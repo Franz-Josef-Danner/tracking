@@ -46,14 +46,28 @@ def count_reliable_tracks(start, end, tracks):
     return count
 
 
-def remove_short_tracks(start, end, tracks):
+def remove_short_tracks(start, end, tracks, ctx):
     """Entfernt Tracks, die im angegebenen Bereich zu kurz sind."""
-    removed = 0
+    to_remove = []
     for t in list(tracks):
         frames = [m.frame for m in t.markers if start <= m.frame <= end]
         if len(frames) < MIN_TRACK_LENGTH:
+            to_remove.append(t)
+
+    removed = 0
+    for t in to_remove:
+        try:
             tracks.remove(t)
-            removed += 1
+        except AttributeError:
+            # Fallback über Operator, falls die Collection keine remove()-Methode kennt
+            try:
+                with bpy.context.temp_override(**ctx):
+                    tracks.active = t
+                    bpy.ops.clip.track_remove()
+            except Exception:
+                pass
+        removed += 1
+
     return removed
 
 
@@ -72,7 +86,7 @@ def auto_track_segmented():
         segment_end = min(segment_start + TIME_SEGMENT_SIZE - 1, frame_end)
         print(f"\n🔍 Segment {segment_start}-{segment_end}", flush=True)
 
-        removed = remove_short_tracks(segment_start, segment_end, tracks)
+        removed = remove_short_tracks(segment_start, segment_end, tracks, ctx)
         if removed:
             print(f"🗑 {removed} kurze Tracks entfernt", flush=True)
 
@@ -104,7 +118,7 @@ def auto_track_segmented():
                 bpy.ops.clip.track_markers(backwards=False, sequence=True)
 
             # Kurzlebige Tracks entfernen
-            r = remove_short_tracks(segment_start, segment_end, tracks)
+            r = remove_short_tracks(segment_start, segment_end, tracks, ctx)
             if r:
                 removed += r
                 print(f"    🗑 {r} kurze Tracks entfernt", flush=True)
