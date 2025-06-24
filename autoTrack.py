@@ -9,18 +9,23 @@ THRESHOLDS = [1.0, 0.5, 0.25, 0.1, 0.05, 0.01, 0.005, 0.001]
 
 
 def get_clip_context():
-    for area in bpy.context.window.screen.areas:
-        if area.type == 'CLIP_EDITOR':
-            for region in area.regions:
-                if region.type == 'WINDOW':
-                    space = next(s for s in area.spaces if s.type == 'CLIP_EDITOR' and s.clip)
+    """Liefert einen Context mit aktivem Clip-Editor und Clip zurück."""
+    wm = bpy.context.window_manager
+    for window in wm.windows:
+        screen = window.screen
+        for area in screen.areas:
+            if area.type != 'CLIP_EDITOR':
+                continue
+            for space in area.spaces:
+                if space.type == 'CLIP_EDITOR' and space.clip:
+                    region = next(r for r in area.regions if r.type == 'WINDOW')
                     return {
+                        "window": window,
+                        "screen": screen,
                         "area": area,
                         "region": region,
                         "space_data": space,
                         "scene": bpy.context.scene,
-                        "window": bpy.context.window,
-                        "screen": bpy.context.screen,
                     }
     raise RuntimeError("Kein aktiver Clip im Motion Tracking Editor gefunden.")
 
