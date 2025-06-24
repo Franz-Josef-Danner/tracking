@@ -74,7 +74,7 @@ def dynamic_track(min_active=20, continue_until=15):
             print(f"  Getrackter Frame {frame - 1} -> {frame}, verbleibende Marker: {remaining}")
 
         # nach Tracking beginnt die Suche erneut (while frame loop setzt sie fort)
-        frame += 0  # Schleifenvariable für Klarheit beibehalten
+        frame += 1  # zum nächsten Frame wechseln, auch wenn keine Marker vorhanden sind
 
     print("Automatisches Tracking beendet.")
 
