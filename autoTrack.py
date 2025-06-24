@@ -78,8 +78,8 @@ def auto_track_segmented():
             with bpy.context.temp_override(**ctx):
                 bpy.ops.clip.detect_features(threshold=th)
 
-            new_tracks = len(tracks) - num_before
-            print(f"    → {new_tracks} neue Marker erkannt", flush=True)
+            new_tracks = tracks[num_before:]
+            print(f"    → {len(new_tracks)} neue Marker erkannt", flush=True)
 
             if new_tracks == 0:
                 continue
@@ -87,6 +87,12 @@ def auto_track_segmented():
             print(f"    → Tracking …", flush=True)
             with bpy.context.temp_override(**ctx):
                 bpy.ops.clip.track_markers(backwards=False, sequence=True)
+
+            # Kurzlebige neue Tracks entfernen
+            for t in new_tracks:
+                frames = [m.frame for m in t.markers if segment_start <= m.frame <= segment_end]
+                if len(frames) < MIN_TRACK_LENGTH:
+                    tracks.remove(t)
 
             updated_reliable = count_reliable_tracks(segment_start, segment_end, tracks)
             print(f"    → {updated_reliable} gültige Tracker", flush=True)
