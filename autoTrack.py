@@ -1,8 +1,14 @@
 import bpy
 import ctypes
+import time
 
 # Windows-Konsole anzeigen (nur Windows)
 ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 1)
+
+# Parameter für das Segment-Tracking
+TIME_SEGMENT_SIZE = 100
+MIN_TRACKS_PER_SEGMENT = 20
+MIN_TRACK_LENGTH = 15
 
 # Thresholds von stabil bis sensibel
 THRESHOLDS = [1.0, 0.5, 0.25, 0.1, 0.05, 0.01, 0.005, 0.001]
@@ -30,59 +36,70 @@ def get_clip_context():
     raise RuntimeError("Kein aktiver Clip im Motion Tracking Editor gefunden.")
 
 
-def count_active_tracks(frame, tracks):
-    """Anzahl der Marker, die auf dem gegebenen Frame existieren."""
-    return sum(1 for t in tracks if any(m.frame == frame for m in t.markers))
+def count_reliable_tracks(start, end, tracks):
+    """Anzahl der Tracks, die im angegebenen Framebereich lang genug sind."""
+    count = 0
+    for t in tracks:
+        frames = [m.frame for m in t.markers if start <= m.frame <= end]
+        if len(frames) >= MIN_TRACK_LENGTH:
+            count += 1
+    return count
 
 
-def dynamic_track(min_active=20, continue_until=15):
-    """Suche Marker, bis min_active Marker vorhanden sind.
-    Danach Tracken, bis nur noch continue_until Marker aktiv sind.
-    Anschließend erneut Marker suchen usw.
-    """
+def auto_track_segmented():
+    """Führt das automatische Tracking segmentweise aus."""
     ctx = get_clip_context()
     clip = ctx["space_data"].clip
     tracks = clip.tracking.tracks
 
-    start = int(clip.frame_start)
-    end = start + int(clip.frame_duration) - 1
-    frame = start
+    frame_start = int(clip.frame_start)
+    frame_end = frame_start + int(clip.frame_duration) - 1
 
-    print(f"Starte automatisches Tracking von {start} bis {end} ({end - start + 1} Frames)")
+    print(f"🚀 Starte Tracking von Frame {frame_start} bis {frame_end}", flush=True)
 
-    while frame <= end:
-        bpy.context.scene.frame_current = frame
-        current_active = count_active_tracks(frame, tracks)
-        print(f"Frame {frame}/{end}: {current_active} aktive Marker vor Suche")
+    for segment_start in range(frame_start, frame_end + 1, TIME_SEGMENT_SIZE):
+        segment_end = min(segment_start + TIME_SEGMENT_SIZE - 1, frame_end)
+        print(f"\n🔍 Segment {segment_start}-{segment_end}", flush=True)
 
-        # Marker suchen bis Mindestanzahl erreicht ist
-        while count_active_tracks(frame, tracks) < min_active:
-            for th in THRESHOLDS:
-                print(f"  Suche mit Threshold {th}")
-                with bpy.context.temp_override(**ctx):
-                    bpy.ops.clip.detect_features(threshold=th)
-                after_search = count_active_tracks(frame, tracks)
-                print(f"    -> {after_search} Marker nach Suche")
-                if after_search >= min_active:
-                    break
-            else:
-                # Nicht genug Marker, obwohl alle Thresholds ausprobiert wurden
+        current_reliable = count_reliable_tracks(segment_start, segment_end, tracks)
+        if current_reliable >= MIN_TRACKS_PER_SEGMENT:
+            print(f"✅ Bereits {current_reliable} verlässliche Tracks vorhanden", flush=True)
+            continue
+
+        print(f"⚠ Nur {current_reliable} Tracks – Feature Detection beginnt", flush=True)
+        segment_time_start = time.time()
+
+        for th in THRESHOLDS:
+            print(f"  ➤ Threshold {th:.4f}", flush=True)
+
+            bpy.context.scene.frame_current = segment_start
+            num_before = len(tracks)
+
+            with bpy.context.temp_override(**ctx):
+                bpy.ops.clip.detect_features(threshold=th)
+
+            new_tracks = len(tracks) - num_before
+            print(f"    → {new_tracks} neue Marker erkannt", flush=True)
+
+            if new_tracks == 0:
+                continue
+
+            print(f"    → Tracking …", flush=True)
+            with bpy.context.temp_override(**ctx):
+                bpy.ops.clip.track_markers(backwards=False, sequence=True)
+
+            updated_reliable = count_reliable_tracks(segment_start, segment_end, tracks)
+            print(f"    → {updated_reliable} gültige Tracker", flush=True)
+
+            if updated_reliable >= MIN_TRACKS_PER_SEGMENT:
+                print(f"    ✅ Ziel erreicht", flush=True)
                 break
 
-        # Marker solange tracken, bis nur noch continue_until übrig sind
-        while frame < end and count_active_tracks(frame, tracks) > continue_until:
-            with bpy.context.temp_override(**ctx):
-                bpy.ops.clip.track_markers(backwards=False, sequence=False)
-            frame += 1
-            bpy.context.scene.frame_current = frame
-            remaining = count_active_tracks(frame, tracks)
-            print(f"  Getrackter Frame {frame - 1} -> {frame}, verbleibende Marker: {remaining}")
+        duration = time.time() - segment_time_start
+        print(f"⏱ Dauer für Segment: {duration:.2f} Sekunden", flush=True)
 
-        # nach Tracking beginnt die Suche erneut (while frame loop setzt sie fort)
-        frame += 1  # zum nächsten Frame wechseln, auch wenn keine Marker vorhanden sind
-
-    print("Automatisches Tracking beendet.")
+    print("\n🎉 Automatisches Tracking abgeschlossen.", flush=True)
 
 
 if __name__ == "__main__":
-    dynamic_track()
+    auto_track_segmented()
