@@ -43,17 +43,22 @@ def dynamic_track(min_active=20, continue_until=15):
     end = start + int(clip.frame_duration) - 1
     frame = start
 
-    print(f"Starte automatisches Tracking von {start} bis {end}")
+    print(f"Starte automatisches Tracking von {start} bis {end} ({end - start + 1} Frames)")
 
     while frame <= end:
         bpy.context.scene.frame_current = frame
+        current_active = count_active_tracks(frame, tracks)
+        print(f"Frame {frame}/{end}: {current_active} aktive Marker vor Suche")
 
         # Marker suchen bis Mindestanzahl erreicht ist
         while count_active_tracks(frame, tracks) < min_active:
             for th in THRESHOLDS:
+                print(f"  Suche mit Threshold {th}")
                 with bpy.context.temp_override(**ctx):
                     bpy.ops.clip.detect_features(threshold=th)
-                if count_active_tracks(frame, tracks) >= min_active:
+                after_search = count_active_tracks(frame, tracks)
+                print(f"    -> {after_search} Marker nach Suche")
+                if after_search >= min_active:
                     break
             else:
                 # Nicht genug Marker, obwohl alle Thresholds ausprobiert wurden
@@ -65,6 +70,8 @@ def dynamic_track(min_active=20, continue_until=15):
                 bpy.ops.clip.track_markers(backwards=False, sequence=False)
             frame += 1
             bpy.context.scene.frame_current = frame
+            remaining = count_active_tracks(frame, tracks)
+            print(f"  Getrackter Frame {frame - 1} -> {frame}, verbleibende Marker: {remaining}")
 
         # nach Tracking beginnt die Suche erneut (while frame loop setzt sie fort)
         frame += 0  # Schleifenvariable für Klarheit beibehalten
