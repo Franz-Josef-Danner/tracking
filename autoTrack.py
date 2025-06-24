@@ -46,6 +46,17 @@ def count_reliable_tracks(start, end, tracks):
     return count
 
 
+def remove_short_tracks(start, end, tracks):
+    """Entfernt Tracks, die im angegebenen Bereich zu kurz sind."""
+    removed = 0
+    for t in list(tracks):
+        frames = [m.frame for m in t.markers if start <= m.frame <= end]
+        if len(frames) < MIN_TRACK_LENGTH:
+            tracks.remove(t)
+            removed += 1
+    return removed
+
+
 def auto_track_segmented():
     """Führt das automatische Tracking segmentweise aus."""
     ctx = get_clip_context()
@@ -60,6 +71,10 @@ def auto_track_segmented():
     for segment_start in range(frame_start, frame_end + 1, TIME_SEGMENT_SIZE):
         segment_end = min(segment_start + TIME_SEGMENT_SIZE - 1, frame_end)
         print(f"\n🔍 Segment {segment_start}-{segment_end}", flush=True)
+
+        removed = remove_short_tracks(segment_start, segment_end, tracks)
+        if removed:
+            print(f"🗑 {removed} kurze Tracks entfernt", flush=True)
 
         current_reliable = count_reliable_tracks(segment_start, segment_end, tracks)
         if current_reliable >= MIN_TRACKS_PER_SEGMENT:
@@ -88,11 +103,11 @@ def auto_track_segmented():
             with bpy.context.temp_override(**ctx):
                 bpy.ops.clip.track_markers(backwards=False, sequence=True)
 
-            # Kurzlebige neue Tracks entfernen
-            for t in new_tracks:
-                frames = [m.frame for m in t.markers if segment_start <= m.frame <= segment_end]
-                if len(frames) < MIN_TRACK_LENGTH:
-                    tracks.remove(t)
+            # Kurzlebige Tracks entfernen
+            r = remove_short_tracks(segment_start, segment_end, tracks)
+            if r:
+                removed += r
+                print(f"    🗑 {r} kurze Tracks entfernt", flush=True)
 
             updated_reliable = count_reliable_tracks(segment_start, segment_end, tracks)
             print(f"    → {updated_reliable} gültige Tracker", flush=True)
