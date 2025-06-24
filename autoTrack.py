@@ -8,6 +8,7 @@ ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 1)
 # Parameter für das Segment-Tracking
 TIME_SEGMENT_SIZE = 100
 MIN_TRACKS_PER_SEGMENT = 20
+MAX_TRACKS_TOTAL = 21
 MIN_TRACK_LENGTH = 15
 
 # Thresholds von stabil bis sensibel
@@ -60,6 +61,30 @@ def remove_short_tracks(start, end, tracks, ctx):
             tracks.remove(t)
         except AttributeError:
             # Fallback über Operator, falls die Collection keine remove()-Methode kennt
+            try:
+                with bpy.context.temp_override(**ctx):
+                    tracks.active = t
+                    bpy.ops.clip.track_remove()
+            except Exception:
+                pass
+        removed += 1
+
+    return removed
+
+
+def remove_low_quality_tracks(tracks, ctx, max_total=MAX_TRACKS_TOTAL):
+    """Entfernt die schlechtesten Tracks, bis nur noch max_total übrig sind."""
+    if len(tracks) <= max_total:
+        return 0
+
+    # Qualität hier simpel über Track-Länge definiert (kürzere = schlechter).
+    sorted_tracks = sorted(tracks, key=lambda t: len(t.markers))
+    num_remove = len(tracks) - max_total
+    removed = 0
+    for t in sorted_tracks[:num_remove]:
+        try:
+            tracks.remove(t)
+        except AttributeError:
             try:
                 with bpy.context.temp_override(**ctx):
                     tracks.active = t
@@ -132,6 +157,11 @@ def auto_track_segmented():
 
         duration = time.time() - segment_time_start
         print(f"⏱ Dauer für Segment: {duration:.2f} Sekunden", flush=True)
+
+    # Gesamte Anzahl prüfen und ggf. schlechteste Tracks entfernen
+    removed_total = remove_low_quality_tracks(tracks, ctx, MAX_TRACKS_TOTAL)
+    if removed_total:
+        print(f"\n🗑 {removed_total} minderwertige Tracks entfernt, um auf {MAX_TRACKS_TOTAL} zu begrenzen", flush=True)
 
     print("\n🎉 Automatisches Tracking abgeschlossen.", flush=True)
 
