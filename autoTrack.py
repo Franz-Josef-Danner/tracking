@@ -50,8 +50,8 @@ class WM_OT_auto_track(bpy.types.Operator):
             f"Nutze MIN_MARKERS={MIN_MARKERS}, MIN_TRACK_LENGTH={MIN_TRACK_LENGTH}",
             flush=True,
         )
-        detect_features_until_enough()
-        return {'FINISHED'}
+        success = detect_features_until_enough()
+        return {'FINISHED'} if success else {'CANCELLED'}
 
 
 def track_span(track):
@@ -171,6 +171,7 @@ def detect_features_until_enough():
         flush=True,
     )
     print("Drücke ESC, um abzubrechen", flush=True)
+    success = False
     while True:
         if escape_pressed():
             print("❌ Abgebrochen mit Escape", flush=True)
@@ -201,6 +202,7 @@ def detect_features_until_enough():
             delete_short_tracks(ctx, clip)
             print_track_lengths(clip)
             move_playhead_to_min_tracks(ctx, clip)
+            success = True
             break
         print(f"⚠ Nur {after} Marker – entferne Marker", flush=True)
         with bpy.context.temp_override(**ctx):
@@ -216,7 +218,7 @@ def detect_features_until_enough():
             print("❌ Kein passender Threshold gefunden", flush=True)
             break
         print(f"→ Neuer Threshold: {threshold:.4f}", flush=True)
-
+    return success
 
 def register():
     bpy.utils.register_class(WM_OT_auto_track)
@@ -231,7 +233,14 @@ if __name__ == "__main__":
     bpy.context.scene.frame_set(start)
     print(f"⏮ Setze Playhead auf Szene-Anfang (Frame {start})", flush=True)
     register()
-    bpy.ops.wm.auto_track('INVOKE_DEFAULT')
+    result = bpy.ops.wm.auto_track('INVOKE_DEFAULT')
+    while result == {'FINISHED'}:
+        result = bpy.ops.wm.auto_track(
+            'EXEC_DEFAULT',
+            min_markers=MIN_MARKERS,
+            min_track_length=MIN_TRACK_LENGTH,
+        )
+    print("🏁 Beende Auto-Tracking", flush=True)
 
 
 
