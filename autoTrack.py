@@ -211,7 +211,7 @@ def detect_features_until_enough(motion_model="Perspective", playhead_min_marker
     # margin and min_distance scale with clip width
     margin = int(width / 200)
     threshold = 0.1
-    distance = int(int(width / 20) / (((log10(threshold)/-1)+1)/2))
+    distance = int(int(width / 40) / (((log10(threshold)/-1)+1)/2))
     target_markers = MIN_MARKERS * 4
     print(
         f"Starte Feature Detection: width={width}, margin={margin}, min_distance={distance}, "
@@ -224,7 +224,7 @@ def detect_features_until_enough(motion_model="Perspective", playhead_min_marker
         if escape_pressed():
             print("❌ Abgebrochen mit Escape", flush=True)
             break
-        distance = int(int(width / 20) / (((log10(threshold)/-1)+1)/2))
+        distance = int(int(width / 40) / (((log10(threshold)/-1)+1)/2))
         before_names = {t.name for t in tracks}
         # Setze Playhead auf aktuellen Frame, damit neue Marker dort starten
         current_frame = bpy.context.scene.frame_current
