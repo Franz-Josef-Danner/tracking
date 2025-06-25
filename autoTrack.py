@@ -206,7 +206,7 @@ def detect_features_until_enough():
                 bpy.ops.clip.track_markers(
                     backwards=False,
                     sequence=False,
-                    frames=end_frame - start_frame,
+                    frames_limit=end_frame - start_frame,
                 )
             delete_short_tracks(ctx, clip)
             print_track_lengths(clip)
