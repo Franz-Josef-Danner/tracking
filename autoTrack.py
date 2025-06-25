@@ -52,10 +52,19 @@ class WM_OT_auto_track(bpy.types.Operator):
             flush=True,
         )
         result = {'FINISHED'}
+        prev_frame = bpy.context.scene.frame_current
         while True:
             if not detect_features_until_enough():
                 result = {'CANCELLED'}
                 break
+            current_frame = bpy.context.scene.frame_current
+            if current_frame == prev_frame:
+                MIN_MARKERS += 10
+                print(
+                    f"🔄 Selber Frame erneut erreicht – erhöhe MIN_MARKERS auf {MIN_MARKERS}",
+                    flush=True,
+                )
+            prev_frame = current_frame
         print("🏁 Beende Auto-Tracking", flush=True)
         return result
 
