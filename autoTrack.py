@@ -11,13 +11,21 @@ MIN_MARKERS = 20
 
 
 def count_active_markers(tracks, frame):
-    """Return the number of markers that exist for the given frame."""
+    """Return the number of non-muted markers for the given frame."""
     count = 0
     for track in tracks:
-        for marker in track.markers:
-            if marker.frame == frame and not getattr(marker, "mute", False):
-                count += 1
-                break
+        # use find_frame to reliably get the marker for this frame
+        marker = None
+        try:
+            marker = track.markers.find_frame(frame)
+        except AttributeError:
+            # fallback for older Blender versions lacking find_frame()
+            for m in track.markers:
+                if getattr(m, "frame", None) == frame:
+                    marker = m
+                    break
+        if marker and not getattr(marker, "mute", False):
+            count += 1
     return count
 
 
