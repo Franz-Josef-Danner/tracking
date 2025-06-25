@@ -164,6 +164,11 @@ def get_clip_context():
 def detect_features_until_enough():
     ctx = get_clip_context()
     clip = ctx["space_data"].clip
+    clip.tracking.settings.default_motion_model = "Perspective"
+    print(
+        f"📐 Nutze Motion Model {clip.tracking.settings.default_motion_model}",
+        flush=True,
+    )
     tracks = clip.tracking.tracks
     width = clip.size[0]
     # margin and min_distance scale with clip width
