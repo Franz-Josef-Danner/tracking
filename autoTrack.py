@@ -97,6 +97,34 @@ def print_track_lengths(clip):
         )
 
 
+def find_first_frame_with_min_tracks(clip):
+    """Return the first frame with only the minimum number of active tracks."""
+    start_frame = clip.frame_start
+    end_frame = start_frame + clip.frame_duration - 1
+    tracks = clip.tracking.tracks
+    for frame in range(start_frame, end_frame + 1):
+        active = 0
+        for track in tracks:
+            if any(m.frame == frame and not m.mute for m in track.markers):
+                active += 1
+        if active <= MIN_MARKERS:
+            return frame
+    return None
+
+
+def move_playhead_to_min_tracks(ctx, clip):
+    """Set the playhead to the frame where only MIN_MARKERS remain."""
+    frame = find_first_frame_with_min_tracks(clip)
+    if frame is None:
+        return
+    with bpy.context.temp_override(**ctx):
+        bpy.context.scene.frame_set(frame)
+    print(
+        f"⏩ Setze Playhead auf Frame {frame} (nur noch {MIN_MARKERS} aktive Tracks)",
+        flush=True,
+    )
+
+
 def get_clip_context():
     """Return a context with an active clip-editor and clip."""
     wm = bpy.context.window_manager
@@ -128,7 +156,7 @@ def detect_features_until_enough():
     margin = int(width / 200)
     distance = int(width / 20)
     threshold = 1.0
-    target_markers = MIN_MARKERS * 2
+    target_markers = MIN_MARKERS * 3
     print(
         f"Starte Feature Detection: width={width}, margin={margin}, min_distance={distance}, "
         f"min_markers={MIN_MARKERS}, min_track_length={MIN_TRACK_LENGTH}",
@@ -160,6 +188,7 @@ def detect_features_until_enough():
                 bpy.ops.clip.track_markers(backwards=False, sequence=True)
             delete_short_tracks(ctx, clip)
             print_track_lengths(clip)
+            move_playhead_to_min_tracks(ctx, clip)
             break
         print(f"⚠ Nur {after} Marker – entferne Marker", flush=True)
         with bpy.context.temp_override(**ctx):
@@ -188,5 +217,7 @@ def unregister():
 if __name__ == "__main__":
     register()
     bpy.ops.wm.auto_track('INVOKE_DEFAULT')
+
+
 
 
