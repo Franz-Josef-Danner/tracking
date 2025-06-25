@@ -1,6 +1,13 @@
 import bpy
 import ctypes
 
+try:
+    import tkinter as tk
+    from tkinter import simpledialog
+except Exception:
+    tk = None
+    simpledialog = None
+
 # Show console on Windows
 try:
     ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 1)
@@ -9,6 +16,34 @@ except Exception:
 
 MIN_MARKERS = 20
 MIN_TRACK_LENGTH = 10
+
+
+def ask_user_settings():
+    """Show a small dialog to ask for the marker and frame minimums."""
+    global MIN_MARKERS, MIN_TRACK_LENGTH
+    if tk is None or simpledialog is None:
+        print("Tkinter nicht verf\xC3\xBCgbar, verwende Standardwerte.", flush=True)
+        return
+    root = tk.Tk()
+    root.withdraw()
+    markers = simpledialog.askinteger(
+        "Einstellungen",
+        "Mindestanzahl Marker:",
+        initialvalue=MIN_MARKERS,
+        minvalue=1,
+    )
+    if markers:
+        MIN_MARKERS = markers
+    frames = simpledialog.askinteger(
+        "Einstellungen",
+        "Mindestanzahl Frames pro Track:",
+        initialvalue=MIN_TRACK_LENGTH,
+        minvalue=1,
+    )
+    if frames:
+        MIN_TRACK_LENGTH = frames
+    root.destroy()
+
 
 
 def delete_short_tracks(clip):
@@ -96,4 +131,5 @@ def detect_features_until_enough():
 
 
 if __name__ == "__main__":
+    ask_user_settings()
     detect_features_until_enough()
