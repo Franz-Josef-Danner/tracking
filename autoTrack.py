@@ -8,83 +8,19 @@ except Exception:
     pass
 
 MIN_MARKERS = 20
+MIN_TRACK_LENGTH = 10
 
 
-def count_active_markers(tracks, frame):
-    """Return the number of non-muted markers for the given frame."""
-    count = 0
-    for track in tracks:
-        # use find_frame to reliably get the marker for this frame
-        marker = None
-        try:
-            marker = track.markers.find_frame(frame)
-        except AttributeError:
-            # fallback for older Blender versions lacking find_frame()
-            for m in track.markers:
-                if getattr(m, "frame", None) == frame:
-                    marker = m
-                    break
-        if marker and not getattr(marker, "mute", False):
-            count += 1
-    return count
-
-
-def track_until_too_few(ctx, clip):
-    """Track step by step and stop if marker count drops too low."""
+def delete_short_tracks(clip):
+    """Remove tracks shorter than the minimum length."""
     tracks = clip.tracking.tracks
-    scene = ctx["scene"]
-    frame_end = scene.frame_end
-    stop_count = int(MIN_MARKERS * 0.9)
-    current = scene.frame_current
-    # Print marker status before tracking begins
-    start_active = count_active_markers(tracks, current)
-    print(f"Start Frame {current}: {start_active} Marker", flush=True)
-    details = []
-    for track in tracks:
-        marker = None
-        try:
-            marker = track.markers.find_frame(current)
-        except AttributeError:
-            for m in track.markers:
-                if getattr(m, "frame", None) == current:
-                    marker = m
-                    break
-        if marker:
-            state = "muted" if getattr(marker, "mute", False) else "active"
-        else:
-            state = "missing"
-        details.append(f"{track.name}:{state}")
-    print(" | ".join(details), flush=True)
-    while current < frame_end:
-        with bpy.context.temp_override(**ctx):
-            bpy.ops.clip.track_markers(backwards=False, sequence=False)
-        current += 1
-        scene.frame_current = current
-        active = count_active_markers(tracks, current)
-        print(f"Frame {current}: {active} Marker", flush=True)
-        # Print detailed status for each track to debug missing markers
-        details = []
-        for track in tracks:
-            marker = None
-            try:
-                marker = track.markers.find_frame(current)
-            except AttributeError:
-                for m in track.markers:
-                    if getattr(m, "frame", None) == current:
-                        marker = m
-                        break
-            if marker:
-                state = "muted" if getattr(marker, "mute", False) else "active"
-            else:
-                state = "missing"
-            details.append(f"{track.name}:{state}")
-        print(" | ".join(details), flush=True)
-        if active < stop_count:
-            print(
-                f"⛔ Tracking gestoppt – nur noch {active} Marker (Minimum {stop_count})",
-                flush=True,
-            )
-            break
+    removed = 0
+    for track in list(tracks):
+        if len(track.markers) < MIN_TRACK_LENGTH:
+            tracks.remove(track)
+            removed += 1
+    if removed:
+        print(f"🗑 Entferne {removed} kurze Tracks (<{MIN_TRACK_LENGTH} Frames)", flush=True)
 
 
 def get_clip_context():
@@ -139,7 +75,9 @@ def detect_features_until_enough():
         if after >= MIN_MARKERS:
             print(f"✅ {after} Marker erreicht", flush=True)
             print("Starte Tracking ...", flush=True)
-            track_until_too_few(ctx, clip)
+            with bpy.context.temp_override(**ctx):
+                bpy.ops.clip.track_markers(backwards=False, sequence=True)
+            delete_short_tracks(clip)
             break
         print(f"⚠ Nur {after} Marker – entferne Marker", flush=True)
         with bpy.context.temp_override(**ctx):
