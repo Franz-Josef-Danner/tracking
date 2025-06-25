@@ -156,7 +156,7 @@ def detect_features_until_enough():
     margin = int(width / 200)
     distance = int(width / 20)
     threshold = 1.0
-    target_markers = MIN_MARKERS * 2
+    target_markers = MIN_MARKERS * 3
     print(
         f"Starte Feature Detection: width={width}, margin={margin}, min_distance={distance}, "
         f"min_markers={MIN_MARKERS}, min_track_length={MIN_TRACK_LENGTH}",
@@ -217,5 +217,7 @@ def unregister():
 if __name__ == "__main__":
     register()
     bpy.ops.wm.auto_track('INVOKE_DEFAULT')
+
+
 
 
