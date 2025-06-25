@@ -37,8 +37,9 @@ def detect_features_until_enough():
     clip = ctx["space_data"].clip
     tracks = clip.tracking.tracks
     width = clip.size[0]
-    margin = int(width / 100)
-    distance = int(width / 10)
+    # margin and min_distance scale with clip width
+    margin = int(width / 200)
+    distance = int(width / 20)
     threshold = 1.0
     print(
         f"Starte Feature Detection: width={width}, margin={margin}, min_distance={distance}, min_markers={MIN_MARKERS}",
