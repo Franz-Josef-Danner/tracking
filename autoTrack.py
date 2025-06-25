@@ -169,7 +169,7 @@ def detect_features_until_enough():
     margin = int(width / 200)
     distance = int(width / 20)
     threshold = 1.0
-    target_markers = MIN_MARKERS * 3
+    target_markers = MIN_MARKERS * 4
     print(
         f"Starte Feature Detection: width={width}, margin={margin}, min_distance={distance}, "
         f"min_markers={MIN_MARKERS}, min_track_length={MIN_TRACK_LENGTH}",
