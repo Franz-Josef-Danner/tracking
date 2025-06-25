@@ -96,6 +96,53 @@ def remove_low_quality_tracks(tracks, ctx, max_total=MAX_TRACKS_TOTAL):
     return removed
 
 
+def count_tracks_on_frame(frame, tracks):
+    """Zählt, wie viele Tracks im angegebenen Frame aktiv sind."""
+    count = 0
+    for t in tracks:
+        if any(m.frame == frame for m in t.markers):
+            count += 1
+    return count
+
+
+def average_track_length(frame, tracks):
+    """Gibt die durchschnittliche Länge aller im Frame aktiven Tracks zurück."""
+    lengths = []
+    for t in tracks:
+        frames = [m.frame for m in t.markers if m.frame <= frame]
+        if frame in frames:
+            lengths.append(len(frames))
+    return sum(lengths) / len(lengths) if lengths else 0.0
+
+
+def track_segment_frames(start, end, ctx, tracks):
+    """Trackt Frame für Frame und gibt Informationen pro Frame aus."""
+    for f in range(start, end):
+        bpy.context.scene.frame_current = f
+        with bpy.context.temp_override(**ctx):
+            bpy.ops.clip.track_markers(backwards=False, sequence=False)
+
+        active = count_tracks_on_frame(f + 1, tracks)
+        quality = average_track_length(f + 1, tracks)
+        print(
+            f"        Frame {f + 1}: {active} Tracker aktiv, Qualität {quality:.1f}",
+            flush=True,
+        )
+
+
+def track_segment(start, end, ctx, tracks):
+    """Trackt ein Segment und entfernt anschließend kurze Tracks."""
+    track_segment_frames(start, end, ctx, tracks)
+
+    r = remove_short_tracks(start, end, tracks, ctx)
+    if r:
+        print(f"    🗑 {r} kurze Tracks entfernt", flush=True)
+
+    updated = count_reliable_tracks(start, end, tracks)
+    print(f"    → {updated} gültige Tracker", flush=True)
+    return updated
+
+
 def auto_track_segmented():
     """Führt das automatische Tracking segmentweise aus."""
     ctx = get_clip_context()
@@ -126,16 +173,7 @@ def auto_track_segmented():
 
             print("    → Tracking …", flush=True)
             bpy.context.scene.frame_current = segment_start
-            with bpy.context.temp_override(**ctx):
-                bpy.ops.clip.track_markers(backwards=False, sequence=True)
-
-            r = remove_short_tracks(segment_start, segment_end, tracks, ctx)
-            if r:
-                removed += r
-                print(f"    🗑 {r} kurze Tracks entfernt", flush=True)
-
-            updated_reliable = count_reliable_tracks(segment_start, segment_end, tracks)
-            print(f"    → {updated_reliable} gültige Tracker", flush=True)
+            updated_reliable = track_segment(segment_start, segment_end, ctx, tracks)
 
             threshold_idx = 0
             success = True
@@ -159,16 +197,8 @@ def auto_track_segmented():
                     detected_any = True
 
                     print("    → Tracking …", flush=True)
-                    with bpy.context.temp_override(**ctx):
-                        bpy.ops.clip.track_markers(backwards=False, sequence=True)
-
-                    r = remove_short_tracks(segment_start, segment_end, tracks, ctx)
-                    if r:
-                        removed += r
-                        print(f"    🗑 {r} kurze Tracks entfernt", flush=True)
-
-                    updated_reliable = count_reliable_tracks(segment_start, segment_end, tracks)
-                    print(f"    → {updated_reliable} gültige Tracker", flush=True)
+                    bpy.context.scene.frame_current = segment_start
+                    updated_reliable = track_segment(segment_start, segment_end, ctx, tracks)
 
                     if updated_reliable >= MIN_TRACKS_PER_SEGMENT:
                         print(f"    ✅ Ziel erreicht", flush=True)
@@ -185,16 +215,7 @@ def auto_track_segmented():
             if not detected_any and current_reliable > 0:
                 print("    → Tracking mit vorhandenen Markern …", flush=True)
                 bpy.context.scene.frame_current = segment_start
-                with bpy.context.temp_override(**ctx):
-                    bpy.ops.clip.track_markers(backwards=False, sequence=True)
-
-                r = remove_short_tracks(segment_start, segment_end, tracks, ctx)
-                if r:
-                    removed += r
-                    print(f"    🗑 {r} kurze Tracks entfernt", flush=True)
-
-                updated_reliable = count_reliable_tracks(segment_start, segment_end, tracks)
-                print(f"    → {updated_reliable} gültige Tracker", flush=True)
+                updated_reliable = track_segment(segment_start, segment_end, ctx, tracks)
 
         if not success:
             print("    ❌ Ziel nicht erreicht", flush=True)
