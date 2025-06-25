@@ -39,7 +39,7 @@ def detect_features_until_enough():
     while True:
         before = len(tracks)
         with bpy.context.temp_override(**ctx):
-            bpy.ops.clip.detect_features(threshold=threshold, margin=5, distance=200)
+            bpy.ops.clip.detect_features(threshold=threshold, margin=5, min_distance=200)
         new_markers = len(tracks) - before
         print(f"Threshold {threshold:.3f}: {new_markers} neue Marker")
         if len(tracks) >= MIN_MARKERS:
@@ -50,7 +50,7 @@ def detect_features_until_enough():
             bpy.ops.clip.select_all(action='SELECT')
             bpy.ops.clip.delete_track()
         threshold -= 0.001
-        if threshold <= 0:
+        if threshold <= 0.0001:
             print("❌ Kein passender Threshold gefunden")
             break
 
