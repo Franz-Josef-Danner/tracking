@@ -69,7 +69,9 @@ def detect_features_until_enough():
             threshold -= MIN_MARKERS / (added * 10)
         else:
             threshold -= 0.1
-        if threshold <= 0.0001:
+        if threshold < 0.0001:
+            threshold = 0.0001
+        if threshold == 0.0001 and after < MIN_MARKERS:
             print("❌ Kein passender Threshold gefunden", flush=True)
             break
         print(f"→ Neuer Threshold: {threshold:.4f}", flush=True)
