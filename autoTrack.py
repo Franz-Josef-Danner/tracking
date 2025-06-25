@@ -63,24 +63,39 @@ class WM_OT_auto_track(bpy.types.Operator):
             flush=True,
         )
 
+        # ❗ Nur EINMAL Feature Detection
         if not detect_features_until_enough(max_attempts=10):
             print("❌ Feature Detection fehlgeschlagen – Abbruch", flush=True)
             return {'CANCELLED'}
 
+        # Ab hier nur noch: TRACKING
         result = {'FINISHED'}
+        prev_frame = bpy.context.scene.frame_current
         model_index = 0
 
         while True:
             motion_model = MOTION_MODELS[model_index]
-            moved = track_existing_markers(motion_model)
-            if moved:
+            ctx = get_clip_context()
+            clip = ctx["space_data"].clip
+            clip.tracking.settings.default_motion_model = motion_model
+            print(f"📐 Starte Tracking mit Motion Model: {motion_model}", flush=True)
+
+            with bpy.context.temp_override(**ctx):
+                bpy.ops.clip.select_all(action='SELECT')
+                bpy.ops.clip.track_markers(backwards=False, sequence=True)
+
+            current_frame = bpy.context.scene.frame_current
+            if current_frame == prev_frame:
+                model_index = (model_index + 1) % len(MOTION_MODELS)
+                print(
+                    f"🔄 Selber Frame erneut erreicht – wechsle Motion Model zu {MOTION_MODELS[model_index]}",
+                    flush=True,
+                )
+            else:
                 print("✅ Tracking erfolgreich weitergeführt", flush=True)
                 break
-            model_index = (model_index + 1) % len(MOTION_MODELS)
-            print(
-                f"🔄 Selber Frame erneut erreicht – wechsle Motion Model zu {MOTION_MODELS[model_index]}",
-                flush=True,
-            )
+
+            prev_frame = current_frame
 
         print("🏁 Beende Auto-Tracking", flush=True)
         return result
