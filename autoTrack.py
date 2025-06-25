@@ -10,6 +10,9 @@ except Exception:
 
 MIN_MARKERS = 20
 MIN_TRACK_LENGTH = 10
+# Prefixes used to separate newly added and permanent tracks
+NEW_PREFIX = "NEW_"
+LOCKED_PREFIX = "LOCKED_"
 # Motion models to cycle through when tracking stalls
 MOTION_MODELS = [
     "Perspective",
@@ -98,13 +101,25 @@ def track_length(track):
     return end - start + 1
 
 
+def rename_new_tracks(tracks, before_names):
+    """Prefix newly created tracks so they can be distinguished."""
+    for track in tracks:
+        if track.name not in before_names and not track.name.startswith(NEW_PREFIX):
+            track.name = f"{NEW_PREFIX}{track.name}"
+
+
 def delete_short_tracks(ctx, clip):
-    """Remove tracks shorter than the minimum length."""
+    """Remove short tracks and lock long living ones."""
     tracks = clip.tracking.tracks
     removed = 0
     with bpy.context.temp_override(**ctx):
         for track in list(tracks):
-            if track_length(track) < MIN_TRACK_LENGTH:
+            length = track_length(track)
+            is_locked = track.lock or track.name.startswith(LOCKED_PREFIX)
+            if length >= MIN_TRACK_LENGTH and not is_locked:
+                track.name = f"{LOCKED_PREFIX}{track.name}"
+                track.lock = True
+            if length < MIN_TRACK_LENGTH and not is_locked:
                 track.select = True
             else:
                 track.select = False
@@ -210,33 +225,26 @@ def detect_features_until_enough(motion_model="Perspective", playhead_min_marker
             print("❌ Abgebrochen mit Escape", flush=True)
             break
         distance = int(int(width / 20) / (((log10(threshold)/-1)+1)/2))
-        before = len(tracks)
+        before_names = {t.name for t in tracks}
         with bpy.context.temp_override(**ctx):
             bpy.ops.clip.detect_features(
                 threshold=threshold,
                 margin=margin,
                 min_distance=distance,
             )
+        rename_new_tracks(tracks, before_names)
+        with bpy.context.temp_override(**ctx):
+            bpy.ops.clip.select_all(action='SELECT')
+            bpy.ops.clip.track_markers(backwards=False, sequence=True)
+        delete_short_tracks(ctx, clip)
         after = len(tracks)
-        added = after - before
+        added = after - len(before_names)
         print(
             f"Threshold {threshold:.3f}: {added} neue Marker (insgesamt {after})",
             flush=True,
         )
         if after >= target_markers:
             print(f"✅ {after} Marker erreicht", flush=True)
-            start_frame = bpy.context.scene.frame_current
-            end_frame = clip.frame_start + clip.frame_duration - 1
-            print(
-                f"Starte Tracking von Frame {start_frame} bis {end_frame} ...",
-                flush=True,
-            )
-            with bpy.context.temp_override(**ctx):
-                bpy.ops.clip.track_markers(
-                    backwards=False,
-                    sequence=True,
-                )
-            delete_short_tracks(ctx, clip)
             print_track_lengths(clip)
             move_playhead_to_min_tracks(
                 ctx,
@@ -245,10 +253,7 @@ def detect_features_until_enough(motion_model="Perspective", playhead_min_marker
             )
             success = True
             break
-        print(f"⚠ Nur {after} Marker – entferne Marker", flush=True)
-        with bpy.context.temp_override(**ctx):
-            bpy.ops.clip.select_all(action='SELECT')
-            bpy.ops.clip.delete_track()
+        print(f"⚠ Nur {after} Marker – versuche erneut", flush=True)
         if added > 0:
             threshold /= (target_markers / added)
         else:
