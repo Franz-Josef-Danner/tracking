@@ -226,6 +226,10 @@ def detect_features_until_enough(motion_model="Perspective", playhead_min_marker
             break
         distance = int(int(width / 20) / (((log10(threshold)/-1)+1)/2))
         before_names = {t.name for t in tracks}
+        # Setze Playhead auf aktuellen Frame, damit neue Marker dort starten
+        current_frame = bpy.context.scene.frame_current
+        with bpy.context.temp_override(**ctx):
+            bpy.context.scene.frame_set(current_frame)
         with bpy.context.temp_override(**ctx):
             bpy.ops.clip.detect_features(
                 threshold=threshold,
