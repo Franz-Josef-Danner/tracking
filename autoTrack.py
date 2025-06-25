@@ -107,6 +107,8 @@ def auto_track_segmented():
 
     print(f"🚀 Starte Tracking von Frame {frame_start} bis {frame_end}", flush=True)
 
+    threshold_idx = 0
+
     for segment_start in range(frame_start, frame_end + 1, TIME_SEGMENT_SIZE):
         segment_end = min(segment_start + TIME_SEGMENT_SIZE - 1, frame_end)
         print(f"\n🔍 Segment {segment_start}-{segment_end}", flush=True)
@@ -123,7 +125,9 @@ def auto_track_segmented():
         print(f"⚠ Nur {current_reliable} Tracks – Feature Detection beginnt", flush=True)
         segment_time_start = time.time()
 
-        for th in THRESHOLDS:
+        success = False
+        while True:
+            th = THRESHOLDS[threshold_idx]
             print(f"  ➤ Threshold {th:.4f}", flush=True)
 
             bpy.context.scene.frame_current = segment_start
@@ -136,7 +140,11 @@ def auto_track_segmented():
             print(f"    → {len(new_tracks)} neue Marker erkannt", flush=True)
 
             if new_tracks == 0:
-                continue
+                if threshold_idx < len(THRESHOLDS) - 1:
+                    threshold_idx += 1
+                    continue
+                else:
+                    break
 
             print(f"    → Tracking …", flush=True)
             with bpy.context.temp_override(**ctx):
@@ -153,7 +161,15 @@ def auto_track_segmented():
 
             if updated_reliable >= MIN_TRACKS_PER_SEGMENT:
                 print(f"    ✅ Ziel erreicht", flush=True)
+                threshold_idx = 0
+                success = True
                 break
+            elif threshold_idx < len(THRESHOLDS) - 1:
+                threshold_idx += 1
+            else:
+                break
+        if not success:
+            print("    ❌ Ziel nicht erreicht", flush=True)
 
         duration = time.time() - segment_time_start
         print(f"⏱ Dauer für Segment: {duration:.2f} Sekunden", flush=True)
