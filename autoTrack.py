@@ -17,7 +17,6 @@ MOTION_MODELS = [
     "LocRotScale",
     "LocRot",
     "Loc",
-    "Planar",
 ]
 
 
