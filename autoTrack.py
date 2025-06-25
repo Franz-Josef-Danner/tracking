@@ -230,7 +230,6 @@ def detect_features_until_enough(motion_model="Perspective", playhead_min_marker
         current_frame = bpy.context.scene.frame_current
         with bpy.context.temp_override(**ctx):
             bpy.context.scene.frame_set(current_frame)
-        with bpy.context.temp_override(**ctx):
             bpy.ops.clip.detect_features(
                 threshold=threshold,
                 margin=margin,
