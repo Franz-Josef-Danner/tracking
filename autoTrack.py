@@ -8,6 +8,19 @@ except Exception:
     pass
 
 MIN_MARKERS = 20
+MIN_TRACK_LENGTH = 10
+
+
+def delete_short_tracks(clip):
+    """Remove tracks shorter than the minimum length."""
+    tracks = clip.tracking.tracks
+    removed = 0
+    for track in list(tracks):
+        if len(track.markers) < MIN_TRACK_LENGTH:
+            tracks.remove(track)
+            removed += 1
+    if removed:
+        print(f"🗑 Entferne {removed} kurze Tracks (<{MIN_TRACK_LENGTH} Frames)", flush=True)
 
 
 def get_clip_context():
@@ -64,6 +77,7 @@ def detect_features_until_enough():
             print("Starte Tracking ...", flush=True)
             with bpy.context.temp_override(**ctx):
                 bpy.ops.clip.track_markers(backwards=False, sequence=True)
+            delete_short_tracks(clip)
             break
         print(f"⚠ Nur {after} Marker – entferne Marker", flush=True)
         with bpy.context.temp_override(**ctx):
