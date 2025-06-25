@@ -67,7 +67,7 @@ def detect_features_until_enough():
             bpy.ops.clip.select_all(action='SELECT')
             bpy.ops.clip.delete_track()
         if added > 0:
-            threshold -= MIN_MARKERS / (added * (30 / threshold))
+            threshold /= (MIN_MARKERS / added)
         else:
             threshold -= 0.1
         if threshold < 0.0001:
