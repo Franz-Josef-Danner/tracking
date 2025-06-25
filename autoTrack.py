@@ -105,7 +105,12 @@ def detect_features_until_enough():
         )
         if after >= MIN_MARKERS:
             print(f"✅ {after} Marker erreicht", flush=True)
-            print("Starte Tracking ...", flush=True)
+            start_frame = clip.frame_start
+            end_frame = start_frame + clip.frame_duration - 1
+            print(
+                f"Starte Tracking von Frame {start_frame} bis {end_frame} ...",
+                flush=True,
+            )
             with bpy.context.temp_override(**ctx):
                 bpy.ops.clip.track_markers(backwards=False, sequence=True)
             delete_short_tracks(clip)
