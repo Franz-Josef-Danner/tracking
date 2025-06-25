@@ -68,7 +68,11 @@ class WM_OT_auto_track(bpy.types.Operator):
         model_index = 0
         while True:
             motion_model = MOTION_MODELS[model_index]
-            if not detect_features_until_enough(motion_model, initial_min_markers):
+            if not detect_features_until_enough(
+                motion_model,
+                initial_min_markers,
+                max_attempts=10,
+            ):
                 result = {'CANCELLED'}
                 break
             current_frame = bpy.context.scene.frame_current
@@ -198,7 +202,13 @@ def get_clip_context():
     raise RuntimeError("Kein aktiver Clip im Motion Tracking Editor gefunden.")
 
 
-def detect_features_until_enough(motion_model="Perspective", playhead_min_markers=None):
+def detect_features_until_enough(
+    motion_model="Perspective",
+    playhead_min_markers=None,
+    *,
+    max_attempts=5,
+    min_threshold=0.0001,
+):
     ctx = get_clip_context()
     clip = ctx["space_data"].clip
     clip.tracking.settings.default_motion_model = motion_model
@@ -211,7 +221,7 @@ def detect_features_until_enough(motion_model="Perspective", playhead_min_marker
     # margin and min_distance scale with clip width
     margin = int(width / 200)
     threshold = 0.1
-    distance = int(int(width / 40) / (((log10(threshold)/-1)+1)/2))
+    distance = int(int(width / 40) / (((log10(threshold) / -1) + 1) / 2))
     target_markers = MIN_MARKERS * 4
     print(
         f"Starte Feature Detection: width={width}, margin={margin}, min_distance={distance}, "
@@ -220,11 +230,13 @@ def detect_features_until_enough(motion_model="Perspective", playhead_min_marker
     )
     print("Drücke ESC, um abzubrechen", flush=True)
     success = False
+    attempts = 0
     while True:
+        attempts += 1
         if escape_pressed():
             print("❌ Abgebrochen mit Escape", flush=True)
             break
-        distance = int(int(width / 40) / (((log10(threshold)/-1)+1)/2))
+        distance = int(int(width / 40) / (((log10(threshold) / -1) + 1) / 2))
         before_names = {t.name for t in tracks}
         # Setze Playhead auf aktuellen Frame, damit neue Marker dort starten
         current_frame = bpy.context.scene.frame_current
@@ -262,10 +274,16 @@ def detect_features_until_enough(motion_model="Perspective", playhead_min_marker
             threshold /= (target_markers / added)
         else:
             threshold -= 0.1
-        if threshold < 0.0001:
-            threshold = 0.0001
-        if threshold == 0.0001 and after < target_markers:
+        if threshold < min_threshold:
+            threshold = min_threshold
+        if threshold == min_threshold and after < target_markers:
             print("❌ Kein passender Threshold gefunden", flush=True)
+            break
+        if max_attempts is not None and attempts >= max_attempts:
+            print(
+                f"❌ Maximalzahl an Versuchen ({max_attempts}) erreicht",
+                flush=True,
+            )
             break
         print(f"→ Neuer Threshold: {threshold:.4f}", flush=True)
     return success
