@@ -128,6 +128,7 @@ def detect_features_until_enough():
     margin = int(width / 200)
     distance = int(width / 20)
     threshold = 1.0
+    target_markers = MIN_MARKERS * 2
     print(
         f"Starte Feature Detection: width={width}, margin={margin}, min_distance={distance}, "
         f"min_markers={MIN_MARKERS}, min_track_length={MIN_TRACK_LENGTH}",
@@ -140,14 +141,14 @@ def detect_features_until_enough():
                 threshold=threshold,
                 margin=margin,
                 min_distance=distance,
-            )
+        )
         after = len(tracks)
         added = after - before
         print(
             f"Threshold {threshold:.3f}: {added} neue Marker (insgesamt {after})",
             flush=True,
         )
-        if after >= MIN_MARKERS:
+        if after >= target_markers:
             print(f"✅ {after} Marker erreicht", flush=True)
             start_frame = clip.frame_start
             end_frame = start_frame + clip.frame_duration - 1
@@ -165,12 +166,12 @@ def detect_features_until_enough():
             bpy.ops.clip.select_all(action='SELECT')
             bpy.ops.clip.delete_track()
         if added > 0:
-            threshold /= (MIN_MARKERS / added)
+            threshold /= (target_markers / added)
         else:
             threshold -= 0.1
         if threshold < 0.0001:
             threshold = 0.0001
-        if threshold == 0.0001 and after < MIN_MARKERS:
+        if threshold == 0.0001 and after < target_markers:
             print("❌ Kein passender Threshold gefunden", flush=True)
             break
         print(f"→ Neuer Threshold: {threshold:.4f}", flush=True)
