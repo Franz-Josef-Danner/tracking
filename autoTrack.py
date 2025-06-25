@@ -42,7 +42,10 @@ class WM_OT_auto_track(bpy.types.Operator):
             f"Nutze MIN_MARKERS={MIN_MARKERS}, MIN_TRACK_LENGTH={MIN_TRACK_LENGTH}",
             flush=True,
         )
-        detect_features_until_enough()
+        while True:
+            moved = detect_features_until_enough()
+            if not moved:
+                break
         return {'FINISHED'}
 
 
@@ -113,16 +116,21 @@ def find_first_frame_with_min_tracks(clip):
 
 
 def move_playhead_to_min_tracks(ctx, clip):
-    """Set the playhead to the frame where only MIN_MARKERS remain."""
+    """Set the playhead to the frame where only MIN_MARKERS remain.
+
+    Returns ``True`` if the playhead was moved, otherwise ``False``.
+    """
     frame = find_first_frame_with_min_tracks(clip)
     if frame is None:
-        return
+        print("⏩ Kein Frame mit zu wenigen Tracks gefunden", flush=True)
+        return False
     with bpy.context.temp_override(**ctx):
         bpy.context.scene.frame_set(frame)
     print(
         f"⏩ Setze Playhead auf Frame {frame} (nur noch {MIN_MARKERS} aktive Tracks)",
         flush=True,
     )
+    return True
 
 
 def get_clip_context():
@@ -188,8 +196,8 @@ def detect_features_until_enough():
                 bpy.ops.clip.track_markers(backwards=False, sequence=True)
             delete_short_tracks(ctx, clip)
             print_track_lengths(clip)
-            move_playhead_to_min_tracks(ctx, clip)
-            break
+            moved = move_playhead_to_min_tracks(ctx, clip)
+            return moved
         print(f"⚠ Nur {after} Marker – entferne Marker", flush=True)
         with bpy.context.temp_override(**ctx):
             bpy.ops.clip.select_all(action='SELECT')
@@ -202,8 +210,10 @@ def detect_features_until_enough():
             threshold = 0.0001
         if threshold == 0.0001 and after < target_markers:
             print("❌ Kein passender Threshold gefunden", flush=True)
-            break
+            return False
         print(f"→ Neuer Threshold: {threshold:.4f}", flush=True)
+
+    return False
 
 
 def register():
