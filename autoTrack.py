@@ -38,6 +38,10 @@ class WM_OT_auto_track(bpy.types.Operator):
         global MIN_MARKERS, MIN_TRACK_LENGTH
         MIN_MARKERS = self.min_markers
         MIN_TRACK_LENGTH = self.min_track_length
+        print(
+            f"Nutze MIN_MARKERS={MIN_MARKERS}, MIN_TRACK_LENGTH={MIN_TRACK_LENGTH}",
+            flush=True,
+        )
         detect_features_until_enough()
         return {'FINISHED'}
 
@@ -86,7 +90,8 @@ def detect_features_until_enough():
     distance = int(width / 20)
     threshold = 1.0
     print(
-        f"Starte Feature Detection: width={width}, margin={margin}, min_distance={distance}, min_markers={MIN_MARKERS}",
+        f"Starte Feature Detection: width={width}, margin={margin}, min_distance={distance}, "
+        f"min_markers={MIN_MARKERS}, min_track_length={MIN_TRACK_LENGTH}",
         flush=True,
     )
     while True:
