@@ -169,18 +169,26 @@ def auto_track_segmented():
         success = False
 
         if current_reliable >= MIN_TRACKS_PER_SEGMENT:
-            print(f"✅ Bereits {current_reliable} verlässliche Tracks vorhanden", flush=True)
+            print(
+                f"✅ Bereits {current_reliable} verlässliche Tracks vorhanden",
+                flush=True,
+            )
 
             print("    → Tracking …", flush=True)
             bpy.context.scene.frame_current = segment_start
-            updated_reliable = track_segment(segment_start, segment_end, ctx, tracks)
+            updated_reliable = track_segment(
+                segment_start, segment_end, ctx, tracks
+            )
 
             threshold_idx = 0
             success = True
         else:
-            print(f"⚠ Nur {current_reliable} Tracks – Feature Detection beginnt", flush=True)
+            print(
+                f"⚠ Nur {current_reliable} Tracks – Feature Detection beginnt",
+                flush=True,
+            )
             detected_any = False
-
+            
             while True:
                 th = THRESHOLDS[threshold_idx]
                 print(f"  ➤ Threshold {th:.4f}", flush=True)
@@ -196,15 +204,21 @@ def auto_track_segmented():
                 if new_tracks:
                     detected_any = True
 
+                current_reliable = count_reliable_tracks(
+                    segment_start, segment_end, tracks
+                )
+
+                if current_reliable >= MIN_TRACKS_PER_SEGMENT:
                     print("    → Tracking …", flush=True)
                     bpy.context.scene.frame_current = segment_start
-                    updated_reliable = track_segment(segment_start, segment_end, ctx, tracks)
+                    updated_reliable = track_segment(
+                        segment_start, segment_end, ctx, tracks
+                    )
 
-                    if updated_reliable >= MIN_TRACKS_PER_SEGMENT:
-                        print(f"    ✅ Ziel erreicht", flush=True)
-                        threshold_idx = 0
-                        success = True
-                        break
+                    print(f"    ✅ Ziel erreicht", flush=True)
+                    threshold_idx = 0
+                    success = True
+                    break
 
                 if threshold_idx < len(THRESHOLDS) - 1:
                     threshold_idx += 1
@@ -212,10 +226,21 @@ def auto_track_segmented():
                 else:
                     break
 
-            if not detected_any and current_reliable > 0:
-                print("    → Tracking mit vorhandenen Markern …", flush=True)
-                bpy.context.scene.frame_current = segment_start
-                updated_reliable = track_segment(segment_start, segment_end, ctx, tracks)
+            if success is False and detected_any:
+                current_reliable = count_reliable_tracks(
+                    segment_start, segment_end, tracks
+                )
+
+                if current_reliable >= MIN_TRACKS_PER_SEGMENT:
+                    print("    → Tracking …", flush=True)
+                    bpy.context.scene.frame_current = segment_start
+                    updated_reliable = track_segment(
+                        segment_start, segment_end, ctx, tracks
+                    )
+
+                    print(f"    ✅ Ziel erreicht", flush=True)
+                    threshold_idx = 0
+                    success = True
 
         if not success:
             print("    ❌ Ziel nicht erreicht", flush=True)
