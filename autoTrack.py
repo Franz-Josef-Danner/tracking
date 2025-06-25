@@ -8,7 +8,6 @@ except Exception:
     pass
 
 MIN_MARKERS = 20
-THRESHOLDS = [1.0, 0.5, 0.25, 0.1, 0.05, 0.01, 0.005, 0.001, 0.0005, 0.0001]
 
 
 def get_clip_context():
@@ -36,17 +35,24 @@ def get_clip_context():
 def detect_features_until_enough():
     ctx = get_clip_context()
     tracks = ctx["space_data"].clip.tracking.tracks
-    for th in THRESHOLDS:
+    threshold = 1.0
+    while True:
         before = len(tracks)
         with bpy.context.temp_override(**ctx):
-            bpy.ops.clip.detect_features(threshold=th)
+            bpy.ops.clip.detect_features(threshold=threshold, margin=5, distance=200)
         new_markers = len(tracks) - before
-        print(f"Threshold {th:.4f}: {new_markers} neue Marker")
+        print(f"Threshold {threshold:.3f}: {new_markers} neue Marker")
         if len(tracks) >= MIN_MARKERS:
             print(f"✅ {len(tracks)} Marker erreicht")
             break
-    else:
-        print(f"⚠ Nur {len(tracks)} Marker nach allen Thresholds")
+        print(f"⚠ Nur {len(tracks)} Marker – entferne Marker")
+        with bpy.context.temp_override(**ctx):
+            bpy.ops.clip.select_all(action='SELECT')
+            bpy.ops.clip.delete_track()
+        threshold -= 0.001
+        if threshold <= 0:
+            print("❌ Kein passender Threshold gefunden")
+            break
 
 
 if __name__ == "__main__":
