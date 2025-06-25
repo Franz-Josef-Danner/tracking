@@ -54,6 +54,12 @@ class WM_OT_auto_track(bpy.types.Operator):
         return {'FINISHED'}
 
 
+def deselect_all_tracks(tracks):
+    """Deselect all tracks in the given collection."""
+    for t in tracks:
+        t.select = False
+
+
 def delete_short_tracks(ctx, clip):
     """Remove tracks shorter than the minimum length."""
     tracks = clip.tracking.tracks
@@ -61,30 +67,31 @@ def delete_short_tracks(ctx, clip):
     with bpy.context.temp_override(**ctx):
         for track in list(tracks):
             length = track_length(track)
-            print(f"🔍 {track.name}: {length} Frames", flush=True)
+            print(f"Track: {track.name}, {length} Frames")
             if length < MIN_TRACK_LENGTH:
-                print("    → lösche", flush=True)
+                print("    -> loesche")
                 try:
                     tracks.remove(track)
                 except AttributeError:
+                    deselect_all_tracks(tracks)
                     track.select = True
                     bpy.ops.clip.delete_track()
                 removed += 1
             else:
-                print("    → behalte", flush=True)
+                print("    -> behalte")
     if removed:
         print(
-            f"🗑 Entferne {removed} kurze Tracks (<{MIN_TRACK_LENGTH} Frames)",
+            f"Entferne {removed} kurze Tracks (<{MIN_TRACK_LENGTH} Frames)",
             flush=True,
         )
 
 
 def print_track_lengths(clip):
     """Gibt die Länge aller Tracks aus."""
-    print("📊 Track-Längen:", flush=True)
+    print("Track-Laengen:")
     for track in clip.tracking.tracks:
         length = track_length(track)
-        print(f"    {track.name}: {length} Frames", flush=True)
+        print(f"    {track.name}: {length} Frames")
 
 
 def get_clip_context():
@@ -138,7 +145,7 @@ def detect_features_until_enough():
             flush=True,
         )
         if after >= MIN_MARKERS:
-            print(f"✅ {after} Marker erreicht", flush=True)
+            print(f"{after} Marker erreicht", flush=True)
             start_frame = clip.frame_start
             end_frame = start_frame + clip.frame_duration - 1
             print(
@@ -150,7 +157,7 @@ def detect_features_until_enough():
             delete_short_tracks(ctx, clip)
             print_track_lengths(clip)
             break
-        print(f"⚠ Nur {after} Marker – entferne Marker", flush=True)
+        print(f"Nur {after} Marker - entferne Marker", flush=True)
         with bpy.context.temp_override(**ctx):
             bpy.ops.clip.select_all(action='SELECT')
             bpy.ops.clip.delete_track()
@@ -161,9 +168,9 @@ def detect_features_until_enough():
         if threshold < 0.0001:
             threshold = 0.0001
         if threshold == 0.0001 and after < MIN_MARKERS:
-            print("❌ Kein passender Threshold gefunden", flush=True)
+            print("Kein passender Threshold gefunden", flush=True)
             break
-        print(f"→ Neuer Threshold: {threshold:.4f}", flush=True)
+        print(f"Neuer Threshold: {threshold:.4f}", flush=True)
 
 
 def register():
