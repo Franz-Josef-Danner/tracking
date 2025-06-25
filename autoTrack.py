@@ -11,6 +11,14 @@ MIN_MARKERS = 20
 MIN_TRACK_LENGTH = 10
 
 
+def escape_pressed() -> bool:
+    """Return True if the Escape key is currently pressed."""
+    try:
+        return bool(ctypes.windll.user32.GetAsyncKeyState(0x1B) & 0x8000)
+    except Exception:
+        return False
+
+
 
 class WM_OT_auto_track(bpy.types.Operator):
     """Operator um Tracking mit Eingabeparameter zu starten"""
@@ -162,7 +170,11 @@ def detect_features_until_enough():
         f"min_markers={MIN_MARKERS}, min_track_length={MIN_TRACK_LENGTH}",
         flush=True,
     )
+    print("Drücke ESC, um abzubrechen", flush=True)
     while True:
+        if escape_pressed():
+            print("❌ Abgebrochen mit Escape", flush=True)
+            break
         before = len(tracks)
         with bpy.context.temp_override(**ctx):
             bpy.ops.clip.detect_features(
