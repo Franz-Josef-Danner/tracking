@@ -169,7 +169,7 @@ def detect_features_until_enough():
     # margin and min_distance scale with clip width
     margin = int(width / 200)
     threshold = 0.1
-    distance = int(width / 20) / (log10(threshold) / -1)
+    distance = int(width / 20) / (log10(threshold) / -2)
     target_markers = MIN_MARKERS * 4
     print(
         f"Starte Feature Detection: width={width}, margin={margin}, min_distance={distance}, "
