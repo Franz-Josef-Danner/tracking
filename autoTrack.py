@@ -46,16 +46,20 @@ class WM_OT_auto_track(bpy.types.Operator):
         return {'FINISHED'}
 
 
-def delete_short_tracks(clip):
+def delete_short_tracks(ctx, clip):
     """Remove tracks shorter than the minimum length."""
     tracks = clip.tracking.tracks
     removed = 0
-    for track in list(tracks):
-        if len(track.markers) < MIN_TRACK_LENGTH:
-            tracks.remove(track)
-            removed += 1
+    with bpy.context.temp_override(**ctx):
+        for track in list(tracks):
+            if len(track.markers) < MIN_TRACK_LENGTH:
+                tracks.remove(track)
+                removed += 1
     if removed:
-        print(f"🗑 Entferne {removed} kurze Tracks (<{MIN_TRACK_LENGTH} Frames)", flush=True)
+        print(
+            f"🗑 Entferne {removed} kurze Tracks (<{MIN_TRACK_LENGTH} Frames)",
+            flush=True,
+        )
 
 
 def get_clip_context():
@@ -118,7 +122,7 @@ def detect_features_until_enough():
             )
             with bpy.context.temp_override(**ctx):
                 bpy.ops.clip.track_markers(backwards=False, sequence=True)
-            delete_short_tracks(clip)
+            delete_short_tracks(ctx, clip)
             break
         print(f"⚠ Nur {after} Marker – entferne Marker", flush=True)
         with bpy.context.temp_override(**ctx):
