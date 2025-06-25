@@ -11,6 +11,9 @@ MIN_TRACKS_PER_SEGMENT = 20
 MAX_TRACKS_TOTAL = 21
 MIN_TRACK_LENGTH = 15
 
+# Anzahl benötigter Marker pro Segment (90 % von MIN_TRACKS_PER_SEGMENT)
+MIN_ACTIVE_TRACKS = max(1, int(MIN_TRACKS_PER_SEGMENT * 0.9))
+
 # Thresholds von stabil bis sensibel
 THRESHOLDS = [1.0, 0.5, 0.25, 0.1, 0.05, 0.01, 0.005, 0.001]
 
@@ -164,32 +167,20 @@ def auto_track_segmented():
         if removed:
             print(f"🗑 {removed} kurze Tracks entfernt", flush=True)
 
-        current_reliable = count_reliable_tracks(segment_start, segment_end, tracks)
+        current_active = count_tracks_on_frame(segment_start, tracks)
         segment_time_start = time.time()
-        success = False
 
-        if current_reliable >= MIN_TRACKS_PER_SEGMENT:
+        if current_active >= MIN_ACTIVE_TRACKS:
             print(
-                f"✅ Bereits {current_reliable} verlässliche Tracks vorhanden",
+                f"✅ Bereits {current_active} Marker aktiv",
                 flush=True,
             )
-
-            print("    → Tracking …", flush=True)
-            bpy.context.scene.frame_current = segment_start
-            updated_reliable = track_segment(
-                segment_start, segment_end, ctx, tracks
-            )
-
-            threshold_idx = 0
-            success = True
         else:
             print(
-                f"⚠ Nur {current_reliable} Tracks – Feature Detection beginnt",
+                f"⚠ Nur {current_active} Tracks – Feature Detection beginnt",
                 flush=True,
             )
-            detected_any = False
-            
-            while True:
+            while current_active < MIN_ACTIVE_TRACKS:
                 th = THRESHOLDS[threshold_idx]
                 print(f"  ➤ Threshold {th:.4f}", flush=True)
 
@@ -201,48 +192,25 @@ def auto_track_segmented():
 
                 new_tracks = tracks[num_before:]
                 print(f"    → {len(new_tracks)} neue Marker erkannt", flush=True)
-                if new_tracks:
-                    detected_any = True
+                current_active = count_tracks_on_frame(segment_start, tracks)
 
-                current_reliable = count_reliable_tracks(
-                    segment_start, segment_end, tracks
-                )
-
-                if current_reliable >= MIN_TRACKS_PER_SEGMENT:
-                    print("    → Tracking …", flush=True)
-                    bpy.context.scene.frame_current = segment_start
-                    updated_reliable = track_segment(
-                        segment_start, segment_end, ctx, tracks
-                    )
-
-                    print(f"    ✅ Ziel erreicht", flush=True)
-                    threshold_idx = 0
-                    success = True
+                if current_active >= MIN_ACTIVE_TRACKS:
                     break
-
                 if threshold_idx < len(THRESHOLDS) - 1:
                     threshold_idx += 1
-                    continue
                 else:
                     break
 
-            if success is False and detected_any:
-                current_reliable = count_reliable_tracks(
-                    segment_start, segment_end, tracks
-                )
+        print("    → Tracking …", flush=True)
+        bpy.context.scene.frame_current = segment_start
+        updated_reliable = track_segment(
+            segment_start, segment_end, ctx, tracks
+        )
 
-                if current_reliable >= MIN_TRACKS_PER_SEGMENT:
-                    print("    → Tracking …", flush=True)
-                    bpy.context.scene.frame_current = segment_start
-                    updated_reliable = track_segment(
-                        segment_start, segment_end, ctx, tracks
-                    )
-
-                    print(f"    ✅ Ziel erreicht", flush=True)
-                    threshold_idx = 0
-                    success = True
-
-        if not success:
+        if updated_reliable >= MIN_TRACKS_PER_SEGMENT:
+            print(f"    ✅ Ziel erreicht", flush=True)
+            threshold_idx = 0
+        else:
             print("    ❌ Ziel nicht erreicht", flush=True)
 
         duration = time.time() - segment_time_start
