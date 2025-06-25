@@ -1,5 +1,6 @@
 import bpy
 import ctypes
+from math import log10
 
 # Show console on Windows
 try:
@@ -167,7 +168,7 @@ def detect_features_until_enough():
     width = clip.size[0]
     # margin and min_distance scale with clip width
     margin = int(width / 200)
-    distance = int(width / 20)
+    distance = int(width / 20) / (log10(threshold) / -1)
     threshold = 1.0
     target_markers = MIN_MARKERS * 4
     print(
