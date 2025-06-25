@@ -46,13 +46,29 @@ class WM_OT_auto_track(bpy.types.Operator):
         return {'FINISHED'}
 
 
+def track_span(track):
+    """Return the first and last tracked frame of a track."""
+    frames = [m.frame for m in track.markers if not m.mute]
+    if not frames:
+        return None, None
+    return min(frames), max(frames)
+
+
+def track_length(track):
+    """Return the tracked frame span of a track."""
+    start, end = track_span(track)
+    if start is None:
+        return 0
+    return end - start + 1
+
+
 def delete_short_tracks(ctx, clip):
     """Remove tracks shorter than the minimum length."""
     tracks = clip.tracking.tracks
     removed = 0
     with bpy.context.temp_override(**ctx):
         for track in list(tracks):
-            if len(track.markers) < MIN_TRACK_LENGTH:
+            if track_length(track) < MIN_TRACK_LENGTH:
                 tracks.remove(track)
                 removed += 1
     if removed:
@@ -66,7 +82,14 @@ def print_track_lengths(clip):
     """Gibt die Länge aller Tracks aus."""
     print("📊 Track-Längen:", flush=True)
     for track in clip.tracking.tracks:
-        print(f"    {track.name}: {len(track.markers)} Frames", flush=True)
+        length = track_length(track)
+        start, end = track_span(track)
+        if start is None:
+            continue
+        print(
+            f"    {track.name}: {length} Frames (von {start} bis {end})",
+            flush=True,
+        )
 
 
 def get_clip_context():
