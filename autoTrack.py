@@ -34,12 +34,20 @@ def get_clip_context():
 
 def detect_features_until_enough():
     ctx = get_clip_context()
-    tracks = ctx["space_data"].clip.tracking.tracks
+    clip = ctx["space_data"].clip
+    tracks = clip.tracking.tracks
+    width = clip.size[0]
+    margin = width / 100
+    distance = width / 10
     threshold = 1.0
     while True:
         before = len(tracks)
         with bpy.context.temp_override(**ctx):
-            bpy.ops.clip.detect_features(threshold=threshold, margin=5, min_distance=200)
+            bpy.ops.clip.detect_features(
+                threshold=threshold,
+                margin=margin,
+                min_distance=distance,
+            )
         added = len(tracks) - before
         print(f"Threshold {threshold:.3f}: {added} neue Marker")
         if len(tracks) >= MIN_MARKERS:
