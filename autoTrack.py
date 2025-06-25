@@ -55,6 +55,7 @@ class WM_OT_auto_track(bpy.types.Operator):
         global MIN_MARKERS, MIN_TRACK_LENGTH
         MIN_MARKERS = self.min_markers
         MIN_TRACK_LENGTH = self.min_track_length
+        initial_min_markers = MIN_MARKERS
         print(
             f"Nutze MIN_MARKERS={MIN_MARKERS}, MIN_TRACK_LENGTH={MIN_TRACK_LENGTH}",
             flush=True,
@@ -64,7 +65,7 @@ class WM_OT_auto_track(bpy.types.Operator):
         model_index = 0
         while True:
             motion_model = MOTION_MODELS[model_index]
-            if not detect_features_until_enough(motion_model):
+            if not detect_features_until_enough(motion_model, initial_min_markers):
                 result = {'CANCELLED'}
                 break
             current_frame = bpy.context.scene.frame_current
@@ -132,8 +133,8 @@ def print_track_lengths(clip):
         )
 
 
-def find_first_frame_with_min_tracks(clip):
-    """Return the first frame with only the minimum number of active tracks."""
+def find_first_frame_with_min_tracks(clip, min_markers):
+    """Return the first frame with only ``min_markers`` active tracks."""
     start_frame = clip.frame_start
     end_frame = start_frame + clip.frame_duration - 1
     tracks = clip.tracking.tracks
@@ -142,20 +143,20 @@ def find_first_frame_with_min_tracks(clip):
         for track in tracks:
             if any(m.frame == frame and not m.mute for m in track.markers):
                 active += 1
-        if active <= MIN_MARKERS:
+        if active <= min_markers:
             return frame
     return None
 
 
-def move_playhead_to_min_tracks(ctx, clip):
-    """Set the playhead to the frame where only MIN_MARKERS remain."""
-    frame = find_first_frame_with_min_tracks(clip)
+def move_playhead_to_min_tracks(ctx, clip, min_markers):
+    """Set the playhead to the frame where only ``min_markers`` remain."""
+    frame = find_first_frame_with_min_tracks(clip, min_markers)
     if frame is None:
         return
     with bpy.context.temp_override(**ctx):
         bpy.context.scene.frame_set(frame)
     print(
-        f"⏩ Setze Playhead auf Frame {frame} (nur noch {MIN_MARKERS} aktive Tracks)",
+        f"⏩ Setze Playhead auf Frame {frame} (nur noch {min_markers} aktive Tracks)",
         flush=True,
     )
 
@@ -182,7 +183,7 @@ def get_clip_context():
     raise RuntimeError("Kein aktiver Clip im Motion Tracking Editor gefunden.")
 
 
-def detect_features_until_enough(motion_model="Perspective"):
+def detect_features_until_enough(motion_model="Perspective", playhead_min_markers=None):
     ctx = get_clip_context()
     clip = ctx["space_data"].clip
     clip.tracking.settings.default_motion_model = motion_model
@@ -237,7 +238,11 @@ def detect_features_until_enough(motion_model="Perspective"):
                 )
             delete_short_tracks(ctx, clip)
             print_track_lengths(clip)
-            move_playhead_to_min_tracks(ctx, clip)
+            move_playhead_to_min_tracks(
+                ctx,
+                clip,
+                MIN_MARKERS if playhead_min_markers is None else playhead_min_markers,
+            )
             success = True
             break
         print(f"⚠ Nur {after} Marker – entferne Marker", flush=True)
