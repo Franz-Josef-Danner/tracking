@@ -60,9 +60,18 @@ def delete_short_tracks(ctx, clip):
     removed = 0
     with bpy.context.temp_override(**ctx):
         for track in list(tracks):
-            if track_length(track) < MIN_TRACK_LENGTH:
-                tracks.remove(track)
+            length = track_length(track)
+            print(f"🔍 {track.name}: {length} Frames", flush=True)
+            if length < MIN_TRACK_LENGTH:
+                print("    → lösche", flush=True)
+                try:
+                    tracks.remove(track)
+                except AttributeError:
+                    track.select = True
+                    bpy.ops.clip.delete_track()
                 removed += 1
+            else:
+                print("    → behalte", flush=True)
     if removed:
         print(
             f"🗑 Entferne {removed} kurze Tracks (<{MIN_TRACK_LENGTH} Frames)",
