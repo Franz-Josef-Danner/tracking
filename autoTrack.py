@@ -11,12 +11,20 @@ MIN_MARKERS = 20
 MIN_TRACK_LENGTH = 10
 
 
-def track_length(track):
-    """Return the tracked length of a track in frames."""
+def track_range(track):
+    """Return (start, end, length) of the unmuted portion of a track."""
     frames = [m.frame for m in track.markers if not m.mute]
     if not frames:
-        return 0
-    return max(frames) - min(frames) + 1
+        return None, None, 0
+    start = min(frames)
+    end = max(frames)
+    return start, end, end - start + 1
+
+
+def track_length(track):
+    """Compatibility wrapper returning only the length."""
+    _, _, length = track_range(track)
+    return length
 
 
 
@@ -66,8 +74,10 @@ def delete_short_tracks(ctx, clip):
     removed = 0
     with bpy.context.temp_override(**ctx):
         for track in list(tracks):
-            length = track_length(track)
-            print(f"Track: {track.name}, {length} Frames")
+            start, end, length = track_range(track)
+            if start is None:
+                start = end = "-"
+            print(f"Track: {track.name}, {length} Frames (von {start} bis {end})")
             if length < MIN_TRACK_LENGTH:
                 print("    -> loesche")
                 try:
@@ -90,8 +100,10 @@ def print_track_lengths(clip):
     """Gibt die Länge aller Tracks aus."""
     print("Track-Laengen:")
     for track in clip.tracking.tracks:
-        length = track_length(track)
-        print(f"    {track.name}: {length} Frames")
+        start, end, length = track_range(track)
+        if start is None:
+            start = end = "-"
+        print(f"    {track.name}: {length} Frames (von {start} bis {end})")
 
 
 def get_clip_context():
