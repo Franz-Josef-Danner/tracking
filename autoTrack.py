@@ -10,6 +10,15 @@ except Exception:
 
 MIN_MARKERS = 20
 MIN_TRACK_LENGTH = 10
+# Motion models to cycle through when tracking stalls
+MOTION_MODELS = [
+    "Perspective",
+    "Affine",
+    "LocRotScale",
+    "LocRot",
+    "Loc",
+    "Planar",
+]
 
 
 def escape_pressed() -> bool:
@@ -53,15 +62,19 @@ class WM_OT_auto_track(bpy.types.Operator):
         )
         result = {'FINISHED'}
         prev_frame = bpy.context.scene.frame_current
+        model_index = 0
         while True:
-            if not detect_features_until_enough():
+            motion_model = MOTION_MODELS[model_index]
+            if not detect_features_until_enough(motion_model):
                 result = {'CANCELLED'}
                 break
             current_frame = bpy.context.scene.frame_current
             if current_frame == prev_frame:
                 MIN_MARKERS += 10
+                model_index = (model_index + 1) % len(MOTION_MODELS)
                 print(
-                    f"🔄 Selber Frame erneut erreicht – erhöhe MIN_MARKERS auf {MIN_MARKERS}",
+                    f"🔄 Selber Frame erneut erreicht – erhöhe MIN_MARKERS auf {MIN_MARKERS} "
+                    f"und wechsle Motion Model zu {MOTION_MODELS[model_index]}",
                     flush=True,
                 )
             prev_frame = current_frame
@@ -170,10 +183,10 @@ def get_clip_context():
     raise RuntimeError("Kein aktiver Clip im Motion Tracking Editor gefunden.")
 
 
-def detect_features_until_enough():
+def detect_features_until_enough(motion_model="Perspective"):
     ctx = get_clip_context()
     clip = ctx["space_data"].clip
-    clip.tracking.settings.default_motion_model = "Perspective"
+    clip.tracking.settings.default_motion_model = motion_model
     print(
         f"📐 Nutze Motion Model {clip.tracking.settings.default_motion_model}",
         flush=True,
