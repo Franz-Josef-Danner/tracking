@@ -50,8 +50,13 @@ class WM_OT_auto_track(bpy.types.Operator):
             f"Nutze MIN_MARKERS={MIN_MARKERS}, MIN_TRACK_LENGTH={MIN_TRACK_LENGTH}",
             flush=True,
         )
-        detect_features_until_enough()
-        return {'FINISHED'}
+        result = {'FINISHED'}
+        while True:
+            if not detect_features_until_enough():
+                result = {'CANCELLED'}
+                break
+        print("🏁 Beende Auto-Tracking", flush=True)
+        return result
 
 
 def track_span(track):
@@ -164,13 +169,14 @@ def detect_features_until_enough():
     margin = int(width / 200)
     distance = int(width / 20)
     threshold = 1.0
-    target_markers = MIN_MARKERS * 3
+    target_markers = MIN_MARKERS * 4
     print(
         f"Starte Feature Detection: width={width}, margin={margin}, min_distance={distance}, "
         f"min_markers={MIN_MARKERS}, min_track_length={MIN_TRACK_LENGTH}",
         flush=True,
     )
     print("Drücke ESC, um abzubrechen", flush=True)
+    success = False
     while True:
         if escape_pressed():
             print("❌ Abgebrochen mit Escape", flush=True)
@@ -190,17 +196,21 @@ def detect_features_until_enough():
         )
         if after >= target_markers:
             print(f"✅ {after} Marker erreicht", flush=True)
-            start_frame = clip.frame_start
-            end_frame = start_frame + clip.frame_duration - 1
+            start_frame = bpy.context.scene.frame_current
+            end_frame = clip.frame_start + clip.frame_duration - 1
             print(
                 f"Starte Tracking von Frame {start_frame} bis {end_frame} ...",
                 flush=True,
             )
             with bpy.context.temp_override(**ctx):
-                bpy.ops.clip.track_markers(backwards=False, sequence=True)
+                bpy.ops.clip.track_markers(
+                    backwards=False,
+                    sequence=True,
+                )
             delete_short_tracks(ctx, clip)
             print_track_lengths(clip)
             move_playhead_to_min_tracks(ctx, clip)
+            success = True
             break
         print(f"⚠ Nur {after} Marker – entferne Marker", flush=True)
         with bpy.context.temp_override(**ctx):
@@ -216,7 +226,7 @@ def detect_features_until_enough():
             print("❌ Kein passender Threshold gefunden", flush=True)
             break
         print(f"→ Neuer Threshold: {threshold:.4f}", flush=True)
-
+    return success
 
 def register():
     bpy.utils.register_class(WM_OT_auto_track)
@@ -227,9 +237,6 @@ def unregister():
 
 
 if __name__ == "__main__":
-    start = bpy.context.scene.frame_start
-    bpy.context.scene.frame_set(start)
-    print(f"⏮ Setze Playhead auf Szene-Anfang (Frame {start})", flush=True)
     register()
     bpy.ops.wm.auto_track('INVOKE_DEFAULT')
 
