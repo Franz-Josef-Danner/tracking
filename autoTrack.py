@@ -227,6 +227,9 @@ def unregister():
 
 
 if __name__ == "__main__":
+    start = bpy.context.scene.frame_start
+    bpy.context.scene.frame_set(start)
+    print(f"⏮ Setze Playhead auf Szene-Anfang (Frame {start})", flush=True)
     register()
     bpy.ops.wm.auto_track('INVOKE_DEFAULT')
 
