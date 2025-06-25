@@ -1,13 +1,6 @@
 import bpy
 import ctypes
 
-try:
-    import tkinter as tk
-    from tkinter import simpledialog
-except Exception:
-    tk = None
-    simpledialog = None
-
 # Show console on Windows
 try:
     ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 1)
@@ -18,32 +11,35 @@ MIN_MARKERS = 20
 MIN_TRACK_LENGTH = 10
 
 
-def ask_user_settings():
-    """Show a small dialog to ask for the marker and frame minimums."""
-    global MIN_MARKERS, MIN_TRACK_LENGTH
-    if tk is None or simpledialog is None:
-        print("Tkinter nicht verf\xC3\xBCgbar, verwende Standardwerte.", flush=True)
-        return
-    root = tk.Tk()
-    root.withdraw()
-    markers = simpledialog.askinteger(
-        "Einstellungen",
-        "Mindestanzahl Marker:",
-        initialvalue=MIN_MARKERS,
-        minvalue=1,
-    )
-    if markers:
-        MIN_MARKERS = markers
-    frames = simpledialog.askinteger(
-        "Einstellungen",
-        "Mindestanzahl Frames pro Track:",
-        initialvalue=MIN_TRACK_LENGTH,
-        minvalue=1,
-    )
-    if frames:
-        MIN_TRACK_LENGTH = frames
-    root.destroy()
 
+class WM_OT_auto_track(bpy.types.Operator):
+    """Operator um Tracking mit Eingabeparameter zu starten"""
+
+    bl_idname = "wm.auto_track"
+    bl_label = "Auto Track"
+
+    min_markers: bpy.props.IntProperty(
+        name="Mindestanzahl Marker",
+        default=20,
+        min=1,
+    )
+    min_track_length: bpy.props.IntProperty(
+        name="Mindestanzahl Frames",
+        default=10,
+        min=1,
+    )
+
+    def invoke(self, context, event):
+        self.min_markers = MIN_MARKERS
+        self.min_track_length = MIN_TRACK_LENGTH
+        return context.window_manager.invoke_props_dialog(self)
+
+    def execute(self, context):
+        global MIN_MARKERS, MIN_TRACK_LENGTH
+        MIN_MARKERS = self.min_markers
+        MIN_TRACK_LENGTH = self.min_track_length
+        detect_features_until_enough()
+        return {'FINISHED'}
 
 
 def delete_short_tracks(clip):
@@ -130,6 +126,14 @@ def detect_features_until_enough():
         print(f"→ Neuer Threshold: {threshold:.4f}", flush=True)
 
 
+def register():
+    bpy.utils.register_class(WM_OT_auto_track)
+
+
+def unregister():
+    bpy.utils.unregister_class(WM_OT_auto_track)
+
+
 if __name__ == "__main__":
-    ask_user_settings()
-    detect_features_until_enough()
+    register()
+    bpy.ops.wm.auto_track('INVOKE_DEFAULT')
