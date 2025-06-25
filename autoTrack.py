@@ -40,6 +40,10 @@ def detect_features_until_enough():
     margin = int(width / 100)
     distance = int(width / 10)
     threshold = 1.0
+    print(
+        f"Starte Feature Detection: width={width}, margin={margin}, min_distance={distance}, min_markers={MIN_MARKERS}",
+        flush=True,
+    )
     while True:
         before = len(tracks)
         with bpy.context.temp_override(**ctx):
@@ -48,12 +52,16 @@ def detect_features_until_enough():
                 margin=margin,
                 min_distance=distance,
             )
-        added = len(tracks) - before
-        print(f"Threshold {threshold:.3f}: {added} neue Marker")
-        if len(tracks) >= MIN_MARKERS:
-            print(f"✅ {len(tracks)} Marker erreicht")
+        after = len(tracks)
+        added = after - before
+        print(
+            f"Threshold {threshold:.3f}: {added} neue Marker (insgesamt {after})",
+            flush=True,
+        )
+        if after >= MIN_MARKERS:
+            print(f"✅ {after} Marker erreicht", flush=True)
             break
-        print(f"⚠ Nur {len(tracks)} Marker – entferne Marker")
+        print(f"⚠ Nur {after} Marker – entferne Marker", flush=True)
         with bpy.context.temp_override(**ctx):
             bpy.ops.clip.select_all(action='SELECT')
             bpy.ops.clip.delete_track()
@@ -62,8 +70,9 @@ def detect_features_until_enough():
         else:
             threshold -= 0.1
         if threshold <= 0.0001:
-            print("❌ Kein passender Threshold gefunden")
+            print("❌ Kein passender Threshold gefunden", flush=True)
             break
+        print(f"→ Neuer Threshold: {threshold:.4f}", flush=True)
 
 
 if __name__ == "__main__":
