@@ -9,7 +9,7 @@ except Exception:
     pass
 
 MIN_MARKERS = 20
-MIN_TRACK_LENGTH = 10
+MIN_TRACK_LENGTH = 25
 
 
 def escape_pressed() -> bool:
@@ -34,7 +34,7 @@ class WM_OT_auto_track(bpy.types.Operator):
     )
     min_track_length: bpy.props.IntProperty(
         name="Mindestanzahl Frames",
-        default=10,
+        default=25,
         min=1,
     )
 
@@ -168,7 +168,7 @@ def detect_features_until_enough():
     width = clip.size[0]
     # margin and min_distance scale with clip width
     margin = int(width / 200)
-    threshold = 1.0
+    threshold = 0.1
     distance = int(width / 20) / (log10(threshold) / -1)
     target_markers = MIN_MARKERS * 4
     print(
@@ -182,13 +182,14 @@ def detect_features_until_enough():
         if escape_pressed():
             print("❌ Abgebrochen mit Escape", flush=True)
             break
+        distance = int(width / 20) / (log10(threshold) / -1)
         before = len(tracks)
         with bpy.context.temp_override(**ctx):
             bpy.ops.clip.detect_features(
                 threshold=threshold,
                 margin=margin,
                 min_distance=distance,
-        )
+            )
         after = len(tracks)
         added = after - before
         print(
