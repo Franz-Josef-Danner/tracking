@@ -10,6 +10,8 @@ except Exception:
 
 MIN_MARKERS = 20
 MIN_TRACK_LENGTH = 10
+# last tracked frame for continuing the playhead
+last_frame = 0
 
 
 def escape_pressed() -> bool:
@@ -111,32 +113,34 @@ def print_track_lengths(clip):
         )
 
 
-def find_first_frame_with_min_tracks(clip):
-    """Return the first frame with only the minimum number of active tracks."""
-    start_frame = clip.frame_start
-    end_frame = start_frame + clip.frame_duration - 1
+def find_first_frame_with_min_tracks(clip, after_frame=0):
+    """Return the first frame *after `after_frame`* with only MIN_MARKERS active tracks."""
+    start_frame = max(after_frame + 1, clip.frame_start)
+    end_frame = clip.frame_start + clip.frame_duration - 1
     tracks = clip.tracking.tracks
     for frame in range(start_frame, end_frame + 1):
-        active = 0
-        for track in tracks:
-            if any(m.frame == frame and not m.mute for m in track.markers):
-                active += 1
+        active = sum(
+            1
+            for track in tracks
+            if any(m.frame == frame and not m.mute for m in track.markers)
+        )
         if active <= MIN_MARKERS:
             return frame
     return None
 
 
-def move_playhead_to_min_tracks(ctx, clip):
-    """Set the playhead to the frame where only MIN_MARKERS remain."""
-    frame = find_first_frame_with_min_tracks(clip)
+def move_playhead_to_min_tracks(ctx, clip, after_frame=0):
+    """Move playhead to next frame with MIN_MARKERS remaining."""
+    frame = find_first_frame_with_min_tracks(clip, after_frame)
     if frame is None:
-        return
+        return None
     with bpy.context.temp_override(**ctx):
         bpy.context.scene.frame_set(frame)
     print(
         f"⏩ Setze Playhead auf Frame {frame} (nur noch {MIN_MARKERS} aktive Tracks)",
         flush=True,
     )
+    return frame
 
 
 def get_clip_context():
@@ -162,6 +166,7 @@ def get_clip_context():
 
 
 def detect_features_until_enough():
+    global last_frame
     ctx = get_clip_context()
     clip = ctx["space_data"].clip
     tracks = clip.tracking.tracks
@@ -211,7 +216,7 @@ def detect_features_until_enough():
                 )
             delete_short_tracks(ctx, clip)
             print_track_lengths(clip)
-            move_playhead_to_min_tracks(ctx, clip)
+            move_playhead_to_min_tracks(ctx, clip, last_frame)
             success = True
             break
         print(f"⚠ Nur {after} Marker – entferne Marker", flush=True)
@@ -228,6 +233,10 @@ def detect_features_until_enough():
             print("❌ Kein passender Threshold gefunden", flush=True)
             break
         print(f"→ Neuer Threshold: {threshold:.4f}", flush=True)
+    next_frame = move_playhead_to_min_tracks(ctx, clip, bpy.context.scene.frame_current)
+    if next_frame:
+        bpy.context.scene.frame_set(next_frame)
+        last_frame = next_frame
     return success
 
 def register():
