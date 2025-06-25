@@ -63,9 +63,7 @@ class WM_OT_auto_track(bpy.types.Operator):
             f"Nutze MIN_MARKERS={MIN_MARKERS}, MIN_TRACK_LENGTH={MIN_TRACK_LENGTH}",
             flush=True,
         )
-        motion_model = MOTION_MODELS[0]
         if not detect_features_until_enough(
-            motion_model,
             initial_min_markers,
             max_attempts=10,
         ):
@@ -73,8 +71,27 @@ class WM_OT_auto_track(bpy.types.Operator):
             return {'CANCELLED'}
 
         result = {'FINISHED'}
-        if not track_all_markers(0):
-            result = {'CANCELLED'}
+        ctx = get_clip_context()
+        clip = ctx["space_data"].clip
+        frame_end = clip.frame_start + clip.frame_duration - 1
+        model_index = 0
+        attempts = 0
+
+        while bpy.context.scene.frame_current < frame_end:
+            motion_model = MOTION_MODELS[model_index]
+            if not track_existing_markers(motion_model):
+                model_index = (model_index + 1) % len(MOTION_MODELS)
+                attempts += 1
+                if attempts >= len(MOTION_MODELS):
+                    print("❌ Tracking stagniert mit allen Motion Models", flush=True)
+                    result = {'CANCELLED'}
+                    break
+                print(
+                    f"🔄 Selber Frame erneut erreicht – wechsle Motion Model zu {MOTION_MODELS[model_index]}",
+                    flush=True,
+                )
+            else:
+                attempts = 0
 
         print("🏁 Beende Auto-Tracking", flush=True)
         return result
@@ -194,7 +211,6 @@ def get_clip_context():
 
 
 def detect_features_until_enough(
-    motion_model="Perspective",
     playhead_min_markers=None,
     *,
     max_attempts=5,
@@ -202,11 +218,6 @@ def detect_features_until_enough(
 ):
     ctx = get_clip_context()
     clip = ctx["space_data"].clip
-    clip.tracking.settings.default_motion_model = motion_model
-    print(
-        f"📐 Nutze Motion Model {clip.tracking.settings.default_motion_model}",
-        flush=True,
-    )
     tracks = clip.tracking.tracks
     width = clip.size[0]
     # margin and min_distance scale with clip width
@@ -280,41 +291,18 @@ def detect_features_until_enough(
     return success
 
 
-def track_all_markers(start_model_index=0):
-    """Track all markers sequentially with motion-model cycling."""
+def track_existing_markers(motion_model="Perspective"):
+    """Track existing markers once using the given motion model."""
     ctx = get_clip_context()
     clip = ctx["space_data"].clip
-    frame_end = clip.frame_start + clip.frame_duration - 1
-    model_index = start_model_index
-    prev_frame = bpy.context.scene.frame_current - 1
-    attempts = 0
-
-    while True:
-        motion_model = MOTION_MODELS[model_index]
-        clip.tracking.settings.default_motion_model = motion_model
-        print(f"📐 Nutze Motion Model {motion_model}", flush=True)
-        with bpy.context.temp_override(**ctx):
-            bpy.ops.clip.select_all(action='SELECT')
-            bpy.ops.clip.track_markers(backwards=False, sequence=True)
-
-        current_frame = bpy.context.scene.frame_current
-        if current_frame == prev_frame:
-            model_index = (model_index + 1) % len(MOTION_MODELS)
-            attempts += 1
-            if attempts >= len(MOTION_MODELS):
-                print("❌ Tracking stagniert mit allen Motion Models", flush=True)
-                return False
-            print(
-                f"🔄 Selber Frame erneut erreicht – wechsle Motion Model zu {MOTION_MODELS[model_index]}",
-                flush=True,
-            )
-        else:
-            prev_frame = current_frame
-            attempts = 0
-
-        if current_frame >= frame_end:
-            print("✅ Tracking abgeschlossen", flush=True)
-            return True
+    clip.tracking.settings.default_motion_model = motion_model
+    print(f"📐 Nutze Motion Model {motion_model}", flush=True)
+    prev_frame = bpy.context.scene.frame_current
+    with bpy.context.temp_override(**ctx):
+        bpy.ops.clip.select_all(action='SELECT')
+        bpy.ops.clip.track_markers(backwards=False, sequence=True)
+    current_frame = bpy.context.scene.frame_current
+    return current_frame != prev_frame
 
 def register():
     bpy.utils.register_class(WM_OT_auto_track)
