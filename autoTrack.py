@@ -70,31 +70,12 @@ class WM_OT_auto_track(bpy.types.Operator):
             print("🏁 Beende Auto-Tracking", flush=True)
             return {'CANCELLED'}
 
-        result = {'FINISHED'}
-        ctx = get_clip_context()
-        clip = ctx["space_data"].clip
-        frame_end = clip.frame_start + clip.frame_duration - 1
-        model_index = 0
-        attempts = 0
-
-        while bpy.context.scene.frame_current < frame_end:
-            motion_model = MOTION_MODELS[model_index]
-            if not track_existing_markers(motion_model):
-                model_index = (model_index + 1) % len(MOTION_MODELS)
-                attempts += 1
-                if attempts >= len(MOTION_MODELS):
-                    print("❌ Tracking stagniert mit allen Motion Models", flush=True)
-                    result = {'CANCELLED'}
-                    break
-                print(
-                    f"🔄 Selber Frame erneut erreicht – wechsle Motion Model zu {MOTION_MODELS[model_index]}",
-                    flush=True,
-                )
-            else:
-                attempts = 0
+        if not track_all_markers():
+            print("🏁 Beende Auto-Tracking", flush=True)
+            return {'CANCELLED'}
 
         print("🏁 Beende Auto-Tracking", flush=True)
-        return result
+        return {'FINISHED'}
 
 
 def track_span(track):
@@ -303,6 +284,32 @@ def track_existing_markers(motion_model="Perspective"):
         bpy.ops.clip.track_markers(backwards=False, sequence=True)
     current_frame = bpy.context.scene.frame_current
     return current_frame != prev_frame
+
+
+def track_all_markers():
+    """Track the clip to the end, switching motion models if tracking stalls."""
+    ctx = get_clip_context()
+    clip = ctx["space_data"].clip
+    frame_end = clip.frame_start + clip.frame_duration - 1
+    model_index = 0
+    attempts = 0
+
+    while bpy.context.scene.frame_current < frame_end:
+        motion_model = MOTION_MODELS[model_index]
+        moved = track_existing_markers(motion_model)
+        if moved:
+            attempts = 0
+            continue
+        model_index = (model_index + 1) % len(MOTION_MODELS)
+        attempts += 1
+        if attempts >= len(MOTION_MODELS):
+            print("❌ Tracking stagniert mit allen Motion Models", flush=True)
+            return False
+        print(
+            f"🔄 Selber Frame erneut erreicht – wechsle Motion Model zu {MOTION_MODELS[model_index]}",
+            flush=True,
+        )
+    return True
 
 def register():
     bpy.utils.register_class(WM_OT_auto_track)
