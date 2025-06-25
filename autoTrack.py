@@ -36,6 +36,25 @@ def track_until_too_few(ctx, clip):
     frame_end = scene.frame_end
     stop_count = int(MIN_MARKERS * 0.9)
     current = scene.frame_current
+    # Print marker status before tracking begins
+    start_active = count_active_markers(tracks, current)
+    print(f"Start Frame {current}: {start_active} Marker", flush=True)
+    details = []
+    for track in tracks:
+        marker = None
+        try:
+            marker = track.markers.find_frame(current)
+        except AttributeError:
+            for m in track.markers:
+                if getattr(m, "frame", None) == current:
+                    marker = m
+                    break
+        if marker:
+            state = "muted" if getattr(marker, "mute", False) else "active"
+        else:
+            state = "missing"
+        details.append(f"{track.name}:{state}")
+    print(" | ".join(details), flush=True)
     while current < frame_end:
         with bpy.context.temp_override(**ctx):
             bpy.ops.clip.track_markers(backwards=False, sequence=False)
@@ -43,6 +62,23 @@ def track_until_too_few(ctx, clip):
         scene.frame_current = current
         active = count_active_markers(tracks, current)
         print(f"Frame {current}: {active} Marker", flush=True)
+        # Print detailed status for each track to debug missing markers
+        details = []
+        for track in tracks:
+            marker = None
+            try:
+                marker = track.markers.find_frame(current)
+            except AttributeError:
+                for m in track.markers:
+                    if getattr(m, "frame", None) == current:
+                        marker = m
+                        break
+            if marker:
+                state = "muted" if getattr(marker, "mute", False) else "active"
+            else:
+                state = "missing"
+            details.append(f"{track.name}:{state}")
+        print(" | ".join(details), flush=True)
         if active < stop_count:
             print(
                 f"⛔ Tracking gestoppt – nur noch {active} Marker (Minimum {stop_count})",
