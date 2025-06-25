@@ -11,16 +11,62 @@ MIN_MARKERS = 20
 MIN_TRACK_LENGTH = 10
 
 
-def delete_short_tracks(clip):
+
+class WM_OT_auto_track(bpy.types.Operator):
+    """Operator um Tracking mit Eingabeparameter zu starten"""
+
+    bl_idname = "wm.auto_track"
+    bl_label = "Auto Track"
+
+    min_markers: bpy.props.IntProperty(
+        name="Mindestanzahl Marker",
+        default=20,
+        min=1,
+    )
+    min_track_length: bpy.props.IntProperty(
+        name="Mindestanzahl Frames",
+        default=10,
+        min=1,
+    )
+
+    def invoke(self, context, event):
+        self.min_markers = MIN_MARKERS
+        self.min_track_length = MIN_TRACK_LENGTH
+        return context.window_manager.invoke_props_dialog(self)
+
+    def execute(self, context):
+        global MIN_MARKERS, MIN_TRACK_LENGTH
+        MIN_MARKERS = self.min_markers
+        MIN_TRACK_LENGTH = self.min_track_length
+        print(
+            f"Nutze MIN_MARKERS={MIN_MARKERS}, MIN_TRACK_LENGTH={MIN_TRACK_LENGTH}",
+            flush=True,
+        )
+        detect_features_until_enough()
+        return {'FINISHED'}
+
+
+def delete_short_tracks(ctx, clip):
     """Remove tracks shorter than the minimum length."""
     tracks = clip.tracking.tracks
     removed = 0
-    for track in list(tracks):
-        if len(track.markers) < MIN_TRACK_LENGTH:
-            tracks.remove(track)
-            removed += 1
+    with bpy.context.temp_override(**ctx):
+        for track in list(tracks):
+            if len(track.markers) < MIN_TRACK_LENGTH:
+                tracks.remove(track)
+                removed += 1
     if removed:
-        print(f"🗑 Entferne {removed} kurze Tracks (<{MIN_TRACK_LENGTH} Frames)", flush=True)
+        print(
+            f"🗑 Entferne {removed} kurze Tracks (<{MIN_TRACK_LENGTH} Frames)",
+            flush=True,
+        )
+
+
+def print_track_lengths(clip):
+    """Gibt die Länge aller Tracks aus."""
+    print("📊 Track-Längen:", flush=True)
+    for track in clip.tracking.tracks:
+        print(f"    {track.name}: {len(track.markers)} Frames", flush=True)
 
 
 def get_clip_context():
@@ -55,7 +101,8 @@ def detect_features_until_enough():
     distance = int(width / 20)
     threshold = 1.0
     print(
-        f"Starte Feature Detection: width={width}, margin={margin}, min_distance={distance}, min_markers={MIN_MARKERS}",
+        f"Starte Feature Detection: width={width}, margin={margin}, min_distance={distance}, "
+        f"min_markers={MIN_MARKERS}, min_track_length={MIN_TRACK_LENGTH}",
         flush=True,
     )
     while True:
@@ -74,10 +121,16 @@ def detect_features_until_enough():
         )
         if after >= MIN_MARKERS:
             print(f"✅ {after} Marker erreicht", flush=True)
-            print("Starte Tracking ...", flush=True)
+            start_frame = clip.frame_start
+            end_frame = start_frame + clip.frame_duration - 1
+            print(
+                f"Starte Tracking von Frame {start_frame} bis {end_frame} ...",
+                flush=True,
+            )
             with bpy.context.temp_override(**ctx):
                 bpy.ops.clip.track_markers(backwards=False, sequence=True)
-            delete_short_tracks(clip)
+            delete_short_tracks(ctx, clip)
+            print_track_lengths(clip)
             break
         print(f"⚠ Nur {after} Marker – entferne Marker", flush=True)
         with bpy.context.temp_override(**ctx):
@@ -95,5 +148,14 @@ def detect_features_until_enough():
         print(f"→ Neuer Threshold: {threshold:.4f}", flush=True)
 
 
+def register():
+    bpy.utils.register_class(WM_OT_auto_track)
+
+
+def unregister():
+    bpy.utils.unregister_class(WM_OT_auto_track)
+
+
 if __name__ == "__main__":
-    detect_features_until_enough()
+    register()
+    bpy.ops.wm.auto_track('INVOKE_DEFAULT')
