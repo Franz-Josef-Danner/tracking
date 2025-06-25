@@ -118,39 +118,17 @@ def auto_track_segmented():
             print(f"🗑 {removed} kurze Tracks entfernt", flush=True)
 
         current_reliable = count_reliable_tracks(segment_start, segment_end, tracks)
+        segment_time_start = time.time()
+        success = False
+
         if current_reliable >= MIN_TRACKS_PER_SEGMENT:
             print(f"✅ Bereits {current_reliable} verlässliche Tracks vorhanden", flush=True)
-            continue
 
-        print(f"⚠ Nur {current_reliable} Tracks – Feature Detection beginnt", flush=True)
-        segment_time_start = time.time()
-
-        success = False
-        while True:
-            th = THRESHOLDS[threshold_idx]
-            print(f"  ➤ Threshold {th:.4f}", flush=True)
-
+            print("    → Tracking …", flush=True)
             bpy.context.scene.frame_current = segment_start
-            num_before = len(tracks)
-
-            with bpy.context.temp_override(**ctx):
-                bpy.ops.clip.detect_features(threshold=th)
-
-            new_tracks = tracks[num_before:]
-            print(f"    → {len(new_tracks)} neue Marker erkannt", flush=True)
-
-            if new_tracks == 0:
-                if threshold_idx < len(THRESHOLDS) - 1:
-                    threshold_idx += 1
-                    continue
-                else:
-                    break
-
-            print(f"    → Tracking …", flush=True)
             with bpy.context.temp_override(**ctx):
                 bpy.ops.clip.track_markers(backwards=False, sequence=True)
 
-            # Kurzlebige Tracks entfernen
             r = remove_short_tracks(segment_start, segment_end, tracks, ctx)
             if r:
                 removed += r
@@ -159,15 +137,65 @@ def auto_track_segmented():
             updated_reliable = count_reliable_tracks(segment_start, segment_end, tracks)
             print(f"    → {updated_reliable} gültige Tracker", flush=True)
 
-            if updated_reliable >= MIN_TRACKS_PER_SEGMENT:
-                print(f"    ✅ Ziel erreicht", flush=True)
-                threshold_idx = 0
-                success = True
-                break
-            elif threshold_idx < len(THRESHOLDS) - 1:
-                threshold_idx += 1
-            else:
-                break
+            threshold_idx = 0
+            success = True
+        else:
+            print(f"⚠ Nur {current_reliable} Tracks – Feature Detection beginnt", flush=True)
+            detected_any = False
+
+            while True:
+                th = THRESHOLDS[threshold_idx]
+                print(f"  ➤ Threshold {th:.4f}", flush=True)
+
+                bpy.context.scene.frame_current = segment_start
+                num_before = len(tracks)
+
+                with bpy.context.temp_override(**ctx):
+                    bpy.ops.clip.detect_features(threshold=th)
+
+                new_tracks = tracks[num_before:]
+                print(f"    → {len(new_tracks)} neue Marker erkannt", flush=True)
+                if new_tracks:
+                    detected_any = True
+
+                    print("    → Tracking …", flush=True)
+                    with bpy.context.temp_override(**ctx):
+                        bpy.ops.clip.track_markers(backwards=False, sequence=True)
+
+                    r = remove_short_tracks(segment_start, segment_end, tracks, ctx)
+                    if r:
+                        removed += r
+                        print(f"    🗑 {r} kurze Tracks entfernt", flush=True)
+
+                    updated_reliable = count_reliable_tracks(segment_start, segment_end, tracks)
+                    print(f"    → {updated_reliable} gültige Tracker", flush=True)
+
+                    if updated_reliable >= MIN_TRACKS_PER_SEGMENT:
+                        print(f"    ✅ Ziel erreicht", flush=True)
+                        threshold_idx = 0
+                        success = True
+                        break
+
+                if threshold_idx < len(THRESHOLDS) - 1:
+                    threshold_idx += 1
+                    continue
+                else:
+                    break
+
+            if not detected_any and current_reliable > 0:
+                print("    → Tracking mit vorhandenen Markern …", flush=True)
+                bpy.context.scene.frame_current = segment_start
+                with bpy.context.temp_override(**ctx):
+                    bpy.ops.clip.track_markers(backwards=False, sequence=True)
+
+                r = remove_short_tracks(segment_start, segment_end, tracks, ctx)
+                if r:
+                    removed += r
+                    print(f"    🗑 {r} kurze Tracks entfernt", flush=True)
+
+                updated_reliable = count_reliable_tracks(segment_start, segment_end, tracks)
+                print(f"    → {updated_reliable} gültige Tracker", flush=True)
+
         if not success:
             print("    ❌ Ziel nicht erreicht", flush=True)
 
