@@ -62,6 +62,13 @@ def delete_short_tracks(ctx, clip):
         )
 
 
+def print_track_lengths(clip):
+    """Gibt die Länge aller Tracks aus."""
+    print("📊 Track-Längen:", flush=True)
+    for track in clip.tracking.tracks:
+        print(f"    {track.name}: {len(track.markers)} Frames", flush=True)
+
+
 def get_clip_context():
     """Return a context with an active clip-editor and clip."""
     wm = bpy.context.window_manager
@@ -123,6 +130,7 @@ def detect_features_until_enough():
             with bpy.context.temp_override(**ctx):
                 bpy.ops.clip.track_markers(backwards=False, sequence=True)
             delete_short_tracks(ctx, clip)
+            print_track_lengths(clip)
             break
         print(f"⚠ Nur {after} Marker – entferne Marker", flush=True)
         with bpy.context.temp_override(**ctx):
