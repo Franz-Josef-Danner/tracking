@@ -37,8 +37,8 @@ def detect_features_until_enough():
     clip = ctx["space_data"].clip
     tracks = clip.tracking.tracks
     width = clip.size[0]
-    margin = width / 100
-    distance = width / 10
+    margin = int(width / 100)
+    distance = int(width / 10)
     threshold = 1.0
     while True:
         before = len(tracks)
