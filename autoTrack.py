@@ -61,6 +61,9 @@ def detect_features_until_enough():
         )
         if after >= MIN_MARKERS:
             print(f"✅ {after} Marker erreicht", flush=True)
+            print("Starte Tracking ...", flush=True)
+            with bpy.context.temp_override(**ctx):
+                bpy.ops.clip.track_markers(backwards=False, sequence=True)
             break
         print(f"⚠ Nur {after} Marker – entferne Marker", flush=True)
         with bpy.context.temp_override(**ctx):
