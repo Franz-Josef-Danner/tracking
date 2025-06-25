@@ -58,24 +58,32 @@ class WM_OT_auto_track(bpy.types.Operator):
         global MIN_MARKERS, MIN_TRACK_LENGTH
         MIN_MARKERS = self.min_markers
         MIN_TRACK_LENGTH = self.min_track_length
-        initial_min_markers = MIN_MARKERS
         print(
             f"Nutze MIN_MARKERS={MIN_MARKERS}, MIN_TRACK_LENGTH={MIN_TRACK_LENGTH}",
             flush=True,
         )
-        if not detect_features_until_enough(
-            initial_min_markers,
-            max_attempts=10,
-        ):
-            print("🏁 Beende Auto-Tracking", flush=True)
+
+        if not detect_features_until_enough(max_attempts=10):
+            print("❌ Feature Detection fehlgeschlagen – Abbruch", flush=True)
             return {'CANCELLED'}
 
-        if not track_all_markers():
-            print("🏁 Beende Auto-Tracking", flush=True)
-            return {'CANCELLED'}
+        result = {'FINISHED'}
+        model_index = 0
+
+        while True:
+            motion_model = MOTION_MODELS[model_index]
+            moved = track_existing_markers(motion_model)
+            if moved:
+                print("✅ Tracking erfolgreich weitergeführt", flush=True)
+                break
+            model_index = (model_index + 1) % len(MOTION_MODELS)
+            print(
+                f"🔄 Selber Frame erneut erreicht – wechsle Motion Model zu {MOTION_MODELS[model_index]}",
+                flush=True,
+            )
 
         print("🏁 Beende Auto-Tracking", flush=True)
-        return {'FINISHED'}
+        return result
 
 
 def track_span(track):
