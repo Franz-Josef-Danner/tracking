@@ -9,7 +9,7 @@ except Exception:
     pass
 
 MIN_MARKERS = 20
-MIN_TRACK_LENGTH = 25
+MIN_TRACK_LENGTH = 10
 
 
 def escape_pressed() -> bool:
@@ -34,7 +34,7 @@ class WM_OT_auto_track(bpy.types.Operator):
     )
     min_track_length: bpy.props.IntProperty(
         name="Mindestanzahl Frames",
-        default=25,
+        default=10,
         min=1,
     )
 
