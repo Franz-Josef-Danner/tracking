@@ -182,7 +182,7 @@ def detect_features_until_enough():
         if escape_pressed():
             print("❌ Abgebrochen mit Escape", flush=True)
             break
-        distance = int(width / 20) / (log10(threshold) / -1)
+        distance = int(width / 20) / ((log10(threshold)/-1)+1)
         before = len(tracks)
         with bpy.context.temp_override(**ctx):
             bpy.ops.clip.detect_features(
