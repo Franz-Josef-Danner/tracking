@@ -133,6 +133,14 @@ def move_playhead_to_min_tracks(ctx, clip):
     )
 
 
+def move_playhead_to_scene_start(ctx):
+    """Setze den Playhead auf den ersten Frame der Szene."""
+    with bpy.context.temp_override(**ctx):
+        start = bpy.context.scene.frame_start
+        bpy.context.scene.frame_set(start)
+    print(f"⏮ Setze Playhead auf Szene-Anfang (Frame {start})", flush=True)
+
+
 def get_clip_context():
     """Return a context with an active clip-editor and clip."""
     wm = bpy.context.window_manager
@@ -158,6 +166,7 @@ def get_clip_context():
 def detect_features_until_enough():
     ctx = get_clip_context()
     clip = ctx["space_data"].clip
+    move_playhead_to_scene_start(ctx)
     tracks = clip.tracking.tracks
     width = clip.size[0]
     # margin and min_distance scale with clip width
