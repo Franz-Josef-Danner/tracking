@@ -50,8 +50,13 @@ class WM_OT_auto_track(bpy.types.Operator):
             f"Nutze MIN_MARKERS={MIN_MARKERS}, MIN_TRACK_LENGTH={MIN_TRACK_LENGTH}",
             flush=True,
         )
-        success = detect_features_until_enough()
-        return {'FINISHED'} if success else {'CANCELLED'}
+        result = {'FINISHED'}
+        while True:
+            if not detect_features_until_enough():
+                result = {'CANCELLED'}
+                break
+        print("🏁 Beende Auto-Tracking", flush=True)
+        return result
 
 
 def track_span(track):
@@ -230,14 +235,7 @@ def unregister():
 
 if __name__ == "__main__":
     register()
-    result = bpy.ops.wm.auto_track('INVOKE_DEFAULT')
-    while result == {'FINISHED'}:
-        result = bpy.ops.wm.auto_track(
-            'EXEC_DEFAULT',
-            min_markers=MIN_MARKERS,
-            min_track_length=MIN_TRACK_LENGTH,
-        )
-    print("🏁 Beende Auto-Tracking", flush=True)
+    bpy.ops.wm.auto_track('INVOKE_DEFAULT')
 
 
 
