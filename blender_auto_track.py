@@ -122,6 +122,8 @@ def run_tracking_cycle(
     while True:
         existing = {t.name for t in clip.tracking.tracks}
         bpy.ops.clip.select_all(action='DESELECT')
+        # Set the detection threshold used by detect_features()
+        clip.tracking.settings.correlation_min = config.threshold
         print(f"Threshold vor detect_features: {config.threshold}")
         bpy.ops.clip.detect_features()
         print(f"Anzahl Tracks nach detect_features: {len(clip.tracking.tracks)}")
