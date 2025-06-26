@@ -263,18 +263,10 @@ def delete_new_tracks(tracks, ctx=None):
                 # Wenn weder remove noch Context vorhanden ist, Track
                 # nicht löschen, um Fehler zu vermeiden
                 continue
-            # Tracknamen können in einigen Umgebungen nicht als Unicode
-            # ausgegeben werden. Daher testen wir zuerst das Encoding und
-            # fallen andernfalls auf eine sichere Ausgabe zurück.
-            name = track.name
-            try:
-                name.encode("utf-8")
-                print(f"🗑 Entferne neuen Marker: {name}", flush=True)
-            except UnicodeEncodeError:
-                print(
-                    "🗑 Entferne Marker (Name konnte nicht als UTF-8 ausgegeben werden)",
-                    flush=True,
-                )
+            # Tracknamen können problematische Zeichen enthalten. Über
+            # ``repr`` stellen wir sicher, dass sie unabhängig vom Encoding
+            # ausgegeben werden können.
+            print(f"🗑 Entferne neuen Marker: {repr(track.name)}", flush=True)
 
 
 def delete_short_tracks(ctx, clip, min_track_length, autotracker=None):
