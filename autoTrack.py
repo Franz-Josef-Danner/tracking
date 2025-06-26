@@ -193,9 +193,7 @@ def save_session_data(autotracker, total_duration):
     scene_time = time.strftime("%H:%M:%S", time.gmtime(total_duration))
     threshold = clip.get("last_threshold")
     width = clip.size[0]
-    marker_distance = None
-    if threshold is not None:
-        marker_distance = int(int(width / 40) / (((log10(threshold) / -1) + 1) / 2))
+    marker_distance = int(width / 20)
     threshold_marker_count_plus = max(0, len(placed_markers) - autotracker.min_markers)
     data = {
         "Start Frame": clip.frame_start,
@@ -355,7 +353,7 @@ def detect_features_until_enough(
     # margin and min_distance scale with clip width
     margin = int(width / 200)
     threshold = 1
-    distance = int(int(width / 40) / (((log10(threshold) / -1) + 1) / 2))
+    distance = int(width / 20)
     target_markers = autotracker.min_markers * MARKER_MULTIPLIER
     print(
         f"Starte Feature Detection: width={width}, margin={margin}, min_distance={distance}, "
@@ -376,7 +374,7 @@ def detect_features_until_enough(
         if escape_pressed():
             print("❌ Abgebrochen mit Escape", flush=True)
             break
-        distance = int(int(width / 40) / (((log10(threshold) / -1) + 1) / 2))
+        distance = int(width / 20)
         # 1. Vorherige NEW_ Marker bereinigen
         delete_new_tracks(tracks)
         # 2. Referenz auf vorhandene Track-Objekte (nicht nur Namen)
