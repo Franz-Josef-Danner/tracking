@@ -21,6 +21,9 @@ MOTION_MODELS = [
     "LocRot",
     "Loc",
 ]
+MAX_CYCLES = 100
+TARGET_DELTA = 10  # Additional markers to reach when detecting features
+
 
 
 def escape_pressed() -> bool:
@@ -69,7 +72,17 @@ class WM_OT_auto_track(bpy.types.Operator):
         clip = ctx["space_data"].clip
         prev_frame = bpy.context.scene.frame_current
         model_index = original_model_index
+        max_cycles = MAX_CYCLES
+        cycle_count = 0
         while True:
+            cycle_count += 1
+            if cycle_count >= max_cycles:
+                print(
+                    f"❌ Maximalanzahl an Trackingzyklen ({max_cycles}) erreicht – Abbruch",
+                    flush=True,
+                )
+                result = {'CANCELLED'}
+                break
             motion_model = MOTION_MODELS[model_index]
             if not detect_features_until_enough(
                 motion_model,
@@ -250,10 +263,11 @@ def detect_features_until_enough(
     margin = int(width / 200)
     threshold = 0.1
     distance = int(int(width / 40) / (((log10(threshold) / -1) + 1) / 2))
-    target_markers = MIN_MARKERS * 4
+    existing_tracks = len(tracks)
+    target_markers = max(MIN_MARKERS + TARGET_DELTA, existing_tracks)
     print(
         f"Starte Feature Detection: width={width}, margin={margin}, min_distance={distance}, "
-        f"min_markers={MIN_MARKERS}, min_track_length={MIN_TRACK_LENGTH}",
+        f"min_markers={MIN_MARKERS}, target_markers={target_markers}, min_track_length={MIN_TRACK_LENGTH}",
         flush=True,
     )
     print("Drücke ESC, um abzubrechen", flush=True)
