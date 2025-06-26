@@ -195,4 +195,8 @@ def unregister() -> None:
 
 
 if __name__ == "__main__":
+    # Remove previously registered classes when re-running the script in the
+    # Blender text editor to avoid duplicate registration warnings.
+    if hasattr(bpy.types, "OT_SetupAutoTracking"):
+        unregister()
     register()
