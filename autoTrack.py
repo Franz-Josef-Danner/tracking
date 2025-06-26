@@ -25,9 +25,6 @@ MOTION_MODELS = [
     "Loc",
 ]
 MAX_CYCLES = 100
-TARGET_DELTA = 10  # Additional markers to reach when detecting features
-
-
 
 def escape_pressed() -> bool:
     """Return True if the Escape key is currently pressed."""
@@ -291,9 +288,7 @@ def detect_features_until_enough(
     # margin and min_distance scale with clip width
     margin = int(width / 200)
     threshold = 0.1
-    last_threshold = threshold  # Für externe Anzeige
     distance = int(int(width / 40) / (((log10(threshold) / -1) + 1) / 2))
-    existing_tracks = len(tracks)
     target_markers = MIN_MARKERS * MARKER_MULTIPLIER
     print(
         f"Starte Feature Detection: width={width}, margin={margin}, min_distance={distance}, "
