@@ -316,6 +316,9 @@ def detect_features_until_enough(
             print("❌ Abgebrochen mit Escape", flush=True)
             break
         distance = int(int(width / 40) / (((log10(threshold) / -1) + 1) / 2))
+        # 1. Vorherige NEW_ Marker bereinigen
+        delete_new_tracks(tracks)
+        # 2. Namen der bestehenden Tracks speichern
         before_names = {t.name for t in tracks}
         # Setze Playhead auf aktuellen Frame, damit neue Marker dort starten
         current_frame = bpy.context.scene.frame_current
@@ -335,7 +338,8 @@ def detect_features_until_enough(
         # Dann auswerten, ob die neuen Tracks lang genug waren
         delete_short_tracks(ctx, clip)
         # Jetzt Marker-Anzahl prüfen
-        added = sum(1 for t in tracks if t.name.startswith(NEW_PREFIX))
+        new_markers = [t for t in tracks if t.name.startswith(NEW_PREFIX)]
+        added = len(new_markers)
         total = len([t for t in tracks if not t.name.startswith(NEW_PREFIX)])
         print(
             f"Threshold {threshold:.3f}: {added} neue Marker (insgesamt {total})",
