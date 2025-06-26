@@ -2,6 +2,9 @@ import bpy
 import ctypes
 from math import log10
 import time
+import os
+import json
+from datetime import datetime
 
 # Show console on Windows
 try:
@@ -139,6 +142,7 @@ class WM_OT_auto_track(bpy.types.Operator):
         print("🏁 Beende Auto-Tracking", flush=True)
         total_duration = time.time() - start_time_all
         print(f"⏱ Gesamtdauer: {total_duration:.2f} Sekunden", flush=True)
+        save_session_data(autotracker, total_duration)
         return result
 
 
@@ -156,6 +160,43 @@ def track_length(track):
     if start is None:
         return 0
     return end - start + 1
+
+
+def save_session_data(autotracker, total_duration):
+    """Save session data as JSON in the project directory."""
+    clip = autotracker.clip
+    tracks = clip.tracking.tracks
+    placed_markers = len([t for t in tracks if not t.name.startswith(NEW_PREFIX)])
+    active_marker = tracks.active.name if tracks.active else ""
+    bad_markers = sum(1 for t in tracks if track_length(t) < autotracker.min_track_length)
+    good_markers = sum(1 for t in tracks if track_length(t) >= autotracker.min_track_length)
+    scene_time = time.strftime("%H:%M:%S", time.gmtime(total_duration))
+    threshold = clip.get("last_threshold")
+    width = clip.size[0]
+    marker_distance = None
+    if threshold is not None:
+        marker_distance = int(int(width / 40) / (((log10(threshold) / -1) + 1) / 2))
+    threshold_marker_count_plus = max(0, placed_markers - autotracker.min_markers)
+    data = {
+        "Start Frame": clip.frame_start,
+        "Placed Markers": placed_markers,
+        "Active Marker": active_marker,
+        "Bad Marker": bad_markers,
+        "Good Markers": good_markers,
+        "Marker Track Length": autotracker.min_track_length,
+        "Scenen Time": scene_time,
+        "Threshold": threshold,
+        "Threshold Marker Count plus": threshold_marker_count_plus,
+        "Motion Models": MOTION_MODELS,
+        "Marker Distanz": marker_distance,
+    }
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    filename = f"trackingsession_{timestamp}.json"
+    project_dir = bpy.path.abspath("//")
+    filepath = os.path.join(project_dir, filename)
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
+    print(f"\U0001F4BE Trackingsession gespeichert: {filepath}", flush=True)
 
 
 def rename_new_tracks(tracks, before_tracks):
