@@ -188,6 +188,22 @@ def get_movie_clip(context: bpy.types.Context) -> bpy.types.MovieClip | None:
     return getattr(context.scene, "clip", None)
 
 
+def get_active_marker_positions(
+    clip: bpy.types.MovieClip, frame: int
+) -> list[tuple[float, float]]:
+    """Return positions of all markers active at *frame* in pixel coordinates."""
+
+    width, height = clip.size
+    positions: list[tuple[float, float]] = []
+    for track in clip.tracking.tracks:
+        for marker in track.markers:
+            if marker.frame == frame and not marker.mute:
+                positions.append((marker.co[0] * width, marker.co[1] * height))
+                break
+
+    return positions
+
+
 def delete_short_tracks(clip: bpy.types.MovieClip, min_track_length: int) -> None:
     """Remove tracks from *clip* shorter than *min_track_length*."""
 
@@ -263,9 +279,15 @@ class OT_RunAutoTracking(bpy.types.Operator):
             min_marker_count=context.scene.min_marker_count,
             min_track_length=context.scene.min_track_length,
         )
+        clip = get_movie_clip(context)
+        active_markers = (
+            get_active_marker_positions(clip, context.scene.frame_current)
+            if clip
+            else []
+        )
         run_tracking_cycle(
             config,
-            active_markers=[(50.0, 50.0), (400.0, 400.0)],
+            active_markers=active_markers,
             frame_current=context.scene.frame_current,
         )
 
