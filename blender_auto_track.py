@@ -167,6 +167,8 @@ class OT_RunAutoTracking(bpy.types.Operator):
 # -----------------------------------------------------------------------------
 
 def register() -> None:
+    """Register classes and scene properties."""
+    unregister()
     bpy.types.Scene.motion_model = StringProperty()
     bpy.types.Scene.threshold = FloatProperty()
     bpy.types.Scene.min_marker_count = IntProperty()
@@ -176,12 +178,20 @@ def register() -> None:
 
 
 def unregister() -> None:
-    bpy.utils.unregister_class(OT_SetupAutoTracking)
-    bpy.utils.unregister_class(OT_RunAutoTracking)
-    del bpy.types.Scene.motion_model
-    del bpy.types.Scene.threshold
-    del bpy.types.Scene.min_marker_count
-    del bpy.types.Scene.min_track_length
+    """Unregister classes and scene properties if registered."""
+    for cls in (OT_SetupAutoTracking, OT_RunAutoTracking):
+        try:
+            bpy.utils.unregister_class(cls)
+        except RuntimeError:
+            pass
+    for prop in (
+        "motion_model",
+        "threshold",
+        "min_marker_count",
+        "min_track_length",
+    ):
+        if hasattr(bpy.types.Scene, prop):
+            delattr(bpy.types.Scene, prop)
 
 
 if __name__ == "__main__":
