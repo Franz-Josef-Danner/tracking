@@ -236,6 +236,13 @@ class OT_RunAutoTracking(bpy.types.Operator):
 # Registration helpers
 # -----------------------------------------------------------------------------
 
+def draw_func(self, context):
+    """Draw menu entries for the auto tracking operators."""
+
+    layout = self.layout
+    layout.operator("scene.setup_auto_tracking")
+    layout.operator("scene.run_auto_tracking")
+
 def register() -> None:
     bpy.types.Scene.motion_model = StringProperty()
     bpy.types.Scene.threshold = FloatProperty()
@@ -243,6 +250,9 @@ def register() -> None:
     bpy.types.Scene.min_track_length = IntProperty()
     bpy.utils.register_class(OT_SetupAutoTracking)
     bpy.utils.register_class(OT_RunAutoTracking)
+
+    # Integrate the operators in the Clip editor menu for convenience
+    bpy.types.CLIP_MT_clip.append(draw_func)
 
 
 def unregister() -> None:
@@ -252,6 +262,8 @@ def unregister() -> None:
     del bpy.types.Scene.threshold
     del bpy.types.Scene.min_marker_count
     del bpy.types.Scene.min_track_length
+
+    bpy.types.CLIP_MT_clip.remove(draw_func)
 
 
 register()
