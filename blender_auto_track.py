@@ -122,33 +122,35 @@ def run_tracking_cycle(
     while True:
         existing = {t.name for t in clip.tracking.tracks}
         bpy.ops.clip.select_all(action='DESELECT')
+        print(f"Threshold vor detect_features: {config.threshold}")
         bpy.ops.clip.detect_features()
+        print(f"Anzahl Tracks nach detect_features: {len(clip.tracking.tracks)}")
         placed_tracks = []
         placed_markers = []
         for track in clip.tracking.tracks:
             if track.name not in existing and track.markers:
                 placed_tracks.append(track)
                 placed_markers.append(track.markers[0])
+        # _validate_markers() temporarily disabled to inspect raw marker count
+        # good, bad, good_tracks, bad_tracks = _validate_markers(
+        #     list(zip(placed_markers, placed_tracks)),
+        #     active_markers,
+        #     frame_width,
+        #     frame_height,
+        #     config.marker_distance,
+        # )
 
-        good, bad, good_tracks, bad_tracks = _validate_markers(
-            list(zip(placed_markers, placed_tracks)),
-            active_markers,
-            frame_width,
-            frame_height,
-            config.marker_distance,
-        )
+        # for track in clip.tracking.tracks:
+        #     for marker in track.markers:
+        #         if marker in bad:
+        #             track.select = True
+        #             bpy.ops.clip.delete_track()
+        #             break
+        # placed_tracks = good_tracks
 
-        for track in clip.tracking.tracks:
-            for marker in track.markers:
-                if marker in bad:
-                    track.select = True
-                    bpy.ops.clip.delete_track()
-                    break
-        placed_tracks = good_tracks
-
-        config.good_markers = [str(m.co.xy) for m in good]
-        config.bad_markers = [str(m.co.xy) for m in bad]
-        config.placed_markers = len(good)
+        config.good_markers = [str(m.co.xy) for m in placed_markers]
+        config.bad_markers = []
+        config.placed_markers = len(placed_tracks)
 
         print(
             f"Iteration {threshold_iter}: {config.placed_markers} Placed Marker, {len(config.bad_markers)} Bad Marker"
