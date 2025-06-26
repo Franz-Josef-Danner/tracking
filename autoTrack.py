@@ -59,6 +59,7 @@ class WM_OT_auto_track(bpy.types.Operator):
         MIN_MARKERS = self.min_markers
         MIN_TRACK_LENGTH = self.min_track_length
         initial_min_markers = MIN_MARKERS
+        original_model_index = 0
         print(
             f"Nutze MIN_MARKERS={MIN_MARKERS}, MIN_TRACK_LENGTH={MIN_TRACK_LENGTH}",
             flush=True,
@@ -67,7 +68,7 @@ class WM_OT_auto_track(bpy.types.Operator):
         ctx = get_clip_context()
         clip = ctx["space_data"].clip
         prev_frame = bpy.context.scene.frame_current
-        model_index = 0
+        model_index = original_model_index
         while True:
             motion_model = MOTION_MODELS[model_index]
             if not detect_features_until_enough(
@@ -92,8 +93,13 @@ class WM_OT_auto_track(bpy.types.Operator):
                     flush=True,
                 )
             else:
+                if model_index != original_model_index:
+                    print(
+                        f"✅ Fortschritt erkannt – setze Motion Model zurück auf {MOTION_MODELS[original_model_index]}",
+                        flush=True,
+                    )
+                model_index = original_model_index
                 MIN_MARKERS = initial_min_markers
-                model_index = 0
             prev_frame = current_frame
 
             if find_first_frame_with_min_tracks(clip, MIN_MARKERS) is None:
