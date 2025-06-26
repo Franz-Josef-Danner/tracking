@@ -11,6 +11,8 @@ except Exception:
 
 MIN_MARKERS = 20
 MIN_TRACK_LENGTH = 10
+# Factor to temporarily raise the detection target
+MARKER_MULTIPLIER = 4
 # Prefixes used to separate newly added and permanent tracks
 NEW_PREFIX = "NEW_"
 LOCKED_PREFIX = "LOCKED_"
@@ -293,16 +295,16 @@ def detect_features_until_enough(
     last_threshold = threshold  # Für externe Anzeige
     distance = int(int(width / 40) / (((log10(threshold) / -1) + 1) / 2))
     existing_tracks = len(tracks)
-    target_markers = max(MIN_MARKERS + TARGET_DELTA, existing_tracks)
+    target_markers = MIN_MARKERS * MARKER_MULTIPLIER
     print(
         f"Starte Feature Detection: width={width}, margin={margin}, min_distance={distance}, "
         f"min_markers={MIN_MARKERS}, target_markers={target_markers}, min_track_length={MIN_TRACK_LENGTH}",
         flush=True,
     )
-    lower_bound = int(MIN_MARKERS * 0.8)
-    upper_bound = int(MIN_MARKERS * 1.2)
+    lower_bound = int(target_markers * 0.8)
+    upper_bound = int(target_markers * 1.2)
     print(
-        f"🎯 Ziel: {MIN_MARKERS} Marker ±20% → erlaubt: {lower_bound} bis {upper_bound}",
+        f"🎯 Ziel: {target_markers} Marker ±20% → erlaubt: {lower_bound} bis {upper_bound}",
         flush=True,
     )
     print("Drücke ESC, um abzubrechen", flush=True)
@@ -339,8 +341,8 @@ def detect_features_until_enough(
             f"Threshold {threshold:.3f}: {added} neue Marker (insgesamt {after})",
             flush=True,
         )
-        lower_bound = int(MIN_MARKERS * 0.8)
-        upper_bound = int(MIN_MARKERS * 1.2)
+        lower_bound = int(target_markers * 0.8)
+        upper_bound = int(target_markers * 1.2)
         if lower_bound <= after <= upper_bound:
             print(
                 f"✅ Markeranzahl im Zielbereich ({lower_bound}–{upper_bound}) mit {after} Markern",
