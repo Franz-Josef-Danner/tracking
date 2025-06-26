@@ -100,6 +100,9 @@ def run_tracking_cycle(
 ) -> None:
     """Simulate one tracking cycle with adaptive thresholding."""
     print(f"Tracking gestartet bei Frame {frame_current}")
+    print(
+        f"Start Threshold: {config.threshold} | Threshold Marker Count: {config.threshold_marker_count}"
+    )
 
     clip = get_movie_clip(bpy.context)
     if not clip:
@@ -152,8 +155,11 @@ def run_tracking_cycle(
         config.placed_markers = len(good)
 
         print(
-            f"Iteration {threshold_iter}: {config.placed_markers} Marker gefunden"
+            f"Iteration {threshold_iter}: {config.placed_markers} Placed Marker, {len(config.bad_markers)} Bad Marker"
         )
+        if config.bad_markers:
+            print(f"Bad Marker: {config.bad_markers}")
+        print(f"Aktueller Threshold Marker Count: {config.threshold_marker_count}")
 
         if (
             config.min_marker_range <= config.placed_markers <= config.max_marker_range
@@ -162,11 +168,13 @@ def run_tracking_cycle(
             print("Tracking beendet")
             break
 
+        old_threshold = config.threshold
         config.threshold = config.threshold * (
             (config.placed_markers + 0.1) / config.threshold_marker_count
         )
 
-        print(f"Neuer Threshold: {config.threshold}")
+        print(f"Threshold angepasst: {old_threshold} -> {config.threshold}")
+        print(f"Threshold Marker Count bleibt: {config.threshold_marker_count}")
 
         threshold_iter += 1
         clip = get_movie_clip(bpy.context)
