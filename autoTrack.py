@@ -208,13 +208,15 @@ def save_session_data(autotracker, total_duration):
     width = clip.size[0]
     marker_distance = int(width / 20)
     threshold_marker_count_plus = max(0, len(placed_markers) - autotracker.min_markers)
+    track_lengths = autotracker.track_lengths or {t.name: track_length(t) for t in tracks}
+
     data = {
         "Start Frame": clip.frame_start,
         "Placed Markers": placed_markers,
         "Active Marker": active_marker,
         "Bad Marker": bad_markers,
         "Good Markers": good_markers,
-        "Marker Track Length": autotracker.min_track_length,
+        "Marker Track Length": track_lengths,
         "Scenen Time": scene_time,
         "Threshold": threshold,
         "Threshold Marker Count plus": threshold_marker_count_plus,
@@ -275,6 +277,12 @@ def delete_short_tracks(ctx, clip, min_track_length, autotracker=None):
                     f"🗑 Entferne {removed} kurze Tracks (<{min_track_length} Frames)",
                     flush=True,
                 )
+
+    # Collect lengths of all remaining tracks after cleaning
+    track_lengths = {t.name: track_length(t) for t in tracks}
+    if autotracker is not None:
+        autotracker.track_lengths = track_lengths
+    return track_lengths
 
 
 def print_track_lengths(clip):
@@ -351,6 +359,7 @@ class AutoTracker:
         self.clip = self.ctx["space_data"].clip
         self.placed_markers = []
         self.bad_markers = []
+        self.track_lengths = {}
 
 
 def detect_features_until_enough(
