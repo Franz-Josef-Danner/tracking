@@ -131,6 +131,43 @@ def run_tracking_cycle(
         config.placed_markers = 0
 
 
+def get_movie_clip(context: bpy.types.Context) -> bpy.types.MovieClip | None:
+    """Return the active MovieClip if available."""
+
+    if context.space_data and context.space_data.type == "CLIP_EDITOR":
+        return context.space_data.clip
+
+    return getattr(context.scene, "clip", None)
+
+
+def delete_short_tracks(clip: bpy.types.MovieClip, min_track_length: int) -> None:
+    """Remove tracks from *clip* shorter than *min_track_length*."""
+
+    for track in list(clip.tracking.tracks):
+        tracked_frames = sum(1 for m in track.markers if not m.mute)
+        if tracked_frames < min_track_length:
+            clip.tracking.tracks.remove(track)
+
+
+def find_first_insufficient_frame(
+    clip: bpy.types.MovieClip, min_marker_count: int
+) -> int | None:
+    """Return the first frame with fewer active markers than required."""
+
+    frame_start = clip.frame_start
+    frame_end = clip.frame_duration
+
+    for frame in range(frame_start, frame_end):
+        active_marker_count = 0
+        for track in clip.tracking.tracks:
+            if any(m.frame == frame and not m.mute for m in track.markers):
+                active_marker_count += 1
+        if active_marker_count < min_marker_count:
+            return frame
+
+    return None
+
+
 # -----------------------------------------------------------------------------
 # Blender operators for setup and running the tracking cycle
 # -----------------------------------------------------------------------------
@@ -183,6 +220,14 @@ class OT_RunAutoTracking(bpy.types.Operator):
             active_markers=[(50.0, 50.0), (400.0, 400.0)],
             frame_current=context.scene.frame_current,
         )
+
+        clip = get_movie_clip(context)
+        if clip:
+            delete_short_tracks(clip, config.min_track_length)
+            frame = find_first_insufficient_frame(clip, config.min_marker_count)
+            if frame is not None:
+                self.report({'INFO'}, f"Insufficient markers at frame {frame}")
+
         self.report({'INFO'}, "Auto tracking cycle executed")
         return {'FINISHED'}
 
