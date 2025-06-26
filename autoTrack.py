@@ -68,8 +68,9 @@ class WM_OT_auto_track(bpy.types.Operator):
             flush=True,
         )
         result = {'FINISHED'}
-        ctx = get_clip_context()
-        clip = ctx["space_data"].clip
+        autotracker = AutoTracker()
+        ctx = autotracker.ctx
+        clip = autotracker.clip
         prev_frame = bpy.context.scene.frame_current
         model_index = original_model_index
         max_cycles = MAX_CYCLES
@@ -243,6 +244,14 @@ def get_clip_context():
     raise RuntimeError("Kein aktiver Clip im Motion Tracking Editor gefunden.")
 
 
+class AutoTracker:
+    """Helper to encapsulate context and clip for tracking."""
+
+    def __init__(self, context=None):
+        self.ctx = context if context is not None else get_clip_context()
+        self.clip = self.ctx["space_data"].clip
+
+
 def detect_features_until_enough(
     motion_model="Perspective",
     playhead_min_markers=None,
@@ -250,8 +259,9 @@ def detect_features_until_enough(
     max_attempts=5,
     min_threshold=0.0001,
 ):
-    ctx = get_clip_context()
-    clip = ctx["space_data"].clip
+    autotracker = AutoTracker()
+    ctx = autotracker.ctx
+    clip = autotracker.clip
     clip.tracking.settings.default_motion_model = motion_model
     print(
         f"📐 Nutze Motion Model {clip.tracking.settings.default_motion_model}",
