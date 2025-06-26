@@ -177,10 +177,13 @@ def run_tracking_cycle(
 
         threshold_iter += 1
         clip = get_movie_clip(bpy.context)
+
+        # Nur löschen, wenn noch weiter iteriert wird
         if clip:
             for track in placed_tracks:
                 track.select = True
                 bpy.ops.clip.delete_track()
+            placed_tracks.clear()
 
         config.bad_markers.clear()
         config.placed_markers = 0
