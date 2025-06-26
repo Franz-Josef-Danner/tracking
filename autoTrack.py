@@ -343,9 +343,9 @@ def detect_features_until_enough(
         )
         lower_bound = int(target_markers * 0.8)
         upper_bound = int(target_markers * 1.2)
-        if lower_bound <= after <= upper_bound:
+        if lower_bound <= added <= upper_bound:
             print(
-                f"✅ Markeranzahl im Zielbereich ({lower_bound}–{upper_bound}) mit {after} Markern",
+                f"✅ Markeranzahl im Zielbereich ({lower_bound}–{upper_bound}) mit {added} neuen Markern",
                 flush=True,
             )
             print_track_lengths(clip)
