@@ -87,28 +87,37 @@ def detect_features(
 
 
 def _validate_markers(
-    markers: list[tuple[float, float]],
+    placed: list[tuple[tuple[float, float], bpy.types.MovieTrackingTrack]],
     active: list[tuple[float, float]],
     frame_width: int,
     frame_height: int,
     distance_threshold: float,
-) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
-    """Validate marker positions and return good and bad lists."""
+) -> tuple[
+    list[tuple[float, float]],
+    list[tuple[float, float]],
+    list[bpy.types.MovieTrackingTrack],
+    list[bpy.types.MovieTrackingTrack],
+]:
+    """Validate marker positions and return lists for good and bad markers."""
 
-    good: list[tuple[float, float]] = []
-    bad: list[tuple[float, float]] = []
+    good_markers: list[tuple[float, float]] = []
+    bad_markers: list[tuple[float, float]] = []
+    good_tracks: list[bpy.types.MovieTrackingTrack] = []
+    bad_tracks: list[bpy.types.MovieTrackingTrack] = []
 
-    for m in markers:
-        if not (0 <= m[0] <= frame_width and 0 <= m[1] <= frame_height):
+    for pos, track in placed:
+        if not (0 <= pos[0] <= frame_width and 0 <= pos[1] <= frame_height):
             continue
 
-        too_close = any(_distance(m, a) < distance_threshold for a in active)
+        too_close = any(_distance(pos, a) < distance_threshold for a in active)
         if too_close:
-            bad.append(m)
+            bad_markers.append(pos)
+            bad_tracks.append(track)
         else:
-            good.append(m)
+            good_markers.append(pos)
+            good_tracks.append(track)
 
-    return good, bad
+    return good_markers, bad_markers, good_tracks, bad_tracks
 
 
 def run_tracking_cycle(
@@ -138,13 +147,22 @@ def run_tracking_cycle(
     threshold_iter = 0
     while True:
         placed_markers, placed_tracks = detect_features()
-        good, bad = _validate_markers(
-            placed_markers,
+        clip = get_movie_clip(bpy.context)
+        good,
+        bad,
+        good_tracks,
+        bad_tracks = _validate_markers(
+            list(zip(placed_markers, placed_tracks)),
             active_markers,
             frame_width,
             frame_height,
             config.marker_distance,
         )
+
+        if clip:
+            for track in bad_tracks:
+                clip.tracking.tracks.remove(track)
+        placed_tracks = good_tracks
 
         config.good_markers = [str(m) for m in good]
         config.bad_markers = [str(m) for m in bad]
