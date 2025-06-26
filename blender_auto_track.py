@@ -121,9 +121,15 @@ def run_tracking_cycle(
     threshold_iter = 0
     while True:
         existing = {t.name for t in clip.tracking.tracks}
-        bpy.ops.clip.select_all(action='DESELECT')
-        # Set the detection threshold used by detect_features()
-        bpy.ops.clip.detect_features(threshold=config.threshold)
+        for area in bpy.context.window.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                override = bpy.context.copy()
+                override['area'] = area
+                override['region'] = area.regions[-1]  # Wichtig: Region muss gesetzt sein
+                with bpy.context.temp_override(**override):
+                    bpy.ops.clip.select_all(action='DESELECT')
+                    bpy.ops.clip.detect_features(threshold=config.threshold)
+                break
         print(f"Threshold vor detect_features: {config.threshold}")
         print(f"Anzahl Tracks nach detect_features: {len(clip.tracking.tracks)}")
         placed_tracks = []
