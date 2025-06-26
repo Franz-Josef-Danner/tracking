@@ -239,12 +239,34 @@ def rename_new_tracks(tracks, before_tracks):
             track.name = f"{NEW_PREFIX}{track.name}"
 
 
-def delete_new_tracks(tracks):
-    """Löscht alle Tracks, die mit NEW_ beginnen."""
+def delete_new_tracks(tracks, ctx=None):
+    """Löscht alle Tracks, die mit NEW_ beginnen.
+
+    ``tracks.remove`` ist bei einigen Blender-Versionen nicht vorhanden.
+    In diesem Fall nutzen wir das Operator-basierte Löschen und
+    benötigen daher ein Context-Override (``ctx``).
+    """
+
     for track in list(tracks):
         if track.name.startswith(NEW_PREFIX):
-            tracks.remove(track)
-            print(f"🗑 Entferne neuen Marker: {track.name}", flush=True)
+            if hasattr(tracks, "remove"):
+                # Neuere Blender-Versionen verfügen über ``remove``
+                tracks.remove(track)
+            elif ctx is not None:
+                # Fallback für ältere Versionen: Track selektieren und
+                # über Operator löschen
+                with bpy.context.temp_override(**ctx):
+                    bpy.ops.clip.select_all(action="DESELECT")
+                    track.select = True
+                    bpy.ops.clip.delete_track()
+            else:
+                # Wenn weder remove noch Context vorhanden ist, Track
+                # nicht löschen, um Fehler zu vermeiden
+                continue
+            # Tracknamen können problematische Zeichen enthalten. Über
+            # ``repr`` stellen wir sicher, dass sie unabhängig vom Encoding
+            # ausgegeben werden können.
+            print(f"🗑 Entferne neuen Marker: {repr(track.name)}", flush=True)
 
 
 def delete_short_tracks(ctx, clip, min_track_length, autotracker=None):
@@ -405,7 +427,7 @@ def detect_features_until_enough(
             break
         distance = int(width / 20)
         # 1. Vorherige NEW_ Marker bereinigen
-        delete_new_tracks(tracks)
+        delete_new_tracks(tracks, ctx)
         # 2. Referenz auf vorhandene Track-Objekte (nicht nur Namen)
         before_tracks = set(tracks[:])
         # Setze Playhead auf aktuellen Frame, damit neue Marker dort starten
@@ -435,13 +457,8 @@ def detect_features_until_enough(
         rename_new_tracks(tracks, before_tracks)
         for track in kept_tracks:
             autotracker.placed_markers.append(track.name)
-        with bpy.context.temp_override(**ctx):
-            bpy.ops.clip.select_all(action='SELECT')
-            # Tracking vorher ausführen
-            bpy.ops.clip.track_markers(backwards=False, sequence=True)
-        # Dann auswerten, ob die neuen Tracks lang genug waren
-        delete_short_tracks(ctx, clip, autotracker.min_track_length, autotracker)
-        # Jetzt Marker-Anzahl prüfen
+
+        # Jetzt Marker-Anzahl vor dem Tracking prüfen
         new_markers = [t for t in tracks if t not in before_tracks]
         added = len(new_markers)
         total = len([t for t in tracks if not t.name.startswith(NEW_PREFIX)])
@@ -456,7 +473,13 @@ def detect_features_until_enough(
                 f"✅ Markeranzahl im Zielbereich ({lower_bound}–{upper_bound}) mit {added} neuen Markern",
                 flush=True,
             )
+            # Marker erst jetzt tracken
+            with bpy.context.temp_override(**ctx):
+                bpy.ops.clip.select_all(action='SELECT')
+                bpy.ops.clip.track_markers(backwards=False, sequence=True)
+            # Track-Längen prüfen und kurze entfernen
             print_track_lengths(clip)
+            delete_short_tracks(ctx, clip, autotracker.min_track_length, autotracker)
             move_playhead_to_min_tracks(
                 ctx,
                 clip,
@@ -464,7 +487,7 @@ def detect_features_until_enough(
             )
             success = True
             break
-        delete_new_tracks(tracks)
+        delete_new_tracks(tracks, ctx)
         remaining = len([t for t in tracks if not t.name.startswith(NEW_PREFIX)])
         print(f"⚠ {remaining} Marker – versuche erneut", flush=True)
         old_threshold = threshold
