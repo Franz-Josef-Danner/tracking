@@ -121,7 +121,6 @@ def run_tracking_cycle(
     threshold_iter = 0
     while True:
         existing = {t.name for t in clip.tracking.tracks}
-        bpy.context.scene.clip = clip
         bpy.ops.clip.select_all(action='DESELECT')
         bpy.ops.clip.detect_features()
         placed_tracks = []
