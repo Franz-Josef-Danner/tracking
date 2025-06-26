@@ -17,9 +17,6 @@ MARKER_MULTIPLIER = 4
 # Prefixes used to separate newly added and permanent tracks
 NEW_PREFIX = "NEW_"
 LOCKED_PREFIX = "LOCKED_"
-# Custom property names to tag tracks created or locked by this script
-NEW_PROP = "autotracker_new"
-LOCKED_PROP = "autotracker_locked"
 # Motion models to cycle through when tracking stalls
 MOTION_MODELS = [
     "Perspective",
@@ -107,7 +104,7 @@ class WM_OT_auto_track(bpy.types.Operator):
                 result = {'CANCELLED'}
                 break
 
-            delete_short_tracks(ctx, clip, autotracker.min_track_length)
+            delete_short_tracks(ctx, clip, autotracker.min_track_length, autotracker)
             move_playhead_to_min_tracks(ctx, clip, initial_min_markers)
             bpy.context.view_layer.update()
 
@@ -161,35 +158,37 @@ def track_length(track):
     return end - start + 1
 
 
-def rename_new_tracks(tracks, before_tracks):
+def rename_new_tracks(tracks, before_tracks, autotracker):
     """Prefix newly created tracks so they can be distinguished."""
     for track in tracks:
-        if track not in before_tracks and not track.get(NEW_PROP):
+        if track not in before_tracks and track not in autotracker.new_tracks:
             if not track.name.startswith(NEW_PREFIX):
                 track.name = f"{NEW_PREFIX}{track.name}"
-            track[NEW_PROP] = True
+            autotracker.new_tracks.add(track)
 
 
-def delete_new_tracks(tracks):
+def delete_new_tracks(tracks, autotracker):
     """Löscht alle durch dieses Skript erstellten NEW_-Tracks."""
     for track in list(tracks):
-        if track.get(NEW_PROP):
+        if track in autotracker.new_tracks:
             tracks.remove(track)
+            autotracker.new_tracks.remove(track)
             print(f"🗑 Entferne neuen Marker: {track.name}", flush=True)
 
 
-def delete_short_tracks(ctx, clip, min_track_length):
+def delete_short_tracks(ctx, clip, min_track_length, autotracker):
     """Remove short tracks and lock long living ones."""
     tracks = clip.tracking.tracks
     with bpy.context.temp_override(**ctx):
         for track in list(tracks):
             length = track_length(track)
-            is_locked = track.lock or track.get(LOCKED_PROP, False)
+            is_locked = track.lock or track in autotracker.locked_tracks
             if length >= min_track_length and not is_locked:
                 if not track.name.startswith(LOCKED_PREFIX):
                     track.name = f"{LOCKED_PREFIX}{track.name}"
                 track.lock = True
-                track[LOCKED_PROP] = True
+                autotracker.locked_tracks.add(track)
+                autotracker.new_tracks.discard(track)
             if length < min_track_length and not is_locked:
                 track.select = True
             else:
@@ -203,6 +202,9 @@ def delete_short_tracks(ctx, clip, min_track_length):
                     f"🗑 Entferne {removed} kurze Tracks (<{min_track_length} Frames)",
                     flush=True,
                 )
+            # Clean up references to deleted tracks
+            autotracker.new_tracks = {t for t in autotracker.new_tracks if t in tracks}
+            autotracker.locked_tracks = {t for t in autotracker.locked_tracks if t in tracks}
 
 
 def print_track_lengths(clip):
@@ -277,6 +279,9 @@ class AutoTracker:
         self.min_track_length = min_track_length
         self.ctx = context if context is not None else get_clip_context()
         self.clip = self.ctx["space_data"].clip
+        # Keep track of markers created or locked by this script
+        self.new_tracks = set()
+        self.locked_tracks = set()
 
 
 def detect_features_until_enough(
@@ -322,7 +327,7 @@ def detect_features_until_enough(
             break
         distance = int(int(width / 40) / (((log10(threshold) / -1) + 1) / 2))
         # 1. Vorherige NEW_ Marker bereinigen
-        delete_new_tracks(tracks)
+        delete_new_tracks(tracks, autotracker)
         # 2. Referenz auf vorhandene Track-Objekte (nicht nur Namen)
         before_tracks = set(tracks[:])
         # Setze Playhead auf aktuellen Frame, damit neue Marker dort starten
@@ -335,17 +340,17 @@ def detect_features_until_enough(
                 margin=margin,
                 min_distance=distance,
             )
-        rename_new_tracks(tracks, before_tracks)
+        rename_new_tracks(tracks, before_tracks, autotracker)
         with bpy.context.temp_override(**ctx):
             bpy.ops.clip.select_all(action='SELECT')
             # Tracking vorher ausführen
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
         # Dann auswerten, ob die neuen Tracks lang genug waren
-        delete_short_tracks(ctx, clip, autotracker.min_track_length)
+        delete_short_tracks(ctx, clip, autotracker.min_track_length, autotracker)
         # Jetzt Marker-Anzahl prüfen
         new_markers = [t for t in tracks if t not in before_tracks]
         added = len(new_markers)
-        total = len([t for t in tracks if not t.get(NEW_PROP)])
+        total = len([t for t in tracks if t not in autotracker.new_tracks])
         print(
             f"Threshold {threshold:.3f}: {added} neue Marker (insgesamt {total})",
             flush=True,
@@ -365,8 +370,8 @@ def detect_features_until_enough(
             )
             success = True
             break
-        delete_new_tracks(tracks)
-        remaining = len([t for t in tracks if not t.get(NEW_PROP)])
+        delete_new_tracks(tracks, autotracker)
+        remaining = len([t for t in tracks if t not in autotracker.new_tracks])
         print(f"⚠ {remaining} Marker – versuche erneut", flush=True)
         old_threshold = threshold
         if added > 0:
