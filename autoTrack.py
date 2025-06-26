@@ -264,12 +264,15 @@ def delete_new_tracks(tracks, ctx=None):
                 # nicht löschen, um Fehler zu vermeiden
                 continue
             # Tracknamen können in einigen Umgebungen nicht als Unicode
-            # ausgegeben werden. In diesem Fall nutzen wir einen Fallback.
+            # ausgegeben werden. Daher testen wir zuerst das Encoding und
+            # fallen andernfalls auf eine sichere Ausgabe zurück.
+            name = track.name
             try:
-                print(f"🗑 Entferne neuen Marker: {track.name}", flush=True)
+                name.encode("utf-8")
+                print(f"🗑 Entferne neuen Marker: {name}", flush=True)
             except UnicodeEncodeError:
                 print(
-                    "🗑 Entferne Marker (Name konnte nicht angezeigt werden)",
+                    "🗑 Entferne Marker (Name konnte nicht als UTF-8 ausgegeben werden)",
                     flush=True,
                 )
 
