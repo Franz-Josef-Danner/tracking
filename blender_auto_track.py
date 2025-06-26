@@ -279,15 +279,15 @@ class OT_RunAutoTracking(bpy.types.Operator):
             min_track_length=context.scene.min_track_length,
         )
         clip = get_movie_clip(context)
-        active_positions = []
-        if clip:
-            active_positions = get_active_marker_positions(
-                clip, context.scene.frame_current
-            )
+        active_markers = (
+            get_active_marker_positions(clip, context.scene.frame_current)
+            if clip
+            else []
+        )
 
         run_tracking_cycle(
             config,
-            active_markers=active_positions,
+            active_markers=active_markers,
             frame_current=context.scene.frame_current,
         )
 
