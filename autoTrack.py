@@ -35,7 +35,18 @@ def escape_pressed() -> bool:
     try:
         return bool(ctypes.windll.user32.GetAsyncKeyState(0x1B) & 0x8000)
     except Exception:
-        return False
+        pass
+
+    # Fallback for non-Windows systems
+    try:
+        wm = bpy.context.window_manager
+        if hasattr(wm, "events"):
+            for evt in wm.events:
+                if evt.type == 'ESC' and evt.value == 'PRESS':
+                    return True
+    except Exception:
+        pass
+    return False
 
 
 
