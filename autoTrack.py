@@ -75,6 +75,9 @@ class WM_OT_auto_track(bpy.types.Operator):
         result = {'FINISHED'}
         ctx = autotracker.ctx
         clip = autotracker.clip
+        # Always start tracking from the first frame of the clip
+        bpy.context.scene.frame_set(clip.frame_start)
+        print(f"⏮ Starte Tracking bei Frame {clip.frame_start}", flush=True)
         prev_frame = bpy.context.scene.frame_current
         model_index = original_model_index
         marker_boost = 0
