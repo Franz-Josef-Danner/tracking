@@ -254,5 +254,4 @@ def unregister() -> None:
     del bpy.types.Scene.min_track_length
 
 
-if __name__ == "__main__":
-    register()
+register()
