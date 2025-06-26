@@ -1,6 +1,7 @@
 import bpy
 import ctypes
 from math import log10
+import time
 
 # Show console on Windows
 try:
@@ -76,7 +77,9 @@ class WM_OT_auto_track(bpy.types.Operator):
         marker_boost = 0
         max_cycles = MAX_CYCLES
         cycle_count = 0
+        start_time_all = time.time()
         while True:
+            cycle_start = time.time()
             cycle_count += 1
             if cycle_count >= max_cycles:
                 print(
@@ -119,12 +122,16 @@ class WM_OT_auto_track(bpy.types.Operator):
                     marker_boost -= 10
                     MIN_MARKERS = initial_min_markers + marker_boost
                     print(f"⬇ MIN_MARKERS reduziert auf {MIN_MARKERS}", flush=True)
+            cycle_duration = time.time() - cycle_start
+            print(f"⏱ Zyklusdauer: {cycle_duration:.2f} Sekunden", flush=True)
             prev_frame = current_frame
 
             if find_first_frame_with_min_tracks(clip, MIN_MARKERS) is None:
                 print("✅ Keine schwachen Stellen mehr gefunden", flush=True)
                 break
         print("🏁 Beende Auto-Tracking", flush=True)
+        total_duration = time.time() - start_time_all
+        print(f"⏱ Gesamtdauer: {total_duration:.2f} Sekunden", flush=True)
         return result
 
 
