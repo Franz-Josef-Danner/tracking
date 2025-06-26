@@ -19,6 +19,21 @@ MARKER_MULTIPLIER = 4
 # Prefixes used to separate newly added and permanent tracks
 NEW_PREFIX = "NEW_"
 LOCKED_PREFIX = "LOCKED_"
+# Helper --------------------------------------------------------------------
+
+def safe_track_name(track, placeholder="<invalid>"):
+    """Return a track name, replacing undecodable bytes if necessary."""
+    try:
+        name = track.name
+    except UnicodeDecodeError:
+        name = placeholder
+        try:
+            track.name = placeholder
+        except Exception:
+            pass
+    else:
+        name = name.encode("utf-8", errors="replace").decode("utf-8")
+    return name
 # Motion models to cycle through when tracking stalls
 MOTION_MODELS = [
     "LocRotScale",
@@ -200,7 +215,7 @@ def save_session_data(autotracker, total_duration):
     clip = autotracker.clip
     tracks = clip.tracking.tracks
     placed_markers = autotracker.placed_markers
-    active_marker = tracks.active.name if tracks.active else ""
+    active_marker = safe_track_name(tracks.active) if tracks.active else ""
     bad_markers = autotracker.bad_markers
     good_markers = sum(1 for t in tracks if track_length(t) >= autotracker.min_track_length)
     scene_time = time.strftime("%H:%M:%S", time.gmtime(total_duration))
@@ -208,7 +223,7 @@ def save_session_data(autotracker, total_duration):
     width = clip.size[0]
     marker_distance = int(width / 20)
     threshold_marker_count_plus = max(0, len(placed_markers) - autotracker.min_markers)
-    track_lengths = autotracker.track_lengths or {t.name: track_length(t) for t in tracks}
+    track_lengths = autotracker.track_lengths or {safe_track_name(t): track_length(t) for t in tracks}
 
     data = {
         "Start Frame": clip.frame_start,
@@ -235,8 +250,9 @@ def save_session_data(autotracker, total_duration):
 def rename_new_tracks(tracks, before_tracks):
     """Prefix newly created tracks so they can be distinguished."""
     for track in tracks:
-        if track not in before_tracks and not track.name.startswith(NEW_PREFIX):
-            track.name = f"{NEW_PREFIX}{track.name}"
+        name = safe_track_name(track)
+        if track not in before_tracks and not name.startswith(NEW_PREFIX):
+            track.name = f"{NEW_PREFIX}{name}"
 
 
 def delete_new_tracks(tracks, ctx=None):
@@ -248,7 +264,8 @@ def delete_new_tracks(tracks, ctx=None):
     """
 
     for track in list(tracks):
-        if track.name.startswith(NEW_PREFIX):
+        name = safe_track_name(track)
+        if name.startswith(NEW_PREFIX):
             if hasattr(tracks, "remove"):
                 # Neuere Blender-Versionen verfügen über ``remove``
                 tracks.remove(track)
@@ -263,10 +280,10 @@ def delete_new_tracks(tracks, ctx=None):
                 # Wenn weder remove noch Context vorhanden ist, Track
                 # nicht löschen, um Fehler zu vermeiden
                 continue
-            # Tracknamen können problematische Zeichen enthalten. Über
-            # ``repr`` stellen wir sicher, dass sie unabhängig vom Encoding
-            # ausgegeben werden können.
-            print(f"🗑 Entferne neuen Marker: {repr(track.name)}", flush=True)
+            # Tracknamen können problematische Zeichen enthalten. Um zu
+            # verhindern, dass ein UnicodeDecodeError beim Auslesen entsteht,
+            # ersetzen wir problematische Bytes.
+            print(f"🗑 Entferne neuen Marker: {name}", flush=True)
 
 
 def delete_short_tracks(ctx, clip, min_track_length, autotracker=None):
@@ -279,9 +296,10 @@ def delete_short_tracks(ctx, clip, min_track_length, autotracker=None):
     with bpy.context.temp_override(**ctx):
         for track in list(tracks):
             length = track_length(track)
-            is_locked = track.lock or track.name.startswith(LOCKED_PREFIX)
+            name = safe_track_name(track)
+            is_locked = track.lock or name.startswith(LOCKED_PREFIX)
             if length >= min_track_length and not is_locked:
-                track.name = f"{LOCKED_PREFIX}{track.name}"
+                track.name = f"{LOCKED_PREFIX}{name}"
                 track.lock = True
             if length < min_track_length and not is_locked:
                 track.select = True
@@ -289,7 +307,7 @@ def delete_short_tracks(ctx, clip, min_track_length, autotracker=None):
                 track.select = False
 
         if any(track.select for track in tracks):
-            selected_names = [t.name for t in tracks if t.select]
+            selected_names = [safe_track_name(t) for t in tracks if t.select]
             removed = len(selected_names)
             if autotracker is not None:
                 autotracker.bad_markers.extend(selected_names)
@@ -301,7 +319,7 @@ def delete_short_tracks(ctx, clip, min_track_length, autotracker=None):
                 )
 
     # Collect lengths of all remaining tracks after cleaning
-    track_lengths = {t.name: track_length(t) for t in tracks}
+    track_lengths = {safe_track_name(t): track_length(t) for t in tracks}
     if autotracker is not None:
         autotracker.track_lengths = track_lengths
     return track_lengths
@@ -315,8 +333,9 @@ def print_track_lengths(clip):
         start, end = track_span(track)
         if start is None:
             continue
+        name = safe_track_name(track)
         print(
-            f"    {track.name}: {length} Frames (von {start} bis {end})",
+            f"    {name}: {length} Frames (von {start} bis {end})",
             flush=True,
         )
 
@@ -449,19 +468,20 @@ def detect_features_until_enough(
                 continue
             x, y = track.markers[0].co
             if x < 0 or y < 0 or x > width or y > height:
-                autotracker.bad_markers.append(track.name)
+                name = safe_track_name(track)
+                autotracker.bad_markers.append(name)
                 tracks.remove(track)
-                print(f"🗑 Entferne Marker außerhalb des Bildes: {track.name}", flush=True)
+                print(f"🗑 Entferne Marker außerhalb des Bildes: {name}", flush=True)
             else:
                 kept_tracks.append(track)
         rename_new_tracks(tracks, before_tracks)
         for track in kept_tracks:
-            autotracker.placed_markers.append(track.name)
+            autotracker.placed_markers.append(safe_track_name(track))
 
         # Jetzt Marker-Anzahl vor dem Tracking prüfen
         new_markers = [t for t in tracks if t not in before_tracks]
         added = len(new_markers)
-        total = len([t for t in tracks if not t.name.startswith(NEW_PREFIX)])
+        total = len([t for t in tracks if not safe_track_name(t).startswith(NEW_PREFIX)])
         print(
             f"Threshold {threshold:.3f}: {added} neue Marker (insgesamt {total})",
             flush=True,
@@ -488,7 +508,7 @@ def detect_features_until_enough(
             success = True
             break
         delete_new_tracks(tracks, ctx)
-        remaining = len([t for t in tracks if not t.name.startswith(NEW_PREFIX)])
+        remaining = len([t for t in tracks if not safe_track_name(t).startswith(NEW_PREFIX)])
         print(f"⚠ {remaining} Marker – versuche erneut", flush=True)
         old_threshold = threshold
         # Adjust threshold based on how many markers were added relative to the
