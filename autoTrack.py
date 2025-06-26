@@ -73,6 +73,7 @@ class WM_OT_auto_track(bpy.types.Operator):
         clip = autotracker.clip
         prev_frame = bpy.context.scene.frame_current
         model_index = original_model_index
+        marker_boost = 0
         max_cycles = MAX_CYCLES
         cycle_count = 0
         while True:
@@ -99,7 +100,8 @@ class WM_OT_auto_track(bpy.types.Operator):
 
             current_frame = bpy.context.scene.frame_current
             if current_frame == prev_frame:
-                MIN_MARKERS += 10
+                marker_boost += 10
+                MIN_MARKERS = initial_min_markers + marker_boost
                 model_index = (model_index + 1) % len(MOTION_MODELS)
                 print(
                     f"🔄 Selber Frame erneut erreicht – erhöhe MIN_MARKERS auf {MIN_MARKERS} "
@@ -113,7 +115,10 @@ class WM_OT_auto_track(bpy.types.Operator):
                         flush=True,
                     )
                 model_index = original_model_index
-                MIN_MARKERS = initial_min_markers
+                if marker_boost > 0:
+                    marker_boost -= 10
+                    MIN_MARKERS = initial_min_markers + marker_boost
+                    print(f"⬇ MIN_MARKERS reduziert auf {MIN_MARKERS}", flush=True)
             prev_frame = current_frame
 
             if find_first_frame_with_min_tracks(clip, MIN_MARKERS) is None:
