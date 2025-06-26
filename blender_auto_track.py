@@ -123,9 +123,8 @@ def run_tracking_cycle(
         existing = {t.name for t in clip.tracking.tracks}
         bpy.ops.clip.select_all(action='DESELECT')
         # Set the detection threshold used by detect_features()
-        clip.tracking.settings.detect_threshold = config.threshold
+        bpy.ops.clip.detect_features(threshold=config.threshold)
         print(f"Threshold vor detect_features: {config.threshold}")
-        bpy.ops.clip.detect_features()
         print(f"Anzahl Tracks nach detect_features: {len(clip.tracking.tracks)}")
         placed_tracks = []
         placed_markers = []
@@ -345,5 +344,6 @@ def unregister() -> None:
 
 
 register()
+
 
 
