@@ -201,7 +201,7 @@ def delete_short_tracks(clip: bpy.types.MovieClip, min_track_length: int) -> Non
     for track in list(clip.tracking.tracks):
         tracked_frames = sum(1 for m in track.markers if not m.mute)
         if tracked_frames < min_track_length:
-            clip.tracking.tracks.remove(track)
+            clip.tracking.tracks.remove(track.name)
 
 
 def find_first_insufficient_frame(
@@ -344,6 +344,7 @@ def unregister() -> None:
 
 
 register()
+
 
 
 
