@@ -357,22 +357,14 @@ def detect_features_until_enough(
         delete_new_tracks(tracks)
         print(f"⚠ {after} Marker – versuche erneut", flush=True)
         old_threshold = threshold
-        if after < lower_bound:
-            if added > 0:
-                threshold /= (target_markers / added)
-            else:
-                threshold *= 0.5  # Bei 0 neuen Markern aggressiver reduzieren
-            print(
-                f"🔻 Zu wenig Marker – Threshold reduziert: {old_threshold:.4f} → {threshold:.4f}",
-                flush=True,
-            )
-        elif after > upper_bound:
-            factor = after / target_markers
-            threshold *= factor
-            print(
-                f"🔺 Zu viele Marker – Threshold erhöht: {old_threshold:.4f} → {threshold:.4f}",
-                flush=True,
-            )
+        delta = after - target_markers
+        adjustment_strength = 0.1  # Dämpfungsfaktor (0.05–0.2 empfohlen)
+        threshold *= (1.0 - adjustment_strength * (delta / target_markers))
+        threshold = max(min(threshold, 1.0), min_threshold)
+        print(
+            f"🔁 Threshold angepasst: {old_threshold:.4f} → {threshold:.4f} (Delta: {delta})",
+            flush=True,
+        )
         if threshold < min_threshold:
             threshold = min_threshold
         if threshold == min_threshold and after < target_markers:
