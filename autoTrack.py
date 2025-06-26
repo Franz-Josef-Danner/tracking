@@ -166,9 +166,9 @@ def save_session_data(autotracker, total_duration):
     """Save session data as JSON in the project directory."""
     clip = autotracker.clip
     tracks = clip.tracking.tracks
-    placed_markers = len([t for t in tracks if not t.name.startswith(NEW_PREFIX)])
+    placed_markers = autotracker.placed_markers
     active_marker = tracks.active.name if tracks.active else ""
-    bad_markers = sum(1 for t in tracks if track_length(t) < autotracker.min_track_length)
+    bad_markers = autotracker.bad_markers
     good_markers = sum(1 for t in tracks if track_length(t) >= autotracker.min_track_length)
     scene_time = time.strftime("%H:%M:%S", time.gmtime(total_duration))
     threshold = clip.get("last_threshold")
@@ -176,7 +176,7 @@ def save_session_data(autotracker, total_duration):
     marker_distance = None
     if threshold is not None:
         marker_distance = int(int(width / 40) / (((log10(threshold) / -1) + 1) / 2))
-    threshold_marker_count_plus = max(0, placed_markers - autotracker.min_markers)
+    threshold_marker_count_plus = max(0, len(placed_markers) - autotracker.min_markers)
     data = {
         "Start Frame": clip.frame_start,
         "Placed Markers": placed_markers,
@@ -311,6 +311,8 @@ class AutoTracker:
         self.min_track_length = min_track_length
         self.ctx = context if context is not None else get_clip_context()
         self.clip = self.ctx["space_data"].clip
+        self.placed_markers = []
+        self.bad_markers = []
 
 
 def detect_features_until_enough(
@@ -369,7 +371,23 @@ def detect_features_until_enough(
                 margin=margin,
                 min_distance=distance,
             )
+        # Filter out tracks whose first marker lies outside the clip
+        new_tracks = [t for t in tracks if t not in before_tracks]
+        width, height = clip.size
+        kept_tracks = []
+        for track in new_tracks:
+            if not track.markers:
+                continue
+            x, y = track.markers[0].co
+            if x < 0 or y < 0 or x > width or y > height:
+                autotracker.bad_markers.append(track.name)
+                tracks.remove(track)
+                print(f"🗑 Entferne Marker außerhalb des Bildes: {track.name}", flush=True)
+            else:
+                kept_tracks.append(track)
         rename_new_tracks(tracks, before_tracks)
+        for track in kept_tracks:
+            autotracker.placed_markers.append(track.name)
         with bpy.context.temp_override(**ctx):
             bpy.ops.clip.select_all(action='SELECT')
             # Tracking vorher ausführen
