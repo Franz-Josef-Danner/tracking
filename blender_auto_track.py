@@ -128,8 +128,8 @@ def run_tracking_cycle(
             print("Tracking beendet")
             break
 
-        config.threshold = config.threshold / (
-            config.threshold_marker_count / (config.placed_markers + 0.1)
+        config.threshold = config.threshold * (
+            (config.placed_markers + 0.1) / config.threshold_marker_count
         )
 
         print(f"Neuer Threshold: {config.threshold}")
