@@ -42,7 +42,7 @@ MOTION_MODELS = [
     "Perspective",
     "LocRot",
 ]
-MAX_CYCLES = 5
+MAX_CYCLES = 10
 
 def escape_pressed() -> bool:
     """Return True if the Escape key is currently pressed."""
