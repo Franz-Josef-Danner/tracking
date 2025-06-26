@@ -26,7 +26,7 @@ class TrackingConfig:
             "LocRot",
         ]
     )
-    threshold: float = 0.1
+    threshold: float = 1.0
     feature_detection: bool = True
     placed_markers: int = 0
     trigger_tracker: bool = False
