@@ -216,6 +216,21 @@ def find_first_insufficient_frame(
     return None
 
 
+def get_active_marker_positions(
+    clip: bpy.types.MovieClip, frame: int
+) -> list[tuple[float, float]]:
+    """Liefert Positionen aller Marker, die im gegebenen Frame aktiv sind."""
+    positions: list[tuple[float, float]] = []
+    width, height = clip.size
+    for track in clip.tracking.tracks:
+        for marker in track.markers:
+            if marker.frame == frame and not marker.mute:
+                pos = (marker.co[0] * width, marker.co[1] * height)
+                positions.append(pos)
+                break  # Nur ein Marker pro Track
+    return positions
+
+
 # -----------------------------------------------------------------------------
 # Blender operators for setup and running the tracking cycle
 # -----------------------------------------------------------------------------
@@ -263,9 +278,16 @@ class OT_RunAutoTracking(bpy.types.Operator):
             min_marker_count=context.scene.min_marker_count,
             min_track_length=context.scene.min_track_length,
         )
+        clip = get_movie_clip(context)
+        active_positions = []
+        if clip:
+            active_positions = get_active_marker_positions(
+                clip, context.scene.frame_current
+            )
+
         run_tracking_cycle(
             config,
-            active_markers=[(50.0, 50.0), (400.0, 400.0)],
+            active_markers=active_positions,
             frame_current=context.scene.frame_current,
         )
 
