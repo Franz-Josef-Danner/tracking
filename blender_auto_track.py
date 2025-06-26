@@ -54,14 +54,21 @@ def _distance(a: tuple[float, float], b: tuple[float, float]) -> float:
     return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
 
 
-def detect_features() -> list[tuple[float, float]]:
-    """Run Blender's feature detection on the active clip."""
+def detect_features(
+    ) -> tuple[
+        list[tuple[float, float]], list[bpy.types.MovieTrackingTrack]
+    ]:
+    """Run Blender's feature detection on the active clip.
+
+    Returns a tuple ``(positions, tracks)`` with the detected marker
+    positions and the corresponding ``MovieTrackingTrack`` objects.
+    """
 
     context = bpy.context
     clip = get_movie_clip(context)
     if not clip:
         print("No active MovieClip found for feature detection")
-        return []
+        return [], []
 
     existing = {t.name for t in clip.tracking.tracks}
 
@@ -69,12 +76,14 @@ def detect_features() -> list[tuple[float, float]]:
 
     width, height = clip.size
     new_positions: list[tuple[float, float]] = []
+    new_tracks: list[bpy.types.MovieTrackingTrack] = []
     for track in clip.tracking.tracks:
         if track.name not in existing and track.markers:
             co = track.markers[0].co
             new_positions.append((co[0] * width, co[1] * height))
+            new_tracks.append(track)
 
-    return new_positions
+    return new_positions, new_tracks
 
 
 def _validate_markers(
@@ -128,7 +137,7 @@ def run_tracking_cycle(
 
     threshold_iter = 0
     while True:
-        placed_markers = detect_features()
+        placed_markers, placed_tracks = detect_features()
         good, bad = _validate_markers(
             placed_markers,
             active_markers,
@@ -159,6 +168,11 @@ def run_tracking_cycle(
         print(f"Neuer Threshold: {config.threshold}")
 
         threshold_iter += 1
+        clip = get_movie_clip(bpy.context)
+        if clip:
+            for track in placed_tracks:
+                clip.tracking.tracks.remove(track)
+
         config.bad_markers.clear()
         config.placed_markers = 0
 
