@@ -159,10 +159,10 @@ def track_length(track):
     return end - start + 1
 
 
-def rename_new_tracks(tracks, before_names):
+def rename_new_tracks(tracks, before_tracks):
     """Prefix newly created tracks so they can be distinguished."""
     for track in tracks:
-        if track.name not in before_names and not track.name.startswith(NEW_PREFIX):
+        if track not in before_tracks and not track.name.startswith(NEW_PREFIX):
             track.name = f"{NEW_PREFIX}{track.name}"
 
 
@@ -316,7 +316,10 @@ def detect_features_until_enough(
             print("❌ Abgebrochen mit Escape", flush=True)
             break
         distance = int(int(width / 40) / (((log10(threshold) / -1) + 1) / 2))
-        before_names = {t.name for t in tracks}
+        # 1. Vorherige NEW_ Marker bereinigen
+        delete_new_tracks(tracks)
+        # 2. Referenz auf vorhandene Track-Objekte (nicht nur Namen)
+        before_tracks = set(tracks[:])
         # Setze Playhead auf aktuellen Frame, damit neue Marker dort starten
         current_frame = bpy.context.scene.frame_current
         with bpy.context.temp_override(**ctx):
@@ -327,7 +330,7 @@ def detect_features_until_enough(
                 margin=margin,
                 min_distance=distance,
             )
-        rename_new_tracks(tracks, before_names)
+        rename_new_tracks(tracks, before_tracks)
         with bpy.context.temp_override(**ctx):
             bpy.ops.clip.select_all(action='SELECT')
             # Tracking vorher ausführen
@@ -335,7 +338,8 @@ def detect_features_until_enough(
         # Dann auswerten, ob die neuen Tracks lang genug waren
         delete_short_tracks(ctx, clip)
         # Jetzt Marker-Anzahl prüfen
-        added = sum(1 for t in tracks if t.name.startswith(NEW_PREFIX))
+        new_markers = [t for t in tracks if t not in before_tracks]
+        added = len(new_markers)
         total = len([t for t in tracks if not t.name.startswith(NEW_PREFIX)])
         print(
             f"Threshold {threshold:.3f}: {added} neue Marker (insgesamt {total})",
@@ -357,7 +361,8 @@ def detect_features_until_enough(
             success = True
             break
         delete_new_tracks(tracks)
-        print(f"⚠ {total} Marker – versuche erneut", flush=True)
+        remaining = len([t for t in tracks if not t.name.startswith(NEW_PREFIX)])
+        print(f"⚠ {remaining} Marker – versuche erneut", flush=True)
         old_threshold = threshold
         if added > 0:
             threshold = threshold / (MIN_MARKERS / added)
