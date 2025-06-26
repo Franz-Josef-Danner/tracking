@@ -77,9 +77,85 @@ def parse_args() -> TrackingConfig:
     )
 
 
+def _distance(a: tuple[float, float], b: tuple[float, float]) -> float:
+    """Return Euclidean distance between two points."""
+    return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
+
+
+def detect_features() -> list[tuple[float, float]]:
+    """Dummy feature detection returning sample marker positions."""
+    # In a real application this would run Blender's feature detection.
+    return [
+        (100.0, 100.0),
+        (150.0, 150.0),
+        (500.0, 500.0),
+        (2000.0, 50.0),  # intentionally outside the default 1920 width
+    ]
+
+
+def run_tracking_cycle(
+    config: TrackingConfig,
+    active_markers: list[tuple[float, float]],
+    frame_width: int = 1920,
+    frame_height: int = 1080,
+) -> None:
+    """Simulate one tracking cycle following the described algorithm."""
+
+    # Save the playhead position as the start frame
+    config.start_frame = config.scene_time
+
+    # Trigger feature detection and store placed marker positions
+    placed_markers = detect_features()
+    config.placed_markers = len(placed_markers)
+
+    # Filter markers that lie outside the frame bounds
+    in_frame = [
+        m
+        for m in placed_markers
+        if 0 <= m[0] < frame_width and 0 <= m[1] < frame_height
+    ]
+
+    good: list[tuple[float, float]] = []
+    bad: list[tuple[float, float]] = []
+
+    # Compare distance to active markers
+    for m in in_frame:
+        too_close = any(_distance(m, a) < config.marker_distance for a in active_markers)
+        if too_close:
+            bad.append(m)
+        else:
+            good.append(m)
+
+    config.good_markers = [str(m) for m in good]
+    config.bad_markers = [str(m) for m in bad]
+    config.placed_markers = len(good)
+
+    # Adjust threshold if placed markers are outside the allowed range
+    if (
+        config.placed_markers < config.min_marker_range
+        or config.placed_markers > config.max_marker_range
+    ):
+        config.threshold = config.threshold / (
+            config.threshold_marker_count / (config.placed_markers + 0.1)
+        )
+
+    # Clean up for next iteration
+    config.placed_markers = 0
+    config.bad_markers.clear()
+
+
 def main() -> None:
     config = parse_args()
     print("Tracking configuration:")
+    for field_name, value in config.__dict__.items():
+        print(f"  {field_name}: {value}")
+
+    # Example call using two active markers. In practice these would be
+    # sourced from the current tracking data.
+    active = [(50.0, 50.0), (400.0, 400.0)]
+    run_tracking_cycle(config, active)
+
+    print("\nConfiguration after tracking cycle:")
     for field_name, value in config.__dict__.items():
         print(f"  {field_name}: {value}")
 
