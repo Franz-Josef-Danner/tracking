@@ -78,6 +78,7 @@ class WM_OT_auto_track(bpy.types.Operator):
         max_cycles = MAX_CYCLES
         cycle_count = 0
         start_time_all = time.time()
+        min_playhead_position = bpy.context.scene.frame_current
         while True:
             cycle_start = time.time()
             cycle_count += 1
@@ -104,7 +105,12 @@ class WM_OT_auto_track(bpy.types.Operator):
                 break
 
             delete_short_tracks(ctx, clip)
-            move_playhead_to_min_tracks(ctx, clip, MIN_MARKERS)
+            frame = move_playhead_to_min_tracks(ctx, clip, MIN_MARKERS, min_playhead_position)
+            if frame is None:
+                print("✅ Keine weiteren schwachen Stellen mehr hinter aktuellem Playhead", flush=True)
+                break
+            if frame > min_playhead_position:
+                min_playhead_position = frame
             bpy.context.view_layer.update()
 
             current_frame = bpy.context.scene.frame_current
@@ -132,8 +138,8 @@ class WM_OT_auto_track(bpy.types.Operator):
             print(f"⏱ Zyklusdauer: {cycle_duration:.2f} Sekunden", flush=True)
             prev_frame = current_frame
 
-            if find_first_frame_with_min_tracks(clip, MIN_MARKERS) is None:
-                print("✅ Keine schwachen Stellen mehr gefunden", flush=True)
+            if find_first_frame_with_min_tracks(clip, MIN_MARKERS, min_frame=min_playhead_position) is None:
+                print("✅ Keine weiteren schwachen Stellen mehr hinter aktuellem Playhead", flush=True)
                 break
         print("🏁 Beende Auto-Tracking", flush=True)
         total_duration = time.time() - start_time_all
@@ -212,9 +218,9 @@ def print_track_lengths(clip):
         )
 
 
-def find_first_frame_with_min_tracks(clip, min_markers):
-    """Return the first frame with only ``min_markers`` active tracks."""
-    start_frame = clip.frame_start
+def find_first_frame_with_min_tracks(clip, min_markers, *, min_frame=None):
+    """Return the first frame with only ``min_markers`` active tracks starting from ``min_frame``."""
+    start_frame = clip.frame_start if min_frame is None else max(clip.frame_start, min_frame)
     end_frame = start_frame + clip.frame_duration - 1
     tracks = clip.tracking.tracks
     for frame in range(start_frame, end_frame + 1):
@@ -227,17 +233,18 @@ def find_first_frame_with_min_tracks(clip, min_markers):
     return None
 
 
-def move_playhead_to_min_tracks(ctx, clip, min_markers):
+def move_playhead_to_min_tracks(ctx, clip, min_markers, min_frame=None):
     """Set the playhead to the frame where only ``min_markers`` remain."""
-    frame = find_first_frame_with_min_tracks(clip, min_markers)
+    frame = find_first_frame_with_min_tracks(clip, min_markers, min_frame=min_frame)
     if frame is None:
-        return
+        return None
     with bpy.context.temp_override(**ctx):
         bpy.context.scene.frame_set(frame)
     print(
         f"⏩ Setze Playhead auf Frame {frame} (nur noch {min_markers} aktive Tracks)",
         flush=True,
     )
+    return frame
 
 
 def get_clip_context():
