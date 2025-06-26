@@ -1,6 +1,5 @@
 import bpy
 import ctypes
-from math import log10
 import time
 import os
 import json
