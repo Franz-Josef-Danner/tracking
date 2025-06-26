@@ -103,7 +103,7 @@ class WM_OT_auto_track(bpy.types.Operator):
                 autotracker,
                 motion_model,
                 initial_min_markers,
-                max_attempts=50,
+                max_attempts=10,
             ):
                 result = {'CANCELLED'}
                 break
@@ -340,7 +340,7 @@ def detect_features_until_enough(
     motion_model="Perspective",
     playhead_min_markers=None,
     *,
-    max_attempts=5,
+    max_attempts=10,
     min_threshold=0.0001,
 ):
     ctx = autotracker.ctx
