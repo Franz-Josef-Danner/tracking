@@ -130,10 +130,7 @@ def run_tracking_cycle(
                 placed_tracks.append(track)
                 placed_markers.append(track.markers[0])
 
-        good,
-        bad,
-        good_tracks,
-        bad_tracks = _validate_markers(
+        good, bad, good_tracks, bad_tracks = _validate_markers(
             list(zip(placed_markers, placed_tracks)),
             active_markers,
             frame_width,
