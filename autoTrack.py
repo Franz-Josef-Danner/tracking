@@ -203,8 +203,9 @@ def delete_short_tracks(ctx, clip, min_track_length, autotracker):
                     flush=True,
                 )
             # Clean up references to deleted tracks
-            autotracker.new_tracks = {t for t in autotracker.new_tracks if t in tracks}
-            autotracker.locked_tracks = {t for t in autotracker.locked_tracks if t in tracks}
+            all_names = {t.name for t in tracks}
+            autotracker.new_tracks = {t for t in autotracker.new_tracks if t.name in all_names}
+            autotracker.locked_tracks = {t for t in autotracker.locked_tracks if t.name in all_names}
 
 
 def print_track_lengths(clip):
