@@ -9,8 +9,9 @@ try:
 except Exception:
     pass
 
-MIN_MARKERS = 20
-MIN_TRACK_LENGTH = 10
+# Default values used when the operator is first invoked
+DEFAULT_MIN_MARKERS = 20
+DEFAULT_MIN_TRACK_LENGTH = 10
 # Factor to temporarily raise the detection target
 MARKER_MULTIPLIER = 4
 # Prefixes used to separate newly added and permanent tracks
@@ -43,32 +44,32 @@ class WM_OT_auto_track(bpy.types.Operator):
 
     min_markers: bpy.props.IntProperty(
         name="Mindestanzahl Marker",
-        default=20,
+        default=DEFAULT_MIN_MARKERS,
         min=1,
     )
     min_track_length: bpy.props.IntProperty(
         name="Mindestanzahl Frames",
-        default=10,
+        default=DEFAULT_MIN_TRACK_LENGTH,
         min=1,
     )
 
     def invoke(self, context, event):
-        self.min_markers = MIN_MARKERS
-        self.min_track_length = MIN_TRACK_LENGTH
+        self.min_markers = DEFAULT_MIN_MARKERS
+        self.min_track_length = DEFAULT_MIN_TRACK_LENGTH
         return context.window_manager.invoke_props_dialog(self)
 
     def execute(self, context):
-        global MIN_MARKERS, MIN_TRACK_LENGTH
-        MIN_MARKERS = self.min_markers
-        MIN_TRACK_LENGTH = self.min_track_length
-        initial_min_markers = MIN_MARKERS
+        autotracker = AutoTracker(
+            min_markers=self.min_markers,
+            min_track_length=self.min_track_length,
+        )
+        initial_min_markers = autotracker.min_markers
         original_model_index = 0
         print(
-            f"Nutze MIN_MARKERS={MIN_MARKERS}, MIN_TRACK_LENGTH={MIN_TRACK_LENGTH}",
+            f"Nutze MIN_MARKERS={autotracker.min_markers}, MIN_TRACK_LENGTH={autotracker.min_track_length}",
             flush=True,
         )
         result = {'FINISHED'}
-        autotracker = AutoTracker()
         ctx = autotracker.ctx
         clip = autotracker.clip
         prev_frame = bpy.context.scene.frame_current
@@ -89,12 +90,13 @@ class WM_OT_auto_track(bpy.types.Operator):
                 break
             motion_model = MOTION_MODELS[model_index]
             print(
-                f"📊 Tracking Zyklus {cycle_count}: Modell = {motion_model}, MIN_MARKERS = {MIN_MARKERS}",
+                f"📊 Tracking Zyklus {cycle_count}: Modell = {motion_model}, MIN_MARKERS = {autotracker.min_markers}",
                 flush=True,
             )
             if "last_threshold" in clip:
                 print(f"📉 Letzter Threshold: {clip['last_threshold']:.4f}", flush=True)
             if not detect_features_until_enough(
+                autotracker,
                 motion_model,
                 initial_min_markers,
                 max_attempts=50,
@@ -102,17 +104,17 @@ class WM_OT_auto_track(bpy.types.Operator):
                 result = {'CANCELLED'}
                 break
 
-            delete_short_tracks(ctx, clip)
+            delete_short_tracks(ctx, clip, autotracker.min_track_length)
             move_playhead_to_min_tracks(ctx, clip, initial_min_markers)
             bpy.context.view_layer.update()
 
             current_frame = bpy.context.scene.frame_current
             if current_frame == prev_frame:
                 marker_boost += 10
-                MIN_MARKERS = initial_min_markers + marker_boost
+                autotracker.min_markers = initial_min_markers + marker_boost
                 model_index = (model_index + 1) % len(MOTION_MODELS)
                 print(
-                    f"🔄 Selber Frame erneut erreicht – erhöhe MIN_MARKERS auf {MIN_MARKERS} "
+                    f"🔄 Selber Frame erneut erreicht – erhöhe MIN_MARKERS auf {autotracker.min_markers} "
                     f"und wechsle Motion Model zu {MOTION_MODELS[model_index]}",
                     flush=True,
                 )
@@ -125,8 +127,8 @@ class WM_OT_auto_track(bpy.types.Operator):
                 model_index = original_model_index
                 if marker_boost > 0:
                     marker_boost -= 10
-                    MIN_MARKERS = initial_min_markers + marker_boost
-                    print(f"⬇ MIN_MARKERS reduziert auf {MIN_MARKERS}", flush=True)
+                    autotracker.min_markers = initial_min_markers + marker_boost
+                    print(f"⬇ MIN_MARKERS reduziert auf {autotracker.min_markers}", flush=True)
             cycle_duration = time.time() - cycle_start
             print(f"⏱ Zyklusdauer: {cycle_duration:.2f} Sekunden", flush=True)
             prev_frame = current_frame
@@ -171,17 +173,17 @@ def delete_new_tracks(tracks):
             print(f"🗑 Entferne neuen Marker: {track.name}", flush=True)
 
 
-def delete_short_tracks(ctx, clip):
+def delete_short_tracks(ctx, clip, min_track_length):
     """Remove short tracks and lock long living ones."""
     tracks = clip.tracking.tracks
     with bpy.context.temp_override(**ctx):
         for track in list(tracks):
             length = track_length(track)
             is_locked = track.lock or track.name.startswith(LOCKED_PREFIX)
-            if length >= MIN_TRACK_LENGTH and not is_locked:
+            if length >= min_track_length and not is_locked:
                 track.name = f"{LOCKED_PREFIX}{track.name}"
                 track.lock = True
-            if length < MIN_TRACK_LENGTH and not is_locked:
+            if length < min_track_length and not is_locked:
                 track.select = True
             else:
                 track.select = False
@@ -191,7 +193,7 @@ def delete_short_tracks(ctx, clip):
             bpy.ops.clip.delete_track()
             if removed:
                 print(
-                    f"🗑 Entferne {removed} kurze Tracks (<{MIN_TRACK_LENGTH} Frames)",
+                    f"🗑 Entferne {removed} kurze Tracks (<{min_track_length} Frames)",
                     flush=True,
                 )
 
@@ -261,21 +263,23 @@ def get_clip_context():
 
 
 class AutoTracker:
-    """Helper to encapsulate context and clip for tracking."""
+    """Helper to encapsulate context, clip and tracking settings."""
 
-    def __init__(self, context=None):
+    def __init__(self, min_markers, min_track_length, context=None):
+        self.min_markers = min_markers
+        self.min_track_length = min_track_length
         self.ctx = context if context is not None else get_clip_context()
         self.clip = self.ctx["space_data"].clip
 
 
 def detect_features_until_enough(
+    autotracker,
     motion_model="Perspective",
     playhead_min_markers=None,
     *,
     max_attempts=5,
     min_threshold=0.0001,
 ):
-    autotracker = AutoTracker()
     ctx = autotracker.ctx
     clip = autotracker.clip
     clip.tracking.settings.default_motion_model = motion_model
@@ -289,10 +293,10 @@ def detect_features_until_enough(
     margin = int(width / 200)
     threshold = 0.1
     distance = int(int(width / 40) / (((log10(threshold) / -1) + 1) / 2))
-    target_markers = MIN_MARKERS * MARKER_MULTIPLIER
+    target_markers = autotracker.min_markers * MARKER_MULTIPLIER
     print(
         f"Starte Feature Detection: width={width}, margin={margin}, min_distance={distance}, "
-        f"min_markers={MIN_MARKERS}, target_markers={target_markers}, min_track_length={MIN_TRACK_LENGTH}",
+        f"min_markers={autotracker.min_markers}, target_markers={target_markers}, min_track_length={autotracker.min_track_length}",
         flush=True,
     )
     lower_bound = int(target_markers * 0.8)
@@ -330,7 +334,7 @@ def detect_features_until_enough(
             # Tracking vorher ausführen
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
         # Dann auswerten, ob die neuen Tracks lang genug waren
-        delete_short_tracks(ctx, clip)
+        delete_short_tracks(ctx, clip, autotracker.min_track_length)
         # Jetzt Marker-Anzahl prüfen
         new_markers = [t for t in tracks if t not in before_tracks]
         added = len(new_markers)
@@ -350,7 +354,7 @@ def detect_features_until_enough(
             move_playhead_to_min_tracks(
                 ctx,
                 clip,
-                MIN_MARKERS if playhead_min_markers is None else playhead_min_markers,
+                autotracker.min_markers if playhead_min_markers is None else playhead_min_markers,
             )
             success = True
             break
@@ -359,7 +363,7 @@ def detect_features_until_enough(
         print(f"⚠ {remaining} Marker – versuche erneut", flush=True)
         old_threshold = threshold
         if added > 0:
-            threshold = threshold / (MIN_MARKERS / added)
+            threshold = threshold / (autotracker.min_markers / added)
         else:
             threshold *= 0.5  # Bei 0 neuen Markern aggressiver reduzieren
         threshold = max(min(threshold, 1.0), min_threshold)
