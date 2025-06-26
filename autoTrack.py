@@ -104,7 +104,7 @@ class WM_OT_auto_track(bpy.types.Operator):
                 break
 
             delete_short_tracks(ctx, clip)
-            move_playhead_to_min_tracks(ctx, clip, MIN_MARKERS)
+            move_playhead_to_min_tracks(ctx, clip, initial_min_markers)
             bpy.context.view_layer.update()
 
             current_frame = bpy.context.scene.frame_current
@@ -132,7 +132,7 @@ class WM_OT_auto_track(bpy.types.Operator):
             print(f"⏱ Zyklusdauer: {cycle_duration:.2f} Sekunden", flush=True)
             prev_frame = current_frame
 
-            if find_first_frame_with_min_tracks(clip, MIN_MARKERS) is None:
+            if find_first_frame_with_min_tracks(clip, initial_min_markers) is None:
                 print("✅ Keine schwachen Stellen mehr gefunden", flush=True)
                 break
         print("🏁 Beende Auto-Tracking", flush=True)
