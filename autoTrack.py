@@ -78,6 +78,7 @@ class WM_OT_auto_track(bpy.types.Operator):
         prev_frame = bpy.context.scene.frame_current
         model_index = original_model_index
         marker_boost = 0
+        log_session_start(autotracker, 1, MOTION_MODELS[model_index])
         max_cycles = MAX_CYCLES
         cycle_count = 0
         start_time_all = time.time()
@@ -160,6 +161,25 @@ def track_length(track):
     if start is None:
         return 0
     return end - start + 1
+
+
+def log_session_start(autotracker, threshold, motion_model):
+    """Log initial session parameters to a JSON file."""
+    clip = autotracker.clip
+    data = {
+        "Start Frame": clip.frame_start,
+        "Min Marker Count": autotracker.min_markers,
+        "Min Track Length": autotracker.min_track_length,
+        "Threshold": threshold,
+        "Motion Model": motion_model,
+    }
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    filename = f"trackingsession_{timestamp}.json"
+    project_dir = bpy.path.abspath("//")
+    filepath = os.path.join(project_dir, filename)
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
+    print(f"\U0001F4BE Trackingsession gestartet: {filepath}", flush=True)
 
 
 def save_session_data(autotracker, total_duration):
@@ -334,7 +354,7 @@ def detect_features_until_enough(
     width = clip.size[0]
     # margin and min_distance scale with clip width
     margin = int(width / 200)
-    threshold = 0.1
+    threshold = 1
     distance = int(int(width / 40) / (((log10(threshold) / -1) + 1) / 2))
     target_markers = autotracker.min_markers * MARKER_MULTIPLIER
     print(
