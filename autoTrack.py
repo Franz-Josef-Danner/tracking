@@ -435,13 +435,8 @@ def detect_features_until_enough(
         rename_new_tracks(tracks, before_tracks)
         for track in kept_tracks:
             autotracker.placed_markers.append(track.name)
-        with bpy.context.temp_override(**ctx):
-            bpy.ops.clip.select_all(action='SELECT')
-            # Tracking vorher ausführen
-            bpy.ops.clip.track_markers(backwards=False, sequence=True)
-        # Dann auswerten, ob die neuen Tracks lang genug waren
-        delete_short_tracks(ctx, clip, autotracker.min_track_length, autotracker)
-        # Jetzt Marker-Anzahl prüfen
+
+        # Jetzt Marker-Anzahl vor dem Tracking prüfen
         new_markers = [t for t in tracks if t not in before_tracks]
         added = len(new_markers)
         total = len([t for t in tracks if not t.name.startswith(NEW_PREFIX)])
@@ -456,7 +451,13 @@ def detect_features_until_enough(
                 f"✅ Markeranzahl im Zielbereich ({lower_bound}–{upper_bound}) mit {added} neuen Markern",
                 flush=True,
             )
+            # Marker erst jetzt tracken
+            with bpy.context.temp_override(**ctx):
+                bpy.ops.clip.select_all(action='SELECT')
+                bpy.ops.clip.track_markers(backwards=False, sequence=True)
+            # Track-Längen prüfen und kurze entfernen
             print_track_lengths(clip)
+            delete_short_tracks(ctx, clip, autotracker.min_track_length, autotracker)
             move_playhead_to_min_tracks(
                 ctx,
                 clip,
