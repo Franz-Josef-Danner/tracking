@@ -263,7 +263,13 @@ def delete_new_tracks(tracks, ctx=None):
                 # Wenn weder remove noch Context vorhanden ist, Track
                 # nicht löschen, um Fehler zu vermeiden
                 continue
-            print(f"🗑 Entferne neuen Marker: {track.name}", flush=True)
+            try:
+                print(f"🗑 Entferne neuen Marker: {track.name}", flush=True)
+            except UnicodeEncodeError:
+                print(
+                    "🗑 Entferne Marker (Name konnte nicht angezeigt werden)",
+                    flush=True,
+                )
 
 
 def delete_short_tracks(ctx, clip, min_track_length, autotracker=None):
