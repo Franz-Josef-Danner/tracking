@@ -80,6 +80,7 @@ class WM_OT_auto_track(bpy.types.Operator):
 
             delete_short_tracks(ctx, clip)
             move_playhead_to_min_tracks(ctx, clip, MIN_MARKERS)
+            bpy.context.view_layer.update()
 
             current_frame = bpy.context.scene.frame_current
             if current_frame == prev_frame:
