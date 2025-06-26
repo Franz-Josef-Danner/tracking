@@ -89,6 +89,12 @@ class WM_OT_auto_track(bpy.types.Operator):
                 result = {'CANCELLED'}
                 break
             motion_model = MOTION_MODELS[model_index]
+            print(
+                f"📊 Tracking Zyklus {cycle_count}: Modell = {motion_model}, MIN_MARKERS = {MIN_MARKERS}",
+                flush=True,
+            )
+            if "last_threshold" in clip:
+                print(f"📉 Letzter Threshold: {clip['last_threshold']:.4f}", flush=True)
             if not detect_features_until_enough(
                 motion_model,
                 initial_min_markers,
@@ -284,6 +290,7 @@ def detect_features_until_enough(
     # margin and min_distance scale with clip width
     margin = int(width / 200)
     threshold = 0.1
+    last_threshold = threshold  # Für externe Anzeige
     distance = int(int(width / 40) / (((log10(threshold) / -1) + 1) / 2))
     existing_tracks = len(tracks)
     target_markers = max(MIN_MARKERS + TARGET_DELTA, existing_tracks)
@@ -354,6 +361,7 @@ def detect_features_until_enough(
             )
             break
         print(f"→ Neuer Threshold: {threshold:.4f}", flush=True)
+    clip["last_threshold"] = threshold  # Für Monitoring
     return success
 
 def register():
