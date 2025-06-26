@@ -212,12 +212,13 @@ def print_track_lengths(clip):
         )
 
 
-def find_first_frame_with_min_tracks(clip, min_markers):
+def find_first_frame_with_min_tracks(clip, min_markers, min_frame=None):
     """Return the first frame with only ``min_markers`` active tracks."""
     start_frame = clip.frame_start
     end_frame = start_frame + clip.frame_duration - 1
     tracks = clip.tracking.tracks
-    for frame in range(start_frame, end_frame + 1):
+    start = min_frame if min_frame is not None else start_frame
+    for frame in range(start, end_frame + 1):
         active = 0
         for track in tracks:
             if any(m.frame == frame and not m.mute for m in track.markers):
