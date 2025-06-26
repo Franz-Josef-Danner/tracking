@@ -299,6 +299,12 @@ def detect_features_until_enough(
         f"min_markers={MIN_MARKERS}, target_markers={target_markers}, min_track_length={MIN_TRACK_LENGTH}",
         flush=True,
     )
+    lower_bound = int(MIN_MARKERS * 0.8)
+    upper_bound = int(MIN_MARKERS * 1.2)
+    print(
+        f"🎯 Ziel: {MIN_MARKERS} Marker ±20% → erlaubt: {lower_bound} bis {upper_bound}",
+        flush=True,
+    )
     print("Drücke ESC, um abzubrechen", flush=True)
     success = False
     attempts = 0
@@ -333,8 +339,13 @@ def detect_features_until_enough(
             f"Threshold {threshold:.3f}: {added} neue Marker (insgesamt {after})",
             flush=True,
         )
-        if after >= target_markers:
-            print(f"✅ {after} Marker erreicht", flush=True)
+        lower_bound = int(MIN_MARKERS * 0.8)
+        upper_bound = int(MIN_MARKERS * 1.2)
+        if lower_bound <= after <= upper_bound:
+            print(
+                f"✅ Markeranzahl im Zielbereich ({lower_bound}–{upper_bound}) mit {after} Markern",
+                flush=True,
+            )
             print_track_lengths(clip)
             move_playhead_to_min_tracks(
                 ctx,
