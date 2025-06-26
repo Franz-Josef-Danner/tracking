@@ -54,67 +54,38 @@ def _distance(a: tuple[float, float], b: tuple[float, float]) -> float:
     return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
 
 
-def detect_features(
-    ) -> tuple[
-        list[tuple[float, float]], list[bpy.types.MovieTrackingTrack]
-    ]:
-    """Run Blender's feature detection on the active clip.
-
-    Returns a tuple ``(positions, tracks)`` with the detected marker
-    positions and the corresponding ``MovieTrackingTrack`` objects.
-    """
-
-    context = bpy.context
-    clip = get_movie_clip(context)
-    if not clip:
-        print("No active MovieClip found for feature detection")
-        return [], []
-
-    existing = {t.name for t in clip.tracking.tracks}
-
-    bpy.ops.clip.detect_features()
-
-    width, height = clip.size
-    new_positions: list[tuple[float, float]] = []
-    new_tracks: list[bpy.types.MovieTrackingTrack] = []
-    for track in clip.tracking.tracks:
-        if track.name not in existing and track.markers:
-            co = track.markers[0].co
-            new_positions.append((co[0] * width, co[1] * height))
-            new_tracks.append(track)
-
-    return new_positions, new_tracks
 
 
 def _validate_markers(
-    placed: list[tuple[tuple[float, float], bpy.types.MovieTrackingTrack]],
+    placed: list[tuple[bpy.types.MovieTrackingMarker, bpy.types.MovieTrackingTrack]],
     active: list[tuple[float, float]],
     frame_width: int,
     frame_height: int,
     distance_threshold: float,
 ) -> tuple[
-    list[tuple[float, float]],
-    list[tuple[float, float]],
+    list[bpy.types.MovieTrackingMarker],
+    list[bpy.types.MovieTrackingMarker],
     list[bpy.types.MovieTrackingTrack],
     list[bpy.types.MovieTrackingTrack],
 ]:
     """Validate marker positions and return lists for good and bad markers."""
 
-    good_markers: list[tuple[float, float]] = []
-    bad_markers: list[tuple[float, float]] = []
+    good_markers: list[bpy.types.MovieTrackingMarker] = []
+    bad_markers: list[bpy.types.MovieTrackingMarker] = []
     good_tracks: list[bpy.types.MovieTrackingTrack] = []
     bad_tracks: list[bpy.types.MovieTrackingTrack] = []
 
-    for pos, track in placed:
+    for marker, track in placed:
+        pos = (marker.co[0] * frame_width, marker.co[1] * frame_height)
         if not (0 <= pos[0] <= frame_width and 0 <= pos[1] <= frame_height):
             continue
 
         too_close = any(_distance(pos, a) < distance_threshold for a in active)
         if too_close:
-            bad_markers.append(pos)
+            bad_markers.append(marker)
             bad_tracks.append(track)
         else:
-            good_markers.append(pos)
+            good_markers.append(marker)
             good_tracks.append(track)
 
     return good_markers, bad_markers, good_tracks, bad_tracks
@@ -130,24 +101,33 @@ def run_tracking_cycle(
     """Simulate one tracking cycle with adaptive thresholding."""
     print(f"Tracking gestartet bei Frame {frame_current}")
 
+    clip = get_movie_clip(bpy.context)
+    if not clip:
+        print("No active MovieClip found")
+        return
+
     config.start_frame = frame_current
 
     if frame_width is None or frame_height is None:
-        clip = get_movie_clip(bpy.context)
-        if clip:
-            width, height = clip.size
-            if frame_width is None:
-                frame_width = int(width)
-            if frame_height is None:
-                frame_height = int(height)
-        else:
-            frame_width = frame_width or 1920
-            frame_height = frame_height or 1080
+        width, height = clip.size
+        if frame_width is None:
+            frame_width = int(width)
+        if frame_height is None:
+            frame_height = int(height)
 
     threshold_iter = 0
     while True:
-        placed_markers, placed_tracks = detect_features()
-        clip = get_movie_clip(bpy.context)
+        existing = {t.name for t in clip.tracking.tracks}
+        bpy.context.scene.clip = clip
+        bpy.ops.clip.select_all(action='DESELECT')
+        bpy.ops.clip.detect_features()
+        placed_tracks = []
+        placed_markers = []
+        for track in clip.tracking.tracks:
+            if track.name not in existing and track.markers:
+                placed_tracks.append(track)
+                placed_markers.append(track.markers[0])
+
         good,
         bad,
         good_tracks,
@@ -159,13 +139,16 @@ def run_tracking_cycle(
             config.marker_distance,
         )
 
-        if clip:
-            for track in bad_tracks:
-                clip.tracking.tracks.remove(track)
+        for track in clip.tracking.tracks:
+            for marker in track.markers:
+                if marker in bad:
+                    track.select = True
+                    bpy.ops.clip.delete_track()
+                    break
         placed_tracks = good_tracks
 
-        config.good_markers = [str(m) for m in good]
-        config.bad_markers = [str(m) for m in bad]
+        config.good_markers = [str(m.co.xy) for m in good]
+        config.bad_markers = [str(m.co.xy) for m in bad]
         config.placed_markers = len(good)
 
         print(
@@ -189,7 +172,8 @@ def run_tracking_cycle(
         clip = get_movie_clip(bpy.context)
         if clip:
             for track in placed_tracks:
-                clip.tracking.tracks.remove(track)
+                track.select = True
+                bpy.ops.clip.delete_track()
 
         config.bad_markers.clear()
         config.placed_markers = 0
