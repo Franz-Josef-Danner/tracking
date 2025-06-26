@@ -263,10 +263,11 @@ def delete_new_tracks(tracks, ctx=None):
                 # Wenn weder remove noch Context vorhanden ist, Track
                 # nicht löschen, um Fehler zu vermeiden
                 continue
-            # Tracknamen können problematische Zeichen enthalten. Über
-            # ``repr`` stellen wir sicher, dass sie unabhängig vom Encoding
-            # ausgegeben werden können.
-            print(f"🗑 Entferne neuen Marker: {repr(track.name)}", flush=True)
+            # Tracknamen können problematische Zeichen enthalten. Um zu
+            # verhindern, dass ein UnicodeDecodeError beim Auslesen entsteht,
+            # ersetzen wir problematische Bytes.
+            name = track.name.encode("utf-8", errors="replace").decode("utf-8")
+            print(f"🗑 Entferne neuen Marker: {name}", flush=True)
 
 
 def delete_short_tracks(ctx, clip, min_track_length, autotracker=None):
