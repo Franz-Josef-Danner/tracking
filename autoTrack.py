@@ -17,6 +17,9 @@ MARKER_MULTIPLIER = 4
 # Prefixes used to separate newly added and permanent tracks
 NEW_PREFIX = "NEW_"
 LOCKED_PREFIX = "LOCKED_"
+# Custom property names to tag tracks created or locked by this script
+NEW_PROP = "autotracker_new"
+LOCKED_PROP = "autotracker_locked"
 # Motion models to cycle through when tracking stalls
 MOTION_MODELS = [
     "Perspective",
@@ -161,14 +164,16 @@ def track_length(track):
 def rename_new_tracks(tracks, before_tracks):
     """Prefix newly created tracks so they can be distinguished."""
     for track in tracks:
-        if track not in before_tracks and not track.name.startswith(NEW_PREFIX):
-            track.name = f"{NEW_PREFIX}{track.name}"
+        if track not in before_tracks and not track.get(NEW_PROP):
+            if not track.name.startswith(NEW_PREFIX):
+                track.name = f"{NEW_PREFIX}{track.name}"
+            track[NEW_PROP] = True
 
 
 def delete_new_tracks(tracks):
-    """Löscht alle Tracks, die mit NEW_ beginnen."""
+    """Löscht alle durch dieses Skript erstellten NEW_-Tracks."""
     for track in list(tracks):
-        if track.name.startswith(NEW_PREFIX):
+        if track.get(NEW_PROP):
             tracks.remove(track)
             print(f"🗑 Entferne neuen Marker: {track.name}", flush=True)
 
@@ -179,10 +184,12 @@ def delete_short_tracks(ctx, clip, min_track_length):
     with bpy.context.temp_override(**ctx):
         for track in list(tracks):
             length = track_length(track)
-            is_locked = track.lock or track.name.startswith(LOCKED_PREFIX)
+            is_locked = track.lock or track.get(LOCKED_PROP, False)
             if length >= min_track_length and not is_locked:
-                track.name = f"{LOCKED_PREFIX}{track.name}"
+                if not track.name.startswith(LOCKED_PREFIX):
+                    track.name = f"{LOCKED_PREFIX}{track.name}"
                 track.lock = True
+                track[LOCKED_PROP] = True
             if length < min_track_length and not is_locked:
                 track.select = True
             else:
@@ -338,7 +345,7 @@ def detect_features_until_enough(
         # Jetzt Marker-Anzahl prüfen
         new_markers = [t for t in tracks if t not in before_tracks]
         added = len(new_markers)
-        total = len([t for t in tracks if not t.name.startswith(NEW_PREFIX)])
+        total = len([t for t in tracks if not t.get(NEW_PROP)])
         print(
             f"Threshold {threshold:.3f}: {added} neue Marker (insgesamt {total})",
             flush=True,
@@ -359,7 +366,7 @@ def detect_features_until_enough(
             success = True
             break
         delete_new_tracks(tracks)
-        remaining = len([t for t in tracks if not t.name.startswith(NEW_PREFIX)])
+        remaining = len([t for t in tracks if not t.get(NEW_PROP)])
         print(f"⚠ {remaining} Marker – versuche erneut", flush=True)
         old_threshold = threshold
         if added > 0:
