@@ -293,9 +293,12 @@ def detect_features_until_enough(
         rename_new_tracks(tracks, before_names)
         with bpy.context.temp_override(**ctx):
             bpy.ops.clip.select_all(action='SELECT')
+            # Tracking vorher ausführen
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
+        # Dann auswerten, ob die neuen Tracks lang genug waren
         delete_short_tracks(ctx, clip)
-        after = len(tracks)
+        # Jetzt Marker-Anzahl prüfen (nur echte Kandidaten)
+        after = len([t for t in tracks if not t.name.startswith(NEW_PREFIX)])
         added = after - len(before_names)
         print(
             f"Threshold {threshold:.3f}: {added} neue Marker (insgesamt {after})",
