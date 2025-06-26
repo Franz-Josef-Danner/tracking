@@ -361,7 +361,8 @@ def detect_features_until_enough(
             success = True
             break
         delete_new_tracks(tracks)
-        print(f"⚠ {total} Marker – versuche erneut", flush=True)
+        remaining = len([t for t in tracks if not t.name.startswith(NEW_PREFIX)])
+        print(f"⚠ {remaining} Marker – versuche erneut", flush=True)
         old_threshold = threshold
         if added > 0:
             threshold = threshold / (MIN_MARKERS / added)
