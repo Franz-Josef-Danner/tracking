@@ -355,13 +355,17 @@ def detect_features_until_enough(
             success = True
             break
         delete_new_tracks(tracks)
-        print(f"⚠ Nur {after} Marker – versuche erneut", flush=True)
+        print(f"⚠ {after} Marker – versuche erneut", flush=True)
         old_threshold = threshold
         if added > 0:
-            threshold /= (target_markers / added)
+            threshold = threshold / (MIN_MARKERS / added)
         else:
-            threshold -= 0.1
-        print(f"🔧 Threshold angepasst: {old_threshold:.4f} → {threshold:.4f}", flush=True)
+            threshold *= 0.5  # Bei 0 neuen Markern aggressiver reduzieren
+        threshold = max(min(threshold, 1.0), min_threshold)
+        print(
+            f"🔁 Threshold angepasst: {old_threshold:.4f} → {threshold:.4f}",
+            flush=True,
+        )
         if threshold < min_threshold:
             threshold = min_threshold
         if threshold == min_threshold and after < target_markers:
