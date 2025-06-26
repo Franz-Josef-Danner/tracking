@@ -188,7 +188,7 @@ def run_tracking_cycle(
             placed_tracks.clear()
 
         config.bad_markers.clear()
-        config.placed_markers = 0
+        # config.placed_markers NICHT zurücksetzen!
 
 
 def get_movie_clip(context: bpy.types.Context) -> bpy.types.MovieClip | None:
@@ -350,6 +350,7 @@ def unregister() -> None:
 
 
 register()
+
 
 
 
