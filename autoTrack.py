@@ -64,6 +64,8 @@ class WM_OT_auto_track(bpy.types.Operator):
             flush=True,
         )
         result = {'FINISHED'}
+        ctx = get_clip_context()
+        clip = ctx["space_data"].clip
         prev_frame = bpy.context.scene.frame_current
         model_index = 0
         while True:
@@ -75,6 +77,10 @@ class WM_OT_auto_track(bpy.types.Operator):
             ):
                 result = {'CANCELLED'}
                 break
+
+            delete_short_tracks(ctx, clip)
+            move_playhead_to_min_tracks(ctx, clip, MIN_MARKERS)
+
             current_frame = bpy.context.scene.frame_current
             if current_frame == prev_frame:
                 MIN_MARKERS += 10
@@ -84,7 +90,14 @@ class WM_OT_auto_track(bpy.types.Operator):
                     f"und wechsle Motion Model zu {MOTION_MODELS[model_index]}",
                     flush=True,
                 )
+            else:
+                MIN_MARKERS = initial_min_markers
+                model_index = 0
             prev_frame = current_frame
+
+            if find_first_frame_with_min_tracks(clip, MIN_MARKERS) is None:
+                print("✅ Keine schwachen Stellen mehr gefunden", flush=True)
+                break
         print("🏁 Beende Auto-Tracking", flush=True)
         return result
 
