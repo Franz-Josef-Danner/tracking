@@ -22,11 +22,11 @@ NEW_PREFIX = "NEW_"
 LOCKED_PREFIX = "LOCKED_"
 # Motion models to cycle through when tracking stalls
 MOTION_MODELS = [
-    "Perspective",
-    "Affine",
     "LocRotScale",
-    "LocRot",
+    "Affine",
     "Loc",
+    "Perspective",
+    "LocRot",
 ]
 MAX_CYCLES = 100
 
