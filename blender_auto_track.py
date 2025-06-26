@@ -98,6 +98,7 @@ def run_tracking_cycle(
     frame_current: int = 0,
 ) -> None:
     """Simulate one tracking cycle with adaptive thresholding."""
+    print(f"Tracking gestartet bei Frame {frame_current}")
 
     config.start_frame = frame_current
 
@@ -116,15 +117,22 @@ def run_tracking_cycle(
         config.bad_markers = [str(m) for m in bad]
         config.placed_markers = len(good)
 
+        print(
+            f"Iteration {threshold_iter}: {config.placed_markers} Marker gefunden"
+        )
+
         if (
             config.min_marker_range <= config.placed_markers <= config.max_marker_range
             or threshold_iter >= config.max_threshold_iteration
         ):
+            print("Tracking beendet")
             break
 
         config.threshold = config.threshold / (
             config.threshold_marker_count / (config.placed_markers + 0.1)
         )
+
+        print(f"Neuer Threshold: {config.threshold}")
 
         threshold_iter += 1
         config.bad_markers.clear()
