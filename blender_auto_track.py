@@ -105,14 +105,26 @@ def _validate_markers(
 def run_tracking_cycle(
     config: TrackingConfig,
     active_markers: list[tuple[float, float]],
-    frame_width: int = 1920,
-    frame_height: int = 1080,
+    frame_width: int | None = None,
+    frame_height: int | None = None,
     frame_current: int = 0,
 ) -> None:
     """Simulate one tracking cycle with adaptive thresholding."""
     print(f"Tracking gestartet bei Frame {frame_current}")
 
     config.start_frame = frame_current
+
+    if frame_width is None or frame_height is None:
+        clip = get_movie_clip(bpy.context)
+        if clip:
+            width, height = clip.size
+            if frame_width is None:
+                frame_width = int(width)
+            if frame_height is None:
+                frame_height = int(height)
+        else:
+            frame_width = frame_width or 1920
+            frame_height = frame_height or 1080
 
     threshold_iter = 0
     while True:
