@@ -177,7 +177,6 @@ def delete_new_tracks(tracks):
 def delete_short_tracks(ctx, clip):
     """Remove short tracks and lock long living ones."""
     tracks = clip.tracking.tracks
-    removed = 0
     with bpy.context.temp_override(**ctx):
         for track in list(tracks):
             length = track_length(track)
@@ -191,8 +190,8 @@ def delete_short_tracks(ctx, clip):
                 track.select = False
 
         if any(track.select for track in tracks):
-            bpy.ops.clip.delete_track()
             removed = sum(1 for track in tracks if track.select)
+            bpy.ops.clip.delete_track()
             if removed:
                 print(
                     f"🗑 Entferne {removed} kurze Tracks (<{MIN_TRACK_LENGTH} Frames)",
