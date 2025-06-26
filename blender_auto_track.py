@@ -180,12 +180,12 @@ def run_tracking_cycle(
 
 
 def get_movie_clip(context: bpy.types.Context) -> bpy.types.MovieClip | None:
-    """Return the active MovieClip if available."""
+    """Return the clip from the active Clip Editor if available."""
 
-    if context.space_data and context.space_data.type == "CLIP_EDITOR":
+    if context.area and context.area.type == "CLIP_EDITOR":
         return context.space_data.clip
 
-    return getattr(context.scene, "clip", None)
+    return None
 
 
 def delete_short_tracks(clip: bpy.types.MovieClip, min_track_length: int) -> None:
