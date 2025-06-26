@@ -112,6 +112,14 @@ def rename_new_tracks(tracks, before_names):
             track.name = f"{NEW_PREFIX}{track.name}"
 
 
+def delete_new_tracks(tracks):
+    """Löscht alle Tracks, die mit NEW_ beginnen."""
+    for track in list(tracks):
+        if track.name.startswith(NEW_PREFIX):
+            tracks.remove(track)
+            print(f"🗑 Entferne neuen Marker: {track.name}", flush=True)
+
+
 def delete_short_tracks(ctx, clip):
     """Remove short tracks and lock long living ones."""
     tracks = clip.tracking.tracks
@@ -269,6 +277,7 @@ def detect_features_until_enough(
             )
             success = True
             break
+        delete_new_tracks(tracks)
         print(f"⚠ Nur {after} Marker – versuche erneut", flush=True)
         if added > 0:
             threshold /= (target_markers / added)
