@@ -88,7 +88,7 @@ class WM_OT_auto_track(bpy.types.Operator):
         while True:
             cycle_start = time.time()
             cycle_count += 1
-            if cycle_count >= max_cycles:
+            if cycle_count > max_cycles:
                 print(
                     f"❌ Maximalanzahl an Trackingzyklen ({max_cycles}) erreicht – Abbruch",
                     flush=True,
