@@ -65,49 +65,70 @@ def detect_features() -> list[tuple[float, float]]:
     ]
 
 
-def run_tracking_cycle(
-    config: TrackingConfig,
-    active_markers: list[tuple[float, float]],
-    frame_width: int = 1920,
-    frame_height: int = 1080,
-) -> None:
-    """Simulate one tracking cycle following the described algorithm."""
-
-    config.start_frame = config.scene_time
-
-    placed_markers = detect_features()
-    config.placed_markers = len(placed_markers)
-
-    in_frame = [
-        m
-        for m in placed_markers
-        if 0 <= m[0] < frame_width and 0 <= m[1] < frame_height
-    ]
+def _validate_markers(
+    markers: list[tuple[float, float]],
+    active: list[tuple[float, float]],
+    frame_width: int,
+    frame_height: int,
+    distance_threshold: float,
+) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+    """Validate marker positions and return good and bad lists."""
 
     good: list[tuple[float, float]] = []
     bad: list[tuple[float, float]] = []
 
-    for m in in_frame:
-        too_close = any(_distance(m, a) < config.marker_distance for a in active_markers)
+    for m in markers:
+        if not (0 <= m[0] <= frame_width and 0 <= m[1] <= frame_height):
+            continue
+
+        too_close = any(_distance(m, a) < distance_threshold for a in active)
         if too_close:
             bad.append(m)
         else:
             good.append(m)
 
-    config.good_markers = [str(m) for m in good]
-    config.bad_markers = [str(m) for m in bad]
-    config.placed_markers = len(good)
+    return good, bad
 
-    if (
-        config.placed_markers < config.min_marker_range
-        or config.placed_markers > config.max_marker_range
-    ):
+
+def run_tracking_cycle(
+    config: TrackingConfig,
+    active_markers: list[tuple[float, float]],
+    frame_width: int = 1920,
+    frame_height: int = 1080,
+    frame_current: int = 0,
+) -> None:
+    """Simulate one tracking cycle with adaptive thresholding."""
+
+    config.start_frame = frame_current
+
+    threshold_iter = 0
+    while True:
+        placed_markers = detect_features()
+        good, bad = _validate_markers(
+            placed_markers,
+            active_markers,
+            frame_width,
+            frame_height,
+            config.marker_distance,
+        )
+
+        config.good_markers = [str(m) for m in good]
+        config.bad_markers = [str(m) for m in bad]
+        config.placed_markers = len(good)
+
+        if (
+            config.min_marker_range <= config.placed_markers <= config.max_marker_range
+            or threshold_iter >= config.max_threshold_iteration
+        ):
+            break
+
         config.threshold = config.threshold / (
             config.threshold_marker_count / (config.placed_markers + 0.1)
         )
 
-    config.placed_markers = 0
-    config.bad_markers.clear()
+        threshold_iter += 1
+        config.bad_markers.clear()
+        config.placed_markers = 0
 
 
 # -----------------------------------------------------------------------------
@@ -157,7 +178,11 @@ class OT_RunAutoTracking(bpy.types.Operator):
             min_marker_count=context.scene.min_marker_count,
             min_track_length=context.scene.min_track_length,
         )
-        run_tracking_cycle(config, active_markers=[(50.0, 50.0), (400.0, 400.0)])
+        run_tracking_cycle(
+            config,
+            active_markers=[(50.0, 50.0), (400.0, 400.0)],
+            frame_current=context.scene.frame_current,
+        )
         self.report({'INFO'}, "Auto tracking cycle executed")
         return {'FINISHED'}
 
