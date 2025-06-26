@@ -403,10 +403,10 @@ def detect_features_until_enough(
         remaining = len([t for t in tracks if not t.name.startswith(NEW_PREFIX)])
         print(f"⚠ {remaining} Marker – versuche erneut", flush=True)
         old_threshold = threshold
-        if added > 0:
-            threshold = threshold / (autotracker.min_markers / added)
-        else:
-            threshold *= 0.5  # Bei 0 neuen Markern aggressiver reduzieren
+        # Adjust threshold based on how many markers were added relative to the
+        # target amount. A small constant avoids getting stuck when no markers
+        # were detected.
+        threshold *= (added + 0.1) / target_markers
         threshold = max(min(threshold, 1.0), min_threshold)
         print(
             f"🔁 Threshold angepasst: {old_threshold:.4f} → {threshold:.4f}",
