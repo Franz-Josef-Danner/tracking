@@ -55,14 +55,26 @@ def _distance(a: tuple[float, float], b: tuple[float, float]) -> float:
 
 
 def detect_features() -> list[tuple[float, float]]:
-    """Dummy feature detection returning sample marker positions."""
-    # In a real application this would run Blender's feature detection.
-    return [
-        (100.0, 100.0),
-        (150.0, 150.0),
-        (500.0, 500.0),
-        (2000.0, 50.0),  # intentionally outside the default 1920 width
-    ]
+    """Run Blender's feature detection on the active clip."""
+
+    context = bpy.context
+    clip = get_movie_clip(context)
+    if not clip:
+        print("No active MovieClip found for feature detection")
+        return []
+
+    existing = {t.name for t in clip.tracking.tracks}
+
+    bpy.ops.clip.detect_features()
+
+    width, height = clip.size
+    new_positions: list[tuple[float, float]] = []
+    for track in clip.tracking.tracks:
+        if track.name not in existing and track.markers:
+            co = track.markers[0].co
+            new_positions.append((co[0] * width, co[1] * height))
+
+    return new_positions
 
 
 def _validate_markers(
