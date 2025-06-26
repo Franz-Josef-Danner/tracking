@@ -111,7 +111,7 @@ class WM_OT_auto_track(bpy.types.Operator):
                 result = {'CANCELLED'}
                 break
 
-            delete_short_tracks(ctx, clip, autotracker.min_track_length)
+            delete_short_tracks(ctx, clip, autotracker.min_track_length, autotracker)
             move_playhead_to_min_tracks(ctx, clip, initial_min_markers)
             bpy.context.view_layer.update()
 
@@ -235,8 +235,12 @@ def delete_new_tracks(tracks):
             print(f"🗑 Entferne neuen Marker: {track.name}", flush=True)
 
 
-def delete_short_tracks(ctx, clip, min_track_length):
-    """Remove short tracks and lock long living ones."""
+def delete_short_tracks(ctx, clip, min_track_length, autotracker=None):
+    """Remove short tracks and lock long living ones.
+
+    If ``autotracker`` is given, the names of all removed tracks will be
+    appended to ``autotracker.bad_markers``.
+    """
     tracks = clip.tracking.tracks
     with bpy.context.temp_override(**ctx):
         for track in list(tracks):
@@ -251,7 +255,10 @@ def delete_short_tracks(ctx, clip, min_track_length):
                 track.select = False
 
         if any(track.select for track in tracks):
-            removed = sum(1 for track in tracks if track.select)
+            selected_names = [t.name for t in tracks if t.select]
+            removed = len(selected_names)
+            if autotracker is not None:
+                autotracker.bad_markers.extend(selected_names)
             bpy.ops.clip.delete_track()
             if removed:
                 print(
@@ -414,7 +421,7 @@ def detect_features_until_enough(
             # Tracking vorher ausführen
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
         # Dann auswerten, ob die neuen Tracks lang genug waren
-        delete_short_tracks(ctx, clip, autotracker.min_track_length)
+        delete_short_tracks(ctx, clip, autotracker.min_track_length, autotracker)
         # Jetzt Marker-Anzahl prüfen
         new_markers = [t for t in tracks if t not in before_tracks]
         added = len(new_markers)
