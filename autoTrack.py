@@ -254,7 +254,7 @@ def print_track_lengths(clip):
 
 
 def find_first_frame_with_min_tracks(clip, min_markers):
-    """Return the first frame with only ``min_markers`` active tracks."""
+    """Return the first frame with fewer than ``min_markers`` active tracks."""
     start_frame = clip.frame_start
     end_frame = start_frame + clip.frame_duration - 1
     tracks = clip.tracking.tracks
@@ -263,20 +263,20 @@ def find_first_frame_with_min_tracks(clip, min_markers):
         for track in tracks:
             if any(m.frame == frame and not m.mute for m in track.markers):
                 active += 1
-        if active <= min_markers:
+        if active < min_markers:
             return frame
     return None
 
 
 def move_playhead_to_min_tracks(ctx, clip, min_markers):
-    """Set the playhead to the frame where only ``min_markers`` remain."""
+    """Set the playhead to the frame where fewer than ``min_markers`` remain."""
     frame = find_first_frame_with_min_tracks(clip, min_markers)
     if frame is None:
         return
     with bpy.context.temp_override(**ctx):
         bpy.context.scene.frame_set(frame)
     print(
-        f"⏩ Setze Playhead auf Frame {frame} (nur noch {min_markers} aktive Tracks)",
+        f"⏩ Setze Playhead auf Frame {frame} (weniger als {min_markers} aktive Tracks)",
         flush=True,
     )
 
