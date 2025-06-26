@@ -98,7 +98,7 @@ class WM_OT_auto_track(bpy.types.Operator):
             if not detect_features_until_enough(
                 motion_model,
                 initial_min_markers,
-                max_attempts=10,
+                max_attempts=50,
             ):
                 result = {'CANCELLED'}
                 break
