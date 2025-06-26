@@ -334,11 +334,11 @@ def detect_features_until_enough(
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
         # Dann auswerten, ob die neuen Tracks lang genug waren
         delete_short_tracks(ctx, clip)
-        # Jetzt Marker-Anzahl prüfen (nur echte Kandidaten)
-        after = len([t for t in tracks if not t.name.startswith(NEW_PREFIX)])
-        added = after - len(before_names)
+        # Jetzt Marker-Anzahl prüfen
+        added = sum(1 for t in tracks if t.name.startswith(NEW_PREFIX))
+        total = len([t for t in tracks if not t.name.startswith(NEW_PREFIX)])
         print(
-            f"Threshold {threshold:.3f}: {added} neue Marker (insgesamt {after})",
+            f"Threshold {threshold:.3f}: {added} neue Marker (insgesamt {total})",
             flush=True,
         )
         lower_bound = int(target_markers * 0.8)
@@ -357,7 +357,7 @@ def detect_features_until_enough(
             success = True
             break
         delete_new_tracks(tracks)
-        print(f"⚠ {after} Marker – versuche erneut", flush=True)
+        print(f"⚠ {total} Marker – versuche erneut", flush=True)
         old_threshold = threshold
         if added > 0:
             threshold = threshold / (MIN_MARKERS / added)
@@ -370,7 +370,7 @@ def detect_features_until_enough(
         )
         if threshold < min_threshold:
             threshold = min_threshold
-        if threshold == min_threshold and after < target_markers:
+        if threshold == min_threshold and total < target_markers:
             print("❌ Kein passender Threshold gefunden", flush=True)
             break
         if max_attempts is not None and attempts >= max_attempts:
