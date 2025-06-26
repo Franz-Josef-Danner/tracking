@@ -116,6 +116,7 @@ class WM_OT_auto_track(bpy.types.Operator):
             if current_frame == prev_frame:
                 marker_boost += 10
                 autotracker.min_markers = initial_min_markers + marker_boost
+                autotracker.marker_boost = marker_boost
                 model_index = (model_index + 1) % len(MOTION_MODELS)
                 print(
                     f"🔄 Selber Frame erneut erreicht – erhöhe MIN_MARKERS auf {autotracker.min_markers} "
@@ -132,6 +133,7 @@ class WM_OT_auto_track(bpy.types.Operator):
                 if marker_boost > 0:
                     marker_boost -= 10
                     autotracker.min_markers = initial_min_markers + marker_boost
+                    autotracker.marker_boost = marker_boost
                     print(f"⬇ MIN_MARKERS reduziert auf {autotracker.min_markers}", flush=True)
             cycle_duration = time.time() - cycle_start
             print(f"⏱ Zyklusdauer: {cycle_duration:.2f} Sekunden", flush=True)
@@ -196,7 +198,7 @@ def save_session_data(autotracker, total_duration):
     marker_distance = None
     if threshold is not None:
         marker_distance = int(int(width / 40) / (((log10(threshold) / -1) + 1) / 2))
-    threshold_marker_count_plus = max(0, len(placed_markers) - autotracker.min_markers)
+    threshold_marker_count_plus = autotracker.marker_boost
     data = {
         "Start Frame": clip.frame_start,
         "Placed Markers": placed_markers,
@@ -333,6 +335,7 @@ class AutoTracker:
         self.clip = self.ctx["space_data"].clip
         self.placed_markers = []
         self.bad_markers = []
+        self.marker_boost = 0
 
 
 def detect_features_until_enough(
