@@ -263,6 +263,8 @@ def delete_new_tracks(tracks, ctx=None):
                 # Wenn weder remove noch Context vorhanden ist, Track
                 # nicht löschen, um Fehler zu vermeiden
                 continue
+            # Tracknamen können in einigen Umgebungen nicht als Unicode
+            # ausgegeben werden. In diesem Fall nutzen wir einen Fallback.
             try:
                 print(f"🗑 Entferne neuen Marker: {track.name}", flush=True)
             except UnicodeEncodeError:
