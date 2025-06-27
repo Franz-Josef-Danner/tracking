@@ -465,8 +465,9 @@ def update_search_size_from_motion(
     scaling_factor: float = 1.0,
     search_min: int = 30,
     search_max: int = 120,
+    pattern_ratio: float = 0.5,
 ) -> float:
-    """Update ``search_size`` based on recent marker motion."""
+    """Update ``search_size`` and ``pattern_size`` based on recent marker motion."""
 
     clip = get_movie_clip(context)
     if not clip:
@@ -476,7 +477,10 @@ def update_search_size_from_motion(
     avg_motion = average_marker_motion(clip, frame, n_frames)
     search_size = avg_motion * scaling_factor
     search_size = max(search_min, min(search_size, search_max))
-    context.scene.tracking_settings.search_size = search_size
+    settings = context.scene.tracking_settings
+    settings.search_size = search_size
+    pattern_size = max(1, int(search_size * pattern_ratio))
+    settings.pattern_size = pattern_size
     return search_size
 
 
