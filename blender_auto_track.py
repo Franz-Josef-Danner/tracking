@@ -477,10 +477,20 @@ def update_search_size_from_motion(
     avg_motion = average_marker_motion(clip, frame, n_frames)
     search_size = avg_motion * scaling_factor
     search_size = max(search_min, min(search_size, search_max))
+    search_size = int(search_size)
+
+    pattern_size = int(search_size * pattern_ratio)
+    pattern_size = max(5, min(pattern_size, search_size))
+
     settings = context.scene.tracking_settings
     settings.search_size = search_size
-    pattern_size = max(1, int(search_size * pattern_ratio))
     settings.pattern_size = pattern_size
+
+    print(
+        f"\n📐 Frame {frame}: avg_motion={avg_motion:.2f}, "
+        f"search_size={search_size}, pattern_size={pattern_size}"
+    )
+
     return search_size
 
 
