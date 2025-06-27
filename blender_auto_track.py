@@ -25,9 +25,7 @@ class TrackingConfig:
         default_factory=lambda: [
             "LocRotScale",
             "Affine",
-            "Loc",
             "Perspective",
-            "LocRot",
         ]
     )
     threshold: float = 1.0
