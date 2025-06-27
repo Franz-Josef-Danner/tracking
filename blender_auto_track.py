@@ -218,8 +218,9 @@ def run_tracking_cycle(
         existing = set()
         for t in clip.tracking.tracks:
             name_safe = safe_track_name(t)
-            if name_safe:
-                existing.add(name_safe)
+            name_clean = clean_name(name_safe) if name_safe else ""
+            if name_clean:
+                existing.add(name_clean)
         for area in bpy.context.window.screen.areas:
             if area.type == 'CLIP_EDITOR':
                 override = bpy.context.copy()
@@ -236,9 +237,10 @@ def run_tracking_cycle(
         placed_markers = []
         for track in clip.tracking.tracks:
             t_name = safe_track_name(track)
-            if not t_name:
+            name_clean = clean_name(t_name) if t_name else ""
+            if not name_clean:
                 continue
-            if t_name not in existing and track.markers:
+            if name_clean not in existing and track.markers:
                 placed_tracks.append(track)
                 placed_markers.append(track.markers[0])
         good, bad, good_tracks, bad_tracks = _validate_markers(
