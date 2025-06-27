@@ -410,8 +410,12 @@ def get_active_marker_positions(
     return positions
 
 
-def trigger_tracker(context: bpy.types.Context | None = None) -> None:
-    """Trigger automatic tracking using current scene settings."""
+def trigger_tracker(context: bpy.types.Context | None = None) -> TrackingConfig:
+    """Trigger automatic tracking using current scene settings.
+
+    Returns the :class:`TrackingConfig` used for this tracking run so that
+    callers can inspect information such as ``active_markers``.
+    """
 
     if context is None:
         context = bpy.context
@@ -465,10 +469,16 @@ def trigger_tracker(context: bpy.types.Context | None = None) -> None:
             f"Playhead verbleibt auf Frame {context.scene.frame_current}"
         )
 
+    # Update the number of active markers after the tracking cycle
+    clip = get_movie_clip(context)
+    if clip:
+        config.active_markers = len(get_active_marker_positions(clip, scene.frame_current))
+    else:
+        config.active_markers = 0
+
     save_session(config, frame is None)
 
-
-
+    return config
 # -----------------------------------------------------------------------------
 # Blender operators for setup and running the tracking cycle
 # -----------------------------------------------------------------------------
@@ -506,13 +516,22 @@ class OT_SetupAutoTracking(bpy.types.Operator):
 
 
 class OT_RunAutoTracking(bpy.types.Operator):
-    """Run a single automatic tracking cycle."""
+    """Run automatic tracking with up to five attempts."""
 
     bl_idname = "scene.run_auto_tracking"
     bl_label = "Run Auto Tracking"
 
     def execute(self, context):
-        trigger_tracker(context)
+        for attempt in range(5):
+            cfg = trigger_tracker(context)
+            if cfg.active_markers >= cfg.min_marker_count:
+                break
+            print(
+                f"❌ Versuch {attempt + 1}: Nur {cfg.active_markers} aktive Marker, erneut versuchen"
+            )
+        else:
+            print("⛔️ Maximale Anzahl an Versuchen erreicht")
+
         self.report({'INFO'}, "Auto tracking cycle executed")
         return {'FINISHED'}
 
