@@ -114,10 +114,11 @@ def run_tracking_cycle(
     frame_width: int | None = None,
     frame_height: int | None = None,
     frame_current: int = 0,
-) -> bool:
+) -> int | None:
     """Simulate one tracking cycle with adaptive thresholding.
 
-    Returns ``True`` if tracks were evaluated and short tracks removed.
+    Returns the first frame with insufficient markers after short track
+    evaluation or ``None`` if no such frame exists.
     """
     print(f"Tracking gestartet bei Frame {frame_current}")
     print(
@@ -127,7 +128,7 @@ def run_tracking_cycle(
     clip = get_movie_clip(bpy.context)
     if not clip:
         print("No active MovieClip found")
-        return False
+        return None
 
     # Ensure the clip uses the current scene motion model for tracking
     motion_model = getattr(bpy.context.scene, "motion_model", MOTION_MODELS[0])
@@ -221,7 +222,9 @@ def run_tracking_cycle(
                         bpy.ops.clip.track_markers(backwards=False, sequence=True)
                     break
             delete_short_tracks(clip, config.min_track_length, config)
-            return True
+            return find_first_insufficient_frame(
+                clip, config.min_marker_count
+            )
 
         if threshold_iter >= config.max_threshold_iteration:
             print("⛔️ Abbruch: Maximale Anzahl an Threshold-Iterationen erreicht.")
@@ -254,7 +257,7 @@ def run_tracking_cycle(
         config.bad_markers.clear()
         # config.placed_markers NICHT zurücksetzen!
 
-    return False
+    return None
 
 
 def get_movie_clip(context: bpy.types.Context) -> bpy.types.MovieClip | None:
@@ -380,15 +383,13 @@ def trigger_tracker(context: bpy.types.Context | None = None) -> None:
         get_active_marker_positions(clip, scene.frame_current) if clip else []
     )
 
-    success = run_tracking_cycle(
+    frame = run_tracking_cycle(
         config,
         active_markers=active_markers,
         frame_current=scene.frame_current,
     )
-    if success and clip:
-        frame = find_first_insufficient_frame(clip, config.min_marker_count)
-        if frame is not None:
-            print(f"Insufficient markers at frame {frame}")
+    if frame is not None:
+        print(f"Insufficient markers at frame {frame}")
 
 
 
@@ -446,21 +447,13 @@ class OT_RunAutoTracking(bpy.types.Operator):
             else []
         )
 
-        success = run_tracking_cycle(
+        frame = run_tracking_cycle(
             config,
             active_markers=active_markers,
             frame_current=context.scene.frame_current,
         )
-        if success:
-            clip = get_movie_clip(context)
-            if clip:
-                frame = find_first_insufficient_frame(
-                    clip, config.min_marker_count
-                )
-                if frame is not None:
-                    self.report(
-                        {'INFO'}, f"Insufficient markers at frame {frame}"
-                    )
+        if frame is not None:
+            self.report({'INFO'}, f"Insufficient markers at frame {frame}")
 
         self.report({'INFO'}, "Auto tracking cycle executed")
         return {'FINISHED'}
