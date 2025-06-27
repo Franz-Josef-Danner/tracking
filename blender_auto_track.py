@@ -30,7 +30,7 @@ class TrackingConfig:
     feature_detection: bool = True
     placed_markers: int = 0
     trigger_tracker: bool = False
-    marker_track_length: int = 0
+    marker_track_length: dict[str, int] = field(default_factory=dict)
     max_threshold_iteration: int = 100
     max_total_iteration: int = 1000
     start_frame: int = 0
@@ -190,6 +190,7 @@ def run_tracking_cycle(
                         bpy.ops.clip.select_all(action='SELECT')
                         bpy.ops.clip.track_markers(backwards=False, sequence=True)
                     break
+            delete_short_tracks(clip, config.min_track_length, config)
             return
 
         if threshold_iter >= config.max_threshold_iteration:
@@ -232,11 +233,31 @@ def get_movie_clip(context: bpy.types.Context) -> bpy.types.MovieClip | None:
     return None
 
 
-def delete_short_tracks(clip: bpy.types.MovieClip, min_track_length: int) -> None:
-    """Remove tracks from *clip* shorter than *min_track_length*."""
+def delete_short_tracks(
+    clip: bpy.types.MovieClip,
+    min_track_length: int,
+    config: TrackingConfig | None = None,
+) -> None:
+    """Remove tracks from *clip* shorter than *min_track_length*.
+
+    If *config* is provided, store track lengths and categorize tracks as good
+    or bad in the config instance before deletion.
+    """
+
+    if config is not None:
+        config.good_markers.clear()
+        config.bad_markers.clear()
+        config.marker_track_length.clear()
 
     for track in list(clip.tracking.tracks):
         tracked_frames = sum(1 for m in track.markers if not m.mute)
+        if config is not None:
+            config.marker_track_length[track.name] = tracked_frames
+            if tracked_frames < min_track_length:
+                config.bad_markers.append(track.name)
+            else:
+                config.good_markers.append(track.name)
+
         if tracked_frames < min_track_length:
             track.select = True
             bpy.ops.clip.delete_track()
