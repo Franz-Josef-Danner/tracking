@@ -109,6 +109,10 @@ def run_tracking_cycle(
         print("No active MovieClip found")
         return
 
+    print(
+        f"🎬 Clip: {clip.name}, Frame-Bereich: {clip.frame_start}-{clip.frame_duration}"
+    )
+
     config.start_frame = frame_current
 
     if frame_width is None or frame_height is None:
@@ -133,8 +137,6 @@ def run_tracking_cycle(
                     bpy.ops.clip.select_all(action='DESELECT')
                     bpy.ops.clip.detect_features(threshold=config.threshold)
                 break
-        print(f"Threshold vor detect_features: {config.threshold}")
-        print(f"Anzahl Tracks nach detect_features: {len(clip.tracking.tracks)}")
         placed_tracks = []
         placed_markers = []
         for track in clip.tracking.tracks:
@@ -162,18 +164,20 @@ def run_tracking_cycle(
         config.bad_markers = []
         config.placed_markers = len(placed_tracks)
 
-        print(
-            f"Iteration {threshold_iter}: {config.placed_markers} Placed Marker, {len(config.bad_markers)} Bad Marker"
-        )
-        if config.bad_markers:
-            print(f"Bad Marker: {config.bad_markers}")
-        print(f"Aktueller Threshold Marker Count: {config.threshold_marker_count}")
+        print(f"\n🟠 Iteration {threshold_iter}")
+        print(f"➡️  Threshold: {config.threshold:.6f}")
+        print(f"➡️  Neue Tracks erkannt: {len(placed_tracks)}")
+        print(f"✅ Gesamt-Platzierte Marker: {config.placed_markers}")
+        print(f"🔍 Zielbereich: {config.min_marker_range} bis {config.max_marker_range}")
 
         if (
             config.min_marker_range <= config.placed_markers <= config.max_marker_range
             or threshold_iter >= config.max_threshold_iteration
         ):
-            print("Tracking beendet")
+            if threshold_iter >= config.max_threshold_iteration:
+                print("⛔️ Abbruch: Maximale Anzahl an Threshold-Iterationen erreicht.")
+            else:
+                print("✅ Abbruch: Zielbereich für Markeranzahl erreicht.")
             break
 
         old_threshold = config.threshold
@@ -181,8 +185,7 @@ def run_tracking_cycle(
             (config.placed_markers + 0.1) / config.threshold_marker_count
         )
 
-        print(f"Threshold angepasst: {old_threshold} -> {config.threshold}")
-        print(f"Threshold Marker Count bleibt: {config.threshold_marker_count}")
+        print(f"📉 Neuer Threshold berechnet: {old_threshold:.6f} → {config.threshold:.6f}")
 
         threshold_iter += 1
         clip = get_movie_clip(bpy.context)
@@ -195,6 +198,9 @@ def run_tracking_cycle(
                 track.select = True
                 bpy.ops.clip.delete_track()
             placed_tracks.clear()
+            print(
+                "❌ Markeranzahl außerhalb Zielbereich, lösche alle neu gesetzten Marker dieser Iteration."
+            )
 
         config.bad_markers.clear()
         # config.placed_markers NICHT zurücksetzen!
