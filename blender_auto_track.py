@@ -479,7 +479,10 @@ def update_search_size_from_motion(
 
     frame = context.scene.frame_current
     avg_motion = average_marker_motion(clip, frame, n_frames)
-    search_size = avg_motion * scaling_factor
+
+    # Multiply the computed result by two so the derived pattern size is not
+    # excessively small when using a 50% ratio.
+    search_size = avg_motion * scaling_factor * 2
     search_size = max(search_min, min(search_size, search_max))
     search_size = int(search_size)
 
