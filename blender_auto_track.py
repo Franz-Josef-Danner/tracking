@@ -545,7 +545,6 @@ def unregister() -> None:
     bpy.types.CLIP_MT_clip.remove(draw_func)
 
 
-register()
 
 if __name__ == "__main__":
     # Only register the operators and menu when running the script directly.
