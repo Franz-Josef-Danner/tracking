@@ -251,6 +251,10 @@ def run_tracking_cycle(
         config.bad_markers = [str(m.co.xy) for m in bad]
         config.placed_markers = len(placed_tracks)
 
+        # Adjust target marker count dynamically based on valid results
+        config.threshold_marker_count = max(config.placed_markers * 2, 1)
+        print(f"🎯 Neuer Zielwert: {config.threshold_marker_count}")
+
         print(f"\n🟠 Iteration {threshold_iter}")
         print(f"➡️  Threshold: {config.threshold:.6f}")
         print(f"➡️  Neue Tracks erkannt: {len(placed_tracks)}")
