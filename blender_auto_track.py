@@ -582,9 +582,7 @@ def trigger_tracker(context: bpy.types.Context | None = None) -> TrackingConfig:
 MOTION_MODELS = [
     "LocRotScale",
     "Affine",
-    "Loc",
     "Perspective",
-    "LocRot",
 ]
 
 
