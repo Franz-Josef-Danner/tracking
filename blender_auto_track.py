@@ -467,9 +467,10 @@ def update_search_size_from_motion(
     context: bpy.types.Context,
     n_frames: int = 5,
     scaling_factor: float = 1.0,
-    search_min: int = 30,
+    search_min: int = 50,
     search_max: int = 120,
     pattern_ratio: float = 0.5,
+    pattern_min: int = 30,
 ) -> float:
     """Update ``search_size`` and ``pattern_size`` based on recent marker motion."""
 
@@ -487,13 +488,13 @@ def update_search_size_from_motion(
     search_size = int(search_size)
 
     pattern_size = int(search_size * pattern_ratio)
-    pattern_size = max(5, min(pattern_size, search_size))
+    pattern_size = max(pattern_min, min(pattern_size, search_size))
 
     if search_size < 2 * pattern_size:
         search_size = 2 * pattern_size
         search_size = max(search_min, min(search_size, search_max))
         pattern_size = int(search_size * pattern_ratio)
-        pattern_size = max(5, min(pattern_size, search_size))
+        pattern_size = max(pattern_min, min(pattern_size, search_size))
 
     # Store sizes on the clip's default tracking settings so that new markers
     # inherit them. Blender exposes these as ``default_search_size`` and
@@ -612,6 +613,10 @@ class OT_SetupAutoTracking(bpy.types.Operator):
         scene.threshold = 1.0
         scene.min_marker_count = self.min_marker_count
         scene.min_track_length = self.min_track_length
+        clip = get_movie_clip(context)
+        if clip:
+            clip.tracking.settings.default_search_size = 100
+            clip.tracking.settings.default_pattern_size = 50
         self.report({'INFO'}, "Auto tracking initialized")
         return {'FINISHED'}
 
