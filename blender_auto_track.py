@@ -378,6 +378,25 @@ def trigger_tracker(context: bpy.types.Context | None = None) -> None:
         min_track_length=getattr(scene, "min_track_length", 6),
     )
 
+    # ------------------------
+    # Playhead-based handling
+    # ------------------------
+    if scene.frame_current == scene.frame_start:
+        # Increase allowed marker count range and rotate motion model
+        config.threshold_marker_count_plus += 10
+        try:
+            idx = MOTION_MODELS.index(scene.motion_model)
+        except ValueError:
+            idx = 0
+        scene.motion_model = MOTION_MODELS[(idx + 1) % len(MOTION_MODELS)]
+    elif scene.frame_current > scene.frame_start:
+        if config.threshold_marker_count_plus > config.threshold_marker_count:
+            config.threshold_marker_count_plus -= 10
+            scene.motion_model = MOTION_MODELS[0]
+
+    config.min_marker_range = int(config.threshold_marker_count_plus * 0.8)
+    config.max_marker_range = int(config.threshold_marker_count_plus * 1.2)
+
     clip = get_movie_clip(context)
     active_markers = (
         get_active_marker_positions(clip, scene.frame_current) if clip else []
