@@ -230,8 +230,7 @@ def run_tracking_cycle(
             config.min_marker_range <= config.placed_markers <= config.max_marker_range
         ):
             for track in placed_tracks:
-                track.select = True
-                bpy.ops.clip.delete_track()
+                clip.tracking.tracks.remove(track)
             placed_tracks.clear()
             print(
                 "❌ Markeranzahl außerhalb Zielbereich, lösche alle neu gesetzten Marker dieser Iteration."
@@ -277,8 +276,7 @@ def delete_short_tracks(
                 config.good_markers.append(name_clean)
 
         if tracked_frames < min_track_length:
-            track.select = True
-            bpy.ops.clip.delete_track()
+            clip.tracking.tracks.remove(track)
 
 
 def find_first_insufficient_frame(
