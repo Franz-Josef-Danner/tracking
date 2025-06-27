@@ -109,6 +109,11 @@ def run_tracking_cycle(
         print("No active MovieClip found")
         return
 
+    # Ensure the clip uses the current scene motion model for tracking
+    motion_model = getattr(bpy.context.scene, "motion_model", MOTION_MODELS[0])
+    clip.tracking.settings.default_motion_model = motion_model
+    print(f"\n🔧 Motion Model gesetzt auf: {motion_model}")
+
     print(
         f"🎬 Clip: {clip.name}, Frame-Bereich: {clip.frame_start}-{clip.frame_duration}"
     )
