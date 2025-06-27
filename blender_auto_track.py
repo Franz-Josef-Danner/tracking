@@ -482,6 +482,12 @@ def update_search_size_from_motion(
     pattern_size = int(search_size * pattern_ratio)
     pattern_size = max(5, min(pattern_size, search_size))
 
+    if search_size < 2 * pattern_size:
+        search_size = 2 * pattern_size
+        search_size = max(search_min, min(search_size, search_max))
+        pattern_size = int(search_size * pattern_ratio)
+        pattern_size = max(5, min(pattern_size, search_size))
+
     # "search_size" and "pattern_size" live on the default_marker of the
     # movie clip tracking settings, not directly on ``tracking.settings``.
     marker_defaults = clip.tracking.settings.default_marker
