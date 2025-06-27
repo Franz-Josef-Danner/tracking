@@ -470,7 +470,7 @@ def update_search_size_from_motion(
     search_min: int = 50,
     search_max: int = 120,
     pattern_ratio: float = 0.5,
-    pattern_min: int = 5,
+    pattern_min: int = 30,
 ) -> float:
     """Update ``search_size`` and ``pattern_size`` based on recent marker motion."""
 
