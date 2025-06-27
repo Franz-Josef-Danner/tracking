@@ -54,6 +54,11 @@ def _distance(a: tuple[float, float], b: tuple[float, float]) -> float:
     return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
 
 
+def clean_name(name: str) -> str:
+    """Return a normalized version of *name* for consistent comparisons."""
+    return name.strip()
+
+
 
 
 def _validate_markers(
@@ -251,7 +256,7 @@ def delete_short_tracks(
 
     for track in list(clip.tracking.tracks):
         tracked_frames = sum(1 for m in track.markers if not m.mute)
-        name_clean = track.name.strip()
+        name_clean = clean_name(track.name)
         if config is not None:
             config.marker_track_length[name_clean] = tracked_frames
             if tracked_frames < min_track_length:
