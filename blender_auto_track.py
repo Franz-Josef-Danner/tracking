@@ -365,6 +365,16 @@ def unregister() -> None:
 
 register()
 
+if __name__ == "__main__":
+    scene = bpy.context.scene
+    scene.frame_current = scene.frame_start
+    scene.motion_model = MOTION_MODELS[0]
+    scene.threshold = 1.0
+    scene.min_marker_count = 8
+    scene.min_track_length = 6
+
+    bpy.ops.scene.run_auto_tracking()
+
 
 
 
