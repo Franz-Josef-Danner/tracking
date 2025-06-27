@@ -100,6 +100,7 @@ def save_session(config: TrackingConfig, success: bool) -> None:
         "scene_time": config.scene_time,
         "active_markers": config.active_markers,
         "marker_track_length": config.marker_track_length,
+        "abort_frame": config.abort_frame,
     }
 
     path = config.session_path or init_session_path()
@@ -532,26 +533,28 @@ class OT_RunAutoTracking(bpy.types.Operator):
     bl_label = "Run Auto Tracking"
 
     def execute(self, context):
-        attempts = 0
+        same_frame_attempts = 0
         last_abort = None
-        while attempts < 5:
+        while same_frame_attempts < 5:
             cfg = trigger_tracker(context)
             if cfg.active_markers >= cfg.min_marker_count:
                 break
 
             abort_frame = cfg.abort_frame
+            if abort_frame is None:
+                break
             if last_abort is not None and abort_frame == last_abort:
-                attempts += 1
+                same_frame_attempts += 1
             else:
-                attempts = 0
+                same_frame_attempts = 0
             last_abort = abort_frame
 
-            if attempts >= 5:
+            if same_frame_attempts >= 5:
                 print("⛔️ Maximale Anzahl an Versuchen erreicht")
                 break
 
             print(
-                f"❌ Versuch {attempts + 1}: Nur {cfg.active_markers} aktive Marker, erneut versuchen"
+                f"❌ Versuch {same_frame_attempts + 1}: Nur {cfg.active_markers} aktive Marker, erneut versuchen"
             )
 
         self.report({'INFO'}, "Auto tracking cycle executed")
