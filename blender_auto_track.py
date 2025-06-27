@@ -408,7 +408,7 @@ MOTION_MODELS = [
 
 class OT_SetupAutoTracking(bpy.types.Operator):
     """Set up scene for auto tracking."""
-        context.scene.frame_current = frame
+    context.scene.frame_current = frame
 
     bl_idname = "scene.setup_auto_tracking"
     bl_label = "Setup Auto Tracking"
