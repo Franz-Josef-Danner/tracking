@@ -117,13 +117,18 @@ def _validate_markers(
     frame_width: int,
     frame_height: int,
     distance_threshold: float,
+    existing: set[str] | None = None,
 ) -> tuple[
     list[bpy.types.MovieTrackingMarker],
     list[bpy.types.MovieTrackingMarker],
     list[bpy.types.MovieTrackingTrack],
     list[bpy.types.MovieTrackingTrack],
 ]:
-    """Validate marker positions and return lists for good and bad markers."""
+    """Validate marker positions and return lists for good and bad markers.
+
+    If ``existing`` is provided, tracks with names in this set are ignored so
+    that only newly placed markers are evaluated.
+    """
 
     good_markers: list[bpy.types.MovieTrackingMarker] = []
     bad_markers: list[bpy.types.MovieTrackingMarker] = []
@@ -131,6 +136,8 @@ def _validate_markers(
     bad_tracks: list[bpy.types.MovieTrackingTrack] = []
 
     for marker, track in placed:
+        if existing and track.name in existing:
+            continue
         pos = (marker.co[0] * frame_width, marker.co[1] * frame_height)
         if not (0 <= pos[0] <= frame_width and 0 <= pos[1] <= frame_height):
             continue
@@ -224,18 +231,14 @@ def run_tracking_cycle(
             frame_width,
             frame_height,
             config.marker_distance,
+            existing,
         )
 
         print(
             f"🔍 Validierte Marker: {len(good_tracks)} / {len(placed_tracks)} ursprünglich"
         )
 
-        for track in clip.tracking.tracks:
-            for marker in track.markers:
-                if marker in bad:
-                    track.select = True
-                    bpy.ops.clip.delete_track()
-                    break
+        remove_tracks(clip, bad_tracks)
 
         placed_tracks = good_tracks
         placed_markers = [t.markers[0] for t in good_tracks if t.markers]
