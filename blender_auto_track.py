@@ -217,25 +217,31 @@ def run_tracking_cycle(
             if t_name not in existing and track.markers:
                 placed_tracks.append(track)
                 placed_markers.append(track.markers[0])
-        # _validate_markers() temporarily disabled to inspect raw marker count
-        # good, bad, good_tracks, bad_tracks = _validate_markers(
-        #     list(zip(placed_markers, placed_tracks)),
-        #     active_markers,
-        #     frame_width,
-        #     frame_height,
-        #     config.marker_distance,
-        # )
 
-        # for track in clip.tracking.tracks:
-        #     for marker in track.markers:
-        #         if marker in bad:
-        #             track.select = True
-        #             bpy.ops.clip.delete_track()
-        #             break
-        # placed_tracks = good_tracks
+        good, bad, good_tracks, bad_tracks = _validate_markers(
+            list(zip(placed_markers, placed_tracks)),
+            active_markers,
+            frame_width,
+            frame_height,
+            config.marker_distance,
+        )
 
-        config.good_markers = [str(m.co.xy) for m in placed_markers]
-        config.bad_markers = []
+        print(
+            f"🔍 Validierte Marker: {len(good_tracks)} / {len(placed_tracks)} ursprünglich"
+        )
+
+        for track in clip.tracking.tracks:
+            for marker in track.markers:
+                if marker in bad:
+                    track.select = True
+                    bpy.ops.clip.delete_track()
+                    break
+
+        placed_tracks = good_tracks
+        placed_markers = [t.markers[0] for t in good_tracks if t.markers]
+
+        config.good_markers = [str(m.co.xy) for m in good]
+        config.bad_markers = [str(m.co.xy) for m in bad]
         config.placed_markers = len(placed_tracks)
 
         print(f"\n🟠 Iteration {threshold_iter}")
