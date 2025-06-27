@@ -631,7 +631,7 @@ class OT_RunAutoTracking(bpy.types.Operator):
     def execute(self, context):
         same_frame_attempts = 0
         last_abort = None
-        while same_frame_attempts < 5:
+        while same_frame_attempts < 20:
             cfg = trigger_tracker(context)
             if cfg.active_markers >= cfg.min_marker_count:
                 break
@@ -645,7 +645,7 @@ class OT_RunAutoTracking(bpy.types.Operator):
                 same_frame_attempts = 0
             last_abort = abort_frame
 
-            if same_frame_attempts >= 5:
+            if same_frame_attempts >= 20:
                 print("⛔️ Maximale Anzahl an Versuchen erreicht")
                 break
 
