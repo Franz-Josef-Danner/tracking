@@ -277,12 +277,20 @@ def run_tracking_cycle(
                         bpy.ops.clip.track_markers(backwards=False, sequence=True)
                     break
             delete_short_tracks(clip, config.min_track_length, config)
+            invalid = final_validate_tracks(clip)
+            if invalid:
+                print(f"⚠️ {len(invalid)} Tracks nicht valide vor Bundle Adjustment:")
+                for t in invalid:
+                    print(f"   - {t.name}")
+            else:
+                print("✅ Alle Tracks bestehen die finale Validierung")
             return find_first_insufficient_frame(
                 clip, config.min_marker_count
             )
 
         if threshold_iter >= config.max_threshold_iteration:
             print("⛔️ Abbruch: Maximale Anzahl an Threshold-Iterationen erreicht.")
+            log_recent_marker_data(clip, frame_current)
             break
 
         old_threshold = config.threshold
@@ -463,16 +471,72 @@ def average_marker_motion(
     return average_motion
 
 
+def final_validate_tracks(
+    clip: bpy.types.MovieClip,
+    min_length: int = 15,
+    motion_threshold: float = 0.1,
+    confidence_threshold: float = 0.3,
+) -> list[bpy.types.MovieTrackingTrack]:
+    """Return tracks that fail basic quality checks before bundle adjustment."""
+
+    width, height = clip.size
+    invalid: list[bpy.types.MovieTrackingTrack] = []
+
+    for track in clip.tracking.tracks:
+        markers = [m for m in track.markers if not m.mute]
+        if len(markers) < min_length:
+            invalid.append(track)
+            continue
+
+        total_distance = 0.0
+        for m1, m2 in zip(markers, markers[1:]):
+            p1 = (m1.co[0] * width, m1.co[1] * height)
+            p2 = (m2.co[0] * width, m2.co[1] * height)
+            total_distance += _distance(p1, p2)
+
+        avg_motion = total_distance / max(1, len(markers) - 1)
+        avg_conf = sum(getattr(m, "weight", 1.0) for m in markers) / len(markers)
+
+        if avg_motion < motion_threshold or avg_conf < confidence_threshold:
+            invalid.append(track)
+
+    return invalid
+
+
+def log_recent_marker_data(
+    clip: bpy.types.MovieClip,
+    frame: int,
+    n_frames: int = 3,
+) -> None:
+    """Print marker info for the last ``n_frames`` up to ``frame``."""
+
+    width, height = clip.size
+    start = max(frame - n_frames + 1, clip.frame_start)
+    print(f"\n📄 Logging marker data for frames {start}-{frame}")
+    for f in range(start, frame + 1):
+        print(f" Frame {f}:")
+        for track in clip.tracking.tracks:
+            marker = next((m for m in track.markers if m.frame == f and not m.mute), None)
+            if marker:
+                pos = (marker.co[0] * width, marker.co[1] * height)
+                conf = getattr(marker, "weight", 1.0)
+                print(f"   {track.name}: {pos} weight={conf:.2f}")
+
+
 def update_search_size_from_motion(
     context: bpy.types.Context,
     n_frames: int = 5,
     scaling_factor: float = 1.0,
-    search_min: int = 50,
+    search_min: int = 70,
     search_max: int = 120,
     pattern_ratio: float = 0.5,
-    pattern_min: int = 30,
+    pattern_min: int = 40,
 ) -> float:
-    """Update ``search_size`` and ``pattern_size`` based on recent marker motion."""
+    """Update ``search_size`` and ``pattern_size`` based on recent marker motion.
+
+    The minimum values are increased to avoid very small markers in later
+    iterations (pattern size >= 40, search size >= 70).
+    """
 
     clip = get_movie_clip(context)
     if not clip:
