@@ -3,6 +3,8 @@ from bpy.props import IntProperty, StringProperty, FloatProperty
 import re
 import unicodedata
 from dataclasses import dataclass, field
+import json
+import datetime
 
 # -----------------------------------------------------------------------------
 # Configuration dataclass and tracking helpers (adapted from autoTrack.py)
@@ -38,6 +40,7 @@ class TrackingConfig:
     start_frame: int = 0
     scene_time: int = 0
     active_markers: int = 0
+    session_path: str = ""
 
     def __post_init__(self) -> None:
         # Derived values
@@ -69,6 +72,41 @@ def clean_name(name: str) -> str:
     # Collapse whitespace and convert to lowercase
     name_ascii = re.sub(r"\s+", " ", name_ascii).strip().casefold()
     return name_ascii
+
+
+def init_session_path() -> str:
+    """Return an absolute path for storing session data."""
+    ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    return bpy.path.abspath(f"//trackingsession_{ts}.json")
+
+
+def save_session(config: TrackingConfig, success: bool) -> None:
+    """Write tracking session information to ``config.session_path``."""
+    data = {
+        "start_frame": config.start_frame,
+        "threshold": config.threshold,
+        "min_marker_count": config.min_marker_count,
+        "min_track_length": config.min_track_length,
+        "threshold_marker_count": config.threshold_marker_count,
+        "threshold_marker_count_plus": config.threshold_marker_count_plus,
+        "motion_models": config.motion_models,
+        "good_markers": config.good_markers,
+        "bad_markers": config.bad_markers,
+        "tracking_success": success,
+        "placed_markers": config.placed_markers,
+        "max_threshold_iteration": config.max_threshold_iteration,
+        "max_total_iteration": config.max_total_iteration,
+        "scene_time": config.scene_time,
+    }
+
+    path = config.session_path or init_session_path()
+    config.session_path = path
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=4)
+        print(f"Session gespeichert: {path}")
+    except Exception as exc:
+        print(f"⚠️ Fehler beim Speichern der Session: {exc}")
 
 
 
@@ -377,6 +415,7 @@ def trigger_tracker(context: bpy.types.Context | None = None) -> None:
         min_marker_count=getattr(scene, "min_marker_count", 8),
         min_track_length=getattr(scene, "min_track_length", 6),
     )
+    config.session_path = init_session_path()
 
     # ------------------------
     # Playhead-based handling
@@ -419,6 +458,8 @@ def trigger_tracker(context: bpy.types.Context | None = None) -> None:
             f"Tracking abgeschlossen ohne unzureichende Marker. "
             f"Playhead verbleibt auf Frame {context.scene.frame_current}"
         )
+
+    save_session(config, frame is None)
 
 
 
