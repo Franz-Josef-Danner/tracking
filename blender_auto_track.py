@@ -170,14 +170,12 @@ def run_tracking_cycle(
         print(f"✅ Gesamt-Platzierte Marker: {config.placed_markers}")
         print(f"🔍 Zielbereich: {config.min_marker_range} bis {config.max_marker_range}")
 
-        if (
-            config.min_marker_range <= config.placed_markers <= config.max_marker_range
-            or threshold_iter >= config.max_threshold_iteration
-        ):
-            if threshold_iter >= config.max_threshold_iteration:
-                print("⛔️ Abbruch: Maximale Anzahl an Threshold-Iterationen erreicht.")
-            else:
-                print("✅ Abbruch: Zielbereich für Markeranzahl erreicht.")
+        if config.min_marker_range <= config.placed_markers <= config.max_marker_range:
+            print("✅ Abbruch: Zielbereich für Markeranzahl erreicht.")
+            return
+
+        if threshold_iter >= config.max_threshold_iteration:
+            print("⛔️ Abbruch: Maximale Anzahl an Threshold-Iterationen erreicht.")
             break
 
         old_threshold = config.threshold
