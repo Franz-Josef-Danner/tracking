@@ -97,6 +97,8 @@ def save_session(config: TrackingConfig, success: bool) -> None:
         "max_threshold_iteration": config.max_threshold_iteration,
         "max_total_iteration": config.max_total_iteration,
         "scene_time": config.scene_time,
+        "active_markers": config.active_markers,
+        "marker_track_length": config.marker_track_length,
     }
 
     path = config.session_path or init_session_path()
