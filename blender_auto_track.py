@@ -251,6 +251,10 @@ def run_tracking_cycle(
         config.bad_markers = [str(m.co.xy) for m in bad]
         config.placed_markers = len(placed_tracks)
 
+        # Adjust target marker count dynamically based on valid results
+        config.threshold_marker_count = max(config.placed_markers * 2, 1)
+        print(f"🎯 Neuer Zielwert: {config.threshold_marker_count}")
+
         print(f"\n🟠 Iteration {threshold_iter}")
         print(f"➡️  Threshold: {config.threshold:.6f}")
         print(f"➡️  Neue Tracks erkannt: {len(placed_tracks)}")
@@ -417,6 +421,95 @@ def get_active_marker_positions(
     return positions
 
 
+def get_active_marker_tracks(
+    clip: bpy.types.MovieClip, frame: int
+) -> list[bpy.types.MovieTrackingTrack]:
+    """Return tracks that have an active marker in *frame*."""
+    tracks: list[bpy.types.MovieTrackingTrack] = []
+    for track in clip.tracking.tracks:
+        for marker in track.markers:
+            if marker.frame == frame and not marker.mute:
+                tracks.append(track)
+                break
+    return tracks
+
+
+def average_marker_motion(
+    clip: bpy.types.MovieClip, frame: int, n_frames: int
+) -> float:
+    """Return average marker motion over ``n_frames`` starting at ``frame``."""
+
+    if n_frames < 2:
+        return 0.0
+
+    width, height = clip.size
+    tracks = get_active_marker_tracks(clip, frame)
+    if not tracks:
+        return 0.0
+
+    total_distance = 0.0
+    for track in tracks:
+        for i in range(n_frames - 1):
+            f1 = frame + i
+            f2 = f1 + 1
+            m1 = next((m for m in track.markers if m.frame == f1 and not m.mute), None)
+            m2 = next((m for m in track.markers if m.frame == f2 and not m.mute), None)
+            if m1 and m2:
+                p1 = (m1.co[0] * width, m1.co[1] * height)
+                p2 = (m2.co[0] * width, m2.co[1] * height)
+                total_distance += _distance(p1, p2)
+
+    average_motion = total_distance / (len(tracks) * (n_frames - 1))
+    return average_motion
+
+
+def update_search_size_from_motion(
+    context: bpy.types.Context,
+    n_frames: int = 5,
+    scaling_factor: float = 1.0,
+    search_min: int = 50,
+    search_max: int = 120,
+    pattern_ratio: float = 0.5,
+    pattern_min: int = 5,
+) -> float:
+    """Update ``search_size`` and ``pattern_size`` based on recent marker motion."""
+
+    clip = get_movie_clip(context)
+    if not clip:
+        return 0.0
+
+    frame = context.scene.frame_current
+    avg_motion = average_marker_motion(clip, frame, n_frames)
+
+    # Multiply the computed result by two so the derived pattern size is not
+    # excessively small when using a 50% ratio.
+    search_size = avg_motion * scaling_factor * 2
+    search_size = max(search_min, min(search_size, search_max))
+    search_size = int(search_size)
+
+    pattern_size = int(search_size * pattern_ratio)
+    pattern_size = max(pattern_min, min(pattern_size, search_size))
+
+    if search_size < 2 * pattern_size:
+        search_size = 2 * pattern_size
+        search_size = max(search_min, min(search_size, search_max))
+        pattern_size = int(search_size * pattern_ratio)
+        pattern_size = max(pattern_min, min(pattern_size, search_size))
+
+    # Store sizes on the clip's default tracking settings so that new markers
+    # inherit them. Blender exposes these as ``default_search_size`` and
+    # ``default_pattern_size`` directly on ``tracking.settings``.
+    clip.tracking.settings.default_search_size = search_size
+    clip.tracking.settings.default_pattern_size = pattern_size
+
+    print(
+        f"\n📐 Frame {frame}: avg_motion={avg_motion:.2f}, "
+        f"search_size={search_size}, pattern_size={pattern_size}"
+    )
+
+    return search_size
+
+
 def trigger_tracker(context: bpy.types.Context | None = None) -> TrackingConfig:
     """Trigger automatic tracking using current scene settings.
 
@@ -454,9 +547,12 @@ def trigger_tracker(context: bpy.types.Context | None = None) -> TrackingConfig:
     config.max_marker_range = int(config.threshold_marker_count_plus * 1.2)
 
     clip = get_movie_clip(context)
-    active_markers = (
-        get_active_marker_positions(clip, scene.frame_current) if clip else []
-    )
+    if clip:
+        if scene.frame_current > scene.frame_start:
+            update_search_size_from_motion(context)
+        active_markers = get_active_marker_positions(clip, scene.frame_current)
+    else:
+        active_markers = []
 
     frame = run_tracking_cycle(
         config,
@@ -495,9 +591,7 @@ def trigger_tracker(context: bpy.types.Context | None = None) -> TrackingConfig:
 MOTION_MODELS = [
     "LocRotScale",
     "Affine",
-    "Loc",
     "Perspective",
-    "LocRot",
 ]
 
 
@@ -520,6 +614,10 @@ class OT_SetupAutoTracking(bpy.types.Operator):
         scene.threshold = 1.0
         scene.min_marker_count = self.min_marker_count
         scene.min_track_length = self.min_track_length
+        clip = get_movie_clip(context)
+        if clip:
+            clip.tracking.settings.default_search_size = 100
+            clip.tracking.settings.default_pattern_size = 50
         self.report({'INFO'}, "Auto tracking initialized")
         return {'FINISHED'}
 
