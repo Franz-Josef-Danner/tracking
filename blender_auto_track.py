@@ -172,6 +172,19 @@ def run_tracking_cycle(
 
         if config.min_marker_range <= config.placed_markers <= config.max_marker_range:
             print("✅ Abbruch: Zielbereich für Markeranzahl erreicht.")
+
+            for area in bpy.context.window.screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    override = bpy.context.copy()
+                    override['area'] = area
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            override['region'] = region
+                            break
+                    with bpy.context.temp_override(**override):
+                        bpy.ops.clip.select_all(action='SELECT')
+                        bpy.ops.clip.track_markers(backwards=False, sequence=True)
+                    break
             return
 
         if threshold_iter >= config.max_threshold_iteration:
