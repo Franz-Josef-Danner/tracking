@@ -63,15 +63,32 @@ def clean_name(name: str) -> str:
     """Return a normalized version of *name* for consistent comparisons.
 
     The name is converted to lowercase, stripped of surrounding whitespace,
-    diacritics are removed and internal whitespace is collapsed.
+    diacritics are removed and internal whitespace is collapsed. The input
+    is first re-encoded with ``utf-8`` and unknown characters are replaced to
+    avoid ``UnicodeEncodeError`` issues with track names coming from Blender.
     """
 
+    # Ensure encoding is UTF-8 and replace invalid characters
+    name_bytes = str(name).encode("utf-8", "replace")
+    name_clean = name_bytes.decode("utf-8")
+
     # Normalize unicode representation and strip accents
-    name_norm = unicodedata.normalize("NFKD", name)
+    name_norm = unicodedata.normalize("NFKD", name_clean)
     name_ascii = "".join(c for c in name_norm if not unicodedata.combining(c))
     # Collapse whitespace and convert to lowercase
     name_ascii = re.sub(r"\s+", " ", name_ascii).strip().casefold()
     return name_ascii
+
+
+def safe_track_name(track: bpy.types.MovieTrackingTrack) -> str:
+    """Return ``track.name`` decoded as UTF-8 with replacements on errors."""
+
+    try:
+        raw = track.name
+    except Exception as exc:
+        print(f"⚠️ Fehler beim Lesen des Track-Namens: {exc}")
+        return ""
+    return raw.encode("utf-8", "replace").decode("utf-8")
 
 
 def init_session_path() -> str:
@@ -100,10 +117,15 @@ def save_session(config: TrackingConfig, success: bool) -> None:
     }
 
     path = config.session_path or init_session_path()
+    try:
+        path.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        print(f"⚠️ Ungültige Zeichen im Pfad: {exc}")
+        path = path.encode("utf-8", "replace").decode("utf-8")
     config.session_path = path
     try:
         with open(path, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=4)
+            json.dump(data, fh, indent=4, ensure_ascii=False)
         print(f"Session gespeichert: {path}")
     except Exception as exc:
         print(f"⚠️ Fehler beim Speichern der Session: {exc}")
@@ -195,10 +217,9 @@ def run_tracking_cycle(
     while True:
         existing = set()
         for t in clip.tracking.tracks:
-            try:
-                existing.add(t.name)
-            except Exception as exc:
-                print(f'⚠️ Fehler beim Lesen des Track-Namens: {exc}')
+            name_safe = safe_track_name(t)
+            if name_safe:
+                existing.add(name_safe)
         for area in bpy.context.window.screen.areas:
             if area.type == 'CLIP_EDITOR':
                 override = bpy.context.copy()
@@ -214,10 +235,8 @@ def run_tracking_cycle(
         placed_tracks = []
         placed_markers = []
         for track in clip.tracking.tracks:
-            try:
-                t_name = track.name
-            except Exception as exc:
-                print(f'⚠️ Fehler beim Lesen des Track-Namens: {exc}')
+            t_name = safe_track_name(track)
+            if not t_name:
                 continue
             if t_name not in existing and track.markers:
                 placed_tracks.append(track)
@@ -249,8 +268,8 @@ def run_tracking_cycle(
         placed_tracks = good_tracks
         placed_markers = good
 
-        config.good_markers = [clean_name(t.name) for t in placed_tracks]
-        config.bad_markers = [clean_name(t.name) for t in bad_tracks]
+        config.good_markers = [clean_name(safe_track_name(t)) for t in placed_tracks]
+        config.bad_markers = [clean_name(safe_track_name(t)) for t in bad_tracks]
         config.placed_markers = len(placed_tracks)
 
         print(f"\n🟠 Iteration {threshold_iter}")
@@ -365,12 +384,10 @@ def delete_short_tracks(
 
     for track in list(clip.tracking.tracks):
         tracked_frames = sum(1 for m in track.markers if not m.mute)
-        try:
-            name = track.name
-        except Exception as exc:
-            print(f'⚠️ Fehler beim Lesen des Track-Namens: {exc}')
+        name_raw = safe_track_name(track)
+        if not name_raw:
             continue
-        name_clean = clean_name(name)
+        name_clean = clean_name(name_raw)
         if config is not None:
             config.marker_track_length[name_clean] = tracked_frames
             if tracked_frames < min_track_length:
