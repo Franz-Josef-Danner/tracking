@@ -81,14 +81,17 @@ def clean_name(name: str) -> str:
 
 
 def safe_track_name(track: bpy.types.MovieTrackingTrack) -> str:
-    """Return ``track.name`` decoded as UTF-8 with replacements on errors."""
+    """Return ``track.name`` as UTF‑8, replacing undecodable bytes."""
 
     try:
         raw = track.name
+        # ``track.name`` might be corrupted binary data. ``latin1`` accepts every
+        # byte so we can re-encode to a safe representation and then decode to
+        # UTF-8 while replacing invalid sequences.
+        return str(raw).encode("latin1", "replace").decode("utf-8", "replace")
     except Exception as exc:
-        print(f"⚠️ Fehler beim Lesen des Track-Namens: {exc}")
+        print(f"⚠️ Fehler beim Konvertieren von Track-Name: {exc}")
         return ""
-    return raw.encode("utf-8", "replace").decode("utf-8")
 
 
 def init_session_path() -> str:
@@ -139,13 +142,14 @@ def _validate_markers(
     frame_width: int,
     frame_height: int,
     distance_threshold: float,
+    margin: float = 0.0,
 ) -> tuple[
     list[bpy.types.MovieTrackingMarker],
     list[bpy.types.MovieTrackingMarker],
     list[bpy.types.MovieTrackingTrack],
     list[bpy.types.MovieTrackingTrack],
 ]:
-    """Validate marker positions and return lists for good and bad markers."""
+    """Validate marker positions within frame bounds and marker distance."""
 
     good_markers: list[bpy.types.MovieTrackingMarker] = []
     bad_markers: list[bpy.types.MovieTrackingMarker] = []
@@ -155,7 +159,10 @@ def _validate_markers(
     for marker, track in placed:
         pos = (marker.co[0] * frame_width, marker.co[1] * frame_height)
 
-        if not (0 <= pos[0] <= frame_width and 0 <= pos[1] <= frame_height):
+        if not (
+            margin <= pos[0] <= frame_width - margin
+            and margin <= pos[1] <= frame_height - margin
+        ):
             bad_markers.append(marker)
             bad_tracks.append(track)
             continue
@@ -191,6 +198,12 @@ def run_tracking_cycle(
     clip = get_movie_clip(bpy.context)
     if not clip:
         print("No active MovieClip found")
+        return None
+
+    if not (
+        clip.frame_start <= frame_current < clip.frame_start + clip.frame_duration
+    ):
+        print("⚠️ Frame liegt außerhalb des Clip-Bereichs")
         return None
 
     active_markers = list(active_markers)
@@ -249,6 +262,7 @@ def run_tracking_cycle(
             frame_width,
             frame_height,
             config.marker_distance,
+            config.marker_margin,
         )
 
         if bad_tracks:
@@ -335,10 +349,14 @@ def run_tracking_cycle(
 
 
 def get_movie_clip(context: bpy.types.Context) -> bpy.types.MovieClip | None:
-    """Return the clip from the active Clip Editor if available."""
+    """Return the clip from any available Clip Editor area."""
 
     if context.area and context.area.type == "CLIP_EDITOR":
         return context.space_data.clip
+
+    for area in context.window.screen.areas:
+        if area.type == "CLIP_EDITOR":
+            return area.spaces.active.clip
 
     return None
 
@@ -451,49 +469,57 @@ def trigger_tracker(context: bpy.types.Context | None = None) -> None:
     )
     config.session_path = init_session_path()
 
-    # ------------------------
-    # Playhead-based handling
-    # ------------------------
-    if scene.frame_current == scene.frame_start:
-        # Increase allowed marker count range and rotate motion model
-        config.threshold_marker_count_plus += 10
-        try:
-            idx = MOTION_MODELS.index(scene.motion_model)
-        except ValueError:
-            idx = 0
-        scene.motion_model = MOTION_MODELS[(idx + 1) % len(MOTION_MODELS)]
-    elif scene.frame_current > scene.frame_start:
-        if config.threshold_marker_count_plus > config.threshold_marker_count:
-            config.threshold_marker_count_plus -= 10
-            scene.motion_model = MOTION_MODELS[0]
+    success = False
+    total_iter = 0
+    while True:
+        # ------------------------
+        # Playhead-based handling
+        # ------------------------
+        if scene.frame_current == scene.frame_start:
+            config.threshold_marker_count_plus += 10
+            try:
+                idx = MOTION_MODELS.index(scene.motion_model)
+            except ValueError:
+                idx = 0
+            scene.motion_model = MOTION_MODELS[(idx + 1) % len(MOTION_MODELS)]
+        elif scene.frame_current > scene.frame_start:
+            if config.threshold_marker_count_plus > config.threshold_marker_count:
+                config.threshold_marker_count_plus -= 10
+                scene.motion_model = MOTION_MODELS[0]
 
-    config.min_marker_range = int(config.threshold_marker_count_plus * 0.8)
-    config.max_marker_range = int(config.threshold_marker_count_plus * 1.2)
+        config.min_marker_range = int(config.threshold_marker_count_plus * 0.8)
+        config.max_marker_range = int(config.threshold_marker_count_plus * 1.2)
+        clip = get_movie_clip(context)
+        active_markers = (
+            get_active_marker_positions(clip, scene.frame_current) if clip else []
+        )
 
-    clip = get_movie_clip(context)
-    active_markers = (
-        get_active_marker_positions(clip, scene.frame_current) if clip else []
-    )
+        frame = run_tracking_cycle(
+            config,
+            active_markers=active_markers,
+            frame_current=scene.frame_current,
+        )
+        if frame is None:
+            success = True
+            print(
+                f"Tracking abgeschlossen ohne unzureichende Marker. "
+                f"Playhead verbleibt auf Frame {context.scene.frame_current}"
+            )
+            break
 
-    frame = run_tracking_cycle(
-        config,
-        active_markers=active_markers,
-        frame_current=scene.frame_current,
-    )
-    if frame is not None:
         print(f"Insufficient markers at frame {frame}")
         context.scene.frame_current = frame
         print(
             f"\u27a1\ufe0f Playhead nach Trackingende auf Frame {context.scene.frame_current} gesetzt "
             f"(Start: {config.start_frame})"
         )
-    else:
-        print(
-            f"Tracking abgeschlossen ohne unzureichende Marker. "
-            f"Playhead verbleibt auf Frame {context.scene.frame_current}"
-        )
 
-    save_session(config, frame is None)
+        total_iter += 1
+        if total_iter >= config.max_total_iteration:
+            print("⛔️ Abbruch: Maximale Anzahl an Tracking-Iterationen erreicht.")
+            break
+
+    save_session(config, success)
 
 
 
