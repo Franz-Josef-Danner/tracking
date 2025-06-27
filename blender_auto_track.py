@@ -189,7 +189,8 @@ def run_tracking_cycle(
         clip = get_movie_clip(bpy.context)
 
         # Nur löschen, wenn noch weiter iteriert wird
-        if not (
+        continue_iterations = threshold_iter < config.max_threshold_iteration
+        if continue_iterations and not (
             config.min_marker_range <= config.placed_markers <= config.max_marker_range
         ):
             for track in placed_tracks:
