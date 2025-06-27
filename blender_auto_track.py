@@ -146,7 +146,12 @@ def run_tracking_cycle(
 
     threshold_iter = 0
     while True:
-        existing = {t.name for t in clip.tracking.tracks}
+        existing = set()
+        for t in clip.tracking.tracks:
+            try:
+                existing.add(t.name)
+            except Exception as exc:
+                print(f'⚠️ Fehler beim Lesen des Track-Namens: {exc}')
         for area in bpy.context.window.screen.areas:
             if area.type == 'CLIP_EDITOR':
                 override = bpy.context.copy()
@@ -162,7 +167,12 @@ def run_tracking_cycle(
         placed_tracks = []
         placed_markers = []
         for track in clip.tracking.tracks:
-            if track.name not in existing and track.markers:
+            try:
+                t_name = track.name
+            except Exception as exc:
+                print(f'⚠️ Fehler beim Lesen des Track-Namens: {exc}')
+                continue
+            if t_name not in existing and track.markers:
                 placed_tracks.append(track)
                 placed_markers.append(track.markers[0])
         # _validate_markers() temporarily disabled to inspect raw marker count
@@ -267,7 +277,12 @@ def delete_short_tracks(
 
     for track in list(clip.tracking.tracks):
         tracked_frames = sum(1 for m in track.markers if not m.mute)
-        name_clean = clean_name(track.name)
+        try:
+            name = track.name
+        except Exception as exc:
+            print(f'⚠️ Fehler beim Lesen des Track-Namens: {exc}')
+            continue
+        name_clean = clean_name(name)
         if config is not None:
             config.marker_track_length[name_clean] = tracked_frames
             if tracked_frames < min_track_length:
