@@ -172,6 +172,7 @@ def run_tracking_cycle(
 
         if config.min_marker_range <= config.placed_markers <= config.max_marker_range:
             print("✅ Abbruch: Zielbereich für Markeranzahl erreicht.")
+            bpy.ops.clip.track_markers()
             return
 
         if threshold_iter >= config.max_threshold_iteration:
