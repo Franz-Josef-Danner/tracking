@@ -1,5 +1,7 @@
 import bpy
 from bpy.props import IntProperty, StringProperty, FloatProperty
+import re
+import unicodedata
 from dataclasses import dataclass, field
 
 # -----------------------------------------------------------------------------
@@ -52,6 +54,21 @@ class TrackingConfig:
 def _distance(a: tuple[float, float], b: tuple[float, float]) -> float:
     """Return Euclidean distance between two points."""
     return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
+
+
+def clean_name(name: str) -> str:
+    """Return a normalized version of *name* for consistent comparisons.
+
+    The name is converted to lowercase, stripped of surrounding whitespace,
+    diacritics are removed and internal whitespace is collapsed.
+    """
+
+    # Normalize unicode representation and strip accents
+    name_norm = unicodedata.normalize("NFKD", name)
+    name_ascii = "".join(c for c in name_norm if not unicodedata.combining(c))
+    # Collapse whitespace and convert to lowercase
+    name_ascii = re.sub(r"\s+", " ", name_ascii).strip().casefold()
+    return name_ascii
 
 
 
@@ -129,7 +146,12 @@ def run_tracking_cycle(
 
     threshold_iter = 0
     while True:
-        existing = {t.name for t in clip.tracking.tracks}
+        existing = set()
+        for t in clip.tracking.tracks:
+            try:
+                existing.add(t.name)
+            except Exception as exc:
+                print(f'⚠️ Fehler beim Lesen des Track-Namens: {exc}')
         for area in bpy.context.window.screen.areas:
             if area.type == 'CLIP_EDITOR':
                 override = bpy.context.copy()
@@ -145,7 +167,12 @@ def run_tracking_cycle(
         placed_tracks = []
         placed_markers = []
         for track in clip.tracking.tracks:
-            if track.name not in existing and track.markers:
+            try:
+                t_name = track.name
+            except Exception as exc:
+                print(f'⚠️ Fehler beim Lesen des Track-Namens: {exc}')
+                continue
+            if t_name not in existing and track.markers:
                 placed_tracks.append(track)
                 placed_markers.append(track.markers[0])
         # _validate_markers() temporarily disabled to inspect raw marker count
@@ -213,8 +240,10 @@ def run_tracking_cycle(
             config.min_marker_range <= config.placed_markers <= config.max_marker_range
         ):
             for track in placed_tracks:
-                track.select = True
-                bpy.ops.clip.delete_track()
+                try:
+                    clip.tracking.tracks.remove(track)
+                except Exception as exc:
+                    print(f'⚠️ Fehler beim Entfernen des Tracks: {exc}')
             placed_tracks.clear()
             print(
                 "❌ Markeranzahl außerhalb Zielbereich, lösche alle neu gesetzten Marker dieser Iteration."
@@ -251,16 +280,24 @@ def delete_short_tracks(
 
     for track in list(clip.tracking.tracks):
         tracked_frames = sum(1 for m in track.markers if not m.mute)
+        try:
+            name = track.name
+        except Exception as exc:
+            print(f'⚠️ Fehler beim Lesen des Track-Namens: {exc}')
+            continue
+        name_clean = clean_name(name)
         if config is not None:
-            config.marker_track_length[track.name] = tracked_frames
+            config.marker_track_length[name_clean] = tracked_frames
             if tracked_frames < min_track_length:
-                config.bad_markers.append(track.name)
+                config.bad_markers.append(name_clean)
             else:
-                config.good_markers.append(track.name)
+                config.good_markers.append(name_clean)
 
         if tracked_frames < min_track_length:
-            track.select = True
-            bpy.ops.clip.delete_track()
+            try:
+                clip.tracking.tracks.remove(track)
+            except Exception as exc:
+                print(f'⚠️ Fehler beim Entfernen des Tracks: {exc}')
 
 
 def find_first_insufficient_frame(
@@ -440,7 +477,6 @@ if __name__ == "__main__":
         trigger_tracker()
     else:
         print("No active MovieClip found, skipping automatic run")
-
 
 
 
