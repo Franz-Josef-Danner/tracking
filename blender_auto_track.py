@@ -258,6 +258,31 @@ def get_active_marker_positions(
     return positions
 
 
+def trigger_tracker(context: bpy.types.Context | None = None) -> None:
+    """Trigger automatic tracking using current scene settings."""
+
+    if context is None:
+        context = bpy.context
+
+    scene = context.scene
+    config = TrackingConfig(
+        min_marker_count=getattr(scene, "min_marker_count", 8),
+        min_track_length=getattr(scene, "min_track_length", 6),
+    )
+
+    clip = get_movie_clip(context)
+    active_markers = (
+        get_active_marker_positions(clip, scene.frame_current) if clip else []
+    )
+
+    run_tracking_cycle(
+        config,
+        active_markers=active_markers,
+        frame_current=scene.frame_current,
+    )
+
+
+
 # -----------------------------------------------------------------------------
 # Blender operators for setup and running the tracking cycle
 # -----------------------------------------------------------------------------
@@ -373,7 +398,7 @@ if __name__ == "__main__":
     scene.min_track_length = 6
 
     if get_movie_clip(bpy.context):
-        bpy.ops.scene.run_auto_tracking()
+        trigger_tracker()
     else:
         print("No active MovieClip found, skipping automatic run")
 
