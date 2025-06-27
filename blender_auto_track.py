@@ -40,6 +40,7 @@ class TrackingConfig:
     start_frame: int = 0
     scene_time: int = 0
     active_markers: int = 0
+    abort_frame: int | None = None
     session_path: str = ""
 
     def __post_init__(self) -> None:
@@ -466,6 +467,7 @@ def trigger_tracker(context: bpy.types.Context | None = None) -> TrackingConfig:
     if frame is not None:
         print(f"Insufficient markers at frame {frame}")
         context.scene.frame_current = frame
+        config.abort_frame = frame
         print(
             f"\u27a1\ufe0f Playhead nach Trackingende auf Frame {context.scene.frame_current} gesetzt "
             f"(Start: {config.start_frame})"
@@ -475,6 +477,7 @@ def trigger_tracker(context: bpy.types.Context | None = None) -> TrackingConfig:
             f"Tracking abgeschlossen ohne unzureichende Marker. "
             f"Playhead verbleibt auf Frame {context.scene.frame_current}"
         )
+        config.abort_frame = None
 
     # Update the number of active markers after the tracking cycle
     clip = get_movie_clip(context)
@@ -529,15 +532,27 @@ class OT_RunAutoTracking(bpy.types.Operator):
     bl_label = "Run Auto Tracking"
 
     def execute(self, context):
-        for attempt in range(5):
+        attempts = 0
+        last_abort = None
+        while attempts < 5:
             cfg = trigger_tracker(context)
             if cfg.active_markers >= cfg.min_marker_count:
                 break
+
+            abort_frame = cfg.abort_frame
+            if last_abort is not None and abort_frame == last_abort:
+                attempts += 1
+            else:
+                attempts = 0
+            last_abort = abort_frame
+
+            if attempts >= 5:
+                print("⛔️ Maximale Anzahl an Versuchen erreicht")
+                break
+
             print(
-                f"❌ Versuch {attempt + 1}: Nur {cfg.active_markers} aktive Marker, erneut versuchen"
+                f"❌ Versuch {attempts + 1}: Nur {cfg.active_markers} aktive Marker, erneut versuchen"
             )
-        else:
-            print("⛔️ Maximale Anzahl an Versuchen erreicht")
 
         self.report({'INFO'}, "Auto tracking cycle executed")
         return {'FINISHED'}
