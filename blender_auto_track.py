@@ -40,6 +40,7 @@ class TrackingConfig:
     start_frame: int = 0
     scene_time: int = 0
     active_markers: int = 0
+    abort_frame: int | None = None
     session_path: str = ""
 
     def __post_init__(self) -> None:
@@ -99,6 +100,7 @@ def save_session(config: TrackingConfig, success: bool) -> None:
         "scene_time": config.scene_time,
         "active_markers": config.active_markers,
         "marker_track_length": config.marker_track_length,
+        "abort_frame": config.abort_frame,
     }
 
     path = config.session_path or init_session_path()
@@ -466,6 +468,7 @@ def trigger_tracker(context: bpy.types.Context | None = None) -> TrackingConfig:
     if frame is not None:
         print(f"Insufficient markers at frame {frame}")
         context.scene.frame_current = frame
+        config.abort_frame = frame
         print(
             f"\u27a1\ufe0f Playhead nach Trackingende auf Frame {context.scene.frame_current} gesetzt "
             f"(Start: {config.start_frame})"
@@ -475,6 +478,7 @@ def trigger_tracker(context: bpy.types.Context | None = None) -> TrackingConfig:
             f"Tracking abgeschlossen ohne unzureichende Marker. "
             f"Playhead verbleibt auf Frame {context.scene.frame_current}"
         )
+        config.abort_frame = None
 
     # Update the number of active markers after the tracking cycle
     clip = get_movie_clip(context)
@@ -529,15 +533,29 @@ class OT_RunAutoTracking(bpy.types.Operator):
     bl_label = "Run Auto Tracking"
 
     def execute(self, context):
-        for attempt in range(5):
+        same_frame_attempts = 0
+        last_abort = None
+        while same_frame_attempts < 5:
             cfg = trigger_tracker(context)
             if cfg.active_markers >= cfg.min_marker_count:
                 break
+
+            abort_frame = cfg.abort_frame
+            if abort_frame is None:
+                break
+            if last_abort is not None and abort_frame == last_abort:
+                same_frame_attempts += 1
+            else:
+                same_frame_attempts = 0
+            last_abort = abort_frame
+
+            if same_frame_attempts >= 5:
+                print("⛔️ Maximale Anzahl an Versuchen erreicht")
+                break
+
             print(
-                f"❌ Versuch {attempt + 1}: Nur {cfg.active_markers} aktive Marker, erneut versuchen"
+                f"❌ Versuch {same_frame_attempts + 1}: Nur {cfg.active_markers} aktive Marker, erneut versuchen"
             )
-        else:
-            print("⛔️ Maximale Anzahl an Versuchen erreicht")
 
         self.report({'INFO'}, "Auto tracking cycle executed")
         return {'FINISHED'}
