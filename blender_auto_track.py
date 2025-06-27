@@ -238,7 +238,9 @@ def run_tracking_cycle(
             f"🔍 Validierte Marker: {len(good_tracks)} / {len(placed_tracks)} ursprünglich"
         )
 
-        remove_tracks(clip, bad_tracks)
+        if bad_tracks:
+            print(f"🗑 Entferne {len(bad_tracks)} ungültige neue Tracks.")
+            remove_tracks(clip, bad_tracks)
 
         placed_tracks = good_tracks
         placed_markers = [t.markers[0] for t in good_tracks if t.markers]
