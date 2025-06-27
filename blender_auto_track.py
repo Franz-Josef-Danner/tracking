@@ -548,7 +548,8 @@ def trigger_tracker(context: bpy.types.Context | None = None) -> TrackingConfig:
 
     clip = get_movie_clip(context)
     if clip:
-        update_search_size_from_motion(context)
+        if scene.frame_current > scene.frame_start:
+            update_search_size_from_motion(context)
         active_markers = get_active_marker_positions(clip, scene.frame_current)
     else:
         active_markers = []
