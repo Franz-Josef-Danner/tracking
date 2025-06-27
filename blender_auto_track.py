@@ -241,13 +241,9 @@ def run_tracking_cycle(
         ):
             for track in placed_tracks:
                 try:
-                    name = track.name
+                    clip.tracking.tracks.remove(track)
                 except Exception as exc:
-                    print(f'⚠️ Fehler beim Lesen des Track-Namens: {exc}')
-                    continue
-                index = clip.tracking.tracks.find(name)
-                if index != -1:
-                    clip.tracking.tracks.remove(index)
+                    print(f'⚠️ Fehler beim Entfernen des Tracks: {exc}')
             placed_tracks.clear()
             print(
                 "❌ Markeranzahl außerhalb Zielbereich, lösche alle neu gesetzten Marker dieser Iteration."
@@ -298,9 +294,10 @@ def delete_short_tracks(
                 config.good_markers.append(name_clean)
 
         if tracked_frames < min_track_length:
-            index = clip.tracking.tracks.find(name)
-            if index != -1:
-                clip.tracking.tracks.remove(index)
+            try:
+                clip.tracking.tracks.remove(track)
+            except Exception as exc:
+                print(f'⚠️ Fehler beim Entfernen des Tracks: {exc}')
 
 
 def find_first_insufficient_frame(
