@@ -482,7 +482,7 @@ def update_search_size_from_motion(
     pattern_size = int(search_size * pattern_ratio)
     pattern_size = max(5, min(pattern_size, search_size))
 
-    settings = context.scene.tracking_settings
+    settings = clip.tracking.settings
     settings.search_size = search_size
     settings.pattern_size = pattern_size
 
