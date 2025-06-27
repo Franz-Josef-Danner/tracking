@@ -320,7 +320,6 @@ class OT_RunAutoTracking(bpy.types.Operator):
 
         clip = get_movie_clip(context)
         if clip:
-            delete_short_tracks(clip, config.min_track_length)
             frame = find_first_insufficient_frame(clip, config.min_marker_count)
             if frame is not None:
                 self.report({'INFO'}, f"Insufficient markers at frame {frame}")
@@ -373,7 +372,10 @@ if __name__ == "__main__":
     scene.min_marker_count = 8
     scene.min_track_length = 6
 
-    bpy.ops.scene.run_auto_tracking()
+    if get_movie_clip(bpy.context):
+        bpy.ops.scene.run_auto_tracking()
+    else:
+        print("No active MovieClip found, skipping automatic run")
 
 
 
