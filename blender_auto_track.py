@@ -132,7 +132,10 @@ def _validate_markers(
 
     for marker, track in placed:
         pos = (marker.co[0] * frame_width, marker.co[1] * frame_height)
+
         if not (0 <= pos[0] <= frame_width and 0 <= pos[1] <= frame_height):
+            bad_markers.append(marker)
+            bad_tracks.append(track)
             continue
 
         too_close = any(_distance(pos, a) < distance_threshold for a in active)
@@ -167,6 +170,8 @@ def run_tracking_cycle(
     if not clip:
         print("No active MovieClip found")
         return None
+
+    active_markers = list(active_markers)
 
     # Ensure the clip uses the current scene motion model for tracking
     motion_model = getattr(bpy.context.scene, "motion_model", MOTION_MODELS[0])
@@ -217,25 +222,35 @@ def run_tracking_cycle(
             if t_name not in existing and track.markers:
                 placed_tracks.append(track)
                 placed_markers.append(track.markers[0])
-        # _validate_markers() temporarily disabled to inspect raw marker count
-        # good, bad, good_tracks, bad_tracks = _validate_markers(
-        #     list(zip(placed_markers, placed_tracks)),
-        #     active_markers,
-        #     frame_width,
-        #     frame_height,
-        #     config.marker_distance,
-        # )
+        good, bad, good_tracks, bad_tracks = _validate_markers(
+            list(zip(placed_markers, placed_tracks)),
+            active_markers,
+            frame_width,
+            frame_height,
+            config.marker_distance,
+        )
 
-        # for track in clip.tracking.tracks:
-        #     for marker in track.markers:
-        #         if marker in bad:
-        #             track.select = True
-        #             bpy.ops.clip.delete_track()
-        #             break
-        # placed_tracks = good_tracks
+        if bad_tracks:
+            try:
+                remove_tracks(clip, bad_tracks)
+            except Exception as exc:
+                print(f'⚠️ Fehler beim Entfernen des Tracks: {exc}')
 
-        config.good_markers = [str(m.co.xy) for m in placed_markers]
-        config.bad_markers = []
+        active_markers.extend(
+            [
+                (
+                    m.co[0] * frame_width,
+                    m.co[1] * frame_height,
+                )
+                for m in good
+            ]
+        )
+
+        placed_tracks = good_tracks
+        placed_markers = good
+
+        config.good_markers = [clean_name(t.name) for t in placed_tracks]
+        config.bad_markers = [clean_name(t.name) for t in bad_tracks]
         config.placed_markers = len(placed_tracks)
 
         print(f"\n🟠 Iteration {threshold_iter}")
