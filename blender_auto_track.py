@@ -391,6 +391,15 @@ def trigger_tracker(context: bpy.types.Context | None = None) -> None:
     if frame is not None:
         print(f"Insufficient markers at frame {frame}")
         context.scene.frame_current = frame
+        print(
+            f"\u27a1\ufe0f Playhead nach Trackingende auf Frame {context.scene.frame_current} gesetzt "
+            f"(Start: {config.start_frame})"
+        )
+    else:
+        print(
+            f"Tracking abgeschlossen ohne unzureichende Marker. "
+            f"Playhead verbleibt auf Frame {context.scene.frame_current}"
+        )
 
 
 
