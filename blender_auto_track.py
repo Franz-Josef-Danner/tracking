@@ -239,11 +239,10 @@ def run_tracking_cycle(
         if continue_iterations and not (
             config.min_marker_range <= config.placed_markers <= config.max_marker_range
         ):
-            for track in placed_tracks:
-                try:
-                    clip.tracking.tracks.remove(track)
-                except Exception as exc:
-                    print(f'⚠️ Fehler beim Entfernen des Tracks: {exc}')
+            try:
+                remove_tracks(clip, placed_tracks)
+            except Exception as exc:
+                print(f'⚠️ Fehler beim Entfernen des Tracks: {exc}')
             placed_tracks.clear()
             print(
                 "❌ Markeranzahl außerhalb Zielbereich, lösche alle neu gesetzten Marker dieser Iteration."
@@ -260,6 +259,31 @@ def get_movie_clip(context: bpy.types.Context) -> bpy.types.MovieClip | None:
         return context.space_data.clip
 
     return None
+
+
+def remove_tracks(
+    clip: bpy.types.MovieClip,
+    tracks: list[bpy.types.MovieTrackingTrack],
+) -> None:
+    """Delete *tracks* from *clip* using Blender operators."""
+
+    if not tracks:
+        return
+
+    for area in bpy.context.window.screen.areas:
+        if area.type == "CLIP_EDITOR":
+            override = bpy.context.copy()
+            override["area"] = area
+            for region in area.regions:
+                if region.type == "WINDOW":
+                    override["region"] = region
+                    break
+            with bpy.context.temp_override(**override):
+                bpy.ops.clip.select_all(action="DESELECT")
+                for t in tracks:
+                    t.select = True
+                bpy.ops.clip.delete_track()
+            break
 
 
 def delete_short_tracks(
@@ -295,7 +319,7 @@ def delete_short_tracks(
 
         if tracked_frames < min_track_length:
             try:
-                clip.tracking.tracks.remove(track)
+                remove_tracks(clip, [track])
             except Exception as exc:
                 print(f'⚠️ Fehler beim Entfernen des Tracks: {exc}')
 
