@@ -545,20 +545,12 @@ def unregister() -> None:
     bpy.types.CLIP_MT_clip.remove(draw_func)
 
 
-register()
 
 if __name__ == "__main__":
-    scene = bpy.context.scene
-    scene.frame_current = scene.frame_start
-    scene.motion_model = MOTION_MODELS[0]
-    scene.threshold = 1.0
-    scene.min_marker_count = 8
-    scene.min_track_length = 6
-
-    if get_movie_clip(bpy.context):
-        trigger_tracker()
-    else:
-        print("No active MovieClip found, skipping automatic run")
+    # Only register the operators and menu when running the script directly.
+    # Automatic tracking should not start immediately.
+    register()
+    print("Auto tracking operators registered. Use the menu to start tracking.")
 
 
 
