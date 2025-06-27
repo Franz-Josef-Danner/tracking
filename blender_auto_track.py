@@ -1,5 +1,7 @@
 import bpy
 from bpy.props import IntProperty, StringProperty, FloatProperty
+import re
+import unicodedata
 from dataclasses import dataclass, field
 
 # -----------------------------------------------------------------------------
@@ -55,8 +57,18 @@ def _distance(a: tuple[float, float], b: tuple[float, float]) -> float:
 
 
 def clean_name(name: str) -> str:
-    """Return a normalized version of *name* for consistent comparisons."""
-    return name.strip()
+    """Return a normalized version of *name* for consistent comparisons.
+
+    The name is converted to lowercase, stripped of surrounding whitespace,
+    diacritics are removed and internal whitespace is collapsed.
+    """
+
+    # Normalize unicode representation and strip accents
+    name_norm = unicodedata.normalize("NFKD", name)
+    name_ascii = "".join(c for c in name_norm if not unicodedata.combining(c))
+    # Collapse whitespace and convert to lowercase
+    name_ascii = re.sub(r"\s+", " ", name_ascii).strip().casefold()
+    return name_ascii
 
 
 
