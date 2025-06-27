@@ -488,11 +488,11 @@ def update_search_size_from_motion(
         pattern_size = int(search_size * pattern_ratio)
         pattern_size = max(5, min(pattern_size, search_size))
 
-    # "search_size" and "pattern_size" live on the default_marker of the
-    # movie clip tracking settings, not directly on ``tracking.settings``.
-    marker_defaults = clip.tracking.settings.default_marker
-    marker_defaults.search_size = search_size
-    marker_defaults.pattern_size = pattern_size
+    # Store sizes on the clip's default tracking settings so that new markers
+    # inherit them. Blender exposes these as ``default_search_size`` and
+    # ``default_pattern_size`` directly on ``tracking.settings``.
+    clip.tracking.settings.default_search_size = search_size
+    clip.tracking.settings.default_pattern_size = pattern_size
 
     print(
         f"\n📐 Frame {frame}: avg_motion={avg_motion:.2f}, "
