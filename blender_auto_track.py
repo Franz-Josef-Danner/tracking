@@ -391,6 +391,15 @@ def trigger_tracker(context: bpy.types.Context | None = None) -> None:
     if frame is not None:
         print(f"Insufficient markers at frame {frame}")
         context.scene.frame_current = frame
+        print(
+            f"\u27a1\ufe0f Playhead nach Trackingende auf Frame {context.scene.frame_current} gesetzt "
+            f"(Start: {config.start_frame})"
+        )
+    else:
+        print(
+            f"Tracking abgeschlossen ohne unzureichende Marker. "
+            f"Playhead verbleibt auf Frame {context.scene.frame_current}"
+        )
 
 
 
@@ -437,25 +446,7 @@ class OT_RunAutoTracking(bpy.types.Operator):
     bl_label = "Run Auto Tracking"
 
     def execute(self, context):
-        config = TrackingConfig(
-            min_marker_count=context.scene.min_marker_count,
-            min_track_length=context.scene.min_track_length,
-        )
-        clip = get_movie_clip(context)
-        active_markers = (
-            get_active_marker_positions(clip, context.scene.frame_current)
-            if clip
-            else []
-        )
-
-        frame = run_tracking_cycle(
-            config,
-            active_markers=active_markers,
-            frame_current=context.scene.frame_current,
-        )
-        if frame is not None:
-            self.report({'INFO'}, f"Insufficient markers at frame {frame}")
-
+        trigger_tracker(context)
         self.report({'INFO'}, "Auto tracking cycle executed")
         return {'FINISHED'}
 
