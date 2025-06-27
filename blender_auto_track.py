@@ -125,7 +125,10 @@ def run_tracking_cycle(
             if area.type == 'CLIP_EDITOR':
                 override = bpy.context.copy()
                 override['area'] = area
-                override['region'] = area.regions[-1]  # Wichtig: Region muss gesetzt sein
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        override['region'] = region  # Wichtig: Region muss gesetzt sein
+                        break
                 with bpy.context.temp_override(**override):
                     bpy.ops.clip.select_all(action='DESELECT')
                     bpy.ops.clip.detect_features(threshold=config.threshold)
