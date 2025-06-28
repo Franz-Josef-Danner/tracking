@@ -767,6 +767,12 @@ if __name__ == "__main__":
     # Only register the operators and menu when running the script directly.
     # Automatic tracking should not start immediately.
     register()
+    clip = get_movie_clip(bpy.context)
+    if clip:
+        w, h = clip.size
+        print(f"\ud83c\udf9e\ufe0f Videoaufl\u00f6sung: {int(w)}x{int(h)}")
+    else:
+        print("Kein MovieClip aktiv")
     print("Auto tracking operators registered. Use the menu to start tracking.")
 
 
