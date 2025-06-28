@@ -52,6 +52,19 @@ class TrackingConfig:
         self.marker_distance = self.resolution_x / 20
         self.marker_margin = self.resolution_x / 200
 
+        debug_print_threshold(self, "Initialized: ")
+
+
+def debug_print_threshold(config: TrackingConfig, label: str = "") -> None:
+    """Output key threshold information for debugging."""
+
+    print(
+        f"{label}threshold={config.threshold:.4f}, "
+        f"placed={config.placed_markers}, "
+        f"target={config.threshold_marker_count}, "
+        f"range=({config.min_marker_range}-{config.max_marker_range})"
+    )
+
 
 def _distance(a: tuple[float, float], b: tuple[float, float]) -> float:
     """Return Euclidean distance between two points."""
@@ -186,6 +199,7 @@ def run_tracking_cycle(
 
     threshold_iter = 0
     while True:
+        debug_print_threshold(config, f"Iter {threshold_iter} start: ")
         existing = set()
         for t in clip.tracking.tracks:
             try:
@@ -264,6 +278,11 @@ def run_tracking_cycle(
         config.threshold = config.threshold * (
             (config.placed_markers + 0.1) / config.threshold_marker_count
         )
+
+        print(
+            f"Iter {threshold_iter}: adjusting threshold from {old_threshold:.4f} to {config.threshold:.4f}"
+        )
+        debug_print_threshold(config, f"Iter {threshold_iter} end: ")
 
 
         threshold_iter += 1
@@ -493,6 +512,7 @@ def trigger_tracker(context: bpy.types.Context | None = None) -> TrackingConfig:
         min_track_length=getattr(scene, "min_track_length", 6),
     )
     config.session_path = init_session_path()
+    debug_print_threshold(config, "Trigger start: ")
 
     # ------------------------
     # Playhead-based handling
