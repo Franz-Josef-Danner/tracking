@@ -457,6 +457,7 @@ def average_marker_motion(
 
     total_distance = 0.0
     for track in tracks:
+        track_dist = 0.0
         for i in range(n_frames - 1):
             f1 = frame + i
             f2 = f1 + 1
@@ -465,9 +466,15 @@ def average_marker_motion(
             if m1 and m2:
                 p1 = (m1.co[0] * width, m1.co[1] * height)
                 p2 = (m2.co[0] * width, m2.co[1] * height)
-                total_distance += _distance(p1, p2)
+                d = _distance(p1, p2)
+                track_dist += d
+        print(f"   Track {track.name}: {track_dist:.3f} px über {n_frames-1} Frames")
+        total_distance += track_dist
 
     average_motion = total_distance / (len(tracks) * (n_frames - 1))
+    print(
+        f" ➡️ Durchschnittliche Marker-Bewegung: {average_motion:.3f} px bei {len(tracks)} Tracks"
+    )
     return average_motion
 
 
