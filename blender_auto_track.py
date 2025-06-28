@@ -231,6 +231,23 @@ def run_tracking_cycle(
         placed_tracks = good_tracks
         placed_markers = [t.markers[0] for t in good_tracks if t.markers]
 
+        # Debug information for pattern and search size of newly placed markers
+        for t in placed_tracks:
+            try:
+                p_area = t.pattern_area
+                s_min = t.search_min
+                s_max = t.search_max
+                p_size_x = p_area[2] - p_area[0]
+                p_size_y = p_area[3] - p_area[1]
+                s_size_x = s_max[0] - s_min[0]
+                s_size_y = s_max[1] - s_min[1]
+                print(
+                    f"[DEBUG] Track '{t.name}': pattern size=({p_size_x:.2f}, {p_size_y:.2f}), "
+                    f"search size=({s_size_x:.2f}, {s_size_y:.2f})"
+                )
+            except Exception:
+                pass
+
         config.good_markers = [str(m.co.xy) for m in good]
         config.bad_markers = [str(m.co.xy) for m in bad]
         config.placed_markers = len(placed_tracks)
@@ -471,6 +488,11 @@ def update_search_size_from_motion(
     # ``default_pattern_size`` directly on ``tracking.settings``.
     clip.tracking.settings.default_search_size = search_size
     clip.tracking.settings.default_pattern_size = pattern_size
+
+    print(
+        f"[DEBUG] Default search size: {search_size}, "
+        f"default pattern size: {pattern_size}"
+    )
 
 
 
