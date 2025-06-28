@@ -202,6 +202,9 @@ def run_tracking_cycle(
                         break
                 with bpy.context.temp_override(**override):
                     bpy.ops.clip.select_all(action='DESELECT')
+                    print(
+                        f"[AutoTrack] Detecting features with threshold {config.threshold:.4f}"
+                    )
                     bpy.ops.clip.detect_features(threshold=config.threshold)
                 break
         placed_tracks = []
@@ -215,6 +218,10 @@ def run_tracking_cycle(
             if t_name not in existing and track.markers:
                 placed_tracks.append(track)
                 placed_markers.append(track.markers[0])
+                m_co = track.markers[0].co
+                print(
+                    f"[AutoTrack] New track '{t_name}' at {m_co[0]:.4f}, {m_co[1]:.4f}"
+                )
 
         good, bad, good_tracks, bad_tracks = _validate_markers(
             list(zip(placed_markers, placed_tracks)),
@@ -225,8 +232,13 @@ def run_tracking_cycle(
             existing,
         )
 
+        print(
+            f"[AutoTrack] Valid markers: {len(good)}, Rejected markers: {len(bad)}"
+        )
+
         if bad_tracks:
             remove_tracks(clip, bad_tracks)
+            print(f"[AutoTrack] Removed {len(bad_tracks)} tracks due to proximity")
 
         placed_tracks = good_tracks
         placed_markers = [t.markers[0] for t in good_tracks if t.markers]
@@ -237,6 +249,10 @@ def run_tracking_cycle(
 
         # Adjust target marker count dynamically based on valid results
         config.threshold_marker_count = max(config.placed_markers * 2, 1)
+
+        print(
+            f"[AutoTrack] Accepted markers: {config.placed_markers}, New threshold target: {config.threshold_marker_count}"
+        )
 
         if config.min_marker_range <= config.placed_markers <= config.max_marker_range:
 
@@ -265,6 +281,10 @@ def run_tracking_cycle(
             (config.placed_markers + 0.1) / config.threshold_marker_count
         )
 
+        print(
+            f"[AutoTrack] Adjust threshold {old_threshold:.4f} -> {config.threshold:.4f}"
+        )
+
 
         threshold_iter += 1
         clip = get_movie_clip(bpy.context)
@@ -276,6 +296,9 @@ def run_tracking_cycle(
         ):
             try:
                 remove_tracks(clip, placed_tracks)
+                print(
+                    f"[AutoTrack] Cleared {len(placed_tracks)} temporary tracks for next iteration"
+                )
             except Exception as exc:
                 pass
             placed_tracks.clear()
