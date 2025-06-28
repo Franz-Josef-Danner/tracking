@@ -185,6 +185,9 @@ def run_tracking_cycle(
             frame_height = int(height)
 
     threshold_iter = 0
+    print(
+        f"[Tracking] Start frame {frame_current}, threshold {config.threshold:.3f}"
+    )
     while True:
         existing = set()
         for t in clip.tracking.tracks:
@@ -201,6 +204,9 @@ def run_tracking_cycle(
                         override['region'] = region  # Wichtig: Region muss gesetzt sein
                         break
                 with bpy.context.temp_override(**override):
+                    print(
+                        f"[Detect] threshold {config.threshold:.3f}"
+                    )
                     bpy.ops.clip.select_all(action='DESELECT')
                     bpy.ops.clip.detect_features(threshold=config.threshold)
                 break
@@ -223,6 +229,11 @@ def run_tracking_cycle(
             frame_height,
             config.marker_distance,
             existing,
+        )
+
+        print(
+            f"[Detect] total {len(placed_tracks)} markers, valid {len(good_tracks)}"
+            f" bad {len(bad_tracks)}"
         )
 
         if bad_tracks:
@@ -249,10 +260,20 @@ def run_tracking_cycle(
                             override['region'] = region
                             break
                     with bpy.context.temp_override(**override):
+                        print(
+                            f"[Tracking] tracking {len(placed_tracks)} markers with"
+                            f" model {motion_model}"
+                        )
+                        for t in placed_tracks:
+                            print(f"  - {t.name}")
                         bpy.ops.clip.select_all(action='SELECT')
                         bpy.ops.clip.track_markers(backwards=False, sequence=True)
+                        print("[Tracking] tracking command finished")
                     break
             delete_short_tracks(clip, config.min_track_length, config)
+            print(
+                f"[Tracking] cleanup complete, evaluating frame for insufficient markers"
+            )
             return find_first_insufficient_frame(
                 clip, config.min_marker_count
             )
@@ -263,6 +284,9 @@ def run_tracking_cycle(
         old_threshold = config.threshold
         config.threshold = config.threshold * (
             (config.placed_markers + 0.1) / config.threshold_marker_count
+        )
+        print(
+            f"[Tracking] adjust threshold {old_threshold:.3f} -> {config.threshold:.3f}"
         )
 
 
@@ -276,6 +300,7 @@ def run_tracking_cycle(
         ):
             try:
                 remove_tracks(clip, placed_tracks)
+                print(f"[Tracking] removed {len(placed_tracks)} temporary markers")
             except Exception as exc:
                 pass
             placed_tracks.clear()
@@ -283,6 +308,7 @@ def run_tracking_cycle(
         config.bad_markers.clear()
         # config.placed_markers NICHT zurücksetzen!
 
+    print("[Tracking] maximum iterations reached or goal not met")
     return None
 
 
