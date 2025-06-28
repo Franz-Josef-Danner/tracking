@@ -106,9 +106,8 @@ def save_session(config: TrackingConfig, success: bool) -> None:
     try:
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=4)
-        print(f"Session gespeichert: {path}")
     except Exception as exc:
-        print(f"⚠️ Fehler beim Speichern der Session: {exc}")
+        pass
 
 
 
@@ -167,24 +166,14 @@ def run_tracking_cycle(
     Returns the first frame with insufficient markers after short track
     evaluation or ``None`` if no such frame exists.
     """
-    print(f"Tracking gestartet bei Frame {frame_current}")
-    print(
-        f"Start Threshold: {config.threshold} | Threshold Marker Count: {config.threshold_marker_count}"
-    )
 
     clip = get_movie_clip(bpy.context)
     if not clip:
-        print("No active MovieClip found")
         return None
 
     # Ensure the clip uses the current scene motion model for tracking
     motion_model = getattr(bpy.context.scene, "motion_model", MOTION_MODELS[0])
     clip.tracking.settings.default_motion_model = motion_model
-    print(f"\n🔧 Motion Model gesetzt auf: {motion_model}")
-
-    print(
-        f"🎬 Clip: {clip.name}, Frame-Bereich: {clip.frame_start}-{clip.frame_duration}"
-    )
 
     config.start_frame = frame_current
 
@@ -202,7 +191,7 @@ def run_tracking_cycle(
             try:
                 existing.add(t.name)
             except Exception as exc:
-                print(f'⚠️ Fehler beim Lesen des Track-Namens: {exc}')
+                pass
         for area in bpy.context.window.screen.areas:
             if area.type == 'CLIP_EDITOR':
                 override = bpy.context.copy()
@@ -221,7 +210,7 @@ def run_tracking_cycle(
             try:
                 t_name = track.name
             except Exception as exc:
-                print(f'⚠️ Fehler beim Lesen des Track-Namens: {exc}')
+                pass
                 continue
             if t_name not in existing and track.markers:
                 placed_tracks.append(track)
@@ -236,12 +225,7 @@ def run_tracking_cycle(
             existing,
         )
 
-        print(
-            f"🔍 Validierte Marker: {len(good_tracks)} / {len(placed_tracks)} ursprünglich"
-        )
-
         if bad_tracks:
-            print(f"🗑 Entferne {len(bad_tracks)} ungültige neue Tracks.")
             remove_tracks(clip, bad_tracks)
 
         placed_tracks = good_tracks
@@ -253,16 +237,8 @@ def run_tracking_cycle(
 
         # Adjust target marker count dynamically based on valid results
         config.threshold_marker_count = max(config.placed_markers * 2, 1)
-        print(f"🎯 Neuer Zielwert: {config.threshold_marker_count}")
-
-        print(f"\n🟠 Iteration {threshold_iter}")
-        print(f"➡️  Threshold: {config.threshold:.6f}")
-        print(f"➡️  Neue Tracks erkannt: {len(placed_tracks)}")
-        print(f"✅ Gesamt-Platzierte Marker: {config.placed_markers}")
-        print(f"🔍 Zielbereich: {config.min_marker_range} bis {config.max_marker_range}")
 
         if config.min_marker_range <= config.placed_markers <= config.max_marker_range:
-            print("✅ Abbruch: Zielbereich für Markeranzahl erreicht.")
 
             for area in bpy.context.window.screen.areas:
                 if area.type == 'CLIP_EDITOR':
@@ -282,7 +258,6 @@ def run_tracking_cycle(
             )
 
         if threshold_iter >= config.max_threshold_iteration:
-            print("⛔️ Abbruch: Maximale Anzahl an Threshold-Iterationen erreicht.")
             break
 
         old_threshold = config.threshold
@@ -290,7 +265,6 @@ def run_tracking_cycle(
             (config.placed_markers + 0.1) / config.threshold_marker_count
         )
 
-        print(f"📉 Neuer Threshold berechnet: {old_threshold:.6f} → {config.threshold:.6f}")
 
         threshold_iter += 1
         clip = get_movie_clip(bpy.context)
@@ -303,11 +277,8 @@ def run_tracking_cycle(
             try:
                 remove_tracks(clip, placed_tracks)
             except Exception as exc:
-                print(f'⚠️ Fehler beim Entfernen des Tracks: {exc}')
+                pass
             placed_tracks.clear()
-            print(
-                "❌ Markeranzahl außerhalb Zielbereich, lösche alle neu gesetzten Marker dieser Iteration."
-            )
 
         config.bad_markers.clear()
         # config.placed_markers NICHT zurücksetzen!
@@ -370,7 +341,6 @@ def delete_short_tracks(
         try:
             name = track.name
         except Exception as exc:
-            print(f'⚠️ Fehler beim Lesen des Track-Namens: {exc}')
             continue
         name_clean = clean_name(name)
         if config is not None:
@@ -384,7 +354,7 @@ def delete_short_tracks(
             try:
                 remove_tracks(clip, [track])
             except Exception as exc:
-                print(f'⚠️ Fehler beim Entfernen des Tracks: {exc}')
+                pass
 
 
 def find_first_insufficient_frame(
@@ -502,10 +472,7 @@ def update_search_size_from_motion(
     clip.tracking.settings.default_search_size = search_size
     clip.tracking.settings.default_pattern_size = pattern_size
 
-    print(
-        f"\n📐 Frame {frame}: avg_motion={avg_motion:.2f}, "
-        f"search_size={search_size}, pattern_size={pattern_size}"
-    )
+
 
     return search_size
 
@@ -560,18 +527,9 @@ def trigger_tracker(context: bpy.types.Context | None = None) -> TrackingConfig:
         frame_current=scene.frame_current,
     )
     if frame is not None:
-        print(f"Insufficient markers at frame {frame}")
         context.scene.frame_current = frame
         config.abort_frame = frame
-        print(
-            f"\u27a1\ufe0f Playhead nach Trackingende auf Frame {context.scene.frame_current} gesetzt "
-            f"(Start: {config.start_frame})"
-        )
     else:
-        print(
-            f"Tracking abgeschlossen ohne unzureichende Marker. "
-            f"Playhead verbleibt auf Frame {context.scene.frame_current}"
-        )
         config.abort_frame = None
 
     # Update the number of active markers after the tracking cycle
@@ -646,12 +604,7 @@ class OT_RunAutoTracking(bpy.types.Operator):
             last_abort = abort_frame
 
             if same_frame_attempts >= 20:
-                print("⛔️ Maximale Anzahl an Versuchen erreicht")
                 break
-
-            print(
-                f"❌ Versuch {same_frame_attempts + 1}: Nur {cfg.active_markers} aktive Marker, erneut versuchen"
-            )
 
         self.report({'INFO'}, "Auto tracking cycle executed")
         return {'FINISHED'}
@@ -696,7 +649,6 @@ if __name__ == "__main__":
     # Only register the operators and menu when running the script directly.
     # Automatic tracking should not start immediately.
     register()
-    print("Auto tracking operators registered. Use the menu to start tracking.")
 
 
 
