@@ -51,8 +51,8 @@ class AutoTrackProperties(bpy.types.PropertyGroup):
         min=0,
     )
 
-    distance: bpy.props.IntProperty(
-        name="Distance",
+    min_distance: bpy.props.IntProperty(
+        name="Min Distance",
         description="Horizontal resolution / 20 for later use",
         default=0,
         min=0,
@@ -98,7 +98,7 @@ def auto_track_wrapper(context):
     bpy.ops.clip.detect_features(
         threshold=props.threshold,
         margin=props.margin,
-        distance=props.distance,
+        min_distance=props.min_distance,
     )
     return frame
 
@@ -137,10 +137,10 @@ class CLIP_OT_auto_track_start(bpy.types.Operator):
 
             props = context.scene.auto_track_settings
 
-            # Calculate margin and distance from the clip's horizontal resolution
+            # Calculate margin and minimum distance from the clip's horizontal resolution
             width = space.clip.size[0]
             props.margin = int(width / 200)
-            props.distance = int(width / 20)
+            props.min_distance = int(width / 20)
 
             # Access tracking settings for the active clip
             tracking = space.clip.tracking
