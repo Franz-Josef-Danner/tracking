@@ -84,15 +84,26 @@ def find_frame_with_few_markers(clip, minimum):
 
 
 def auto_track_wrapper(context):
-    """Search for sparse marker frames and run Detect Features."""
+    """Search for sparse marker frames and run Detect Features.
+
+    Returns a tuple of the frame used for detection and information about
+    newly created markers. Each entry contains the track name and the
+    marker position as ``(x, y)`` at the detection frame. If the number of
+    new markers is outside the configured bounds, all newly created tracks
+    are removed and an empty list is returned."""
+
     space = context.space_data
     if not (space and space.clip):
-        return None
+        return None, []
 
     props = context.scene.auto_track_settings
     frame = find_frame_with_few_markers(space.clip, props.min_marker_count)
     if frame is None:
-        return None
+        return None, []
+
+    clip = space.clip
+    tracks = clip.tracking.tracks
+    existing = {t.name for t in tracks}
 
     context.scene.frame_current = frame
     bpy.ops.clip.detect_features(
@@ -100,7 +111,25 @@ def auto_track_wrapper(context):
         margin=props.margin,
         min_distance=props.min_distance,
     )
-    return frame
+
+    new_tracks = [t for t in tracks if t.name not in existing]
+    new_markers = []
+    for track in new_tracks:
+        marker = track.markers.find_frame(frame)
+        if not marker and track.markers:
+            marker = track.markers[0]
+        if marker:
+            new_markers.append((track.name, (marker.co[0], marker.co[1])))
+
+    if (
+        len(new_markers) < props.min_marker_count_plus_small
+        or len(new_markers) > props.min_marker_count_plus_big
+    ):
+        for track in new_tracks:
+            tracks.remove(track)
+        new_markers.clear()
+
+    return frame, new_markers
 
 
 class CLIP_OT_auto_track_settings(bpy.types.Operator):
@@ -200,9 +229,15 @@ class CLIP_OT_auto_track_start(bpy.types.Operator):
                 if area.type == 'CLIP_EDITOR':
                     area.tag_redraw()
 
-            frame = auto_track_wrapper(context)
+            frame, new_markers = auto_track_wrapper(context)
             if frame is not None:
-                self.report({'INFO'}, f"Detect Features run at frame {frame}")
+                if new_markers:
+                    self.report(
+                        {'INFO'},
+                        f"Detect Features run at frame {frame}, {len(new_markers)} markers kept",
+                    )
+                else:
+                    self.report({'INFO'}, f"Detect Features run at frame {frame}, markers removed")
             else:
                 self.report({'INFO'}, "Tracking defaults applied")
             return {'FINISHED'}
