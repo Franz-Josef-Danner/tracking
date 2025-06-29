@@ -77,7 +77,16 @@ class CLIP_OT_auto_track_start(bpy.types.Operator):
 
             # Set global UI motion model
             tracking = space.clip.tracking
-            tracking.settings.motion_model = 'LocRotScale'
+            settings = tracking.settings
+
+            # Blender versions may expose the motion model setting under
+            # different names; try both possibilities to remain compatible
+            if hasattr(settings, "motion_model"):
+                settings.motion_model = 'LocRotScale'
+            elif hasattr(settings, "default_motion_model"):
+                settings.default_motion_model = 'LocRotScale'
+            else:
+                self.report({'WARNING'}, "Motion model property not found")
 
             # Optional: Set motion model for active track
             track = tracking.tracks.active
