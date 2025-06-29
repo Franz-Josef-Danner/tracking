@@ -1,12 +1,11 @@
 bl_info = {
-    "name": "Auto Track Menu",
+    "name": "Auto Track Tools",
     "blender": (2, 80, 0),
     "category": "Clip",
     "author": "Auto Generated",
-    "version": (1, 0, 0),
+    "version": (1, 2, 1),
     "description": (
-        "Add auto track entries to the Clip menu and provide configurable "
-        "tracking settings"
+        "Provide an Auto Track panel with configurable tracking settings"
     ),
 }
 
@@ -78,6 +77,30 @@ class CLIP_OT_auto_track_start(bpy.types.Operator):
             return {'CANCELLED'}
 
 
+class CLIP_OT_auto_track_start_head(bpy.types.Operator):
+    """Auto track after setting motion model to LocRotScale"""
+
+    bl_idname = "clip.auto_track_start_head"
+    bl_label = "Auto Track Start Head"
+
+    def execute(self, context):
+        try:
+            settings = context.scene.tracking.settings
+            enum_prop = settings.bl_rna.properties["motion_model"].enum_items
+            if len(enum_prop) > 2:
+                settings.motion_model = enum_prop[2].identifier
+            else:
+                self.report({'WARNING'}, "Motion model index 2 missing")
+            bpy.ops.clip.track_markers(
+                'INVOKE_DEFAULT', backwards=False, sequence=True
+            )
+            return {'FINISHED'}
+        except Exception as e:
+            self.report({'ERROR'}, str(e))
+            return {'CANCELLED'}
+
+
+
 class CLIP_PT_auto_track_settings_panel(bpy.types.Panel):
     """Panel in the Clip Editor sidebar displaying auto track options"""
 
@@ -93,25 +116,21 @@ class CLIP_PT_auto_track_settings_panel(bpy.types.Panel):
         layout.prop(settings, "min_marker_count")
         layout.prop(settings, "min_tracking_length")
         layout.separator()
-
-
-def draw_auto_track_menu(self, context):
-    layout = self.layout
-    layout.separator()
-    layout.operator(
-        CLIP_OT_auto_track_settings.bl_idname,
-        text="Auto Track Settings",
-    )
-    layout.operator(
-        CLIP_OT_auto_track_start.bl_idname,
-        text="AUTO TRACK START",
-    )
+        layout.operator(
+            CLIP_OT_auto_track_start.bl_idname,
+            text="Auto Track Start",
+        )
+        layout.operator(
+            CLIP_OT_auto_track_start_head.bl_idname,
+            text="Auto Track Start Head",
+        )
 
 
 classes = (
     AutoTrackProperties,
     CLIP_OT_auto_track_settings,
     CLIP_OT_auto_track_start,
+    CLIP_OT_auto_track_start_head,
     CLIP_PT_auto_track_settings_panel,
 )
 
@@ -122,11 +141,9 @@ def register():
     bpy.types.Scene.auto_track_settings = bpy.props.PointerProperty(
         type=AutoTrackProperties
     )
-    bpy.types.CLIP_MT_clip.append(draw_auto_track_menu)
 
 
 def unregister():
-    bpy.types.CLIP_MT_clip.remove(draw_auto_track_menu)
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
     del bpy.types.Scene.auto_track_settings
