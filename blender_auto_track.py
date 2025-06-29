@@ -38,12 +38,12 @@ class AutoTrackProperties(bpy.types.PropertyGroup):
     @property
     def min_marker_count_plus_small(self):
         """Minimum marker count increased by 80 percent"""
-        return int(self.min_marker_count * 1.8)
+        return int(self.min_marker_count * 0.8)
 
     @property
     def min_marker_count_plus_big(self):
         """Minimum marker count increased by 120 percent"""
-        return int(self.min_marker_count * 2.2)
+        return int(self.min_marker_count * 1.2)
 
 
 class CLIP_OT_auto_track_settings(bpy.types.Operator):
