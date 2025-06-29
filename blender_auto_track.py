@@ -85,8 +85,14 @@ class CLIP_OT_auto_track_start_head(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            settings = context.space_data.clip.tracking.settings
+            tracking_object = context.space_data.clip.tracking.objects.active
+            if tracking_object is None:
+                self.report({'ERROR'}, "No active tracking object.")
+                return {'CANCELLED'}
+
+            settings = tracking_object.settings
             enum_prop = settings.bl_rna.properties["motion_model"].enum_items
+
             if len(enum_prop) > 2:
                 settings.motion_model = enum_prop[2].identifier
             else:
