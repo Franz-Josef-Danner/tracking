@@ -11,6 +11,9 @@ bl_info = {
 
 import bpy
 
+# Keep track of validated tracks and the last group of detected tracks
+GOOD_MARKERS = []
+TRACK_MARKERS = []
 
 class AutoTrackProperties(bpy.types.PropertyGroup):
     """Properties stored in the scene for auto tracking"""
@@ -36,12 +39,12 @@ class AutoTrackProperties(bpy.types.PropertyGroup):
 
     @property
     def min_marker_count_plus_small(self):
-        """Minimum marker count increased by 80 percent"""
+        """Minimum marker count at 80 percent"""
         return int(self.min_marker_count * 0.8)
 
     @property
     def min_marker_count_plus_big(self):
-        """Minimum marker count increased by 120 percent"""
+        """Minimum marker count increased by 20 percent"""
         return int(self.min_marker_count * 1.2)
 
     margin: bpy.props.IntProperty(
@@ -113,23 +116,53 @@ def auto_track_wrapper(context):
     )
 
     new_tracks = [t for t in tracks if t.name not in existing]
-    new_markers = []
+    detected = []
+    width, height = clip.size
+
+    # Gather coordinates of good markers at this frame
+    good_positions = []
+    for name in GOOD_MARKERS:
+        good = tracks.get(name)
+        if not good:
+            continue
+        mark = good.markers.find_frame(frame)
+        if mark:
+            good_positions.append((mark.co[0] * width, mark.co[1] * height))
+
     for track in new_tracks:
         marker = track.markers.find_frame(frame)
         if not marker and track.markers:
             marker = track.markers[0]
-        if marker:
-            new_markers.append((track.name, (marker.co[0], marker.co[1])))
+        if not marker:
+            continue
+
+        x = marker.co[0] * width
+        y = marker.co[1] * height
+        keep = True
+        for gx, gy in good_positions:
+            dist = ((x - gx) ** 2 + (y - gy) ** 2) ** 0.5
+            if dist < props.min_distance:
+                keep = False
+                break
+
+        if keep:
+            detected.append((track, (marker.co[0], marker.co[1])))
+        else:
+            tracks.remove(track)
+
+    TRACK_MARKERS[:] = [t.name for t, _ in detected]
 
     if (
-        len(new_markers) < props.min_marker_count_plus_small
-        or len(new_markers) > props.min_marker_count_plus_big
+        len(detected) < props.min_marker_count_plus_small
+        or len(detected) > props.min_marker_count_plus_big
     ):
-        for track in new_tracks:
+        for track, _ in detected:
             tracks.remove(track)
-        new_markers.clear()
+        TRACK_MARKERS.clear()
+        return frame, []
 
-    return frame, new_markers
+    GOOD_MARKERS.extend(TRACK_MARKERS)
+    return frame, [(t.name, pos) for t, pos in detected]
 
 
 class CLIP_OT_auto_track_settings(bpy.types.Operator):
