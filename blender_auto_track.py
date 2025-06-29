@@ -3,7 +3,7 @@ bl_info = {
     "blender": (2, 80, 0),
     "category": "Clip",
     "author": "Auto Generated",
-    "version": (1, 1, 0),
+    "version": (1, 2, 0),
     "description": (
         "Provide an Auto Track panel with configurable tracking settings"
     ),
@@ -111,6 +111,14 @@ class CLIP_PT_auto_track_settings_panel(bpy.types.Panel):
         layout.prop(settings, "min_marker_count")
         layout.prop(settings, "min_tracking_length")
         layout.separator()
+        layout.operator(
+            CLIP_OT_auto_track_start.bl_idname,
+            text="Auto Track Start",
+        )
+        layout.operator(
+            CLIP_OT_auto_track_start_head.bl_idname,
+            text="Auto Track Start Head",
+        )
 
 
 classes = (
