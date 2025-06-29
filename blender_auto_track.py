@@ -75,6 +75,9 @@ class CLIP_OT_auto_track_start(bpy.types.Operator):
                 track = space.clip.tracking.tracks.active
                 if track:
                     track.motion_model = 'LocRotScale'
+                    for area in context.screen.areas:
+                        if area.type == 'CLIP_EDITOR':
+                            area.tag_redraw()
                 else:
                     self.report({'WARNING'}, "No active track selected")
             self.report({'INFO'}, "Motion model set to LocRotScale")
