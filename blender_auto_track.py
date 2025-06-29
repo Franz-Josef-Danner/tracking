@@ -75,7 +75,7 @@ class CLIP_OT_auto_track_start(bpy.types.Operator):
                 self.report({'ERROR'}, "No movie clip found")
                 return {'CANCELLED'}
 
-            # Set global UI motion model
+            # Access tracking settings for the active clip
             tracking = space.clip.tracking
             settings = tracking.settings
 
@@ -88,10 +88,31 @@ class CLIP_OT_auto_track_start(bpy.types.Operator):
             else:
                 self.report({'WARNING'}, "Motion model property not found")
 
+            # Update detection and marker defaults
+            if hasattr(settings, "detect_threshold"):
+                settings.detect_threshold = 1
+            elif hasattr(settings, "default_threshold"):
+                settings.default_threshold = 1
+
+            if hasattr(settings, "default_pattern_size"):
+                settings.default_pattern_size = 50
+            elif hasattr(settings, "pattern_size"):
+                settings.pattern_size = 50
+
+            if hasattr(settings, "default_search_size"):
+                settings.default_search_size = 100
+            elif hasattr(settings, "search_size"):
+                settings.search_size = 100
+
             # Optional: Set motion model for active track
             track = tracking.tracks.active
             if track:
-                track.motion_model = 'LocRotScale'
+                if hasattr(track, "motion_model"):
+                    track.motion_model = 'LocRotScale'
+                if hasattr(track, "pattern_size"):
+                    track.pattern_size = 50
+                if hasattr(track, "search_size"):
+                    track.search_size = 100
             else:
                 self.report({'WARNING'}, "No active track selected")
 
