@@ -3,7 +3,7 @@ bl_info = {
     "blender": (2, 80, 0),
     "category": "Clip",
     "author": "Auto Generated",
-    "version": (1, 2, 0),
+    "version": (1, 2, 1),
     "description": (
         "Provide an Auto Track panel with configurable tracking settings"
     ),
@@ -85,7 +85,12 @@ class CLIP_OT_auto_track_start_head(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            context.scene.tracking.settings.motion_model = 'TRANSLATION_ROTATION_SCALE'
+            settings = context.scene.tracking.settings
+            enum_prop = settings.bl_rna.properties["motion_model"].enum_items
+            if len(enum_prop) > 2:
+                settings.motion_model = enum_prop[2].identifier
+            else:
+                self.report({'WARNING'}, "Motion model index 2 missing")
             bpy.ops.clip.track_markers(
                 'INVOKE_DEFAULT', backwards=False, sequence=True
             )
