@@ -88,21 +88,31 @@ class CLIP_OT_auto_track_start(bpy.types.Operator):
             else:
                 self.report({'WARNING'}, "Motion model property not found")
 
-            # Update detection and marker defaults
+            # Update detection and marker defaults so manual "Detect Features"
+            # starts with threshold 1 and larger marker sizes
             if hasattr(settings, "detect_threshold"):
                 settings.detect_threshold = 1
             elif hasattr(settings, "default_threshold"):
                 settings.default_threshold = 1
+
+            if hasattr(settings, "use_default_detect_threshold"):
+                settings.use_default_detect_threshold = True
 
             if hasattr(settings, "default_pattern_size"):
                 settings.default_pattern_size = 50
             elif hasattr(settings, "pattern_size"):
                 settings.pattern_size = 50
 
+            if hasattr(settings, "use_default_pattern_size"):
+                settings.use_default_pattern_size = True
+
             if hasattr(settings, "default_search_size"):
                 settings.default_search_size = 100
             elif hasattr(settings, "search_size"):
                 settings.search_size = 100
+
+            if hasattr(settings, "use_default_search_size"):
+                settings.use_default_search_size = True
 
             # Optional: Set motion model for active track
             track = tracking.tracks.active
