@@ -89,10 +89,12 @@ class CLIP_OT_auto_track_start(bpy.types.Operator):
                 self.report({'WARNING'}, "Motion model property not found")
 
             # Update detection and marker defaults so manual "Detect Features"
-            # starts with threshold 1 and larger marker sizes
+            # starts with threshold 1 and larger marker sizes. Set both the
+            # immediate threshold and the default to cover all Blender
+            # versions and UI states.
             if hasattr(settings, "detect_threshold"):
                 settings.detect_threshold = 1
-            elif hasattr(settings, "default_threshold"):
+            if hasattr(settings, "default_threshold"):
                 settings.default_threshold = 1
 
             if hasattr(settings, "use_default_detect_threshold"):
