@@ -62,6 +62,28 @@ class CLIP_OT_auto_track_settings(bpy.types.Operator):
             return {'CANCELLED'}
 
 
+class CLIP_OT_auto_detect_features(bpy.types.Operator):
+    """Run Detect Features with threshold 1"""
+
+    bl_idname = "clip.auto_detect_features"
+    bl_label = "Detect Features (Auto)"
+    bl_description = "Führt 'Detect Features' mit Threshold 1 aus"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return (
+            context.space_data
+            and context.space_data.type == 'CLIP_EDITOR'
+            and context.space_data.clip is not None
+        )
+
+    def execute(self, context):
+        bpy.ops.clip.detect_features(threshold=1.0)
+        self.report({'INFO'}, "Detect Features mit Threshold = 1 ausgeführt")
+        return {'FINISHED'}
+
+
 class CLIP_OT_auto_track_start(bpy.types.Operator):
     """Set Motion Model to LocRotScale for UI and active track"""
 
@@ -133,7 +155,13 @@ class CLIP_OT_auto_track_start(bpy.types.Operator):
                 if area.type == 'CLIP_EDITOR':
                     area.tag_redraw()
 
-            self.report({'INFO'}, "Motion model set to LocRotScale")
+            # Immediately run Detect Features with threshold 1
+            bpy.ops.clip.detect_features(threshold=1.0)
+
+            self.report(
+                {'INFO'},
+                "Motion model set to LocRotScale and Detect Features ausgeführt",
+            )
             return {'FINISHED'}
 
         except Exception as e:
@@ -159,11 +187,16 @@ class CLIP_PT_auto_track_settings_panel(bpy.types.Panel):
             CLIP_OT_auto_track_start.bl_idname,
             text="Auto Track Start",
         )
+        layout.operator(
+            CLIP_OT_auto_detect_features.bl_idname,
+            text="Detect Features (Auto)",
+        )
 
 
 classes = (
     AutoTrackProperties,
     CLIP_OT_auto_track_settings,
+    CLIP_OT_auto_detect_features,
     CLIP_OT_auto_track_start,
     CLIP_PT_auto_track_settings_panel,
 )
