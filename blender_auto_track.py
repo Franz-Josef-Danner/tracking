@@ -63,7 +63,7 @@ class CLIP_OT_auto_track_settings(bpy.types.Operator):
 
 
 class CLIP_OT_auto_track_start(bpy.types.Operator):
-    """Set the active track's motion model to LocRotScale"""
+    """Set Motion Model to LocRotScale for UI and active track"""
 
     bl_idname = "clip.auto_track_start"
     bl_label = "Auto Track Start"
@@ -71,17 +71,29 @@ class CLIP_OT_auto_track_start(bpy.types.Operator):
     def execute(self, context):
         try:
             space = context.space_data
-            if space and space.clip:
-                track = space.clip.tracking.tracks.active
-                if track:
-                    space.clip.tracking.settings.motion_model = 'LocRotScale'
-                    for area in context.screen.areas:
-                        if area.type == 'CLIP_EDITOR':
-                            area.tag_redraw()
-                else:
-                    self.report({'WARNING'}, "No active track selected")
+            if not (space and space.clip):
+                self.report({'ERROR'}, "No movie clip found")
+                return {'CANCELLED'}
+
+            # Set global UI motion model
+            tracking = space.clip.tracking
+            tracking.settings.motion_model = 'LocRotScale'
+
+            # Optional: Set motion model for active track
+            track = tracking.tracks.active
+            if track:
+                track.motion_model = 'LocRotScale'
+            else:
+                self.report({'WARNING'}, "No active track selected")
+
+            # Force UI refresh
+            for area in context.screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    area.tag_redraw()
+
             self.report({'INFO'}, "Motion model set to LocRotScale")
             return {'FINISHED'}
+
         except Exception as e:
             self.report({'ERROR'}, str(e))
             return {'CANCELLED'}
