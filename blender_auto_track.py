@@ -83,7 +83,6 @@ class CLIP_PT_auto_track_settings_panel(bpy.types.Panel):
         layout.prop(settings, "min_marker_count")
         layout.prop(settings, "min_tracking_length")
         layout.separator()
-        layout.label(text=f"Min Marker Count Multiplicator: {settings.min_marker_multiplier}")
 
 
 def draw_auto_track_menu(self, context):
