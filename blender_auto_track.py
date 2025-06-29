@@ -3,7 +3,7 @@ bl_info = {
     "blender": (2, 80, 0),
     "category": "Clip",
     "author": "Auto Generated",
-    "version": (1, 2, 1),
+    "version": (1, 3, 0),
     "description": (
         "Provide an Auto Track panel with configurable tracking settings"
     ),
@@ -44,6 +44,20 @@ class AutoTrackProperties(bpy.types.PropertyGroup):
         """Minimum marker count increased by 120 percent"""
         return int(self.min_marker_count * 1.2)
 
+    margin: bpy.props.IntProperty(
+        name="Margin",
+        description="Horizontal resolution / 200 for later use",
+        default=0,
+        min=0,
+    )
+
+    distance: bpy.props.IntProperty(
+        name="Distance",
+        description="Horizontal resolution / 20 for later use",
+        default=0,
+        min=0,
+    )
+
 
 class CLIP_OT_auto_track_settings(bpy.types.Operator):
     """Show the auto track sidebar in the Clip Editor"""
@@ -76,6 +90,13 @@ class CLIP_OT_auto_track_start(bpy.types.Operator):
             if not (space and space.clip):
                 self.report({'ERROR'}, "No movie clip found")
                 return {'CANCELLED'}
+
+            props = context.scene.auto_track_settings
+
+            # Calculate margin and distance from the clip's horizontal resolution
+            width = space.clip.size[0]
+            props.margin = int(width / 200)
+            props.distance = int(width / 20)
 
             # Access tracking settings for the active clip
             tracking = space.clip.tracking
