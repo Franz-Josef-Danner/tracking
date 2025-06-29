@@ -70,7 +70,7 @@ class AutoTrackProperties(bpy.types.PropertyGroup):
 def find_frame_with_few_markers(clip, minimum):
     """Return the first frame with fewer active markers than minimum."""
     start = int(clip.frame_start)
-    end = int(clip.frame_end)
+    end = int(clip.frame_start + clip.frame_duration - 1)
     tracks = clip.tracking.tracks
     for frame in range(start, end + 1):
         count = 0
