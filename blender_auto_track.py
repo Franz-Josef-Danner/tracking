@@ -85,7 +85,7 @@ class CLIP_OT_auto_track_start_head(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            context.scene.tracking.settings.motion_model = 'LocRotScale'
+            context.scene.tracking.settings.motion_model = 'TRANSLATION_ROTATION_SCALE'
             bpy.ops.clip.track_markers(
                 'INVOKE_DEFAULT', backwards=False, sequence=True
             )
