@@ -35,6 +35,16 @@ class AutoTrackProperties(bpy.types.PropertyGroup):
         """Four times the minimum marker count"""
         return self.min_marker_count * 4
 
+    @property
+    def min_marker_count_plus_small(self):
+        """Minimum marker count increased by 80 percent"""
+        return int(self.min_marker_count * 0.8)
+
+    @property
+    def min_marker_count_plus_big(self):
+        """Minimum marker count increased by 120 percent"""
+        return int(self.min_marker_count * 1.2)
+
 
 class CLIP_OT_auto_track_settings(bpy.types.Operator):
     """Show the auto track sidebar in the Clip Editor"""
