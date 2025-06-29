@@ -74,7 +74,7 @@ class CLIP_OT_auto_track_start(bpy.types.Operator):
             if space and space.clip:
                 track = space.clip.tracking.tracks.active
                 if track:
-                    track.motion_model = 'LocRotScale'
+                    space.clip.tracking.settings.motion_model = 'LocRotScale'
                     for area in context.screen.areas:
                         if area.type == 'CLIP_EDITOR':
                             area.tag_redraw()
