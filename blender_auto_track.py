@@ -58,6 +58,50 @@ class AutoTrackProperties(bpy.types.PropertyGroup):
         min=0,
     )
 
+    threshold: bpy.props.FloatProperty(
+        name="Threshold",
+        description="Feature detection threshold",
+        default=1.0,
+        min=0.0,
+        max=1.0,
+    )
+
+
+def find_frame_with_few_markers(clip, minimum):
+    """Return the first frame with fewer active markers than minimum."""
+    start = int(clip.frame_start)
+    end = int(clip.frame_end)
+    tracks = clip.tracking.tracks
+    for frame in range(start, end + 1):
+        count = 0
+        for track in tracks:
+            marker = track.markers.find_frame(frame)
+            if marker and not marker.mute:
+                count += 1
+        if count < minimum:
+            return frame
+    return None
+
+
+def auto_track_wrapper(context):
+    """Search for sparse marker frames and run Detect Features."""
+    space = context.space_data
+    if not (space and space.clip):
+        return None
+
+    props = context.scene.auto_track_settings
+    frame = find_frame_with_few_markers(space.clip, props.min_marker_count)
+    if frame is None:
+        return None
+
+    context.scene.frame_current = frame
+    bpy.ops.clip.detect_features(
+        threshold=props.threshold,
+        margin=props.margin,
+        distance=props.distance,
+    )
+    return frame
+
 
 class CLIP_OT_auto_track_settings(bpy.types.Operator):
     """Show the auto track sidebar in the Clip Editor"""
@@ -156,7 +200,11 @@ class CLIP_OT_auto_track_start(bpy.types.Operator):
                 if area.type == 'CLIP_EDITOR':
                     area.tag_redraw()
 
-            self.report({'INFO'}, "Tracking defaults applied")
+            frame = auto_track_wrapper(context)
+            if frame is not None:
+                self.report({'INFO'}, f"Detect Features run at frame {frame}")
+            else:
+                self.report({'INFO'}, "Tracking defaults applied")
             return {'FINISHED'}
 
         except Exception as e:
@@ -177,6 +225,7 @@ class CLIP_PT_auto_track_settings_panel(bpy.types.Panel):
 
         layout.prop(settings, "min_marker_count")
         layout.prop(settings, "min_tracking_length")
+        layout.prop(settings, "threshold")
         layout.separator()
         layout.operator(
             CLIP_OT_auto_track_start.bl_idname,
