@@ -11,6 +11,9 @@ bl_info = {
 
 import bpy
 
+# Keep track of validated tracks and the last group of detected tracks
+GOOD_MARKERS = []
+TRACK_MARKERS = []
 
 class AutoTrackProperties(bpy.types.PropertyGroup):
     """Properties stored in the scene for auto tracking"""
@@ -51,12 +54,115 @@ class AutoTrackProperties(bpy.types.PropertyGroup):
         min=0,
     )
 
-    distance: bpy.props.IntProperty(
-        name="Distance",
+    min_distance: bpy.props.IntProperty(
+        name="Min Distance",
         description="Horizontal resolution / 20 for later use",
         default=0,
         min=0,
     )
+
+    threshold: bpy.props.FloatProperty(
+        name="Threshold",
+        description="Feature detection threshold",
+        default=1.0,
+        min=0.0,
+        max=1.0,
+    )
+
+
+def find_frame_with_few_markers(clip, minimum):
+    """Return the first frame with fewer active markers than minimum."""
+    start = int(clip.frame_start)
+    end = int(clip.frame_start + clip.frame_duration - 1)
+    tracks = clip.tracking.tracks
+    for frame in range(start, end + 1):
+        count = 0
+        for track in tracks:
+            marker = track.markers.find_frame(frame)
+            if marker and not marker.mute:
+                count += 1
+        if count < minimum:
+            return frame
+    return None
+
+
+def auto_track_wrapper(context):
+    """Search for sparse marker frames and run Detect Features.
+
+    Returns a tuple of the frame used for detection and information about
+    newly created markers. Each entry contains the track name and the
+    marker position as ``(x, y)`` at the detection frame. If the number of
+    new markers is outside the configured bounds, all newly created tracks
+    are removed and an empty list is returned."""
+
+    space = context.space_data
+    if not (space and space.clip):
+        return None, []
+
+    props = context.scene.auto_track_settings
+    frame = find_frame_with_few_markers(space.clip, props.min_marker_count)
+    if frame is None:
+        return None, []
+
+    clip = space.clip
+    tracks = clip.tracking.tracks
+    existing = {t.name for t in tracks}
+
+    context.scene.frame_current = frame
+    bpy.ops.clip.detect_features(
+        threshold=props.threshold,
+        margin=props.margin,
+        min_distance=props.min_distance,
+    )
+
+    new_tracks = [t for t in tracks if t.name not in existing]
+    detected = []
+    width, height = clip.size
+
+    # Gather coordinates of good markers at this frame
+    good_positions = []
+    for name in GOOD_MARKERS:
+        good = tracks.get(name)
+        if not good:
+            continue
+        mark = good.markers.find_frame(frame)
+        if mark:
+            good_positions.append((mark.co[0] * width, mark.co[1] * height))
+
+    for track in new_tracks:
+        marker = track.markers.find_frame(frame)
+        if not marker and track.markers:
+            marker = track.markers[0]
+        if not marker:
+            continue
+
+        x = marker.co[0] * width
+        y = marker.co[1] * height
+        keep = True
+        for gx, gy in good_positions:
+            dist = ((x - gx) ** 2 + (y - gy) ** 2) ** 0.5
+            if dist < props.min_distance:
+                keep = False
+                break
+
+        if keep:
+            detected.append((track, (marker.co[0], marker.co[1])))
+        else:
+            tracks.remove(track)
+
+    TRACK_MARKERS[:] = [t.name for t, _ in detected]
+
+    if (
+        len(detected) < props.min_marker_count_plus_small
+        or len(detected) > props.min_marker_count_plus_big
+    ):
+        for track, _ in detected:
+            tracks.remove(track)
+        TRACK_MARKERS.clear()
+        return frame, []
+
+    GOOD_MARKERS.extend(TRACK_MARKERS)
+    return frame, [(t.name, pos) for t, pos in detected]
 
 
 class CLIP_OT_auto_track_settings(bpy.types.Operator):
@@ -93,10 +199,10 @@ class CLIP_OT_auto_track_start(bpy.types.Operator):
 
             props = context.scene.auto_track_settings
 
-            # Calculate margin and distance from the clip's horizontal resolution
+            # Calculate margin and minimum distance from the clip's horizontal resolution
             width = space.clip.size[0]
             props.margin = int(width / 200)
-            props.distance = int(width / 20)
+            props.min_distance = int(width / 20)
 
             # Access tracking settings for the active clip
             tracking = space.clip.tracking
@@ -156,7 +262,17 @@ class CLIP_OT_auto_track_start(bpy.types.Operator):
                 if area.type == 'CLIP_EDITOR':
                     area.tag_redraw()
 
-            self.report({'INFO'}, "Tracking defaults applied")
+            frame, new_markers = auto_track_wrapper(context)
+            if frame is not None:
+                if new_markers:
+                    self.report(
+                        {'INFO'},
+                        f"Detect Features run at frame {frame}, {len(new_markers)} markers kept",
+                    )
+                else:
+                    self.report({'INFO'}, f"Detect Features run at frame {frame}, markers removed")
+            else:
+                self.report({'INFO'}, "Tracking defaults applied")
             return {'FINISHED'}
 
         except Exception as e:
@@ -177,6 +293,7 @@ class CLIP_PT_auto_track_settings_panel(bpy.types.Panel):
 
         layout.prop(settings, "min_marker_count")
         layout.prop(settings, "min_tracking_length")
+        layout.prop(settings, "threshold")
         layout.separator()
         layout.operator(
             CLIP_OT_auto_track_start.bl_idname,
