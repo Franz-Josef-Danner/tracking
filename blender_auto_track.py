@@ -39,12 +39,12 @@ class AutoTrackProperties(bpy.types.PropertyGroup):
 
     @property
     def min_marker_count_plus_small(self):
-        """Minimum marker count increased by 80 percent"""
+        """Minimum marker count at 80 percent"""
         return int(self.min_marker_count * 0.8)
 
     @property
     def min_marker_count_plus_big(self):
-        """Minimum marker count increased by 120 percent"""
+        """Minimum marker count increased by 20 percent"""
         return int(self.min_marker_count * 1.2)
 
     margin: bpy.props.IntProperty(
