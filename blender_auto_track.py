@@ -3,7 +3,7 @@ bl_info = {
     "blender": (2, 80, 0),
     "category": "Clip",
     "author": "Auto Generated",
-    "version": (1, 2, 1),
+    "version": (1, 3, 0),
     "description": (
         "Provide an Auto Track panel with configurable tracking settings"
     ),
@@ -44,6 +44,20 @@ class AutoTrackProperties(bpy.types.PropertyGroup):
         """Minimum marker count increased by 120 percent"""
         return int(self.min_marker_count * 1.2)
 
+    margin: bpy.props.IntProperty(
+        name="Margin",
+        description="Horizontal resolution / 200 for later use",
+        default=0,
+        min=0,
+    )
+
+    distance: bpy.props.IntProperty(
+        name="Distance",
+        description="Horizontal resolution / 20 for later use",
+        default=0,
+        min=0,
+    )
+
 
 class CLIP_OT_auto_track_settings(bpy.types.Operator):
     """Show the auto track sidebar in the Clip Editor"""
@@ -62,8 +76,10 @@ class CLIP_OT_auto_track_settings(bpy.types.Operator):
             return {'CANCELLED'}
 
 
+
+
 class CLIP_OT_auto_track_start(bpy.types.Operator):
-    """Set the active track's motion model to LocRotScale"""
+    """Set Motion Model to LocRotScale for UI and active track"""
 
     bl_idname = "clip.auto_track_start"
     bl_label = "Auto Track Start"
@@ -71,17 +87,78 @@ class CLIP_OT_auto_track_start(bpy.types.Operator):
     def execute(self, context):
         try:
             space = context.space_data
-            if space and space.clip:
-                track = space.clip.tracking.tracks.active
-                if track:
-                    space.clip.tracking.settings.motion_model = 'LocRotScale'
-                    for area in context.screen.areas:
-                        if area.type == 'CLIP_EDITOR':
-                            area.tag_redraw()
-                else:
-                    self.report({'WARNING'}, "No active track selected")
-            self.report({'INFO'}, "Motion model set to LocRotScale")
+            if not (space and space.clip):
+                self.report({'ERROR'}, "No movie clip found")
+                return {'CANCELLED'}
+
+            props = context.scene.auto_track_settings
+
+            # Calculate margin and distance from the clip's horizontal resolution
+            width = space.clip.size[0]
+            props.margin = int(width / 200)
+            props.distance = int(width / 20)
+
+            # Access tracking settings for the active clip
+            tracking = space.clip.tracking
+            settings = tracking.settings
+
+            # Blender versions may expose the motion model setting under
+            # different names; try both possibilities to remain compatible
+            if hasattr(settings, "motion_model"):
+                settings.motion_model = 'LocRotScale'
+            elif hasattr(settings, "default_motion_model"):
+                settings.default_motion_model = 'LocRotScale'
+            else:
+                self.report({'WARNING'}, "Motion model property not found")
+
+            # Update detection and marker defaults so manual "Detect Features"
+            # starts with threshold 1 and larger marker sizes. Set both the
+            # immediate threshold and the default to cover all Blender
+            # versions and UI states.
+            if hasattr(settings, "detect_threshold"):
+                settings.detect_threshold = 1
+            if hasattr(settings, "default_threshold"):
+                settings.default_threshold = 1
+
+            if hasattr(settings, "use_default_detect_threshold"):
+                settings.use_default_detect_threshold = True
+
+            if hasattr(settings, "default_pattern_size"):
+                settings.default_pattern_size = 50
+            elif hasattr(settings, "pattern_size"):
+                settings.pattern_size = 50
+
+            if hasattr(settings, "use_default_pattern_size"):
+                settings.use_default_pattern_size = True
+
+            if hasattr(settings, "default_search_size"):
+                settings.default_search_size = 100
+            elif hasattr(settings, "search_size"):
+                settings.search_size = 100
+
+            if hasattr(settings, "use_default_search_size"):
+                settings.use_default_search_size = True
+
+            # Optional: Set motion model for active track
+            track = tracking.tracks.active
+            if track:
+                if hasattr(track, "motion_model"):
+                    track.motion_model = 'LocRotScale'
+                if hasattr(track, "pattern_size"):
+                    track.pattern_size = 50
+                if hasattr(track, "search_size"):
+                    track.search_size = 100
+            else:
+                self.report({'WARNING'}, "No active track selected")
+
+            # Force UI refresh
+            for area in context.screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    area.tag_redraw()
+
+            self.report({'INFO'}, "Tracking defaults applied")
             return {'FINISHED'}
+
         except Exception as e:
             self.report({'ERROR'}, str(e))
             return {'CANCELLED'}
