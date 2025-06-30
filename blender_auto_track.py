@@ -71,44 +71,18 @@ class AutoTrackProperties(bpy.types.PropertyGroup):
 
 
 def remove_track_by_name(context, name):
-    """Entfernt Track über selektiven Operator-Aufruf mit Override."""
+    """Robust remove by iterating over actual collection."""
     clip = context.space_data.clip
     tracks = clip.tracking.tracks
-    track = tracks.get(name)
-    if not track:
-        return
 
-    # Alles deselektieren
-    for t in tracks:
-        t.select = False
-    track.select = True
-
-    # Sicherstellen, dass Clip-Editor-Kontext verwendet wird
-    area = next((a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None)
-    if not area:
-        print("CLIP_EDITOR area not found.")
-        return
-
-    region = next((r for r in area.regions if r.type == 'WINDOW'), None)
-    if not region:
-        print("WINDOW region not found in CLIP_EDITOR.")
-        return
-
-    override = {
-        "area": area,
-        "region": region,
-        "space_data": area.spaces.active,
-        "clip": clip,
-        "scene": context.scene,
-        "window": context.window,
-        "screen": context.screen,
-    }
-
-    try:
-        bpy.ops.clip.track_remove(override)
-        print(f"Track '{name}' removed via operator.")
-    except Exception as e:
-        print(f"Operator failed to remove track '{name}': {e}")
+    for track in list(tracks):  # Wichtig: Kopie der Liste!
+        if track.name == name:
+            try:
+                tracks.remove(track)
+                print(f"Removed track: {name}")
+            except Exception as e:
+                print(f"Failed to remove track '{name}': {e}")
+            break
 
 
 def find_frame_with_few_markers(clip, minimum):
