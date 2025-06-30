@@ -81,6 +81,14 @@ def remove_track_by_name(tracks, name):
             print(f"Failed to remove track '{name}': {e}")
 
 
+def disable_track(track):
+    """Disable the track as a soft-delete workaround."""
+    track.select = False
+    track.mute = True
+    track.hide = True
+    print(f"Track '{track.name}' disabled instead of removed.")
+
+
 def set_prefix(track, prefix):
     """Rename track with the given prefix, stripping any existing one."""
     name = track.name
@@ -169,7 +177,7 @@ def auto_track_wrapper(context):
             set_prefix(track, PREFIX_TRACK)
             detected.append((track, (marker.co[0], marker.co[1])))
         else:
-            remove_track_by_name(tracks, track.name)
+            disable_track(track)
 
 
 
@@ -178,7 +186,7 @@ def auto_track_wrapper(context):
         or len(detected) > props.min_marker_count_plus_big
     ):
         for track, _ in detected:
-            remove_track_by_name(tracks, track.name)
+            disable_track(track)
         return frame, []
 
     for track, _ in detected:
