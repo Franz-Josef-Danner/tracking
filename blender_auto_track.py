@@ -70,6 +70,13 @@ class AutoTrackProperties(bpy.types.PropertyGroup):
     )
 
 
+def remove_track_by_name(tracks, name):
+    """Safely remove a track from the collection by name."""
+    track = tracks.get(name)
+    if track:
+        tracks.remove(track)
+
+
 def find_frame_with_few_markers(clip, minimum):
     """Return the first frame with fewer active markers than minimum."""
     start = int(clip.frame_start)
@@ -148,7 +155,7 @@ def auto_track_wrapper(context):
         if keep:
             detected.append((track, (marker.co[0], marker.co[1])))
         else:
-            tracks.remove(track)
+            remove_track_by_name(tracks, track.name)
 
     TRACK_MARKERS[:] = [t.name for t, _ in detected]
 
@@ -157,7 +164,7 @@ def auto_track_wrapper(context):
         or len(detected) > props.min_marker_count_plus_big
     ):
         for track, _ in detected:
-            tracks.remove(track)
+            remove_track_by_name(tracks, track.name)
         TRACK_MARKERS.clear()
         return frame, []
 
