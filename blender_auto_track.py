@@ -114,6 +114,8 @@ def auto_track_wrapper(context):
         margin=props.margin,
         min_distance=props.min_distance,
     )
+    # Ensure the tracking data is fully updated before accessing the tracks
+    context.view_layer.update()
 
     new_tracks = [t for t in tracks if t.name not in existing]
     detected = []
@@ -148,7 +150,10 @@ def auto_track_wrapper(context):
         if keep:
             detected.append((track, (marker.co[0], marker.co[1])))
         else:
-            tracks.remove(track)
+            for t in tracks:
+                if t.name == track.name:
+                    tracks.remove(t)
+                    break
 
     TRACK_MARKERS[:] = [t.name for t, _ in detected]
 
@@ -157,7 +162,10 @@ def auto_track_wrapper(context):
         or len(detected) > props.min_marker_count_plus_big
     ):
         for track, _ in detected:
-            tracks.remove(track)
+            for t in tracks:
+                if t.name == track.name:
+                    tracks.remove(t)
+                    break
         TRACK_MARKERS.clear()
         return frame, []
 
