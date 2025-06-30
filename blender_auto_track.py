@@ -71,19 +71,13 @@ class AutoTrackProperties(bpy.types.PropertyGroup):
 
 
 def remove_track_by_name(tracks, name):
-    """Safely remove a track using Blender's remove operator."""
+    """Remove track by name using direct API call."""
     track = tracks.get(name)
-    if not track:
-        return
-
-    # Deselect all tracks and select only the target to ensure the operator
-    # deletes the correct one. Using the operator avoids issues with
-    # ``tracks.remove`` not being available in all Blender versions.
-    for t in tracks:
-        t.select = False
-    track.select = True
-
-    bpy.ops.clip.track_remove()
+    if track:
+        try:
+            tracks.remove(track)
+        except Exception as e:
+            print(f"Failed to remove track '{name}': {e}")
 
 
 def find_frame_with_few_markers(clip, minimum):
