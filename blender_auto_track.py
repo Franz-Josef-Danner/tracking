@@ -71,18 +71,23 @@ class AutoTrackProperties(bpy.types.PropertyGroup):
 
 
 def remove_track_by_name(context, name):
-    """Robust remove by iterating over actual collection."""
+    """Korrekt über die ID-Datenstruktur auf die echte Track-Collection zugreifen."""
     clip = context.space_data.clip
-    tracks = clip.tracking.tracks
+    tracking_data = clip.tracking
+    tracks_collection = tracking_data.tracks
 
-    for track in list(tracks):  # Wichtig: Kopie der Liste!
-        if track.name == name:
-            try:
-                tracks.remove(track)
-                print(f"Removed track: {name}")
-            except Exception as e:
-                print(f"Failed to remove track '{name}': {e}")
+    real_track = None
+    for t in tracks_collection:
+        if t.name == name:
+            real_track = t
             break
+
+    if real_track is not None:
+        try:
+            tracks_collection.remove(real_track)
+            print(f"Removed track: {name}")
+        except Exception as e:
+            print(f"Failed to remove track '{name}': {e}")
 
 
 def find_frame_with_few_markers(clip, minimum):
