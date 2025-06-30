@@ -70,40 +70,19 @@ class AutoTrackProperties(bpy.types.PropertyGroup):
     )
 
 
-def remove_track_by_name(tracks, name):
-    """Remove track using Blender's operator with an override context."""
-    track = tracks.get(name)
-    if not track:
+def remove_track_by_name(context, name):
+    """Direktes Entfernen eines Tracking-Tracks über Daten-API."""
+    space = context.space_data
+    if not (space and space.clip):
         return
 
-    try:
-        # Locate an available Clip Editor area for proper context
-        area = None
-        for window in bpy.context.window_manager.windows:
-            for a in window.screen.areas:
-                if a.type == 'CLIP_EDITOR':
-                    area = a
-                    break
-            if area:
-                break
-
-        if area:
-            region = next((r for r in area.regions if r.type == 'WINDOW'), area.regions[0])
-            override = {
-                'window': window,
-                'screen': window.screen,
-                'area': area,
-                'region': region,
-                'scene': bpy.context.scene,
-                'clip': area.spaces.active.clip,
-                'track': track,
-            }
-            bpy.ops.clip.track_remove(override, track=name)
-        else:
-            # Fallback: attempt removal without override
-            bpy.ops.clip.track_remove(track=name)
-    except Exception as e:
-        print(f"Failed to remove track '{name}': {e}")
+    tracks = space.clip.tracking.tracks
+    track = tracks.get(name)
+    if track:
+        try:
+            tracks.remove(track)
+        except Exception as e:
+            print(f"Failed to remove track '{name}': {e}")
 
 
 def find_frame_with_few_markers(clip, minimum):
@@ -184,7 +163,7 @@ def auto_track_wrapper(context):
         if keep:
             detected.append((track, (marker.co[0], marker.co[1])))
         else:
-            remove_track_by_name(tracks, track.name)
+            remove_track_by_name(context, track.name)
 
     TRACK_MARKERS[:] = [t.name for t, _ in detected]
 
@@ -193,7 +172,7 @@ def auto_track_wrapper(context):
         or len(detected) > props.min_marker_count_plus_big
     ):
         for track, _ in detected:
-            remove_track_by_name(tracks, track.name)
+            remove_track_by_name(context, track.name)
         TRACK_MARKERS.clear()
         return frame, []
 
