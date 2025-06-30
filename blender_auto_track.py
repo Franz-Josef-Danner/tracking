@@ -71,18 +71,20 @@ class AutoTrackProperties(bpy.types.PropertyGroup):
 
 
 def remove_track_by_name(context, name):
-    """Direktes Entfernen eines Tracking-Tracks über Daten-API."""
+    """Robustes Entfernen eines Tracking-Tracks über Vergleich in der Collection."""
     space = context.space_data
     if not (space and space.clip):
         return
 
     tracks = space.clip.tracking.tracks
-    track = tracks.get(name)
-    if track:
-        try:
-            tracks.remove(track)
-        except Exception as e:
-            print(f"Failed to remove track '{name}': {e}")
+    for t in list(tracks):
+        if t.name == name:
+            try:
+                tracks.remove(t)
+                print(f"Track '{name}' removed successfully.")
+            except Exception as e:
+                print(f"Failed to remove track '{name}': {e}")
+            break
 
 
 def find_frame_with_few_markers(clip, minimum):
