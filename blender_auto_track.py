@@ -11,9 +11,10 @@ bl_info = {
 
 import bpy
 
-# Keep track of validated tracks and the last group of detected tracks
-GOOD_MARKERS = []
-TRACK_MARKERS = []
+# Prefixes used to identify track states
+PREFIX_NEW = "NEW_"
+PREFIX_TRACK = "TRACK_"
+PREFIX_GOOD = "GOOD_"
 
 class AutoTrackProperties(bpy.types.PropertyGroup):
     """Properties stored in the scene for auto tracking"""
@@ -70,24 +71,22 @@ class AutoTrackProperties(bpy.types.PropertyGroup):
     )
 
 
-def remove_track_by_name(context, name):
-    """Korrekt über die ID-Datenstruktur auf die echte Track-Collection zugreifen."""
-    clip = context.space_data.clip
-    tracking_data = clip.tracking
-    tracks_collection = tracking_data.tracks
-
-    real_track = None
-    for t in tracks_collection:
-        if t.name == name:
-            real_track = t
-            break
-
-    if real_track is not None:
+def remove_track_by_name(tracks, name):
+    """Remove track from collection if it exists."""
+    track = tracks.get(name)
+    if track:
         try:
-            tracks_collection.remove(real_track)
-            print(f"Removed track: {name}")
+            tracks.remove(track)
         except Exception as e:
             print(f"Failed to remove track '{name}': {e}")
+
+
+def set_prefix(track, prefix):
+    """Rename track with the given prefix, stripping any existing one."""
+    name = track.name
+    if name.startswith((PREFIX_NEW, PREFIX_TRACK, PREFIX_GOOD)):
+        name = name.split("_", 1)[1]
+    track.name = prefix + name
 
 
 def find_frame_with_few_markers(clip, minimum):
@@ -136,18 +135,19 @@ def auto_track_wrapper(context):
     )
 
     new_tracks = [t for t in tracks if t.name not in existing]
+    for t in new_tracks:
+        set_prefix(t, PREFIX_NEW)
+
     detected = []
     width, height = clip.size
 
     # Gather coordinates of good markers at this frame
     good_positions = []
-    for name in GOOD_MARKERS:
-        good = tracks.get(name)
-        if not good:
-            continue
-        mark = good.markers.find_frame(frame)
-        if mark:
-            good_positions.append((mark.co[0] * width, mark.co[1] * height))
+    for t in tracks:
+        if t.name.startswith(PREFIX_GOOD):
+            mark = t.markers.find_frame(frame)
+            if mark:
+                good_positions.append((mark.co[0] * width, mark.co[1] * height))
 
     for track in new_tracks:
         marker = track.markers.find_frame(frame)
@@ -166,22 +166,24 @@ def auto_track_wrapper(context):
                 break
 
         if keep:
+            set_prefix(track, PREFIX_TRACK)
             detected.append((track, (marker.co[0], marker.co[1])))
         else:
-            remove_track_by_name(context, track.name)
+            remove_track_by_name(tracks, track.name)
 
-    TRACK_MARKERS[:] = [t.name for t, _ in detected]
+
 
     if (
         len(detected) < props.min_marker_count_plus_small
         or len(detected) > props.min_marker_count_plus_big
     ):
         for track, _ in detected:
-            remove_track_by_name(context, track.name)
-        TRACK_MARKERS.clear()
+            remove_track_by_name(tracks, track.name)
         return frame, []
 
-    GOOD_MARKERS.extend(TRACK_MARKERS)
+    for track, _ in detected:
+        set_prefix(track, PREFIX_GOOD)
+
     return frame, [(t.name, pos) for t, pos in detected]
 
 
