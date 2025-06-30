@@ -71,13 +71,39 @@ class AutoTrackProperties(bpy.types.PropertyGroup):
 
 
 def remove_track_by_name(tracks, name):
-    """Remove track by name using direct API call."""
+    """Remove track using Blender's operator with an override context."""
     track = tracks.get(name)
-    if track:
-        try:
-            tracks.remove(track)
-        except Exception as e:
-            print(f"Failed to remove track '{name}': {e}")
+    if not track:
+        return
+
+    try:
+        # Locate an available Clip Editor area for proper context
+        area = None
+        for window in bpy.context.window_manager.windows:
+            for a in window.screen.areas:
+                if a.type == 'CLIP_EDITOR':
+                    area = a
+                    break
+            if area:
+                break
+
+        if area:
+            region = next((r for r in area.regions if r.type == 'WINDOW'), area.regions[0])
+            override = {
+                'window': window,
+                'screen': window.screen,
+                'area': area,
+                'region': region,
+                'scene': bpy.context.scene,
+                'clip': area.spaces.active.clip,
+                'track': track,
+            }
+            bpy.ops.clip.track_remove(override, track=name)
+        else:
+            # Fallback: attempt removal without override
+            bpy.ops.clip.track_remove(track=name)
+    except Exception as e:
+        print(f"Failed to remove track '{name}': {e}")
 
 
 def find_frame_with_few_markers(clip, minimum):
