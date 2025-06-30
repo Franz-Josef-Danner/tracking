@@ -71,7 +71,7 @@ class AutoTrackProperties(bpy.types.PropertyGroup):
 
 
 def remove_track_by_name(tracks, name):
-    """Safely remove a track using Blender's delete operator."""
+    """Safely remove a track using Blender's remove operator."""
     track = tracks.get(name)
     if not track:
         return
@@ -83,7 +83,7 @@ def remove_track_by_name(tracks, name):
         t.select = False
     track.select = True
 
-    bpy.ops.clip.tracks_delete()
+    bpy.ops.clip.track_remove()
 
 
 def find_frame_with_few_markers(clip, minimum):
