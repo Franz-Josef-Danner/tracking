@@ -172,6 +172,8 @@ class TRACKING_PT_custom_panel(bpy.types.Panel):
 
 # ---- Playhead utilities (from playhead.py) ----
 DEFAULT_MINIMUM_MARKER_COUNT = 5
+# Seconds between timer events during the tracking cycle
+CYCLE_TIMER_INTERVAL = 1.0
 
 def get_tracking_marker_counts():
     """Return a mapping of frame numbers to the number of markers."""
@@ -288,7 +290,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         self._last_frame = context.scene.frame_current
 
         wm = context.window_manager
-        self._timer = wm.event_timer_add(0.5, window=context.window)
+        self._timer = wm.event_timer_add(CYCLE_TIMER_INTERVAL, window=context.window)
         wm.modal_handler_add(self)
         print("[Cycle] Modal handler added")
         return {'RUNNING_MODAL'}
