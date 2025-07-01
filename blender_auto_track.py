@@ -71,15 +71,6 @@ class AutoTrackProperties(bpy.types.PropertyGroup):
     )
 
 
-def remove_track_by_name(tracks, name):
-    """Remove track from collection if it exists."""
-    track = tracks.get(name)
-    if track:
-        try:
-            tracks.remove(track)
-        except Exception as e:
-            print(f"Failed to remove track '{name}': {e}")
-
 
 def disable_track(track):
     """Disable the track as a soft-delete workaround."""
