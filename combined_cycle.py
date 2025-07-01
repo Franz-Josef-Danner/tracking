@@ -27,7 +27,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
     def execute(self, context):
         bpy.ops.clip.detect_features(
-            threshold=0.01,
+            threshold=0.1,
             margin=50,
             min_distance=100,
             placement='FRAME'
