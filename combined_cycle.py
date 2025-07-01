@@ -261,10 +261,22 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             bpy.ops.clip.auto_track_forward()
             context.scene.tracking_cycle_status = "Cleaning tracks"
             bpy.ops.tracking.delete_short_tracks_with_prefix()
-            # Clear cached clip images to free memory before the next
-            # detection step. Verified available operators with
-            # ``dir(bpy.ops.clip)`` in Blender's Python console.
-            bpy.ops.clip.clear_cache()
+            # Clear cached clip images before running the next detection
+            # step to free memory. ``dir(bpy.ops.clip)`` confirmed that the
+            # operator is ``clip.clear_cache``.
+            for area in context.screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            for space in area.spaces:
+                                if space.type == 'CLIP_EDITOR':
+                                    with context.temp_override(
+                                        area=area, region=region, space_data=space
+                                    ):
+                                        bpy.ops.clip.clear_cache()
+                                    break
+                            break
+                    break
             self._last_frame = context.scene.frame_current
             print(f"[Cycle] Step finished at frame {self._last_frame}")
             context.scene.tracking_cycle_status = "Running"
