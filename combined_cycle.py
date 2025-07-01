@@ -235,11 +235,19 @@ def find_frame_with_few_tracking_markers(marker_counts, minimum_count):
     print("[Cycle] No frame below threshold found")
     return None
 
-def set_playhead(frame):
+def set_playhead(frame, context=None):
     """Set the current frame if ``frame`` is valid."""
 
     if frame is not None:
         bpy.context.scene.frame_current = frame
+        screen = (
+            context.screen if context and getattr(context, "screen", None) else bpy.context.screen
+        )
+        for area in screen.areas:
+            if area.type == "CLIP_EDITOR":
+                for space in area.spaces:
+                    if space.type == "CLIP_EDITOR":
+                        space.clip_user.frame_current = frame
         print(f"[Cycle] Playhead set to frame {frame}")
     else:
         print("[Cycle] No frame to set playhead")
@@ -275,7 +283,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 self._threshold,
             )
             bpy.ops.clip.clear_custom_cache()
-            set_playhead(target_frame)
+            set_playhead(target_frame, context)
             context.scene.current_cycle_frame = context.scene.frame_current
 
             if target_frame is None:
