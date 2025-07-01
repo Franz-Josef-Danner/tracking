@@ -13,7 +13,7 @@ bl_info = {
     "name": "Tracking Cycle",
     "description": "Find frames, detect and track iteratively",
     "author": "OpenAI Codex",
-    "version": (1, 0, 0),
+    "version": (1, 1, 0),
     "blender": (2, 80, 0),
     "category": "Clip",
 }
@@ -124,6 +124,64 @@ class TRACK_PT_auto_track_panel(bpy.types.Panel):
         layout = self.layout
         layout.operator(TRACK_OT_auto_track_forward.bl_idname, icon='TRACKING_FORWARDS')
 
+# ---- Delete Short Tracks Operator (from Track Length.py) ----
+class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
+    """Remove tracks with prefix ``TRACK_`` shorter than 25 frames."""
+
+    bl_idname = "tracking.delete_short_tracks_with_prefix"
+    bl_label = "Delete Short Tracks with Prefix"
+
+    def execute(self, context):
+        print("\n=== [Delete short tracks] ===")
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "No clip loaded")
+            print("[Delete] No movie clip loaded")
+            return {'CANCELLED'}
+
+        active_obj = clip.tracking.objects.active
+        tracks = active_obj.tracks
+        tracks_to_delete = [
+            t for t in tracks if t.name.startswith("TRACK_") and len(t.markers) < 25
+        ]
+
+        for track in tracks:
+            track.select = track in tracks_to_delete
+
+        if not tracks_to_delete:
+            self.report({'INFO'}, "No short tracks found with prefix 'TRACK_'")
+            return {'CANCELLED'}
+
+        for area in context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        for space in area.spaces:
+                            if space.type == 'CLIP_EDITOR':
+                                with context.temp_override(
+                                    area=area, region=region, space_data=space
+                                ):
+                                    bpy.ops.clip.delete_track()
+                                self.report(
+                                    {'INFO'},
+                                    f"Deleted {len(tracks_to_delete)} short tracks with prefix 'TRACK_'",
+                                )
+                                return {'FINISHED'}
+
+        self.report({'ERROR'}, "No Clip Editor area found")
+        return {'CANCELLED'}
+
+
+class TRACKING_PT_custom_panel(bpy.types.Panel):
+    bl_space_type = 'CLIP_EDITOR'
+    bl_region_type = 'UI'
+    bl_category = 'Tracking'
+    bl_label = 'Custom Tracking Tools'
+
+    def draw(self, context):
+        layout = self.layout
+        layout.operator(TRACKING_OT_delete_short_tracks_with_prefix.bl_idname)
+
 # ---- Playhead utilities (from playhead.py) ----
 DEFAULT_MINIMUM_MARKER_COUNT = 5
 
@@ -207,6 +265,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             )
             bpy.ops.clip.detect_features_custom()
             bpy.ops.clip.auto_track_forward()
+            bpy.ops.tracking.delete_short_tracks_with_prefix()
             self._last_frame = context.scene.frame_current
             print(f"[Cycle] Step finished at frame {self._last_frame}")
 
@@ -268,6 +327,8 @@ classes = [
     CLIP_PT_DetectFeaturesPanel,
     TRACK_OT_auto_track_forward,
     TRACK_PT_auto_track_panel,
+    TRACKING_OT_delete_short_tracks_with_prefix,
+    TRACKING_PT_custom_panel,
     CLIP_OT_tracking_cycle,
     CLIP_PT_tracking_cycle_panel,
 ]
