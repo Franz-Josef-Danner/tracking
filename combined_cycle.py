@@ -276,6 +276,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             )
             bpy.ops.clip.clear_custom_cache()
             set_playhead(target_frame)
+            context.scene.current_cycle_frame = context.scene.frame_current
 
             if target_frame is None:
                 self.report({'INFO'}, "Tracking cycle complete")
@@ -299,6 +300,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             self._last_frame = context.scene.frame_current
             print(f"[Cycle] Step finished at frame {self._last_frame}")
             context.scene.tracking_cycle_status = "Running"
+            context.scene.current_cycle_frame = context.scene.frame_current
 
         elif event.type == 'ESC':
             self.report({'INFO'}, "Tracking cycle cancelled")
@@ -315,6 +317,10 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             f"(min_marker_count={context.scene.min_marker_count})"
         )
         context.scene.tracking_cycle_status = "Running"
+        context.scene.total_cycle_frames = (
+            context.scene.frame_end - context.scene.frame_start + 1
+        )
+        context.scene.current_cycle_frame = context.scene.frame_current
         self._clip = context.space_data.clip
         if not self._clip:
             self.report({'WARNING'}, "Kein Clip gefunden")
@@ -349,6 +355,10 @@ class CLIP_PT_tracking_cycle_panel(bpy.types.Panel):
         layout = self.layout
         layout.prop(context.scene, "min_marker_count")
         layout.label(text=context.scene.tracking_cycle_status)
+        layout.label(
+            text=f"Frame {context.scene.current_cycle_frame}/"
+            f"{context.scene.total_cycle_frames}"
+        )
         layout.operator(
             CLIP_OT_tracking_cycle.bl_idname,
             icon='REC',
@@ -382,6 +392,18 @@ def register():
         description="Current state of the tracking cycle",
     )
 
+    bpy.types.Scene.current_cycle_frame = bpy.props.IntProperty(
+        name="Current Cycle Frame",
+        default=0,
+        description="Current frame processed in the tracking cycle",
+    )
+
+    bpy.types.Scene.total_cycle_frames = bpy.props.IntProperty(
+        name="Total Cycle Frames",
+        default=0,
+        description="Total number of frames in the cycle",
+    )
+
     for cls in classes:
         bpy.utils.register_class(cls)
 
@@ -394,6 +416,8 @@ def unregister():
 
     del bpy.types.Scene.min_marker_count
     del bpy.types.Scene.tracking_cycle_status
+    del bpy.types.Scene.current_cycle_frame
+    del bpy.types.Scene.total_cycle_frames
 
 if __name__ == "__main__":
     register()
