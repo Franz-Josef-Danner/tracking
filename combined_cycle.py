@@ -11,6 +11,9 @@ are immediately tracked forward.
 
 bl_info = {
     "name": "Tracking Cycle",
+    "description": "Find frames, detect and track iteratively",
+    "author": "OpenAI Codex",
+    "version": (1, 0, 0),
     "blender": (2, 80, 0),
     "category": "Clip",
 }
@@ -26,12 +29,14 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
     bl_label = "Detect Features (Custom)"
 
     def execute(self, context):
+        print("[Detect] Running feature detection...")
         bpy.ops.clip.detect_features(
             threshold=0.1,
             margin=50,
             min_distance=100,
             placement='FRAME'
         )
+        print("[Detect] Done")
         return {'FINISHED'}
 
 class CLIP_PT_DetectFeaturesPanel(bpy.types.Panel):
@@ -60,6 +65,7 @@ class TRACK_OT_auto_track_forward(bpy.types.Operator):
 
     def execute(self, context):
         clip = context.space_data.clip
+        print("[Track] Starting auto track...")
         if not clip:
             self.report({'WARNING'}, "Kein Clip gefunden")
             return {'CANCELLED'}
@@ -69,6 +75,7 @@ class TRACK_OT_auto_track_forward(bpy.types.Operator):
             return {'CANCELLED'}
 
         bpy.ops.clip.track_markers(sequence=True)
+        print("[Track] Finished auto track")
         return {'FINISHED'}
 
 class TRACK_PT_auto_track_panel(bpy.types.Panel):
@@ -94,6 +101,9 @@ def get_tracking_marker_counts():
             for marker in track.markers:
                 frame = marker.frame
                 marker_counts[frame] += 1
+    print("[Cycle] Marker count per frame:")
+    for frame, count in sorted(marker_counts.items()):
+        print(f"  Frame {frame}: {count}")
     return marker_counts
 
 def find_frame_with_few_tracking_markers(marker_counts, minimum_count):
@@ -103,7 +113,9 @@ def find_frame_with_few_tracking_markers(marker_counts, minimum_count):
     end = bpy.context.scene.frame_end
     for frame in range(start, end + 1):
         if marker_counts.get(frame, 0) < minimum_count:
+            print(f"[Cycle] Found frame {frame} with {marker_counts.get(frame,0)} markers")
             return frame
+    print("[Cycle] No frame below threshold found")
     return None
 
 def set_playhead(frame):
@@ -111,6 +123,9 @@ def set_playhead(frame):
 
     if frame is not None:
         bpy.context.scene.frame_current = frame
+        print(f"[Cycle] Playhead set to frame {frame}")
+    else:
+        print("[Cycle] No frame to set playhead")
 
 # ---- Cycle Operator ----
 class CLIP_OT_tracking_cycle(bpy.types.Operator):
@@ -131,8 +146,10 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
 
     def modal(self, context, event):
         if event.type == 'TIMER':
+            print("[Cycle] Timer event")
             if self._last_frame is not None and self._last_frame != context.scene.frame_end:
                 self._threshold = max(int(self._threshold * 0.9), 1)
+                print(f"[Cycle] Threshold reduced to {self._threshold}")
 
             marker_counts = get_tracking_marker_counts()
             target_frame = find_frame_with_few_tracking_markers(
@@ -149,21 +166,26 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             for track in self._clip.tracking.tracks:
                 track.select = False
 
+            print("[Cycle] Detecting features and tracking")
             bpy.ops.clip.detect_features_custom()
             bpy.ops.clip.auto_track_forward()
             self._last_frame = context.scene.frame_current
+            print(f"[Cycle] Step finished at frame {self._last_frame}")
 
         elif event.type == 'ESC':
             self.report({'INFO'}, "Tracking cycle cancelled")
+            print("[Cycle] Cancelled by user")
             self.cancel(context)
             return {'CANCELLED'}
 
         return {'PASS_THROUGH'}
 
     def execute(self, context):
+        print("[Cycle] Starting tracking cycle")
         self._clip = context.space_data.clip
         if not self._clip:
             self.report({'WARNING'}, "Kein Clip gefunden")
+            print("[Cycle] No clip found")
             return {'CANCELLED'}
 
         self._threshold = MINIMUM_MARKER_COUNT
@@ -172,6 +194,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.5, window=context.window)
         wm.modal_handler_add(self)
+        print("[Cycle] Modal handler added")
         return {'RUNNING_MODAL'}
 
     def cancel(self, context):
@@ -179,6 +202,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         if self._timer is not None:
             wm.event_timer_remove(self._timer)
             self._timer = None
+        print("[Cycle] Timer removed")
 
 
 class CLIP_PT_tracking_cycle_panel(bpy.types.Panel):
