@@ -14,13 +14,11 @@ the Blender text editor or installed as an add-on.
 The add-on registers the following operators in the Movie Clip Editor and
 prints diagnostic information in the console:
 
-- **Detect Features (Custom)** – detects tracking features with predefined
-  settings.
-- **Auto Track Selected** – tracks all selected markers forward.
 - **Start Tracking Cycle** – iteratively searches for frames with few
   markers, detects new features and tracks them forward.
+- **Delete Short Tracks with Prefix** – removes all tracking tracks starting
+  with `TRACK_` that are shorter than 25 frames.
 
-Both the minimum number of markers per frame and the minimum number of
-features to detect can be configured in the panel before running the
-operators.
+The minimum marker count used for detection and frame search can be configured
+in the panel before running the operator.
 
