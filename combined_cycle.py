@@ -232,6 +232,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 self._threshold = max(int(self._threshold * 0.9), 1)
                 print(f"[Cycle] Threshold reduced to {self._threshold}")
 
+            context.scene.tracking_cycle_status = "Searching next frame"
             marker_counts = get_tracking_marker_counts()
             target_frame = find_frame_with_few_tracking_markers(
                 marker_counts,
@@ -241,6 +242,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
 
             if target_frame is None:
                 self.report({'INFO'}, "Tracking cycle complete")
+                context.scene.tracking_cycle_status = "Finished"
                 self.cancel(context)
                 return {'FINISHED'}
 
@@ -251,15 +253,20 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 f"[Cycle] Detecting features and tracking "
                 f"(min markers {context.scene.min_marker_count})"
             )
+            context.scene.tracking_cycle_status = "Detecting features"
             bpy.ops.clip.detect_features_custom()
+            context.scene.tracking_cycle_status = "Tracking markers"
             bpy.ops.clip.auto_track_forward()
+            context.scene.tracking_cycle_status = "Cleaning tracks"
             bpy.ops.tracking.delete_short_tracks_with_prefix()
             self._last_frame = context.scene.frame_current
             print(f"[Cycle] Step finished at frame {self._last_frame}")
+            context.scene.tracking_cycle_status = "Running"
 
         elif event.type == 'ESC':
             self.report({'INFO'}, "Tracking cycle cancelled")
             print("[Cycle] Cancelled by user")
+            context.scene.tracking_cycle_status = "Cancelled"
             self.cancel(context)
             return {'CANCELLED'}
 
@@ -270,6 +277,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             f"[Cycle] Starting tracking cycle "
             f"(min_marker_count={context.scene.min_marker_count})"
         )
+        context.scene.tracking_cycle_status = "Running"
         self._clip = context.space_data.clip
         if not self._clip:
             self.report({'WARNING'}, "Kein Clip gefunden")
@@ -303,6 +311,7 @@ class CLIP_PT_tracking_cycle_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.prop(context.scene, "min_marker_count")
+        layout.label(text=context.scene.tracking_cycle_status)
         layout.operator(
             CLIP_OT_tracking_cycle.bl_idname,
             icon='REC',
@@ -328,6 +337,12 @@ def register():
         description="Minimum markers for detection and search",
     )
 
+    bpy.types.Scene.tracking_cycle_status = bpy.props.StringProperty(
+        name="Tracking Status",
+        default="Idle",
+        description="Current state of the tracking cycle",
+    )
+
     for cls in classes:
         bpy.utils.register_class(cls)
 
@@ -339,6 +354,7 @@ def unregister():
         bpy.utils.unregister_class(cls)
 
     del bpy.types.Scene.min_marker_count
+    del bpy.types.Scene.tracking_cycle_status
 
 if __name__ == "__main__":
     register()
