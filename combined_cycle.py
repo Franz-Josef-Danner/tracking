@@ -25,9 +25,9 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
     def execute(self, context):
         bpy.ops.clip.detect_features(
-            threshold=0.05,
+            threshold=0.01,
             margin=50,
-            min_distance=200,
+            min_distance=100,
             placement='FRAME'
         )
         return {'FINISHED'}
@@ -112,23 +112,21 @@ def set_playhead(frame):
 
 # ---- Cycle Operator ----
 class CLIP_OT_tracking_cycle(bpy.types.Operator):
-    """Cycle through frames without pausing between tracks."""
+    """Run the tracking cycle step by step using a timer."""
 
     bl_idname = "clip.tracking_cycle"
     bl_label = "Start Tracking Cycle"
     bl_description = "Find frames, detect and track iteratively"
 
+    _timer = None
+    _clip = None
+
     @classmethod
     def poll(cls, context):
         return context.space_data and context.space_data.type == 'CLIP_EDITOR'
 
-    def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip gefunden")
-            return {'CANCELLED'}
-
-        while True:
+    def modal(self, context, event):
+        if event.type == 'TIMER':
             marker_counts = get_tracking_marker_counts()
             target_frame = find_frame_with_few_tracking_markers(
                 marker_counts,
@@ -138,16 +136,39 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
 
             if target_frame is None:
                 self.report({'INFO'}, "Tracking cycle complete")
-                break
+                self.cancel(context)
+                return {'FINISHED'}
 
-            # Deselect existing markers so only newly detected ones are tracked
-            for track in clip.tracking.tracks:
+            for track in self._clip.tracking.tracks:
                 track.select = False
 
             bpy.ops.clip.detect_features_custom()
             bpy.ops.clip.auto_track_forward()
 
-        return {'FINISHED'}
+        elif event.type == 'ESC':
+            self.report({'INFO'}, "Tracking cycle cancelled")
+            self.cancel(context)
+            return {'CANCELLED'}
+
+        return {'PASS_THROUGH'}
+
+    def execute(self, context):
+        self._clip = context.space_data.clip
+        if not self._clip:
+            self.report({'WARNING'}, "Kein Clip gefunden")
+            return {'CANCELLED'}
+
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.5, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def cancel(self, context):
+        wm = context.window_manager
+        if self._timer is not None:
+            wm.event_timer_remove(self._timer)
+            self._timer = None
+
 
 class CLIP_PT_tracking_cycle_panel(bpy.types.Panel):
     """UI panel exposing the tracking cycle operator."""
