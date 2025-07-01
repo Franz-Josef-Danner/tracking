@@ -14,7 +14,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             return {'CANCELLED'}
 
         threshold = 0.01
-        min_new = context.scene.detect_min_features
+        min_new = context.scene.min_marker_count
         tracks_before = len(clip.tracking.tracks)
 
         print(
@@ -59,14 +59,14 @@ class CLIP_PT_DetectFeaturesPanel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.prop(context.scene, "detect_min_features")
+        layout.prop(context.scene, "min_marker_count")
         layout.operator("clip.detect_features_custom", icon='VIEWZOOM')
 
 # Registrierung
 def register():
-    bpy.types.Scene.detect_min_features = bpy.props.IntProperty(
-        name="Min New Markers",
-        default=1,
+    bpy.types.Scene.min_marker_count = bpy.props.IntProperty(
+        name="Min Marker Count",
+        default=5,
         min=1,
         description="Minimum markers to detect each run",
     )
@@ -78,7 +78,7 @@ def unregister():
     bpy.utils.unregister_class(DetectFeaturesCustomOperator)
     bpy.utils.unregister_class(CLIP_PT_DetectFeaturesPanel)
 
-    del bpy.types.Scene.detect_min_features
+    del bpy.types.Scene.min_marker_count
 
 if __name__ == "__main__":
     register()
