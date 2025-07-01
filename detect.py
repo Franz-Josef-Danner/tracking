@@ -6,13 +6,39 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
     bl_label = "Detect Features (Custom)"
 
     def execute(self, context):
-        # ruft die Feature-Erkennung mit spezifischen Einstellungen auf
+        """Run feature detection and lower threshold if none are found."""
+
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip gefunden")
+            return {'CANCELLED'}
+
+        threshold = 0.01
+        tracks_before = len(clip.tracking.tracks)
+
         bpy.ops.clip.detect_features(
-            threshold=0.01,
+            threshold=threshold,
             margin=500,
             min_distance=10,
-            placement='FRAME'
+            placement='FRAME',
         )
+
+        tracks_after = len(clip.tracking.tracks)
+
+        while tracks_after == tracks_before and threshold > 0.0001:
+            threshold *= 0.9
+            self.report(
+                {'INFO'},
+                f"Keine Features gefunden, senke Threshold auf {threshold:.4f}",
+            )
+            bpy.ops.clip.detect_features(
+                threshold=threshold,
+                margin=500,
+                min_distance=10,
+                placement='FRAME',
+            )
+            tracks_after = len(clip.tracking.tracks)
+
         return {'FINISHED'}
 
 # Panel-Klasse

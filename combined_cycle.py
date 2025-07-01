@@ -29,13 +29,37 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
     bl_label = "Detect Features (Custom)"
 
     def execute(self, context):
+        """Detect features and lower the threshold if none are found."""
+
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip gefunden")
+            print("[Detect] No clip found")
+            return {'CANCELLED'}
+
+        threshold = 0.1
+        tracks_before = len(clip.tracking.tracks)
+
         print("[Detect] Running feature detection...")
         bpy.ops.clip.detect_features(
-            threshold=0.1,
+            threshold=threshold,
             margin=50,
             min_distance=100,
-            placement='FRAME'
+            placement='FRAME',
         )
+        tracks_after = len(clip.tracking.tracks)
+
+        while tracks_after == tracks_before and threshold > 0.0001:
+            threshold *= 0.9
+            print(f"[Detect] No features, threshold -> {threshold:.4f}")
+            bpy.ops.clip.detect_features(
+                threshold=threshold,
+                margin=50,
+                min_distance=100,
+                placement='FRAME',
+            )
+            tracks_after = len(clip.tracking.tracks)
+
         print("[Detect] Done")
         return {'FINISHED'}
 
