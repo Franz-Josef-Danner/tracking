@@ -18,7 +18,9 @@ prints diagnostic information in the console:
   markers, detects new features and tracks them forward.
 - **Delete Short Tracks with Prefix** – removes all tracking tracks starting
   with `TRACK_` that are shorter than 25 frames.
+- **Clear RAM Cache** – reloads the current clip to free memory.
 
 The minimum marker count used for detection and frame search can be configured
-in the panel before running the operator.
+in the panel before running the operator. During the tracking cycle the
+RAM cache is cleared automatically before jumping to the next frame.
 
