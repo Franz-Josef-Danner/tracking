@@ -58,7 +58,8 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         tracks_after = len(clip.tracking.tracks)
 
         while (tracks_after - tracks_before) < min_new and threshold > 0.0001:
-            threshold *= 0.9
+            factor = ((tracks_after - tracks_before) + 0.1) / min_new
+            threshold *= factor
             print(
                 f"[Detect] Only {tracks_after - tracks_before} found, "
                 f"lowering threshold to {threshold:.4f}"
