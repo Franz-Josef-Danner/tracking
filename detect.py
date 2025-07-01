@@ -17,6 +17,10 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         min_new = context.scene.detect_min_features
         tracks_before = len(clip.tracking.tracks)
 
+        print(
+            f"[Detect] Running detection for {min_new} markers at "
+            f"threshold {threshold:.4f}"
+        )
         bpy.ops.clip.detect_features(
             threshold=threshold,
             margin=500,
@@ -28,13 +32,12 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
         while (tracks_after - tracks_before) < min_new and threshold > 0.0001:
             threshold *= 0.9
-            self.report(
-                {'INFO'},
-                (
-                    f"Nur {tracks_after - tracks_before} Features, "
-                    f"senke Threshold auf {threshold:.4f}"
-                ),
+            msg = (
+                f"Nur {tracks_after - tracks_before} Features, "
+                f"senke Threshold auf {threshold:.4f}"
             )
+            print(f"[Detect] {msg}")
+            self.report({'INFO'}, msg)
             bpy.ops.clip.detect_features(
                 threshold=threshold,
                 margin=500,
@@ -42,7 +45,9 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 placement='FRAME',
             )
             tracks_after = len(clip.tracking.tracks)
-
+        print(
+            f"[Detect] Finished with {tracks_after - tracks_before} new markers"
+        )
         return {'FINISHED'}
 
 # Panel-Klasse

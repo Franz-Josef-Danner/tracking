@@ -41,7 +41,10 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         min_new = context.scene.detect_min_features
         tracks_before = len(clip.tracking.tracks)
 
-        print("[Detect] Running feature detection...")
+        print(
+            f"[Detect] Running detection for {min_new} markers at "
+            f"threshold {threshold:.4f}"
+        )
         bpy.ops.clip.detect_features(
             threshold=threshold,
             margin=50,
@@ -54,7 +57,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             threshold *= 0.9
             print(
                 f"[Detect] Only {tracks_after - tracks_before} found, "
-                f"threshold -> {threshold:.4f}"
+                f"lowering threshold to {threshold:.4f}"
             )
             bpy.ops.clip.detect_features(
                 threshold=threshold,
@@ -64,7 +67,9 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             )
             tracks_after = len(clip.tracking.tracks)
 
-        print("[Detect] Done")
+        print(
+            f"[Detect] Finished with {tracks_after - tracks_before} new markers"
+        )
         return {'FINISHED'}
 
 class CLIP_PT_DetectFeaturesPanel(bpy.types.Panel):
@@ -196,7 +201,10 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             for track in self._clip.tracking.tracks:
                 track.select = False
 
-            print("[Cycle] Detecting features and tracking")
+            print(
+                f"[Cycle] Detecting features and tracking "
+                f"(min features {context.scene.detect_min_features})"
+            )
             bpy.ops.clip.detect_features_custom()
             bpy.ops.clip.auto_track_forward()
             self._last_frame = context.scene.frame_current
@@ -211,7 +219,11 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         return {'PASS_THROUGH'}
 
     def execute(self, context):
-        print("[Cycle] Starting tracking cycle")
+        print(
+            f"[Cycle] Starting tracking cycle "
+            f"(frame_min_markers={context.scene.frame_min_markers}, "
+            f"detect_min_features={context.scene.detect_min_features})"
+        )
         self._clip = context.space_data.clip
         if not self._clip:
             self.report({'WARNING'}, "Kein Clip gefunden")

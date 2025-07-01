@@ -11,7 +11,8 @@ the Blender text editor or installed as an add-on.
    install the folder as an add-on via *Edit → Preferences → Add-ons →
    Install...*.
 
-The add-on registers the following operators in the Movie Clip Editor:
+The add-on registers the following operators in the Movie Clip Editor and
+prints diagnostic information in the console:
 
 - **Detect Features (Custom)** – detects tracking features with predefined
   settings.
