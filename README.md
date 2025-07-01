@@ -19,3 +19,7 @@ The add-on registers the following operators in the Movie Clip Editor:
 - **Start Tracking Cycle** – iteratively searches for frames with few
   markers, detects new features and tracks them forward.
 
+Both the minimum number of markers per frame and the minimum number of
+features to detect can be configured in the panel before running the
+operators.
+

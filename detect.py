@@ -14,6 +14,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             return {'CANCELLED'}
 
         threshold = 0.01
+        min_new = context.scene.detect_min_features
         tracks_before = len(clip.tracking.tracks)
 
         bpy.ops.clip.detect_features(
@@ -25,11 +26,14 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
         tracks_after = len(clip.tracking.tracks)
 
-        while tracks_after == tracks_before and threshold > 0.0001:
+        while (tracks_after - tracks_before) < min_new and threshold > 0.0001:
             threshold *= 0.9
             self.report(
                 {'INFO'},
-                f"Keine Features gefunden, senke Threshold auf {threshold:.4f}",
+                (
+                    f"Nur {tracks_after - tracks_before} Features, "
+                    f"senke Threshold auf {threshold:.4f}"
+                ),
             )
             bpy.ops.clip.detect_features(
                 threshold=threshold,
@@ -49,16 +53,27 @@ class CLIP_PT_DetectFeaturesPanel(bpy.types.Panel):
     bl_label = "Detect Features Tool"
 
     def draw(self, context):
-        self.layout.operator("clip.detect_features_custom", icon='VIEWZOOM')
+        layout = self.layout
+        layout.prop(context.scene, "detect_min_features")
+        layout.operator("clip.detect_features_custom", icon='VIEWZOOM')
 
 # Registrierung
 def register():
+    bpy.types.Scene.detect_min_features = bpy.props.IntProperty(
+        name="Min New Markers",
+        default=1,
+        min=1,
+        description="Minimum markers to detect each run",
+    )
+
     bpy.utils.register_class(DetectFeaturesCustomOperator)
     bpy.utils.register_class(CLIP_PT_DetectFeaturesPanel)
 
 def unregister():
     bpy.utils.unregister_class(DetectFeaturesCustomOperator)
     bpy.utils.unregister_class(CLIP_PT_DetectFeaturesPanel)
+
+    del bpy.types.Scene.detect_min_features
 
 if __name__ == "__main__":
     register()
