@@ -3,8 +3,10 @@
 This script can be run directly from Blender's text editor or installed as
 an add-on. It provides a single button in the Movie Clip Editor that
 repeats the sequence ``Playhead -> Detect -> Track`` until no further frame
-with too few markers is found. Newly detected markers are immediately
-tracked forward.
+with too few markers is found. After every tracking step the current frame
+is compared with the scene end and the threshold for the next search is
+reduced by ten percent if the end is not reached. Newly detected markers
+are immediately tracked forward.
 """
 
 bl_info = {
@@ -120,6 +122,8 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
 
     _timer = None
     _clip = None
+    _threshold = MINIMUM_MARKER_COUNT
+    _last_frame = None
 
     @classmethod
     def poll(cls, context):
@@ -127,10 +131,13 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
 
     def modal(self, context, event):
         if event.type == 'TIMER':
+            if self._last_frame is not None and self._last_frame != context.scene.frame_end:
+                self._threshold = max(int(self._threshold * 0.9), 1)
+
             marker_counts = get_tracking_marker_counts()
             target_frame = find_frame_with_few_tracking_markers(
                 marker_counts,
-                MINIMUM_MARKER_COUNT,
+                self._threshold,
             )
             set_playhead(target_frame)
 
@@ -144,6 +151,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
 
             bpy.ops.clip.detect_features_custom()
             bpy.ops.clip.auto_track_forward()
+            self._last_frame = context.scene.frame_current
 
         elif event.type == 'ESC':
             self.report({'INFO'}, "Tracking cycle cancelled")
@@ -157,6 +165,9 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         if not self._clip:
             self.report({'WARNING'}, "Kein Clip gefunden")
             return {'CANCELLED'}
+
+        self._threshold = MINIMUM_MARKER_COUNT
+        self._last_frame = context.scene.frame_current
 
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.5, window=context.window)
