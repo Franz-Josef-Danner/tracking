@@ -29,14 +29,47 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
     bl_label = "Detect Features (Custom)"
 
     def execute(self, context):
-        print("[Detect] Running feature detection...")
+        """Detect features and lower the threshold if none are found."""
+
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip gefunden")
+            print("[Detect] No clip found")
+            return {'CANCELLED'}
+
+        threshold = 0.1
+        min_new = context.scene.detect_min_features
+        tracks_before = len(clip.tracking.tracks)
+
+        print(
+            f"[Detect] Running detection for {min_new} markers at "
+            f"threshold {threshold:.4f}"
+        )
         bpy.ops.clip.detect_features(
-            threshold=0.1,
+            threshold=threshold,
             margin=50,
             min_distance=100,
-            placement='FRAME'
+            placement='FRAME',
         )
-        print("[Detect] Done")
+        tracks_after = len(clip.tracking.tracks)
+
+        while (tracks_after - tracks_before) < min_new and threshold > 0.0001:
+            threshold *= 0.9
+            print(
+                f"[Detect] Only {tracks_after - tracks_before} found, "
+                f"lowering threshold to {threshold:.4f}"
+            )
+            bpy.ops.clip.detect_features(
+                threshold=threshold,
+                margin=50,
+                min_distance=100,
+                placement='FRAME',
+            )
+            tracks_after = len(clip.tracking.tracks)
+
+        print(
+            f"[Detect] Finished with {tracks_after - tracks_before} new markers"
+        )
         return {'FINISHED'}
 
 class CLIP_PT_DetectFeaturesPanel(bpy.types.Panel):
@@ -46,7 +79,9 @@ class CLIP_PT_DetectFeaturesPanel(bpy.types.Panel):
     bl_label = "Detect Features Tool"
 
     def draw(self, context):
-        self.layout.operator(
+        layout = self.layout
+        layout.prop(context.scene, "detect_min_features")
+        layout.operator(
             DetectFeaturesCustomOperator.bl_idname,
             icon='VIEWZOOM',
         )
@@ -90,7 +125,7 @@ class TRACK_PT_auto_track_panel(bpy.types.Panel):
         layout.operator(TRACK_OT_auto_track_forward.bl_idname, icon='TRACKING_FORWARDS')
 
 # ---- Playhead utilities (from playhead.py) ----
-MINIMUM_MARKER_COUNT = 5
+DEFAULT_MINIMUM_MARKER_COUNT = 5
 
 def get_tracking_marker_counts():
     """Return a mapping of frame numbers to the number of markers."""
@@ -137,7 +172,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
 
     _timer = None
     _clip = None
-    _threshold = MINIMUM_MARKER_COUNT
+    _threshold = DEFAULT_MINIMUM_MARKER_COUNT
     _last_frame = None
 
     @classmethod
@@ -166,7 +201,10 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             for track in self._clip.tracking.tracks:
                 track.select = False
 
-            print("[Cycle] Detecting features and tracking")
+            print(
+                f"[Cycle] Detecting features and tracking "
+                f"(min features {context.scene.detect_min_features})"
+            )
             bpy.ops.clip.detect_features_custom()
             bpy.ops.clip.auto_track_forward()
             self._last_frame = context.scene.frame_current
@@ -181,14 +219,18 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         return {'PASS_THROUGH'}
 
     def execute(self, context):
-        print("[Cycle] Starting tracking cycle")
+        print(
+            f"[Cycle] Starting tracking cycle "
+            f"(frame_min_markers={context.scene.frame_min_markers}, "
+            f"detect_min_features={context.scene.detect_min_features})"
+        )
         self._clip = context.space_data.clip
         if not self._clip:
             self.report({'WARNING'}, "Kein Clip gefunden")
             print("[Cycle] No clip found")
             return {'CANCELLED'}
 
-        self._threshold = MINIMUM_MARKER_COUNT
+        self._threshold = context.scene.frame_min_markers
         self._last_frame = context.scene.frame_current
 
         wm = context.window_manager
@@ -214,6 +256,7 @@ class CLIP_PT_tracking_cycle_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
+        layout.prop(context.scene, "frame_min_markers")
         layout.operator(
             CLIP_OT_tracking_cycle.bl_idname,
             icon='REC',
@@ -232,6 +275,19 @@ classes = [
 def register():
     """Register all classes and ensure required modules are loaded."""
 
+    bpy.types.Scene.frame_min_markers = bpy.props.IntProperty(
+        name="Min Marker per Frame",
+        default=DEFAULT_MINIMUM_MARKER_COUNT,
+        min=1,
+        description="Minimum tracking markers expected per frame",
+    )
+    bpy.types.Scene.detect_min_features = bpy.props.IntProperty(
+        name="Min New Markers",
+        default=1,
+        min=1,
+        description="Minimum markers to detect each run",
+    )
+
     for cls in classes:
         bpy.utils.register_class(cls)
 
@@ -241,6 +297,9 @@ def unregister():
 
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
+
+    del bpy.types.Scene.frame_min_markers
+    del bpy.types.Scene.detect_min_features
 
 if __name__ == "__main__":
     register()
