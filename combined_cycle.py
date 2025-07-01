@@ -25,9 +25,9 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
     def execute(self, context):
         bpy.ops.clip.detect_features(
-            threshold=0.05,
+            threshold=0.01,
             margin=50,
-            min_distance=200,
+            min_distance=100,
             placement='FRAME'
         )
         return {'FINISHED'}
@@ -159,7 +159,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             return {'CANCELLED'}
 
         wm = context.window_manager
-        self._timer = wm.event_timer_add(0.1, window=context.window)
+        self._timer = wm.event_timer_add(0.5, window=context.window)
         wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
