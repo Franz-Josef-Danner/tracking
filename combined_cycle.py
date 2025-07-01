@@ -45,12 +45,16 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             f"[Detect] Running detection for {min_new} markers at "
             f"threshold {threshold:.4f}"
         )
+        initial_names = {t.name for t in clip.tracking.tracks}
         bpy.ops.clip.detect_features(
             threshold=threshold,
             margin=50,
             min_distance=100,
             placement='FRAME',
         )
+        for track in clip.tracking.tracks:
+            if track.name not in initial_names and not track.name.startswith("TRACK_"):
+                track.name = f"TRACK_{track.name}"
         tracks_after = len(clip.tracking.tracks)
 
         while (tracks_after - tracks_before) < min_new and threshold > 0.0001:
@@ -65,6 +69,9 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 min_distance=100,
                 placement='FRAME',
             )
+            for track in clip.tracking.tracks:
+                if track.name not in initial_names and not track.name.startswith("TRACK_"):
+                    track.name = f"TRACK_{track.name}"
             tracks_after = len(clip.tracking.tracks)
 
         print(
@@ -162,6 +169,9 @@ class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
                                     area=area, region=region, space_data=space
                                 ):
                                     bpy.ops.clip.delete_track()
+                                for track in active_obj.tracks:
+                                    if track.name.startswith("TRACK_"):
+                                        track.name = track.name.replace("TRACK_", "GOOD_", 1)
                                 self.report(
                                     {'INFO'},
                                     f"Deleted {len(tracks_to_delete)} short tracks with prefix 'TRACK_'",
