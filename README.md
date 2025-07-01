@@ -11,17 +11,18 @@ the Blender text editor or installed as an add-on.
    install the folder as an add-on via *Edit → Preferences → Add-ons →
    Install...*.
 
-When installed as an add-on, a panel named **Tracking Cycle** appears in the
-Movie Clip Editor. It shows the current status string as well as the processed
-frame number out of the total scene range. Heavy operations like feature
-detection or auto tracking run synchronously and may block the UI momentarily,
-so the status text helps indicate progress.
+When installed as an add-on, a single panel named **Tracking Cycle** appears in
+the Movie Clip Editor. It provides only the minimum marker count input, a
+progress label showing the current frame out of the total, and a button to start
+the cycle. Heavy operations like feature detection and auto tracking run
+synchronously and may temporarily block Blender's UI, so the status text helps
+indicate progress.
 
-The add-on registers the following operators in the Movie Clip Editor and
-prints diagnostic information in the console:
+The following operators are registered for internal use and can also be called
+via Blender's operator search:
 
-- **Start Tracking Cycle** – iteratively searches for frames with few
-  markers, detects new features and tracks them forward.
+- **Start Tracking Cycle** – iteratively searches for frames with few markers,
+  detects new features and tracks them forward.
 - **Delete Short Tracks with Prefix** – removes all tracking tracks starting
   with `TRACK_` that are shorter than 25 frames.
 - **Clear RAM Cache** – reloads the current clip to free memory.

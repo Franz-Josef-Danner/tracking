@@ -366,12 +366,10 @@ class CLIP_PT_tracking_cycle_panel(bpy.types.Panel):
 
 # ---- Registration ----
 classes = [
-    CLIP_PT_clear_cache_panel,
     CLIP_OT_clear_custom_cache,
     DetectFeaturesCustomOperator,
     TRACK_OT_auto_track_forward,
     TRACKING_OT_delete_short_tracks_with_prefix,
-    TRACKING_PT_custom_panel,
     CLIP_OT_tracking_cycle,
     CLIP_PT_tracking_cycle_panel,
 ]
