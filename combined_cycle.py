@@ -361,6 +361,10 @@ class TRACK_OT_auto_track_forward(bpy.types.Operator):
             self.report({'WARNING'}, "Keine Marker vorhanden")
             return {'CANCELLED'}
 
+        active_obj = clip.tracking.objects.active
+        for track in active_obj.tracks:
+            track.select = track.name.startswith("TRACK_")
+
         toggled = False
         if context.scene.proxy_built and not clip.use_proxy:
             bpy.ops.clip.toggle_proxy()
