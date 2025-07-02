@@ -54,39 +54,6 @@ except Exception:
     # When running headless there may be no UI yet; ignore errors.
     pass
 
-# ---- Cache Clearing Operator (from catch clean.py) ----
-class CLIP_PT_clear_cache_panel(bpy.types.Panel):
-    """UI panel providing a button to clear the RAM cache."""
-
-    bl_space_type = 'CLIP_EDITOR'
-    bl_region_type = 'UI'
-    bl_category = 'Cache Tools'
-    bl_label = 'Clear Cache'
-
-    def draw(self, context):
-        layout = self.layout
-        layout.operator(
-            "clip.clear_custom_cache",
-            text="Clear RAM Cache",
-            icon='TRASH',
-        )
-
-
-class CLIP_OT_clear_custom_cache(bpy.types.Operator):
-    """Reload the active clip to clear its RAM cache."""
-
-    bl_idname = "clip.clear_custom_cache"
-    bl_label = "Clear RAM Cache"
-    bl_description = "Reloads the clip to clear its RAM cache"
-
-    def execute(self, context):
-        sc = context.space_data
-        if sc and sc.clip:
-            bpy.ops.clip.reload()
-            self.report({'INFO'}, f"RAM-Cache für Clip '{sc.clip.name}' wurde geleert")
-            return {'FINISHED'}
-        self.report({'WARNING'}, "Kein Clip aktiv im Editor")
-        return {'CANCELLED'}
 
 # ---- Feature Detection Operator (from detect.py) ----
 class DetectFeaturesCustomOperator(bpy.types.Operator):
@@ -310,12 +277,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 marker_counts,
                 self._threshold,
             )
-            bpy.ops.clip.clear_custom_cache()
             set_playhead(target_frame)
-
-            if target_frame is not None:
-                bpy.ops.clip.change_frame(frame=target_frame)
-                bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
 
             context.scene.current_cycle_frame = context.scene.frame_current
 
@@ -407,7 +369,6 @@ class CLIP_PT_tracking_cycle_panel(bpy.types.Panel):
 
 # ---- Registration ----
 classes = [
-    CLIP_OT_clear_custom_cache,
     DetectFeaturesCustomOperator,
     TRACK_OT_auto_track_forward,
     TRACKING_OT_delete_short_tracks_with_prefix,
