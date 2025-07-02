@@ -22,8 +22,16 @@ import bpy
 from collections import Counter
 
 
-def calculate_margin_distance(clip):
-    """Return margin and distance based on clip width."""
+def ensure_margin_distance(clip):
+    """Return margin and distance based on the clip width.
+
+    The values are cached on the clip as custom properties to avoid
+    recalculating them every time detection runs.
+    """
+
+    if "MARGIN" in clip and "DISTANCE" in clip:
+        return clip["MARGIN"], clip["DISTANCE"]
+
     width = clip.size[0]
     margin = width / 200
     distance = width / 20
@@ -85,8 +93,8 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         min_new = context.scene.min_marker_count
         tracks_before = len(clip.tracking.tracks)
 
-        # Calculate margin and distance based on the active clip width
-        margin, distance = calculate_margin_distance(clip)
+        # Ensure margin and distance values are available for this clip
+        margin, distance = ensure_margin_distance(clip)
 
         print(
             f"[Detect] Running detection for {min_new} markers at "
@@ -415,15 +423,15 @@ def register():
         description="Total number of frames in the cycle",
     )
 
-    # Pre-calculate margin and distance if a clip is available
+    # Pre-calculate margin and distance if a clip is already loaded
     try:
         area = next((a for a in bpy.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
         if area:
             space = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
             if space and space.clip:
-                calculate_margin_distance(space.clip)
+                ensure_margin_distance(space.clip)
     except Exception:
-        # In case the context is not fully available when the add-on is registered
+        # The UI might not be fully ready when registering in background
         pass
 
     for cls in classes:
