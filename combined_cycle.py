@@ -30,7 +30,7 @@ def ensure_margin_distance(clip, threshold=1.0):
     Base values derived from the clip width are cached on the clip as custom
     properties so they are calculated only once per clip. Each call can then
     scale these base values by the desired detection ``threshold`` using
-    ``base * (log10(threshold * 1000) / 3)``.
+    ``base * (log10(threshold * 100000) / 5)``.
     """
 
     if "MARGIN" not in clip or "DISTANCE" not in clip:
@@ -41,7 +41,7 @@ def ensure_margin_distance(clip, threshold=1.0):
     base_margin = int(clip["MARGIN"])
     base_distance = int(clip["DISTANCE"])
 
-    scale = math.log10(threshold * 1000) / 3
+    scale = math.log10(threshold * 100000) / 5
     margin = max(1, int(base_margin * scale))
     distance = max(1, int(base_distance * scale))
     return margin, distance
