@@ -312,6 +312,11 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             )
             bpy.ops.clip.clear_custom_cache()
             set_playhead(target_frame)
+
+            if target_frame is not None:
+                bpy.ops.clip.change_frame(frame=target_frame)
+                bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
+
             context.scene.current_cycle_frame = context.scene.frame_current
 
             if target_frame is None:
