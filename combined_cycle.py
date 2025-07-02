@@ -217,7 +217,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             f"starting at threshold {threshold:.4f}"
         )
         attempt = 0
-        max_attempts = 5
+        max_attempts = 20
         success = False
         tracks_after = tracks_before
         while attempt < max_attempts:
