@@ -152,6 +152,18 @@ class CLIP_OT_build_recommended_proxy(bpy.types.Operator):
     bl_idname = "clip.build_recommended_proxy"
     bl_label = "Empfohlenen Proxy erstellen"
 
+    _timer = None
+    _clip = None
+
+    def modal(self, context, event):
+        if event.type == 'TIMER' and self._clip:
+            if not self._clip.is_proxy_building:
+                context.window_manager.event_timer_remove(self._timer)
+                context.scene.proxy_built = True
+                self.report({'INFO'}, "✅ Proxy-Erstellung abgeschlossen")
+                return {'FINISHED'}
+        return {'PASS_THROUGH'}
+
     def execute(self, context):
         clip = context.space_data.clip
         props = context.scene.proxy_check_props
@@ -160,6 +172,8 @@ class CLIP_OT_build_recommended_proxy(bpy.types.Operator):
         if not clip or proxy_size == "":
             self.report({'WARNING'}, "❌ Kein Proxy empfohlen oder Clip fehlt.")
             return {'CANCELLED'}
+
+        context.scene.proxy_built = False
 
         clip.use_proxy = True
         proxy = clip.proxy
@@ -193,9 +207,13 @@ class CLIP_OT_build_recommended_proxy(bpy.types.Operator):
         with bpy.context.temp_override(**override):
             bpy.ops.clip.rebuild_proxy()
 
-        context.scene.proxy_built = True
-        self.report({'INFO'}, f"✅ Proxy {proxy_size}% wird erstellt.")
-        return {'FINISHED'}
+        self._clip = clip
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.5, window=context.window)
+        wm.modal_handler_add(self)
+
+        self.report({'INFO'}, f"✅ Proxy {proxy_size}% wird erstellt")
+        return {'RUNNING_MODAL'}
 
 
 
