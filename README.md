@@ -32,8 +32,10 @@ panel before running the operator. Feature detection now aims to create a
 number of new tracks between *Min Marker Count × 4 × 0.8* and
 *Min Marker Count × 4 × 1.2*. If too few or too many markers are found, the
 detection threshold is adjusted and detection is attempted again until the
-result falls inside this range. During the tracking cycle the RAM cache is
-cleared automatically before jumping to the next frame.
+result falls inside this range. The search margin and minimum distance grow or
+shrink with the current threshold so wide thresholds consider a broader area.
+During the tracking cycle the RAM cache is cleared automatically before jumping
+to the next frame.
 
 This project is released under the MIT License. See the `LICENSE` file for
 details.

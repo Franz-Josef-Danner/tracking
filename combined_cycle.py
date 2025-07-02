@@ -23,22 +23,24 @@ from collections import Counter
 import os
 
 
-def ensure_margin_distance(clip):
-    """Return margin and distance based on the clip width.
+def ensure_margin_distance(clip, threshold=1.0):
+    """Return margin and distance scaled by ``threshold``.
 
-    The values are cached on the clip as custom properties to avoid
-    recalculating them every time detection runs.
+    Base values derived from the clip width are cached on the clip as custom
+    properties so they are calculated only once per clip. Each call can then
+    scale these base values by the desired detection ``threshold``.
     """
 
-    if "MARGIN" in clip and "DISTANCE" in clip:
-        # Cast to int in case previous versions stored floats
-        return int(clip["MARGIN"]), int(clip["DISTANCE"])
+    if "MARGIN" not in clip or "DISTANCE" not in clip:
+        width = clip.size[0]
+        clip["MARGIN"] = max(1, int(width / 200))
+        clip["DISTANCE"] = max(1, int(width / 20))
 
-    width = clip.size[0]
-    margin = max(1, int(width / 200))
-    distance = max(1, int(width / 20))
-    clip["MARGIN"] = margin
-    clip["DISTANCE"] = distance
+    base_margin = int(clip["MARGIN"])
+    base_distance = int(clip["DISTANCE"])
+
+    margin = max(1, int(base_margin * threshold))
+    distance = max(1, int(base_distance * threshold))
     return margin, distance
 
 
@@ -205,7 +207,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         tracks_before = len(clip.tracking.tracks)
 
         # Ensure margin and distance values are available for this clip
-        margin, distance = ensure_margin_distance(clip)
+        margin, distance = ensure_margin_distance(clip, threshold)
 
         base = context.scene.min_marker_count
         print(
