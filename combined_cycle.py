@@ -20,6 +20,7 @@ bl_info = {
 
 import bpy
 from collections import Counter
+import os
 
 
 def ensure_margin_distance(clip):
@@ -53,6 +54,24 @@ try:
 except Exception:
     # When running headless there may be no UI yet; ignore errors.
     pass
+
+
+
+
+class ToggleProxyOperator(bpy.types.Operator):
+    """Proxy/Timecode Umschalten"""
+
+    bl_idname = "clip.toggle_proxy"
+    bl_label = "Toggle Proxy/Timecode"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if clip:
+            clip.use_proxy = not clip.use_proxy
+            self.report({'INFO'}, f"Proxy/Timecode {'aktiviert' if clip.use_proxy else 'deaktiviert'}")
+        else:
+            self.report({'WARNING'}, "Kein Clip geladen")
+        return {'FINISHED'}
 
 # ---- Cache Clearing Operator (from catch clean.py) ----
 class CLIP_PT_clear_cache_panel(bpy.types.Panel):
@@ -88,6 +107,70 @@ class CLIP_OT_clear_custom_cache(bpy.types.Operator):
         self.report({'WARNING'}, "Kein Clip aktiv im Editor")
         return {'CANCELLED'}
 
+
+class CLIP_OT_auto_start(bpy.types.Operator):
+    """Build a 50% proxy and start the tracking cycle."""
+
+    bl_idname = "clip.auto_start_tracking"
+    bl_label = "Auto Start"
+
+    _timer = None
+    _clip = None
+
+    def modal(self, context, event):
+        if event.type == 'TIMER' and self._clip:
+            proxy_done = not getattr(self._clip, "is_proxy_building", False)
+            if proxy_done:
+                context.window_manager.event_timer_remove(self._timer)
+                context.scene.proxy_built = True
+                self.report({'INFO'}, "✅ Proxy-Erstellung abgeschlossen")
+                bpy.ops.clip.tracking_cycle('INVOKE_DEFAULT')
+                return {'FINISHED'}
+        return {'PASS_THROUGH'}
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip gefunden")
+            return {'CANCELLED'}
+
+        context.scene.proxy_built = False
+
+        clip.use_proxy = True
+        proxy = clip.proxy
+        proxy.quality = 50
+        proxy.directory = bpy.path.abspath("//BL_proxy/")
+        proxy.timecode = 'FREE_RUN_NO_GAPS'
+
+        proxy.build_25 = proxy.build_50 = proxy.build_75 = proxy.build_100 = False
+        proxy.build_50 = True
+
+        proxy.build_undistorted_25 = False
+        proxy.build_undistorted_50 = False
+        proxy.build_undistorted_75 = False
+        proxy.build_undistorted_100 = False
+
+        override = context.copy()
+        override['area'] = next(
+            area for area in context.screen.areas if area.type == 'CLIP_EDITOR'
+        )
+        override['region'] = next(
+            region for region in override['area'].regions if region.type == 'WINDOW'
+        )
+        override['space_data'] = override['area'].spaces.active
+        override['clip'] = clip
+
+        with context.temp_override(**override):
+            bpy.ops.clip.rebuild_proxy()
+
+        self._clip = clip
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.5, window=context.window)
+        wm.modal_handler_add(self)
+
+        self.report({'INFO'}, "Proxy 50% Erstellung gestartet")
+        return {'RUNNING_MODAL'}
+
 # ---- Feature Detection Operator (from detect.py) ----
 class DetectFeaturesCustomOperator(bpy.types.Operator):
     """Wrapper for ``bpy.ops.clip.detect_features`` with fixed settings."""
@@ -103,6 +186,11 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip gefunden")
             print("[Detect] No clip found")
             return {'CANCELLED'}
+
+        toggled = False
+        if context.scene.proxy_built and clip.use_proxy:
+            bpy.ops.clip.toggle_proxy()
+            toggled = True
 
         threshold = 0.1
         min_new = context.scene.min_marker_count
@@ -148,6 +236,9 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         print(
             f"[Detect] Finished with {tracks_after - tracks_before} new markers"
         )
+
+        if toggled:
+            bpy.ops.clip.toggle_proxy()
         return {'FINISHED'}
 
 
@@ -174,14 +265,22 @@ class TRACK_OT_auto_track_forward(bpy.types.Operator):
             self.report({'WARNING'}, "Keine Marker vorhanden")
             return {'CANCELLED'}
 
+        toggled = False
+        if context.scene.proxy_built and not clip.use_proxy:
+            bpy.ops.clip.toggle_proxy()
+            toggled = True
+
         bpy.ops.clip.track_markers(sequence=True)
+
+        if toggled:
+            bpy.ops.clip.toggle_proxy()
         print("[Track] Finished auto track")
         return {'FINISHED'}
 
 
 # ---- Delete Short Tracks Operator (from Track Length.py) ----
 class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
-    """Remove tracks with prefix ``TRACK_`` shorter than 25 frames."""
+    """Remove tracks with prefix ``TRACK_`` shorter than the given length."""
 
     bl_idname = "tracking.delete_short_tracks_with_prefix"
     bl_label = "Delete Short Tracks with Prefix"
@@ -196,8 +295,9 @@ class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
 
         active_obj = clip.tracking.objects.active
         tracks = active_obj.tracks
+        min_len = context.scene.min_track_length
         tracks_to_delete = [
-            t for t in tracks if t.name.startswith("TRACK_") and len(t.markers) < 25
+            t for t in tracks if t.name.startswith("TRACK_") and len(t.markers) < min_len
         ]
 
         for track in tracks:
@@ -328,7 +428,11 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 f"(min markers {context.scene.min_marker_count})"
             )
             context.scene.tracking_cycle_status = "Detecting features"
+            if context.scene.proxy_built:
+                bpy.ops.clip.toggle_proxy()
             bpy.ops.clip.detect_features_custom()
+            if context.scene.proxy_built:
+                bpy.ops.clip.toggle_proxy()
             context.scene.tracking_cycle_status = "Tracking markers"
             bpy.ops.clip.auto_track_forward()
             context.scene.tracking_cycle_status = "Cleaning tracks"
@@ -389,29 +493,37 @@ class CLIP_PT_tracking_cycle_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
+
         layout.prop(context.scene, "min_marker_count")
+        layout.prop(context.scene, "min_track_length")
         layout.label(text=context.scene.tracking_cycle_status)
         layout.label(
             text=f"Frame {context.scene.current_cycle_frame}/"
             f"{context.scene.total_cycle_frames}"
         )
         layout.operator(
-            CLIP_OT_tracking_cycle.bl_idname,
+            CLIP_OT_auto_start.bl_idname,
             icon='REC',
         )
 
 # ---- Registration ----
 classes = [
+    ToggleProxyOperator,
+    CLIP_PT_clear_cache_panel,
     CLIP_OT_clear_custom_cache,
     DetectFeaturesCustomOperator,
     TRACK_OT_auto_track_forward,
     TRACKING_OT_delete_short_tracks_with_prefix,
     CLIP_OT_tracking_cycle,
+    CLIP_OT_auto_start,
     CLIP_PT_tracking_cycle_panel,
 ]
 
 def register():
     """Register all classes and ensure required modules are loaded."""
+
+    for cls in classes:
+        bpy.utils.register_class(cls)
 
     bpy.types.Scene.min_marker_count = bpy.props.IntProperty(
         name="Min Marker Count",
@@ -419,6 +531,22 @@ def register():
         min=1,
         description="Minimum markers for detection and search",
     )
+
+    bpy.types.Scene.min_track_length = bpy.props.IntProperty(
+        name="Min Track Length",
+        default=25,
+        min=1,
+        description="Minimum track length kept after tracking",
+    )
+
+    bpy.types.Scene.proxy_built = bpy.props.BoolProperty(
+        name="Proxy Built",
+        default=False,
+        description="True when a recommended proxy has been built",
+    )
+
+    for scene in bpy.data.scenes:
+        scene.proxy_built = False
 
     bpy.types.Scene.tracking_cycle_status = bpy.props.StringProperty(
         name="Tracking Status",
@@ -449,9 +577,6 @@ def register():
         # The UI might not be fully ready when registering in background
         pass
 
-    for cls in classes:
-        bpy.utils.register_class(cls)
-
 
 def unregister():
     """Unregister all classes."""
@@ -460,6 +585,8 @@ def unregister():
         bpy.utils.unregister_class(cls)
 
     del bpy.types.Scene.min_marker_count
+    del bpy.types.Scene.min_track_length
+    del bpy.types.Scene.proxy_built
     del bpy.types.Scene.tracking_cycle_status
     del bpy.types.Scene.current_cycle_frame
     del bpy.types.Scene.total_cycle_frames
