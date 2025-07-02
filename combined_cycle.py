@@ -209,14 +209,21 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
         base = context.scene.min_marker_count
         print(
-            f"[Detect] base {base}, range {min_new}-{max_new} "
-            f"at threshold {threshold:.4f}"
+            f"[Detect] frame {context.scene.frame_current} in '{clip.name}' "
+            f"({clip.size[0]}x{clip.size[1]})"
+        )
+        print(
+            f"[Detect] base {base}, expected range {min_new}-{max_new} "
+            f"starting at threshold {threshold:.4f}"
         )
         attempt = 0
         max_attempts = 5
         tracks_after = tracks_before
         while attempt < max_attempts:
             attempt += 1
+            print(
+                f"[Detect] attempt {attempt} with threshold {threshold:.4f}"
+            )
             initial_names = {t.name for t in clip.tracking.tracks}
             bpy.ops.clip.detect_features(
                 threshold=threshold,
@@ -234,6 +241,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
             tracks_after = len(clip.tracking.tracks)
             new_count = tracks_after - tracks_before
+            print(f"[Detect] found {new_count} new markers")
 
             if min_new <= new_count <= max_new:
                 print(
@@ -449,7 +457,6 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         if event.type == 'TIMER':
             if self._last_frame is not None and self._last_frame != context.scene.frame_end:
                 self._threshold = max(int(self._threshold * 0.9), 1)
-                print(f"[Cycle] threshold {self._threshold}")
 
             context.scene.tracking_cycle_status = "Searching next frame"
             marker_counts = get_tracking_marker_counts()
@@ -470,9 +477,6 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             for track in self._clip.tracking.tracks:
                 track.select = False
 
-            print(
-                f"[Cycle] detect/track with threshold {self._threshold}"
-            )
             context.scene.tracking_cycle_status = "Detecting features"
             if context.scene.proxy_built:
                 bpy.ops.clip.toggle_proxy()
