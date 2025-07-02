@@ -21,6 +21,16 @@ bl_info = {
 import bpy
 from collections import Counter
 
+
+def calculate_margin_distance(clip):
+    """Return margin and distance based on clip width."""
+    width = clip.size[0]
+    margin = width / 200
+    distance = width / 20
+    clip["MARGIN"] = margin
+    clip["DISTANCE"] = distance
+    return margin, distance
+
 # ---- Cache Clearing Operator (from catch clean.py) ----
 class CLIP_PT_clear_cache_panel(bpy.types.Panel):
     """UI panel providing a button to clear the RAM cache."""
@@ -75,6 +85,9 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         min_new = context.scene.min_marker_count
         tracks_before = len(clip.tracking.tracks)
 
+        # Calculate margin and distance based on the active clip width
+        margin, distance = calculate_margin_distance(clip)
+
         print(
             f"[Detect] Running detection for {min_new} markers at "
             f"threshold {threshold:.4f}"
@@ -82,8 +95,8 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         initial_names = {t.name for t in clip.tracking.tracks}
         bpy.ops.clip.detect_features(
             threshold=threshold,
-            margin=50,
-            min_distance=100,
+            margin=margin,
+            min_distance=distance,
             placement='FRAME',
         )
         for track in clip.tracking.tracks:
@@ -100,8 +113,8 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             )
             bpy.ops.clip.detect_features(
                 threshold=threshold,
-                margin=50,
-                min_distance=100,
+                margin=margin,
+                min_distance=distance,
                 placement='FRAME',
             )
             for track in clip.tracking.tracks:
@@ -401,6 +414,17 @@ def register():
         default=0,
         description="Total number of frames in the cycle",
     )
+
+    # Pre-calculate margin and distance if a clip is available
+    try:
+        area = next((a for a in bpy.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
+        if area:
+            space = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
+            if space and space.clip:
+                calculate_margin_distance(space.clip)
+    except Exception:
+        # In case the context is not fully available when the add-on is registered
+        pass
 
     for cls in classes:
         bpy.utils.register_class(cls)
