@@ -46,6 +46,9 @@ After tracking forward and removing tracks that are too short, the remaining
 iterations.
 During the tracking cycle the RAM cache is cleared automatically before jumping
 to the next frame.
+Each visited frame is remembered. If the playhead returns to a frame that was
+processed before, the value of **Marker Count Plus** increases by 10, widening
+the expected range for new markers on repeated attempts.
 
 This project is released under the MIT License. See the `LICENSE` file for
 details.

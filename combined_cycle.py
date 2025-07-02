@@ -54,6 +54,14 @@ def update_min_marker_props(scene, context):
     scene.min_marker_count_plus_max = int(scene.min_marker_count_plus * 1.2)
 
 
+def adjust_marker_count_plus(scene, delta):
+    """Increase the marker count plus value and update its range."""
+
+    scene.min_marker_count_plus += delta
+    scene.min_marker_count_plus_min = int(scene.min_marker_count_plus * 0.8)
+    scene.min_marker_count_plus_max = int(scene.min_marker_count_plus * 1.2)
+
+
 # Try to initialize margin and distance on the active clip when the
 # script is executed directly. This mirrors the standalone helper
 # script and ensures the values are available before detection runs.
@@ -503,6 +511,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
     _clip = None
     _threshold = DEFAULT_MINIMUM_MARKER_COUNT
     _last_frame = None
+    _frame_history = None
 
     @classmethod
     def poll(cls, context):
@@ -520,6 +529,11 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 self._threshold,
             )
             bpy.ops.clip.clear_custom_cache()
+            if target_frame is not None:
+                visits = self._frame_history.get(target_frame, 0)
+                if visits > 0:
+                    adjust_marker_count_plus(context.scene, 10)
+                self._frame_history[target_frame] = visits + 1
             set_playhead(target_frame)
             context.scene.current_cycle_frame = context.scene.frame_current
 
@@ -567,6 +581,8 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
 
         self._threshold = context.scene.min_marker_count
         self._last_frame = context.scene.frame_current
+        self._frame_history = {}
+        update_min_marker_props(context.scene, context)
 
         wm = context.window_manager
         self._timer = wm.event_timer_add(CYCLE_TIMER_INTERVAL, window=context.window)
@@ -578,6 +594,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         if self._timer is not None:
             wm.event_timer_remove(self._timer)
             self._timer = None
+        update_min_marker_props(context.scene, context)
 
 
 class CLIP_PT_tracking_cycle_panel(bpy.types.Panel):
