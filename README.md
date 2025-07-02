@@ -24,7 +24,7 @@ via Blender's operator search:
 - **Start Tracking Cycle** – iteratively searches for frames with few markers,
   detects new features and tracks them forward.
 - **Delete Short Tracks with Prefix** – removes all tracking tracks starting
-  with `TRACK_` that are shorter than 25 frames.
+  with `TRACK_` that are shorter than the "Min Track Length" property.
 - **Clear RAM Cache** – reloads the current clip to free memory.
 
 The minimum marker count used for the playhead search is configured in the

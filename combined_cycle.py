@@ -309,47 +309,60 @@ class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
     bl_label = "Delete Short Tracks with Prefix"
 
     def execute(self, context):
-        print("\n=== [Delete short tracks] ===")
+        print("\n=== [Operator gestartet: TRACKING_OT_delete_short_tracks_with_prefix] ===")
         clip = context.space_data.clip
         if not clip:
             self.report({'WARNING'}, "No clip loaded")
-            print("[Delete] No movie clip loaded")
+            print("❌ Kein Movie Clip geladen – Abbruch.")
             return {'CANCELLED'}
+        print(f"🎬 Clip: {clip.name}")
 
         active_obj = clip.tracking.objects.active
         tracks = active_obj.tracks
+        print(f"📷 Aktives Objekt: {active_obj.name} — {len(tracks)} Tracks vorhanden")
+
         min_len = context.scene.min_track_length
         tracks_to_delete = [
             t for t in tracks if t.name.startswith("TRACK_") and len(t.markers) < min_len
         ]
 
+        print("🎯 Tracks mit Präfix 'TRACK_' und < %d Frames:" % min_len)
+        for t in tracks_to_delete:
+            print(f"   - {t.name} ({len(t.markers)} Frames)")
+
         for track in tracks:
             track.select = track in tracks_to_delete
 
         if not tracks_to_delete:
+            print("ℹ️ Keine passenden Tracks gefunden – beende.")
             self.report({'INFO'}, "No short tracks found with prefix 'TRACK_'")
             return {'CANCELLED'}
 
+        print("🔎 Suche nach CLIP_EDITOR Bereich für Operator...")
         for area in context.screen.areas:
             if area.type == 'CLIP_EDITOR':
                 for region in area.regions:
                     if region.type == 'WINDOW':
                         for space in area.spaces:
                             if space.type == 'CLIP_EDITOR':
+                                print("✅ Kontext bereit – führe delete_track() aus")
                                 with context.temp_override(
-                                    area=area, region=region, space_data=space
+                                    area=area,
+                                    region=region,
+                                    space_data=space,
                                 ):
                                     bpy.ops.clip.delete_track()
-                                for track in active_obj.tracks:
-                                    if track.name.startswith("TRACK_"):
-                                        track.name = track.name.replace("TRACK_", "GOOD_", 1)
+                                print(f"🗑️ {len(tracks_to_delete)} Track(s) gelöscht.")
                                 self.report(
                                     {'INFO'},
                                     f"Deleted {len(tracks_to_delete)} short tracks with prefix 'TRACK_'",
                                 )
+                                print("=== [Operator erfolgreich beendet] ===\n")
                                 return {'FINISHED'}
 
+        print("❌ Kein geeigneter Clip Editor Bereich gefunden.")
         self.report({'ERROR'}, "No Clip Editor area found")
+        print("=== [Operator abgebrochen] ===\n")
         return {'CANCELLED'}
 
 
