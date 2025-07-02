@@ -277,7 +277,8 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             new_count = tracks_after - tracks_before
 
             if new_count < min_new:
-                factor = (new_count + 0.1) / min_new
+                base_plus = context.scene.min_marker_count_plus
+                factor = (new_count + 0.1) / base_plus
                 threshold *= factor
                 print(
                     f"[Detect] attempt {attempt}: {new_count} found, "
