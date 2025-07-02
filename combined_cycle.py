@@ -39,6 +39,20 @@ def ensure_margin_distance(clip):
     clip["DISTANCE"] = distance
     return margin, distance
 
+
+# Try to initialize margin and distance on the active clip when the
+# script is executed directly. This mirrors the standalone helper
+# script and ensures the values are available before detection runs.
+try:
+    area = next((a for a in bpy.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
+    if area:
+        space = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
+        if space and space.clip:
+            ensure_margin_distance(space.clip)
+except Exception:
+    # When running headless there may be no UI yet; ignore errors.
+    pass
+
 # ---- Cache Clearing Operator (from catch clean.py) ----
 class CLIP_PT_clear_cache_panel(bpy.types.Panel):
     """UI panel providing a button to clear the RAM cache."""
