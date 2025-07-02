@@ -618,6 +618,9 @@ classes = [
 def register():
     """Register all classes and ensure required modules are loaded."""
 
+    for cls in classes:
+        bpy.utils.register_class(cls)
+
     bpy.types.Scene.min_marker_count = bpy.props.IntProperty(
         name="Min Marker Count",
         default=DEFAULT_MINIMUM_MARKER_COUNT,
@@ -670,9 +673,6 @@ def register():
     except Exception:
         # The UI might not be fully ready when registering in background
         pass
-
-    for cls in classes:
-        bpy.utils.register_class(cls)
 
 
 def unregister():
