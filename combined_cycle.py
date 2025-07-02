@@ -379,7 +379,11 @@ class TRACK_OT_auto_track_forward(bpy.types.Operator):
 
 # ---- Delete Short Tracks Operator (from Track Length.py) ----
 class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
-    """Remove tracks with prefix ``TRACK_`` shorter than the given length."""
+    """Remove tracks with prefix ``TRACK_`` shorter than the given length.
+
+    After deletion the remaining ``TRACK_`` tracks are renamed to ``GOOD_`` so
+    they won't be tracked again in the next cycle.
+    """
 
     bl_idname = "tracking.delete_short_tracks_with_prefix"
     bl_label = "Delete Short Tracks with Prefix"
@@ -398,34 +402,49 @@ class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
             t for t in tracks if t.name.startswith("TRACK_") and len(t.markers) < min_len
         ]
 
+        deleted_count = 0
+        if tracks_to_delete:
+            for track in tracks:
+                track.select = track in tracks_to_delete
 
-        for track in tracks:
-            track.select = track in tracks_to_delete
+            area_found = False
+            for area in context.screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            for space in area.spaces:
+                                if space.type == 'CLIP_EDITOR':
+                                    with context.temp_override(
+                                        area=area,
+                                        region=region,
+                                        space_data=space,
+                                    ):
+                                        bpy.ops.clip.delete_track()
+                                    area_found = True
+                                    break
+                        if area_found:
+                            break
+                if area_found:
+                    break
 
-        if not tracks_to_delete:
-            self.report({'INFO'}, "No short tracks found with prefix 'TRACK_'")
-            return {'CANCELLED'}
+            if not area_found:
+                self.report({'ERROR'}, "No Clip Editor area found")
+                return {'CANCELLED'}
 
-        for area in context.screen.areas:
-            if area.type == 'CLIP_EDITOR':
-                for region in area.regions:
-                    if region.type == 'WINDOW':
-                        for space in area.spaces:
-                            if space.type == 'CLIP_EDITOR':
-                                with context.temp_override(
-                                    area=area,
-                                    region=region,
-                                    space_data=space,
-                                ):
-                                    bpy.ops.clip.delete_track()
-                                self.report(
-                                    {'INFO'},
-                                    f"Deleted {len(tracks_to_delete)} short tracks with prefix 'TRACK_'",
-                                )
-                                return {'FINISHED'}
+            deleted_count = len(tracks_to_delete)
 
-        self.report({'ERROR'}, "No Clip Editor area found")
-        return {'CANCELLED'}
+        # Rename remaining TRACK_ markers to GOOD_
+        renamed_count = 0
+        for track in active_obj.tracks:
+            if track.name.startswith("TRACK_"):
+                track.name = f"GOOD_{track.name[6:]}"
+                renamed_count += 1
+
+        self.report(
+            {'INFO'},
+            f"Deleted {deleted_count} short tracks; renamed {renamed_count} to 'GOOD_'",
+        )
+        return {'FINISHED'}
 
 
 class TRACKING_PT_custom_panel(bpy.types.Panel):

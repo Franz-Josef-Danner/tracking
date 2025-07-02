@@ -25,7 +25,8 @@ via Blender's operator search:
   detects new features and tracks them forward.
 - **Auto Track Selected** – selects all tracks named `TRACK_*` and tracks them forward.
 - **Delete Short Tracks with Prefix** – removes all tracking tracks starting
-  with `TRACK_` that are shorter than the "Min Track Length" property.
+  with `TRACK_` that are shorter than the "Min Track Length" property and
+  renames the remaining ones to `GOOD_`.
 - **Clear RAM Cache** – reloads the current clip to free memory.
 
 The minimum marker count used for the playhead search is configured in the
@@ -40,6 +41,9 @@ shrink with the current threshold so wide thresholds consider a broader area.
 Newly created markers receive the prefix `NEU_` during each attempt. If the
 detected count falls in the expected range they are renamed to `TRACK_`; if not
 they are deleted and detection runs again.
+After tracking forward and removing tracks that are too short, the remaining
+`TRACK_` markers are renamed to `GOOD_` so they are skipped in subsequent
+iterations.
 During the tracking cycle the RAM cache is cleared automatically before jumping
 to the next frame.
 
