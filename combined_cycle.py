@@ -413,6 +413,11 @@ classes = [
 def register():
     """Register all classes and ensure required modules are loaded."""
 
+    bpy.utils.register_class(ProxyCheckProperties)
+    bpy.types.Scene.proxy_check_props = bpy.props.PointerProperty(
+        type=ProxyCheckProperties
+    )
+
     bpy.types.Scene.min_marker_count = bpy.props.IntProperty(
         name="Min Marker Count",
         default=DEFAULT_MINIMUM_MARKER_COUNT,
@@ -458,6 +463,10 @@ def unregister():
 
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
+
+    bpy.utils.unregister_class(ProxyCheckProperties)
+
+    del bpy.types.Scene.proxy_check_props
 
     del bpy.types.Scene.min_marker_count
     del bpy.types.Scene.tracking_cycle_status
