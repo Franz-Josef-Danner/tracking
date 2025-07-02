@@ -271,6 +271,10 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 self.report({'ERROR'}, 'No Clip Editor area found to delete temporary tracks')
                 return {'CANCELLED'}
 
+            # Update track count after deleting the temporary tracks
+            tracks_after = len(clip.tracking.tracks)
+            new_count = tracks_after - tracks_before
+
             if new_count < min_new:
                 factor = (new_count + 0.1) / min_new
                 threshold *= factor
@@ -284,7 +288,11 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                     f"[Detect] {new_count} found, raising threshold to {threshold:.4f}"
                 )
 
-        print(f"[Detect] Detection attempts: {attempt}, final count {tracks_after - tracks_before}")
+        final_tracks = len(clip.tracking.tracks)
+        final_new = final_tracks - tracks_before
+        print(
+            f"[Detect] Detection attempts: {attempt}, final count {final_new}"
+        )
 
         if toggled:
             bpy.ops.clip.toggle_proxy()
