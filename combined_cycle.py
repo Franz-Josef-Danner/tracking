@@ -119,7 +119,8 @@ class CLIP_OT_auto_start(bpy.types.Operator):
 
     def modal(self, context, event):
         if event.type == 'TIMER' and self._clip:
-            if not self._clip.is_proxy_building:
+            proxy_done = not getattr(self._clip, "is_proxy_building", False)
+            if proxy_done:
                 context.window_manager.event_timer_remove(self._timer)
                 context.scene.proxy_built = True
                 self.report({'INFO'}, "✅ Proxy-Erstellung abgeschlossen")
