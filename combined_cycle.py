@@ -663,6 +663,14 @@ def register():
         type=ProxyCheckProperties
     )
 
+    # Ensure proxy check state starts fresh for all scenes so the build button
+    # stays disabled until a RAM check runs.
+    for scene in bpy.data.scenes:
+        scene.proxy_built = False
+        scene.proxy_check_props.result = ""
+        scene.proxy_check_props.proxy_recommendation = ""
+        scene.proxy_check_props.user_ram_gb = 16.0
+
     bpy.types.Scene.tracking_cycle_status = bpy.props.StringProperty(
         name="Tracking Status",
         default="Idle",
