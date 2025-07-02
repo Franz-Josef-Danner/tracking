@@ -36,6 +36,9 @@ detection threshold is adjusted with
 and detection is attempted again until the
 result falls inside this range. The search margin and minimum distance grow or
 shrink with the current threshold so wide thresholds consider a broader area.
+Newly created markers receive the prefix `NEU_` during each attempt. If the
+detected count falls in the expected range they are renamed to `TRACK_`; if not
+they are deleted and detection runs again.
 During the tracking cycle the RAM cache is cleared automatically before jumping
 to the next frame.
 

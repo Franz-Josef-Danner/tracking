@@ -218,6 +218,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         )
         attempt = 0
         max_attempts = 5
+        success = False
         tracks_after = tracks_before
         while attempt < max_attempts:
             attempt += 1
@@ -237,11 +238,11 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 t for t in clip.tracking.tracks if t.name not in initial_names
             ]
             for track in new_tracks:
-                if not track.name.startswith("TRACK_"):
-                    track.name = f"TRACK_{track.name}"
+                track.name = f"NEU_{track.name}"
 
-            tracks_after = len(clip.tracking.tracks)
-            new_count = tracks_after - tracks_before
+            new_count = sum(
+                1 for t in clip.tracking.tracks if t.name.startswith("NEU_")
+            )
             print(f"[Detect] found {new_count} new markers")
 
             if min_new <= new_count <= max_new:
@@ -249,13 +250,32 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                     f"[Detect] attempt {attempt}: "
                     f"{new_count} markers in range"
                 )
+                for t in clip.tracking.tracks:
+                    if t.name.startswith("NEU_"):
+                        t.name = f"TRACK_{t.name[4:]}"
+                success = True
                 break
 
-            # Remove the newly created tracks using the operator to ensure
-            # compatibility across Blender versions
+            if new_count < min_new:
+                base_plus = context.scene.min_marker_count_plus
+                factor = (new_count + 0.1) / base_plus
+                threshold *= factor
+                print(
+                    f"[Detect] attempt {attempt}: {new_count} found, "
+                    f"lowering to {threshold:.4f}"
+                )
+            else:
+                factor = new_count / max(max_new, 1)
+                threshold *= factor
+                print(
+                    f"[Detect] attempt {attempt}: {new_count} found, "
+                    f"raising to {threshold:.4f}"
+                )
+
+            # Remove all temporary NEU_ tracks using the operator
             active_obj = clip.tracking.objects.active
-            for t in new_tracks:
-                t.select = True
+            for t in clip.tracking.tracks:
+                t.select = t.name.startswith("NEU_")
 
             deleted = False
             for area in context.screen.areas:
@@ -281,25 +301,34 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 self.report({'ERROR'}, 'No Clip Editor area found to delete temporary tracks')
                 return {'CANCELLED'}
 
-            # Update track count after deleting the temporary tracks
-            tracks_after = len(clip.tracking.tracks)
-            new_count = tracks_after - tracks_before
+        if not success:
+            active_obj = clip.tracking.objects.active
+            for t in clip.tracking.tracks:
+                t.select = t.name.startswith("NEU_")
 
-            if new_count < min_new:
-                base_plus = context.scene.min_marker_count_plus
-                factor = (new_count + 0.1) / base_plus
-                threshold *= factor
-                print(
-                    f"[Detect] attempt {attempt}: {new_count} found, "
-                    f"lowering to {threshold:.4f}"
-                )
-            else:
-                factor = new_count / max(max_new, 1)
-                threshold *= factor
-                print(
-                    f"[Detect] attempt {attempt}: {new_count} found, "
-                    f"raising to {threshold:.4f}"
-                )
+            deleted = False
+            for area in context.screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            for space in area.spaces:
+                                if space.type == 'CLIP_EDITOR':
+                                    with context.temp_override(
+                                        area=area,
+                                        region=region,
+                                        space_data=space,
+                                    ):
+                                        bpy.ops.clip.delete_track()
+                                    deleted = True
+                                    break
+                        if deleted:
+                            break
+                if deleted:
+                    break
+
+            if not deleted:
+                self.report({'ERROR'}, 'No Clip Editor area found to delete temporary tracks')
+                return {'CANCELLED'}
 
         final_tracks = len(clip.tracking.tracks)
         final_new = final_tracks - tracks_before
