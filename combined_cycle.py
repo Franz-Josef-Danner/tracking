@@ -236,7 +236,12 @@ def find_frame_with_few_tracking_markers(marker_counts, minimum_count):
     return None
 
 def set_playhead(frame, context=None):
-    """Set the current frame if ``frame`` is valid."""
+    """Set the current frame if ``frame`` is valid.
+
+    When a ``context`` with a screen is provided, any clip editor areas in that
+    screen are synchronized to the same frame. Otherwise the current context's
+    screen is used.
+    """
 
     if frame is not None:
         bpy.context.scene.frame_current = frame
