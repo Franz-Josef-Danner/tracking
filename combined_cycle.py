@@ -56,11 +56,13 @@ def update_min_marker_props(scene, context):
 
 
 def adjust_marker_count_plus(scene, delta):
-    """Increase the marker count plus value and update its range."""
+    """Update marker count plus while clamping to the base value."""
 
-    scene.min_marker_count_plus += delta
-    scene.min_marker_count_plus_min = int(scene.min_marker_count_plus * 0.8)
-    scene.min_marker_count_plus_max = int(scene.min_marker_count_plus * 1.2)
+    base_plus = scene.min_marker_count * 4
+    new_val = max(base_plus, scene.min_marker_count_plus + delta)
+    scene.min_marker_count_plus = new_val
+    scene.min_marker_count_plus_min = int(new_val * 0.8)
+    scene.min_marker_count_plus_max = int(new_val * 1.2)
 
 
 # Try to initialize margin and distance on the active clip when the
@@ -534,6 +536,8 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 visits = self._frame_history.get(target_frame, 0)
                 if visits > 0:
                     adjust_marker_count_plus(context.scene, 10)
+                else:
+                    adjust_marker_count_plus(context.scene, -10)
                 self._frame_history[target_frame] = visits + 1
             set_playhead(target_frame)
             context.scene.current_cycle_frame = context.scene.frame_current
