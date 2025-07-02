@@ -21,6 +21,39 @@ bl_info = {
 import bpy
 from collections import Counter
 
+
+def ensure_margin_distance(clip):
+    """Return margin and distance based on the clip width.
+
+    The values are cached on the clip as custom properties to avoid
+    recalculating them every time detection runs.
+    """
+
+    if "MARGIN" in clip and "DISTANCE" in clip:
+        # Cast to int in case previous versions stored floats
+        return int(clip["MARGIN"]), int(clip["DISTANCE"])
+
+    width = clip.size[0]
+    margin = max(1, int(width / 200))
+    distance = max(1, int(width / 20))
+    clip["MARGIN"] = margin
+    clip["DISTANCE"] = distance
+    return margin, distance
+
+
+# Try to initialize margin and distance on the active clip when the
+# script is executed directly. This mirrors the standalone helper
+# script and ensures the values are available before detection runs.
+try:
+    area = next((a for a in bpy.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
+    if area:
+        space = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
+        if space and space.clip:
+            ensure_margin_distance(space.clip)
+except Exception:
+    # When running headless there may be no UI yet; ignore errors.
+    pass
+
 # ---- Cache Clearing Operator (from catch clean.py) ----
 class CLIP_PT_clear_cache_panel(bpy.types.Panel):
     """UI panel providing a button to clear the RAM cache."""
@@ -75,6 +108,9 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         min_new = context.scene.min_marker_count
         tracks_before = len(clip.tracking.tracks)
 
+        # Ensure margin and distance values are available for this clip
+        margin, distance = ensure_margin_distance(clip)
+
         print(
             f"[Detect] Running detection for {min_new} markers at "
             f"threshold {threshold:.4f}"
@@ -82,8 +118,8 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         initial_names = {t.name for t in clip.tracking.tracks}
         bpy.ops.clip.detect_features(
             threshold=threshold,
-            margin=50,
-            min_distance=100,
+            margin=margin,
+            min_distance=distance,
             placement='FRAME',
         )
         for track in clip.tracking.tracks:
@@ -100,8 +136,8 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             )
             bpy.ops.clip.detect_features(
                 threshold=threshold,
-                margin=50,
-                min_distance=100,
+                margin=margin,
+                min_distance=distance,
                 placement='FRAME',
             )
             for track in clip.tracking.tracks:
@@ -401,6 +437,17 @@ def register():
         default=0,
         description="Total number of frames in the cycle",
     )
+
+    # Pre-calculate margin and distance if a clip is already loaded
+    try:
+        area = next((a for a in bpy.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
+        if area:
+            space = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
+            if space and space.clip:
+                ensure_margin_distance(space.clip)
+    except Exception:
+        # The UI might not be fully ready when registering in background
+        pass
 
     for cls in classes:
         bpy.utils.register_class(cls)
