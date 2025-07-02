@@ -315,7 +315,6 @@ class TRACK_OT_auto_track_forward(bpy.types.Operator):
 
     def execute(self, context):
         clip = context.space_data.clip
-        print("[Track] start")
         if not clip:
             self.report({'WARNING'}, "Kein Clip gefunden")
             return {'CANCELLED'}
@@ -333,7 +332,6 @@ class TRACK_OT_auto_track_forward(bpy.types.Operator):
 
         if toggled:
             bpy.ops.clip.toggle_proxy()
-        print("[Track] done")
         return {'FINISHED'}
 
 
@@ -498,9 +496,6 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         return {'PASS_THROUGH'}
 
     def execute(self, context):
-        print(
-            f"[Cycle] start (min {context.scene.min_marker_count})"
-        )
         context.scene.tracking_cycle_status = "Running"
         context.scene.total_cycle_frames = (
             context.scene.frame_end - context.scene.frame_start + 1
@@ -517,7 +512,6 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         wm = context.window_manager
         self._timer = wm.event_timer_add(CYCLE_TIMER_INTERVAL, window=context.window)
         wm.modal_handler_add(self)
-        print("[Cycle] handler added")
         return {'RUNNING_MODAL'}
 
     def cancel(self, context):
