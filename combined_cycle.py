@@ -198,13 +198,14 @@ class CLIP_OT_build_recommended_proxy(bpy.types.Operator):
         proxy.build_undistorted_75 = False
         proxy.build_undistorted_100 = False
 
-        override = context.copy()
-        area = next((a for a in bpy.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
-        if area:
-            region = next((r for r in area.regions if r.type == 'WINDOW'), None)
-            override['area'] = area
-            override['region'] = region
-            override['space_data'] = area.spaces.active
+        override = bpy.context.copy()
+        override['area'] = next(
+            area for area in bpy.context.screen.areas if area.type == 'CLIP_EDITOR'
+        )
+        override['region'] = next(
+            region for region in override['area'].regions if region.type == 'WINDOW'
+        )
+        override['space_data'] = override['area'].spaces.active
         override['clip'] = clip
 
         with bpy.context.temp_override(**override):
