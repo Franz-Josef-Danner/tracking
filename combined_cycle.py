@@ -241,9 +241,35 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 )
                 break
 
+            # Remove the newly created tracks using the operator to ensure
+            # compatibility across Blender versions
             active_obj = clip.tracking.objects.active
             for t in new_tracks:
-                active_obj.tracks.remove(t)
+                t.select = True
+
+            deleted = False
+            for area in context.screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            for space in area.spaces:
+                                if space.type == 'CLIP_EDITOR':
+                                    with context.temp_override(
+                                        area=area,
+                                        region=region,
+                                        space_data=space,
+                                    ):
+                                        bpy.ops.clip.delete_track()
+                                    deleted = True
+                                    break
+                        if deleted:
+                            break
+                if deleted:
+                    break
+
+            if not deleted:
+                self.report({'ERROR'}, 'No Clip Editor area found to delete temporary tracks')
+                return {'CANCELLED'}
 
             if new_count < min_new:
                 factor = (new_count + 0.1) / min_new
