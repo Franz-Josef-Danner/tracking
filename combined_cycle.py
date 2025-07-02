@@ -30,11 +30,12 @@ def ensure_margin_distance(clip):
     """
 
     if "MARGIN" in clip and "DISTANCE" in clip:
-        return clip["MARGIN"], clip["DISTANCE"]
+        # Cast to int in case previous versions stored floats
+        return int(clip["MARGIN"]), int(clip["DISTANCE"])
 
     width = clip.size[0]
-    margin = width / 200
-    distance = width / 20
+    margin = max(1, int(width / 200))
+    distance = max(1, int(width / 20))
     clip["MARGIN"] = margin
     clip["DISTANCE"] = distance
     return margin, distance
