@@ -206,9 +206,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         max_new = context.scene.min_marker_count_plus_max
         tracks_before = len(clip.tracking.tracks)
 
-        # Ensure margin and distance values are available for this clip
-        margin, distance = ensure_margin_distance(clip, threshold)
-
+        # Log clip info and prepare for iterative detection attempts
         base = context.scene.min_marker_count
         print(
             f"[Detect] frame {context.scene.frame_current} in '{clip.name}' "
@@ -226,6 +224,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             print(
                 f"[Detect] attempt {attempt} with threshold {threshold:.4f}"
             )
+            margin, distance = ensure_margin_distance(clip, threshold)
             initial_names = {t.name for t in clip.tracking.tracks}
             bpy.ops.clip.detect_features(
                 threshold=threshold,
@@ -295,7 +294,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                     f"lowering to {threshold:.4f}"
                 )
             else:
-                factor = max_new / max(new_count, 1)
+                factor = new_count / max(max_new, 1)
                 threshold *= factor
                 print(
                     f"[Detect] attempt {attempt}: {new_count} found, "

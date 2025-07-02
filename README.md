@@ -31,7 +31,9 @@ The minimum marker count used for the playhead search is configured in the
 panel before running the operator. Feature detection now aims to create a
 number of new tracks between *Min Marker Count × 4 × 0.8* and
 *Min Marker Count × 4 × 1.2*. If too few or too many markers are found, the
-detection threshold is adjusted and detection is attempted again until the
+detection threshold is adjusted with
+``threshold *= (new_count + 0.1) / (Min Marker Count × 4)``
+and detection is attempted again until the
 result falls inside this range. The search margin and minimum distance grow or
 shrink with the current threshold so wide thresholds consider a broader area.
 During the tracking cycle the RAM cache is cleared automatically before jumping
