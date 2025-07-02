@@ -42,6 +42,14 @@ def ensure_margin_distance(clip):
     return margin, distance
 
 
+def update_min_marker_props(scene, context):
+    """Update derived marker count properties when the base count changes."""
+    base = scene.min_marker_count
+    scene.min_marker_count_plus = base * 4
+    scene.min_marker_count_plus_min = int(scene.min_marker_count_plus * 0.8)
+    scene.min_marker_count_plus_max = int(scene.min_marker_count_plus * 1.2)
+
+
 # Try to initialize margin and distance on the active clip when the
 # script is executed directly. This mirrors the standalone helper
 # script and ensures the values are available before detection runs.
@@ -193,7 +201,8 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             toggled = True
 
         threshold = 0.1
-        min_new = context.scene.min_marker_count
+        min_new = context.scene.min_marker_count_plus_min
+        max_new = context.scene.min_marker_count_plus_max
         tracks_before = len(clip.tracking.tracks)
 
         # Ensure margin and distance values are available for this clip
@@ -203,39 +212,53 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             f"[Detect] Running detection for {min_new} markers at "
             f"threshold {threshold:.4f}"
         )
-        initial_names = {t.name for t in clip.tracking.tracks}
-        bpy.ops.clip.detect_features(
-            threshold=threshold,
-            margin=margin,
-            min_distance=distance,
-            placement='FRAME',
-        )
-        for track in clip.tracking.tracks:
-            if track.name not in initial_names and not track.name.startswith("TRACK_"):
-                track.name = f"TRACK_{track.name}"
-        tracks_after = len(clip.tracking.tracks)
-
-        while (tracks_after - tracks_before) < min_new and threshold > 0.0001:
-            factor = ((tracks_after - tracks_before) + 0.1) / min_new
-            threshold *= factor
-            print(
-                f"[Detect] Only {tracks_after - tracks_before} found, "
-                f"lowering threshold to {threshold:.4f}"
-            )
+        attempt = 0
+        max_attempts = 5
+        tracks_after = tracks_before
+        while attempt < max_attempts:
+            attempt += 1
+            initial_names = {t.name for t in clip.tracking.tracks}
             bpy.ops.clip.detect_features(
                 threshold=threshold,
                 margin=margin,
                 min_distance=distance,
                 placement='FRAME',
             )
-            for track in clip.tracking.tracks:
-                if track.name not in initial_names and not track.name.startswith("TRACK_"):
-                    track.name = f"TRACK_{track.name}"
-            tracks_after = len(clip.tracking.tracks)
 
-        print(
-            f"[Detect] Finished with {tracks_after - tracks_before} new markers"
-        )
+            new_tracks = [
+                t for t in clip.tracking.tracks if t.name not in initial_names
+            ]
+            for track in new_tracks:
+                if not track.name.startswith("TRACK_"):
+                    track.name = f"TRACK_{track.name}"
+
+            tracks_after = len(clip.tracking.tracks)
+            new_count = tracks_after - tracks_before
+
+            if min_new <= new_count <= max_new:
+                print(
+                    f"[Detect] Finished with {new_count} new markers in range"
+                )
+                break
+
+            active_obj = clip.tracking.objects.active
+            for t in new_tracks:
+                active_obj.tracks.remove(t)
+
+            if new_count < min_new:
+                factor = (new_count + 0.1) / min_new
+                threshold *= factor
+                print(
+                    f"[Detect] Only {new_count} found, lowering threshold to {threshold:.4f}"
+                )
+            else:
+                factor = max_new / max(new_count, 1)
+                threshold *= factor
+                print(
+                    f"[Detect] {new_count} found, raising threshold to {threshold:.4f}"
+                )
+
+        print(f"[Detect] Detection attempts: {attempt}, final count {tracks_after - tracks_before}")
 
         if toggled:
             bpy.ops.clip.toggle_proxy()
@@ -530,6 +553,19 @@ def register():
         default=DEFAULT_MINIMUM_MARKER_COUNT,
         min=1,
         description="Minimum markers for detection and search",
+        update=update_min_marker_props,
+    )
+    bpy.types.Scene.min_marker_count_plus = bpy.props.IntProperty(
+        name="Marker Count Plus",
+        default=DEFAULT_MINIMUM_MARKER_COUNT * 4,
+    )
+    bpy.types.Scene.min_marker_count_plus_min = bpy.props.IntProperty(
+        name="Marker Count Plus Min",
+        default=int(DEFAULT_MINIMUM_MARKER_COUNT * 4 * 0.8),
+    )
+    bpy.types.Scene.min_marker_count_plus_max = bpy.props.IntProperty(
+        name="Marker Count Plus Max",
+        default=int(DEFAULT_MINIMUM_MARKER_COUNT * 4 * 1.2),
     )
 
     bpy.types.Scene.min_track_length = bpy.props.IntProperty(
@@ -547,6 +583,7 @@ def register():
 
     for scene in bpy.data.scenes:
         scene.proxy_built = False
+        update_min_marker_props(scene, bpy.context)
 
     bpy.types.Scene.tracking_cycle_status = bpy.props.StringProperty(
         name="Tracking Status",
@@ -585,6 +622,9 @@ def unregister():
         bpy.utils.unregister_class(cls)
 
     del bpy.types.Scene.min_marker_count
+    del bpy.types.Scene.min_marker_count_plus
+    del bpy.types.Scene.min_marker_count_plus_min
+    del bpy.types.Scene.min_marker_count_plus_max
     del bpy.types.Scene.min_track_length
     del bpy.types.Scene.proxy_built
     del bpy.types.Scene.tracking_cycle_status
