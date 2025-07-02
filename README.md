@@ -37,7 +37,7 @@ detection threshold is adjusted with
 ``threshold *= (new_count + 0.1) / (Min Marker Count × 4)``
 and detection is attempted again until the
 result falls inside this range. The search margin and minimum distance scale
-with ``(threshold / 4) + 0.75`` so wider thresholds consider a broader area.
+with ``(threshold / 2) + 0.5`` so wider thresholds consider a broader area.
 Newly created markers receive the prefix `NEU_` during each attempt. If the
 detected count falls in the expected range they are renamed to `TRACK_`; if not
 they are deleted and detection runs again.
