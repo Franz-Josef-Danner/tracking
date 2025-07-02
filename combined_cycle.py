@@ -21,25 +21,48 @@ bl_info = {
 import bpy
 from collections import Counter
 import os
+import math
 
 
-def ensure_margin_distance(clip):
-    """Return margin and distance based on the clip width.
+def ensure_margin_distance(clip, threshold=1.0):
+    """Return margin and distance scaled by ``threshold``.
 
-    The values are cached on the clip as custom properties to avoid
-    recalculating them every time detection runs.
+    Base values derived from the clip width are cached on the clip as custom
+    properties so they are calculated only once per clip. Each call can then
+    scale these base values by the desired detection ``threshold`` using
+    ``base * (log10(threshold * 100000) / 5)``.
     """
 
-    if "MARGIN" in clip and "DISTANCE" in clip:
-        # Cast to int in case previous versions stored floats
-        return int(clip["MARGIN"]), int(clip["DISTANCE"])
+    if "MARGIN" not in clip or "DISTANCE" not in clip:
+        width = clip.size[0]
+        clip["MARGIN"] = max(1, int(width / 200))
+        clip["DISTANCE"] = max(1, int(width / 20))
 
-    width = clip.size[0]
-    margin = max(1, int(width / 200))
-    distance = max(1, int(width / 20))
-    clip["MARGIN"] = margin
-    clip["DISTANCE"] = distance
+    base_margin = int(clip["MARGIN"])
+    base_distance = int(clip["DISTANCE"])
+
+    scale = math.log10(threshold * 100000) / 5
+    margin = max(1, int(base_margin * scale))
+    distance = max(1, int(base_distance * scale))
     return margin, distance
+
+
+def update_min_marker_props(scene, context):
+    """Update derived marker count properties when the base count changes."""
+    base = scene.min_marker_count
+    scene.min_marker_count_plus = base * 4
+    scene.min_marker_count_plus_min = int(scene.min_marker_count_plus * 0.8)
+    scene.min_marker_count_plus_max = int(scene.min_marker_count_plus * 1.2)
+
+
+def adjust_marker_count_plus(scene, delta):
+    """Update marker count plus while clamping to the base value."""
+
+    base_plus = scene.min_marker_count * 4
+    new_val = max(base_plus, scene.min_marker_count_plus + delta)
+    scene.min_marker_count_plus = new_val
+    scene.min_marker_count_plus_min = int(new_val * 0.8)
+    scene.min_marker_count_plus_max = int(new_val * 1.2)
 
 
 # Try to initialize margin and distance on the active clip when the
@@ -184,7 +207,6 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         clip = context.space_data.clip
         if not clip:
             self.report({'WARNING'}, "Kein Clip gefunden")
-            print("[Detect] No clip found")
             return {'CANCELLED'}
 
         toggled = False
@@ -193,49 +215,137 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             toggled = True
 
         threshold = 0.1
-        min_new = context.scene.min_marker_count
+        min_new = context.scene.min_marker_count_plus_min
+        max_new = context.scene.min_marker_count_plus_max
         tracks_before = len(clip.tracking.tracks)
 
-        # Ensure margin and distance values are available for this clip
-        margin, distance = ensure_margin_distance(clip)
-
+        # Log clip info and prepare for iterative detection attempts
+        base = context.scene.min_marker_count
         print(
-            f"[Detect] Running detection for {min_new} markers at "
-            f"threshold {threshold:.4f}"
+            f"[Detect] frame {context.scene.frame_current} in '{clip.name}' "
+            f"({clip.size[0]}x{clip.size[1]})"
         )
-        initial_names = {t.name for t in clip.tracking.tracks}
-        bpy.ops.clip.detect_features(
-            threshold=threshold,
-            margin=margin,
-            min_distance=distance,
-            placement='FRAME',
+        print(
+            f"[Detect] base {base}, expected range {min_new}-{max_new} "
+            f"starting at threshold {threshold:.4f}"
         )
-        for track in clip.tracking.tracks:
-            if track.name not in initial_names and not track.name.startswith("TRACK_"):
-                track.name = f"TRACK_{track.name}"
-        tracks_after = len(clip.tracking.tracks)
-
-        while (tracks_after - tracks_before) < min_new and threshold > 0.0001:
-            factor = ((tracks_after - tracks_before) + 0.1) / min_new
-            threshold *= factor
+        attempt = 0
+        max_attempts = 20
+        success = False
+        tracks_after = tracks_before
+        while attempt < max_attempts:
+            attempt += 1
             print(
-                f"[Detect] Only {tracks_after - tracks_before} found, "
-                f"lowering threshold to {threshold:.4f}"
+                f"[Detect] attempt {attempt} with threshold {threshold:.4f}"
             )
+            margin, distance = ensure_margin_distance(clip, threshold)
+            initial_names = {t.name for t in clip.tracking.tracks}
             bpy.ops.clip.detect_features(
                 threshold=threshold,
                 margin=margin,
                 min_distance=distance,
                 placement='FRAME',
             )
-            for track in clip.tracking.tracks:
-                if track.name not in initial_names and not track.name.startswith("TRACK_"):
-                    track.name = f"TRACK_{track.name}"
-            tracks_after = len(clip.tracking.tracks)
 
-        print(
-            f"[Detect] Finished with {tracks_after - tracks_before} new markers"
-        )
+            new_tracks = [
+                t for t in clip.tracking.tracks if t.name not in initial_names
+            ]
+            for track in new_tracks:
+                track.name = f"NEU_{track.name}"
+
+            new_count = sum(
+                1 for t in clip.tracking.tracks if t.name.startswith("NEU_")
+            )
+            print(f"[Detect] found {new_count} new markers")
+
+            if min_new <= new_count <= max_new:
+                print(
+                    f"[Detect] attempt {attempt}: "
+                    f"{new_count} markers in range"
+                )
+                for t in clip.tracking.tracks:
+                    if t.name.startswith("NEU_"):
+                        t.name = f"TRACK_{t.name[4:]}"
+                success = True
+                break
+
+            if new_count < min_new:
+                base_plus = context.scene.min_marker_count_plus
+                factor = (new_count + 0.1) / base_plus
+                threshold *= factor
+                print(
+                    f"[Detect] attempt {attempt}: {new_count} found, "
+                    f"lowering to {threshold:.4f}"
+                )
+            else:
+                factor = new_count / max(max_new, 1)
+                threshold *= factor
+                print(
+                    f"[Detect] attempt {attempt}: {new_count} found, "
+                    f"raising to {threshold:.4f}"
+                )
+
+            # Remove all temporary NEU_ tracks using the operator
+            active_obj = clip.tracking.objects.active
+            for t in clip.tracking.tracks:
+                t.select = t.name.startswith("NEU_")
+
+            deleted = False
+            for area in context.screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            for space in area.spaces:
+                                if space.type == 'CLIP_EDITOR':
+                                    with context.temp_override(
+                                        area=area,
+                                        region=region,
+                                        space_data=space,
+                                    ):
+                                        bpy.ops.clip.delete_track()
+                                    deleted = True
+                                    break
+                        if deleted:
+                            break
+                if deleted:
+                    break
+
+            if not deleted:
+                self.report({'ERROR'}, 'No Clip Editor area found to delete temporary tracks')
+                return {'CANCELLED'}
+
+        if not success:
+            active_obj = clip.tracking.objects.active
+            for t in clip.tracking.tracks:
+                t.select = t.name.startswith("NEU_")
+
+            deleted = False
+            for area in context.screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            for space in area.spaces:
+                                if space.type == 'CLIP_EDITOR':
+                                    with context.temp_override(
+                                        area=area,
+                                        region=region,
+                                        space_data=space,
+                                    ):
+                                        bpy.ops.clip.delete_track()
+                                    deleted = True
+                                    break
+                        if deleted:
+                            break
+                if deleted:
+                    break
+
+            if not deleted:
+                self.report({'ERROR'}, 'No Clip Editor area found to delete temporary tracks')
+                return {'CANCELLED'}
+
+        final_tracks = len(clip.tracking.tracks)
+        final_new = final_tracks - tracks_before
+        print(f"[Detect] final new markers {final_new}")
 
         if toggled:
             bpy.ops.clip.toggle_proxy()
@@ -256,7 +366,6 @@ class TRACK_OT_auto_track_forward(bpy.types.Operator):
 
     def execute(self, context):
         clip = context.space_data.clip
-        print("[Track] Starting auto track...")
         if not clip:
             self.report({'WARNING'}, "Kein Clip gefunden")
             return {'CANCELLED'}
@@ -264,6 +373,10 @@ class TRACK_OT_auto_track_forward(bpy.types.Operator):
         if not clip.tracking.tracks:
             self.report({'WARNING'}, "Keine Marker vorhanden")
             return {'CANCELLED'}
+
+        active_obj = clip.tracking.objects.active
+        for track in active_obj.tracks:
+            track.select = track.name.startswith("TRACK_")
 
         toggled = False
         if context.scene.proxy_built and not clip.use_proxy:
@@ -274,60 +387,77 @@ class TRACK_OT_auto_track_forward(bpy.types.Operator):
 
         if toggled:
             bpy.ops.clip.toggle_proxy()
-        print("[Track] Finished auto track")
         return {'FINISHED'}
 
 
 # ---- Delete Short Tracks Operator (from Track Length.py) ----
 class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
-    """Remove tracks with prefix ``TRACK_`` shorter than the given length."""
+    """Remove tracks with prefix ``TRACK_`` shorter than the given length.
+
+    After deletion the remaining ``TRACK_`` tracks are renamed to ``GOOD_`` so
+    they won't be tracked again in the next cycle.
+    """
 
     bl_idname = "tracking.delete_short_tracks_with_prefix"
     bl_label = "Delete Short Tracks with Prefix"
 
     def execute(self, context):
-        print("\n=== [Delete short tracks] ===")
         clip = context.space_data.clip
         if not clip:
             self.report({'WARNING'}, "No clip loaded")
-            print("[Delete] No movie clip loaded")
             return {'CANCELLED'}
 
         active_obj = clip.tracking.objects.active
         tracks = active_obj.tracks
+
         min_len = context.scene.min_track_length
         tracks_to_delete = [
             t for t in tracks if t.name.startswith("TRACK_") and len(t.markers) < min_len
         ]
 
-        for track in tracks:
-            track.select = track in tracks_to_delete
+        deleted_count = 0
+        if tracks_to_delete:
+            for track in tracks:
+                track.select = track in tracks_to_delete
 
-        if not tracks_to_delete:
-            self.report({'INFO'}, "No short tracks found with prefix 'TRACK_'")
-            return {'CANCELLED'}
+            area_found = False
+            for area in context.screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            for space in area.spaces:
+                                if space.type == 'CLIP_EDITOR':
+                                    with context.temp_override(
+                                        area=area,
+                                        region=region,
+                                        space_data=space,
+                                    ):
+                                        bpy.ops.clip.delete_track()
+                                    area_found = True
+                                    break
+                        if area_found:
+                            break
+                if area_found:
+                    break
 
-        for area in context.screen.areas:
-            if area.type == 'CLIP_EDITOR':
-                for region in area.regions:
-                    if region.type == 'WINDOW':
-                        for space in area.spaces:
-                            if space.type == 'CLIP_EDITOR':
-                                with context.temp_override(
-                                    area=area, region=region, space_data=space
-                                ):
-                                    bpy.ops.clip.delete_track()
-                                for track in active_obj.tracks:
-                                    if track.name.startswith("TRACK_"):
-                                        track.name = track.name.replace("TRACK_", "GOOD_", 1)
-                                self.report(
-                                    {'INFO'},
-                                    f"Deleted {len(tracks_to_delete)} short tracks with prefix 'TRACK_'",
-                                )
-                                return {'FINISHED'}
+            if not area_found:
+                self.report({'ERROR'}, "No Clip Editor area found")
+                return {'CANCELLED'}
 
-        self.report({'ERROR'}, "No Clip Editor area found")
-        return {'CANCELLED'}
+            deleted_count = len(tracks_to_delete)
+
+        # Rename remaining TRACK_ markers to GOOD_
+        renamed_count = 0
+        for track in active_obj.tracks:
+            if track.name.startswith("TRACK_"):
+                track.name = f"GOOD_{track.name[6:]}"
+                renamed_count += 1
+
+        self.report(
+            {'INFO'},
+            f"Deleted {deleted_count} short tracks; renamed {renamed_count} to 'GOOD_'",
+        )
+        return {'FINISHED'}
 
 
 class TRACKING_PT_custom_panel(bpy.types.Panel):
@@ -354,9 +484,6 @@ def get_tracking_marker_counts():
             for marker in track.markers:
                 frame = marker.frame
                 marker_counts[frame] += 1
-    print("[Cycle] Marker count per frame:")
-    for frame, count in sorted(marker_counts.items()):
-        print(f"  Frame {frame}: {count}")
     return marker_counts
 
 def find_frame_with_few_tracking_markers(marker_counts, minimum_count):
@@ -366,9 +493,7 @@ def find_frame_with_few_tracking_markers(marker_counts, minimum_count):
     end = bpy.context.scene.frame_end
     for frame in range(start, end + 1):
         if marker_counts.get(frame, 0) < minimum_count:
-            print(f"[Cycle] Found frame {frame} with {marker_counts.get(frame,0)} markers")
             return frame
-    print("[Cycle] No frame below threshold found")
     return None
 
 def set_playhead(frame):
@@ -376,9 +501,6 @@ def set_playhead(frame):
 
     if frame is not None:
         bpy.context.scene.frame_current = frame
-        print(f"[Cycle] Playhead set to frame {frame}")
-    else:
-        print("[Cycle] No frame to set playhead")
 
 # ---- Cycle Operator ----
 class CLIP_OT_tracking_cycle(bpy.types.Operator):
@@ -392,6 +514,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
     _clip = None
     _threshold = DEFAULT_MINIMUM_MARKER_COUNT
     _last_frame = None
+    _frame_history = None
 
     @classmethod
     def poll(cls, context):
@@ -399,10 +522,8 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
 
     def modal(self, context, event):
         if event.type == 'TIMER':
-            print("[Cycle] Timer event")
             if self._last_frame is not None and self._last_frame != context.scene.frame_end:
                 self._threshold = max(int(self._threshold * 0.9), 1)
-                print(f"[Cycle] Threshold reduced to {self._threshold}")
 
             context.scene.tracking_cycle_status = "Searching next frame"
             marker_counts = get_tracking_marker_counts()
@@ -411,6 +532,13 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 self._threshold,
             )
             bpy.ops.clip.clear_custom_cache()
+            if target_frame is not None:
+                visits = self._frame_history.get(target_frame, 0)
+                if visits > 0:
+                    adjust_marker_count_plus(context.scene, 10)
+                else:
+                    adjust_marker_count_plus(context.scene, -10)
+                self._frame_history[target_frame] = visits + 1
             set_playhead(target_frame)
             context.scene.current_cycle_frame = context.scene.frame_current
 
@@ -423,10 +551,6 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             for track in self._clip.tracking.tracks:
                 track.select = False
 
-            print(
-                f"[Cycle] Detecting features and tracking "
-                f"(min markers {context.scene.min_marker_count})"
-            )
             context.scene.tracking_cycle_status = "Detecting features"
             if context.scene.proxy_built:
                 bpy.ops.clip.toggle_proxy()
@@ -438,13 +562,11 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             context.scene.tracking_cycle_status = "Cleaning tracks"
             bpy.ops.tracking.delete_short_tracks_with_prefix()
             self._last_frame = context.scene.frame_current
-            print(f"[Cycle] Step finished at frame {self._last_frame}")
             context.scene.tracking_cycle_status = "Running"
             context.scene.current_cycle_frame = context.scene.frame_current
 
         elif event.type == 'ESC':
             self.report({'INFO'}, "Tracking cycle cancelled")
-            print("[Cycle] Cancelled by user")
             context.scene.tracking_cycle_status = "Cancelled"
             self.cancel(context)
             return {'CANCELLED'}
@@ -452,10 +574,6 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         return {'PASS_THROUGH'}
 
     def execute(self, context):
-        print(
-            f"[Cycle] Starting tracking cycle "
-            f"(min_marker_count={context.scene.min_marker_count})"
-        )
         context.scene.tracking_cycle_status = "Running"
         context.scene.total_cycle_frames = (
             context.scene.frame_end - context.scene.frame_start + 1
@@ -464,16 +582,16 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         self._clip = context.space_data.clip
         if not self._clip:
             self.report({'WARNING'}, "Kein Clip gefunden")
-            print("[Cycle] No clip found")
             return {'CANCELLED'}
 
         self._threshold = context.scene.min_marker_count
         self._last_frame = context.scene.frame_current
+        self._frame_history = {}
+        update_min_marker_props(context.scene, context)
 
         wm = context.window_manager
         self._timer = wm.event_timer_add(CYCLE_TIMER_INTERVAL, window=context.window)
         wm.modal_handler_add(self)
-        print("[Cycle] Modal handler added")
         return {'RUNNING_MODAL'}
 
     def cancel(self, context):
@@ -481,7 +599,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         if self._timer is not None:
             wm.event_timer_remove(self._timer)
             self._timer = None
-        print("[Cycle] Timer removed")
+        update_min_marker_props(context.scene, context)
 
 
 class CLIP_PT_tracking_cycle_panel(bpy.types.Panel):
@@ -530,6 +648,19 @@ def register():
         default=DEFAULT_MINIMUM_MARKER_COUNT,
         min=1,
         description="Minimum markers for detection and search",
+        update=update_min_marker_props,
+    )
+    bpy.types.Scene.min_marker_count_plus = bpy.props.IntProperty(
+        name="Marker Count Plus",
+        default=DEFAULT_MINIMUM_MARKER_COUNT * 4,
+    )
+    bpy.types.Scene.min_marker_count_plus_min = bpy.props.IntProperty(
+        name="Marker Count Plus Min",
+        default=int(DEFAULT_MINIMUM_MARKER_COUNT * 4 * 0.8),
+    )
+    bpy.types.Scene.min_marker_count_plus_max = bpy.props.IntProperty(
+        name="Marker Count Plus Max",
+        default=int(DEFAULT_MINIMUM_MARKER_COUNT * 4 * 1.2),
     )
 
     bpy.types.Scene.min_track_length = bpy.props.IntProperty(
@@ -547,6 +678,7 @@ def register():
 
     for scene in bpy.data.scenes:
         scene.proxy_built = False
+        update_min_marker_props(scene, bpy.context)
 
     bpy.types.Scene.tracking_cycle_status = bpy.props.StringProperty(
         name="Tracking Status",
@@ -585,6 +717,9 @@ def unregister():
         bpy.utils.unregister_class(cls)
 
     del bpy.types.Scene.min_marker_count
+    del bpy.types.Scene.min_marker_count_plus
+    del bpy.types.Scene.min_marker_count_plus_min
+    del bpy.types.Scene.min_marker_count_plus_max
     del bpy.types.Scene.min_track_length
     del bpy.types.Scene.proxy_built
     del bpy.types.Scene.tracking_cycle_status

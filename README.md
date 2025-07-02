@@ -23,13 +23,33 @@ via Blender's operator search:
 
 - **Start Tracking Cycle** – iteratively searches for frames with few markers,
   detects new features and tracks them forward.
+- **Auto Track Selected** – selects all tracks named `TRACK_*` and tracks them forward.
 - **Delete Short Tracks with Prefix** – removes all tracking tracks starting
-  with `TRACK_` that are shorter than 25 frames.
+  with `TRACK_` that are shorter than the "Min Track Length" property and
+  renames the remaining ones to `GOOD_`.
 - **Clear RAM Cache** – reloads the current clip to free memory.
 
-The minimum marker count used for detection and frame search can be configured
-in the panel before running the operator. During the tracking cycle the
-RAM cache is cleared automatically before jumping to the next frame.
+The minimum marker count used for the playhead search is configured in the
+panel before running the operator. Feature detection now aims to create a
+number of new tracks between *Min Marker Count × 4 × 0.8* and
+*Min Marker Count × 4 × 1.2*. If too few or too many markers are found, the
+detection threshold is adjusted with
+``threshold *= (new_count + 0.1) / (Min Marker Count × 4)``
+and detection is attempted again until the
+result falls inside this range. The search margin and minimum distance scale
+with ``log10(threshold * 100000) / 5`` so wider thresholds consider a broader area.
+Newly created markers receive the prefix `NEU_` during each attempt. If the
+detected count falls in the expected range they are renamed to `TRACK_`; if not
+they are deleted and detection runs again.
+After tracking forward and removing tracks that are too short, the remaining
+`TRACK_` markers are renamed to `GOOD_` so they are skipped in subsequent
+iterations.
+During the tracking cycle the RAM cache is cleared automatically before jumping
+to the next frame.
+Each visited frame is remembered. If the playhead revisits one of these frames
+the value of **Marker Count Plus** increases by 10, widening the expected
+range for new markers. Landing on a new frame decreases the value by 10 again,
+but never below its original starting value.
 
 This project is released under the MIT License. See the `LICENSE` file for
 details.
