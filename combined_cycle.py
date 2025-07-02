@@ -561,6 +561,12 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             bpy.ops.clip.auto_track_forward()
             context.scene.tracking_cycle_status = "Cleaning tracks"
             bpy.ops.tracking.delete_short_tracks_with_prefix()
+            if context.scene.frame_current >= context.scene.frame_end:
+                self.report({'INFO'}, "End frame reached - restarting cycle")
+                self.cancel(context)
+                context.scene.frame_current = context.scene.frame_start
+                bpy.ops.clip.auto_start_tracking('INVOKE_DEFAULT')
+                return {'FINISHED'}
             self._last_frame = context.scene.frame_current
             context.scene.tracking_cycle_status = "Running"
             context.scene.current_cycle_frame = context.scene.frame_current

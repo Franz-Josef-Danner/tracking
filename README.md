@@ -45,7 +45,8 @@ After tracking forward and removing tracks that are too short, the remaining
 `TRACK_` markers are renamed to `GOOD_` so they are skipped in subsequent
 iterations.
 During the tracking cycle the RAM cache is cleared automatically before jumping
-to the next frame.
+to the next frame. When tracking hits the scene end, the proxy is rebuilt and
+the cycle restarts from the beginning.
 Each visited frame is remembered. If the playhead revisits one of these frames
 the value of **Marker Count Plus** increases by 10, widening the expected
 range for new markers. Landing on a new frame decreases the value by 10 again,
