@@ -20,6 +20,7 @@ bl_info = {
 
 import bpy
 from collections import Counter
+import os
 
 
 def ensure_margin_distance(clip):
@@ -53,6 +54,165 @@ try:
 except Exception:
     # When running headless there may be no UI yet; ignore errors.
     pass
+
+# ---- Proxy Estimation Utilities (from proxy rechner.py) ----
+def classify_resolution(width, height):
+    if width >= 3840:
+        return "4K"
+    if width >= 1920:
+        return "1080p"
+    return "SD"
+
+
+def estimate_uncompressed_ram_need(width, height, frames, bits_per_channel=8, channels=3):
+    bytes_per_channel = bits_per_channel / 8
+    bytes_per_frame = width * height * channels * bytes_per_channel
+    total_bytes = bytes_per_frame * frames
+    return total_bytes / (1024 ** 3)
+
+
+def suggest_proxy_percentage(ratio):
+    if ratio <= 0.85:
+        return None
+    if ratio <= 1.5:
+        return 75
+    if ratio <= 3.0:
+        return 50
+    return 25
+
+
+def estimate_proxy_need_from_ram(clip, user_ram_gb):
+    width = clip.size[0]
+    height = clip.size[1]
+    fps = clip.fps
+    frame_count = clip.frame_duration
+    duration_min = frame_count / fps / 60
+
+    resolution_label = classify_resolution(width, height)
+    uncompressed_ram_gb = estimate_uncompressed_ram_need(width, height, frame_count)
+    tracking_overhead = 0.25 * uncompressed_ram_gb
+    total_need = uncompressed_ram_gb + tracking_overhead
+    ram_ratio = total_need / user_ram_gb
+    proxy_suggestion = suggest_proxy_percentage(ram_ratio)
+
+    result = [
+        f"📁 Datei: {os.path.basename(bpy.path.abspath(clip.filepath))}",
+        f"🖐️ Auflösung: {width}x{height} ({resolution_label})",
+        f"🎮 Dauer: {duration_min:.2f} min @ {fps:.1f} fps",
+        f"🧠 RAM-Verbrauch geschätzt: {uncompressed_ram_gb:.2f} GB",
+        f"➕ Tracking-Zuschlag (25%): +{tracking_overhead:.2f} GB",
+        f"🧮 Gesamt-RAM-Bedarf: {total_need:.2f} GB",
+        f"💻 Eingestellter System-RAM: {user_ram_gb:.2f} GB",
+    ]
+
+    if proxy_suggestion:
+        result.append("⚠️ RAM-Knappheit erkannt – Proxy empfohlen.")
+        result.append(f"🔧 Empfohlene Proxy-Auflösung: {proxy_suggestion}%")
+    else:
+        result.append("✅ RAM ausreichend – kein Proxy notwendig.")
+
+    return "\n".join(result), proxy_suggestion
+
+
+# ---- Proxy Calculator Operators and Panel ----
+class ProxyCheckProperties(bpy.types.PropertyGroup):
+    result: bpy.props.StringProperty(name="Ergebnis", default="")
+    user_ram_gb: bpy.props.FloatProperty(
+        name="System-RAM (GB)",
+        default=16.0,
+        min=1.0,
+        max=1024.0,
+        description="Gib deinen verfügbaren Arbeitsspeicher in GB an",
+    )
+    proxy_recommendation: bpy.props.StringProperty(
+        name="Empfohlene Proxy-Auflösung", default=""
+    )
+
+
+class CLIP_OT_check_proxy_ram(bpy.types.Operator):
+    bl_idname = "clip.check_proxy_ram"
+    bl_label = "RAM-Prognose prüfen"
+
+    def execute(self, context):
+        props = context.scene.proxy_check_props
+        clip = context.space_data.clip
+
+        if not clip:
+            self.report({'WARNING'}, "❌ Kein Clip geladen.")
+            return {'CANCELLED'}
+
+        result, proxy_size = estimate_proxy_need_from_ram(clip, props.user_ram_gb)
+        props.result = result
+        props.proxy_recommendation = str(proxy_size) if proxy_size else ""
+        context.scene.proxy_built = False
+        return {'FINISHED'}
+
+
+class CLIP_OT_build_recommended_proxy(bpy.types.Operator):
+    bl_idname = "clip.build_recommended_proxy"
+    bl_label = "Empfohlenen Proxy erstellen"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        props = context.scene.proxy_check_props
+        proxy_size = props.proxy_recommendation
+
+        if not clip or proxy_size == "":
+            self.report({'WARNING'}, "❌ Kein Proxy empfohlen oder Clip fehlt.")
+            return {'CANCELLED'}
+
+        clip.use_proxy = True
+        proxy = clip.proxy
+        proxy.quality = 50
+        proxy.directory = bpy.path.abspath("//BL_proxy/")
+        proxy.timecode = 'FREE_RUN_NO_GAPS'
+
+        proxy.build_25 = proxy.build_50 = proxy.build_75 = proxy.build_100 = False
+
+        if proxy_size == "25":
+            proxy.build_25 = True
+        elif proxy_size == "50":
+            proxy.build_50 = True
+        elif proxy_size == "75":
+            proxy.build_75 = True
+        else:
+            self.report({'WARNING'}, "Ungültige Proxy-Größe.")
+            return {'CANCELLED'}
+
+        proxy.build_undistorted_25 = False
+        proxy.build_undistorted_50 = False
+        proxy.build_undistorted_75 = False
+        proxy.build_undistorted_100 = False
+
+        override = bpy.context.copy()
+        override['area'] = next(a for a in bpy.context.screen.areas if a.type == 'CLIP_EDITOR')
+        override['region'] = next(r for r in override['area'].regions if r.type == 'WINDOW')
+        override['space_data'] = override['area'].spaces.active
+        override['clip'] = clip
+
+        with bpy.context.temp_override(**override):
+            bpy.ops.clip.rebuild_proxy()
+
+        context.scene.proxy_built = True
+        self.report({'INFO'}, f"✅ Proxy {proxy_size}% wird erstellt.")
+        return {'FINISHED'}
+
+
+
+class ToggleProxyOperator(bpy.types.Operator):
+    """Proxy/Timecode Umschalten"""
+
+    bl_idname = "clip.toggle_proxy"
+    bl_label = "Toggle Proxy/Timecode"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if clip:
+            clip.use_proxy = not clip.use_proxy
+            self.report({'INFO'}, f"Proxy/Timecode {'aktiviert' if clip.use_proxy else 'deaktiviert'}")
+        else:
+            self.report({'WARNING'}, "Kein Clip geladen")
+        return {'FINISHED'}
 
 # ---- Cache Clearing Operator (from catch clean.py) ----
 class CLIP_PT_clear_cache_panel(bpy.types.Panel):
@@ -104,6 +264,11 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             print("[Detect] No clip found")
             return {'CANCELLED'}
 
+        toggled = False
+        if context.scene.proxy_built and clip.use_proxy:
+            bpy.ops.clip.toggle_proxy()
+            toggled = True
+
         threshold = 0.1
         min_new = context.scene.min_marker_count
         tracks_before = len(clip.tracking.tracks)
@@ -148,6 +313,9 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         print(
             f"[Detect] Finished with {tracks_after - tracks_before} new markers"
         )
+
+        if toggled:
+            bpy.ops.clip.toggle_proxy()
         return {'FINISHED'}
 
 
@@ -174,14 +342,22 @@ class TRACK_OT_auto_track_forward(bpy.types.Operator):
             self.report({'WARNING'}, "Keine Marker vorhanden")
             return {'CANCELLED'}
 
+        toggled = False
+        if context.scene.proxy_built and not clip.use_proxy:
+            bpy.ops.clip.toggle_proxy()
+            toggled = True
+
         bpy.ops.clip.track_markers(sequence=True)
+
+        if toggled:
+            bpy.ops.clip.toggle_proxy()
         print("[Track] Finished auto track")
         return {'FINISHED'}
 
 
 # ---- Delete Short Tracks Operator (from Track Length.py) ----
 class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
-    """Remove tracks with prefix ``TRACK_`` shorter than 25 frames."""
+    """Remove tracks with prefix ``TRACK_`` shorter than the given length."""
 
     bl_idname = "tracking.delete_short_tracks_with_prefix"
     bl_label = "Delete Short Tracks with Prefix"
@@ -196,8 +372,9 @@ class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
 
         active_obj = clip.tracking.objects.active
         tracks = active_obj.tracks
+        min_len = context.scene.min_track_length
         tracks_to_delete = [
-            t for t in tracks if t.name.startswith("TRACK_") and len(t.markers) < 25
+            t for t in tracks if t.name.startswith("TRACK_") and len(t.markers) < min_len
         ]
 
         for track in tracks:
@@ -328,7 +505,11 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 f"(min markers {context.scene.min_marker_count})"
             )
             context.scene.tracking_cycle_status = "Detecting features"
+            if context.scene.proxy_built:
+                bpy.ops.clip.toggle_proxy()
             bpy.ops.clip.detect_features_custom()
+            if context.scene.proxy_built:
+                bpy.ops.clip.toggle_proxy()
             context.scene.tracking_cycle_status = "Tracking markers"
             bpy.ops.clip.auto_track_forward()
             context.scene.tracking_cycle_status = "Cleaning tracks"
@@ -389,19 +570,43 @@ class CLIP_PT_tracking_cycle_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
+        props = context.scene.proxy_check_props
+
+        layout.prop(props, "user_ram_gb")
+        layout.operator(CLIP_OT_check_proxy_ram.bl_idname)
+
+        if props.result:
+            layout.label(text="Ergebnis:")
+            for line in props.result.split("\n"):
+                layout.label(text=line[:128])
+
+        row = layout.row()
+        row.enabled = bool(props.proxy_recommendation)
+        row.operator(CLIP_OT_build_recommended_proxy.bl_idname)
+
         layout.prop(context.scene, "min_marker_count")
+        layout.prop(context.scene, "min_track_length")
         layout.label(text=context.scene.tracking_cycle_status)
         layout.label(
             text=f"Frame {context.scene.current_cycle_frame}/"
             f"{context.scene.total_cycle_frames}"
         )
-        layout.operator(
+        start_row = layout.row()
+        start_enabled = props.result != "" and (
+            props.proxy_recommendation == "" or context.scene.proxy_built
+        )
+        start_row.enabled = start_enabled
+        start_row.operator(
             CLIP_OT_tracking_cycle.bl_idname,
             icon='REC',
         )
 
 # ---- Registration ----
 classes = [
+    ProxyCheckProperties,
+    CLIP_OT_check_proxy_ram,
+    CLIP_OT_build_recommended_proxy,
+    ToggleProxyOperator,
     CLIP_OT_clear_custom_cache,
     DetectFeaturesCustomOperator,
     TRACK_OT_auto_track_forward,
@@ -418,6 +623,23 @@ def register():
         default=DEFAULT_MINIMUM_MARKER_COUNT,
         min=1,
         description="Minimum markers for detection and search",
+    )
+
+    bpy.types.Scene.min_track_length = bpy.props.IntProperty(
+        name="Min Track Length",
+        default=25,
+        min=1,
+        description="Minimum track length kept after tracking",
+    )
+
+    bpy.types.Scene.proxy_built = bpy.props.BoolProperty(
+        name="Proxy Built",
+        default=False,
+        description="True when a recommended proxy has been built",
+    )
+
+    bpy.types.Scene.proxy_check_props = bpy.props.PointerProperty(
+        type=ProxyCheckProperties
     )
 
     bpy.types.Scene.tracking_cycle_status = bpy.props.StringProperty(
@@ -460,6 +682,9 @@ def unregister():
         bpy.utils.unregister_class(cls)
 
     del bpy.types.Scene.min_marker_count
+    del bpy.types.Scene.min_track_length
+    del bpy.types.Scene.proxy_built
+    del bpy.types.Scene.proxy_check_props
     del bpy.types.Scene.tracking_cycle_status
     del bpy.types.Scene.current_cycle_frame
     del bpy.types.Scene.total_cycle_frames
