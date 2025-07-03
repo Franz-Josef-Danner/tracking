@@ -81,8 +81,11 @@ class CLIP_OT_remove_close_neu_markers(bpy.types.Operator):
 
         removed_count = 0
         for track in to_remove:
+            if tracks.find(track.name) == -1:
+                self.report({'WARNING'}, f"Track {track.name} existiert nicht mehr")
+                continue
             try:
-                tracks.remove(track)
+                clip.tracking.tracks.remove(track)
                 self.report({'INFO'}, f"🗑️ Lösche Track: {track.name}")
                 removed_count += 1
             except Exception as e:
