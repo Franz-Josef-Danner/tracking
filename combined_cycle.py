@@ -139,16 +139,22 @@ class CLIP_OT_auto_start(bpy.types.Operator):
 
     _timer = None
     _clip = None
+    _checks = 0
+    _proxy_paths = None
 
     def modal(self, context, event):
-        if event.type == 'TIMER' and self._clip:
-            proxy_done = not getattr(self._clip, "is_proxy_building", False)
-            if proxy_done:
+        if event.type == 'TIMER' and self._clip and self._proxy_paths:
+            self._checks += 1
+            if any(os.path.exists(p) for p in self._proxy_paths):
                 context.window_manager.event_timer_remove(self._timer)
                 context.scene.proxy_built = True
                 self.report({'INFO'}, "✅ Proxy-Erstellung abgeschlossen")
                 bpy.ops.clip.tracking_cycle('INVOKE_DEFAULT')
                 return {'FINISHED'}
+            if self._checks > 180:
+                context.window_manager.event_timer_remove(self._timer)
+                self.report({'WARNING'}, "⚠️ Proxy-Erstellung Zeitüberschreitung")
+                return {'CANCELLED'}
         return {'PASS_THROUGH'}
 
     def execute(self, context):
@@ -186,7 +192,14 @@ class CLIP_OT_auto_start(bpy.types.Operator):
         with context.temp_override(**override):
             bpy.ops.clip.rebuild_proxy()
 
+        proxy_dir = bpy.path.abspath(proxy.directory)
+        proxy_file = "proxy_50.avi"
+        direct_path = os.path.join(proxy_dir, proxy_file)
+        alt_path = os.path.join(proxy_dir, os.path.basename(clip.filepath), proxy_file)
+
         self._clip = clip
+        self._proxy_paths = [direct_path, alt_path]
+        self._checks = 0
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.5, window=context.window)
         wm.modal_handler_add(self)
