@@ -93,7 +93,7 @@ class CLIP_PT_neu_cleanup_tools(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.operator(CLIP_OT_remove_close_neu_markers.bl_idname).min_distance
+        layout.operator(CLIP_OT_remove_close_neu_markers.bl_idname)
 
 
 def register():
