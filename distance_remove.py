@@ -4,9 +4,19 @@ import mathutils
 class CLIP_OT_remove_close_neu_markers(bpy.types.Operator):
     bl_idname = "clip.remove_close_neu_markers"
     bl_label = "NEU_-Marker löschen (zu nahe an GOOD_)"
-    bl_description = "Löscht NEU_-Marker im aktuellen Frame, wenn sie zu nahe an GOOD_-Markern liegen"
+    bl_description = (
+        "Löscht NEU_-Marker im aktuellen Frame, wenn sie zu nahe an GOOD_-Markern liegen"
+    )
 
     min_distance = 0.02  # 2% Bildbreite/Höhe im normierten Raum (0-1)
+
+    @classmethod
+    def poll(cls, context):
+        return (
+            context.space_data
+            and context.space_data.type == 'CLIP_EDITOR'
+            and context.space_data.clip
+        )
 
     def execute(self, context):
         clip = context.space_data.clip
