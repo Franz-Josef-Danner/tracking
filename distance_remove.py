@@ -101,19 +101,25 @@ class CLIP_PT_neu_cleanup_tools(bpy.types.Panel):
 def register():
     bpy.utils.register_class(CLIP_OT_remove_close_neu_markers)
     bpy.utils.register_class(CLIP_PT_neu_cleanup_tools)
-    bpy.types.WindowManager.cleanup_min_distance = bpy.props.FloatProperty(
-        name="Mindestabstand",
-        default=0.02,
-        description="Mindestabstand im normierten Raum (0-1) zum Löschen",
-        min=0.0,
-    )
+    if not hasattr(bpy.types.WindowManager, "cleanup_min_distance"):
+        bpy.types.WindowManager.cleanup_min_distance = bpy.props.FloatProperty(
+            name="Mindestabstand",
+            default=0.02,
+            description="Mindestabstand im normierten Raum (0-1) zum Löschen",
+            min=0.0,
+        )
 
 
 def unregister():
-    del bpy.types.WindowManager.cleanup_min_distance
+    if hasattr(bpy.types.WindowManager, "cleanup_min_distance"):
+        del bpy.types.WindowManager.cleanup_min_distance
     bpy.utils.unregister_class(CLIP_OT_remove_close_neu_markers)
     bpy.utils.unregister_class(CLIP_PT_neu_cleanup_tools)
 
 
 if __name__ == "__main__":
+    try:
+        unregister()
+    except Exception:
+        pass
     register()
