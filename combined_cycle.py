@@ -548,7 +548,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
     _clip = None
     _threshold = DEFAULT_MINIMUM_MARKER_COUNT
     _last_frame = None
-    _frame_history = None
+    _visited_frames = None
 
     @classmethod
     def poll(cls, context):
@@ -567,12 +567,11 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             )
             bpy.ops.clip.clear_custom_cache()
             if target_frame is not None:
-                visits = self._frame_history.get(target_frame, 0)
-                if visits > 0:
+                if target_frame in self._visited_frames:
                     adjust_marker_count_plus(context.scene, 10)
                 else:
                     adjust_marker_count_plus(context.scene, -10)
-                self._frame_history[target_frame] = visits + 1
+                    self._visited_frames.add(target_frame)
             set_playhead(target_frame)
             context.scene.current_cycle_frame = context.scene.frame_current
 
@@ -620,7 +619,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
 
         self._threshold = context.scene.min_marker_count
         self._last_frame = context.scene.frame_current
-        self._frame_history = {}
+        self._visited_frames = set()
         update_min_marker_props(context.scene, context)
 
         wm = context.window_manager
