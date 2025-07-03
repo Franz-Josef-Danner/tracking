@@ -53,6 +53,15 @@ range for new markers. Landing on a new frame decreases the value by 10 again,
 but never below its original starting value. The "Marker Count Plus" value
 is clamped to a maximum of 300.
 
+## Standalone Cleanup Script
+
+`distance_remove.py` is a small helper that can be run directly from
+Blender's text editor. When executed it registers the **Cleanup NEU_ Markers**
+operator, which deletes `NEU_` markers that are closer than a user-defined
+distance to existing `GOOD_` markers in the current frame. Running the script
+again automatically unregisters the previous instance so it can be tested
+multiple times without restarting Blender.
+
 This project is released under the MIT License. See the `LICENSE` file for
 details.
 

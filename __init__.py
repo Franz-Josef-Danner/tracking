@@ -17,3 +17,11 @@ def register():
 def unregister():
     combined_cycle.unregister()
 
+
+if __name__ == "__main__":
+    try:
+        unregister()
+    except Exception:
+        pass
+    register()
+
