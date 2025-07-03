@@ -151,6 +151,8 @@ class CLIP_OT_auto_start(bpy.types.Operator):
                 self.report({'INFO'}, "✅ Proxy-Erstellung abgeschlossen")
                 bpy.ops.clip.tracking_cycle('INVOKE_DEFAULT')
                 return {'FINISHED'}
+            if self._checks % 10 == 0:
+                print(f"\u23F3 Warte… {self._checks}/180")
             if self._checks > 180:
                 context.window_manager.event_timer_remove(self._timer)
                 self.report({'WARNING'}, "⚠️ Proxy-Erstellung Zeitüberschreitung")
@@ -164,20 +166,37 @@ class CLIP_OT_auto_start(bpy.types.Operator):
             return {'CANCELLED'}
 
         context.scene.proxy_built = False
+        print("\U0001F7E1 Starte Proxy-Erstellung (50%, custom Pfad)")
+        clip_path = bpy.path.abspath(clip.filepath)
+        print(f"\U0001F4C2 Clip-Pfad: {clip_path}")
+        if not os.path.isfile(clip_path):
+            print("\u274C Clip-Datei existiert nicht.")
+            return {'CANCELLED'}
 
+        print("\u2699\ufe0f Setze Proxy-Optionen…")
         clip.use_proxy = True
+        clip.use_proxy_custom_directory = True
+        print("\u2705 Custom Directory aktiviert")
         proxy = clip.proxy
         proxy.quality = 50
-        proxy.directory = bpy.path.abspath("//BL_proxy/")
+        print("\u2705 Qualität auf 50 gesetzt")
+        proxy.directory = "//BL_proxy/"
         proxy.timecode = 'FREE_RUN_NO_GAPS'
 
         proxy.build_25 = proxy.build_50 = proxy.build_75 = proxy.build_100 = False
         proxy.build_50 = True
+        print("\u2705 Proxy-Build 50% aktiviert")
 
         proxy.build_undistorted_25 = False
         proxy.build_undistorted_50 = False
         proxy.build_undistorted_75 = False
         proxy.build_undistorted_100 = False
+
+        proxy_dir = bpy.path.abspath(proxy.directory)
+        os.makedirs(proxy_dir, exist_ok=True)
+        print(f"\U0001F4C1 Proxy-Zielverzeichnis: {proxy_dir}")
+        print("\u26A0\ufe0f Wenn Zeitcode nötig: bitte manuell in der UI setzen.")
+        print("\U0001F6A7 Starte Proxy-Rebuild…")
 
         override = context.copy()
         override['area'] = next(
@@ -192,10 +211,12 @@ class CLIP_OT_auto_start(bpy.types.Operator):
         with context.temp_override(**override):
             bpy.ops.clip.rebuild_proxy()
 
-        proxy_dir = bpy.path.abspath(proxy.directory)
+        print("\U0001F552 Warte auf erste Proxy-Datei…")
+
         proxy_file = "proxy_50.avi"
         direct_path = os.path.join(proxy_dir, proxy_file)
         alt_path = os.path.join(proxy_dir, os.path.basename(clip.filepath), proxy_file)
+        print(f"\U0001F50D Suche nach Datei: {direct_path} oder {alt_path}")
 
         self._clip = clip
         self._proxy_paths = [direct_path, alt_path]
