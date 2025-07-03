@@ -28,8 +28,6 @@ via Blender's operator search:
   with `TRACK_` that are shorter than the "Min Track Length" property and
   renames the remaining ones to `GOOD_`.
 - **Clear RAM Cache** – reloads the current clip to free memory.
-- **Cleanup NEU_ Markers** – deletes any `NEU_*` marker that is closer than the
-  configured distance to a `GOOD_*` marker in the current frame.
 
 The minimum marker count used for the playhead search is configured in the
 panel before running the operator. Feature detection now aims to create a
