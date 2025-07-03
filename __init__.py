@@ -8,12 +8,15 @@ bl_info = {
 }
 
 from . import combined_cycle
+from . import distance_remove
 
 
 def register():
     combined_cycle.register()
+    distance_remove.register()
 
 
 def unregister():
     combined_cycle.unregister()
+    distance_remove.unregister()
 

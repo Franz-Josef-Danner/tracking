@@ -1,6 +1,17 @@
 import bpy
 import mathutils
 
+bl_info = {
+    "name": "NEU_ Marker Cleanup",
+    "description": (
+        "Entfernt NEU_-Marker, die im aktuellen Frame zu nah an GOOD_-Markern liegen"
+    ),
+    "author": "OpenAI Codex",
+    "version": (1, 0, 0),
+    "blender": (2, 80, 0),
+    "category": "Clip",
+}
+
 class CLIP_OT_remove_close_neu_markers(bpy.types.Operator):
     bl_idname = "clip.remove_close_neu_markers"
     bl_label = "NEU_-Marker löschen (zu nahe an GOOD_)"
@@ -8,7 +19,14 @@ class CLIP_OT_remove_close_neu_markers(bpy.types.Operator):
         "Löscht NEU_-Marker im aktuellen Frame, wenn sie zu nahe an GOOD_-Markern liegen"
     )
 
-    min_distance = 0.02  # 2% Bildbreite/Höhe im normierten Raum (0-1)
+    bl_options = {"REGISTER", "UNDO"}
+
+    min_distance: bpy.props.FloatProperty(
+        name="Mindestabstand",
+        default=0.02,
+        description="Mindestabstand im normierten Raum (0-1) zum Löschen",
+        min=0.0,
+    )
 
     @classmethod
     def poll(cls, context):
@@ -47,18 +65,21 @@ class CLIP_OT_remove_close_neu_markers(bpy.types.Operator):
 
                 distance = (neu_pos - good_pos).length
                 if distance < self.min_distance:
-                    print(f"⚠️ {neu.name} ist zu nahe an {good.name} (Distanz: {distance:.5f}) → Löschen")
+                    msg = (
+                        f"⚠️ {neu.name} ist zu nahe an {good.name} (Distanz: {distance:.5f}) → Löschen"
+                    )
+                    self.report({'INFO'}, msg)
                     to_remove.append(neu)
                     break  # Stop bei erstem nahen GOOD_
 
         removed_count = 0
         for track in to_remove:
             try:
-                print(f"🗑️ Lösche Track: {track.name}")
                 tracks.remove(track)
+                self.report({'INFO'}, f"🗑️ Lösche Track: {track.name}")
                 removed_count += 1
             except Exception as e:
-                print(f"❌ Fehler beim Löschen von {track.name}: {e}")
+                self.report({'ERROR'}, f"❌ Fehler beim Löschen von {track.name}: {e}")
 
         self.report({'INFO'}, f"🗑️ Gelöscht: {removed_count} NEU_-Marker im Frame {current_frame}")
         return {'FINISHED'}
@@ -72,7 +93,7 @@ class CLIP_PT_neu_cleanup_tools(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.operator("clip.remove_close_neu_markers")
+        layout.operator(CLIP_OT_remove_close_neu_markers.bl_idname).min_distance
 
 
 def register():
