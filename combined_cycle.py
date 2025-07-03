@@ -274,14 +274,14 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             if new_count < min_new:
                 base_plus = context.scene.min_marker_count_plus
                 factor = (new_count + 0.1) / base_plus
-                threshold *= factor
+                threshold = max(threshold * factor, 0.0001)
                 print(
                     f"[Detect] attempt {attempt}: {new_count} found, "
                     f"lowering to {threshold:.4f}"
                 )
             else:
                 factor = new_count / max(max_new, 1)
-                threshold *= factor
+                threshold = max(threshold * factor, 0.0001)
                 print(
                     f"[Detect] attempt {attempt}: {new_count} found, "
                     f"raising to {threshold:.4f}"

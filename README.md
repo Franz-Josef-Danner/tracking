@@ -38,6 +38,7 @@ detection threshold is adjusted with
 and detection is attempted again until the
 result falls inside this range. The search margin and minimum distance scale
 with ``log10(threshold * 100000) / 5`` so wider thresholds consider a broader area.
+The threshold is clamped to a minimum of ``0.0001`` so it never becomes too small.
 Newly created markers receive the prefix `NEU_` during each attempt. If the
 detected count falls in the expected range they are renamed to `TRACK_`; if not
 they are deleted and detection runs again.
