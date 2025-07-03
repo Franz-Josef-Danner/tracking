@@ -1,3 +1,11 @@
+"""Cleanup NEU_ markers that are too close to GOOD_ markers.
+
+This script can run standalone from Blender's text editor or be part of the
+Tracking Tools add-on. It registers an operator that deletes NEU_ markers in
+the current frame if they fall closer than a configurable distance to existing
+GOOD_ markers.
+"""
+
 import bpy
 import mathutils
 
