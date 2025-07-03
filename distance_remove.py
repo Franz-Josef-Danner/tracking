@@ -79,20 +79,37 @@ class CLIP_OT_remove_close_neu_markers(bpy.types.Operator):
                     to_remove.append(neu)
                     break  # Stop bei erstem nahen GOOD_
 
-        removed_count = 0
-        for track in to_remove:
-            if tracks.find(track.name) == -1:
-                self.report({'WARNING'}, f"Track {track.name} existiert nicht mehr")
-                continue
-            try:
-                clip.tracking.tracks.remove(track)
-                self.report({'INFO'}, f"🗑️ Lösche Track: {track.name}")
-                removed_count += 1
-            except Exception as e:
-                self.report({'ERROR'}, f"❌ Fehler beim Löschen von {track.name}: {e}")
+        if not to_remove:
+            self.report({'INFO'}, "Keine NEU_-Marker zum Löschen gefunden")
+            return {'CANCELLED'}
 
-        self.report({'INFO'}, f"🗑️ Gelöscht: {removed_count} NEU_-Marker im Frame {current_frame}")
-        return {'FINISHED'}
+        # Tracks markieren
+        for t in tracks:
+            t.select = False
+        for t in to_remove:
+            t.select = True
+
+        # Operator im Clip Editor ausführen
+        for area in context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        for space in area.spaces:
+                            if space.type == 'CLIP_EDITOR':
+                                with context.temp_override(
+                                    area=area,
+                                    region=region,
+                                    space_data=space,
+                                ):
+                                    bpy.ops.clip.delete_track()
+                                self.report(
+                                    {'INFO'},
+                                    f"🗑️ Gelöscht: {len(to_remove)} NEU_-Marker im Frame {current_frame}",
+                                )
+                                return {'FINISHED'}
+
+        self.report({'ERROR'}, "Kein geeigneter Clip Editor Bereich gefunden")
+        return {'CANCELLED'}
 
 
 class CLIP_PT_neu_cleanup_tools(bpy.types.Panel):
