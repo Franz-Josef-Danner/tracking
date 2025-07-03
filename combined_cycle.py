@@ -50,7 +50,7 @@ def ensure_margin_distance(clip, threshold=1.0):
 def update_min_marker_props(scene, context):
     """Update derived marker count properties when the base count changes."""
     base = scene.min_marker_count
-    scene.min_marker_count_plus = base * 4
+    scene.min_marker_count_plus = min(base * 4, 300)
     scene.min_marker_count_plus_min = int(scene.min_marker_count_plus * 0.8)
     scene.min_marker_count_plus_max = int(scene.min_marker_count_plus * 1.2)
 
@@ -60,6 +60,7 @@ def adjust_marker_count_plus(scene, delta):
 
     base_plus = scene.min_marker_count * 4
     new_val = max(base_plus, scene.min_marker_count_plus + delta)
+    new_val = min(new_val, 300)
     scene.min_marker_count_plus = new_val
     scene.min_marker_count_plus_min = int(new_val * 0.8)
     scene.min_marker_count_plus_max = int(new_val * 1.2)
@@ -273,14 +274,14 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             if new_count < min_new:
                 base_plus = context.scene.min_marker_count_plus
                 factor = (new_count + 0.1) / base_plus
-                threshold *= factor
+                threshold = max(threshold * factor, 0.0001)
                 print(
                     f"[Detect] attempt {attempt}: {new_count} found, "
                     f"lowering to {threshold:.4f}"
                 )
             else:
                 factor = new_count / max(max_new, 1)
-                threshold *= factor
+                threshold = max(threshold * factor, 0.0001)
                 print(
                     f"[Detect] attempt {attempt}: {new_count} found, "
                     f"raising to {threshold:.4f}"
@@ -650,6 +651,7 @@ def register():
     bpy.types.Scene.min_marker_count_plus = bpy.props.IntProperty(
         name="Marker Count Plus",
         default=DEFAULT_MINIMUM_MARKER_COUNT * 4,
+        max=300,
     )
     bpy.types.Scene.min_marker_count_plus_min = bpy.props.IntProperty(
         name="Marker Count Plus Min",

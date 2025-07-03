@@ -32,7 +32,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
         while (tracks_after - tracks_before) < min_new and threshold > 0.0001:
             factor = ((tracks_after - tracks_before) + 0.1) / min_new
-            threshold *= factor
+            threshold = max(threshold * factor, 0.0001)
             msg = (
                 f"Nur {tracks_after - tracks_before} Features, "
                 f"senke Threshold auf {threshold:.4f}"

@@ -38,6 +38,7 @@ detection threshold is adjusted with
 and detection is attempted again until the
 result falls inside this range. The search margin and minimum distance scale
 with ``log10(threshold * 100000) / 5`` so wider thresholds consider a broader area.
+The threshold is clamped to a minimum of ``0.0001`` so it never becomes too small.
 Newly created markers receive the prefix `NEU_` during each attempt. If the
 detected count falls in the expected range they are renamed to `TRACK_`; if not
 they are deleted and detection runs again.
@@ -49,7 +50,8 @@ to the next frame.
 Each visited frame is remembered. If the playhead revisits one of these frames
 the value of **Marker Count Plus** increases by 10, widening the expected
 range for new markers. Landing on a new frame decreases the value by 10 again,
-but never below its original starting value.
+but never below its original starting value. The "Marker Count Plus" value
+is clamped to a maximum of 300.
 
 This project is released under the MIT License. See the `LICENSE` file for
 details.
