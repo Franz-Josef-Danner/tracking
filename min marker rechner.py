@@ -4,7 +4,7 @@ import bpy
 x = 10  # Diesen Wert kannst du durch eine Variable oder UI-Element ersetzen
 
 # Berechnungen
-min_marker_count_plus = min(x * 4, 300)
+min_marker_count_plus = min(x * 4, x * 200)
 min_marker_count_plus_min = min_marker_count_plus * 0.8
 min_marker_count_plus_max = min_marker_count_plus * 1.2
 
