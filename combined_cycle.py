@@ -96,39 +96,6 @@ class ToggleProxyOperator(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
         return {'FINISHED'}
 
-# ---- Cache Clearing Operator (from catch clean.py) ----
-class CLIP_PT_clear_cache_panel(bpy.types.Panel):
-    """UI panel providing a button to clear the RAM cache."""
-
-    bl_space_type = 'CLIP_EDITOR'
-    bl_region_type = 'UI'
-    bl_category = 'Cache Tools'
-    bl_label = 'Clear Cache'
-
-    def draw(self, context):
-        layout = self.layout
-        layout.operator(
-            "clip.clear_custom_cache",
-            text="Clear RAM Cache",
-            icon='TRASH',
-        )
-
-
-class CLIP_OT_clear_custom_cache(bpy.types.Operator):
-    """Reload the active clip to clear its RAM cache."""
-
-    bl_idname = "clip.clear_custom_cache"
-    bl_label = "Clear RAM Cache"
-    bl_description = "Reloads the clip to clear its RAM cache"
-
-    def execute(self, context):
-        sc = context.space_data
-        if sc and sc.clip:
-            bpy.ops.clip.reload()
-            self.report({'INFO'}, f"RAM-Cache für Clip '{sc.clip.name}' wurde geleert")
-            return {'FINISHED'}
-        self.report({'WARNING'}, "Kein Clip aktiv im Editor")
-        return {'CANCELLED'}
 
 
 class CLIP_OT_auto_start(bpy.types.Operator):
@@ -139,16 +106,24 @@ class CLIP_OT_auto_start(bpy.types.Operator):
 
     _timer = None
     _clip = None
+    _checks = 0
+    _proxy_paths = None
 
     def modal(self, context, event):
-        if event.type == 'TIMER' and self._clip:
-            proxy_done = not getattr(self._clip, "is_proxy_building", False)
-            if proxy_done:
+        if event.type == 'TIMER' and self._clip and self._proxy_paths:
+            self._checks += 1
+            if any(os.path.exists(p) for p in self._proxy_paths):
                 context.window_manager.event_timer_remove(self._timer)
                 context.scene.proxy_built = True
                 self.report({'INFO'}, "✅ Proxy-Erstellung abgeschlossen")
                 bpy.ops.clip.tracking_cycle('INVOKE_DEFAULT')
                 return {'FINISHED'}
+            if self._checks % 10 == 0:
+                print(f"\u23F3 Warte… {self._checks}/180")
+            if self._checks > 180:
+                context.window_manager.event_timer_remove(self._timer)
+                self.report({'WARNING'}, "⚠️ Proxy-Erstellung Zeitüberschreitung")
+                return {'CANCELLED'}
         return {'PASS_THROUGH'}
 
     def execute(self, context):
@@ -158,20 +133,37 @@ class CLIP_OT_auto_start(bpy.types.Operator):
             return {'CANCELLED'}
 
         context.scene.proxy_built = False
+        print("\U0001F7E1 Starte Proxy-Erstellung (50%, custom Pfad)")
+        clip_path = bpy.path.abspath(clip.filepath)
+        print(f"\U0001F4C2 Clip-Pfad: {clip_path}")
+        if not os.path.isfile(clip_path):
+            print("\u274C Clip-Datei existiert nicht.")
+            return {'CANCELLED'}
 
+        print("\u2699\ufe0f Setze Proxy-Optionen…")
         clip.use_proxy = True
+        clip.use_proxy_custom_directory = True
+        print("\u2705 Custom Directory aktiviert")
         proxy = clip.proxy
         proxy.quality = 50
-        proxy.directory = bpy.path.abspath("//BL_proxy/")
+        print("\u2705 Qualität auf 50 gesetzt")
+        proxy.directory = "//BL_proxy/"
         proxy.timecode = 'FREE_RUN_NO_GAPS'
 
         proxy.build_25 = proxy.build_50 = proxy.build_75 = proxy.build_100 = False
         proxy.build_50 = True
+        print("\u2705 Proxy-Build 50% aktiviert")
 
         proxy.build_undistorted_25 = False
         proxy.build_undistorted_50 = False
         proxy.build_undistorted_75 = False
         proxy.build_undistorted_100 = False
+
+        proxy_dir = bpy.path.abspath(proxy.directory)
+        os.makedirs(proxy_dir, exist_ok=True)
+        print(f"\U0001F4C1 Proxy-Zielverzeichnis: {proxy_dir}")
+        print("\u26A0\ufe0f Wenn Zeitcode nötig: bitte manuell in der UI setzen.")
+        print("\U0001F6A7 Starte Proxy-Rebuild…")
 
         override = context.copy()
         override['area'] = next(
@@ -186,7 +178,16 @@ class CLIP_OT_auto_start(bpy.types.Operator):
         with context.temp_override(**override):
             bpy.ops.clip.rebuild_proxy()
 
+        print("\U0001F552 Warte auf erste Proxy-Datei…")
+
+        proxy_file = "proxy_50.avi"
+        direct_path = os.path.join(proxy_dir, proxy_file)
+        alt_path = os.path.join(proxy_dir, os.path.basename(clip.filepath), proxy_file)
+        print(f"\U0001F50D Suche nach Datei: {direct_path} oder {alt_path}")
+
         self._clip = clip
+        self._proxy_paths = [direct_path, alt_path]
+        self._checks = 0
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.5, window=context.window)
         wm.modal_handler_add(self)
@@ -514,7 +515,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
     _clip = None
     _threshold = DEFAULT_MINIMUM_MARKER_COUNT
     _last_frame = None
-    _frame_history = None
+    _visited_frames = None
 
     @classmethod
     def poll(cls, context):
@@ -531,14 +532,12 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 marker_counts,
                 self._threshold,
             )
-            bpy.ops.clip.clear_custom_cache()
             if target_frame is not None:
-                visits = self._frame_history.get(target_frame, 0)
-                if visits > 0:
+                if target_frame in self._visited_frames:
                     adjust_marker_count_plus(context.scene, 10)
                 else:
                     adjust_marker_count_plus(context.scene, -10)
-                self._frame_history[target_frame] = visits + 1
+                    self._visited_frames.add(target_frame)
             set_playhead(target_frame)
             context.scene.current_cycle_frame = context.scene.frame_current
 
@@ -586,7 +585,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
 
         self._threshold = context.scene.min_marker_count
         self._last_frame = context.scene.frame_current
-        self._frame_history = {}
+        self._visited_frames = set()
         update_min_marker_props(context.scene, context)
 
         wm = context.window_manager
@@ -627,8 +626,6 @@ class CLIP_PT_tracking_cycle_panel(bpy.types.Panel):
 # ---- Registration ----
 classes = [
     ToggleProxyOperator,
-    CLIP_PT_clear_cache_panel,
-    CLIP_OT_clear_custom_cache,
     DetectFeaturesCustomOperator,
     TRACK_OT_auto_track_forward,
     TRACKING_OT_delete_short_tracks_with_prefix,
