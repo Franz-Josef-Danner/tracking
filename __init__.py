@@ -20,3 +20,11 @@ def unregister():
     combined_cycle.unregister()
     distance_remove.unregister()
 
+
+if __name__ == "__main__":
+    try:
+        unregister()
+    except Exception:
+        pass
+    register()
+
