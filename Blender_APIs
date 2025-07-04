@@ -1,0 +1,19 @@
+# Blender Motion Tracking APIs
+
+# Marker access
+# Retrieve markers from a track under the clip.tracking object
+# Marker positions are stored in MovieTrackingMarker.co in normalized clip coordinates
+
+# Pattern and search areas for a track
+# Stored as two (x, y) coordinate pairs defining a rectangle around the marker center
+# track.pattern_area = ((x1, y1), (x2, y2))
+# track.search_area = ((x1, y1), (x2, y2))
+
+# Example usage
+# clip = bpy.data.movieclips["YourClip"]
+# track = clip.tracking.tracks["YourTrack"]
+# for marker in track.markers:
+#     print(marker.co)
+# print("Pattern:", track.pattern_area)
+# print("Search:", track.search_area)
+
