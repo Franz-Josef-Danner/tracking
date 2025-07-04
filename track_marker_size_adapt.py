@@ -31,27 +31,27 @@ def adapt_marker_size_from_tracks(context):
         bpy.ops.clip.track_markers(sequence=True)
 
     width, height = clip.size
-    total_mpx = total_mpy = total_ms = 0.0
+    total_dx = total_dy = 0.0
+    total_steps = 0
     total_ml = 0
 
     for track in selected_tracks:
         markers = track.markers
         if not markers:
             continue
-        length = markers[-1].frame - markers[0].frame + 1
+        length = markers[-1].frame - markers[0].frame
         total_ml += length
+        last = markers[0].co
 
-        for m in markers:
-            total_mpx += m.co.x * width
-            total_mpy += m.co.y * height
-            corners = m.pattern_corners
-            pw = math.dist(corners[0], corners[1]) * width
-            ph = math.dist(corners[1], corners[2]) * height
-            total_ms += (pw + ph) / 2.0
+        for m in markers[1:]:
+            total_dx += abs(m.co.x - last.x) * width
+            total_dy += abs(m.co.y - last.y) * height
+            total_steps += 1
+            last = m.co
 
     ma = len(selected_tracks)
-    if ma and total_ml:
-        pz = ((total_mpx + total_mpy + total_ms) / total_ml) / ma
+    if ma and total_steps:
+        pz = ((total_dx + total_dy) / total_steps) / ma
     else:
         pz = clip.tracking.settings.default_pattern_size
 
