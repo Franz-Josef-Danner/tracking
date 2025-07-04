@@ -1,7 +1,9 @@
 import bpy
-import math
 
-def dynamic_pattern_tracking():
+
+def marker_size_adapt():
+    """Track selected markers and adjust pattern/search size."""
+
     clip = None
     for area in bpy.context.screen.areas:
         if area.type == 'CLIP_EDITOR':
@@ -13,68 +15,86 @@ def dynamic_pattern_tracking():
 
     scene = bpy.context.scene
     start = clip.frame_start
-    end = clip.frame_start + clip.frame_duration - 1
-    w, h = clip.size
 
-    min_p = 20
-    max_p = 100
-    print("🚀 Starte dynamische Anpassung der Markergrößen")
+    selected_tracks = [t for t in clip.tracking.tracks if t.select]
+    if not selected_tracks:
+        print("❌ Keine selektierten Marker")
+        return
 
-    for track in clip.tracking.tracks:
-        print(f"\n🎯 Track: {track.name}")
-        scene.frame_set(start)
+    # Track all selected markers forward until none remain active
+    scene.frame_set(start)
+    bpy.ops.clip.track_markers(sequence=True)
 
-        marker = next((m for m in track.markers if m.frame == start), None)
-        if not marker:
-            clip.tracking.tracks.active = track
-            bpy.ops.clip.track_markers(backwards=False, sequence=True)
-            marker = next((m for m in track.markers if m.frame == start), None)
-        if not marker:
-            print("❌ Keine Marker am ersten Frame")
+    values = []
+    for track in selected_tracks:
+        if not track.markers:
             continue
+        Ml = len(track.markers)
+        last = track.markers[-1]
+        mpx = last.co.x
+        mpy = last.co.y
+        msx = last.pattern_width
+        msy = last.pattern_height
+        values.append(((mpx + mpy + msx + msy) / 4.0) / Ml)
 
-        last = marker.co.copy()
-        for f in range(start + 1, end + 1):
-            scene.frame_set(f)
-            clip.tracking.tracks.active = track
-            bpy.ops.clip.track_markers(backwards=False, sequence=True)
+    if not values:
+        print("❌ Keine Markerinformationen gefunden")
+        return
 
-            m = next((x for x in track.markers if x.frame == f), None)
-            if not m:
-                print(f"⚠️ Marker auf Frame {f} fehlt")
-                continue
+    Ma = len(values)
+    Pz = sum(values) / Ma
 
-            dx = abs(m.co.x - last.x) * w
-            dy = abs(m.co.y - last.y) * h
-            mv = math.sqrt(dx*dx + dy*dy)
+    print(f"🔧 Berechnete Patterngröße: {Pz:.3f}")
 
-            p = max(min(mv, max_p), min_p)
-            s = p * 2
+    # Reset playhead to start frame
+    scene.frame_set(start)
 
-            m.pattern_width = p
-            m.pattern_height = p
-            m.search_width = s
-            m.search_height = s
+    # Apply pattern and search size
+    settings = clip.tracking.settings
+    settings.default_pattern_size = Pz
+    settings.default_search_size = Pz * 2
 
-            print(f"Frame {f}: Bewegung {mv:.1f}px → pattern {p}px, search {s}px")
-            last = m.co.copy()
+    # Detect new features with the updated sizes
+    bpy.ops.clip.detect_features()
 
-class TRACKING_PT_dynamic_pattern(bpy.types.Panel):
+    # Track the newly detected markers
+    bpy.ops.clip.track_markers(sequence=True)
+
+
+class TRACKING_PT_marker_size_adapt(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
     bl_category = 'Tracking'
-    bl_label = 'Dynamic Pattern Tracker'
+    bl_label = 'Marker Size Adapt'
 
     def draw(self, context):
-        self.layout.operator("tracking.dynamic_pattern", icon='TRACKING')
+        self.layout.operator("tracking.marker_size_adapt", icon='TRACKING')
 
-class TRACKING_OT_dynamic_pattern(bpy.types.Operator):
-    bl_idname = "tracking.dynamic_pattern"
-    bl_label = "Track Dynamisch"
+
+class TRACKING_OT_marker_size_adapt(bpy.types.Operator):
+    bl_idname = "tracking.marker_size_adapt"
+    bl_label = "Marker Size Adapt"
 
     def execute(self, context):
-        dynamic_pattern_tracking()
+        marker_size_adapt()
         return {'FINISHED'}
 
-bpy.utils.register_class(TRACKING_PT_dynamic_pattern)
-bpy.utils.register_class(TRACKING_OT_dynamic_pattern)
+
+classes = [
+    TRACKING_PT_marker_size_adapt,
+    TRACKING_OT_marker_size_adapt,
+]
+
+
+def register():
+    for cls in classes:
+        bpy.utils.register_class(cls)
+
+
+def unregister():
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
+
+
+if __name__ == "__main__":
+    register()
