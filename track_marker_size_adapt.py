@@ -33,8 +33,11 @@ def marker_size_adapt():
         last = track.markers[-1]
         mpx = last.co.x
         mpy = last.co.y
-        msx = last.pattern_width
-        msy = last.pattern_height
+        corners = last.pattern_corners
+        xs = [corners[i] for i in range(0, 8, 2)]
+        ys = [corners[i] for i in range(1, 8, 2)]
+        msx = max(xs) - min(xs)
+        msy = max(ys) - min(ys)
         values.append(((mpx + mpy + msx + msy) / 4.0) / Ml)
 
     if not values:
