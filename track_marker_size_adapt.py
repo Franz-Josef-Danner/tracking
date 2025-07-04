@@ -62,12 +62,15 @@ def dynamic_pattern_tracking():
             p = max(min(mv, max_p), min_p)
             s = p * 2
 
-            # Update pattern and search sizes on the track so Blender uses the
-            # new values for the next tracking step.
-            track.pattern_width = p
-            track.pattern_height = p
-            track.search_width = s
-            track.search_height = s
+            # Convert pixel sizes to normalized clip coordinates for the
+            # pattern and search areas.
+            pw = p / w
+            ph = p / h
+            sw = s / w
+            sh = s / h
+
+            track.pattern_area = ((-pw / 2, -ph / 2), (pw / 2, ph / 2))
+            track.search_area = ((-sw / 2, -sh / 2), (sw / 2, sh / 2))
 
             print(f"Frame {f}: Bewegung {mv:.1f}px → pattern {p}px, search {s}px")
             last = m.co.copy()
