@@ -38,7 +38,8 @@ def marker_size_adapt():
         ys = [corners[i] for i in range(1, 8, 2)]
         msx = max(xs) - min(xs)
         msy = max(ys) - min(ys)
-        values.append(((mpx + mpy + msx + msy) / 4.0) / Ml)
+        # Berechne Markergröße ohne Mittelung von Skalierung und Position
+        values.append((mpx + mpy + msx + msy) / Ml)
 
     if not values:
         print("❌ Keine Markerinformationen gefunden")
