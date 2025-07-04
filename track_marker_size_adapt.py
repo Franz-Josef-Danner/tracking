@@ -34,10 +34,14 @@ def marker_size_adapt():
         mpx = last.co.x
         mpy = last.co.y
         corners = last.pattern_corners
-        xs = [corners[i] for i in range(0, 8, 2)]
-        ys = [corners[i] for i in range(1, 8, 2)]
-        msx = max(xs) - min(xs)
-        msy = max(ys) - min(ys)
+        if len(corners) >= 8:
+            xs = [corners[i] for i in range(0, 8, 2)]
+            ys = [corners[i] for i in range(1, 8, 2)]
+            msx = max(xs) - min(xs)
+            msy = max(ys) - min(ys)
+        else:
+            msx = last.pattern_width
+            msy = last.pattern_height
         # Berechne Markergröße ohne Mittelung von Skalierung und Position
         values.append((mpx + mpy + msx + msy) / Ml)
 
