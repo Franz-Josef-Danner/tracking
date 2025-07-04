@@ -7,6 +7,7 @@ bl_info = {
     "version": (1, 0),
     "blender": (2, 80, 0),
     "description": "Passt Pattern- und Suchgro\xC3\x9Fen beim Tracking dynamisch an",
+    "category": "Tracking",
 }
 
 def dynamic_pattern_tracking():
@@ -32,11 +33,11 @@ def dynamic_pattern_tracking():
         print(f"\n🎯 Track: {track.name}")
         scene.frame_set(start)
 
-        marker = next((m for m in track.markers if m.frame == start), None)
+        marker = track.markers.find_frame(start)
         if not marker:
             clip.tracking.tracks.active = track
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
-            marker = next((m for m in track.markers if m.frame == start), None)
+            marker = track.markers.find_frame(start)
         if not marker:
             print("❌ Keine Marker am ersten Frame")
             continue
@@ -48,7 +49,7 @@ def dynamic_pattern_tracking():
             bpy.ops.clip.track_markers(backwards=False, sequence=False)
             scene.frame_set(f)
 
-            m = next((x for x in track.markers if x.frame == f), None)
+            m = track.markers.find_frame(f)
             if not m:
                 print(f"⚠️ Marker auf Frame {f} fehlt")
                 continue
