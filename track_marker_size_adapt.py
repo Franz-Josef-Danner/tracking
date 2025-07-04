@@ -5,8 +5,8 @@ import math
 def adapt_marker_size_from_tracks(context):
     """Track selected markers and adapt pattern/search size."""
 
-    area = next((a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None)
-    if not area:
+    area = context.area
+    if not area or area.type != 'CLIP_EDITOR':
         print("❌ Kein Movie Clip Editor aktiv")
         return
 
@@ -15,7 +15,7 @@ def adapt_marker_size_from_tracks(context):
     clip = space.clip
 
     if not clip or not region:
-        print("❌ Kein Movie Clip Editor aktiv")
+        print("❌ Kein Clip geladen")
         return
 
     selected_tracks = [t for t in clip.tracking.tracks if t.select]
@@ -32,20 +32,26 @@ def adapt_marker_size_from_tracks(context):
 
     width, height = clip.size
     total_mpx = total_mpy = total_ms = 0.0
-    total_mi = 0
+    total_ml = 0
 
     for track in selected_tracks:
         markers = track.markers
-        mi = len(markers)
-        total_mi += mi
+        if not markers:
+            continue
+        length = markers[-1].frame - markers[0].frame + 1
+        total_ml += length
+
         for m in markers:
             total_mpx += m.co.x * width
             total_mpy += m.co.y * height
-            total_ms += (m.pattern_width + m.pattern_height) / 2.0
+            corners = m.pattern_corners
+            pw = math.dist(corners[0], corners[1]) * width
+            ph = math.dist(corners[1], corners[2]) * height
+            total_ms += (pw + ph) / 2.0
 
     ma = len(selected_tracks)
-    if ma and total_mi:
-        pz = ((total_mpx + total_mpy + total_ms) / total_mi) / ma
+    if ma and total_ml:
+        pz = ((total_mpx + total_mpy + total_ms) / total_ml) / ma
     else:
         pz = clip.tracking.settings.default_pattern_size
 
@@ -71,7 +77,8 @@ class TRACKING_OT_adapt_marker_size(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.space_data and context.space_data.type == 'CLIP_EDITOR'
+        area = context.area
+        return area and area.type == 'CLIP_EDITOR' and area.spaces.active.clip
 
     def execute(self, context):
         adapt_marker_size_from_tracks(context)
