@@ -1,0 +1,338 @@
+--- Workspace: Motion Tracking ---
+
+> > > Area Type: OUTLINER
+
+
+
+
+
+
+
+Operator: bpy.ops.outliner.action_set
+bpy.ops.outliner.action_set(action='<UNKNOWN ENUM>')
+Change the active action used
+
+Operator: bpy.ops.outliner.animdata_operation
+bpy.ops.outliner.animdata_operation(type='CLEAR_ANIMDATA')
+(undocumented operator)
+
+Operator: bpy.ops.outliner.clear_filter
+bpy.ops.outliner.clear_filter()
+Clear the search filter
+
+Operator: bpy.ops.outliner.collection_color_tag_set
+bpy.ops.outliner.collection_color_tag_set(color='NONE')
+Set a color tag for the selected collections
+
+Operator: bpy.ops.outliner.collection_disable
+bpy.ops.outliner.collection_disable()
+Disable viewport display in the view layers
+
+Operator: bpy.ops.outliner.collection_disable_render
+bpy.ops.outliner.collection_disable_render()
+Do not render this collection
+
+Operator: bpy.ops.outliner.collection_drop
+bpy.ops.outliner.collection_drop()
+Drag to move to collection in Outliner
+
+Operator: bpy.ops.outliner.collection_duplicate
+bpy.ops.outliner.collection_duplicate()
+Recursively duplicate the collection, all its children, objects and object data
+
+Operator: bpy.ops.outliner.collection_duplicate_linked
+bpy.ops.outliner.collection_duplicate_linked()
+Recursively duplicate the collection, all its children and objects, with linked object data
+
+Operator: bpy.ops.outliner.collection_enable
+bpy.ops.outliner.collection_enable()
+Enable viewport display in the view layers
+
+Operator: bpy.ops.outliner.collection_enable_render
+bpy.ops.outliner.collection_enable_render()
+Render the collection
+
+Operator: bpy.ops.outliner.collection_exclude_clear
+bpy.ops.outliner.collection_exclude_clear()
+Include collection in the active view layer
+
+Operator: bpy.ops.outliner.collection_exclude_set
+bpy.ops.outliner.collection_exclude_set()
+Exclude collection from the active view layer
+
+Operator: bpy.ops.outliner.collection_hide
+bpy.ops.outliner.collection_hide()
+Hide the collection in this view layer
+
+Operator: bpy.ops.outliner.collection_hide_inside
+bpy.ops.outliner.collection_hide_inside()
+Hide all the objects and collections inside the collection
+
+Operator: bpy.ops.outliner.collection_hierarchy_delete
+bpy.ops.outliner.collection_hierarchy_delete()
+Delete selected collection hierarchies
+
+Operator: bpy.ops.outliner.collection_holdout_clear
+bpy.ops.outliner.collection_holdout_clear()
+Clear masking of collection in the active view layer
+
+Operator: bpy.ops.outliner.collection_holdout_set
+bpy.ops.outliner.collection_holdout_set()
+Mask collection in the active view layer
+
+Operator: bpy.ops.outliner.collection_indirect_only_clear
+bpy.ops.outliner.collection_indirect_only_clear()
+Clear collection contributing only indirectly in the view layer
+
+Operator: bpy.ops.outliner.collection_indirect_only_set
+bpy.ops.outliner.collection_indirect_only_set()
+Set collection to only contribute indirectly (through shadows and reflections) in the view layer
+
+Operator: bpy.ops.outliner.collection_instance
+bpy.ops.outliner.collection_instance()
+Instance selected collections to active scene
+
+Operator: bpy.ops.outliner.collection_isolate
+bpy.ops.outliner.collection_isolate(extend=False)
+Hide all but this collection and its parents
+
+Operator: bpy.ops.outliner.collection_link
+bpy.ops.outliner.collection_link()
+Link selected collections to active scene
+
+Operator: bpy.ops.outliner.collection_new
+bpy.ops.outliner.collection_new(nested=True)
+Add a new collection inside selected collection
+
+Operator: bpy.ops.outliner.collection_objects_deselect
+bpy.ops.outliner.collection_objects_deselect()
+Deselect objects in collection
+
+Operator: bpy.ops.outliner.collection_objects_select
+bpy.ops.outliner.collection_objects_select()
+Select objects in collection
+
+Operator: bpy.ops.outliner.collection_show
+bpy.ops.outliner.collection_show()
+Show the collection in this view layer
+
+Operator: bpy.ops.outliner.collection_show_inside
+bpy.ops.outliner.collection_show_inside()
+Show all the objects and collections inside the collection
+
+Operator: bpy.ops.outliner.constraint_operation
+bpy.ops.outliner.constraint_operation(type='ENABLE')
+(undocumented operator)
+
+Operator: bpy.ops.outliner.data_operation
+bpy.ops.outliner.data_operation(type='DEFAULT')
+(undocumented operator)
+
+Operator: bpy.ops.outliner.datastack_drop
+bpy.ops.outliner.datastack_drop()
+Copy or reorder modifiers, constraints, and effects
+
+Operator: bpy.ops.outliner.delete
+bpy.ops.outliner.delete(hierarchy=False)
+Delete selected objects and collections
+
+Operator: bpy.ops.outliner.drivers_add_selected
+bpy.ops.outliner.drivers_add_selected()
+Add drivers to selected items
+
+Operator: bpy.ops.outliner.drivers_delete_selected
+bpy.ops.outliner.drivers_delete_selected()
+Delete drivers assigned to selected items
+
+Operator: bpy.ops.outliner.expanded_toggle
+bpy.ops.outliner.expanded_toggle()
+Expand/Collapse all items
+
+Operator: bpy.ops.outliner.hide
+bpy.ops.outliner.hide()
+Hide selected objects and collections
+
+Operator: bpy.ops.outliner.highlight_update
+bpy.ops.outliner.highlight_update()
+Update the item highlight based on the current mouse position
+
+Operator: bpy.ops.outliner.id_copy
+bpy.ops.outliner.id_copy()
+Copy the selected data-blocks to the internal clipboard
+
+Operator: bpy.ops.outliner.id_delete
+bpy.ops.outliner.id_delete()
+Delete the ID under cursor
+
+Operator: bpy.ops.outliner.id_operation
+bpy.ops.outliner.id_operation(type='UNLINK')
+General data-block management operations
+
+Operator: bpy.ops.outliner.id_paste
+bpy.ops.outliner.id_paste()
+Paste data-blocks from the internal clipboard
+
+Operator: bpy.ops.outliner.id_remap
+bpy.ops.outliner.id_remap(id_type='OBJECT', old_id='<UNKNOWN ENUM>', new_id='<UNKNOWN ENUM>')
+(undocumented operator)
+
+Operator: bpy.ops.outliner.item_activate
+bpy.ops.outliner.item_activate(extend=False, extend_range=False, deselect_all=False, recurse=False)
+Handle mouse clicks to select and activate items
+
+Operator: bpy.ops.outliner.item_drag_drop
+bpy.ops.outliner.item_drag_drop()
+Drag and drop element to another place
+
+Operator: bpy.ops.outliner.item_openclose
+bpy.ops.outliner.item_openclose(all=False)
+Toggle whether item under cursor is enabled or closed
+
+Operator: bpy.ops.outliner.item_rename
+bpy.ops.outliner.item_rename(use_active=False)
+Rename the active element
+
+Operator: bpy.ops.outliner.keyingset_add_selected
+bpy.ops.outliner.keyingset_add_selected()
+Add selected items (blue-gray rows) to active Keying Set
+
+Operator: bpy.ops.outliner.keyingset_remove_selected
+bpy.ops.outliner.keyingset_remove_selected()
+Remove selected items (blue-gray rows) from active Keying Set
+
+Operator: bpy.ops.outliner.lib_operation
+bpy.ops.outliner.lib_operation(type='DELETE')
+(undocumented operator)
+
+Operator: bpy.ops.outliner.lib_relocate
+bpy.ops.outliner.lib_relocate()
+Relocate the library under cursor
+
+Operator: bpy.ops.outliner.liboverride_operation
+bpy.ops.outliner.liboverride_operation(type='OVERRIDE_LIBRARY_CREATE_HIERARCHY', selection_set='SELECTED')
+Create, reset or clear library override hierarchies
+
+Operator: bpy.ops.outliner.liboverride_troubleshoot_operation
+bpy.ops.outliner.liboverride_troubleshoot_operation(type='OVERRIDE_LIBRARY_RESYNC_HIERARCHY', selection_set='SELECTED')
+Advanced operations over library override to help fix broken hierarchies
+
+Operator: bpy.ops.outliner.material_drop
+bpy.ops.outliner.material_drop()
+Drag material to object in Outliner
+
+Operator: bpy.ops.outliner.modifier_operation
+bpy.ops.outliner.modifier_operation(type='APPLY')
+(undocumented operator)
+
+Operator: bpy.ops.outliner.object_operation
+bpy.ops.outliner.object_operation(type='SELECT')
+(undocumented operator)
+
+Operator: bpy.ops.outliner.operation
+bpy.ops.outliner.operation()
+Context menu for item operations
+
+Operator: bpy.ops.outliner.orphans_manage
+bpy.ops.outliner.orphans_manage()
+Open a window to manage unused data
+
+Operator: bpy.ops.outliner.orphans_purge
+bpy.ops.outliner.orphans_purge(do_local_ids=True, do_linked_ids=True, do_recursive=True)
+Clear all orphaned data-blocks without any users from the file
+
+Operator: bpy.ops.outliner.parent_clear
+bpy.ops.outliner.parent_clear()
+Drag to clear parent in Outliner
+
+Operator: bpy.ops.outliner.parent_drop
+bpy.ops.outliner.parent_drop()
+Drag to parent in Outliner
+
+Operator: bpy.ops.outliner.scene_drop
+bpy.ops.outliner.scene_drop()
+Drag object to scene in Outliner
+
+Operator: bpy.ops.outliner.scene_operation
+bpy.ops.outliner.scene_operation(type='DELETE')
+Context menu for scene operations
+
+Operator: bpy.ops.outliner.scroll_page
+bpy.ops.outliner.scroll_page(up=False)
+Scroll page up or down
+
+Operator: bpy.ops.outliner.select_all
+bpy.ops.outliner.select_all(action='TOGGLE')
+Toggle the Outliner selection of items
+
+Operator: bpy.ops.outliner.select_box
+bpy.ops.outliner.select_box(tweak=False, xmin=0, xmax=0, ymin=0, ymax=0, wait_for_input=True, mode='SET')
+Use box selection to select tree elements
+
+Operator: bpy.ops.outliner.select_walk
+bpy.ops.outliner.select_walk(direction='UP', extend=False, toggle_all=False)
+Use walk navigation to select tree elements
+
+Operator: bpy.ops.outliner.show_active
+bpy.ops.outliner.show_active()
+Open up the tree and adjust the view so that the active object is shown centered
+
+Operator: bpy.ops.outliner.show_hierarchy
+bpy.ops.outliner.show_hierarchy()
+Open all object entries and close all others
+
+Operator: bpy.ops.outliner.show_one_level
+bpy.ops.outliner.show_one_level(open=True)
+Expand/collapse all entries by one level
+
+Operator: bpy.ops.outliner.start_filter
+bpy.ops.outliner.start_filter()
+Start entering filter text
+
+Operator: bpy.ops.outliner.unhide_all
+bpy.ops.outliner.unhide_all()
+Unhide all objects and collections
+
+> > > Area Type: PROPERTIES
+
+
+
+
+
+
+
+> > > Area Type: CLIP_EDITOR
+
+
+
+
+
+
+
+> > > Area Type: VIEW_3D
+
+
+
+
+
+
+
+> > > Area Type: DOPESHEET_EDITOR
+
+
+
+
+
+
+
+> > > Area Type: TEXT_EDITOR
+
+
+
+
+
+
+
+Operator: bpy.ops.text_editor.preset_add
+bpy.ops.text_editor.preset_add(name="", remove_name=False, remove_active=False)
+Add or remove a Text Editor Preset
+
