@@ -1,6 +1,14 @@
 import bpy
 import math
 
+bl_info = {
+    "name": "Dynamic Pattern Tracker",
+    "author": "",
+    "version": (1, 0),
+    "blender": (2, 80, 0),
+    "description": "Passt Pattern- und Suchgro\xC3\x9Fen beim Tracking dynamisch an",
+}
+
 def dynamic_pattern_tracking():
     clip = None
     for area in bpy.context.screen.areas:
@@ -35,9 +43,10 @@ def dynamic_pattern_tracking():
 
         last = marker.co.copy()
         for f in range(start + 1, end + 1):
-            scene.frame_set(f)
+            scene.frame_set(f - 1)
             clip.tracking.tracks.active = track
-            bpy.ops.clip.track_markers(backwards=False, sequence=True)
+            bpy.ops.clip.track_markers(backwards=False, sequence=False)
+            scene.frame_set(f)
 
             m = next((x for x in track.markers if x.frame == f), None)
             if not m:
@@ -76,5 +85,22 @@ class TRACKING_OT_dynamic_pattern(bpy.types.Operator):
         dynamic_pattern_tracking()
         return {'FINISHED'}
 
-bpy.utils.register_class(TRACKING_PT_dynamic_pattern)
-bpy.utils.register_class(TRACKING_OT_dynamic_pattern)
+
+classes = [
+    TRACKING_PT_dynamic_pattern,
+    TRACKING_OT_dynamic_pattern,
+]
+
+
+def register():
+    for cls in classes:
+        bpy.utils.register_class(cls)
+
+
+def unregister():
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
+
+
+if __name__ == "__main__":
+    register()
