@@ -60,10 +60,10 @@ def dynamic_pattern_tracking():
             p = max(min(mv, max_p), min_p)
             s = p * 2
 
-            m.pattern_width = p
-            m.pattern_height = p
-            m.search_width = s
-            m.search_height = s
+            track.pattern_width = p
+            track.pattern_height = p
+            track.search_width = s
+            track.search_height = s
 
             print(f"Frame {f}: Bewegung {mv:.1f}px → pattern {p}px, search {s}px")
             last = m.co.copy()
