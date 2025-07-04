@@ -68,7 +68,8 @@ def register():
     bpy.types.Scene.min_marker_count = bpy.props.IntProperty(
         name="Min Marker Count",
         default=5,
-        min=1,
+        min=5,
+        max=50,
         description="Minimum markers to detect each run",
     )
 

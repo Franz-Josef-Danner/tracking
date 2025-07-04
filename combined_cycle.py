@@ -22,7 +22,21 @@ import bpy
 from collections import Counter
 import os
 import math
+import mathutils
 
+
+def get_marker_count_plus(scene):
+    """Return stored value or the default derived from the base count."""
+    return scene.get("_marker_count_plus", scene.min_marker_count * 4)
+
+
+def set_marker_count_plus(scene, value):
+    """Clamp and store marker count plus based on the base marker count."""
+    base = scene.min_marker_count
+    value = max(base * 4, min(value, base * 200))
+    scene["_marker_count_plus"] = int(value)
+    scene.min_marker_count_plus_min = int(value * 0.8)
+    scene.min_marker_count_plus_max = int(value * 1.2)
 
 def ensure_margin_distance(clip, threshold=1.0):
     """Return margin and distance scaled by ``threshold``.
@@ -50,9 +64,7 @@ def ensure_margin_distance(clip, threshold=1.0):
 def update_min_marker_props(scene, context):
     """Update derived marker count properties when the base count changes."""
     base = scene.min_marker_count
-    scene.min_marker_count_plus = min(base * 4, 300)
-    scene.min_marker_count_plus_min = int(scene.min_marker_count_plus * 0.8)
-    scene.min_marker_count_plus_max = int(scene.min_marker_count_plus * 1.2)
+    scene.min_marker_count_plus = min(base * 4, base * 200)
 
 
 def adjust_marker_count_plus(scene, delta):
@@ -60,10 +72,67 @@ def adjust_marker_count_plus(scene, delta):
 
     base_plus = scene.min_marker_count * 4
     new_val = max(base_plus, scene.min_marker_count_plus + delta)
-    new_val = min(new_val, 300)
+    new_val = min(new_val, scene.min_marker_count * 200)
     scene.min_marker_count_plus = new_val
-    scene.min_marker_count_plus_min = int(new_val * 0.8)
-    scene.min_marker_count_plus_max = int(new_val * 1.2)
+
+
+def remove_close_neu_tracks(context, clip, base_distance, threshold):
+    """Delete NEU_ tracks too close to GOOD_ tracks in the current frame.
+
+    ``base_distance`` is the pixel distance used during feature detection.
+    The removal distance is calculated as ``(base_distance * threshold) / 2``
+    converted to normalized clip space.
+    """
+
+    current_frame = context.scene.frame_current
+    tracks = clip.tracking.tracks
+
+    neu_tracks = [t for t in tracks if t.name.startswith("NEU_")]
+    good_tracks = [t for t in tracks if t.name.startswith("GOOD_")]
+
+    if not neu_tracks or not good_tracks:
+        return 0
+
+    norm_dist = ((base_distance * threshold) / 2.0) / clip.size[0]
+    to_remove = []
+
+    for neu in neu_tracks:
+        neu_marker = neu.markers.find_frame(current_frame)
+        if not neu_marker:
+            continue
+        neu_pos = mathutils.Vector(neu_marker.co)
+        for good in good_tracks:
+            good_marker = good.markers.find_frame(current_frame)
+            if not good_marker:
+                continue
+            good_pos = mathutils.Vector(good_marker.co)
+            if (neu_pos - good_pos).length < norm_dist:
+                to_remove.append(neu)
+                break
+
+    if not to_remove:
+        return 0
+
+    for t in tracks:
+        t.select = False
+    for t in to_remove:
+        t.select = True
+
+    for area in context.screen.areas:
+        if area.type == 'CLIP_EDITOR':
+            for region in area.regions:
+                if region.type == 'WINDOW':
+                    for space in area.spaces:
+                        if space.type == 'CLIP_EDITOR':
+                            with context.temp_override(
+                                area=area,
+                                region=region,
+                                space_data=space,
+                            ):
+                                bpy.ops.clip.delete_track()
+                            return len(to_remove)
+
+    return 0
 
 
 # Try to initialize margin and distance on the active clip when the
@@ -254,6 +323,9 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             ]
             for track in new_tracks:
                 track.name = f"NEU_{track.name}"
+
+            # Remove NEU_ markers too close to GOOD_ markers before counting
+            remove_close_neu_tracks(context, clip, distance, threshold)
 
             new_count = sum(
                 1 for t in clip.tracking.tracks if t.name.startswith("NEU_")
@@ -644,14 +716,16 @@ def register():
     bpy.types.Scene.min_marker_count = bpy.props.IntProperty(
         name="Min Marker Count",
         default=DEFAULT_MINIMUM_MARKER_COUNT,
-        min=1,
+        min=5,
+        max=50,
         description="Minimum markers for detection and search",
         update=update_min_marker_props,
     )
     bpy.types.Scene.min_marker_count_plus = bpy.props.IntProperty(
         name="Marker Count Plus",
         default=DEFAULT_MINIMUM_MARKER_COUNT * 4,
-        max=300,
+        get=get_marker_count_plus,
+        set=set_marker_count_plus,
     )
     bpy.types.Scene.min_marker_count_plus_min = bpy.props.IntProperty(
         name="Marker Count Plus Min",

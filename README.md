@@ -51,7 +51,7 @@ Each visited frame is remembered. If the playhead revisits one of these frames
 the value of **Marker Count Plus** increases by 10, widening the expected
 range for new markers. Landing on a new frame decreases the value by 10 again,
 but never below its original starting value. The "Marker Count Plus" value
-is clamped to a maximum of 300.
+is clamped to ``Min Marker Count × 200``.
 
 ## Standalone Cleanup Script
 
