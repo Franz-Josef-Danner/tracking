@@ -1,80 +1,97 @@
 import bpy
 import math
 
-def dynamic_pattern_tracking():
+
+def adapt_marker_size_from_tracks():
+    """Track selected markers and adapt pattern size for detection."""
     clip = None
-    for area in bpy.context.screen.areas:
-        if area.type == 'CLIP_EDITOR':
-            clip = area.spaces.active.clip
+    area = None
+    region = None
+    space = None
+    for a in bpy.context.screen.areas:
+        if a.type == 'CLIP_EDITOR':
+            area = a
+            space = a.spaces.active
+            region = next((r for r in a.regions if r.type == 'WINDOW'), None)
+            clip = space.clip
             break
-    if not clip:
+    if not clip or not region:
         print("❌ Kein Movie Clip Editor aktiv")
         return
 
+    selected_tracks = [t for t in clip.tracking.tracks if t.select]
+    if not selected_tracks:
+        print("❌ Keine Tracks ausgewählt")
+        return
+
     scene = bpy.context.scene
-    start = clip.frame_start
-    end = clip.frame_start + clip.frame_duration - 1
-    w, h = clip.size
+    start_frame = scene.frame_current
 
-    min_p = 20
-    max_p = 100
-    print("🚀 Starte dynamische Anpassung der Markergrößen")
+    with bpy.context.temp_override(area=area, region=region, space_data=space):
+        bpy.ops.clip.track_markers(sequence=True)
 
-    for track in clip.tracking.tracks:
-        print(f"\n🎯 Track: {track.name}")
-        scene.frame_set(start)
+    width, height = clip.size
+    sum_dx = sum_dy = sum_ds = 0.0
+    steps = 0
 
-        marker = next((m for m in track.markers if m.frame == start), None)
-        if not marker:
-            clip.tracking.tracks.active = track
-            bpy.ops.clip.track_markers(backwards=False, sequence=True)
-            marker = next((m for m in track.markers if m.frame == start), None)
-        if not marker:
-            print("❌ Keine Marker am ersten Frame")
-            continue
+    for track in selected_tracks:
+        markers = sorted(track.markers, key=lambda m: m.frame)
+        for m_prev, m_cur in zip(markers, markers[1:]):
+            sum_dx += abs(m_cur.co.x - m_prev.co.x) * width
+            sum_dy += abs(m_cur.co.y - m_prev.co.y) * height
+            sum_ds += abs(m_cur.pattern_width - m_prev.pattern_width)
+            steps += 1
 
-        last = marker.co.copy()
-        for f in range(start + 1, end + 1):
-            scene.frame_set(f)
-            clip.tracking.tracks.active = track
-            bpy.ops.clip.track_markers(backwards=False, sequence=True)
+    ma = len(selected_tracks)
+    if steps and ma:
+        pz = ((sum_dx + sum_dy + sum_ds) / steps) / ma
+    else:
+        pz = clip.tracking.settings.default_pattern_size
 
-            m = next((x for x in track.markers if x.frame == f), None)
-            if not m:
-                print(f"⚠️ Marker auf Frame {f} fehlt")
-                continue
+    print(f"⭐ Berechnete Pattern-Größe: {pz:.1f}")
 
-            dx = abs(m.co.x - last.x) * w
-            dy = abs(m.co.y - last.y) * h
-            mv = math.sqrt(dx*dx + dy*dy)
+    scene.frame_set(start_frame)
 
-            p = max(min(mv, max_p), min_p)
-            s = p * 2
+    settings = clip.tracking.settings
+    settings.default_pattern_size = int(pz)
+    settings.default_search_size = int(pz * 2)
 
-            m.pattern_width = p
-            m.pattern_height = p
-            m.search_width = s
-            m.search_height = s
+    with bpy.context.temp_override(area=area, region=region, space_data=space):
+        bpy.ops.clip.detect_features()
+        bpy.ops.clip.track_markers(sequence=True)
 
-            print(f"Frame {f}: Bewegung {mv:.1f}px → pattern {p}px, search {s}px")
-            last = m.co.copy()
 
-class TRACKING_PT_dynamic_pattern(bpy.types.Panel):
+class TRACKING_OT_adapt_marker_size(bpy.types.Operator):
+    bl_idname = "tracking.adapt_marker_size"
+    bl_label = "Adapt Marker Size"
+
+    def execute(self, context):
+        adapt_marker_size_from_tracks()
+        return {'FINISHED'}
+
+
+class TRACKING_PT_adapt_marker_size(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
     bl_category = 'Tracking'
-    bl_label = 'Dynamic Pattern Tracker'
+    bl_label = 'Adapt Marker Size'
 
     def draw(self, context):
-        self.layout.operator("tracking.dynamic_pattern", icon='TRACKING')
+        self.layout.operator("tracking.adapt_marker_size", icon='TRACKING')
 
-class TRACKING_OT_dynamic_pattern(bpy.types.Operator):
-    bl_idname = "tracking.dynamic_pattern"
-    bl_label = "Track Dynamisch"
 
-    def execute(self, context):
-        dynamic_pattern_tracking()
-        return {'FINISHED'}
+classes = [TRACKING_OT_adapt_marker_size, TRACKING_PT_adapt_marker_size]
 
-bpy.utils.register_class(TRACKING_PT_dynamic_pattern)
-bpy.utils.register_class(TRACKING_OT_dynamic_pattern)
+
+def register():
+    for cls in classes:
+        bpy.utils.register_class(cls)
+
+
+def unregister():
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
+
+
+if __name__ == "__main__":
+    register()
