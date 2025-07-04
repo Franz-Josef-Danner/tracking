@@ -3,7 +3,7 @@ import math
 
 bl_info = {
     "name": "Dynamic Pattern Tracker",
-    "author": "",
+    "author": "OpenAI Codex",
     "version": (1, 0),
     "blender": (2, 80, 0),
     "description": "Passt Pattern- und Suchgro\xC3\x9Fen beim Tracking dynamisch an",
@@ -11,6 +11,7 @@ bl_info = {
 }
 
 def dynamic_pattern_tracking():
+    """Track one frame at a time and adjust pattern/search size dynamically."""
     clip = None
     for area in bpy.context.screen.areas:
         if area.type == 'CLIP_EDITOR':
