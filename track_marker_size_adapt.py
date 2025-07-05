@@ -1,80 +1,175 @@
 import bpy
-import math
 
-def dynamic_pattern_tracking():
-    clip = None
-    for area in bpy.context.screen.areas:
-        if area.type == 'CLIP_EDITOR':
-            clip = area.spaces.active.clip
-            break
+
+def track_selected_markers_until_stop():
+    """Track selected markers frame by frame until none remain active."""
+    ctx = bpy.context
+    area = ctx.area
+    if not area or area.type != 'CLIP_EDITOR':
+        print("tracking.track_until_stop: ❌ Kein Movie Clip Editor aktiv")
+        return
+    space = area.spaces.active
+    clip = space.clip
     if not clip:
-        print("❌ Kein Movie Clip Editor aktiv")
+        print("tracking.track_until_stop: ❌ Kein Clip geladen")
+        return
+    tracks = [t for t in clip.tracking.tracks if t.select]
+    if not tracks:
+        print("tracking.track_until_stop: ❌ Kein Marker ausgewählt")
         return
 
-    scene = bpy.context.scene
-    start = clip.frame_start
-    end = clip.frame_start + clip.frame_duration - 1
     w, h = clip.size
 
-    min_p = 20
-    max_p = 100
-    print("🚀 Starte dynamische Anpassung der Markergrößen")
+    scene = ctx.scene
+    frame = scene.frame_current
 
-    for track in clip.tracking.tracks:
-        print(f"\n🎯 Track: {track.name}")
-        scene.frame_set(start)
+    def _get_corners(marker):
+        c = marker.pattern_corners
+        if len(c) == 8 and not isinstance(c[0], (list, tuple)):
+            return [(float(c[i]), float(c[i + 1])) for i in range(0, 8, 2)]
+        return [(float(x), float(y)) for x, y in c]
 
-        marker = next((m for m in track.markers if m.frame == start), None)
-        if not marker:
-            clip.tracking.tracks.active = track
-            bpy.ops.clip.track_markers(backwards=False, sequence=True)
-            marker = next((m for m in track.markers if m.frame == start), None)
-        if not marker:
-            print("❌ Keine Marker am ersten Frame")
-            continue
+    def _set_corners(marker, corners):
+        marker.pattern_corners = [(float(x), float(y)) for x, y in corners]
 
-        last = marker.co.copy()
-        for f in range(start + 1, end + 1):
-            scene.frame_set(f)
-            clip.tracking.tracks.active = track
-            bpy.ops.clip.track_markers(backwards=False, sequence=True)
+    while tracks:
+        start_pos = {}
+        for t in tracks:
+            marker = next((m for m in t.markers if m.frame == frame), None)
+            start_pos[t.as_pointer()] = marker.co.copy() if marker else None
 
-            m = next((x for x in track.markers if x.frame == f), None)
-            if not m:
-                print(f"⚠️ Marker auf Frame {f} fehlt")
+        results = []
+
+        bpy.ops.clip.track_markers(backwards=False, sequence=False)
+
+        next_frame = frame + 1
+        for t in tracks[:]:
+            marker = next((m for m in t.markers if m.frame == next_frame), None)
+            start_co = start_pos.get(t.as_pointer())
+            if not marker:
+                tracks.remove(t)
+                results.append([
+                    f"Start {t.name}: kein Marker auf Frame {frame}",
+                    f"Nachher {t.name}: kein Marker auf Frame {next_frame}",
+                ])
                 continue
 
-            dx = abs(m.co.x - last.x) * w
-            dy = abs(m.co.y - last.y) * h
-            mv = math.sqrt(dx*dx + dy*dy)
+            after_corners = _get_corners(marker)
+            d0_len = (
+                (after_corners[2][0] - after_corners[0][0]) ** 2
+                + (after_corners[2][1] - after_corners[0][1]) ** 2
+            ) ** 0.5
+            d1_len = (
+                (after_corners[3][0] - after_corners[1][0]) ** 2
+                + (after_corners[3][1] - after_corners[1][1]) ** 2
+            ) ** 0.5
 
-            p = max(min(mv, max_p), min_p)
-            s = p * 2
+            if start_co is None:
+                results.append(
+                    [
+                        f"Start {t.name}: kein Marker auf Frame {frame}",
+                        f"Nachher {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})",
+                        f"Diagonale 0 {t.name}: {d0_len:.4f}, Diagonale 1 {t.name}: {d1_len:.4f}",
+                        f"Bewegung {t.name}: nicht ermittelbar",
+                    ]
+                )
+                continue
 
-            m.pattern_width = p
-            m.pattern_height = p
-            m.search_width = s
-            m.search_height = s
+            dx = marker.co.x - start_co.x
+            dy = marker.co.y - start_co.y
+            move_dist = (dx * dx + dy * dy) ** 0.5
 
-            print(f"Frame {f}: Bewegung {mv:.1f}px → pattern {p}px, search {s}px")
-            last = m.co.copy()
+            diff0 = move_dist - d0_len
+            diff1 = move_dist - d1_len
+            avg = (diff0 + diff1) / 2.0
 
-class TRACKING_PT_dynamic_pattern(bpy.types.Panel):
+            result_lines = [
+                f"Start {t.name}: ({start_co.x:.4f}, {start_co.y:.4f})",
+                f"Nachher {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})",
+                f"Diagonale 0 {t.name}: {d0_len:.4f}, Diagonale 1 {t.name}: {d1_len:.4f}",
+                f"Bewegung {t.name}: {move_dist:.4f}, \u0394 zu Diag0 {diff0:.4f}, \u0394 zu Diag1 {diff1:.4f}, Mittel {avg:.4f}",
+            ]
+
+            pairs = [(0, 2), (1, 3)]
+            for a, b in pairs:
+                p1 = after_corners[a]
+                p2 = after_corners[b]
+                cx = (p1[0] + p2[0]) / 2.0
+                cy = (p1[1] + p2[1]) / 2.0
+                vx = p1[0] - cx
+                vy = p1[1] - cy
+                length = ((p2[0] - p1[0]) ** 2 + (p2[1] - p1[1]) ** 2) ** 0.5
+                if length:
+                    scale = (length + avg) / length
+                    vx *= scale
+                    vy *= scale
+                after_corners[a] = (cx + vx, cy + vy)
+                after_corners[b] = (cx - vx, cy - vy)
+
+                # Ensure diagonal stays at least 20 pixels long
+                dx = (after_corners[b][0] - after_corners[a][0]) * w
+                dy = (after_corners[b][1] - after_corners[a][1]) * h
+                diag_len_px = (dx * dx + dy * dy) ** 0.5
+                if diag_len_px < 20:
+                    min_scale = 20 / diag_len_px if diag_len_px else 1.0
+                    vx = after_corners[a][0] - cx
+                    vy = after_corners[a][1] - cy
+                    after_corners[a] = (cx + vx * min_scale, cy + vy * min_scale)
+                    after_corners[b] = (cx - vx * min_scale, cy - vy * min_scale)
+
+            _set_corners(marker, after_corners)
+            corner_info = ", ".join(f"({x:.4f}, {y:.4f})" for x, y in after_corners)
+            result_lines.append(f"Ecken neu {t.name}: {corner_info}")
+            results.append(result_lines)
+
+        for lines in results:
+            for line in lines:
+                print(line)
+
+        frame = next_frame
+        scene.frame_set(frame)
+        print("tracking.track_until_stop: ✅ Frame getrackt")
+
+    print("tracking.track_until_stop: ⭐ Tracking beendet")
+
+
+class TRACKING_OT_track_until_stop(bpy.types.Operator):
+    bl_idname = "tracking.track_until_stop"
+    bl_label = "Track Until Stop"
+    bl_description = "Trackt ausgewählte Marker fortlaufend, bis keiner mehr aktiv ist"
+
+    @classmethod
+    def poll(cls, context):
+        area = context.area
+        return area and area.type == 'CLIP_EDITOR' and area.spaces.active.clip
+
+    def execute(self, context):
+        track_selected_markers_until_stop()
+        return {'FINISHED'}
+
+
+class TRACKING_PT_track_until_stop(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
     bl_category = 'Tracking'
-    bl_label = 'Dynamic Pattern Tracker'
+    bl_label = 'Track Until Stop'
 
     def draw(self, context):
-        self.layout.operator("tracking.dynamic_pattern", icon='TRACKING')
+        self.layout.operator(TRACKING_OT_track_until_stop.bl_idname, icon='TRACKING')
 
-class TRACKING_OT_dynamic_pattern(bpy.types.Operator):
-    bl_idname = "tracking.dynamic_pattern"
-    bl_label = "Track Dynamisch"
 
-    def execute(self, context):
-        dynamic_pattern_tracking()
-        return {'FINISHED'}
+classes = [TRACKING_OT_track_until_stop, TRACKING_PT_track_until_stop]
 
-bpy.utils.register_class(TRACKING_PT_dynamic_pattern)
-bpy.utils.register_class(TRACKING_OT_dynamic_pattern)
+
+def register():
+    for cls in classes:
+        bpy.utils.register_class(cls)
+
+
+def unregister():
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
+
+
+if __name__ == "__main__":
+    register()
