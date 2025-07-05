@@ -82,14 +82,12 @@ def track_selected_markers_one_frame():
         diff1 = move_dist - d1_len
         avg = (diff0 + diff1) / 2.0
 
-        results.append(
-            [
-                f"Start {t.name}: ({start_co.x:.4f}, {start_co.y:.4f})",
-                f"Nachher {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})",
-                f"Diagonale 0 {t.name}: {d0_len:.4f}, Diagonale 1 {t.name}: {d1_len:.4f}",
-                f"Bewegung {t.name}: {move_dist:.4f}, \u0394 zu Diag0 {diff0:.4f}, \u0394 zu Diag1 {diff1:.4f}, Mittel {avg:.4f}",
-            ]
-        )
+        result_lines = [
+            f"Start {t.name}: ({start_co.x:.4f}, {start_co.y:.4f})",
+            f"Nachher {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})",
+            f"Diagonale 0 {t.name}: {d0_len:.4f}, Diagonale 1 {t.name}: {d1_len:.4f}",
+            f"Bewegung {t.name}: {move_dist:.4f}, \u0394 zu Diag0 {diff0:.4f}, \u0394 zu Diag1 {diff1:.4f}, Mittel {avg:.4f}",
+        ]
 
         # adjust diagonal corners based on the average difference
         pairs = [(0, 2), (1, 3)]
@@ -109,6 +107,9 @@ def track_selected_markers_one_frame():
             after_corners[b] = (cx - vx, cy - vy)
 
         _set_corners(marker, after_corners)
+        corner_info = ", ".join(f"({x:.4f}, {y:.4f})" for x, y in after_corners)
+        result_lines.append(f"Ecken neu {t.name}: {corner_info}")
+        results.append(result_lines)
 
     for lines in results:
         for line in lines:
