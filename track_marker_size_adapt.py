@@ -22,6 +22,8 @@ def track_selected_markers_one_frame():
     frame = scene.frame_current
 
     start_pos = {}
+    width, height = clip.size
+
     for t in tracks:
         marker = next((m for m in t.markers if m.frame == frame), None)
         if marker:
@@ -42,7 +44,13 @@ def track_selected_markers_one_frame():
                 dx = marker.co.x - start.x
                 dy = marker.co.y - start.y
                 dist = (dx * dx + dy * dy) ** 0.5
-                print(f"Differenz {t.name}: ({dx:.4f}, {dy:.4f}), Distanz {dist:.4f}")
+                dx_px = dx * width
+                dy_px = dy * height
+                dist_px = (dx_px * dx_px + dy_px * dy_px) ** 0.5
+                print(
+                    f"Differenz {t.name}: ({dx:.4f}, {dy:.4f}) -> ({dx_px:.2f} px,"
+                    f" {dy_px:.2f} px), Distanz {dist:.4f} -> {dist_px:.2f} px"
+                )
         else:
             print(f"Nachher {t.name}: kein Marker auf Frame {next_frame}")
             if start is not None:
