@@ -21,13 +21,22 @@ def track_selected_markers_one_frame():
     scene = ctx.scene
     frame = scene.frame_current
 
-    start_pos = {}
-    width, height = clip.size
+    def _get_corners(marker):
+        """Return pattern corners as four (x, y) pairs."""
+        c = marker.pattern_corners
+        if len(c) == 8 and not isinstance(c[0], (list, tuple)):
+            return [(float(c[i]), float(c[i + 1])) for i in range(0, 8, 2)]
+        return [(float(x), float(y)) for x, y in c]
+
+    start_data = {}
 
     for t in tracks:
         marker = next((m for m in t.markers if m.frame == frame), None)
         if marker:
-            start_pos[t.as_pointer()] = marker.co.copy()
+            start_data[t.as_pointer()] = {
+                'co': marker.co.copy(),
+                'corners': _get_corners(marker),
+            }
             print(f"Vorher {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})")
         else:
             print(f"Vorher {t.name}: kein Marker auf Frame {frame}")
@@ -37,19 +46,49 @@ def track_selected_markers_one_frame():
     next_frame = frame + 1
     for t in tracks:
         marker = next((m for m in t.markers if m.frame == next_frame), None)
-        start = start_pos.get(t.as_pointer())
+        start = start_data.get(t.as_pointer())
         if marker:
             print(f"Nachher {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})")
             if start is not None:
-                dx = marker.co.x - start.x
-                dy = marker.co.y - start.y
+                dx = marker.co.x - start['co'].x
+                dy = marker.co.y - start['co'].y
                 dist = (dx * dx + dy * dy) ** 0.5
-                dx_px = dx * width
-                dy_px = dy * height
-                dist_px = (dx_px * dx_px + dy_px * dy_px) ** 0.5
+
+                before = start['corners']
+                after = _get_corners(marker)
+
+                d0_before = (
+                    before[2][0] - before[0][0],
+                    before[2][1] - before[0][1],
+                )
+                d0_after = (
+                    after[2][0] - after[0][0],
+                    after[2][1] - after[0][1],
+                )
+                d1_before = (
+                    before[3][0] - before[1][0],
+                    before[3][1] - before[1][1],
+                )
+                d1_after = (
+                    after[3][0] - after[1][0],
+                    after[3][1] - after[1][1],
+                )
+
+                diff0 = (
+                    d0_after[0] - d0_before[0],
+                    d0_after[1] - d0_before[1],
+                )
+                diff1 = (
+                    d1_after[0] - d1_before[0],
+                    d1_after[1] - d1_before[1],
+                )
+
                 print(
-                    f"Differenz {t.name}: ({dx:.4f}, {dy:.4f}) -> ({dx_px:.2f} px,"
-                    f" {dy_px:.2f} px), Distanz {dist:.4f} -> {dist_px:.2f} px"
+                    f"Differenz {t.name}: ({dx:.4f}, {dy:.4f}), Distanz {dist:.4f}"
+                )
+                print(
+                    f"Eck-Deltas {t.name}: diag0 ({diff0[0]:.4f}, {diff0[1]:.4f}),"
+                    f" diag1 ({diff1[0]:.4f}, {diff1[1]:.4f})"
                 )
         else:
             print(f"Nachher {t.name}: kein Marker auf Frame {next_frame}")
