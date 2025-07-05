@@ -1,80 +1,91 @@
 import bpy
-import math
 
-def dynamic_pattern_tracking():
-    clip = None
-    for area in bpy.context.screen.areas:
-        if area.type == 'CLIP_EDITOR':
-            clip = area.spaces.active.clip
-            break
-    if not clip:
-        print("❌ Kein Movie Clip Editor aktiv")
+
+def track_selected_markers_until_stop():
+    """Track selected markers frame by frame until none remain active."""
+    ctx = bpy.context
+    area = ctx.area
+    if not area or area.type != 'CLIP_EDITOR':
+        print("track_until_stop: ❌ Kein Movie Clip Editor aktiv")
         return
 
-    scene = bpy.context.scene
-    start = clip.frame_start
-    end = clip.frame_start + clip.frame_duration - 1
-    w, h = clip.size
+    space = area.spaces.active
+    clip = space.clip
+    if not clip:
+        print("track_until_stop: ❌ Kein Clip geladen")
+        return
 
-    min_p = 20
-    max_p = 100
-    print("🚀 Starte dynamische Anpassung der Markergrößen")
+    tracks = [t for t in clip.tracking.tracks if t.select]
+    if not tracks:
+        print("track_until_stop: ❌ Kein Marker ausgewählt")
+        return
 
-    for track in clip.tracking.tracks:
-        print(f"\n🎯 Track: {track.name}")
-        scene.frame_set(start)
+    scene = ctx.scene
+    start_frame = scene.frame_current
 
-        marker = next((m for m in track.markers if m.frame == start), None)
-        if not marker:
-            clip.tracking.tracks.active = track
-            bpy.ops.clip.track_markers(backwards=False, sequence=True)
-            marker = next((m for m in track.markers if m.frame == start), None)
-        if not marker:
-            print("❌ Keine Marker am ersten Frame")
-            continue
+    active_tracks = tracks[:]
+    iteration = 0
+    while active_tracks:
+        iteration += 1
+        frame = scene.frame_current
+        print(f"track_until_stop: Iteration {iteration} bei Frame {frame}")
 
-        last = marker.co.copy()
-        for f in range(start + 1, end + 1):
-            scene.frame_set(f)
-            clip.tracking.tracks.active = track
-            bpy.ops.clip.track_markers(backwards=False, sequence=True)
+        result = bpy.ops.clip.track_markers(backwards=False, sequence=False)
+        print(f"track_markers result: {result}")
 
-            m = next((x for x in track.markers if x.frame == f), None)
-            if not m:
-                print(f"⚠️ Marker auf Frame {f} fehlt")
-                continue
+        next_frame = frame + 1
+        survivors = []
+        for t in active_tracks:
+            if t.markers.find_frame(next_frame):
+                survivors.append(t)
+            else:
+                print(f"  {t.name}: kein Marker auf Frame {next_frame} -> entfernt")
 
-            dx = abs(m.co.x - last.x) * w
-            dy = abs(m.co.y - last.y) * h
-            mv = math.sqrt(dx*dx + dy*dy)
+        active_tracks = survivors
+        if active_tracks:
+            scene.frame_set(next_frame)
 
-            p = max(min(mv, max_p), min_p)
-            s = p * 2
+    scene.frame_set(start_frame)
+    print("track_until_stop: ⭐ Tracking beendet")
 
-            m.pattern_width = p
-            m.pattern_height = p
-            m.search_width = s
-            m.search_height = s
 
-            print(f"Frame {f}: Bewegung {mv:.1f}px → pattern {p}px, search {s}px")
-            last = m.co.copy()
+class TRACKING_OT_track_until_stop(bpy.types.Operator):
+    bl_idname = "tracking.track_until_stop"
+    bl_label = "Track Until Stop"
+    bl_description = "Trackt ausgewählte Marker frameweise bis keiner mehr aktiv ist"
 
-class TRACKING_PT_dynamic_pattern(bpy.types.Panel):
+    @classmethod
+    def poll(cls, context):
+        area = context.area
+        return area and area.type == 'CLIP_EDITOR' and area.spaces.active.clip
+
+    def execute(self, context):
+        track_selected_markers_until_stop()
+        return {'FINISHED'}
+
+
+class TRACKING_PT_track_until_stop(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
     bl_category = 'Tracking'
-    bl_label = 'Dynamic Pattern Tracker'
+    bl_label = 'Track Until Stop'
 
     def draw(self, context):
-        self.layout.operator("tracking.dynamic_pattern", icon='TRACKING')
+        self.layout.operator(TRACKING_OT_track_until_stop.bl_idname, icon='TRACKING_FORWARDS')
 
-class TRACKING_OT_dynamic_pattern(bpy.types.Operator):
-    bl_idname = "tracking.dynamic_pattern"
-    bl_label = "Track Dynamisch"
 
-    def execute(self, context):
-        dynamic_pattern_tracking()
-        return {'FINISHED'}
+classes = [TRACKING_OT_track_until_stop, TRACKING_PT_track_until_stop]
 
-bpy.utils.register_class(TRACKING_PT_dynamic_pattern)
-bpy.utils.register_class(TRACKING_OT_dynamic_pattern)
+
+def register():
+    for cls in classes:
+        bpy.utils.register_class(cls)
+
+
+def unregister():
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
+
+
+if __name__ == "__main__":
+    register()
