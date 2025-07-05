@@ -27,6 +27,9 @@ def track_selected_markers_one_frame():
             return [(float(c[i]), float(c[i + 1])) for i in range(0, 8, 2)]
         return [(float(x), float(y)) for x, y in c]
 
+    def _set_corners(marker, corners):
+        marker.pattern_corners = [(float(x), float(y)) for x, y in corners]
+
     start_pos = {}
     for t in tracks:
         marker = next((m for m in t.markers if m.frame == frame), None)
@@ -71,10 +74,30 @@ def track_selected_markers_one_frame():
 
         diff0 = move_dist - d0_len
         diff1 = move_dist - d1_len
+        avg = (diff0 + diff1) / 2.0
 
         print(
-            f"Bewegung {t.name}: {move_dist:.4f}, \u0394 zu Diag0 {diff0:.4f}, \u0394 zu Diag1 {diff1:.4f}"
+            f"Bewegung {t.name}: {move_dist:.4f}, \u0394 zu Diag0 {diff0:.4f}, \u0394 zu Diag1 {diff1:.4f}, Mittel {avg:.4f}"
         )
+
+        # adjust diagonal corners based on the average difference
+        pairs = [(0, 2), (1, 3)]
+        for a, b in pairs:
+            p1 = after_corners[a]
+            p2 = after_corners[b]
+            cx = (p1[0] + p2[0]) / 2.0
+            cy = (p1[1] + p2[1]) / 2.0
+            vx = p1[0] - cx
+            vy = p1[1] - cy
+            length = ( (p2[0] - p1[0]) ** 2 + (p2[1] - p1[1]) ** 2 ) ** 0.5
+            if length:
+                scale = (length + avg) / length
+                vx *= scale
+                vy *= scale
+            after_corners[a] = (cx + vx, cy + vy)
+            after_corners[b] = (cx - vx, cy - vy)
+
+        _set_corners(marker, after_corners)
 
     print("tracking.track_one_frame: ✅ Frame getrackt")
 
