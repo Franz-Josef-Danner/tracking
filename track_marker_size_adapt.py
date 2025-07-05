@@ -3,7 +3,7 @@ import math
 
 
 def adapt_marker_size_from_tracks(context):
-    """Track selected markers and adapt pattern/search size."""
+    """Track selected markers one frame and scale their patterns."""
 
     area = context.area
     if not area or area.type != 'CLIP_EDITOR':
@@ -31,8 +31,6 @@ def adapt_marker_size_from_tracks(context):
         bpy.ops.clip.track_markers(sequence=False)
 
     width, height = clip.size
-    total_scale = 0.0
-    valid_tracks = 0
 
     for track in selected_tracks:
         markers = track.markers
@@ -55,33 +53,14 @@ def adapt_marker_size_from_tracks(context):
             scaled.append(cy + (corners[i + 1] - cy) * factor)
         curr.pattern_corners = scaled
 
-        total_scale += factor
-        valid_tracks += 1
-
-    if valid_tracks:
-        pz = clip.tracking.settings.default_pattern_size * (total_scale / valid_tracks)
-    else:
-        pz = clip.tracking.settings.default_pattern_size
-
-    print(f"⭐ Berechnete Pattern-Größe: {pz:.1f}")
-
-    # Reset playhead
     scene.frame_set(start_frame)
-
-    settings = clip.tracking.settings
-    settings.default_pattern_size = int(pz)
-    settings.default_search_size = int(pz * 2)
-
-    # Detect features and track with new pattern/search size
-    with context.temp_override(area=area, region=region, space_data=space):
-        bpy.ops.clip.detect_features()
-        bpy.ops.clip.track_markers(sequence=True)
+    print("⭐ Marker wurden skaliert")
 
 
 class TRACKING_OT_adapt_marker_size(bpy.types.Operator):
     bl_idname = "tracking.adapt_marker_size"
-    bl_label = "Adapt Marker Size"
-    bl_description = "Analyse ausgew\xE4hlte Tracks und passt Pattern-Gr\xF6\xDFe an"
+    bl_label = "Scale Marker Pattern"
+    bl_description = "Trackt einen Frame und skaliert Marker-Ecken basierend auf der Bewegung"
 
     @classmethod
     def poll(cls, context):
