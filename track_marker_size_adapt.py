@@ -45,8 +45,11 @@ def adapt_marker_size_from_tracks(context, operator=None):
     start_frame = scene.frame_current
     width, height = clip.size
 
+    iteration = 0
     with context.temp_override(area=area, region=region, space_data=space):
         while any(t.select for t in selected_tracks):
+            iteration += 1
+            _report(f"➤ Iteration {iteration}: tracke Marker")
             prev_counts = {
                 t.as_pointer(): len(t.markers)
                 for t in selected_tracks
@@ -56,11 +59,20 @@ def adapt_marker_size_from_tracks(context, operator=None):
 
             for track in list(selected_tracks):
                 if not track.select:
+                    _report("⚠️ Marker nicht mehr ausgewählt", track)
                     selected_tracks.remove(track)
                     continue
 
                 prev_len = prev_counts.get(track.as_pointer())
-                if prev_len is None or len(track.markers) <= prev_len:
+                if prev_len is None:
+                    _report("⚠️ Vorherige Markeranzahl unbekannt", track)
+                    selected_tracks.remove(track)
+                    continue
+                if len(track.markers) <= prev_len:
+                    _report(
+                        f"❌ Kein neuer Marker (aktuell {len(track.markers)}, vorher {prev_len})",
+                        track,
+                    )
                     selected_tracks.remove(track)
                     continue
 
