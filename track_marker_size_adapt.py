@@ -35,15 +35,18 @@ def track_selected_markers_one_frame():
     next_frame = frame + 1
     for t in tracks:
         marker = next((m for m in t.markers if m.frame == next_frame), None)
+        start = start_pos.get(t.as_pointer())
         if marker:
             print(f"Nachher {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})")
-            start = start_pos.get(t.as_pointer())
             if start is not None:
                 dx = marker.co.x - start.x
                 dy = marker.co.y - start.y
-                print(f"Differenz {t.name}: ({dx:.4f}, {dy:.4f})")
+                dist = (dx * dx + dy * dy) ** 0.5
+                print(f"Differenz {t.name}: ({dx:.4f}, {dy:.4f}), Distanz {dist:.4f}")
         else:
             print(f"Nachher {t.name}: kein Marker auf Frame {next_frame}")
+            if start is not None:
+                print(f"Differenz {t.name}: nicht ermittelbar")
 
     print("tracking.track_one_frame: ✅ Frame getrackt")
 
