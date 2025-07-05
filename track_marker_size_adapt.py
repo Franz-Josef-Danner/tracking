@@ -18,6 +18,8 @@ def track_selected_markers_until_stop():
         print("tracking.track_until_stop: ❌ Kein Marker ausgewählt")
         return
 
+    w, h = clip.size
+
     scene = ctx.scene
     frame = scene.frame_current
 
@@ -103,6 +105,17 @@ def track_selected_markers_until_stop():
                     vy *= scale
                 after_corners[a] = (cx + vx, cy + vy)
                 after_corners[b] = (cx - vx, cy - vy)
+
+                # Ensure diagonal stays at least 20 pixels long
+                dx = (after_corners[b][0] - after_corners[a][0]) * w
+                dy = (after_corners[b][1] - after_corners[a][1]) * h
+                diag_len_px = (dx * dx + dy * dy) ** 0.5
+                if diag_len_px < 20:
+                    min_scale = 20 / diag_len_px if diag_len_px else 1.0
+                    vx = after_corners[a][0] - cx
+                    vy = after_corners[a][1] - cy
+                    after_corners[a] = (cx + vx * min_scale, cy + vy * min_scale)
+                    after_corners[b] = (cx - vx * min_scale, cy - vy * min_scale)
 
             _set_corners(marker, after_corners)
             corner_info = ", ".join(f"({x:.4f}, {y:.4f})" for x, y in after_corners)
