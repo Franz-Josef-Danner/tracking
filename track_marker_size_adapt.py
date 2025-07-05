@@ -71,7 +71,11 @@ def adapt_marker_size_from_tracks(context, operator=None):
                 dist = math.hypot(dx, dy)
                 factor = 1.0 + dist / max(width, height)
 
-                corners = [float(c) for c in curr.pattern_corners]
+                raw_corners = list(curr.pattern_corners)
+                if raw_corners and hasattr(raw_corners[0], "__iter__"):
+                    corners = [float(v) for corner in raw_corners for v in corner]
+                else:
+                    corners = [float(v) for v in raw_corners]
                 cx = sum(corners[0::2]) / 4.0
                 cy = sum(corners[1::2]) / 4.0
                 scaled = []
