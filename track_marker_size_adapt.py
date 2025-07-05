@@ -3,7 +3,7 @@ import math
 
 
 def adapt_marker_size_from_tracks(context):
-    """Track selected markers one frame and scale their patterns."""
+    """Track and scale selected markers until none remain active."""
 
     area = context.area
     if not area or area.type != 'CLIP_EDITOR':
@@ -25,42 +25,50 @@ def adapt_marker_size_from_tracks(context):
 
     scene = context.scene
     start_frame = scene.frame_current
-
-    # Track selected markers only one frame to measure movement
-    with context.temp_override(area=area, region=region, space_data=space):
-        bpy.ops.clip.track_markers(sequence=False)
-
     width, height = clip.size
 
-    for track in selected_tracks:
-        markers = track.markers
-        if len(markers) < 2:
-            continue
+    with context.temp_override(area=area, region=region, space_data=space):
+        while any(t.select for t in selected_tracks):
+            prev_counts = {t: len(t.markers) for t in selected_tracks if t.select}
+            bpy.ops.clip.track_markers(sequence=False)
 
-        prev = markers[-2]
-        curr = markers[-1]
-        dx = (curr.co.x - prev.co.x) * width
-        dy = (curr.co.y - prev.co.y) * height
-        dist = math.hypot(dx, dy)
-        factor = 1.0 + dist / max(width, height)
+            for track in list(selected_tracks):
+                if not track.select:
+                    selected_tracks.remove(track)
+                    continue
 
-        corners = list(curr.pattern_corners)
-        cx = sum(corners[0::2]) / 4.0
-        cy = sum(corners[1::2]) / 4.0
-        scaled = []
-        for i in range(0, 8, 2):
-            scaled.append(cx + (corners[i] - cx) * factor)
-            scaled.append(cy + (corners[i + 1] - cy) * factor)
-        curr.pattern_corners = scaled
+                prev_len = prev_counts.get(track)
+                if prev_len is None or len(track.markers) <= prev_len:
+                    selected_tracks.remove(track)
+                    continue
+
+                prev = track.markers[-2]
+                curr = track.markers[-1]
+                dx = (curr.co.x - prev.co.x) * width
+                dy = (curr.co.y - prev.co.y) * height
+                dist = math.hypot(dx, dy)
+                factor = 1.0 + dist / max(width, height)
+
+                corners = list(curr.pattern_corners)
+                cx = sum(corners[0::2]) / 4.0
+                cy = sum(corners[1::2]) / 4.0
+                scaled = []
+                for i in range(0, 8, 2):
+                    scaled.append(cx + (corners[i] - cx) * factor)
+                    scaled.append(cy + (corners[i + 1] - cy) * factor)
+                curr.pattern_corners = scaled
 
     scene.frame_set(start_frame)
-    print("⭐ Marker wurden skaliert")
+    print("⭐ Tracking beendet")
 
 
 class TRACKING_OT_adapt_marker_size(bpy.types.Operator):
     bl_idname = "tracking.adapt_marker_size"
     bl_label = "Scale Marker Pattern"
-    bl_description = "Trackt einen Frame und skaliert Marker-Ecken basierend auf der Bewegung"
+    bl_description = (
+        "Trackt ausgewählte Marker Frame für Frame und skaliert ihre Muster, "
+        "bis keine Marker mehr aktiv sind"
+    )
 
     @classmethod
     def poll(cls, context):
