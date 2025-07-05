@@ -35,9 +35,10 @@ def track_selected_markers_one_frame():
         marker = next((m for m in t.markers if m.frame == frame), None)
         if marker:
             start_pos[t.as_pointer()] = marker.co.copy()
-            print(f"Start {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})")
         else:
-            print(f"Start {t.name}: kein Marker auf Frame {frame}")
+            start_pos[t.as_pointer()] = None
+
+    results = []
 
     bpy.ops.clip.track_markers(backwards=False, sequence=False)
 
@@ -46,7 +47,10 @@ def track_selected_markers_one_frame():
         marker = next((m for m in t.markers if m.frame == next_frame), None)
         start_co = start_pos.get(t.as_pointer())
         if not marker:
-            print(f"Nachher {t.name}: kein Marker auf Frame {next_frame}")
+            results.append([
+                f"Start {t.name}: kein Marker auf Frame {frame}",
+                f"Nachher {t.name}: kein Marker auf Frame {next_frame}",
+            ])
             continue
 
         after_corners = _get_corners(marker)
@@ -59,13 +63,15 @@ def track_selected_markers_one_frame():
             + (after_corners[3][1] - after_corners[1][1]) ** 2
         ) ** 0.5
 
-        print(f"Nachher {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})")
-        print(
-            f"Diagonale 0 {t.name}: {d0_len:.4f}, Diagonale 1 {t.name}: {d1_len:.4f}"
-        )
-
         if start_co is None:
-            print(f"Bewegung {t.name}: nicht ermittelbar")
+            results.append(
+                [
+                    f"Start {t.name}: kein Marker auf Frame {frame}",
+                    f"Nachher {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})",
+                    f"Diagonale 0 {t.name}: {d0_len:.4f}, Diagonale 1 {t.name}: {d1_len:.4f}",
+                    f"Bewegung {t.name}: nicht ermittelbar",
+                ]
+            )
             continue
 
         dx = marker.co.x - start_co.x
@@ -76,8 +82,13 @@ def track_selected_markers_one_frame():
         diff1 = move_dist - d1_len
         avg = (diff0 + diff1) / 2.0
 
-        print(
-            f"Bewegung {t.name}: {move_dist:.4f}, \u0394 zu Diag0 {diff0:.4f}, \u0394 zu Diag1 {diff1:.4f}, Mittel {avg:.4f}"
+        results.append(
+            [
+                f"Start {t.name}: ({start_co.x:.4f}, {start_co.y:.4f})",
+                f"Nachher {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})",
+                f"Diagonale 0 {t.name}: {d0_len:.4f}, Diagonale 1 {t.name}: {d1_len:.4f}",
+                f"Bewegung {t.name}: {move_dist:.4f}, \u0394 zu Diag0 {diff0:.4f}, \u0394 zu Diag1 {diff1:.4f}, Mittel {avg:.4f}",
+            ]
         )
 
         # adjust diagonal corners based on the average difference
@@ -98,6 +109,10 @@ def track_selected_markers_one_frame():
             after_corners[b] = (cx - vx, cy - vy)
 
         _set_corners(marker, after_corners)
+
+    for lines in results:
+        for line in lines:
+            print(line)
 
     print("tracking.track_one_frame: ✅ Frame getrackt")
 
