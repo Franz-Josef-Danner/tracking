@@ -2,7 +2,7 @@ import bpy
 
 
 def track_selected_markers_one_frame():
-    """Track all selected markers for a single frame and print their positions."""
+    """Track all selected markers for a single frame and print diagnostics."""
     ctx = bpy.context
     area = ctx.area
     if not area or area.type != 'CLIP_EDITOR':
@@ -22,105 +22,59 @@ def track_selected_markers_one_frame():
     frame = scene.frame_current
 
     def _get_corners(marker):
-        """Return pattern corners as four (x, y) pairs."""
         c = marker.pattern_corners
         if len(c) == 8 and not isinstance(c[0], (list, tuple)):
             return [(float(c[i]), float(c[i + 1])) for i in range(0, 8, 2)]
         return [(float(x), float(y)) for x, y in c]
 
-    start_data = {}
-
+    start_pos = {}
     for t in tracks:
         marker = next((m for m in t.markers if m.frame == frame), None)
         if marker:
-            start_corners = _get_corners(marker)
-            start_data[t.as_pointer()] = {
-                'co': marker.co.copy(),
-                'corners': start_corners,
-            }
-            print(f"Vorher {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})")
-            print(f"Ecken vorher {t.name}: {start_corners}")
+            start_pos[t.as_pointer()] = marker.co.copy()
+            print(f"Start {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})")
         else:
-            print(f"Vorher {t.name}: kein Marker auf Frame {frame}")
+            print(f"Start {t.name}: kein Marker auf Frame {frame}")
 
     bpy.ops.clip.track_markers(backwards=False, sequence=False)
 
     next_frame = frame + 1
     for t in tracks:
         marker = next((m for m in t.markers if m.frame == next_frame), None)
-        start = start_data.get(t.as_pointer())
-        if marker:
-            after_corners = _get_corners(marker)
-            print(f"Nachher {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})")
-            print(f"Ecken nachher {t.name}: {after_corners}")
-            if start is not None:
-                dx = marker.co.x - start['co'].x
-                dy = marker.co.y - start['co'].y
-                dist = (dx * dx + dy * dy) ** 0.5
-
-                before = start['corners']
-                after = _get_corners(marker)
-
-                d0_before = (
-                    before[2][0] - before[0][0],
-                    before[2][1] - before[0][1],
-                )
-                d0_after = (
-                    after[2][0] - after[0][0],
-                    after[2][1] - after[0][1],
-                )
-                d1_before = (
-                    before[3][0] - before[1][0],
-                    before[3][1] - before[1][1],
-                )
-                d1_after = (
-                    after[3][0] - after[1][0],
-                    after[3][1] - after[1][1],
-                )
-
-                diff0 = (
-                    d0_after[0] - d0_before[0],
-                    d0_after[1] - d0_before[1],
-                )
-                diff1 = (
-                    d1_after[0] - d1_before[0],
-                    d1_after[1] - d1_before[1],
-                )
-
-                diag0_before_len = (d0_before[0] ** 2 + d0_before[1] ** 2) ** 0.5
-                diag0_after_len = (d0_after[0] ** 2 + d0_after[1] ** 2) ** 0.5
-                diag1_before_len = (d1_before[0] ** 2 + d1_before[1] ** 2) ** 0.5
-                diag1_after_len = (d1_after[0] ** 2 + d1_after[1] ** 2) ** 0.5
-
-                diag_diff = (
-                    abs(diag0_after_len - diag0_before_len)
-                    + abs(diag1_after_len - diag1_before_len)
-                ) / 2.0
-                diff_vs_diag = dist - diag_diff
-
-                print(
-                    f"Differenz {t.name}: ({dx:.4f}, {dy:.4f}), Distanz {dist:.4f}"
-                )
-                print(
-                    f"Eck-Deltas {t.name}: diag0 ({diff0[0]:.4f}, {diff0[1]:.4f}),"
-                    f" diag1 ({diff1[0]:.4f}, {diff1[1]:.4f})"
-                )
-                print(
-                    f"Diagonale Laengen {t.name}: vor ({diag0_before_len:.4f}, {diag1_before_len:.4f})"
-                )
-                print(
-                    f"Diagonale Laengen {t.name}: nach ({diag0_after_len:.4f}, {diag1_after_len:.4f})"
-                )
-                print(
-                    f"Durchschnittliche Diagonal-Differenz {t.name}: {diag_diff:.4f}"
-                )
-                print(
-                    f"Differenz Position vs Diagonale {t.name}: {diff_vs_diag:.4f}"
-                )
-        else:
+        start_co = start_pos.get(t.as_pointer())
+        if not marker:
             print(f"Nachher {t.name}: kein Marker auf Frame {next_frame}")
-            if start is not None:
-                print(f"Differenz {t.name}: nicht ermittelbar")
+            continue
+
+        after_corners = _get_corners(marker)
+        d0_len = (
+            (after_corners[2][0] - after_corners[0][0]) ** 2
+            + (after_corners[2][1] - after_corners[0][1]) ** 2
+        ) ** 0.5
+        d1_len = (
+            (after_corners[3][0] - after_corners[1][0]) ** 2
+            + (after_corners[3][1] - after_corners[1][1]) ** 2
+        ) ** 0.5
+
+        print(f"Nachher {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})")
+        print(
+            f"Diagonale 0 {t.name}: {d0_len:.4f}, Diagonale 1 {t.name}: {d1_len:.4f}"
+        )
+
+        if start_co is None:
+            print(f"Bewegung {t.name}: nicht ermittelbar")
+            continue
+
+        dx = marker.co.x - start_co.x
+        dy = marker.co.y - start_co.y
+        move_dist = (dx * dx + dy * dy) ** 0.5
+
+        diff0 = move_dist - d0_len
+        diff1 = move_dist - d1_len
+
+        print(
+            f"Bewegung {t.name}: {move_dist:.4f}, \u0394 zu Diag0 {diff0:.4f}, \u0394 zu Diag1 {diff1:.4f}"
+        )
 
     print("tracking.track_one_frame: ✅ Frame getrackt")
 
