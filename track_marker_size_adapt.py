@@ -39,28 +39,43 @@ def track_selected_markers_until_stop():
 
     iteration = 0
     while tracks:
-        print(f"-- Iteration {iteration}: Frame {frame} -> {frame + 1}, {len(tracks)} aktive Tracks --")
+        print(
+            f"-- Iteration {iteration}: Frame {frame} -> {frame + 1},"
+            f" {len(tracks)} aktive Tracks --"
+        )
         start_pos = {}
+        start_counts = {}
         for t in tracks:
             marker = next((m for m in t.markers if m.frame == frame), None)
             if marker:
-                print(f"  {t.name}: Start ({marker.co.x:.4f}, {marker.co.y:.4f})")
+                print(
+                    f"  {t.name}: Start ({marker.co.x:.4f}, {marker.co.y:.4f})"
+                    f", Markeranzahl {len(t.markers)}"
+                )
                 start_pos[t.as_pointer()] = marker.co.copy()
             else:
                 print(f"  {t.name}: kein Marker auf Frame {frame}")
                 start_pos[t.as_pointer()] = None
+            start_counts[t.as_pointer()] = len(t.markers)
 
         results = []
 
         result = bpy.ops.clip.track_markers(backwards=False, sequence=False)
         print(f"  track_markers result: {result}")
+        for t in tracks:
+            diff = len(t.markers) - start_counts[t.as_pointer()]
+            print(f"  {t.name}: Markeranzahl vorher {start_counts[t.as_pointer()]}, nachher {len(t.markers)} ({diff:+d})")
 
         next_frame = frame + 1
         for t in tracks[:]:
             marker = next((m for m in t.markers if m.frame == next_frame), None)
             start_co = start_pos.get(t.as_pointer())
             if not marker:
-                print(f"  {t.name}: kein Marker auf Frame {next_frame} -> entfernt")
+                end_count = len(t.markers)
+                diff_count = end_count - start_counts[t.as_pointer()]
+                print(
+                    f"  {t.name}: kein Marker auf Frame {next_frame} -> entfernt (Markeranzahl {end_count}, \u0394 {diff_count:+d})"
+                )
                 tracks.remove(t)
                 results.append([
                     f"Start {t.name}: kein Marker auf Frame {frame}",
@@ -144,7 +159,10 @@ def track_selected_markers_until_stop():
 
         frame = next_frame
         scene.frame_set(frame)
-        print(f"tracking.track_until_stop: ✅ Frame {frame} getrackt, verbleibende Tracks: {len(tracks)}")
+        remaining = ", ".join(t.name for t in tracks)
+        print(
+            f"tracking.track_until_stop: ✅ Frame {frame} getrackt, verbleibende Tracks: {len(tracks)} [{remaining}]"
+        )
         iteration += 1
 
     print(
