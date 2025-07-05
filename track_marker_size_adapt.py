@@ -26,32 +26,40 @@ def adapt_marker_size_from_tracks(context):
     scene = context.scene
     start_frame = scene.frame_current
 
-    # Track all selected markers until none remain active
+    # Track selected markers only one frame to measure movement
     with context.temp_override(area=area, region=region, space_data=space):
-        bpy.ops.clip.track_markers(sequence=True)
+        bpy.ops.clip.track_markers(sequence=False)
 
     width, height = clip.size
-    total_dx = total_dy = 0.0
-    total_steps = 0
-    total_ml = 0
+    total_scale = 0.0
+    valid_tracks = 0
 
     for track in selected_tracks:
         markers = track.markers
-        if not markers:
+        if len(markers) < 2:
             continue
-        length = markers[-1].frame - markers[0].frame
-        total_ml += length
-        last = markers[0].co
 
-        for m in markers[1:]:
-            total_dx += abs(m.co.x - last.x) * width
-            total_dy += abs(m.co.y - last.y) * height
-            total_steps += 1
-            last = m.co
+        prev = markers[-2]
+        curr = markers[-1]
+        dx = (curr.co.x - prev.co.x) * width
+        dy = (curr.co.y - prev.co.y) * height
+        dist = math.hypot(dx, dy)
+        factor = 1.0 + dist / max(width, height)
 
-    ma = len(selected_tracks)
-    if ma and total_steps:
-        pz = ((total_dx + total_dy) / total_steps) / ma
+        corners = list(curr.pattern_corners)
+        cx = sum(corners[0::2]) / 4.0
+        cy = sum(corners[1::2]) / 4.0
+        scaled = []
+        for i in range(0, 8, 2):
+            scaled.append(cx + (corners[i] - cx) * factor)
+            scaled.append(cy + (corners[i + 1] - cy) * factor)
+        curr.pattern_corners = scaled
+
+        total_scale += factor
+        valid_tracks += 1
+
+    if valid_tracks:
+        pz = clip.tracking.settings.default_pattern_size * (total_scale / valid_tracks)
     else:
         pz = clip.tracking.settings.default_pattern_size
 
