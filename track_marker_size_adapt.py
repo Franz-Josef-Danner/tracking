@@ -23,6 +23,11 @@ def track_selected_markers_until_stop():
     scene = ctx.scene
     frame = scene.frame_current
 
+    print(
+        f"tracking.track_until_stop: Start bei Frame {frame} mit {len(tracks)} "
+        f"Tracks: {', '.join(t.name for t in tracks)}"
+    )
+
     def _get_corners(marker):
         c = marker.pattern_corners
         if len(c) == 8 and not isinstance(c[0], (list, tuple)):
@@ -32,27 +37,38 @@ def track_selected_markers_until_stop():
     def _set_corners(marker, corners):
         marker.pattern_corners = [(float(x), float(y)) for x, y in corners]
 
+    iteration = 0
     while tracks:
+        print(f"-- Iteration {iteration}: Frame {frame} -> {frame + 1}, {len(tracks)} aktive Tracks --")
         start_pos = {}
         for t in tracks:
             marker = next((m for m in t.markers if m.frame == frame), None)
-            start_pos[t.as_pointer()] = marker.co.copy() if marker else None
+            if marker:
+                print(f"  {t.name}: Start ({marker.co.x:.4f}, {marker.co.y:.4f})")
+                start_pos[t.as_pointer()] = marker.co.copy()
+            else:
+                print(f"  {t.name}: kein Marker auf Frame {frame}")
+                start_pos[t.as_pointer()] = None
 
         results = []
 
-        bpy.ops.clip.track_markers(backwards=False, sequence=False)
+        result = bpy.ops.clip.track_markers(backwards=False, sequence=False)
+        print(f"  track_markers result: {result}")
 
         next_frame = frame + 1
         for t in tracks[:]:
             marker = next((m for m in t.markers if m.frame == next_frame), None)
             start_co = start_pos.get(t.as_pointer())
             if not marker:
+                print(f"  {t.name}: kein Marker auf Frame {next_frame} -> entfernt")
                 tracks.remove(t)
                 results.append([
                     f"Start {t.name}: kein Marker auf Frame {frame}",
                     f"Nachher {t.name}: kein Marker auf Frame {next_frame}",
                 ])
                 continue
+            else:
+                print(f"  {t.name}: After ({marker.co.x:.4f}, {marker.co.y:.4f})")
 
             after_corners = _get_corners(marker)
             d0_len = (
@@ -128,9 +144,12 @@ def track_selected_markers_until_stop():
 
         frame = next_frame
         scene.frame_set(frame)
-        print("tracking.track_until_stop: ✅ Frame getrackt")
+        print(f"tracking.track_until_stop: ✅ Frame {frame} getrackt, verbleibende Tracks: {len(tracks)}")
+        iteration += 1
 
-    print("tracking.track_until_stop: ⭐ Tracking beendet")
+    print(
+        f"tracking.track_until_stop: ⭐ Tracking beendet auf Frame {frame} nach {iteration} Iterationen"
+    )
 
 
 class TRACKING_OT_track_until_stop(bpy.types.Operator):
