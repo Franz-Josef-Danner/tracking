@@ -14,10 +14,14 @@ def adapt_marker_size_from_tracks(context, operator=None):
         Blender's status bar.
     """
 
-    def _report(message):
-        print(message)
+    def _report(message, track=None):
+        prefix = f"{operator.bl_idname if operator else 'tracking.adapt_marker_size'}"
+        if track is not None:
+            prefix += f" [{track.name}]"
+        full_message = f"{prefix}: {message}"
+        print(full_message)
         if operator is not None:
-            operator.report({'INFO'}, message)
+            operator.report({'INFO'}, full_message)
 
     area = context.area
     if not area or area.type != 'CLIP_EDITOR':
@@ -67,7 +71,7 @@ def adapt_marker_size_from_tracks(context, operator=None):
                 dist = math.hypot(dx, dy)
                 factor = 1.0 + dist / max(width, height)
 
-                corners = list(curr.pattern_corners)
+                corners = [float(c) for c in curr.pattern_corners]
                 cx = sum(corners[0::2]) / 4.0
                 cy = sum(corners[1::2]) / 4.0
                 scaled = []
