@@ -33,11 +33,13 @@ def track_selected_markers_one_frame():
     for t in tracks:
         marker = next((m for m in t.markers if m.frame == frame), None)
         if marker:
+            start_corners = _get_corners(marker)
             start_data[t.as_pointer()] = {
                 'co': marker.co.copy(),
-                'corners': _get_corners(marker),
+                'corners': start_corners,
             }
             print(f"Vorher {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})")
+            print(f"Ecken vorher {t.name}: {start_corners}")
         else:
             print(f"Vorher {t.name}: kein Marker auf Frame {frame}")
 
@@ -48,7 +50,9 @@ def track_selected_markers_one_frame():
         marker = next((m for m in t.markers if m.frame == next_frame), None)
         start = start_data.get(t.as_pointer())
         if marker:
+            after_corners = _get_corners(marker)
             print(f"Nachher {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})")
+            print(f"Ecken nachher {t.name}: {after_corners}")
             if start is not None:
                 dx = marker.co.x - start['co'].x
                 dy = marker.co.y - start['co'].y
@@ -92,6 +96,7 @@ def track_selected_markers_one_frame():
                     abs(diag0_after_len - diag0_before_len)
                     + abs(diag1_after_len - diag1_before_len)
                 ) / 2.0
+                diff_vs_diag = dist - diag_diff
 
                 print(
                     f"Differenz {t.name}: ({dx:.4f}, {dy:.4f}), Distanz {dist:.4f}"
@@ -100,14 +105,17 @@ def track_selected_markers_one_frame():
                     f"Eck-Deltas {t.name}: diag0 ({diff0[0]:.4f}, {diff0[1]:.4f}),"
                     f" diag1 ({diff1[0]:.4f}, {diff1[1]:.4f})"
                 )
-                if dist > diag_diff:
-                    cmp = "Marker-Differenz größer"
-                elif dist < diag_diff:
-                    cmp = "Diagonale Differenz größer"
-                else:
-                    cmp = "Beide Differenzen gleich"
                 print(
-                    f"Vergleich {t.name}: {cmp} (Marker {dist:.4f} vs Diagonale {diag_diff:.4f})"
+                    f"Diagonale Laengen {t.name}: vor ({diag0_before_len:.4f}, {diag1_before_len:.4f})"
+                )
+                print(
+                    f"Diagonale Laengen {t.name}: nach ({diag0_after_len:.4f}, {diag1_after_len:.4f})"
+                )
+                print(
+                    f"Durchschnittliche Diagonal-Differenz {t.name}: {diag_diff:.4f}"
+                )
+                print(
+                    f"Differenz Position vs Diagonale {t.name}: {diff_vs_diag:.4f}"
                 )
         else:
             print(f"Nachher {t.name}: kein Marker auf Frame {next_frame}")
