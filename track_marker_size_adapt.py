@@ -83,12 +83,31 @@ def track_selected_markers_one_frame():
                     d1_after[1] - d1_before[1],
                 )
 
+                diag0_before_len = (d0_before[0] ** 2 + d0_before[1] ** 2) ** 0.5
+                diag0_after_len = (d0_after[0] ** 2 + d0_after[1] ** 2) ** 0.5
+                diag1_before_len = (d1_before[0] ** 2 + d1_before[1] ** 2) ** 0.5
+                diag1_after_len = (d1_after[0] ** 2 + d1_after[1] ** 2) ** 0.5
+
+                diag_diff = (
+                    abs(diag0_after_len - diag0_before_len)
+                    + abs(diag1_after_len - diag1_before_len)
+                ) / 2.0
+
                 print(
                     f"Differenz {t.name}: ({dx:.4f}, {dy:.4f}), Distanz {dist:.4f}"
                 )
                 print(
                     f"Eck-Deltas {t.name}: diag0 ({diff0[0]:.4f}, {diff0[1]:.4f}),"
                     f" diag1 ({diff1[0]:.4f}, {diff1[1]:.4f})"
+                )
+                if dist > diag_diff:
+                    cmp = "Marker-Differenz größer"
+                elif dist < diag_diff:
+                    cmp = "Diagonale Differenz größer"
+                else:
+                    cmp = "Beide Differenzen gleich"
+                print(
+                    f"Vergleich {t.name}: {cmp} (Marker {dist:.4f} vs Diagonale {diag_diff:.4f})"
                 )
         else:
             print(f"Nachher {t.name}: kein Marker auf Frame {next_frame}")
