@@ -2,12 +2,26 @@ import bpy
 import math
 
 
-def adapt_marker_size_from_tracks(context):
-    """Track and scale selected markers until none remain active."""
+def adapt_marker_size_from_tracks(context, operator=None):
+    """Track and scale selected markers until none remain active.
+
+    Parameters
+    ----------
+    context : bpy.types.Context
+        Blender context used for overrides.
+    operator : bpy.types.Operator, optional
+        Operator for UI reporting. When provided, messages are also shown in
+        Blender's status bar.
+    """
+
+    def _report(message):
+        print(message)
+        if operator is not None:
+            operator.report({'INFO'}, message)
 
     area = context.area
     if not area or area.type != 'CLIP_EDITOR':
-        print("❌ Kein Movie Clip Editor aktiv")
+        _report("❌ Kein Movie Clip Editor aktiv")
         return
 
     region = next((r for r in area.regions if r.type == 'WINDOW'), None)
@@ -15,12 +29,12 @@ def adapt_marker_size_from_tracks(context):
     clip = space.clip
 
     if not clip or not region:
-        print("❌ Kein Clip geladen")
+        _report("❌ Kein Clip geladen")
         return
 
     selected_tracks = [t for t in clip.tracking.tracks if t.select]
     if not selected_tracks:
-        print("❌ Keine Tracks ausgewählt")
+        _report("❌ Keine Tracks ausgewählt")
         return
 
     scene = context.scene
@@ -29,7 +43,11 @@ def adapt_marker_size_from_tracks(context):
 
     with context.temp_override(area=area, region=region, space_data=space):
         while any(t.select for t in selected_tracks):
-            prev_counts = {t: len(t.markers) for t in selected_tracks if t.select}
+            prev_counts = {
+                t.as_pointer(): len(t.markers)
+                for t in selected_tracks
+                if t.select
+            }
             bpy.ops.clip.track_markers(sequence=False)
 
             for track in list(selected_tracks):
@@ -37,7 +55,7 @@ def adapt_marker_size_from_tracks(context):
                     selected_tracks.remove(track)
                     continue
 
-                prev_len = prev_counts.get(track)
+                prev_len = prev_counts.get(track.as_pointer())
                 if prev_len is None or len(track.markers) <= prev_len:
                     selected_tracks.remove(track)
                     continue
@@ -59,7 +77,7 @@ def adapt_marker_size_from_tracks(context):
                 curr.pattern_corners = scaled
 
     scene.frame_set(start_frame)
-    print("⭐ Tracking beendet")
+    _report("⭐ Tracking beendet")
 
 
 class TRACKING_OT_adapt_marker_size(bpy.types.Operator):
@@ -76,7 +94,7 @@ class TRACKING_OT_adapt_marker_size(bpy.types.Operator):
         return area and area.type == 'CLIP_EDITOR' and area.spaces.active.clip
 
     def execute(self, context):
-        adapt_marker_size_from_tracks(context)
+        adapt_marker_size_from_tracks(context, operator=self)
         return {'FINISHED'}
 
 
