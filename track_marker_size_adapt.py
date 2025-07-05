@@ -2,7 +2,7 @@ import bpy
 
 
 def track_selected_markers_one_frame():
-    """Track all selected markers for a single frame."""
+    """Track all selected markers for a single frame and print their positions."""
     ctx = bpy.context
     area = ctx.area
     if not area or area.type != 'CLIP_EDITOR':
@@ -13,11 +13,31 @@ def track_selected_markers_one_frame():
     if not clip:
         print("tracking.track_one_frame: ❌ Kein Clip geladen")
         return
-    if not any(t.select for t in clip.tracking.tracks):
+    tracks = [t for t in clip.tracking.tracks if t.select]
+    if not tracks:
         print("tracking.track_one_frame: ❌ Kein Marker ausgewählt")
         return
 
+    scene = ctx.scene
+    frame = scene.frame_current
+
+    for t in tracks:
+        marker = next((m for m in t.markers if m.frame == frame), None)
+        if marker:
+            print(f"Vorher {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})")
+        else:
+            print(f"Vorher {t.name}: kein Marker auf Frame {frame}")
+
     bpy.ops.clip.track_markers(backwards=False, sequence=False)
+
+    next_frame = frame + 1
+    for t in tracks:
+        marker = next((m for m in t.markers if m.frame == next_frame), None)
+        if marker:
+            print(f"Nachher {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})")
+        else:
+            print(f"Nachher {t.name}: kein Marker auf Frame {next_frame}")
+
     print("tracking.track_one_frame: ✅ Frame getrackt")
 
 
