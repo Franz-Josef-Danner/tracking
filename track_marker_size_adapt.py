@@ -21,9 +21,11 @@ def track_selected_markers_one_frame():
     scene = ctx.scene
     frame = scene.frame_current
 
+    start_pos = {}
     for t in tracks:
         marker = next((m for m in t.markers if m.frame == frame), None)
         if marker:
+            start_pos[t.as_pointer()] = marker.co.copy()
             print(f"Vorher {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})")
         else:
             print(f"Vorher {t.name}: kein Marker auf Frame {frame}")
@@ -35,6 +37,11 @@ def track_selected_markers_one_frame():
         marker = next((m for m in t.markers if m.frame == next_frame), None)
         if marker:
             print(f"Nachher {t.name}: ({marker.co.x:.4f}, {marker.co.y:.4f})")
+            start = start_pos.get(t.as_pointer())
+            if start is not None:
+                dx = marker.co.x - start.x
+                dy = marker.co.y - start.y
+                print(f"Differenz {t.name}: ({dx:.4f}, {dy:.4f})")
         else:
             print(f"Nachher {t.name}: kein Marker auf Frame {next_frame}")
 
