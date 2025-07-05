@@ -80,8 +80,12 @@ def adapt_marker_size_from_tracks(context, operator=None):
                 cy = sum(corners[1::2]) / 4.0
                 scaled = []
                 for i in range(0, 8, 2):
-                    scaled.append(cx + (corners[i] - cx) * factor)
-                    scaled.append(cy + (corners[i + 1] - cy) * factor)
+                    scaled.append(
+                        (
+                            cx + (corners[i] - cx) * factor,
+                            cy + (corners[i + 1] - cy) * factor,
+                        )
+                    )
                 curr.pattern_corners = scaled
 
     scene.frame_set(start_frame)
