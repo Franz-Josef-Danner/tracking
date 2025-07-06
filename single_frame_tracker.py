@@ -8,6 +8,16 @@ bl_info = {
 import bpy
 from mathutils import Vector
 
+
+def _marker_diagonal(marker: bpy.types.MovieTrackingMarker) -> float:
+    """Return distance between opposite pattern corners in clip space."""
+    corners = getattr(marker, "pattern_corners", None)
+    if corners and len(corners) >= 6:
+        c0 = Vector((corners[0], corners[1])) + Vector(marker.co)
+        c2 = Vector((corners[4], corners[5])) + Vector(marker.co)
+        return (c2 - c0).length
+    return 0.0
+
 class CLIP_OT_track_one_frame(bpy.types.Operator):
     """Track selected markers forward by one frame until they can't move further"""
     bl_idname = "clip.track_one_frame"
@@ -69,6 +79,7 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                         break
 
                                     distances = []
+                                    diagonals = []
                                     for t in active_tracks:
                                         prev = prev_positions.get(t.name)
                                         next_marker_or_index = t.markers.find_frame(frame + 1)
@@ -80,8 +91,12 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                             dist = (Vector(next_marker.co) - prev).length
                                             distances.append(f"{t.name}: {dist:.4f}")
                                             prev_positions[t.name] = Vector(next_marker.co)
+                                            diag = _marker_diagonal(next_marker)
+                                            diagonals.append(f"{t.name}: {diag:.4f}")
                                     if distances:
                                         print("[Track Until Done] Distances:", ", ".join(distances))
+                                    if diagonals:
+                                        print("[Track Until Done] Diagonals:", ", ".join(diagonals))
 
                                     frame += 1
                                     if frame > scene_end:
