@@ -59,8 +59,8 @@ The module `single_frame_tracker.py` adds a small panel in the Movie Clip
 Editor with a **Track Until Done** button. When pressed, it tracks all selected
 markers forward one frame at a time until none remain active or the scene's end
 frame is reached. After every step, the console prints the distance each marker
-moved as well as the diagonal length of its pattern box. To enable this feature
-install the repository as an add-on and enable **Tracking Tools** in the
+moved as well as both diagonal lengths of its pattern box. To enable this
+feature install the repository as an add-on and enable **Tracking Tools** in the
 preferences.
 
 ## Standalone Cleanup Script

@@ -9,14 +9,20 @@ import bpy
 from mathutils import Vector
 
 
-def _marker_diagonal(marker: bpy.types.MovieTrackingMarker) -> float:
-    """Return distance between opposite pattern corners in clip space."""
-    corners = getattr(marker, "pattern_corners", None)
-    if corners and len(corners) >= 6:
-        c0 = Vector((corners[0], corners[1])) + Vector(marker.co)
-        c2 = Vector((corners[4], corners[5])) + Vector(marker.co)
-        return (c2 - c0).length
-    return 0.0
+def _marker_diagonal(track: bpy.types.MovieTrackingTrack,
+                     marker: bpy.types.MovieTrackingMarker) -> tuple[float, float]:
+    """Return both diagonals of the marker's pattern box."""
+    corners = getattr(track, "pattern_corners", None)
+    if corners and len(corners) >= 8:
+        x1, y1, x2, y2, x3, y3, x4, y4 = corners[:8]
+        p1 = Vector(marker.co) + Vector((x1, y1))
+        p2 = Vector(marker.co) + Vector((x2, y2))
+        p3 = Vector(marker.co) + Vector((x3, y3))
+        p4 = Vector(marker.co) + Vector((x4, y4))
+        d1 = (p3 - p1).length
+        d2 = (p4 - p2).length
+        return d1, d2
+    return 0.0, 0.0
 
 class CLIP_OT_track_one_frame(bpy.types.Operator):
     """Track selected markers forward by one frame until they can't move further"""
@@ -91,8 +97,10 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                             dist = (Vector(next_marker.co) - prev).length
                                             distances.append(f"{t.name}: {dist:.4f}")
                                             prev_positions[t.name] = Vector(next_marker.co)
-                                            diag = _marker_diagonal(next_marker)
-                                            diagonals.append(f"{t.name}: {diag:.4f}")
+                                            d1, d2 = _marker_diagonal(t, next_marker)
+                                            diagonals.append(
+                                                f"{t.name}: {d1:.4f}, {d2:.4f}"
+                                            )
                                     if distances:
                                         print("[Track Until Done] Distances:", ", ".join(distances))
                                     if diagonals:
