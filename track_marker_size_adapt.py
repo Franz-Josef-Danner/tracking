@@ -38,9 +38,17 @@ def track_until_stop(ctx):
         frame = scene.frame_current
         print(f"track_until_stop: Iteration {iteration} bei Frame {frame}")
 
+        # Use a stable context override so track_markers gets the correct area,
+        # region and space data. The last region is not always the window.
+        region = next((r for r in area.regions if r.type == "WINDOW"), None)
+        if region is None:
+            print("track_until_stop: \u274c Keine WINDOW-Region gefunden")
+            break
         override = ctx.copy()
         override["area"] = area
-        override["region"] = area.regions[-1]
+        override["region"] = region
+        override["space_data"] = area.spaces.active
+        override["clip"] = clip
         result = bpy.ops.clip.track_markers(override, backwards=False, sequence=False)
         print(f"track_markers result: {result}")
 
@@ -69,8 +77,12 @@ class TRACKING_OT_track_until_stop(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        area = context.area
-        return area and area.type == "CLIP_EDITOR" and area.spaces.active.clip
+        space = context.space_data
+        return (
+            space is not None
+            and space.type == "CLIP_EDITOR"
+            and getattr(space, "clip", None)
+        )
 
     def execute(self, context):
         track_until_stop(context)
