@@ -9,10 +9,11 @@ import bpy
 from mathutils import Vector
 
 
-def _marker_diagonal(track: bpy.types.MovieTrackingTrack,
-                     marker: bpy.types.MovieTrackingMarker) -> tuple[float, float]:
+def _marker_diagonal(
+    track: bpy.types.MovieTrackingTrack, marker: bpy.types.MovieTrackingMarker
+) -> tuple[float, float]:
     """Return both diagonals of the marker's pattern box."""
-    corners = getattr(track, "pattern_corners", None)
+    corners = getattr(marker, "pattern_corners", None)
     if corners and len(corners) >= 8:
         x1, y1, x2, y2, x3, y3, x4, y4 = corners[:8]
         p1 = Vector(marker.co) + Vector((x1, y1))
