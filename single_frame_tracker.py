@@ -14,7 +14,7 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        max_iterations = 1000
+        scene_end = context.scene.frame_end
         iterations = 0
 
         print("[Track Until Done] Starting frame-by-frame tracking...")
@@ -38,7 +38,7 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                 bpy.context.scene.frame_set(frame)
                                 clip_user.frame_current = frame
 
-                                while iterations < max_iterations:
+                                while frame <= scene_end:
                                     active_tracks = [
                                         t
                                         for t in clip.tracking.tracks
@@ -59,6 +59,12 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                         break
 
                                     frame += 1
+                                    if frame > scene_end:
+                                        print(
+                                            f"[Track Until Done] Reached scene end frame {scene_end}."
+                                        )
+                                        break
+
                                     bpy.context.scene.frame_set(frame)
                                     clip_user.frame_current = frame
                                     iterations += 1

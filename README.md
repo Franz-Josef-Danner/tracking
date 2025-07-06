@@ -57,9 +57,9 @@ is clamped to ``Min Marker Count × 200``.
 
 The module `single_frame_tracker.py` adds a small panel in the Movie Clip
 Editor with a **Track Until Done** button. When pressed, it tracks all selected
-markers forward one frame at a time until none remain active. To enable this
-feature install the repository as an add-on and enable **Tracking Tools** in the
-preferences.
+markers forward one frame at a time until none remain active or the scene's end
+frame is reached. To enable this feature install the repository as an add-on and
+enable **Tracking Tools** in the preferences.
 
 ## Standalone Cleanup Script
 
