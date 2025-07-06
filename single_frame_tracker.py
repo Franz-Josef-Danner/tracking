@@ -54,9 +54,13 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                         f"[Track Until Done] Frame {frame} (clip {clip_user.frame_current}), active markers: {len(active_tracks)}"
                                     )
                                     for t in active_tracks:
-                                        idx = t.markers.find_frame(frame)
-                                        if idx != -1:
-                                            prev_positions[t.name] = Vector(t.markers[idx].co)
+                                        marker_or_index = t.markers.find_frame(frame)
+                                        if marker_or_index != -1 and marker_or_index is not None:
+                                            if isinstance(marker_or_index, int):
+                                                marker = t.markers[marker_or_index]
+                                            else:
+                                                marker = marker_or_index
+                                            prev_positions[t.name] = Vector(marker.co)
                                     result = bpy.ops.clip.track_markers(backwards=False, sequence=False)
                                     print(f"[Track Until Done] Result: {result}")
 
@@ -67,9 +71,12 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                     distances = []
                                     for t in active_tracks:
                                         prev = prev_positions.get(t.name)
-                                        next_idx = t.markers.find_frame(frame + 1)
-                                        if prev is not None and next_idx != -1:
-                                            next_marker = t.markers[next_idx]
+                                        next_marker_or_index = t.markers.find_frame(frame + 1)
+                                        if prev is not None and next_marker_or_index != -1 and next_marker_or_index is not None:
+                                            if isinstance(next_marker_or_index, int):
+                                                next_marker = t.markers[next_marker_or_index]
+                                            else:
+                                                next_marker = next_marker_or_index
                                             dist = (Vector(next_marker.co) - prev).length
                                             distances.append(f"{t.name}: {dist:.4f}")
                                             prev_positions[t.name] = Vector(next_marker.co)
