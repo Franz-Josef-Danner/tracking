@@ -1,11 +1,14 @@
-# Python caches and compiled files
+﻿############################
+# Python: Cache und Build
+############################
+
 __pycache__/
 *.py[cod]
 *.so
 *.dylib
 *.pyd
 
-# Distribution / packaging
+# Distribution / Packaging
 .Python
 env/
 venv/
@@ -24,21 +27,79 @@ var/
 .installed.cfg
 *.egg
 
+############################
+# Visual Studio: IDE & Build
+############################
+
+# User-spezifische Dateien
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Datenbank- und Indexdateien
+*.VC.db
+*.VC.opendb
+
+# Build-Ordner
+bin/
+obj/
+[Bb]uild/
+[Bb]uilds/
+
+# Projekt- und Lösungs-Backupdateien
+*.bak
+*.old
+*.orig
+
+# Visual Studio temporäre Verzeichnisse
+.vs/
+
+############################
 # Visual Studio Code
+############################
+
 .vscode/
 *.code-workspace
 
-# JetBrains IDEs
+############################
+# JetBrains IDEs (z. B. PyCharm)
+############################
+
 .idea/
 
-# Blender backup files
+############################
+# Blender: Backup-Dateien
+############################
+
 *.blend1
 *.blend2
 *.blend@
+*.blend~
 
-# macOS files
+############################
+# Betriebssystem-spezifische Dateien
+############################
+
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
 
-# Windows files
+# Windows
 Thumbs.db
+ehthumbs.db
+Desktop.ini
 
+# Linux
+*~
+
+############################
+# Logs, temporäre Dateien
+############################
+
+*.log
+*.tmp
+*.temp
