@@ -1,6 +1,6 @@
 bl_info = {
     "name": "Single Frame Tracker",
-    "blender": (4, 0, 0),
+    "blender": (2, 80, 0),
     "category": "Clip",
     "description": "Track selected markers frame by frame until none remain",
 }
@@ -54,9 +54,9 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                         f"[Track Until Done] Frame {frame} (clip {clip_user.frame_current}), active markers: {len(active_tracks)}"
                                     )
                                     for t in active_tracks:
-                                        marker = t.markers.find_frame(frame)
-                                        if marker:
-                                            prev_positions[t.name] = Vector(marker.co)
+                                        idx = t.markers.find_frame(frame)
+                                        if idx != -1:
+                                            prev_positions[t.name] = Vector(t.markers[idx].co)
                                     result = bpy.ops.clip.track_markers(backwards=False, sequence=False)
                                     print(f"[Track Until Done] Result: {result}")
 
@@ -67,8 +67,9 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                     distances = []
                                     for t in active_tracks:
                                         prev = prev_positions.get(t.name)
-                                        next_marker = t.markers.find_frame(frame + 1)
-                                        if prev is not None and next_marker:
+                                        next_idx = t.markers.find_frame(frame + 1)
+                                        if prev is not None and next_idx != -1:
+                                            next_marker = t.markers[next_idx]
                                             dist = (Vector(next_marker.co) - prev).length
                                             distances.append(f"{t.name}: {dist:.4f}")
                                             prev_positions[t.name] = Vector(next_marker.co)
