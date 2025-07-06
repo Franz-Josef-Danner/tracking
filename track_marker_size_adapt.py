@@ -1,91 +1,90 @@
+bl_info = {
+    "name": "Single Frame Tracker",
+    "blender": (4, 0, 0),
+    "category": "Clip",
+    "description": "Adds a button to track selected markers for one frame",
+}
+
 import bpy
 
-
-def track_selected_markers_until_stop():
-    """Track selected markers frame by frame until none remain active."""
-    ctx = bpy.context
-    area = ctx.area
-    if not area or area.type != 'CLIP_EDITOR':
-        print("track_until_stop: ❌ Kein Movie Clip Editor aktiv")
-        return
-
-    space = area.spaces.active
-    clip = space.clip
-    if not clip:
-        print("track_until_stop: ❌ Kein Clip geladen")
-        return
-
-    tracks = [t for t in clip.tracking.tracks if t.select]
-    if not tracks:
-        print("track_until_stop: ❌ Kein Marker ausgewählt")
-        return
-
-    scene = ctx.scene
-    start_frame = scene.frame_current
-
-    active_tracks = tracks[:]
-    iteration = 0
-    while active_tracks:
-        iteration += 1
-        frame = scene.frame_current
-        print(f"track_until_stop: Iteration {iteration} bei Frame {frame}")
-
-        result = bpy.ops.clip.track_markers(backwards=False, sequence=False)
-        print(f"track_markers result: {result}")
-
-        next_frame = frame + 1
-        survivors = []
-        for t in active_tracks:
-            if t.markers.find_frame(next_frame):
-                survivors.append(t)
-            else:
-                print(f"  {t.name}: kein Marker auf Frame {next_frame} -> entfernt")
-
-        active_tracks = survivors
-        if active_tracks:
-            scene.frame_set(next_frame)
-
-    scene.frame_set(start_frame)
-    print("track_until_stop: ⭐ Tracking beendet")
-
-
-class TRACKING_OT_track_until_stop(bpy.types.Operator):
-    bl_idname = "tracking.track_until_stop"
-    bl_label = "Track Until Stop"
-    bl_description = "Trackt ausgewählte Marker frameweise bis keiner mehr aktiv ist"
-
-    @classmethod
-    def poll(cls, context):
-        area = context.area
-        return area and area.type == 'CLIP_EDITOR' and area.spaces.active.clip
+class CLIP_OT_track_one_frame(bpy.types.Operator):
+    """Track selected markers forward by one frame until they can't move further"""
+    bl_idname = "clip.track_one_frame"
+    bl_label = "Track Until Done"
+    bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        track_selected_markers_until_stop()
-        return {'FINISHED'}
+        max_iterations = 1000
+        iterations = 0
+
+        print("[Track Until Done] Starting frame-by-frame tracking...")
+
+        for window in bpy.context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    space = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
+                    if not space:
+                        continue
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            with bpy.context.temp_override(window=window, screen=window.screen, area=area, region=region, space_data=space):
+                                clip = space.clip
+                                if not clip:
+                                    print("[Track Until Done] No clip loaded.")
+                                    continue
+
+                                clip_user = space.clip_user
+                                frame = clip_user.frame_current
+                                bpy.context.scene.frame_set(frame)
+
+                                while iterations < max_iterations:
+                                    active_tracks = [t for t in clip.tracking.tracks if t.select and not t.mute]
+                                    if not active_tracks:
+                                        print(f"[Track Until Done] No active markers left at frame {frame}.")
+                                        break
+
+                                    print(f"[Track Until Done] Frame {frame}, active markers: {len(active_tracks)}")
+                                    result = bpy.ops.clip.track_markers(backwards=False, sequence=False)
+                                    print(f"[Track Until Done] Result: {result}")
+
+                                    if 'CANCELLED' in result:
+                                        print(f"[Track Until Done] Tracking cancelled at frame {frame}.")
+                                        break
+
+                                    frame += 1
+                                    bpy.context.scene.frame_set(frame)
+                                    iterations += 1
+
+                                print(f"[Track Until Done] Finished at frame {frame} after {iterations} steps.")
+                                self.report({'INFO'}, f"Tracking completed in {iterations} steps.")
+                                return {'FINISHED'}
+
+        print("[Track Until Done] No Clip Editor found.")
+        self.report({'WARNING'}, "No suitable Clip Editor context found.")
+        return {'CANCELLED'}
 
 
-class TRACKING_PT_track_until_stop(bpy.types.Panel):
+class CLIP_PT_one_frame_tracker_panel(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
-    bl_category = 'Tracking'
-    bl_label = 'Track Until Stop'
+    bl_category = "Tracking"
+    bl_label = "One Frame Tracker"
 
     def draw(self, context):
-        self.layout.operator(TRACKING_OT_track_until_stop.bl_idname, icon='TRACKING_FORWARDS')
-
-
-classes = [TRACKING_OT_track_until_stop, TRACKING_PT_track_until_stop]
+        layout = self.layout
+        layout.operator("clip.track_one_frame", text="Track Until Done")
 
 
 def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
+    bpy.utils.register_class(CLIP_OT_track_one_frame)
+    bpy.utils.register_class(CLIP_PT_one_frame_tracker_panel)
 
 
 def unregister():
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
+    bpy.utils.unregister_class(CLIP_OT_track_one_frame)
+    bpy.utils.unregister_class(CLIP_PT_one_frame_tracker_panel)
 
 
 if __name__ == "__main__":
     register()
+    bpy.ops.wm.console_toggle()
