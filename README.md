@@ -53,6 +53,14 @@ range for new markers. Landing on a new frame decreases the value by 10 again,
 but never below its original starting value. The "Marker Count Plus" value
 is clamped to ``Min Marker Count × 200``.
 
+## Single Frame Tracker
+
+The module `single_frame_tracker.py` adds a small panel in the Movie Clip
+Editor with a **Track Until Done** button. When pressed, it tracks all selected
+markers forward one frame at a time until none remain active. To enable this
+feature install the repository as an add-on and enable **Tracking Tools** in the
+preferences.
+
 ## Standalone Cleanup Script
 
 `distance_remove.py` is a small helper that can be run directly from

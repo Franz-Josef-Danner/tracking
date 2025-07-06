@@ -2,7 +2,7 @@ bl_info = {
     "name": "Single Frame Tracker",
     "blender": (4, 0, 0),
     "category": "Clip",
-    "description": "Adds a button to track selected markers for one frame",
+    "description": "Track selected markers frame by frame until none remain",
 }
 
 import bpy
@@ -36,6 +36,7 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                 clip_user = space.clip_user
                                 frame = clip_user.frame_current
                                 bpy.context.scene.frame_set(frame)
+                                clip_user.frame_current = frame
 
                                 while iterations < max_iterations:
                                     active_tracks = [
@@ -47,7 +48,9 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                         print(f"[Track Until Done] No active markers left at frame {frame}.")
                                         break
 
-                                    print(f"[Track Until Done] Frame {frame}, active markers: {len(active_tracks)}")
+                                    print(
+                                        f"[Track Until Done] Frame {frame} (clip {clip_user.frame_current}), active markers: {len(active_tracks)}"
+                                    )
                                     result = bpy.ops.clip.track_markers(backwards=False, sequence=False)
                                     print(f"[Track Until Done] Result: {result}")
 
@@ -57,6 +60,7 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
 
                                     frame += 1
                                     bpy.context.scene.frame_set(frame)
+                                    clip_user.frame_current = frame
                                     iterations += 1
 
                                 print(f"[Track Until Done] Finished at frame {frame} after {iterations} steps.")
@@ -91,4 +95,3 @@ def unregister():
 
 if __name__ == "__main__":
     register()
-    bpy.ops.wm.console_toggle()

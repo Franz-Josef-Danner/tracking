@@ -7,14 +7,16 @@ bl_info = {
     "category": "Clip",
 }
 
-from . import combined_cycle
+from . import combined_cycle, single_frame_tracker
 
 
 def register():
     combined_cycle.register()
+    single_frame_tracker.register()
 
 
 def unregister():
+    single_frame_tracker.unregister()
     combined_cycle.unregister()
 
 
