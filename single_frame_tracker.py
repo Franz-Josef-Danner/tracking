@@ -6,6 +6,7 @@ bl_info = {
 }
 
 import bpy
+from mathutils import Vector
 
 class CLIP_OT_track_one_frame(bpy.types.Operator):
     """Track selected markers forward by one frame until they can't move further"""
@@ -38,6 +39,7 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                 bpy.context.scene.frame_set(frame)
                                 clip_user.frame_current = frame
 
+                                prev_positions = {}
                                 while frame <= scene_end:
                                     active_tracks = [
                                         t
@@ -51,12 +53,27 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                     print(
                                         f"[Track Until Done] Frame {frame} (clip {clip_user.frame_current}), active markers: {len(active_tracks)}"
                                     )
+                                    for t in active_tracks:
+                                        marker = t.markers.find(frame)
+                                        if marker:
+                                            prev_positions[t.name] = Vector(marker.co)
                                     result = bpy.ops.clip.track_markers(backwards=False, sequence=False)
                                     print(f"[Track Until Done] Result: {result}")
 
                                     if 'CANCELLED' in result:
                                         print(f"[Track Until Done] Tracking cancelled at frame {frame}.")
                                         break
+
+                                    distances = []
+                                    for t in active_tracks:
+                                        prev = prev_positions.get(t.name)
+                                        next_marker = t.markers.find(frame + 1)
+                                        if prev is not None and next_marker:
+                                            dist = (Vector(next_marker.co) - prev).length
+                                            distances.append(f"{t.name}: {dist:.4f}")
+                                            prev_positions[t.name] = Vector(next_marker.co)
+                                    if distances:
+                                        print("[Track Until Done] Distances:", ", ".join(distances))
 
                                     frame += 1
                                     if frame > scene_end:
