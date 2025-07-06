@@ -54,7 +54,7 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                         f"[Track Until Done] Frame {frame} (clip {clip_user.frame_current}), active markers: {len(active_tracks)}"
                                     )
                                     for t in active_tracks:
-                                        marker = t.markers.find(frame)
+                                        marker = t.markers.find_frame(frame)
                                         if marker:
                                             prev_positions[t.name] = Vector(marker.co)
                                     result = bpy.ops.clip.track_markers(backwards=False, sequence=False)
@@ -67,7 +67,7 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                     distances = []
                                     for t in active_tracks:
                                         prev = prev_positions.get(t.name)
-                                        next_marker = t.markers.find(frame + 1)
+                                        next_marker = t.markers.find_frame(frame + 1)
                                         if prev is not None and next_marker:
                                             dist = (Vector(next_marker.co) - prev).length
                                             distances.append(f"{t.name}: {dist:.4f}")
