@@ -9,21 +9,16 @@ import bpy
 from mathutils import Vector
 
 
-def _marker_diagonal(
-    track: bpy.types.MovieTrackingTrack, marker: bpy.types.MovieTrackingMarker
-) -> tuple[float, float]:
-    """Return both diagonals of the marker's pattern box."""
+def _shift_pattern(marker: bpy.types.MovieTrackingMarker, delta: Vector):
+    """Shift the marker's pattern box by the given translation."""
     corners = getattr(marker, "pattern_corners", None)
-    if corners and len(corners) >= 8:
-        x1, y1, x2, y2, x3, y3, x4, y4 = corners[:8]
-        p1 = Vector(marker.co) + Vector((x1, y1))
-        p2 = Vector(marker.co) + Vector((x2, y2))
-        p3 = Vector(marker.co) + Vector((x3, y3))
-        p4 = Vector(marker.co) + Vector((x4, y4))
-        d1 = (p3 - p1).length
-        d2 = (p4 - p2).length
-        return d1, d2
-    return 0.0, 0.0
+    if not corners or len(corners) < 8:
+        return
+    new = list(corners)
+    for i in range(0, 8, 2):
+        new[i] += delta.x
+        new[i + 1] += delta.y
+    marker.pattern_corners = new
 
 class CLIP_OT_track_one_frame(bpy.types.Operator):
     """Track selected markers forward by one frame until they can't move further"""
@@ -86,7 +81,6 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                         break
 
                                     distances = []
-                                    diagonals = []
                                     for t in active_tracks:
                                         prev = prev_positions.get(t.name)
                                         next_marker_or_index = t.markers.find_frame(frame + 1)
@@ -97,15 +91,10 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                                 next_marker = next_marker_or_index
                                             dist = (Vector(next_marker.co) - prev).length
                                             distances.append(f"{t.name}: {dist:.4f}")
+                                            _shift_pattern(next_marker, Vector(next_marker.co) - prev)
                                             prev_positions[t.name] = Vector(next_marker.co)
-                                            d1, d2 = _marker_diagonal(t, next_marker)
-                                            diagonals.append(
-                                                f"{t.name}: {d1:.4f}, {d2:.4f}"
-                                            )
                                     if distances:
                                         print("[Track Until Done] Distances:", ", ".join(distances))
-                                    if diagonals:
-                                        print("[Track Until Done] Diagonals:", ", ".join(diagonals))
 
                                     frame += 1
                                     if frame > scene_end:
