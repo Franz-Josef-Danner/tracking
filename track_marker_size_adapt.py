@@ -38,7 +38,11 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                 bpy.context.scene.frame_set(frame)
 
                                 while iterations < max_iterations:
-                                    active_tracks = [t for t in clip.tracking.tracks if t.select and not t.mute]
+                                    active_tracks = [
+                                        t
+                                        for t in clip.tracking.tracks
+                                        if t.select and not getattr(t, "mute", False)
+                                    ]
                                     if not active_tracks:
                                         print(f"[Track Until Done] No active markers left at frame {frame}.")
                                         break
