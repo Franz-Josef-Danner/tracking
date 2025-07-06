@@ -20,6 +20,21 @@ def _shift_pattern(marker: bpy.types.MovieTrackingMarker, delta: Vector):
         new[i + 1] += delta.y
     marker.pattern_corners = new
 
+
+def _marker_diagonal(marker: bpy.types.MovieTrackingMarker) -> tuple[float, float]:
+    """Return the lengths of both diagonals of the marker's pattern box."""
+    corners = getattr(marker, "pattern_corners", None)
+    if corners and len(corners) >= 8:
+        x1, y1, x2, y2, x3, y3, x4, y4 = corners[:8]
+        p1 = Vector(marker.co) + Vector((x1, y1))
+        p2 = Vector(marker.co) + Vector((x2, y2))
+        p3 = Vector(marker.co) + Vector((x3, y3))
+        p4 = Vector(marker.co) + Vector((x4, y4))
+        d1 = (p3 - p1).length
+        d2 = (p4 - p2).length
+        return d1, d2
+    return 0.0, 0.0
+
 class CLIP_OT_track_one_frame(bpy.types.Operator):
     """Track selected markers forward by one frame until they can't move further"""
     bl_idname = "clip.track_one_frame"
@@ -52,6 +67,7 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                 clip_user.frame_current = frame
 
                                 prev_positions = {}
+                                prev_diagonals = {}
                                 while frame <= scene_end:
                                     active_tracks = [
                                         t
@@ -73,6 +89,7 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                             else:
                                                 marker = marker_or_index
                                             prev_positions[t.name] = Vector(marker.co)
+                                            prev_diagonals[t.name] = _marker_diagonal(marker)
                                     result = bpy.ops.clip.track_markers(backwards=False, sequence=False)
                                     print(f"[Track Until Done] Result: {result}")
 
@@ -81,6 +98,7 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                         break
 
                                     distances = []
+                                    scales = []
                                     for t in active_tracks:
                                         prev = prev_positions.get(t.name)
                                         next_marker_or_index = t.markers.find_frame(frame + 1)
@@ -93,8 +111,17 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                             distances.append(f"{t.name}: {dist:.4f}")
                                             _shift_pattern(next_marker, Vector(next_marker.co) - prev)
                                             prev_positions[t.name] = Vector(next_marker.co)
+                                            old_d1, old_d2 = prev_diagonals.get(t.name, (0.0, 0.0))
+                                            new_d1, new_d2 = _marker_diagonal(next_marker)
+                                            if old_d1 and old_d2:
+                                                scale1 = new_d1 / old_d1
+                                                scale2 = new_d2 / old_d2
+                                                scales.append(f"{t.name}: {scale1:.4f}, {scale2:.4f}")
+                                            prev_diagonals[t.name] = (new_d1, new_d2)
                                     if distances:
                                         print("[Track Until Done] Distances:", ", ".join(distances))
+                                    if scales:
+                                        print("[Track Until Done] Pattern Scales:", ", ".join(scales))
 
                                     frame += 1
                                     if frame > scene_end:
