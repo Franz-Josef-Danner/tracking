@@ -1,0 +1,44 @@
+# Python caches and compiled files
+__pycache__/
+*.py[cod]
+*.so
+*.dylib
+*.pyd
+
+# Distribution / packaging
+.Python
+env/
+venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# JetBrains IDEs
+.idea/
+
+# Blender backup files
+*.blend1
+*.blend2
+*.blend@
+
+# macOS files
+.DS_Store
+
+# Windows files
+Thumbs.db
+
