@@ -39,7 +39,7 @@ def set_marker_count_plus(scene, value):
     scene.min_marker_count_plus_max = int(value * 1.2)
 
 def ensure_margin_distance(clip, threshold=1.0):
-    """Return margin and distance scaled by ``threshold``.
+    """Return margin and distance scaled by ``threshold`` along with the base distance.
 
     Base values derived from the clip width are cached on the clip as custom
     properties so they are calculated only once per clip. Each call can then
@@ -58,7 +58,7 @@ def ensure_margin_distance(clip, threshold=1.0):
     scale = math.log10(threshold * 100000) / 5
     margin = max(1, int(base_margin * scale))
     distance = max(1, int(base_distance * scale))
-    return margin, distance
+    return margin, distance, base_distance
 
 
 def update_min_marker_props(scene, context):
@@ -76,22 +76,30 @@ def adjust_marker_count_plus(scene, delta):
     scene.min_marker_count_plus = new_val
 
 
-def remove_close_new_tracks(context, clip, min_distance=0.02):
-    """Delete NEU_ tracks near GOOD_ tracks in the current frame.
+def remove_close_new_tracks(context, clip, base_distance, threshold):
+    """Delete NEU_ tracks near GOOD_ or TRACK_ tracks in the current frame.
 
-    Prints which markers are removed so the cleanup can be verified.
-    ``min_distance`` uses normalized clip coordinates (0-1).
+    ``base_distance`` and ``threshold`` come from :func:`ensure_margin_distance`.
+    The removal distance is ``(base_distance * threshold) / 2`` converted to
+    normalized clip space. Prints which markers are removed so the cleanup can
+    be verified.
     """
 
     current_frame = context.scene.frame_current
     tracks = clip.tracking.tracks
 
     neu_tracks = [t for t in tracks if t.name.startswith("NEU_")]
-    good_tracks = [t for t in tracks if t.name.startswith("GOOD_")]
+    good_tracks = [
+        t
+        for t in tracks
+        if t.name.startswith("GOOD_") or t.name.startswith("TRACK_")
+    ]
 
     if not neu_tracks or not good_tracks:
-        print("[Cleanup] No GOOD_ or NEU_ tracks found, skipping cleanup")
+        print("[Cleanup] No GOOD_/TRACK_ or NEU_ tracks found, skipping cleanup")
         return 0
+
+    norm_dist = ((base_distance * threshold) / 2.0) / clip.size[0]
 
     to_remove = []
     for neu in neu_tracks:
@@ -104,7 +112,7 @@ def remove_close_new_tracks(context, clip, min_distance=0.02):
             if not good_marker:
                 continue
             good_pos = mathutils.Vector(good_marker.co)
-            if (neu_pos - good_pos).length < min_distance:
+            if (neu_pos - good_pos).length < norm_dist:
                 to_remove.append(neu)
                 break
 
@@ -317,7 +325,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             print(
                 f"[Detect] attempt {attempt} with threshold {threshold:.4f}"
             )
-            margin, distance = ensure_margin_distance(clip, threshold)
+            margin, distance, base_distance = ensure_margin_distance(clip, threshold)
             initial_names = {t.name for t in clip.tracking.tracks}
             bpy.ops.clip.detect_features(
                 threshold=threshold,
@@ -332,8 +340,8 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             for track in new_tracks:
                 track.name = f"NEU_{track.name}"
 
-            # Remove NEU_ markers too close to GOOD_ markers before counting
-            remove_close_new_tracks(context, clip)
+            # Remove NEU_ markers too close to GOOD_ or TRACK_ markers before counting
+            remove_close_new_tracks(context, clip, base_distance, threshold)
 
             new_count = sum(
                 1 for t in clip.tracking.tracks if t.name.startswith("NEU_")
