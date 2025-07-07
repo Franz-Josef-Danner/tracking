@@ -232,6 +232,18 @@ class CLIP_OT_auto_start(bpy.types.Operator):
         proxy_dir = bpy.path.abspath(proxy.directory)
         os.makedirs(proxy_dir, exist_ok=True)
         print(f"\U0001F4C1 Proxy-Zielverzeichnis: {proxy_dir}")
+
+        alt_dir = os.path.join(proxy_dir, os.path.basename(clip.filepath))
+        for d in (proxy_dir, alt_dir):
+            if os.path.isdir(d):
+                for f in os.listdir(d):
+                    if f.startswith("proxy_"):
+                        try:
+                            os.remove(os.path.join(d, f))
+                            print(f"\U0001F5D1\ufe0f Entferne alte Datei: {f}")
+                        except OSError as err:
+                            print(f"Fehler beim Entfernen {f}: {err}")
+
         print("\u26A0\ufe0f Wenn Zeitcode nötig: bitte manuell in der UI setzen.")
         print("\U0001F6A7 Starte Proxy-Rebuild…")
 
@@ -548,6 +560,8 @@ class TRACKING_PT_custom_panel(bpy.types.Panel):
 DEFAULT_MINIMUM_MARKER_COUNT = 5
 # Seconds between timer events during the tracking cycle
 CYCLE_TIMER_INTERVAL = 1.0
+# Maximum number of attempts per frame before skipping it
+MAX_FRAME_RETRIES = 3
 
 def get_tracking_marker_counts():
     """Return a mapping of frame numbers to the number of markers."""
@@ -560,12 +574,20 @@ def get_tracking_marker_counts():
                 marker_counts[frame] += 1
     return marker_counts
 
-def find_frame_with_few_tracking_markers(marker_counts, minimum_count):
-    """Return the first frame with fewer markers than ``minimum_count``."""
+def find_frame_with_few_tracking_markers(marker_counts, minimum_count, skipped_frames=None):
+    """Return the first frame with fewer markers than ``minimum_count``.
 
+    ``skipped_frames`` is an optional set of frames that should not be
+    returned. This helps avoid endlessly retrying frames that never meet the
+    marker count threshold.
+    """
+
+    skipped_frames = skipped_frames or set()
     start = bpy.context.scene.frame_start
     end = bpy.context.scene.frame_end
     for frame in range(start, end + 1):
+        if frame in skipped_frames:
+            continue
         if marker_counts.get(frame, 0) < minimum_count:
             return frame
     return None
@@ -589,6 +611,8 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
     _threshold = DEFAULT_MINIMUM_MARKER_COUNT
     _last_frame = None
     _visited_frames = None
+    _retry_counts = None
+    _skipped_frames = None
 
     @classmethod
     def poll(cls, context):
@@ -604,8 +628,20 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             target_frame = find_frame_with_few_tracking_markers(
                 marker_counts,
                 self._threshold,
+                self._skipped_frames,
             )
+            while (
+                target_frame is not None
+                and self._retry_counts.get(target_frame, 0) >= MAX_FRAME_RETRIES
+            ):
+                self._skipped_frames.add(target_frame)
+                target_frame = find_frame_with_few_tracking_markers(
+                    marker_counts,
+                    self._threshold,
+                    self._skipped_frames,
+                )
             if target_frame is not None:
+                self._retry_counts[target_frame] = self._retry_counts.get(target_frame, 0) + 1
                 if target_frame in self._visited_frames:
                     adjust_marker_count_plus(context.scene, 10)
                 else:
@@ -659,6 +695,8 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         self._threshold = context.scene.min_marker_count
         self._last_frame = context.scene.frame_current
         self._visited_frames = set()
+        self._retry_counts = {}
+        self._skipped_frames = set()
         update_min_marker_props(context.scene, context)
 
         wm = context.window_manager
