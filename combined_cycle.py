@@ -76,12 +76,11 @@ def adjust_marker_count_plus(scene, delta):
     scene.min_marker_count_plus = new_val
 
 
-def remove_close_neu_tracks(context, clip, base_distance, threshold):
-    """Delete NEU_ tracks too close to GOOD_ tracks in the current frame.
+def remove_close_new_tracks(context, clip, min_distance=0.02):
+    """Delete NEU_ tracks near GOOD_ tracks in the current frame.
 
-    ``base_distance`` is the pixel distance used during feature detection.
-    The removal distance is calculated as ``(base_distance * threshold) / 2``
-    converted to normalized clip space.
+    Prints which markers are removed so the cleanup can be verified.
+    ``min_distance`` uses normalized clip coordinates (0-1).
     """
 
     current_frame = context.scene.frame_current
@@ -91,11 +90,10 @@ def remove_close_neu_tracks(context, clip, base_distance, threshold):
     good_tracks = [t for t in tracks if t.name.startswith("GOOD_")]
 
     if not neu_tracks or not good_tracks:
+        print("[Cleanup] No GOOD_ or NEU_ tracks found, skipping cleanup")
         return 0
 
-    norm_dist = ((base_distance * threshold) / 2.0) / clip.size[0]
     to_remove = []
-
     for neu in neu_tracks:
         neu_marker = neu.markers.find_frame(current_frame)
         if not neu_marker:
@@ -106,11 +104,12 @@ def remove_close_neu_tracks(context, clip, base_distance, threshold):
             if not good_marker:
                 continue
             good_pos = mathutils.Vector(good_marker.co)
-            if (neu_pos - good_pos).length < norm_dist:
+            if (neu_pos - good_pos).length < min_distance:
                 to_remove.append(neu)
                 break
 
     if not to_remove:
+        print("[Cleanup] No NEU_ tracks to remove")
         return 0
 
     for t in tracks:
@@ -118,21 +117,18 @@ def remove_close_neu_tracks(context, clip, base_distance, threshold):
     for t in to_remove:
         t.select = True
 
-    for area in context.screen.areas:
-        if area.type == 'CLIP_EDITOR':
-            for region in area.regions:
-                if region.type == 'WINDOW':
-                    for space in area.spaces:
-                        if space.type == 'CLIP_EDITOR':
-                            with context.temp_override(
-                                area=area,
-                                region=region,
-                                space_data=space,
-                            ):
-                                bpy.ops.clip.delete_track()
-                            return len(to_remove)
+    area = next((a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None)
+    if area:
+        region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+        space = area.spaces.active
+        with context.temp_override(area=area, region=region, space_data=space):
+            bpy.ops.clip.delete_track()
+        print(
+            f"[Cleanup] Removed {len(to_remove)} NEU_ tracks: "
+            f"{', '.join(t.name for t in to_remove)}"
+        )
 
-    return 0
+    return len(to_remove)
 
 
 # Try to initialize margin and distance on the active clip when the
@@ -337,7 +333,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 track.name = f"NEU_{track.name}"
 
             # Remove NEU_ markers too close to GOOD_ markers before counting
-            remove_close_neu_tracks(context, clip, distance, threshold)
+            remove_close_new_tracks(context, clip)
 
             new_count = sum(
                 1 for t in clip.tracking.tracks if t.name.startswith("NEU_")
