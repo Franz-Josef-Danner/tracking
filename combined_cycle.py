@@ -189,8 +189,8 @@ class CLIP_OT_auto_start(bpy.types.Operator):
                 bpy.ops.clip.tracking_cycle('INVOKE_DEFAULT')
                 return {'FINISHED'}
             if self._checks % 10 == 0:
-                print(f"\u23F3 Warte… {self._checks}/180")
-            if self._checks > 180:
+                print(f"\u23F3 Warte… {self._checks}/300")
+            if self._checks > 300:
                 context.window_manager.event_timer_remove(self._timer)
                 self.report({'WARNING'}, "⚠️ Proxy-Erstellung Zeitüberschreitung")
                 return {'CANCELLED'}
@@ -563,15 +563,22 @@ CYCLE_TIMER_INTERVAL = 1.0
 # Maximum number of attempts per frame before skipping it
 MAX_FRAME_RETRIES = 3
 
-def get_tracking_marker_counts():
-    """Return a mapping of frame numbers to the number of markers."""
+def get_tracking_marker_counts(clip=None):
+    """Return a mapping of frame numbers to the number of markers.
+
+    If ``clip`` is ``None``, the active clip from ``bpy.context`` is used.
+    """
+
+    if clip is None:
+        clip = bpy.context.space_data.clip
+        if not clip:
+            return Counter()
 
     marker_counts = Counter()
-    for clip in bpy.data.movieclips:
-        for track in clip.tracking.tracks:
-            for marker in track.markers:
-                frame = marker.frame
-                marker_counts[frame] += 1
+    for track in clip.tracking.tracks:
+        for marker in track.markers:
+            frame = marker.frame
+            marker_counts[frame] += 1
     return marker_counts
 
 def find_frame_with_few_tracking_markers(marker_counts, minimum_count, skipped_frames=None):
@@ -624,7 +631,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 self._threshold = max(int(self._threshold * 0.9), 1)
 
             context.scene.tracking_cycle_status = "Searching next frame"
-            marker_counts = get_tracking_marker_counts()
+            marker_counts = get_tracking_marker_counts(self._clip)
             target_frame = find_frame_with_few_tracking_markers(
                 marker_counts,
                 self._threshold,
