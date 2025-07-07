@@ -599,11 +599,22 @@ def find_frame_with_few_tracking_markers(marker_counts, minimum_count, skipped_f
             return frame
     return None
 
-def set_playhead(frame):
-    """Set the current frame if ``frame`` is valid."""
+def set_playhead(frame, retries=2):
+    """Position the playhead reliably at ``frame``."""
 
-    if frame is not None:
-        bpy.context.scene.frame_current = frame
+    if frame is None:
+        return
+
+    scene = bpy.context.scene
+    for _ in range(retries):
+        scene.frame_set(frame)
+        if scene.frame_current == frame:
+            break
+        scene.frame_current = frame
+        if scene.frame_current == frame:
+            break
+    else:
+        print(f"\u26A0\ufe0f Playhead reposition failed: {scene.frame_current} vs {frame}")
 
 # ---- Cycle Operator ----
 class CLIP_OT_tracking_cycle(bpy.types.Operator):
