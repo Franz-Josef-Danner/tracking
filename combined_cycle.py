@@ -77,25 +77,23 @@ def adjust_marker_count_plus(scene, delta):
 
 
 def remove_close_new_tracks(context, clip, base_distance, threshold):
-    """Delete NEU_ tracks that are too close to existing markers.
+    """Delete ``NEU_`` tracks that are too close to ``GOOD_`` tracks.
 
-    Tracks starting with ``GOOD_`` or ``TRACK_`` are treated as existing. The
-    distance threshold is derived from ``base_distance`` and ``threshold`` using
-    ``(base_distance * threshold) / 2`` converted to normalized clip space. The
-    function prints the threshold distance and the distances for each NEU_ vs.
-    existing marker comparison so the cleanup can be inspected in Blender's
-    console.
+    Only markers whose names start with ``GOOD_`` are considered for the
+    distance comparison.  The threshold is derived from ``base_distance`` and
+    ``threshold`` using ``(base_distance * threshold) / 2`` converted to
+    normalized clip space.  For each frame the function prints the threshold
+    distance and the distance of every ``NEU_`` marker to every active
+    ``GOOD_`` marker so the cleanup can be inspected in Blender's console.
     """
 
     current_frame = context.scene.frame_current
     tracks = clip.tracking.tracks
 
     neu_tracks = [t for t in tracks if t.name.startswith("NEU_")]
-    existing_tracks = [
-        t for t in tracks if t.name.startswith("GOOD_") or t.name.startswith("TRACK_")
-    ]
+    good_tracks = [t for t in tracks if t.name.startswith("GOOD_")]
 
-    if not neu_tracks or not existing_tracks:
+    if not neu_tracks or not good_tracks:
         return 0
 
     norm_dist = ((base_distance * threshold) / 2.0) / clip.size[0]
@@ -107,7 +105,7 @@ def remove_close_new_tracks(context, clip, base_distance, threshold):
         if not neu_marker:
             continue
         neu_pos = mathutils.Vector(neu_marker.co)
-        for good in existing_tracks:
+        for good in good_tracks:
             good_marker = good.markers.find_frame(current_frame)
             if not good_marker:
                 continue
