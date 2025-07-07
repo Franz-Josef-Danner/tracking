@@ -77,26 +77,22 @@ def adjust_marker_count_plus(scene, delta):
 
 
 def remove_close_new_tracks(context, clip, base_distance, threshold):
-    """Delete NEU_ tracks near GOOD_ or TRACK_ tracks in the current frame.
+    """Delete NEU_ tracks near GOOD_ tracks in the current frame.
 
     ``base_distance`` and ``threshold`` come from :func:`ensure_margin_distance`.
     The removal distance is ``(base_distance * threshold) / 2`` converted to
-    normalized clip space. Prints which markers are removed so the cleanup can
-    be verified.
+    normalized clip space. Distances between each NEU_ track and all GOOD_
+    tracks are printed so the behaviour can be verified.
     """
 
     current_frame = context.scene.frame_current
     tracks = clip.tracking.tracks
 
     neu_tracks = [t for t in tracks if t.name.startswith("NEU_")]
-    good_tracks = [
-        t
-        for t in tracks
-        if t.name.startswith("GOOD_") or t.name.startswith("TRACK_")
-    ]
+    good_tracks = [t for t in tracks if t.name.startswith("GOOD_")]
 
     if not neu_tracks or not good_tracks:
-        print("[Cleanup] No GOOD_/TRACK_ or NEU_ tracks found, skipping cleanup")
+        print("[Cleanup] No GOOD_ or NEU_ tracks found, skipping cleanup")
         return 0
 
     norm_dist = ((base_distance * threshold) / 2.0) / clip.size[0]
@@ -112,7 +108,14 @@ def remove_close_new_tracks(context, clip, base_distance, threshold):
             if not good_marker:
                 continue
             good_pos = mathutils.Vector(good_marker.co)
-            if (neu_pos - good_pos).length < norm_dist:
+            dist = (neu_pos - good_pos).length
+            print(
+                f"[Cleanup] {neu.name} vs {good.name}: distance {dist:.5f}"
+            )
+            if dist < norm_dist:
+                print(
+                    f"[Cleanup] {neu.name} too close to {good.name} "
+                    f"({dist:.5f} < {norm_dist:.5f}) -> remove")
                 to_remove.append(neu)
                 break
 
@@ -340,7 +343,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             for track in new_tracks:
                 track.name = f"NEU_{track.name}"
 
-            # Remove NEU_ markers too close to GOOD_ or TRACK_ markers before counting
+            # Remove NEU_ markers too close to GOOD_ markers before counting
             remove_close_new_tracks(context, clip, base_distance, threshold)
 
             new_count = sum(
