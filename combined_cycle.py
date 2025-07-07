@@ -469,7 +469,9 @@ class TRACK_OT_auto_track_forward(bpy.types.Operator):
             bpy.ops.clip.toggle_proxy()
             toggled = True
 
+        start_frame = context.scene.frame_current
         bpy.ops.clip.track_markers(sequence=True)
+        set_playhead(start_frame)
 
         if toggled:
             bpy.ops.clip.toggle_proxy()
