@@ -59,11 +59,11 @@ The module `single_frame_tracker.py` adds a small panel in the Movie Clip
 Editor with a **Track Until Done** button. When pressed, it tracks all selected
 markers forward one frame at a time until none remain active or the scene's end
 frame is reached. After every step the console prints how far each marker
-moved. The script also shifts the pattern area of each marker using the
-calculated translation so the patch follows along. After each frame it prints
-the current scaling of that pattern based on the diagonal lengths so you can
-monitor patch size changes. To enable this feature install the repository as an
-add-on and enable **Tracking Tools** in the preferences.
+moved. The script resizes each marker's pattern area based on its movement,
+keeping the patch centered while adapting its width and height (never below
+30 pixels). After each frame it prints the diagonal lengths so you can monitor
+patch scaling. To enable this feature install the repository as an add-on and
+enable **Tracking Tools** in the preferences.
 
 ## Standalone Cleanup Script
 
