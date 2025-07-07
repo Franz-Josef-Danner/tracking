@@ -61,6 +61,18 @@ def _marker_diagonal(marker: bpy.types.MovieTrackingMarker) -> tuple[float, floa
         return d1, d2
     return 0.0, 0.0
 
+
+def _pattern_size(marker: bpy.types.MovieTrackingMarker, clip: bpy.types.MovieClip) -> tuple[float, float] | None:
+    """Return the pattern box size in pixels."""
+    corners = getattr(marker, "pattern_corners", None)
+    if corners and len(corners) >= 8:
+        xs = [corners[i] for i in range(0, 8, 2)]
+        ys = [corners[i] for i in range(1, 8, 2)]
+        width_px = (max(xs) - min(xs)) * clip.size[0]
+        height_px = (max(ys) - min(ys)) * clip.size[1]
+        return width_px, height_px
+    return None
+
 class CLIP_OT_track_one_frame(bpy.types.Operator):
     """Track selected markers forward by one frame until they can't move further"""
     bl_idname = "clip.track_one_frame"
@@ -143,6 +155,11 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                                 Vector(next_marker.co) - prev,
                                                 clip,
                                             )
+                                            size_px = _pattern_size(next_marker, clip)
+                                            if size_px:
+                                                print(
+                                                    f"[Track Until Done] {t.name} pattern size {size_px[0]:.2f}x{size_px[1]:.2f} px"
+                                                )
                                             prev_positions[t.name] = Vector(next_marker.co)
                                             old_d1, old_d2 = prev_diagonals.get(t.name, (0.0, 0.0))
                                             new_d1, new_d2 = _marker_diagonal(next_marker)

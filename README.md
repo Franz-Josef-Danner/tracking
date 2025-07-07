@@ -61,8 +61,9 @@ markers forward one frame at a time until none remain active or the scene's end
 frame is reached. After every step the console prints how far each marker
 moved. The script resizes each marker's pattern area based on its movement,
 keeping the patch centered while adapting its width and height (never below
-30 pixels). After each frame it prints the diagonal lengths so you can monitor
-patch scaling. To enable this feature install the repository as an add-on and
+30 pixels). After each frame it prints the diagonal lengths and the current
+pattern size so you can monitor how the patch changes. To enable this feature
+install the repository as an add-on and
 enable **Tracking Tools** in the preferences.
 
 ## Standalone Cleanup Script
