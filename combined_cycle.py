@@ -77,22 +77,33 @@ def adjust_marker_count_plus(scene, delta):
 
 
 def remove_close_new_tracks(context, clip, base_distance, threshold):
-    """Delete ``NEU_`` tracks that are too close to ``GOOD_`` tracks.
+    """Delete ``NEU_`` tracks that are too close to existing markers.
 
-    Only markers whose names start with ``GOOD_`` are considered for the
-    distance comparison.  The removal distance is derived from ``base_distance``
-    and ``threshold`` using the same scaling as feature detection. It is half
-    the scaled distance converted to normalized clip space. For each frame the
-    function prints the threshold
-    distance and the distance of every ``NEU_`` marker to every active
-    ``GOOD_`` marker so the cleanup can be inspected in Blender's console.
+    Tracks starting with either ``GOOD_`` or ``TRACK_`` are treated as existing
+    markers.  The removal distance is derived from ``base_distance`` and
+    ``threshold`` using the same scaling formula as feature detection. It is
+    half the scaled distance converted to normalized clip space.  For each
+    frame the function prints the threshold distance and the distance of every
+    ``NEU_`` marker to every active existing marker so the cleanup can be
+    inspected in Blender's console.  Missing markers are also reported.
     """
 
     current_frame = context.scene.frame_current
     tracks = clip.tracking.tracks
 
     neu_tracks = [t for t in tracks if t.name.startswith("NEU_")]
-    good_tracks = [t for t in tracks if t.name.startswith("GOOD_")]
+    existing = [
+        t for t in tracks if t.name.startswith("GOOD_") or t.name.startswith("TRACK_")
+    ]
+
+    # Filter existing tracks to those with a marker at the current frame
+    good_tracks = []
+    for track in existing:
+        marker = track.markers.find_frame(current_frame)
+        if marker:
+            good_tracks.append((track, marker))
+        else:
+            print(f"[Cleanup] {track.name} has no marker at frame {current_frame}")
 
     if not neu_tracks or not good_tracks:
         print("[Cleanup] skipping - no GOOD_ or NEU_ tracks")
@@ -107,12 +118,10 @@ def remove_close_new_tracks(context, clip, base_distance, threshold):
     for neu in neu_tracks:
         neu_marker = neu.markers.find_frame(current_frame)
         if not neu_marker:
+            print(f"[Cleanup] {neu.name} has no marker at frame {current_frame}")
             continue
         neu_pos = mathutils.Vector(neu_marker.co)
-        for good in good_tracks:
-            good_marker = good.markers.find_frame(current_frame)
-            if not good_marker:
-                continue
+        for good, good_marker in good_tracks:
             good_pos = mathutils.Vector(good_marker.co)
             dist = (neu_pos - good_pos).length
             print(
