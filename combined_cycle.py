@@ -189,8 +189,8 @@ class CLIP_OT_auto_start(bpy.types.Operator):
                 bpy.ops.clip.tracking_cycle('INVOKE_DEFAULT')
                 return {'FINISHED'}
             if self._checks % 10 == 0:
-                print(f"\u23F3 Warte… {self._checks}/180")
-            if self._checks > 180:
+                print(f"\u23F3 Warte… {self._checks}/300")
+            if self._checks > 300:
                 context.window_manager.event_timer_remove(self._timer)
                 self.report({'WARNING'}, "⚠️ Proxy-Erstellung Zeitüberschreitung")
                 return {'CANCELLED'}
@@ -232,6 +232,18 @@ class CLIP_OT_auto_start(bpy.types.Operator):
         proxy_dir = bpy.path.abspath(proxy.directory)
         os.makedirs(proxy_dir, exist_ok=True)
         print(f"\U0001F4C1 Proxy-Zielverzeichnis: {proxy_dir}")
+
+        alt_dir = os.path.join(proxy_dir, os.path.basename(clip.filepath))
+        for d in (proxy_dir, alt_dir):
+            if os.path.isdir(d):
+                for f in os.listdir(d):
+                    if f.startswith("proxy_"):
+                        try:
+                            os.remove(os.path.join(d, f))
+                            print(f"\U0001F5D1\ufe0f Entferne alte Datei: {f}")
+                        except OSError as err:
+                            print(f"Fehler beim Entfernen {f}: {err}")
+
         print("\u26A0\ufe0f Wenn Zeitcode nötig: bitte manuell in der UI setzen.")
         print("\U0001F6A7 Starte Proxy-Rebuild…")
 
@@ -457,7 +469,9 @@ class TRACK_OT_auto_track_forward(bpy.types.Operator):
             bpy.ops.clip.toggle_proxy()
             toggled = True
 
+        start_frame = context.scene.frame_current
         bpy.ops.clip.track_markers(sequence=True)
+        set_playhead(start_frame)
 
         if toggled:
             bpy.ops.clip.toggle_proxy()
@@ -548,21 +562,29 @@ class TRACKING_PT_custom_panel(bpy.types.Panel):
 DEFAULT_MINIMUM_MARKER_COUNT = 5
 # Seconds between timer events during the tracking cycle
 CYCLE_TIMER_INTERVAL = 1.0
+# Maximum number of attempts on the same frame before aborting
+MAX_FRAME_ATTEMPTS = 10
 
-def get_tracking_marker_counts():
-    """Return a mapping of frame numbers to the number of markers."""
+def get_tracking_marker_counts(clip=None):
+    """Return a mapping of frame numbers to the number of markers.
+
+    If ``clip`` is ``None``, the active clip from ``bpy.context`` is used.
+    """
+
+    if clip is None:
+        clip = bpy.context.space_data.clip
+        if not clip:
+            return Counter()
 
     marker_counts = Counter()
-    for clip in bpy.data.movieclips:
-        for track in clip.tracking.tracks:
-            for marker in track.markers:
-                frame = marker.frame
-                marker_counts[frame] += 1
+    for track in clip.tracking.tracks:
+        for marker in track.markers:
+            frame = marker.frame
+            marker_counts[frame] += 1
     return marker_counts
 
 def find_frame_with_few_tracking_markers(marker_counts, minimum_count):
     """Return the first frame with fewer markers than ``minimum_count``."""
-
     start = bpy.context.scene.frame_start
     end = bpy.context.scene.frame_end
     for frame in range(start, end + 1):
@@ -570,11 +592,31 @@ def find_frame_with_few_tracking_markers(marker_counts, minimum_count):
             return frame
     return None
 
-def set_playhead(frame):
-    """Set the current frame if ``frame`` is valid."""
+def set_playhead(frame, retries=2):
+    """Position the playhead reliably at ``frame`` and refresh the UI."""
 
-    if frame is not None:
-        bpy.context.scene.frame_current = frame
+    if frame is None:
+        return
+
+    scene = bpy.context.scene
+    for _ in range(retries):
+        scene.frame_set(frame)
+        if scene.frame_current == frame:
+            break
+        scene.frame_current = frame
+        if scene.frame_current == frame:
+            break
+    else:
+        print(
+            f"\u26A0\ufe0f Playhead reposition failed: {scene.frame_current} vs {frame}"
+        )
+
+    # Ensure UI reflects the new playhead position
+    wm = bpy.context.window_manager
+    for window in wm.windows:
+        for area in window.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                area.tag_redraw()
 
 # ---- Cycle Operator ----
 class CLIP_OT_tracking_cycle(bpy.types.Operator):
@@ -589,6 +631,8 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
     _threshold = DEFAULT_MINIMUM_MARKER_COUNT
     _last_frame = None
     _visited_frames = None
+    _current_target = None
+    _target_attempts = 0
 
     @classmethod
     def poll(cls, context):
@@ -600,17 +644,33 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 self._threshold = max(int(self._threshold * 0.9), 1)
 
             context.scene.tracking_cycle_status = "Searching next frame"
-            marker_counts = get_tracking_marker_counts()
+            marker_counts = get_tracking_marker_counts(self._clip)
             target_frame = find_frame_with_few_tracking_markers(
                 marker_counts,
                 self._threshold,
             )
             if target_frame is not None:
+                if target_frame == self._current_target:
+                    self._target_attempts += 1
+                else:
+                    self._current_target = target_frame
+                    self._target_attempts = 1
+
+                if self._target_attempts > MAX_FRAME_ATTEMPTS:
+                    self.report(
+                        {'WARNING'},
+                        f"Tracking aborted at frame {target_frame} after {MAX_FRAME_ATTEMPTS} attempts",
+                    )
+                    context.scene.tracking_cycle_status = "Aborted"
+                    self.cancel(context)
+                    return {'CANCELLED'}
+
                 if target_frame in self._visited_frames:
                     adjust_marker_count_plus(context.scene, 10)
                 else:
                     adjust_marker_count_plus(context.scene, -10)
                     self._visited_frames.add(target_frame)
+
             set_playhead(target_frame)
             context.scene.current_cycle_frame = context.scene.frame_current
 
@@ -659,6 +719,8 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         self._threshold = context.scene.min_marker_count
         self._last_frame = context.scene.frame_current
         self._visited_frames = set()
+        self._current_target = None
+        self._target_attempts = 0
         update_min_marker_props(context.scene, context)
 
         wm = context.window_manager

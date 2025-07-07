@@ -48,7 +48,7 @@ def create_proxy_and_wait():
 
         print(f"🔍 Suche nach Datei: {direct_path} oder {alt_path}")
 
-        for i in range(180):
+        for i in range(300):
             time.sleep(0.5)
             if os.path.exists(direct_path):
                 print(f"✅ Proxy-Datei gefunden: {direct_path}")
@@ -57,7 +57,7 @@ def create_proxy_and_wait():
                 print(f"✅ Proxy-Datei gefunden (alternativ): {alt_path}")
                 return
             if i % 10 == 0:
-                print(f"⏳ Warte… {i}/180")
+                print(f"⏳ Warte… {i}/300")
         print("⚠️ Zeitüberschreitung")
 
     threading.Thread(target=wait_file).start()
