@@ -69,6 +69,9 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                 prev_positions = {}
                                 prev_diagonals = {}
                                 while frame <= scene_end:
+                                    # Some Blender versions don't define the
+                                    # 'mute' attribute. Use getattr() so the
+                                    # check works everywhere.
                                     active_tracks = [
                                         t
                                         for t in clip.tracking.tracks
