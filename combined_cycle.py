@@ -562,8 +562,8 @@ class TRACKING_PT_custom_panel(bpy.types.Panel):
 DEFAULT_MINIMUM_MARKER_COUNT = 5
 # Seconds between timer events during the tracking cycle
 CYCLE_TIMER_INTERVAL = 1.0
-# Maximum number of attempts per frame before skipping it
-MAX_FRAME_RETRIES = 3
+# Maximum number of attempts on the same frame before aborting
+MAX_FRAME_ATTEMPTS = 10
 
 def get_tracking_marker_counts(clip=None):
     """Return a mapping of frame numbers to the number of markers.
@@ -583,20 +583,11 @@ def get_tracking_marker_counts(clip=None):
             marker_counts[frame] += 1
     return marker_counts
 
-def find_frame_with_few_tracking_markers(marker_counts, minimum_count, skipped_frames=None):
-    """Return the first frame with fewer markers than ``minimum_count``.
-
-    ``skipped_frames`` is an optional set of frames that should not be
-    returned. This helps avoid endlessly retrying frames that never meet the
-    marker count threshold.
-    """
-
-    skipped_frames = skipped_frames or set()
+def find_frame_with_few_tracking_markers(marker_counts, minimum_count):
+    """Return the first frame with fewer markers than ``minimum_count``."""
     start = bpy.context.scene.frame_start
     end = bpy.context.scene.frame_end
     for frame in range(start, end + 1):
-        if frame in skipped_frames:
-            continue
         if marker_counts.get(frame, 0) < minimum_count:
             return frame
     return None
@@ -640,8 +631,8 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
     _threshold = DEFAULT_MINIMUM_MARKER_COUNT
     _last_frame = None
     _visited_frames = None
-    _retry_counts = None
-    _skipped_frames = None
+    _current_target = None
+    _target_attempts = 0
 
     @classmethod
     def poll(cls, context):
@@ -657,25 +648,29 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             target_frame = find_frame_with_few_tracking_markers(
                 marker_counts,
                 self._threshold,
-                self._skipped_frames,
             )
-            while (
-                target_frame is not None
-                and self._retry_counts.get(target_frame, 0) >= MAX_FRAME_RETRIES
-            ):
-                self._skipped_frames.add(target_frame)
-                target_frame = find_frame_with_few_tracking_markers(
-                    marker_counts,
-                    self._threshold,
-                    self._skipped_frames,
-                )
             if target_frame is not None:
-                self._retry_counts[target_frame] = self._retry_counts.get(target_frame, 0) + 1
+                if target_frame == self._current_target:
+                    self._target_attempts += 1
+                else:
+                    self._current_target = target_frame
+                    self._target_attempts = 1
+
+                if self._target_attempts > MAX_FRAME_ATTEMPTS:
+                    self.report(
+                        {'WARNING'},
+                        f"Tracking aborted at frame {target_frame} after {MAX_FRAME_ATTEMPTS} attempts",
+                    )
+                    context.scene.tracking_cycle_status = "Aborted"
+                    self.cancel(context)
+                    return {'CANCELLED'}
+
                 if target_frame in self._visited_frames:
                     adjust_marker_count_plus(context.scene, 10)
                 else:
                     adjust_marker_count_plus(context.scene, -10)
                     self._visited_frames.add(target_frame)
+
             set_playhead(target_frame)
             context.scene.current_cycle_frame = context.scene.frame_current
 
@@ -724,8 +719,8 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         self._threshold = context.scene.min_marker_count
         self._last_frame = context.scene.frame_current
         self._visited_frames = set()
-        self._retry_counts = {}
-        self._skipped_frames = set()
+        self._current_target = None
+        self._target_attempts = 0
         update_min_marker_props(context.scene, context)
 
         wm = context.window_manager
