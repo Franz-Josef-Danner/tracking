@@ -600,7 +600,7 @@ def find_frame_with_few_tracking_markers(marker_counts, minimum_count, skipped_f
     return None
 
 def set_playhead(frame, retries=2):
-    """Position the playhead reliably at ``frame``."""
+    """Position the playhead reliably at ``frame`` and refresh the UI."""
 
     if frame is None:
         return
@@ -614,7 +614,16 @@ def set_playhead(frame, retries=2):
         if scene.frame_current == frame:
             break
     else:
-        print(f"\u26A0\ufe0f Playhead reposition failed: {scene.frame_current} vs {frame}")
+        print(
+            f"\u26A0\ufe0f Playhead reposition failed: {scene.frame_current} vs {frame}"
+        )
+
+    # Ensure UI reflects the new playhead position
+    wm = bpy.context.window_manager
+    for window in wm.windows:
+        for area in window.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                area.tag_redraw()
 
 # ---- Cycle Operator ----
 class CLIP_OT_tracking_cycle(bpy.types.Operator):
