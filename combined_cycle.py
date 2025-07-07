@@ -82,8 +82,9 @@ def remove_close_new_tracks(context, clip, base_distance, threshold):
     Tracks starting with ``GOOD_`` or ``TRACK_`` are treated as existing. The
     distance threshold is derived from ``base_distance`` and ``threshold`` using
     ``(base_distance * threshold) / 2`` converted to normalized clip space. The
-    function prints distances between NEU_ and existing tracks so the cleanup
-    can be inspected in Blender's console.
+    function prints the threshold distance and the distances for each NEU_ vs.
+    existing marker comparison so the cleanup can be inspected in Blender's
+    console.
     """
 
     current_frame = context.scene.frame_current
@@ -94,14 +95,11 @@ def remove_close_new_tracks(context, clip, base_distance, threshold):
         t for t in tracks if t.name.startswith("GOOD_") or t.name.startswith("TRACK_")
     ]
 
-    if not neu_tracks:
-        print("[Cleanup] No NEU_ tracks found")
-        return 0
-    if not existing_tracks:
-        print("[Cleanup] No GOOD_/TRACK_ tracks found")
+    if not neu_tracks or not existing_tracks:
         return 0
 
     norm_dist = ((base_distance * threshold) / 2.0) / clip.size[0]
+    print(f"[Cleanup] threshold distance {norm_dist:.5f}")
 
     to_remove = []
     for neu in neu_tracks:
@@ -322,8 +320,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
             # Remove NEU_ markers too close to existing ones before counting
             removed = remove_close_new_tracks(context, clip, base_distance, threshold)
-            if removed:
-                print(f"[Detect] removed {removed} close markers")
+            print(f"[Detect] distance cleanup removed {removed} markers")
 
             new_count = sum(
                 1 for t in clip.tracking.tracks if t.name.startswith("NEU_")
