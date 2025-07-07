@@ -77,22 +77,23 @@ def adjust_marker_count_plus(scene, delta):
 
 
 def remove_close_new_tracks(context, clip, base_distance, threshold):
-    """Delete NEU_ tracks near GOOD_ tracks in the current frame.
+    """Delete NEU_ tracks that are too close to existing markers.
 
+    Tracks starting with ``GOOD_`` or ``TRACK_`` are considered existing.
     ``base_distance`` and ``threshold`` come from :func:`ensure_margin_distance`.
     The removal distance is ``(base_distance * threshold) / 2`` converted to
-    normalized clip space. Distances between each NEU_ track and all GOOD_
-    tracks are printed so the behaviour can be verified.
+    normalized clip space. Distances between NEU_ and existing tracks are
+    printed for inspection.
     """
 
     current_frame = context.scene.frame_current
     tracks = clip.tracking.tracks
 
     neu_tracks = [t for t in tracks if t.name.startswith("NEU_")]
-    good_tracks = [t for t in tracks if t.name.startswith("GOOD_")]
-
-    if not neu_tracks or not good_tracks:
-        print("[Cleanup] No GOOD_ or NEU_ tracks found, skipping cleanup")
+    existing_tracks = [
+        t for t in tracks if t.name.startswith("GOOD_") or t.name.startswith("TRACK_")
+    ]
+    if not neu_tracks or not existing_tracks:
         return 0
 
     norm_dist = ((base_distance * threshold) / 2.0) / clip.size[0]
@@ -103,7 +104,7 @@ def remove_close_new_tracks(context, clip, base_distance, threshold):
         if not neu_marker:
             continue
         neu_pos = mathutils.Vector(neu_marker.co)
-        for good in good_tracks:
+        for good in existing_tracks:
             good_marker = good.markers.find_frame(current_frame)
             if not good_marker:
                 continue
@@ -115,12 +116,12 @@ def remove_close_new_tracks(context, clip, base_distance, threshold):
             if dist < norm_dist:
                 print(
                     f"[Cleanup] {neu.name} too close to {good.name} "
-                    f"({dist:.5f} < {norm_dist:.5f}) -> remove")
+                    f"({dist:.5f} < {norm_dist:.5f}) -> remove"
+                )
                 to_remove.append(neu)
                 break
 
     if not to_remove:
-        print("[Cleanup] No NEU_ tracks to remove")
         return 0
 
     for t in tracks:
@@ -134,10 +135,6 @@ def remove_close_new_tracks(context, clip, base_distance, threshold):
         space = area.spaces.active
         with context.temp_override(area=area, region=region, space_data=space):
             bpy.ops.clip.delete_track()
-        print(
-            f"[Cleanup] Removed {len(to_remove)} NEU_ tracks: "
-            f"{', '.join(t.name for t in to_remove)}"
-        )
 
     return len(to_remove)
 
@@ -195,8 +192,6 @@ class CLIP_OT_auto_start(bpy.types.Operator):
                 self.report({'INFO'}, "✅ Proxy-Erstellung abgeschlossen")
                 bpy.ops.clip.tracking_cycle('INVOKE_DEFAULT')
                 return {'FINISHED'}
-            if self._checks % 10 == 0:
-                print(f"\u23F3 Warte… {self._checks}/300")
             if self._checks > 300:
                 context.window_manager.event_timer_remove(self._timer)
                 self.report({'WARNING'}, "⚠️ Proxy-Erstellung Zeitüberschreitung")
@@ -210,26 +205,19 @@ class CLIP_OT_auto_start(bpy.types.Operator):
             return {'CANCELLED'}
 
         context.scene.proxy_built = False
-        print("\U0001F7E1 Starte Proxy-Erstellung (50%, custom Pfad)")
         clip_path = bpy.path.abspath(clip.filepath)
-        print(f"\U0001F4C2 Clip-Pfad: {clip_path}")
         if not os.path.isfile(clip_path):
-            print("\u274C Clip-Datei existiert nicht.")
             return {'CANCELLED'}
 
-        print("\u2699\ufe0f Setze Proxy-Optionen…")
         clip.use_proxy = True
         clip.use_proxy_custom_directory = True
-        print("\u2705 Custom Directory aktiviert")
         proxy = clip.proxy
         proxy.quality = 50
-        print("\u2705 Qualität auf 50 gesetzt")
         proxy.directory = "//BL_proxy/"
         proxy.timecode = 'FREE_RUN_NO_GAPS'
 
         proxy.build_25 = proxy.build_50 = proxy.build_75 = proxy.build_100 = False
         proxy.build_50 = True
-        print("\u2705 Proxy-Build 50% aktiviert")
 
         proxy.build_undistorted_25 = False
         proxy.build_undistorted_50 = False
@@ -238,7 +226,6 @@ class CLIP_OT_auto_start(bpy.types.Operator):
 
         proxy_dir = bpy.path.abspath(proxy.directory)
         os.makedirs(proxy_dir, exist_ok=True)
-        print(f"\U0001F4C1 Proxy-Zielverzeichnis: {proxy_dir}")
 
         alt_dir = os.path.join(proxy_dir, os.path.basename(clip.filepath))
         for d in (proxy_dir, alt_dir):
@@ -247,12 +234,10 @@ class CLIP_OT_auto_start(bpy.types.Operator):
                     if f.startswith("proxy_"):
                         try:
                             os.remove(os.path.join(d, f))
-                            print(f"\U0001F5D1\ufe0f Entferne alte Datei: {f}")
                         except OSError as err:
-                            print(f"Fehler beim Entfernen {f}: {err}")
+                            pass
 
-        print("\u26A0\ufe0f Wenn Zeitcode nötig: bitte manuell in der UI setzen.")
-        print("\U0001F6A7 Starte Proxy-Rebuild…")
+        # Start proxy rebuild
 
         override = context.copy()
         override['area'] = next(
@@ -267,12 +252,10 @@ class CLIP_OT_auto_start(bpy.types.Operator):
         with context.temp_override(**override):
             bpy.ops.clip.rebuild_proxy()
 
-        print("\U0001F552 Warte auf erste Proxy-Datei…")
 
         proxy_file = "proxy_50.avi"
         direct_path = os.path.join(proxy_dir, proxy_file)
         alt_path = os.path.join(proxy_dir, os.path.basename(clip.filepath), proxy_file)
-        print(f"\U0001F50D Suche nach Datei: {direct_path} oder {alt_path}")
 
         self._clip = clip
         self._proxy_paths = [direct_path, alt_path]
@@ -309,25 +292,13 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         max_new = context.scene.min_marker_count_plus_max
         tracks_before = len(clip.tracking.tracks)
 
-        # Log clip info and prepare for iterative detection attempts
         base = context.scene.min_marker_count
-        print(
-            f"[Detect] frame {context.scene.frame_current} in '{clip.name}' "
-            f"({clip.size[0]}x{clip.size[1]})"
-        )
-        print(
-            f"[Detect] base {base}, expected range {min_new}-{max_new} "
-            f"starting at threshold {threshold:.4f}"
-        )
         attempt = 0
         max_attempts = 20
         success = False
         tracks_after = tracks_before
         while attempt < max_attempts:
             attempt += 1
-            print(
-                f"[Detect] attempt {attempt} with threshold {threshold:.4f}"
-            )
             margin, distance, base_distance = ensure_margin_distance(clip, threshold)
             initial_names = {t.name for t in clip.tracking.tracks}
             bpy.ops.clip.detect_features(
@@ -349,13 +320,8 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             new_count = sum(
                 1 for t in clip.tracking.tracks if t.name.startswith("NEU_")
             )
-            print(f"[Detect] found {new_count} new markers")
 
             if min_new <= new_count <= max_new:
-                print(
-                    f"[Detect] attempt {attempt}: "
-                    f"{new_count} markers in range"
-                )
                 for t in clip.tracking.tracks:
                     if t.name.startswith("NEU_"):
                         t.name = f"TRACK_{t.name[4:]}"
@@ -366,17 +332,9 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 base_plus = context.scene.min_marker_count_plus
                 factor = (new_count + 0.1) / base_plus
                 threshold = max(threshold * factor, 0.0001)
-                print(
-                    f"[Detect] attempt {attempt}: {new_count} found, "
-                    f"lowering to {threshold:.4f}"
-                )
             else:
                 factor = new_count / max(max_new, 1)
                 threshold = max(threshold * factor, 0.0001)
-                print(
-                    f"[Detect] attempt {attempt}: {new_count} found, "
-                    f"raising to {threshold:.4f}"
-                )
 
             # Remove all temporary NEU_ tracks using the operator
             active_obj = clip.tracking.objects.active
@@ -438,7 +396,6 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
         final_tracks = len(clip.tracking.tracks)
         final_new = final_tracks - tracks_before
-        print(f"[Detect] final new markers {final_new}")
 
         if toggled:
             bpy.ops.clip.toggle_proxy()
@@ -614,9 +571,7 @@ def set_playhead(frame, retries=2):
         if scene.frame_current == frame:
             break
     else:
-        print(
-            f"\u26A0\ufe0f Playhead reposition failed: {scene.frame_current} vs {frame}"
-        )
+        pass
 
     # Ensure UI reflects the new playhead position
     wm = bpy.context.window_manager
