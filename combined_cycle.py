@@ -80,9 +80,10 @@ def remove_close_new_tracks(context, clip, base_distance, threshold):
     """Delete ``NEU_`` tracks that are too close to ``GOOD_`` tracks.
 
     Only markers whose names start with ``GOOD_`` are considered for the
-    distance comparison.  The threshold is derived from ``base_distance`` and
-    ``threshold`` using ``(base_distance * threshold) / 2`` converted to
-    normalized clip space.  For each frame the function prints the threshold
+    distance comparison.  The removal distance is derived from ``base_distance``
+    and ``threshold`` using the same scaling as feature detection. It is half
+    the scaled distance converted to normalized clip space. For each frame the
+    function prints the threshold
     distance and the distance of every ``NEU_`` marker to every active
     ``GOOD_`` marker so the cleanup can be inspected in Blender's console.
     """
@@ -94,9 +95,12 @@ def remove_close_new_tracks(context, clip, base_distance, threshold):
     good_tracks = [t for t in tracks if t.name.startswith("GOOD_")]
 
     if not neu_tracks or not good_tracks:
+        print("[Cleanup] skipping - no GOOD_ or NEU_ tracks")
         return 0
 
-    norm_dist = ((base_distance * threshold) / 2.0) / clip.size[0]
+    scale = math.log10(threshold * 100000) / 5
+    scaled_dist = max(1, int(base_distance * scale))
+    norm_dist = (scaled_dist / 2.0) / clip.size[0]
     print(f"[Cleanup] threshold distance {norm_dist:.5f}")
 
     to_remove = []
