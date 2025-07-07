@@ -9,7 +9,9 @@ import bpy
 from mathutils import Vector
 
 
-def _resize_pattern(marker: bpy.types.MovieTrackingMarker, delta: Vector):
+def _resize_pattern(
+    marker: bpy.types.MovieTrackingMarker, delta: Vector, clip: bpy.types.MovieClip
+) -> None:
     """Resize the marker's pattern box based on translation delta."""
     corners = getattr(marker, "pattern_corners", None)
     if not corners or len(corners) < 8:
@@ -20,19 +22,29 @@ def _resize_pattern(marker: bpy.types.MovieTrackingMarker, delta: Vector):
     cx = sum(xs) / 4
     cy = sum(ys) / 4
 
-    width = max(30.0, abs(delta.x))
-    height = max(30.0, abs(delta.y))
+    width_px = max(30.0, abs(delta.x) * clip.size[0])
+    height_px = max(30.0, abs(delta.y) * clip.size[1])
+
+    width = width_px / clip.size[0]
+    height = height_px / clip.size[1]
 
     half_w = width / 2
     half_h = height / 2
 
     new_corners = [
-        cx - half_w, cy - half_h,
-        cx + half_w, cy - half_h,
-        cx + half_w, cy + half_h,
-        cx - half_w, cy + half_h,
+        cx - half_w,
+        cy - half_h,
+        cx + half_w,
+        cy - half_h,
+        cx + half_w,
+        cy + half_h,
+        cx - half_w,
+        cy + half_h,
     ]
     marker.pattern_corners = new_corners
+    print(
+        f"[Track Until Done] {marker.name} pattern resized to {width_px:.2f}x{height_px:.2f} px"
+    )
 
 
 def _marker_diagonal(marker: bpy.types.MovieTrackingMarker) -> tuple[float, float]:
@@ -126,7 +138,11 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
                                                 next_marker = next_marker_or_index
                                             dist = (Vector(next_marker.co) - prev).length
                                             distances.append(f"{t.name}: {dist:.4f}")
-                                            _resize_pattern(next_marker, Vector(next_marker.co) - prev)
+                                            _resize_pattern(
+                                                next_marker,
+                                                Vector(next_marker.co) - prev,
+                                                clip,
+                                            )
                                             prev_positions[t.name] = Vector(next_marker.co)
                                             old_d1, old_d2 = prev_diagonals.get(t.name, (0.0, 0.0))
                                             new_d1, new_d2 = _marker_diagonal(next_marker)
