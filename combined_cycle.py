@@ -79,11 +79,11 @@ def adjust_marker_count_plus(scene, delta):
 def remove_close_new_tracks(context, clip, base_distance, threshold):
     """Delete NEU_ tracks that are too close to existing markers.
 
-    Tracks starting with ``GOOD_`` or ``TRACK_`` are considered existing.
-    ``base_distance`` and ``threshold`` come from :func:`ensure_margin_distance`.
-    The removal distance is ``(base_distance * threshold) / 2`` converted to
-    normalized clip space. Distances between NEU_ and existing tracks are
-    printed for inspection.
+    Tracks starting with ``GOOD_`` or ``TRACK_`` are treated as existing. The
+    distance threshold is derived from ``base_distance`` and ``threshold`` using
+    ``(base_distance * threshold) / 2`` converted to normalized clip space. The
+    function prints distances between NEU_ and existing tracks so the cleanup
+    can be inspected in Blender's console.
     """
 
     current_frame = context.scene.frame_current
@@ -93,7 +93,12 @@ def remove_close_new_tracks(context, clip, base_distance, threshold):
     existing_tracks = [
         t for t in tracks if t.name.startswith("GOOD_") or t.name.startswith("TRACK_")
     ]
-    if not neu_tracks or not existing_tracks:
+
+    if not neu_tracks:
+        print("[Cleanup] No NEU_ tracks found")
+        return 0
+    if not existing_tracks:
+        print("[Cleanup] No GOOD_/TRACK_ tracks found")
         return 0
 
     norm_dist = ((base_distance * threshold) / 2.0) / clip.size[0]
@@ -136,6 +141,7 @@ def remove_close_new_tracks(context, clip, base_distance, threshold):
         with context.temp_override(area=area, region=region, space_data=space):
             bpy.ops.clip.delete_track()
 
+    print(f"[Cleanup] Removed {len(to_remove)} NEU_ tracks")
     return len(to_remove)
 
 
@@ -314,8 +320,10 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             for track in new_tracks:
                 track.name = f"NEU_{track.name}"
 
-            # Remove NEU_ markers too close to GOOD_ markers before counting
-            remove_close_new_tracks(context, clip, base_distance, threshold)
+            # Remove NEU_ markers too close to existing ones before counting
+            removed = remove_close_new_tracks(context, clip, base_distance, threshold)
+            if removed:
+                print(f"[Detect] removed {removed} close markers")
 
             new_count = sum(
                 1 for t in clip.tracking.tracks if t.name.startswith("NEU_")
