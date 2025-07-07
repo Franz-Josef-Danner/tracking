@@ -3,12 +3,17 @@ import mathutils
 
 
 def remove_close_new_tracks(context, clip, new_tracks, min_distance=0.02):
-    """Delete newly detected tracks too close to existing GOOD_ tracks."""
+    """Delete newly detected tracks too close to existing GOOD_ tracks.
+
+    Prints basic information about how many tracks are checked and
+    removed so that the cleanup can be monitored from the console.
+    """
 
     current_frame = context.scene.frame_current
     good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]
 
     if not good_tracks or not new_tracks:
+        print("[Cleanup] No GOOD_ or new tracks found, skipping cleanup")
         return 0
 
     to_remove = []
@@ -29,6 +34,7 @@ def remove_close_new_tracks(context, clip, new_tracks, min_distance=0.02):
                 break
 
     if not to_remove:
+        print("[Cleanup] No new tracks to remove")
         return 0
 
     for t in clip.tracking.tracks:
@@ -42,7 +48,11 @@ def remove_close_new_tracks(context, clip, new_tracks, min_distance=0.02):
         space = area.spaces.active
         with context.temp_override(area=area, region=region, space_data=space):
             bpy.ops.clip.delete_track()
-
+        print(
+            f"[Cleanup] Removed {len(to_remove)} new tracks: "
+            f"{', '.join(t.name for t in to_remove)}"
+        )
+    
     return len(to_remove)
 
 # Operator-Klasse
