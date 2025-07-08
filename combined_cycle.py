@@ -709,6 +709,8 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
     _visited_frames = None
     _current_target = None
     _target_attempts = 0
+    _frame_attempt_limit = FIRST_PASS_FRAME_ATTEMPTS
+    _detect_attempt_limit = FIRST_PASS_DETECT_ATTEMPTS
     _pattern_size = 0
     _original_pattern_size = 0
     _original_search_size = 0
@@ -754,14 +756,8 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 marker_counts,
                 self._threshold,
             )
-            max_frame_attempts = (
-                FIRST_PASS_FRAME_ATTEMPTS if getattr(self, "_pass_count", 0) < 1 else MAX_FRAME_ATTEMPTS
-            )
-            detect_attempts = (
-                FIRST_PASS_DETECT_ATTEMPTS
-                if getattr(self, "_pass_count", 0) < 1
-                else MAX_DETECT_ATTEMPTS
-            )
+            max_frame_attempts = self._frame_attempt_limit
+            detect_attempts = self._detect_attempt_limit
             if target_frame is not None:
                 if target_frame == self._current_target:
                     self._target_attempts += 1
@@ -774,12 +770,24 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                     self._target_attempts = 1
 
                 if self._target_attempts > max_frame_attempts:
+                    if self._frame_attempt_limit >= MAX_FRAME_ATTEMPTS:
+                        print("[Cycle] Maximum repeat attempts reached, aborting")
+                        context.scene.tracking_cycle_status = "Failed"
+                        self.cancel(context)
+                        return {'CANCELLED'}
+
                     print("[Cycle] Repeat attempt limit reached, restarting")
                     if (
                         context.scene.frame_current >= context.scene.frame_end
                         and getattr(self, "_pass_count", 0) < 1
                     ):
                         self._pass_count = getattr(self, "_pass_count", 0) + 1
+                    self._frame_attempt_limit = min(
+                        self._frame_attempt_limit + 1, MAX_FRAME_ATTEMPTS
+                    )
+                    self._detect_attempt_limit = min(
+                        self._detect_attempt_limit + 1, MAX_DETECT_ATTEMPTS
+                    )
                     self._restart_from_start(context)
                     target_frame = context.scene.frame_start
 
@@ -887,6 +895,8 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         self._original_search_size = settings.default_search_size
         self._pattern_size = settings.default_pattern_size
         self._pass_count = 0
+        self._frame_attempt_limit = FIRST_PASS_FRAME_ATTEMPTS
+        self._detect_attempt_limit = FIRST_PASS_DETECT_ATTEMPTS
 
         self._threshold = context.scene.min_marker_count
         self._last_frame = context.scene.frame_current
