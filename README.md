@@ -56,6 +56,11 @@ range for new markers. Landing on a new frame decreases the value by 10 again,
 but never below its original starting value. The "Marker Count Plus" value
 is clamped to ``Min Marker Count × 200``.
 
+If the playhead lands on the same frame as in the previous tracking step, the
+default pattern size for newly detected features grows by 10 pixels. The search
+size always updates to twice the current pattern size, allowing difficult frames
+to be tracked with progressively larger areas.
+
 ## Standalone Cleanup Script
 
 `distance_remove.py` is a small helper that can be run directly from
