@@ -770,6 +770,10 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
 
             set_playhead(target_frame)
             context.scene.current_cycle_frame = context.scene.frame_current
+            print(
+                f"[Cycle] Progress {context.scene.current_cycle_frame}/"
+                f"{context.scene.total_cycle_frames}"
+            )
 
             if target_frame is None:
                 if getattr(self, "_pass_count", 0) < 1:
@@ -789,6 +793,10 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                     self._target_attempts = 0
                     self._last_frame = context.scene.frame_start
                     context.scene.current_cycle_frame = context.scene.frame_start
+                    print(
+                        f"[Cycle] Progress {context.scene.current_cycle_frame}/"
+                        f"{context.scene.total_cycle_frames}"
+                    )
                     update_min_marker_props(context.scene, context)
                     return {'PASS_THROUGH'}
                 print("[Cycle] Tracking cycle complete")
@@ -815,6 +823,10 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             self._last_frame = context.scene.frame_current
             context.scene.tracking_cycle_status = "Running"
             context.scene.current_cycle_frame = context.scene.frame_current
+            print(
+                f"[Cycle] Progress {context.scene.current_cycle_frame}/"
+                f"{context.scene.total_cycle_frames}"
+            )
 
         elif event.type == 'ESC':
             print("[Cycle] Tracking cycle cancelled")
@@ -831,6 +843,10 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             context.scene.frame_end - context.scene.frame_start + 1
         )
         context.scene.current_cycle_frame = context.scene.frame_current
+        print(
+            f"[Cycle] Progress {context.scene.current_cycle_frame}/"
+            f"{context.scene.total_cycle_frames}"
+        )
         self._clip = context.space_data.clip
         if not self._clip:
             self.report({'WARNING'}, "Kein Clip gefunden")

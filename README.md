@@ -18,7 +18,8 @@ the Movie Clip Editor. It provides only the minimum marker count input, a
 progress label showing the current frame out of the total, and a button to start
 the cycle. Heavy operations like feature detection and auto tracking run
 synchronously and may temporarily block Blender's UI, so the status text helps
-indicate progress. A boolean option **Cleanup Verbose** controls whether the
+indicate progress. The currently processed frame is also printed to the console
+for quick feedback. A boolean option **Cleanup Verbose** controls whether the
 distance from each `NEU_` marker to `GOOD_` markers is printed during cleanup.
 
 The following operators are registered for internal use and can also be called
