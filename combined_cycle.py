@@ -729,6 +729,10 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             if target_frame is not None:
                 if target_frame == self._current_target:
                     self._target_attempts += 1
+                    print(
+                        f"[Cycle] Repeat attempt {self._target_attempts}/"
+                        f"{MAX_FRAME_ATTEMPTS} on frame {target_frame}"
+                    )
                 else:
                     self._current_target = target_frame
                     self._target_attempts = 1
