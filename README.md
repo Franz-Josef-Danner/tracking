@@ -12,6 +12,8 @@ now bundled in `combined_cycle.py`.
 2. Load `combined_cycle.py` in the text editor and press **Run Script**, or
    install the folder as an add-on via *Edit → Preferences → Add-ons →
    Install...*.
+3. *(Optional)* Run `pip install -r requirements.txt` to install `flake8`
+   and execute `make lint` to check the code style.
 
 When installed as an add-on, a single panel named **Tracking Cycle** appears in
 the Movie Clip Editor. It provides only the minimum marker count input, a
