@@ -708,6 +708,29 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
     _original_pattern_size = 0
     _original_search_size = 0
 
+    def _restart_from_start(self, context):
+        """Reset state and jump back to the scene start."""
+
+        set_playhead(context.scene.frame_start)
+
+        settings = self._clip.tracking.settings
+        self._pattern_size = self._original_pattern_size
+        settings.default_pattern_size = self._original_pattern_size
+        settings.default_search_size = self._original_search_size
+        reset_motion_model(settings)
+
+        self._threshold = context.scene.min_marker_count
+        self._visited_frames.clear()
+        self._current_target = None
+        self._target_attempts = 0
+        self._last_frame = context.scene.frame_start
+        context.scene.current_cycle_frame = context.scene.frame_start
+        print(
+            f"[Cycle] Progress {context.scene.current_cycle_frame}/"
+            f"{context.scene.total_cycle_frames}"
+        )
+        update_min_marker_props(context.scene, context)
+
     @classmethod
     def poll(cls, context):
         return context.space_data and context.space_data.type == 'CLIP_EDITOR'
@@ -738,16 +761,9 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                     self._target_attempts = 1
 
                 if self._target_attempts > MAX_FRAME_ATTEMPTS:
-                    settings = self._clip.tracking.settings
-                    target_frame = min(target_frame + 1, context.scene.frame_end)
-                    self._current_target = target_frame
-                    self._target_attempts = 1
-                    self._last_frame = None
-                    self._pattern_size = max(
-                        1,
-                        min(PATTERN_SIZE_MAX, int(self._pattern_size / 1.1)),
-                    )
-                    reset_motion_model(settings)
+                    print("[Cycle] Repeat attempt limit reached, restarting")
+                    self._restart_from_start(context)
+                    target_frame = context.scene.frame_start
 
                 if target_frame in self._visited_frames:
                     adjust_marker_count_plus(context.scene, 10)
@@ -783,25 +799,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 if getattr(self, "_pass_count", 0) < 1:
                     print("[Cycle] First pass complete, restarting")
                     self._pass_count = getattr(self, "_pass_count", 0) + 1
-                    set_playhead(context.scene.frame_start)
-
-                    settings = self._clip.tracking.settings
-                    self._pattern_size = self._original_pattern_size
-                    settings.default_pattern_size = self._original_pattern_size
-                    settings.default_search_size = self._original_search_size
-                    reset_motion_model(settings)
-
-                    self._threshold = context.scene.min_marker_count
-                    self._visited_frames.clear()
-                    self._current_target = None
-                    self._target_attempts = 0
-                    self._last_frame = context.scene.frame_start
-                    context.scene.current_cycle_frame = context.scene.frame_start
-                    print(
-                        f"[Cycle] Progress {context.scene.current_cycle_frame}/"
-                        f"{context.scene.total_cycle_frames}"
-                    )
-                    update_min_marker_props(context.scene, context)
+                    self._restart_from_start(context)
                     return {'PASS_THROUGH'}
                 print("[Cycle] Tracking cycle complete")
                 context.scene.tracking_cycle_status = "Finished"

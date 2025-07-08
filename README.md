@@ -68,8 +68,8 @@ updates to twice the current pattern size. Pattern sizes are capped at 150,
 allowing difficult frames to be tracked with progressively larger or smaller
 areas without exceeding this limit.
 
-If the search finds the same frame twenty times in a row, the playhead now skips ahead one frame and continues tracking instead of stopping. Each repeated attempt prints
-``[Cycle] Repeat attempt n/20 on frame x`` to the console so it's easy to see how close the loop is to moving on.
+If the search finds the same frame twenty times in a row, the playhead jumps back to the scene start. All detection values reset to their defaults and the cycle continues from the beginning. Each repeated attempt prints
+``[Cycle] Repeat attempt n/20 on frame x`` to the console so it's easy to see how close the loop is to restarting.
 
 ## Standalone Cleanup Script
 
