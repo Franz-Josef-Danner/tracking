@@ -22,9 +22,9 @@ start the cycle. Heavy operations like feature detection and auto tracking run
 synchronously and may temporarily block Blender's UI, so the status text helps
 indicate progress. The add-on now forces a redraw after each status update so
 the progress label refreshes even during long operations. This is implemented
-via a small `force_redraw()` helper. A boolean option
-**Cleanup Verbose** controls whether the distance from each `NEU_` marker to
-`GOOD_` markers is printed during cleanup.
+via a small `force_redraw()` helper. A boolean option **Cleanup Verbose**
+controls whether the distance from each `NEU_` marker to `GOOD_` markers is
+printed during cleanup.
 
 The following operators are registered for internal use and can also be called
 via Blender's operator search:

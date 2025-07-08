@@ -664,6 +664,7 @@ def set_playhead(frame, retries=2):
         for area in window.screen.areas:
             if area.type == 'CLIP_EDITOR':
                 area.tag_redraw()
+    force_redraw()
 
 # ---- Cycle Operator ----
 class CLIP_OT_tracking_cycle(bpy.types.Operator):
