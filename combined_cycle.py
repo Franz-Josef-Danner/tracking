@@ -829,6 +829,14 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 f"[Cycle] Progress {context.scene.current_cycle_frame}/"
                 f"{context.scene.total_cycle_frames}"
             )
+            if (
+                self._last_frame >= context.scene.frame_end
+                and getattr(self, "_pass_count", 0) < 1
+            ):
+                print("[Cycle] First pass reached end frame, restarting")
+                self._pass_count = getattr(self, "_pass_count", 0) + 1
+                self._restart_from_start(context)
+                return {'PASS_THROUGH'}
 
         elif event.type == 'ESC':
             print("[Cycle] Tracking cycle cancelled")
