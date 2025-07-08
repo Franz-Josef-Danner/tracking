@@ -657,7 +657,6 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
     _visited_frames = None
     _current_target = None
     _target_attempts = 0
-    _second_pass = False
     _pattern_size = 0
     _original_pattern_size = 0
     _original_search_size = 0
@@ -686,28 +685,15 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
 
                 if self._target_attempts > MAX_FRAME_ATTEMPTS:
                     settings = self._clip.tracking.settings
-                    if not self._second_pass:
-                        target_frame = context.scene.frame_start
-                        self._visited_frames.clear()
-                        self._current_target = target_frame
-                        self._target_attempts = 1
-                        self._threshold = DEFAULT_MINIMUM_MARKER_COUNT
-                        context.scene.min_marker_count = DEFAULT_MINIMUM_MARKER_COUNT
-                        update_min_marker_props(context.scene, context)
-                        self._pattern_size = self._original_pattern_size
-                        settings.default_pattern_size = self._original_pattern_size
-                        settings.default_search_size = self._original_search_size
-                        reset_motion_model(settings)
-                        self._last_frame = None
-                        self._second_pass = True
-                    else:
-                        self.report(
-                            {'WARNING'},
-                            f"Tracking aborted at frame {target_frame} after {MAX_FRAME_ATTEMPTS} attempts",
-                        )
-                        context.scene.tracking_cycle_status = "Aborted"
-                        self.cancel(context)
-                        return {'CANCELLED'}
+                    target_frame = min(target_frame + 1, context.scene.frame_end)
+                    self._current_target = target_frame
+                    self._target_attempts = 1
+                    self._last_frame = None
+                    self._pattern_size = max(
+                        1,
+                        min(PATTERN_SIZE_MAX, int(self._pattern_size / 1.1)),
+                    )
+                    reset_motion_model(settings)
 
                 if target_frame in self._visited_frames:
                     adjust_marker_count_plus(context.scene, 10)
@@ -787,7 +773,6 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         self._visited_frames = set()
         self._current_target = None
         self._target_attempts = 0
-        self._second_pass = False
         update_min_marker_props(context.scene, context)
 
         wm = context.window_manager
