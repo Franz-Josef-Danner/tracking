@@ -24,6 +24,7 @@ import os
 import math
 import mathutils
 import time
+from bpy.ops import wm
 
 
 def get_marker_count_plus(scene):
@@ -303,7 +304,7 @@ class CLIP_OT_toggle_cycle_pause(bpy.types.Operator):
         scene.tracking_cycle_status = (
             "Paused" if scene.tracking_cycle_paused else "Running"
         )
-        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+        wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
         return {'FINISHED'}
 
 # ---- Feature Detection Operator (from detect.py) ----
@@ -693,13 +694,13 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         if event.type == 'TIMER':
             if context.scene.tracking_cycle_paused:
                 context.scene.tracking_cycle_status = "Paused"
-                bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
                 return {'PASS_THROUGH'}
             if self._last_frame is not None and self._last_frame != context.scene.frame_end:
                 self._threshold = max(int(self._threshold * 0.9), 1)
 
             context.scene.tracking_cycle_status = "Searching next frame"
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
             marker_counts = get_tracking_marker_counts(self._clip)
             target_frame = find_frame_with_few_tracking_markers(
                 marker_counts,
@@ -749,12 +750,12 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
 
             set_playhead(target_frame)
             context.scene.current_cycle_frame = context.scene.frame_current
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
 
             if target_frame is None:
                 self.report({'INFO'}, "Tracking cycle complete")
                 context.scene.tracking_cycle_status = "Finished"
-                bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
                 self.cancel(context)
                 return {'FINISHED'}
 
@@ -762,28 +763,28 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 track.select = False
 
             context.scene.tracking_cycle_status = "Detecting features"
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
             if context.scene.proxy_built:
                 bpy.ops.clip.toggle_proxy()
             bpy.ops.clip.detect_features_custom()
             if context.scene.proxy_built:
                 bpy.ops.clip.toggle_proxy()
             context.scene.tracking_cycle_status = "Tracking markers"
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
             bpy.ops.clip.auto_track_forward()
             context.scene.tracking_cycle_status = "Cleaning tracks"
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
             bpy.ops.tracking.delete_short_tracks_with_prefix()
             self._last_frame = context.scene.frame_current
             context.scene.tracking_cycle_status = "Running"
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
             context.scene.current_cycle_frame = context.scene.frame_current
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
 
         elif event.type == 'ESC':
             self.report({'INFO'}, "Tracking cycle cancelled")
             context.scene.tracking_cycle_status = "Cancelled"
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
             self.cancel(context)
             return {'CANCELLED'}
 
@@ -792,12 +793,12 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
     def execute(self, context):
         context.scene.tracking_cycle_paused = False
         context.scene.tracking_cycle_status = "Running"
-        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+        wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
         context.scene.total_cycle_frames = (
             context.scene.frame_end - context.scene.frame_start + 1
         )
         context.scene.current_cycle_frame = context.scene.frame_current
-        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+        wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
         self._clip = context.space_data.clip
         if not self._clip:
             self.report({'WARNING'}, "Kein Clip gefunden")

@@ -15,12 +15,13 @@ now bundled in `combined_cycle.py`.
 
 When installed as an add-on, a single panel named **Tracking Cycle** appears in
 the Movie Clip Editor. It provides only the minimum marker count input, a
-progress label showing the current frame out of the total, and a button to start
-the cycle. Heavy operations like feature detection and auto tracking run
+progress label showing the current frame out of the total, and a button to
+start the cycle. Heavy operations like feature detection and auto tracking run
 synchronously and may temporarily block Blender's UI, so the status text helps
 indicate progress. The add-on now forces a redraw after each status update so
-the progress label refreshes even during long operations. A boolean option **Cleanup Verbose** controls whether the
-distance from each `NEU_` marker to `GOOD_` markers is printed during cleanup.
+the progress label refreshes even during long operations. A boolean option
+**Cleanup Verbose** controls whether the distance from each `NEU_` marker to
+`GOOD_` markers is printed during cleanup.
 
 The following operators are registered for internal use and can also be called
 via Blender's operator search:
