@@ -4,6 +4,8 @@ This repository contains simple Blender scripts to automate movie clip
 tracking. The main script `combined_cycle.py` combines feature detection,
 auto tracking and playhead search in a repeating cycle. It can be run from
 the Blender text editor or installed as an add-on.
+All other scripts in this repository are prototypes of the individual steps
+now bundled in `combined_cycle.py`.
 
 ## Installation
 1. Open Blender and switch to the *Scripting* workspace.
@@ -63,6 +65,28 @@ distance to existing `GOOD_` markers in the current frame. Running the script
 again automatically unregisters the previous instance so it can be tested
 multiple times without restarting Blender.
 
+## Function Test Scripts
+
+In addition to `combined_cycle.py` the repository includes several standalone
+scripts that were used to verify each step of the workflow. They remain
+executable from Blender's text editor, although their functionality is now
+incorporated into the main cycle:
+
+- `Track Length.py` – removes tracks named `TRACK_` that are shorter than 25 frames.
+- `detect.py` – panel for repeatedly detecting features until a minimum count is reached.
+- `playhead.py` – finds the first frame with too few markers and sets the playhead.
+- `catch clean.py` – reloads the clip to clear its RAM cache.
+- `Proxy switch.py` – header button to toggle proxy usage.
+- `proxy rechner.py` – estimates memory usage and suggests a proxy size.
+- `proxy wait.py` – creates a 50 % proxy and waits for its files to appear.
+- `distance_remove.py` – operator that deletes `NEU_` markers too close to `GOOD_` markers.
+- `track.py` – operator to track selected markers forward.
+- `track_marker_size_adapt.py` – tracks one frame at a time until markers stop moving.
+- `margin a Distanz.py` – calculates detection margin and distance from clip width.
+- `min marker rechner.py` – helper for computing the marker count range used by detection.
+
+These scripts can be executed from Blender's text editor for experimentation,
+but the full workflow resides in `combined_cycle.py`.
 This project is released under the MIT License. See the `LICENSE` file for
 details.
 
