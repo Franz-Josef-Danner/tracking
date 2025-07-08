@@ -57,14 +57,15 @@ but never below its original starting value. The "Marker Count Plus" value
 is clamped to ``Min Marker Count × 200``.
 
 If the playhead lands on the same frame as in the previous tracking step, the
-default pattern size for newly detected features grows by **10 %**. Reaching a
-new frame decreases it by the same percentage. The search size always updates to
-twice the current pattern size. Pattern sizes are capped at 150, allowing
-difficult frames to be tracked with progressively larger or smaller areas
-without exceeding this limit.
+default pattern size for newly detected features grows by **10 %**. The motion
+model cycles to the next type (Loc → LocRot → LocScale → LocRotScale → Affine →
+Perspective). Reaching a new frame decreases the pattern size by the same
+percentage and resets the motion model back to **Loc**. The search size always
+updates to twice the current pattern size. Pattern sizes are capped at 150,
+allowing difficult frames to be tracked with progressively larger or smaller
+areas without exceeding this limit.
 
-If the search finds the same frame twenty times in a row, the cycle stops
-automatically to avoid endless attempts.
+If the search finds the same frame twenty times in a row, the playhead now skips ahead one frame and continues tracking instead of stopping.
 
 ## Standalone Cleanup Script
 
@@ -86,7 +87,8 @@ incorporated into the main cycle:
 - `detect.py` – panel for repeatedly detecting features until a minimum count is reached.
 - `playhead.py` – finds the first frame with too few markers and sets the playhead.
 - `catch clean.py` – reloads the clip to clear its RAM cache.
-- `Proxy switch.py` – header button to toggle proxy usage.
+- `Proxy switch.py` – header button to toggle proxy usage. The operator waits
+  half a second after switching so the UI can refresh.
 - `proxy rechner.py` – estimates memory usage and suggests a proxy size.
 - `proxy wait.py` – creates a 50 % proxy and waits for its files to appear.
 - `distance_remove.py` – operator that deletes `NEU_` markers too close to `GOOD_` markers.
