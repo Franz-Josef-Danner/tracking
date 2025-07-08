@@ -88,7 +88,7 @@ incorporated into the main cycle:
 - `playhead.py` – finds the first frame with too few markers and sets the playhead.
 - `catch clean.py` – reloads the clip to clear its RAM cache.
 - `Proxy switch.py` – header button to toggle proxy usage. The operator waits
-  half a second after switching so the UI can refresh.
+  two seconds after switching so the UI can refresh.
 - `proxy rechner.py` – estimates memory usage and suggests a proxy size.
 - `proxy wait.py` – creates a 50 % proxy and waits for its files to appear.
 - `distance_remove.py` – operator that deletes `NEU_` markers too close to `GOOD_` markers.
