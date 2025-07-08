@@ -1,4 +1,7 @@
-import bpy, os, time, threading
+import bpy
+import os
+import time
+import threading
 
 def create_proxy_and_wait():
     print("🟡 Starte Proxy-Erstellung (50%, custom Pfad)")
