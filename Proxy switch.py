@@ -1,5 +1,4 @@
 import bpy
-import time
 
 class ToggleProxyOperator(bpy.types.Operator):
     """Proxy/Timecode Umschalten"""
@@ -11,7 +10,6 @@ class ToggleProxyOperator(bpy.types.Operator):
         if clip:
             clip.use_proxy = not clip.use_proxy
             self.report({'INFO'}, f"Proxy/Timecode {'aktiviert' if clip.use_proxy else 'deaktiviert'}")
-            time.sleep(2)
         else:
             self.report({'WARNING'}, "Kein Clip geladen")
         return {'FINISHED'}

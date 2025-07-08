@@ -23,7 +23,6 @@ from collections import Counter
 import os
 import math
 import mathutils
-import time
 
 
 def get_marker_count_plus(scene):
@@ -189,7 +188,6 @@ class ToggleProxyOperator(bpy.types.Operator):
             clip.use_proxy = not clip.use_proxy
             self.report({'INFO'}, f"Proxy/Timecode {'aktiviert' if clip.use_proxy else 'deaktiviert'}")
             print(f"[Proxy] {'aktiviert' if clip.use_proxy else 'deaktiviert'}")
-            time.sleep(2)
         else:
             self.report({'WARNING'}, "Kein Clip geladen")
         return {'FINISHED'}
