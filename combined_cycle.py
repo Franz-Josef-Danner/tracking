@@ -77,22 +77,21 @@ def adjust_marker_count_plus(scene, delta):
 
 
 def remove_close_new_tracks(context, clip, base_distance, threshold):
-    """Delete ``NEU_`` tracks that are too close to existing markers.
+    """Delete ``NEU_`` tracks too close to existing ``GOOD_`` markers.
 
-    Tracks starting with either ``GOOD_`` or ``TRACK_`` are treated as existing
-    markers.  The removal distance is derived from ``base_distance`` and
-    ``threshold`` using the same scaling formula as feature detection. It is
-    half the scaled distance converted to normalized clip space.  For each
-    frame the function prints the threshold distance and the distance of every
-    ``NEU_`` marker to every active existing marker so the cleanup can be
-    inspected in Blender's console.  Missing markers are also reported.
+    Only tracks with the prefix ``GOOD_`` are considered existing markers.
+    The removal distance is derived from ``base_distance`` and ``threshold``
+    using the same scaling formula as feature detection. It is half the scaled
+    distance converted to normalized clip space. Per-marker distances are
+    printed only when ``scene.cleanup_verbose`` is enabled; summary logs are
+    always shown. Missing markers are also reported.
     """
 
     current_frame = context.scene.frame_current
     tracks = clip.tracking.tracks
 
     neu_tracks = [t for t in tracks if t.name.startswith("NEU_")]
-    existing = [t for t in tracks if t.name.startswith("GOOD_") or t.name.startswith("TRACK_")]
+    existing = [t for t in tracks if t.name.startswith("GOOD_")]
 
     # Filter existing tracks to those with a marker at the current frame
     good_tracks = []
@@ -104,7 +103,7 @@ def remove_close_new_tracks(context, clip, base_distance, threshold):
         else:
             missing += 1
     if missing:
-        print(f"[Cleanup] {missing} existing tracks lack marker at frame {current_frame}")
+        print(f"[Cleanup] {missing} GOOD_ tracks lack marker at frame {current_frame}")
 
     if not neu_tracks or not good_tracks:
         print("[Cleanup] skipping - no GOOD_ or NEU_ tracks")
@@ -119,15 +118,15 @@ def remove_close_new_tracks(context, clip, base_distance, threshold):
     for neu in neu_tracks:
         neu_marker = neu.markers.find_frame(current_frame)
         if not neu_marker:
-            print(f"[Cleanup] {neu.name} has no marker at frame {current_frame}")
+            if context.scene.cleanup_verbose:
+                print(f"[Cleanup] {neu.name} has no marker at frame {current_frame}")
             continue
         neu_pos = mathutils.Vector(neu_marker.co)
         for good, good_marker in good_tracks:
             good_pos = mathutils.Vector(good_marker.co)
             dist = (neu_pos - good_pos).length
-            print(
-                f"[Cleanup] {neu.name} vs {good.name}: distance {dist:.5f}"
-            )
+            if context.scene.cleanup_verbose:
+                print(f"[Cleanup] {neu.name} vs {good.name}: distance {dist:.5f}")
             if dist < norm_dist:
                 print(
                     f"[Cleanup] {neu.name} too close to {good.name} "
@@ -145,11 +144,17 @@ def remove_close_new_tracks(context, clip, base_distance, threshold):
         t.select = True
 
     area = next((a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None)
-    if area:
+    if not area:
+        print("[Cleanup] Warning: no Clip Editor area found for deletion")
+    else:
         region = next((r for r in area.regions if r.type == 'WINDOW'), None)
-        space = area.spaces.active
-        with context.temp_override(area=area, region=region, space_data=space):
-            bpy.ops.clip.delete_track()
+        space = getattr(area, 'spaces', None)
+        space = space.active if space else None
+        if not region or not space:
+            print("[Cleanup] Warning: missing region or space for deletion")
+        else:
+            with context.temp_override(area=area, region=region, space_data=space):
+                bpy.ops.clip.delete_track()
 
     print(f"[Cleanup] Removed {len(to_remove)} NEU_ tracks")
     return len(to_remove)
@@ -790,6 +795,12 @@ def register():
         description="True when a recommended proxy has been built",
     )
 
+    bpy.types.Scene.cleanup_verbose = bpy.props.BoolProperty(
+        name="Cleanup Verbose",
+        default=False,
+        description="Print per-marker distances during cleanup",
+    )
+
     for scene in bpy.data.scenes:
         scene.proxy_built = False
         update_min_marker_props(scene, bpy.context)
@@ -836,6 +847,7 @@ def unregister():
     del bpy.types.Scene.min_marker_count_plus_max
     del bpy.types.Scene.min_track_length
     del bpy.types.Scene.proxy_built
+    del bpy.types.Scene.cleanup_verbose
     del bpy.types.Scene.tracking_cycle_status
     del bpy.types.Scene.current_cycle_frame
     del bpy.types.Scene.total_cycle_frames
