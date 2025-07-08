@@ -13,7 +13,7 @@ bl_info = {
     "name": "Tracking Cycle",
     "description": "Find frames, detect and track iteratively",
     "author": "OpenAI Codex",
-    "version": (1, 2, 0),
+    "version": (1, 3, 0),
     "blender": (2, 80, 0),
     "category": "Clip",
 }
@@ -289,6 +289,21 @@ class CLIP_OT_auto_start(bpy.types.Operator):
 
         self.report({'INFO'}, "Proxy 50% Erstellung gestartet")
         return {'RUNNING_MODAL'}
+
+
+class CLIP_OT_toggle_cycle_pause(bpy.types.Operator):
+    """Pause or resume the running tracking cycle."""
+
+    bl_idname = "clip.toggle_cycle_pause"
+    bl_label = "Toggle Cycle Pause"
+
+    def execute(self, context):
+        scene = context.scene
+        scene.tracking_cycle_paused = not scene.tracking_cycle_paused
+        scene.tracking_cycle_status = (
+            "Paused" if scene.tracking_cycle_paused else "Running"
+        )
+        return {'FINISHED'}
 
 # ---- Feature Detection Operator (from detect.py) ----
 class DetectFeaturesCustomOperator(bpy.types.Operator):
@@ -667,6 +682,9 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
 
     def modal(self, context, event):
         if event.type == 'TIMER':
+            if context.scene.tracking_cycle_paused:
+                context.scene.tracking_cycle_status = "Paused"
+                return {'PASS_THROUGH'}
             if self._last_frame is not None and self._last_frame != context.scene.frame_end:
                 self._threshold = max(int(self._threshold * 0.9), 1)
 
@@ -753,6 +771,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         return {'PASS_THROUGH'}
 
     def execute(self, context):
+        context.scene.tracking_cycle_paused = False
         context.scene.tracking_cycle_status = "Running"
         context.scene.total_cycle_frames = (
             context.scene.frame_end - context.scene.frame_start + 1
@@ -809,6 +828,13 @@ class CLIP_PT_tracking_cycle_panel(bpy.types.Panel):
             text=f"Frame {context.scene.current_cycle_frame}/"
             f"{context.scene.total_cycle_frames}"
         )
+        pause_text = "Resume" if context.scene.tracking_cycle_paused else "Pause"
+        pause_icon = 'PLAY' if context.scene.tracking_cycle_paused else 'PAUSE'
+        layout.operator(
+            CLIP_OT_toggle_cycle_pause.bl_idname,
+            text=pause_text,
+            icon=pause_icon,
+        )
         layout.operator(
             CLIP_OT_auto_start.bl_idname,
             icon='REC',
@@ -821,6 +847,7 @@ classes = [
     TRACK_OT_auto_track_forward,
     TRACKING_OT_delete_short_tracks_with_prefix,
     CLIP_OT_tracking_cycle,
+    CLIP_OT_toggle_cycle_pause,
     CLIP_OT_auto_start,
     CLIP_PT_tracking_cycle_panel,
 ]
@@ -873,8 +900,15 @@ def register():
         description="Print per-marker distances during cleanup",
     )
 
+    bpy.types.Scene.tracking_cycle_paused = bpy.props.BoolProperty(
+        name="Cycle Paused",
+        default=False,
+        description="True when the tracking cycle is paused",
+    )
+
     for scene in bpy.data.scenes:
         scene.proxy_built = False
+        scene.tracking_cycle_paused = False
         update_min_marker_props(scene, bpy.context)
 
     bpy.types.Scene.tracking_cycle_status = bpy.props.StringProperty(
@@ -920,6 +954,7 @@ def unregister():
     del bpy.types.Scene.min_track_length
     del bpy.types.Scene.proxy_built
     del bpy.types.Scene.cleanup_verbose
+    del bpy.types.Scene.tracking_cycle_paused
     del bpy.types.Scene.tracking_cycle_status
     del bpy.types.Scene.current_cycle_frame
     del bpy.types.Scene.total_cycle_frames
