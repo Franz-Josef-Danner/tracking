@@ -65,9 +65,7 @@ updates to twice the current pattern size. Pattern sizes are capped at 150,
 allowing difficult frames to be tracked with progressively larger or smaller
 areas without exceeding this limit.
 
-If the search finds the same frame twenty times in a row, the cycle jumps ahead
-by one frame instead of stopping, ensuring tracking continues without manual
-intervention.
+If the search finds the same frame twenty times in a row, the playhead resets to the scene start and a second tracking pass begins. Threshold, marker counts and pattern size all return to their initial values.
 
 ## Standalone Cleanup Script
 
