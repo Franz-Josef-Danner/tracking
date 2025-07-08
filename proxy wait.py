@@ -49,6 +49,7 @@ def create_proxy_and_wait():
         print(f"🔍 Suche nach Datei: {direct_path} oder {alt_path}")
 
         for i in range(300):
+            # Short pause to avoid busy waiting while the proxy is built
             time.sleep(0.5)
             if os.path.exists(direct_path):
                 print(f"✅ Proxy-Datei gefunden: {direct_path}")

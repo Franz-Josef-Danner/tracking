@@ -188,7 +188,7 @@ class ToggleProxyOperator(bpy.types.Operator):
         if clip:
             clip.use_proxy = not clip.use_proxy
             self.report({'INFO'}, f"Proxy/Timecode {'aktiviert' if clip.use_proxy else 'deaktiviert'}")
-            time.sleep(0.5)
+            time.sleep(2)
         else:
             self.report({'WARNING'}, "Kein Clip geladen")
         return {'FINISHED'}
@@ -325,6 +325,8 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             bpy.ops.clip.toggle_proxy()
             toggled = True
 
+        settings = clip.tracking.settings
+
         threshold = 0.1
         min_new = context.scene.min_marker_count_plus_min
         max_new = context.scene.min_marker_count_plus_max
@@ -359,6 +361,12 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             new_count = sum(
                 1 for t in clip.tracking.tracks if t.name.startswith("NEU_")
             )
+            if new_count == 0:
+                settings.default_pattern_size = max(
+                    1,
+                    int(settings.default_pattern_size / 1.1),
+                )
+                settings.default_search_size = settings.default_pattern_size * 2
 
             if min_new <= new_count <= max_new:
                 for t in clip.tracking.tracks:
