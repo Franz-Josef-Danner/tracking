@@ -682,13 +682,9 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                     self._target_attempts = 1
 
                 if self._target_attempts > MAX_FRAME_ATTEMPTS:
-                    self.report(
-                        {'WARNING'},
-                        f"Tracking aborted at frame {target_frame} after {MAX_FRAME_ATTEMPTS} attempts",
-                    )
-                    context.scene.tracking_cycle_status = "Aborted"
-                    self.cancel(context)
-                    return {'CANCELLED'}
+                    target_frame = min(target_frame + 1, context.scene.frame_end)
+                    self._current_target = target_frame
+                    self._target_attempts = 1
 
                 if target_frame in self._visited_frames:
                     adjust_marker_count_plus(context.scene, 10)

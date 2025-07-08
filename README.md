@@ -65,8 +65,9 @@ updates to twice the current pattern size. Pattern sizes are capped at 150,
 allowing difficult frames to be tracked with progressively larger or smaller
 areas without exceeding this limit.
 
-If the search finds the same frame twenty times in a row, the cycle stops
-automatically to avoid endless attempts.
+If the search finds the same frame twenty times in a row, the cycle jumps ahead
+by one frame instead of stopping, ensuring tracking continues without manual
+intervention.
 
 ## Standalone Cleanup Script
 
