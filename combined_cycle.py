@@ -553,6 +553,35 @@ MAX_FRAME_ATTEMPTS = 20
 # Highest allowed pattern size when adjusting for repeated frames
 PATTERN_SIZE_MAX = 150
 
+# Motion model cycling order used when the playhead stays on the same
+# frame. Names follow the Blender API spelling from ``MovieTrackingSettings``.
+MOTION_MODEL_SEQUENCE = [
+    "Loc",
+    "LocRot",
+    "LocScale",
+    "LocRotScale",
+    "Affine",
+    "Perspective",
+]
+DEFAULT_MOTION_MODEL = "Loc"
+
+def cycle_motion_model(settings):
+    """Advance ``settings.default_motion_model`` to the next value."""
+
+    current = settings.default_motion_model
+    try:
+        index = MOTION_MODEL_SEQUENCE.index(current)
+    except ValueError:
+        # Unknown value; do not change it to avoid breaking user setup
+        return
+    next_index = (index + 1) % len(MOTION_MODEL_SEQUENCE)
+    settings.default_motion_model = MOTION_MODEL_SEQUENCE[next_index]
+
+def reset_motion_model(settings):
+    """Reset ``settings.default_motion_model`` to ``DEFAULT_MOTION_MODEL``."""
+
+    settings.default_motion_model = DEFAULT_MOTION_MODEL
+
 def get_tracking_marker_counts(clip=None):
     """Return a mapping of frame numbers to the number of markers.
 
@@ -674,11 +703,13 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                         1,
                         min(PATTERN_SIZE_MAX, int(self._pattern_size * 1.1)),
                     )
+                    cycle_motion_model(settings)
                 else:
                     self._pattern_size = max(
                         1,
                         min(PATTERN_SIZE_MAX, int(self._pattern_size / 1.1)),
                     )
+                    reset_motion_model(settings)
                 settings.default_pattern_size = self._pattern_size
                 settings.default_search_size = self._pattern_size * 2
 
