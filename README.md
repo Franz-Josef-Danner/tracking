@@ -57,7 +57,7 @@ but never below its original starting value. The "Marker Count Plus" value
 is clamped to ``Min Marker Count × 200``.
 
 If the playhead lands on the same frame as in the previous tracking step, the
-default pattern size for newly detected features grows by 10 pixels. The search
+default pattern size for newly detected features grows by **10 %**. The search
 size always updates to twice the current pattern size, allowing difficult frames
 to be tracked with progressively larger areas.
 

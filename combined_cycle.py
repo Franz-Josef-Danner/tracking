@@ -607,7 +607,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
     """Run the tracking cycle step by step using a timer.
 
     When the playhead is positioned on the same frame as in the previous
-    tracking iteration the default pattern size is increased by 10 units and
+    tracking iteration the default pattern size is increased by ten percent and
     the search size is updated to twice that value.
     """
 
@@ -664,7 +664,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                     self._visited_frames.add(target_frame)
 
             if target_frame is not None and target_frame == self._last_frame:
-                self._pattern_size += 10
+                self._pattern_size = max(1, int(self._pattern_size * 1.1))
                 settings = self._clip.tracking.settings
                 settings.default_pattern_size = self._pattern_size
                 settings.default_search_size = self._pattern_size * 2
