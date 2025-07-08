@@ -62,6 +62,9 @@ new frame decreases it by the same percentage. The search size always updates to
 twice the current pattern size, allowing difficult frames to be tracked with
 progressively larger or smaller areas without fixed bounds.
 
+If the search finds the same frame twenty times in a row, the cycle stops
+automatically to avoid endless attempts.
+
 ## Standalone Cleanup Script
 
 `distance_remove.py` is a small helper that can be run directly from
