@@ -549,7 +549,9 @@ DEFAULT_MINIMUM_MARKER_COUNT = 5
 # Seconds between timer events during the tracking cycle
 CYCLE_TIMER_INTERVAL = 1.0
 # Maximum number of attempts on the same frame before aborting
-MAX_FRAME_ATTEMPTS = 10
+MAX_FRAME_ATTEMPTS = 20
+# Highest allowed pattern size when adjusting for repeated frames
+PATTERN_SIZE_MAX = 150
 
 def get_tracking_marker_counts(clip=None):
     """Return a mapping of frame numbers to the number of markers.
@@ -604,7 +606,14 @@ def set_playhead(frame, retries=2):
 
 # ---- Cycle Operator ----
 class CLIP_OT_tracking_cycle(bpy.types.Operator):
-    """Run the tracking cycle step by step using a timer."""
+    """Run the tracking cycle step by step using a timer.
+
+    When the playhead is positioned on the same frame as in the previous
+    tracking iteration the default pattern size is increased by ten percent. If
+    a new frame is reached it is decreased by ten percent again. The search size
+    is always set to twice the current pattern size. The pattern size never
+    exceeds 150.
+    """
 
     bl_idname = "clip.tracking_cycle"
     bl_label = "Start Tracking Cycle"
@@ -617,6 +626,9 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
     _visited_frames = None
     _current_target = None
     _target_attempts = 0
+    _pattern_size = 0
+    _original_pattern_size = 0
+    _original_search_size = 0
 
     @classmethod
     def poll(cls, context):
@@ -654,6 +666,21 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 else:
                     adjust_marker_count_plus(context.scene, -10)
                     self._visited_frames.add(target_frame)
+
+            if target_frame is not None:
+                settings = self._clip.tracking.settings
+                if target_frame == self._last_frame:
+                    self._pattern_size = max(
+                        1,
+                        min(PATTERN_SIZE_MAX, int(self._pattern_size * 1.1)),
+                    )
+                else:
+                    self._pattern_size = max(
+                        1,
+                        min(PATTERN_SIZE_MAX, int(self._pattern_size / 1.1)),
+                    )
+                settings.default_pattern_size = self._pattern_size
+                settings.default_search_size = self._pattern_size * 2
 
             set_playhead(target_frame)
             context.scene.current_cycle_frame = context.scene.frame_current
@@ -700,6 +727,11 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip gefunden")
             return {'CANCELLED'}
 
+        settings = self._clip.tracking.settings
+        self._original_pattern_size = settings.default_pattern_size
+        self._original_search_size = settings.default_search_size
+        self._pattern_size = settings.default_pattern_size
+
         self._threshold = context.scene.min_marker_count
         self._last_frame = context.scene.frame_current
         self._visited_frames = set()
@@ -717,6 +749,10 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         if self._timer is not None:
             wm.event_timer_remove(self._timer)
             self._timer = None
+        if self._clip:
+            settings = self._clip.tracking.settings
+            settings.default_pattern_size = self._original_pattern_size
+            settings.default_search_size = self._original_search_size
         update_min_marker_props(context.scene, context)
 
 
