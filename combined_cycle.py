@@ -315,6 +315,8 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
     bl_idname = "clip.detect_features_custom"
     bl_label = "Detect Features (Custom)"
 
+
+    max_attempts: bpy.props.IntProperty(name="Max Attempts", default=20, min=1)
     def execute(self, context):
         """Detect features and lower the threshold if none are found."""
 
@@ -339,7 +341,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
         base = context.scene.min_marker_count
         attempt = 0
-        max_attempts = 20
+        max_attempts = self.max_attempts
         success = False
         tracks_after = tracks_before
         while attempt < max_attempts:
@@ -599,6 +601,9 @@ DEFAULT_MINIMUM_MARKER_COUNT = 5
 CYCLE_TIMER_INTERVAL = 1.0
 # Maximum number of attempts on the same frame before aborting
 MAX_FRAME_ATTEMPTS = 20
+FIRST_PASS_FRAME_ATTEMPTS = 10
+FIRST_PASS_DETECT_ATTEMPTS = 10
+MAX_DETECT_ATTEMPTS = 20
 # Highest allowed pattern size when adjusting for repeated frames
 PATTERN_SIZE_MAX = 150
 
@@ -704,6 +709,8 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
     _visited_frames = None
     _current_target = None
     _target_attempts = 0
+    _frame_attempt_limit = FIRST_PASS_FRAME_ATTEMPTS
+    _detect_attempt_limit = FIRST_PASS_DETECT_ATTEMPTS
     _pattern_size = 0
     _original_pattern_size = 0
     _original_search_size = 0
@@ -749,19 +756,38 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 marker_counts,
                 self._threshold,
             )
+            max_frame_attempts = self._frame_attempt_limit
+            detect_attempts = self._detect_attempt_limit
             if target_frame is not None:
                 if target_frame == self._current_target:
                     self._target_attempts += 1
                     print(
                         f"[Cycle] Repeat attempt {self._target_attempts}/"
-                        f"{MAX_FRAME_ATTEMPTS} on frame {target_frame}"
+                        f"{max_frame_attempts} on frame {target_frame}"
                     )
                 else:
                     self._current_target = target_frame
                     self._target_attempts = 1
 
-                if self._target_attempts > MAX_FRAME_ATTEMPTS:
+                if self._target_attempts > max_frame_attempts:
+                    if self._frame_attempt_limit >= MAX_FRAME_ATTEMPTS:
+                        print("[Cycle] Maximum repeat attempts reached, aborting")
+                        context.scene.tracking_cycle_status = "Failed"
+                        self.cancel(context)
+                        return {'CANCELLED'}
+
                     print("[Cycle] Repeat attempt limit reached, restarting")
+                    if (
+                        context.scene.frame_current >= context.scene.frame_end
+                        and getattr(self, "_pass_count", 0) < 1
+                    ):
+                        self._pass_count = getattr(self, "_pass_count", 0) + 1
+                    self._frame_attempt_limit = min(
+                        self._frame_attempt_limit + 1, MAX_FRAME_ATTEMPTS
+                    )
+                    self._detect_attempt_limit = min(
+                        self._detect_attempt_limit + 1, MAX_DETECT_ATTEMPTS
+                    )
                     self._restart_from_start(context)
                     target_frame = context.scene.frame_start
 
@@ -813,7 +839,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             print("[Cycle] Detecting features")
             if context.scene.proxy_built:
                 bpy.ops.clip.toggle_proxy()
-            bpy.ops.clip.detect_features_custom()
+            bpy.ops.clip.detect_features_custom(max_attempts=detect_attempts)
             if context.scene.proxy_built:
                 bpy.ops.clip.toggle_proxy()
             context.scene.tracking_cycle_status = "Tracking markers"
@@ -829,6 +855,14 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 f"[Cycle] Progress {context.scene.current_cycle_frame}/"
                 f"{context.scene.total_cycle_frames}"
             )
+            if (
+                self._last_frame >= context.scene.frame_end
+                and getattr(self, "_pass_count", 0) < 1
+            ):
+                print("[Cycle] First pass reached end frame, restarting")
+                self._pass_count = getattr(self, "_pass_count", 0) + 1
+                self._restart_from_start(context)
+                return {'PASS_THROUGH'}
 
         elif event.type == 'ESC':
             print("[Cycle] Tracking cycle cancelled")
@@ -861,6 +895,8 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         self._original_search_size = settings.default_search_size
         self._pattern_size = settings.default_pattern_size
         self._pass_count = 0
+        self._frame_attempt_limit = FIRST_PASS_FRAME_ATTEMPTS
+        self._detect_attempt_limit = FIRST_PASS_DETECT_ATTEMPTS
 
         self._threshold = context.scene.min_marker_count
         self._last_frame = context.scene.frame_current
