@@ -603,6 +603,7 @@ CYCLE_TIMER_INTERVAL = 1.0
 MAX_FRAME_ATTEMPTS = 20
 FIRST_PASS_FRAME_ATTEMPTS = 10
 FIRST_PASS_DETECT_ATTEMPTS = 10
+MAX_DETECT_ATTEMPTS = 20
 # Highest allowed pattern size when adjusting for repeated frames
 PATTERN_SIZE_MAX = 150
 
@@ -757,7 +758,9 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 FIRST_PASS_FRAME_ATTEMPTS if getattr(self, "_pass_count", 0) < 1 else MAX_FRAME_ATTEMPTS
             )
             detect_attempts = (
-                FIRST_PASS_DETECT_ATTEMPTS if getattr(self, "_pass_count", 0) < 1 else 20
+                FIRST_PASS_DETECT_ATTEMPTS
+                if getattr(self, "_pass_count", 0) < 1
+                else MAX_DETECT_ATTEMPTS
             )
             if target_frame is not None:
                 if target_frame == self._current_target:
@@ -772,6 +775,11 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
 
                 if self._target_attempts > max_frame_attempts:
                     print("[Cycle] Repeat attempt limit reached, restarting")
+                    if (
+                        context.scene.frame_current >= context.scene.frame_end
+                        and getattr(self, "_pass_count", 0) < 1
+                    ):
+                        self._pass_count = getattr(self, "_pass_count", 0) + 1
                     self._restart_from_start(context)
                     target_frame = context.scene.frame_start
 
