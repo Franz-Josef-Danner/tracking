@@ -92,18 +92,19 @@ def remove_close_new_tracks(context, clip, base_distance, threshold):
     tracks = clip.tracking.tracks
 
     neu_tracks = [t for t in tracks if t.name.startswith("NEU_")]
-    existing = [
-        t for t in tracks if t.name.startswith("GOOD_") or t.name.startswith("TRACK_")
-    ]
+    existing = [t for t in tracks if t.name.startswith("GOOD_") or t.name.startswith("TRACK_")]
 
     # Filter existing tracks to those with a marker at the current frame
     good_tracks = []
+    missing = 0
     for track in existing:
         marker = track.markers.find_frame(current_frame)
         if marker:
             good_tracks.append((track, marker))
         else:
-            print(f"[Cleanup] {track.name} has no marker at frame {current_frame}")
+            missing += 1
+    if missing:
+        print(f"[Cleanup] {missing} existing tracks lack marker at frame {current_frame}")
 
     if not neu_tracks or not good_tracks:
         print("[Cleanup] skipping - no GOOD_ or NEU_ tracks")
