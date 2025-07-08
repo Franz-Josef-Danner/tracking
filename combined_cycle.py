@@ -510,9 +510,25 @@ class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
         tracks = active_obj.tracks
 
         min_len = context.scene.min_track_length
-        tracks_to_delete = [
-            t for t in tracks if t.name.startswith("TRACK_") and len(t.markers) < min_len
-        ]
+        frame_end = context.scene.frame_end
+        frame_current = context.scene.frame_current
+        frames_remaining = frame_end - frame_current + 1
+
+        if frames_remaining < min_len:
+            # When fewer than ``min_len`` frames remain, only remove tracks
+            # that fail to reach the final frame so valid end markers stay.
+            tracks_to_delete = [
+                t
+                for t in tracks
+                if t.name.startswith("TRACK_")
+                and t.markers.find_frame(frame_end) is None
+            ]
+        else:
+            tracks_to_delete = [
+                t
+                for t in tracks
+                if t.name.startswith("TRACK_") and len(t.markers) < min_len
+            ]
 
         deleted_count = 0
         if tracks_to_delete:
