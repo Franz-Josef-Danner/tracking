@@ -104,35 +104,35 @@ def remove_close_new_tracks(context, clip, base_distance, threshold):
         else:
             missing += 1
     if missing:
-        print(f"[Cleanup] {missing} GOOD_ tracks lack marker at frame {current_frame}")
+        pass  # print(f"[Cleanup] {missing} GOOD_ tracks lack marker at frame {current_frame}")
 
     if not neu_tracks or not good_tracks:
-        print("[Cleanup] skipping - no GOOD_ or NEU_ tracks")
+        # print("[Cleanup] skipping - no GOOD_ or NEU_ tracks")
         return 0
 
     scale = math.log10(threshold * 100000) / 5
     scaled_dist = max(1, int(base_distance * scale))
     norm_dist = (scaled_dist / 2.0) / clip.size[0]
-    print(f"[Cleanup] threshold distance {norm_dist:.5f}")
+    # print(f"[Cleanup] threshold distance {norm_dist:.5f}")
 
     to_remove = []
     for neu in neu_tracks:
         neu_marker = neu.markers.find_frame(current_frame)
         if not neu_marker:
             if context.scene.cleanup_verbose:
-                print(f"[Cleanup] {neu.name} has no marker at frame {current_frame}")
+                pass  # print(f"[Cleanup] {neu.name} has no marker at frame {current_frame}")
             continue
         neu_pos = mathutils.Vector(neu_marker.co)
         for good, good_marker in good_tracks:
             good_pos = mathutils.Vector(good_marker.co)
             dist = (neu_pos - good_pos).length
             if context.scene.cleanup_verbose:
-                print(f"[Cleanup] {neu.name} vs {good.name}: distance {dist:.5f}")
+                pass  # print(f"[Cleanup] {neu.name} vs {good.name}: distance {dist:.5f}")
             if dist < norm_dist:
-                print(
-                    f"[Cleanup] {neu.name} too close to {good.name} "
-                    f"({dist:.5f} < {norm_dist:.5f}) -> remove"
-                )
+                # print(
+                #     f"[Cleanup] {neu.name} too close to {good.name} "
+                #     f"({dist:.5f} < {norm_dist:.5f}) -> remove"
+                # )
                 to_remove.append(neu)
                 break
 
@@ -146,18 +146,18 @@ def remove_close_new_tracks(context, clip, base_distance, threshold):
 
     area = next((a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None)
     if not area:
-        print("[Cleanup] Warning: no Clip Editor area found for deletion")
+        pass  # print("[Cleanup] Warning: no Clip Editor area found for deletion")
     else:
         region = next((r for r in area.regions if r.type == 'WINDOW'), None)
         space = getattr(area, 'spaces', None)
         space = space.active if space else None
         if not region or not space:
-            print("[Cleanup] Warning: missing region or space for deletion")
+            pass  # print("[Cleanup] Warning: missing region or space for deletion")
         else:
             with context.temp_override(area=area, region=region, space_data=space):
                 bpy.ops.clip.delete_track()
 
-    print(f"[Cleanup] Removed {len(to_remove)} NEU_ tracks")
+    # print(f"[Cleanup] Removed {len(to_remove)} NEU_ tracks")
     return len(to_remove)
 
 
@@ -187,10 +187,10 @@ class ToggleProxyOperator(bpy.types.Operator):
         clip = context.space_data.clip
         if clip:
             clip.use_proxy = not clip.use_proxy
-            self.report({'INFO'}, f"Proxy/Timecode {'aktiviert' if clip.use_proxy else 'deaktiviert'}")
+            # self.report({'INFO'}, f"Proxy/Timecode {'aktiviert' if clip.use_proxy else 'deaktiviert'}")
             time.sleep(2)
         else:
-            self.report({'WARNING'}, "Kein Clip geladen")
+            pass  # self.report({'WARNING'}, "Kein Clip geladen")
         return {'FINISHED'}
 
 
@@ -212,19 +212,19 @@ class CLIP_OT_auto_start(bpy.types.Operator):
             if any(os.path.exists(p) for p in self._proxy_paths):
                 context.window_manager.event_timer_remove(self._timer)
                 context.scene.proxy_built = True
-                self.report({'INFO'}, "✅ Proxy-Erstellung abgeschlossen")
+                # self.report({'INFO'}, "✅ Proxy-Erstellung abgeschlossen")
                 bpy.ops.clip.tracking_cycle('INVOKE_DEFAULT')
                 return {'FINISHED'}
             if self._checks > 300:
                 context.window_manager.event_timer_remove(self._timer)
-                self.report({'WARNING'}, "⚠️ Proxy-Erstellung Zeitüberschreitung")
+                # self.report({'WARNING'}, "⚠️ Proxy-Erstellung Zeitüberschreitung")
                 return {'CANCELLED'}
         return {'PASS_THROUGH'}
 
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip gefunden")
+            # self.report({'WARNING'}, "Kein Clip gefunden")
             return {'CANCELLED'}
 
         context.scene.proxy_built = False
@@ -287,7 +287,7 @@ class CLIP_OT_auto_start(bpy.types.Operator):
         self._timer = wm.event_timer_add(0.5, window=context.window)
         wm.modal_handler_add(self)
 
-        self.report({'INFO'}, "Proxy 50% Erstellung gestartet")
+        # self.report({'INFO'}, "Proxy 50% Erstellung gestartet")
         return {'RUNNING_MODAL'}
 
 
@@ -317,7 +317,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip gefunden")
+            # self.report({'WARNING'}, "Kein Clip gefunden")
             return {'CANCELLED'}
 
         toggled = False
@@ -356,7 +356,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
             # Remove NEU_ markers too close to existing ones before counting
             removed = remove_close_new_tracks(context, clip, base_distance, threshold)
-            print(f"[Detect] distance cleanup removed {removed} markers")
+            # print(f"[Detect] distance cleanup removed {removed} markers")
 
             new_count = sum(
                 1 for t in clip.tracking.tracks if t.name.startswith("NEU_")
@@ -409,7 +409,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                     break
 
             if not deleted:
-                self.report({'ERROR'}, 'No Clip Editor area found to delete temporary tracks')
+                # self.report({'ERROR'}, 'No Clip Editor area found to delete temporary tracks')
                 return {'CANCELLED'}
 
         if not success:
@@ -438,7 +438,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                     break
 
             if not deleted:
-                self.report({'ERROR'}, 'No Clip Editor area found to delete temporary tracks')
+                # self.report({'ERROR'}, 'No Clip Editor area found to delete temporary tracks')
                 return {'CANCELLED'}
 
         final_tracks = len(clip.tracking.tracks)
@@ -464,11 +464,11 @@ class TRACK_OT_auto_track_forward(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip gefunden")
+            # self.report({'WARNING'}, "Kein Clip gefunden")
             return {'CANCELLED'}
 
         if not clip.tracking.tracks:
-            self.report({'WARNING'}, "Keine Marker vorhanden")
+            # self.report({'WARNING'}, "Keine Marker vorhanden")
             return {'CANCELLED'}
 
         active_obj = clip.tracking.objects.active
@@ -503,7 +503,7 @@ class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "No clip loaded")
+            # self.report({'WARNING'}, "No clip loaded")
             return {'CANCELLED'}
 
         active_obj = clip.tracking.objects.active
@@ -556,7 +556,7 @@ class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
                     break
 
             if not area_found:
-                self.report({'ERROR'}, "No Clip Editor area found")
+                # self.report({'ERROR'}, "No Clip Editor area found")
                 return {'CANCELLED'}
 
             deleted_count = len(tracks_to_delete)
@@ -568,10 +568,10 @@ class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
                 track.name = f"GOOD_{track.name[6:]}"
                 renamed_count += 1
 
-        self.report(
-            {'INFO'},
-            f"Deleted {deleted_count} short tracks; renamed {renamed_count} to 'GOOD_'",
-        )
+        # self.report(
+        #     {'INFO'},
+        #     f"Deleted {deleted_count} short tracks; renamed {renamed_count} to 'GOOD_'",
+        # )
         return {'FINISHED'}
 
 
@@ -764,7 +764,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             context.scene.current_cycle_frame = context.scene.frame_current
 
             if target_frame is None:
-                self.report({'INFO'}, "Tracking cycle complete")
+                # self.report({'INFO'}, "Tracking cycle complete")
                 context.scene.tracking_cycle_status = "Finished"
                 self.cancel(context)
                 return {'FINISHED'}
@@ -787,7 +787,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             context.scene.current_cycle_frame = context.scene.frame_current
 
         elif event.type == 'ESC':
-            self.report({'INFO'}, "Tracking cycle cancelled")
+            # self.report({'INFO'}, "Tracking cycle cancelled")
             context.scene.tracking_cycle_status = "Cancelled"
             self.cancel(context)
             return {'CANCELLED'}
@@ -803,7 +803,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         context.scene.current_cycle_frame = context.scene.frame_current
         self._clip = context.space_data.clip
         if not self._clip:
-            self.report({'WARNING'}, "Kein Clip gefunden")
+            # self.report({'WARNING'}, "Kein Clip gefunden")
             return {'CANCELLED'}
 
         settings = self._clip.tracking.settings
