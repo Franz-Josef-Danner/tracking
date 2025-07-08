@@ -18,7 +18,8 @@ the Movie Clip Editor. It provides only the minimum marker count input, a
 progress label showing the current frame out of the total, and a button to start
 the cycle. Heavy operations like feature detection and auto tracking run
 synchronously and may temporarily block Blender's UI, so the status text helps
-indicate progress. A boolean option **Cleanup Verbose** controls whether the
+indicate progress. The currently processed frame is also printed to the console
+for quick feedback. A boolean option **Cleanup Verbose** controls whether the
 distance from each `NEU_` marker to `GOOD_` markers is printed during cleanup.
 
 The following operators are registered for internal use and can also be called
@@ -49,7 +50,9 @@ After tracking forward and removing tracks that are too short, the remaining
 `TRACK_` markers are renamed to `GOOD_` so they are skipped in subsequent
 iterations.
 During the tracking cycle the RAM cache is cleared automatically before jumping
-to the next frame.
+to the next frame. Once the end frame is reached the playhead returns to the
+scene start and the cycle runs a second time. All detection values are reset to
+their defaults before this second pass begins.
 Each visited frame is remembered. If the playhead revisits one of these frames
 the value of **Marker Count Plus** increases by 10, widening the expected
 range for new markers. Landing on a new frame decreases the value by 10 again,
@@ -65,7 +68,8 @@ updates to twice the current pattern size. Pattern sizes are capped at 150,
 allowing difficult frames to be tracked with progressively larger or smaller
 areas without exceeding this limit.
 
-If the search finds the same frame twenty times in a row, the playhead now skips ahead one frame and continues tracking instead of stopping.
+If the search finds the same frame twenty times in a row, the playhead jumps back to the scene start. All detection values reset to their defaults and the cycle continues from the beginning. Each repeated attempt prints
+``[Cycle] Repeat attempt n/20 on frame x`` to the console so it's easy to see how close the loop is to restarting.
 
 ## Standalone Cleanup Script
 
