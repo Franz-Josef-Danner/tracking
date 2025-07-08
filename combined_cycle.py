@@ -550,6 +550,8 @@ DEFAULT_MINIMUM_MARKER_COUNT = 5
 CYCLE_TIMER_INTERVAL = 1.0
 # Maximum number of attempts on the same frame before aborting
 MAX_FRAME_ATTEMPTS = 20
+# Highest allowed pattern size when adjusting for repeated frames
+PATTERN_SIZE_MAX = 150
 
 def get_tracking_marker_counts(clip=None):
     """Return a mapping of frame numbers to the number of markers.
@@ -609,7 +611,8 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
     When the playhead is positioned on the same frame as in the previous
     tracking iteration the default pattern size is increased by ten percent. If
     a new frame is reached it is decreased by ten percent again. The search size
-    is always set to twice the current pattern size.
+    is always set to twice the current pattern size. The pattern size never
+    exceeds 150.
     """
 
     bl_idname = "clip.tracking_cycle"
@@ -667,9 +670,15 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             if target_frame is not None:
                 settings = self._clip.tracking.settings
                 if target_frame == self._last_frame:
-                    self._pattern_size = max(1, int(self._pattern_size * 1.1))
+                    self._pattern_size = max(
+                        1,
+                        min(PATTERN_SIZE_MAX, int(self._pattern_size * 1.1)),
+                    )
                 else:
-                    self._pattern_size = max(1, int(self._pattern_size / 1.1))
+                    self._pattern_size = max(
+                        1,
+                        min(PATTERN_SIZE_MAX, int(self._pattern_size / 1.1)),
+                    )
                 settings.default_pattern_size = self._pattern_size
                 settings.default_search_size = self._pattern_size * 2
 
