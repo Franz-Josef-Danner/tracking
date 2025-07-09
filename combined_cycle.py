@@ -632,7 +632,7 @@ class CLIP_OT_cleanup_excess_markers(bpy.types.Operator):
             if callable(delete_fn):
                 delete_fn(marker.frame)
             else:
-                track.markers.remove(marker)
+                track.markers.delete(marker.frame)
 
         set_playhead(frame)
         print(f"[Cleanup] Removed {len(to_remove)} markers at frame {frame}")
