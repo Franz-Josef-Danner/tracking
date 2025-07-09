@@ -139,9 +139,9 @@ def remove_close_new_tracks(context, clip, base_distance, threshold):
         return 0
 
     for t in tracks:
-        t.select_set(False)
+        t.select = False
     for t in to_remove:
-        t.select_set(True)
+        t.select = True
 
     area = next((a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None)
     if not area:
@@ -463,7 +463,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             # Remove all temporary NEU_ tracks using the operator
             active_obj = clip.tracking.objects.active
             for t in clip.tracking.tracks:
-                t.select_set(t.name.startswith("NEU_"))
+                t.select = t.name.startswith("NEU_")
 
             deleted = False
             for area in context.screen.areas:
@@ -492,7 +492,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         if not success:
             active_obj = clip.tracking.objects.active
             for t in clip.tracking.tracks:
-                t.select_set(t.name.startswith("NEU_"))
+                t.select = t.name.startswith("NEU_")
 
             deleted = False
             for area in context.screen.areas:
@@ -553,7 +553,7 @@ class TRACK_OT_auto_track_forward(bpy.types.Operator):
 
         active_obj = clip.tracking.objects.active
         for track in active_obj.tracks:
-            track.select_set(track.name.startswith("TRACK_"))
+            track.select = track.name.startswith("TRACK_")
 
         toggled = False
         if context.scene.proxy_built and not clip.use_proxy:
@@ -576,6 +576,10 @@ class CLIP_OT_refine_selected_markers(bpy.types.Operator):
     bl_idname = "clip.refine_selected_markers"
     bl_label = "Refine Selected Markers"
 
+    @classmethod
+    def poll(cls, context):
+        return context.space_data and context.space_data.type == 'CLIP_EDITOR'
+
     def execute(self, context):
         space = context.space_data
         clip = space.clip
@@ -587,7 +591,7 @@ class CLIP_OT_refine_selected_markers(bpy.types.Operator):
 
         for track in clip.tracking.tracks:
             marker = track.markers.find_frame(frame_current)
-            track.select_set(marker is not None and not marker.mute)
+            track.select = marker is not None and not marker.mute
 
         bpy.ops.clip.refine_markers(backwards=True)
         bpy.ops.clip.refine_markers(backwards=False)
@@ -639,7 +643,7 @@ class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
         deleted_count = 0
         if tracks_to_delete:
             for track in tracks:
-                track.select_set(track in tracks_to_delete)
+                track.select = track in tracks_to_delete
 
             area_found = False
             for area in context.screen.areas:
@@ -1043,7 +1047,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 return {'FINISHED'}
 
             for track in self._clip.tracking.tracks:
-                track.select_set(False)
+                track.select = False
 
             context.scene.tracking_cycle_status = "Detecting features"
             print("[Cycle] Detecting features")
