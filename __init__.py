@@ -8,13 +8,16 @@ bl_info = {
 }
 
 from . import combined_cycle
+from . import sparse_marker_check
 
 
 def register():
     combined_cycle.register()
+    sparse_marker_check.register()
 
 
 def unregister():
+    sparse_marker_check.unregister()
     combined_cycle.unregister()
 
 

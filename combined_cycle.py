@@ -734,6 +734,23 @@ def find_frame_with_few_tracking_markers(marker_counts, minimum_count):
             return frame
     return None
 
+
+def find_sparse_marker_frames(clip, threshold):
+    """Return list of frames with fewer markers than ``threshold``."""
+
+    frames_with_few_markers = []
+    start = int(clip.frame_start)
+    end = int(clip.frame_duration + clip.frame_start)
+    for frame in range(start, end):
+        count = 0
+        for track in clip.tracking.tracks:
+            marker = track.markers.find_frame(frame)
+            if marker and not marker.mute:
+                count += 1
+        if count < threshold:
+            frames_with_few_markers.append((frame, count))
+    return frames_with_few_markers
+
 def set_playhead(frame, retries=2):
     """Position the playhead reliably at ``frame`` and refresh the UI."""
 
@@ -903,6 +920,15 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                     self._pass_count = getattr(self, "_pass_count", 0) + 1
                     self._restart_from_start(context)
                     return {'PASS_THROUGH'}
+
+                sparse = find_sparse_marker_frames(
+                    self._clip, context.scene.min_marker_count
+                )
+                if sparse:
+                    print("[Cycle] Sparse frames remaining - restarting")
+                    self._restart_from_start(context)
+                    return {'PASS_THROUGH'}
+
                 print("[Cycle] Tracking cycle complete")
                 context.scene.tracking_cycle_status = "Finished"
                 self.cancel(context)
