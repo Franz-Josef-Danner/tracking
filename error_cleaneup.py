@@ -5,11 +5,25 @@ MARKER_LIMIT = 10  # <- Hier den gewünschten Wert für "x" eintragen
 
 def find_frame_with_few_markers(limit):
     # Versuche Solve durchzuführen, um Marker-Fehler zu generieren
+    clip = bpy.context.space_data.clip
+    if not clip:
+        print("❗ Kein MovieClip im aktuellen Kontext verfügbar.")
+        return
+
+    obj = clip.tracking.objects.active
+    if obj is None or not obj.is_camera:
+        print("❗ Kein aktives Kamera-Tracking-Objekt vorhanden.")
+        return
+
     try:
         bpy.ops.clip.solve_camera()
         print("✔ Camera solve completed to access marker error data.")
     except Exception as e:
         print(f"❗ Solve failed: {e}")
+        return
+
+    if not clip.tracking.reconstruction.is_valid:
+        print("❗ Camera solve wurde ausgeführt, aber keine gültige Lösung erzeugt.")
         return
     clip = bpy.context.space_data.clip
     if not clip:
