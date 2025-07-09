@@ -677,6 +677,8 @@ FIRST_PASS_DETECT_ATTEMPTS = 10
 MAX_DETECT_ATTEMPTS = 20
 # Highest allowed pattern size when adjusting for repeated frames
 PATTERN_SIZE_MAX = 150
+# Number of times the solver may fail before aborting the cycle
+MAX_SOLVE_ATTEMPTS = 10
 
 # Motion model cycling order used when the playhead stays on the same
 # frame. Names follow the Blender API spelling from ``MovieTrackingSettings``.
@@ -724,6 +726,25 @@ def get_tracking_marker_counts(clip=None):
             frame = marker.frame
             marker_counts[frame] += 1
     return marker_counts
+
+def solver_covers_full_scene(clip):
+    """Return ``True`` if the reconstruction includes all frames."""
+
+    recon = clip.tracking.reconstruction
+    if not recon.is_valid:
+        return False
+
+    frame_start = int(clip.frame_start)
+    frame_end = int(clip.frame_start + clip.frame_duration - 1)
+    frames = {cam.frame for cam in recon.cameras}
+    if not frames:
+        return False
+
+    return (
+        min(frames) <= frame_start
+        and max(frames) >= frame_end
+        and len(frames) >= (frame_end - frame_start + 1)
+    )
 
 def find_frame_with_few_tracking_markers(marker_counts, minimum_count):
     """Return the first frame with fewer markers than ``minimum_count``."""
@@ -814,6 +835,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
     _pattern_size = 0
     _original_pattern_size = 0
     _original_search_size = 0
+    _solve_attempts = 0
 
     def _restart_from_start(self, context):
         """Reset state and jump back to the scene start."""
@@ -936,6 +958,24 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 context.scene.tracking_cycle_status = "Cleaning errors"
                 cleanup_marker_errors(context.scene.error_cleanup_limit)
 
+                if not solver_covers_full_scene(self._clip):
+                    self._solve_attempts += 1
+                    if self._solve_attempts >= MAX_SOLVE_ATTEMPTS:
+                        print("[Cycle] Solver failed too often, aborting")
+                        context.scene.tracking_cycle_status = "Failed"
+                        self.cancel(context)
+                        return {'CANCELLED'}
+
+                    context.scene.min_marker_count = int(
+                        context.scene.min_marker_count * 1.1
+                    )
+                    update_min_marker_props(context.scene, context)
+                    print(
+                        f"[Cycle] Solver incomplete - increasing minimum markers to {context.scene.min_marker_count} and retrying"
+                    )
+                    self._restart_from_start(context)
+                    return {'PASS_THROUGH'}
+
                 sparse = find_sparse_marker_frames(
                     self._clip, context.scene.min_marker_count
                 )
@@ -947,6 +987,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                     return {'PASS_THROUGH'}
 
                 context.scene.tracking_cycle_status = "Finished"
+                self._solve_attempts = 0
                 self.cancel(context)
                 return {'FINISHED'}
 
@@ -1013,6 +1054,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         self._original_search_size = settings.default_search_size
         self._pattern_size = settings.default_pattern_size
         self._pass_count = 0
+        self._solve_attempts = 0
         self._frame_attempt_limit = FIRST_PASS_FRAME_ATTEMPTS
         self._detect_attempt_limit = FIRST_PASS_DETECT_ATTEMPTS
 
