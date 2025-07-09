@@ -752,6 +752,9 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
 
             context.scene.tracking_cycle_status = "Searching next frame"
             marker_counts = get_tracking_marker_counts(self._clip)
+            print(
+                f"[Cycle] Searching for frame with fewer than {self._threshold} markers"
+            )
             target_frame = find_frame_with_few_tracking_markers(
                 marker_counts,
                 self._threshold,
