@@ -32,8 +32,8 @@ via Blender's operator search:
   with `TRACK_` that are shorter than the "Min Track Length" property and
   renames the remaining ones to `GOOD_`.
 - **Clear RAM Cache** – reloads the current clip to free memory.
-- **Cleanup Excess Markers** – finds a frame with too many markers and
-  removes the worst ones down to the minimum count.
+- **Cleanup Excess Markers** – scans each frame for excessive markers and
+  repeatedly deletes the worst ones until every frame meets the minimum count.
 
 The minimum marker count used for the playhead search is configured in the
 panel before running the operator. Feature detection now aims to create a

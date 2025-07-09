@@ -609,36 +609,44 @@ class CLIP_OT_cleanup_excess_markers(bpy.types.Operator):
             return {'CANCELLED'}
 
         minimum = context.scene.min_marker_count
+        total_removed = 0
         counts = get_tracking_marker_counts(clip)
         frame = find_frame_with_many_tracking_markers(counts, minimum)
-        if frame is None:
-            return {'CANCELLED'}
+        while frame is not None:
+            entries = []
+            for track in clip.tracking.tracks:
+                marker = track.markers.find_frame(frame)
+                if marker:
+                    entries.append((track, marker))
 
-        tracks = clip.tracking.tracks
-        entries = []
-        for track in tracks:
-            marker = track.markers.find_frame(frame)
-            if marker:
-                entries.append((track, marker))
+            if len(entries) <= minimum:
+                counts[frame] = len(entries)
+                frame = find_frame_with_many_tracking_markers(counts, minimum)
+                continue
 
-        if len(entries) <= minimum:
+            entries.sort(key=lambda item: item[0].average_error, reverse=True)
+            to_remove = entries[minimum:]
+            for track, marker in to_remove:
+                try:
+                    delete_fn = getattr(track.markers, "delete", None)
+                    if callable(delete_fn):
+                        track.markers.delete(marker.frame)
+                    else:
+                        track.markers.remove(marker)
+                except Exception as e:
+                    print(
+                        f"[Cleanup] Fehler beim Löschen des Markers im Track '{track.name}' bei Frame {marker.frame}: {e}"
+                    )
+            total_removed += len(to_remove)
             set_playhead(frame)
-            return {'CANCELLED'}
+            counts = get_tracking_marker_counts(clip)
+            frame = find_frame_with_many_tracking_markers(counts, minimum)
 
-        entries.sort(key=lambda item: item[0].average_error, reverse=True)
-        to_remove = entries[minimum:]
-        for track, marker in to_remove:
-            frame = marker.frame
-            try:
-                track.markers.delete_frame(frame)
-            except Exception as e:
-                print(
-                    f"[Cleanup] Fehler beim Löschen des Markers im Track '{track.name}' bei Frame {frame}: {e}"
-                )
+        if total_removed:
+            print(f"[Cleanup] Removed {total_removed} markers")
+            return {'FINISHED'}
 
-        set_playhead(frame)
-        print(f"[Cleanup] Removed {len(to_remove)} markers at frame {frame}")
-        return {'FINISHED'}
+        return {'CANCELLED'}
 
 # ---- Playhead utilities (from playhead.py) ----
 DEFAULT_MINIMUM_MARKER_COUNT = 5
