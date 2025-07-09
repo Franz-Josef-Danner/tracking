@@ -24,6 +24,12 @@ import os
 import math
 import mathutils
 
+try:
+    from . import error_cleanup
+except Exception:  # fallback when running as a script
+    import importlib
+    error_cleanup = importlib.import_module("error_cleanup")
+
 
 def get_marker_count_plus(scene):
     """Return stored value or the default derived from the base count."""
@@ -835,6 +841,12 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 print("[Cycle] Tracking cycle complete")
                 context.scene.tracking_cycle_status = "Finished"
                 self.cancel(context)
+                try:
+                    error_cleanup.find_frame_with_few_markers(
+                        error_cleanup.MARKER_LIMIT
+                    )
+                except Exception as e:
+                    print(f"[Cleanup] Failed: {e}")
                 return {'FINISHED'}
 
             for track in self._clip.tracking.tracks:
