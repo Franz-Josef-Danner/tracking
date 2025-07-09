@@ -875,6 +875,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
     _original_pattern_size = 0
     _original_search_size = 0
     _solve_attempts = 0
+    _refine_frame = None
 
     def _restart_from_start(self, context):
         """Reset state and jump back to the scene start."""
@@ -994,25 +995,29 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                     return {'PASS_THROUGH'}
 
                 print("[Cycle] Tracking cycle complete")
+                if self._refine_frame is not None:
+                    target = self._refine_frame
+                    set_playhead(target)
+                    bpy.ops.clip.refine_selected_markers()
+
+                    step = max(1, context.scene.min_track_length // 2)
+                    for _ in range(3):
+                        target -= step
+                        if target < context.scene.frame_start:
+                            break
+                        set_playhead(target)
+                        bpy.ops.clip.refine_selected_markers()
+                    self._refine_frame = None
+
                 context.scene.tracking_cycle_status = "Cleaning errors"
                 cleanup_marker_errors(context.scene.error_cleanup_limit)
 
                 if not solver_covers_full_scene(self._clip):
-                    # The solve ended early. Try refining markers around the
-                    # last valid frame before restarting the cycle.
+                    # The solve ended early. Store the frame for refinement
+                    # before the next solve attempt and restart the cycle.
                     last_frame = get_last_solved_frame(self._clip)
                     if last_frame is not None:
-                        target = min(last_frame + 1, context.scene.frame_end)
-                        set_playhead(target)
-                        bpy.ops.clip.refine_selected_markers()
-
-                        step = max(1, context.scene.min_track_length // 2)
-                        for _ in range(3):
-                            target -= step
-                            if target < context.scene.frame_start:
-                                break
-                            set_playhead(target)
-                            bpy.ops.clip.refine_selected_markers()
+                        self._refine_frame = min(last_frame + 1, context.scene.frame_end)
 
                     self._solve_attempts += 1
                     if self._solve_attempts >= MAX_SOLVE_ATTEMPTS:
@@ -1110,6 +1115,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         self._pattern_size = settings.default_pattern_size
         self._pass_count = 0
         self._solve_attempts = 0
+        self._refine_frame = None
         self._frame_attempt_limit = FIRST_PASS_FRAME_ATTEMPTS
         self._detect_attempt_limit = FIRST_PASS_DETECT_ATTEMPTS
 
