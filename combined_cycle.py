@@ -628,11 +628,7 @@ class CLIP_OT_cleanup_excess_markers(bpy.types.Operator):
             to_remove = entries[minimum:]
             for track, marker in to_remove:
                 try:
-                    delete_fn = getattr(track.markers, "delete", None)
-                    if callable(delete_fn):
-                        track.markers.delete(marker.frame)
-                    else:
-                        track.markers.remove(marker)
+                    track.markers.delete_frame(marker.frame)
                 except Exception as e:
                     print(
                         f"[Cleanup] Fehler beim Löschen des Markers im Track '{track.name}' bei Frame {marker.frame}: {e}"
