@@ -705,6 +705,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
     _timer = None
     _clip = None
     _threshold = DEFAULT_MINIMUM_MARKER_COUNT
+    _base_marker_count = DEFAULT_MINIMUM_MARKER_COUNT
     _last_frame = None
     _visited_frames = None
     _current_target = None
@@ -727,6 +728,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         reset_motion_model(settings)
 
         self._threshold = context.scene.min_marker_count
+        self._base_marker_count = context.scene.min_marker_count
         self._visited_frames.clear()
         self._current_target = None
         self._target_attempts = 0
@@ -753,11 +755,11 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
             context.scene.tracking_cycle_status = "Searching next frame"
             marker_counts = get_tracking_marker_counts(self._clip)
             print(
-                f"[Cycle] Searching for frame with fewer than {self._threshold} markers"
+                f"[Cycle] Searching for frame with fewer than {self._base_marker_count} markers"
             )
             target_frame = find_frame_with_few_tracking_markers(
                 marker_counts,
-                self._threshold,
+                self._base_marker_count,
             )
             max_frame_attempts = self._frame_attempt_limit
             detect_attempts = self._detect_attempt_limit
@@ -902,6 +904,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         self._detect_attempt_limit = FIRST_PASS_DETECT_ATTEMPTS
 
         self._threshold = context.scene.min_marker_count
+        self._base_marker_count = context.scene.min_marker_count
         self._last_frame = context.scene.frame_current
         self._visited_frames = set()
         self._current_target = None
