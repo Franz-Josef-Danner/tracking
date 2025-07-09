@@ -595,6 +595,45 @@ class TRACKING_PT_custom_panel(bpy.types.Panel):
         layout = self.layout
         layout.operator(TRACKING_OT_delete_short_tracks_with_prefix.bl_idname)
 
+
+# ---- Cleanup Excess Markers Operator ----
+class CLIP_OT_cleanup_excess_markers(bpy.types.Operator):
+    """Remove worst markers in frames with too many."""
+
+    bl_idname = "clip.cleanup_excess_markers"
+    bl_label = "Cleanup Excess Markers"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            return {'CANCELLED'}
+
+        minimum = context.scene.min_marker_count
+        counts = get_tracking_marker_counts(clip)
+        frame = find_frame_with_many_tracking_markers(counts, minimum)
+        if frame is None:
+            return {'CANCELLED'}
+
+        tracks = clip.tracking.tracks
+        entries = []
+        for track in tracks:
+            marker = track.markers.find_frame(frame)
+            if marker:
+                entries.append((track, marker))
+
+        if len(entries) <= minimum:
+            set_playhead(frame)
+            return {'CANCELLED'}
+
+        entries.sort(key=lambda item: item[0].average_error, reverse=True)
+        to_remove = entries[minimum:]
+        for track, marker in to_remove:
+            track.markers.remove(marker)
+
+        set_playhead(frame)
+        print(f"[Cleanup] Removed {len(to_remove)} markers at frame {frame}")
+        return {'FINISHED'}
+
 # ---- Playhead utilities (from playhead.py) ----
 DEFAULT_MINIMUM_MARKER_COUNT = 5
 # Seconds between timer events during the tracking cycle
@@ -660,6 +699,16 @@ def find_frame_with_few_tracking_markers(marker_counts, minimum_count):
     end = bpy.context.scene.frame_end
     for frame in range(start, end + 1):
         if marker_counts.get(frame, 0) < minimum_count:
+            return frame
+    return None
+
+def find_frame_with_many_tracking_markers(marker_counts, minimum_count):
+    """Return the first frame with more markers than ``minimum_count``."""
+
+    start = bpy.context.scene.frame_start
+    end = bpy.context.scene.frame_end
+    for frame in range(start, end + 1):
+        if marker_counts.get(frame, 0) > minimum_count:
             return frame
     return None
 
@@ -833,6 +882,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                     self._restart_from_start(context)
                     return {'PASS_THROUGH'}
                 print("[Cycle] Tracking cycle complete")
+                bpy.ops.clip.cleanup_excess_markers()
                 context.scene.tracking_cycle_status = "Finished"
                 self.cancel(context)
                 return {'FINISHED'}
@@ -956,6 +1006,10 @@ class CLIP_PT_tracking_cycle_panel(bpy.types.Panel):
             CLIP_OT_auto_start.bl_idname,
             icon='REC',
         )
+        layout.operator(
+            CLIP_OT_cleanup_excess_markers.bl_idname,
+            icon='TRASH',
+        )
 
 # ---- Registration ----
 classes = [
@@ -966,6 +1020,7 @@ classes = [
     CLIP_OT_tracking_cycle,
     CLIP_OT_toggle_cycle_pause,
     CLIP_OT_auto_start,
+    CLIP_OT_cleanup_excess_markers,
     CLIP_PT_tracking_cycle_panel,
 ]
 
