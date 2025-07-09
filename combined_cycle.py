@@ -569,6 +569,32 @@ class TRACK_OT_auto_track_forward(bpy.types.Operator):
         return {'FINISHED'}
 
 
+# ---- Refine Operator (from refine.py) ----
+class CLIP_OT_refine_selected_markers(bpy.types.Operator):
+    """Refine selected markers on the current frame forwards and backwards."""
+
+    bl_idname = "clip.refine_selected_markers"
+    bl_label = "Refine Selected Markers"
+
+    def execute(self, context):
+        space = context.space_data
+        clip = space.clip
+        frame_current = context.scene.frame_current
+
+        if not clip:
+            self.report({'WARNING'}, "Kein Movie Clip geladen.")
+            return {'CANCELLED'}
+
+        for track in clip.tracking.tracks:
+            marker = track.markers.find_frame(frame_current)
+            track.select = marker is not None and not marker.mute
+
+        bpy.ops.clip.refine_markers(backwards=True)
+        bpy.ops.clip.refine_markers(backwards=False)
+
+        return {'FINISHED'}
+
+
 # ---- Delete Short Tracks Operator (from Track Length.py) ----
 class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
     """Remove tracks with prefix ``TRACK_`` shorter than the given length.
@@ -745,6 +771,15 @@ def solver_covers_full_scene(clip):
         and max(frames) >= frame_end
         and len(frames) >= (frame_end - frame_start + 1)
     )
+
+def get_last_solved_frame(clip):
+    """Return the highest frame number with a solved camera."""
+
+    recon = clip.tracking.reconstruction
+    if not recon.is_valid:
+        return None
+    frames = [cam.frame for cam in recon.cameras]
+    return max(frames) if frames else None
 
 def find_frame_with_few_tracking_markers(marker_counts, minimum_count):
     """Return the first frame with fewer markers than ``minimum_count``."""
@@ -959,6 +994,22 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                 cleanup_marker_errors(context.scene.error_cleanup_limit)
 
                 if not solver_covers_full_scene(self._clip):
+                    # The solve ended early. Try refining markers around the
+                    # last valid frame before restarting the cycle.
+                    last_frame = get_last_solved_frame(self._clip)
+                    if last_frame is not None:
+                        target = min(last_frame + 1, context.scene.frame_end)
+                        set_playhead(target)
+                        bpy.ops.clip.refine_selected_markers()
+
+                        step = max(1, context.scene.min_track_length // 2)
+                        for _ in range(3):
+                            target -= step
+                            if target < context.scene.frame_start:
+                                break
+                            set_playhead(target)
+                            bpy.ops.clip.refine_selected_markers()
+
                     self._solve_attempts += 1
                     if self._solve_attempts >= MAX_SOLVE_ATTEMPTS:
                         print("[Cycle] Solver failed too often, aborting")
@@ -1119,6 +1170,7 @@ classes = [
     DetectFeaturesCustomOperator,
     TRACK_OT_auto_track_forward,
     TRACKING_OT_delete_short_tracks_with_prefix,
+    CLIP_OT_refine_selected_markers,
     CLIP_OT_tracking_cycle,
     CLIP_OT_toggle_cycle_pause,
     CLIP_OT_auto_start,
