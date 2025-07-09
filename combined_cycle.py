@@ -628,7 +628,11 @@ class CLIP_OT_cleanup_excess_markers(bpy.types.Operator):
         entries.sort(key=lambda item: item[0].average_error, reverse=True)
         to_remove = entries[minimum:]
         for track, marker in to_remove:
-            track.markers.delete(marker.frame)
+            delete_fn = getattr(track.markers, "delete", None)
+            if callable(delete_fn):
+                track.markers.delete(marker.frame)
+            else:
+                track.markers.remove(marker)
 
         set_playhead(frame)
         print(f"[Cleanup] Removed {len(to_remove)} markers at frame {frame}")
