@@ -734,6 +734,34 @@ def find_frame_with_few_tracking_markers(marker_counts, minimum_count):
             return frame
     return None
 
+
+def find_sparse_marker_frames(clip, threshold):
+    """Return list of frames with fewer markers than ``threshold``.
+
+    The search operates on the current scene's frame range so it matches
+    the cycle's tracking domain. The last frame is skipped to avoid false
+    positives when no tracking data exists yet for that frame.
+    """
+
+    if clip is None:
+        clip = bpy.context.space_data.clip
+        if not clip:
+            return []
+
+    scene = bpy.context.scene
+    start = int(scene.frame_start)
+    end = int(scene.frame_end)
+    frames_with_few_markers = []
+    for frame in range(start, end):
+        count = 0
+        for track in clip.tracking.tracks:
+            marker = track.markers.find_frame(frame)
+            if marker and not marker.mute:
+                count += 1
+        if count < threshold:
+            frames_with_few_markers.append((frame, count))
+    return frames_with_few_markers
+
 def set_playhead(frame, retries=2):
     """Position the playhead reliably at ``frame`` and refresh the UI."""
 
@@ -903,10 +931,23 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                     self._pass_count = getattr(self, "_pass_count", 0) + 1
                     self._restart_from_start(context)
                     return {'PASS_THROUGH'}
+
                 print("[Cycle] Tracking cycle complete")
+                context.scene.tracking_cycle_status = "Cleaning errors"
+                cleanup_marker_errors(context.scene.error_cleanup_limit)
+
+                sparse = find_sparse_marker_frames(
+                    self._clip, context.scene.min_marker_count
+                )
+                if sparse:
+                    print(
+                        "[Cycle] Sparse frames remaining after cleanup - restarting"
+                    )
+                    self._restart_from_start(context)
+                    return {'PASS_THROUGH'}
+
                 context.scene.tracking_cycle_status = "Finished"
                 self.cancel(context)
-                cleanup_marker_errors(context.scene.error_cleanup_limit)
                 return {'FINISHED'}
 
             for track in self._clip.tracking.tracks:
