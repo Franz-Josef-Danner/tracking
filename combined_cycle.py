@@ -736,11 +736,15 @@ def find_frame_with_few_tracking_markers(marker_counts, minimum_count):
 
 
 def find_sparse_marker_frames(clip, threshold):
-    """Return list of frames with fewer markers than ``threshold``."""
+    """Return list of frames with fewer markers than ``threshold``.
+
+    The last frame of the clip is skipped to avoid false positives when
+    no tracking data exists yet for that frame.
+    """
 
     frames_with_few_markers = []
     start = int(clip.frame_start)
-    end = int(clip.frame_duration + clip.frame_start)
+    end = int(clip.frame_start + clip.frame_duration - 1)
     for frame in range(start, end):
         count = 0
         for track in clip.tracking.tracks:
