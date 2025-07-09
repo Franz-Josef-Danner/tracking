@@ -667,7 +667,7 @@ class TRACKING_PT_custom_panel(bpy.types.Panel):
 # ---- Playhead utilities (from playhead.py) ----
 DEFAULT_MINIMUM_MARKER_COUNT = 5
 # Maximum markers allowed during error cleanup
-DEFAULT_ERROR_LIMIT = 10
+DEFAULT_ERROR_LIMIT = 2
 # Seconds between timer events during the tracking cycle
 CYCLE_TIMER_INTERVAL = 1.0
 # Maximum number of attempts on the same frame before aborting
