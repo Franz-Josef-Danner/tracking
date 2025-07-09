@@ -71,6 +71,8 @@ areas without exceeding this limit.
 If the search finds the same frame twenty times in a row, the playhead jumps back to the scene start. All detection values reset to their defaults and the cycle continues from the beginning. Each repeated attempt prints
 ``[Cycle] Repeat attempt n/20 on frame x`` to the console so it's easy to see how close the loop is to restarting.
 
+After each completed tracking cycle the camera solve is run automatically. If the reconstruction does not cover the entire scene the property **Min Marker Count** increases by ten percent and the cycle restarts. The script aborts after ten unsuccessful solve attempts.
+
 ## Standalone Cleanup Script
 
 `distance_remove.py` is a small helper that can be run directly from
