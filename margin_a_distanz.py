@@ -16,10 +16,10 @@ def compute_margin_distance():
 
     clip = space.clip
     width = clip.size[0]
-    margin = width / 200
+    margin = width / 100
     distance = width / 20
     clip["MARGIN"] = margin
     clip["DISTANCE"] = distance
     print(f"Breite: {width}")
-    print(f"MARGIN (Breite / 200): {margin}")
+    print(f"MARGIN (Breite / 100): {margin}")
     print(f"DISTANCE (Breite / 20): {distance}")
