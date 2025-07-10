@@ -9,14 +9,17 @@ bl_info = {
 
 from . import combined_cycle
 from . import sparse_marker_check
+from . import motion_outlier_cleanup
 
 
 def register():
     combined_cycle.register()
     sparse_marker_check.register()
+    motion_outlier_cleanup.register()
 
 
 def unregister():
+    motion_outlier_cleanup.unregister()
     sparse_marker_check.unregister()
     combined_cycle.unregister()
 
