@@ -21,6 +21,11 @@ the helper scripts sit directly in the archive root before installing.
 1. Open the Movie Clip Editor and switch to **Tracking** context.
 2. Press **N** to reveal the sidebar and choose the **Kaiserlich** tab.
 3. Adjust the properties and click **Start** to run the operator.
+4. Existing proxies are removed, then a 50% proxy and a timecode
+   index are built. The addon waits up to 300&nbsp;s for a proxy
+   file to appear, printing a countdown in the console. After that it
+   disables the proxy timeline, detects features and filters them
+   automatically.
 
 ### Properties
 
@@ -29,8 +34,6 @@ The panel exposes several options:
 - **min marker pro frame** – minimum marker count per frame (default 10)
 - **min tracking length** – minimum length for each track (default 20)
 - **Error Threshold** – maximum error allowed for trackers (default 0.04)
-- **Proxy Wait** – wait time after proxies are generated (fixed at 300s).
-  Proxy creation is performed as the final step of the operation
 
 ### Helper Scripts
 
@@ -40,5 +43,12 @@ Several utility modules are included for experimentation:
 - `get_marker_count_plus.py` – compute additional marker thresholds.
 - `margin_a_distanz.py` – derive margin and distance values from the clip width.
 - `playhead.py` – utilities for repositioning the playhead.
-- `proxy_wait.py` – create proxies and wait for completion.
+ - `proxy_wait.py` – create proxies and timecode indices, print its file path
+   on import, show the proxy folder and a countdown until a file appears.
+- `remove_existing_proxies` – helper inside `proxy_wait.py` to delete old
+  proxy files before new ones are generated.
 - `update_min_marker_props.py` – sync derived marker properties.
+- `proxy_switch.py` – disable proxies after generation.
+ - `detect.py` – adaptive feature detection script that uses margin and
+   distance values from `margin_a_distanz.py`.
+- `distance_remove.py` – filter NEU_ markers near GOOD_ markers.
