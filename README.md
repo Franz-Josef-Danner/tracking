@@ -22,6 +22,16 @@ the helper scripts sit directly in the archive root before installing.
 2. Press **N** to reveal the sidebar and choose the **Kaiserlich** tab.
 3. Adjust the properties and click **Start** to run the operator.
 
+### Properties
+
+The panel exposes several options:
+
+- **min marker pro frame** – minimum marker count per frame (default 10)
+- **min tracking length** – minimum length for each track (default 20)
+- **Error Threshold** – maximum error allowed for trackers (default 0.04)
+- **Proxy Wait** – delay in seconds before the next steps run after proxies
+  start building
+
 ### Helper Scripts
 
 Several utility modules are included for experimentation:

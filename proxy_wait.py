@@ -6,7 +6,7 @@ import threading
 import time
 
 
-def create_proxy_and_wait():
+def create_proxy_and_wait(wait_time=0.0):
     print("Starte Proxy-Erstellung (50%, custom Pfad)")
     clip = bpy.context.space_data.clip
     if not clip:
@@ -44,4 +44,7 @@ def create_proxy_and_wait():
                 return
         print("Zeitüberschreitung beim Warten auf Proxy-Datei")
 
-    threading.Thread(target=wait_file).start()
+    wait_thread = threading.Thread(target=wait_file)
+    wait_thread.start()
+    if wait_time > 0:
+        wait_thread.join(timeout=wait_time)
