@@ -21,8 +21,9 @@ the helper scripts sit directly in the archive root before installing.
 1. Open the Movie Clip Editor and switch to **Tracking** context.
 2. Press **N** to reveal the sidebar and choose the **Kaiserlich** tab.
 3. Adjust the properties and click **Start** to run the operator.
-4. The addon waits for proxy generation, disables proxies, then runs
-   marker detection and cleanup automatically.
+4. Existing proxies are removed, the addon waits for proxy generation,
+   disables proxies, then runs marker detection and cleanup
+   automatically.
 
 ### Properties
 
@@ -44,6 +45,8 @@ Several utility modules are included for experimentation:
 - `margin_a_distanz.py` – derive margin and distance values from the clip width.
 - `playhead.py` – utilities for repositioning the playhead.
 - `proxy_wait.py` – create proxies and wait for completion.
+- `remove_existing_proxies` – helper inside `proxy_wait.py` to delete old
+  proxy files before new ones are generated.
 - `update_min_marker_props.py` – sync derived marker properties.
 - `proxy_switch.py` – disable proxies after generation.
 - `detect.py` – adaptive feature detection script.

@@ -31,7 +31,7 @@ from playhead import (
     set_playhead_to_low_marker_frame,
     get_tracking_marker_counts,
 )
-from proxy_wait import create_proxy_and_wait
+from proxy_wait import create_proxy_and_wait, remove_existing_proxies
 from update_min_marker_props import update_min_marker_props
 from distance_remove import CLIP_OT_remove_close_neu_markers
 from proxy_switch import ToggleProxyOperator
@@ -67,6 +67,8 @@ class CLIP_OT_kaiserlich_track(Operator):
                 f"error {error_threshold}, derived {marker_plus}"
             ),
         )
+        # Alte Proxies entfernen
+        remove_existing_proxies()
         # 50% Proxy erstellen und etwas warten. Manche
         # Installationen liefern eine Version ohne Parameter.
         try:

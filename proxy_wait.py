@@ -2,8 +2,22 @@
 
 import bpy
 import os
+import shutil
 import threading
 import time
+
+
+def remove_existing_proxies():
+    """Remove previously generated proxy files."""
+    clip = bpy.context.space_data.clip
+    if not clip:
+        print("Kein aktiver Clip.")
+        return
+
+    proxy_dir = bpy.path.abspath("//BL_proxy/")
+    if os.path.isdir(proxy_dir):
+        print(f"Lösche altes Proxy-Verzeichnis {proxy_dir}")
+        shutil.rmtree(proxy_dir, ignore_errors=True)
 
 
 def create_proxy_and_wait(wait_time=0.0):
@@ -48,3 +62,4 @@ def create_proxy_and_wait(wait_time=0.0):
     wait_thread.start()
     if wait_time > 0:
         wait_thread.join(timeout=wait_time)
+
