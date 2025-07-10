@@ -42,3 +42,6 @@ Several utility modules are included for experimentation:
 - `playhead.py` – utilities for repositioning the playhead.
 - `proxy_wait.py` – create proxies and wait for completion.
 - `update_min_marker_props.py` – sync derived marker properties.
+- `proxy_switch.py` – disable proxies after generation.
+- `detect.py` – adaptive feature detection script.
+- `distance_remove.py` – filter NEU_ markers near GOOD_ markers.

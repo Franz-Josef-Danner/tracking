@@ -33,6 +33,51 @@ from playhead import (
 )
 from proxy_wait import create_proxy_and_wait
 from update_min_marker_props import update_min_marker_props
+from distance_remove import CLIP_OT_remove_close_neu_markers
+
+
+def detect_features_custom(context):
+    """Run feature detection with adaptive threshold."""
+    clip = context.space_data.clip
+    if not clip:
+        print("Kein Clip gefunden")
+        return
+
+    threshold = 0.01
+    min_new = context.scene.min_marker_count
+    tracks_before = len(clip.tracking.tracks)
+    settings = clip.tracking.settings
+
+    bpy.ops.clip.detect_features(
+        threshold=threshold,
+        margin=500,
+        min_distance=10,
+        placement='FRAME',
+    )
+
+    tracks_after = len(clip.tracking.tracks)
+    if tracks_after == tracks_before:
+        settings.default_pattern_size = max(
+            1, int(settings.default_pattern_size / 1.1)
+        )
+        settings.default_search_size = settings.default_pattern_size * 2
+
+    while (tracks_after - tracks_before) < min_new and threshold > 0.0001:
+        if tracks_after == tracks_before:
+            settings.default_pattern_size = max(
+                1, int(settings.default_pattern_size / 1.1)
+            )
+            settings.default_search_size = settings.default_pattern_size * 2
+
+        factor = ((tracks_after - tracks_before) + 0.1) / min_new
+        threshold = max(threshold * factor, 0.0001)
+        bpy.ops.clip.detect_features(
+            threshold=threshold,
+            margin=500,
+            min_distance=10,
+            placement='FRAME',
+        )
+        tracks_after = len(clip.tracking.tracks)
 
 
 class CLIP_OT_kaiserlich_track(Operator):
@@ -63,6 +108,16 @@ class CLIP_OT_kaiserlich_track(Operator):
             ),
         )
         create_proxy_and_wait(proxy_wait)
+
+        # Proxy-Zeitlinie wieder deaktivieren
+        clip = context.space_data.clip
+        if clip:
+            clip.use_proxy = False
+
+        # Marker erkennen und bereinigen
+        detect_features_custom(context)
+        bpy.ops.clip.remove_close_neu_markers()
+
         return {'FINISHED'}
 
 
@@ -117,11 +172,13 @@ def register():
     )
     bpy.utils.register_class(CLIP_OT_kaiserlich_track)
     bpy.utils.register_class(CLIP_PT_kaiserlich_track)
+    bpy.utils.register_class(CLIP_OT_remove_close_neu_markers)
 
 
 def unregister():
     bpy.utils.unregister_class(CLIP_OT_kaiserlich_track)
     bpy.utils.unregister_class(CLIP_PT_kaiserlich_track)
+    bpy.utils.unregister_class(CLIP_OT_remove_close_neu_markers)
     del bpy.types.Scene.kt_min_marker_per_frame
     del bpy.types.Scene.kt_min_tracking_length
     del bpy.types.Scene.kt_error_threshold
