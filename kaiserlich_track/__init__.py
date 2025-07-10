@@ -34,7 +34,7 @@ class CLIP_OT_kaiserlich_track(Operator):
 class CLIP_PT_kaiserlich_track(Panel):
     bl_label = "Kaiserlich Track"
     bl_space_type = 'CLIP_EDITOR'
-    bl_region_type = 'TOOLS'
+    bl_region_type = 'UI'
     bl_category = "Kaiserlich"
     bl_context = "tracking"
 
