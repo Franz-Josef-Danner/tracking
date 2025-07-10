@@ -58,7 +58,7 @@ def create_proxy_and_wait(wait_time=0.0):
     sys.stdout.flush()
 
     def wait_file():
-        proxy_pattern = os.path.join(full_proxy, "**", "proxy_50.*")
+        proxy_pattern = os.path.join(full_proxy, "**", "proxy_50*")
         checks = int(wait_time * 2) if wait_time > 0 else 180
         for _ in range(checks):
             time.sleep(0.5)
