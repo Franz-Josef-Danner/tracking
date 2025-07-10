@@ -569,6 +569,36 @@ class TRACK_OT_auto_track_forward(bpy.types.Operator):
         return {'FINISHED'}
 
 
+# ---- Refine Operator (from refine.py) ----
+class CLIP_OT_refine_selected_markers(bpy.types.Operator):
+    """Refine selected markers on the current frame forwards and backwards."""
+
+    bl_idname = "clip.refine_selected_markers"
+    bl_label = "Refine Selected Markers"
+
+    @classmethod
+    def poll(cls, context):
+        return context.space_data and context.space_data.type == 'CLIP_EDITOR'
+
+    def execute(self, context):
+        space = context.space_data
+        clip = space.clip
+        frame_current = context.scene.frame_current
+
+        if not clip:
+            self.report({'WARNING'}, "Kein Movie Clip geladen.")
+            return {'CANCELLED'}
+
+        for track in clip.tracking.tracks:
+            marker = track.markers.find_frame(frame_current)
+            track.select = marker is not None and not marker.mute
+
+        bpy.ops.clip.refine_markers(backwards=True)
+        bpy.ops.clip.refine_markers(backwards=False)
+
+        return {'FINISHED'}
+
+
 # ---- Delete Short Tracks Operator (from Track Length.py) ----
 class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
     """Remove tracks with prefix ``TRACK_`` shorter than the given length.
@@ -746,6 +776,15 @@ def solver_covers_full_scene(clip):
         and len(frames) >= (frame_end - frame_start + 1)
     )
 
+def get_last_solved_frame(clip):
+    """Return the highest frame number with a solved camera."""
+
+    recon = clip.tracking.reconstruction
+    if not recon.is_valid:
+        return None
+    frames = [cam.frame for cam in recon.cameras]
+    return max(frames) if frames else None
+
 def find_frame_with_few_tracking_markers(marker_counts, minimum_count):
     """Return the first frame with fewer markers than ``minimum_count``."""
     start = bpy.context.scene.frame_start
@@ -836,6 +875,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
     _original_pattern_size = 0
     _original_search_size = 0
     _solve_attempts = 0
+    _refine_frame = None
 
     def _restart_from_start(self, context):
         """Reset state and jump back to the scene start."""
@@ -955,10 +995,30 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
                     return {'PASS_THROUGH'}
 
                 print("[Cycle] Tracking cycle complete")
+                if self._refine_frame is not None:
+                    target = self._refine_frame
+                    set_playhead(target)
+                    bpy.ops.clip.refine_selected_markers()
+
+                    step = max(1, context.scene.min_track_length // 2)
+                    for _ in range(3):
+                        target -= step
+                        if target < context.scene.frame_start:
+                            break
+                        set_playhead(target)
+                        bpy.ops.clip.refine_selected_markers()
+                    self._refine_frame = None
+
                 context.scene.tracking_cycle_status = "Cleaning errors"
                 cleanup_marker_errors(context.scene.error_cleanup_limit)
 
                 if not solver_covers_full_scene(self._clip):
+                    # The solve ended early. Store the frame for refinement
+                    # before the next solve attempt and restart the cycle.
+                    last_frame = get_last_solved_frame(self._clip)
+                    if last_frame is not None:
+                        self._refine_frame = min(last_frame + 1, context.scene.frame_end)
+
                     self._solve_attempts += 1
                     if self._solve_attempts >= MAX_SOLVE_ATTEMPTS:
                         print("[Cycle] Solver failed too often, aborting")
@@ -1055,6 +1115,7 @@ class CLIP_OT_tracking_cycle(bpy.types.Operator):
         self._pattern_size = settings.default_pattern_size
         self._pass_count = 0
         self._solve_attempts = 0
+        self._refine_frame = None
         self._frame_attempt_limit = FIRST_PASS_FRAME_ATTEMPTS
         self._detect_attempt_limit = FIRST_PASS_DETECT_ATTEMPTS
 
@@ -1119,6 +1180,7 @@ classes = [
     DetectFeaturesCustomOperator,
     TRACK_OT_auto_track_forward,
     TRACKING_OT_delete_short_tracks_with_prefix,
+    CLIP_OT_refine_selected_markers,
     CLIP_OT_tracking_cycle,
     CLIP_OT_toggle_cycle_pause,
     CLIP_OT_auto_start,
