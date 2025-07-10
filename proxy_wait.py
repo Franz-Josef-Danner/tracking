@@ -1,24 +1,4 @@
-import bpy
-import os
-import shutil
-import sys
-import time
-
-
-def remove_existing_proxies():
-    """Remove previously generated proxy files."""
-    clip = bpy.context.space_data.clip
-    if not clip:
-        print("Kein aktiver Clip.")
-        return
-
-    proxy_dir = bpy.path.abspath("//BL_proxy/")
-    if os.path.isdir(proxy_dir):
-        print(f"Lösche altes Proxy-Verzeichnis {proxy_dir}")
-        shutil.rmtree(proxy_dir, ignore_errors=True)
-
-
-def create_proxy_and_wait(wait_time=300.0):  # 5 Minuten Standardwartezeit
+def create_proxy_and_wait(wait_time=300.0):
     print("Starte Proxy-Erstellung (50 %, custom Pfad)")
     sys.stdout.flush()
 
@@ -34,7 +14,7 @@ def create_proxy_and_wait(wait_time=300.0):  # 5 Minuten Standardwartezeit
 
     clip.use_proxy = True
     clip.use_proxy_timecode = True
-    clip.proxy.timecode = 'FREE_RUN_NO_GAPS'
+    clip.proxy.timecode = 'RECORD_RUN_NO_GAPS'
     clip.proxy.build_25 = False
     clip.proxy.build_50 = True
     clip.proxy.build_75 = False
@@ -49,7 +29,7 @@ def create_proxy_and_wait(wait_time=300.0):  # 5 Minuten Standardwartezeit
     print(f"Proxy wird im Ordner {full_proxy} erstellt")
     sys.stdout.flush()
 
-    # Sicherer Operator-Aufruf im CLIP_EDITOR-Kontext
+    # Proxy-Operator im richtigen Kontext aufrufen
     try:
         area = next(area for area in bpy.context.window.screen.areas if area.type == 'CLIP_EDITOR')
         override = bpy.context.copy()
@@ -59,22 +39,29 @@ def create_proxy_and_wait(wait_time=300.0):  # 5 Minuten Standardwartezeit
         print("❌ Kein CLIP_EDITOR-Bereich gefunden.")
         return
 
-    print("Warte auf Proxy-Datei (max. 300 Sekunden)...")
+    print("⏳ Warte bis Proxy intern verfügbar ist (max. 300s)...")
     sys.stdout.flush()
 
-    # Warte synchron auf das Erscheinen der Proxy-Datei
+    # Warten auf interne Verfügbarkeit oder Dateisystem
     proxy_filename = "proxy_50.avi"
     direct_path = os.path.join(full_proxy, proxy_filename)
     alt_folder = os.path.join(full_proxy, os.path.basename(clip.filepath))
     alt_path = os.path.join(alt_folder, proxy_filename)
 
-    checks = int(wait_time * 2)  # Alle 0,5s prüfen
-    for i in range(checks):
-        if os.path.exists(direct_path) or os.path.exists(alt_path):
-            print("✅ Proxy-Datei gefunden.")
+    start_time = time.time()
+    while (time.time() - start_time) < wait_time:
+        clip.reload()
+
+        # Überprüfe, ob der Proxy intern registriert ist
+        proxy_ready = clip.proxy.build_50 is False and clip.proxy.build_25 is False
+        file_ready = os.path.exists(direct_path) or os.path.exists(alt_path)
+
+        if proxy_ready and file_ready:
+            print("✅ Proxy fertig und sichtbar in Blender.")
             sys.stdout.flush()
             return
-        time.sleep(0.5)
 
-    print("⏱️ Zeitüberschreitung: Keine Proxy-Datei gefunden.")
+        time.sleep(1)
+
+    print("⏱️ Zeitüberschreitung: Proxy-Dateien nicht verfügbar oder nicht registriert.")
     sys.stdout.flush()
