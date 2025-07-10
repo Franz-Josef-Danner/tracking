@@ -12,17 +12,17 @@ import bpy
 from bpy.types import Panel, Operator
 from bpy.props import IntProperty, FloatProperty
 
-from kaiserlich_track.find_frame_with_few_tracking_markers import (
+from find_frame_with_few_tracking_markers import (
     find_frame_with_few_tracking_markers,
 )
-from kaiserlich_track.get_marker_count_plus import get_marker_count_plus
-from kaiserlich_track.margin_a_distanz import compute_margin_distance
-from kaiserlich_track.playhead import (
+from get_marker_count_plus import get_marker_count_plus
+from margin_a_distanz import compute_margin_distance
+from playhead import (
     set_playhead_to_low_marker_frame,
     get_tracking_marker_counts,
 )
-from kaiserlich_track.proxy_wait import create_proxy_and_wait
-from kaiserlich_track.update_min_marker_props import update_min_marker_props
+from proxy_wait import create_proxy_and_wait
+from update_min_marker_props import update_min_marker_props
 
 
 class CLIP_OT_kaiserlich_track(Operator):
