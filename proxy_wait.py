@@ -59,16 +59,15 @@ def create_proxy_and_wait(wait_time=0.0):
     sys.stdout.flush()
 
     def wait_file():
-        # Blender first writes a temporary "proxy_50_part.*". We wait for the
-        # final file "proxy_50.*" that does not end with "_part" to ensure the
-        # proxy is fully generated before continuing.
-        proxy_pattern = os.path.join(full_proxy, "**", "proxy_50.*")
+        # Blender may keep the file temporarily named "proxy_50_part.*" while
+        # the proxy job is running. The countdown should stop as soon as this
+        # file appears, so we look for any path beginning with "proxy_50".
+        proxy_pattern = os.path.join(full_proxy, "**", "proxy_50*")
         checks = int(wait_time * 2) if wait_time > 0 else 180
         for _ in range(checks):
             time.sleep(0.5)
             matches = [p for p in glob.glob(proxy_pattern, recursive=True)
-                       if os.path.isfile(p)
-                       and not os.path.basename(p).startswith("proxy_50_part")]
+                       if os.path.isfile(p)]
             if matches:
                 print("Proxy-Datei gefunden")
                 sys.stdout.flush()
