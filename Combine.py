@@ -989,7 +989,8 @@ def register():
         description="True when the tracking cycle is paused",
     )
 
-    for scene in bpy.data.scenes:
+    scenes = getattr(getattr(bpy, "data", None), "scenes", [])
+    for scene in scenes:
         scene.proxy_built = False
         scene.tracking_cycle_paused = False
         scene.error_cleanup_limit = DEFAULT_ERROR_LIMIT
