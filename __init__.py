@@ -84,10 +84,15 @@ class CLIP_OT_kaiserlich_track(Operator):
         # Proxy-Zeitlinie wieder deaktivieren
         clip = context.space_data.clip
         if clip and clip.use_proxy:
+            print("Proxy-Zeitlinie wird deaktiviert")
             bpy.ops.clip.toggle_proxy()
+        else:
+            print("Proxy bereits deaktiviert oder kein Clip")
 
         # Marker erkennen und bereinigen
+        print("Starte Feature-Erkennung")
         bpy.ops.clip.detect_features_custom()
+        print("Bereinige Marker")
         bpy.ops.clip.remove_close_neu_markers()
 
         return {'FINISHED'}
