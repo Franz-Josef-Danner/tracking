@@ -21,9 +21,10 @@ the helper scripts sit directly in the archive root before installing.
 1. Open the Movie Clip Editor and switch to **Tracking** context.
 2. Press **N** to reveal the sidebar and choose the **Kaiserlich** tab.
 3. Adjust the properties and click **Start** to run the operator.
-4. Existing proxies are removed, the addon waits for proxy generation,
-   disables proxies, then runs marker detection and cleanup
-   automatically.
+4. Existing proxies are removed, then a 50% proxy is built. The
+   addon waits up to 300&nbsp;s for a proxy file to appear,
+   printing a countdown in the console. After that it disables the proxy
+   timeline, detects features and filters them automatically.
 
 ### Properties
 
@@ -32,10 +33,6 @@ The panel exposes several options:
 - **min marker pro frame** – minimum marker count per frame (default 10)
 - **min tracking length** – minimum length for each track (default 20)
 - **Error Threshold** – maximum error allowed for trackers (default 0.04)
-- **Proxy Wait** – optional wait time passed to the proxy helper when
-  available. Proxy creation is performed as the final step of the
-  operation and defaults to 300 s. The console prints the target
-  directory and a countdown during this wait.
 
 ### Helper Scripts
 
