@@ -67,8 +67,13 @@ class CLIP_OT_kaiserlich_track(Operator):
                 f"error {error_threshold}, derived {marker_plus}"
             ),
         )
-        # 50% Proxy erstellen und etwas warten
-        create_proxy_and_wait(proxy_wait)
+        # 50% Proxy erstellen und etwas warten. Manche
+        # Installationen liefern eine Version ohne Parameter.
+        try:
+            create_proxy_and_wait(proxy_wait)
+        except TypeError:
+            # Fallback für ältere Skripte ohne Argument
+            create_proxy_and_wait()
 
         # Proxy-Zeitlinie wieder deaktivieren
         clip = context.space_data.clip
