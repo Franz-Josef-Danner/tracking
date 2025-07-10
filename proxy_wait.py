@@ -61,5 +61,11 @@ def create_proxy_and_wait(wait_time=0.0):
     wait_thread = threading.Thread(target=wait_file)
     wait_thread.start()
     if wait_time > 0:
-        wait_thread.join(timeout=wait_time)
+        remaining = int(wait_time)
+        while remaining > 0 and wait_thread.is_alive():
+            print(f"⏳ Warte {remaining}s auf Proxy…")
+            time.sleep(1)
+            remaining -= 1
+        if wait_thread.is_alive():
+            wait_thread.join(timeout=0)
 

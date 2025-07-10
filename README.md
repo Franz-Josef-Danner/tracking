@@ -34,7 +34,8 @@ The panel exposes several options:
 - **Error Threshold** – maximum error allowed for trackers (default 0.04)
 - **Proxy Wait** – optional wait time passed to the proxy helper when
   available. Proxy creation is performed as the final step of the
-  operation and defaults to 300 s.
+  operation and defaults to 300 s. While waiting a countdown is
+  printed in the console.
 
 ### Helper Scripts
 
