@@ -1,4 +1,5 @@
 import bpy
+from margin_a_distanz import compute_margin_distance
 
 # Operator-Klasse
 class DetectFeaturesCustomOperator(bpy.types.Operator):
@@ -13,6 +14,11 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip gefunden")
             return {'CANCELLED'}
 
+        # Aktualisiere Margin und Distanz vom Clip
+        compute_margin_distance()
+        margin = clip.get("MARGIN", 500)
+        distance = clip.get("DISTANCE", 10)
+
         threshold = 0.1
         min_new = context.scene.min_marker_count
         tracks_before = len(clip.tracking.tracks)
@@ -22,8 +28,8 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
         bpy.ops.clip.detect_features(
             threshold=threshold,
-            margin=500,
-            min_distance=10,
+            margin=margin,
+            min_distance=distance,
             placement='FRAME',
         )
 
@@ -52,8 +58,8 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             self.report({'INFO'}, msg)
             bpy.ops.clip.detect_features(
                 threshold=threshold,
-                margin=500,
-                min_distance=10,
+                margin=margin,
+                min_distance=distance,
                 placement='FRAME',
             )
             tracks_after = len(clip.tracking.tracks)
