@@ -31,15 +31,7 @@ class CLIP_OT_remove_motion_outliers(bpy.types.Operator):
             and context.space_data.clip
         )
 
-    def execute(self, context):
-        scene = context.scene
-        clip = context.space_data.clip
-        frame = scene.frame_current
-
-        if frame == scene.frame_start:
-            frame += 1
-            scene.frame_current = frame
-
+    def cleanup_frame(self, context, clip, frame):
         tracks = clip.tracking.tracks
         values = []
         valid_tracks = []
@@ -65,20 +57,19 @@ class CLIP_OT_remove_motion_outliers(bpy.types.Operator):
             valid_tracks.append(track)
 
         if not values:
-            self.report({'WARNING'}, "Keine g\u00fcltigen Marker gefunden")
-            return {'CANCELLED'}
+            return 0
 
         txg = sum(v[0] for v in values) / len(values)
         tyg = sum(v[1] for v in values) / len(values)
 
-        to_delete = []
-        for track, (tx, ty) in zip(valid_tracks, values):
-            if abs(tx - txg) > self.threshold or abs(ty - tyg) > self.threshold:
-                to_delete.append(track)
+        to_delete = [
+            track
+            for track, (tx, ty) in zip(valid_tracks, values)
+            if abs(tx - txg) > self.threshold or abs(ty - tyg) > self.threshold
+        ]
 
         if not to_delete:
-            self.report({'INFO'}, "Keine Ausrei\u00dfer gefunden")
-            return {'CANCELLED'}
+            return 0
 
         for t in tracks:
             t.select = False
@@ -91,13 +82,31 @@ class CLIP_OT_remove_motion_outliers(bpy.types.Operator):
                     if region.type == 'WINDOW':
                         for space in area.spaces:
                             if space.type == 'CLIP_EDITOR':
-                                with context.temp_override(area=area, region=region, space_data=space):
+                                with context.temp_override(
+                                    area=area,
+                                    region=region,
+                                    space_data=space,
+                                ):
                                     bpy.ops.clip.delete_track()
-                                self.report({'INFO'}, f"Gel\u00f6scht: {len(to_delete)} Marker")
-                                return {'FINISHED'}
+                                return len(to_delete)
 
-        self.report({'ERROR'}, "Kein geeigneter Clip Editor Bereich gefunden")
-        return {'CANCELLED'}
+        return 0
+
+    def execute(self, context):
+        scene = context.scene
+        clip = context.space_data.clip
+
+        start = scene.frame_start
+        end = scene.frame_end
+        scene.frame_current = start + 1
+
+        total_deleted = 0
+        for frame in range(start + 1, end):
+            scene.frame_current = frame
+            total_deleted += self.cleanup_frame(context, clip, frame)
+
+        self.report({'INFO'}, f"Gesamt gelöscht: {total_deleted} Marker")
+        return {'FINISHED'}
 
 
 class CLIP_PT_motion_outlier_panel(bpy.types.Panel):
