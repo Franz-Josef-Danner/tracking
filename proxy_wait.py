@@ -63,7 +63,8 @@ def create_proxy_and_wait(wait_time=0.0):
         checks = int(wait_time * 2) if wait_time > 0 else 180
         for _ in range(checks):
             time.sleep(0.5)
-            matches = glob.glob(proxy_pattern, recursive=True)
+            matches = [p for p in glob.glob(proxy_pattern, recursive=True)
+                       if os.path.isfile(p)]
             if matches:
                 print("Proxy-Datei gefunden")
                 sys.stdout.flush()
