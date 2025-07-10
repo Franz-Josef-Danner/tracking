@@ -777,10 +777,16 @@ def get_last_solved_frame(clip):
     return max(frames) if frames else None
 
 def find_frame_with_few_tracking_markers(marker_counts, minimum_count):
-    """Return the first frame with fewer markers than ``minimum_count``."""
+    """Return the first frame with fewer markers than ``minimum_count``.
+
+    The search excludes the last frame of the scene to avoid detecting
+    features where no subsequent frame exists for tracking.
+    """
+
     start = bpy.context.scene.frame_start
     end = bpy.context.scene.frame_end
-    for frame in range(start, end + 1):
+
+    for frame in range(start, end):  # skip end frame
         if marker_counts.get(frame, 0) < minimum_count:
             return frame
     return None
