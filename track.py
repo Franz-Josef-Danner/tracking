@@ -1,18 +1,19 @@
 import bpy
 
-class TRACK_OT_auto_track_forward(bpy.types.Operator):
-    """Track all currently selected markers forward."""
+class TRACK_OT_auto_track_bidir(bpy.types.Operator):
+    """Trackt ausgewählte Marker rückwärts und dann vorwärts vom aktuellen Frame aus"""
 
-    bl_idname = "clip.auto_track_forward"
-    bl_label = "Auto Track Selected"
-    bl_description = "Trackt alle ausgewählten Marker automatisch vorwärts"
+    bl_idname = "clip.auto_track_bidir"
+    bl_label = "Auto Track Bidirektional"
+    bl_description = "Trackt ausgewählte Marker zuerst rückwärts, dann vorwärts, und kehrt zum Startframe zurück"
 
     @classmethod
     def poll(cls, context):
         return context.space_data and context.space_data.type == 'CLIP_EDITOR'
 
     def execute(self, context):
-        clip = context.space_data.clip
+        clip_editor = context.space_data
+        clip = clip_editor.clip
         if not clip:
             self.report({'WARNING'}, "Kein Clip gefunden")
             return {'CANCELLED'}
@@ -21,11 +22,31 @@ class TRACK_OT_auto_track_forward(bpy.types.Operator):
             self.report({'WARNING'}, "Keine Marker vorhanden")
             return {'CANCELLED'}
 
-        bpy.ops.clip.track_markers(sequence=True)
+        scene = context.scene
+        current_frame = scene.frame_current
+        print(f"Aktueller Frame: {current_frame}")
+
+        print("Starte Rückwärts-Tracking...")
+        bpy.ops.clip.track_markers(backwards=True, sequence=True)
+        print("Rückwärts-Tracking abgeschlossen.")
+
+        # Zurück zum ursprünglichen Frame springen
+        scene.frame_current = current_frame
+        print(f"Zurück zum Ausgangsframe: {current_frame}")
+
+        print("Starte Vorwärts-Tracking...")
+        bpy.ops.clip.track_markers(backwards=False, sequence=True)
+        print("Vorwärts-Tracking abgeschlossen.")
+
+        # Sicherstellen, dass Frame wieder korrekt gesetzt ist
+        scene.frame_current = current_frame
+        print(f"Finaler Frame gesetzt auf: {current_frame}")
+
         return {'FINISHED'}
 
+
 class TRACK_PT_auto_track_panel(bpy.types.Panel):
-    """UI panel for the auto-track operator."""
+    """UI Panel für den bidirektionalen Auto-Track"""
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
     bl_category = 'Track'
@@ -33,10 +54,10 @@ class TRACK_PT_auto_track_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.operator("clip.auto_track_forward", icon='TRACKING_FORWARDS')
+        layout.operator("clip.auto_track_bidir", icon='TRACKING_FORWARDS')
 
 classes = [
-    TRACK_OT_auto_track_forward,
+    TRACK_OT_auto_track_bidir,
     TRACK_PT_auto_track_panel,
 ]
 
