@@ -54,8 +54,6 @@ class CLIP_OT_kaiserlich_track(Operator):
             set_playhead_to_low_marker_frame(min_marker)
 
         compute_margin_distance()
-        create_proxy_and_wait(proxy_wait)
-
         marker_plus = get_marker_count_plus(scene)
         self.report(
             {'INFO'},
@@ -64,6 +62,7 @@ class CLIP_OT_kaiserlich_track(Operator):
                 f"error {error_threshold}, derived {marker_plus}"
             ),
         )
+        create_proxy_and_wait(proxy_wait)
         return {'FINISHED'}
 
 

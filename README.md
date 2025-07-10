@@ -29,8 +29,8 @@ The panel exposes several options:
 - **min marker pro frame** – minimum marker count per frame (default 10)
 - **min tracking length** – minimum length for each track (default 20)
 - **Error Threshold** – maximum error allowed for trackers (default 0.04)
-- **Proxy Wait** – delay in seconds before the next steps run after proxies
-  start building
+- **Proxy Wait** – time in seconds to wait after proxies are generated.
+  Proxy creation is performed as the final step of the operation
 
 ### Helper Scripts
 
