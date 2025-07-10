@@ -1,17 +1,17 @@
 # Tracking Add-on
 
 This repository contains simple Blender scripts to automate movie clip
-tracking. The main script `combined_cycle.py` combines feature detection,
+tracking. The main script `Combine.py` combines feature detection,
 auto tracking and playhead search in a repeating cycle. It can be run from
 the Blender text editor or installed as an add-on. A second add-on,
 `kaiser_track.py`, currently exposes a panel with placeholder settings for a
 future unified workflow.
 All other scripts in this repository are prototypes of the individual steps
-now bundled in `combined_cycle.py`.
+now bundled in `Combine.py`.
 
 ## Installation
 1. Open Blender and switch to the *Scripting* workspace.
-2. Load `combined_cycle.py` in the text editor and press **Run Script**, or
+2. Load `Combine.py` in the text editor and press **Run Script**, or
    install the folder as an add-on via *Edit → Preferences → Add-ons →
    Install...*.
 
@@ -86,7 +86,7 @@ multiple times without restarting Blender.
 
 ## Function Test Scripts
 
-In addition to `combined_cycle.py` the repository includes several standalone
+In addition to `Combine.py` the repository includes several standalone
 scripts that were used to verify each step of the workflow. They remain
 executable from Blender's text editor, although their functionality is now
 incorporated into the main cycle:
@@ -108,7 +108,7 @@ incorporated into the main cycle:
 - `kaiser_track.py` – provides a placeholder UI panel for a future unified workflow.
 
 These scripts can be executed from Blender's text editor for experimentation,
-but the full workflow resides in `combined_cycle.py`.
+but the full workflow resides in `Combine.py`.
 This project is released under the MIT License. See the `LICENSE` file for
 details.
 

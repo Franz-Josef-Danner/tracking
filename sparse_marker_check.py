@@ -1,5 +1,5 @@
 import bpy
-from .combined_cycle import find_sparse_marker_frames
+from .Combine import find_sparse_marker_frames
 
 
 class CLIP_OT_find_sparse_marker_frames(bpy.types.Operator):

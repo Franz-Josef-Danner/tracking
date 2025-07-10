@@ -11,7 +11,7 @@ from importlib import import_module, reload
 
 
 _modules = [
-    "combined_cycle",
+    "Combine",
     "sparse_marker_check",
     "motion_outlier_cleanup",
     "kaiser_track",
