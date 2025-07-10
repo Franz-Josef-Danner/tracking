@@ -10,6 +10,8 @@ import threading
 import time
 import glob
 
+PROXY_DIR = "//BL_proxy/"
+
 
 def remove_existing_proxies():
     """Remove previously generated proxy files."""
@@ -18,7 +20,7 @@ def remove_existing_proxies():
         print("Kein aktiver Clip.")
         return
 
-    proxy_dir = bpy.path.abspath("//BL_proxy/")
+    proxy_dir = bpy.path.abspath(PROXY_DIR)
     if os.path.isdir(proxy_dir):
         print(f"Lösche altes Proxy-Verzeichnis {proxy_dir}")
         shutil.rmtree(proxy_dir, ignore_errors=True)
@@ -49,9 +51,8 @@ def create_proxy_and_wait(wait_time=0.0):
     clip.proxy.build_100 = False
     clip.proxy.quality = 50
     clip.use_proxy_custom_directory = True
-    proxy_dir = "//BL_proxy/"
-    clip.proxy.directory = proxy_dir
-    full_proxy = bpy.path.abspath(proxy_dir)
+    clip.proxy.directory = PROXY_DIR
+    full_proxy = bpy.path.abspath(PROXY_DIR)
     os.makedirs(full_proxy, exist_ok=True)
     print(f"Proxy wird im Ordner {full_proxy} erstellt")
     print("Proxy-Erstellung gestartet…")
