@@ -11,7 +11,6 @@ import bpy
 from . import combined_cycle
 from . import sparse_marker_check
 from . import motion_outlier_cleanup
-from . import detect
 from . import track
 from . import refine
 from . import playhead
@@ -26,7 +25,6 @@ def register():
     combined_cycle.register()
     sparse_marker_check.register()
     motion_outlier_cleanup.register()
-    detect.register()
     track.register()
     refine.register()
     playhead.register()
@@ -44,7 +42,6 @@ def unregister():
     playhead.unregister()
     refine.unregister()
     track.unregister()
-    detect.unregister()
     motion_outlier_cleanup.unregister()
     sparse_marker_check.unregister()
     combined_cycle.unregister()
