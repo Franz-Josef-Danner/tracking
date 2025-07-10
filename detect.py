@@ -58,35 +58,12 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         return {'FINISHED'}
 
 # Panel-Klasse
-class CLIP_PT_DetectFeaturesPanel(bpy.types.Panel):
-    bl_space_type = 'CLIP_EDITOR'
-    bl_region_type = 'UI'
-    bl_category = 'Motion Tracking'
-    bl_label = "Detect Features Tool"
-
-    def draw(self, context):
-        layout = self.layout
-        layout.prop(context.scene, "min_marker_count")
-        layout.operator("clip.detect_features_custom", icon='VIEWZOOM')
-
 # Registrierung
 def register():
-    bpy.types.Scene.min_marker_count = bpy.props.IntProperty(
-        name="Min Marker Count",
-        default=5,
-        min=5,
-        max=50,
-        description="Minimum markers to detect each run",
-    )
-
     bpy.utils.register_class(DetectFeaturesCustomOperator)
-    bpy.utils.register_class(CLIP_PT_DetectFeaturesPanel)
 
 def unregister():
     bpy.utils.unregister_class(DetectFeaturesCustomOperator)
-    bpy.utils.unregister_class(CLIP_PT_DetectFeaturesPanel)
-
-    del bpy.types.Scene.min_marker_count
 
 if __name__ == "__main__":
     register()

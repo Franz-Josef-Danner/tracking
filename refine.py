@@ -35,20 +35,7 @@ class CLIP_OT_refine_selected_markers(bpy.types.Operator):
         self.report({'INFO'}, "Refine abgeschlossen.")
         return {'FINISHED'}
 
-class CLIP_PT_refine_panel(bpy.types.Panel):
-    bl_space_type = 'CLIP_EDITOR'
-    bl_region_type = 'UI'
-    bl_category = 'Track'
-    bl_label = "Refine Tools"
-
-    def draw(self, context):
-        layout = self.layout
-        layout.operator("clip.refine_selected_markers", icon="FILE_REFRESH")
-
-classes = (
-    CLIP_OT_refine_selected_markers,
-    CLIP_PT_refine_panel,
-)
+classes = (CLIP_OT_refine_selected_markers,)
 
 def register():
     for cls in classes:

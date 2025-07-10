@@ -24,21 +24,7 @@ class TRACK_OT_auto_track_forward(bpy.types.Operator):
         bpy.ops.clip.track_markers(sequence=True)
         return {'FINISHED'}
 
-class TRACK_PT_auto_track_panel(bpy.types.Panel):
-    """UI panel for the auto-track operator."""
-    bl_space_type = 'CLIP_EDITOR'
-    bl_region_type = 'UI'
-    bl_category = 'Track'
-    bl_label = "Auto Track"
-
-    def draw(self, context):
-        layout = self.layout
-        layout.operator("clip.auto_track_forward", icon='TRACKING_FORWARDS')
-
-classes = [
-    TRACK_OT_auto_track_forward,
-    TRACK_PT_auto_track_panel,
-]
+classes = [TRACK_OT_auto_track_forward]
 
 def register():
     for cls in classes:

@@ -112,22 +112,8 @@ class CLIP_OT_remove_close_neu_markers(bpy.types.Operator):
         return {'CANCELLED'}
 
 
-class CLIP_PT_neu_cleanup_tools(bpy.types.Panel):
-    bl_label = "NEU_-Cleanup"
-    bl_space_type = 'CLIP_EDITOR'
-    bl_region_type = 'UI'
-    bl_category = 'Tools'
-
-    def draw(self, context):
-        layout = self.layout
-        layout.prop(context.window_manager, "cleanup_min_distance")
-        op = layout.operator(CLIP_OT_remove_close_neu_markers.bl_idname)
-        op.min_distance = context.window_manager.cleanup_min_distance
-
-
 def register():
     bpy.utils.register_class(CLIP_OT_remove_close_neu_markers)
-    bpy.utils.register_class(CLIP_PT_neu_cleanup_tools)
     if not hasattr(bpy.types.WindowManager, "cleanup_min_distance"):
         bpy.types.WindowManager.cleanup_min_distance = bpy.props.FloatProperty(
             name="Mindestabstand",
@@ -141,7 +127,6 @@ def unregister():
     if hasattr(bpy.types.WindowManager, "cleanup_min_distance"):
         del bpy.types.WindowManager.cleanup_min_distance
     bpy.utils.unregister_class(CLIP_OT_remove_close_neu_markers)
-    bpy.utils.unregister_class(CLIP_PT_neu_cleanup_tools)
 
 
 if __name__ == "__main__":

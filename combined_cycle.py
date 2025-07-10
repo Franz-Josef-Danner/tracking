@@ -684,15 +684,6 @@ class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class TRACKING_PT_custom_panel(bpy.types.Panel):
-    bl_space_type = 'CLIP_EDITOR'
-    bl_region_type = 'UI'
-    bl_category = 'Tracking'
-    bl_label = 'Custom Tracking Tools'
-
-    def draw(self, context):
-        layout = self.layout
-        layout.operator(TRACKING_OT_delete_short_tracks_with_prefix.bl_idname)
 
 # ---- Playhead utilities (from playhead.py) ----
 DEFAULT_MINIMUM_MARKER_COUNT = 5
@@ -1184,7 +1175,6 @@ classes = [
     CLIP_OT_tracking_cycle,
     CLIP_OT_toggle_cycle_pause,
     CLIP_OT_auto_start,
-    CLIP_PT_tracking_cycle_panel,
 ]
 
 def register():
@@ -1248,11 +1238,14 @@ def register():
         description="True when the tracking cycle is paused",
     )
 
-    for scene in bpy.data.scenes:
-        scene.proxy_built = False
-        scene.tracking_cycle_paused = False
-        scene.error_cleanup_limit = DEFAULT_ERROR_LIMIT
-        update_min_marker_props(scene, bpy.context)
+    scenes = getattr(bpy.data, "scenes", None)
+    if scenes:
+        for scene in scenes:
+            scene.proxy_built = False
+            scene.tracking_cycle_paused = False
+            scene.error_cleanup_limit = DEFAULT_ERROR_LIMIT
+            update_min_marker_props(scene, bpy.context)
+
 
     bpy.types.Scene.tracking_cycle_status = bpy.props.StringProperty(
         name="Tracking Status",

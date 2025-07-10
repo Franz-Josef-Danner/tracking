@@ -66,15 +66,6 @@ def create_proxy_and_wait():
 
     threading.Thread(target=wait_file).start()
 
-class MOVIECLIP_PT_proxy_test(bpy.types.Panel):
-    bl_space_type = 'CLIP_EDITOR'
-    bl_region_type = 'UI'
-    bl_category = "ProxyTest"
-    bl_label = "Proxy 50% Custom"
-
-    def draw(self, context):
-        self.layout.operator("clip.proxy_custom_operator", text="Proxy 50% erstellen")
-
 class CLIP_OT_proxy_custom_operator(bpy.types.Operator):
     bl_idname = "clip.proxy_custom_operator"
     bl_label = "Proxy 50% erstellen"
@@ -86,13 +77,11 @@ class CLIP_OT_proxy_custom_operator(bpy.types.Operator):
 
 def register():
     bpy.utils.register_class(CLIP_OT_proxy_custom_operator)
-    bpy.utils.register_class(MOVIECLIP_PT_proxy_test)
-    print("✅ Proxy-UI registriert")
+    print("✅ Proxy-Operator registriert")
 
 def unregister():
     bpy.utils.unregister_class(CLIP_OT_proxy_custom_operator)
-    bpy.utils.unregister_class(MOVIECLIP_PT_proxy_test)
-    print("❎ Proxy-UI entfernt")
+    print("❎ Proxy-Operator entfernt")
 
 if __name__ == "__main__":
     register()
