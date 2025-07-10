@@ -1,5 +1,4 @@
 import bpy
-from . import marker_count_property
 
 # Operator-Klasse
 class DetectFeaturesCustomOperator(bpy.types.Operator):
@@ -79,13 +78,13 @@ classes = (
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
-    marker_count_property.register()
+
 
 
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
-    marker_count_property.unregister()
+
 
 if __name__ == "__main__":
     register()

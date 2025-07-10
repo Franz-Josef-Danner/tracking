@@ -21,6 +21,8 @@ the helper scripts sit directly in the archive root before installing.
 1. Open the Movie Clip Editor and switch to **Tracking** context.
 2. Press **N** to reveal the sidebar and choose the **Kaiserlich** tab.
 3. Adjust the properties and click **Start** to run the operator.
+4. The addon waits for proxy generation, disables proxies, then runs
+   marker detection and cleanup automatically.
 
 ### Properties
 
