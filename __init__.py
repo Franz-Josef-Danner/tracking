@@ -11,6 +11,16 @@ bl_info = {
 import bpy
 from bpy.types import Panel, Operator
 from bpy.props import IntProperty, FloatProperty
+import os
+import sys
+
+# Ensure helper modules in this directory can be imported when the addon is
+# installed as a single-file module. Blender does not automatically add the
+# addon folder to ``sys.path`` when ``__init__.py`` sits at the root of the
+# archive, so do it manually.
+addon_dir = os.path.dirname(__file__)
+if addon_dir not in sys.path:
+    sys.path.append(addon_dir)
 
 from find_frame_with_few_tracking_markers import (
     find_frame_with_few_tracking_markers,
