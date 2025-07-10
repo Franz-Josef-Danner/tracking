@@ -39,7 +39,7 @@ def create_proxy_and_wait(wait_time=0.0):
     if hasattr(clip, "use_proxy_timecode"):
         clip.use_proxy_timecode = True
     if hasattr(clip.proxy, "timecode"):
-        clip.proxy.timecode = 'RECORD_RUN'
+        clip.proxy.timecode = 'FREE_RUN_NO_GAPS'
     clip.proxy.build_25 = False
     clip.proxy.build_50 = True
     clip.proxy.build_75 = False
