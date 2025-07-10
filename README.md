@@ -7,6 +7,9 @@ include an extra parent folder. Blender extracts the archive into a new
 directory whose name matches the zip file, so the root must contain
 `__init__.py`. The addon adds a panel to the Movie Clip Editor for custom
 tracking options.
+If the addon is nested in another directory when the zip is created,
+Blender will fail to load the module. Double-check that `__init__.py` and
+the helper scripts sit directly in the archive root before installing.
 
 ## Installation
 1. In Blender open **Edit > Preferences > Add-ons**.
