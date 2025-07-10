@@ -53,7 +53,8 @@ class CLIP_OT_kaiserlich_track(Operator):
         min_marker = scene.kt_min_marker_per_frame
         min_track_len = scene.kt_min_tracking_length
         error_threshold = scene.kt_error_threshold
-        proxy_wait = 300.0
+        # Wartezeit für die Proxy-Erstellung (in Sekunden)
+        wait_time = 300.0
 
         update_min_marker_props(scene, context)
         marker_counts = get_tracking_marker_counts()
@@ -76,7 +77,7 @@ class CLIP_OT_kaiserlich_track(Operator):
         # Installationen liefern eine Version ohne Parameter.
         try:
             print("✅ Aufruf: create_proxy_and_wait() wird gestartet")
-            create_proxy_and_wait(proxy_wait)
+            create_proxy_and_wait(wait_time)
         except TypeError:
             # Fallback für ältere Skripte ohne Argument
             create_proxy_and_wait()
