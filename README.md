@@ -14,13 +14,15 @@ now bundled in `combined_cycle.py`.
    Install...*.
 
 When installed as an add-on, a single panel named **Tracking Cycle** appears in
-the Movie Clip Editor. It provides only the minimum marker count input, a
-progress label showing the current frame out of the total, and a button to start
-the cycle. Heavy operations like feature detection and auto tracking run
-synchronously and may temporarily block Blender's UI, so the status text helps
-indicate progress. The currently processed frame is also printed to the console
-for quick feedback. A boolean option **Cleanup Verbose** controls whether the
-distance from each `NEU_` marker to `GOOD_` markers is printed during cleanup.
+the Movie Clip Editor. Besides the **Min Marker Count** value it now exposes the
+properties **Min Track Length** and **Error Cleanup Limit**. The panel displays
+the current status and frame progress and includes buttons to start the cycle,
+pause or resume it, and an **Auto Start** option that builds a 50 % proxy before
+launching the cycle. Heavy operations like feature detection and auto tracking
+run synchronously, so the status label helps indicate progress. The currently
+processed frame is also printed to the console for quick feedback. A boolean
+option **Cleanup Verbose** controls whether the distance from each `NEU_` marker
+to `GOOD_` markers is printed during cleanup.
 
 The following operators are registered for internal use and can also be called
 via Blender's operator search:
@@ -28,6 +30,8 @@ via Blender's operator search:
 - **Start Tracking Cycle** – iteratively searches for frames with few markers,
   detects new features and tracks them forward.
 - **Auto Track Selected** – selects all tracks named `TRACK_*` and tracks them forward.
+- **Auto Start** – builds a 50% proxy and starts the tracking cycle automatically.
+- **Toggle Cycle Pause** – pauses or resumes the running cycle.
 - **Delete Short Tracks with Prefix** – removes all tracking tracks starting
   with `TRACK_` that are shorter than the "Min Track Length" property and
   renames the remaining ones to `GOOD_`.
