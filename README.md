@@ -90,7 +90,8 @@ executable from Blender's text editor, although their functionality is now
 incorporated into the main cycle:
 
 - `Track Length.py` – removes tracks named `TRACK_` that are shorter than 25 frames.
-- `detect.py` – panel for repeatedly detecting features until a minimum count is reached.
+- `detect.py` – detection operator calling Blender's feature detection.
+- `marker_count_property.py` – registers the Min Marker Count property used by detection.
 - `playhead.py` – finds the first frame with too few markers and sets the playhead.
 - `catch clean.py` – reloads the clip to clear its RAM cache.
 - `Proxy switch.py` – header button to toggle proxy usage. The operator waits

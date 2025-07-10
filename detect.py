@@ -1,4 +1,5 @@
 import bpy
+from . import marker_count_property
 
 # Operator-Klasse
 class DetectFeaturesCustomOperator(bpy.types.Operator):
@@ -69,24 +70,22 @@ class CLIP_PT_DetectFeaturesPanel(bpy.types.Panel):
         layout.prop(context.scene, "min_marker_count")
         layout.operator("clip.detect_features_custom", icon='VIEWZOOM')
 
-# Registrierung
-def register():
-    bpy.types.Scene.min_marker_count = bpy.props.IntProperty(
-        name="Min Marker Count",
-        default=5,
-        min=5,
-        max=50,
-        description="Minimum markers to detect each run",
-    )
+classes = (
+    DetectFeaturesCustomOperator,
+    CLIP_PT_DetectFeaturesPanel,
+)
 
-    bpy.utils.register_class(DetectFeaturesCustomOperator)
-    bpy.utils.register_class(CLIP_PT_DetectFeaturesPanel)
+
+def register():
+    for cls in classes:
+        bpy.utils.register_class(cls)
+    marker_count_property.register()
+
 
 def unregister():
-    bpy.utils.unregister_class(DetectFeaturesCustomOperator)
-    bpy.utils.unregister_class(CLIP_PT_DetectFeaturesPanel)
-
-    del bpy.types.Scene.min_marker_count
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
+    marker_count_property.unregister()
 
 if __name__ == "__main__":
     register()
