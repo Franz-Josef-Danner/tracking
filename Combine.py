@@ -24,209 +24,84 @@ import os
 import math
 import mathutils
 
+# Import motion model helpers from the separate module. The fallback import
+# supports running this script directly from Blender's text editor where
+# package-style imports are unavailable.
+try:
+    from .motion_model import cycle_motion_model, reset_motion_model
+except Exception:
+    from motion_model import cycle_motion_model, reset_motion_model
 
-def get_marker_count_plus(scene):
-    """Return stored value or the default derived from the base count."""
-    return scene.get("_marker_count_plus", scene.min_marker_count * 4)
+try:
+    from .get_marker_count_plus import get_marker_count_plus
+except Exception:
+    from get_marker_count_plus import get_marker_count_plus
 
+try:
+    from .set_marker_count_plus import set_marker_count_plus
+except Exception:
+    from set_marker_count_plus import set_marker_count_plus
 
-def set_marker_count_plus(scene, value):
-    """Clamp and store marker count plus based on the base marker count."""
-    base = scene.min_marker_count
-    value = max(base * 4, min(value, base * 200))
-    scene["_marker_count_plus"] = int(value)
-    scene.min_marker_count_plus_min = int(value * 0.8)
-    scene.min_marker_count_plus_max = int(value * 1.2)
+try:
+    from .ensure_margin_distance import ensure_margin_distance
+except Exception:
+    from ensure_margin_distance import ensure_margin_distance
 
-def ensure_margin_distance(clip, threshold=1.0):
-    """Return margin and distance scaled by ``threshold`` along with the base distance.
+try:
+    from .update_min_marker_props import update_min_marker_props
+except Exception:
+    from update_min_marker_props import update_min_marker_props
 
-    Base values derived from the clip width are cached on the clip as custom
-    properties so they are calculated only once per clip. Each call can then
-    scale these base values by the desired detection ``threshold`` using
-    ``base * (log10(threshold * 100000) / 5)``.
-    """
+try:
+    from .adjust_marker_count_plus import adjust_marker_count_plus
+except Exception:
+    from adjust_marker_count_plus import adjust_marker_count_plus
 
-    if "MARGIN" not in clip or "DISTANCE" not in clip:
-        width = clip.size[0]
-        clip["MARGIN"] = max(1, int(width / 200))
-        clip["DISTANCE"] = max(1, int(width / 20))
+try:
+    from .remove_close_new_tracks import remove_close_new_tracks
+except Exception:
+    from remove_close_new_tracks import remove_close_new_tracks
 
-    base_margin = int(clip["MARGIN"])
-    base_distance = int(clip["DISTANCE"])
+try:
+    from .cleanup_marker_errors import cleanup_marker_errors
+except Exception:
+    from cleanup_marker_errors import cleanup_marker_errors
 
-    scale = math.log10(threshold * 100000) / 5
-    margin = max(1, int(base_margin * scale))
-    distance = max(1, int(base_distance * scale))
-    return margin, distance, base_distance
+try:
+    from .get_tracking_marker_counts import get_tracking_marker_counts
+except Exception:
+    from get_tracking_marker_counts import get_tracking_marker_counts
 
+try:
+    from .solver_covers_full_scene import solver_covers_full_scene
+except Exception:
+    from solver_covers_full_scene import solver_covers_full_scene
 
-def update_min_marker_props(scene, context):
-    """Update derived marker count properties when the base count changes."""
-    base = scene.min_marker_count
-    scene.min_marker_count_plus = min(base * 4, base * 200)
+try:
+    from .get_last_solved_frame import get_last_solved_frame
+except Exception:
+    from get_last_solved_frame import get_last_solved_frame
 
+try:
+    from .find_frame_with_few_tracking_markers import (
+        find_frame_with_few_tracking_markers,
+    )
+except Exception:
+    from find_frame_with_few_tracking_markers import (
+        find_frame_with_few_tracking_markers,
+    )
 
-def adjust_marker_count_plus(scene, delta):
-    """Update marker count plus while clamping to the base value."""
+try:
+    from .find_sparse_marker_frames import find_sparse_marker_frames
+except Exception:
+    from find_sparse_marker_frames import find_sparse_marker_frames
 
-    base_plus = scene.min_marker_count * 4
-    new_val = max(base_plus, scene.min_marker_count_plus + delta)
-    new_val = min(new_val, scene.min_marker_count * 200)
-    scene.min_marker_count_plus = new_val
-
-
-def remove_close_new_tracks(context, clip, base_distance, threshold):
-    """Delete ``NEU_`` tracks too close to existing ``GOOD_`` markers.
-
-    Only tracks with the prefix ``GOOD_`` are considered existing markers.
-    The removal distance is derived from ``base_distance`` and ``threshold``
-    using the same scaling formula as feature detection. It is half the scaled
-    distance converted to normalized clip space. Per-marker distances are
-    printed only when ``scene.cleanup_verbose`` is enabled; summary logs are
-    always shown. Missing markers are also reported.
-    """
-
-    current_frame = context.scene.frame_current
-    tracks = clip.tracking.tracks
-
-    neu_tracks = [t for t in tracks if t.name.startswith("NEU_")]
-    existing = [t for t in tracks if t.name.startswith("GOOD_")]
-
-    # Filter existing tracks to those with a marker at the current frame
-    good_tracks = []
-    missing = 0
-    for track in existing:
-        marker = track.markers.find_frame(current_frame)
-        if marker:
-            good_tracks.append((track, marker))
-        else:
-            missing += 1
-    if missing:
-        pass  # print(f"[Cleanup] {missing} GOOD_ tracks lack marker at frame {current_frame}")
-
-    if not neu_tracks or not good_tracks:
-        # print("[Cleanup] skipping - no GOOD_ or NEU_ tracks")
-        return 0
-
-    scale = math.log10(threshold * 100000) / 5
-    scaled_dist = max(1, int(base_distance * scale))
-    norm_dist = (scaled_dist / 2.0) / clip.size[0]
-    # print(f"[Cleanup] threshold distance {norm_dist:.5f}")
-
-    to_remove = []
-    for neu in neu_tracks:
-        neu_marker = neu.markers.find_frame(current_frame)
-        if not neu_marker:
-            if context.scene.cleanup_verbose:
-                pass  # print(f"[Cleanup] {neu.name} has no marker at frame {current_frame}")
-            continue
-        neu_pos = mathutils.Vector(neu_marker.co)
-        for good, good_marker in good_tracks:
-            good_pos = mathutils.Vector(good_marker.co)
-            dist = (neu_pos - good_pos).length
-            if context.scene.cleanup_verbose:
-                pass  # print(f"[Cleanup] {neu.name} vs {good.name}: distance {dist:.5f}")
-            if dist < norm_dist:
-                # print(
-                #     f"[Cleanup] {neu.name} too close to {good.name} "
-                #     f"({dist:.5f} < {norm_dist:.5f}) -> remove"
-                # )
-                to_remove.append(neu)
-                break
-
-    if not to_remove:
-        return 0
-
-    for t in tracks:
-        t.select = False
-    for t in to_remove:
-        t.select = True
-
-    area = next((a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None)
-    if not area:
-        pass  # print("[Cleanup] Warning: no Clip Editor area found for deletion")
-    else:
-        region = next((r for r in area.regions if r.type == 'WINDOW'), None)
-        space = getattr(area, 'spaces', None)
-        space = space.active if space else None
-        if not region or not space:
-            pass  # print("[Cleanup] Warning: missing region or space for deletion")
-        else:
-            with context.temp_override(area=area, region=region, space_data=space):
-                bpy.ops.clip.delete_track()
-
-    print(f"[Cleanup] Removed {len(to_remove)} NEU_ tracks")
-    return len(to_remove)
+try:
+    from .set_playhead import set_playhead
+except Exception:
+    from set_playhead import set_playhead
 
 
-def cleanup_marker_errors(limit):
-    """Remove tracks with high reprojection error when too many markers exist."""
-
-    clip = bpy.context.space_data.clip
-    if not clip:
-        print("\u2757 Kein MovieClip im aktuellen Kontext verf\u00fcgbar.")
-        return
-
-    obj = clip.tracking.objects.active
-    if obj is None or not obj.is_camera:
-        print("\u2757 Kein aktives Kamera-Tracking-Objekt vorhanden.")
-        return
-
-    try:
-        bpy.ops.clip.solve_camera()
-        print("[Cleanup] camera solve finished")
-    except Exception as e:
-        print(f"[Cleanup] solve failed: {e}")
-        return
-
-    if not clip.tracking.reconstruction.is_valid:
-        print("\u2757 Camera solve wurde ausgef\u00fchrt, aber keine g\u00fcltige L\u00f6sung erzeugt.")
-        return
-
-    marker_data = clip.tracking.tracks
-    if not marker_data:
-        return
-
-    start_frame = int(clip.frame_start)
-    end_frame = int(clip.frame_start + clip.frame_duration - 1)
-
-    changes_made = True
-    while changes_made:
-        changes_made = False
-
-        for frame in range(start_frame, end_frame + 1):
-            active_markers = []
-            for track in marker_data:
-                marker = track.markers.find_frame(frame)
-                if marker and not marker.mute:
-                    error = getattr(marker, "error", 0.0)
-                    active_markers.append((track, error))
-
-            if len(active_markers) > limit:
-                bpy.context.scene.frame_current = frame
-                print(
-                    f"Found frame {frame} with {len(active_markers)} active markers (more than {limit})."
-                )
-                active_markers.sort(key=lambda x: x[1], reverse=True)
-                while len(active_markers) > limit:
-                    worst_track, error = active_markers.pop(0)
-                    if error < 2.0:
-                        print(
-                            f"Skipped deletion of marker with error {error:.4f} (below threshold)"
-                        )
-                        continue
-                    clip.tracking.tracks.remove(worst_track)
-                    print(
-                        f"Deleted entire track '{worst_track.name}' due to error {error:.4f} at frame {frame}"
-                    )
-                    changes_made = True
-
-                break
-
-    final_tracks = len(clip.tracking.tracks)
-    print(f"Final track count: {final_tracks}")
-    print("All frames now within marker limit.")
 
 
 # Try to initialize margin and distance on the active clip when the
@@ -710,141 +585,7 @@ PATTERN_SIZE_MAX = 150
 # Number of times the solver may fail before aborting the cycle
 MAX_SOLVE_ATTEMPTS = 10
 
-# Motion model cycling order used when the playhead stays on the same
-# frame. Names follow the Blender API spelling from ``MovieTrackingSettings``.
-MOTION_MODEL_SEQUENCE = [
-    "Loc",
-    "LocRot",
-    "LocScale",
-    "LocRotScale",
-    "Affine",
-    "Perspective",
-]
-DEFAULT_MOTION_MODEL = "Loc"
 
-def cycle_motion_model(settings):
-    """Advance ``settings.default_motion_model`` to the next value."""
-
-    current = settings.default_motion_model
-    try:
-        index = MOTION_MODEL_SEQUENCE.index(current)
-    except ValueError:
-        # Unknown value; do not change it to avoid breaking user setup
-        return
-    next_index = (index + 1) % len(MOTION_MODEL_SEQUENCE)
-    settings.default_motion_model = MOTION_MODEL_SEQUENCE[next_index]
-
-def reset_motion_model(settings):
-    """Reset ``settings.default_motion_model`` to ``DEFAULT_MOTION_MODEL``."""
-
-    settings.default_motion_model = DEFAULT_MOTION_MODEL
-
-def get_tracking_marker_counts(clip=None):
-    """Return a mapping of frame numbers to the number of markers.
-
-    If ``clip`` is ``None``, the active clip from ``bpy.context`` is used.
-    """
-
-    if clip is None:
-        clip = bpy.context.space_data.clip
-        if not clip:
-            return Counter()
-
-    marker_counts = Counter()
-    for track in clip.tracking.tracks:
-        for marker in track.markers:
-            frame = marker.frame
-            marker_counts[frame] += 1
-    return marker_counts
-
-def solver_covers_full_scene(clip):
-    """Return ``True`` if the reconstruction includes all frames."""
-
-    recon = clip.tracking.reconstruction
-    if not recon.is_valid:
-        return False
-
-    frame_start = int(clip.frame_start)
-    frame_end = int(clip.frame_start + clip.frame_duration - 1)
-    frames = {cam.frame for cam in recon.cameras}
-    if not frames:
-        return False
-
-    return (
-        min(frames) <= frame_start
-        and max(frames) >= frame_end
-        and len(frames) >= (frame_end - frame_start + 1)
-    )
-
-def get_last_solved_frame(clip):
-    """Return the highest frame number with a solved camera."""
-
-    recon = clip.tracking.reconstruction
-    if not recon.is_valid:
-        return None
-    frames = [cam.frame for cam in recon.cameras]
-    return max(frames) if frames else None
-
-def find_frame_with_few_tracking_markers(marker_counts, minimum_count):
-    """Return the first frame with fewer markers than ``minimum_count``."""
-    start = bpy.context.scene.frame_start
-    end = bpy.context.scene.frame_end
-    for frame in range(start, end + 1):
-        if marker_counts.get(frame, 0) < minimum_count:
-            return frame
-    return None
-
-
-def find_sparse_marker_frames(clip, threshold):
-    """Return list of frames with fewer markers than ``threshold``.
-
-    The search operates on the current scene's frame range so it matches
-    the cycle's tracking domain. The last frame is skipped to avoid false
-    positives when no tracking data exists yet for that frame.
-    """
-
-    if clip is None:
-        clip = bpy.context.space_data.clip
-        if not clip:
-            return []
-
-    scene = bpy.context.scene
-    start = int(scene.frame_start)
-    end = int(scene.frame_end)
-    frames_with_few_markers = []
-    for frame in range(start, end):
-        count = 0
-        for track in clip.tracking.tracks:
-            marker = track.markers.find_frame(frame)
-            if marker and not marker.mute:
-                count += 1
-        if count < threshold:
-            frames_with_few_markers.append((frame, count))
-    return frames_with_few_markers
-
-def set_playhead(frame, retries=2):
-    """Position the playhead reliably at ``frame`` and refresh the UI."""
-
-    if frame is None:
-        return
-
-    scene = bpy.context.scene
-    for _ in range(retries):
-        scene.frame_set(frame)
-        if scene.frame_current == frame:
-            break
-        scene.frame_current = frame
-        if scene.frame_current == frame:
-            break
-    else:
-        pass
-
-    # Ensure UI reflects the new playhead position
-    wm = bpy.context.window_manager
-    for window in wm.windows:
-        for area in window.screen.areas:
-            if area.type == 'CLIP_EDITOR':
-                area.tag_redraw()
 
 # ---- Cycle Operator ----
 class CLIP_OT_tracking_cycle(bpy.types.Operator):
