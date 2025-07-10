@@ -1247,11 +1247,14 @@ def register():
         description="True when the tracking cycle is paused",
     )
 
-    for scene in bpy.data.scenes:
-        scene.proxy_built = False
-        scene.tracking_cycle_paused = False
-        scene.error_cleanup_limit = DEFAULT_ERROR_LIMIT
-        update_min_marker_props(scene, bpy.context)
+    scenes = getattr(bpy.data, "scenes", None)
+    if scenes:
+        for scene in scenes:
+            scene.proxy_built = False
+            scene.tracking_cycle_paused = False
+            scene.error_cleanup_limit = DEFAULT_ERROR_LIMIT
+            update_min_marker_props(scene, bpy.context)
+
 
     bpy.types.Scene.tracking_cycle_status = bpy.props.StringProperty(
         name="Tracking Status",

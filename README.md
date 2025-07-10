@@ -3,9 +3,10 @@
 This repository contains simple Blender scripts to automate movie clip
 tracking. The main script `combined_cycle.py` combines feature detection,
 auto tracking and playhead search in a repeating cycle. It can be run from
-the Blender text editor or installed as an add-on.
-All other scripts in this repository are prototypes of the individual steps
-now bundled in `combined_cycle.py`.
+the Blender text editor or installed as an add-on. All other files provide
+standalone operators. When installed as an add-on the `__init__.py` module
+registers these helpers and reuses the UI panels from `combined_cycle.py`
+to avoid duplicate buttons.
 
 ## Installation
 1. Open Blender and switch to the *Scripting* workspace.
