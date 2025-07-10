@@ -90,7 +90,8 @@ executable from Blender's text editor, although their functionality is now
 incorporated into the main cycle:
 
 - `Track Length.py` – removes tracks named `TRACK_` that are shorter than 25 frames.
-- `detect.py` – panel for repeatedly detecting features until a minimum count is reached.
+- `detect.py` – detection operator calling Blender's feature detection.
+- `marker_count_property.py` – registers the Min Marker Count property used by detection.
 - `playhead.py` – finds the first frame with too few markers and sets the playhead.
 - `catch clean.py` – reloads the clip to clear its RAM cache.
 - `Proxy switch.py` – header button to toggle proxy usage. The operator waits
@@ -100,8 +101,8 @@ incorporated into the main cycle:
 - `distance_remove.py` – operator that deletes `NEU_` markers too close to `GOOD_` markers.
 - `track.py` – operator to track selected markers forward.
 - `track_marker_size_adapt.py` – tracks one frame at a time until markers stop moving.
-- `margin a Distanz.py` – calculates detection margin and distance from clip width.
-- `min marker rechner.py` – helper for computing the marker count range used by detection.
+- `ensure_margin_distance.py` – computes detection margin and distance based on a threshold value.
+- `update_min_marker_props.py` – keeps derived marker properties in sync with the base count.
 
 These scripts can be executed from Blender's text editor for experimentation,
 but the full workflow resides in `combined_cycle.py`.

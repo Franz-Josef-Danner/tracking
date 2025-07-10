@@ -118,10 +118,13 @@ class CLIP_OT_clean_tracking_markers(bpy.types.Operator):
     bl_label = "Wackelige Marker bereinigen"
     bl_description = "Bereinigt Marker mit inkonsistenter Bewegung über alle Frames"
     bl_options = {'REGISTER', 'UNDO'}
-
-    ,
-        description="Toleranzen für Ganzbild, Halbierung und Viertelung"
+    threshold: bpy.props.FloatProperty(
+        name="Abweichungs-Schwelle",
+        default=0.2,
+        min=0.0,
+        description="Tolerierte Abweichung von der mittleren Bewegung",
     )
+
 
     @classmethod
     def poll(cls, context):
