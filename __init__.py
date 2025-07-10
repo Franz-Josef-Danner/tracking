@@ -79,7 +79,6 @@ class CLIP_PT_kaiserlich_track(Panel):
         layout.prop(scene, "kt_min_marker_per_frame")
         layout.prop(scene, "kt_min_tracking_length")
         layout.prop(scene, "kt_error_threshold")
-        layout.prop(scene, "kt_proxy_wait")
         layout.operator(CLIP_OT_kaiserlich_track.bl_idname, text="Start")
 
 
@@ -101,7 +100,7 @@ def register():
     )
     bpy.types.Scene.kt_proxy_wait = FloatProperty(
         name="Proxy Wait",
-        default=2.0,
+        default=300.0,
         min=0.0,
     )
     bpy.types.Scene.min_marker_count = IntProperty(
