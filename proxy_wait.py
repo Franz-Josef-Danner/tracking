@@ -43,6 +43,7 @@ def create_proxy_and_wait(wait_time=0.0):
     clip.proxy.directory = proxy_dir
     full_proxy = bpy.path.abspath(proxy_dir)
     os.makedirs(full_proxy, exist_ok=True)
+    print(f"Proxy wird im Ordner {full_proxy} erstellt")
     bpy.ops.clip.rebuild_proxy()
     print("Warte auf erste Proxy-Datei…")
 
@@ -68,4 +69,6 @@ def create_proxy_and_wait(wait_time=0.0):
             remaining -= 1
         if wait_thread.is_alive():
             wait_thread.join(timeout=0)
+    wait_thread.join()
+    print("Proxy-Erstellung abgeschlossen")
 
