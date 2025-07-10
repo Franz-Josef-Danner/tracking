@@ -10,15 +10,18 @@ bl_info = {
 from . import combined_cycle
 from . import sparse_marker_check
 from . import motion_outlier_cleanup
+from . import kaiser_track
 
 
 def register():
     combined_cycle.register()
     sparse_marker_check.register()
     motion_outlier_cleanup.register()
+    kaiser_track.register()
 
 
 def unregister():
+    kaiser_track.unregister()
     motion_outlier_cleanup.unregister()
     sparse_marker_check.unregister()
     combined_cycle.unregister()
