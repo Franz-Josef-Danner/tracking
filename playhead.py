@@ -59,19 +59,8 @@ class CLIP_OT_jump_to_sparse_marker_frame(bpy.types.Operator):
 
 
 # UI-Panel in der Sidebar des Clip Editors
-class CLIP_PT_marker_jump_panel(bpy.types.Panel):
-    bl_label = "Marker Tools"
-    bl_space_type = 'CLIP_EDITOR'
-    bl_region_type = 'UI'
-    bl_category = "Marker Tools"
-
-    def draw(self, context):
-        layout = self.layout
-        layout.operator("clip.jump_to_sparse_marker", text="Gehe zu leerem Marker-Frame")
-
-
 # Registrierung
-classes = (CLIP_OT_jump_to_sparse_marker_frame, CLIP_PT_marker_jump_panel)
+classes = (CLIP_OT_jump_to_sparse_marker_frame,)
 
 def register():
     for cls in classes:

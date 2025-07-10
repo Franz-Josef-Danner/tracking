@@ -25,18 +25,7 @@ class CLIP_OT_find_sparse_marker_frames(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class CLIP_PT_marker_check_panel(bpy.types.Panel):
-    bl_space_type = 'CLIP_EDITOR'
-    bl_region_type = 'UI'
-    bl_category = 'Marker Analyse'
-    bl_label = 'Marker Analyse'
-
-    def draw(self, context):
-        layout = self.layout
-        layout.operator("clip.find_sparse_marker_frames", icon='VIEWZOOM')
-
-
-classes = (CLIP_OT_find_sparse_marker_frames, CLIP_PT_marker_check_panel)
+classes = (CLIP_OT_find_sparse_marker_frames,)
 
 
 def register():

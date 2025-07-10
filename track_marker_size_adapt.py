@@ -64,25 +64,12 @@ class CLIP_OT_track_one_frame(bpy.types.Operator):
         return {'CANCELLED'}
 
 
-class CLIP_PT_one_frame_tracker_panel(bpy.types.Panel):
-    bl_space_type = 'CLIP_EDITOR'
-    bl_region_type = 'UI'
-    bl_category = "Tracking"
-    bl_label = "One Frame Tracker"
-
-    def draw(self, context):
-        layout = self.layout
-        layout.operator("clip.track_one_frame", text="Track Until Done")
-
-
 def register():
     bpy.utils.register_class(CLIP_OT_track_one_frame)
-    bpy.utils.register_class(CLIP_PT_one_frame_tracker_panel)
 
 
 def unregister():
     bpy.utils.unregister_class(CLIP_OT_track_one_frame)
-    bpy.utils.unregister_class(CLIP_PT_one_frame_tracker_panel)
 
 
 if __name__ == "__main__":

@@ -88,15 +88,6 @@ def find_frame_with_few_markers(limit):
     print("All frames now within marker limit.")
 
 # Panel + Button definieren
-class CLIP_PT_FindSparseMarkerFrame(bpy.types.Panel):
-    bl_space_type = 'CLIP_EDITOR'
-    bl_region_type = 'UI'
-    bl_category = 'Marker Tools'
-    bl_label = 'Find Sparse Marker Frame'
-
-    def draw(self, context):
-        layout = self.layout
-        layout.operator("clip.find_sparse_marker_frame", text="Jump to Dense Frame")
 
 class CLIP_OT_FindSparseMarkerFrameOperator(bpy.types.Operator):
     bl_idname = "clip.find_sparse_marker_frame"
@@ -107,7 +98,7 @@ class CLIP_OT_FindSparseMarkerFrameOperator(bpy.types.Operator):
         return {'FINISHED'}
 
 # Registrierung
-classes = [CLIP_PT_FindSparseMarkerFrame, CLIP_OT_FindSparseMarkerFrameOperator]
+classes = [CLIP_OT_FindSparseMarkerFrameOperator]
 
 def register():
     for cls in classes:

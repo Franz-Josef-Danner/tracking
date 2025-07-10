@@ -62,26 +62,6 @@ def estimate_proxy_need_from_ram(clip, user_ram_gb):
 
 # === UI & Operator ===
 
-class CLIP_PT_proxy_estimator(bpy.types.Panel):
-    bl_label = "Proxy Bedarf (RAM)"
-    bl_space_type = 'CLIP_EDITOR'
-    bl_region_type = 'UI'
-    bl_category = 'Proxy'
-
-    def draw(self, context):
-        layout = self.layout
-        props = context.scene.proxy_check_props
-
-        layout.prop(props, "user_ram_gb")
-        layout.operator("clip.check_proxy_ram")
-
-        if props.result:
-            layout.label(text="Ergebnis:")
-            for line in props.result.split("\n"):
-                layout.label(text=line[:128])
-
-        if props.proxy_recommendation:
-            layout.operator("clip.build_recommended_proxy")
 
 class CLIP_OT_check_proxy_ram(bpy.types.Operator):
     bl_idname = "clip.check_proxy_ram"
@@ -167,7 +147,6 @@ class ProxyCheckProperties(bpy.types.PropertyGroup):
 
 classes = [
     ProxyCheckProperties,
-    CLIP_PT_proxy_estimator,
     CLIP_OT_check_proxy_ram,
     CLIP_OT_build_recommended_proxy
 ]

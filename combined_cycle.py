@@ -1184,7 +1184,6 @@ classes = [
     CLIP_OT_tracking_cycle,
     CLIP_OT_toggle_cycle_pause,
     CLIP_OT_auto_start,
-    CLIP_PT_tracking_cycle_panel,
 ]
 
 def register():

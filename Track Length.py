@@ -61,25 +61,13 @@ class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
         print("=== [Operator abgebrochen] ===\n")
         return {'CANCELLED'}
 
-class TRACKING_PT_custom_panel(bpy.types.Panel):
-    bl_space_type = 'CLIP_EDITOR'
-    bl_region_type = 'UI'
-    bl_category = 'Tracking'
-    bl_label = 'Custom Tracking Tools'
-
-    def draw(self, context):
-        layout = self.layout
-        layout.operator("tracking.delete_short_tracks_with_prefix")
-
 def register():
     bpy.utils.register_class(TRACKING_OT_delete_short_tracks_with_prefix)
-    bpy.utils.register_class(TRACKING_PT_custom_panel)
-    print("🔧 Operator & Panel registriert")
+    print("🔧 Operator registriert")
 
 def unregister():
     bpy.utils.unregister_class(TRACKING_OT_delete_short_tracks_with_prefix)
-    bpy.utils.unregister_class(TRACKING_PT_custom_panel)
-    print("🧹 Operator & Panel entfernt")
+    print("🧹 Operator entfernt")
 
 if __name__ == "__main__":
     register()

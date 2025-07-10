@@ -109,23 +109,7 @@ class CLIP_OT_remove_motion_outliers(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class CLIP_PT_motion_outlier_panel(bpy.types.Panel):
-    bl_label = "Motion Cleanup"
-    bl_space_type = 'CLIP_EDITOR'
-    bl_region_type = 'UI'
-    bl_category = 'Tools'
-
-    def draw(self, context):
-        layout = self.layout
-        layout.prop(context.window_manager, "outlier_threshold")
-        op = layout.operator(CLIP_OT_remove_motion_outliers.bl_idname)
-        op.threshold = context.window_manager.outlier_threshold
-
-
-classes = (
-    CLIP_OT_remove_motion_outliers,
-    CLIP_PT_motion_outlier_panel,
-)
+classes = (CLIP_OT_remove_motion_outliers,)
 
 
 def register():
