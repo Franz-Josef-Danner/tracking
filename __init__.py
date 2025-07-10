@@ -13,6 +13,7 @@ from bpy.types import Panel, Operator
 from bpy.props import IntProperty, FloatProperty
 import os
 import sys
+import importlib
 
 # Ensure helper modules in this directory can be imported when the addon is
 # installed as a single-file module. Blender does not automatically add the
@@ -31,8 +32,15 @@ from playhead import (
     set_playhead_to_low_marker_frame,
     get_tracking_marker_counts,
 )
-from proxy_wait import create_proxy_and_wait
+import proxy_wait
+importlib.reload(proxy_wait)
+from proxy_wait import create_proxy_and_wait, remove_existing_proxies
 from update_min_marker_props import update_min_marker_props
+from distance_remove import CLIP_OT_remove_close_neu_markers
+from proxy_switch import ToggleProxyOperator
+from detect import DetectFeaturesCustomOperator
+
+
 
 
 class CLIP_OT_kaiserlich_track(Operator):
@@ -45,7 +53,8 @@ class CLIP_OT_kaiserlich_track(Operator):
         min_marker = scene.kt_min_marker_per_frame
         min_track_len = scene.kt_min_tracking_length
         error_threshold = scene.kt_error_threshold
-        proxy_wait = scene.kt_proxy_wait
+        # Wartezeit für die Proxy-Erstellung (in Sekunden)
+        wait_time = 300.0
 
         update_min_marker_props(scene, context)
         marker_counts = get_tracking_marker_counts()
@@ -62,7 +71,31 @@ class CLIP_OT_kaiserlich_track(Operator):
                 f"error {error_threshold}, derived {marker_plus}"
             ),
         )
-        create_proxy_and_wait(proxy_wait)
+        # Alte Proxies entfernen
+        remove_existing_proxies()
+        # 50% Proxy erstellen und etwas warten. Manche
+        # Installationen liefern eine Version ohne Parameter.
+        try:
+            print("✅ Aufruf: create_proxy_and_wait() wird gestartet")
+            create_proxy_and_wait(wait_time)
+        except TypeError:
+            # Fallback für ältere Skripte ohne Argument
+            create_proxy_and_wait()
+
+        # Proxy-Zeitlinie wieder deaktivieren
+        clip = context.space_data.clip
+        if clip and clip.use_proxy:
+            print("Proxy-Zeitlinie wird deaktiviert")
+            bpy.ops.clip.toggle_proxy()
+        else:
+            print("Proxy bereits deaktiviert oder kein Clip")
+
+        # Marker erkennen und bereinigen
+        print("Starte Feature-Erkennung")
+        bpy.ops.clip.detect_features_custom()
+        print("Bereinige Marker")
+        bpy.ops.clip.remove_close_neu_markers()
+
         return {'FINISHED'}
 
 
@@ -98,11 +131,6 @@ def register():
         default=0.04,
         min=0.0,
     )
-    bpy.types.Scene.kt_proxy_wait = FloatProperty(
-        name="Proxy Wait",
-        default=300.0,
-        min=0.0,
-    )
     bpy.types.Scene.min_marker_count = IntProperty(
         name="Min Marker Count",
         default=5,
@@ -115,17 +143,22 @@ def register():
         default=20,
         min=0,
     )
+    bpy.utils.register_class(ToggleProxyOperator)
+    bpy.utils.register_class(DetectFeaturesCustomOperator)
     bpy.utils.register_class(CLIP_OT_kaiserlich_track)
     bpy.utils.register_class(CLIP_PT_kaiserlich_track)
+    bpy.utils.register_class(CLIP_OT_remove_close_neu_markers)
 
 
 def unregister():
     bpy.utils.unregister_class(CLIP_OT_kaiserlich_track)
     bpy.utils.unregister_class(CLIP_PT_kaiserlich_track)
+    bpy.utils.unregister_class(CLIP_OT_remove_close_neu_markers)
+    bpy.utils.unregister_class(ToggleProxyOperator)
+    bpy.utils.unregister_class(DetectFeaturesCustomOperator)
     del bpy.types.Scene.kt_min_marker_per_frame
     del bpy.types.Scene.kt_min_tracking_length
     del bpy.types.Scene.kt_error_threshold
-    del bpy.types.Scene.kt_proxy_wait
     del bpy.types.Scene.min_marker_count
     del bpy.types.Scene.min_marker_count_plus
 

@@ -1,5 +1,5 @@
 import bpy
-from . import marker_count_property
+from margin_a_distanz import compute_margin_distance
 
 # Operator-Klasse
 class DetectFeaturesCustomOperator(bpy.types.Operator):
@@ -14,15 +14,22 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip gefunden")
             return {'CANCELLED'}
 
-        threshold = 0.01
+        threshold = 0.1
         min_new = context.scene.min_marker_count
         tracks_before = len(clip.tracking.tracks)
         settings = clip.tracking.settings
+        settings.default_pattern_size = 50
+        settings.default_search_size = settings.default_pattern_size * 2
+
+        # Werte aus margin_a_distanz verwenden
+        compute_margin_distance()
+        margin = int(clip.get("MARGIN", 500))
+        distance = int(clip.get("DISTANCE", 10))
 
         bpy.ops.clip.detect_features(
             threshold=threshold,
-            margin=500,
-            min_distance=10,
+            margin=margin,
+            min_distance=distance,
             placement='FRAME',
         )
 
@@ -51,8 +58,8 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             self.report({'INFO'}, msg)
             bpy.ops.clip.detect_features(
                 threshold=threshold,
-                margin=500,
-                min_distance=10,
+                margin=margin,
+                min_distance=distance,
                 placement='FRAME',
             )
             tracks_after = len(clip.tracking.tracks)
@@ -79,13 +86,13 @@ classes = (
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
-    marker_count_property.register()
+
 
 
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
-    marker_count_property.unregister()
+
 
 if __name__ == "__main__":
     register()
