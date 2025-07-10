@@ -8,6 +8,7 @@ import shutil
 import sys
 import threading
 import time
+import glob
 
 
 def remove_existing_proxies():
@@ -57,14 +58,12 @@ def create_proxy_and_wait(wait_time=0.0):
     sys.stdout.flush()
 
     def wait_file():
-        proxy_filename = "proxy_50.avi"
-        direct_path = os.path.join(full_proxy, proxy_filename)
-        alt_folder = os.path.join(full_proxy, os.path.basename(clip.filepath))
-        alt_path = os.path.join(alt_folder, proxy_filename)
+        proxy_pattern = os.path.join(full_proxy, "**", "proxy_50.*")
         checks = int(wait_time * 2) if wait_time > 0 else 180
         for _ in range(checks):
             time.sleep(0.5)
-            if os.path.exists(direct_path) or os.path.exists(alt_path):
+            matches = glob.glob(proxy_pattern, recursive=True)
+            if matches:
                 print("Proxy-Datei gefunden")
                 sys.stdout.flush()
                 return
