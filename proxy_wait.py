@@ -48,19 +48,14 @@ def create_proxy_and_wait(wait_time=0.0):
     print(f"Proxy wird im Ordner {full_proxy} erstellt")
     print("Proxy-Erstellung gestartet…")
     sys.stdout.flush()
-    bpy.ops.clip.rebuild_proxy()
-    print(
-        "Warte auf die erste Proxy-Datei (Blender legt mehrere Dateien an, "
-        "sobald eine erscheint, geht es weiter)"
-    )
-    sys.stdout.flush()
 
     def wait_file():
         proxy_filename = "proxy_50.avi"
         direct_path = os.path.join(full_proxy, proxy_filename)
         alt_folder = os.path.join(full_proxy, os.path.basename(clip.filepath))
         alt_path = os.path.join(alt_folder, proxy_filename)
-        for _ in range(180):
+        checks = int(wait_time * 2) if wait_time > 0 else 180
+        for _ in range(checks):
             time.sleep(0.5)
             if os.path.exists(direct_path) or os.path.exists(alt_path):
                 print("Proxy-Datei gefunden")
@@ -71,16 +66,29 @@ def create_proxy_and_wait(wait_time=0.0):
 
     wait_thread = threading.Thread(target=wait_file)
     wait_thread.start()
+    print(
+        "Warte auf die erste Proxy-Datei (Blender legt mehrere Dateien an, "
+        "sobald eine erscheint, geht es weiter)"
+    )
+    sys.stdout.flush()
+
+    countdown_thread = None
     if wait_time > 0:
-        remaining = int(wait_time)
-        while remaining > 0 and wait_thread.is_alive():
-            print(f"⏳ Warte {remaining}s auf Proxy…")
-            sys.stdout.flush()
-            time.sleep(1)
-            remaining -= 1
-        if wait_thread.is_alive():
-            wait_thread.join(timeout=0)
+        def countdown():
+            remaining = int(wait_time)
+            while remaining > 0 and wait_thread.is_alive():
+                print(f"⏳ Warte {remaining}s auf Proxy…")
+                sys.stdout.flush()
+                time.sleep(1)
+                remaining -= 1
+        countdown_thread = threading.Thread(target=countdown)
+        countdown_thread.start()
+
+    bpy.ops.clip.rebuild_proxy('INVOKE_DEFAULT')
+
     wait_thread.join()
+    if countdown_thread:
+        countdown_thread.join()
     print("Proxy-Erstellung abgeschlossen")
     sys.stdout.flush()
 
