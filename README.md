@@ -3,7 +3,9 @@
 This repository contains simple Blender scripts to automate movie clip
 tracking. The main script `combined_cycle.py` combines feature detection,
 auto tracking and playhead search in a repeating cycle. It can be run from
-the Blender text editor or installed as an add-on.
+the Blender text editor or installed as an add-on. A second add-on,
+`kaiser_track.py`, currently exposes a panel with placeholder settings for a
+future unified workflow.
 All other scripts in this repository are prototypes of the individual steps
 now bundled in `combined_cycle.py`.
 
@@ -103,6 +105,7 @@ incorporated into the main cycle:
 - `track_marker_size_adapt.py` – tracks one frame at a time until markers stop moving.
 - `ensure_margin_distance.py` – computes detection margin and distance based on a threshold value.
 - `update_min_marker_props.py` – keeps derived marker properties in sync with the base count.
+- `kaiser_track.py` – provides a placeholder UI panel for a future unified workflow.
 
 These scripts can be executed from Blender's text editor for experimentation,
 but the full workflow resides in `combined_cycle.py`.
