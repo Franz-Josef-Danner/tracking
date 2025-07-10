@@ -34,8 +34,8 @@ The panel exposes several options:
 - **Error Threshold** – maximum error allowed for trackers (default 0.04)
 - **Proxy Wait** – optional wait time passed to the proxy helper when
   available. Proxy creation is performed as the final step of the
-  operation and defaults to 300 s. While waiting a countdown is
-  printed in the console.
+  operation and defaults to 300 s. The console prints the target
+  directory and a countdown during this wait.
 
 ### Helper Scripts
 
@@ -45,7 +45,8 @@ Several utility modules are included for experimentation:
 - `get_marker_count_plus.py` – compute additional marker thresholds.
 - `margin_a_distanz.py` – derive margin and distance values from the clip width.
 - `playhead.py` – utilities for repositioning the playhead.
-- `proxy_wait.py` – create proxies and wait for completion.
+- `proxy_wait.py` – create proxies, print the proxy folder path, and
+  wait with a countdown until a file appears.
 - `remove_existing_proxies` – helper inside `proxy_wait.py` to delete old
   proxy files before new ones are generated.
 - `update_min_marker_props.py` – sync derived marker properties.

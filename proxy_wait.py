@@ -3,6 +3,7 @@
 import bpy
 import os
 import shutil
+import sys
 import threading
 import time
 
@@ -22,6 +23,7 @@ def remove_existing_proxies():
 
 def create_proxy_and_wait(wait_time=0.0):
     print("Starte Proxy-Erstellung (50%, custom Pfad)")
+    sys.stdout.flush()
     clip = bpy.context.space_data.clip
     if not clip:
         print("Kein aktiver Clip.")
@@ -44,8 +46,14 @@ def create_proxy_and_wait(wait_time=0.0):
     full_proxy = bpy.path.abspath(proxy_dir)
     os.makedirs(full_proxy, exist_ok=True)
     print(f"Proxy wird im Ordner {full_proxy} erstellt")
+    print("Proxy-Erstellung gestartet…")
+    sys.stdout.flush()
     bpy.ops.clip.rebuild_proxy()
-    print("Warte auf erste Proxy-Datei…")
+    print(
+        "Warte auf die erste Proxy-Datei (Blender legt mehrere Dateien an, "
+        "sobald eine erscheint, geht es weiter)"
+    )
+    sys.stdout.flush()
 
     def wait_file():
         proxy_filename = "proxy_50.avi"
@@ -56,8 +64,10 @@ def create_proxy_and_wait(wait_time=0.0):
             time.sleep(0.5)
             if os.path.exists(direct_path) or os.path.exists(alt_path):
                 print("Proxy-Datei gefunden")
+                sys.stdout.flush()
                 return
         print("Zeitüberschreitung beim Warten auf Proxy-Datei")
+        sys.stdout.flush()
 
     wait_thread = threading.Thread(target=wait_file)
     wait_thread.start()
@@ -65,10 +75,12 @@ def create_proxy_and_wait(wait_time=0.0):
         remaining = int(wait_time)
         while remaining > 0 and wait_thread.is_alive():
             print(f"⏳ Warte {remaining}s auf Proxy…")
+            sys.stdout.flush()
             time.sleep(1)
             remaining -= 1
         if wait_thread.is_alive():
             wait_thread.join(timeout=0)
     wait_thread.join()
     print("Proxy-Erstellung abgeschlossen")
+    sys.stdout.flush()
 

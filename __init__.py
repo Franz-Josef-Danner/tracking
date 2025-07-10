@@ -102,6 +102,7 @@ class CLIP_PT_kaiserlich_track(Panel):
         layout.prop(scene, "kt_min_marker_per_frame")
         layout.prop(scene, "kt_min_tracking_length")
         layout.prop(scene, "kt_error_threshold")
+        layout.prop(scene, "kt_proxy_wait")
         layout.operator(CLIP_OT_kaiserlich_track.bl_idname, text="Start")
 
 
