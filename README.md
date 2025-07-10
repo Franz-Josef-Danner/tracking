@@ -21,10 +21,11 @@ the helper scripts sit directly in the archive root before installing.
 1. Open the Movie Clip Editor and switch to **Tracking** context.
 2. Press **N** to reveal the sidebar and choose the **Kaiserlich** tab.
 3. Adjust the properties and click **Start** to run the operator.
-4. Existing proxies are removed, then a 50% proxy is built. The
-   addon waits up to 300&nbsp;s for a proxy file to appear,
-   printing a countdown in the console. After that it disables the proxy
-   timeline, detects features and filters them automatically.
+4. Existing proxies are removed, then a 50% proxy and a timecode
+   index are built. The addon waits up to 300&nbsp;s for a proxy
+   file to appear, printing a countdown in the console. After that it
+   disables the proxy timeline, detects features and filters them
+   automatically.
 
 ### Properties
 
@@ -42,8 +43,8 @@ Several utility modules are included for experimentation:
 - `get_marker_count_plus.py` – compute additional marker thresholds.
 - `margin_a_distanz.py` – derive margin and distance values from the clip width.
 - `playhead.py` – utilities for repositioning the playhead.
-- `proxy_wait.py` – create proxies, print the proxy folder path, and
-  wait with a countdown until a file appears.
+ - `proxy_wait.py` – create proxies and timecode indices, print the proxy
+   folder path, and wait with a countdown until a file appears.
 - `remove_existing_proxies` – helper inside `proxy_wait.py` to delete old
   proxy files before new ones are generated.
 - `update_min_marker_props.py` – sync derived marker properties.
