@@ -6,7 +6,6 @@ import bpy
 import os
 import shutil
 import sys
-import threading
 import time
 import glob
 
@@ -58,48 +57,39 @@ def create_proxy_and_wait(wait_time=0.0):
     print("Proxy-Erstellung gestartet…")
     sys.stdout.flush()
 
-    def wait_file():
-        # Look for a completed proxy file named "proxy_50.*". Blender may write
-        # a temporary file like "proxy_50_part.*" first, but the countdown
-        # should continue until the final output exists.
-        proxy_pattern = os.path.join(full_proxy, "**", "proxy_50.*")
-        checks = int(wait_time * 2) if wait_time > 0 else 180
-        for _ in range(checks):
-            time.sleep(0.5)
-            matches = [p for p in glob.glob(proxy_pattern, recursive=True)
-                       if os.path.isfile(p) and "_part" not in os.path.basename(p)]
-            if matches:
-                print("Proxy-Datei gefunden")
-                sys.stdout.flush()
-                return
-        print("Zeitüberschreitung beim Warten auf Proxy-Datei")
-        sys.stdout.flush()
+    # Use a timer so Blender's UI remains responsive during the wait loop.
+    proxy_pattern = os.path.join(full_proxy, "**", "proxy_50.*")
+    wait_seconds = wait_time if wait_time > 0 else 180
+    start = time.time()
 
-    wait_thread = threading.Thread(target=wait_file)
-    wait_thread.start()
+    def check():
+        matches = [p for p in glob.glob(proxy_pattern, recursive=True)
+                   if os.path.isfile(p) and "_part" not in os.path.basename(p)]
+        if matches:
+            print("Proxy-Datei gefunden")
+            print("Proxy-Erstellung abgeschlossen")
+            sys.stdout.flush()
+            return None
+
+        elapsed = time.time() - start
+        if elapsed >= wait_seconds:
+            print("Zeitüberschreitung beim Warten auf Proxy-Datei")
+            print("Proxy-Erstellung abgeschlossen")
+            sys.stdout.flush()
+            return None
+
+        remaining = int(wait_seconds - elapsed)
+        if remaining % 10 == 0:
+            print(f"⏳ Warte {remaining}s auf Proxy…")
+            sys.stdout.flush()
+        return 1.0  # check again in 1 second
+
     print(
         "Warte auf die erste Proxy-Datei (Blender legt mehrere Dateien an, "
         "sobald eine erscheint, geht es weiter)"
     )
     sys.stdout.flush()
 
-    countdown_thread = None
-    if wait_time > 0:
-        def countdown():
-            remaining = int(wait_time)
-            while remaining > 0 and wait_thread.is_alive():
-                print(f"⏳ Warte {remaining}s auf Proxy…")
-                sys.stdout.flush()
-                time.sleep(1)
-                remaining -= 1
-        countdown_thread = threading.Thread(target=countdown)
-        countdown_thread.start()
-
     bpy.ops.clip.rebuild_proxy('INVOKE_DEFAULT')
-
-    wait_thread.join()
-    if countdown_thread:
-        countdown_thread.join()
-    print("Proxy-Erstellung abgeschlossen")
-    sys.stdout.flush()
+    bpy.app.timers.register(check)
 
