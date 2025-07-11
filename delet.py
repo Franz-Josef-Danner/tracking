@@ -1,3 +1,8 @@
+"""Helpers for removing NEW_ markers near GOOD_ markers.
+
+Provides :func:`delete_close_new_markers`.
+"""
+
 import bpy
 import mathutils
 

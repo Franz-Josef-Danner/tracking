@@ -15,9 +15,13 @@ import glob
 PROXY_DIR = "//BL_proxy/"
 
 
-def remove_existing_proxies():
-    """Remove previously generated proxy files."""
-    clip = bpy.context.space_data.clip
+def remove_existing_proxies(clip=None):
+    """Remove previously generated proxy files for ``clip`` or the active one."""
+    if clip is None:
+        space = getattr(bpy.context, "space_data", None)
+        clip = getattr(space, "clip", None)
+        if clip is None:
+            clip = getattr(bpy.context.scene, "clip", None)
     if not clip:
         print("Kein aktiver Clip.")
         return

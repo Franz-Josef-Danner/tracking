@@ -98,9 +98,9 @@ class CLIP_OT_kaiserlich_track(Operator):
             bpy.ops.clip.remove_close_new_markers()
 
         # Alte Proxies entfernen
-        remove_existing_proxies()
-        # 50% Proxy erstellen und warten, bis Dateien erscheinen
         active_clip = context.space_data.clip
+        remove_existing_proxies(active_clip)
+        # 50% Proxy erstellen und warten, bis Dateien erscheinen
         try:
             print("✅ Aufruf: create_proxy_and_wait() wird gestartet")
             create_proxy_and_wait(wait_time, on_finish=after_proxy, clip=active_clip)
