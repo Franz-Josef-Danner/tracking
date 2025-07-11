@@ -100,7 +100,6 @@ class CLIP_OT_kaiserlich_track(Operator):
             if frame is not None:
                 set_playhead_to_low_marker_frame(min_marker)
 
-            bpy.context.scene.clip = clip
 
             def run_ops():
                 compute_margin_distance()
