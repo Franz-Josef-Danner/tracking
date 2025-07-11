@@ -282,7 +282,7 @@ class CLIP_OT_auto_start(bpy.types.Operator):
                 context.scene.proxy_built = True
                 self.report({'INFO'}, "✅ Proxy-Erstellung abgeschlossen")
                 print("[Proxy] build finished")
-                bpy.ops.clip.tracking_cycle('INVOKE_DEFAULT')
+                bpy.ops.clip.proxy_marker_cycle('INVOKE_DEFAULT')
                 return {'FINISHED'}
             if self._checks > 300:
                 context.window_manager.event_timer_remove(self._timer)
