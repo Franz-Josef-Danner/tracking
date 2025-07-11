@@ -61,15 +61,7 @@ def create_proxy_and_wait(wait_time=0.0):
     wait_seconds = wait_time if wait_time > 0 else 180
     start = time.time()
 
-    print(
-        "Warte auf die erste Proxy-Datei (Blender legt mehrere Dateien an, "
-        "sobald eine erscheint, geht es weiter)"
-    )
-    sys.stdout.flush()
-
-    bpy.ops.clip.rebuild_proxy('INVOKE_DEFAULT')
-
-    while True:
+    def check():
         matches = [
             p
             for p in glob.glob(proxy_pattern, recursive=True)
@@ -77,19 +69,30 @@ def create_proxy_and_wait(wait_time=0.0):
         ]
         if matches:
             print("Proxy-Datei gefunden")
-            break
+            print("Proxy-Erstellung abgeschlossen")
+            sys.stdout.flush()
+            return None
 
         elapsed = time.time() - start
         if elapsed >= wait_seconds:
             print("Zeitüberschreitung beim Warten auf Proxy-Datei")
-            break
+            print("Proxy-Erstellung abgeschlossen")
+            sys.stdout.flush()
+            return None
 
         remaining = int(wait_seconds - elapsed)
         if remaining % 10 == 0:
             print(f"⏳ Warte {remaining}s auf Proxy…")
             sys.stdout.flush()
-        time.sleep(1)
+        return 1.0
 
-    print("Proxy-Erstellung abgeschlossen")
+    print(
+        "Warte auf die erste Proxy-Datei (Blender legt mehrere Dateien an, "
+        "sobald eine erscheint, geht es weiter)"
+    )
     sys.stdout.flush()
+
+    bpy.ops.clip.rebuild_proxy('INVOKE_DEFAULT')
+    bpy.app.timers.register(check)
+
 
