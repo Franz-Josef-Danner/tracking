@@ -1,9 +1,18 @@
-"""Adjust the marker_count_plus property when too few markers are found."""
+"""Adjust the ``min_marker_count_plus`` property when too few markers are found.
+
+The helper lowers the expectation gradually so detection thresholds can be
+reduced in the next iteration.  ``new_marker_count`` is the number of markers
+found in the previous run.
+"""
 
 
 def adjust_marker_count_plus(scene, new_marker_count):
-    """Lower ``min_marker_count_plus`` slightly based on detected markers."""
+    """Decrease the expected marker count based on the last result."""
+
     current = scene.min_marker_count_plus
-    # Reduce expectation by 10% to gradually ease requirements
-    scene.min_marker_count_plus = max(1, int(current * 0.9))
+    if new_marker_count >= current:
+        return current
+
+    reduced = int(current * 0.9)
+    scene.min_marker_count_plus = max(1, max(reduced, new_marker_count))
     return scene.min_marker_count_plus

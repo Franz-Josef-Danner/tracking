@@ -20,7 +20,6 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         base_plus = context.scene.min_marker_count_plus
         min_new = context.scene.min_marker_count
         tracks_before = len(clip.tracking.tracks)
-        existing_names = {t.name for t in clip.tracking.tracks}
         settings = clip.tracking.settings
         settings.default_pattern_size = 50
         settings.default_search_size = settings.default_pattern_size * 2
@@ -44,7 +43,9 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             )
             settings.default_search_size = settings.default_pattern_size * 2
 
-        new_marker = tracks_after - tracks_before
+        new_marker = sum(
+            1 for t in clip.tracking.tracks if t.name.startswith("NEU_")
+        )
 
         while new_marker < min_new and threshold > 0.0001:
             if tracks_after == tracks_before:
@@ -61,9 +62,9 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
             margin, distance, _ = ensure_margin_distance(clip, threshold)
 
-            # aktuelle NEW_-Marker entfernen
+            # vorhandene NEU_-Marker entfernen
             for track in list(clip.tracking.tracks):
-                if track.name not in existing_names:
+                if track.name.startswith("NEU_"):
                     clip.tracking.tracks.remove(track)
 
             msg = (
@@ -78,7 +79,9 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 placement='FRAME',
             )
             tracks_after = len(clip.tracking.tracks)
-            new_marker = tracks_after - tracks_before
+            new_marker = sum(
+                1 for t in clip.tracking.tracks if t.name.startswith("NEU_")
+            )
         return {'FINISHED'}
 
 # Panel-Klasse
