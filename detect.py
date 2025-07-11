@@ -3,6 +3,13 @@ from margin_a_distanz import compute_margin_distance
 from ensure_margin_distance import ensure_margin_distance
 from adjust_marker_count_plus import adjust_marker_count_plus
 
+
+def rename_new_tracks(clip, start_index, prefix="NEW_"):
+    """Prefix newly created tracks with ``prefix``."""
+    for track in list(clip.tracking.tracks)[start_index:]:
+        if not track.name.startswith(prefix):
+            track.name = f"{prefix}{track.name}"
+
 # Operator-Klasse
 class DetectFeaturesCustomOperator(bpy.types.Operator):
     bl_idname = "clip.detect_features_custom"
@@ -34,6 +41,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             min_distance=distance,
             placement='FRAME',
         )
+        rename_new_tracks(clip, tracks_before)
 
         tracks_after = len(clip.tracking.tracks)
         if tracks_after == tracks_before:
@@ -44,7 +52,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             settings.default_search_size = settings.default_pattern_size * 2
 
         new_marker = sum(
-            1 for t in clip.tracking.tracks if t.name.startswith("NEU_")
+            1 for t in clip.tracking.tracks if t.name.startswith("NEW_")
         )
 
         while new_marker < min_new and threshold > 0.0001:
@@ -62,9 +70,9 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
             margin, distance, _ = ensure_margin_distance(clip, threshold)
 
-            # vorhandene NEU_-Marker entfernen
+            # vorhandene NEW_-Marker entfernen
             for track in list(clip.tracking.tracks):
-                if track.name.startswith("NEU_"):
+                if track.name.startswith("NEW_"):
                     clip.tracking.tracks.remove(track)
 
             msg = (
@@ -78,9 +86,10 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 min_distance=distance,
                 placement='FRAME',
             )
+            rename_new_tracks(clip, tracks_before)
             tracks_after = len(clip.tracking.tracks)
             new_marker = sum(
-                1 for t in clip.tracking.tracks if t.name.startswith("NEU_")
+                1 for t in clip.tracking.tracks if t.name.startswith("NEW_")
             )
         return {'FINISHED'}
 

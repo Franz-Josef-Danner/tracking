@@ -38,7 +38,7 @@ import proxy_wait
 importlib.reload(proxy_wait)
 from proxy_wait import create_proxy_and_wait, remove_existing_proxies
 from update_min_marker_props import update_min_marker_props
-from distance_remove import CLIP_OT_remove_close_neu_markers
+from distance_remove import CLIP_OT_remove_close_new_markers
 from proxy_switch import ToggleProxyOperator
 from detect import DetectFeaturesCustomOperator
 
@@ -99,7 +99,7 @@ class CLIP_OT_kaiserlich_track(Operator):
         print("Starte Feature-Erkennung")
         bpy.ops.clip.detect_features_custom()
         print("Bereinige Marker")
-        bpy.ops.clip.remove_close_neu_markers()
+        bpy.ops.clip.remove_close_new_markers()
 
         return {'FINISHED'}
 
@@ -152,13 +152,13 @@ def register():
     bpy.utils.register_class(DetectFeaturesCustomOperator)
     bpy.utils.register_class(CLIP_OT_kaiserlich_track)
     bpy.utils.register_class(CLIP_PT_kaiserlich_track)
-    bpy.utils.register_class(CLIP_OT_remove_close_neu_markers)
+    bpy.utils.register_class(CLIP_OT_remove_close_new_markers)
 
 
 def unregister():
     bpy.utils.unregister_class(CLIP_OT_kaiserlich_track)
     bpy.utils.unregister_class(CLIP_PT_kaiserlich_track)
-    bpy.utils.unregister_class(CLIP_OT_remove_close_neu_markers)
+    bpy.utils.unregister_class(CLIP_OT_remove_close_new_markers)
     bpy.utils.unregister_class(ToggleProxyOperator)
     bpy.utils.unregister_class(DetectFeaturesCustomOperator)
     del bpy.types.Scene.kt_min_marker_per_frame

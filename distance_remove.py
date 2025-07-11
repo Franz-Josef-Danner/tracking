@@ -1,7 +1,7 @@
-"""Cleanup NEU_ markers that are too close to GOOD_ markers.
+"""Cleanup NEW_ markers that are too close to GOOD_ markers.
 
 This script is intended for manual use in Blender's text editor. It registers
-an operator that deletes NEU_ markers in the current frame when they are closer
+an operator that deletes NEW_ markers in the current frame when they are closer
 than a configurable distance to existing GOOD_ markers.
 """
 
@@ -9,9 +9,9 @@ import bpy
 import mathutils
 
 bl_info = {
-    "name": "NEU_ Marker Cleanup",
+    "name": "NEW_ Marker Cleanup",
     "description": (
-        "Entfernt NEU_-Marker, die im aktuellen Frame zu nah an GOOD_-Markern liegen"
+        "Entfernt NEW_-Marker, die im aktuellen Frame zu nah an GOOD_-Markern liegen"
     ),
     "author": "OpenAI Codex",
     "version": (1, 0, 0),
@@ -19,11 +19,11 @@ bl_info = {
     "category": "Clip",
 }
 
-class CLIP_OT_remove_close_neu_markers(bpy.types.Operator):
-    bl_idname = "clip.remove_close_neu_markers"
-    bl_label = "NEU_-Marker löschen (zu nahe an GOOD_)"
+class CLIP_OT_remove_close_new_markers(bpy.types.Operator):
+    bl_idname = "clip.remove_close_new_markers"
+    bl_label = "NEW_-Marker löschen (zu nahe an GOOD_)"
     bl_description = (
-        "Löscht NEU_-Marker im aktuellen Frame, wenn sie zu nahe an GOOD_-Markern liegen"
+        "Löscht NEW_-Marker im aktuellen Frame, wenn sie zu nahe an GOOD_-Markern liegen"
     )
 
     bl_options = {"REGISTER", "UNDO"}
@@ -53,7 +53,7 @@ class CLIP_OT_remove_close_neu_markers(bpy.types.Operator):
         tracks = clip.tracking.tracks
 
         # Listen vorbereiten
-        neu_tracks = [t for t in tracks if t.name.startswith("NEU_")]
+        neu_tracks = [t for t in tracks if t.name.startswith("NEW_")]
         good_tracks = [t for t in tracks if t.name.startswith("GOOD_")]
 
         to_remove = []
@@ -80,7 +80,7 @@ class CLIP_OT_remove_close_neu_markers(bpy.types.Operator):
                     break  # Stop bei erstem nahen GOOD_
 
         if not to_remove:
-            self.report({'INFO'}, "Keine NEU_-Marker zum Löschen gefunden")
+            self.report({'INFO'}, "Keine NEW_-Marker zum Löschen gefunden")
             return {'CANCELLED'}
 
         # Tracks markieren
@@ -104,7 +104,7 @@ class CLIP_OT_remove_close_neu_markers(bpy.types.Operator):
                                     bpy.ops.clip.delete_track()
                                 self.report(
                                     {'INFO'},
-                                    f"🗑️ Gelöscht: {len(to_remove)} NEU_-Marker im Frame {current_frame}",
+                                    f"🗑️ Gelöscht: {len(to_remove)} NEW_-Marker im Frame {current_frame}",
                                 )
                                 return {'FINISHED'}
 
@@ -112,8 +112,8 @@ class CLIP_OT_remove_close_neu_markers(bpy.types.Operator):
         return {'CANCELLED'}
 
 
-class CLIP_PT_neu_cleanup_tools(bpy.types.Panel):
-    bl_label = "NEU_-Cleanup"
+class CLIP_PT_new_cleanup_tools(bpy.types.Panel):
+    bl_label = "NEW_-Cleanup"
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
     bl_category = 'Tools'
@@ -121,13 +121,13 @@ class CLIP_PT_neu_cleanup_tools(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.prop(context.window_manager, "cleanup_min_distance")
-        op = layout.operator(CLIP_OT_remove_close_neu_markers.bl_idname)
+        op = layout.operator(CLIP_OT_remove_close_new_markers.bl_idname)
         op.min_distance = context.window_manager.cleanup_min_distance
 
 
 def register():
-    bpy.utils.register_class(CLIP_OT_remove_close_neu_markers)
-    bpy.utils.register_class(CLIP_PT_neu_cleanup_tools)
+    bpy.utils.register_class(CLIP_OT_remove_close_new_markers)
+    bpy.utils.register_class(CLIP_PT_new_cleanup_tools)
     if not hasattr(bpy.types.WindowManager, "cleanup_min_distance"):
         bpy.types.WindowManager.cleanup_min_distance = bpy.props.FloatProperty(
             name="Mindestabstand",
@@ -140,8 +140,8 @@ def register():
 def unregister():
     if hasattr(bpy.types.WindowManager, "cleanup_min_distance"):
         del bpy.types.WindowManager.cleanup_min_distance
-    bpy.utils.unregister_class(CLIP_OT_remove_close_neu_markers)
-    bpy.utils.unregister_class(CLIP_PT_neu_cleanup_tools)
+    bpy.utils.unregister_class(CLIP_OT_remove_close_new_markers)
+    bpy.utils.unregister_class(CLIP_PT_new_cleanup_tools)
 
 
 if __name__ == "__main__":
