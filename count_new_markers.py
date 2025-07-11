@@ -8,16 +8,19 @@ from margin_distance_adapt import ensure_margin_distance
 from rename_new import rename_tracks
 
 
-def count_new_markers(clip, prefix="NEW_"):
-    """Return the number of tracks starting with ``prefix``."""
-    return sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
+def count_new_markers(context, clip, prefix="NEW_"):
+    """Return and store the number of tracks starting with ``prefix``."""
+
+    new_count = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
+    context.scene.new_marker_count = new_count
+    return new_count
 
 
 def check_marker_range(context, clip, prefix="NEW_"):
     """Validate the count of NEW_ markers and rerun detection if needed."""
 
     scene = context.scene
-    new_count = count_new_markers(clip, prefix)
+    new_count = count_new_markers(context, clip, prefix)
     min_count = getattr(scene, "marker_count_plus_min", 0)
     max_count = getattr(scene, "marker_count_plus_max", 0)
 

@@ -32,7 +32,7 @@ from margin_a_distanz import compute_margin_distance
 from playhead import (
     get_tracking_marker_counts,
 )
-from count_new_markers import check_marker_range
+from count_new_markers import check_marker_range, count_new_markers
 import proxy_wait
 importlib.reload(proxy_wait)
 from proxy_wait import create_proxy_and_wait, remove_existing_proxies
@@ -120,6 +120,9 @@ class CLIP_OT_kaiserlich_track(Operator):
                 start_idx = len(clip.tracking.tracks)
                 bpy.ops.clip.detect_features_custom()
                 rename_new_tracks(list(clip.tracking.tracks)[start_idx:])
+                # store marker count before cleanup
+                count_new_markers(context, clip)
+                print(f"NEW_ Marker vor Cleanup: {scene.new_marker_count}")
                 print("Bereinige Marker")
                 bpy.ops.clip.remove_close_new_markers()
                 check_marker_range(context, clip)
@@ -188,6 +191,11 @@ def register():
         default=0,
         min=0,
     )
+    bpy.types.Scene.new_marker_count = IntProperty(
+        name="NEW_ Marker Count",
+        default=0,
+        min=0,
+    )
     bpy.utils.register_class(ToggleProxyOperator)
     bpy.utils.register_class(DetectFeaturesCustomOperator)
     bpy.utils.register_class(CLIP_OT_kaiserlich_track)
@@ -207,6 +215,7 @@ def unregister():
     del bpy.types.Scene.min_marker_count_plus
     del bpy.types.Scene.marker_count_plus_min
     del bpy.types.Scene.marker_count_plus_max
+    del bpy.types.Scene.new_marker_count
 
 
 if __name__ == "__main__":

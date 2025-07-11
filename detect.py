@@ -47,8 +47,10 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
         tracks_after = len(clip.tracking.tracks)
         features_created = tracks_after - base_count
+        context.scene.new_marker_count = features_created
         print(
-            f"Detect Features erzeugte {features_created} Marker"
+            f"Detect Features erzeugte {features_created} Marker, "
+            f"gespeichert: {context.scene.new_marker_count}"
         )
         if tracks_after == base_count:
             settings.default_pattern_size = max(
@@ -59,7 +61,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
         new_marker = tracks_after - base_count
 
-        while new_marker < min_new and threshold > 0.0001:
+        while context.scene.new_marker_count < min_new and threshold > 0.0001:
             if tracks_after == base_count:
                 settings.default_pattern_size = max(
                     1,
@@ -67,9 +69,12 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 )
                 settings.default_search_size = settings.default_pattern_size * 2
 
-            adjust_marker_count_plus(context.scene, new_marker)
+            adjust_marker_count_plus(context.scene, context.scene.new_marker_count)
             min_plus = context.scene.min_marker_count_plus
-            threshold = max(threshold * ((new_marker + 0.1) / min_plus), 0.0001)
+            threshold = max(
+                threshold * ((context.scene.new_marker_count + 0.1) / min_plus),
+                0.0001,
+            )
 
             margin, distance, _ = ensure_margin_distance(clip, threshold)
 
@@ -91,9 +96,11 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             )
             tracks_after = len(clip.tracking.tracks)
             features_created = tracks_after - prev_count
+            context.scene.new_marker_count = features_created
             new_marker = tracks_after - base_count
             print(
-                f"Detect Features erzeugte {features_created} Marker"
+                f"Detect Features erzeugte {features_created} Marker, "
+                f"gespeichert: {context.scene.new_marker_count}"
             )
 
         return {'FINISHED'}
