@@ -18,15 +18,17 @@ import importlib
 # Ensure helper modules in this directory can be imported when the addon is
 # installed as a single-file module. Blender does not automatically add the
 # addon folder to ``sys.path`` when ``__init__.py`` sits at the root of the
-# archive, so do it manually.
+# archive, so do it manually before other imports.
 addon_dir = os.path.dirname(__file__)
 if addon_dir not in sys.path:
     sys.path.append(addon_dir)
 
+import marker_count_property
+
 from find_frame_with_few_tracking_markers import (
     find_frame_with_few_tracking_markers,
 )
-from get_marker_count_plus import get_marker_count_plus
+from marker_count_plus import update_marker_count_plus
 from margin_a_distanz import compute_margin_distance
 from playhead import (
     set_playhead_to_low_marker_frame,
@@ -36,7 +38,7 @@ import proxy_wait
 importlib.reload(proxy_wait)
 from proxy_wait import create_proxy_and_wait, remove_existing_proxies
 from update_min_marker_props import update_min_marker_props
-from distance_remove import CLIP_OT_remove_close_neu_markers
+from distance_remove import CLIP_OT_remove_close_new_markers
 from proxy_switch import ToggleProxyOperator
 from detect import DetectFeaturesCustomOperator
 
@@ -63,7 +65,7 @@ class CLIP_OT_kaiserlich_track(Operator):
             set_playhead_to_low_marker_frame(min_marker)
 
         compute_margin_distance()
-        marker_plus = get_marker_count_plus(scene)
+        marker_plus = update_marker_count_plus(scene)
         self.report(
             {'INFO'},
             (
@@ -90,11 +92,14 @@ class CLIP_OT_kaiserlich_track(Operator):
         else:
             print("Proxy bereits deaktiviert oder kein Clip")
 
+        # Property registration for marker counts
+        marker_count_property.register()
+
         # Marker erkennen und bereinigen
         print("Starte Feature-Erkennung")
         bpy.ops.clip.detect_features_custom()
         print("Bereinige Marker")
-        bpy.ops.clip.remove_close_neu_markers()
+        bpy.ops.clip.remove_close_new_markers()
 
         return {'FINISHED'}
 
@@ -143,17 +148,27 @@ def register():
         default=20,
         min=0,
     )
+    bpy.types.Scene.marker_count_plus_min = FloatProperty(
+        name="Marker Count Plus Min",
+        default=0.0,
+        min=0.0,
+    )
+    bpy.types.Scene.marker_count_plus_max = FloatProperty(
+        name="Marker Count Plus Max",
+        default=0.0,
+        min=0.0,
+    )
     bpy.utils.register_class(ToggleProxyOperator)
     bpy.utils.register_class(DetectFeaturesCustomOperator)
     bpy.utils.register_class(CLIP_OT_kaiserlich_track)
     bpy.utils.register_class(CLIP_PT_kaiserlich_track)
-    bpy.utils.register_class(CLIP_OT_remove_close_neu_markers)
+    bpy.utils.register_class(CLIP_OT_remove_close_new_markers)
 
 
 def unregister():
     bpy.utils.unregister_class(CLIP_OT_kaiserlich_track)
     bpy.utils.unregister_class(CLIP_PT_kaiserlich_track)
-    bpy.utils.unregister_class(CLIP_OT_remove_close_neu_markers)
+    bpy.utils.unregister_class(CLIP_OT_remove_close_new_markers)
     bpy.utils.unregister_class(ToggleProxyOperator)
     bpy.utils.unregister_class(DetectFeaturesCustomOperator)
     del bpy.types.Scene.kt_min_marker_per_frame
@@ -161,6 +176,8 @@ def unregister():
     del bpy.types.Scene.kt_error_threshold
     del bpy.types.Scene.min_marker_count
     del bpy.types.Scene.min_marker_count_plus
+    del bpy.types.Scene.marker_count_plus_min
+    del bpy.types.Scene.marker_count_plus_max
 
 
 if __name__ == "__main__":

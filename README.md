@@ -40,7 +40,7 @@ The panel exposes several options:
 Several utility modules are included for experimentation:
 
 - `find_frame_with_few_tracking_markers.py` – locate frames with few markers.
-- `get_marker_count_plus.py` – compute additional marker thresholds.
+- `marker_count_plus.py` – compute additional marker thresholds.
 - `margin_a_distanz.py` – derive margin and distance values from the clip width.
 - `playhead.py` – utilities for repositioning the playhead.
  - `proxy_wait.py` – create proxies and timecode indices, print its file path
@@ -51,4 +51,4 @@ Several utility modules are included for experimentation:
 - `proxy_switch.py` – disable proxies after generation.
  - `detect.py` – adaptive feature detection script that uses margin and
    distance values from `margin_a_distanz.py`.
-- `distance_remove.py` – filter NEU_ markers near GOOD_ markers.
+ - `distance_remove.py` – filter NEW_ markers near GOOD_ markers.
