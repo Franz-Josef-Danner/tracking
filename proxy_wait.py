@@ -1,6 +1,5 @@
 """Create a 50% proxy and wait for its files to appear."""
-
-print("✅ proxy_wait.py geladen aus:", __file__)
+# Debug print of this file's path was removed to keep the console clean.
 
 import bpy
 import os
