@@ -64,9 +64,8 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 settings.default_search_size = settings.default_pattern_size * 2
 
             adjust_marker_count_plus(context.scene, new_marker)
-            base_plus = context.scene.min_marker_count_plus
-            factor = (new_marker + 0.1) / base_plus
-            threshold = max(threshold * factor, 0.0001)
+            min_plus = context.scene.min_marker_count_plus
+            threshold = max(threshold * ((new_marker + 0.1) / min_plus), 0.0001)
 
             margin, distance, _ = ensure_margin_distance(clip, threshold)
 

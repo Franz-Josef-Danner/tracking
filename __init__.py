@@ -30,7 +30,6 @@ from few_marker_frame import (
 from marker_count_plus import update_marker_count_plus
 from margin_a_distanz import compute_margin_distance
 from playhead import (
-    set_playhead_to_low_marker_frame,
     get_tracking_marker_counts,
 )
 import proxy_wait
@@ -99,7 +98,8 @@ class CLIP_OT_kaiserlich_track(Operator):
             marker_counts = get_tracking_marker_counts()
             frame = find_frame_with_few_tracking_markers(marker_counts, min_marker)
             if frame is not None:
-                set_playhead_to_low_marker_frame(min_marker)
+                context.scene.frame_current = frame
+                print(f"Playhead auf Frame {frame} gesetzt.")
 
 
             def run_ops():
