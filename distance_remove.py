@@ -6,7 +6,7 @@ than a configurable distance to existing GOOD_ markers.
 """
 
 import bpy
-import mathutils
+from delet import delete_close_new_markers
 
 bl_info = {
     "name": "NEW_ Marker Cleanup",
@@ -44,72 +44,12 @@ class CLIP_OT_remove_close_new_markers(bpy.types.Operator):
         )
 
     def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "❌ Kein aktiver Clip gefunden.")
-            return {'CANCELLED'}
-
-        current_frame = context.scene.frame_current
-        tracks = clip.tracking.tracks
-
-        # Listen vorbereiten
-        neu_tracks = [t for t in tracks if t.name.startswith("NEW_")]
-        good_tracks = [t for t in tracks if t.name.startswith("GOOD_")]
-
-        to_remove = []
-
-        for neu in neu_tracks:
-            neu_marker = neu.markers.find_frame(current_frame)
-            if not neu_marker:
-                continue
-            neu_pos = mathutils.Vector(neu_marker.co)
-
-            for good in good_tracks:
-                good_marker = good.markers.find_frame(current_frame)
-                if not good_marker:
-                    continue
-                good_pos = mathutils.Vector(good_marker.co)
-
-                distance = (neu_pos - good_pos).length
-                if distance < self.min_distance:
-                    msg = (
-                        f"⚠️ {neu.name} ist zu nahe an {good.name} (Distanz: {distance:.5f}) → Löschen"
-                    )
-                    self.report({'INFO'}, msg)
-                    to_remove.append(neu)
-                    break  # Stop bei erstem nahen GOOD_
-
-        if not to_remove:
-            self.report({'INFO'}, "Keine NEW_-Marker zum Löschen gefunden")
-            return {'CANCELLED'}
-
-        # Tracks markieren
-        for t in tracks:
-            t.select = False
-        for t in to_remove:
-            t.select = True
-
-        # Operator im Clip Editor ausführen
-        for area in context.screen.areas:
-            if area.type == 'CLIP_EDITOR':
-                for region in area.regions:
-                    if region.type == 'WINDOW':
-                        for space in area.spaces:
-                            if space.type == 'CLIP_EDITOR':
-                                with context.temp_override(
-                                    area=area,
-                                    region=region,
-                                    space_data=space,
-                                ):
-                                    bpy.ops.clip.delete_track()
-                                self.report(
-                                    {'INFO'},
-                                    f"🗑️ Gelöscht: {len(to_remove)} NEW_-Marker im Frame {current_frame}",
-                                )
-                                return {'FINISHED'}
-
-        self.report({'ERROR'}, "Kein geeigneter Clip Editor Bereich gefunden")
-        return {'CANCELLED'}
+        success = delete_close_new_markers(
+            context,
+            self.min_distance,
+            self.report,
+        )
+        return {'FINISHED'} if success else {'CANCELLED'}
 
 
 class CLIP_PT_new_cleanup_tools(bpy.types.Panel):
