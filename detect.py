@@ -18,9 +18,17 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
     bl_label = "Detect Features (Custom)"
 
     def execute(self, context):
-        """Run feature detection and lower threshold if none are found."""
+        """Run feature detection and lower threshold if none are found.
 
-        clip = context.space_data.clip
+        The operator may run from a timer or other context without
+        ``space_data``. In that case use the scene's active clip.
+        """
+
+        space = getattr(context, "space_data", None)
+        clip = getattr(space, "clip", None)
+        if clip is None:
+            clip = getattr(context.scene, "clip", None)
+
         if not clip:
             self.report({'WARNING'}, "Kein Clip gefunden")
             return {'CANCELLED'}
