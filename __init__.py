@@ -28,7 +28,7 @@ import marker_count_property
 from find_frame_with_few_tracking_markers import (
     find_frame_with_few_tracking_markers,
 )
-from get_marker_count_plus import get_marker_count_plus
+from marker_count_plus import update_marker_count_plus
 from margin_a_distanz import compute_margin_distance
 from playhead import (
     set_playhead_to_low_marker_frame,
@@ -65,7 +65,7 @@ class CLIP_OT_kaiserlich_track(Operator):
             set_playhead_to_low_marker_frame(min_marker)
 
         compute_margin_distance()
-        marker_plus = get_marker_count_plus(scene)
+        marker_plus = update_marker_count_plus(scene)
         self.report(
             {'INFO'},
             (
@@ -148,6 +148,16 @@ def register():
         default=20,
         min=0,
     )
+    bpy.types.Scene.marker_count_plus_min = FloatProperty(
+        name="Marker Count Plus Min",
+        default=0.0,
+        min=0.0,
+    )
+    bpy.types.Scene.marker_count_plus_max = FloatProperty(
+        name="Marker Count Plus Max",
+        default=0.0,
+        min=0.0,
+    )
     bpy.utils.register_class(ToggleProxyOperator)
     bpy.utils.register_class(DetectFeaturesCustomOperator)
     bpy.utils.register_class(CLIP_OT_kaiserlich_track)
@@ -166,6 +176,8 @@ def unregister():
     del bpy.types.Scene.kt_error_threshold
     del bpy.types.Scene.min_marker_count
     del bpy.types.Scene.min_marker_count_plus
+    del bpy.types.Scene.marker_count_plus_min
+    del bpy.types.Scene.marker_count_plus_max
 
 
 if __name__ == "__main__":
