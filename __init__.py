@@ -76,9 +76,9 @@ class CLIP_OT_kaiserlich_track(Operator):
 
     def execute(self, context):
         scene = context.scene
-        min_marker = scene.kt_min_marker_per_frame
-        min_track_len = scene.kt_min_tracking_length
-        error_threshold = scene.kt_error_threshold
+        min_marker = scene.min_marker_count
+        min_track_len = scene.min_tracking_length
+        error_threshold = scene.error_threshold
         # Wartezeit für die Proxy-Erstellung (in Sekunden)
         wait_time = 300.0
 
@@ -141,34 +141,28 @@ class CLIP_PT_kaiserlich_track(Panel):
     def draw(self, context):
         layout = self.layout
         scene = context.scene
-        layout.prop(scene, "kt_min_marker_per_frame")
-        layout.prop(scene, "kt_min_tracking_length")
-        layout.prop(scene, "kt_error_threshold")
+        layout.prop(scene, "min_marker_count")
+        layout.prop(scene, "min_tracking_length")
+        layout.prop(scene, "error_threshold")
         layout.operator(CLIP_OT_kaiserlich_track.bl_idname, text="Start")
 
 
 def register():
-    bpy.types.Scene.kt_min_marker_per_frame = IntProperty(
+    bpy.types.Scene.min_marker_count = IntProperty(
         name="min marker pro frame",
         default=10,
         min=0,
+        update=update_min_marker_props,
     )
-    bpy.types.Scene.kt_min_tracking_length = IntProperty(
+    bpy.types.Scene.min_tracking_length = IntProperty(
         name="min tracking length",
         default=20,
         min=0,
     )
-    bpy.types.Scene.kt_error_threshold = FloatProperty(
+    bpy.types.Scene.error_threshold = FloatProperty(
         name="Error Threshold",
         default=0.04,
         min=0.0,
-    )
-    bpy.types.Scene.min_marker_count = IntProperty(
-        name="Min Marker Count",
-        default=5,
-        min=5,
-        max=50,
-        update=update_min_marker_props,
     )
     bpy.types.Scene.min_marker_count_plus = IntProperty(
         name="Marker Count Plus",
@@ -198,10 +192,9 @@ def unregister():
     bpy.utils.unregister_class(CLIP_OT_remove_close_new_markers)
     bpy.utils.unregister_class(ToggleProxyOperator)
     bpy.utils.unregister_class(DetectFeaturesCustomOperator)
-    del bpy.types.Scene.kt_min_marker_per_frame
-    del bpy.types.Scene.kt_min_tracking_length
-    del bpy.types.Scene.kt_error_threshold
     del bpy.types.Scene.min_marker_count
+    del bpy.types.Scene.min_tracking_length
+    del bpy.types.Scene.error_threshold
     del bpy.types.Scene.min_marker_count_plus
     del bpy.types.Scene.marker_count_plus_min
     del bpy.types.Scene.marker_count_plus_max
