@@ -39,7 +39,7 @@ The panel exposes several options:
 
 Several utility modules are included for experimentation:
 
-- `find_frame_with_few_tracking_markers.py` – locate frames with few markers.
+- `few_marker_Frame.py` – locate frames with few markers.
 - `marker_count_plus.py` – compute additional marker thresholds.
 - `margin_a_distanz.py` – derive margin and distance values from the clip width.
 - `playhead.py` – utilities for repositioning the playhead.

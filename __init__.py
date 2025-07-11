@@ -25,7 +25,7 @@ if addon_dir not in sys.path:
 
 import marker_count_property
 
-from find_frame_with_few_tracking_markers import (
+from few_marker_Frame import (
     find_frame_with_few_tracking_markers,
 )
 from marker_count_plus import update_marker_count_plus
