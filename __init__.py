@@ -57,21 +57,6 @@ class CLIP_OT_kaiserlich_track(Operator):
         # Wartezeit für die Proxy-Erstellung (in Sekunden)
         wait_time = 300.0
 
-        update_min_marker_props(scene, context)
-        marker_counts = get_tracking_marker_counts()
-        frame = find_frame_with_few_tracking_markers(marker_counts, min_marker)
-        if frame is not None:
-            set_playhead_to_low_marker_frame(min_marker)
-
-        compute_margin_distance()
-        marker_plus = update_marker_count_plus(scene)
-        self.report(
-            {'INFO'},
-            (
-                f"Start with min markers {min_marker}, length {min_track_len}, "
-                f"error {error_threshold}, derived {marker_plus}"
-            ),
-        )
         # Schritte nach Abschluss des Proxy-Aufbaus.
         # Der aktuelle Clip wird übergeben, damit der Callback unabhängig vom
         # aktiven Kontext funktioniert.
@@ -81,6 +66,22 @@ class CLIP_OT_kaiserlich_track(Operator):
                 clip.use_proxy = False
             else:
                 print("Proxy bereits deaktiviert oder kein Clip")
+
+            update_min_marker_props(scene, context)
+            marker_counts = get_tracking_marker_counts()
+            frame = find_frame_with_few_tracking_markers(marker_counts, min_marker)
+            if frame is not None:
+                set_playhead_to_low_marker_frame(min_marker)
+
+            compute_margin_distance()
+            marker_plus = update_marker_count_plus(scene)
+            self.report(
+                {'INFO'},
+                (
+                    f"Start with min markers {min_marker}, length {min_track_len}, "
+                    f"error {error_threshold}, derived {marker_plus}"
+                ),
+            )
 
             print("Starte Feature-Erkennung")
             bpy.ops.clip.detect_features_custom()
