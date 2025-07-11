@@ -51,6 +51,22 @@ def show_popup(message, title="Info", icon='INFO'):
     bpy.context.window_manager.popup_menu(draw, title=title, icon=icon)
 
 
+def run_in_clip_editor(clip, func):
+    """Execute ``func`` with a Clip Editor override and set its clip."""
+    ctx = bpy.context
+    for area in ctx.screen.areas:
+        if area.type == 'CLIP_EDITOR':
+            for region in area.regions:
+                if region.type == 'WINDOW':
+                    for space in area.spaces:
+                        if space.type == 'CLIP_EDITOR':
+                            space.clip = clip
+                            with ctx.temp_override(area=area, region=region, space_data=space):
+                                func()
+                            return True
+    return False
+
+
 
 
 class CLIP_OT_kaiserlich_track(Operator):
@@ -84,18 +100,24 @@ class CLIP_OT_kaiserlich_track(Operator):
             if frame is not None:
                 set_playhead_to_low_marker_frame(min_marker)
 
-            compute_margin_distance()
-            marker_plus = update_marker_count_plus(scene)
-            msg = (
-                f"Start with min markers {min_marker}, length {min_track_len}, "
-                f"error {error_threshold}, derived {marker_plus}"
-            )
-            print(msg)
+            bpy.context.scene.clip = clip
 
-            print("Starte Feature-Erkennung")
-            bpy.ops.clip.detect_features_custom()
-            print("Bereinige Marker")
-            bpy.ops.clip.remove_close_new_markers()
+            def run_ops():
+                compute_margin_distance()
+                marker_plus = update_marker_count_plus(scene)
+                msg = (
+                    f"Start with min markers {min_marker}, length {min_track_len}, "
+                    f"error {error_threshold}, derived {marker_plus}"
+                )
+                print(msg)
+
+                print("Starte Feature-Erkennung")
+                bpy.ops.clip.detect_features_custom()
+                print("Bereinige Marker")
+                bpy.ops.clip.remove_close_new_markers()
+
+            if not run_in_clip_editor(clip, run_ops):
+                print("Kein Clip Editor zum Ausführen der Operatoren gefunden")
 
         # Alte Proxies entfernen
         active_clip = context.space_data.clip
