@@ -5,13 +5,6 @@ from margin_distance_adapt import ensure_margin_distance
 from adjust_marker_count_plus import adjust_marker_count_plus
 from count_new_markers import count_new_markers
 
-
-def rename_new_tracks(clip, start_index, prefix="NEW_"):
-    """Prefix newly created tracks with ``prefix``."""
-    for track in list(clip.tracking.tracks)[start_index:]:
-        if not track.name.startswith(prefix):
-            track.name = f"{prefix}{track.name}"
-
 # Operator-Klasse
 class DetectFeaturesCustomOperator(bpy.types.Operator):
     bl_idname = "clip.detect_features_custom"
@@ -51,7 +44,6 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             min_distance=distance,
             placement='FRAME',
         )
-        rename_new_tracks(clip, tracks_before)
 
         tracks_after = len(clip.tracking.tracks)
         if tracks_after == tracks_before:
@@ -94,7 +86,6 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 min_distance=distance,
                 placement='FRAME',
             )
-            rename_new_tracks(clip, tracks_before)
             tracks_after = len(clip.tracking.tracks)
             new_marker = count_new_markers(clip)
         return {'FINISHED'}
