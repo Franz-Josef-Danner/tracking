@@ -1,6 +1,9 @@
-"""Create a 50% proxy and wait for its files to appear."""
+"""Create a 50% proxy and wait for its files to appear.
 
-print("✅ proxy_wait.py geladen aus:", __file__)
+The optional ``on_finish`` callback is invoked with the active clip once
+the first proxy file is detected or the timeout expires.
+"""
+# Debug print of this file's path was removed to keep the console clean.
 
 import bpy
 import os
@@ -25,10 +28,12 @@ def remove_existing_proxies():
         shutil.rmtree(proxy_dir, ignore_errors=True)
 
 
-def create_proxy_and_wait(wait_time=0.0):
+def create_proxy_and_wait(wait_time=0.0, on_finish=None, clip=None):
+    """Build proxies and invoke ``on_finish`` with the given clip."""
     print("Starte Proxy-Erstellung (50%, custom Pfad)")
     sys.stdout.flush()
-    clip = bpy.context.space_data.clip
+    if clip is None:
+        clip = bpy.context.space_data.clip
     if not clip:
         print("Kein aktiver Clip.")
         return
@@ -57,18 +62,22 @@ def create_proxy_and_wait(wait_time=0.0):
     print("Proxy-Erstellung gestartet…")
     sys.stdout.flush()
 
-    # Use a timer so Blender's UI remains responsive during the wait loop.
     proxy_pattern = os.path.join(full_proxy, "**", "proxy_50.*")
     wait_seconds = wait_time if wait_time > 0 else 180
     start = time.time()
 
     def check():
-        matches = [p for p in glob.glob(proxy_pattern, recursive=True)
-                   if os.path.isfile(p) and "_part" not in os.path.basename(p)]
+        matches = [
+            p
+            for p in glob.glob(proxy_pattern, recursive=True)
+            if os.path.isfile(p) and "_part" not in os.path.basename(p)
+        ]
         if matches:
             print("Proxy-Datei gefunden")
             print("Proxy-Erstellung abgeschlossen")
             sys.stdout.flush()
+            if on_finish:
+                on_finish(clip)
             return None
 
         elapsed = time.time() - start
@@ -76,13 +85,15 @@ def create_proxy_and_wait(wait_time=0.0):
             print("Zeitüberschreitung beim Warten auf Proxy-Datei")
             print("Proxy-Erstellung abgeschlossen")
             sys.stdout.flush()
+            if on_finish:
+                on_finish(clip)
             return None
 
         remaining = int(wait_seconds - elapsed)
         if remaining % 10 == 0:
             print(f"⏳ Warte {remaining}s auf Proxy…")
             sys.stdout.flush()
-        return 1.0  # check again in 1 second
+        return 1.0
 
     print(
         "Warte auf die erste Proxy-Datei (Blender legt mehrere Dateien an, "
@@ -92,4 +103,5 @@ def create_proxy_and_wait(wait_time=0.0):
 
     bpy.ops.clip.rebuild_proxy('INVOKE_DEFAULT')
     bpy.app.timers.register(check)
+
 

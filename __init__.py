@@ -23,9 +23,8 @@ addon_dir = os.path.dirname(__file__)
 if addon_dir not in sys.path:
     sys.path.append(addon_dir)
 
-import marker_count_property
 
-from find_frame_with_few_tracking_markers import (
+from few_marker_frame import (
     find_frame_with_few_tracking_markers,
 )
 from marker_count_plus import update_marker_count_plus
@@ -73,33 +72,30 @@ class CLIP_OT_kaiserlich_track(Operator):
                 f"error {error_threshold}, derived {marker_plus}"
             ),
         )
+        # Schritte nach Abschluss des Proxy-Aufbaus.
+        # Der aktuelle Clip wird übergeben, damit der Callback unabhängig vom
+        # aktiven Kontext funktioniert.
+        def after_proxy(clip):
+            if clip and clip.use_proxy:
+                print("Proxy-Zeitlinie wird deaktiviert")
+                bpy.ops.clip.toggle_proxy()
+            else:
+                print("Proxy bereits deaktiviert oder kein Clip")
+
+            print("Starte Feature-Erkennung")
+            bpy.ops.clip.detect_features_custom()
+            print("Bereinige Marker")
+            bpy.ops.clip.remove_close_new_markers()
+
         # Alte Proxies entfernen
         remove_existing_proxies()
-        # 50% Proxy erstellen und etwas warten. Manche
-        # Installationen liefern eine Version ohne Parameter.
+        # 50% Proxy erstellen und warten, bis Dateien erscheinen
+        active_clip = context.space_data.clip
         try:
             print("✅ Aufruf: create_proxy_and_wait() wird gestartet")
-            create_proxy_and_wait(wait_time)
+            create_proxy_and_wait(wait_time, on_finish=after_proxy, clip=active_clip)
         except TypeError:
-            # Fallback für ältere Skripte ohne Argument
-            create_proxy_and_wait()
-
-        # Proxy-Zeitlinie wieder deaktivieren
-        clip = context.space_data.clip
-        if clip and clip.use_proxy:
-            print("Proxy-Zeitlinie wird deaktiviert")
-            bpy.ops.clip.toggle_proxy()
-        else:
-            print("Proxy bereits deaktiviert oder kein Clip")
-
-        # Property registration for marker counts
-        marker_count_property.register()
-
-        # Marker erkennen und bereinigen
-        print("Starte Feature-Erkennung")
-        bpy.ops.clip.detect_features_custom()
-        print("Bereinige Marker")
-        bpy.ops.clip.remove_close_new_markers()
+            create_proxy_and_wait(on_finish=after_proxy, clip=active_clip)
 
         return {'FINISHED'}
 
@@ -148,15 +144,15 @@ def register():
         default=20,
         min=0,
     )
-    bpy.types.Scene.marker_count_plus_min = FloatProperty(
+    bpy.types.Scene.marker_count_plus_min = IntProperty(
         name="Marker Count Plus Min",
-        default=0.0,
-        min=0.0,
+        default=0,
+        min=0,
     )
-    bpy.types.Scene.marker_count_plus_max = FloatProperty(
+    bpy.types.Scene.marker_count_plus_max = IntProperty(
         name="Marker Count Plus Max",
-        default=0.0,
-        min=0.0,
+        default=0,
+        min=0,
     )
     bpy.utils.register_class(ToggleProxyOperator)
     bpy.utils.register_class(DetectFeaturesCustomOperator)
