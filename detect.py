@@ -46,6 +46,11 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         )
 
         tracks_after = len(clip.tracking.tracks)
+        features_created = tracks_after - tracks_before
+        print(
+            f"Detect Features erzeugte {features_created} Marker, "
+            f"{count_new_markers(clip)} NEW_-Marker"
+        )
         if tracks_after == tracks_before:
             settings.default_pattern_size = max(
                 1,
@@ -79,6 +84,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 f"senke Threshold auf {threshold:.4f}"
             )
             self.report({'INFO'}, msg)
+            prev_count = tracks_after
             bpy.ops.clip.detect_features(
                 threshold=threshold,
                 margin=margin,
@@ -86,7 +92,12 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 placement='FRAME',
             )
             tracks_after = len(clip.tracking.tracks)
+            features_created = tracks_after - prev_count
             new_marker = count_new_markers(clip)
+            print(
+                f"Detect Features erzeugte {features_created} Marker, "
+                f"{new_marker} NEW_-Marker"
+            )
 
         check_marker_range(context, clip)
         return {'FINISHED'}
