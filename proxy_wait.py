@@ -1,4 +1,8 @@
-"""Create a 50% proxy and wait for its files to appear."""
+"""Create a 50% proxy and wait for its files to appear.
+
+The optional ``on_finish`` callback is invoked with the active clip once
+the first proxy file is detected or the timeout expires.
+"""
 # Debug print of this file's path was removed to keep the console clean.
 
 import bpy
@@ -24,10 +28,12 @@ def remove_existing_proxies():
         shutil.rmtree(proxy_dir, ignore_errors=True)
 
 
-def create_proxy_and_wait(wait_time=0.0, on_finish=None):
+def create_proxy_and_wait(wait_time=0.0, on_finish=None, clip=None):
+    """Build proxies and invoke ``on_finish`` with the given clip."""
     print("Starte Proxy-Erstellung (50%, custom Pfad)")
     sys.stdout.flush()
-    clip = bpy.context.space_data.clip
+    if clip is None:
+        clip = bpy.context.space_data.clip
     if not clip:
         print("Kein aktiver Clip.")
         return
@@ -71,7 +77,7 @@ def create_proxy_and_wait(wait_time=0.0, on_finish=None):
             print("Proxy-Erstellung abgeschlossen")
             sys.stdout.flush()
             if on_finish:
-                on_finish()
+                on_finish(clip)
             return None
 
         elapsed = time.time() - start
@@ -80,7 +86,7 @@ def create_proxy_and_wait(wait_time=0.0, on_finish=None):
             print("Proxy-Erstellung abgeschlossen")
             sys.stdout.flush()
             if on_finish:
-                on_finish()
+                on_finish(clip)
             return None
 
         remaining = int(wait_seconds - elapsed)

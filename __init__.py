@@ -72,9 +72,10 @@ class CLIP_OT_kaiserlich_track(Operator):
                 f"error {error_threshold}, derived {marker_plus}"
             ),
         )
-        # Schritte nach Abschluss des Proxy-Aufbaus
-        def after_proxy():
-            clip = bpy.context.space_data.clip
+        # Schritte nach Abschluss des Proxy-Aufbaus.
+        # Der aktuelle Clip wird übergeben, damit der Callback unabhängig vom
+        # aktiven Kontext funktioniert.
+        def after_proxy(clip):
             if clip and clip.use_proxy:
                 print("Proxy-Zeitlinie wird deaktiviert")
                 bpy.ops.clip.toggle_proxy()
@@ -89,11 +90,12 @@ class CLIP_OT_kaiserlich_track(Operator):
         # Alte Proxies entfernen
         remove_existing_proxies()
         # 50% Proxy erstellen und warten, bis Dateien erscheinen
+        active_clip = context.space_data.clip
         try:
             print("✅ Aufruf: create_proxy_and_wait() wird gestartet")
-            create_proxy_and_wait(wait_time, on_finish=after_proxy)
+            create_proxy_and_wait(wait_time, on_finish=after_proxy, clip=active_clip)
         except TypeError:
-            create_proxy_and_wait(on_finish=after_proxy)
+            create_proxy_and_wait(on_finish=after_proxy, clip=active_clip)
 
         return {'FINISHED'}
 
@@ -142,15 +144,15 @@ def register():
         default=20,
         min=0,
     )
-    bpy.types.Scene.marker_count_plus_min = FloatProperty(
+    bpy.types.Scene.marker_count_plus_min = IntProperty(
         name="Marker Count Plus Min",
-        default=0.0,
-        min=0.0,
+        default=0,
+        min=0,
     )
-    bpy.types.Scene.marker_count_plus_max = FloatProperty(
+    bpy.types.Scene.marker_count_plus_max = IntProperty(
         name="Marker Count Plus Max",
-        default=0.0,
-        min=0.0,
+        default=0,
+        min=0,
     )
     bpy.utils.register_class(ToggleProxyOperator)
     bpy.utils.register_class(DetectFeaturesCustomOperator)
