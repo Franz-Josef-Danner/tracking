@@ -3,8 +3,7 @@ from margin_a_distanz import compute_margin_distance
 # ``ensure_margin_distance`` is defined in ``margin_distance_adapt``
 from margin_distance_adapt import ensure_margin_distance
 from adjust_marker_count_plus import adjust_marker_count_plus
-from count_new_markers import count_new_markers, check_marker_range
-from rename_new import rename_tracks
+from count_new_markers import count_new_markers
 
 # Operator-Klasse
 class DetectFeaturesCustomOperator(bpy.types.Operator):
@@ -30,7 +29,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         threshold = 0.1
         base_plus = context.scene.min_marker_count_plus
         min_new = context.scene.min_marker_count
-        tracks_before = len(clip.tracking.tracks)
+        base_count = len(clip.tracking.tracks)
         settings = clip.tracking.settings
         settings.default_pattern_size = 50
         settings.default_search_size = settings.default_pattern_size * 2
@@ -45,25 +44,23 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             min_distance=distance,
             placement='FRAME',
         )
-        rename_tracks(list(clip.tracking.tracks)[tracks_before:])
 
         tracks_after = len(clip.tracking.tracks)
-        features_created = tracks_after - tracks_before
+        features_created = tracks_after - base_count
         print(
-            f"Detect Features erzeugte {features_created} Marker, "
-            f"{count_new_markers(clip)} NEW_-Marker"
+            f"Detect Features erzeugte {features_created} Marker"
         )
-        if tracks_after == tracks_before:
+        if tracks_after == base_count:
             settings.default_pattern_size = max(
                 1,
                 int(settings.default_pattern_size / 1.1),
             )
             settings.default_search_size = settings.default_pattern_size * 2
 
-        new_marker = count_new_markers(clip)
+        new_marker = tracks_after - base_count
 
         while new_marker < min_new and threshold > 0.0001:
-            if tracks_after == tracks_before:
+            if tracks_after == base_count:
                 settings.default_pattern_size = max(
                     1,
                     int(settings.default_pattern_size / 1.1),
@@ -76,10 +73,9 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
             margin, distance, _ = ensure_margin_distance(clip, threshold)
 
-            # vorhandene NEW_-Marker entfernen
-            for track in list(clip.tracking.tracks):
-                if track.name.startswith("NEW_"):
-                    clip.tracking.tracks.remove(track)
+            # zuvor erstellte Marker entfernen
+            for track in list(clip.tracking.tracks)[base_count:]:
+                clip.tracking.tracks.remove(track)
 
             msg = (
                 f"Nur {new_marker} Features, "
@@ -93,16 +89,13 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 min_distance=distance,
                 placement='FRAME',
             )
-            rename_tracks(list(clip.tracking.tracks)[prev_count:])
             tracks_after = len(clip.tracking.tracks)
             features_created = tracks_after - prev_count
-            new_marker = count_new_markers(clip)
+            new_marker = tracks_after - base_count
             print(
-                f"Detect Features erzeugte {features_created} Marker, "
-                f"{new_marker} NEW_-Marker"
+                f"Detect Features erzeugte {features_created} Marker"
             )
 
-        check_marker_range(context, clip)
         return {'FINISHED'}
 
 # Panel-Klasse

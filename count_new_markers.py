@@ -5,6 +5,7 @@ import bpy
 from delet import delete_close_new_markers, delete_new_markers
 from adjust_marker_count_plus import adjust_marker_count_plus
 from margin_distance_adapt import ensure_margin_distance
+from rename_new import rename_tracks
 
 
 def count_new_markers(clip, prefix="NEW_"):
@@ -35,5 +36,7 @@ def check_marker_range(context, clip, prefix="NEW_"):
         f"NEW_-Marker {new_count} außerhalb des Bereichs {min_count}-{max_count}" 
         " → erneute Erkennung"
     )
+    start_idx = len(clip.tracking.tracks)
     bpy.ops.clip.detect_features_custom()
+    rename_tracks(list(clip.tracking.tracks)[start_idx:])
     return new_count
