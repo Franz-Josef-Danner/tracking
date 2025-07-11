@@ -11,6 +11,7 @@ bl_info = {
 import bpy
 from bpy.types import Panel, Operator
 from bpy.props import IntProperty, FloatProperty
+import marker_count_property
 import os
 import sys
 import importlib
@@ -89,6 +90,9 @@ class CLIP_OT_kaiserlich_track(Operator):
             bpy.ops.clip.toggle_proxy()
         else:
             print("Proxy bereits deaktiviert oder kein Clip")
+
+        # Property registration for marker counts
+        marker_count_property.register()
 
         # Marker erkennen und bereinigen
         print("Starte Feature-Erkennung")

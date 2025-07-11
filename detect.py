@@ -1,5 +1,7 @@
 import bpy
 from margin_a_distanz import compute_margin_distance
+from ensure_margin_distance import ensure_margin_distance
+from adjust_marker_count_plus import adjust_marker_count_plus
 
 # Operator-Klasse
 class DetectFeaturesCustomOperator(bpy.types.Operator):
@@ -15,16 +17,17 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             return {'CANCELLED'}
 
         threshold = 0.1
+        base_plus = context.scene.min_marker_count_plus
         min_new = context.scene.min_marker_count
         tracks_before = len(clip.tracking.tracks)
+        existing_names = {t.name for t in clip.tracking.tracks}
         settings = clip.tracking.settings
         settings.default_pattern_size = 50
         settings.default_search_size = settings.default_pattern_size * 2
 
-        # Werte aus margin_a_distanz verwenden
+        # Werte aus margin_a_distanz verwenden und an Threshold anpassen
         compute_margin_distance()
-        margin = int(clip.get("MARGIN", 500))
-        distance = int(clip.get("DISTANCE", 10))
+        margin, distance, _ = ensure_margin_distance(clip, threshold)
 
         bpy.ops.clip.detect_features(
             threshold=threshold,
@@ -41,7 +44,9 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             )
             settings.default_search_size = settings.default_pattern_size * 2
 
-        while (tracks_after - tracks_before) < min_new and threshold > 0.0001:
+        new_marker = tracks_after - tracks_before
+
+        while new_marker < min_new and threshold > 0.0001:
             if tracks_after == tracks_before:
                 settings.default_pattern_size = max(
                     1,
@@ -49,10 +54,20 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 )
                 settings.default_search_size = settings.default_pattern_size * 2
 
-            factor = ((tracks_after - tracks_before) + 0.1) / min_new
+            adjust_marker_count_plus(context.scene, new_marker)
+            base_plus = context.scene.min_marker_count_plus
+            factor = (new_marker + 0.1) / base_plus
             threshold = max(threshold * factor, 0.0001)
+
+            margin, distance, _ = ensure_margin_distance(clip, threshold)
+
+            # aktuelle NEW_-Marker entfernen
+            for track in list(clip.tracking.tracks):
+                if track.name not in existing_names:
+                    clip.tracking.tracks.remove(track)
+
             msg = (
-                f"Nur {tracks_after - tracks_before} Features, "
+                f"Nur {new_marker} Features, "
                 f"senke Threshold auf {threshold:.4f}"
             )
             self.report({'INFO'}, msg)
@@ -63,6 +78,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 placement='FRAME',
             )
             tracks_after = len(clip.tracking.tracks)
+            new_marker = tracks_after - tracks_before
         return {'FINISHED'}
 
 # Panel-Klasse
