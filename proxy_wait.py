@@ -24,7 +24,7 @@ def remove_existing_proxies():
         shutil.rmtree(proxy_dir, ignore_errors=True)
 
 
-def create_proxy_and_wait(wait_time=0.0):
+def create_proxy_and_wait(wait_time=0.0, on_finish=None):
     print("Starte Proxy-Erstellung (50%, custom Pfad)")
     sys.stdout.flush()
     clip = bpy.context.space_data.clip
@@ -70,6 +70,8 @@ def create_proxy_and_wait(wait_time=0.0):
             print("Proxy-Datei gefunden")
             print("Proxy-Erstellung abgeschlossen")
             sys.stdout.flush()
+            if on_finish:
+                on_finish()
             return None
 
         elapsed = time.time() - start
@@ -77,6 +79,8 @@ def create_proxy_and_wait(wait_time=0.0):
             print("Zeitüberschreitung beim Warten auf Proxy-Datei")
             print("Proxy-Erstellung abgeschlossen")
             sys.stdout.flush()
+            if on_finish:
+                on_finish()
             return None
 
         remaining = int(wait_seconds - elapsed)

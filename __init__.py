@@ -72,30 +72,28 @@ class CLIP_OT_kaiserlich_track(Operator):
                 f"error {error_threshold}, derived {marker_plus}"
             ),
         )
+        # Schritte nach Abschluss des Proxy-Aufbaus
+        def after_proxy():
+            clip = bpy.context.space_data.clip
+            if clip and clip.use_proxy:
+                print("Proxy-Zeitlinie wird deaktiviert")
+                bpy.ops.clip.toggle_proxy()
+            else:
+                print("Proxy bereits deaktiviert oder kein Clip")
+
+            print("Starte Feature-Erkennung")
+            bpy.ops.clip.detect_features_custom()
+            print("Bereinige Marker")
+            bpy.ops.clip.remove_close_new_markers()
+
         # Alte Proxies entfernen
         remove_existing_proxies()
-        # 50% Proxy erstellen und etwas warten. Manche
-        # Installationen liefern eine Version ohne Parameter.
+        # 50% Proxy erstellen und warten, bis Dateien erscheinen
         try:
             print("✅ Aufruf: create_proxy_and_wait() wird gestartet")
-            create_proxy_and_wait(wait_time)
+            create_proxy_and_wait(wait_time, on_finish=after_proxy)
         except TypeError:
-            # Fallback für ältere Skripte ohne Argument
-            create_proxy_and_wait()
-
-        # Proxy-Zeitlinie wieder deaktivieren
-        clip = context.space_data.clip
-        if clip and clip.use_proxy:
-            print("Proxy-Zeitlinie wird deaktiviert")
-            bpy.ops.clip.toggle_proxy()
-        else:
-            print("Proxy bereits deaktiviert oder kein Clip")
-
-        # Marker erkennen und bereinigen
-        print("Starte Feature-Erkennung")
-        bpy.ops.clip.detect_features_custom()
-        print("Bereinige Marker")
-        bpy.ops.clip.remove_close_new_markers()
+            create_proxy_and_wait(on_finish=after_proxy)
 
         return {'FINISHED'}
 
