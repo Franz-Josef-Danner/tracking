@@ -3,7 +3,7 @@
 import bpy
 from collections import Counter
 
-from few_marker_Frame import (
+from few_marker_frame import (
     find_frame_with_few_tracking_markers,
 )
 

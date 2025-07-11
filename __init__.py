@@ -23,9 +23,8 @@ addon_dir = os.path.dirname(__file__)
 if addon_dir not in sys.path:
     sys.path.append(addon_dir)
 
-import marker_count_property
 
-from few_marker_Frame import (
+from few_marker_frame import (
     find_frame_with_few_tracking_markers,
 )
 from marker_count_plus import update_marker_count_plus

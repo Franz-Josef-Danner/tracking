@@ -57,32 +57,9 @@ def create_proxy_and_wait(wait_time=0.0):
     print("Proxy-Erstellung gestartet…")
     sys.stdout.flush()
 
-    # Use a timer so Blender's UI remains responsive during the wait loop.
     proxy_pattern = os.path.join(full_proxy, "**", "proxy_50.*")
     wait_seconds = wait_time if wait_time > 0 else 180
     start = time.time()
-
-    def check():
-        matches = [p for p in glob.glob(proxy_pattern, recursive=True)
-                   if os.path.isfile(p) and "_part" not in os.path.basename(p)]
-        if matches:
-            print("Proxy-Datei gefunden")
-            print("Proxy-Erstellung abgeschlossen")
-            sys.stdout.flush()
-            return None
-
-        elapsed = time.time() - start
-        if elapsed >= wait_seconds:
-            print("Zeitüberschreitung beim Warten auf Proxy-Datei")
-            print("Proxy-Erstellung abgeschlossen")
-            sys.stdout.flush()
-            return None
-
-        remaining = int(wait_seconds - elapsed)
-        if remaining % 10 == 0:
-            print(f"⏳ Warte {remaining}s auf Proxy…")
-            sys.stdout.flush()
-        return 1.0  # check again in 1 second
 
     print(
         "Warte auf die erste Proxy-Datei (Blender legt mehrere Dateien an, "
@@ -91,5 +68,29 @@ def create_proxy_and_wait(wait_time=0.0):
     sys.stdout.flush()
 
     bpy.ops.clip.rebuild_proxy('INVOKE_DEFAULT')
-    bpy.app.timers.register(check)
+
+    while True:
+        matches = [
+            p
+            for p in glob.glob(proxy_pattern, recursive=True)
+            if os.path.isfile(p) and "_part" not in os.path.basename(p)
+        ]
+        if matches:
+            print("Proxy-Datei gefunden")
+            print("Proxy-Erstellung abgeschlossen")
+            sys.stdout.flush()
+            break
+
+        elapsed = time.time() - start
+        if elapsed >= wait_seconds:
+            print("Zeitüberschreitung beim Warten auf Proxy-Datei")
+            print("Proxy-Erstellung abgeschlossen")
+            sys.stdout.flush()
+            break
+
+        remaining = int(wait_seconds - elapsed)
+        if remaining % 10 == 0:
+            print(f"⏳ Warte {remaining}s auf Proxy…")
+            sys.stdout.flush()
+        time.sleep(1)
 
