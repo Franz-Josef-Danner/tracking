@@ -2,7 +2,7 @@
 
 import bpy
 
-from delet import delete_close_new_markers
+from delet import delete_close_new_markers, delete_new_markers
 from adjust_marker_count_plus import adjust_marker_count_plus
 from margin_distance_adapt import ensure_margin_distance
 
@@ -24,7 +24,11 @@ def check_marker_range(context, clip, prefix="NEW_"):
         print(f"NEW_-Marker {new_count} liegt im Bereich {min_count}-{max_count}")
         return new_count
 
-    delete_close_new_markers(context)
+    deleted = delete_new_markers(context)
+    if deleted:
+        print(f"🗑️ Gelöscht: {deleted} NEW_-Marker")
+    else:
+        delete_close_new_markers(context)
     adjust_marker_count_plus(scene, new_count)
     ensure_margin_distance(clip)
     print(

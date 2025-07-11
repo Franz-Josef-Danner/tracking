@@ -1,7 +1,8 @@
-"""Helpers for removing NEW_ markers near GOOD_ markers.
+"""Helpers for removing NEW_ markers.
 
-Provides :func:`delete_close_new_markers`.
-"""
+The module provides :func:`delete_close_new_markers` to remove only the
+NEW_ markers that are too close to GOOD_ markers in the current frame and
+``delete_new_markers`` to wipe all NEW_ markers from the clip."""
 
 import bpy
 import mathutils
@@ -77,3 +78,22 @@ def delete_close_new_markers(context, min_distance=0.02, report=None):
     if report:
         report({'ERROR'}, "Kein geeigneter Clip Editor Bereich gefunden")
     return False
+
+
+def delete_new_markers(context, prefix="NEW_", report=None):
+    """Remove all tracks starting with ``prefix`` from the active clip."""
+
+    clip = context.space_data.clip
+    if not clip:
+        if report:
+            report({'WARNING'}, "❌ Kein aktiver Clip gefunden.")
+        return 0
+
+    tracks = clip.tracking.tracks
+    to_remove = [t for t in tracks if t.name.startswith(prefix)]
+    for t in to_remove:
+        tracks.remove(t)
+
+    if report:
+        report({'INFO'}, f"🗑️ Gelöscht: {len(to_remove)} {prefix} Marker")
+    return len(to_remove)
