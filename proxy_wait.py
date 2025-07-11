@@ -69,7 +69,7 @@ def create_proxy_and_wait(wait_time=0.0):
 
     bpy.ops.clip.rebuild_proxy('INVOKE_DEFAULT')
 
-    def check():
+    while True:
         matches = [
             p
             for p in glob.glob(proxy_pattern, recursive=True)
@@ -77,22 +77,19 @@ def create_proxy_and_wait(wait_time=0.0):
         ]
         if matches:
             print("Proxy-Datei gefunden")
-            print("Proxy-Erstellung abgeschlossen")
-            sys.stdout.flush()
-            return None
+            break
 
         elapsed = time.time() - start
         if elapsed >= wait_seconds:
             print("Zeitüberschreitung beim Warten auf Proxy-Datei")
-            print("Proxy-Erstellung abgeschlossen")
-            sys.stdout.flush()
-            return None
+            break
 
         remaining = int(wait_seconds - elapsed)
         if remaining % 10 == 0:
             print(f"⏳ Warte {remaining}s auf Proxy…")
             sys.stdout.flush()
-        return 1.0
+        time.sleep(1)
 
-    bpy.app.timers.register(check)
+    print("Proxy-Erstellung abgeschlossen")
+    sys.stdout.flush()
 
