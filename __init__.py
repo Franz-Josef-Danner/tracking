@@ -94,6 +94,7 @@ class CLIP_OT_kaiserlich_track(Operator):
                 print("Proxy bereits deaktiviert oder kein Clip")
                 show_popup("Proxy bereits deaktiviert oder kein Clip")
 
+            print("Berechne minimale Marker-Eigenschaften")
             update_min_marker_props(scene, context)
             marker_counts = get_tracking_marker_counts()
             frame = find_frame_with_few_tracking_markers(marker_counts, min_marker)
@@ -109,8 +110,9 @@ class CLIP_OT_kaiserlich_track(Operator):
                     f"error {error_threshold}, derived {marker_plus}"
                 )
                 print(msg)
-
                 print("Starte Feature-Erkennung")
+                sys.stdout.flush()
+                
                 bpy.ops.clip.detect_features_custom()
                 print("Bereinige Marker")
                 bpy.ops.clip.remove_close_new_markers()

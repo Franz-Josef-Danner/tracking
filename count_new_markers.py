@@ -21,10 +21,15 @@ def check_marker_range(context, clip, prefix="NEW_"):
     max_count = getattr(scene, "marker_count_plus_max", 0)
 
     if min_count <= new_count <= max_count:
+        print(f"NEW_-Marker {new_count} liegt im Bereich {min_count}-{max_count}")
         return new_count
 
     delete_close_new_markers(context)
     adjust_marker_count_plus(scene, new_count)
     ensure_margin_distance(clip)
+    print(
+        f"NEW_-Marker {new_count} außerhalb des Bereichs {min_count}-{max_count}" 
+        " → erneute Erkennung"
+    )
     bpy.ops.clip.detect_features_custom()
     return new_count

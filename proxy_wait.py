@@ -79,6 +79,8 @@ def create_proxy_and_wait(wait_time=0.0, on_finish=None, clip=None):
         if matches:
             print("Proxy-Datei gefunden")
             print("Proxy-Erstellung abgeschlossen")
+            if on_finish:
+                print("Führe nachgelagerte Schritte aus")
             sys.stdout.flush()
             if on_finish:
                 on_finish(clip)
@@ -88,6 +90,8 @@ def create_proxy_and_wait(wait_time=0.0, on_finish=None, clip=None):
         if elapsed >= wait_seconds:
             print("Zeitüberschreitung beim Warten auf Proxy-Datei")
             print("Proxy-Erstellung abgeschlossen")
+            if on_finish:
+                print("Führe nachgelagerte Schritte aus")
             sys.stdout.flush()
             if on_finish:
                 on_finish(clip)
