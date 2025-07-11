@@ -42,6 +42,15 @@ from proxy_switch import ToggleProxyOperator
 from detect import DetectFeaturesCustomOperator
 
 
+def show_popup(message, title="Info", icon='INFO'):
+    """Display a temporary popup in Blender's UI."""
+
+    def draw(self, _context):
+        self.layout.label(text=message)
+
+    bpy.context.window_manager.popup_menu(draw, title=title, icon=icon)
+
+
 
 
 class CLIP_OT_kaiserlich_track(Operator):
@@ -64,8 +73,10 @@ class CLIP_OT_kaiserlich_track(Operator):
             if clip and clip.use_proxy:
                 print("Proxy-Zeitlinie wird deaktiviert")
                 clip.use_proxy = False
+                show_popup("Proxy-Zeitlinie wurde deaktiviert")
             else:
                 print("Proxy bereits deaktiviert oder kein Clip")
+                show_popup("Proxy bereits deaktiviert oder kein Clip")
 
             update_min_marker_props(scene, context)
             marker_counts = get_tracking_marker_counts()
