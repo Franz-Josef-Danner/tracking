@@ -1,4 +1,9 @@
-"""Utility: compute margin and distance values from threshold."""
+"""Utility helpers for margin and distance values.
+
+The function :func:`ensure_margin_distance` ensures that the active clip has
+``MARGIN`` and ``DISTANCE`` properties and returns them scaled by the given
+threshold. The base distance is also returned unchanged.
+"""
 
 import math
 
