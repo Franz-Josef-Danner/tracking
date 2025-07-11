@@ -92,9 +92,6 @@ class CLIP_OT_kaiserlich_track(Operator):
         else:
             print("Proxy bereits deaktiviert oder kein Clip")
 
-        # Property registration for marker counts
-        marker_count_property.register()
-
         # Marker erkennen und bereinigen
         print("Starte Feature-Erkennung")
         bpy.ops.clip.detect_features_custom()
