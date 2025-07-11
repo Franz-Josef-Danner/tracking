@@ -75,13 +75,11 @@ class CLIP_OT_kaiserlich_track(Operator):
 
             compute_margin_distance()
             marker_plus = update_marker_count_plus(scene)
-            self.report(
-                {'INFO'},
-                (
-                    f"Start with min markers {min_marker}, length {min_track_len}, "
-                    f"error {error_threshold}, derived {marker_plus}"
-                ),
+            msg = (
+                f"Start with min markers {min_marker}, length {min_track_len}, "
+                f"error {error_threshold}, derived {marker_plus}"
             )
+            print(msg)
 
             print("Starte Feature-Erkennung")
             bpy.ops.clip.detect_features_custom()
