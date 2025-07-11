@@ -15,9 +15,13 @@ import glob
 PROXY_DIR = "//BL_proxy/"
 
 
-def remove_existing_proxies():
-    """Remove previously generated proxy files."""
-    clip = bpy.context.space_data.clip
+def remove_existing_proxies(clip=None):
+    """Remove previously generated proxy files for ``clip`` or the active one."""
+    if clip is None:
+        space = getattr(bpy.context, "space_data", None)
+        clip = getattr(space, "clip", None)
+        if clip is None:
+            clip = getattr(bpy.context.scene, "clip", None)
     if not clip:
         print("Kein aktiver Clip.")
         return
@@ -75,6 +79,8 @@ def create_proxy_and_wait(wait_time=0.0, on_finish=None, clip=None):
         if matches:
             print("Proxy-Datei gefunden")
             print("Proxy-Erstellung abgeschlossen")
+            if on_finish:
+                print("Führe nachgelagerte Schritte aus")
             sys.stdout.flush()
             if on_finish:
                 on_finish(clip)
@@ -84,6 +90,8 @@ def create_proxy_and_wait(wait_time=0.0, on_finish=None, clip=None):
         if elapsed >= wait_seconds:
             print("Zeitüberschreitung beim Warten auf Proxy-Datei")
             print("Proxy-Erstellung abgeschlossen")
+            if on_finish:
+                print("Führe nachgelagerte Schritte aus")
             sys.stdout.flush()
             if on_finish:
                 on_finish(clip)

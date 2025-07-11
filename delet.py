@@ -1,3 +1,9 @@
+"""Helpers for removing NEW_ markers.
+
+The module provides :func:`delete_close_new_markers` to remove only the
+NEW_ markers that are too close to GOOD_ markers in the current frame and
+``delete_new_markers`` to wipe all NEW_ markers from the clip."""
+
 import bpy
 import mathutils
 
@@ -72,3 +78,43 @@ def delete_close_new_markers(context, min_distance=0.02, report=None):
     if report:
         report({'ERROR'}, "Kein geeigneter Clip Editor Bereich gefunden")
     return False
+
+
+def delete_new_markers(context, prefix="NEW_", report=None):
+    """Delete all tracks starting with ``prefix`` using the delete operator."""
+
+    space = getattr(context, "space_data", None)
+    clip = getattr(space, "clip", None)
+    if clip is None:
+        clip = getattr(context.scene, "clip", None)
+    if not clip:
+        if report:
+            report({'WARNING'}, "❌ Kein aktiver Clip gefunden.")
+        return 0
+
+    tracks = clip.tracking.tracks
+    to_remove = [t for t in tracks if t.name.startswith(prefix)]
+    if not to_remove:
+        return 0
+
+    for t in tracks:
+        t.select = False
+    for t in to_remove:
+        t.select = True
+
+    for area in context.screen.areas:
+        if area.type == 'CLIP_EDITOR':
+            for region in area.regions:
+                if region.type == 'WINDOW':
+                    for space in area.spaces:
+                        if space.type == 'CLIP_EDITOR':
+                            space.clip = clip
+                            with context.temp_override(area=area, region=region, space_data=space):
+                                bpy.ops.clip.delete_track()
+                            if report:
+                                report({'INFO'}, f"🗑️ Gelöscht: {len(to_remove)} {prefix} Marker")
+                            return len(to_remove)
+
+    if report:
+        report({'ERROR'}, "Kein geeigneter Clip Editor Bereich gefunden")
+    return 0

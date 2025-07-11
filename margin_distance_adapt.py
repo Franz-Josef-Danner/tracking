@@ -22,5 +22,9 @@ def ensure_margin_distance(clip, threshold=1.0):
     scale = math.log10(threshold * 100000) / 5
     margin = max(1, int(base_margin * scale))
     distance = max(1, int(base_distance * scale))
+    print(
+        f"ensure_margin_distance: threshold={threshold:.4f}, "
+        f"base_distance={base_distance}, margin={margin}, distance={distance}"
+    )
     return margin, distance, base_distance
 
