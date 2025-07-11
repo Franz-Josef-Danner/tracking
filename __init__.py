@@ -42,6 +42,31 @@ from proxy_switch import ToggleProxyOperator
 from detect import DetectFeaturesCustomOperator
 
 
+def show_popup(message, title="Info", icon='INFO'):
+    """Display a temporary popup in Blender's UI."""
+
+    def draw(self, _context):
+        self.layout.label(text=message)
+
+    bpy.context.window_manager.popup_menu(draw, title=title, icon=icon)
+
+
+def run_in_clip_editor(clip, func):
+    """Execute ``func`` with a Clip Editor override and set its clip."""
+    ctx = bpy.context
+    for area in ctx.screen.areas:
+        if area.type == 'CLIP_EDITOR':
+            for region in area.regions:
+                if region.type == 'WINDOW':
+                    for space in area.spaces:
+                        if space.type == 'CLIP_EDITOR':
+                            space.clip = clip
+                            with ctx.temp_override(area=area, region=region, space_data=space):
+                                func()
+                            return True
+    return False
+
+
 
 
 class CLIP_OT_kaiserlich_track(Operator):
@@ -51,46 +76,52 @@ class CLIP_OT_kaiserlich_track(Operator):
 
     def execute(self, context):
         scene = context.scene
-        min_marker = scene.kt_min_marker_per_frame
-        min_track_len = scene.kt_min_tracking_length
-        error_threshold = scene.kt_error_threshold
+        min_marker = scene.min_marker_count
+        min_track_len = scene.min_tracking_length
+        error_threshold = scene.error_threshold
         # Wartezeit für die Proxy-Erstellung (in Sekunden)
         wait_time = 300.0
 
-        update_min_marker_props(scene, context)
-        marker_counts = get_tracking_marker_counts()
-        frame = find_frame_with_few_tracking_markers(marker_counts, min_marker)
-        if frame is not None:
-            set_playhead_to_low_marker_frame(min_marker)
-
-        compute_margin_distance()
-        marker_plus = update_marker_count_plus(scene)
-        self.report(
-            {'INFO'},
-            (
-                f"Start with min markers {min_marker}, length {min_track_len}, "
-                f"error {error_threshold}, derived {marker_plus}"
-            ),
-        )
         # Schritte nach Abschluss des Proxy-Aufbaus.
         # Der aktuelle Clip wird übergeben, damit der Callback unabhängig vom
         # aktiven Kontext funktioniert.
         def after_proxy(clip):
             if clip and clip.use_proxy:
                 print("Proxy-Zeitlinie wird deaktiviert")
-                bpy.ops.clip.toggle_proxy()
+                clip.use_proxy = False
+                show_popup("Proxy-Zeitlinie wurde deaktiviert")
             else:
                 print("Proxy bereits deaktiviert oder kein Clip")
+                show_popup("Proxy bereits deaktiviert oder kein Clip")
 
-            print("Starte Feature-Erkennung")
-            bpy.ops.clip.detect_features_custom()
-            print("Bereinige Marker")
-            bpy.ops.clip.remove_close_new_markers()
+            update_min_marker_props(scene, context)
+            marker_counts = get_tracking_marker_counts()
+            frame = find_frame_with_few_tracking_markers(marker_counts, min_marker)
+            if frame is not None:
+                set_playhead_to_low_marker_frame(min_marker)
+
+
+            def run_ops():
+                compute_margin_distance()
+                marker_plus = update_marker_count_plus(scene)
+                msg = (
+                    f"Start with min markers {min_marker}, length {min_track_len}, "
+                    f"error {error_threshold}, derived {marker_plus}"
+                )
+                print(msg)
+
+                print("Starte Feature-Erkennung")
+                bpy.ops.clip.detect_features_custom()
+                print("Bereinige Marker")
+                bpy.ops.clip.remove_close_new_markers()
+
+            if not run_in_clip_editor(clip, run_ops):
+                print("Kein Clip Editor zum Ausführen der Operatoren gefunden")
 
         # Alte Proxies entfernen
-        remove_existing_proxies()
-        # 50% Proxy erstellen und warten, bis Dateien erscheinen
         active_clip = context.space_data.clip
+        remove_existing_proxies(active_clip)
+        # 50% Proxy erstellen und warten, bis Dateien erscheinen
         try:
             print("✅ Aufruf: create_proxy_and_wait() wird gestartet")
             create_proxy_and_wait(wait_time, on_finish=after_proxy, clip=active_clip)
@@ -110,34 +141,28 @@ class CLIP_PT_kaiserlich_track(Panel):
     def draw(self, context):
         layout = self.layout
         scene = context.scene
-        layout.prop(scene, "kt_min_marker_per_frame")
-        layout.prop(scene, "kt_min_tracking_length")
-        layout.prop(scene, "kt_error_threshold")
+        layout.prop(scene, "min_marker_count")
+        layout.prop(scene, "min_tracking_length")
+        layout.prop(scene, "error_threshold")
         layout.operator(CLIP_OT_kaiserlich_track.bl_idname, text="Start")
 
 
 def register():
-    bpy.types.Scene.kt_min_marker_per_frame = IntProperty(
+    bpy.types.Scene.min_marker_count = IntProperty(
         name="min marker pro frame",
         default=10,
         min=0,
+        update=update_min_marker_props,
     )
-    bpy.types.Scene.kt_min_tracking_length = IntProperty(
+    bpy.types.Scene.min_tracking_length = IntProperty(
         name="min tracking length",
         default=20,
         min=0,
     )
-    bpy.types.Scene.kt_error_threshold = FloatProperty(
+    bpy.types.Scene.error_threshold = FloatProperty(
         name="Error Threshold",
         default=0.04,
         min=0.0,
-    )
-    bpy.types.Scene.min_marker_count = IntProperty(
-        name="Min Marker Count",
-        default=5,
-        min=5,
-        max=50,
-        update=update_min_marker_props,
     )
     bpy.types.Scene.min_marker_count_plus = IntProperty(
         name="Marker Count Plus",
@@ -167,10 +192,9 @@ def unregister():
     bpy.utils.unregister_class(CLIP_OT_remove_close_new_markers)
     bpy.utils.unregister_class(ToggleProxyOperator)
     bpy.utils.unregister_class(DetectFeaturesCustomOperator)
-    del bpy.types.Scene.kt_min_marker_per_frame
-    del bpy.types.Scene.kt_min_tracking_length
-    del bpy.types.Scene.kt_error_threshold
     del bpy.types.Scene.min_marker_count
+    del bpy.types.Scene.min_tracking_length
+    del bpy.types.Scene.error_threshold
     del bpy.types.Scene.min_marker_count_plus
     del bpy.types.Scene.marker_count_plus_min
     del bpy.types.Scene.marker_count_plus_max

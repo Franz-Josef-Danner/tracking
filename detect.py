@@ -3,14 +3,7 @@ from margin_a_distanz import compute_margin_distance
 # ``ensure_margin_distance`` is defined in ``margin_distance_adapt``
 from margin_distance_adapt import ensure_margin_distance
 from adjust_marker_count_plus import adjust_marker_count_plus
-from count_new_markers import count_new_markers
-
-
-def rename_new_tracks(clip, start_index, prefix="NEW_"):
-    """Prefix newly created tracks with ``prefix``."""
-    for track in list(clip.tracking.tracks)[start_index:]:
-        if not track.name.startswith(prefix):
-            track.name = f"{prefix}{track.name}"
+from count_new_markers import count_new_markers, check_marker_range
 
 # Operator-Klasse
 class DetectFeaturesCustomOperator(bpy.types.Operator):
@@ -18,9 +11,17 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
     bl_label = "Detect Features (Custom)"
 
     def execute(self, context):
-        """Run feature detection and lower threshold if none are found."""
+        """Run feature detection and lower threshold if none are found.
 
-        clip = context.space_data.clip
+        The operator may run from a timer or other context without
+        ``space_data``. In that case use the scene's active clip.
+        """
+
+        space = getattr(context, "space_data", None)
+        clip = getattr(space, "clip", None)
+        if clip is None:
+            clip = getattr(context.scene, "clip", None)
+
         if not clip:
             self.report({'WARNING'}, "Kein Clip gefunden")
             return {'CANCELLED'}
@@ -43,7 +44,6 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             min_distance=distance,
             placement='FRAME',
         )
-        rename_new_tracks(clip, tracks_before)
 
         tracks_after = len(clip.tracking.tracks)
         if tracks_after == tracks_before:
@@ -86,9 +86,10 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 min_distance=distance,
                 placement='FRAME',
             )
-            rename_new_tracks(clip, tracks_before)
             tracks_after = len(clip.tracking.tracks)
             new_marker = count_new_markers(clip)
+
+        check_marker_range(context, clip)
         return {'FINISHED'}
 
 # Panel-Klasse
