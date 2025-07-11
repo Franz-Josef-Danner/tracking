@@ -4,6 +4,7 @@ from margin_a_distanz import compute_margin_distance
 from margin_distance_adapt import ensure_margin_distance
 from adjust_marker_count_plus import adjust_marker_count_plus
 from count_new_markers import count_new_markers, check_marker_range
+from rename_new import rename_tracks
 
 # Operator-Klasse
 class DetectFeaturesCustomOperator(bpy.types.Operator):
@@ -44,6 +45,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             min_distance=distance,
             placement='FRAME',
         )
+        rename_tracks(list(clip.tracking.tracks)[tracks_before:])
 
         tracks_after = len(clip.tracking.tracks)
         features_created = tracks_after - tracks_before
@@ -91,6 +93,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 min_distance=distance,
                 placement='FRAME',
             )
+            rename_tracks(list(clip.tracking.tracks)[prev_count:])
             tracks_after = len(clip.tracking.tracks)
             features_created = tracks_after - prev_count
             new_marker = count_new_markers(clip)
