@@ -78,7 +78,7 @@ class CLIP_OT_kaiserlich_track(Operator):
         def after_proxy(clip):
             if clip and clip.use_proxy:
                 print("Proxy-Zeitlinie wird deaktiviert")
-                bpy.ops.clip.toggle_proxy()
+                clip.use_proxy = False
             else:
                 print("Proxy bereits deaktiviert oder kein Clip")
 

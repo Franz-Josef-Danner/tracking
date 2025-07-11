@@ -6,10 +6,22 @@ class ToggleProxyOperator(bpy.types.Operator):
     bl_label = "Toggle Proxy/Timecode"
 
     def execute(self, context):
-        clip = context.space_data.clip
+        """Toggle proxy usage on the active clip.
+
+        The operator may be executed from a timer or other context where
+        ``context.space_data`` is unavailable. In that case fall back to the
+        scene's active clip if possible.
+        """
+
+        space = getattr(context, "space_data", None)
+        clip = getattr(space, "clip", None)
+        if clip is None:
+            clip = getattr(context.scene, "clip", None)
+
         if clip:
             clip.use_proxy = not clip.use_proxy
-            self.report({'INFO'}, f"Proxy/Timecode {'aktiviert' if clip.use_proxy else 'deaktiviert'}")
+            state = "aktiviert" if clip.use_proxy else "deaktiviert"
+            self.report({'INFO'}, f"Proxy/Timecode {state}")
         else:
             self.report({'WARNING'}, "Kein Clip geladen")
         return {'FINISHED'}
