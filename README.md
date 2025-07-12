@@ -35,13 +35,13 @@ function with ``register_after_detect_callback`` before starting the operator:
 
 ```python
 import kaiserlich_track
-import track_Cycle
+import track_cycle
 
-kaiserlich_track.register_after_detect_callback(track_Cycle.run)
+kaiserlich_track.register_after_detect_callback(track_cycle.run)
 ```
 
 The callback receives the current ``context`` object. The example in
-``track_Cycle.py`` enables proxy/timecode again using the toggle operator.
+``track_cycle.py`` enables proxy/timecode again using the toggle operator.
 It then launches ``auto_track_bidir`` to track all ``TRACK_`` markers and
 finally removes short ones with ``delete_short_tracks_with_prefix``.
 Remaining tracks are renamed with the ``GOOD_`` prefix.
