@@ -6,6 +6,7 @@ NEW_ markers that are too close to GOOD_ markers in the current frame and
 
 import bpy
 import mathutils
+from utils import get_active_clip
 
 
 def delete_close_new_markers(context, min_distance=0.02, report=None):
@@ -83,10 +84,7 @@ def delete_close_new_markers(context, min_distance=0.02, report=None):
 def delete_new_markers(context, prefix="NEW_", report=None):
     """Delete all tracks starting with ``prefix`` using the delete operator."""
 
-    space = getattr(context, "space_data", None)
-    clip = getattr(space, "clip", None)
-    if clip is None:
-        clip = getattr(context.scene, "clip", None)
+    clip = get_active_clip(context)
     if not clip:
         if report:
             report({'WARNING'}, "❌ Kein aktiver Clip gefunden.")

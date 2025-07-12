@@ -13,6 +13,8 @@ import time
 import glob
 import logging
 
+from utils import get_active_clip
+
 PROXY_DIR = "//BL_proxy/"
 
 logger = logging.getLogger(__name__)
@@ -21,10 +23,7 @@ logger = logging.getLogger(__name__)
 def remove_existing_proxies(clip=None):
     """Remove previously generated proxy files for ``clip`` or the active one."""
     if clip is None:
-        space = getattr(bpy.context, "space_data", None)
-        clip = getattr(space, "clip", None)
-        if clip is None:
-            clip = getattr(bpy.context.scene, "clip", None)
+        clip = get_active_clip(bpy.context)
     if not clip:
         logger.info("Kein aktiver Clip.")
         return
@@ -40,7 +39,7 @@ def create_proxy_and_wait(wait_time=0.0, on_finish=None, clip=None):
     logger.info("Starte Proxy-Erstellung (50%, custom Pfad)")
     sys.stdout.flush()
     if clip is None:
-        clip = bpy.context.space_data.clip
+        clip = get_active_clip(bpy.context)
     if not clip:
         logger.info("Kein aktiver Clip.")
         return

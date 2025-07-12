@@ -2,6 +2,7 @@ import bpy
 import logging
 from margin_utils import compute_margin_distance, ensure_margin_distance
 from adjust_marker_count_plus import adjust_marker_count_plus
+from utils import get_active_clip
 
 logger = logging.getLogger(__name__)
 
@@ -17,10 +18,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         ``space_data``. In that case use the scene's active clip.
         """
 
-        space = getattr(context, "space_data", None)
-        clip = getattr(space, "clip", None)
-        if clip is None:
-            clip = getattr(context.scene, "clip", None)
+        clip = get_active_clip(context)
 
         if not clip:
             self.report({'WARNING'}, "Kein Clip gefunden")

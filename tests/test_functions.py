@@ -10,6 +10,7 @@ sys.modules.setdefault('bpy', types.SimpleNamespace())
 import adjust_marker_count_plus as acp
 import rename_new
 import margin_utils
+import utils
 
 
 class DummyScene:
@@ -97,6 +98,23 @@ class EnsureMarginDistanceTests(unittest.TestCase):
         self.assertEqual(margin, expected_margin)
         self.assertEqual(distance, expected_distance)
         self.assertEqual(base, clip["DISTANCE"])
+
+
+class GetActiveClipTests(unittest.TestCase):
+    class DummyContext:
+        def __init__(self, space_clip=None, scene_clip=None):
+            self.space_data = types.SimpleNamespace(clip=space_clip) if space_clip else None
+            self.scene = types.SimpleNamespace(clip=scene_clip)
+
+    def test_returns_space_clip_when_available(self):
+        clip = object()
+        ctx = self.DummyContext(space_clip=clip, scene_clip=object())
+        self.assertIs(utils.get_active_clip(ctx), clip)
+
+    def test_falls_back_to_scene(self):
+        clip = object()
+        ctx = self.DummyContext(space_clip=None, scene_clip=clip)
+        self.assertIs(utils.get_active_clip(ctx), clip)
 
 
 if __name__ == "__main__":
