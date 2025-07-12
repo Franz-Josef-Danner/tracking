@@ -57,3 +57,7 @@ Several utility modules are included for experimentation:
 - `count_new_markers.py` – helper to count NEW_ markers on a clip.
 - `iterative_detect.py` – repeatedly detect markers until the count fits and
   rename them with the prefix `TRACK_`.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
