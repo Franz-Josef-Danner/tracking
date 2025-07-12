@@ -2,17 +2,20 @@
 
 import bpy
 import math
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def compute_margin_distance():
     """Store margin and distance properties on the active clip."""
     area = next((a for a in bpy.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
     if not area:
-        print("Movie Clip Editor nicht aktiv.")
+        logger.info("Movie Clip Editor nicht aktiv.")
         return
     space = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
     if not space or not space.clip:
-        print("Kein Clip im Movie Clip Editor geladen.")
+        logger.info("Kein Clip im Movie Clip Editor geladen.")
         return
 
     clip = space.clip
@@ -21,9 +24,9 @@ def compute_margin_distance():
     distance = width / 20
     clip["MARGIN"] = margin
     clip["DISTANCE"] = distance
-    print(f"Breite: {width}")
-    print(f"MARGIN (Breite / 200): {margin}")
-    print(f"DISTANCE (Breite / 20): {distance}")
+    logger.info(f"Breite: {width}")
+    logger.info(f"MARGIN (Breite / 200): {margin}")
+    logger.info(f"DISTANCE (Breite / 20): {distance}")
 
 
 def ensure_margin_distance(clip, threshold=1.0):
@@ -39,8 +42,11 @@ def ensure_margin_distance(clip, threshold=1.0):
     scale = math.log10(threshold * 100000) / 5
     margin = max(1, int(base_margin * scale))
     distance = max(1, int(base_distance * scale))
-    print(
-        f"ensure_margin_distance: threshold={threshold:.4f}, "
-        f"base_distance={base_distance}, margin={margin}, distance={distance}"
+    logger.info(
+        "ensure_margin_distance: threshold=%.4f, base_distance=%s, margin=%s, distance=%s",
+        threshold,
+        base_distance,
+        margin,
+        distance,
     )
     return margin, distance, base_distance

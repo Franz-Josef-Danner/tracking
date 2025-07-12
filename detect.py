@@ -1,6 +1,9 @@
 import bpy
+import logging
 from margin_utils import compute_margin_distance, ensure_margin_distance
 from adjust_marker_count_plus import adjust_marker_count_plus
+
+logger = logging.getLogger(__name__)
 
 # Operator-Klasse
 class DetectFeaturesCustomOperator(bpy.types.Operator):
@@ -45,7 +48,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         tracks_after = len(clip.tracking.tracks)
         features_created = tracks_after - base_count
         context.scene.new_marker_count = features_created
-        print(
+        logger.info(
             f"Detect Features erzeugte {features_created} Marker, "
             f"gespeichert: {context.scene.new_marker_count}"
         )
@@ -96,7 +99,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             features_created = tracks_after - prev_count
             context.scene.new_marker_count = features_created
             new_marker = tracks_after - base_count
-            print(
+            logger.info(
                 f"Detect Features erzeugte {features_created} Marker, "
                 f"gespeichert: {context.scene.new_marker_count}"
             )
