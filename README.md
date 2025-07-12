@@ -34,10 +34,10 @@ Custom scripts can run after the iterative detection finishes. Register a
 function with ``register_after_detect_callback`` before starting the operator:
 
 ```python
-import kaiserlich_track
+import tracking
 import track_cycle
 
-kaiserlich_track.register_after_detect_callback(track_cycle.run)
+tracking.register_after_detect_callback(track_cycle.run)
 ```
 
 The callback receives the current ``context`` object. The example in
