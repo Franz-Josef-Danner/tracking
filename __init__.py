@@ -1,3 +1,5 @@
+import sys
+
 BLENDER_AVAILABLE = False
 bl_info = {
     "name": "Kaiserlich Track",
@@ -16,7 +18,6 @@ try:
     BLENDER_AVAILABLE = True
 except ModuleNotFoundError:  # pragma: no cover - not running inside Blender
     import types
-    import sys
 
     bpy = types.SimpleNamespace()
     sys.modules['bpy'] = bpy
@@ -39,7 +40,6 @@ except ModuleNotFoundError:  # pragma: no cover - not running inside Blender
     def BoolProperty(**_kwargs):
         return None
 import os
-import sys
 import importlib
 import logging
 
