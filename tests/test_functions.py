@@ -6,11 +6,13 @@ from unittest import mock
 
 # Patch bpy before importing modules that expect it
 sys.modules.setdefault('bpy', types.SimpleNamespace())
+sys.modules.setdefault('mathutils', types.SimpleNamespace(Vector=lambda co=None: types.SimpleNamespace(co=co)))
 
 import adjust_marker_count_plus as acp
 import rename_new
 import margin_utils
 import utils
+import delete_helpers
 
 
 class DummyScene:
@@ -115,6 +117,13 @@ class GetActiveClipTests(unittest.TestCase):
         clip = object()
         ctx = self.DummyContext(space_clip=None, scene_clip=clip)
         self.assertIs(utils.get_active_clip(ctx), clip)
+
+
+class DeleteNewMarkersTests(unittest.TestCase):
+    def test_returns_zero_without_clip(self):
+        ctx = types.SimpleNamespace(space_data=None, screen=types.SimpleNamespace(areas=[]))
+        removed = delete_helpers.delete_new_markers(ctx)
+        self.assertEqual(removed, 0)
 
 
 if __name__ == "__main__":

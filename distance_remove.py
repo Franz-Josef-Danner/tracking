@@ -6,7 +6,7 @@ than a configurable distance to existing GOOD_ markers.
 """
 
 import bpy
-from delete_helpers import delete_close_new_markers
+from delete_helpers import delete_close_new_markers, delete_new_markers
 
 bl_info = {
     "name": "NEW_ Marker Cleanup",
@@ -52,6 +52,24 @@ class CLIP_OT_remove_close_new_markers(bpy.types.Operator):
         return {'FINISHED'} if success else {'CANCELLED'}
 
 
+class CLIP_OT_delete_all_new_markers(bpy.types.Operator):
+    bl_idname = "clip.delete_all_new_markers"
+    bl_label = "Alle NEW_ Marker löschen"
+    bl_description = "Löscht alle NEW_ Marker im aktiven Clip"
+
+    @classmethod
+    def poll(cls, context):
+        return (
+            context.space_data
+            and context.space_data.type == 'CLIP_EDITOR'
+            and context.space_data.clip
+        )
+
+    def execute(self, context):
+        removed = delete_new_markers(context, report=self.report)
+        return {'FINISHED'} if removed else {'CANCELLED'}
+
+
 class CLIP_PT_new_cleanup_tools(bpy.types.Panel):
     bl_label = "NEW_-Cleanup"
     bl_space_type = 'CLIP_EDITOR'
@@ -63,10 +81,13 @@ class CLIP_PT_new_cleanup_tools(bpy.types.Panel):
         layout.prop(context.window_manager, "cleanup_min_distance")
         op = layout.operator(CLIP_OT_remove_close_new_markers.bl_idname)
         op.min_distance = context.window_manager.cleanup_min_distance
+        layout.separator()
+        layout.operator(CLIP_OT_delete_all_new_markers.bl_idname)
 
 
 def register():
     bpy.utils.register_class(CLIP_OT_remove_close_new_markers)
+    bpy.utils.register_class(CLIP_OT_delete_all_new_markers)
     bpy.utils.register_class(CLIP_PT_new_cleanup_tools)
     if not hasattr(bpy.types.WindowManager, "cleanup_min_distance"):
         bpy.types.WindowManager.cleanup_min_distance = bpy.props.FloatProperty(
@@ -80,6 +101,7 @@ def register():
 def unregister():
     if hasattr(bpy.types.WindowManager, "cleanup_min_distance"):
         del bpy.types.WindowManager.cleanup_min_distance
+    bpy.utils.unregister_class(CLIP_OT_delete_all_new_markers)
     bpy.utils.unregister_class(CLIP_OT_remove_close_new_markers)
     bpy.utils.unregister_class(CLIP_PT_new_cleanup_tools)
 
