@@ -71,7 +71,6 @@ def configure_logging():
         "detect",
         "iterative_detect",
         "margin_utils",
-        "playhead",
         "proxy_wait",
     ):
         logging.getLogger(name).setLevel(level)
