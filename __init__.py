@@ -77,6 +77,11 @@ from few_marker_frame import (
     set_playhead_to_low_marker_frame,
 )
 from marker_count_plus import update_marker_count_plus
+from adjust_marker_count_plus import (
+    increase_marker_count_plus,
+    decrease_marker_count_plus,
+)
+from motion_model import cycle_motion_model, reset_motion_model
 from margin_utils import compute_margin_distance
 
 from count_new_markers import check_marker_range, count_new_markers
@@ -144,7 +149,6 @@ class CLIP_OT_kaiserlich_track(Operator):
 
             logger.info("Berechne minimale Marker-Eigenschaften")
             update_min_marker_props(scene, context)
-            set_playhead_to_low_marker_frame(min_marker)
 
 
             def run_ops(on_after_detect=None):
@@ -161,6 +165,24 @@ class CLIP_OT_kaiserlich_track(Operator):
                 new_count = detect_until_count_matches(context)
                 scene.new_marker_count = new_count
                 logger.info(f"TRACK_ Marker nach Iteration: {new_count}")
+
+                frame = set_playhead_to_low_marker_frame(min_marker)
+                if frame is not None:
+                    space = context.space_data
+                    clip_local = getattr(space, "clip", None)
+                    if clip_local:
+                        settings = clip_local.tracking.settings
+                        if scene.repeat_frame == frame:
+                            cycle_motion_model(settings)
+                            increase_marker_count_plus(scene)
+                        else:
+                            scene.repeat_frame = frame
+                            reset_motion_model(settings)
+                            decrease_marker_count_plus(scene, scene.marker_count_plus_base)
+                        new_count = detect_until_count_matches(context)
+                        scene.new_marker_count = new_count
+                        logger.info(f"TRACK_ Marker nach Iteration: {new_count}")
+
                 if on_after_detect:
                     try:
                         on_after_detect(context)
@@ -233,6 +255,16 @@ def register():
         default=0,
         min=0,
     )
+    bpy.types.Scene.marker_count_plus_base = IntProperty(
+        name="Marker Count Plus Base",
+        default=0,
+        min=0,
+    )
+    bpy.types.Scene.repeat_frame = IntProperty(
+        name="Repeat Frame",
+        default=-1,
+        min=-1,
+    )
     bpy.utils.register_class(ToggleProxyOperator)
     bpy.utils.register_class(DetectFeaturesCustomOperator)
     bpy.utils.register_class(KaiserlichAddonPreferences)
@@ -258,6 +290,8 @@ def unregister():
     del bpy.types.Scene.marker_count_plus_min
     del bpy.types.Scene.marker_count_plus_max
     del bpy.types.Scene.new_marker_count
+    del bpy.types.Scene.marker_count_plus_base
+    del bpy.types.Scene.repeat_frame
 
 
 if __name__ == "__main__":

@@ -79,6 +79,7 @@ Several utility modules are included for experimentation:
   rename them with the prefix `TRACK_`.
 - `auto_track_bidir.py` – operator to track markers named with the `TRACK_` prefix both backward and forward.
 - `track_length.py` – delete `TRACK_` markers shorter than 25 frames and rename the remaining ones with `GOOD_`.
+- `motion_model.py` – helpers to cycle or reset the default motion model.
 
 ## License
 

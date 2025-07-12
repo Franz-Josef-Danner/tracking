@@ -47,6 +47,18 @@ class AdjustMarkerCountPlusTests(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertEqual(scene.min_marker_count_plus, 1)
 
+    def test_increase_marker_count_plus(self):
+        scene = DummyScene(10)
+        result = acp.increase_marker_count_plus(scene)
+        self.assertEqual(result, 11)
+        self.assertEqual(scene.min_marker_count_plus, 11)
+
+    def test_decrease_marker_count_plus(self):
+        scene = DummyScene(10)
+        result = acp.decrease_marker_count_plus(scene, base_value=8)
+        self.assertEqual(result, 9)
+        self.assertEqual(scene.min_marker_count_plus, 9)
+
 
 class RenameTracksTests(unittest.TestCase):
     def test_add_prefix(self):
