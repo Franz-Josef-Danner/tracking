@@ -1,16 +1,14 @@
 import bpy
 import logging
 from rename_new import rename_tracks
+from utils import get_active_clip
 
 logger = logging.getLogger(__name__)
 
 def delete_short_tracks_with_prefix(context, prefix="TRACK_", min_frames=25):
     """Delete tracks whose names start with ``prefix`` that are shorter than
     ``min_frames`` frames."""
-    space = getattr(context, "space_data", None)
-    clip = getattr(space, "clip", None)
-    if clip is None:
-        clip = getattr(context.scene, "clip", None)
+    clip = get_active_clip(context)
     if not clip:
         logger.warning("Kein Clip gefunden")
         return 0

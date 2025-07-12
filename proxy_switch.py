@@ -1,4 +1,5 @@
 import bpy
+from utils import get_active_clip
 
 class ToggleProxyOperator(bpy.types.Operator):
     """Proxy/Timecode Umschalten"""
@@ -13,10 +14,7 @@ class ToggleProxyOperator(bpy.types.Operator):
         scene's active clip if possible.
         """
 
-        space = getattr(context, "space_data", None)
-        clip = getattr(space, "clip", None)
-        if clip is None:
-            clip = getattr(context.scene, "clip", None)
+        clip = get_active_clip(context)
 
         if clip:
             clip.use_proxy = not clip.use_proxy

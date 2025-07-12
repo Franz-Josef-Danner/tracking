@@ -3,6 +3,7 @@ import logging
 from proxy_switch import ToggleProxyOperator
 from track_length import delete_short_tracks_with_prefix
 from few_marker_frame import set_playhead_to_low_marker_frame
+from utils import get_active_clip
 
 logger = logging.getLogger(__name__)
 
@@ -13,10 +14,7 @@ def run(context):
     It toggles proxy/timecode on the current clip to ensure proxies are
     enabled before starting another tracking cycle.
     """
-    space = getattr(context, "space_data", None)
-    clip = getattr(space, "clip", None)
-    if clip is None:
-        clip = getattr(context.scene, "clip", None)
+    clip = get_active_clip(context)
 
     if clip and not clip.use_proxy:
         bpy.ops.clip.toggle_proxy()

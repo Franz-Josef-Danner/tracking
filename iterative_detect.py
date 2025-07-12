@@ -13,6 +13,7 @@ import logging
 from margin_utils import compute_margin_distance, ensure_margin_distance
 from count_new_markers import count_new_markers
 from rename_new import rename_tracks as rename_new_tracks
+from utils import get_active_clip
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +22,7 @@ def detect_until_count_matches(context):
     """Detect markers repeatedly until the count is within the desired range."""
 
     scene = context.scene
-    space = getattr(context, "space_data", None)
-    clip = getattr(space, "clip", None)
-    if clip is None:
-        clip = getattr(scene, "clip", None)
+    clip = get_active_clip(context)
     if not clip:
         logger.info("Kein Clip gefunden")
         return 0
