@@ -25,12 +25,30 @@ the helper scripts sit directly in the archive root before installing.
    index are built. The addon waits up to 300&nbsp;s for a proxy
    file to appear, printing a countdown in the console. After that it
    disables the proxy timeline, detects features and filters them
-   automatically.
+   automatically. When a callback is registered, additional actions
+   such as bidirectional tracking can run afterward without a separate
+   button.
 
 The main operator now relies on `detect_until_count_matches`. This helper
 repeatedly runs feature detection and adapts the settings until the number of
 markers falls within the expected range. Once a satisfactory count is achieved,
 all newly created tracks are renamed with the ``TRACK_`` prefix.
+
+### Callbacks
+
+Custom scripts can run after the iterative detection finishes. Register a
+function with ``register_after_detect_callback`` before starting the operator:
+
+```python
+import kaiserlich_track
+import track_Cycle
+
+kaiserlich_track.register_after_detect_callback(track_Cycle.run)
+```
+
+The callback receives the current ``context`` object. The example in
+``track_Cycle.py`` enables proxy/timecode again using the toggle operator and
+runs the bidirectional tracking operator ``auto_track_bidir``.
 
 ### Properties
 
@@ -57,6 +75,8 @@ Several utility modules are included for experimentation:
 - `count_new_markers.py` – helper to count NEW_ markers on a clip.
 - `iterative_detect.py` – repeatedly detect markers until the count fits and
   rename them with the prefix `TRACK_`.
+- `auto_track_bidir.py` – operator to track selected markers backward and
+  forward.
 
 ## License
 

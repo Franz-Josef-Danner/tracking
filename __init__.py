@@ -23,6 +23,14 @@ if not logger.handlers:
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
+# Optional callback invoked after feature detection has finished
+after_detect_callback = None
+
+def register_after_detect_callback(func):
+    """Register ``func`` to run after feature detection completes."""
+    global after_detect_callback
+    after_detect_callback = func
+
 
 def configure_logging():
     """Set log level based on addon preferences."""
@@ -82,6 +90,7 @@ from distance_remove import CLIP_OT_remove_close_new_markers
 from proxy_switch import ToggleProxyOperator
 from detect import DetectFeaturesCustomOperator
 from iterative_detect import detect_until_count_matches
+from auto_track_bidir import TRACK_OT_auto_track_bidir
 
 def show_popup(message, title="Info", icon='INFO'):
     """Display a temporary popup in Blender's UI."""
@@ -144,7 +153,7 @@ class CLIP_OT_kaiserlich_track(Operator):
                 logger.info(f"Playhead auf Frame {frame} gesetzt.")
 
 
-            def run_ops():
+            def run_ops(on_after_detect=None):
                 compute_margin_distance()
                 marker_plus = update_marker_count_plus(scene)
                 msg = (
@@ -158,8 +167,13 @@ class CLIP_OT_kaiserlich_track(Operator):
                 new_count = detect_until_count_matches(context)
                 scene.new_marker_count = new_count
                 logger.info(f"TRACK_ Marker nach Iteration: {new_count}")
+                if on_after_detect:
+                    try:
+                        on_after_detect(context)
+                    except Exception:
+                        logger.exception("Fehler im After-Detect Callback")
 
-            if not run_in_clip_editor(clip, run_ops):
+            if not run_in_clip_editor(clip, lambda: run_ops(after_detect_callback)):
                 logger.info("Kein Clip Editor zum Ausführen der Operatoren gefunden")
 
         # Alte Proxies entfernen
@@ -230,6 +244,7 @@ def register():
     bpy.utils.register_class(KaiserlichAddonPreferences)
     bpy.utils.register_class(CLIP_OT_kaiserlich_track)
     bpy.utils.register_class(CLIP_PT_kaiserlich_track)
+    bpy.utils.register_class(TRACK_OT_auto_track_bidir)
     bpy.utils.register_class(CLIP_OT_remove_close_new_markers)
     configure_logging()
 
@@ -241,6 +256,7 @@ def unregister():
     bpy.utils.unregister_class(ToggleProxyOperator)
     bpy.utils.unregister_class(DetectFeaturesCustomOperator)
     bpy.utils.unregister_class(KaiserlichAddonPreferences)
+    bpy.utils.unregister_class(TRACK_OT_auto_track_bidir)
     del bpy.types.Scene.min_marker_count
     del bpy.types.Scene.min_tracking_length
     del bpy.types.Scene.error_threshold
