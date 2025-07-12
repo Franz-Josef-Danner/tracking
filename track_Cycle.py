@@ -1,6 +1,7 @@
 import bpy
 import logging
 from proxy_switch import ToggleProxyOperator
+from track_length import delete_short_tracks_with_prefix
 
 logger = logging.getLogger(__name__)
 
@@ -24,4 +25,7 @@ def run(context):
 
     # Run bidirectional tracking on selected markers
     bpy.ops.clip.auto_track_bidir()
+
+    # Delete short tracks with the TRACK_ prefix
+    delete_short_tracks_with_prefix(context)
 
