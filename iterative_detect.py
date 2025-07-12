@@ -42,7 +42,14 @@ def detect_until_count_matches(context):
             min_distance=distance,
             placement='FRAME',
         )
-        rename_new_tracks(list(clip.tracking.tracks)[base_idx:])
+        new_tracks = list(clip.tracking.tracks)[base_idx:]
+        rename_new_tracks(new_tracks)
+        print(
+            "Detect step:",
+            f"threshold={threshold:.4f}",
+            f"→ erzeugt {len(new_tracks)} Marker",
+            f"{[t.name for t in new_tracks]}",
+        )
         return count_new_markers(context, clip)
 
     new_count = detect_step()
@@ -51,8 +58,10 @@ def detect_until_count_matches(context):
 
     while not (min_expected <= new_count <= max_expected) and threshold > 0.0001:
         prev_count = new_count
-        for track in list(clip.tracking.tracks)[base_idx:]:
+        delete_tracks = list(clip.tracking.tracks)[base_idx:]
+        for track in delete_tracks:
             track.select = True
+        print("Lösche Marker:", [t.name for t in delete_tracks])
         bpy.ops.clip.delete_track()
 
         adjust_marker_count_plus(scene, prev_count)
@@ -63,5 +72,7 @@ def detect_until_count_matches(context):
         min_expected = scene.marker_count_plus_min
         max_expected = scene.marker_count_plus_max
 
-    rename_track_tracks(list(clip.tracking.tracks)[base_idx:])
+    final_tracks = list(clip.tracking.tracks)[base_idx:]
+    rename_track_tracks(final_tracks)
+    print("Finale TRACK_ Marker:", [t.name for t in final_tracks])
     return new_count
