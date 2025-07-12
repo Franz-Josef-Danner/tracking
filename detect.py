@@ -80,7 +80,8 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
             # zuvor erstellte Marker entfernen
             for track in list(clip.tracking.tracks)[base_count:]:
-                clip.tracking.tracks.remove(track)
+                track.select = True
+            bpy.ops.clip.delete_track()
 
             msg = (
                 f"Nur {new_marker} Features, "
