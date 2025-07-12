@@ -3,7 +3,6 @@ from margin_a_distanz import compute_margin_distance
 # ``ensure_margin_distance`` is defined in ``margin_distance_adapt``
 from margin_distance_adapt import ensure_margin_distance
 from adjust_marker_count_plus import adjust_marker_count_plus
-from count_new_markers import count_new_markers
 
 # Operator-Klasse
 class DetectFeaturesCustomOperator(bpy.types.Operator):
