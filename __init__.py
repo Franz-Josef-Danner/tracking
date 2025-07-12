@@ -125,11 +125,8 @@ class CLIP_OT_kaiserlich_track(Operator):
         active_clip = context.space_data.clip
         remove_existing_proxies(active_clip)
         # 50% Proxy erstellen und warten, bis Dateien erscheinen
-        try:
-            print("✅ Aufruf: create_proxy_and_wait() wird gestartet")
-            create_proxy_and_wait(wait_time, on_finish=after_proxy, clip=active_clip)
-        except TypeError:
-            create_proxy_and_wait(on_finish=after_proxy, clip=active_clip)
+        print("✅ Aufruf: create_proxy_and_wait() wird gestartet")
+        create_proxy_and_wait(wait_time, on_finish=after_proxy, clip=active_clip)
 
         return {'FINISHED'}
 
