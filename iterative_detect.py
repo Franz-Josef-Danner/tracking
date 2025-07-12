@@ -13,7 +13,6 @@ from margin_a_distanz import compute_margin_distance
 from margin_distance_adapt import ensure_margin_distance
 from count_new_markers import count_new_markers
 from rename_new import rename_tracks as rename_new_tracks
-from rename_track import rename_tracks as rename_track_tracks
 
 
 def detect_until_count_matches(context):
@@ -73,6 +72,6 @@ def detect_until_count_matches(context):
         max_expected = scene.marker_count_plus_max
 
     final_tracks = list(clip.tracking.tracks)[base_idx:]
-    rename_track_tracks(final_tracks)
+    rename_new_tracks(final_tracks, prefix="TRACK_")
     print("Finale TRACK_ Marker:", [t.name for t in final_tracks])
     return new_count
