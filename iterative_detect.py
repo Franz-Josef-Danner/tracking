@@ -11,7 +11,6 @@ import bpy
 
 from margin_a_distanz import compute_margin_distance
 from margin_distance_adapt import ensure_margin_distance
-from adjust_marker_count_plus import adjust_marker_count_plus
 from count_new_markers import count_new_markers
 from rename_new import rename_tracks as rename_new_tracks
 from rename_track import rename_tracks as rename_track_tracks
@@ -50,7 +49,9 @@ def detect_until_count_matches(context):
             f"→ erzeugt {len(new_tracks)} Marker",
             f"{[t.name for t in new_tracks]}",
         )
-        return count_new_markers(context, clip)
+        new_count = count_new_markers(context, clip)
+        print(f"Gespeicherte NEW_-Marker: {scene.new_marker_count}")
+        return new_count
 
     new_count = detect_step()
     min_expected = scene.marker_count_plus_min
@@ -64,7 +65,6 @@ def detect_until_count_matches(context):
         print("Lösche Marker:", [t.name for t in delete_tracks])
         bpy.ops.clip.delete_track()
 
-        adjust_marker_count_plus(scene, prev_count)
         min_plus = max(1, scene.min_marker_count_plus)
         threshold = max(threshold * ((prev_count + 0.1) / min_plus), 0.0001)
         margin, distance, _ = ensure_margin_distance(clip, threshold)
