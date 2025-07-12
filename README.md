@@ -46,14 +46,13 @@ Several utility modules are included for experimentation:
 
 - `few_marker_frame.py` – locate frames with few markers.
 - `marker_count_plus.py` – compute additional marker thresholds.
-- `margin_a_distanz.py` – derive margin and distance values from the clip width.
-- `margin_distance_adapt.py` – ensure margin and distance are stored on the clip and scaled relative to the detection threshold.
+- `margin_utils.py` – derive margin and distance values and scale them relative to the detection threshold.
 - `playhead.py` – utilities for repositioning the playhead.
 - `proxy_wait.py` – create proxies and timecode indices, show the proxy folder and a countdown until a file appears.
 - `remove_existing_proxies` – helper inside `proxy_wait.py` to delete old proxy files before new ones are generated.
 - `update_min_marker_props.py` – sync derived marker properties.
 - `proxy_switch.py` – disable proxies after generation.
-- `detect.py` – adaptive feature detection script that uses margin and distance values from `margin_a_distanz.py`.
+- `detect.py` – adaptive feature detection script that relies on `margin_utils.py` for margin and distance values.
 - `distance_remove.py` – filter NEW_ markers near GOOD_ markers.
 - `count_new_markers.py` – helper to count NEW_ markers on a clip.
 - `iterative_detect.py` – repeatedly detect markers until the count fits and

@@ -1,7 +1,5 @@
 import bpy
-from margin_a_distanz import compute_margin_distance
-# ``ensure_margin_distance`` is defined in ``margin_distance_adapt``
-from margin_distance_adapt import ensure_margin_distance
+from margin_utils import compute_margin_distance, ensure_margin_distance
 from adjust_marker_count_plus import adjust_marker_count_plus
 
 # Operator-Klasse
@@ -33,7 +31,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         settings.default_pattern_size = 50
         settings.default_search_size = settings.default_pattern_size * 2
 
-        # Werte aus margin_a_distanz verwenden und an Threshold anpassen
+        # Werte aus margin_utils verwenden und an Threshold anpassen
         compute_margin_distance()
         margin, distance, _ = ensure_margin_distance(clip, threshold)
 

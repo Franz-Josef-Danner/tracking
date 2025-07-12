@@ -4,7 +4,7 @@ import bpy
 
 from delete_helpers import delete_close_new_markers, delete_new_markers
 from adjust_marker_count_plus import adjust_marker_count_plus
-from margin_distance_adapt import ensure_margin_distance
+from margin_utils import ensure_margin_distance
 from rename_new import rename_tracks
 
 
