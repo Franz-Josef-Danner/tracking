@@ -28,6 +28,10 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
         # Start with the user-defined error threshold from the scene
         threshold = context.scene.error_threshold
+        # If no count is available yet, initialize ``new_marker_count`` with
+        # ``min_marker_count_plus`` so the adaptive threshold has a baseline.
+        if context.scene.new_marker_count == 0:
+            context.scene.new_marker_count = context.scene.min_marker_count_plus
         base_plus = context.scene.min_marker_count_plus
         min_new = context.scene.min_marker_count
         base_count = len(clip.tracking.tracks)

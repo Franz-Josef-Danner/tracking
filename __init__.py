@@ -196,6 +196,9 @@ def register():
         default=0,
         min=0,
     )
+    # Ensure ``new_marker_count`` starts with a sensible baseline so the
+    # detection operator can use it before any markers are counted.
+    update_min_marker_props(bpy.context.scene, None)
     bpy.utils.register_class(ToggleProxyOperator)
     bpy.utils.register_class(DetectFeaturesCustomOperator)
     bpy.utils.register_class(CLIP_OT_kaiserlich_track)

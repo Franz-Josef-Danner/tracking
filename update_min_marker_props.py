@@ -8,3 +8,6 @@ def update_min_marker_props(scene, _context):
     scene.min_marker_count_plus = int(marker_count_plus)
     scene.marker_count_plus_min = int(marker_count_plus * 0.8)
     scene.marker_count_plus_max = int(marker_count_plus * 1.2)
+    # Initialize ``new_marker_count`` with this value so the adaptive
+    # threshold logic has a sensible starting point before detection runs.
+    scene.new_marker_count = scene.min_marker_count_plus
