@@ -1,6 +1,5 @@
 import bpy
 from margin_a_distanz import compute_margin_distance
-# ``ensure_margin_distance`` is defined in ``margin_distance_adapt``
 from margin_distance_adapt import ensure_margin_distance
 from count_new_markers import count_new_markers
 
@@ -25,7 +24,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip gefunden")
             return {'CANCELLED'}
 
-        threshold = 1.0
+        threshold = getattr(context.scene, "feature_threshold", 1.0)
         base_plus = context.scene.min_marker_count_plus
         min_new = context.scene.min_marker_count
         base_count = len(clip.tracking.tracks)
@@ -82,7 +81,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             bpy.ops.clip.delete_track()
 
             msg = (
-                f"Nur {new_marker} Features, "
+                f"Nur {context.scene.new_marker_count} Features, "
                 f"senke Threshold auf {threshold:.4f}"
             )
             self.report({'INFO'}, msg)
@@ -102,6 +101,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 f"gespeichert: {context.scene.new_marker_count}"
             )
 
+        context.scene.feature_threshold = threshold
         return {'FINISHED'}
 
 # Panel-Klasse

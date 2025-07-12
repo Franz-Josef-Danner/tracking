@@ -196,6 +196,11 @@ def register():
         default=0,
         min=0,
     )
+    bpy.types.Scene.feature_threshold = FloatProperty(
+        name="Feature Threshold",
+        default=1.0,
+        min=0.0,
+    )
     bpy.utils.register_class(ToggleProxyOperator)
     bpy.utils.register_class(DetectFeaturesCustomOperator)
     bpy.utils.register_class(CLIP_OT_kaiserlich_track)
@@ -216,6 +221,7 @@ def unregister():
     del bpy.types.Scene.marker_count_plus_min
     del bpy.types.Scene.marker_count_plus_max
     del bpy.types.Scene.new_marker_count
+    del bpy.types.Scene.feature_threshold
 
 
 if __name__ == "__main__":
