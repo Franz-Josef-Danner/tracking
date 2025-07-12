@@ -32,6 +32,7 @@ from margin_a_distanz import compute_margin_distance
 from playhead import (
     get_tracking_marker_counts,
 )
+from count_new_markers import check_marker_range, count_new_markers
 import proxy_wait
 importlib.reload(proxy_wait)
 from proxy_wait import create_proxy_and_wait, remove_existing_proxies
@@ -39,10 +40,7 @@ from update_min_marker_props import update_min_marker_props
 from distance_remove import CLIP_OT_remove_close_new_markers
 from proxy_switch import ToggleProxyOperator
 from detect import DetectFeaturesCustomOperator
-from rename_new import rename_tracks as rename_new_tracks
-from rename_good import rename_tracks as rename_good_tracks
-from rename_track import rename_tracks as rename_track_tracks
-
+from iterative_detect import detect_until_count_matches
 
 def show_popup(message, title="Info", icon='INFO'):
     """Display a temporary popup in Blender's UI."""
@@ -116,11 +114,9 @@ class CLIP_OT_kaiserlich_track(Operator):
                 print("Starte Feature-Erkennung")
                 sys.stdout.flush()
 
-                start_idx = len(clip.tracking.tracks)
-                bpy.ops.clip.detect_features_custom()
-                rename_new_tracks(list(clip.tracking.tracks)[start_idx:])
-                print("Bereinige Marker")
-                bpy.ops.clip.remove_close_new_markers()
+                new_count = detect_until_count_matches(context)
+                scene.new_marker_count = new_count
+                print(f"TRACK_ Marker nach Iteration: {new_count}")
 
             if not run_in_clip_editor(clip, run_ops):
                 print("Kein Clip Editor zum Ausführen der Operatoren gefunden")
