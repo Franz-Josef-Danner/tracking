@@ -1,15 +1,6 @@
 # Kaiserlich Track Addon
 
-This repository contains a simple Blender addon. **Important:** the
-`__init__.py` file must reside at the root of the addon alongside all helper
-modules. When zipping the addon, select all files directly and **do not**
-include an extra parent folder. Blender extracts the archive into a new
-directory whose name matches the zip file, so the root must contain
-`__init__.py`. The addon adds a panel to the Movie Clip Editor for custom
-tracking options.
-If the addon is nested in another directory when the zip is created,
-Blender will fail to load the module. Double-check that `__init__.py` and
-the helper scripts sit directly in the archive root before installing.
+This repository contains a simple Blender addon. **Important:** zip the files directly so that `__init__.py` sits at the archive root; Blender extracts the archive into a folder with that name and expects the module at the top level. The addon adds a panel to the Movie Clip Editor for custom tracking options.
 
 ## Installation
 1. In Blender open **Edit > Preferences > Add-ons**.
