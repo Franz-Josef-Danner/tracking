@@ -4,7 +4,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 def delete_short_tracks_with_prefix(context, prefix="TRACK_", min_frames=25):
-    """Delete tracks with the given prefix that have fewer than ``min_frames`` markers."""
+    """Delete tracks whose names start with ``prefix`` that are shorter than
+    ``min_frames`` frames."""
     space = getattr(context, "space_data", None)
     clip = getattr(space, "clip", None)
     if clip is None:

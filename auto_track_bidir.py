@@ -4,7 +4,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class TRACK_OT_auto_track_bidir(bpy.types.Operator):
-    """Track selected markers backward and forward from the current frame."""
+    """Track ``TRACK_`` markers backward and forward from the current frame."""
 
     bl_idname = "clip.auto_track_bidir"
     bl_label = "Auto Track Bidirektional"
@@ -27,6 +27,16 @@ class TRACK_OT_auto_track_bidir(bpy.types.Operator):
         if not clip.tracking.tracks:
             self.report({'WARNING'}, "Keine Marker vorhanden")
             return {'CANCELLED'}
+
+        active_obj = clip.tracking.objects.active
+        track_list = active_obj.tracks
+        track_sel = [t for t in track_list if t.name.startswith("TRACK_")]
+        for t in track_list:
+            t.select = t in track_sel
+        if not track_sel:
+            self.report({'WARNING'}, "Keine TRACK_ Marker gefunden")
+            return {'CANCELLED'}
+        logger.info("Tracking %d TRACK_ Marker", len(track_sel))
 
         scene = context.scene
         current_frame = scene.frame_current

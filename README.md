@@ -47,9 +47,9 @@ kaiserlich_track.register_after_detect_callback(track_Cycle.run)
 ```
 
 The callback receives the current ``context`` object. The example in
-``track_Cycle.py`` enables proxy/timecode again using the toggle operator,
-runs the bidirectional tracking operator ``auto_track_bidir`` and then removes
-short ``TRACK_`` markers using ``delete_short_tracks_with_prefix``.
+``track_Cycle.py`` enables proxy/timecode again using the toggle operator.
+It then launches ``auto_track_bidir`` to track all ``TRACK_`` markers and
+finally removes short ones with ``delete_short_tracks_with_prefix``.
 
 ### Properties
 
@@ -76,8 +76,7 @@ Several utility modules are included for experimentation:
 - `count_new_markers.py` – helper to count NEW_ markers on a clip.
 - `iterative_detect.py` – repeatedly detect markers until the count fits and
   rename them with the prefix `TRACK_`.
-- `auto_track_bidir.py` – operator to track selected markers backward and
-  forward.
+- `auto_track_bidir.py` – operator to track markers named with the `TRACK_` prefix both backward and forward.
 - `track_length.py` – delete `TRACK_` markers shorter than 25 frames.
 
 ## License

@@ -23,7 +23,7 @@ def run(context):
     else:
         logger.info("Proxy bereits aktiv oder kein Clip")
 
-    # Run bidirectional tracking on selected markers
+    # Run bidirectional tracking on TRACK_ markers
     bpy.ops.clip.auto_track_bidir()
 
     # Delete short tracks with the TRACK_ prefix
