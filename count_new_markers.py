@@ -35,8 +35,11 @@ def check_marker_range(context, clip, prefix="NEW_"):
         delete_close_new_markers(context)
     adjust_marker_count_plus(scene, new_count)
     ensure_margin_distance(clip)
+    # Reset before re-running detection so the operator sees a fresh count
+    scene.new_marker_count = 0
+    count_new_markers(context, clip, prefix)
     print(
-        f"NEW_-Marker {new_count} außerhalb des Bereichs {min_count}-{max_count}" 
+        f"NEW_-Marker {new_count} außerhalb des Bereichs {min_count}-{max_count}"
         " → erneute Erkennung"
     )
     start_idx = len(clip.tracking.tracks)

@@ -14,5 +14,9 @@ def adjust_marker_count_plus(scene, new_marker_count):
         return current
 
     reduced = int(current * 0.9)
-    scene.min_marker_count_plus = max(1, max(reduced, new_marker_count))
+    result = max(1, max(reduced, new_marker_count))
+    scene.min_marker_count_plus = result
+    # Keep derived limits in sync with the updated expectation
+    scene.marker_count_plus_min = int(result * 0.8)
+    scene.marker_count_plus_max = int(result * 1.2)
     return scene.min_marker_count_plus

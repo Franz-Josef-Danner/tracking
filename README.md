@@ -51,3 +51,8 @@ Several utility modules are included for experimentation:
 - `detect.py` – adaptive feature detection script that uses margin and distance values from `margin_a_distanz.py`.
 - `distance_remove.py` – filter NEW_ markers near GOOD_ markers.
 - `count_new_markers.py` – helper to count NEW_ markers on a clip.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for
+details.
