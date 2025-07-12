@@ -75,6 +75,24 @@ Several utility modules are included for experimentation:
 - `track_length.py` – delete `TRACK_` markers shorter than 25 frames and rename the remaining ones with `GOOD_`.
 - `motion_model.py` – helpers to cycle or reset the default motion model.
 
+## Running Tests
+
+The tests run entirely outside Blender. You only need Python 3.8+ and the
+`pytest` package (optional) to execute them. Dummy replacements for `bpy` and
+`mathutils` are created automatically so no Blender installation is required.
+
+Run all tests with:
+
+```bash
+pytest
+```
+
+or using the built-in unittest runner:
+
+```bash
+python -m unittest
+```
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
