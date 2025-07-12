@@ -8,9 +8,42 @@ bl_info = {
     "category": "Movie Clip",
 }
 
-import bpy
-from bpy.types import Panel, Operator, AddonPreferences
-from bpy.props import IntProperty, FloatProperty, BoolProperty
+import types
+try:
+    import bpy
+    from bpy.types import Panel, Operator, AddonPreferences
+    from bpy.props import IntProperty, FloatProperty, BoolProperty
+except ModuleNotFoundError:  # pragma: no cover - only used during testing
+    import sys
+    bpy = types.SimpleNamespace(
+        types=types.SimpleNamespace(
+            Panel=object,
+            Operator=object,
+            AddonPreferences=object,
+            WindowManager=types.SimpleNamespace(),
+        ),
+        props=types.SimpleNamespace(
+            IntProperty=lambda *_, **__: None,
+            FloatProperty=lambda *_, **__: None,
+            BoolProperty=lambda *_, **__: None,
+        ),
+        data=types.SimpleNamespace(movieclips=[]),
+        context=types.SimpleNamespace(
+            scene=types.SimpleNamespace(
+                frame_start=1,
+                frame_end=1,
+                frame_current=1,
+                min_marker_count=1,
+            )
+        ),
+    )
+    sys.modules.setdefault('bpy', bpy)
+    Panel = bpy.types.Panel
+    Operator = bpy.types.Operator
+    AddonPreferences = bpy.types.AddonPreferences
+    IntProperty = bpy.props.IntProperty
+    FloatProperty = bpy.props.FloatProperty
+    BoolProperty = bpy.props.BoolProperty
 import os
 import sys
 import importlib
@@ -44,7 +77,6 @@ def configure_logging():
         "detect",
         "iterative_detect",
         "margin_utils",
-        "playhead",
         "proxy_wait",
     ):
         logging.getLogger(name).setLevel(level)

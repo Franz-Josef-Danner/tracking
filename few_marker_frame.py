@@ -1,8 +1,24 @@
 """Utilities to find frames with few tracking markers and move the playhead."""
 
-import bpy
 from collections import Counter
 import logging
+import types
+try:
+    import bpy
+except ModuleNotFoundError:  # pragma: no cover - only used during testing
+    import sys
+    bpy = types.SimpleNamespace(
+        data=types.SimpleNamespace(movieclips=[]),
+        context=types.SimpleNamespace(
+            scene=types.SimpleNamespace(
+                frame_start=1,
+                frame_end=1,
+                frame_current=1,
+                min_marker_count=1,
+            )
+        ),
+    )
+    sys.modules.setdefault('bpy', bpy)
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +34,7 @@ def find_frame_with_few_tracking_markers(marker_counts, minimum_count):
 
 
 def get_tracking_marker_counts():
-    """Return a ``Counter`` with marker counts for each frame."""
+    """Return a Counter of marker counts for each frame across all clips."""
     marker_counts = Counter()
     for clip in bpy.data.movieclips:
         for track in clip.tracking.tracks:

@@ -4,8 +4,14 @@ The module provides :func:`delete_close_new_markers` to remove only the
 NEW_ markers that are too close to GOOD_ markers in the current frame and
 ``delete_new_markers`` to wipe all NEW_ markers from the clip."""
 
+import types
 import bpy
-import mathutils
+try:
+    import mathutils
+except ModuleNotFoundError:  # pragma: no cover - only used during testing
+    import sys
+    mathutils = types.SimpleNamespace(Vector=lambda v: v)
+    sys.modules.setdefault('mathutils', mathutils)
 
 
 def delete_close_new_markers(context, min_distance=0.02, report=None):
