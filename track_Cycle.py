@@ -2,6 +2,7 @@ import bpy
 import logging
 from proxy_switch import ToggleProxyOperator
 from track_length import delete_short_tracks_with_prefix
+from few_marker_frame import set_playhead_to_low_marker_frame
 
 logger = logging.getLogger(__name__)
 
@@ -28,4 +29,7 @@ def run(context):
 
     # Delete short tracks with the TRACK_ prefix
     delete_short_tracks_with_prefix(context)
+
+    # Position playhead on the first frame with too few markers
+    set_playhead_to_low_marker_frame(context.scene.min_marker_count)
 

@@ -64,7 +64,7 @@ The panel exposes several options:
 
 Several utility modules are included for experimentation:
 
-- `few_marker_frame.py` – locate frames with few markers.
+- `few_marker_frame.py` – locate frames with few markers and position the playhead.
 - `marker_count_plus.py` – compute additional marker thresholds.
 - `margin_utils.py` – derive margin and distance values and scale them relative to the detection threshold.
 - `playhead.py` – utilities for repositioning the playhead.

@@ -74,13 +74,11 @@ if addon_dir not in sys.path:
 
 
 from few_marker_frame import (
-    find_frame_with_few_tracking_markers,
+    set_playhead_to_low_marker_frame,
 )
 from marker_count_plus import update_marker_count_plus
 from margin_utils import compute_margin_distance
-from playhead import (
-    get_tracking_marker_counts,
-)
+
 from count_new_markers import check_marker_range, count_new_markers
 import proxy_wait
 importlib.reload(proxy_wait)
@@ -146,11 +144,7 @@ class CLIP_OT_kaiserlich_track(Operator):
 
             logger.info("Berechne minimale Marker-Eigenschaften")
             update_min_marker_props(scene, context)
-            marker_counts = get_tracking_marker_counts()
-            frame = find_frame_with_few_tracking_markers(marker_counts, min_marker)
-            if frame is not None:
-                context.scene.frame_current = frame
-                logger.info(f"Playhead auf Frame {frame} gesetzt.")
+            set_playhead_to_low_marker_frame(min_marker)
 
 
             def run_ops(on_after_detect=None):
