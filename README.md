@@ -67,6 +67,7 @@ Several utility modules are included for experimentation:
 - `proxy_switch.py` – disable proxies after generation.
 - `detect.py` – adaptive feature detection script that relies on `margin_utils.py` for margin and distance values.
 - `distance_remove.py` – filter NEW_ markers near GOOD_ markers.
+- `delete_new_markers` – remove all NEW_ markers from the active clip via the NEW_-Cleanup panel.
 - `count_new_markers.py` – helper to count NEW_ markers on a clip.
 - `iterative_detect.py` – repeatedly detect markers until the count fits and
   rename them with the prefix `TRACK_`.
