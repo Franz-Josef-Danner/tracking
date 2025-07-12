@@ -9,8 +9,7 @@ matches the expected range, the markers are renamed with the prefix
 
 import bpy
 
-from margin_a_distanz import compute_margin_distance
-from margin_distance_adapt import ensure_margin_distance
+from margin_utils import compute_margin_distance, ensure_margin_distance
 from count_new_markers import count_new_markers
 from rename_new import rename_tracks as rename_new_tracks
 from rename_track import rename_tracks as rename_track_tracks
