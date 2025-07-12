@@ -15,4 +15,5 @@ def update_marker_count_plus(scene):
     scene.min_marker_count_plus = marker_count_plus
     scene.marker_count_plus_min = int(marker_count_plus * 0.8)
     scene.marker_count_plus_max = int(marker_count_plus * 1.2)
+    scene.new_marker_count = marker_count_plus
     return marker_count_plus

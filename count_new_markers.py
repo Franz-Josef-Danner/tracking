@@ -42,4 +42,5 @@ def check_marker_range(context, clip, prefix="NEW_"):
     start_idx = len(clip.tracking.tracks)
     bpy.ops.clip.detect_features_custom()
     rename_tracks(list(clip.tracking.tracks)[start_idx:])
+    new_count = count_new_markers(context, clip, prefix)
     return new_count

@@ -26,7 +26,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip gefunden")
             return {'CANCELLED'}
 
-        threshold = 0.1
+        threshold = 1.0
         base_plus = context.scene.min_marker_count_plus
         min_new = context.scene.min_marker_count
         base_count = len(clip.tracking.tracks)
@@ -80,7 +80,8 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
             # zuvor erstellte Marker entfernen
             for track in list(clip.tracking.tracks)[base_count:]:
-                clip.tracking.tracks.remove(track)
+                track.select = True
+            bpy.ops.clip.delete_track()
 
             msg = (
                 f"Nur {new_marker} Features, "
