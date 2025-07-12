@@ -56,3 +56,5 @@ Several utility modules are included for experimentation:
 - `detect.py` – adaptive feature detection script that uses margin and distance values from `margin_a_distanz.py`.
 - `distance_remove.py` – filter NEW_ markers near GOOD_ markers.
 - `count_new_markers.py` – helper to count NEW_ markers on a clip.
+- `iterative_detect.py` – repeatedly detect markers until the count fits and
+  rename them with the prefix `TRACK_`.
