@@ -110,7 +110,7 @@ if BLENDER_AVAILABLE:
     from motion_model import cycle_motion_model, reset_motion_model
     from margin_utils import compute_margin_distance
 
-    from count_new_markers import check_marker_range, count_new_markers
+    from count_new_markers import count_new_markers
     import proxy_wait
     importlib.reload(proxy_wait)
     from proxy_wait import create_proxy_and_wait, remove_existing_proxies
