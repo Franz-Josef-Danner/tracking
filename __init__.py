@@ -149,6 +149,7 @@ class CLIP_OT_kaiserlich_track(Operator):
 
             logger.info("Berechne minimale Marker-Eigenschaften")
             update_min_marker_props(scene, context)
+            scene.repeat_frame_hits = 0
 
 
             def run_ops(on_after_detect=None):
@@ -173,10 +174,22 @@ class CLIP_OT_kaiserlich_track(Operator):
                     if clip_local:
                         settings = clip_local.tracking.settings
                         if scene.repeat_frame == frame:
+                            scene.repeat_frame_hits += 1
+                            if scene.repeat_frame_hits >= 10:
+                                logger.warning(
+                                    "Frame %s wurde 10 mal gefunden, breche ab",
+                                    frame,
+                                )
+                                show_popup(
+                                    f"Tracking abgebrochen: Frame {frame} 10 mal gefunden",
+                                    icon='ERROR',
+                                )
+                                return
                             cycle_motion_model(settings)
                             increase_marker_count_plus(scene)
                         else:
                             scene.repeat_frame = frame
+                            scene.repeat_frame_hits = 1
                             reset_motion_model(settings)
                             decrease_marker_count_plus(scene, scene.marker_count_plus_base)
                         new_count = detect_until_count_matches(context)
@@ -265,6 +278,11 @@ def register():
         default=-1,
         min=-1,
     )
+    bpy.types.Scene.repeat_frame_hits = IntProperty(
+        name="Repeat Frame Hits",
+        default=0,
+        min=0,
+    )
     bpy.utils.register_class(ToggleProxyOperator)
     bpy.utils.register_class(DetectFeaturesCustomOperator)
     bpy.utils.register_class(KaiserlichAddonPreferences)
@@ -292,6 +310,7 @@ def unregister():
     del bpy.types.Scene.new_marker_count
     del bpy.types.Scene.marker_count_plus_base
     del bpy.types.Scene.repeat_frame
+    del bpy.types.Scene.repeat_frame_hits
 
 
 if __name__ == "__main__":

@@ -33,6 +33,9 @@ The main operator now relies on `detect_until_count_matches`. This helper
 repeatedly runs feature detection and adapts the settings until the number of
 markers falls within the expected range. Once a satisfactory count is achieved,
 all newly created tracks are renamed with the ``TRACK_`` prefix.
+If the same low-marker frame is found repeatedly, the addon cycles through
+different motion models and adjusts the ``min_marker_count_plus`` value.
+After the frame appears ten times in a row the operator stops with a warning.
 
 ### Callbacks
 
