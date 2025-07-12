@@ -9,11 +9,52 @@ bl_info = {
 }
 
 import bpy
-from bpy.types import Panel, Operator
-from bpy.props import IntProperty, FloatProperty
+from bpy.types import Panel, Operator, AddonPreferences
+from bpy.props import IntProperty, FloatProperty, BoolProperty
 import os
 import sys
 import importlib
+import logging
+
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter("%(name)s: %(message)s")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+
+def configure_logging():
+    """Set log level based on addon preferences."""
+    addon = bpy.context.preferences.addons.get(__name__)
+    enable = addon and getattr(addon.preferences, "enable_detailed_logs", False)
+    level = logging.INFO if enable else logging.WARNING
+    logger.setLevel(level)
+    for name in (
+        __name__,
+        "count_new_markers",
+        "detect",
+        "iterative_detect",
+        "margin_utils",
+        "playhead",
+        "proxy_wait",
+    ):
+        logging.getLogger(name).setLevel(level)
+
+
+class KaiserlichAddonPreferences(AddonPreferences):
+    bl_idname = __name__
+
+    enable_detailed_logs: BoolProperty(
+        name="Enable detailed logs",
+        description="Output additional info to the console",
+        default=False,
+        update=lambda self, context: configure_logging(),
+    )
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "enable_detailed_logs")
 
 # Ensure helper modules in this directory can be imported when the addon is
 # installed as a single-file module. Blender does not automatically add the
@@ -87,20 +128,20 @@ class CLIP_OT_kaiserlich_track(Operator):
         # aktiven Kontext funktioniert.
         def after_proxy(clip):
             if clip and clip.use_proxy:
-                print("Proxy-Zeitlinie wird deaktiviert")
+                logger.info("Proxy-Zeitlinie wird deaktiviert")
                 clip.use_proxy = False
                 show_popup("Proxy-Zeitlinie wurde deaktiviert")
             else:
-                print("Proxy bereits deaktiviert oder kein Clip")
+                logger.info("Proxy bereits deaktiviert oder kein Clip")
                 show_popup("Proxy bereits deaktiviert oder kein Clip")
 
-            print("Berechne minimale Marker-Eigenschaften")
+            logger.info("Berechne minimale Marker-Eigenschaften")
             update_min_marker_props(scene, context)
             marker_counts = get_tracking_marker_counts()
             frame = find_frame_with_few_tracking_markers(marker_counts, min_marker)
             if frame is not None:
                 context.scene.frame_current = frame
-                print(f"Playhead auf Frame {frame} gesetzt.")
+                logger.info(f"Playhead auf Frame {frame} gesetzt.")
 
 
             def run_ops():
@@ -110,22 +151,22 @@ class CLIP_OT_kaiserlich_track(Operator):
                     f"Start with min markers {min_marker}, length {min_track_len}, "
                     f"error {error_threshold}, derived {marker_plus}"
                 )
-                print(msg)
-                print("Starte Feature-Erkennung")
+                logger.info(msg)
+                logger.info("Starte Feature-Erkennung")
                 sys.stdout.flush()
 
                 new_count = detect_until_count_matches(context)
                 scene.new_marker_count = new_count
-                print(f"TRACK_ Marker nach Iteration: {new_count}")
+                logger.info(f"TRACK_ Marker nach Iteration: {new_count}")
 
             if not run_in_clip_editor(clip, run_ops):
-                print("Kein Clip Editor zum Ausführen der Operatoren gefunden")
+                logger.info("Kein Clip Editor zum Ausführen der Operatoren gefunden")
 
         # Alte Proxies entfernen
         active_clip = context.space_data.clip
         remove_existing_proxies(active_clip)
         # 50% Proxy erstellen und warten, bis Dateien erscheinen
-        print("✅ Aufruf: create_proxy_and_wait() wird gestartet")
+        logger.info("✅ Aufruf: create_proxy_and_wait() wird gestartet")
         create_proxy_and_wait(wait_time, on_finish=after_proxy, clip=active_clip)
 
         return {'FINISHED'}
@@ -186,9 +227,11 @@ def register():
     )
     bpy.utils.register_class(ToggleProxyOperator)
     bpy.utils.register_class(DetectFeaturesCustomOperator)
+    bpy.utils.register_class(KaiserlichAddonPreferences)
     bpy.utils.register_class(CLIP_OT_kaiserlich_track)
     bpy.utils.register_class(CLIP_PT_kaiserlich_track)
     bpy.utils.register_class(CLIP_OT_remove_close_new_markers)
+    configure_logging()
 
 
 def unregister():
@@ -197,6 +240,7 @@ def unregister():
     bpy.utils.unregister_class(CLIP_OT_remove_close_new_markers)
     bpy.utils.unregister_class(ToggleProxyOperator)
     bpy.utils.unregister_class(DetectFeaturesCustomOperator)
+    bpy.utils.unregister_class(KaiserlichAddonPreferences)
     del bpy.types.Scene.min_marker_count
     del bpy.types.Scene.min_tracking_length
     del bpy.types.Scene.error_threshold

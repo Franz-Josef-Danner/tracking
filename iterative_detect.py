@@ -8,10 +8,13 @@ matches the expected range, the markers are renamed with the prefix
 """
 
 import bpy
+import logging
 
 from margin_utils import compute_margin_distance, ensure_margin_distance
 from count_new_markers import count_new_markers
 from rename_new import rename_tracks as rename_new_tracks
+
+logger = logging.getLogger(__name__)
 
 
 def detect_until_count_matches(context):
@@ -23,7 +26,7 @@ def detect_until_count_matches(context):
     if clip is None:
         clip = getattr(scene, "clip", None)
     if not clip:
-        print("Kein Clip gefunden")
+        logger.info("Kein Clip gefunden")
         return 0
 
     compute_margin_distance()
@@ -41,14 +44,14 @@ def detect_until_count_matches(context):
         )
         new_tracks = list(clip.tracking.tracks)[base_idx:]
         rename_new_tracks(new_tracks)
-        print(
-            "Detect step:",
+        logger.info(
+            "Detect step: %s %s %s",
             f"threshold={threshold:.4f}",
             f"→ erzeugt {len(new_tracks)} Marker",
             f"{[t.name for t in new_tracks]}",
         )
         new_count = count_new_markers(context, clip)
-        print(f"Gespeicherte NEW_-Marker: {scene.new_marker_count}")
+        logger.info(f"Gespeicherte NEW_-Marker: {scene.new_marker_count}")
         return new_count
 
     new_count = detect_step()
@@ -60,7 +63,7 @@ def detect_until_count_matches(context):
         delete_tracks = list(clip.tracking.tracks)[base_idx:]
         for track in delete_tracks:
             track.select = True
-        print("Lösche Marker:", [t.name for t in delete_tracks])
+        logger.info("Lösche Marker: %s", [t.name for t in delete_tracks])
         bpy.ops.clip.delete_track()
 
         min_plus = max(1, scene.min_marker_count_plus)
@@ -72,5 +75,5 @@ def detect_until_count_matches(context):
 
     final_tracks = list(clip.tracking.tracks)[base_idx:]
     rename_new_tracks(final_tracks, prefix="TRACK_")
-    print("Finale TRACK_ Marker:", [t.name for t in final_tracks])
+    logger.info("Finale TRACK_ Marker: %s", [t.name for t in final_tracks])
     return new_count
