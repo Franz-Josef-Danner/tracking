@@ -13,7 +13,7 @@ import time
 import glob
 import logging
 
-from utils import get_active_clip
+from .utils import get_active_clip
 
 PROXY_DIR = "//BL_proxy/"
 

@@ -7,7 +7,7 @@ count.
 """
 
 
-from marker_count_plus import compute_marker_count_plus
+from .marker_count_plus import compute_marker_count_plus
 
 
 def update_min_marker_props(scene, _context):

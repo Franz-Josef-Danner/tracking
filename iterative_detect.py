@@ -10,10 +10,10 @@ matches the expected range, the markers are renamed with the prefix
 import bpy
 import logging
 
-from margin_utils import compute_margin_distance, ensure_margin_distance
-from count_new_markers import count_new_markers
-from rename_new import rename_tracks as rename_new_tracks
-from utils import get_active_clip
+from .margin_utils import compute_margin_distance, ensure_margin_distance
+from .count_new_markers import count_new_markers
+from .rename_new import rename_tracks as rename_new_tracks
+from .utils import get_active_clip
 
 logger = logging.getLogger(__name__)
 

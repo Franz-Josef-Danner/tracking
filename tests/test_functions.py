@@ -8,11 +8,11 @@ from unittest import mock
 sys.modules.setdefault('bpy', types.SimpleNamespace())
 sys.modules.setdefault('mathutils', types.SimpleNamespace(Vector=lambda co=None: types.SimpleNamespace(co=co)))
 
-import adjust_marker_count_plus as acp
-import rename_new
-import margin_utils
-import utils
-import delete_helpers
+from tracking import adjust_marker_count_plus as acp
+from tracking import rename_new
+from tracking import margin_utils
+from tracking import utils
+from tracking import delete_helpers
 
 
 class DummyScene:

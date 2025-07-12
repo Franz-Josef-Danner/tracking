@@ -6,7 +6,7 @@ than a configurable distance to existing GOOD_ markers.
 """
 
 import bpy
-from delete_helpers import delete_close_new_markers, delete_new_markers
+from .delete_helpers import delete_close_new_markers, delete_new_markers
 
 bl_info = {
     "name": "NEW_ Marker Cleanup",
