@@ -50,6 +50,7 @@ The callback receives the current ``context`` object. The example in
 ``track_Cycle.py`` enables proxy/timecode again using the toggle operator.
 It then launches ``auto_track_bidir`` to track all ``TRACK_`` markers and
 finally removes short ones with ``delete_short_tracks_with_prefix``.
+Remaining tracks are renamed with the ``GOOD_`` prefix.
 
 ### Properties
 
@@ -77,7 +78,7 @@ Several utility modules are included for experimentation:
 - `iterative_detect.py` – repeatedly detect markers until the count fits and
   rename them with the prefix `TRACK_`.
 - `auto_track_bidir.py` – operator to track markers named with the `TRACK_` prefix both backward and forward.
-- `track_length.py` – delete `TRACK_` markers shorter than 25 frames.
+- `track_length.py` – delete `TRACK_` markers shorter than 25 frames and rename the remaining ones with `GOOD_`.
 
 ## License
 
