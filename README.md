@@ -68,12 +68,11 @@ The panel exposes several options:
 Several utility modules are included for experimentation:
 
 - `few_marker_frame.py` – locate frames with few markers and position the playhead.
-- `marker_count_plus.py` – compute additional marker thresholds.
+- `marker_count_plus.py` – compute marker thresholds and sync derived properties.
 - `margin_utils.py` – derive margin and distance values and scale them relative to the detection threshold.
 - `playhead.py` – utilities for repositioning the playhead.
 - `proxy_wait.py` – create proxies and timecode indices, show the proxy folder and a countdown until a file appears.
 - `remove_existing_proxies` – helper inside `proxy_wait.py` to delete old proxy files before new ones are generated.
-- `update_min_marker_props.py` – sync derived marker properties.
 - `proxy_switch.py` – disable proxies after generation.
 - `detect.py` – adaptive feature detection script that relies on `margin_utils.py` for margin and distance values.
 - `distance_remove.py` – filter NEW_ markers near GOOD_ markers.

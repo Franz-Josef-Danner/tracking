@@ -7,14 +7,11 @@ count.
 """
 
 
-def update_min_marker_props(scene, _context):
-    """Update derived marker count properties when the base count changes."""
-    base = scene.min_marker_count
-    # Compute the target marker count as four times the base value
-    marker_count_plus = base * 4
-    scene.min_marker_count_plus = int(marker_count_plus)
-    scene.marker_count_plus_min = int(marker_count_plus * 0.8)
-    scene.marker_count_plus_max = int(marker_count_plus * 1.2)
-    scene.marker_count_plus_base = int(marker_count_plus)
-    scene.new_marker_count = scene.min_marker_count_plus
+from marker_count_plus import update_marker_count_plus
+
+
+def update_min_marker_props(scene, context):
+    """Update derived marker properties when ``min_marker_count`` changes."""
+
+    return update_marker_count_plus(scene, context)
 

@@ -1,12 +1,15 @@
 """Calculate and store marker count thresholds."""
 
 
-def update_marker_count_plus(scene):
+def update_marker_count_plus(scene, _context=None):
     """Compute marker count limits from ``min_marker_count``.
 
     The main value ``min_marker_count_plus`` is four times the user input.
     Two additional properties ``marker_count_plus_min`` and
-    ``marker_count_plus_max`` are 80%% and 120%% of that value.
+    ``marker_count_plus_max`` are 80% and 120% of that value. The helper
+    also stores the base count in ``marker_count_plus_base`` so callers can
+    adjust the threshold relative to the original expectation.
+
     The computed count is returned for convenience.
     """
 
@@ -15,5 +18,6 @@ def update_marker_count_plus(scene):
     scene.min_marker_count_plus = marker_count_plus
     scene.marker_count_plus_min = int(marker_count_plus * 0.8)
     scene.marker_count_plus_max = int(marker_count_plus * 1.2)
+    scene.marker_count_plus_base = marker_count_plus
     scene.new_marker_count = marker_count_plus
     return marker_count_plus

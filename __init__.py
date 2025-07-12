@@ -8,9 +8,29 @@ bl_info = {
     "category": "Movie Clip",
 }
 
-import bpy
-from bpy.types import Panel, Operator, AddonPreferences
-from bpy.props import IntProperty, FloatProperty, BoolProperty
+try:
+    import bpy
+    from bpy.types import Panel, Operator, AddonPreferences
+    from bpy.props import IntProperty, FloatProperty, BoolProperty
+    TEST_MODE = False
+except ModuleNotFoundError:  # Allow running tests without Blender
+    import types
+    import sys
+    bpy = types.SimpleNamespace()
+    sys.modules.setdefault("bpy", bpy)
+
+    Panel = Operator = AddonPreferences = object
+
+    def IntProperty(*_args, **_kwargs):
+        return 0
+
+    def FloatProperty(*_args, **_kwargs):
+        return 0.0
+
+    def BoolProperty(*_args, **_kwargs):
+        return False
+
+    TEST_MODE = True
 import os
 import sys
 import importlib
@@ -73,27 +93,27 @@ if addon_dir not in sys.path:
     sys.path.append(addon_dir)
 
 
-from few_marker_frame import (
-    set_playhead_to_low_marker_frame,
-)
-from marker_count_plus import update_marker_count_plus
-from adjust_marker_count_plus import (
-    increase_marker_count_plus,
-    decrease_marker_count_plus,
-)
-from motion_model import cycle_motion_model, reset_motion_model
-from margin_utils import compute_margin_distance
+if not TEST_MODE:
+    from few_marker_frame import (
+        set_playhead_to_low_marker_frame,
+    )
+    from marker_count_plus import update_marker_count_plus
+    from adjust_marker_count_plus import (
+        increase_marker_count_plus,
+        decrease_marker_count_plus,
+    )
+    from motion_model import cycle_motion_model, reset_motion_model
+    from margin_utils import compute_margin_distance
 
-from count_new_markers import check_marker_range, count_new_markers
-import proxy_wait
-importlib.reload(proxy_wait)
-from proxy_wait import create_proxy_and_wait, remove_existing_proxies
-from update_min_marker_props import update_min_marker_props
-from distance_remove import CLIP_OT_remove_close_new_markers
-from proxy_switch import ToggleProxyOperator
-from detect import DetectFeaturesCustomOperator
-from iterative_detect import detect_until_count_matches
-from auto_track_bidir import TRACK_OT_auto_track_bidir
+    from count_new_markers import check_marker_range, count_new_markers
+    import proxy_wait
+    importlib.reload(proxy_wait)
+    from proxy_wait import create_proxy_and_wait, remove_existing_proxies
+    from distance_remove import CLIP_OT_remove_close_new_markers
+    from proxy_switch import ToggleProxyOperator
+    from detect import DetectFeaturesCustomOperator
+    from iterative_detect import detect_until_count_matches
+    from auto_track_bidir import TRACK_OT_auto_track_bidir
 
 def show_popup(message, title="Info", icon='INFO'):
     """Display a temporary popup in Blender's UI."""
@@ -148,7 +168,7 @@ class CLIP_OT_kaiserlich_track(Operator):
                 show_popup("Proxy bereits deaktiviert oder kein Clip")
 
             logger.info("Berechne minimale Marker-Eigenschaften")
-            update_min_marker_props(scene, context)
+            update_marker_count_plus(scene, context)
             scene.repeat_frame_hits = 0
 
 
@@ -236,7 +256,7 @@ def register():
         name="min marker pro frame",
         default=10,
         min=0,
-        update=update_min_marker_props,
+        update=update_marker_count_plus,
     )
     bpy.types.Scene.min_tracking_length = IntProperty(
         name="min tracking length",
