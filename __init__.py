@@ -95,6 +95,7 @@ if _BPy:
     from track_cycle import auto_track_bidirectional
     from delete_helpers import delete_short_tracks
     from rename_new import rename_tracks
+    from New.motion_model import cycle_motion_model, reset_motion_model
 
 def show_popup(message, title="Info", icon='INFO'):
     """Display a temporary popup in Blender's UI."""
@@ -119,6 +120,66 @@ def run_in_clip_editor(clip, func):
                                 func()
                             return True
     return False
+
+
+visited_frames = set()
+
+
+def run_tracking_cycle(context, clip, min_marker, min_track_len):
+    """Iteratively detect and track until all frames meet ``min_marker``.
+
+    The global ``visited_frames`` set stores each processed frame so it is not
+    removed between operator executions.
+    """
+
+    scene = context.scene
+    settings = clip.tracking.settings
+    global visited_frames
+    pattern_size = settings.default_pattern_size
+
+    while True:
+        counts = get_tracking_marker_counts()
+        frame = find_frame_with_few_tracking_markers(counts, min_marker)
+        if frame is None:
+            break
+
+        scene.frame_current = frame
+        logger.info(f"Playhead auf Frame {frame} gesetzt.")
+
+        if frame not in visited_frames:
+            visited_frames.add(frame)
+            reset_motion_model(settings)
+            pattern_size = max(1, int(pattern_size * 0.9))
+        else:
+            cycle_motion_model(settings)
+            pattern_size = int(pattern_size * 1.1)
+
+        settings.default_pattern_size = pattern_size
+        settings.default_search_size = settings.default_pattern_size * 2
+
+        compute_margin_distance()
+        update_marker_count_plus(scene)
+
+        new_count = detect_until_count_matches(context)
+        scene.new_marker_count = new_count
+
+        auto_track_bidirectional(context)
+
+        deleted = delete_short_tracks(context, min_track_len, prefix="TRACK_")
+        if deleted:
+            logger.info(f"🗑️ Gelöscht: {deleted} kurze TRACK_ Marker")
+            show_popup(f"Gelöscht: {deleted} kurze TRACK_ Marker")
+
+        remaining = [
+            t for t in clip.tracking.tracks if t.name.startswith("TRACK_")
+        ]
+        if remaining:
+            rename_tracks(remaining, prefix="GOOD_")
+            logger.info(
+                f"✅ Umbenannt: {len(remaining)} TRACK_ Marker zu GOOD_"
+            )
+
+    logger.info("Keine Frames mit zu wenigen Markern mehr gefunden")
 
 
 
@@ -166,42 +227,9 @@ class CLIP_OT_kaiserlich_track(Operator):
                 if clip and not clip.use_proxy:
                     bpy.ops.clip.toggle_proxy()
 
-                compute_margin_distance()
-                marker_plus = update_marker_count_plus(scene)
-                msg = (
-                    f"Start with min markers {min_marker}, length {min_track_len}, "
-                    f"error {error_threshold}, derived {marker_plus}"
-                )
-                logger.info(msg)
-                logger.info("Starte Feature-Erkennung")
-                sys.stdout.flush()
+                run_tracking_cycle(bpy.context, clip, min_marker, min_track_len)
 
-                new_count = detect_until_count_matches(bpy.context)
-                scene.new_marker_count = new_count
-                logger.info(f"TRACK_ Marker nach Iteration: {new_count}")
-                logger.info("Starte Auto-Tracking")
-                auto_track_bidirectional(bpy.context)
-                logger.info("Auto-Tracking abgeschlossen")
-                deleted = delete_short_tracks(
-                    bpy.context, min_track_len, prefix="TRACK_"
-                )
-                if deleted:
-                    logger.info(f"🗑️ Gelöscht: {deleted} kurze TRACK_ Marker")
-                    show_popup(f"Gelöscht: {deleted} kurze TRACK_ Marker")
-                # Rename remaining TRACK_ markers to GOOD_
-                remaining = [
-                    t
-                    for t in clip.tracking.tracks
-                    if t.name.startswith("TRACK_")
-                ]
-                if remaining:
-                    rename_tracks(remaining, prefix="GOOD_")
-                    logger.info(
-                        f"✅ Umbenannt: {len(remaining)} TRACK_ Marker zu GOOD_"
-                    )
-
-                # Nach dem Umbenennen die Markeranzahl ueberpruefen und den
-                # Playhead auf den ersten Frame mit zu wenigen Markern setzen
+                # Nach Abschluss sicherstellen, dass kein Frame mehr uebrig ist
                 set_playhead_to_low_marker_frame(min_marker)
 
             if not run_in_clip_editor(clip, run_ops):
