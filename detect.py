@@ -15,6 +15,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
 
         threshold = 1
         min_new = context.scene.min_marker_count
+        smp = getattr(context.scene, "min_marker_count_plus", min_new * 4)
         tracks_before = len(clip.tracking.tracks)
         settings = clip.tracking.settings
 
@@ -41,11 +42,12 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 )
                 settings.default_search_size = settings.default_pattern_size * 2
 
-            factor = ((tracks_after - tracks_before) + 0.1) / min_new
-            threshold = max(threshold * factor, 0.0001)
+            nm = tracks_after - tracks_before
+            at = threshold
+            factor = (nm + 0.1) / smp
+            threshold = max(at * factor, 0.0001)
             msg = (
-                f"Nur {tracks_after - tracks_before} Features, "
-                f"senke Threshold auf {threshold:.4f}"
+                f"Nur {nm} Features, senke Threshold auf {threshold:.4f}"
             )
             self.report({'INFO'}, msg)
             bpy.ops.clip.detect_features(
@@ -78,6 +80,12 @@ def register():
         max=50,
         description="Minimum markers to detect each run",
     )
+    bpy.types.Scene.min_marker_count_plus = bpy.props.IntProperty(
+        name="Marker Count Plus",
+        default=20,
+        min=1,
+        description="Reference count for threshold adjustment",
+    )
 
     bpy.utils.register_class(DetectFeaturesCustomOperator)
     bpy.utils.register_class(CLIP_PT_DetectFeaturesPanel)
@@ -87,6 +95,7 @@ def unregister():
     bpy.utils.unregister_class(CLIP_PT_DetectFeaturesPanel)
 
     del bpy.types.Scene.min_marker_count
+    del bpy.types.Scene.min_marker_count_plus
 
 if __name__ == "__main__":
     register()
