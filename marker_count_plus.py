@@ -1,4 +1,4 @@
-"""Calculate and store marker count thresholds."""
+"""Helpers for computing and adjusting marker count thresholds."""
 
 
 def update_marker_count_plus(scene):
@@ -13,6 +13,16 @@ def update_marker_count_plus(scene):
     base = getattr(scene, "min_marker_count", 0)
     marker_count_plus = int(base * 4)
     scene.min_marker_count_plus = marker_count_plus
+    scene.marker_count_plus_min = int(marker_count_plus * 0.8)
+    scene.marker_count_plus_max = int(marker_count_plus * 1.2)
+    scene.new_marker_count = marker_count_plus
+    return marker_count_plus
+
+
+def refresh_marker_count_plus(scene):
+    """Update range properties based on ``min_marker_count_plus``."""
+
+    marker_count_plus = getattr(scene, "min_marker_count_plus", 0)
     scene.marker_count_plus_min = int(marker_count_plus * 0.8)
     scene.marker_count_plus_max = int(marker_count_plus * 1.2)
     scene.new_marker_count = marker_count_plus

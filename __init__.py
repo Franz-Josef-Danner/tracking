@@ -81,7 +81,10 @@ if _BPy:
     from few_marker_frame import (
         find_frame_with_few_tracking_markers,
     )
-    from marker_count_plus import update_marker_count_plus
+    from marker_count_plus import (
+        update_marker_count_plus,
+        refresh_marker_count_plus,
+    )
     from margin_utils import compute_margin_distance
     from playhead import (
         get_tracking_marker_counts,
@@ -145,6 +148,8 @@ def run_tracking_cycle(context, clip, min_marker, min_track_len):
     start = scene.frame_start
     end = scene.frame_end
     total = end - start + 1
+    original_plus = update_marker_count_plus(scene)
+    prev_frame = None
     if _BPy:
         context.window_manager.progress_begin(0, total)
     scene.tracking_progress = 0.0
@@ -154,6 +159,19 @@ def run_tracking_cycle(context, clip, min_marker, min_track_len):
         frame = find_frame_with_few_tracking_markers(counts, min_marker)
         if frame is None:
             break
+
+        if prev_frame is not None:
+            if frame == prev_frame:
+                scene.min_marker_count_plus = min(
+                    scene.min_marker_count_plus + 1,
+                    original_plus * 2,
+                )
+            else:
+                scene.min_marker_count_plus = max(
+                    original_plus,
+                    scene.min_marker_count_plus - 1,
+                )
+            refresh_marker_count_plus(scene)
 
         progress = (frame - start) / total
         scene.tracking_progress = max(0.0, min(1.0, progress))
@@ -182,7 +200,7 @@ def run_tracking_cycle(context, clip, min_marker, min_track_len):
         )
 
         compute_margin_distance()
-        update_marker_count_plus(scene)
+        refresh_marker_count_plus(scene)
 
         new_count = detect_until_count_matches(context)
         scene.new_marker_count = new_count
@@ -202,6 +220,8 @@ def run_tracking_cycle(context, clip, min_marker, min_track_len):
             logger.info(
                 f"✅ Umbenannt: {len(remaining)} TRACK_ Marker zu GOOD_"
             )
+
+        prev_frame = frame
 
     if _BPy:
         context.window_manager.progress_update(total)

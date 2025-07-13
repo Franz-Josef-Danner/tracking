@@ -10,11 +10,15 @@ sys.modules.setdefault('bpy', types.SimpleNamespace())
 import adjust_marker_count_plus as acp
 import rename_new
 import margin_utils
+import marker_count_plus as mcp
 
 
 class DummyScene:
     def __init__(self, count):
         self.min_marker_count_plus = count
+        self.marker_count_plus_min = 0
+        self.marker_count_plus_max = 0
+        self.new_marker_count = 0
 
 
 class DummyTrack:
@@ -85,6 +89,15 @@ class EnsureMarginDistanceTests(unittest.TestCase):
         self.assertEqual(margin, expected_margin)
         self.assertEqual(distance, expected_distance)
         self.assertEqual(base, clip["DISTANCE"])
+
+
+class RefreshMarkerCountPlusTests(unittest.TestCase):
+    def test_updates_ranges(self):
+        scene = DummyScene(10)
+        mcp.refresh_marker_count_plus(scene)
+        self.assertEqual(scene.marker_count_plus_min, 8)
+        self.assertEqual(scene.marker_count_plus_max, 12)
+        self.assertEqual(scene.new_marker_count, 10)
 
 
 if __name__ == "__main__":
