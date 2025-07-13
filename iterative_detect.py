@@ -32,6 +32,8 @@ def detect_until_count_matches(context):
     base_idx = len(clip.tracking.tracks)
     threshold = 1.0
     margin, distance, _ = ensure_margin_distance(clip, threshold)
+    logger.info("Starte detection mit %d vorhandenen Tracks", base_idx)
+    print(f"Starte detection mit {base_idx} vorhandenen Tracks")
 
     def detect_step():
         bpy.ops.clip.detect_features(
@@ -48,6 +50,14 @@ def detect_until_count_matches(context):
             f"→ erzeugt {len(new_tracks)} Marker",
             f"{[t.name for t in new_tracks]}",
         )
+        print(
+            "Detect step:",
+            f"threshold={threshold:.4f}",
+            "→ erzeugt",
+            len(new_tracks),
+            "Marker",
+            [t.name for t in new_tracks],
+        )
         new_count = count_new_markers(context, clip)
         logger.info(f"Gespeicherte NEW_-Marker: {scene.new_marker_count}")
         return new_count
@@ -55,8 +65,25 @@ def detect_until_count_matches(context):
     new_count = detect_step()
     min_expected = scene.marker_count_plus_min
     max_expected = scene.marker_count_plus_max
+    logger.info(
+        "Verifiziere Menge: %d Marker, erwartet %d-%d",
+        new_count,
+        min_expected,
+        max_expected,
+    )
+    print(f"Verifiziere Menge: {new_count} Marker, erwartet {min_expected}-{max_expected}")
 
     while not (min_expected <= new_count <= max_expected) and threshold > 0.0001:
+        logger.info(
+            "%d Marker ausserhalb von %d-%d, neuer Threshold %.4f",
+            new_count,
+            min_expected,
+            max_expected,
+            threshold,
+        )
+        print(
+            f"{new_count} Marker ausserhalb von {min_expected}-{max_expected}, neuer Threshold {threshold:.4f}"
+        )
         prev_count = new_count
         delete_tracks = list(clip.tracking.tracks)[base_idx:]
         for track in delete_tracks:
@@ -74,4 +101,11 @@ def detect_until_count_matches(context):
     final_tracks = list(clip.tracking.tracks)[base_idx:]
     rename_new_tracks(final_tracks, prefix="TRACK_")
     logger.info("Finale TRACK_ Marker: %s", [t.name for t in final_tracks])
+    logger.info(
+        "Ergebnis: %d TRACK_ Marker innerhalb %d-%d",
+        len(final_tracks),
+        min_expected,
+        max_expected,
+    )
+    print(f"Ergebnis: {len(final_tracks)} TRACK_ Marker innerhalb {min_expected}-{max_expected}")
     return new_count
