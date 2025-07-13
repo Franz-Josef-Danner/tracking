@@ -39,7 +39,7 @@ def detect_until_count_matches(context):
     def detect_step():
         if clip.use_proxy:
             logger.info("Proxy für Detection deaktivieren")
-            bpy.ops.clip.toggle_proxy()
+            clip.use_proxy = False
         bpy.ops.clip.detect_features(
             threshold=threshold,
             margin=margin,
