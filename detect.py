@@ -48,6 +48,8 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         compute_margin_distance()
         margin, distance, _ = ensure_margin_distance(clip, threshold)
 
+        logger.info("Initialer Threshold: %.4f", threshold)
+
         bpy.ops.clip.detect_features(
             threshold=threshold,
             margin=margin,
@@ -85,6 +87,8 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
                 threshold * ((context.scene.new_marker_count + 0.1) / min_plus),
                 0.0001,
             )
+
+            logger.info("Neuer Threshold: %.4f", threshold)
 
             margin, distance, _ = ensure_margin_distance(clip, threshold)
 
