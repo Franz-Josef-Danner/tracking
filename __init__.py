@@ -59,12 +59,6 @@ def register_after_detect_callback(func):
     after_detect_callback = func
 
 
-def unregister_after_detect_callback():
-    """Clear the callback registered with ``register_after_detect_callback``."""
-    global after_detect_callback
-    after_detect_callback = None
-
-
 def configure_logging():
     """Set log level based on addon preferences."""
     addon = bpy.context.preferences.addons.get(__name__)
@@ -127,6 +121,7 @@ if BLENDER_AVAILABLE:
     from .iterative_detect import detect_until_count_matches
     from .auto_track_bidir import TRACK_OT_auto_track_bidir
     from .utils import get_active_clip
+    from . import track_cycle
 
 def show_popup(message, title="Info", icon='INFO'):
     """Display a temporary popup in Blender's UI."""
@@ -341,10 +336,12 @@ def register():
     bpy.utils.register_class(TRACK_OT_auto_track_bidir)
     bpy.utils.register_class(CLIP_OT_remove_close_new_markers)
     configure_logging()
+    register_after_detect_callback(track_cycle.run)
+    logger.info("After-Detect Callback auto-registered: track_cycle.run")
+    print("After-Detect Callback auto-registered: track_cycle.run")
 
 
 def unregister():
-    unregister_after_detect_callback()
     bpy.utils.unregister_class(CLIP_OT_kaiserlich_track)
     bpy.utils.unregister_class(CLIP_PT_kaiserlich_track)
     bpy.utils.unregister_class(CLIP_OT_remove_close_new_markers)
