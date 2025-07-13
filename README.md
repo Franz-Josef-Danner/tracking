@@ -43,6 +43,12 @@ import track_cycle
 tracking.register_after_detect_callback(track_cycle.run)
 ```
 
+Remove the callback later with:
+
+```python
+tracking.unregister_after_detect_callback()
+```
+
 The callback receives the current ``context`` object. The example in
 ``track_cycle.py`` enables proxy/timecode again using the toggle operator.
 It then launches ``auto_track_bidir`` to track all ``TRACK_`` markers and
