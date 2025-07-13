@@ -13,7 +13,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip gefunden")
             return {'CANCELLED'}
 
-        threshold = 0.01
+        threshold = 1
         min_new = context.scene.min_marker_count
         tracks_before = len(clip.tracking.tracks)
         settings = clip.tracking.settings
