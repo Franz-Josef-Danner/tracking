@@ -175,6 +175,11 @@ def run_tracking_cycle(context, clip, min_marker, min_track_len):
 
         settings.default_pattern_size = pattern_size
         settings.default_search_size = settings.default_pattern_size * 2
+        logger.info(
+            "Tracking: pattern_size=%s motion_model=%s",
+            pattern_size,
+            settings.default_motion_model,
+        )
 
         compute_margin_distance()
         update_marker_count_plus(scene)
