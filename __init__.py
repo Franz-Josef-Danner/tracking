@@ -93,6 +93,7 @@ if _BPy:
     from iterative_detect import detect_until_count_matches
     from track_cycle import auto_track_bidirectional
     from delete_helpers import delete_short_tracks
+    from rename_new import rename_tracks
 
 def show_popup(message, title="Info", icon='INFO'):
     """Display a temporary popup in Blender's UI."""
@@ -186,6 +187,17 @@ class CLIP_OT_kaiserlich_track(Operator):
                 if deleted:
                     logger.info(f"🗑️ Gelöscht: {deleted} kurze TRACK_ Marker")
                     show_popup(f"Gelöscht: {deleted} kurze TRACK_ Marker")
+                # Rename remaining TRACK_ markers to GOOD_
+                remaining = [
+                    t
+                    for t in clip.tracking.tracks
+                    if t.name.startswith("TRACK_")
+                ]
+                if remaining:
+                    rename_tracks(remaining, prefix="GOOD_")
+                    logger.info(
+                        f"✅ Umbenannt: {len(remaining)} TRACK_ Marker zu GOOD_"
+                    )
 
             if not run_in_clip_editor(clip, run_ops):
                 logger.info("Kein Clip Editor zum Ausführen der Operatoren gefunden")
