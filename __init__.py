@@ -137,13 +137,17 @@ class CLIP_OT_kaiserlich_track(Operator):
         # Der aktuelle Clip wird übergeben, damit der Callback unabhängig vom
         # aktiven Kontext funktioniert.
         def after_proxy(clip):
-            if clip and clip.use_proxy:
-                logger.info("Proxy-Zeitlinie wird deaktiviert")
-                clip.use_proxy = False
-                show_popup("Proxy-Zeitlinie wurde deaktiviert")
+            if clip:
+                if not clip.use_proxy:
+                    logger.info("Proxy-Zeitlinie wird aktiviert")
+                    clip.use_proxy = True
+                    show_popup("Proxy-Zeitlinie wurde aktiviert")
+                else:
+                    logger.info("Proxy bereits aktiviert")
+                    show_popup("Proxy bereits aktiviert")
             else:
-                logger.info("Proxy bereits deaktiviert oder kein Clip")
-                show_popup("Proxy bereits deaktiviert oder kein Clip")
+                logger.info("Kein Clip für Proxy-Schaltung")
+                show_popup("Kein Clip für Proxy-Schaltung")
 
             logger.info("Berechne minimale Marker-Eigenschaften")
             update_min_marker_props(scene, context)
@@ -155,6 +159,10 @@ class CLIP_OT_kaiserlich_track(Operator):
 
 
             def run_ops():
+                # Proxy einschalten, falls noch deaktiviert
+                if clip and not clip.use_proxy:
+                    bpy.ops.clip.toggle_proxy()
+
                 compute_margin_distance()
                 marker_plus = update_marker_count_plus(scene)
                 msg = (

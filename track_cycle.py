@@ -11,6 +11,10 @@ def auto_track_bidirectional(context):
         logger.info("Kein Clip gefunden")
         return
 
+    # Proxy vor dem Tracking aktivieren
+    if not clip.use_proxy:
+        bpy.ops.clip.toggle_proxy()
+
     scene = context.scene
     current_frame = scene.frame_current
     logger.info("Starte Rueckwaerts-Tracking")
