@@ -8,9 +8,17 @@ bl_info = {
     "category": "Movie Clip",
 }
 
-import bpy
-from bpy.types import Panel, Operator, AddonPreferences
-from bpy.props import IntProperty, FloatProperty, BoolProperty
+try:
+    import bpy
+    from bpy.types import Panel, Operator, AddonPreferences
+    from bpy.props import IntProperty, FloatProperty, BoolProperty
+    _BPy = True
+except ModuleNotFoundError:  # Allow running tests without Blender
+    import types
+    bpy = types.SimpleNamespace()
+    Panel = Operator = AddonPreferences = object
+    IntProperty = FloatProperty = BoolProperty = lambda *a, **k: None
+    _BPy = False
 import os
 import sys
 import importlib
@@ -65,23 +73,25 @@ if addon_dir not in sys.path:
     sys.path.append(addon_dir)
 
 
-from few_marker_frame import (
-    find_frame_with_few_tracking_markers,
-)
-from marker_count_plus import update_marker_count_plus
-from margin_utils import compute_margin_distance
-from playhead import (
-    get_tracking_marker_counts,
-)
-from count_new_markers import check_marker_range, count_new_markers
-import proxy_wait
-importlib.reload(proxy_wait)
-from proxy_wait import create_proxy_and_wait, remove_existing_proxies
-from update_min_marker_props import update_min_marker_props
-from distance_remove import CLIP_OT_remove_close_new_markers
-from proxy_switch import ToggleProxyOperator
-from detect import DetectFeaturesCustomOperator
-from iterative_detect import detect_until_count_matches
+if _BPy:
+    from few_marker_frame import (
+        find_frame_with_few_tracking_markers,
+    )
+    from marker_count_plus import update_marker_count_plus
+    from margin_utils import compute_margin_distance
+    from playhead import (
+        get_tracking_marker_counts,
+    )
+    from count_new_markers import check_marker_range, count_new_markers
+    import proxy_wait
+    importlib.reload(proxy_wait)
+    from proxy_wait import create_proxy_and_wait, remove_existing_proxies
+    from update_min_marker_props import update_min_marker_props
+    from distance_remove import CLIP_OT_remove_close_new_markers
+    from proxy_switch import ToggleProxyOperator
+    from detect import DetectFeaturesCustomOperator
+    from iterative_detect import detect_until_count_matches
+    from track_cycle import auto_track_bidirectional
 
 def show_popup(message, title="Info", icon='INFO'):
     """Display a temporary popup in Blender's UI."""
@@ -158,6 +168,9 @@ class CLIP_OT_kaiserlich_track(Operator):
                 new_count = detect_until_count_matches(context)
                 scene.new_marker_count = new_count
                 logger.info(f"TRACK_ Marker nach Iteration: {new_count}")
+                logger.info("Starte Auto-Tracking")
+                auto_track_bidirectional(context)
+                logger.info("Auto-Tracking abgeschlossen")
 
             if not run_in_clip_editor(clip, run_ops):
                 logger.info("Kein Clip Editor zum Ausführen der Operatoren gefunden")
