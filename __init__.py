@@ -92,6 +92,7 @@ if _BPy:
     from detect import DetectFeaturesCustomOperator
     from iterative_detect import detect_until_count_matches
     from track_cycle import auto_track_bidirectional
+    from delete_helpers import delete_short_tracks
 
 def show_popup(message, title="Info", icon='INFO'):
     """Display a temporary popup in Blender's UI."""
@@ -179,6 +180,12 @@ class CLIP_OT_kaiserlich_track(Operator):
                 logger.info("Starte Auto-Tracking")
                 auto_track_bidirectional(bpy.context)
                 logger.info("Auto-Tracking abgeschlossen")
+                deleted = delete_short_tracks(
+                    bpy.context, min_track_len, prefix="TRACK_"
+                )
+                if deleted:
+                    logger.info(f"🗑️ Gelöscht: {deleted} kurze TRACK_ Marker")
+                    show_popup(f"Gelöscht: {deleted} kurze TRACK_ Marker")
 
             if not run_in_clip_editor(clip, run_ops):
                 logger.info("Kein Clip Editor zum Ausführen der Operatoren gefunden")
