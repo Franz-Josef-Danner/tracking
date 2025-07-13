@@ -1,8 +1,8 @@
 import bpy
 import logging
-from margin_utils import compute_margin_distance, ensure_margin_distance
-from adjust_marker_count_plus import adjust_marker_count_plus
-from utils import get_active_clip
+from .margin_utils import compute_margin_distance, ensure_margin_distance
+from .adjust_marker_count_plus import adjust_marker_count_plus
+from .utils import get_active_clip
 
 logger = logging.getLogger(__name__)
 

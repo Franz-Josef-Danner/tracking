@@ -1,7 +1,7 @@
 import bpy
 import logging
-from rename_new import rename_tracks
-from utils import get_active_clip
+from .rename_new import rename_tracks
+from .utils import get_active_clip
 
 logger = logging.getLogger(__name__)
 

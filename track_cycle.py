@@ -1,9 +1,9 @@
 import bpy
 import logging
-from proxy_switch import ToggleProxyOperator
-from track_length import delete_short_tracks_with_prefix
-from few_marker_frame import set_playhead_to_low_marker_frame
-from utils import get_active_clip
+from .proxy_switch import ToggleProxyOperator
+from .track_length import delete_short_tracks_with_prefix
+from .few_marker_frame import set_playhead_to_low_marker_frame
+from .utils import get_active_clip
 
 logger = logging.getLogger(__name__)
 

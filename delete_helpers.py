@@ -6,7 +6,7 @@ NEW_ markers that are too close to GOOD_ markers in the current frame and
 
 import bpy
 import mathutils
-from utils import get_active_clip
+from .utils import get_active_clip
 
 
 def delete_close_new_markers(context, min_distance=0.02, report=None):

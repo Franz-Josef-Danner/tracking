@@ -1,5 +1,5 @@
 import bpy
-from utils import get_active_clip
+from .utils import get_active_clip
 
 class ToggleProxyOperator(bpy.types.Operator):
     """Proxy/Timecode Umschalten"""
