@@ -273,7 +273,7 @@ class CLIP_OT_kaiserlich_track(Operator):
             def run_ops():
                 # Proxy einschalten, falls noch deaktiviert
                 if clip and not clip.use_proxy:
-                    bpy.ops.clip.toggle_proxy()
+                    clip.use_proxy = True
 
                 scene.tracking_progress = 0.0
 
