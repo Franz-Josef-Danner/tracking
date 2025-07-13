@@ -195,6 +195,7 @@ class ProxyFlagTests(unittest.TestCase):
 
         self.assertFalse(clip.use_proxy)
 
+
     def test_track_cycle_enables_proxy(self):
         import track_cycle
 
