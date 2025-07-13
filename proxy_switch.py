@@ -21,6 +21,7 @@ class ToggleProxyOperator(bpy.types.Operator):
         if clip:
             clip.use_proxy = not clip.use_proxy
             state = "aktiviert" if clip.use_proxy else "deaktiviert"
+            print(f"Proxy {state}")
             self.report({'INFO'}, f"Proxy/Timecode {state}")
         else:
             self.report({'WARNING'}, "Kein Clip geladen")

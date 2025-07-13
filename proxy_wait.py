@@ -52,6 +52,7 @@ def create_proxy_and_wait(wait_time=0.0, on_finish=None, clip=None):
         return
 
     clip.use_proxy = True
+    print("Proxy aktiviert")
     # Proxy-Timecode aktivieren
     if hasattr(clip, "use_proxy_timecode"):
         clip.use_proxy_timecode = True

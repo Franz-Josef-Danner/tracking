@@ -34,6 +34,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         if clip.use_proxy:
             logger.info("Proxy für Detection deaktivieren")
             clip.use_proxy = False
+            print("Proxy deaktiviert")
 
         threshold = 1.0
         base_plus = context.scene.min_marker_count_plus
