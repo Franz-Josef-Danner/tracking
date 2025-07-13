@@ -21,11 +21,11 @@ the helper scripts sit directly in the archive root before installing.
 1. Open the Movie Clip Editor and switch to **Tracking** context.
 2. Press **N** to reveal the sidebar and choose the **Kaiserlich** tab.
 3. Adjust the properties and click **Start** to run the operator.
-4. Existing proxies are removed, then a 50% proxy and a timecode
-   index are built. The addon waits up to 300&nbsp;s for a proxy
-   file to appear, printing a countdown in the console. After that it
-   disables the proxy timeline, detects features and filters them
-   automatically.
+4. Existing proxies are removed, then a 50% AVI proxy and a timecode
+   index are built. The addon waits up to 300&nbsp;s for the final
+   ``proxy_50.avi`` file, polling until its size stops changing. After
+   that it disables the proxy timeline, detects features and filters
+   them automatically.
 
 The main operator now relies on `detect_until_count_matches`. This helper
 repeatedly runs feature detection and adapts the settings until the number of
