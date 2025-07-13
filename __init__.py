@@ -135,13 +135,18 @@ def run_tracking_cycle(context, clip, min_marker, min_track_len):
     scene = context.scene
     settings = clip.tracking.settings
     global visited_frames
+    visited_frames.clear()
     pattern_size = settings.default_pattern_size
+    start = scene.frame_start
+    end = scene.frame_end
+    total = end - start + 1
 
     while True:
         counts = get_tracking_marker_counts()
         frame = find_frame_with_few_tracking_markers(counts, min_marker)
         if frame is None:
             break
+
 
         scene.frame_current = frame
         logger.info(f"Playhead auf Frame {frame} gesetzt.")
@@ -227,6 +232,9 @@ class CLIP_OT_kaiserlich_track(Operator):
                 if clip and not clip.use_proxy:
                     bpy.ops.clip.toggle_proxy()
 
+                # Modaloperator zum visuellen Fortschritt starten
+                bpy.ops.clip.modal_tracker('INVOKE_DEFAULT')
+
                 run_tracking_cycle(bpy.context, clip, min_marker, min_track_len)
 
                 # Nach Abschluss sicherstellen, dass kein Frame mehr uebrig ist
@@ -243,6 +251,37 @@ class CLIP_OT_kaiserlich_track(Operator):
         create_proxy_and_wait(wait_time, on_finish=after_proxy, clip=active_clip)
 
         return {'FINISHED'}
+
+
+class ModalTrackerOperator(Operator):
+    bl_idname = "clip.modal_tracker"
+    bl_label = "Visual Tracker"
+
+    _timer = None
+    frame = 1
+
+    def modal(self, context, event):
+        if event.type == 'TIMER':
+            self.frame += 1
+            if self.frame > 10:
+                self.cancel(context)
+                return {'FINISHED'}
+
+            track = context.space_data.clip.tracking.tracks.active
+            track.markers.add_frame(self.frame)
+            context.area.tag_redraw()
+
+        return {'PASS_THROUGH'}
+
+    def execute(self, context):
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.5, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def cancel(self, context):
+        wm = context.window_manager
+        wm.event_timer_remove(self._timer)
 
 
 class CLIP_PT_kaiserlich_track(Panel):
@@ -304,6 +343,7 @@ def register():
     bpy.utils.register_class(CLIP_OT_kaiserlich_track)
     bpy.utils.register_class(CLIP_PT_kaiserlich_track)
     bpy.utils.register_class(CLIP_OT_remove_close_new_markers)
+    bpy.utils.register_class(ModalTrackerOperator)
     configure_logging()
 
 
@@ -311,6 +351,7 @@ def unregister():
     bpy.utils.unregister_class(CLIP_OT_kaiserlich_track)
     bpy.utils.unregister_class(CLIP_PT_kaiserlich_track)
     bpy.utils.unregister_class(CLIP_OT_remove_close_new_markers)
+    bpy.utils.unregister_class(ModalTrackerOperator)
     bpy.utils.unregister_class(ToggleProxyOperator)
     bpy.utils.unregister_class(DetectFeaturesCustomOperator)
     bpy.utils.unregister_class(KaiserlichAddonPreferences)
