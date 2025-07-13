@@ -33,7 +33,7 @@ def detect_until_count_matches(context):
 
     settings = clip.tracking.settings
     base_idx = len(clip.tracking.tracks)
-    threshold = 1.0
+    threshold = getattr(scene, "error_threshold", 1.0)
     margin, distance, _ = ensure_margin_distance(clip, threshold)
 
     logger.info("Initialer Threshold: %.4f", threshold)

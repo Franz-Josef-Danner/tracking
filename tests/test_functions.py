@@ -195,6 +195,50 @@ class ProxyFlagTests(unittest.TestCase):
 
         self.assertFalse(clip.use_proxy)
 
+    def test_iterative_detect_uses_error_threshold(self):
+        import iterative_detect
+
+        class Clip:
+            def __init__(self):
+                self.use_proxy = True
+                self.tracking = types.SimpleNamespace(
+                    tracks=[],
+                    settings=types.SimpleNamespace(
+                        default_pattern_size=0,
+                        default_motion_model="",
+                    ),
+                )
+
+        clip = Clip()
+        scene = types.SimpleNamespace(
+            marker_count_plus_min=0,
+            marker_count_plus_max=2,
+            min_marker_count_plus=1,
+            new_marker_count=0,
+            error_threshold=0.5,
+        )
+        context = types.SimpleNamespace(
+            scene=scene,
+            space_data=types.SimpleNamespace(clip=clip),
+        )
+
+        bpy.ops = types.SimpleNamespace(
+            clip=types.SimpleNamespace(
+                detect_features=lambda **kw: clip.tracking.tracks.append(
+                    DummyTrack("x")
+                ),
+                delete_track=lambda: clip.tracking.tracks.clear(),
+            )
+        )
+
+        with mock.patch.object(iterative_detect, "compute_margin_distance"), \
+                mock.patch.object(iterative_detect, "ensure_margin_distance", return_value=(1, 1, 1)) as emd, \
+                mock.patch.object(iterative_detect, "rename_new_tracks"), \
+                mock.patch.object(iterative_detect, "count_new_markers", return_value=1):
+            iterative_detect.detect_until_count_matches(context)
+
+        emd.assert_any_call(clip, 0.5)
+
     def test_track_cycle_enables_proxy(self):
         import track_cycle
 
