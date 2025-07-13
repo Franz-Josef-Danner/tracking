@@ -24,6 +24,10 @@ import sys
 import importlib
 import logging
 
+# pattern size handling
+PATTERN_SIZE_START = 50
+PATTERN_SIZE_MAX = 100
+
 logger = logging.getLogger(__name__)
 if not logger.handlers:
     handler = logging.StreamHandler()
@@ -136,7 +140,8 @@ def run_tracking_cycle(context, clip, min_marker, min_track_len):
     settings = clip.tracking.settings
     global visited_frames
     visited_frames.clear()
-    pattern_size = settings.default_pattern_size
+    pattern_size = min(PATTERN_SIZE_START, PATTERN_SIZE_MAX)
+    settings.default_pattern_size = pattern_size
     start = scene.frame_start
     end = scene.frame_end
     total = end - start + 1
@@ -162,9 +167,11 @@ def run_tracking_cycle(context, clip, min_marker, min_track_len):
             visited_frames.add(frame)
             reset_motion_model(settings)
             pattern_size = max(1, int(pattern_size * 0.9))
+            pattern_size = min(pattern_size, PATTERN_SIZE_MAX)
         else:
             cycle_motion_model(settings)
             pattern_size = int(pattern_size * 1.1)
+            pattern_size = min(pattern_size, PATTERN_SIZE_MAX)
 
         settings.default_pattern_size = pattern_size
         settings.default_search_size = settings.default_pattern_size * 2

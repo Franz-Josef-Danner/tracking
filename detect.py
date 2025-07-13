@@ -3,6 +3,10 @@ import logging
 from margin_utils import compute_margin_distance, ensure_margin_distance
 from adjust_marker_count_plus import adjust_marker_count_plus
 
+# Clamp pattern sizes to a sane range
+PATTERN_SIZE_START = 50
+PATTERN_SIZE_MAX = 100
+
 logger = logging.getLogger(__name__)
 
 # Operator-Klasse
@@ -31,7 +35,7 @@ class DetectFeaturesCustomOperator(bpy.types.Operator):
         min_new = context.scene.min_marker_count
         base_count = len(clip.tracking.tracks)
         settings = clip.tracking.settings
-        settings.default_pattern_size = 50
+        settings.default_pattern_size = min(PATTERN_SIZE_START, PATTERN_SIZE_MAX)
         settings.default_search_size = settings.default_pattern_size * 2
 
         # Werte aus margin_utils verwenden und an Threshold anpassen
