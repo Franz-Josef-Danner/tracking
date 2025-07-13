@@ -46,7 +46,7 @@ class TRACK_OT_auto_track_bidir(bpy.types.Operator):
         print("Marker gesetzt -> beginne Tracking")
 
         def track_range(track):
-            frames = [m.frame for m in track.markers]
+            frames = [m.frame for m in getattr(track, "markers", [])]
             return (min(frames), max(frames)) if frames else (None, None)
 
         ranges_before = {t.name: track_range(t) for t in track_sel}
@@ -56,19 +56,24 @@ class TRACK_OT_auto_track_bidir(bpy.types.Operator):
 
         scene = context.scene
         current_frame = scene.frame_current
+        start_frame = scene.frame_start
         logger.info("Aktueller Frame: %s", current_frame)
         print(f"Aktueller Frame: {current_frame}")
 
-        logger.info("Starte Rückwärts-Tracking...")
-        print("Starte Rückwärts-Tracking...")
-        logger.info(
-            "-- Rueckwaerts: %d Marker ab Frame %d",
-            len(track_sel),
-            current_frame,
-        )
-        bpy.ops.clip.track_markers(backwards=True, sequence=True)
-        logger.info("Rückwärts-Tracking abgeschlossen.")
-        print("Rückwärts-Tracking abgeschlossen.")
+        if current_frame == start_frame:
+            logger.info("Playhead at start; skipping backward tracking")
+            print("Playhead at start; skipping backward tracking")
+        else:
+            logger.info("Starte Rückwärts-Tracking...")
+            print("Starte Rückwärts-Tracking...")
+            logger.info(
+                "-- Rueckwaerts: %d Marker ab Frame %d",
+                len(track_sel),
+                current_frame,
+            )
+            bpy.ops.clip.track_markers(backwards=True, sequence=True)
+            logger.info("Rückwärts-Tracking abgeschlossen.")
+            print("Rückwärts-Tracking abgeschlossen.")
 
         ranges_after_back = {t.name: track_range(t) for t in track_sel}
         for name, rng in ranges_after_back.items():
