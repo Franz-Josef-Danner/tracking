@@ -1,7 +1,7 @@
-"""Create a 50% proxy and wait for its files to appear.
+"""Create a 50% proxy and wait for the finished AVI file.
 
 The optional ``on_finish`` callback is invoked with the active clip once
-the first proxy file is detected or the timeout expires.
+``proxy_50.avi`` is fully written or the timeout expires.
 """
 # Debug print of this file's path was removed to keep the console clean.
 
@@ -61,6 +61,8 @@ def create_proxy_and_wait(wait_time=0.0, on_finish=None, clip=None):
     clip.proxy.build_50 = True
     clip.proxy.build_75 = False
     clip.proxy.build_100 = False
+    if hasattr(clip.proxy, "build_avi"):
+        clip.proxy.build_avi = True
     clip.proxy.quality = 50
     clip.use_proxy_custom_directory = True
     clip.proxy.directory = PROXY_DIR
@@ -70,9 +72,11 @@ def create_proxy_and_wait(wait_time=0.0, on_finish=None, clip=None):
     logger.info("Proxy-Erstellung gestartet…")
     sys.stdout.flush()
 
-    proxy_pattern = os.path.join(full_proxy, "**", "proxy_50.*")
+    proxy_pattern = os.path.join(full_proxy, "**", "proxy_50.avi")
     wait_seconds = wait_time if wait_time > 0 else 180
     start = time.time()
+
+    last_size = [-1]
 
     def check():
         matches = [
@@ -81,14 +85,19 @@ def create_proxy_and_wait(wait_time=0.0, on_finish=None, clip=None):
             if os.path.isfile(p) and "_part" not in os.path.basename(p)
         ]
         if matches:
-            logger.info("Proxy-Datei gefunden")
-            logger.info("Proxy-Erstellung abgeschlossen")
-            if on_finish:
-                logger.info("Führe nachgelagerte Schritte aus")
-            sys.stdout.flush()
-            if on_finish:
-                on_finish(clip)
-            return None
+            file_path = matches[0]
+            current_size = os.path.getsize(file_path)
+            if current_size == last_size[0]:
+                logger.info("Proxy-Datei gefunden")
+                logger.info("Proxy-Erstellung abgeschlossen")
+                if on_finish:
+                    logger.info("Führe nachgelagerte Schritte aus")
+                sys.stdout.flush()
+                if on_finish:
+                    on_finish(clip)
+                return None
+            last_size[0] = current_size
+            return 1.0
 
         elapsed = time.time() - start
         if elapsed >= wait_seconds:
@@ -107,10 +116,7 @@ def create_proxy_and_wait(wait_time=0.0, on_finish=None, clip=None):
             sys.stdout.flush()
         return 1.0
 
-    logger.info(
-        "Warte auf die erste Proxy-Datei (Blender legt mehrere Dateien an, "
-        "sobald eine erscheint, geht es weiter)"
-    )
+    logger.info("Warte auf die fertige Proxy-Datei proxy_50.avi …")
     sys.stdout.flush()
 
     bpy.ops.clip.rebuild_proxy('INVOKE_DEFAULT')
