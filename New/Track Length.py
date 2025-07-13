@@ -1,4 +1,7 @@
 import bpy
+import logging
+
+logger = logging.getLogger(__name__)
 
 class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
     bl_idname = "tracking.delete_short_tracks_with_prefix"
@@ -6,18 +9,18 @@ class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
     bl_description = "Delete tracking tracks with prefix 'TRACK_' and less than 25 frames"
 
     def execute(self, context):
-        print("\n=== [Operator gestartet: TRACKING_OT_delete_short_tracks_with_prefix] ===")
+        logger.info("=== [Operator gestartet: TRACKING_OT_delete_short_tracks_with_prefix] ===")
 
         clip = context.space_data.clip
         if not clip:
             self.report({'WARNING'}, "No clip loaded")
-            print("❌ Kein Movie Clip geladen – Abbruch.")
+            logger.info("❌ Kein Movie Clip geladen – Abbruch.")
             return {'CANCELLED'}
-        print(f"🎬 Clip: {clip.name}")
+        logger.info(f"🎬 Clip: {clip.name}")
 
         active_obj = clip.tracking.objects.active
         tracks = active_obj.tracks
-        print(f"📷 Aktives Objekt: {active_obj.name} — {len(tracks)} Tracks vorhanden")
+        logger.info(f"📷 Aktives Objekt: {active_obj.name} — {len(tracks)} Tracks vorhanden")
 
         # Filter nach Präfix und Marker-Anzahl
         tracks_to_delete = [
@@ -25,40 +28,40 @@ class TRACKING_OT_delete_short_tracks_with_prefix(bpy.types.Operator):
             if t.name.startswith("TRACK_") and len(t.markers) < 25
         ]
 
-        print("🎯 Tracks mit Präfix 'TRACK_' und < 25 Frames:")
+        logger.info("🎯 Tracks mit Präfix 'TRACK_' und < 25 Frames:")
         for t in tracks_to_delete:
-            print(f"   - {t.name} ({len(t.markers)} Frames)")
+            logger.info(f"   - {t.name} ({len(t.markers)} Frames)")
 
         for track in tracks:
             track.select = track in tracks_to_delete
 
         if not tracks_to_delete:
-            print("ℹ️ Keine passenden Tracks gefunden – beende.")
+            logger.info("ℹ️ Keine passenden Tracks gefunden – beende.")
             self.report({'INFO'}, "No short tracks found with prefix 'TRACK_'")
             return {'CANCELLED'}
 
-        print("🔎 Suche nach CLIP_EDITOR Bereich für Operator...")
+        logger.info("🔎 Suche nach CLIP_EDITOR Bereich für Operator...")
         for area in context.screen.areas:
             if area.type == 'CLIP_EDITOR':
                 for region in area.regions:
                     if region.type == 'WINDOW':
                         for space in area.spaces:
                             if space.type == 'CLIP_EDITOR':
-                                print("✅ Kontext bereit – führe delete_track() aus")
+                                logger.info("✅ Kontext bereit – führe delete_track() aus")
                                 with context.temp_override(
                                     area=area,
                                     region=region,
                                     space_data=space
                                 ):
                                     bpy.ops.clip.delete_track()
-                                print(f"🗑️ {len(tracks_to_delete)} Track(s) gelöscht.")
+                                logger.info(f"🗑️ {len(tracks_to_delete)} Track(s) gelöscht.")
                                 self.report({'INFO'}, f"Deleted {len(tracks_to_delete)} short tracks with prefix 'TRACK_'")
-                                print("=== [Operator erfolgreich beendet] ===\n")
+                                logger.info("=== [Operator erfolgreich beendet] ===")
                                 return {'FINISHED'}
 
-        print("❌ Kein geeigneter Clip Editor Bereich gefunden.")
+        logger.info("❌ Kein geeigneter Clip Editor Bereich gefunden.")
         self.report({'ERROR'}, "No Clip Editor area found.")
-        print("=== [Operator abgebrochen] ===\n")
+        logger.info("=== [Operator abgebrochen] ===")
         return {'CANCELLED'}
 
 class TRACKING_PT_custom_panel(bpy.types.Panel):
@@ -74,12 +77,12 @@ class TRACKING_PT_custom_panel(bpy.types.Panel):
 def register():
     bpy.utils.register_class(TRACKING_OT_delete_short_tracks_with_prefix)
     bpy.utils.register_class(TRACKING_PT_custom_panel)
-    print("🔧 Operator & Panel registriert")
+    logger.info("🔧 Operator & Panel registriert")
 
 def unregister():
     bpy.utils.unregister_class(TRACKING_OT_delete_short_tracks_with_prefix)
     bpy.utils.unregister_class(TRACKING_PT_custom_panel)
-    print("🧹 Operator & Panel entfernt")
+    logger.info("🧹 Operator & Panel entfernt")
 
 if __name__ == "__main__":
     register()
