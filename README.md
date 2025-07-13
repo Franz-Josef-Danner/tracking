@@ -30,8 +30,10 @@ After the frame appears ten times in a row the operator stops with a warning.
 
 ### Callbacks
 
-Custom scripts can run after the iterative detection finishes. Register a
-function with ``register_after_detect_callback`` before starting the operator:
+Custom scripts can run after the iterative detection finishes. **This
+registration must be done every time the addon is loaded** so the callback can
+run additional steps such as bidirectional tracking. Register a function with
+``register_after_detect_callback`` before starting the operator:
 
 ```python
 import tracking
