@@ -32,7 +32,7 @@ def detect_until_count_matches(context):
     base_idx = len(clip.tracking.tracks)
     threshold = 1.0
     margin, distance, _ = ensure_margin_distance(clip, threshold)
-    print(f"Starte detection mit {base_idx} vorhandenen Tracks")
+    logger.info("Starte detection mit %d vorhandenen Tracks", base_idx)
 
     def detect_step():
         bpy.ops.clip.detect_features(
@@ -56,14 +56,20 @@ def detect_until_count_matches(context):
     new_count = detect_step()
     min_expected = scene.marker_count_plus_min
     max_expected = scene.marker_count_plus_max
-    print(
-        f"Verifiziere Menge: {new_count} Marker, erwartet {min_expected}-{max_expected}"
+    logger.info(
+        "Verifiziere Menge: %d Marker, erwartet %d-%d",
+        new_count,
+        min_expected,
+        max_expected,
     )
 
     while not (min_expected <= new_count <= max_expected) and threshold > 0.0001:
-        print(
-            f"{new_count} Marker ausserhalb von {min_expected}-{max_expected}, "
-            f"neuer Threshold {threshold:.4f}"
+        logger.info(
+            "%d Marker ausserhalb von %d-%d, neuer Threshold %.4f",
+            new_count,
+            min_expected,
+            max_expected,
+            threshold,
         )
         prev_count = new_count
         delete_tracks = list(clip.tracking.tracks)[base_idx:]
@@ -82,7 +88,10 @@ def detect_until_count_matches(context):
     final_tracks = list(clip.tracking.tracks)[base_idx:]
     rename_new_tracks(final_tracks, prefix="TRACK_")
     logger.info("Finale TRACK_ Marker: %s", [t.name for t in final_tracks])
-    print(
-        f"Ergebnis: {len(final_tracks)} TRACK_ Marker innerhalb {min_expected}-{max_expected}"
+    logger.info(
+        "Ergebnis: %d TRACK_ Marker innerhalb %d-%d",
+        len(final_tracks),
+        min_expected,
+        max_expected,
     )
     return new_count

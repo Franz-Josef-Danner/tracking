@@ -48,6 +48,14 @@ It then launches ``auto_track_bidir`` to track all ``TRACK_`` markers and
 finally removes short ones with ``delete_short_tracks_with_prefix``.
 Remaining tracks are renamed with the ``GOOD_`` prefix.
 
+#### Automatic registration
+
+To avoid running these lines manually each time, create a text block in
+Blender's Text Editor containing the callback registration and enable
+"Register" so the snippet executes on file load. You can also copy the same
+code to a startup script inside ``scripts/startup`` to run it whenever Blender
+launches.
+
 ### Properties
 
 The panel exposes several options:

@@ -230,14 +230,16 @@ class CLIP_OT_kaiserlich_track(Operator):
                             [t.name for t in clip_final.tracking.tracks if t.name.startswith("TRACK_")]
                             if clip_final else []
                         )
-                        print(
-                            f"Wechsel zu Tracking mit {len(tracks)} TRACK_ Markern: {tracks}"
+                        logger.info(
+                            "Wechsel zu Tracking mit %d TRACK_ Markern: %s",
+                            len(tracks),
+                            tracks,
                         )
                         on_after_detect(context)
                     except Exception:
                         logger.exception("Fehler im After-Detect Callback")
                 else:
-                    print(
+                    logger.warning(
                         "Kein After-Detect Callback registriert \u2013 nur Erkennung ausgef\u00fchrt"
                     )
 
