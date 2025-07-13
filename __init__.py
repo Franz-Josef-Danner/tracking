@@ -120,6 +120,8 @@ if BLENDER_AVAILABLE:
     from .detect import DetectFeaturesCustomOperator
     from .iterative_detect import detect_until_count_matches
     from .auto_track_bidir import TRACK_OT_auto_track_bidir
+    from .utils import get_active_clip
+    from . import track_cycle
 
 def show_popup(message, title="Info", icon='INFO'):
     """Display a temporary popup in Blender's UI."""
@@ -224,9 +226,26 @@ class CLIP_OT_kaiserlich_track(Operator):
 
                 if on_after_detect:
                     try:
+                        clip_final = get_active_clip(context)
+                        tracks = (
+                            [t.name for t in clip_final.tracking.tracks if t.name.startswith("TRACK_")]
+                            if clip_final else []
+                        )
+                        logger.info(
+                            "Wechsel zu Tracking mit %d TRACK_ Markern: %s",
+                            len(tracks),
+                            tracks,
+                        )
+                        print(
+                            f"Wechsel zu Tracking mit {len(tracks)} TRACK_ Markern: {tracks}"
+                        )
                         on_after_detect(context)
                     except Exception:
                         logger.exception("Fehler im After-Detect Callback")
+                else:
+                    msg = "Kein After-Detect Callback registriert – nur Erkennung ausgeführt"
+                    logger.warning(msg)
+                    print(f"tr: {msg}")
 
             if not run_in_clip_editor(clip, lambda: run_ops(after_detect_callback)):
                 logger.info("Kein Clip Editor zum Ausführen der Operatoren gefunden")
@@ -317,6 +336,9 @@ def register():
     bpy.utils.register_class(TRACK_OT_auto_track_bidir)
     bpy.utils.register_class(CLIP_OT_remove_close_new_markers)
     configure_logging()
+    register_after_detect_callback(track_cycle.run)
+    logger.info("After-Detect Callback auto-registered: track_cycle.run")
+    print("After-Detect Callback auto-registered: track_cycle.run")
 
 
 def unregister():
