@@ -120,6 +120,7 @@ if BLENDER_AVAILABLE:
     from .detect import DetectFeaturesCustomOperator
     from .iterative_detect import detect_until_count_matches
     from .auto_track_bidir import TRACK_OT_auto_track_bidir
+    from .utils import get_active_clip
 
 def show_popup(message, title="Info", icon='INFO'):
     """Display a temporary popup in Blender's UI."""
@@ -224,6 +225,14 @@ class CLIP_OT_kaiserlich_track(Operator):
 
                 if on_after_detect:
                     try:
+                        clip_final = get_active_clip(context)
+                        tracks = (
+                            [t.name for t in clip_final.tracking.tracks if t.name.startswith("TRACK_")]
+                            if clip_final else []
+                        )
+                        print(
+                            f"Wechsel zu Tracking mit {len(tracks)} TRACK_ Markern: {tracks}"
+                        )
                         on_after_detect(context)
                     except Exception:
                         logger.exception("Fehler im After-Detect Callback")

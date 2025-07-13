@@ -37,6 +37,8 @@ class TRACK_OT_auto_track_bidir(bpy.types.Operator):
             self.report({'WARNING'}, "Keine TRACK_ Marker gefunden")
             return {'CANCELLED'}
         logger.info("Tracking %d TRACK_ Marker", len(track_sel))
+        print(f"Ausgewaehlte TRACK_ Marker: {[t.name for t in track_sel]}")
+        print("Marker gesetzt -> beginne Tracking")
 
         def track_range(track):
             frames = [m.frame for m in track.markers]
@@ -51,6 +53,7 @@ class TRACK_OT_auto_track_bidir(bpy.types.Operator):
         logger.info("Aktueller Frame: %s", current_frame)
 
         logger.info("Starte Rückwärts-Tracking...")
+        print(f"-- Rueckwaerts: {len(track_sel)} Marker ab Frame {current_frame}")
         bpy.ops.clip.track_markers(backwards=True, sequence=True)
         logger.info("Rückwärts-Tracking abgeschlossen.")
 
@@ -63,6 +66,7 @@ class TRACK_OT_auto_track_bidir(bpy.types.Operator):
         logger.info("Zurück zum Ausgangsframe: %s", current_frame)
 
         logger.info("Starte Vorwärts-Tracking...")
+        print(f"-- Vorwaerts: {len(track_sel)} Marker ab Frame {current_frame}")
         bpy.ops.clip.track_markers(backwards=False, sequence=True)
         logger.info("Vorwärts-Tracking abgeschlossen.")
 
