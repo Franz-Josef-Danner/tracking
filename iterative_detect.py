@@ -36,6 +36,8 @@ def detect_until_count_matches(context):
     threshold = 1.0
     margin, distance, _ = ensure_margin_distance(clip, threshold)
 
+    logger.info("Initialer Threshold: %.4f", threshold)
+
     def detect_step():
         if clip.use_proxy:
             logger.info("Proxy für Detection deaktivieren")
@@ -75,6 +77,7 @@ def detect_until_count_matches(context):
 
         min_plus = max(1, scene.min_marker_count_plus)
         threshold = max(threshold * ((prev_count + 0.1) / min_plus), 0.0001)
+        logger.info("Neuer Threshold: %.4f", threshold)
         margin, distance, _ = ensure_margin_distance(clip, threshold)
         new_count = detect_step()
         min_expected = scene.marker_count_plus_min
