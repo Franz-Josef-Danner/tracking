@@ -13,7 +13,8 @@ import time
 import glob
 import logging
 
-PROXY_DIR = "//BL_proxy/"
+# Store proxies in a custom directory inside the blend file's folder
+PROXY_DIR = "//BL_Tr_proxy/"
 
 logger = logging.getLogger(__name__)
 
