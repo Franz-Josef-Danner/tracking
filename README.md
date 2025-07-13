@@ -13,8 +13,8 @@ This repository contains a simple Blender addon. **Important:** zip the files di
 2. Press **N** to reveal the sidebar and choose the **Kaiserlich** tab.
 3. Adjust the properties and click **Start** to run the operator.
 4. Existing proxies are removed, then a 50% proxy and a timecode
-   index are built. The addon waits up to 300&nbsp;s for a proxy
-   file to appear, printing a countdown in the console. After that it
+   index are built. The addon waits up to 300&nbsp;s for the proxy
+   render to finish, printing a countdown in the console. After that it
    disables the proxy timeline, detects features and filters them
    automatically. When a callback is registered, additional actions
    such as bidirectional tracking can run afterward without a separate

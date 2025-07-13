@@ -69,6 +69,7 @@ def create_proxy_and_wait(wait_time=0.0, on_finish=None, clip=None):
     sys.stdout.flush()
 
     proxy_pattern = os.path.join(full_proxy, "**", "proxy_50.*")
+    partial_pattern = os.path.join(full_proxy, "**", "*.part")
     wait_seconds = wait_time if wait_time > 0 else 180
     start = time.time()
 
@@ -78,8 +79,11 @@ def create_proxy_and_wait(wait_time=0.0, on_finish=None, clip=None):
             for p in glob.glob(proxy_pattern, recursive=True)
             if os.path.isfile(p) and "_part" not in os.path.basename(p)
         ]
-        if matches:
-            logger.info("Proxy-Datei gefunden")
+        partials = [
+            p for p in glob.glob(partial_pattern, recursive=True) if os.path.isfile(p)
+        ]
+        if matches and not partials:
+            logger.info("Alle Proxy-Dateien vorhanden")
             logger.info("Proxy-Erstellung abgeschlossen")
             if on_finish:
                 logger.info("Führe nachgelagerte Schritte aus")

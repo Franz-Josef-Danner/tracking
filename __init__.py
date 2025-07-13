@@ -53,6 +53,12 @@ if not logger.handlers:
 # Optional callback invoked after feature detection has finished
 after_detect_callback = None
 
+
+def unregister_after_detect_callback():
+    """Clear the after-detect callback."""
+    global after_detect_callback
+    after_detect_callback = None
+
 def register_after_detect_callback(func):
     """Register ``func`` to run after feature detection completes."""
     global after_detect_callback
@@ -220,9 +226,7 @@ class CLIP_OT_kaiserlich_track(Operator):
                             scene.repeat_frame_hits = 1
                             reset_motion_model(settings)
                             decrease_marker_count_plus(scene, scene.marker_count_plus_base)
-                        new_count = detect_until_count_matches(context)
-                        scene.new_marker_count = new_count
-                        logger.info(f"TRACK_ Marker nach Iteration: {new_count}")
+                        logger.info("Marker gesetzt -> Tracking wird gestartet")
 
                 if on_after_detect:
                     try:
