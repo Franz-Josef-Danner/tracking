@@ -3,7 +3,6 @@
 The optional ``on_finish`` callback is invoked with the active clip once
 the first proxy file is detected or the timeout expires.
 """
-# Debug print of this file's path was removed to keep the console clean.
 
 import bpy
 import os
@@ -15,7 +14,6 @@ import logging
 
 # Import the helper from this add-on's utils module, not Blender's internal one.
 from .utils import get_active_clip
-print("🧪 get_active_clip geladen aus:", get_active_clip.__module__)
 
 PROXY_DIR = "//BL_proxy/"
 
