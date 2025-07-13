@@ -31,6 +31,8 @@ The main operator now relies on `detect_until_count_matches`. This helper
 repeatedly runs feature detection and adapts the settings until the number of
 markers falls within the expected range. Once a satisfactory count is achieved,
 all newly created tracks are renamed with the ``TRACK_`` prefix.
+Tracks shorter than the configured **min tracking length** are deleted
+automatically after tracking.
 
 ### Properties
 

@@ -118,3 +118,51 @@ def delete_new_markers(context, prefix="NEW_", report=None):
     if report:
         report({'ERROR'}, "Kein geeigneter Clip Editor Bereich gefunden")
     return 0
+
+
+def delete_short_tracks(context, min_length, prefix="TRACK_", report=None):
+    """Delete tracks shorter than ``min_length`` frames.
+
+    Only tracks whose names start with ``prefix`` are considered. Set
+    ``prefix`` to ``None`` to check all tracks.
+    """
+
+    space = getattr(context, "space_data", None)
+    clip = getattr(space, "clip", None)
+    if clip is None:
+        clip = getattr(context.scene, "clip", None)
+    if not clip:
+        if report:
+            report({'WARNING'}, "❌ Kein aktiver Clip gefunden.")
+        return 0
+
+    tracks = clip.tracking.tracks
+    if prefix:
+        to_remove = [t for t in tracks if t.name.startswith(prefix) and len(t.markers) < min_length]
+    else:
+        to_remove = [t for t in tracks if len(t.markers) < min_length]
+
+    if not to_remove:
+        return 0
+
+    for t in tracks:
+        t.select = False
+    for t in to_remove:
+        t.select = True
+
+    for area in context.screen.areas:
+        if area.type == 'CLIP_EDITOR':
+            for region in area.regions:
+                if region.type == 'WINDOW':
+                    for space in area.spaces:
+                        if space.type == 'CLIP_EDITOR':
+                            space.clip = clip
+                            with context.temp_override(area=area, region=region, space_data=space):
+                                bpy.ops.clip.delete_track()
+                            if report:
+                                report({'INFO'}, f"🗑️ Gelöscht: {len(to_remove)} kurze Tracks")
+                            return len(to_remove)
+
+    if report:
+        report({'ERROR'}, "Kein geeigneter Clip Editor Bereich gefunden")
+    return 0
