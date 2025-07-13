@@ -38,6 +38,14 @@ class TRACK_OT_auto_track_bidir(bpy.types.Operator):
             return {'CANCELLED'}
         logger.info("Tracking %d TRACK_ Marker", len(track_sel))
 
+        def track_range(track):
+            frames = [m.frame for m in track.markers]
+            return (min(frames), max(frames)) if frames else (None, None)
+
+        ranges_before = {t.name: track_range(t) for t in track_sel}
+        for name, rng in ranges_before.items():
+            print(f"Vor Tracking {name}: {rng}")
+
         scene = context.scene
         current_frame = scene.frame_current
         logger.info("Aktueller Frame: %s", current_frame)
@@ -46,6 +54,10 @@ class TRACK_OT_auto_track_bidir(bpy.types.Operator):
         bpy.ops.clip.track_markers(backwards=True, sequence=True)
         logger.info("Rückwärts-Tracking abgeschlossen.")
 
+        ranges_after_back = {t.name: track_range(t) for t in track_sel}
+        for name, rng in ranges_after_back.items():
+            print(f"Nach Rueckwaerts {name}: {rng}")
+
         # Zurück zum ursprünglichen Frame springen
         scene.frame_current = current_frame
         logger.info("Zurück zum Ausgangsframe: %s", current_frame)
@@ -53,6 +65,10 @@ class TRACK_OT_auto_track_bidir(bpy.types.Operator):
         logger.info("Starte Vorwärts-Tracking...")
         bpy.ops.clip.track_markers(backwards=False, sequence=True)
         logger.info("Vorwärts-Tracking abgeschlossen.")
+
+        ranges_after_forward = {t.name: track_range(t) for t in track_sel}
+        for name, rng in ranges_after_forward.items():
+            print(f"Nach Vorwaerts {name}: {rng}")
 
         # Sicherstellen, dass Frame wieder korrekt gesetzt ist
         scene.frame_current = current_frame
