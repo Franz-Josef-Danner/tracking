@@ -25,6 +25,7 @@ class TRACK_OT_auto_track_bidir(bpy.types.Operator):
         if not clip.use_proxy:
             print("Proxy für Tracking aktivieren…")
             clip.use_proxy = True
+            print("Proxy aktiviert")
 
         scene = context.scene
         current_frame = scene.frame_current
