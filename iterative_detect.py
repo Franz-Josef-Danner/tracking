@@ -31,6 +31,7 @@ def detect_until_count_matches(context):
 
     compute_margin_distance()
 
+    settings = clip.tracking.settings
     base_idx = len(clip.tracking.tracks)
     threshold = 1.0
     margin, distance, _ = ensure_margin_distance(clip, threshold)
@@ -45,11 +46,13 @@ def detect_until_count_matches(context):
         new_tracks = list(clip.tracking.tracks)[base_idx:]
         rename_new_tracks(new_tracks)
         logger.info(
-            "Detect step: %s %s %s",
-            f"threshold={threshold:.4f}",
-            f"→ erzeugt {len(new_tracks)} Marker",
-            f"{[t.name for t in new_tracks]}",
+            "Detect step: pattern_size=%s motion_model=%s threshold=%.4f -> %s",
+            settings.default_pattern_size,
+            settings.default_motion_model,
+            threshold,
+            len(new_tracks),
         )
+        logger.info("Neue Marker: %s", [t.name for t in new_tracks])
         new_count = count_new_markers(context, clip)
         logger.info(f"Gespeicherte NEW_-Marker: {scene.new_marker_count}")
         return new_count
