@@ -179,7 +179,6 @@ def run_tracking_cycle(context, clip, min_marker, min_track_len):
             context.window_manager.progress_update(frame - start)
 
         scene.frame_current = frame
-        logger.info(f"Playhead auf Frame {frame} gesetzt.")
 
         if frame not in visited_frames:
             visited_frames.add(frame)
@@ -193,6 +192,15 @@ def run_tracking_cycle(context, clip, min_marker, min_track_len):
 
         settings.default_pattern_size = pattern_size
         settings.default_search_size = settings.default_pattern_size * 2
+
+        threshold = getattr(scene, "error_threshold", "n/a")
+        logger.info(
+            "Playhead auf Frame %s gesetzt. threshold=%s pattern_size=%s min_marker_count=%s",
+            frame,
+            threshold,
+            pattern_size,
+            min_marker,
+        )
         logger.info(
             "Tracking: pattern_size=%s motion_model=%s",
             pattern_size,
@@ -268,7 +276,20 @@ class CLIP_OT_kaiserlich_track(Operator):
             frame = find_frame_with_few_tracking_markers(marker_counts, min_marker)
             if frame is not None:
                 context.scene.frame_current = frame
-                logger.info(f"Playhead auf Frame {frame} gesetzt.")
+
+                clip_settings = clip.tracking.settings if clip else None
+                pattern_size = (
+                    clip_settings.default_pattern_size if clip_settings else "n/a"
+                )
+                threshold = getattr(scene, "error_threshold", "n/a")
+
+                logger.info(
+                    "Playhead auf Frame %s gesetzt. threshold=%s pattern_size=%s min_marker_count=%s",
+                    frame,
+                    threshold,
+                    pattern_size,
+                    min_marker,
+                )
 
 
             def run_ops():
