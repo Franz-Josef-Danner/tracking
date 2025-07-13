@@ -41,6 +41,7 @@ The panel exposes several options:
 - **min marker pro frame** – minimum marker count per frame (default 10)
 - **min tracking length** – minimum length for each track (default 20)
 - **Error Threshold** – maximum error allowed for trackers (default 0.04)
+- **Tracking Progress** – shows progress of the tracking process
 
 ### Helper Scripts
 

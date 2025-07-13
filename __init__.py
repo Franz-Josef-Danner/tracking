@@ -135,13 +135,25 @@ def run_tracking_cycle(context, clip, min_marker, min_track_len):
     scene = context.scene
     settings = clip.tracking.settings
     global visited_frames
+    visited_frames.clear()
     pattern_size = settings.default_pattern_size
+    start = scene.frame_start
+    end = scene.frame_end
+    total = end - start + 1
+    if _BPy:
+        context.window_manager.progress_begin(0, total)
+    scene.tracking_progress = 0.0
 
     while True:
         counts = get_tracking_marker_counts()
         frame = find_frame_with_few_tracking_markers(counts, min_marker)
         if frame is None:
             break
+
+        progress = (frame - start) / total
+        scene.tracking_progress = max(0.0, min(1.0, progress))
+        if _BPy:
+            context.window_manager.progress_update(frame - start)
 
         scene.frame_current = frame
         logger.info(f"Playhead auf Frame {frame} gesetzt.")
@@ -179,6 +191,10 @@ def run_tracking_cycle(context, clip, min_marker, min_track_len):
                 f"✅ Umbenannt: {len(remaining)} TRACK_ Marker zu GOOD_"
             )
 
+    if _BPy:
+        context.window_manager.progress_update(total)
+        context.window_manager.progress_end()
+    scene.tracking_progress = 1.0
     logger.info("Keine Frames mit zu wenigen Markern mehr gefunden")
 
 
@@ -227,6 +243,8 @@ class CLIP_OT_kaiserlich_track(Operator):
                 if clip and not clip.use_proxy:
                     bpy.ops.clip.toggle_proxy()
 
+                scene.tracking_progress = 0.0
+
                 run_tracking_cycle(bpy.context, clip, min_marker, min_track_len)
 
                 # Nach Abschluss sicherstellen, dass kein Frame mehr uebrig ist
@@ -258,6 +276,7 @@ class CLIP_PT_kaiserlich_track(Panel):
         layout.prop(scene, "min_marker_count")
         layout.prop(scene, "min_tracking_length")
         layout.prop(scene, "error_threshold")
+        layout.prop(scene, "tracking_progress", slider=True)
         layout.operator(CLIP_OT_kaiserlich_track.bl_idname, text="Start")
 
 
@@ -298,6 +317,13 @@ def register():
         default=0,
         min=0,
     )
+    bpy.types.Scene.tracking_progress = FloatProperty(
+        name="Tracking Progress",
+        subtype='PERCENTAGE',
+        default=0.0,
+        min=0.0,
+        max=1.0,
+    )
     bpy.utils.register_class(ToggleProxyOperator)
     bpy.utils.register_class(DetectFeaturesCustomOperator)
     bpy.utils.register_class(KaiserlichAddonPreferences)
@@ -321,6 +347,7 @@ def unregister():
     del bpy.types.Scene.marker_count_plus_min
     del bpy.types.Scene.marker_count_plus_max
     del bpy.types.Scene.new_marker_count
+    del bpy.types.Scene.tracking_progress
 
 
 if __name__ == "__main__":
