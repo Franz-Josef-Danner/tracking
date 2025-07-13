@@ -23,11 +23,25 @@ logger = logging.getLogger(__name__)
 
 
 def set_playhead_to_low_marker_frame(minimum_count):
-    """Move the playhead to the first frame with too few markers."""
+    """Move the playhead to the first frame with too few markers and log info."""
     counts = get_tracking_marker_counts()
     frame = find_frame_with_few_tracking_markers(counts, minimum_count)
     if frame is not None:
-        bpy.context.scene.frame_current = frame
-        logger.info(f"Playhead auf Frame {frame} gesetzt.")
+        scene = bpy.context.scene
+        scene.frame_current = frame
+
+        clip = getattr(bpy.context.space_data, "clip", None)
+        settings = clip.tracking.settings if clip else None
+
+        pattern_size = settings.default_pattern_size if settings else "n/a"
+        threshold = getattr(scene, "error_threshold", "n/a")
+
+        logger.info(
+            "Playhead auf Frame %s gesetzt. threshold=%s pattern_size=%s min_marker_count=%s",
+            frame,
+            threshold,
+            pattern_size,
+            minimum_count,
+        )
     else:
         logger.info("Kein passender Frame gefunden.")
