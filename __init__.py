@@ -59,6 +59,12 @@ def register_after_detect_callback(func):
     after_detect_callback = func
 
 
+def unregister_after_detect_callback():
+    """Clear the callback registered with ``register_after_detect_callback``."""
+    global after_detect_callback
+    after_detect_callback = None
+
+
 def configure_logging():
     """Set log level based on addon preferences."""
     addon = bpy.context.preferences.addons.get(__name__)
@@ -320,6 +326,7 @@ def register():
 
 
 def unregister():
+    unregister_after_detect_callback()
     bpy.utils.unregister_class(CLIP_OT_kaiserlich_track)
     bpy.utils.unregister_class(CLIP_PT_kaiserlich_track)
     bpy.utils.unregister_class(CLIP_OT_remove_close_new_markers)
