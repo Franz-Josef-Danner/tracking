@@ -30,9 +30,10 @@ After the frame appears ten times in a row the operator stops with a warning.
 
 ### Callbacks
 
-Custom scripts can run after the iterative detection finishes. **This
-registration must be done every time the addon is loaded** so the callback can
-run additional steps such as bidirectional tracking. Register a function with
+Custom scripts can run after the iterative detection finishes.  Starting from
+this version the addon automatically registers ``track_cycle.run`` as the
+default callback so bidirectional tracking happens right away.  You can override
+this behaviour by registering your own function with
 ``register_after_detect_callback`` before starting the operator:
 
 ```python
@@ -41,8 +42,6 @@ import track_cycle
 
 tracking.register_after_detect_callback(track_cycle.run)
 ```
-Call ``unregister_after_detect_callback`` again when the callback is no longer needed to restore the default behavior.
-
 
 The callback receives the current ``context`` object. The example in
 ``track_cycle.py`` enables proxy/timecode again using the toggle operator.
@@ -52,11 +51,10 @@ Remaining tracks are renamed with the ``GOOD_`` prefix.
 
 #### Automatic registration
 
-To avoid running these lines manually each time, create a text block in
-Blender's Text Editor containing the callback registration and enable
-"Register" so the snippet executes on file load. You can also copy the same
-code to a startup script inside ``scripts/startup`` to run it whenever Blender
-launches.
+The addon hooks ``track_cycle.run`` during registration so you normally don't
+need to run any extra code.  If you prefer to manage callbacks yourself, you can
+still place ``register_after_detect_callback`` inside a text block or in a
+startup script so it runs automatically with Blender.
 
 ### Properties
 
