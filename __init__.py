@@ -235,13 +235,16 @@ class CLIP_OT_kaiserlich_track(Operator):
                             len(tracks),
                             tracks,
                         )
+                        print(
+                            f"Wechsel zu Tracking mit {len(tracks)} TRACK_ Markern: {tracks}"
+                        )
                         on_after_detect(context)
                     except Exception:
                         logger.exception("Fehler im After-Detect Callback")
                 else:
-                    logger.warning(
-                        "Kein After-Detect Callback registriert \u2013 nur Erkennung ausgef\u00fchrt"
-                    )
+                    msg = "Kein After-Detect Callback registriert – nur Erkennung ausgeführt"
+                    logger.warning(msg)
+                    print(f"tr: {msg}")
 
             if not run_in_clip_editor(clip, lambda: run_ops(after_detect_callback)):
                 logger.info("Kein Clip Editor zum Ausführen der Operatoren gefunden")
