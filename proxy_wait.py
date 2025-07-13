@@ -13,6 +13,7 @@ import time
 import glob
 import logging
 
+# Import the helper from this add-on's utils module, not Blender's internal one.
 from .utils import get_active_clip
 
 PROXY_DIR = "//BL_proxy/"
