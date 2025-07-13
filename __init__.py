@@ -253,7 +253,7 @@ class CLIP_OT_kaiserlich_track(Operator):
                 if not clip.use_proxy:
                     logger.info("Proxy-Zeitlinie wird aktiviert")
                     clip.use_proxy = True
-                    print("Proxy aktiviert")
+                    logger.info("Proxy aktiviert")
                     show_popup("Proxy-Zeitlinie wurde aktiviert")
                 else:
                     logger.info("Proxy bereits aktiviert")
@@ -275,7 +275,7 @@ class CLIP_OT_kaiserlich_track(Operator):
                 # Proxy einschalten, falls noch deaktiviert
                 if clip and not clip.use_proxy:
                     clip.use_proxy = True
-                    print("Proxy aktiviert")
+                    logger.info("Proxy aktiviert")
 
                 scene.tracking_progress = 0.0
 

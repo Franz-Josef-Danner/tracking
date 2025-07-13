@@ -1,4 +1,7 @@
 import bpy
+import logging
+
+logger = logging.getLogger(__name__)
 
 class TRACK_OT_auto_track_bidir(bpy.types.Operator):
     """Trackt ausgewählte Marker rückwärts und dann vorwärts vom aktuellen Frame aus"""
@@ -23,29 +26,29 @@ class TRACK_OT_auto_track_bidir(bpy.types.Operator):
             return {'CANCELLED'}
 
         if not clip.use_proxy:
-            print("Proxy für Tracking aktivieren…")
+            logger.info("Proxy für Tracking aktivieren…")
             clip.use_proxy = True
-            print("Proxy aktiviert")
+            logger.info("Proxy aktiviert")
 
         scene = context.scene
         current_frame = scene.frame_current
-        print(f"Aktueller Frame: {current_frame}")
+        logger.info(f"Aktueller Frame: {current_frame}")
 
-        print("Starte Rückwärts-Tracking...")
+        logger.info("Starte Rückwärts-Tracking...")
         bpy.ops.clip.track_markers(backwards=True, sequence=True)
-        print("Rückwärts-Tracking abgeschlossen.")
+        logger.info("Rückwärts-Tracking abgeschlossen.")
 
         # Zurück zum ursprünglichen Frame springen
         scene.frame_current = current_frame
-        print(f"Zurück zum Ausgangsframe: {current_frame}")
+        logger.info(f"Zurück zum Ausgangsframe: {current_frame}")
 
-        print("Starte Vorwärts-Tracking...")
+        logger.info("Starte Vorwärts-Tracking...")
         bpy.ops.clip.track_markers(backwards=False, sequence=True)
-        print("Vorwärts-Tracking abgeschlossen.")
+        logger.info("Vorwärts-Tracking abgeschlossen.")
 
         # Sicherstellen, dass Frame wieder korrekt gesetzt ist
         scene.frame_current = current_frame
-        print(f"Finaler Frame gesetzt auf: {current_frame}")
+        logger.info(f"Finaler Frame gesetzt auf: {current_frame}")
 
         return {'FINISHED'}
 
