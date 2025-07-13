@@ -165,11 +165,11 @@ class CLIP_OT_kaiserlich_track(Operator):
                 logger.info("Starte Feature-Erkennung")
                 sys.stdout.flush()
 
-                new_count = detect_until_count_matches(context)
+                new_count = detect_until_count_matches(bpy.context)
                 scene.new_marker_count = new_count
                 logger.info(f"TRACK_ Marker nach Iteration: {new_count}")
                 logger.info("Starte Auto-Tracking")
-                auto_track_bidirectional(context)
+                auto_track_bidirectional(bpy.context)
                 logger.info("Auto-Tracking abgeschlossen")
 
             if not run_in_clip_editor(clip, run_ops):
