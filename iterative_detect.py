@@ -37,6 +37,9 @@ def detect_until_count_matches(context):
     margin, distance, _ = ensure_margin_distance(clip, threshold)
 
     def detect_step():
+        if clip.use_proxy:
+            logger.info("Proxy für Detection deaktivieren")
+            clip.use_proxy = False
         bpy.ops.clip.detect_features(
             threshold=threshold,
             margin=margin,

@@ -13,7 +13,8 @@ def auto_track_bidirectional(context):
 
     # Proxy vor dem Tracking aktivieren
     if not clip.use_proxy:
-        bpy.ops.clip.toggle_proxy()
+        logger.info("Proxy für Tracking aktivieren")
+        clip.use_proxy = True
 
     scene = context.scene
     current_frame = scene.frame_current
