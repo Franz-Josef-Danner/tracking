@@ -81,6 +81,7 @@ if _BPy:
     from margin_utils import compute_margin_distance
     from playhead import (
         get_tracking_marker_counts,
+        set_playhead_to_low_marker_frame,
     )
     from count_new_markers import check_marker_range, count_new_markers
     import proxy_wait
@@ -198,6 +199,10 @@ class CLIP_OT_kaiserlich_track(Operator):
                     logger.info(
                         f"✅ Umbenannt: {len(remaining)} TRACK_ Marker zu GOOD_"
                     )
+
+                # Nach dem Umbenennen die Markeranzahl ueberpruefen und den
+                # Playhead auf den ersten Frame mit zu wenigen Markern setzen
+                set_playhead_to_low_marker_frame(min_marker)
 
             if not run_in_clip_editor(clip, run_ops):
                 logger.info("Kein Clip Editor zum Ausführen der Operatoren gefunden")
