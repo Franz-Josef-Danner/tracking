@@ -10,21 +10,14 @@ bl_info = {
 
 import bpy
 
-from .modules.operators.tracksycle_operator import (
-    KAISERLICH_OT_auto_track_cycle,
-    KAISERLICH_PT_tracking_tools,
-)
+from .modules.operators.tracksycle_operator import KAISERLICH_OT_auto_track_cycle
+from .modules.ui.kaiserlich_panel import KAISERLICH_PT_tracking_tools
 from bpy.props import IntProperty, FloatProperty, BoolProperty
-
-classes = [
-    KAISERLICH_OT_auto_track_cycle,
-    KAISERLICH_PT_tracking_tools,
-]
 
 
 def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
+    bpy.utils.register_class(KAISERLICH_OT_auto_track_cycle)
+    bpy.utils.register_class(KAISERLICH_PT_tracking_tools)
 
     bpy.types.Scene.min_marker_count = IntProperty(
         name="Minimale Markeranzahl",
@@ -55,8 +48,8 @@ def register():
 
 
 def unregister():
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
+    bpy.utils.unregister_class(KAISERLICH_PT_tracking_tools)
+    bpy.utils.unregister_class(KAISERLICH_OT_auto_track_cycle)
 
     del bpy.types.Scene.min_marker_count
     del bpy.types.Scene.min_track_length
