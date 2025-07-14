@@ -31,9 +31,12 @@ tracking-tracksycle/
 │   ├── playback/
 │   │   ├── __init__.py
 │   │   └── set_playhead.py
-│   └── util/
+│   ├── util/
+│   │   ├── __init__.py
+│   │   └── tracker_logger.py
+│   └── ui/
 │       ├── __init__.py
-│       └── tracker_logger.py
+│       └── kaiserlich_panel.py
 ```
 
 > **Hinweis:** Jeder Unterordner benötigt eine `__init__.py`, um als Modul erkannt zu werden.
