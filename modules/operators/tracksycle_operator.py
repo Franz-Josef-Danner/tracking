@@ -5,6 +5,7 @@ import bpy
 from ..proxy.proxy_wait import (
     create_proxy_and_wait_async,
     remove_existing_proxies,
+    detect_features_in_ui_context,
 )
 from ..util.tracker_logger import TrackerLogger, configure_logger
 
@@ -35,12 +36,20 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
         clip.proxy.directory = "//proxy"
         clip.proxy.timecode = 'FREE_RUN_NO_GAPS'
 
-        ctx = context.copy()
         for area in context.screen.areas:
             if area.type == 'CLIP_EDITOR':
-                ctx['area'] = area
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        for space in area.spaces:
+                            if space.type == 'CLIP_EDITOR':
+                                with context.temp_override(
+                                    area=area,
+                                    region=region,
+                                    space_data=space,
+                                ):
+                                    bpy.ops.clip.rebuild_proxy('INVOKE_DEFAULT')
+                                break
                 break
-        bpy.ops.clip.rebuild_proxy('INVOKE_DEFAULT')
 
         # state machine property
         scene.kaiserlich_tracking_state = 'WAIT_FOR_PROXY'
@@ -58,24 +67,11 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
                 scene.frame_set(scene.frame_current)
 
                 # Jetzt Feature Detection sicher aufrufen
-                for area in bpy.context.screen.areas:
-                    if area.type == 'CLIP_EDITOR':
-                        override = bpy.context.copy()
-                        override['area'] = area
-                        override['region'] = next(
-                            (r for r in area.regions if r.type == 'WINDOW'),
-                            area.regions[-1],
-                        )
-                        override['space_data'] = area.spaces.active
-
-                        bpy.ops.clip.detect_features(
-                            override,
-                            "EXEC_DEFAULT",
-                            threshold=1.0,
-                            margin=26,
-                            min_distance=265,
-                        )
-                        break
+                detect_features_in_ui_context(
+                threshold=1.0,
+                margin=26,
+                min_distance=265,
+                )
                 return None  # nur einmal ausf\u00fchren
 
             # Verzögerung von 0.5 Sekunden
