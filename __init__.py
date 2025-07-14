@@ -18,10 +18,12 @@ except ModuleNotFoundError:  # pragma: no cover - allows running tests without B
 from .modules.util.tracker_logger import configure_logger
 
 from .modules.operators.tracksycle_operator import KAISERLICH_OT_auto_track_cycle
+from .modules.operators.rename_tracks_modal import KAISERLICH_OT_rename_tracks_modal
 from .modules.ui.kaiserlich_panel import KAISERLICH_PT_tracking_tools
 
 classes = [
     KAISERLICH_OT_auto_track_cycle,
+    KAISERLICH_OT_rename_tracks_modal,
     KAISERLICH_PT_tracking_tools,
 ]
 

@@ -174,6 +174,7 @@ bpy.ops.clip.detect_features(threshold=dynamic, margin=width/200, distance=width
 * `threshold` wird bei unzureichender Markeranzahl iterativ angepasst (max. 10 Versuche)
 * `default_pattern_size` dynamisch, max. 100
 * Optionales Debug-Logging via `detect_features_no_proxy(..., logger=TrackerLogger())`
+* Bei sehr großen Clips kann `detect_features_async` genutzt werden, um die Erkennung per Timer zu unterteilen
 
 #### 📊 Threshold-Formel (Feature Detection)
 
