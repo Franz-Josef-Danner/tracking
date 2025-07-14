@@ -5,6 +5,27 @@ import os
 import time
 
 
+def wait_for_stable_file(path, timeout=60, check_interval=1, stable_time=3):
+    """Wait until ``path`` exists and its size no longer changes."""
+
+    start_time = time.time()
+    last_size = -1
+    same_size_count = 0
+
+    while time.time() - start_time < timeout:
+        if os.path.exists(path):
+            current_size = os.path.getsize(path)
+            if current_size == last_size:
+                same_size_count += 1
+                if same_size_count >= stable_time:
+                    return True
+            else:
+                same_size_count = 0
+                last_size = current_size
+        time.sleep(check_interval)
+    raise TimeoutError(f"Proxy file {path} not stable after {timeout} seconds")
+
+
 def remove_existing_proxies(clip, logger=None):
     """Delete previously generated proxy files if they exist.
 
@@ -99,8 +120,17 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
 
     def _wait_for_proxy():
         if os.path.exists(proxy_path):
-            if logger:
-                logger.info("Proxy file found.")
+            remaining = max(timeout - (time.time() - state["start"]), 0)
+            try:
+                wait_for_stable_file(proxy_path, timeout=remaining)
+            except TimeoutError as exc:
+                if logger:
+                    logger.error(str(exc))
+                else:
+                    print(f"ERROR: {exc}")
+            else:
+                if logger:
+                    logger.info("Proxy file found.")
             return None
         elapsed = time.time() - state["start"]
         if elapsed > timeout:
@@ -113,6 +143,14 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
 
     bpy.app.timers.register(_wait_for_proxy)
     return True
+
+
+__all__ = [
+    "wait_for_stable_file",
+    "remove_existing_proxies",
+    "create_proxy_and_wait",
+    "create_proxy_and_wait_async",
+]
 
 
 def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
@@ -180,8 +218,17 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
 
     def _wait_for_proxy():
         if os.path.exists(proxy_path):
-            if logger:
-                logger.info("Proxy file found.")
+            remaining = max(timeout - (time.time() - state["start"]), 0)
+            try:
+                wait_for_stable_file(proxy_path, timeout=remaining)
+            except TimeoutError as exc:
+                if logger:
+                    logger.error(str(exc))
+                else:
+                    print(f"ERROR: {exc}")
+            else:
+                if logger:
+                    logger.info("Proxy file found.")
             if callback:
                 callback()
             return None
