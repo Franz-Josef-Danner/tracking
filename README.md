@@ -1,14 +1,12 @@
-Verstanden. Du erwartest ein präzises, technisches `README.md` – mit Ablaufbeschreibung auf Codeebene, verwendeten Blender-APIs, Zustandslogik und Entwicklerinformationen. Hier die überarbeitete Fassung mit **technischer Tiefe**, **Modulstruktur**, **Zustandsdiagramm** und **API-Referenzen**:
-
 ---
 
-# 📽️ Kaiserlich Tracksycle – Technisches README
+# 🍴 Kaiserlich Tracksycle – Technisches README
 
 Ein automatisierter Tracking-Zyklus für Blender (ab 4.0), entwickelt zur robusten Feature-Erkennung und bidirektionalen Marker-Nachverfolgung mit dynamischer Reaktion auf Markerqualität, Proxystatus und Trackingfehler.
 
 ---
 
-## 🗂️ Struktur
+## 📂 Struktur
 
 ```
 tracking-tracksycle/
@@ -21,22 +19,30 @@ tracking-tracksycle/
 ├── set_playhead.py               # Playhead-Positionierung
 ├── motion_model.py               # Motion-Model-Cycling
 ├── tracker_logger.py             # Konfigurierbares Logging
+├── proxy_wait.py                 # Proxy-Erstellung und Warten (async)
 ```
 
 ---
 
-## 🧭 Ablaufplan (Operator: `KAISERLICH_OT_auto_track_cycle`)
+## 🧽 Ablaufplan (Operator: `KAISERLICH_OT_auto_track_cycle`)
 
-### 1. **Proxy-Handling**
+### 1. **Proxy-Handling (async)**
 
 ```python
-proxy_path = os.path.join(clip.directory, "BL_proxy", clip.name + ".avi")
-os.path.exists(proxy_path)
-clip.use_proxy = False
-clip.proxy.build_50 = False
+from .proxy_wait import create_proxy_and_wait
 ```
 
-Wartezeit: 5 Minuten (Polling alle 5s). Danach Abbruch mit UI-Fehlermeldung.
+* Entfernt zuvor generierte Proxy-Dateien via `remove_existing_proxies()`
+* Erstellt 50%-Proxy in `BL_Tr_proxy/`
+* Wartet asynchron mit Timer auf erste Proxy-Datei (`proxy_50.avi`, max. Timeout: 300s)
+* Nutzt Dateigrößen-Prüfung zur Validierung abgeschlossener Proxy-Erstellung
+* Implementiert überarbeitetes und stabiles Verfahren laut `proxy_wait (1).py`
+
+#### ✨ Besonderheiten der stabilen Version
+
+* Separate Thread-Logik zur Dateiprüfung
+* Fehlerbehandlung via Logging
+* Sauberes Abbrechen nach Timeout
 
 ---
 
@@ -46,8 +52,26 @@ Wartezeit: 5 Minuten (Polling alle 5s). Danach Abbruch mit UI-Fehlermeldung.
 bpy.ops.clip.detect_features(threshold=dynamic, margin=width/200, distance=width/20)
 ```
 
-* `threshold` wird bei unzureichender Markeranzahl iterativ angepasst (max. 10 Versuche).
-* `default_pattern_size` dynamisch, max. 100.
+* Proxy-Status wird vor jedem Aufruf deaktiviert: `clip.proxy.build_50 = False`, `clip.use_proxy = False`
+* `threshold` wird bei unzureichender Markeranzahl iterativ angepasst (max. 10 Versuche)
+* `default_pattern_size` dynamisch, max. 100
+
+#### 📊 Threshold-Formel (Feature Detection)
+
+Wenn `marker_count < min_marker_count`, wird `threshold` wie folgt angepasst:
+
+```python
+threshold = max(threshold * ((marker_count + 0.1) / expected), 0.0001)
+threshold = round(threshold, 5)
+```
+
+Dabei ist:
+
+* `expected = min_marker_count * 4`
+* `threshold_start = 1.0`
+* `0.0001` = untere Grenze zur Vermeidung von Null/Negativwerten
+
+Ziel: Empfindlichkeit steigt bei zu wenigen erkannten Features.
 
 ---
 
@@ -59,7 +83,8 @@ for track in clip.tracking.tracks:
         track.marked_for_deletion = True
 ```
 
-Entfernt Marker nahe `GOOD_`-Markern. Danach Umbenennung in `TRACK_`.
+* Entfernt Marker nahe `GOOD_`-Markern
+* Danach: automatische Umbenennung zu `TRACK_`
 
 ---
 
@@ -70,8 +95,8 @@ bpy.ops.clip.track_markers(forward=True)
 bpy.ops.clip.track_markers(backward=True)
 ```
 
-* Tracking aller `TRACK_`-Marker.
-* Kontextoverride über `context.temp_override()`.
+* Tracking aller `TRACK_`-Marker mit Kontextoverride `context.temp_override()`
+* UI-Override zwingend notwendig (da sonst `track_markers` nicht läuft)
 
 ---
 
@@ -124,7 +149,7 @@ REVIEW / LOOP
 
 ---
 
-## 🧰 Blender API Overview
+## 🛠️ Blender API Overview
 
 | Aktion                | API                                              |
 | --------------------- | ------------------------------------------------ |
@@ -135,12 +160,12 @@ REVIEW / LOOP
 | Kontext setzen        | `context.temp_override()`                        |
 | Pattern Size setzen   | `clip.tracking.settings.default_pattern_size`    |
 | Motion Model wechseln | `clip.tracking.settings.motion_model = 'Affine'` |
-| Tracks löschen        | manuell via `clip.tracking.tracks.remove(...)`   |
+| Tracks löschen        | `clip.tracking.tracks.remove(...)`               |
 | Playhead setzen       | `context.scene.frame_current = frame`            |
 
 ---
 
-## 🛠 Debug-Logging
+## 🔧 Debug-Logging
 
 ```python
 from .tracker_logger import TrackerLogger
@@ -165,6 +190,11 @@ logger.info(), logger.warn(), logger.error(), logger.debug()
   ```python
   getattr(scene, "min_marker_count", 10)
   ```
+* **Blender Version/Attributprüfung**:
+
+  ```python
+  if hasattr(settings, "motion_model"):
+  ```
 
 ---
 
@@ -177,7 +207,7 @@ logger.info(), logger.warn(), logger.error(), logger.debug()
 
 ---
 
-## 🧩 Integrationsempfehlung
+## 🧹 Integrationsempfehlung
 
 * `__init__.py` muss **alle Module explizit importieren**, z. B.:
 
@@ -185,7 +215,7 @@ logger.info(), logger.warn(), logger.error(), logger.debug()
   from .tracksycle_operator import KAISERLICH_OT_auto_track_cycle
   ```
 
-* Einfache UI-Integration:
+* UI-Integration via:
 
   ```python
   layout.operator("kaiserlich.auto_track_cycle", text="Auto Track")
@@ -193,4 +223,21 @@ logger.info(), logger.warn(), logger.error(), logger.debug()
 
 ---
 
-Möchtest du dieses `README.md` als Datei in dein Add-on einfügen? Ich kann es dir direkt generieren.
+## 🧹 UI-Integration (Blender Sidebar)
+
+### Panel: `KAISERLICH_PT_tracking_tools`
+
+| UI-Element                     | Typ               | Property                      | Tooltip Beschreibung                                              |
+| ------------------------------ | ----------------- | ----------------------------- | ----------------------------------------------------------------- |
+| **Auto Track starten**         | Button (Operator) | `kaiserlich.auto_track_cycle` | Startet den automatischen Tracking-Zyklus                         |
+| **Minimale Markeranzahl**      | `IntProperty`     | `scene.min_marker_count`      | Anzahl an erkannten Features, die mindestens erreicht werden soll |
+| **Tracking-Länge (min)**       | `IntProperty`     | `scene.min_track_length`      | Minimale Anzahl Frames pro Marker                                 |
+| **Fehler-Schwelle**            | `FloatProperty`   | `scene.error_threshold`       | Maximal tolerierter Reprojektionfehler                            |
+| **🛠 Debug Output aktivieren** | `BoolProperty`    | `scene.debug_output`          | Aktiviert ausführliches Logging zur Fehleranalyse                 |
+
+### Panel-Position in Blender:
+
+* Editor: **Movie Clip Editor**
+* Region: **Sidebar (**\`\`**)**
+* Tab: **„Kaiserlich“**
+* Kontext: `space_data.type == 'CLIP_EDITOR'`
