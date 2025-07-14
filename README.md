@@ -10,17 +10,17 @@ Ein automatisierter Tracking-Zyklus für Blender (ab 4.0), entwickelt zur robust
 
 ```
 tracking-tracksycle/
-├── __init__.py
-├── tracksycle_operator.py        # Hauptzyklus (Execute)
-├── distance_remove.py            # Entfernt Marker nahe GOOD_
-├── track.py                      # BIDIR Tracking aller TRACK_-Marker
-├── Track_Length.py               # Löscht Tracks unter min. Länge
-├── find_frame_with_few_tracking_markers.py
-├── set_playhead.py               # Playhead-Positionierung
-├── motion_model.py               # Motion-Model-Cycling
-├── tracker_logger.py             # Konfigurierbares Logging
-├── proxy_wait.py                 # Proxy-Erstellung und Warten (async)
+├── __init__.py           # Add-on entry point
+├── detect_features.py    # Dynamische Feature-Erkennung
+# Weitere Module sind geplant, aber noch nicht implementiert
 ```
+
+## Installation
+
+1. Erstelle ein ZIP-Archiv des Ordners `tracking_tracksycle`.
+2. In Blender unter **Edit → Preferences → Add-ons** auf **Install...** klicken und das ZIP wählen.
+3. Das Add-on "Kaiserlich Tracksycle" aktivieren.
+4. Den Operator `KAISERLICH_OT_detect_features` über die Suchfunktion oder ein eigenes Panel ausführen.
 
 ---
 
@@ -238,6 +238,12 @@ logger.info(), logger.warn(), logger.error(), logger.debug()
 ### Panel-Position in Blender:
 
 * Editor: **Movie Clip Editor**
-* Region: **Sidebar (**\`\`**)**
+* Region: **Sidebar (N)**
 * Tab: **„Kaiserlich“**
 * Kontext: `space_data.type == 'CLIP_EDITOR'`
+
+---
+
+## Lizenz
+
+Dieses Projekt steht unter der [MIT-Lizenz](LICENSE).
