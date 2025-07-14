@@ -58,11 +58,23 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
                 scene.frame_set(scene.frame_current)
 
                 # Jetzt Feature Detection sicher aufrufen
-                bpy.ops.clip.detect_features(
-                    threshold=1.0,
-                    margin=26,
-                    min_distance=265,
-                )
+                for area in bpy.context.screen.areas:
+                    if area.type == 'CLIP_EDITOR':
+                        override = bpy.context.copy()
+                        override['area'] = area
+                        override['region'] = next(
+                            (r for r in area.regions if r.type == 'WINDOW'),
+                            area.regions[-1],
+                        )
+                        override['space_data'] = area.spaces.active
+
+                        bpy.ops.clip.detect_features(
+                            override,
+                            threshold=1.0,
+                            margin=26,
+                            min_distance=265,
+                        )
+                        break
                 return None  # nur einmal ausf\u00fchren
 
             # Verzögerung von 0.5 Sekunden
