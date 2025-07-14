@@ -4,6 +4,15 @@ from __future__ import annotations
 
 import bpy
 
+try:
+    from bpy.types import Event
+    VALID_EVENT_TYPES = {
+        item.identifier for item in Event.bl_rna.properties["type"].enum_items
+    }
+except Exception:  # pragma: no cover - gracefully handle missing bpy in tests
+    Event = None
+    VALID_EVENT_TYPES = set()
+
 from ..util.tracker_logger import TrackerLogger
 
 
@@ -36,6 +45,9 @@ class KAISERLICH_OT_rename_tracks_modal(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
+        if event.type not in VALID_EVENT_TYPES:
+            return {'PASS_THROUGH'}
+
         if event.type == 'TIMER':
             if self._index >= len(self._tracks):
                 context.window_manager.event_timer_remove(self._timer)
