@@ -148,7 +148,7 @@ from modules.proxy.proxy_wait import create_proxy_and_wait
 ```
 
 * Entfernt zuvor generierte Proxy-Dateien via `remove_existing_proxies()`
-* Erstellt 50%-Proxy in `BL_Tr_proxy/`
+* Erstellt 50%-Proxy in `proxies/`
 * Wartet asynchron mit Timer auf erste Proxy-Datei (`proxy_50.avi`, max. Timeout: 300s)
 * Nutzt Dateigrößen-Prüfung zur Validierung abgeschlossener Proxy-Erstellung
 * Implementiert überarbeitetes und stabiles Verfahren laut `proxy_wait (1).py`
@@ -159,7 +159,7 @@ from modules.proxy.proxy_wait import create_proxy_and_wait
 * Fehlerbehandlung via Logging
 * Proxy-Pfad-Validierung (Existenz & Schreibrechte)
 * Fehlender Proxy-Ordner wird automatisch angelegt
-* Custom-Verzeichnis aktivieren via `clip.proxy.use_custom_directory = True`
+* Custom-Verzeichnis aktivieren via `clip.use_proxy_custom_directory = True`
 * Sauberes Abbrechen nach Timeout
 * ✉ Referenzdatei: `proxy_wait (1).py`
 
