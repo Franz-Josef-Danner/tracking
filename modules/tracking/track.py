@@ -28,7 +28,7 @@ def track_markers(context, forwards=True, backwards=True, logger=None):
             bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
         if backwards:
             bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
-    except Exception as exc:  # pylint: disable=broad-except
+    except RuntimeError as exc:
         if logger:
             logger.error(f"track_markers failed: {exc}")
         else:
