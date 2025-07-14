@@ -319,6 +319,13 @@ logger.info(), logger.warn(), logger.error(), logger.debug()
   if hasattr(settings, "motion_model"):
   ```
 
+* **Event-Validierung vor Verarbeitung**:
+
+  ```python
+  if event.type in bpy.types.Event.bl_rna.properties["type"].enum_items.keys():
+      pass
+  ```
+
 ---
 
 ## ✅ Voraussetzungen
