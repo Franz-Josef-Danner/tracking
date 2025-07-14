@@ -45,10 +45,13 @@ class KAISERLICH_OT_rename_tracks_modal(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
-        if event.type not in VALID_EVENT_TYPES:
+        event_type = getattr(event, "type", None)
+        if not isinstance(event_type, str):
+            return {'PASS_THROUGH'}
+        if event_type not in VALID_EVENT_TYPES:
             return {'PASS_THROUGH'}
 
-        if event.type == 'TIMER':
+        if event_type == 'TIMER':
             if self._index >= len(self._tracks):
                 context.window_manager.event_timer_remove(self._timer)
                 return {'FINISHED'}
