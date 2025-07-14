@@ -1,110 +1,346 @@
-# Tracking Add-on
+---
 
-This repository contains simple Blender scripts to automate movie clip
-tracking. The main script `combined_cycle.py` combines feature detection,
-auto tracking and playhead search in a repeating cycle. It can be run from
-the Blender text editor or installed as an add-on.
-All other scripts in this repository are prototypes of the individual steps
-now bundled in `combined_cycle.py`.
+# 🍴 Kaiserlich Tracksycle – Technisches README
 
-## Installation
-1. Open Blender and switch to the *Scripting* workspace.
-2. Load `combined_cycle.py` in the text editor and press **Run Script**, or
-   install the folder as an add-on via *Edit → Preferences → Add-ons →
-   Install...*.
+Ein automatisierter Tracking-Zyklus für Blender (ab 4.0), entwickelt zur robusten Feature-Erkennung und bidirektionalen Marker-Nachverfolgung mit dynamischer Reaktion auf Markerqualität, Proxystatus und Trackingfehler.
 
-When installed as an add-on, a single panel named **Tracking Cycle** appears in
-the Movie Clip Editor. It provides only the minimum marker count input, a
-progress label showing the current frame out of the total, and a button to start
-the cycle. Heavy operations like feature detection and auto tracking run
-synchronously and may temporarily block Blender's UI, so the status text helps
-indicate progress. The currently processed frame is also printed to the console
-for quick feedback. A boolean option **Cleanup Verbose** controls whether the
-distance from each `NEU_` marker to `GOOD_` markers is printed during cleanup.
+---
 
-The following operators are registered for internal use and can also be called
-via Blender's operator search:
+## 📂 Struktur
 
-- **Start Tracking Cycle** – iteratively searches for frames with few markers,
-  detects new features and tracks them forward.
-- **Auto Track Selected** – selects all tracks named `TRACK_*` and tracks them forward.
-- **Delete Short Tracks with Prefix** – removes all tracking tracks starting
-  with `TRACK_` that are shorter than the "Min Track Length" property and
-  renames the remaining ones to `GOOD_`.
-- **Clear RAM Cache** – reloads the current clip to free memory.
+```
+tracking_tracksycle/
+├── __init__.py
+├── modules/                      # Unterordner für logische Trennung
+│   ├── __init__.py
+│   ├── operators/
+│   │   ├── __init__.py
+│   │   └── tracksycle_operator.py
+│   ├── proxy/
+│   │   ├── __init__.py
+│   │   └── proxy_wait.py
+│   ├── detection/
+│   │   ├── __init__.py
+│   │   ├── distance_remove.py
+│   │   └── find_frame_with_few_tracking_markers.py
+│   ├── tracking/
+│   │   ├── __init__.py
+│   │   ├── track.py
+│   │   ├── motion_model.py
+│   │   └── track_length.py
+│   ├── playback/
+│   │   ├── __init__.py
+│   │   └── set_playhead.py
+│   ├── util/
+│   │   ├── __init__.py
+│   │   └── tracker_logger.py
+│   └── ui/
+│       ├── __init__.py
+│       └── kaiserlich_panel.py
+```
 
-The minimum marker count used for the playhead search is configured in the
-panel before running the operator. Feature detection now aims to create a
-number of new tracks between *Min Marker Count × 4 × 0.8* and
-*Min Marker Count × 4 × 1.2*. If too few or too many markers are found, the
-detection threshold is adjusted with
-``threshold *= (new_count + 0.1) / (Min Marker Count × 4)``
-and detection is attempted again until the
-result falls inside this range. The search margin and minimum distance scale
-with ``log10(threshold * 100000) / 5`` so wider thresholds consider a broader area.
-The threshold is clamped to a minimum of ``0.0001`` so it never becomes too small.
-Newly created markers receive the prefix `NEU_` during each attempt. If the
-detected count falls in the expected range they are renamed to `TRACK_`; if not
-they are deleted and detection runs again.
-After tracking forward and removing tracks that are too short, the remaining
-`TRACK_` markers are renamed to `GOOD_` so they are skipped in subsequent
-iterations.
-During the tracking cycle the RAM cache is cleared automatically before jumping
-to the next frame. Once the end frame is reached the playhead returns to the
-scene start and the cycle runs a second time. All detection values are reset to
-their defaults before this second pass begins.
-Each visited frame is remembered. If the playhead revisits one of these frames
-the value of **Marker Count Plus** increases by 10, widening the expected
-range for new markers. Landing on a new frame decreases the value by 10 again,
-but never below its original starting value. The "Marker Count Plus" value
-is clamped to ``Min Marker Count × 200``.
+> **Hinweis:** Jeder Unterordner benötigt eine `__init__.py`, um als Modul erkannt zu werden.
 
-If the playhead lands on the same frame as in the previous tracking step, the
-default pattern size for newly detected features grows by **10 %**. The motion
-model cycles to the next type (Loc → LocRot → LocScale → LocRotScale → Affine →
-Perspective). Reaching a new frame decreases the pattern size by the same
-percentage and resets the motion model back to **Loc**. The search size always
-updates to twice the current pattern size. Pattern sizes are capped at 150,
-allowing difficult frames to be tracked with progressively larger or smaller
-areas without exceeding this limit.
+### Aufbau eines `__init__.py`
 
-If the search finds the same frame twenty times in a row, the playhead jumps back to the scene start. All detection values reset to their defaults and the cycle continues from the beginning. Each repeated attempt prints
-``[Cycle] Repeat attempt n/20 on frame x`` to the console so it's easy to see how close the loop is to restarting.
+Die `__init__.py`-Dateien innerhalb der Subfolder können minimalistisch sein, z. B.:
 
-After each completed tracking cycle the camera solve is run automatically. If the reconstruction does not cover the entire scene the property **Min Marker Count** increases by ten percent and the cycle restarts. The script aborts after ten unsuccessful solve attempts.
+```python
+# modules/detection/__init__.py
+# Ermöglicht Modulimport wie: from modules.detection import distance_remove
+```
 
-## Standalone Cleanup Script
+Optional (für explizite Exporte):
 
-`distance_remove.py` is a small helper that can be run directly from
-Blender's text editor. When executed it registers the **Cleanup NEU_ Markers**
-operator, which deletes `NEU_` markers that are closer than a user-defined
-distance to existing `GOOD_` markers in the current frame. Running the script
-again automatically unregisters the previous instance so it can be tested
-multiple times without restarting Blender.
+```python
+from .distance_remove import *
+from .find_frame_with_few_tracking_markers import *
+```
 
-## Function Test Scripts
+Im Stamm-`__init__.py` erfolgt der Hauptimport:
 
-In addition to `combined_cycle.py` the repository includes several standalone
-scripts that were used to verify each step of the workflow. They remain
-executable from Blender's text editor, although their functionality is now
-incorporated into the main cycle:
+```python
+from .modules.operators.tracksycle_operator import KAISERLICH_OT_auto_track_cycle
+```
 
-- `Track Length.py` – removes tracks named `TRACK_` that are shorter than 25 frames.
-- `detect.py` – panel for repeatedly detecting features until a minimum count is reached.
-- `playhead.py` – finds the first frame with too few markers and sets the playhead.
-- `catch clean.py` – reloads the clip to clear its RAM cache.
-- `Proxy switch.py` – header button to toggle proxy usage. The operator waits
-  two seconds after switching so the UI can refresh.
-- `proxy rechner.py` – estimates memory usage and suggests a proxy size.
-- `proxy wait.py` – creates a 50 % proxy and waits for its files to appear.
-- `distance_remove.py` – operator that deletes `NEU_` markers too close to `GOOD_` markers.
-- `track.py` – operator to track selected markers forward.
-- `track_marker_size_adapt.py` – tracks one frame at a time until markers stop moving.
-- `margin a Distanz.py` – calculates detection margin and distance from clip width.
-- `min marker rechner.py` – helper for computing the marker count range used by detection.
+## 🔗 Modulregistrierung in `__init__.py`
 
-These scripts can be executed from Blender's text editor for experimentation,
-but the full workflow resides in `combined_cycle.py`.
-This project is released under the MIT License. See the `LICENSE` file for
-details.
+Damit das Add-on korrekt geladen wird, müssen alle relevanten Klassen in der Hauptdatei `__init__.py` wie folgt registriert werden:
+
+```python
+from .modules.operators.tracksycle_operator import KAISERLICH_OT_auto_track_cycle
+from .modules.ui.kaiserlich_panel import KAISERLICH_PT_tracking_tools
+
+classes = [
+    KAISERLICH_OT_auto_track_cycle,
+    KAISERLICH_PT_tracking_tools,
+    # ggf. weitere Klassen...
+]
+
+def register():
+    for cls in classes:
+        bpy.utils.register_class(cls)
+
+def unregister():
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
+```
+
+Jedes Submodul ist in seinem eigenen Unterordner organisiert und wird dort durch ein eigenes `__init__.py` als Paketstruktur kenntlich gemacht. Diese Dateien können leer sein oder zusätzlich lokale `register()`-Funktionen definieren, wenn innerhalb des Pakets mehrere Klassen verwaltet werden.
+
+Beispiel für ein leeres `__init__.py`:
+
+```python
+# erforderlich zur Modulinitialisierung
+```
+
+Alternativ mit Unterregistrierung:
+
+```python
+from .some_operator import SOME_OT_Class
+
+def register():
+    bpy.utils.register_class(SOME_OT_Class)
+
+def unregister():
+    bpy.utils.unregister_class(SOME_OT_Class)
+```
+
+---
+
+## 🗂 Ablaufplan (Operator: `KAISERLICH_OT_auto_track_cycle`)
+
+### 1. **Proxy-Handling (async)**
+
+```python
+from modules.proxy.proxy_wait import create_proxy_and_wait
+```
+
+* Entfernt zuvor generierte Proxy-Dateien via `remove_existing_proxies()`
+* Erstellt 50%-Proxy in `BL_Tr_proxy/`
+* Wartet asynchron mit Timer auf erste Proxy-Datei (`proxy_50.avi`, max. Timeout: 300s)
+* Nutzt Dateigrößen-Prüfung zur Validierung abgeschlossener Proxy-Erstellung
+* Implementiert überarbeitetes und stabiles Verfahren laut `proxy_wait (1).py`
+
+#### ✨ Besonderheiten der stabilen Version
+
+* Separate Thread-Logik zur Dateiprüfung
+* Fehlerbehandlung via Logging
+* Sauberes Abbrechen nach Timeout
+* ✉ Referenzdatei: `proxy_wait (1).py`
+
+---
+
+### 2. **Detect Features**
+
+```python
+bpy.ops.clip.detect_features(threshold=dynamic, margin=width/200, distance=width/20)
+```
+
+* Proxy-Status wird vor jedem Aufruf deaktiviert: `clip.proxy.build_50 = False`, `clip.use_proxy = False`
+* `threshold` wird bei unzureichender Markeranzahl iterativ angepasst (max. 10 Versuche)
+* `default_pattern_size` dynamisch, max. 100
+
+#### 📊 Threshold-Formel (Feature Detection)
+
+Wenn `marker_count < min_marker_count`, wird `threshold` wie folgt angepasst:
+
+```python
+threshold = max(threshold * ((marker_count + 0.1) / expected), 0.0001)
+threshold = round(threshold, 5)
+```
+
+Dabei ist:
+
+* `expected = min_marker_count * 4`
+* `threshold_start = 1.0`
+* `0.0001` = untere Grenze zur Vermeidung von Null/Negativwerten
+
+Ziel: Empfindlichkeit steigt bei zu wenigen erkannten Features.
+
+---
+
+### 3. **Marker-Filterung**
+
+```python
+for track in clip.tracking.tracks:
+    if distance(track, good_marker) < margin:
+        track.marked_for_deletion = True
+```
+
+* Entfernt Marker nahe `GOOD_`-Markern
+* Danach: automatische Umbenennung zu `TRACK_`
+
+---
+
+### 4. **Bidirektionales Tracking**
+
+```python
+bpy.ops.clip.track_markers(forward=True)
+bpy.ops.clip.track_markers(backward=True)
+```
+
+* Tracking aller `TRACK_`-Marker mit Kontextoverride `context.temp_override()`
+* UI-Override zwingend notwendig (da sonst `track_markers` nicht läuft)
+
+---
+
+### 5. **Löschen kurzer Tracks**
+
+```python
+track.markers → [marker.frame]
+if max(frame) - min(frame) < min_track_length: → DELETE
+```
+
+---
+
+### 6. **Re-Analyse**
+
+```python
+clip.tracking.tracks → active_marker_count_per_frame
+if active < min_marker_count → sparse_frame = frame
+```
+
+Falls `sparse_frame` erneut auftritt:
+
+```python
+clip.tracking.settings.motion_model = next_model()
+clip.tracking.settings.default_pattern_size *= 1.1
+```
+
+---
+
+### 7. **Playhead setzen**
+
+```python
+context.scene.frame_current = sparse_frame
+```
+
+---
+
+## 🧠 Zustandssteuerung (`scene.kaiserlich_tracking_state`)
+
+```text
+WAIT_FOR_PROXY
+🔻
+DETECTING
+🔻
+TRACKING
+🔻
+CLEANUP
+🔻
+REVIEW / LOOP
+```
+
+---
+
+## 🛠️ Blender API Overview
+
+| Aktion                | API                                              |
+| --------------------- | ------------------------------------------------ |
+| Proxy prüfen          | `clip.proxy.build_50`, `clip.use_proxy`          |
+| Features erkennen     | `bpy.ops.clip.detect_features()`                 |
+| Marker zählen         | `len(clip.tracking.tracks)`                      |
+| Tracking auslösen     | `bpy.ops.clip.track_markers()`                   |
+| Kontext setzen        | `context.temp_override()`                        |
+| Pattern Size setzen   | `clip.tracking.settings.default_pattern_size`    |
+| Motion Model wechseln | `clip.tracking.settings.motion_model = 'Affine'` |
+| Tracks löschen        | `clip.tracking.tracks.remove(...)`               |
+| Playhead setzen       | `context.scene.frame_current = frame`            |
+
+---
+
+## 🔧 Debug-Logging
+
+```python
+from modules.util.tracker_logger import TrackerLogger
+logger = TrackerLogger(debug=True)
+logger.info(), logger.warn(), logger.error(), logger.debug()
+```
+
+---
+
+## 🔐 Sicherheitslogik
+
+* **Abbruchbedingungen** bei:
+
+  * Timeout Proxy
+  * Kein Clip gefunden
+* **Grenzwerte**:
+
+  * `threshold >= 0.0001`
+  * `pattern_size <= 100`
+* **Fallback-Property-Zugriffe**:
+
+  ```python
+  getattr(scene, "min_marker_count", 10)
+  ```
+* **Blender Version/Attributprüfung**:
+
+  ```python
+  if hasattr(settings, "motion_model"):
+  ```
+
+---
+
+## ✅ Voraussetzungen
+
+* Blender ≥ 4.0
+* Movie Clip Editor aktiv
+* Clip muss Frames beinhalten
+* Proxy darf existieren, wird aber zur Erkennung deaktiviert
+
+---
+
+## 🧹 Integrationsempfehlung
+
+* `__init__.py` im Add-on-Stammverzeichnis importiert aus Submodulen:
+
+  ```python
+  from .modules.operators.tracksycle_operator import KAISERLICH_OT_auto_track_cycle
+  ```
+
+* Jeder Unterordner benötigt eine `__init__.py` für Modulregistrierung
+
+* Struktur für tiefe Imports:
+
+  ```python
+  from modules.detection.distance_remove import distance_remove
+  ```
+
+* UI-Integration via:
+
+  ```python
+  layout.operator("kaiserlich.auto_track_cycle", text="Auto Track")
+  ```
+
+* Bei Beendigung des gesamten Tracking-Zyklus erscheint die Meldung:
+  „Es war sehr sch\u00f6n, es hat mich sehr gefreut."
+
+---
+
+## 🪺 UI-Integration (Blender Sidebar)
+
+### Panel: `KAISERLICH_PT_tracking_tools`
+
+| UI-Element                     | Typ               | Property                      | Tooltip Beschreibung                                              |
+| ------------------------------ | ----------------- | ----------------------------- | ----------------------------------------------------------------- |
+| **Auto Track starten**         | Button (Operator) | `kaiserlich.auto_track_cycle` | Startet den automatischen Tracking-Zyklus                         |
+| **Minimale Markeranzahl**      | `IntProperty`     | `scene.min_marker_count`      | Anzahl an erkannten Features, die mindestens erreicht werden soll |
+| **Tracking-Länge (min)**       | `IntProperty`     | `scene.min_track_length`      | Minimale Anzahl Frames pro Marker                                 |
+| **Fehler-Schwelle**            | `FloatProperty`   | `scene.error_threshold`       | Maximal tolerierter Reprojektionfehler                            |
+| **🔧 Debug Output aktivieren** | `BoolProperty`    | `scene.debug_output`          | Aktiviert ausführliches Logging zur Fehleranalyse                 |
+
+### Panel-Position in Blender:
+
+* Editor: **Movie Clip Editor**
+* Region: **Sidebar (**\`\`**)**
+* Tab: **„Kaiserlich“**
+* Kontext: `space_data.type == 'CLIP_EDITOR'`
+
+---
+
+## 📄 Lizenz
+
+Dieses Projekt steht unter der **MIT-Lizenz**. Siehe die Datei [LICENSE](LICENSE) für weitere Details.
 

@@ -1,105 +1,56 @@
-﻿############################
-# Python: Cache und Build
-############################
-
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
-*.so
-*.dylib
-*.pyd
+*.pyc
+*$py.class
 
-# Distribution / Packaging
+# C extensions
+*.so
+
+# Distribution / packaging
 .Python
+build/
+dist/
+.eggs/
+*.egg-info/
+*.egg
+MANIFEST
+
+# Virtual environments
 env/
 venv/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-*.egg-info/
-.installed.cfg
-*.egg
+ENV/
+.venv/
+.env/
 
-############################
-# Visual Studio: IDE & Build
-############################
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
 
-# User-spezifische Dateien
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
 
-# Datenbank- und Indexdateien
-*.VC.db
-*.VC.opendb
+# Jupyter Notebook
+.ipynb_checkpoints
 
-# Build-Ordner
-bin/
-obj/
-[Bb]uild/
-[Bb]uilds/
+# IPython
+profile_default/
+ipython_config.py
 
-# Projekt- und Lösungs-Backupdateien
-*.bak
-*.old
-*.orig
+# OSX
+.DS_Store
 
-# Visual Studio temporäre Verzeichnisse
-.vs/
-
-############################
-# Visual Studio Code
-############################
+# Others
+*.log
 
 .vscode/
-*.code-workspace
-
-############################
-# JetBrains IDEs (z. B. PyCharm)
-############################
-
 .idea/
-
-############################
-# Blender: Backup-Dateien
-############################
-
-*.blend1
-*.blend2
-*.blend@
-*.blend~
-
-############################
-# Betriebssystem-spezifische Dateien
-############################
-
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-Icon?
-._*
-
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-
-# Linux
-*~
-
-############################
-# Logs, temporäre Dateien
-############################
-
-*.log
-*.tmp
-*.temp
