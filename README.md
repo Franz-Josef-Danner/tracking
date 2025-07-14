@@ -280,7 +280,7 @@ REVIEW / LOOP
 | Kontext setzen        | `context.temp_override()`                        |
 | Pattern Size setzen   | `clip.tracking.settings.default_pattern_size`    |
 | Motion Model wechseln | `clip.tracking.settings.motion_model = 'Affine'` |
-| Tracks löschen        | `clip.tracking.tracks.remove(...)`               |
+| Tracks löschen        | `idx = clip.tracking.tracks.find(name)`<br>`clip.tracking.tracks.remove(idx)` |
 | Playhead setzen       | `context.scene.frame_current = frame`            |
 
 ---
