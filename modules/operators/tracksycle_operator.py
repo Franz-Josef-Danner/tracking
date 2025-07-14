@@ -96,7 +96,10 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
 
         for track in list(clip.tracking.tracks):
             if get_track_length(track) < scene.min_track_length:
-                clip.tracking.tracks.remove(track)
+                tracks = clip.tracking.tracks
+                idx = tracks.find(track.name)
+                if idx != -1:
+                    tracks.remove(idx)
 
         sparse_frame = find_frame_with_few_tracking_markers(clip, scene.min_marker_count)
         if sparse_frame is not None:

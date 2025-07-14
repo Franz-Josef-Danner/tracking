@@ -23,8 +23,14 @@ class DummyTrack:
     name = "DUMMY"
 
 class DummyTracks(list):
-    def remove(self, track):
-        super().remove(track)
+    def find(self, name):
+        for i, tr in enumerate(self):
+            if tr.name == name:
+                return i
+        return -1
+
+    def remove(self, index):
+        del self[index]
         self.removed = True
 
 def test_distance_remove_empty_markers():
