@@ -268,23 +268,27 @@ def detect_features_in_ui_context(threshold=1.0, margin=0, min_distance=0, place
         if area.type == 'CLIP_EDITOR':
             for region in area.regions:
                 if region.type == 'WINDOW':
-                    override = {
-                        'area': area,
-                        'region': region,
-                        'space_data': area.spaces.active,
-                        'scene': bpy.context.scene,
-                    }
-                    if logger:
-                        logger.info("Running feature detection in UI context")
-                    bpy.ops.clip.detect_features(
-                        override,
-                        "EXEC_DEFAULT",
-                        threshold=threshold,
-                        margin=margin,
-                        min_distance=min_distance,
-                        placement=placement,
-                    )
-                    return True
+                    spaces = area.spaces
+                    try:
+                        space_iter = list(spaces)
+                    except TypeError:
+                        space_iter = [spaces.active]
+                    for space in space_iter:
+                        if space.type == 'CLIP_EDITOR':
+                            if logger:
+                                logger.info("Running feature detection in UI context")
+                            with bpy.context.temp_override(
+                                area=area,
+                                region=region,
+                                space_data=space,
+                            ):
+                                bpy.ops.clip.detect_features(
+                                    threshold=threshold,
+                                    margin=margin,
+                                    min_distance=min_distance,
+                                    placement=placement,
+                                )
+                            return True
     if logger:
         logger.error("No valid UI context found")
     else:
