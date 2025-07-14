@@ -31,7 +31,25 @@ def remove_existing_proxies(clip, logger=None):
 
 
 def create_proxy_and_wait(clip, timeout=300, logger=None):
-    """Create a 50% proxy and wait until the proxy file exists."""
+    """Create a 50% proxy and wait until the proxy file exists.
+
+    Parameters
+    ----------
+    clip : :class:`bpy.types.MovieClip`
+        Movie clip for which the proxy should be generated.
+    timeout : int, optional
+        Maximum time to wait for the proxy in seconds.
+    logger : :class:`TrackerLogger`, optional
+        Logger used for debug output.
+    """
+
+    if clip is None:
+        message = "No clip provided to create_proxy_and_wait"
+        if logger:
+            logger.error(message)
+        else:
+            print(f"ERROR: {message}")
+        return False
 
     if not clip.proxy.directory:
         if logger:
@@ -51,22 +69,31 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
 
     proxy_path = os.path.join(directory, "proxy_50.avi")
 
+    # Enable proxy generation and start building the proxy
+    clip.use_proxy = True
+    clip.proxy.build_50 = True
+    bpy.ops.clip.proxy_build()
+
     if logger:
         logger.info(f"Waiting for proxy file: {proxy_path}")
 
-    start = time.time()
-    while not os.path.exists(proxy_path):
-        elapsed = time.time() - start
+    state = {"start": time.time()}
+
+    def _wait_for_proxy():
+        if os.path.exists(proxy_path):
+            if logger:
+                logger.info("Proxy file found.")
+            return None
+        elapsed = time.time() - state["start"]
         if elapsed > timeout:
             if logger:
                 logger.error("Proxy creation timed out after 300 seconds.")
-            return False
+            return None
         if logger:
             logger.info(f"Proxy not found yet... {int(elapsed)}s elapsed")
-        time.sleep(10)
+        return 1.0
 
-    if logger:
-        logger.info("Proxy file found.")
+    bpy.app.timers.register(_wait_for_proxy)
     return True
 
 
