@@ -40,7 +40,7 @@ def test_operator_calls_detection(monkeypatch):
     op.report = lambda *a, **k: None
     op.threshold = 0.5
     op.margin = 10.0
-    op.min_distance = 5.0
+    op.min_distance = 5
     context = DummyContext(DummyClip())
 
     result = op.execute(context)
@@ -50,4 +50,4 @@ def test_operator_calls_detection(monkeypatch):
     assert clip is context.space_data.clip
     assert thr == 0.5
     assert marg == 10.0
-    assert dist == 5.0
+    assert dist == 5

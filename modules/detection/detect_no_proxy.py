@@ -15,7 +15,7 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None, min_distance=None
     margin : int, optional
         Margin value passed to the operator. If ``None`` it is derived from
         ``clip.size``.
-    min_distance : float, optional
+    min_distance : int, optional
         Minimum distance between detected features. If ``None`` it is derived
         from ``clip.size``.
     logger : :class:`TrackerLogger`, optional
@@ -26,6 +26,7 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None, min_distance=None
     margin = int(margin)
     if min_distance is None:
         min_distance = clip.size[0] / 20
+    min_distance = int(min_distance)
 
     message = (
         f"Detecting features with threshold={threshold}, "
