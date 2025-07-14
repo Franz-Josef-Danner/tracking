@@ -14,10 +14,15 @@ from .modules.operators.tracksycle_operator import KAISERLICH_OT_auto_track_cycl
 from .modules.ui.kaiserlich_panel import KAISERLICH_PT_tracking_tools
 from bpy.props import IntProperty, FloatProperty, BoolProperty
 
+classes = [
+    KAISERLICH_OT_auto_track_cycle,
+    KAISERLICH_PT_tracking_tools,
+]
+
 
 def register():
-    bpy.utils.register_class(KAISERLICH_OT_auto_track_cycle)
-    bpy.utils.register_class(KAISERLICH_PT_tracking_tools)
+    for cls in classes:
+        bpy.utils.register_class(cls)
 
     bpy.types.Scene.min_marker_count = IntProperty(
         name="Minimale Markeranzahl",
@@ -41,15 +46,15 @@ def register():
     )
 
     bpy.types.Scene.debug_output = BoolProperty(
-        name="Debug Output",
-        description="Aktiviert ausf\u00fchrliches Logging zur Fehleranalyse",
+        name="\U0001F527 Debug Output aktivieren",
+        description="Aktiviert ausführliches Logging zur Fehleranalyse",
         default=False,
     )
 
 
 def unregister():
-    bpy.utils.unregister_class(KAISERLICH_PT_tracking_tools)
-    bpy.utils.unregister_class(KAISERLICH_OT_auto_track_cycle)
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
 
     del bpy.types.Scene.min_marker_count
     del bpy.types.Scene.min_track_length
