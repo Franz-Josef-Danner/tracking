@@ -31,28 +31,13 @@ def remove_existing_proxies(clip, logger=None):
 
 
 def create_proxy_and_wait(clip, timeout=300, logger=None):
-    """Create a 50% proxy and wait until the proxy file exists.
-
-    Parameters
-    ----------
-    clip : :class:`bpy.types.MovieClip`
-        MovieClip for which the proxy should be generated.
-    timeout : int, optional
-        Maximum time in seconds to wait for proxy generation.
-    logger : :class:`TrackerLogger`, optional
-        Logger used for warning output.
-
-    Returns
-    -------
-    bool
-        ``True`` if the proxy file exists within ``timeout``,
-        otherwise ``False``.
-    """
+    """Create a 50% proxy and wait until the proxy file exists."""
 
     if not clip.proxy.directory:
         if logger:
             logger.warn("Proxy directory was not set; using default '//proxy/'")
         clip.proxy.directory = "//proxy/"
+
     directory = bpy.path.abspath(clip.proxy.directory)
     try:
         os.makedirs(directory, exist_ok=True)
@@ -64,25 +49,24 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
             print(f"ERROR: {message}")
         return False
 
-    if not os.access(directory, os.W_OK):
-        message = f"Proxy directory is not writable: {directory}"
-        if logger:
-            logger.error(message)
-        else:
-            print(f"ERROR: {message}")
-        return False
-
-    clip.proxy.build_50 = True
-    clip.use_proxy = True
-    bpy.ops.clip.rebuild_proxy()
-
     proxy_path = os.path.join(directory, "proxy_50.avi")
+
+    if logger:
+        logger.info(f"Waiting for proxy file: {proxy_path}")
 
     start = time.time()
     while not os.path.exists(proxy_path):
-        if time.time() - start > timeout:
+        elapsed = time.time() - start
+        if elapsed > timeout:
+            if logger:
+                logger.error("Proxy creation timed out after 300 seconds.")
             return False
-        time.sleep(1)
+        if logger:
+            logger.info(f"Proxy not found yet... {int(elapsed)}s elapsed")
+        time.sleep(10)
+
+    if logger:
+        logger.info("Proxy file found.")
     return True
 
 
