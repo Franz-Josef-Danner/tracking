@@ -334,3 +334,10 @@ logger.info(), logger.warn(), logger.error(), logger.debug()
 * Region: **Sidebar (**\`\`**)**
 * Tab: **„Kaiserlich“**
 * Kontext: `space_data.type == 'CLIP_EDITOR'`
+
+---
+
+## 📄 Lizenz
+
+Dieses Projekt steht unter der **MIT-Lizenz**. Siehe die Datei [LICENSE](LICENSE) für weitere Details.
+
