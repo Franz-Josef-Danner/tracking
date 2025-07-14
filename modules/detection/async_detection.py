@@ -56,4 +56,18 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
     bpy.app.timers.register(_step)
 
 
-__all__ = ["detect_features_async"]
+
+def delayed_call(callback, delay=0.1):
+    """Execute ``callback`` after ``delay`` seconds if a clip is active."""
+
+    def _delayed():
+        if not getattr(bpy.context.space_data, "clip", None):
+            print("Kein Clip verf\u00fcgbar \u2013 Feature Detection abgebrochen.")
+            return None
+        callback()
+        return None
+
+    bpy.app.timers.register(_delayed, first_interval=delay)
+
+
+__all__ = ["detect_features_async", "delayed_call"]
