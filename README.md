@@ -107,6 +107,37 @@ def unregister():
 ```
 
 ---
+## 🚀 Nutzung
+
+1. Öffne den Movie Clip Editor in Blender und lade einen Clip.
+2. Wechsle in der Sidebar zum Tab "Kaiserlich".
+3. Stelle die gewünschten Parameter ein (siehe Abschnitt "Parameter").
+4. Klicke auf **Auto Track starten**, um den Tracking-Zyklus zu beginnen.
+
+### Tracking-Zyklus in Kürze
+
+Der Operator `KAISERLICH_OT_auto_track_cycle` durchläuft automatisch folgende Schritte:
+
+1. Entfernen vorhandener Proxy-Dateien und Erzeugen eines neuen 50%-Proxys.
+2. Feature-Erkennung mit dynamisch angepasstem Threshold, bis mindestens `min_marker_count` Marker gefunden sind.
+3. Bereinigung und Umbenennung der Marker zu `TRACK_*`.
+4. Bidirektionales Tracking aller Marker.
+5. Löschen zu kurzer Tracks basierend auf `min_track_length`.
+6. Optionales Nachjustieren von Motion Model und Pattern Size, falls zu wenige Marker vorhanden sind.
+7. Setzen des Playheads auf einen Frame mit wenig Markern und Ausgabe der Abschlusmeldung.
+
+---
+
+## ⚙️ Parameter
+
+| Property | Beschreibung |
+| -------- | ------------ |
+| `scene.min_marker_count` | Mindestanzahl erkannter Marker, ab der das Tracking fortgeführt wird. |
+| `scene.min_track_length` | Minimale Länge eines Tracks in Frames, damit er nicht gelöscht wird. |
+| `scene.error_threshold`  | Maximal erlaubter Reprojektionfehler (für zukünftige Prüfungen nutzbar). |
+| `scene.debug_output`     | Aktiviert detaillierte Log-Ausgaben im Terminal. |
+
+---
 
 ## 🗂 Ablaufplan (Operator: `KAISERLICH_OT_auto_track_cycle`)
 
