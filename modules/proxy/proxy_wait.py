@@ -2,6 +2,7 @@
 
 import bpy
 import os
+import shutil
 import time
 
 
@@ -27,33 +28,40 @@ def wait_for_stable_file(path, timeout=60, check_interval=1, stable_time=3):
 
 
 def remove_existing_proxies(clip, logger=None):
-    """Delete previously generated proxy files if they exist.
+    """Remove and recreate the proxy directory for ``clip``.
 
-    Ensures ``clip.use_proxy_custom_directory`` is enabled so the
-    proxy path is honored.
+    This deletes the entire proxy folder along with all files inside
+    and recreates it afterwards.  ``clip.use_proxy_custom_directory``
+    is activated so the configured directory is honored.
 
     Parameters
     ----------
     clip : :class:`bpy.types.MovieClip`
-        MovieClip for which old proxies should be removed.
+        MovieClip whose proxy directory should be cleaned.
     logger : :class:`TrackerLogger`, optional
-        Logger used for warning output.
+        Logger used for debug output.
     """
 
-    # ensure proxy directory usage is enabled
     clip.use_proxy_custom_directory = True
     if not clip.proxy.directory:
         clip.proxy.directory = "//proxies"
-    directory = clip.proxy.directory
-    os.makedirs(bpy.path.abspath(directory), exist_ok=True)
 
-    path = os.path.join(directory, "proxy_50.avi")
-    if os.path.exists(path):
+    abs_dir = bpy.path.abspath(clip.proxy.directory)
+
+    if os.path.exists(abs_dir):
         try:
-            os.remove(path)
-        except OSError as exc:  # pylint: disable=broad-except
+            shutil.rmtree(abs_dir)
             if logger:
-                logger.warn(f"Failed to remove existing proxy: {exc}")
+                logger.info(f"Proxy directory removed: {abs_dir}")
+        except Exception as exc:  # pylint: disable=broad-except
+            if logger:
+                logger.warn(f"Failed to remove proxy directory: {exc}")
+
+    try:
+        os.makedirs(abs_dir, exist_ok=True)
+    except Exception as exc:  # pylint: disable=broad-except
+        if logger:
+            logger.error(f"Failed to create proxy directory: {exc}")
 
 
 def create_proxy_and_wait(clip, timeout=300, logger=None):
