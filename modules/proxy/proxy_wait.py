@@ -60,12 +60,20 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
         return False
 
     if not os.path.isdir(directory):
-        message = f"Proxy directory does not exist: {directory}"
-        if logger:
-            logger.error(message)
-        else:
-            print(f"ERROR: {message}")
-        return False
+        try:
+            os.makedirs(directory, exist_ok=True)
+            message = f"Created missing proxy directory: {directory}"
+            if logger:
+                logger.info(message)
+            else:
+                print(message)
+        except OSError as exc:
+            message = f"Failed to create proxy directory: {directory} ({exc})"
+            if logger:
+                logger.error(message)
+            else:
+                print(f"ERROR: {message}")
+            return False
 
     if not os.access(directory, os.W_OK):
         message = f"Proxy directory is not writable: {directory}"

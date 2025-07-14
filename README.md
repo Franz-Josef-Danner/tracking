@@ -127,6 +127,7 @@ from modules.proxy.proxy_wait import create_proxy_and_wait
 * Separate Thread-Logik zur Dateiprüfung
 * Fehlerbehandlung via Logging
 * Proxy-Pfad-Validierung (Existenz & Schreibrechte)
+* Fehlender Proxy-Ordner wird automatisch angelegt
 * Sauberes Abbrechen nach Timeout
 * ✉ Referenzdatei: `proxy_wait (1).py`
 
