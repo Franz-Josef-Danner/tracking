@@ -48,6 +48,7 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
 
     clip.proxy.build_50 = True
     clip.use_proxy = True
+    bpy.ops.clip.rebuild_proxy()
 
     proxy_path = os.path.join(directory, "proxy_50.avi")
 
