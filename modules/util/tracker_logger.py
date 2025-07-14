@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 LOGGER_NAME = "Tracksycle"
 
 
-def configure_logger(debug: bool = False) -> logging.Logger:
+def configure_logger(debug: bool = False, log_file: str | Path | None = None) -> logging.Logger:
     """Configure the Tracksycle logger once.
 
     Parameters
     ----------
     debug : bool, optional
         Whether debug level logging should be enabled, by default ``False``.
+    log_file : str | Path, optional
+        If given, a :class:`logging.FileHandler` will also be attached and
+        write to this file.
 
     Returns
     -------
@@ -29,6 +33,11 @@ def configure_logger(debug: bool = False) -> logging.Logger:
         handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter('[Tracksycle] %(message)s'))
         logger.addHandler(handler)
+
+    if log_file and not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(logging.Formatter('[Tracksycle] %(message)s'))
+        logger.addHandler(file_handler)
 
     return logger
 
