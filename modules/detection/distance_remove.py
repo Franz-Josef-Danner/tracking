@@ -13,7 +13,5 @@ def distance_remove(tracks, good_marker, margin):
         except (AttributeError, IndexError):
             continue
         if (Vector(pos) - good_pos).length < margin:
-            idx = tracks.find(track.name)
-            if idx != -1:
-                tracks.remove(idx)
+            tracks.remove(track)
 
