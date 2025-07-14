@@ -28,8 +28,8 @@ def test_operator_no_clip():
 def test_operator_calls_detection(monkeypatch):
     called = {}
 
-    def dummy_detect(clip, threshold=1.0, margin=None, distance=None, logger=None):
-        called['args'] = (clip, threshold, margin, distance, logger)
+    def dummy_detect(clip, threshold=1.0, margin=None, min_distance=None, logger=None):
+        called['args'] = (clip, threshold, margin, min_distance, logger)
 
     monkeypatch.setattr(
         'modules.operators.detect_features_operator.detect_features_no_proxy',
@@ -40,7 +40,7 @@ def test_operator_calls_detection(monkeypatch):
     op.report = lambda *a, **k: None
     op.threshold = 0.5
     op.margin = 10.0
-    op.distance = 5.0
+    op.min_distance = 5.0
     context = DummyContext(DummyClip())
 
     result = op.execute(context)

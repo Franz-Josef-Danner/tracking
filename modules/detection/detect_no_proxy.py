@@ -3,7 +3,7 @@
 import bpy
 
 
-def detect_features_no_proxy(clip, threshold=1.0, margin=None, distance=None, logger=None):
+def detect_features_no_proxy(clip, threshold=1.0, margin=None, min_distance=None, logger=None):
     """Run :func:`bpy.ops.clip.detect_features` with proxies disabled.
 
     Parameters
@@ -15,7 +15,7 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None, distance=None, lo
     margin : int, optional
         Margin value passed to the operator. If ``None`` it is derived from
         ``clip.size``.
-    distance : float, optional
+    min_distance : float, optional
         Minimum distance between detected features. If ``None`` it is derived
         from ``clip.size``.
     logger : :class:`TrackerLogger`, optional
@@ -24,12 +24,12 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None, distance=None, lo
     if margin is None:
         margin = clip.size[0] / 200
     margin = int(margin)
-    if distance is None:
-        distance = clip.size[0] / 20
+    if min_distance is None:
+        min_distance = clip.size[0] / 20
 
     message = (
         f"Detecting features with threshold={threshold}, "
-        f"margin={margin}, distance={distance}"
+        f"margin={margin}, min_distance={min_distance}"
     )
     if logger:
         logger.debug(message)
@@ -43,7 +43,7 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None, distance=None, lo
     bpy.ops.clip.detect_features(
         threshold=threshold,
         margin=margin,
-        distance=distance,
+        min_distance=min_distance,
     )
 
 __all__ = ["detect_features_no_proxy"]

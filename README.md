@@ -167,7 +167,7 @@ from modules.proxy.proxy_wait import create_proxy_and_wait
 ### 2. **Detect Features**
 
 ```python
-bpy.ops.clip.detect_features(threshold=dynamic, margin=width/200, distance=width/20)
+bpy.ops.clip.detect_features(threshold=dynamic, margin=width/200, min_distance=width/20)
 ```
 
 * Proxy-Status wird vor jedem Aufruf deaktiviert: `clip.proxy.build_50 = False`, `clip.use_proxy = False`

@@ -28,8 +28,8 @@ class KAISERLICH_OT_detect_features(bpy.types.Operator):  # type: ignore[misc]
         default=0.0,
         min=0.0,
     )
-    distance: FloatProperty(
-        name="Distance",
+    min_distance: FloatProperty(
+        name="Min Distance",
         description="Minimum distance between features (0 = auto)",
         default=0.0,
         min=0.0,
@@ -50,7 +50,7 @@ class KAISERLICH_OT_detect_features(bpy.types.Operator):  # type: ignore[misc]
             clip,
             threshold=self.threshold,
             margin=self.margin or None,
-            distance=self.distance or None,
+            min_distance=self.min_distance or None,
             logger=logger,
         )
         return {'FINISHED'}
