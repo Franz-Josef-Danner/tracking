@@ -159,6 +159,7 @@ from modules.proxy.proxy_wait import create_proxy_and_wait
 * Fehlerbehandlung via Logging
 * Proxy-Pfad-Validierung (Existenz & Schreibrechte)
 * Fehlender Proxy-Ordner wird automatisch angelegt
+* Custom-Verzeichnis aktivieren via `clip.proxy.use_custom_directory = True`
 * Sauberes Abbrechen nach Timeout
 * ✉ Referenzdatei: `proxy_wait (1).py`
 

@@ -8,6 +8,9 @@ import time
 def remove_existing_proxies(clip, logger=None):
     """Delete previously generated proxy files if they exist.
 
+    Ensures ``clip.proxy.use_custom_directory`` is enabled so the
+    proxy path is honored.
+
     Parameters
     ----------
     clip : :class:`bpy.types.MovieClip`
@@ -16,6 +19,8 @@ def remove_existing_proxies(clip, logger=None):
         Logger used for warning output.
     """
 
+    # ensure proxy directory usage is enabled
+    clip.proxy.use_custom_directory = True
     if not clip.proxy.directory:
         clip.proxy.directory = "//proxy/"
     directory = clip.proxy.directory
@@ -32,6 +37,9 @@ def remove_existing_proxies(clip, logger=None):
 
 def create_proxy_and_wait(clip, timeout=300, logger=None):
     """Create a 50% proxy and wait until the proxy file exists.
+
+    Activates ``clip.proxy.use_custom_directory`` to ensure the
+    provided directory is used for proxy files.
 
     Parameters
     ----------
@@ -51,6 +59,8 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
             print(f"ERROR: {message}")
         return False
 
+    # ensure proxy directory usage is enabled
+    clip.proxy.use_custom_directory = True
     if not clip.proxy.directory:
         if logger:
             logger.warn("Proxy directory was not set; using default '//proxy/'")
