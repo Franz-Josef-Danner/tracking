@@ -5,12 +5,12 @@ from __future__ import annotations
 import bpy
 
 try:
-    from bpy.types import Event
+    from bpy.types import Event as BpyEvent
     VALID_EVENT_TYPES = {
-        item.identifier for item in Event.bl_rna.properties["type"].enum_items
+        item.identifier for item in BpyEvent.bl_rna.properties["type"].enum_items
     }
 except Exception:  # pragma: no cover - gracefully handle missing bpy in tests
-    Event = None
+    BpyEvent = None
     VALID_EVENT_TYPES = set()
 
 from ..util.tracker_logger import TrackerLogger
