@@ -4,6 +4,7 @@ import bpy
 
 from ..proxy.proxy_wait import create_proxy_and_wait, remove_existing_proxies
 from ..detection.distance_remove import distance_remove
+from ..detection.detect_no_proxy import detect_features_no_proxy
 from ..detection.find_frame_with_few_tracking_markers import (
     find_frame_with_few_tracking_markers,
 )
@@ -49,11 +50,12 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
         pattern_size = getattr(settings, "default_pattern_size", 11)
 
         for _ in range(10):
-            clip.proxy.build_50 = False
-            clip.use_proxy = False
-            bpy.ops.clip.detect_features(threshold=threshold,
-                                        margin=clip.size[0]/200,
-                                        distance=clip.size[0]/20)
+            detect_features_no_proxy(
+                clip,
+                threshold=threshold,
+                margin=clip.size[0] / 200,
+                distance=clip.size[0] / 20,
+            )
             marker_count = len(clip.tracking.tracks)
             if marker_count >= scene.min_marker_count:
                 break
