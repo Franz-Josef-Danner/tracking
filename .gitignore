@@ -54,3 +54,6 @@ ipython_config.py
 
 .vscode/
 .idea/
+
+# Visual Studio
+.vs/
