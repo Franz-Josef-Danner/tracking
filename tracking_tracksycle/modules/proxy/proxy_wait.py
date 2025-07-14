@@ -5,17 +5,30 @@ import os
 import time
 
 
-def remove_existing_proxies(clip):
-    """Delete previously generated proxy files if they exist."""
+def remove_existing_proxies(clip, logger=None):
+    """Delete previously generated proxy files if they exist.
+
+    Parameters
+    ----------
+    clip : :class:`bpy.types.MovieClip`
+        MovieClip for which old proxies should be removed.
+    logger : :class:`TrackerLogger`, optional
+        Logger used for warning output.
+    """
+
     directory = clip.proxy.directory
     if not directory:
+        if logger:
+            logger.warn("Proxy directory is not set")
         return
+
     path = os.path.join(directory, "proxy_50.avi")
     if os.path.exists(path):
         try:
             os.remove(path)
-        except OSError:
-            pass
+        except OSError as exc:  # pylint: disable=broad-except
+            if logger:
+                logger.warn(f"Failed to remove existing proxy: {exc}")
 
 
 def create_proxy_and_wait(clip, timeout=300, logger=None):
@@ -38,12 +51,28 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
     """
 
     directory = clip.proxy.directory
-    if directory is None:
+    if not directory:
         warning = "Proxy directory is not set; clip may not be initialized."
         if logger:
             logger.warn(warning)
         else:
             print(f"WARNING: {warning}")
+        return False
+
+    if not os.path.isdir(directory):
+        message = f"Proxy directory does not exist: {directory}"
+        if logger:
+            logger.error(message)
+        else:
+            print(f"ERROR: {message}")
+        return False
+
+    if not os.access(directory, os.W_OK):
+        message = f"Proxy directory is not writable: {directory}"
+        if logger:
+            logger.error(message)
+        else:
+            print(f"ERROR: {message}")
         return False
 
     clip.proxy.build_50 = True

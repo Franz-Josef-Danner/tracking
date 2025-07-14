@@ -34,7 +34,7 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
         # state machine property
         scene.kaiserlich_tracking_state = 'WAIT_FOR_PROXY'
 
-        remove_existing_proxies(clip)
+        remove_existing_proxies(clip, logger=logger)
         logger.info("Generating proxy...")
         if not create_proxy_and_wait(clip, logger=logger):
             self.report({'ERROR'}, "Proxy creation timed out")
