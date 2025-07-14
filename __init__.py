@@ -8,13 +8,17 @@ bl_info = {
     "category": "Tracking",
 }
 
-import bpy
+try:
+    import bpy
+    from bpy.props import IntProperty, FloatProperty, BoolProperty, EnumProperty
+except ModuleNotFoundError:  # pragma: no cover - allows running tests without Blender
+    bpy = None
+    IntProperty = FloatProperty = BoolProperty = EnumProperty = lambda *a, **k: None
 
 from .modules.util.tracker_logger import configure_logger
 
 from .modules.operators.tracksycle_operator import KAISERLICH_OT_auto_track_cycle
 from .modules.ui.kaiserlich_panel import KAISERLICH_PT_tracking_tools
-from bpy.props import IntProperty, FloatProperty, BoolProperty, EnumProperty
 
 classes = [
     KAISERLICH_OT_auto_track_cycle,
@@ -23,7 +27,11 @@ classes = [
 
 
 def register():
+    if bpy is None:
+        raise RuntimeError("bpy module is required to register the add-on")
+
     configure_logger()
+
     for cls in classes:
         bpy.utils.register_class(cls)
 
