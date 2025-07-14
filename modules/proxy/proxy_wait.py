@@ -69,10 +69,17 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
 
     proxy_path = os.path.join(directory, "proxy_50.avi")
 
-    # Enable proxy generation and start building the proxy
-    clip.use_proxy = True
-    clip.proxy.build_50 = True
-    bpy.ops.clip.proxy_build()
+    # Enable proxy generation and set up building the proxy
+    try:
+        clip.use_proxy = True
+        clip.proxy.build_50 = True
+        # clip.proxy.build_proxy() gibt es so nicht – stattdessen ggf. durch Timer auf das File warten wie bisher
+    except Exception as e:  # pylint: disable=broad-except
+        if logger:
+            logger.error(f"Proxy-Build-Setup fehlgeschlagen: {e}")
+        else:
+            print(f"ERROR: Proxy-Build-Setup fehlgeschlagen: {e}")
+        return False
 
     if logger:
         logger.info(f"Waiting for proxy file: {proxy_path}")
