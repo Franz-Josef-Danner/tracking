@@ -73,7 +73,6 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
     try:
         clip.use_proxy = True
         clip.proxy.build_50 = True
-        clip.proxy.use_timecode = 'RECORD_RUN'
         # clip.proxy.build_proxy() gibt es so nicht – stattdessen ggf. durch Timer auf das File warten wie bisher
     except Exception as e:  # pylint: disable=broad-except
         if logger:
