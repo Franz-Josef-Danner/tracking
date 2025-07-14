@@ -149,6 +149,7 @@ from modules.proxy.proxy_wait import create_proxy_and_wait
 
 * Entfernt zuvor generierte Proxy-Dateien via `remove_existing_proxies()`
 * Erstellt 50%-Proxy in `proxies/`
+* Aktiviert `clip.use_proxy = True` vor der Proxy-Erstellung
 * Wartet asynchron mit Timer auf erste Proxy-Datei (`proxy_50.avi`, max. Timeout: 300s)
 * Nutzt Dateigrößen-Prüfung zur Validierung abgeschlossener Proxy-Erstellung
 * Implementiert überarbeitetes und stabiles Verfahren laut `proxy_wait (1).py`
