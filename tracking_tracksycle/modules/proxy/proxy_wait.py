@@ -18,8 +18,18 @@ def remove_existing_proxies(clip):
             pass
 
 
-def create_proxy_and_wait(clip, timeout=300):
-    """Create a 50% proxy and wait until the proxy file exists."""
+def create_proxy_and_wait(clip, timeout=300, logger=None):
+    """Create a 50% proxy and wait until the proxy file exists.
+
+    Parameters
+    ----------
+    clip : :class:`bpy.types.MovieClip`
+        Clip on which the proxy should be built.
+    timeout : int, optional
+        Maximum time in seconds to wait for the proxy file.
+    logger : :class:`TrackerLogger`, optional
+        Optional logger for timeout feedback.
+    """
     clip.proxy.build_50 = True
     clip.use_proxy = True
 
@@ -29,6 +39,10 @@ def create_proxy_and_wait(clip, timeout=300):
     start = time.time()
     while proxy_path and not os.path.exists(proxy_path):
         if time.time() - start > timeout:
+            if logger:
+                logger.warn("Proxy creation timed out")
+            else:
+                print("Proxy creation timed out")
             return False
         time.sleep(1)
     return True
