@@ -10,6 +10,8 @@ bl_info = {
 
 import bpy
 
+from .modules.util.tracker_logger import configure_logger
+
 from .modules.operators.tracksycle_operator import KAISERLICH_OT_auto_track_cycle
 from .modules.ui.kaiserlich_panel import KAISERLICH_PT_tracking_tools
 from bpy.props import IntProperty, FloatProperty, BoolProperty, EnumProperty
@@ -21,6 +23,7 @@ classes = [
 
 
 def register():
+    configure_logger()
     for cls in classes:
         bpy.utils.register_class(cls)
 

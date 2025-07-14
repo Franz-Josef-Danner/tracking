@@ -253,8 +253,10 @@ REVIEW / LOOP
 ## 🔧 Debug-Logging
 
 ```python
-from modules.util.tracker_logger import TrackerLogger
-logger = TrackerLogger(debug=True)
+from modules.util.tracker_logger import TrackerLogger, configure_logger
+
+configure_logger(debug=True)
+logger = TrackerLogger()
 logger.info(), logger.warn(), logger.error(), logger.debug()
 ```
 

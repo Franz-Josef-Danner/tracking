@@ -11,7 +11,7 @@ from ..tracking.track import track_markers
 from ..tracking.track_length import get_track_length
 from ..tracking.motion_model import next_model
 from ..playback.set_playhead import set_playhead
-from ..util.tracker_logger import TrackerLogger
+from ..util.tracker_logger import TrackerLogger, configure_logger
 
 
 class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
@@ -29,7 +29,8 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
             self.report({'ERROR'}, "No clip loaded")
             return {'CANCELLED'}
 
-        logger = TrackerLogger(debug=scene.debug_output)
+        configure_logger(debug=scene.debug_output)
+        logger = TrackerLogger()
 
         # state machine property
         scene.kaiserlich_tracking_state = 'WAIT_FOR_PROXY'
