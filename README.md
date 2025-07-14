@@ -144,7 +144,7 @@ Der Operator `KAISERLICH_OT_auto_track_cycle` durchläuft automatisch folgende S
 ### 1. **Proxy-Handling (async)**
 
 ```python
-from modules.proxy.proxy_wait import create_proxy_and_wait
+from modules.proxy.proxy_wait import create_proxy_and_wait_async
 ```
 
 * Entfernt zuvor generierte Proxy-Dateien via `remove_existing_proxies()`
