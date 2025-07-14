@@ -9,34 +9,34 @@ Ein automatisierter Tracking-Zyklus für Blender (ab 4.0), entwickelt zur robust
 ## 📂 Struktur
 
 ```
-tracking_tracksycle/
+
+__init__.py
+modules/                      # Unterordner für logische Trennung
 ├── __init__.py
-├── modules/                      # Unterordner für logische Trennung
+├── operators/
+├── __init__.py
+│   └── tracksycle_operator.py
+├── proxy/
 │   ├── __init__.py
-│   ├── operators/
-│   │   ├── __init__.py
-│   │   └── tracksycle_operator.py
-│   ├── proxy/
-│   │   ├── __init__.py
-│   │   └── proxy_wait.py
-│   ├── detection/
-│   │   ├── __init__.py
-│   │   ├── distance_remove.py
-│   │   └── find_frame_with_few_tracking_markers.py
-│   ├── tracking/
-│   │   ├── __init__.py
-│   │   ├── track.py
-│   │   ├── motion_model.py
-│   │   └── track_length.py
-│   ├── playback/
-│   │   ├── __init__.py
-│   │   └── set_playhead.py
-│   ├── util/
-│   │   ├── __init__.py
-│   │   └── tracker_logger.py
-│   └── ui/
-│       ├── __init__.py
-│       └── kaiserlich_panel.py
+│   └── proxy_wait.py
+├── detection/
+│   ├── __init__.py
+│   ├── distance_remove.py
+│   └── find_frame_with_few_tracking_markers.py
+├── tracking/
+│   ├── __init__.py
+│   ├── track.py
+│   ├── motion_model.py
+│   └── track_length.py
+├── playback/
+│   ├── __init__.py
+│   └── set_playhead.py
+├── util/
+│   ├── __init__.py
+│   └── tracker_logger.py
+└── ui/
+    ├── __init__.py
+    └── kaiserlich_panel.py
 ```
 
 > **Hinweis:** Jeder Unterordner benötigt eine `__init__.py`, um als Modul erkannt zu werden.
