@@ -57,9 +57,11 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
             if marker_count >= scene.min_marker_count:
                 break
             threshold = max(round(threshold * ((marker_count + 0.1) / expected), 5), 0.0001)
+            logger.debug(f"Threshold adjusted to {threshold}")
             if pattern_size < 100:
                 pattern_size = min(int(pattern_size * 1.1), 100)
                 settings.default_pattern_size = pattern_size
+                logger.debug(f"Pattern size adjusted to {pattern_size}")
 
         scene.kaiserlich_tracking_state = 'TRACKING'
 
@@ -87,6 +89,7 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
             if pattern_size < 100:
                 pattern_size = min(int(pattern_size * 1.1), 100)
                 settings.default_pattern_size = pattern_size
+                logger.debug(f"Pattern size adjusted to {pattern_size}")
             set_playhead(sparse_frame)
 
         scene.kaiserlich_tracking_state = 'REVIEW'
