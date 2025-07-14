@@ -35,7 +35,7 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
             clip,
             threshold=state["threshold"],
             margin=clip.size[0] / 200,
-            min_distance=clip.size[0] / 20,
+            min_distance=int(clip.size[0] / 20),
             logger=logger,
         )
         marker_count = len(clip.tracking.tracks)

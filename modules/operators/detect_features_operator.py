@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import bpy
-from bpy.props import FloatProperty
+from bpy.props import FloatProperty, IntProperty
 
 from ..detection.detect_no_proxy import detect_features_no_proxy
 from ..util.tracker_logger import TrackerLogger, configure_logger
@@ -28,11 +28,11 @@ class KAISERLICH_OT_detect_features(bpy.types.Operator):  # type: ignore[misc]
         default=0.0,
         min=0.0,
     )
-    min_distance: FloatProperty(
+    min_distance: IntProperty(
         name="Min Distance",
         description="Minimum distance between features (0 = auto)",
-        default=0.0,
-        min=0.0,
+        default=0,
+        min=0,
     )
 
     def execute(self, context):  # type: ignore[override]
