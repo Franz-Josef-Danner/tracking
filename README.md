@@ -11,25 +11,63 @@ Ein automatisierter Tracking-Zyklus für Blender (ab 4.0), entwickelt zur robust
 ```
 tracking-tracksycle/
 ├── __init__.py
-├── tracksycle_operator.py        # Hauptzyklus (Execute)
-├── distance_remove.py            # Entfernt Marker nahe GOOD_
-├── track.py                      # BIDIR Tracking aller TRACK_-Marker
-├── Track_Length.py               # Löscht Tracks unter min. Länge
-├── find_frame_with_few_tracking_markers.py
-├── set_playhead.py               # Playhead-Positionierung
-├── motion_model.py               # Motion-Model-Cycling
-├── tracker_logger.py             # Konfigurierbares Logging
-├── proxy_wait.py                 # Proxy-Erstellung und Warten (async)
+├── modules/                      # Unterordner für logische Trennung
+│   ├── __init__.py
+│   ├── operators/
+│   │   ├── __init__.py
+│   │   └── tracksycle_operator.py
+│   ├── proxy/
+│   │   ├── __init__.py
+│   │   └── proxy_wait.py
+│   ├── detection/
+│   │   ├── __init__.py
+│   │   ├── distance_remove.py
+│   │   └── find_frame_with_few_tracking_markers.py
+│   ├── tracking/
+│   │   ├── __init__.py
+│   │   ├── track.py
+│   │   ├── motion_model.py
+│   │   └── Track_Length.py
+│   ├── playback/
+│   │   ├── __init__.py
+│   │   └── set_playhead.py
+│   └── util/
+│       ├── __init__.py
+│       └── tracker_logger.py
+```
+
+> **Hinweis:** Jeder Unterordner benötigt eine `__init__.py`, um als Modul erkannt zu werden.
+
+### Aufbau eines `__init__.py`
+
+Die `__init__.py`-Dateien innerhalb der Subfolder können minimalistisch sein, z. B.:
+
+```python
+# modules/detection/__init__.py
+# Ermöglicht Modulimport wie: from modules.detection import distance_remove
+```
+
+Optional (für explizite Exporte):
+
+```python
+from .distance_remove import *
+from .find_frame_with_few_tracking_markers import *
+```
+
+Im Stamm-`__init__.py` erfolgt der Hauptimport:
+
+```python
+from .modules.operators.tracksycle_operator import KAISERLICH_OT_auto_track_cycle
 ```
 
 ---
 
-## 🧽 Ablaufplan (Operator: `KAISERLICH_OT_auto_track_cycle`)
+## 🗂 Ablaufplan (Operator: `KAISERLICH_OT_auto_track_cycle`)
 
 ### 1. **Proxy-Handling (async)**
 
 ```python
-from .proxy_wait import create_proxy_and_wait
+from modules.proxy.proxy_wait import create_proxy_and_wait
 ```
 
 * Entfernt zuvor generierte Proxy-Dateien via `remove_existing_proxies()`
@@ -43,6 +81,7 @@ from .proxy_wait import create_proxy_and_wait
 * Separate Thread-Logik zur Dateiprüfung
 * Fehlerbehandlung via Logging
 * Sauberes Abbrechen nach Timeout
+* ✉ Referenzdatei: `proxy_wait (1).py`
 
 ---
 
@@ -137,13 +176,13 @@ context.scene.frame_current = sparse_frame
 
 ```text
 WAIT_FOR_PROXY
-↓
+🔻
 DETECTING
-↓
+🔻
 TRACKING
-↓
+🔻
 CLEANUP
-↓
+🔻
 REVIEW / LOOP
 ```
 
@@ -168,7 +207,7 @@ REVIEW / LOOP
 ## 🔧 Debug-Logging
 
 ```python
-from .tracker_logger import TrackerLogger
+from modules.util.tracker_logger import TrackerLogger
 logger = TrackerLogger(debug=True)
 logger.info(), logger.warn(), logger.error(), logger.debug()
 ```
@@ -209,10 +248,18 @@ logger.info(), logger.warn(), logger.error(), logger.debug()
 
 ## 🧹 Integrationsempfehlung
 
-* `__init__.py` muss **alle Module explizit importieren**, z. B.:
+* `__init__.py` im Add-on-Stammverzeichnis importiert aus Submodulen:
 
   ```python
-  from .tracksycle_operator import KAISERLICH_OT_auto_track_cycle
+  from .modules.operators.tracksycle_operator import KAISERLICH_OT_auto_track_cycle
+  ```
+
+* Jeder Unterordner benötigt eine `__init__.py` für Modulregistrierung
+
+* Struktur für tiefe Imports:
+
+  ```python
+  from modules.detection.distance_remove import distance_remove
   ```
 
 * UI-Integration via:
@@ -223,7 +270,7 @@ logger.info(), logger.warn(), logger.error(), logger.debug()
 
 ---
 
-## 🧹 UI-Integration (Blender Sidebar)
+## 🪺 UI-Integration (Blender Sidebar)
 
 ### Panel: `KAISERLICH_PT_tracking_tools`
 
@@ -233,7 +280,7 @@ logger.info(), logger.warn(), logger.error(), logger.debug()
 | **Minimale Markeranzahl**      | `IntProperty`     | `scene.min_marker_count`      | Anzahl an erkannten Features, die mindestens erreicht werden soll |
 | **Tracking-Länge (min)**       | `IntProperty`     | `scene.min_track_length`      | Minimale Anzahl Frames pro Marker                                 |
 | **Fehler-Schwelle**            | `FloatProperty`   | `scene.error_threshold`       | Maximal tolerierter Reprojektionfehler                            |
-| **🛠 Debug Output aktivieren** | `BoolProperty`    | `scene.debug_output`          | Aktiviert ausführliches Logging zur Fehleranalyse                 |
+| **🔧 Debug Output aktivieren** | `BoolProperty`    | `scene.debug_output`          | Aktiviert ausführliches Logging zur Fehleranalyse                 |
 
 ### Panel-Position in Blender:
 
