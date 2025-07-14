@@ -12,7 +12,7 @@ import bpy
 
 from .modules.operators.tracksycle_operator import KAISERLICH_OT_auto_track_cycle
 from .modules.ui.kaiserlich_panel import KAISERLICH_PT_tracking_tools
-from bpy.props import IntProperty, FloatProperty, BoolProperty
+from bpy.props import IntProperty, FloatProperty, BoolProperty, EnumProperty
 
 classes = [
     KAISERLICH_OT_auto_track_cycle,
@@ -51,6 +51,19 @@ def register():
         default=False,
     )
 
+    bpy.types.Scene.kaiserlich_tracking_state = EnumProperty(
+        name="Tracking State",
+        description="Internal state for the Kaiserlich Tracksycle operator",
+        items=[
+            ('WAIT_FOR_PROXY', 'Wait for Proxy', ''),
+            ('DETECTING', 'Detecting', ''),
+            ('TRACKING', 'Tracking', ''),
+            ('CLEANUP', 'Cleanup', ''),
+            ('REVIEW', 'Review', ''),
+        ],
+        default='WAIT_FOR_PROXY',
+    )
+
 
 def unregister():
     for cls in reversed(classes):
@@ -60,6 +73,7 @@ def unregister():
     del bpy.types.Scene.min_track_length
     del bpy.types.Scene.error_threshold
     del bpy.types.Scene.debug_output
+    del bpy.types.Scene.kaiserlich_tracking_state
 
 
 if __name__ == "__main__":
