@@ -71,9 +71,15 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
 
         for track in clip.tracking.tracks:
             if not track.name.startswith("TRACK_"):
-                track.name = f"TRACK_{track.name}"
+                new_name = f"TRACK_{track.name}"
+                try:
+                    track.name = new_name
+                except Exception as exc:  # pylint: disable=broad-except
+                    logger.warn(f"Failed to rename track {track.name} -> {new_name}: {exc}")
 
-        track_markers(context)
+        if not track_markers(context, logger=logger):
+            self.report({'ERROR'}, "Tracking markers failed; check console for details")
+            return {'CANCELLED'}
 
         scene.kaiserlich_tracking_state = 'CLEANUP'
 
