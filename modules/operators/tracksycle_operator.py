@@ -79,7 +79,7 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
                 new_name = f"TRACK_{track.name}"
                 try:
                     track.name = new_name
-                except Exception as exc:  # pylint: disable=broad-except
+                except RuntimeError as exc:
                     logger.warn(f"Failed to rename track {track.name} -> {new_name}: {exc}")
 
         if not track_markers(context, logger=logger):
