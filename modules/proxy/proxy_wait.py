@@ -278,6 +278,7 @@ def detect_features_in_ui_context(threshold=1.0, margin=0, min_distance=0, place
                         logger.info("Running feature detection in UI context")
                     bpy.ops.clip.detect_features(
                         override,
+                        "EXEC_DEFAULT",
                         threshold=threshold,
                         margin=margin,
                         min_distance=min_distance,

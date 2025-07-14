@@ -42,6 +42,7 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None, min_distance=None
     clip.use_proxy = False
 
     bpy.ops.clip.detect_features(
+        "EXEC_DEFAULT",
         threshold=threshold,
         margin=margin,
         min_distance=min_distance,

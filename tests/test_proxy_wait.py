@@ -53,7 +53,7 @@ def test_detect_features_in_ui_context(monkeypatch):
     import bpy  # provided by conftest
 
     bpy.context = dummy_context
-    bpy.ops.clip.detect_features = lambda override=None, **k: called.update({"override": override, **k})
+    bpy.ops.clip.detect_features = lambda override=None, exec_ctx=None, **k: called.update({"override": override, "ctx": exec_ctx, **k})
 
     result = detect_features_in_ui_context(threshold=0.2, margin=5, min_distance=3, placement="FRAME")
     assert result is True
@@ -62,6 +62,7 @@ def test_detect_features_in_ui_context(monkeypatch):
     assert called["min_distance"] == 3
     assert called["placement"] == "FRAME"
     assert called["override"]["area"] is areas[0]
+    assert called["ctx"] == "EXEC_DEFAULT"
 
 
 def test_wait_for_proxy_and_trigger_detection(tmp_path, monkeypatch):
@@ -88,7 +89,7 @@ def test_wait_for_proxy_and_trigger_detection(tmp_path, monkeypatch):
         fn()
 
     bpy.app = SimpleNamespace(timers=SimpleNamespace(register=dummy_register))
-    bpy.ops.clip.detect_features = lambda override=None, **k: calls.update({"called": True})
+    bpy.ops.clip.detect_features = lambda *a, **k: calls.update({"called": True, "ctx": a[1] if len(a) > 1 else None})
 
     # run threads immediately
     monkeypatch.setattr(threading.Thread, "start", lambda self: self.run())
@@ -100,3 +101,4 @@ def test_wait_for_proxy_and_trigger_detection(tmp_path, monkeypatch):
 
     wait_for_proxy_and_trigger_detection(None, str(proxy))
     assert calls.get("called")
+    assert calls.get("ctx") == "EXEC_DEFAULT"
