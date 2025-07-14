@@ -54,7 +54,7 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
                 clip,
                 threshold=threshold,
                 margin=clip.size[0] / 200,
-                distance=clip.size[0] / 20,
+                min_distance=clip.size[0] / 20,
                 logger=logger,
             )
             marker_count = len(clip.tracking.tracks)
