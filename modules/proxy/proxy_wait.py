@@ -16,11 +16,10 @@ def remove_existing_proxies(clip, logger=None):
         Logger used for warning output.
     """
 
+    if not clip.proxy.directory:
+        clip.proxy.directory = "//proxy/"
     directory = clip.proxy.directory
-    if not directory:
-        if logger:
-            logger.warn("Proxy directory is not set")
-        return
+    os.makedirs(bpy.path.abspath(directory), exist_ok=True)
 
     path = os.path.join(directory, "proxy_50.avi")
     if os.path.exists(path):
@@ -50,30 +49,20 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
         otherwise ``False``.
     """
 
-    directory = clip.proxy.directory
-    if not directory:
-        warning = "Proxy directory is not set; clip may not be initialized."
+    if not clip.proxy.directory:
         if logger:
-            logger.warn(warning)
+            logger.warn("Proxy directory was not set; using default '//proxy/'")
+        clip.proxy.directory = "//proxy/"
+    directory = bpy.path.abspath(clip.proxy.directory)
+    try:
+        os.makedirs(directory, exist_ok=True)
+    except OSError as exc:
+        message = f"Failed to create proxy directory: {directory} ({exc})"
+        if logger:
+            logger.error(message)
         else:
-            print(f"WARNING: {warning}")
+            print(f"ERROR: {message}")
         return False
-
-    if not os.path.isdir(directory):
-        try:
-            os.makedirs(directory, exist_ok=True)
-            message = f"Created missing proxy directory: {directory}"
-            if logger:
-                logger.info(message)
-            else:
-                print(message)
-        except OSError as exc:
-            message = f"Failed to create proxy directory: {directory} ({exc})"
-            if logger:
-                logger.error(message)
-            else:
-                print(f"ERROR: {message}")
-            return False
 
     if not os.access(directory, os.W_OK):
         message = f"Proxy directory is not writable: {directory}"
