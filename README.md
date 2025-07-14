@@ -191,6 +191,7 @@ logger.info(), logger.warn(), logger.error(), logger.debug()
   layout.operator("kaiserlich.auto_track_cycle", text="Auto Track")
   ```
 
----
+* Panel im Clip-Editor:
 
-Möchtest du dieses `README.md` als Datei in dein Add-on einfügen? Ich kann es dir direkt generieren.
+  Ein neues Panel **"Kaiserlich Tracker"** erscheint rechts im Clip Editor. Es enthält drei Eingabefelder ("Min Marker Count", "Min Track Length", "Detect Threshold") und einen **Start**-Button, der den Operator `kaiserlich.auto_track_cycle` ausführt.
+

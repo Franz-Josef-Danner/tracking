@@ -29,6 +29,11 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
             self.report({'ERROR'}, "No clip found")
             return {'CANCELLED'}
 
+        # Read settings from scene properties to allow UI inputs
+        self.min_marker_count = scene.kaiserlich_min_marker_count
+        self.min_track_length = scene.kaiserlich_min_track_length
+        self.threshold = scene.kaiserlich_detect_threshold
+
         motion_cycle = motion_model_cycle()
 
         # Step 1: Proxy Handling (simplified)
