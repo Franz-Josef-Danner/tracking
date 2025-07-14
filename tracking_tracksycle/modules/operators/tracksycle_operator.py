@@ -8,7 +8,7 @@ from ..detection.find_frame_with_few_tracking_markers import (
     find_frame_with_few_tracking_markers,
 )
 from ..tracking.track import track_markers
-from ..tracking.Track_Length import get_track_length
+from ..tracking.track_length import get_track_length
 from ..tracking.motion_model import next_model
 from ..playback.set_playhead import set_playhead
 from ..util.tracker_logger import TrackerLogger
