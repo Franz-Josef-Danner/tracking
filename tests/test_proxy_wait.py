@@ -9,6 +9,7 @@ from modules.proxy.proxy_wait import (
     wait_for_stable_file,
     detect_features_in_ui_context,
     wait_for_proxy_and_trigger_detection,
+    log_proxy_status,
 )
 
 
@@ -122,3 +123,20 @@ def test_wait_for_proxy_and_trigger_detection(tmp_path, monkeypatch):
 
     wait_for_proxy_and_trigger_detection(None, str(proxy))
     assert calls.get("called")
+
+
+def test_log_proxy_status(caplog):
+    clip = SimpleNamespace(
+        name="test",
+        use_proxy=True,
+        proxy=SimpleNamespace(build_25=False, build_50=True, build_75=False, build_100=False),
+    )
+
+    from modules.util.tracker_logger import configure_logger, TrackerLogger
+
+    logger = configure_logger(debug=True)
+    tlogger = TrackerLogger()
+    with caplog.at_level(logger.level):
+        log_proxy_status(clip, tlogger)
+    assert "use_proxy=True" in caplog.text
+    assert "build_50: True" in caplog.text

@@ -164,6 +164,30 @@ from modules.proxy.proxy_wait import create_proxy_and_wait_async
 * Sauberes Abbrechen nach Timeout
 * ✉ Referenzdatei: `proxy_wait (1).py`
 
+#### Proxy-Status abfragen
+
+```python
+import bpy
+
+space = bpy.context.space_data
+if space and space.type == 'CLIP_EDITOR':
+    clip = space.clip
+    if clip:
+        if clip.use_proxy:
+            print(f"[Proxy] Clip \"{clip.name}\" ist AKTIV (use_proxy=True)")
+            p = clip.proxy
+            print(
+                f" \u2192 build_25: {p.build_25}, build_50: {p.build_50}, "
+                f"build_75: {p.build_75}, build_100: {p.build_100}"
+            )
+        else:
+            print(f"[Proxy] Clip \"{clip.name}\" ist INAKTIV (use_proxy=False)")
+    else:
+        print("[Proxy] Kein Clip im Editor ausgewählt.")
+else:
+    print("[Proxy] Script läuft nicht im Movie Clip Editor.")
+```
+
 ---
 
 ### 2. **Detect Features**
