@@ -36,7 +36,7 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
 
         remove_existing_proxies(clip)
         logger.info("Generating proxy...")
-        if not create_proxy_and_wait(clip):
+        if not create_proxy_and_wait(clip, logger=logger):
             self.report({'ERROR'}, "Proxy creation timed out")
             return {'CANCELLED'}
 
