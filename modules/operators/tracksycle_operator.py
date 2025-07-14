@@ -33,6 +33,21 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
         configure_logger(debug=scene.debug_output)
         logger = TrackerLogger()
 
+        # Activate proxy settings before generating proxies
+        clip.use_proxy = True
+        clip.use_proxy_custom_directory = True
+        clip.proxy.build_50 = True
+        clip.proxy.build_25 = clip.proxy.build_75 = clip.proxy.build_100 = False
+        clip.proxy.directory = "//proxy"
+        clip.proxy.timecode = 'FREE_RUN_NO_GAPS'
+
+        ctx = context.copy()
+        for area in context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                ctx['area'] = area
+                break
+        bpy.ops.clip.rebuild_proxy(ctx)
+
         # state machine property
         scene.kaiserlich_tracking_state = 'WAIT_FOR_PROXY'
 
