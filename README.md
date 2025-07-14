@@ -173,6 +173,7 @@ bpy.ops.clip.detect_features(threshold=dynamic, margin=width/200, distance=width
 * Proxy-Status wird vor jedem Aufruf deaktiviert: `clip.proxy.build_50 = False`, `clip.use_proxy = False`
 * `threshold` wird bei unzureichender Markeranzahl iterativ angepasst (max. 10 Versuche)
 * `default_pattern_size` dynamisch, max. 100
+* Optionales Debug-Logging via `detect_features_no_proxy(..., logger=TrackerLogger())`
 
 #### 📊 Threshold-Formel (Feature Detection)
 
