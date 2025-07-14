@@ -72,7 +72,12 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
         margin = clip.size[0] / 20
         for track in list(clip.tracking.tracks):
             if track.name.startswith("GOOD_"):
-                distance_remove(clip.tracking.tracks, track.markers[0].co, margin)
+                try:
+                    marker_co = track.markers[0].co
+                except (IndexError, AttributeError):
+                    logger.warn(f"Track {track.name} has no markers; skipping distance check")
+                    continue
+                distance_remove(clip.tracking.tracks, marker_co, margin)
 
         for track in clip.tracking.tracks:
             if not track.name.startswith("TRACK_"):

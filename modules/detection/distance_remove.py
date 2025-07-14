@@ -8,8 +8,10 @@ def distance_remove(tracks, good_marker, margin):
     """Remove tracks within a margin of a given marker."""
     good_pos = Vector(good_marker)
     for track in list(tracks):
-        if track.markers:
+        try:
             pos = track.markers[0].co
-            if (Vector(pos) - good_pos).length < margin:
-                tracks.remove(track)
+        except (AttributeError, IndexError):
+            continue
+        if (Vector(pos) - good_pos).length < margin:
+            tracks.remove(track)
 
