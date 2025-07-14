@@ -314,6 +314,9 @@ logger.info(), logger.warn(), logger.error(), logger.debug()
   layout.operator("kaiserlich.auto_track_cycle", text="Auto Track")
   ```
 
+* Bei Beendigung des gesamten Tracking-Zyklus erscheint die Meldung:
+  „Es war sehr sch\u00f6n, es hat mich sehr gefreut."
+
 ---
 
 ## 🪺 UI-Integration (Blender Sidebar)
