@@ -8,6 +8,36 @@ import time
 import threading
 
 
+def log_proxy_status(clip, logger=None):
+    """Log the proxy status for ``clip``.
+
+    Parameters
+    ----------
+    clip : :class:`bpy.types.MovieClip`
+        Movie clip whose proxy status should be reported.
+    logger : :class:`TrackerLogger`, optional
+        Logger used for output; when omitted ``print`` is used.
+    """
+
+    if not clip:
+        return
+
+    if clip.use_proxy:
+        p = clip.proxy
+        message = (
+            f"[Proxy] Clip \"{clip.name}\" ist AKTIV (use_proxy=True)\n"
+            f" \u2192 build_25: {p.build_25}, build_50: {p.build_50}, "
+            f"build_75: {p.build_75}, build_100: {p.build_100}"
+        )
+    else:
+        message = f"[Proxy] Clip \"{clip.name}\" ist INAKTIV (use_proxy=False)"
+
+    if logger:
+        logger.info(message)
+    else:
+        print(message)
+
+
 def wait_for_stable_file(path, timeout=60, check_interval=1, stable_time=3):
     """Wait until ``path`` exists and its size no longer changes."""
 
@@ -94,6 +124,7 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
     clip.use_proxy = True
     # ensure proxy directory usage is enabled
     clip.use_proxy_custom_directory = True
+    log_proxy_status(clip, logger)
     if not clip.proxy.directory:
         if logger:
             logger.warn("Proxy directory was not set; using default '//proxies'")
@@ -192,6 +223,7 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
     # enable proxies before generating them
     clip.use_proxy = True
     clip.use_proxy_custom_directory = True
+    log_proxy_status(clip, logger)
     if not clip.proxy.directory:
         if logger:
             logger.warn("Proxy directory was not set; using default '//proxies'")
@@ -330,6 +362,7 @@ def wait_for_proxy_and_trigger_detection(clip, proxy_path, threshold=1.0, margin
 
 __all__ = [
     "wait_for_stable_file",
+    "log_proxy_status",
     "remove_existing_proxies",
     "create_proxy_and_wait",
     "create_proxy_and_wait_async",

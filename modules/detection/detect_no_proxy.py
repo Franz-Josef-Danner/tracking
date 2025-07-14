@@ -1,6 +1,7 @@
 """Feature detection with proxy disabled."""
 
 import bpy
+from ..proxy.proxy_wait import log_proxy_status
 
 
 def detect_features_no_proxy(clip, threshold=1.0, margin=None, min_distance=None, logger=None):
@@ -40,6 +41,7 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None, min_distance=None
     # ensure proxies are disabled during detection
     clip.proxy.build_50 = False
     clip.use_proxy = False
+    log_proxy_status(clip, logger)
 
     bpy.ops.clip.detect_features(
         "EXEC_DEFAULT",
