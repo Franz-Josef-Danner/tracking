@@ -23,3 +23,14 @@ def test_tracker_logger_methods(caplog):
     assert 'error' in caplog.text
     assert 'debug' in caplog.text
 
+
+def test_configure_logger_file(tmp_path):
+    log_file = tmp_path / "test.log"
+    logger = configure_logger(debug=True, log_file=log_file)
+    logger.info('file')
+    for h in logger.handlers:
+        if hasattr(h, 'flush'):
+            h.flush()
+    assert log_file.exists()
+    assert 'file' in log_file.read_text()
+

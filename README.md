@@ -288,7 +288,7 @@ REVIEW / LOOP
 ```python
 from modules.util.tracker_logger import TrackerLogger, configure_logger
 
-configure_logger(debug=True)
+configure_logger(debug=True, log_file="tracksycle.log")
 logger = TrackerLogger()
 logger.info(), logger.warn(), logger.error(), logger.debug()
 ```
