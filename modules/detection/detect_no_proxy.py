@@ -41,6 +41,8 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None, min_distance=None
     # ensure proxies are disabled during detection
     clip.proxy.build_50 = False
     clip.use_proxy = False
+    from modules.proxy.proxy_wait import log_proxy_status
+    log_proxy_status(clip)
     log_proxy_status(clip, logger)
 
     bpy.ops.clip.detect_features(
