@@ -29,8 +29,13 @@ class DummyTracks(list):
                 return i
         return -1
 
-    def remove(self, index):
-        del self[index]
+    def remove(self, track):
+        self.remove_called_with = track
+        try:
+            idx = self.index(track)
+        except ValueError:
+            return
+        del self[idx]
         self.removed = True
 
 def test_distance_remove_empty_markers():
