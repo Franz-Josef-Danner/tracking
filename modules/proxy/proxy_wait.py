@@ -38,8 +38,8 @@ def remove_existing_proxies(clip, logger=None):
 def create_proxy_and_wait(clip, timeout=300, logger=None):
     """Create a 50% proxy and wait until the proxy file exists.
 
-    Activates ``clip.use_proxy_custom_directory`` to ensure the
-    provided directory is used for proxy files.
+    Activates ``clip.use_proxy`` and ``clip.use_proxy_custom_directory`` so the
+    proxy is generated in the configured directory.
 
     Parameters
     ----------
@@ -59,6 +59,8 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
             print(f"ERROR: {message}")
         return False
 
+    # enable proxies before generating them
+    clip.use_proxy = True
     # ensure proxy directory usage is enabled
     clip.use_proxy_custom_directory = True
     if not clip.proxy.directory:
@@ -81,7 +83,6 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
 
     # Enable proxy generation and set up building the proxy
     try:
-        clip.use_proxy = True
         clip.proxy.build_50 = True
         # clip.proxy.build_proxy() gibt es so nicht – stattdessen ggf. durch Timer auf das File warten wie bisher
     except Exception as e:  # pylint: disable=broad-except
