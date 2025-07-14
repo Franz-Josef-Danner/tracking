@@ -46,7 +46,7 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
             if area.type == 'CLIP_EDITOR':
                 ctx['area'] = area
                 break
-        bpy.ops.clip.rebuild_proxy(ctx)
+        bpy.ops.clip.rebuild_proxy('INVOKE_DEFAULT')
 
         # state machine property
         scene.kaiserlich_tracking_state = 'WAIT_FOR_PROXY'
