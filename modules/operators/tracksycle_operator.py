@@ -70,6 +70,7 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
 
                         bpy.ops.clip.detect_features(
                             override,
+                            "EXEC_DEFAULT",
                             threshold=1.0,
                             margin=26,
                             min_distance=265,
