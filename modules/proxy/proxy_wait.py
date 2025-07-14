@@ -5,6 +5,7 @@ import glob
 import os
 import shutil
 import time
+import threading
 
 
 def wait_for_stable_file(path, timeout=60, check_interval=1, stable_time=3):
@@ -160,14 +161,6 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
     return True
 
 
-__all__ = [
-    "wait_for_stable_file",
-    "remove_existing_proxies",
-    "create_proxy_and_wait",
-    "create_proxy_and_wait_async",
-]
-
-
 def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
     """Create a 50% proxy and run ``callback`` once it exists.
 
@@ -267,5 +260,76 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
 
     bpy.app.timers.register(_wait_for_proxy)
     return True
+
+
+def detect_features_in_ui_context(threshold=1.0, margin=0, min_distance=0, placement="FRAME", logger=None):
+    """Run feature detection in a valid Clip Editor UI context."""
+    for area in bpy.context.window.screen.areas:
+        if area.type == 'CLIP_EDITOR':
+            for region in area.regions:
+                if region.type == 'WINDOW':
+                    override = {
+                        'area': area,
+                        'region': region,
+                        'space_data': area.spaces.active,
+                        'scene': bpy.context.scene,
+                    }
+                    if logger:
+                        logger.info("Running feature detection in UI context")
+                    bpy.ops.clip.detect_features(
+                        override,
+                        threshold=threshold,
+                        margin=margin,
+                        min_distance=min_distance,
+                        placement=placement,
+                    )
+                    return True
+    if logger:
+        logger.error("No valid UI context found")
+    else:
+        print("\u274c Kein g\u00fcltiger UI-Kontext gefunden")
+    return False
+
+
+def wait_for_proxy_and_trigger_detection(clip, proxy_path, threshold=1.0, margin=0, min_distance=0, placement="FRAME", logger=None):
+    """Wait for ``proxy_path`` to appear and then run detection in the UI context."""
+
+    def wait_loop():
+        for _ in range(300):
+            time.sleep(0.5)
+            if os.path.exists(proxy_path):
+                try:
+                    with open(proxy_path, "rb"):
+                        if logger:
+                            logger.info("\u2705 Proxy verf\u00fcgbar")
+                        bpy.app.timers.register(
+                            lambda: detect_features_in_ui_context(
+                                threshold,
+                                margin,
+                                min_distance,
+                                placement,
+                                logger,
+                            ),
+                            first_interval=0.1,
+                        )
+                        return
+                except PermissionError:
+                    continue
+        if logger:
+            logger.error("Proxy nicht fertig oder blockiert.")
+        else:
+            print("\u274c Proxy nicht fertig oder blockiert.")
+
+    threading.Thread(target=wait_loop).start()
+
+
+__all__ = [
+    "wait_for_stable_file",
+    "remove_existing_proxies",
+    "create_proxy_and_wait",
+    "create_proxy_and_wait_async",
+    "detect_features_in_ui_context",
+    "wait_for_proxy_and_trigger_detection",
+]
 
 
