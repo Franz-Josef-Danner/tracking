@@ -1,6 +1,7 @@
 """Proxy management utilities for Kaiserlich Tracksycle."""
 
 import bpy
+import glob
 import os
 import shutil
 import time
@@ -108,7 +109,13 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
             print(f"ERROR: {message}")
         return False
 
-    proxy_path = os.path.join(directory, "proxy_50.avi")
+    possible_proxies = glob.glob(os.path.join(directory, "proxy_50*.avi"))
+    if possible_proxies:
+        proxy_path = possible_proxies[0]  # Nimm die erste passende Datei
+    else:
+        proxy_path = os.path.join(directory, "proxy_50.avi")  # Fallback
+    if logger:
+        logger.info(f"Looking for proxy file: {proxy_path}")
 
     # Enable proxy generation and set up building the proxy
     try:
@@ -208,7 +215,14 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
             print(f"ERROR: {message}")
         return False
 
-    proxy_path = os.path.join(directory, "proxy_50.avi")
+
+    possible_proxies = glob.glob(os.path.join(directory, "proxy_50*.avi"))
+    if possible_proxies:
+        proxy_path = possible_proxies[0]  # Nimm die erste passende Datei
+    else:
+        proxy_path = os.path.join(directory, "proxy_50.avi")  # Fallback
+    if logger:
+        logger.info(f"Looking for proxy file: {proxy_path}")
 
     try:
         clip.proxy.build_50 = True
