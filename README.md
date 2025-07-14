@@ -9,7 +9,7 @@ Ein automatisierter Tracking-Zyklus für Blender (ab 4.0), entwickelt zur robust
 ## 📂 Struktur
 
 ```
-tracking-tracksycle/
+tracking_tracksycle/
 ├── __init__.py
 ├── modules/                      # Unterordner für logische Trennung
 │   ├── __init__.py
@@ -31,9 +31,12 @@ tracking-tracksycle/
 │   ├── playback/
 │   │   ├── __init__.py
 │   │   └── set_playhead.py
-│   └── util/
+│   ├── util/
+│   │   ├── __init__.py
+│   │   └── tracker_logger.py
+│   └── ui/
 │       ├── __init__.py
-│       └── tracker_logger.py
+│       └── kaiserlich_panel.py
 ```
 
 > **Hinweis:** Jeder Unterordner benötigt eine `__init__.py`, um als Modul erkannt zu werden.
@@ -58,6 +61,49 @@ Im Stamm-`__init__.py` erfolgt der Hauptimport:
 
 ```python
 from .modules.operators.tracksycle_operator import KAISERLICH_OT_auto_track_cycle
+```
+
+## 🔗 Modulregistrierung in `__init__.py`
+
+Damit das Add-on korrekt geladen wird, müssen alle relevanten Klassen in der Hauptdatei `__init__.py` wie folgt registriert werden:
+
+```python
+from .modules.operators.tracksycle_operator import KAISERLICH_OT_auto_track_cycle
+from .modules.ui.kaiserlich_panel import KAISERLICH_PT_tracking_tools
+
+classes = [
+    KAISERLICH_OT_auto_track_cycle,
+    KAISERLICH_PT_tracking_tools,
+    # ggf. weitere Klassen...
+]
+
+def register():
+    for cls in classes:
+        bpy.utils.register_class(cls)
+
+def unregister():
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
+```
+
+Jedes Submodul ist in seinem eigenen Unterordner organisiert und wird dort durch ein eigenes `__init__.py` als Paketstruktur kenntlich gemacht. Diese Dateien können leer sein oder zusätzlich lokale `register()`-Funktionen definieren, wenn innerhalb des Pakets mehrere Klassen verwaltet werden.
+
+Beispiel für ein leeres `__init__.py`:
+
+```python
+# erforderlich zur Modulinitialisierung
+```
+
+Alternativ mit Unterregistrierung:
+
+```python
+from .some_operator import SOME_OT_Class
+
+def register():
+    bpy.utils.register_class(SOME_OT_Class)
+
+def unregister():
+    bpy.utils.unregister_class(SOME_OT_Class)
 ```
 
 ---
