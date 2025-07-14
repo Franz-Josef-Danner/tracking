@@ -9,7 +9,7 @@ Ein automatisierter Tracking-Zyklus für Blender (ab 4.0), entwickelt zur robust
 ## 📂 Struktur
 
 ```
-tracking-tracksycle/
+tracking_tracksycle/
 ├── __init__.py
 ├── modules/                      # Unterordner für logische Trennung
 │   ├── __init__.py
