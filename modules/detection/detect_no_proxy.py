@@ -12,7 +12,7 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None, distance=None, lo
         The movie clip on which to perform feature detection.
     threshold : float, optional
         Detection threshold, defaults to ``1.0``.
-    margin : float, optional
+    margin : int, optional
         Margin value passed to the operator. If ``None`` it is derived from
         ``clip.size``.
     distance : float, optional
@@ -23,6 +23,7 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None, distance=None, lo
     """
     if margin is None:
         margin = clip.size[0] / 200
+    margin = int(margin)
     if distance is None:
         distance = clip.size[0] / 20
 
