@@ -16,10 +16,12 @@ def test_tracker_logger_methods(caplog):
     with caplog.at_level(logger.level):
         tlogger.info('info')
         tlogger.warn('warn')
+        tlogger.warning('warning')
         tlogger.error('error')
         tlogger.debug('debug')
     assert 'info' in caplog.text
     assert 'warn' in caplog.text
+    assert 'warning' in caplog.text
     assert 'error' in caplog.text
     assert 'debug' in caplog.text
 

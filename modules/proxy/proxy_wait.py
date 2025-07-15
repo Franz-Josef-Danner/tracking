@@ -145,7 +145,7 @@ def remove_existing_proxies(clip, logger=None):
                 f"[Tracksycle] WARNUNG: Proxy-Datei {abs_dir} ist gesperrt und kann nicht gelöscht werden."
             )
             if logger:
-                logger.warn(message)
+                logger.warning(message)
             else:
                 print(message)
         else:
@@ -155,7 +155,7 @@ def remove_existing_proxies(clip, logger=None):
                     logger.info(f"Proxy directory removed: {abs_dir}")
             except Exception as exc:  # pylint: disable=broad-except
                 if logger:
-                    logger.warn(f"Failed to remove proxy directory: {exc}")
+                    logger.warning(f"Failed to remove proxy directory: {exc}")
     else:
         if logger:
             logger.debug("Proxy directory does not exist")
@@ -222,7 +222,7 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
     log_proxy_status(clip, logger)
     if not clip.proxy.directory:
         if logger:
-            logger.warn("Proxy directory was not set; using default '//proxies'")
+            logger.warning("Proxy directory was not set; using default '//proxies'")
         clip.proxy.directory = "//proxies"
 
     directory = bpy.path.abspath(clip.proxy.directory)
@@ -348,7 +348,7 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
     log_proxy_status(clip, logger)
     if not clip.proxy.directory:
         if logger:
-            logger.warn("Proxy directory was not set; using default '//proxies'")
+            logger.warning("Proxy directory was not set; using default '//proxies'")
         clip.proxy.directory = "//proxies"
 
     directory = bpy.path.abspath(clip.proxy.directory)

@@ -418,7 +418,7 @@ from modules.util.tracker_logger import TrackerLogger, configure_logger
 
 configure_logger(debug=True, log_file="tracksycle.log")
 logger = TrackerLogger()
-logger.info(), logger.warn(), logger.error(), logger.debug()
+logger.info(), logger.warning(), logger.error(), logger.debug()
 ```
 
 ---
