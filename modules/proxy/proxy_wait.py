@@ -216,7 +216,7 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
     # Enable proxy generation and set up building the proxy
     try:
         clip.proxy.build_50 = True
-        bpy.context.scene.use_proxy = True
+        clip.use_proxy = True
         clip.proxy.timecode = 'RECORD_RUN'
         bpy.ops.clip.rebuild_proxy({'clip': clip})
         # clip.proxy.build_proxy() gibt es so nicht – stattdessen ggf. durch Timer auf das File warten wie bisher
@@ -332,7 +332,7 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
 
     try:
         clip.proxy.build_50 = True
-        bpy.context.scene.use_proxy = True
+        clip.use_proxy = True
         clip.proxy.timecode = 'RECORD_RUN'
         bpy.ops.clip.rebuild_proxy({'clip': clip})
     except Exception as e:  # pylint: disable=broad-except
