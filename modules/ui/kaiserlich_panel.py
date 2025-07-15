@@ -3,6 +3,7 @@
 import bpy
 
 from ..operators.tracksycle_operator import KAISERLICH_OT_auto_track_cycle
+from ..operators.proxy_build_modal import KAISERLICH_OT_proxy_build_modal
 
 
 class KAISERLICH_PT_tracking_tools(bpy.types.Panel):
@@ -24,7 +25,12 @@ class KAISERLICH_PT_tracking_tools(bpy.types.Panel):
 
         layout.operator(KAISERLICH_OT_auto_track_cycle.bl_idname,
                         text="Auto Track starten")
+        layout.operator("kaiserlich.proxy_build_modal",
+                        text="Build Proxy and Track")
         layout.prop(scene, "min_marker_count")
         layout.prop(scene, "min_track_length")
         layout.prop(scene, "error_threshold")
         layout.prop(scene, "debug_output")
+
+__all__ = ["KAISERLICH_PT_tracking_tools"]
+

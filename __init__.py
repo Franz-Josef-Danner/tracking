@@ -20,12 +20,14 @@ from .modules.util.tracker_logger import configure_logger
 from .modules.operators.tracksycle_operator import KAISERLICH_OT_auto_track_cycle
 from .modules.operators.rename_tracks_modal import KAISERLICH_OT_rename_tracks_modal
 from .modules.operators.detect_features_operator import KAISERLICH_OT_detect_features
+from .modules.operators.proxy_build_modal import KAISERLICH_OT_proxy_build_modal
 from .modules.ui.kaiserlich_panel import KAISERLICH_PT_tracking_tools
 
 classes = [
     KAISERLICH_OT_auto_track_cycle,
     KAISERLICH_OT_rename_tracks_modal,
     KAISERLICH_OT_detect_features,
+    KAISERLICH_OT_proxy_build_modal,
     KAISERLICH_PT_tracking_tools,
 ]
 
@@ -66,6 +68,12 @@ def register():
         default=False,
     )
 
+    bpy.types.Scene.proxy_built = BoolProperty(
+        name="Proxy Built",
+        description="Indicates whether a proxy was built",
+        default=False,
+    )
+
     bpy.types.Scene.kaiserlich_tracking_state = EnumProperty(
         name="Tracking State",
         description="Internal state for the Kaiserlich Tracksycle operator",
@@ -89,6 +97,7 @@ def unregister():
     del bpy.types.Scene.error_threshold
     del bpy.types.Scene.debug_output
     del bpy.types.Scene.kaiserlich_tracking_state
+    del bpy.types.Scene.proxy_built
 
 
 if __name__ == "__main__":
