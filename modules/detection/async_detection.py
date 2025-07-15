@@ -48,10 +48,14 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
             min_distance=int(clip.size[0] / 20),
             logger=logger,
         )
+        if logger:
+            logger.debug(f"Detection call returned {ok}")
         if not ok:
             if logger:
                 logger.error("Detection step failed")
             return None
+        if logger:
+            logger.debug("Starting marker count check")
         marker_count = len(clip.tracking.tracks)
         if logger:
             logger.debug(f"Markers detected: {marker_count}")
