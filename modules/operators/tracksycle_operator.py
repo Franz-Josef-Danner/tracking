@@ -8,7 +8,7 @@ from ..detection.find_frame_with_few_tracking_markers import (
     find_frame_with_few_tracking_markers,
 )
 from ..detection.detect_no_proxy import detect_features_no_proxy
-from ..util.tracking_utils import safe_remove_track
+from ..util.tracking_utils import safe_remove_track, count_markers_in_frame
 
 
 class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
@@ -26,17 +26,22 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
     def run_detection_with_check(self, clip, scene, logger):
         """Asynchronous feature detection with marker count verification."""
 
-        state = {"attempt": 0}
+        state = {"attempt": 0, "threshold": 1.0}
+        max_attempts = 10
 
         def detect_step():
-            logger.info(f"\u25B6 Feature Detection Durchlauf {state['attempt'] + 1}")
+            logger.info(
+                f"\u25B6 Feature Detection Durchlauf {state['attempt'] + 1}"
+            )
             state["attempt"] += 1
 
+            margin = clip.size[0] / 200
+            min_distance = clip.size[0] / 20
             ok = detect_features_no_proxy(
                 clip,
-                threshold=1.0,
-                margin=clip.size[0] / 200,
-                min_distance=265,
+                threshold=state["threshold"],
+                margin=margin,
+                min_distance=min_distance,
                 logger=logger,
             )
 
@@ -46,14 +51,30 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
 
             logger.info("\u2705 Marker gesetzt \u2013 pr\u00fcfe Anzahl...")
             min_count = getattr(scene, "min_marker_count", 10)
+            expected = min_count * 4
             frame = find_frame_with_few_tracking_markers(clip, min_count)
 
             if frame is not None:
+                marker_count = count_markers_in_frame(clip.tracking.tracks, frame)
+                state["threshold"] = max(
+                    round(
+                        state["threshold"]
+                        * ((marker_count + 0.1) / expected),
+                        5,
+                    ),
+                    0.0001,
+                )
                 logger.warning(
                     f"\u26A0 Zu wenige Marker in Frame {frame}. L\u00f6sche Tracks und versuche erneut."
                 )
                 for track in list(clip.tracking.tracks):
                     safe_remove_track(clip, track)
+                if state["attempt"] >= max_attempts:
+                    logger.warning(
+                        f"\u26A0 Max attempts ({max_attempts}) erreicht. Breche ab."
+                    )
+                    scene.kaiserlich_feature_detection_done = True
+                    return None
                 return 0.5
 
             logger.info("\U0001F389 Gen\u00fcgend Marker erkannt \u2013 fertig.")
