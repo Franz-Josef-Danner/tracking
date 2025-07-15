@@ -216,6 +216,7 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None,
 Führt die Erkennung ohne aktivierte Proxys aus.
 
 ```python
+from modules.util.tracking_utils import count_markers_in_frame
 def detect_features_async(scene, clip, logger=None, attempts=10):
     state = {"attempt": 0, "threshold": 1.0}
     def _step():
@@ -226,7 +227,9 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
             min_distance=int(clip.size[0] / 20),
             logger=logger,
         )
-        marker_count = len(clip.tracking.tracks)
+        marker_count = count_markers_in_frame(
+            clip.tracking.tracks, scene.frame_current
+        )
         state["threshold"] = max(
             round(state["threshold"] * ((marker_count + 0.1) / state["expected"]), 5),
             0.0001,
@@ -358,8 +361,9 @@ if max(frame) - min(frame) < min_track_length: → DELETE
 ### 6. **Re-Analyse**
 
 ```python
-clip.tracking.tracks → active_marker_count_per_frame
-if active < min_marker_count → sparse_frame = frame
+active = count_markers_in_frame(clip.tracking.tracks, frame)
+if active < min_marker_count:
+    sparse_frame = frame
 ```
 
 Falls `sparse_frame` erneut auftritt:
@@ -401,7 +405,7 @@ REVIEW / LOOP
 | --------------------- | ------------------------------------------------ |
 | Proxy prüfen          | `clip.proxy.build_50`, `clip.use_proxy`          |
 | Features erkennen     | `bpy.ops.clip.detect_features()`                 |
-| Marker zählen         | `len(clip.tracking.tracks)`                      |
+| Marker zählen         | `count_markers_in_frame(clip.tracking.tracks, frame)` |
 | Tracking auslösen     | `bpy.ops.clip.track_markers()`                   |
 | Kontext setzen        | `context.temp_override()`                        |
 | Pattern Size setzen   | `clip.tracking.settings.default_pattern_size`    |

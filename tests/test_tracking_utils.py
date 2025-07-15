@@ -35,6 +35,11 @@ class DummyTrack:
         self.markers = []
 
 
+class DummyMarker:
+    def __init__(self, frame):
+        self.frame = frame
+
+
 class DummyClip:
     def __init__(self):
         self.tracking = SimpleNamespace(tracks=DummyTracks())
@@ -85,3 +90,18 @@ def test_safe_remove_track_fallback(monkeypatch):
     tracking_utils.safe_remove_track(clip, track)
     assert called.get("op") is None
     assert called.get("removed") is True
+
+
+def test_count_markers_in_frame():
+    tracks = DummyTracks()
+    t1 = DummyTrack("A")
+    t1.markers = [DummyMarker(1), DummyMarker(3)]
+    t2 = DummyTrack("B")
+    t2.markers = [DummyMarker(2)]
+    t3 = DummyTrack("C")
+    tracks.extend([t1, t2, t3])
+
+    assert tracking_utils.count_markers_in_frame(tracks, 1) == 1
+    assert tracking_utils.count_markers_in_frame(tracks, 2) == 1
+    assert tracking_utils.count_markers_in_frame(tracks, 3) == 1
+    assert tracking_utils.count_markers_in_frame(tracks, 4) == 0

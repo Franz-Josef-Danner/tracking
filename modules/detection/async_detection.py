@@ -5,6 +5,7 @@ from __future__ import annotations
 import bpy
 
 from .detect_no_proxy import detect_features_no_proxy
+from ..util.tracking_utils import count_markers_in_frame, safe_remove_track
 
 
 def detect_features_async(scene, clip, logger=None, attempts=10):
@@ -56,7 +57,9 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
             return None
         if logger:
             logger.debug("Starting marker count check")
-        marker_count = len(clip.tracking.tracks)
+        marker_count = count_markers_in_frame(
+            clip.tracking.tracks, scene.frame_current
+        )
         if logger:
             logger.debug(f"Markers detected: {marker_count}")
             logger.debug(
@@ -70,6 +73,11 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
                     f"Detection finished after {state['attempt'] + 1} attempts with {marker_count} markers"
                 )
             return None
+        if marker_count < getattr(scene, "min_marker_count", 10):
+            if logger:
+                logger.debug("Removing existing tracks before retrying")
+            for track in list(clip.tracking.tracks):
+                safe_remove_track(clip, track)
         new_threshold = max(
             round(state["threshold"] * ((marker_count + 0.1) / state["expected"]), 5),
             0.0001,
