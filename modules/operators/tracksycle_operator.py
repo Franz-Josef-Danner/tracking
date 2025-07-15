@@ -21,6 +21,7 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
+        scene.kaiserlich_feature_detection_done = False
         space = context.space_data
         clip = getattr(space, "clip", None)
         if not clip:
@@ -98,25 +99,32 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
                     min_distance=265,
                     logger=self._logger,
                 )
-                if (
-                    len(self._clip.tracking.tracks)
-                    < getattr(context.scene, "min_marker_count", 10)
-                ):
-                    self._logger.info(
-                        "Zu wenige Marker – starte detect_features_async()"
-                    )
-                    from ..detection import detect_features_async
+                scene.kaiserlich_feature_detection_done = False  # initialisiere Flag
 
-                    bpy.app.timers.register(
-                        lambda: detect_features_async(
-                            context.scene, self._clip, logger=self._logger
+                # Trigger Timer, um auf Fertigstellung zu warten
+                def check_detection_done():
+                    scene = bpy.context.scene
+                    if not scene.kaiserlich_feature_detection_done:
+                        return 0.5  # Wiederhole alle 0.5 s
+
+                    self._logger.info("Detection abgeschlossen, pr\u00fcfe Marker...")
+                    if (
+                        len(self._clip.tracking.tracks)
+                        < getattr(scene, "min_marker_count", 10)
+                    ):
+                        self._logger.info("Zu wenige Marker – starte detect_features_async()")
+                        from ..detection import detect_features_async
+                        bpy.app.timers.register(
+                            lambda: detect_features_async(scene, self._clip, logger=self._logger)
                         )
-                    )
-                    context.scene.kaiserlich_tracking_state = "DETECTING"
-                    return {'RUNNING_MODAL'}
+                    else:
+                        self._logger.info("Gen\u00fcgend Marker – Tracking fortsetzen")
 
-                scene.kaiserlich_tracking_state = 'DETECTING'
-                return {'FINISHED'}
+                    scene.kaiserlich_tracking_state = "DETECTING"
+                    return None  # Timer beenden
+
+                bpy.app.timers.register(check_detection_done)
+                return {'RUNNING_MODAL'}
             self._checks += 1
         return {'PASS_THROUGH'}
 
