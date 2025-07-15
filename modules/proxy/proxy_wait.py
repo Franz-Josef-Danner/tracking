@@ -6,6 +6,8 @@ import os
 import shutil
 import time
 import threading
+import ctypes
+import sys
 
 
 def log_proxy_status(clip, logger=None):
@@ -62,6 +64,31 @@ def wait_for_stable_file(path, timeout=60, check_interval=1, stable_time=3):
     raise TimeoutError(f"Proxy file {path} not stable after {timeout} seconds")
 
 
+def is_file_locked(filepath):
+    """Return ``True`` if ``filepath`` is locked on Windows."""
+    if os.name != "nt":
+        return False
+
+    GENERIC_WRITE = 0x40000000
+    FILE_SHARE_READ = 0x00000001
+    OPEN_EXISTING = 3
+    INVALID_HANDLE_VALUE = -1
+
+    handle = ctypes.windll.kernel32.CreateFileW(
+        str(filepath),
+        GENERIC_WRITE,
+        FILE_SHARE_READ,
+        None,
+        OPEN_EXISTING,
+        0,
+        None,
+    )
+    if handle == INVALID_HANDLE_VALUE:
+        return True
+    ctypes.windll.kernel32.CloseHandle(handle)
+    return False
+
+
 def remove_existing_proxies(clip, logger=None):
     """Remove and recreate the proxy directory for ``clip``.
 
@@ -84,13 +111,22 @@ def remove_existing_proxies(clip, logger=None):
     abs_dir = bpy.path.abspath(clip.proxy.directory)
 
     if os.path.exists(abs_dir):
-        try:
-            shutil.rmtree(abs_dir)
+        if os.name == "nt" and is_file_locked(abs_dir):
+            message = (
+                f"[Tracksycle] WARNUNG: Proxy-Datei {abs_dir} ist gesperrt und kann nicht gelöscht werden."
+            )
             if logger:
-                logger.info(f"Proxy directory removed: {abs_dir}")
-        except Exception as exc:  # pylint: disable=broad-except
-            if logger:
-                logger.warn(f"Failed to remove proxy directory: {exc}")
+                logger.warn(message)
+            else:
+                print(message)
+        else:
+            try:
+                shutil.rmtree(abs_dir)
+                if logger:
+                    logger.info(f"Proxy directory removed: {abs_dir}")
+            except Exception as exc:  # pylint: disable=broad-except
+                if logger:
+                    logger.warn(f"Failed to remove proxy directory: {exc}")
 
     try:
         os.makedirs(abs_dir, exist_ok=True)
