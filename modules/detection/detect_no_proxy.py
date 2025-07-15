@@ -54,7 +54,7 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None, min_distance=None
     clip.use_proxy = False
     if logger:
         logger.debug("Proxies disabled for detection")
-    from modules.proxy.proxy_wait import log_proxy_status
+    from ..proxy.proxy_wait import log_proxy_status
     log_proxy_status(clip)
     log_proxy_status(clip, logger)
 
