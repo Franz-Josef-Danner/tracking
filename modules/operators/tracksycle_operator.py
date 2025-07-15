@@ -1,13 +1,9 @@
 """Core operator for the Kaiserlich Tracksycle addon."""
 
 import bpy
+import os
 
-from ..proxy.proxy_wait import (
-    create_proxy_and_wait_async,
-    remove_existing_proxies,
-    detect_features_in_ui_context,
-    _get_clip_editor_override,
-)
+from ..proxy.proxy_wait import detect_features_in_ui_context
 from ..util.tracker_logger import TrackerLogger, configure_logger
 
 
@@ -17,6 +13,11 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
     bl_idname = "kaiserlich.auto_track_cycle"
     bl_label = "Auto Track Cycle"
     bl_options = {'REGISTER', 'UNDO'}
+
+    _timer = None
+    _proxy_paths = []
+    _clip = None
+    _logger = None
 
     def execute(self, context):
         scene = context.scene
@@ -29,6 +30,8 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
         configure_logger(debug=scene.debug_output)
         logger = TrackerLogger()
 
+        scene.proxy_built = False
+
         # Activate proxy settings before generating proxies
         clip.use_proxy = True
         clip.use_proxy_custom_directory = True
@@ -37,55 +40,72 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
         clip.proxy.directory = "//proxy"
         clip.proxy.timecode = 'FREE_RUN_NO_GAPS'
 
-        ctx = bpy.context.copy()
-        for area in bpy.context.screen.areas:
-            if area.type == 'CLIP_EDITOR':
-                ctx['window'] = bpy.context.window
-                ctx['screen'] = bpy.context.screen
-                ctx['area'] = area
-                ctx['region'] = next(r for r in area.regions if r.type == 'WINDOW')
-                ctx['space_data'] = area.spaces.active
-                bpy.ops.clip.rebuild_proxy(ctx)
-                break
-        else:
-            self.report({'ERROR'}, "Kein Movie Clip Editor ge\u00f6ffnet")
-            return {'CANCELLED'}
+        proxy_dir = bpy.path.abspath(clip.proxy.directory)
+        os.makedirs(proxy_dir, exist_ok=True)
+        alt_dir = os.path.join(proxy_dir, os.path.basename(clip.filepath))
+        for d in (proxy_dir, alt_dir):
+            if os.path.isdir(d):
+                for f in os.listdir(d):
+                    if f.startswith("proxy_"):
+                        try:
+                            os.remove(os.path.join(d, f))
+                        except OSError:
+                            pass
 
-        # state machine property
+        override = context.copy()
+        override['area'] = next(
+            a for a in context.screen.areas if a.type == 'CLIP_EDITOR'
+        )
+        override['region'] = next(
+            r for r in override['area'].regions if r.type == 'WINDOW'
+        )
+        override['space_data'] = override['area'].spaces.active
+        override['clip'] = clip
+
+        with context.temp_override(**override):
+            bpy.ops.clip.rebuild_proxy()
+
         scene.kaiserlich_tracking_state = 'WAIT_FOR_PROXY'
 
-        def nach_proxy():
-            def delayed_call():
-                logger.debug("Executing detection callback")
-                scene = bpy.context.scene
-                space = bpy.context.space_data
-                clip = getattr(space, "clip", None)
-                if clip and clip.use_proxy:
-                    clip.use_proxy = False
-                    logger.debug("Proxy deaktiviert f\u00fcr Feature-Erkennung")
+        proxy_file = "proxy_50.avi"
+        direct_path = os.path.join(proxy_dir, proxy_file)
+        alt_path = os.path.join(proxy_dir, os.path.basename(clip.filepath), proxy_file)
 
-                # Optional: Sicherstellen, dass der richtige Frame gesetzt ist
-                scene.frame_set(scene.frame_current)
+        self._clip = clip
+        self._proxy_paths = [direct_path, alt_path]
+        self._logger = logger
+        self._checks = 0
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.5, window=context.window)
+        wm.modal_handler_add(self)
 
-                # Jetzt Feature Detection sicher aufrufen
+        self.report({'INFO'}, "Proxy 50% Erstellung gestartet")
+        logger.info("[Proxy] build started")
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):  # type: ignore[override]
+        if event.type == 'TIMER':
+            if any(os.path.exists(p) for p in self._proxy_paths):
+                context.window_manager.event_timer_remove(self._timer)
+                if self._clip:
+                    self._clip.use_proxy = False
+                scene = context.scene
+                scene.proxy_built = True
+                self._logger.info("[Proxy] build finished")
                 detect_features_in_ui_context(
-                threshold=1.0,
-                margin=26,
-                min_distance=265,
-                logger=logger,
+                    threshold=1.0,
+                    margin=26,
+                    min_distance=265,
+                    logger=self._logger,
                 )
-                return None  # nur einmal ausf\u00fchren
+                scene.kaiserlich_tracking_state = 'DETECTING'
+                return {'FINISHED'}
+            self._checks += 1
+        return {'PASS_THROUGH'}
 
-            # Verzögerung von 0.5 Sekunden
-            logger.info("Proxy ready, scheduling feature detection")
-            bpy.app.timers.register(delayed_call, first_interval=0.5)
-
-        remove_existing_proxies(clip, logger=logger)
-        logger.info("Generating proxy...")
-        if not create_proxy_and_wait_async(clip, callback=nach_proxy, logger=logger):
-            self.report({'ERROR'}, "Proxy creation timed out")
-            return {'CANCELLED'}
-
-        return {'FINISHED'}
+    def cancel(self, context):  # type: ignore[override]
+        if self._timer:
+            context.window_manager.event_timer_remove(self._timer)
+        return {'CANCELLED'}
 
 
