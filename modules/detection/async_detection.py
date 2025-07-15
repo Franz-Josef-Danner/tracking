@@ -55,6 +55,11 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
         marker_count = len(clip.tracking.tracks)
         if logger:
             logger.debug(f"Markers detected: {marker_count}")
+            logger.debug(
+                f"Evaluating: marker_count={marker_count}, "
+                f"min_marker_count={getattr(scene, 'min_marker_count', 10)}, "
+                f"attempt={state['attempt']}, attempts={attempts}"
+            )
         if marker_count >= getattr(scene, "min_marker_count", 10) or state["attempt"] >= attempts:
             if logger:
                 logger.info(
