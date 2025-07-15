@@ -7,7 +7,6 @@ import shutil
 import time
 import threading
 import ctypes
-import sys
 
 
 def _get_clip_editor_override(ctx=None):
