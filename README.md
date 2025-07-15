@@ -406,8 +406,10 @@ REVIEW / LOOP
 | Kontext setzen        | `context.temp_override()`                        |
 | Pattern Size setzen   | `clip.tracking.settings.default_pattern_size`    |
 | Motion Model wechseln | `clip.tracking.settings.motion_model = 'Affine'` |
-| Tracks löschen        | `track = clip.tracking.tracks.get(name)`<br>`clip.tracking.tracks.remove(track)` |
+| Tracks löschen        | `track = clip.tracking.tracks.get(name)`<br>`safe_remove_track(track)` |
 | Playhead setzen       | `context.scene.frame_current = frame`            |
+
+> **Hinweis:** Direktes Entfernen über `clip.tracking.tracks.remove()` wird ab Blender 4.4+ nicht mehr unterstützt. Verwende `safe_remove_track` oder `bpy.ops.clip.track_remove()`.
 
 ---
 
