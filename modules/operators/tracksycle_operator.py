@@ -4,6 +4,7 @@ import bpy
 import os
 
 from ..proxy.proxy_wait import detect_features_in_ui_context
+from ..detection import detect_features_async
 from ..util.tracker_logger import TrackerLogger, configure_logger
 
 
@@ -92,10 +93,9 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
                 scene = context.scene
                 scene.proxy_built = True
                 self._logger.info("[Proxy] build finished")
-                detect_features_in_ui_context(
-                    threshold=1.0,
-                    margin=26,
-                    min_distance=265,
+                detect_features_async(
+                    scene,
+                    self._clip,
                     logger=self._logger,
                 )
                 scene.kaiserlich_tracking_state = 'DETECTING'
