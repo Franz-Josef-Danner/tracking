@@ -30,7 +30,17 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
         "expected": getattr(scene, "min_marker_count", 10) * 4,
     }
 
+    if logger:
+        logger.debug(
+            f"Starting async detection: attempts={attempts}, expected={state['expected']}, "
+            f"pattern_size={state['pattern_size']}"
+        )
+
     def _step():
+        if logger:
+            logger.debug(
+                f"Attempt {state['attempt'] + 1}: threshold={state['threshold']}, pattern_size={state['pattern_size']}"
+            )
         detect_features_no_proxy(
             clip,
             threshold=state["threshold"],
@@ -39,12 +49,21 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
             logger=logger,
         )
         marker_count = len(clip.tracking.tracks)
+        if logger:
+            logger.debug(f"Markers detected: {marker_count}")
         if marker_count >= getattr(scene, "min_marker_count", 10) or state["attempt"] >= attempts:
+            if logger:
+                logger.info(
+                    f"Detection finished after {state['attempt'] + 1} attempts with {marker_count} markers"
+                )
             return None
-        state["threshold"] = max(
+        new_threshold = max(
             round(state["threshold"] * ((marker_count + 0.1) / state["expected"]), 5),
             0.0001,
         )
+        if logger and new_threshold != state["threshold"]:
+            logger.debug(f"Adjusting threshold to {new_threshold}")
+        state["threshold"] = new_threshold
         if state["pattern_size"] < 100:
             state["pattern_size"] = min(int(state["pattern_size"] * 1.1), 100)
             settings.default_pattern_size = state["pattern_size"]
@@ -54,6 +73,8 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
         return 0.1
 
     bpy.app.timers.register(_step)
+    if logger:
+        logger.debug("Async detection timer registered")
 
 
 
