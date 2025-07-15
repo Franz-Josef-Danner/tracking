@@ -98,6 +98,23 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
                     min_distance=265,
                     logger=self._logger,
                 )
+                if (
+                    len(self._clip.tracking.tracks)
+                    < getattr(context.scene, "min_marker_count", 10)
+                ):
+                    self._logger.info(
+                        "Zu wenige Marker – starte detect_features_async()"
+                    )
+                    from ..detection import detect_features_async
+
+                    bpy.app.timers.register(
+                        lambda: detect_features_async(
+                            context.scene, self._clip, logger=self._logger
+                        )
+                    )
+                    context.scene.kaiserlich_tracking_state = "DETECTING"
+                    return {'RUNNING_MODAL'}
+
                 scene.kaiserlich_tracking_state = 'DETECTING'
                 return {'FINISHED'}
             self._checks += 1
