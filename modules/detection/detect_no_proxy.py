@@ -30,7 +30,7 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None, min_distance=None
     min_distance = int(min_distance)
 
     message = (
-        f"Detecting features with threshold={threshold}, "
+        f"Detecting features on {clip.name} with threshold={threshold}, "
         f"margin={margin}, min_distance={min_distance}"
     )
     if logger:
@@ -51,5 +51,10 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None, min_distance=None
         margin=margin,
         min_distance=min_distance,
     )
+
+    if logger:
+        logger.debug(
+            f"Detection finished, {len(clip.tracking.tracks)} markers present"
+        )
 
 __all__ = ["detect_features_no_proxy"]

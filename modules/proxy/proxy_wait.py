@@ -34,6 +34,9 @@ def log_proxy_status(clip, logger=None):
 
     if logger:
         logger.info(message)
+        directory = getattr(clip.proxy, "directory", None)
+        if directory:
+            logger.debug(f"Proxy directory: {bpy.path.abspath(directory)}")
     else:
         print(message)
 
@@ -120,6 +123,11 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
             print(f"ERROR: {message}")
         return False
 
+    if logger:
+        logger.debug(
+            f"Start proxy creation for {clip.name} with timeout {timeout}s"
+        )
+
     # enable proxies before generating them
     clip.use_proxy = True
     # ensure proxy directory usage is enabled
@@ -178,6 +186,9 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
             else:
                 if logger:
                     logger.info("Proxy file found.")
+                    logger.debug(
+                        f"Proxy generation took {time.time() - state['start']:.2f}s"
+                    )
             return None
         elapsed = time.time() - state["start"]
         if elapsed > timeout:
@@ -219,6 +230,11 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
         else:
             print(f"ERROR: {message}")
         return False
+
+    if logger:
+        logger.debug(
+            f"Start async proxy creation for {clip.name} with timeout {timeout}s"
+        )
 
     # enable proxies before generating them
     clip.use_proxy = True
@@ -276,6 +292,9 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
             else:
                 if logger:
                     logger.info("Proxy file found.")
+                    logger.debug(
+                        f"Proxy generation took {time.time() - state['start']:.2f}s"
+                    )
             if callback:
                 callback()
             return None
@@ -309,6 +328,10 @@ def detect_features_in_ui_context(threshold=1.0, margin=0, min_distance=0, place
                         if space.type == 'CLIP_EDITOR':
                             if logger:
                                 logger.info("Running feature detection in UI context")
+                                logger.debug(
+                                    f"threshold={threshold}, margin={margin}, "
+                                    f"min_distance={min_distance}, placement={placement}"
+                                )
                             with bpy.context.temp_override(
                                 area=area,
                                 region=region,
@@ -320,6 +343,8 @@ def detect_features_in_ui_context(threshold=1.0, margin=0, min_distance=0, place
                                     min_distance=min_distance,
                                     placement=placement,
                                 )
+                            if logger:
+                                logger.debug("Feature detection executed")
                             return True
     if logger:
         logger.error("No valid UI context found")
@@ -330,6 +355,9 @@ def detect_features_in_ui_context(threshold=1.0, margin=0, min_distance=0, place
 
 def wait_for_proxy_and_trigger_detection(clip, proxy_path, threshold=1.0, margin=0, min_distance=0, placement="FRAME", logger=None):
     """Wait for ``proxy_path`` to appear and then run detection in the UI context."""
+
+    if logger:
+        logger.debug(f"Waiting for proxy at {proxy_path} to trigger detection")
 
     def wait_loop():
         for _ in range(300):
@@ -349,6 +377,8 @@ def wait_for_proxy_and_trigger_detection(clip, proxy_path, threshold=1.0, margin
                             ),
                             first_interval=0.1,
                         )
+                        if logger:
+                            logger.debug("Proxy found, detection scheduled")
                         return
                 except PermissionError:
                     continue
