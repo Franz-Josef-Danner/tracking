@@ -47,7 +47,7 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
                                     region=region,
                                     space_data=space,
                                 ):
-                                    bpy.ops.clip.rebuild_proxy('INVOKE_DEFAULT')
+                                    bpy.ops.clip.rebuild_proxy('EXEC_DEFAULT')
                                 break
                 break
 
