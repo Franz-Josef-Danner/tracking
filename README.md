@@ -126,6 +126,25 @@ Der Operator `KAISERLICH_OT_auto_track_cycle` durchläuft automatisch folgende S
 6. Optionales Nachjustieren von Motion Model und Pattern Size, falls zu wenige Marker vorhanden sind.
 7. Setzen des Playheads auf einen Frame mit wenig Markern und Ausgabe der Abschlusmeldung.
 
+## 🧩 Kernstellen der Blender-Kommunikation
+
+Mehrere Funktionen greifen direkt über die `bpy`‑API auf Blender zu:
+
+1. **Registrierung und Properties** – Im Wurzel-`__init__.py` werden alle Operator‑ und Panelklassen mittels `bpy.utils.register_class` registriert und Szenen‑Properties wie `Scene.min_marker_count` definiert.
+2. **Proxy-Erstellung und UI-Overrides** – `KAISERLICH_OT_auto_track_cycle.execute()` aktiviert die Proxy-Einstellungen und ruft mit `context.temp_override(...)` `bpy.ops.clip.rebuild_proxy()` auf.
+3. **Asynchroner Ablauf über Timer** – Während der Proxy erstellt wird, überwacht der Operator im Modalmodus per `wm.event_timer_add` das Auftauchen der Proxy-Datei.
+4. **Feature-Erkennung im gültigen UI-Kontext** – `detect_features_in_ui_context` sucht nach einem Clip-Editor-Bereich und führt dort `bpy.ops.clip.detect_features()` aus.
+5. **Direkter Aufruf ohne Proxy** – `detect_features_no_proxy` schaltet `clip.use_proxy` aus und startet die Erkennung sofort.
+6. **Timer-basierte, wiederholte Erkennung** – `detect_features_async` registriert sich mit `bpy.app.timers.register`, um die Erkennung mehrfach zu wiederholen, bis genügend Marker gefunden wurden.
+
+## 🔄 Ablauf: Start bis Feature-Erkennung
+
+1. Nach dem Klick auf **Auto Track starten** prüft `KAISERLICH_OT_auto_track_cycle`, ob im Movie‑Clip‑Editor ein Clip geladen ist. Fehlt dieser, wird der Operator abgebrochen.
+2. Der Logger wird eingerichtet, `scene.proxy_built` zurückgesetzt und diverse Proxy-Flags am Clip aktiviert. Alte Proxy-Dateien im Zielordner werden entfernt.
+3. Mit einem UI-Override wird `bpy.ops.clip.rebuild_proxy()` gestartet. Der Operator merkt sich die erwarteten Proxy-Dateipfade, setzt `scene.kaiserlich_tracking_state` auf `WAIT_FOR_PROXY` und registriert einen Timer.
+4. In der `modal`‑Methode prüft jeder Timer-Event, ob die Proxy-Datei existiert. Bei Erfolg wird der Timer entfernt, `clip.use_proxy` deaktiviert, `scene.proxy_built` auf `True` gesetzt und der Status auf `DETECTING` geändert.
+5. Anschließend ruft der Operator `detect_features_in_ui_context()` auf. Diese Funktion führt die Marker-Erkennung im Clip‑Editor-Kontext mit den übergebenen Parametern aus.
+
 ---
 
 ## ⚙️ Parameter
