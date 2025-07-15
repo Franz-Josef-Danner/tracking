@@ -41,7 +41,7 @@ def log_proxy_status(clip, logger=None):
         print(message)
 
 
-def wait_for_stable_file(path, timeout=60, check_interval=1, stable_time=3):
+def wait_for_stable_file(path, timeout=60, check_interval=1, stable_time=3, logger=None):
     """Wait until ``path`` exists and its size no longer changes."""
 
     start_time = time.time()
@@ -51,6 +51,8 @@ def wait_for_stable_file(path, timeout=60, check_interval=1, stable_time=3):
     while time.time() - start_time < timeout:
         if os.path.exists(path):
             current_size = os.path.getsize(path)
+            if logger:
+                logger.debug(f"File size of {path}: {current_size}")
             if current_size == last_size:
                 same_size_count += 1
                 if same_size_count >= stable_time:
@@ -98,6 +100,23 @@ def remove_existing_proxies(clip, logger=None):
         if logger:
             logger.error(f"Failed to create proxy directory: {exc}")
 
+
+def rename_proxy_file(src, dst, logger=None):
+    """Rename ``src`` to ``dst`` with logging."""
+    if os.path.abspath(src) == os.path.abspath(dst):
+        if logger:
+            logger.debug("Proxy filename already correct")
+        return dst
+    try:
+        os.replace(src, dst)
+        if logger:
+            logger.debug(f"Renamed proxy file {src} -> {dst}")
+    except OSError as exc:  # pylint: disable=broad-except
+        if logger:
+            logger.error(f"Failed to rename proxy file: {exc}")
+        else:
+            print(f"ERROR: Failed to rename proxy file: {exc}")
+    return dst
 
 def create_proxy_and_wait(clip, timeout=300, logger=None):
     """Create a 50% proxy and wait until the proxy file exists.
@@ -149,13 +168,14 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
             print(f"ERROR: {message}")
         return False
 
-    possible_proxies = glob.glob(os.path.join(directory, "proxy_50*.avi"))
+    proxy_glob = os.path.join(directory, "proxy_50*.avi")
+    possible_proxies = glob.glob(proxy_glob)
     if possible_proxies:
-        proxy_path = possible_proxies[0]  # Nimm die erste passende Datei
+        proxy_path = possible_proxies[0]
     else:
-        proxy_path = os.path.join(directory, "proxy_50.avi")  # Fallback
+        proxy_path = os.path.join(directory, "proxy_50.avi")
     if logger:
-        logger.info(f"Looking for proxy file: {proxy_path}")
+        logger.info(f"Looking for proxy file matching: {proxy_glob}")
 
     # Enable proxy generation and set up building the proxy
     try:
@@ -174,16 +194,21 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
     state = {"start": time.time()}
 
     def _wait_for_proxy():
-        if os.path.exists(proxy_path):
+        matches = glob.glob(proxy_glob)
+        if matches:
+            found = matches[0]
+            if logger and found != proxy_path:
+                logger.debug(f"Detected proxy candidate: {found}")
             remaining = max(timeout - (time.time() - state["start"]), 0)
             try:
-                wait_for_stable_file(proxy_path, timeout=remaining)
+                wait_for_stable_file(found, timeout=remaining, logger=logger)
             except TimeoutError as exc:
                 if logger:
                     logger.error(str(exc))
                 else:
                     print(f"ERROR: {exc}")
             else:
+                rename_proxy_file(found, proxy_path, logger)
                 if logger:
                     logger.info("Proxy file found.")
                     logger.debug(
@@ -257,13 +282,14 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
         return False
 
 
-    possible_proxies = glob.glob(os.path.join(directory, "proxy_50*.avi"))
+    proxy_glob = os.path.join(directory, "proxy_50*.avi")
+    possible_proxies = glob.glob(proxy_glob)
     if possible_proxies:
-        proxy_path = possible_proxies[0]  # Nimm die erste passende Datei
+        proxy_path = possible_proxies[0]
     else:
-        proxy_path = os.path.join(directory, "proxy_50.avi")  # Fallback
+        proxy_path = os.path.join(directory, "proxy_50.avi")
     if logger:
-        logger.info(f"Looking for proxy file: {proxy_path}")
+        logger.info(f"Looking for proxy file matching: {proxy_glob}")
 
     try:
         clip.proxy.build_50 = True
@@ -280,16 +306,21 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
     state = {"start": time.time()}
 
     def _wait_for_proxy():
-        if os.path.exists(proxy_path):
+        matches = glob.glob(proxy_glob)
+        if matches:
+            found = matches[0]
+            if logger and found != proxy_path:
+                logger.debug(f"Detected proxy candidate: {found}")
             remaining = max(timeout - (time.time() - state["start"]), 0)
             try:
-                wait_for_stable_file(proxy_path, timeout=remaining)
+                wait_for_stable_file(found, timeout=remaining, logger=logger)
             except TimeoutError as exc:
                 if logger:
                     logger.error(str(exc))
                 else:
                     print(f"ERROR: {exc}")
             else:
+                rename_proxy_file(found, proxy_path, logger)
                 if logger:
                     logger.info("Proxy file found.")
                     logger.debug(
@@ -317,6 +348,8 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
 
 def detect_features_in_ui_context(threshold=1.0, margin=0, min_distance=0, placement="FRAME", logger=None):
     """Run feature detection in a valid Clip Editor UI context."""
+    if logger:
+        logger.debug("Searching UI context for feature detection")
     for area in bpy.context.window.screen.areas:
         if area.type == 'CLIP_EDITOR':
             for region in area.regions:
@@ -368,6 +401,8 @@ def wait_for_proxy_and_trigger_detection(clip, proxy_path, threshold=1.0, margin
                 try:
                     with open(proxy_path, "rb"):
                         if logger:
+                            logger.debug("Proxy file accessible, starting detection")
+                        if logger:
                             logger.info("\u2705 Proxy verf\u00fcgbar")
                         bpy.app.timers.register(
                             lambda: detect_features_in_ui_context(
@@ -383,6 +418,8 @@ def wait_for_proxy_and_trigger_detection(clip, proxy_path, threshold=1.0, margin
                             logger.debug("Proxy found, detection scheduled")
                         return
                 except PermissionError:
+                    if logger:
+                        logger.debug("Proxy file locked; retrying")
                     continue
         if logger:
             logger.error("Proxy nicht fertig oder blockiert.")
