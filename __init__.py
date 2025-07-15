@@ -72,6 +72,12 @@ def register():
         default=False,
     )
 
+    bpy.types.Scene.kaiserlich_feature_detection_done = BoolProperty(
+        name="Feature Detection Done",
+        description="Internal flag for async feature detection",
+        default=False,
+    )
+
 
     bpy.types.Scene.kaiserlich_tracking_state = EnumProperty(
         name="Tracking State",
@@ -96,6 +102,7 @@ def unregister():
     del bpy.types.Scene.error_threshold
     del bpy.types.Scene.debug_output
     del bpy.types.Scene.proxy_built
+    del bpy.types.Scene.kaiserlich_feature_detection_done
     del bpy.types.Scene.kaiserlich_tracking_state
 
 

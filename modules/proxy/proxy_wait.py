@@ -488,6 +488,8 @@ def detect_features_in_ui_context(threshold=1.0, margin=0, min_distance=0, place
                                     logger.info(
                                         f"Markers before: {before}, after: {after}, added: {after - before}"
                                     )
+                            if hasattr(bpy.context.scene, "kaiserlich_feature_detection_done"):
+                                bpy.context.scene.kaiserlich_feature_detection_done = True
                             return True
     if logger:
         logger.error("No valid UI context found")
