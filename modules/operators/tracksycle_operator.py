@@ -56,12 +56,13 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
 
         def nach_proxy():
             def delayed_call():
+                logger.debug("Executing detection callback")
                 scene = bpy.context.scene
                 space = bpy.context.space_data
                 clip = getattr(space, "clip", None)
                 if clip and clip.tracking.use_proxy:
                     clip.tracking.use_proxy = False
-                    print("Proxy deaktiviert f\u00fcr Feature-Erkennung")
+                    logger.debug("Proxy deaktiviert f\u00fcr Feature-Erkennung")
 
                 # Optional: Sicherstellen, dass der richtige Frame gesetzt ist
                 scene.frame_set(scene.frame_current)
@@ -71,10 +72,12 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
                 threshold=1.0,
                 margin=26,
                 min_distance=265,
+                logger=logger,
                 )
                 return None  # nur einmal ausf\u00fchren
 
             # Verzögerung von 0.5 Sekunden
+            logger.info("Proxy ready, scheduling feature detection")
             bpy.app.timers.register(delayed_call, first_interval=0.5)
 
         remove_existing_proxies(clip, logger=logger)

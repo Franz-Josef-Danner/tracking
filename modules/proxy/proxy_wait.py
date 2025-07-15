@@ -296,6 +296,8 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
                         f"Proxy generation took {time.time() - state['start']:.2f}s"
                     )
             if callback:
+                if logger:
+                    logger.debug("Executing proxy callback")
                 callback()
             return None
         elapsed = time.time() - state["start"]
