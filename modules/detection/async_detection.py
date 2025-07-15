@@ -31,6 +31,9 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
         "expected": getattr(scene, "min_marker_count", 10) * 4,
     }
 
+    if hasattr(scene, "kaiserlich_feature_detection_done"):
+        scene.kaiserlich_feature_detection_done = False
+
     if logger:
         logger.debug(
             f"Starting async detection: attempts={attempts}, expected={state['expected']}, "
@@ -72,6 +75,8 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
                 logger.info(
                     f"Detection finished after {state['attempt'] + 1} attempts with {marker_count} markers"
                 )
+            if hasattr(scene, "kaiserlich_feature_detection_done"):
+                scene.kaiserlich_feature_detection_done = True
             return None
         if marker_count < getattr(scene, "min_marker_count", 10):
             if logger:
