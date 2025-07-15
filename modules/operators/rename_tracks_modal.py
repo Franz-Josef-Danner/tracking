@@ -62,7 +62,7 @@ class KAISERLICH_OT_rename_tracks_modal(bpy.types.Operator):
                     track.name = new_name
                 except RuntimeError as exc:
                     if self._logger:
-                        self._logger.warn(f"Failed to rename track {track.name} -> {new_name}: {exc}")
+                        self._logger.warning(f"Failed to rename track {track.name} -> {new_name}: {exc}")
             self._index += 1
         return {'PASS_THROUGH'}
 

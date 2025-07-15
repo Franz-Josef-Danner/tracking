@@ -54,6 +54,9 @@ class TrackerLogger:
     def warn(self, msg):
         self._logger.warning(msg)
 
+    def warning(self, msg):
+        self._logger.warning(msg)
+
     def error(self, msg):
         self._logger.error(msg)
 
