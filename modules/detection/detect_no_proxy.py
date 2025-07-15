@@ -81,6 +81,13 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None, min_distance=None
         logger.info(
             f"Markers before: {before}, after: {after}, added: {after - before}"
         )
+        logger.debug("End of detection step, handing results back")
+
+    else:
+        print(
+            f"Detection executed in {duration:.2f}s: {result}. "
+            f"Markers before: {before}, after: {after}, added: {after - before}"
+        )
 
     return True
 
