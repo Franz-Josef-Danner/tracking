@@ -37,9 +37,19 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
         clip.proxy.directory = "//proxy"
         clip.proxy.timecode = 'FREE_RUN_NO_GAPS'
 
-        override = {"clip": clip}
-        override.update(_get_clip_editor_override(context))
-        bpy.ops.clip.rebuild_proxy(override)
+        ctx = bpy.context.copy()
+        for area in bpy.context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                ctx['window'] = bpy.context.window
+                ctx['screen'] = bpy.context.screen
+                ctx['area'] = area
+                ctx['region'] = next(r for r in area.regions if r.type == 'WINDOW')
+                ctx['space_data'] = area.spaces.active
+                bpy.ops.clip.rebuild_proxy(ctx)
+                break
+        else:
+            self.report({'ERROR'}, "Kein Movie Clip Editor ge\u00f6ffnet")
+            return {'CANCELLED'}
 
         # state machine property
         scene.kaiserlich_tracking_state = 'WAIT_FOR_PROXY'
