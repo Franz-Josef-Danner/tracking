@@ -59,3 +59,30 @@ def safe_remove_track(clip, track):
     safe_track = tracks.get(track.name) if hasattr(tracks, "get") else track
     if safe_track and hasattr(tracks, "remove"):
         tracks.remove(safe_track)
+
+
+def count_markers_in_frame(tracks, frame):
+    """Return the number of markers on ``frame`` across ``tracks``.
+
+    Parameters
+    ----------
+    tracks : iterable
+        Collection of tracks containing marker lists.
+    frame : int
+        The frame for which markers should be counted.
+
+    Returns
+    -------
+    int
+        Number of tracks that have at least one marker on ``frame``.
+    """
+
+    count = 0
+    for track in tracks:
+        try:
+            markers = track.markers
+        except AttributeError:
+            continue
+        if any(getattr(m, "frame", None) == frame for m in markers):
+            count += 1
+    return count
