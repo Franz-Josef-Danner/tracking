@@ -66,6 +66,12 @@ def register():
         default=False,
     )
 
+    bpy.types.Scene.proxy_built = BoolProperty(
+        name="Proxy Built",
+        description="Internal flag used by the modal proxy builder",
+        default=False,
+    )
+
 
     bpy.types.Scene.kaiserlich_tracking_state = EnumProperty(
         name="Tracking State",
@@ -89,6 +95,7 @@ def unregister():
     del bpy.types.Scene.min_track_length
     del bpy.types.Scene.error_threshold
     del bpy.types.Scene.debug_output
+    del bpy.types.Scene.proxy_built
     del bpy.types.Scene.kaiserlich_tracking_state
 
 
