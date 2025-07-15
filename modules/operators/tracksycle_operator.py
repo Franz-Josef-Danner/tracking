@@ -52,7 +52,9 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
                     f"\u26A0 Zu wenige Marker in Frame {frame}. L\u00f6sche Tracks und versuche erneut."
                 )
                 for track in list(clip.tracking.tracks):
-                    clip.tracking.tracks.remove(track)
+                    safe_track = clip.tracking.tracks.get(track.name)
+                    if safe_track:
+                        clip.tracking.tracks.remove(safe_track)
                 return 0.5
 
             logger.info("\U0001F389 Gen\u00fcgend Marker erkannt \u2013 fertig.")
