@@ -41,16 +41,25 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
             logger.debug(
                 f"Attempt {state['attempt'] + 1}: threshold={state['threshold']}, pattern_size={state['pattern_size']}"
             )
-        detect_features_no_proxy(
+        ok = detect_features_no_proxy(
             clip,
             threshold=state["threshold"],
             margin=clip.size[0] / 200,
             min_distance=int(clip.size[0] / 20),
             logger=logger,
         )
+        if not ok:
+            if logger:
+                logger.error("Detection step failed")
+            return None
         marker_count = len(clip.tracking.tracks)
         if logger:
             logger.debug(f"Markers detected: {marker_count}")
+            logger.debug(
+                f"Evaluating: marker_count={marker_count}, "
+                f"min_marker_count={getattr(scene, 'min_marker_count', 10)}, "
+                f"attempt={state['attempt']}, attempts={attempts}"
+            )
         if marker_count >= getattr(scene, "min_marker_count", 10) or state["attempt"] >= attempts:
             if logger:
                 logger.info(
