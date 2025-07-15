@@ -459,19 +459,35 @@ def detect_features_in_ui_context(threshold=1.0, margin=0, min_distance=0, place
                                     f"threshold={threshold}, margin={margin}, "
                                     f"min_distance={min_distance}, placement={placement}"
                                 )
+                            clip = getattr(space, "clip", None)
+                            before = len(clip.tracking.tracks) if clip else None
                             with bpy.context.temp_override(
                                 area=area,
                                 region=region,
                                 space_data=space,
                             ):
-                                bpy.ops.clip.detect_features(
-                                    threshold=threshold,
-                                    margin=margin,
-                                    min_distance=min_distance,
-                                    placement=placement,
-                                )
+                                start_time = time.time()
+                                try:
+                                    result = bpy.ops.clip.detect_features(
+                                        threshold=threshold,
+                                        margin=margin,
+                                        min_distance=min_distance,
+                                        placement=placement,
+                                    )
+                                except Exception as exc:  # pylint: disable=broad-except
+                                    if logger:
+                                        logger.error(f"detect_features failed: {exc}")
+                                    return False
+                                duration = time.time() - start_time
+                            after = len(clip.tracking.tracks) if clip else None
                             if logger:
-                                logger.debug("Feature detection executed")
+                                logger.debug(
+                                    f"Feature detection executed in {duration:.2f}s: {result}"
+                                )
+                                if before is not None and after is not None:
+                                    logger.info(
+                                        f"Markers before: {before}, after: {after}, added: {after - before}"
+                                    )
                             return True
     if logger:
         logger.error("No valid UI context found")

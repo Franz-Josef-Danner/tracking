@@ -23,6 +23,11 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None, min_distance=None
         from ``clip.size``.
     logger : :class:`TrackerLogger`, optional
         Logger for debug output. When omitted ``print`` is used.
+
+    Returns
+    -------
+    bool
+        ``True`` if detection was executed successfully, ``False`` otherwise.
     """
     if margin is None:
         margin = clip.size[0] / 200
@@ -53,19 +58,30 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None, min_distance=None
     log_proxy_status(clip)
     log_proxy_status(clip, logger)
 
+    before = len(clip.tracking.tracks)
     start_time = time.time()
-
-    bpy.ops.clip.detect_features(
-        "EXEC_DEFAULT",
-        threshold=threshold,
-        margin=margin,
-        min_distance=min_distance,
-    )
+    try:
+        result = bpy.ops.clip.detect_features(
+            "EXEC_DEFAULT",
+            threshold=threshold,
+            margin=margin,
+            min_distance=min_distance,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        if logger:
+            logger.error(f"detect_features operator failed: {exc}")
+        return False
     duration = time.time() - start_time
+    after = len(clip.tracking.tracks)
 
     if logger:
         logger.debug(
-            f"Detection finished in {duration:.2f}s, {len(clip.tracking.tracks)} markers present"
+            f"Detection executed in {duration:.2f}s: {result}"
         )
+        logger.info(
+            f"Markers before: {before}, after: {after}, added: {after - before}"
+        )
+
+    return True
 
 __all__ = ["detect_features_no_proxy"]
