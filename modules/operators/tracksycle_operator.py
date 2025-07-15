@@ -118,7 +118,6 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
         self._clip = clip
         self._proxy_paths = [direct_path, alt_path]
         self._logger = logger
-        self._checks = 0
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.5, window=context.window)
         wm.modal_handler_add(self)
@@ -150,7 +149,6 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
 
                 bpy.app.timers.register(check_detection_done)
                 return {'RUNNING_MODAL'}
-            self._checks += 1
         return {'PASS_THROUGH'}
 
     def cancel(self, context):  # type: ignore[override]
