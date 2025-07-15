@@ -6,6 +6,7 @@ from ..proxy.proxy_wait import (
     create_proxy_and_wait_async,
     remove_existing_proxies,
     detect_features_in_ui_context,
+    _get_clip_editor_override,
 )
 from ..util.tracker_logger import TrackerLogger, configure_logger
 
@@ -36,20 +37,9 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
         clip.proxy.directory = "//proxy"
         clip.proxy.timecode = 'FREE_RUN_NO_GAPS'
 
-        for area in context.screen.areas:
-            if area.type == 'CLIP_EDITOR':
-                for region in area.regions:
-                    if region.type == 'WINDOW':
-                        for space in area.spaces:
-                            if space.type == 'CLIP_EDITOR':
-                                with context.temp_override(
-                                    area=area,
-                                    region=region,
-                                    space_data=space,
-                                ):
-                                    bpy.ops.clip.rebuild_proxy('EXEC_DEFAULT')
-                                break
-                break
+        override = {"clip": clip}
+        override.update(_get_clip_editor_override(context))
+        bpy.ops.clip.rebuild_proxy(override)
 
         # state machine property
         scene.kaiserlich_tracking_state = 'WAIT_FOR_PROXY'
