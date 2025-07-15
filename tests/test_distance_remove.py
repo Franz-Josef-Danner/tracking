@@ -38,10 +38,20 @@ class DummyTracks(list):
         del self[idx]
         self.removed = True
 
-def test_distance_remove_empty_markers():
+def test_distance_remove_empty_markers(monkeypatch):
     tracks = DummyTracks([DummyTrack(), DummyTrack([DummyMarker((0, 0))])])
+    called = {}
+
+    def dummy_safe_remove(clip, track):
+        called['track'] = track
+        tracks.remove(track)
+
+    monkeypatch.setattr(distance_remove, 'safe_remove_track', dummy_safe_remove)
+
     distance_remove.distance_remove(tracks, (0, 0), 1.0)
-    # The track with markers should be removed; the empty one remains
+
+    # The track with markers should be removed via safe_remove_track
+    assert called.get('track') is not None
     assert getattr(tracks, 'removed', False)
     assert len(tracks) == 1
 
