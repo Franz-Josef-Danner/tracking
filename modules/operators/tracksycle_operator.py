@@ -3,8 +3,11 @@
 import bpy
 import os
 
-from ..proxy.proxy_wait import detect_features_in_ui_context
 from ..util.tracker_logger import TrackerLogger, configure_logger
+from ..detection.find_frame_with_few_tracking_markers import (
+    find_frame_with_few_tracking_markers,
+)
+from ..detection.detect_no_proxy import detect_features_no_proxy
 
 
 class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
@@ -18,6 +21,45 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
     _proxy_paths = []
     _clip = None
     _logger = None
+
+    def run_detection_with_check(self, clip, scene, logger):
+        """Asynchronous feature detection with marker count verification."""
+
+        state = {"attempt": 0}
+
+        def detect_step():
+            logger.info(f"\u25B6 Feature Detection Durchlauf {state['attempt'] + 1}")
+            state["attempt"] += 1
+
+            ok = detect_features_no_proxy(
+                clip,
+                threshold=1.0,
+                margin=clip.size[0] / 200,
+                min_distance=265,
+                logger=logger,
+            )
+
+            if not ok:
+                logger.warning("\u274C Feature Detection fehlgeschlagen.")
+                return None
+
+            logger.info("\u2705 Marker gesetzt \u2013 pr\u00fcfe Anzahl...")
+            min_count = getattr(scene, "min_marker_count", 10)
+            frame = find_frame_with_few_tracking_markers(clip, min_count)
+
+            if frame is not None:
+                logger.warning(
+                    f"\u26A0 Zu wenige Marker in Frame {frame}. L\u00f6sche Tracks und versuche erneut."
+                )
+                for track in list(clip.tracking.tracks):
+                    clip.tracking.tracks.remove(track)
+                return 0.5
+
+            logger.info("\U0001F389 Gen\u00fcgend Marker erkannt \u2013 fertig.")
+            scene.kaiserlich_feature_detection_done = True
+            return None
+
+        bpy.app.timers.register(detect_step, first_interval=0.1)
 
     def execute(self, context):
         scene = context.scene
@@ -93,35 +135,17 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
                 scene = context.scene
                 scene.proxy_built = True
                 self._logger.info("[Proxy] build finished")
-                detect_features_in_ui_context(
-                    threshold=1.0,
-                    margin=26,
-                    min_distance=265,
-                    logger=self._logger,
-                )
-                scene.kaiserlich_feature_detection_done = False  # initialisiere Flag
+                scene.kaiserlich_feature_detection_done = False
+                self.run_detection_with_check(self._clip, scene, self._logger)
 
-                # Trigger Timer, um auf Fertigstellung zu warten
                 def check_detection_done():
                     scene = bpy.context.scene
                     if not scene.kaiserlich_feature_detection_done:
-                        return 0.5  # Wiederhole alle 0.5 s
+                        return 0.5
 
-                    self._logger.info("Detection abgeschlossen, pr\u00fcfe Marker...")
-                    if (
-                        len(self._clip.tracking.tracks)
-                        < getattr(scene, "min_marker_count", 10)
-                    ):
-                        self._logger.info("Zu wenige Marker – starte detect_features_async()")
-                        from ..detection import detect_features_async
-                        bpy.app.timers.register(
-                            lambda: detect_features_async(scene, self._clip, logger=self._logger)
-                        )
-                    else:
-                        self._logger.info("Gen\u00fcgend Marker – Tracking fortsetzen")
-
+                    self._logger.info("Detection abgeschlossen")
                     scene.kaiserlich_tracking_state = "DETECTING"
-                    return None  # Timer beenden
+                    return None
 
                 bpy.app.timers.register(check_detection_done)
                 return {'RUNNING_MODAL'}
