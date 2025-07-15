@@ -2,6 +2,7 @@
 
 import bpy
 from mathutils import Vector
+from ..util.tracking_utils import safe_remove_track
 
 
 def distance_remove(tracks, good_marker, margin):
@@ -15,5 +16,6 @@ def distance_remove(tracks, good_marker, margin):
         if (Vector(pos) - good_pos).length < margin:
             safe_track = tracks.get(track.name) if hasattr(tracks, "get") else track
             if safe_track:
-                tracks.remove(safe_track)
+                clip = getattr(tracks, "id_data", None)
+                safe_remove_track(clip, safe_track)
 

@@ -8,6 +8,7 @@ from ..detection.find_frame_with_few_tracking_markers import (
     find_frame_with_few_tracking_markers,
 )
 from ..detection.detect_no_proxy import detect_features_no_proxy
+from ..util.tracking_utils import safe_remove_track
 
 
 class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
@@ -52,9 +53,7 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
                     f"\u26A0 Zu wenige Marker in Frame {frame}. L\u00f6sche Tracks und versuche erneut."
                 )
                 for track in list(clip.tracking.tracks):
-                    safe_track = clip.tracking.tracks.get(track.name)
-                    if safe_track:
-                        clip.tracking.tracks.remove(safe_track)
+                    safe_remove_track(clip, track)
                 return 0.5
 
             logger.info("\U0001F389 Gen\u00fcgend Marker erkannt \u2013 fertig.")
