@@ -54,22 +54,39 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None, min_distance=None
     clip.use_proxy = False
     if logger:
         logger.debug("Proxies disabled for detection")
-    from ..proxy.proxy_wait import log_proxy_status
     log_proxy_status(clip)
     log_proxy_status(clip, logger)
 
     before = len(clip.tracking.tracks)
     start_time = time.time()
-    try:
-        result = bpy.ops.clip.detect_features(
-            "EXEC_DEFAULT",
-            threshold=threshold,
-            margin=margin,
-            min_distance=min_distance,
-        )
-    except Exception as exc:  # pylint: disable=broad-except
+    for area in bpy.context.screen.areas:
+        if area.type == 'CLIP_EDITOR':
+            for region in area.regions:
+                if region.type == 'WINDOW':
+                    override = {
+                        'area': area,
+                        'region': region,
+                        'scene': bpy.context.scene,
+                        'clip': clip,
+                    }
+                    try:
+                        with bpy.context.temp_override(**override):
+                            result = bpy.ops.clip.detect_features(
+                                threshold=threshold,
+                                margin=margin,
+                                min_distance=min_distance,
+                            )
+                    except Exception as exc:  # pylint: disable=broad-except
+                        if logger:
+                            logger.error(
+                                f"detect_features operator failed: {exc}"
+                            )
+                        return False
+                    break
+            break
+    else:
         if logger:
-            logger.error(f"detect_features operator failed: {exc}")
+            logger.error("\u274c Kein aktiver Movie Clip Editor gefunden.")
         return False
     duration = time.time() - start_time
     after = len(clip.tracking.tracks)
