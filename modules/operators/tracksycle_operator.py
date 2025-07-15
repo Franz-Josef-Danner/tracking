@@ -60,8 +60,8 @@ class KAISERLICH_OT_auto_track_cycle(bpy.types.Operator):
                 scene = bpy.context.scene
                 space = bpy.context.space_data
                 clip = getattr(space, "clip", None)
-                if clip and clip.tracking.use_proxy:
-                    clip.tracking.use_proxy = False
+                if clip and clip.use_proxy:
+                    clip.use_proxy = False
                     logger.debug("Proxy deaktiviert f\u00fcr Feature-Erkennung")
 
                 # Optional: Sicherstellen, dass der richtige Frame gesetzt ist
