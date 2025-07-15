@@ -139,6 +139,87 @@ Der Operator `KAISERLICH_OT_auto_track_cycle` durchläuft automatisch folgende S
 
 ---
 
+## 🏗 Wichtige Proxy-Funktionen
+
+Aus `modules.proxy.proxy_wait` stammen die Helfer zur Proxy-Erstellung. Das
+Herzstück bildet `create_proxy_and_wait_async`:
+
+```python
+def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
+    clip.use_proxy = True
+    clip.use_proxy_custom_directory = True
+    clip.proxy.build_50 = True
+    override = {"clip": clip}
+    override.update(_get_clip_editor_override())
+    bpy.ops.clip.rebuild_proxy(override)
+    bpy.app.timers.register(_wait_for_proxy)
+```
+
+Startet die Proxy-Erstellung und registriert einen Timer, der auf die fertige
+Datei wartet. Nach Abschluss kann optional `callback` ausgeführt werden.
+
+```python
+def wait_for_proxy_and_trigger_detection(clip, proxy_path, threshold=1.0,
+                                         margin=0, min_distance=0,
+                                         placement="FRAME", logger=None):
+    def wait_loop():
+        for _ in range(300):
+            if os.path.exists(proxy_path):
+                bpy.app.timers.register(
+                    lambda: detect_features_in_ui_context(
+                        threshold, margin, min_distance, placement, logger
+                    ),
+                    first_interval=0.1,
+                )
+                return
+```
+
+Überwacht das angegebene Proxy-File und startet anschließend die
+Feature-Erkennung im Clip-Editor.
+
+## 🔍 Wichtige Detect-Funktionen
+
+Im Paket `modules.detection` befinden sich die Routinen für die eigentliche
+Marker-Erkennung:
+
+```python
+def detect_features_no_proxy(clip, threshold=1.0, margin=None,
+                             min_distance=None, logger=None):
+    clip.proxy.build_50 = False
+    clip.use_proxy = False
+    bpy.ops.clip.detect_features(
+        threshold=threshold,
+        margin=margin,
+        min_distance=min_distance,
+    )
+```
+
+Führt die Erkennung ohne aktivierte Proxys aus.
+
+```python
+def detect_features_async(scene, clip, logger=None, attempts=10):
+    state = {"attempt": 0, "threshold": 1.0}
+    def _step():
+        detect_features_no_proxy(
+            clip,
+            threshold=state["threshold"],
+            margin=clip.size[0] / 200,
+            min_distance=int(clip.size[0] / 20),
+            logger=logger,
+        )
+        marker_count = len(clip.tracking.tracks)
+        state["threshold"] = max(
+            round(state["threshold"] * ((marker_count + 0.1) / state["expected"]), 5),
+            0.0001,
+        )
+    bpy.app.timers.register(_step)
+```
+
+Wiederholt die Erkennung asynchron und passt dabei Threshold sowie Pattern Size
+dynamisch an.
+
+---
+
 ## 🗂 Ablaufplan (Operator: `KAISERLICH_OT_auto_track_cycle`)
 
 ### 1. **Proxy-Handling (async)**
