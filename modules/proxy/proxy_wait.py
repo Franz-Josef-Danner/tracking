@@ -134,8 +134,12 @@ def remove_existing_proxies(clip, logger=None):
         clip.proxy.directory = "//proxies"
 
     abs_dir = bpy.path.abspath(clip.proxy.directory)
+    if logger:
+        logger.debug(f"Preparing proxy directory: {abs_dir}")
 
     if os.path.exists(abs_dir):
+        if logger:
+            logger.debug("Existing proxy directory found")
         if os.name == "nt" and is_file_locked(abs_dir):
             message = (
                 f"[Tracksycle] WARNUNG: Proxy-Datei {abs_dir} ist gesperrt und kann nicht gelöscht werden."
@@ -152,9 +156,14 @@ def remove_existing_proxies(clip, logger=None):
             except Exception as exc:  # pylint: disable=broad-except
                 if logger:
                     logger.warn(f"Failed to remove proxy directory: {exc}")
+    else:
+        if logger:
+            logger.debug("Proxy directory does not exist")
 
     try:
         os.makedirs(abs_dir, exist_ok=True)
+        if logger:
+            logger.debug(f"Proxy directory ready: {abs_dir}")
     except Exception as exc:  # pylint: disable=broad-except
         if logger:
             logger.error(f"Failed to create proxy directory: {exc}")
@@ -217,8 +226,12 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
         clip.proxy.directory = "//proxies"
 
     directory = bpy.path.abspath(clip.proxy.directory)
+    if logger:
+        logger.debug(f"Using proxy directory: {directory}")
     try:
         os.makedirs(directory, exist_ok=True)
+        if logger:
+            logger.debug(f"Proxy directory ensured: {directory}")
     except OSError as exc:
         message = f"Failed to create proxy directory: {directory} ({exc})"
         if logger:
@@ -291,6 +304,8 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
         return 1.0
 
     bpy.app.timers.register(_wait_for_proxy)
+    if logger:
+        logger.debug("Proxy wait timer registered")
     return True
 
 
@@ -366,6 +381,8 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
         if logger:
             logger.debug(f"rebuild_proxy override keys: {list(override.keys())}")
         bpy.ops.clip.rebuild_proxy(override)
+        if logger:
+            logger.debug("bpy.ops.clip.rebuild_proxy called")
     except Exception as e:  # pylint: disable=broad-except
         if logger:
             logger.error(f"Proxy-Build-Setup fehlgeschlagen: {e}")
@@ -416,6 +433,8 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
         return 1.0
 
     bpy.app.timers.register(_wait_for_proxy)
+    if logger:
+        logger.debug("Proxy wait timer registered")
     return True
 
 
