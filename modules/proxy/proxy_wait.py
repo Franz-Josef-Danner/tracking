@@ -10,6 +10,29 @@ import ctypes
 import sys
 
 
+def _get_clip_editor_override(ctx=None):
+    """Return a context override dictionary for Clip Editor operations."""
+    ctx = ctx or bpy.context
+    override = {}
+    if getattr(ctx, "window", None):
+        override["window"] = ctx.window
+        screen = getattr(ctx.window, "screen", None)
+        if screen:
+            for area in screen.areas:
+                if area.type == "CLIP_EDITOR":
+                    override["area"] = area
+                    for region in area.regions:
+                        if region.type == "WINDOW":
+                            override["region"] = region
+                            break
+                    for space in area.spaces:
+                        if space.type == "CLIP_EDITOR":
+                            override["space_data"] = space
+                            break
+                    break
+    return override
+
+
 def log_proxy_status(clip, logger=None):
     """Log the proxy status for ``clip``.
 
@@ -218,7 +241,11 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
         clip.proxy.build_50 = True
         clip.use_proxy = True
         clip.proxy.timecode = 'RECORD_RUN'
-        bpy.ops.clip.rebuild_proxy({'clip': clip})
+        override = {'clip': clip}
+        override.update(_get_clip_editor_override())
+        if logger:
+            logger.debug(f"rebuild_proxy override keys: {list(override.keys())}")
+        bpy.ops.clip.rebuild_proxy(override)
         # clip.proxy.build_proxy() gibt es so nicht – stattdessen ggf. durch Timer auf das File warten wie bisher
     except Exception as e:  # pylint: disable=broad-except
         if logger:
@@ -334,7 +361,11 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
         clip.proxy.build_50 = True
         clip.use_proxy = True
         clip.proxy.timecode = 'RECORD_RUN'
-        bpy.ops.clip.rebuild_proxy({'clip': clip})
+        override = {'clip': clip}
+        override.update(_get_clip_editor_override())
+        if logger:
+            logger.debug(f"rebuild_proxy override keys: {list(override.keys())}")
+        bpy.ops.clip.rebuild_proxy(override)
     except Exception as e:  # pylint: disable=broad-except
         if logger:
             logger.error(f"Proxy-Build-Setup fehlgeschlagen: {e}")
