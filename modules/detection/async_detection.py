@@ -5,7 +5,8 @@ from __future__ import annotations
 import bpy
 
 from .detect_no_proxy import detect_features_no_proxy
-from ..util.tracking_utils import count_markers_in_frame, safe_remove_track
+from .distance_remove import distance_remove
+from ..util.tracking_utils import safe_remove_track
 from ..util.tracker_logger import TrackerLogger
 
 
@@ -60,11 +61,24 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
             if logger:
                 logger.error("Detection step failed")
             return None
+        # rename newly detected tracks
+        for i, track in enumerate(clip.tracking.tracks):
+            if track.name.startswith("Track"):
+                track.name = f"NEW_{i:03}"
+
+        # remove NEW_ tracks close to GOOD_ markers
+        good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]
+        margin_dist = int(clip.size[0] / 20)
+        for good in good_tracks:
+            try:
+                pos = good.markers[0].co
+            except (AttributeError, IndexError):
+                continue
+            distance_remove(clip.tracking.tracks, pos, margin_dist)
+
         if logger:
             logger.debug("Starting marker count check")
-        marker_count = count_markers_in_frame(
-            clip.tracking.tracks, scene.frame_current
-        )
+        marker_count = len([t for t in clip.tracking.tracks if t.name.startswith("NEW_")])
         min_marker_count = getattr(scene, "min_marker_count", 10)
         min_plus = min_marker_count * 4
         min_valid = min_plus * 0.8
@@ -75,17 +89,20 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
                 f"Evaluating: marker_count={marker_count}, min_marker_count={min_marker_count}, "
                 f"min_valid={min_valid}, max_valid={max_valid}, attempt={state['attempt']}, attempts={attempts}"
             )
-        if (min_valid < marker_count < max_valid) or state["attempt"] >= attempts:
+        if (min_valid <= marker_count <= max_valid) or state["attempt"] >= attempts:
             if logger:
                 logger.info(
                     f"Detection finished after {state['attempt'] + 1} attempts with {marker_count} markers"
                 )
+            for track in clip.tracking.tracks:
+                if track.name.startswith("NEW_"):
+                    track.name = track.name.replace("NEW_", "TRACK_")
             if hasattr(scene, "kaiserlich_feature_detection_done"):
                 scene.kaiserlich_feature_detection_done = True
             return None
         if logger:
             logger.debug("Removing existing tracks before retrying")
-        for track in list(clip.tracking.tracks):
+        for track in [t for t in clip.tracking.tracks if t.name.startswith("NEW_")]:
             safe_remove_track(clip, track, logger=logger)
         remaining = len(clip.tracking.tracks)
         if logger:

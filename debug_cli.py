@@ -4,15 +4,16 @@ import argparse
 import os
 import sys
 from types import SimpleNamespace
+import importlib.util
 
 # Ensure modules are importable when run directly
 sys.path.insert(0, os.path.dirname(__file__))
 
 # Provide dummy bpy module when running outside Blender
-try:
-    import bpy  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover - only for environments w/o Blender
-    sys.modules['bpy'] = SimpleNamespace()
+if importlib.util.find_spec("bpy") is None:  # pragma: no cover - only for environments w/o Blender
+    sys.modules["bpy"] = SimpleNamespace()
+else:  # pragma: no cover - Blender available
+    import bpy  # type: ignore  # noqa: F401
 
 from modules.tracking import motion_model
 from modules.tracking.track_length import get_track_length

@@ -1,10 +1,14 @@
-import os, sys; sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+import importlib
+import os
+import sys
 from types import SimpleNamespace
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Provide dummy bpy module
 sys.modules.setdefault('bpy', SimpleNamespace())
 
-from modules.tracking import motion_model
+motion_model = importlib.import_module("modules.tracking.motion_model")
 
 
 class DummySettings:
