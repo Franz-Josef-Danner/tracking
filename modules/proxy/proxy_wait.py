@@ -8,16 +8,18 @@ import time
 import threading
 import ctypes
 
+from ..util.tracker_logger import TrackerLogger
+
 
 def _get_clip_editor_override(ctx=None):
     """Return a context override dictionary for Clip Editor operations."""
     ctx = ctx or bpy.context
-    override = {}
-    if getattr(ctx, "window", None):
-        override["window"] = ctx.window
-        screen = getattr(ctx.window, "screen", None)
-        if screen:
-            for area in screen.areas:
+    if not getattr(ctx, "window", None):
+        return {}
+    override = {"window": ctx.window}
+    screen = getattr(ctx.window, "screen", None)
+    if screen:
+        for area in screen.areas:
                 if area.type == "CLIP_EDITOR":
                     override["area"] = area
                     for region in area.regions:
@@ -56,13 +58,12 @@ def log_proxy_status(clip, logger=None):
     else:
         message = f"[Proxy] Clip \"{clip.name}\" ist INAKTIV (use_proxy=False)"
 
-    if logger:
-        logger.info(message)
-        directory = getattr(clip.proxy, "directory", None)
-        if directory:
-            logger.debug(f"Proxy directory: {bpy.path.abspath(directory)}")
-    else:
-        print(message)
+    if logger is None:
+        logger = TrackerLogger()
+    logger.info(message)
+    directory = getattr(clip.proxy, "directory", None)
+    if directory:
+        logger.debug(f"Proxy directory: {bpy.path.abspath(directory)}")
 
 
 def wait_for_stable_file(path, timeout=60, check_interval=1, stable_time=3, logger=None):
@@ -143,10 +144,9 @@ def remove_existing_proxies(clip, logger=None):
             message = (
                 f"[Tracksycle] WARNUNG: Proxy-Datei {abs_dir} ist gesperrt und kann nicht gelöscht werden."
             )
-            if logger:
-                logger.warning(message)
-            else:
-                print(message)
+            if logger is None:
+                logger = TrackerLogger()
+            logger.warning(message)
         else:
             try:
                 shutil.rmtree(abs_dir)
@@ -179,10 +179,9 @@ def rename_proxy_file(src, dst, logger=None):
         if logger:
             logger.debug(f"Renamed proxy file {src} -> {dst}")
     except OSError as exc:  # pylint: disable=broad-except
-        if logger:
-            logger.error(f"Failed to rename proxy file: {exc}")
-        else:
-            print(f"ERROR: Failed to rename proxy file: {exc}")
+        if logger is None:
+            logger = TrackerLogger()
+        logger.error(f"Failed to rename proxy file: {exc}")
     return dst
 
 def create_proxy_and_wait(clip, timeout=300, logger=None):
@@ -203,10 +202,9 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
 
     if clip is None:
         message = "No clip provided to create_proxy_and_wait"
-        if logger:
-            logger.error(message)
-        else:
-            print(f"ERROR: {message}")
+        if logger is None:
+            logger = TrackerLogger()
+        logger.error(message)
         return False
 
     if logger:
@@ -233,10 +231,9 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
             logger.debug(f"Proxy directory ensured: {directory}")
     except OSError as exc:
         message = f"Failed to create proxy directory: {directory} ({exc})"
-        if logger:
-            logger.error(message)
-        else:
-            print(f"ERROR: {message}")
+        if logger is None:
+            logger = TrackerLogger()
+        logger.error(message)
         return False
 
     proxy_glob = os.path.join(directory, "proxy_50*.avi")
@@ -260,10 +257,9 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
         bpy.ops.clip.rebuild_proxy(override)
         # clip.proxy.build_proxy() gibt es so nicht – stattdessen ggf. durch Timer auf das File warten wie bisher
     except Exception as e:  # pylint: disable=broad-except
-        if logger:
-            logger.error(f"Proxy-Build-Setup fehlgeschlagen: {e}")
-        else:
-            print(f"ERROR: Proxy-Build-Setup fehlgeschlagen: {e}")
+        if logger is None:
+            logger = TrackerLogger()
+        logger.error(f"Proxy-Build-Setup fehlgeschlagen: {e}")
         return False
 
     if logger:
@@ -281,10 +277,8 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
             try:
                 wait_for_stable_file(found, timeout=remaining, logger=logger)
             except TimeoutError as exc:
-                if logger:
-                    logger.error(str(exc))
-                else:
-                    print(f"ERROR: {exc}")
+                log = logger or TrackerLogger()
+                log.error(str(exc))
             else:
                 rename_proxy_file(found, proxy_path, logger)
                 if logger:
@@ -330,10 +324,9 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
 
     if clip is None:
         message = "No clip provided to create_proxy_and_wait_async"
-        if logger:
-            logger.error(message)
-        else:
-            print(f"ERROR: {message}")
+        if logger is None:
+            logger = TrackerLogger()
+        logger.error(message)
         return False
 
     if logger:
@@ -355,10 +348,9 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
         os.makedirs(directory, exist_ok=True)
     except OSError as exc:
         message = f"Failed to create proxy directory: {directory} ({exc})"
-        if logger:
-            logger.error(message)
-        else:
-            print(f"ERROR: {message}")
+        if logger is None:
+            logger = TrackerLogger()
+        logger.error(message)
         return False
 
 
@@ -383,10 +375,9 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
         if logger:
             logger.debug("bpy.ops.clip.rebuild_proxy called")
     except Exception as e:  # pylint: disable=broad-except
-        if logger:
-            logger.error(f"Proxy-Build-Setup fehlgeschlagen: {e}")
-        else:
-            print(f"ERROR: Proxy-Build-Setup fehlgeschlagen: {e}")
+        if logger is None:
+            logger = TrackerLogger()
+        logger.error(f"Proxy-Build-Setup fehlgeschlagen: {e}")
         return False
 
     if logger:
@@ -404,10 +395,8 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
             try:
                 wait_for_stable_file(found, timeout=remaining, logger=logger)
             except TimeoutError as exc:
-                if logger:
-                    logger.error(str(exc))
-                else:
-                    print(f"ERROR: {exc}")
+                log = logger or TrackerLogger()
+                log.error(str(exc))
             else:
                 rename_proxy_file(found, proxy_path, logger)
                 if logger:
@@ -490,10 +479,9 @@ def detect_features_in_ui_context(threshold=1.0, margin=0, min_distance=0, place
                             if hasattr(bpy.context.scene, "kaiserlich_feature_detection_done"):
                                 bpy.context.scene.kaiserlich_feature_detection_done = True
                             return True
-    if logger:
-        logger.error("No valid UI context found")
-    else:
-        print("\u274c Kein g\u00fcltiger UI-Kontext gefunden")
+    if logger is None:
+        logger = TrackerLogger()
+    logger.error("No valid UI context found")
     return False
 
 
@@ -530,10 +518,8 @@ def wait_for_proxy_and_trigger_detection(clip, proxy_path, threshold=1.0, margin
                     if logger:
                         logger.debug("Proxy file locked; retrying")
                     continue
-        if logger:
-            logger.error("Proxy nicht fertig oder blockiert.")
-        else:
-            print("\u274c Proxy nicht fertig oder blockiert.")
+        log = logger or TrackerLogger()
+        log.error("Proxy nicht fertig oder blockiert.")
 
     threading.Thread(target=wait_loop).start()
 

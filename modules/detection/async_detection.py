@@ -6,6 +6,7 @@ import bpy
 
 from .detect_no_proxy import detect_features_no_proxy
 from ..util.tracking_utils import count_markers_in_frame, safe_remove_track
+from ..util.tracker_logger import TrackerLogger
 
 
 def detect_features_async(scene, clip, logger=None, attempts=10):
@@ -34,11 +35,12 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
     if hasattr(scene, "kaiserlich_feature_detection_done"):
         scene.kaiserlich_feature_detection_done = False
 
-    if logger:
-        logger.debug(
-            f"Starting async detection: attempts={attempts}, expected={state['expected']}, "
-            f"pattern_size={state['pattern_size']}"
-        )
+    if logger is None:
+        logger = TrackerLogger()
+    logger.debug(
+        f"Starting async detection: attempts={attempts}, expected={state['expected']}, "
+        f"pattern_size={state['pattern_size']}"
+    )
 
     def _step():
         if logger:
@@ -104,12 +106,19 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
 
 
 
-def delayed_call(callback, delay=0.1):
+def delayed_call(callback, delay=0.1, logger=None):
     """Execute ``callback`` after ``delay`` seconds if a clip is active."""
 
     def _delayed():
         if not getattr(bpy.context.space_data, "clip", None):
-            print("Kein Clip verf\u00fcgbar \u2013 Feature Detection abgebrochen.")
+            if logger is None:
+                TrackerLogger().warning(
+                    "Kein Clip verf\u00fcgbar \u2013 Feature Detection abgebrochen."
+                )
+            else:
+                logger.warning(
+                    "Kein Clip verf\u00fcgbar \u2013 Feature Detection abgebrochen."
+                )
             return None
         callback()
         return None

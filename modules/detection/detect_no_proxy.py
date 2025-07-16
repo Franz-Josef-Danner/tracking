@@ -4,6 +4,7 @@ import time
 
 import bpy
 from ..proxy.proxy_wait import log_proxy_status
+from ..util.tracker_logger import TrackerLogger
 
 
 def detect_features_no_proxy(clip, threshold=1.0, margin=None, min_distance=None, logger=None):
@@ -40,14 +41,14 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None, min_distance=None
             logger.debug(f"Auto-calculated min_distance: {min_distance}")
     min_distance = int(min_distance)
 
+    if logger is None:
+        logger = TrackerLogger()
+
     message = (
         f"Detecting features on {clip.name} with threshold={threshold}, "
         f"margin={margin}, min_distance={min_distance}"
     )
-    if logger:
-        logger.debug(message)
-    else:
-        print(message)
+    logger.debug(message)
 
     # ensure proxies are disabled during detection
     clip.proxy.build_50 = False
@@ -90,20 +91,13 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None, min_distance=None
     duration = time.time() - start_time
     after = len(clip.tracking.tracks)
 
-    if logger:
-        logger.debug(
-            f"Detection executed in {duration:.2f}s: {result}"
-        )
-        logger.info(
-            f"Markers before: {before}, after: {after}, added: {after - before}"
-        )
-        logger.debug("End of detection step, handing results back")
-
-    else:
-        print(
-            f"Detection executed in {duration:.2f}s: {result}. "
-            f"Markers before: {before}, after: {after}, added: {after - before}"
-        )
+    logger.debug(
+        f"Detection executed in {duration:.2f}s: {result}"
+    )
+    logger.info(
+        f"Markers before: {before}, after: {after}, added: {after - before}"
+    )
+    logger.debug("End of detection step, handing results back")
 
     return True
 
