@@ -5,6 +5,7 @@ from types import SimpleNamespace
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from modules.detection import async_detection
+from modules.util import tracking_utils
 
 
 class DummyClip:
@@ -44,7 +45,7 @@ def test_async_detection_adjusts_threshold_and_limits_attempts(monkeypatch):
         return True
 
     monkeypatch.setattr(async_detection, "detect_features_no_proxy", dummy_detect)
-    monkeypatch.setattr(async_detection, "safe_remove_track", lambda *a, **k: None)
+    monkeypatch.setattr(tracking_utils, "safe_remove_track", lambda *a, **k: None)
 
     step_holder = {}
 
@@ -84,7 +85,7 @@ def test_async_detection_stops_when_count_in_range(monkeypatch):
         return True
 
     monkeypatch.setattr(async_detection, "detect_features_no_proxy", dummy_detect)
-    monkeypatch.setattr(async_detection, "safe_remove_track", lambda *a, **k: None)
+    monkeypatch.setattr(tracking_utils, "safe_remove_track", lambda *a, **k: None)
 
     step_holder = {}
 
@@ -124,10 +125,11 @@ def test_tracks_cleared_on_retry(monkeypatch):
     def dummy_remove(clip, track, logger=None):
         nonlocal call_count
         call_count += 1
+        clip.tracking.tracks.remove(track)
         return True
 
     monkeypatch.setattr(async_detection, "detect_features_no_proxy", dummy_detect)
-    monkeypatch.setattr(async_detection, "safe_remove_track", dummy_remove)
+    monkeypatch.setattr(tracking_utils, "safe_remove_track", dummy_remove)
 
     step_holder = {}
 
@@ -160,7 +162,7 @@ def test_warn_when_no_good_tracks(monkeypatch):
         return True
 
     monkeypatch.setattr(async_detection, "detect_features_no_proxy", dummy_detect)
-    monkeypatch.setattr(async_detection, "safe_remove_track", lambda *a, **k: True)
+    monkeypatch.setattr(tracking_utils, "safe_remove_track", lambda *a, **k: True)
 
     step_holder = {}
 
@@ -189,7 +191,7 @@ def test_abort_when_remove_fails(monkeypatch):
         return True
 
     monkeypatch.setattr(async_detection, "detect_features_no_proxy", dummy_detect)
-    monkeypatch.setattr(async_detection, "safe_remove_track", lambda *a, **k: False)
+    monkeypatch.setattr(tracking_utils, "safe_remove_track", lambda *a, **k: False)
 
     step_holder = {}
 

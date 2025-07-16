@@ -132,6 +132,21 @@ Der Operator `KAISERLICH_OT_auto_track_cycle` durchläuft automatisch folgende S
 6. Optionales Nachjustieren von Motion Model und Pattern Size, falls zu wenige Marker vorhanden sind.
 7. Setzen des Playheads auf einen Frame mit wenig Markern und Ausgabe der Abschlusmeldung.
 
+### 🧹 NEW_ Cleanup Helper
+
+Sollte die Erkennung zu wenige oder zu viele Marker liefern, lassen sich alle temporären `NEW_*`-Tracks vor dem nächsten Versuch mit `hard_remove_new_tracks(clip, logger)` entfernen. Die Funktion sorgt für
+- sicheres Löschen über `safe_remove_track`
+- Logging bei fehlgeschlagenen Versuchen
+- Aufräumen leerer Reste.
+
+```python
+from modules.util.tracking_utils import hard_remove_new_tracks
+
+hard_remove_new_tracks(clip, logger=logger)
+```
+
+Dieser Schritt sollte vor jedem erneuten Aufruf von `detect_features_async()` stehen.
+
 ## 🧩 Kernstellen der Blender-Kommunikation
 
 Mehrere Funktionen greifen direkt über die `bpy`‑API auf Blender zu:

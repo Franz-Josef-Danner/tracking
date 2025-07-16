@@ -6,7 +6,7 @@ import bpy
 
 from .detect_no_proxy import detect_features_no_proxy
 from .distance_remove import distance_remove
-from ..util.tracking_utils import safe_remove_track
+from ..util.tracking_utils import hard_remove_new_tracks, safe_remove_track
 from ..util.tracker_logger import TrackerLogger
 
 
@@ -116,22 +116,14 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
             return None
         if logger:
             logger.debug("Removing existing tracks before retrying")
-        success = True
-        for track in [t for t in clip.tracking.tracks if t.name.startswith("NEW_")]:
-            if not safe_remove_track(clip, track, logger=logger):
-                success = False
-                if logger:
-                    logger.warning(
-                        f"Track {track.name} could not be removed \u2013 aborting retry cycle"
-                    )
-                break
-        if not success:
-            return None
-        remaining = len(clip.tracking.tracks)
+        hard_remove_new_tracks(clip, logger=logger)
+        remaining = len([t for t in clip.tracking.tracks if t.name.startswith("NEW_")])
         if logger:
-            logger.debug(f"Remaining tracks after removal: {remaining}")
-        if remaining and logger:
-            logger.warning(f"{remaining} tracks could not be removed")
+            logger.debug(f"Remaining NEW_ tracks after removal: {remaining}")
+        if remaining:
+            if logger:
+                logger.warning(f"{remaining} NEW_ tracks could not be removed")
+            return None
         new_threshold = max(
             round(state["threshold"] * ((marker_count + 0.1) / state["expected"]), 5),
             0.0001,
