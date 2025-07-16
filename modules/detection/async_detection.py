@@ -62,12 +62,26 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
                 logger.error("Detection step failed")
             return None
         # rename newly detected tracks
-        for i, track in enumerate(clip.tracking.tracks):
-            if track.name.startswith("Track"):
-                track.name = f"NEW_{i:03}"
+        existing_names = {t.name for t in clip.tracking.tracks}
+        idx = 0
+        for track in clip.tracking.tracks:
+            if track.name.startswith(("Track", "Track.", "Track_")):
+                new_name = f"NEW_{idx:03}"
+                while new_name in existing_names:
+                    idx += 1
+                    new_name = f"NEW_{idx:03}"
+                track.name = new_name
+                existing_names.add(new_name)
+                idx += 1
 
         # remove NEW_ tracks close to GOOD_ markers
         good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]
+        new_tracks = [t for t in clip.tracking.tracks if t.name.startswith("NEW_")]
+        if logger:
+            logger.debug(f"Found {len(good_tracks)} GOOD_ tracks for filtering")
+            logger.debug(f"Found {len(new_tracks)} NEW_ tracks before distance filtering")
+        if not good_tracks and logger:
+            logger.warning("No GOOD_ tracks found – skipping proximity filtering")
         margin_dist = int(clip.size[0] / 20)
         for good in good_tracks:
             try:
@@ -102,8 +116,17 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
             return None
         if logger:
             logger.debug("Removing existing tracks before retrying")
+        success = True
         for track in [t for t in clip.tracking.tracks if t.name.startswith("NEW_")]:
-            safe_remove_track(clip, track, logger=logger)
+            if not safe_remove_track(clip, track, logger=logger):
+                success = False
+                if logger:
+                    logger.warning(
+                        f"Track {track.name} could not be removed \u2013 aborting retry cycle"
+                    )
+                break
+        if not success:
+            return None
         remaining = len(clip.tracking.tracks)
         if logger:
             logger.debug(f"Remaining tracks after removal: {remaining}")
