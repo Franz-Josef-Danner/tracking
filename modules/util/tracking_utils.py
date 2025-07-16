@@ -7,11 +7,26 @@ import bpy
 
 def _track_exists(tracks, track):
     """Return ``True`` if ``track`` is present in ``tracks``."""
-    if track in tracks:
-        return True
+    try:
+        if track in tracks:
+            return True
+    except TypeError:
+        pass
+
+    name = getattr(track, "name", None)
+    if name is None:
+        return False
+
+    try:
+        if name in tracks:
+            return True
+    except TypeError:
+        pass
+
     if hasattr(tracks, "get"):
-        return tracks.get(getattr(track, "name", "")) is not None
-    return False
+        return tracks.get(name) is not None
+
+    return any(getattr(t, "name", None) == name for t in tracks)
 
 
 def safe_remove_track(clip, track, logger=None):
