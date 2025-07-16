@@ -108,7 +108,7 @@ def test_tracks_cleared_on_retry(monkeypatch):
     def dummy_count(tracks, frame):
         return marker_counts.pop(0)
 
-    def dummy_remove(clip, track):
+    def dummy_remove(clip, track, logger=None):
         nonlocal call_count
         call_count += 1
 
