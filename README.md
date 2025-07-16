@@ -443,6 +443,9 @@ REVIEW / LOOP
 
 > **Hinweis:** Direktes Entfernen über `clip.tracking.tracks.remove()` wird ab Blender 4.4+ nicht mehr unterstützt. Verwende `safe_remove_track` oder `bpy.ops.clip.track_remove()`.
 
+### ⚠️ Hinweise zur Track‑Entfernung
+Als letzte Rückfallebene sucht `hard_remove_new_tracks` nach dem Track auch in `bpy.context.space_data.clip` und `bpy.data.movieclips`. Wird er dort gefunden, erfolgt ein Entfernungsversuch mit Attributprüfung und entsprechender Logging-Meldung.
+
 ---
 
 ## 🔧 Debug-Logging
