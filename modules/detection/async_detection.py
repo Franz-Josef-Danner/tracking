@@ -83,11 +83,10 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
             if hasattr(scene, "kaiserlich_feature_detection_done"):
                 scene.kaiserlich_feature_detection_done = True
             return None
-        if marker_count < min_marker_count:
-            if logger:
-                logger.debug("Removing existing tracks before retrying")
-            for track in list(clip.tracking.tracks):
-                safe_remove_track(clip, track)
+        if logger:
+            logger.debug("Removing existing tracks before retrying")
+        for track in list(clip.tracking.tracks):
+            safe_remove_track(clip, track)
         new_threshold = max(
             round(state["threshold"] * ((marker_count + 0.1) / state["expected"]), 5),
             0.0001,

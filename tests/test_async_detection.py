@@ -96,3 +96,46 @@ def test_async_detection_stops_when_count_in_range(monkeypatch):
     assert iterations == 2  # stop once marker count enters valid range
     assert thresholds[0] == 1.0
     assert iterations == len(thresholds)
+
+
+def test_tracks_cleared_on_retry(monkeypatch):
+    call_count = 0
+    marker_counts = [15, 17]
+
+    def dummy_detect(clip, threshold=1.0, margin=None, min_distance=None, logger=None):
+        return True
+
+    def dummy_count(tracks, frame):
+        return marker_counts.pop(0)
+
+    def dummy_remove(clip, track):
+        nonlocal call_count
+        call_count += 1
+
+    monkeypatch.setattr(async_detection, "detect_features_no_proxy", dummy_detect)
+    monkeypatch.setattr(async_detection, "count_markers_in_frame", dummy_count)
+    monkeypatch.setattr(async_detection, "safe_remove_track", dummy_remove)
+
+    step_holder = {}
+
+    def dummy_register(fn, first_interval=0.0):
+        step_holder["fn"] = fn
+
+    import bpy  # provided by conftest
+
+    bpy.app = SimpleNamespace(timers=SimpleNamespace(register=dummy_register))
+
+    scene = SimpleNamespace(frame_current=1, min_marker_count=5)
+    clip = DummyClip()
+
+    async_detection.detect_features_async(scene, clip, attempts=5)
+    step = step_holder["fn"]
+
+    iterations = 1
+    result = step()
+    while result is not None:
+        iterations += 1
+        result = step()
+
+    assert iterations == 2  # one retry
+    assert call_count == 1
