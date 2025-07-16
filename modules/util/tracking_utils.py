@@ -150,30 +150,37 @@ def hard_remove_new_tracks(clip, logger=None):
 
         ref_clip = getattr(track, "id_data", clip)
         ref_tracks = getattr(getattr(ref_clip, "tracking", None), "tracks", None)
-        if ref_tracks and getattr(track, "name", None) in ref_tracks:
+
+        if hasattr(ref_tracks, "get") and hasattr(ref_tracks, "remove"):
             try:
-                ref_tracks.remove(ref_tracks.get(track.name))
-                if logger:
-                    logger.info(f"Force removed track by id_data: {track.name}")
-                continue
+                target = ref_tracks.get(track.name)
+                if target:
+                    ref_tracks.remove(target)
+                    if logger:
+                        logger.info(f"Force removed track by id_data: {track.name}")
+                    continue
             except Exception as exc:  # pragma: no cover - fallback
                 if logger:
                     logger.warning(f"Fallback removal failed for {track.name}: {exc}")
 
-        for t in ref_tracks or []:
-            if getattr(t, "name", None) == getattr(track, "name", None):
-                try:
-                    ref_tracks.remove(t)
-                    if logger:
-                        logger.info(f"Removed NEW_ track by name match: {track.name}")
-                    break
-                except Exception as exc:  # pragma: no cover - fallback
-                    if logger:
-                        logger.warning(f"Could not remove {track.name} by name match: {exc}")
+        if hasattr(ref_tracks, "__iter__") and hasattr(ref_tracks, "remove"):
+            for t in ref_tracks:
+                if getattr(t, "name", None) == getattr(track, "name", None):
+                    try:
+                        ref_tracks.remove(t)
+                        if logger:
+                            logger.info(f"Removed NEW_ track by name match: {track.name}")
+                        break
+                    except Exception as exc:  # pragma: no cover - fallback
+                        if logger:
+                            logger.warning(f"Could not remove {track.name} by name match: {exc}")
                         failed.append(track.name)
-                else:
-                    break
+                        break
+            else:
+                failed.append(track.name)
         else:
+            if logger:
+                logger.warning(f"ref_tracks not removable or iterable for {track.name}")
             failed.append(track.name)
 
     try:  # ensure view layer refresh
