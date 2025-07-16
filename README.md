@@ -135,9 +135,11 @@ Der Operator `KAISERLICH_OT_auto_track_cycle` durchläuft automatisch folgende S
 ### 🧹 NEW_ Cleanup Helper
 
 Sollte die Erkennung zu wenige oder zu viele Marker liefern, lassen sich alle temporären `NEW_*`-Tracks vor dem nächsten Versuch mit `hard_remove_new_tracks(clip, logger)` entfernen. Die Funktion sorgt für
-- sicheres Löschen über `safe_remove_track`
-- Logging bei fehlgeschlagenen Versuchen
-- Aufräumen leerer Reste.
+1. sicheres Löschen über `safe_remove_track`
+2. Logging bei fehlgeschlagenen Versuchen
+3. Aufräumen leerer Reste
+4. Suche im `context.space_data.clip` oder in `bpy.data.movieclips`
+5. ultimative Suche in allen `bpy.data.movieclips`
 
 ```python
 from modules.util.tracking_utils import hard_remove_new_tracks
@@ -444,7 +446,7 @@ REVIEW / LOOP
 > **Hinweis:** Direktes Entfernen über `clip.tracking.tracks.remove()` wird ab Blender 4.4+ nicht mehr unterstützt. Verwende `safe_remove_track` oder `bpy.ops.clip.track_remove()`.
 
 ### ⚠️ Hinweise zur Track‑Entfernung
-Als letzte Rückfallebene sucht `hard_remove_new_tracks` nach dem Track auch in `bpy.context.space_data.clip` und `bpy.data.movieclips`. Wird er dort gefunden, erfolgt ein Entfernungsversuch mit Attributprüfung und entsprechender Logging-Meldung.
+Als letzte Rückfallebene (Schritt&nbsp;5) sucht `hard_remove_new_tracks` in allen `bpy.data.movieclips` nach dem Track. Wird er in einem anderen Clip gefunden, erfolgt der Löschversuch dort und es wird entsprechend geloggt.
 
 ---
 
