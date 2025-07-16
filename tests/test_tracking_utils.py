@@ -9,8 +9,10 @@ from modules.util import tracking_utils
 class DummyOverride:
     def __init__(self, **kw):
         self.kw = kw
+
     def __enter__(self):
         return self
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         return False
 
@@ -61,6 +63,17 @@ def _setup_context(clip, with_area=True):
     )
 
 
+class DummyLogger:
+    def __init__(self):
+        self.warnings = []
+
+    def warning(self, msg):
+        self.warnings.append(msg)
+
+    def debug(self, msg):
+        pass
+
+
 def test_safe_remove_track_operator(monkeypatch):
     called = {}
     clip = DummyClip()
@@ -72,9 +85,12 @@ def test_safe_remove_track_operator(monkeypatch):
     bpy.ops.clip.track_remove = lambda: called.setdefault("op", True)
     bpy.context = _setup_context(clip, with_area=True)
 
-    tracking_utils.safe_remove_track(clip, track)
+    logger = DummyLogger()
+    result = tracking_utils.safe_remove_track(clip, track, logger=logger)
     assert called.get("op") is True
     assert track not in clip.tracking.tracks
+    assert result is True
+    assert logger.warnings == []
 
 
 def test_safe_remove_track_fallback(monkeypatch):
@@ -90,11 +106,18 @@ def test_safe_remove_track_fallback(monkeypatch):
 
     def dummy_remove(t):
         called["removed"] = True
+        try:
+            list.remove(clip.tracking.tracks, t)
+        except ValueError:
+            pass
     clip.tracking.tracks.remove = dummy_remove
 
-    tracking_utils.safe_remove_track(clip, track)
+    logger = DummyLogger()
+    result = tracking_utils.safe_remove_track(clip, track, logger=logger)
     assert called.get("op") is None
     assert called.get("removed") is True
+    assert result is True
+    assert logger.warnings  # warning should be emitted when no area found
 
 
 def test_count_markers_in_frame():

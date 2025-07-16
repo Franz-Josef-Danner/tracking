@@ -5,12 +5,22 @@ from __future__ import annotations
 import bpy
 
 
-def safe_remove_track(clip, track):
+def _track_exists(tracks, track):
+    """Return ``True`` if ``track`` is present in ``tracks``."""
+    if track in tracks:
+        return True
+    if hasattr(tracks, "get"):
+        return tracks.get(getattr(track, "name", "")) is not None
+    return False
+
+
+def safe_remove_track(clip, track, logger=None):
     """Safely remove ``track`` from ``clip``.
 
     Tries to call :func:`bpy.ops.clip.track_remove` in a Clip Editor UI
     context. If the operator cannot be executed, falls back to directly
-    removing the track from ``clip.tracking.tracks``.
+    removing the track from ``clip.tracking.tracks``. Returns ``True`` when
+    the track no longer exists after the attempt, otherwise ``False``.
     """
     tracks = None
 
@@ -26,13 +36,15 @@ def safe_remove_track(clip, track):
             clip = parent
 
     if tracks is None:
-        return
+        return False
 
     try:
         op = bpy.ops.clip.track_remove
     except AttributeError:
         op = None
 
+    op_success = False
+    clip_editor_found = False
     if op is not None:
         try:
             context = bpy.context
@@ -46,6 +58,7 @@ def safe_remove_track(clip, track):
                 else None
             )
             if area and region:
+                clip_editor_found = True
                 space = area.spaces.active
                 if hasattr(track, "select"):
                     track.select = True
@@ -53,24 +66,26 @@ def safe_remove_track(clip, track):
                 with context.temp_override(
                     area=area, region=region, space_data=space, clip=clip
                 ):
-                    op()
-                # Operator might silently fail to remove the track
-                still_there = (
-                    track in tracks
-                    or (
-                        hasattr(tracks, "get") and tracks.get(getattr(track, "name", ""))
-                        is not None
-                    )
-                )
-                if still_there and hasattr(tracks, "remove"):
-                    tracks.remove(track)
-                return
+                    result = op()
+                op_success = result == {"FINISHED"}
         except Exception:  # pragma: no cover - fallback
             pass
+    if op is not None and not clip_editor_found and logger:
+        logger.warning("No CLIP_EDITOR area found; falling back to direct removal")
 
-    safe_track = tracks.get(track.name) if hasattr(tracks, "get") else track
-    if safe_track and hasattr(tracks, "remove"):
-        tracks.remove(safe_track)
+    still_there = _track_exists(tracks, track)
+    if still_there and hasattr(tracks, "remove"):
+        try:
+            tracks.remove(track)
+            op_success = True
+        except Exception as exc:  # pragma: no cover - fallback
+            if logger:
+                logger.warning(f"Track remove fallback failed for {track.name}: {exc}")
+
+    still_there = _track_exists(tracks, track)
+    if still_there and logger:
+        logger.warning(f"Track '{track.name}' still exists after attempted removal!")
+    return not still_there
 
 
 def count_markers_in_frame(tracks, frame):
