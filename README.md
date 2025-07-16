@@ -127,6 +127,12 @@ Der Operator `KAISERLICH_OT_auto_track_cycle` durchläuft automatisch folgende S
    erneut gestartet (siehe `detect_features_async`). Die Funktion
    `hard_remove_new_tracks` kann dabei genutzt werden, um zuverlässig alle
    `NEW_*`-Tracks zu löschen.
+
+   - Markers renamed to `NEW_`.
+   - Distance check against `GOOD_` markers; close `NEW_` markers removed.
+   - Count remaining `NEW_` markers.
+   - If count invalid, run `hard_remove_new_tracks` and restart detection.
+   - When count valid, rename `NEW_` to `TRACK_`.
 4. Bidirektionales Tracking aller Marker.
 5. Löschen zu kurzer Tracks basierend auf `min_track_length`.
 6. Optionales Nachjustieren von Motion Model und Pattern Size, falls zu wenige Marker vorhanden sind.
