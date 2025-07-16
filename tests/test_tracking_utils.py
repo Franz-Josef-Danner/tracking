@@ -22,6 +22,10 @@ class DummyTracks(list):
         self.removed = None
     def remove(self, track):
         self.removed = track
+        try:
+            super().remove(track)
+        except ValueError:
+            pass
     def get(self, name):
         for t in self:
             if t.name == name:
@@ -33,6 +37,7 @@ class DummyTrack:
     def __init__(self, name="T"):
         self.name = name
         self.markers = []
+        self.select = False
 
 
 class DummyMarker:
@@ -69,7 +74,7 @@ def test_safe_remove_track_operator(monkeypatch):
 
     tracking_utils.safe_remove_track(clip, track)
     assert called.get("op") is True
-    assert clip.tracking.tracks.removed is None
+    assert track not in clip.tracking.tracks
 
 
 def test_safe_remove_track_fallback(monkeypatch):

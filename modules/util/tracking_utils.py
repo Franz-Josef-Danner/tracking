@@ -47,11 +47,23 @@ def safe_remove_track(clip, track):
             )
             if area and region:
                 space = area.spaces.active
+                if hasattr(track, "select"):
+                    track.select = True
                 tracks.active = track
                 with context.temp_override(
                     area=area, region=region, space_data=space, clip=clip
                 ):
                     op()
+                # Operator might silently fail to remove the track
+                still_there = (
+                    track in tracks
+                    or (
+                        hasattr(tracks, "get") and tracks.get(getattr(track, "name", ""))
+                        is not None
+                    )
+                )
+                if still_there and hasattr(tracks, "remove"):
+                    tracks.remove(track)
                 return
         except Exception:  # pragma: no cover - fallback
             pass
