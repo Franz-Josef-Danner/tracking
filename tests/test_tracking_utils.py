@@ -133,3 +133,24 @@ def test_count_markers_in_frame():
     assert tracking_utils.count_markers_in_frame(tracks, 2) == 1
     assert tracking_utils.count_markers_in_frame(tracks, 3) == 1
     assert tracking_utils.count_markers_in_frame(tracks, 4) == 0
+
+
+def test_track_exists_bpy_collection():
+    class DummyBpyTracks:
+        def __init__(self, tracks):
+            self._tracks = {t.name: t for t in tracks}
+
+        def __contains__(self, name):  # expects a track name
+            return name in self._tracks
+
+        def get(self, name):
+            return self._tracks.get(name)
+
+        def __iter__(self):
+            return iter(self._tracks.values())
+
+    t1 = DummyTrack("A")
+    tracks = DummyBpyTracks([t1])
+
+    assert tracking_utils._track_exists(tracks, t1)
+    assert not tracking_utils._track_exists(tracks, DummyTrack("B"))
