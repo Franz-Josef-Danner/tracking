@@ -5,7 +5,6 @@ from types import SimpleNamespace
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from modules.util import tracking_utils
-from modules.util import context_helpers
 
 
 class DummyOverride:
@@ -86,15 +85,6 @@ def test_safe_remove_track_operator(monkeypatch):
     import bpy
     bpy.ops.clip.track_remove = lambda: called.setdefault("op", True)
     bpy.context = _setup_context(clip, with_area=True)
-    monkeypatch.setattr(
-        context_helpers,
-        "get_clip_editor_override",
-        lambda ctx=None: {
-            "area": bpy.context.screen.areas[0],
-            "region": bpy.context.screen.areas[0].regions[0],
-            "space_data": bpy.context.screen.areas[0].spaces.active,
-        },
-    )
 
     logger = DummyLogger()
     result = tracking_utils.safe_remove_track(clip, track, logger=logger)
@@ -114,7 +104,6 @@ def test_safe_remove_track_fallback(monkeypatch):
     import bpy
     bpy.ops.clip.track_remove = lambda: called.setdefault("op", True)
     bpy.context = _setup_context(clip, with_area=False)
-    monkeypatch.setattr(context_helpers, "get_clip_editor_override", lambda ctx=None: {})
 
     def dummy_remove(t):
         called["removed"] = True
@@ -243,77 +232,49 @@ def test_hard_remove_returns_failed(monkeypatch):
     assert result == ["NEW_001"]
 
 
-def test_hard_remove_context_and_data_fallback(monkeypatch):
+def test_hard_remove_no_remove_method(monkeypatch):
+    class DummyNoRemoveTracks:
+        def __init__(self, tracks):
+            self._tracks = list(tracks)
+
+        def __iter__(self):
+            return iter(self._tracks)
+
+        def get(self, name):
+            for t in self._tracks:
+                if t.name == name:
+                    return t
+            return None
+
     clip = DummyClip()
-    clip.name = "C1"
-    t1 = DummyTrack("NEW_CTX")
-    clip.tracking.tracks.append(t1)
+    t1 = DummyTrack("NEW_001")
+    clip.tracking.tracks = DummyNoRemoveTracks([t1])
 
     monkeypatch.setattr(tracking_utils, "safe_remove_track", lambda *_a, **_k: False)
-    t1.id_data = SimpleNamespace(tracking=SimpleNamespace())
-
-    import bpy
-    bpy.context = _setup_context(clip, with_area=False)
-    bpy.context.space_data = SimpleNamespace(clip=clip)
-    bpy.data = SimpleNamespace(movieclips={"C1": clip})
 
     result = tracking_utils.hard_remove_new_tracks(clip)
 
-    assert clip.tracking.tracks == []
-    assert result == []
+    assert result == ["NEW_001"]
 
 
-def test_hard_remove_data_fallback_only(monkeypatch):
+def test_hard_remove_fallback_get_remove(monkeypatch):
+    class DummyGetRemoveNoIter:
+        def __init__(self, tracks):
+            self._tracks = {t.name: t for t in tracks}
+
+        def get(self, name):
+            return self._tracks.get(name)
+
+        def remove(self, t):
+            self._tracks.pop(t.name, None)
+
     clip = DummyClip()
-    clip.name = "C2"
-    t1 = DummyTrack("NEW_DATA")
+    t1 = DummyTrack("NEW_001")
     clip.tracking.tracks.append(t1)
+    t1.id_data = SimpleNamespace(tracking=SimpleNamespace(tracks=DummyGetRemoveNoIter([t1])))
 
     monkeypatch.setattr(tracking_utils, "safe_remove_track", lambda *_a, **_k: False)
-    t1.id_data = SimpleNamespace(tracking=SimpleNamespace())
-
-    import bpy
-    bpy.context = _setup_context(clip, with_area=False)
-    bpy.context.space_data = SimpleNamespace(clip=None)
-    bpy.data = SimpleNamespace(movieclips={"C2": clip})
 
     result = tracking_utils.hard_remove_new_tracks(clip)
 
-    assert clip.tracking.tracks == []
-    assert result == []
-
-
-def test_hard_remove_other_clip_final_fallback(monkeypatch):
-    clip = DummyClip()
-    clip.name = "C3"
-    t1 = DummyTrack("NEW_OTHER")
-    clip.tracking.tracks.append(t1)
-
-    other = DummyClip()
-    other.name = "C4"
-    t2 = DummyTrack("NEW_OTHER")
-    other.tracking.tracks.append(t2)
-
-    calls = {}
-
-    def dummy_safe_remove(target_clip, track, logger=None):
-        if target_clip is other:
-            other.tracking.tracks.remove(track)
-            calls["other"] = True
-            return True
-        return False
-
-    monkeypatch.setattr(tracking_utils, "safe_remove_track", dummy_safe_remove)
-    t1.id_data = SimpleNamespace(tracking=SimpleNamespace(tracks=clip.tracking.tracks))
-    clip.tracking.tracks.remove = lambda _t: (_ for _ in ()).throw(RuntimeError("fail"))
-
-    import bpy
-    bpy.context = _setup_context(clip, with_area=False)
-    bpy.context.space_data = SimpleNamespace(clip=None)
-    bpy.data = SimpleNamespace(movieclips=[clip, other])
-
-    result = tracking_utils.hard_remove_new_tracks(clip)
-
-    assert calls.get("other") is True
-    assert t2 not in other.tracking.tracks
     assert result == []
