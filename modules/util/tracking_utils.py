@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import bpy
 
-from .context_helpers import get_clip_editor_override
-
 
 def _track_exists(tracks, track):
     """Return ``True`` if ``track`` is present in ``tracks``."""
@@ -64,19 +62,24 @@ def safe_remove_track(clip, track, logger=None):
     if op is not None:
         try:
             context = bpy.context
-            override = get_clip_editor_override(context)
-            area = override.get("area")
-            region = override.get("region")
+            area = next(
+                (a for a in context.screen.areas if a.type == "CLIP_EDITOR"),
+                None,
+            )
+            region = (
+                next((r for r in area.regions if r.type == "WINDOW"), None)
+                if area
+                else None
+            )
             if area and region:
                 clip_editor_found = True
-                space = override.get("space_data", getattr(area, "spaces", None))
-                if hasattr(space, "active"):
-                    space = space.active if getattr(space, "active", None) else space
+                space = area.spaces.active
                 if hasattr(track, "select"):
                     track.select = True
                 tracks.active = track
-                override["clip"] = clip
-                with context.temp_override(**override):
+                with context.temp_override(
+                    area=area, region=region, space_data=space, clip=clip
+                ):
                     op()
         except Exception:  # pragma: no cover - fallback
             pass
@@ -148,91 +151,37 @@ def hard_remove_new_tracks(clip, logger=None):
         ref_clip = getattr(track, "id_data", clip)
         ref_tracks = getattr(getattr(ref_clip, "tracking", None), "tracks", None)
 
-        if ref_tracks is None:
-            context_clip = getattr(getattr(bpy.context, "space_data", None), "clip", None)
-            data_movieclips = getattr(bpy.data, "movieclips", None)
-            movieclip_iter = []
-            if data_movieclips is not None:
-                if hasattr(data_movieclips, "values"):
-                    movieclip_iter = data_movieclips.values()
-                else:
-                    movieclip_iter = data_movieclips
-            fallback_sources = [
-                (context_clip, "context clip"),
-            ] + [(mc, "bpy.data.movieclips") for mc in movieclip_iter]
-
-            removed_via_fallback = False
-            for candidate_clip, label in fallback_sources:
-                candidate_tracks = getattr(getattr(candidate_clip, "tracking", None), "tracks", None)
-                if candidate_tracks and hasattr(candidate_tracks, "remove"):
-                    target = None
-                    if hasattr(candidate_tracks, "get"):
-                        target = candidate_tracks.get(track.name)
-                    if target is None:
-                        for t in candidate_tracks:
-                            if getattr(t, "name", None) == getattr(track, "name", None):
-                                target = t
-                                break
-                    if target is not None:
-                        try:
-                            candidate_tracks.remove(target)
-                            if logger:
-                                logger.info(f"Removed NEW_ track via {label} fallback: {track.name}")
-                            removed_via_fallback = True
-                            break
-                        except Exception as exc:  # pragma: no cover - fallback
-                            if logger:
-                                logger.warning(f"{label} fallback removal failed for {track.name}: {exc}")
-                            break
-
-            if removed_via_fallback:
-                continue
-
-        if ref_tracks and getattr(track, "name", None) in ref_tracks:
+        if hasattr(ref_tracks, "get") and hasattr(ref_tracks, "remove"):
             try:
-                ref_tracks.remove(ref_tracks.get(track.name))
-                if logger:
-                    logger.info(f"Force removed track by id_data: {track.name}")
-                continue
+                target = ref_tracks.get(track.name)
+                if target:
+                    ref_tracks.remove(target)
+                    if logger:
+                        logger.info(f"Force removed track by id_data: {track.name}")
+                    continue
             except Exception as exc:  # pragma: no cover - fallback
                 if logger:
                     logger.warning(f"Fallback removal failed for {track.name}: {exc}")
 
-        for t in ref_tracks or []:
-            if getattr(t, "name", None) == getattr(track, "name", None):
-                try:
-                    ref_tracks.remove(t)
-                    if logger:
-                        logger.info(f"Removed NEW_ track by name match: {track.name}")
-                    break
-                except Exception as exc:  # pragma: no cover - fallback
-                    if logger:
-                        logger.warning(
-                            f"Could not remove {track.name} by name match: {exc}"
-                        )
+        if hasattr(ref_tracks, "__iter__") and hasattr(ref_tracks, "remove"):
+            for t in ref_tracks:
+                if getattr(t, "name", None) == getattr(track, "name", None):
+                    try:
+                        ref_tracks.remove(t)
+                        if logger:
+                            logger.info(f"Removed NEW_ track by name match: {track.name}")
+                        break
+                    except Exception as exc:  # pragma: no cover - fallback
+                        if logger:
+                            logger.warning(f"Could not remove {track.name} by name match: {exc}")
                         failed.append(track.name)
-                else:
-                    break
-        else:
-            removed = False
-            for other_clip in getattr(getattr(bpy, "data", None), "movieclips", []):
-                other_tracks = getattr(getattr(other_clip, "tracking", None), "tracks", None)
-                if not other_tracks:
-                    continue
-                t = (
-                    other_tracks.get(track.name)
-                    if hasattr(other_tracks, "get")
-                    else None
-                )
-                if t and safe_remove_track(other_clip, t, logger=logger):
-                    if logger:
-                        logger.info(
-                            f"Removed NEW_ track from other clip {getattr(other_clip, 'name', '')}: {track.name}"
-                        )
-                    removed = True
-                    break
-            if not removed:
+                        break
+            else:
                 failed.append(track.name)
+        else:
+            if logger:
+                logger.warning(f"ref_tracks not removable or iterable for {track.name}")
+            failed.append(track.name)
 
     try:  # ensure view layer refresh
         bpy.context.view_layer.update()
@@ -243,4 +192,3 @@ def hard_remove_new_tracks(clip, logger=None):
         logger.warning(f"{len(failed)} NEW_ tracks could not be removed: {failed}")
 
     return failed
-
