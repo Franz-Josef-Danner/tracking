@@ -125,3 +125,31 @@ def count_markers_in_frame(tracks, frame):
         if any(getattr(m, "frame", None) == frame for m in markers):
             count += 1
     return count
+
+
+def hard_remove_new_tracks(clip, logger=None):
+    """Remove all tracks of ``clip`` whose names start with ``NEW_``."""
+
+    if not getattr(clip, "tracking", None):
+        return
+
+    tracks = clip.tracking.tracks
+    new_tracks = [t for t in list(tracks) if getattr(t, "name", "").startswith("NEW_")]
+
+    for track in new_tracks:
+        safe_remove_track(clip, track, logger=logger)
+
+    # remove any leftover empty tracks
+    for track in list(tracks):
+        if (
+            getattr(track, "name", "").startswith("NEW_")
+            and not getattr(track, "markers", [])
+        ):
+            try:
+                tracks.remove(track)
+                if logger:
+                    logger.info(f"Track {track.name} force removed")
+            except Exception as exc:  # pragma: no cover - fallback
+                if logger:
+                    logger.warning(f"Track {track.name} could not be removed: {exc}")
+

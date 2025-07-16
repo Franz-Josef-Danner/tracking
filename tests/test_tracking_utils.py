@@ -155,3 +155,42 @@ def test_track_exists_bpy_collection():
 
     assert tracking_utils._track_exists(tracks, t1)
     assert not tracking_utils._track_exists(tracks, DummyTrack("B"))
+
+
+def test_hard_remove_new_tracks(monkeypatch):
+    clip = DummyClip()
+    clip.tracking.tracks.extend([
+        DummyTrack("NEW_001"),
+        DummyTrack("KEEP"),
+        DummyTrack("NEW_002"),
+    ])
+
+    def dummy_safe_remove(_clip, track, logger=None):
+        clip.tracking.tracks.remove(track)
+        return True
+
+    monkeypatch.setattr(tracking_utils, "safe_remove_track", dummy_safe_remove)
+
+    tracking_utils.hard_remove_new_tracks(clip)
+
+    names = [t.name for t in clip.tracking.tracks]
+    assert names == ["KEEP"]
+
+
+def test_hard_remove_new_tracks_empty(monkeypatch):
+    clip = DummyClip()
+    t1 = DummyTrack("NEW_001")
+    t1.markers = []
+    t2 = DummyTrack("NEW_002")
+    t2.markers = []
+    clip.tracking.tracks.extend([t1, t2])
+
+    def dummy_safe_remove(_clip, track, logger=None):
+        # simulate failure: do not remove t1
+        return track is not t1
+
+    monkeypatch.setattr(tracking_utils, "safe_remove_track", dummy_safe_remove)
+
+    tracking_utils.hard_remove_new_tracks(clip)
+
+    assert clip.tracking.tracks == []

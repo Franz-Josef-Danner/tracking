@@ -120,7 +120,13 @@ Der Operator `KAISERLICH_OT_auto_track_cycle` durchläuft automatisch folgende S
 
 1. Entfernen vorhandener Proxy-Dateien und Erzeugen eines neuen 50%-Proxys.
 2. Feature-Erkennung mit dynamisch angepasstem Threshold, bis die Markeranzahl im Bereich von 80‑120 % von `min_marker_count * 4` liegt.
-3. Bereinigung und Umbenennung der Marker zu `TRACK_*`.
+3. Neu gesetzte Marker erhalten zunächst das Präfix `NEW_`. Marker, die zu nah
+   an vorhandenen `GOOD_*`-Markern liegen, werden gelöscht. Liegt die Anzahl der
+   verbleibenden `NEW_*`-Marker im gültigen Bereich, werden sie in `TRACK_*`
+   umbenannt; andernfalls werden alle `NEW_*`-Marker entfernt und die Erkennung
+   erneut gestartet (siehe `detect_features_async`). Die Funktion
+   `hard_remove_new_tracks` kann dabei genutzt werden, um zuverlässig alle
+   `NEW_*`-Tracks zu löschen.
 4. Bidirektionales Tracking aller Marker.
 5. Löschen zu kurzer Tracks basierend auf `min_track_length`.
 6. Optionales Nachjustieren von Motion Model und Pattern Size, falls zu wenige Marker vorhanden sind.

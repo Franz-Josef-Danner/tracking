@@ -45,7 +45,7 @@ def test_distance_remove_empty_markers(monkeypatch):
     tracks = DummyTracks([DummyTrack(), DummyTrack([DummyMarker((0, 0))])])
     called = {}
 
-    def dummy_safe_remove(clip, track):
+    def dummy_safe_remove(clip, track, logger=None):
         called['track'] = track
         tracks.remove(track)
 
@@ -57,4 +57,27 @@ def test_distance_remove_empty_markers(monkeypatch):
     assert called.get('track') is not None
     assert getattr(tracks, 'removed', False)
     assert len(tracks) == 1
+
+
+class DummyLogger:
+    def __init__(self):
+        self.infos = []
+
+    def info(self, msg):
+        self.infos.append(msg)
+
+
+def test_distance_remove_logs(monkeypatch):
+    tracks = DummyTracks([DummyTrack([DummyMarker((0, 0))])])
+
+    def dummy_safe_remove(clip, track, logger=None):
+        tracks.remove(track)
+
+    monkeypatch.setattr(distance_remove, 'safe_remove_track', dummy_safe_remove)
+
+    logger = DummyLogger()
+    distance_remove.distance_remove(tracks, (0, 0), 1.0, logger=logger)
+
+    assert len(logger.infos) == 1
+    assert len(tracks) == 0
 
