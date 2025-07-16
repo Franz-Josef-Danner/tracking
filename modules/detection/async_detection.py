@@ -6,7 +6,7 @@ import bpy
 
 from .detect_no_proxy import detect_features_no_proxy
 from .distance_remove import distance_remove
-from ..util.tracking_utils import hard_remove_new_tracks, safe_remove_track
+from ..util.tracking_utils import hard_remove_new_tracks
 from ..util.tracker_logger import TrackerLogger
 
 
