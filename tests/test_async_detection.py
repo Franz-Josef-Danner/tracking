@@ -16,6 +16,23 @@ class DummyClip:
         )
 
 
+class DummyLogger:
+    def __init__(self):
+        self.warnings = []
+
+    def warning(self, msg):
+        self.warnings.append(msg)
+
+    def debug(self, msg):
+        pass
+
+    def info(self, msg):
+        pass
+
+    def error(self, msg):
+        pass
+
+
 def test_async_detection_adjusts_threshold_and_limits_attempts(monkeypatch):
     thresholds = []
     marker_counts = [0, 0, 0, 0]
@@ -107,6 +124,7 @@ def test_tracks_cleared_on_retry(monkeypatch):
     def dummy_remove(clip, track, logger=None):
         nonlocal call_count
         call_count += 1
+        return True
 
     monkeypatch.setattr(async_detection, "detect_features_no_proxy", dummy_detect)
     monkeypatch.setattr(async_detection, "safe_remove_track", dummy_remove)
@@ -134,3 +152,61 @@ def test_tracks_cleared_on_retry(monkeypatch):
 
     assert iterations == 2  # one retry
     assert call_count == 15
+
+
+def test_warn_when_no_good_tracks(monkeypatch):
+    def dummy_detect(clip, threshold=1.0, margin=None, min_distance=None, logger=None):
+        clip.tracking.tracks = [SimpleNamespace(name=f"Track{i}", markers=[SimpleNamespace(co=(0,0))]) for i in range(5)]
+        return True
+
+    monkeypatch.setattr(async_detection, "detect_features_no_proxy", dummy_detect)
+    monkeypatch.setattr(async_detection, "safe_remove_track", lambda *a, **k: True)
+
+    step_holder = {}
+
+    def dummy_register(fn, first_interval=0.0):
+        step_holder["fn"] = fn
+
+    import bpy  # provided by conftest
+
+    bpy.app = SimpleNamespace(timers=SimpleNamespace(register=dummy_register))
+
+    scene = SimpleNamespace(frame_current=1, min_marker_count=5)
+    clip = DummyClip()
+    logger = DummyLogger()
+
+    async_detection.detect_features_async(scene, clip, logger=logger, attempts=1)
+    step = step_holder["fn"]
+    step()
+
+    assert any("No GOOD_ tracks" in w for w in logger.warnings)
+    assert all(tr.name.startswith("NEW_") for tr in clip.tracking.tracks)
+
+
+def test_abort_when_remove_fails(monkeypatch):
+    def dummy_detect(clip, threshold=1.0, margin=None, min_distance=None, logger=None):
+        clip.tracking.tracks = [SimpleNamespace(name=f"Track{i}", markers=[SimpleNamespace(co=(0,0))]) for i in range(5)]
+        return True
+
+    monkeypatch.setattr(async_detection, "detect_features_no_proxy", dummy_detect)
+    monkeypatch.setattr(async_detection, "safe_remove_track", lambda *a, **k: False)
+
+    step_holder = {}
+
+    def dummy_register(fn, first_interval=0.0):
+        step_holder["fn"] = fn
+
+    import bpy  # provided by conftest
+
+    bpy.app = SimpleNamespace(timers=SimpleNamespace(register=dummy_register))
+
+    scene = SimpleNamespace(frame_current=1, min_marker_count=5)
+    clip = DummyClip()
+    logger = DummyLogger()
+
+    async_detection.detect_features_async(scene, clip, logger=logger, attempts=2)
+    step = step_holder["fn"]
+    result = step()
+
+    assert result is None
+    assert any("could not be removed" in w for w in logger.warnings)
