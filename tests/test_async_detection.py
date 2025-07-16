@@ -1,4 +1,5 @@
-import os, sys
+import os
+import sys
 from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -21,13 +22,11 @@ def test_async_detection_adjusts_threshold_and_limits_attempts(monkeypatch):
 
     def dummy_detect(clip, threshold=1.0, margin=None, min_distance=None, logger=None):
         thresholds.append(threshold)
+        count = marker_counts.pop(0)
+        clip.tracking.tracks = [SimpleNamespace(name=f"Track{i}", markers=[SimpleNamespace(co=(0,0))]) for i in range(count)]
         return True
 
-    def dummy_count(tracks, frame):
-        return marker_counts.pop(0)
-
     monkeypatch.setattr(async_detection, "detect_features_no_proxy", dummy_detect)
-    monkeypatch.setattr(async_detection, "count_markers_in_frame", dummy_count)
     monkeypatch.setattr(async_detection, "safe_remove_track", lambda *a, **k: None)
 
     step_holder = {}
@@ -63,13 +62,11 @@ def test_async_detection_stops_when_count_in_range(monkeypatch):
 
     def dummy_detect(clip, threshold=1.0, margin=None, min_distance=None, logger=None):
         thresholds.append(threshold)
+        count = marker_counts.pop(0)
+        clip.tracking.tracks = [SimpleNamespace(name=f"Track{i}", markers=[SimpleNamespace(co=(0,0))]) for i in range(count)]
         return True
 
-    def dummy_count(tracks, frame):
-        return marker_counts.pop(0)
-
     monkeypatch.setattr(async_detection, "detect_features_no_proxy", dummy_detect)
-    monkeypatch.setattr(async_detection, "count_markers_in_frame", dummy_count)
     monkeypatch.setattr(async_detection, "safe_remove_track", lambda *a, **k: None)
 
     step_holder = {}
@@ -103,17 +100,15 @@ def test_tracks_cleared_on_retry(monkeypatch):
     marker_counts = [15, 17]
 
     def dummy_detect(clip, threshold=1.0, margin=None, min_distance=None, logger=None):
+        count = marker_counts.pop(0)
+        clip.tracking.tracks = [SimpleNamespace(name=f"Track{i}", markers=[SimpleNamespace(co=(0,0))]) for i in range(count)]
         return True
-
-    def dummy_count(tracks, frame):
-        return marker_counts.pop(0)
 
     def dummy_remove(clip, track, logger=None):
         nonlocal call_count
         call_count += 1
 
     monkeypatch.setattr(async_detection, "detect_features_no_proxy", dummy_detect)
-    monkeypatch.setattr(async_detection, "count_markers_in_frame", dummy_count)
     monkeypatch.setattr(async_detection, "safe_remove_track", dummy_remove)
 
     step_holder = {}
@@ -138,4 +133,4 @@ def test_tracks_cleared_on_retry(monkeypatch):
         result = step()
 
     assert iterations == 2  # one retry
-    assert call_count == 1
+    assert call_count == 15

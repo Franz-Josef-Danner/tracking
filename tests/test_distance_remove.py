@@ -1,4 +1,7 @@
-import os, sys; sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from modules.detection import distance_remove
 
@@ -18,9 +21,9 @@ class DummyMarker:
         self.co = co
 
 class DummyTrack:
-    def __init__(self, markers=None):
+    def __init__(self, markers=None, name="NEW_DUMMY"):
         self.markers = markers or []
-    name = "DUMMY"
+        self.name = name
 
 class DummyTracks(list):
     def find(self, name):

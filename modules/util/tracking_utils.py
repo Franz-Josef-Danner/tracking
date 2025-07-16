@@ -58,7 +58,6 @@ def safe_remove_track(clip, track, logger=None):
     except AttributeError:
         op = None
 
-    op_success = False
     clip_editor_found = False
     if op is not None:
         try:
@@ -81,8 +80,7 @@ def safe_remove_track(clip, track, logger=None):
                 with context.temp_override(
                     area=area, region=region, space_data=space, clip=clip
                 ):
-                    result = op()
-                op_success = result == {"FINISHED"}
+                    op()
         except Exception:  # pragma: no cover - fallback
             pass
     if op is not None and not clip_editor_found and logger:
@@ -92,7 +90,6 @@ def safe_remove_track(clip, track, logger=None):
     if still_there and hasattr(tracks, "remove"):
         try:
             tracks.remove(track)
-            op_success = True
         except Exception as exc:  # pragma: no cover - fallback
             if logger:
                 logger.warning(f"Track remove fallback failed for {track.name}: {exc}")

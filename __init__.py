@@ -1,12 +1,4 @@
-bl_info = {
-    "name": "Kaiserlich Tracksycle",
-    "description": "Automated tracking cycle for Blender with proxy handling and dynamic feature detection.",
-    "author": "Kaiserlich",
-    "version": (0, 1, 0),
-    "blender": (4, 0, 0),
-    "location": "Clip Editor > Sidebar > Kaiserlich",
-    "category": "Tracking",
-}
+from __future__ import annotations
 
 try:
     import bpy
@@ -16,11 +8,21 @@ except ModuleNotFoundError:  # pragma: no cover - allows running tests without B
     IntProperty = FloatProperty = BoolProperty = EnumProperty = lambda *a, **k: None
 
 from .modules.util.tracker_logger import configure_logger
-
 from .modules.operators.tracksycle_operator import KAISERLICH_OT_auto_track_cycle
 from .modules.operators.rename_tracks_modal import KAISERLICH_OT_rename_tracks_modal
 from .modules.operators.detect_features_operator import KAISERLICH_OT_detect_features
 from .modules.ui.kaiserlich_panel import KAISERLICH_PT_tracking_tools
+
+
+bl_info = {
+    "name": "Kaiserlich Tracksycle",
+    "description": "Automated tracking cycle for Blender with proxy handling and dynamic feature detection.",
+    "author": "Kaiserlich",
+    "version": (0, 1, 0),
+    "blender": (4, 0, 0),
+    "location": "Clip Editor > Sidebar > Kaiserlich",
+    "category": "Tracking",
+}
 
 classes = [
     KAISERLICH_OT_auto_track_cycle,

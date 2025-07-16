@@ -1,7 +1,5 @@
 """Utilities for switching tracking motion models."""
 
-import bpy
-
 _motion_models = ['Perspective', 'Affine', 'LocRotScale']
 _index = 0
 

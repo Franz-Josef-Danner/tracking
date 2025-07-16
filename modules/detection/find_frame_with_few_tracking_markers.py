@@ -1,8 +1,5 @@
 """Locate frames with few tracking markers."""
 
-import bpy
-
-
 def find_frame_with_few_tracking_markers(clip, min_markers):
     """Return the first frame with fewer markers than `min_markers`."""
     for frame in range(
