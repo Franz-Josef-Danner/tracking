@@ -241,3 +241,43 @@ def test_hard_remove_returns_failed(monkeypatch):
     result = tracking_utils.hard_remove_new_tracks(clip)
 
     assert result == ["NEW_001"]
+
+
+def test_hard_remove_context_and_data_fallback(monkeypatch):
+    clip = DummyClip()
+    clip.name = "C1"
+    t1 = DummyTrack("NEW_CTX")
+    clip.tracking.tracks.append(t1)
+
+    monkeypatch.setattr(tracking_utils, "safe_remove_track", lambda *_a, **_k: False)
+    t1.id_data = SimpleNamespace(tracking=SimpleNamespace())
+
+    import bpy
+    bpy.context = _setup_context(clip, with_area=False)
+    bpy.context.space_data = SimpleNamespace(clip=clip)
+    bpy.data = SimpleNamespace(movieclips={"C1": clip})
+
+    result = tracking_utils.hard_remove_new_tracks(clip)
+
+    assert clip.tracking.tracks == []
+    assert result == []
+
+
+def test_hard_remove_data_fallback_only(monkeypatch):
+    clip = DummyClip()
+    clip.name = "C2"
+    t1 = DummyTrack("NEW_DATA")
+    clip.tracking.tracks.append(t1)
+
+    monkeypatch.setattr(tracking_utils, "safe_remove_track", lambda *_a, **_k: False)
+    t1.id_data = SimpleNamespace(tracking=SimpleNamespace())
+
+    import bpy
+    bpy.context = _setup_context(clip, with_area=False)
+    bpy.context.space_data = SimpleNamespace(clip=None)
+    bpy.data = SimpleNamespace(movieclips={"C2": clip})
+
+    result = tracking_utils.hard_remove_new_tracks(clip)
+
+    assert clip.tracking.tracks == []
+    assert result == []

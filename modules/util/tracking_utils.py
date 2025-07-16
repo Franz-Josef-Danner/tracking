@@ -147,6 +147,47 @@ def hard_remove_new_tracks(clip, logger=None):
 
         ref_clip = getattr(track, "id_data", clip)
         ref_tracks = getattr(getattr(ref_clip, "tracking", None), "tracks", None)
+
+        if ref_tracks is None:
+            context_clip = getattr(getattr(bpy.context, "space_data", None), "clip", None)
+            data_movieclips = getattr(bpy.data, "movieclips", None)
+            movieclip_iter = []
+            if data_movieclips is not None:
+                if hasattr(data_movieclips, "values"):
+                    movieclip_iter = data_movieclips.values()
+                else:
+                    movieclip_iter = data_movieclips
+            fallback_sources = [
+                (context_clip, "context clip"),
+            ] + [(mc, "bpy.data.movieclips") for mc in movieclip_iter]
+
+            removed_via_fallback = False
+            for candidate_clip, label in fallback_sources:
+                candidate_tracks = getattr(getattr(candidate_clip, "tracking", None), "tracks", None)
+                if candidate_tracks and hasattr(candidate_tracks, "remove"):
+                    target = None
+                    if hasattr(candidate_tracks, "get"):
+                        target = candidate_tracks.get(track.name)
+                    if target is None:
+                        for t in candidate_tracks:
+                            if getattr(t, "name", None) == getattr(track, "name", None):
+                                target = t
+                                break
+                    if target is not None:
+                        try:
+                            candidate_tracks.remove(target)
+                            if logger:
+                                logger.info(f"Removed NEW_ track via {label} fallback: {track.name}")
+                            removed_via_fallback = True
+                            break
+                        except Exception as exc:  # pragma: no cover - fallback
+                            if logger:
+                                logger.warning(f"{label} fallback removal failed for {track.name}: {exc}")
+                            break
+
+            if removed_via_fallback:
+                continue
+
         if ref_tracks and getattr(track, "name", None) in ref_tracks:
             try:
                 ref_tracks.remove(ref_tracks.get(track.name))
