@@ -124,7 +124,9 @@ Der Operator `KAISERLICH_OT_auto_track_cycle` durchläuft automatisch folgende S
    an vorhandenen `GOOD_*`-Markern liegen, werden gelöscht. Liegt die Anzahl der
    verbleibenden `NEW_*`-Marker im gültigen Bereich, werden sie in `TRACK_*`
    umbenannt; andernfalls werden alle `NEW_*`-Marker entfernt und die Erkennung
-   erneut gestartet (siehe `detect_features_async`).
+   erneut gestartet (siehe `detect_features_async`). Die Funktion
+   `hard_remove_new_tracks` kann dabei genutzt werden, um zuverlässig alle
+   `NEW_*`-Tracks zu löschen.
 4. Bidirektionales Tracking aller Marker.
 5. Löschen zu kurzer Tracks basierend auf `min_track_length`.
 6. Optionales Nachjustieren von Motion Model und Pattern Size, falls zu wenige Marker vorhanden sind.
@@ -524,4 +526,3 @@ logger.info(), logger.warning(), logger.error(), logger.debug()
 ## 📄 Lizenz
 
 Dieses Projekt steht unter der **MIT-Lizenz**. Siehe die Datei [LICENSE](LICENSE) für weitere Details.
-
