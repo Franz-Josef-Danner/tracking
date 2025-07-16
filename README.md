@@ -158,7 +158,7 @@ Dieser Schritt sollte vor jedem erneuten Aufruf von `detect_features_async()` st
 Mehrere Funktionen greifen direkt über die `bpy`‑API auf Blender zu:
 
 1. **Registrierung und Properties** – Im Wurzel-`__init__.py` werden alle Operator‑ und Panelklassen mittels `bpy.utils.register_class` registriert und Szenen‑Properties wie `Scene.min_marker_count` definiert.
-2. **Proxy-Erstellung und UI-Overrides** – `KAISERLICH_OT_auto_track_cycle.execute()` aktiviert die Proxy-Einstellungen und ruft mit `context.temp_override(...)` `bpy.ops.clip.rebuild_proxy()` auf.
+2. **Proxy-Erstellung und UI-Overrides** – `KAISERLICH_OT_auto_track_cycle.execute()` aktiviert die Proxy-Einstellungen und ruft mit `context.temp_override(...)` `bpy.ops.clip.rebuild_proxy()` auf. Das benötigte Kontext-Dictionary liefert dabei `get_clip_editor_override()`.
 3. **Asynchroner Ablauf über Timer** – Während der Proxy erstellt wird, überwacht der Operator im Modalmodus per `wm.event_timer_add` das Auftauchen der Proxy-Datei.
 4. **Feature-Erkennung im gültigen UI-Kontext** – `detect_features_in_ui_context` sucht nach einem Clip-Editor-Bereich und führt dort `bpy.ops.clip.detect_features()` aus.
 5. **Direkter Aufruf ohne Proxy** – `detect_features_no_proxy` schaltet `clip.use_proxy` aus und startet die Erkennung sofort.
@@ -196,7 +196,7 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
     clip.use_proxy_custom_directory = True
     clip.proxy.build_50 = True
     override = {"clip": clip}
-    override.update(_get_clip_editor_override())
+    override.update(get_clip_editor_override())
     bpy.ops.clip.rebuild_proxy(override)
     bpy.app.timers.register(_wait_for_proxy)
 ```
@@ -372,7 +372,7 @@ bpy.ops.clip.track_markers(forward=True)
 bpy.ops.clip.track_markers(backward=True)
 ```
 
-* Tracking aller `TRACK_`-Marker mit Kontextoverride `context.temp_override()`
+* Tracking aller `TRACK_`-Marker mit Kontextoverride `context.temp_override()` (per `get_clip_editor_override()` erzeugt)
 * UI-Override zwingend notwendig (da sonst `track_markers` nicht läuft)
 
 ---
