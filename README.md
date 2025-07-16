@@ -148,18 +148,31 @@ Sollte die Erkennung zu wenige oder zu viele Marker liefern, lassen sich alle te
 5. ultimative Suche in allen `bpy.data.movieclips`
 
 ```python
+
 from modules.util.tracking_utils import hard_remove_new_tracks
 
 hard_remove_new_tracks(clip, logger=logger)
 ```
 
-> **Warnung:** `clip.tracking.tracks.remove()` ist ab Blender 4.4+ unsicher.
-> `hard_remove_new_tracks` nutzt daher immer `safe_remove_track` und greift
-> im Notfall über `track.id_data.tracking.tracks.get(name)` auf die Referenz
-> zu. Ein abschließendes `bpy.context.view_layer.update()` sorgt für die
-> Aktualisierung des UI-Zustands.
+### ⚠️ Hinweise zur Track-Entfernung (Blender 4.4+)
 
-Dieser Schritt sollte vor jedem erneuten Aufruf von `detect_features_async()` stehen.
+`tracks.remove(track)` ist ab Blender 4.4 potenziell instabil, da
+`bpy_prop_collection` nicht immer eine zuverlässige `remove()`-Methode
+bereitstellt. `hard_remove_new_tracks()` nutzt daher mehrere Stufen:
+
+1. Zuerst wird `safe_remove_track` aufgerufen, das `bpy.ops.clip.track_remove`
+   versucht und bei Bedarf auf `tracks.remove()` zurückfällt.
+2. Falls der Track danach noch existiert, wird bei verfügbarem `get()` und
+   `remove()` die Referenz über `track.id_data.tracking.tracks.get(name)`
+   entfernt.
+3. Sind diese Methoden nicht vorhanden, wird über alle Tracks iteriert und bei
+   Namensübereinstimmung gelöscht, sofern `remove()` existiert.
+4. Lässt sich der Track trotzdem nicht entfernen, erscheint sein Name im
+   Rückgabewert und optional im Log.
+
+Ein abschließendes `bpy.context.view_layer.update()` aktualisiert den
+UI-Zustand. Dieser Schritt sollte vor jedem erneuten Aufruf von
+`detect_features_async()` stehen.
 
 ## 🧩 Kernstellen der Blender-Kommunikation
 
