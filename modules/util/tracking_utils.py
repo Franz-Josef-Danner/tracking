@@ -207,12 +207,32 @@ def hard_remove_new_tracks(clip, logger=None):
                     break
                 except Exception as exc:  # pragma: no cover - fallback
                     if logger:
-                        logger.warning(f"Could not remove {track.name} by name match: {exc}")
+                        logger.warning(
+                            f"Could not remove {track.name} by name match: {exc}"
+                        )
                         failed.append(track.name)
                 else:
                     break
         else:
-            failed.append(track.name)
+            removed = False
+            for other_clip in getattr(getattr(bpy, "data", None), "movieclips", []):
+                other_tracks = getattr(getattr(other_clip, "tracking", None), "tracks", None)
+                if not other_tracks:
+                    continue
+                t = (
+                    other_tracks.get(track.name)
+                    if hasattr(other_tracks, "get")
+                    else None
+                )
+                if t and safe_remove_track(other_clip, t, logger=logger):
+                    if logger:
+                        logger.info(
+                            f"Removed NEW_ track from other clip {getattr(other_clip, 'name', '')}: {track.name}"
+                        )
+                    removed = True
+                    break
+            if not removed:
+                failed.append(track.name)
 
     try:  # ensure view layer refresh
         bpy.context.view_layer.update()

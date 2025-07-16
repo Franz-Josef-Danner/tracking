@@ -281,3 +281,39 @@ def test_hard_remove_data_fallback_only(monkeypatch):
 
     assert clip.tracking.tracks == []
     assert result == []
+
+
+def test_hard_remove_other_clip_final_fallback(monkeypatch):
+    clip = DummyClip()
+    clip.name = "C3"
+    t1 = DummyTrack("NEW_OTHER")
+    clip.tracking.tracks.append(t1)
+
+    other = DummyClip()
+    other.name = "C4"
+    t2 = DummyTrack("NEW_OTHER")
+    other.tracking.tracks.append(t2)
+
+    calls = {}
+
+    def dummy_safe_remove(target_clip, track, logger=None):
+        if target_clip is other:
+            other.tracking.tracks.remove(track)
+            calls["other"] = True
+            return True
+        return False
+
+    monkeypatch.setattr(tracking_utils, "safe_remove_track", dummy_safe_remove)
+    t1.id_data = SimpleNamespace(tracking=SimpleNamespace(tracks=clip.tracking.tracks))
+    clip.tracking.tracks.remove = lambda _t: (_ for _ in ()).throw(RuntimeError("fail"))
+
+    import bpy
+    bpy.context = _setup_context(clip, with_area=False)
+    bpy.context.space_data = SimpleNamespace(clip=None)
+    bpy.data = SimpleNamespace(movieclips=[clip, other])
+
+    result = tracking_utils.hard_remove_new_tracks(clip)
+
+    assert calls.get("other") is True
+    assert t2 not in other.tracking.tracks
+    assert result == []
