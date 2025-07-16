@@ -5,6 +5,7 @@ from types import SimpleNamespace
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from modules.detection import async_detection
+from modules.util import tracking_utils
 
 
 class DummyClip:
@@ -44,7 +45,7 @@ def test_async_detection_adjusts_threshold_and_limits_attempts(monkeypatch):
         return True
 
     monkeypatch.setattr(async_detection, "detect_features_no_proxy", dummy_detect)
-    monkeypatch.setattr(async_detection, "safe_remove_track", lambda *a, **k: None)
+    monkeypatch.setattr(tracking_utils, "safe_remove_track", lambda *a, **k: None)
 
     step_holder = {}
 
@@ -84,7 +85,7 @@ def test_async_detection_stops_when_count_in_range(monkeypatch):
         return True
 
     monkeypatch.setattr(async_detection, "detect_features_no_proxy", dummy_detect)
-    monkeypatch.setattr(async_detection, "safe_remove_track", lambda *a, **k: None)
+    monkeypatch.setattr(tracking_utils, "safe_remove_track", lambda *a, **k: None)
 
     step_holder = {}
 
@@ -124,10 +125,11 @@ def test_tracks_cleared_on_retry(monkeypatch):
     def dummy_remove(clip, track, logger=None):
         nonlocal call_count
         call_count += 1
+        clip.tracking.tracks.remove(track)
         return True
 
     monkeypatch.setattr(async_detection, "detect_features_no_proxy", dummy_detect)
-    monkeypatch.setattr(async_detection, "safe_remove_track", dummy_remove)
+    monkeypatch.setattr(tracking_utils, "safe_remove_track", dummy_remove)
 
     step_holder = {}
 
@@ -155,12 +157,23 @@ def test_tracks_cleared_on_retry(monkeypatch):
 
 
 def test_warn_when_no_good_tracks(monkeypatch):
+    class FailingTracks(list):
+        def __init__(self, tracks):
+            super().__init__(tracks)
+
+        def get(self, name):
+            return next((t for t in self if t.name == name), None)
+
+        def remove(self, track):
+            raise RuntimeError("fail")
+
     def dummy_detect(clip, threshold=1.0, margin=None, min_distance=None, logger=None):
-        clip.tracking.tracks = [SimpleNamespace(name=f"Track{i}", markers=[SimpleNamespace(co=(0,0))]) for i in range(5)]
+        tracks = [SimpleNamespace(name=f"Track{i}", markers=[SimpleNamespace(co=(0,0))]) for i in range(5)]
+        clip.tracking.tracks = FailingTracks(tracks)
         return True
 
     monkeypatch.setattr(async_detection, "detect_features_no_proxy", dummy_detect)
-    monkeypatch.setattr(async_detection, "safe_remove_track", lambda *a, **k: True)
+    monkeypatch.setattr(tracking_utils, "safe_remove_track", lambda *a, **k: True)
 
     step_holder = {}
 
@@ -184,12 +197,23 @@ def test_warn_when_no_good_tracks(monkeypatch):
 
 
 def test_abort_when_remove_fails(monkeypatch):
+    class FailingTracks(list):
+        def __init__(self, tracks):
+            super().__init__(tracks)
+
+        def get(self, name):
+            return next((t for t in self if t.name == name), None)
+
+        def remove(self, track):
+            raise RuntimeError("fail")
+
     def dummy_detect(clip, threshold=1.0, margin=None, min_distance=None, logger=None):
-        clip.tracking.tracks = [SimpleNamespace(name=f"Track{i}", markers=[SimpleNamespace(co=(0,0))]) for i in range(5)]
+        tracks = [SimpleNamespace(name=f"Track{i}", markers=[SimpleNamespace(co=(0,0))]) for i in range(5)]
+        clip.tracking.tracks = FailingTracks(tracks)
         return True
 
     monkeypatch.setattr(async_detection, "detect_features_no_proxy", dummy_detect)
-    monkeypatch.setattr(async_detection, "safe_remove_track", lambda *a, **k: False)
+    monkeypatch.setattr(tracking_utils, "safe_remove_track", lambda *a, **k: False)
 
     step_holder = {}
 
@@ -206,6 +230,7 @@ def test_abort_when_remove_fails(monkeypatch):
 
     async_detection.detect_features_async(scene, clip, logger=logger, attempts=2)
     step = step_holder["fn"]
+
     result = step()
 
     assert result is None

@@ -128,28 +128,67 @@ def count_markers_in_frame(tracks, frame):
 
 
 def hard_remove_new_tracks(clip, logger=None):
-    """Remove all tracks of ``clip`` whose names start with ``NEW_``."""
+    """Robustly remove all tracks starting with ``NEW_``.
+
+    Returns a list of track names that could not be removed.
+    """
 
     if not getattr(clip, "tracking", None):
-        return
+        return ["clip has no tracking data"]
 
     tracks = clip.tracking.tracks
-    new_tracks = [t for t in list(tracks) if getattr(t, "name", "").startswith("NEW_")]
+    all_tracks = list(tracks)
+    failed = []
 
-    for track in new_tracks:
-        safe_remove_track(clip, track, logger=logger)
+    for track in all_tracks:
+        if not getattr(track, "name", "").startswith("NEW_"):
+            continue
 
-    # remove any leftover empty tracks
-    for track in list(tracks):
-        if (
-            getattr(track, "name", "").startswith("NEW_")
-            and not getattr(track, "markers", [])
-        ):
+        removed = safe_remove_track(clip, track, logger=logger)
+        if removed:
+            continue
+
+        ref_clip = getattr(track, "id_data", clip)
+        ref_tracks = getattr(getattr(ref_clip, "tracking", None), "tracks", None)
+
+        if hasattr(ref_tracks, "get") and hasattr(ref_tracks, "remove"):
             try:
-                tracks.remove(track)
-                if logger:
-                    logger.info(f"Track {track.name} force removed")
+                target = ref_tracks.get(track.name)
+                if target:
+                    ref_tracks.remove(target)
+                    if logger:
+                        logger.info(f"Force removed track by id_data: {track.name}")
+                    continue
             except Exception as exc:  # pragma: no cover - fallback
                 if logger:
-                    logger.warning(f"Track {track.name} could not be removed: {exc}")
+                    logger.warning(f"Fallback removal failed for {track.name}: {exc}")
 
+        if hasattr(ref_tracks, "__iter__") and hasattr(ref_tracks, "remove"):
+            for t in ref_tracks:
+                if getattr(t, "name", None) == getattr(track, "name", None):
+                    try:
+                        ref_tracks.remove(t)
+                        if logger:
+                            logger.info(f"Removed NEW_ track by name match: {track.name}")
+                        break
+                    except Exception as exc:  # pragma: no cover - fallback
+                        if logger:
+                            logger.warning(f"Could not remove {track.name} by name match: {exc}")
+                        failed.append(track.name)
+                        break
+            else:
+                failed.append(track.name)
+        else:
+            if logger:
+                logger.warning(f"ref_tracks not removable or iterable for {track.name}")
+            failed.append(track.name)
+
+    try:  # ensure view layer refresh
+        bpy.context.view_layer.update()
+    except Exception:  # pragma: no cover - update might not be available in tests
+        pass
+
+    if failed and logger:
+        logger.warning(f"{len(failed)} NEW_ tracks could not be removed: {failed}")
+
+    return failed

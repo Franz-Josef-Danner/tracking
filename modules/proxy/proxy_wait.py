@@ -9,29 +9,7 @@ import threading
 import ctypes
 
 from ..util.tracker_logger import TrackerLogger
-
-
-def _get_clip_editor_override(ctx=None):
-    """Return a context override dictionary for Clip Editor operations."""
-    ctx = ctx or bpy.context
-    if not getattr(ctx, "window", None):
-        return {}
-    override = {"window": ctx.window}
-    screen = getattr(ctx.window, "screen", None)
-    if screen:
-        for area in screen.areas:
-            if area.type == "CLIP_EDITOR":
-                override["area"] = area
-                for region in area.regions:
-                    if region.type == "WINDOW":
-                        override["region"] = region
-                        break
-                for space in area.spaces:
-                    if space.type == "CLIP_EDITOR":
-                        override["space_data"] = space
-                        break
-                break
-    return override
+from ..util.context_helpers import get_clip_editor_override
 
 
 def log_proxy_status(clip, logger=None):
@@ -251,7 +229,7 @@ def create_proxy_and_wait(clip, timeout=300, logger=None):
         clip.use_proxy = True
         clip.proxy.timecode = 'RECORD_RUN'
         override = {'clip': clip}
-        override.update(_get_clip_editor_override())
+        override.update(get_clip_editor_override())
         if logger:
             logger.debug(f"rebuild_proxy override keys: {list(override.keys())}")
         bpy.ops.clip.rebuild_proxy(override)
@@ -368,7 +346,7 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
         clip.use_proxy = True
         clip.proxy.timecode = 'RECORD_RUN'
         override = {'clip': clip}
-        override.update(_get_clip_editor_override())
+        override.update(get_clip_editor_override())
         if logger:
             logger.debug(f"rebuild_proxy override keys: {list(override.keys())}")
         bpy.ops.clip.rebuild_proxy(override)

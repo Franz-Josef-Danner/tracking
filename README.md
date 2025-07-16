@@ -127,17 +127,59 @@ Der Operator `KAISERLICH_OT_auto_track_cycle` durchläuft automatisch folgende S
    erneut gestartet (siehe `detect_features_async`). Die Funktion
    `hard_remove_new_tracks` kann dabei genutzt werden, um zuverlässig alle
    `NEW_*`-Tracks zu löschen.
+
+   - Markers renamed to `NEW_`.
+   - Distance check against `GOOD_` markers; close `NEW_` markers removed.
+   - Count remaining `NEW_` markers.
+   - If count invalid, run `hard_remove_new_tracks` and restart detection.
+   - When count valid, rename `NEW_` to `TRACK_`.
 4. Bidirektionales Tracking aller Marker.
 5. Löschen zu kurzer Tracks basierend auf `min_track_length`.
 6. Optionales Nachjustieren von Motion Model und Pattern Size, falls zu wenige Marker vorhanden sind.
 7. Setzen des Playheads auf einen Frame mit wenig Markern und Ausgabe der Abschlusmeldung.
+
+### 🧹 NEW_ Cleanup Helper
+
+Sollte die Erkennung zu wenige oder zu viele Marker liefern, lassen sich alle temporären `NEW_*`-Tracks vor dem nächsten Versuch mit `hard_remove_new_tracks(clip, logger)` entfernen. Die Funktion sorgt für
+1. sicheres Löschen über `safe_remove_track`
+2. Logging bei fehlgeschlagenen Versuchen
+3. Aufräumen leerer Reste
+4. Suche im `context.space_data.clip` oder in `bpy.data.movieclips`
+5. ultimative Suche in allen `bpy.data.movieclips`
+
+```python
+
+from modules.util.tracking_utils import hard_remove_new_tracks
+
+hard_remove_new_tracks(clip, logger=logger)
+```
+
+### ⚠️ Hinweise zur Track-Entfernung (Blender 4.4+)
+
+`tracks.remove(track)` ist ab Blender 4.4 potenziell instabil, da
+`bpy_prop_collection` nicht immer eine zuverlässige `remove()`-Methode
+bereitstellt. `hard_remove_new_tracks()` nutzt daher mehrere Stufen:
+
+1. Zuerst wird `safe_remove_track` aufgerufen, das `bpy.ops.clip.track_remove`
+   versucht und bei Bedarf auf `tracks.remove()` zurückfällt.
+2. Falls der Track danach noch existiert, wird bei verfügbarem `get()` und
+   `remove()` die Referenz über `track.id_data.tracking.tracks.get(name)`
+   entfernt.
+3. Sind diese Methoden nicht vorhanden, wird über alle Tracks iteriert und bei
+   Namensübereinstimmung gelöscht, sofern `remove()` existiert.
+4. Lässt sich der Track trotzdem nicht entfernen, erscheint sein Name im
+   Rückgabewert und optional im Log.
+
+Ein abschließendes `bpy.context.view_layer.update()` aktualisiert den
+UI-Zustand. Dieser Schritt sollte vor jedem erneuten Aufruf von
+`detect_features_async()` stehen.
 
 ## 🧩 Kernstellen der Blender-Kommunikation
 
 Mehrere Funktionen greifen direkt über die `bpy`‑API auf Blender zu:
 
 1. **Registrierung und Properties** – Im Wurzel-`__init__.py` werden alle Operator‑ und Panelklassen mittels `bpy.utils.register_class` registriert und Szenen‑Properties wie `Scene.min_marker_count` definiert.
-2. **Proxy-Erstellung und UI-Overrides** – `KAISERLICH_OT_auto_track_cycle.execute()` aktiviert die Proxy-Einstellungen und ruft mit `context.temp_override(...)` `bpy.ops.clip.rebuild_proxy()` auf.
+2. **Proxy-Erstellung und UI-Overrides** – `KAISERLICH_OT_auto_track_cycle.execute()` aktiviert die Proxy-Einstellungen und ruft mit `context.temp_override(...)` `bpy.ops.clip.rebuild_proxy()` auf. Das benötigte Kontext-Dictionary liefert dabei `get_clip_editor_override()`.
 3. **Asynchroner Ablauf über Timer** – Während der Proxy erstellt wird, überwacht der Operator im Modalmodus per `wm.event_timer_add` das Auftauchen der Proxy-Datei.
 4. **Feature-Erkennung im gültigen UI-Kontext** – `detect_features_in_ui_context` sucht nach einem Clip-Editor-Bereich und führt dort `bpy.ops.clip.detect_features()` aus.
 5. **Direkter Aufruf ohne Proxy** – `detect_features_no_proxy` schaltet `clip.use_proxy` aus und startet die Erkennung sofort.
@@ -175,7 +217,7 @@ def create_proxy_and_wait_async(clip, callback=None, timeout=300, logger=None):
     clip.use_proxy_custom_directory = True
     clip.proxy.build_50 = True
     override = {"clip": clip}
-    override.update(_get_clip_editor_override())
+    override.update(get_clip_editor_override())
     bpy.ops.clip.rebuild_proxy(override)
     bpy.app.timers.register(_wait_for_proxy)
 ```
@@ -351,7 +393,7 @@ bpy.ops.clip.track_markers(forward=True)
 bpy.ops.clip.track_markers(backward=True)
 ```
 
-* Tracking aller `TRACK_`-Marker mit Kontextoverride `context.temp_override()`
+* Tracking aller `TRACK_`-Marker mit Kontextoverride `context.temp_override()` (per `get_clip_editor_override()` erzeugt)
 * UI-Override zwingend notwendig (da sonst `track_markers` nicht läuft)
 
 ---
@@ -421,6 +463,9 @@ REVIEW / LOOP
 | Playhead setzen       | `context.scene.frame_current = frame`            |
 
 > **Hinweis:** Direktes Entfernen über `clip.tracking.tracks.remove()` wird ab Blender 4.4+ nicht mehr unterstützt. Verwende `safe_remove_track` oder `bpy.ops.clip.track_remove()`.
+
+### ⚠️ Hinweise zur Track‑Entfernung
+Als letzte Rückfallebene (Schritt&nbsp;5) sucht `hard_remove_new_tracks` in allen `bpy.data.movieclips` nach dem Track. Wird er in einem anderen Clip gefunden, erfolgt der Löschversuch dort und es wird entsprechend geloggt.
 
 ---
 

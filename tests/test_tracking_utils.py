@@ -171,10 +171,11 @@ def test_hard_remove_new_tracks(monkeypatch):
 
     monkeypatch.setattr(tracking_utils, "safe_remove_track", dummy_safe_remove)
 
-    tracking_utils.hard_remove_new_tracks(clip)
+    result = tracking_utils.hard_remove_new_tracks(clip)
 
     names = [t.name for t in clip.tracking.tracks]
     assert names == ["KEEP"]
+    assert result == []
 
 
 def test_hard_remove_new_tracks_empty(monkeypatch):
@@ -187,10 +188,93 @@ def test_hard_remove_new_tracks_empty(monkeypatch):
 
     def dummy_safe_remove(_clip, track, logger=None):
         # simulate failure: do not remove t1
-        return track is not t1
+        if track is not t1:
+            clip.tracking.tracks.remove(track)
+            return True
+        return False
 
     monkeypatch.setattr(tracking_utils, "safe_remove_track", dummy_safe_remove)
 
-    tracking_utils.hard_remove_new_tracks(clip)
+    result = tracking_utils.hard_remove_new_tracks(clip)
 
     assert clip.tracking.tracks == []
+    assert result == []
+
+
+def test_hard_remove_fallback_by_name(monkeypatch):
+    clip = DummyClip()
+    t1 = DummyTrack("NEW_001")
+    clip.tracking.tracks.append(t1)
+
+    monkeypatch.setattr(tracking_utils, "safe_remove_track", lambda *_a, **_k: False)
+    clip.tracking.tracks.get = lambda name: None
+
+    result = tracking_utils.hard_remove_new_tracks(clip)
+
+    assert clip.tracking.tracks == []
+    assert result == []
+
+
+def test_hard_remove_returns_failed(monkeypatch):
+    clip = DummyClip()
+    t1 = DummyTrack("NEW_001")
+    clip.tracking.tracks.append(t1)
+
+    monkeypatch.setattr(tracking_utils, "safe_remove_track", lambda *_a, **_k: False)
+
+    def fail_remove(track):
+        raise RuntimeError("fail")
+
+    clip.tracking.tracks.remove = fail_remove
+
+    result = tracking_utils.hard_remove_new_tracks(clip)
+
+    assert result == ["NEW_001"]
+
+
+def test_hard_remove_no_remove_method(monkeypatch):
+    class DummyNoRemoveTracks:
+        def __init__(self, tracks):
+            self._tracks = list(tracks)
+
+        def __iter__(self):
+            return iter(self._tracks)
+
+        def get(self, name):
+            for t in self._tracks:
+                if t.name == name:
+                    return t
+            return None
+
+    clip = DummyClip()
+    t1 = DummyTrack("NEW_001")
+    clip.tracking.tracks = DummyNoRemoveTracks([t1])
+
+    monkeypatch.setattr(tracking_utils, "safe_remove_track", lambda *_a, **_k: False)
+
+    result = tracking_utils.hard_remove_new_tracks(clip)
+
+    assert result == ["NEW_001"]
+
+
+def test_hard_remove_fallback_get_remove(monkeypatch):
+    class DummyGetRemoveNoIter:
+        def __init__(self, tracks):
+            self._tracks = {t.name: t for t in tracks}
+
+        def get(self, name):
+            return self._tracks.get(name)
+
+        def remove(self, t):
+            self._tracks.pop(t.name, None)
+
+    clip = DummyClip()
+    t1 = DummyTrack("NEW_001")
+    clip.tracking.tracks.append(t1)
+    t1.id_data = SimpleNamespace(tracking=SimpleNamespace(tracks=DummyGetRemoveNoIter([t1])))
+
+    monkeypatch.setattr(tracking_utils, "safe_remove_track", lambda *_a, **_k: False)
+
+    result = tracking_utils.hard_remove_new_tracks(clip)
+
+    assert result == []
