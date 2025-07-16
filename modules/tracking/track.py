@@ -1,6 +1,7 @@
 """Wrapper utilities for clip tracking."""
 
 import bpy
+from ..util.tracker_logger import TrackerLogger
 
 
 def track_markers(context, forwards=True, backwards=True, logger=None):
@@ -29,10 +30,9 @@ def track_markers(context, forwards=True, backwards=True, logger=None):
         if backwards:
             bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
     except RuntimeError as exc:
-        if logger:
-            logger.error(f"track_markers failed: {exc}")
-        else:
-            print(f"track_markers failed: {exc}")
+        if logger is None:
+            logger = TrackerLogger()
+        logger.error(f"track_markers failed: {exc}")
         return False
 
     return True
