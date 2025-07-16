@@ -119,7 +119,7 @@ def unregister():
 Der Operator `KAISERLICH_OT_auto_track_cycle` durchläuft automatisch folgende Schritte:
 
 1. Entfernen vorhandener Proxy-Dateien und Erzeugen eines neuen 50%-Proxys.
-2. Feature-Erkennung mit dynamisch angepasstem Threshold, bis mindestens `min_marker_count` Marker gefunden sind.
+2. Feature-Erkennung mit dynamisch angepasstem Threshold, bis die Markeranzahl im Bereich von 80‑120 % von `min_marker_count * 4` liegt.
 3. Bereinigung und Umbenennung der Marker zu `TRACK_*`.
 4. Bidirektionales Tracking aller Marker.
 5. Löschen zu kurzer Tracks basierend auf `min_track_length`.
@@ -317,6 +317,7 @@ threshold = round(threshold, 5)
 Dabei ist:
 
 * `expected = min_marker_count * 4`
+* Der Detection-Loop endet, sobald `marker_count` zwischen `expected * 0.8` und `expected * 1.2` liegt.
 * `threshold_start = 1.0`
 * `0.0001` = untere Grenze zur Vermeidung von Null/Negativwerten
 
