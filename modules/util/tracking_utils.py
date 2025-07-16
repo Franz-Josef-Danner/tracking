@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import bpy
 
+from .context_helpers import get_clip_editor_override
+
 
 def _track_exists(tracks, track):
     """Return ``True`` if ``track`` is present in ``tracks``."""
@@ -62,24 +64,19 @@ def safe_remove_track(clip, track, logger=None):
     if op is not None:
         try:
             context = bpy.context
-            area = next(
-                (a for a in context.screen.areas if a.type == "CLIP_EDITOR"),
-                None,
-            )
-            region = (
-                next((r for r in area.regions if r.type == "WINDOW"), None)
-                if area
-                else None
-            )
+            override = get_clip_editor_override(context)
+            area = override.get("area")
+            region = override.get("region")
             if area and region:
                 clip_editor_found = True
-                space = area.spaces.active
+                space = override.get("space_data", getattr(area, "spaces", None))
+                if hasattr(space, "active"):
+                    space = space.active if getattr(space, "active", None) else space
                 if hasattr(track, "select"):
                     track.select = True
                 tracks.active = track
-                with context.temp_override(
-                    area=area, region=region, space_data=space, clip=clip
-                ):
+                override["clip"] = clip
+                with context.temp_override(**override):
                     op()
         except Exception:  # pragma: no cover - fallback
             pass

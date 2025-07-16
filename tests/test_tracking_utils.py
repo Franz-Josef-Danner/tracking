@@ -5,6 +5,7 @@ from types import SimpleNamespace
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from modules.util import tracking_utils
+from modules.util import context_helpers
 
 
 class DummyOverride:
@@ -85,6 +86,15 @@ def test_safe_remove_track_operator(monkeypatch):
     import bpy
     bpy.ops.clip.track_remove = lambda: called.setdefault("op", True)
     bpy.context = _setup_context(clip, with_area=True)
+    monkeypatch.setattr(
+        context_helpers,
+        "get_clip_editor_override",
+        lambda ctx=None: {
+            "area": bpy.context.screen.areas[0],
+            "region": bpy.context.screen.areas[0].regions[0],
+            "space_data": bpy.context.screen.areas[0].spaces.active,
+        },
+    )
 
     logger = DummyLogger()
     result = tracking_utils.safe_remove_track(clip, track, logger=logger)
@@ -104,6 +114,7 @@ def test_safe_remove_track_fallback(monkeypatch):
     import bpy
     bpy.ops.clip.track_remove = lambda: called.setdefault("op", True)
     bpy.context = _setup_context(clip, with_area=False)
+    monkeypatch.setattr(context_helpers, "get_clip_editor_override", lambda ctx=None: {})
 
     def dummy_remove(t):
         called["removed"] = True
