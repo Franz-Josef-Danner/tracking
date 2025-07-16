@@ -20,17 +20,17 @@ def _get_clip_editor_override(ctx=None):
     screen = getattr(ctx.window, "screen", None)
     if screen:
         for area in screen.areas:
-                if area.type == "CLIP_EDITOR":
-                    override["area"] = area
-                    for region in area.regions:
-                        if region.type == "WINDOW":
-                            override["region"] = region
-                            break
-                    for space in area.spaces:
-                        if space.type == "CLIP_EDITOR":
-                            override["space_data"] = space
-                            break
-                    break
+            if area.type == "CLIP_EDITOR":
+                override["area"] = area
+                for region in area.regions:
+                    if region.type == "WINDOW":
+                        override["region"] = region
+                        break
+                for space in area.spaces:
+                    if space.type == "CLIP_EDITOR":
+                        override["space_data"] = space
+                        break
+                break
     return override
 
 

@@ -125,3 +125,45 @@ def count_markers_in_frame(tracks, frame):
         if any(getattr(m, "frame", None) == frame for m in markers):
             count += 1
     return count
+
+
+def hard_remove_new_tracks(clip, logger=None):
+    """Remove all tracks of ``clip`` whose names start with ``NEW_``."""
+
+    if not getattr(clip, "tracking", None):
+        return
+
+    tracks = clip.tracking.tracks
+    new_tracks = [t for t in list(tracks) if getattr(t, "name", "").startswith("NEW_")]
+
+    for track in new_tracks:
+        safe_remove_track(clip, track, logger=logger)
+
+    # remove any leftover empty tracks
+    for track in list(tracks):
+        if (
+            getattr(track, "name", "").startswith("NEW_")
+            and not getattr(track, "markers", [])
+        ):
+            try:
+                tracks.remove(track)
+                if logger:
+                    logger.info(f"Track {track.name} force removed")
+            except Exception as exc:  # pragma: no cover - fallback
+                if logger:
+                    logger.warning(f"Track {track.name} could not be removed: {exc}")
+
+
+def rename_new_to_track(clip, logger=None):
+    """Rename all ``NEW_`` tracks on ``clip`` to ``TRACK_`` sequentially."""
+
+    if not getattr(clip, "tracking", None):
+        return
+
+    for i, track in enumerate(list(clip.tracking.tracks)):
+        if getattr(track, "name", "").startswith("NEW_"):
+            new_name = f"TRACK_{i:03}"
+            if logger:
+                logger.info(f"Renaming {track.name} to {new_name}")
+            track.name = new_name
+
