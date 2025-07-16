@@ -145,6 +145,12 @@ from modules.util.tracking_utils import hard_remove_new_tracks
 hard_remove_new_tracks(clip, logger=logger)
 ```
 
+> **Warnung:** `clip.tracking.tracks.remove()` ist ab Blender 4.4+ unsicher.
+> `hard_remove_new_tracks` nutzt daher immer `safe_remove_track` und greift
+> im Notfall über `track.id_data.tracking.tracks.get(name)` auf die Referenz
+> zu. Ein abschließendes `bpy.context.view_layer.update()` sorgt für die
+> Aktualisierung des UI-Zustands.
+
 Dieser Schritt sollte vor jedem erneuten Aufruf von `detect_features_async()` stehen.
 
 ## 🧩 Kernstellen der Blender-Kommunikation
