@@ -65,14 +65,17 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
         marker_count = count_markers_in_frame(
             clip.tracking.tracks, scene.frame_current
         )
+        min_marker_count = getattr(scene, "min_marker_count", 10)
+        min_plus = min_marker_count * 4
+        min_valid = min_plus * 0.8
+        max_valid = min_plus * 1.2
         if logger:
             logger.debug(f"Markers detected: {marker_count}")
             logger.debug(
-                f"Evaluating: marker_count={marker_count}, "
-                f"min_marker_count={getattr(scene, 'min_marker_count', 10)}, "
-                f"attempt={state['attempt']}, attempts={attempts}"
+                f"Evaluating: marker_count={marker_count}, min_marker_count={min_marker_count}, "
+                f"min_valid={min_valid}, max_valid={max_valid}, attempt={state['attempt']}, attempts={attempts}"
             )
-        if marker_count >= getattr(scene, "min_marker_count", 10) or state["attempt"] >= attempts:
+        if (min_valid < marker_count < max_valid) or state["attempt"] >= attempts:
             if logger:
                 logger.info(
                     f"Detection finished after {state['attempt'] + 1} attempts with {marker_count} markers"
@@ -80,7 +83,7 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
             if hasattr(scene, "kaiserlich_feature_detection_done"):
                 scene.kaiserlich_feature_detection_done = True
             return None
-        if marker_count < getattr(scene, "min_marker_count", 10):
+        if marker_count < min_marker_count:
             if logger:
                 logger.debug("Removing existing tracks before retrying")
             for track in list(clip.tracking.tracks):
