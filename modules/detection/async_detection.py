@@ -88,7 +88,7 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
                 pos = good.markers[0].co
             except (AttributeError, IndexError):
                 continue
-            distance_remove(clip.tracking.tracks, pos, margin_dist)
+            distance_remove(clip.tracking.tracks, pos, margin_dist, logger=logger)
 
         if logger:
             logger.debug("Starting marker count check")
