@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 1),
+    "version": (1, 2),
     "blender": (3, 6, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -38,12 +38,24 @@ class CLIP_PT_tracking_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
+        layout.label(text="Addon Informationen")
+
+
+class CLIP_PT_button_panel(bpy.types.Panel):
+    bl_space_type = 'CLIP_EDITOR'
+    bl_region_type = 'UI'
+    bl_category = 'Track'
+    bl_label = 'Button Panel'
+
+    def draw(self, context):
+        layout = self.layout
         layout.operator('clip.panel_button')
 
 classes = (
     OBJECT_OT_simple_operator,
     CLIP_OT_panel_button,
     CLIP_PT_tracking_panel,
+    CLIP_PT_button_panel,
 )
 
 
