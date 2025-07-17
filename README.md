@@ -261,7 +261,10 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None,
     )
 ```
 
-Führt die Erkennung ohne aktivierte Proxys aus.
+Führt die Erkennung ohne aktivierte Proxys aus. Die Funktion
+erfordert einen sichtbaren **Clip Editor**. Ist kein entsprechender
+Bereich vorhanden, gibt `detect_features_no_proxy()` ``False`` zurück
+und führt den Operator nicht aus.
 
 ```python
 from modules.util.tracking_utils import count_markers_in_frame
