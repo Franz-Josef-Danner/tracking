@@ -74,6 +74,9 @@ class DummyLogger:
     def debug(self, msg):
         pass
 
+    def info(self, msg):
+        pass
+
 
 def test_safe_remove_track_operator(monkeypatch):
     called = {}

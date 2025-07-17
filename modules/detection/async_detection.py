@@ -130,13 +130,20 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
             return None
         if logger:
             logger.debug("Removing existing tracks before retrying")
-        hard_remove_new_tracks(clip, logger=logger)
-        remaining = len([t for t in clip.tracking.tracks if t.name.startswith("NEW_")])
+        before_names = [t.name for t in clip.tracking.tracks if t.name.startswith("NEW_")]
+        failed = hard_remove_new_tracks(clip, logger=logger)
+        after_names = [t.name for t in clip.tracking.tracks if t.name.startswith("NEW_")]
+        removed_names = [n for n in before_names if n not in after_names]
+        remaining = len(after_names)
+        removed_count = len(removed_names)
         if logger:
+            logger.info(f"Removed {removed_count} NEW_ tracks: {removed_names}")
             logger.debug(f"Remaining NEW_ tracks after removal: {remaining}")
         if remaining:
             if logger:
-                logger.warning(f"{remaining} NEW_ tracks could not be removed")
+                logger.warning(
+                    f"{remaining} NEW_ tracks could not be removed: {failed}"
+                )
             return None
         new_threshold = max(
             round(state["threshold"] * ((marker_count + 0.1) / state["expected"]), 5),
