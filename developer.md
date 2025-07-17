@@ -38,3 +38,8 @@
 ## Version 1.9
 - Der "Marker"-Button führt nun `clip.detect_features()` aus. Dabei werden
   `detection_threshold`, `detection_distance` und `detection_margin` gesetzt.
+
+## Version 1.10
+- Die Parameter für `clip.detect_features()` werden nun direkt beim
+  Operatoraufruf übergeben, da die entsprechenden Eigenschaften im
+  `SpaceClipEditor` nicht mehr existieren.

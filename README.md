@@ -19,3 +19,6 @@ Marker) im Clip Editor anstatt eines Timeline Markers.
 Seit Version 1.9 ruft der "Marker"-Button `clip.detect_features()` auf und setzt
 vorher die Parameter `detection_threshold`, `detection_distance` und
 `detection_margin`.
+Seit Version 1.10 werden diese Parameter direkt an den Operator
+`clip.detect_features()` übergeben, da sie nicht mehr als
+Eigenschaften von `SpaceClipEditor` verfügbar sind.
