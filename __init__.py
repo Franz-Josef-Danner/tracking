@@ -2,7 +2,7 @@ bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
     "version": (1, 5),
-    "blender": (3, 6, 0),
+    "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
     "category": "Object",
@@ -40,10 +40,7 @@ class CLIP_OT_panel_button(bpy.types.Operator):
         # Proxy mit Qualität 50 erzeugen
         clip.proxy.quality = 50
 
-        if hasattr(clip.proxy, "use_proxy_custom_directory"):
-            clip.proxy.use_proxy_custom_directory = True
-        else:
-            clip.proxy.use_custom_directory = True
+        clip.proxy.use_proxy_custom_directory = True
         clip.proxy.directory = "//proxies"
 
         # absoluten Pfad zum Proxy-Verzeichnis auflösen
