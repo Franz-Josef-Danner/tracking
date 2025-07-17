@@ -43,3 +43,8 @@
 - Die Parameter für `clip.detect_features()` werden nun direkt beim
   Operatoraufruf übergeben, da die entsprechenden Eigenschaften im
   `SpaceClipEditor` nicht mehr existieren.
+
+## Version 1.11
+- Der Parameter `detection_distance` wurde durch `min_distance`
+  ersetzt, der nun beim Aufruf von `clip.detect_features()`
+  verwendet wird.

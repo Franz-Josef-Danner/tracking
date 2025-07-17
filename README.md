@@ -22,3 +22,5 @@ vorher die Parameter `detection_threshold`, `detection_distance` und
 Seit Version 1.10 werden diese Parameter direkt an den Operator
 `clip.detect_features()` übergeben, da sie nicht mehr als
 Eigenschaften von `SpaceClipEditor` verfügbar sind.
+Seit Version 1.11 heißt der Parameter für den Mindestabstand
+`min_distance` und ersetzt das bisherige `detection_distance`.
