@@ -235,3 +235,45 @@ def test_abort_when_remove_fails(monkeypatch):
 
     assert result is None
     assert any("could not be removed" in w for w in logger.warnings)
+
+
+def test_distance_filter_uses_current_frame(monkeypatch):
+    """Coordinates of GOOD_ markers are taken from the active frame."""
+
+    captured = {}
+
+    def dummy_detect(clip, threshold=1.0, margin=None, min_distance=None, logger=None):
+        good = SimpleNamespace(
+            name="GOOD_1",
+            markers=[
+                SimpleNamespace(frame=1, co=(1, 1)),
+                SimpleNamespace(frame=2, co=(2, 2)),
+            ],
+        )
+        clip.tracking.tracks = [good, SimpleNamespace(name="Track0", markers=[SimpleNamespace(co=(0, 0))])]
+        return True
+
+    monkeypatch.setattr(async_detection, "detect_features_no_proxy", dummy_detect)
+
+    def dummy_distance(tracks, pos, margin, logger=None):
+        captured["pos"] = pos
+
+    monkeypatch.setattr(async_detection, "distance_remove", dummy_distance)
+    monkeypatch.setattr(tracking_utils, "safe_remove_track", lambda *_a, **_k: None)
+
+    step_holder = {}
+
+    def dummy_register(fn, first_interval=0.0):
+        step_holder["fn"] = fn
+
+    import bpy  # provided by conftest
+
+    bpy.app = SimpleNamespace(timers=SimpleNamespace(register=dummy_register))
+
+    scene = SimpleNamespace(frame_current=2, min_marker_count=5)
+    clip = DummyClip()
+
+    async_detection.detect_features_async(scene, clip, attempts=1)
+    step_holder["fn"]()
+
+    assert captured.get("pos") == (2, 2)
