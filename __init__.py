@@ -14,7 +14,10 @@ from .modules.operators.detect_features_operator import KAISERLICH_OT_detect_fea
 from .modules.operators.cleanup_new_tracks_operator import (
     KAISERLICH_OT_cleanup_new_tracks,
 )
-from .modules.ui.kaiserlich_panel import KAISERLICH_PT_tracking_tools
+from .modules.ui.kaiserlich_panel import (
+    KAISERLICH_PT_tracking_tools,
+    KAISERLICH_PT_cleanup_tools,
+)
 
 
 bl_info = {
@@ -33,6 +36,7 @@ classes = [
     KAISERLICH_OT_detect_features,
     KAISERLICH_OT_cleanup_new_tracks,
     KAISERLICH_PT_tracking_tools,
+    KAISERLICH_PT_cleanup_tools,
 ]
 
 
