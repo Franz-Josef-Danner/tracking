@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 10),
+    "version": (1, 11),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -75,7 +75,7 @@ class CLIP_OT_marker_button(bpy.types.Operator):
 
         bpy.ops.clip.detect_features(
             threshold=0.8,
-            distance=120,
+            min_distance=120,
             margin=1,
         )
         self.report({'INFO'}, f"Features bei Frame {frame} erkannt")
@@ -112,7 +112,7 @@ class CLIP_OT_clean_new_tracks(bpy.types.Operator):
         if self.detect:
             bpy.ops.clip.detect_features(
                 threshold=threshold,
-                distance=distance_px,
+                min_distance=distance_px,
                 margin=margin,
             )
 
