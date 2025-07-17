@@ -75,6 +75,63 @@ class CLIP_OT_marker_button(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_clean_new_tracks(bpy.types.Operator):
+    bl_idname = "clip.clean_new_tracks"
+    bl_label = "Clean NEW Tracks"
+    bl_description = "Entfernt neu erkannte Tracks, die zu nahe an GOOD_ Tracks liegen"
+
+    def execute(self, context):
+        space = context.space_data
+        clip = space.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        width, height = clip.size
+        margin = width / 100.0
+        distance_px = width / 20.0
+
+        space.detection_margin = margin
+        space.detection_distance = distance_px
+        space.detection_threshold = 1.0
+
+        bpy.ops.clip.detect_features()
+
+        for track in clip.tracking.tracks:
+            if track.select and not track.name.startswith("NEW_"):
+                track.name = "NEW_" + track.name
+
+        frame = context.scene.frame_current
+        good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]
+
+        to_remove = []
+        for track in clip.tracking.tracks:
+            if not track.name.startswith("NEW_"):
+                continue
+            marker = track.markers.find_frame(frame)
+            if not marker:
+                continue
+            nx = marker.co[0] * width
+            ny = marker.co[1] * height
+
+            for good in good_tracks:
+                g_marker = good.markers.find_frame(frame)
+                if not g_marker:
+                    continue
+                gx = g_marker.co[0] * width
+                gy = g_marker.co[1] * height
+                dist = ((nx - gx) ** 2 + (ny - gy) ** 2) ** 0.5
+                if dist < distance_px:
+                    to_remove.append(track)
+                    break
+
+        for track in to_remove:
+            clip.tracking.tracks.remove(track)
+
+        self.report({'INFO'}, f"Entfernte {len(to_remove)} NEW_ Tracks")
+        return {'FINISHED'}
+
+
 class CLIP_PT_tracking_panel(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
@@ -97,11 +154,13 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.prop(context.scene, 'marker_frame', text='Marker / Frame')
         layout.operator('clip.marker_button')
         layout.operator('clip.panel_button')
+        layout.operator('clip.clean_new_tracks')
 
 classes = (
     OBJECT_OT_simple_operator,
     CLIP_OT_panel_button,
     CLIP_OT_marker_button,
+    CLIP_OT_clean_new_tracks,
     CLIP_PT_tracking_panel,
     CLIP_PT_button_panel,
 )

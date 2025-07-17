@@ -21,3 +21,7 @@
 ## Version 1.6
 - Neues Eingabefeld "Marker / Frame" oberhalb des Panels
 - Neuer Button "Marker", der einen Timeline Marker am angegebenen Frame setzt.
+
+## Version 1.7
+- Neuer Operator `clip.clean_new_tracks` entfernt `NEW_`-Tracks, die im aktuellen
+  Frame näher als die berechnete Pixel-Distanz zu `GOOD_`-Tracks liegen.
