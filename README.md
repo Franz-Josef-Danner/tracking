@@ -7,3 +7,4 @@ Das Addon stellt einen simplen Operator bereit, der im Info-Bereich eine Meldung
 Seit Version 1.1 gibt es im Clip Editor unter *Track* ein neues Panel mit einem Button. Dieser Button ruft einen Operator auf, der eine Meldung in Blender ausgibt.
 
 Seit Version 1.2 befindet sich der Button in einem eigenen Panel.
+Seit Version 1.3 liegt dieses Panel in einem separaten Tab "Addon" im Clip Editor.
