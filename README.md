@@ -26,5 +26,5 @@ Seit Version 1.11 heißt der Parameter für den Mindestabstand
 `min_distance` und ersetzt das bisherige `detection_distance`.
 Seit Version 1.12 werden die verwendeten Werte für `margin` und `min_distance`
 beim Aufruf von `clip.detect_features()` in der Konsole ausgegeben.
-Seit Version 1.13 gibt es einen Button "Tracking Marker", der eine erweiterte
-Feature-Erkennung mit dynamischen Parametern ausführt.
+Seit Version 1.13 führt der "Marker"-Button eine erweiterte
+Feature-Erkennung mit dynamischen Parametern aus.
