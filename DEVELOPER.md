@@ -258,6 +258,12 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None,
                              min_distance=None, logger=None):
     clip.proxy.build_50 = False
     clip.use_proxy = False
+    # Werte im SpaceClipEditor setzen, damit Blender konsistent arbeitet
+    space = get_clip_editor_override().get("space_data")
+    if space:
+        space.detection_threshold = threshold
+        space.detection_distance = min_distance
+        space.detection_margin = margin
     bpy.ops.clip.detect_features(
         threshold=threshold,
         margin=margin,

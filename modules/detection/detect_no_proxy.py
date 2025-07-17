@@ -5,6 +5,7 @@ import time
 import bpy
 from ..proxy.proxy_wait import log_proxy_status
 from ..util.tracker_logger import TrackerLogger
+from ..util.context_helpers import get_clip_editor_override
 
 
 def detect_features_no_proxy(clip, threshold=1.0, margin=None, min_distance=None, logger=None):
@@ -67,14 +68,18 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None, min_distance=None
         if area.type == 'CLIP_EDITOR':
             for region in area.regions:
                 if region.type == 'WINDOW':
-                    override = {
-                        'area': area,
-                        'region': region,
-                        'scene': bpy.context.scene,
-                        'clip': clip,
-                    }
+                    override = {'clip': clip, 'scene': bpy.context.scene}
+                    override.update(get_clip_editor_override())
                     try:
                         with bpy.context.temp_override(**override):
+                            space = override.get('space_data')
+                            if space:
+                                if hasattr(space, 'detection_threshold'):
+                                    space.detection_threshold = threshold
+                                if hasattr(space, 'detection_distance'):
+                                    space.detection_distance = min_distance
+                                if hasattr(space, 'detection_margin'):
+                                    space.detection_margin = margin
                             result = bpy.ops.clip.detect_features(
                                 threshold=threshold,
                                 margin=margin,

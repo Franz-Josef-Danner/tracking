@@ -27,8 +27,10 @@ def _setup_context(areas, called):
         def __exit__(self, exc_type, exc_val, exc_tb):
             return False
 
+    screen = SimpleNamespace(areas=areas)
     return SimpleNamespace(
-        screen=SimpleNamespace(areas=areas),
+        window=SimpleNamespace(screen=screen),
+        screen=screen,
         scene="scene",
         temp_override=lambda **kw: DummyOverride(**kw),
     )
@@ -36,7 +38,13 @@ def _setup_context(areas, called):
 
 def test_detect_features_no_proxy_ui_context(monkeypatch):
     called = {}
-    areas = [SimpleNamespace(type="CLIP_EDITOR", regions=[SimpleNamespace(type="WINDOW")])]
+    areas = [
+        SimpleNamespace(
+            type="CLIP_EDITOR",
+            regions=[SimpleNamespace(type="WINDOW")],
+            spaces=SimpleNamespace(active=SimpleNamespace(type="CLIP_EDITOR")),
+        )
+    ]
     import bpy
     bpy.context = _setup_context(areas, called)
 
@@ -58,8 +66,10 @@ def test_detect_features_no_proxy_ui_context(monkeypatch):
     assert called["min_distance"] == 5
     assert called["args"] == ()
     assert called["override"]["clip"] is clip
+    assert called["override"]["window"] == bpy.context.window
     assert called["override"]["area"] is areas[0]
     assert called["override"]["region"] is areas[0].regions[0]
+    assert called["override"]["space_data"] is areas[0].spaces.active
     assert called["override"]["scene"] == "scene"
 
 

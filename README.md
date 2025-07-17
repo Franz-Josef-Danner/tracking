@@ -16,6 +16,7 @@ Ein Blender-Add-on, das das automatische Tracking von Markern vereinfacht.
    - **Tracking-Länge**
    - **Fehler-Schwelle**
    - **Debug Output aktivieren**
+   - **Detection-Einstellungen des Clip Editors** (Threshold, Distance, Margin)
 
 ## Bekannte Einschränkungen
 - Blender **4.0** oder neuer erforderlich.
