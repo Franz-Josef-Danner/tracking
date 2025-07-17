@@ -463,8 +463,20 @@ def detect_features_in_ui_context(threshold=1.0, margin=0, min_distance=0, place
     return False
 
 
-def wait_for_proxy_and_trigger_detection(clip, proxy_path, threshold=1.0, margin=0, min_distance=0, placement="FRAME", logger=None):
-    """Wait for ``proxy_path`` to appear and then run detection in the UI context."""
+def wait_for_proxy_and_trigger_detection(
+    clip,
+    proxy_path,
+    threshold=1.0,
+    margin=0,
+    min_distance=0,
+    placement="FRAME",
+    logger=None,
+):
+    """Wait for ``proxy_path`` to appear and then run detection in the UI context.
+
+    The check is performed in a background thread started as ``daemon`` so
+    Blender can exit cleanly if the thread is still running.
+    """
 
     if logger:
         logger.debug(f"Waiting for proxy at {proxy_path} to trigger detection")
@@ -499,7 +511,7 @@ def wait_for_proxy_and_trigger_detection(clip, proxy_path, threshold=1.0, margin
         log = logger or TrackerLogger()
         log.error("Proxy nicht fertig oder blockiert.")
 
-    threading.Thread(target=wait_loop).start()
+    threading.Thread(target=wait_loop, daemon=True).start()
 
 
 __all__ = [

@@ -11,6 +11,9 @@ from .modules.util.tracker_logger import configure_logger
 from .modules.operators.tracksycle_operator import KAISERLICH_OT_auto_track_cycle
 from .modules.operators.rename_tracks_modal import KAISERLICH_OT_rename_tracks_modal
 from .modules.operators.detect_features_operator import KAISERLICH_OT_detect_features
+from .modules.operators.cleanup_new_tracks_operator import (
+    KAISERLICH_OT_cleanup_new_tracks,
+)
 from .modules.ui.kaiserlich_panel import KAISERLICH_PT_tracking_tools
 
 
@@ -28,6 +31,7 @@ classes = [
     KAISERLICH_OT_auto_track_cycle,
     KAISERLICH_OT_rename_tracks_modal,
     KAISERLICH_OT_detect_features,
+    KAISERLICH_OT_cleanup_new_tracks,
     KAISERLICH_PT_tracking_tools,
 ]
 

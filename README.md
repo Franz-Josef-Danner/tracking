@@ -152,6 +152,8 @@ Sollte die Erkennung zu wenige oder zu viele Marker liefern, lassen sich alle te
 from modules.util.tracking_utils import hard_remove_new_tracks
 
 hard_remove_new_tracks(clip, logger=logger)
+# or via UI:
+# bpy.ops.kaiserlich.cleanup_new_tracks()
 ```
 
 ### ⚠️ Hinweise zur Track-Entfernung (Blender 4.4+)
@@ -160,8 +162,8 @@ hard_remove_new_tracks(clip, logger=logger)
 `bpy_prop_collection` nicht immer eine zuverlässige `remove()`-Methode
 bereitstellt. `hard_remove_new_tracks()` nutzt daher mehrere Stufen:
 
-1. Zuerst wird `safe_remove_track` aufgerufen, das `bpy.ops.clip.track_remove`
-   versucht und bei Bedarf auf `tracks.remove()` zurückfällt.
+1. Zuerst wird `safe_remove_track` aufgerufen, das ausschließlich
+   `bpy.ops.clip.track_remove` im gültigen UI-Kontext nutzt.
 2. Falls der Track danach noch existiert, wird bei verfügbarem `get()` und
    `remove()` die Referenz über `track.id_data.tracking.tracks.get(name)`
    entfernt.
@@ -261,7 +263,10 @@ def detect_features_no_proxy(clip, threshold=1.0, margin=None,
     )
 ```
 
-Führt die Erkennung ohne aktivierte Proxys aus.
+Führt die Erkennung ohne aktivierte Proxys aus. Die Funktion
+erfordert einen sichtbaren **Clip Editor**. Ist kein entsprechender
+Bereich vorhanden, gibt `detect_features_no_proxy()` ``False`` zurück
+und führt den Operator nicht aus.
 
 ```python
 from modules.util.tracking_utils import count_markers_in_frame
@@ -462,7 +467,7 @@ REVIEW / LOOP
 | Tracks löschen        | `track = clip.tracking.tracks.get(name)`<br>`safe_remove_track(track)` |
 | Playhead setzen       | `context.scene.frame_current = frame`            |
 
-> **Hinweis:** Direktes Entfernen über `clip.tracking.tracks.remove()` wird ab Blender 4.4+ nicht mehr unterstützt. Verwende `safe_remove_track` oder `bpy.ops.clip.track_remove()`.
+> **Hinweis:** Direktes Entfernen über `clip.tracking.tracks.remove()` wird ab Blender 4.4+ nicht mehr unterstützt. `safe_remove_track` ruft `bpy.ops.clip.track_remove` nur im gültigen `CLIP_EDITOR`‑Kontext auf und gibt `False` zurück, wenn kein passender Bereich vorhanden ist.
 
 ### ⚠️ Hinweise zur Track‑Entfernung
 Als letzte Rückfallebene (Schritt&nbsp;5) sucht `hard_remove_new_tracks` in allen `bpy.data.movieclips` nach dem Track. Wird er in einem anderen Clip gefunden, erfolgt der Löschversuch dort und es wird entsprechend geloggt.

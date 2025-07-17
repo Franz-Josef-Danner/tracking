@@ -114,7 +114,11 @@ def test_wait_for_proxy_and_trigger_detection(tmp_path, monkeypatch):
 
     # run threads immediately
     monkeypatch.setattr(threading.Thread, "start", lambda self: self.run())
-    monkeypatch.setattr(threading.Thread, "__init__", lambda self, target: setattr(self, "run", target))
+    monkeypatch.setattr(
+        threading.Thread,
+        "__init__",
+        lambda self, target=None, daemon=None: setattr(self, "run", target),
+    )
     monkeypatch.setattr(time, "sleep", lambda s: None)
 
     proxy = tmp_path / "proxy.avi"

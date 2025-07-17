@@ -33,9 +33,10 @@ def safe_remove_track(clip, track, logger=None):
     """Safely remove ``track`` from ``clip``.
 
     Tries to call :func:`bpy.ops.clip.track_remove` in a Clip Editor UI
-    context. If the operator cannot be executed, falls back to directly
-    removing the track from ``clip.tracking.tracks``. Returns ``True`` when
-    the track no longer exists after the attempt, otherwise ``False``.
+    context.  If no valid UI context is available or the operator fails,
+    the function returns ``False`` without trying to remove the track
+    directly.  ``True`` is returned only when the operator succeeds and the
+    track no longer exists afterwards.
     """
     tracks = None
 
@@ -83,16 +84,10 @@ def safe_remove_track(clip, track, logger=None):
                     op()
         except Exception:  # pragma: no cover - fallback
             pass
-    if op is not None and not clip_editor_found and logger:
-        logger.warning("No CLIP_EDITOR area found; falling back to direct removal")
-
-    still_there = _track_exists(tracks, track)
-    if still_there and hasattr(tracks, "remove"):
-        try:
-            tracks.remove(track)
-        except Exception as exc:  # pragma: no cover - fallback
-            if logger:
-                logger.warning(f"Track remove fallback failed for {track.name}: {exc}")
+    if op is not None and not clip_editor_found:
+        if logger:
+            logger.warning("No CLIP_EDITOR area found")
+        return False
 
     still_there = _track_exists(tracks, track)
     if still_there and logger:

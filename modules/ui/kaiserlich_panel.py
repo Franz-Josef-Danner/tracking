@@ -3,6 +3,7 @@
 import bpy
 
 from ..operators.tracksycle_operator import KAISERLICH_OT_auto_track_cycle
+from ..operators.cleanup_new_tracks_operator import KAISERLICH_OT_cleanup_new_tracks
 
 
 class KAISERLICH_PT_tracking_tools(bpy.types.Panel):
@@ -22,8 +23,12 @@ class KAISERLICH_PT_tracking_tools(bpy.types.Panel):
         layout = self.layout
         scene = context.scene
 
-        layout.operator(KAISERLICH_OT_auto_track_cycle.bl_idname,
-                        text="Auto Track starten")
+        layout.operator(
+            KAISERLICH_OT_auto_track_cycle.bl_idname, text="Auto Track starten"
+        )
+        layout.operator(
+            KAISERLICH_OT_cleanup_new_tracks.bl_idname, text="Cleanup NEW Tracks"
+        )
         layout.prop(scene, "min_marker_count")
         layout.prop(scene, "min_track_length")
         layout.prop(scene, "error_threshold")
