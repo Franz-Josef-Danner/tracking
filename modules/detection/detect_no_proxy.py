@@ -10,6 +10,10 @@ from ..util.tracker_logger import TrackerLogger
 def detect_features_no_proxy(clip, threshold=1.0, margin=None, min_distance=None, logger=None):
     """Run :func:`bpy.ops.clip.detect_features` with proxies disabled.
 
+    This function requires a visible Clip Editor area.  When no such
+    UI context is available it returns ``False`` without executing the
+    operator.
+
     Parameters
     ----------
     clip : :class:`bpy.types.MovieClip`

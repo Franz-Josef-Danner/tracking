@@ -116,8 +116,9 @@ def test_safe_remove_track_fallback(monkeypatch):
     logger = DummyLogger()
     result = tracking_utils.safe_remove_track(clip, track, logger=logger)
     assert called.get("op") is None
-    assert called.get("removed") is True
-    assert result is True
+    assert called.get("removed") is None
+    assert result is False
+    assert track in clip.tracking.tracks
     assert logger.warnings  # warning should be emitted when no area found
 
 

@@ -76,10 +76,11 @@ def detect_features_async(scene, clip, logger=None, attempts=10):
 
         # remove NEW_ tracks close to GOOD_ markers
         good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]
-        new_tracks = [t for t in clip.tracking.tracks if t.name.startswith("NEW_")]
         if logger:
             logger.debug(f"Found {len(good_tracks)} GOOD_ tracks for filtering")
-            logger.debug(f"Found {len(new_tracks)} NEW_ tracks before distance filtering")
+            logger.debug(
+                f"Found {len([t for t in clip.tracking.tracks if t.name.startswith('NEW_')])} NEW_ tracks before distance filtering"
+            )
         if not good_tracks and logger:
             logger.warning("No GOOD_ tracks found – skipping proximity filtering")
         margin_dist = int(clip.size[0] / 20)

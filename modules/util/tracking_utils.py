@@ -83,8 +83,10 @@ def safe_remove_track(clip, track, logger=None):
                     op()
         except Exception:  # pragma: no cover - fallback
             pass
-    if op is not None and not clip_editor_found and logger:
-        logger.warning("No CLIP_EDITOR area found; falling back to direct removal")
+    if op is not None and not clip_editor_found:
+        if logger:
+            logger.warning("No CLIP_EDITOR area found")
+        return False
 
     still_there = _track_exists(tracks, track)
     if still_there and hasattr(tracks, "remove"):
