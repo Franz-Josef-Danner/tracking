@@ -53,3 +53,8 @@
 - Beim Aufruf von `clip.detect_features()` werden die verwendeten Werte für
   `margin` und `min_distance` in der Konsole ausgegeben. Beide Werte sind
   nun ganze Zahlen.
+
+## Version 1.13
+- Neuer Operator `clip.tracking_marker` führt eine dynamische Feature-Erkennung
+  durch und entfernt NEW_-Tracks, die zu nahe an GOOD_-Tracks liegen.
+- Zusätzlicher Button "Tracking Marker" ruft diesen Operator auf.
