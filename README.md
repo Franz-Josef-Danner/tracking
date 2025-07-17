@@ -1,10 +1,5 @@
-# Blender Addon Beispiel
+# Simple Blender Addon
 
-Dieses Repository enthaelt ein minimales Blender Addon.
+Dieses Verzeichnis enthaelt ein minimales Blender Addon. Kopiere den Ordner `my_blender_addon` in deinen Blender Addons-Ordner und aktiviere das Addon in den Einstellungen.
 
-## Installation
-
-1. Kopiere den Ordner `my_blender_addon` in deinen Blender Addons Ordner.
-2. Starte Blender und aktiviere das Addon unter *Edit > Preferences > Add-ons*.
-
-Das Addon fuegt einen Operator hinzu, der beim Ausfuehren eine Meldung im Info-Log anzeigt.
+Das Addon stellt einen simplen Operator bereit, der im Info-Bereich eine Meldung ausgibt.
