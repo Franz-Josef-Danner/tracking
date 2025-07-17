@@ -17,10 +17,12 @@ Seit Version 1.7.1 kann derselbe Operator auch ohne erneute Feature-Erkennung au
 Seit Version 1.8 setzt der "Marker"-Button nun einen Clip Marker (Movie Tracking
 Marker) im Clip Editor anstatt eines Timeline Markers.
 Seit Version 1.9 ruft der "Marker"-Button `clip.detect_features()` auf und setzt
-vorher die Parameter `detection_threshold`, `detection_distance` und
+vorher die Parameter `detection_threshold`, `min_distance` und
 `detection_margin`.
 Seit Version 1.10 werden diese Parameter direkt an den Operator
 `clip.detect_features()` übergeben, da sie nicht mehr als
 Eigenschaften von `SpaceClipEditor` verfügbar sind.
 Seit Version 1.11 heißt der Parameter für den Mindestabstand
 `min_distance` und ersetzt das bisherige `detection_distance`.
+Seit Version 1.12 werden die verwendeten Werte für `margin` und `min_distance`
+beim Aufruf von `clip.detect_features()` in der Konsole ausgegeben.
