@@ -5,3 +5,6 @@
 
 ## Version 1.2
 - Der Button befindet sich jetzt in einem eigenen Panel (`CLIP_PT_button_panel`).
+
+## Version 1.3
+- Das Button-Panel liegt nun im separaten Tab `Addon`.
