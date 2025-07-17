@@ -6,6 +6,8 @@ from ..operators.tracksycle_operator import KAISERLICH_OT_auto_track_cycle
 from ..operators.cleanup_new_tracks_operator import (
     KAISERLICH_OT_cleanup_new_tracks,
 )
+from ..operators.detect_features_operator import KAISERLICH_OT_detect_features
+from ..operators.tracking_marker_operator import KAISERLICH_OT_tracking_marker
 
 
 class KAISERLICH_PT_tracking_tools(bpy.types.Panel):
@@ -27,6 +29,12 @@ class KAISERLICH_PT_tracking_tools(bpy.types.Panel):
 
         layout.operator(
             KAISERLICH_OT_auto_track_cycle.bl_idname, text="Auto Track starten"
+        )
+        layout.operator(
+            KAISERLICH_OT_detect_features.bl_idname, text="Detect Features"
+        )
+        layout.operator(
+            KAISERLICH_OT_tracking_marker.bl_idname, text="Tracking Marker"
         )
         layout.prop(scene, "min_marker_count")
         layout.prop(scene, "min_track_length")

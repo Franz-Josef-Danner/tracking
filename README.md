@@ -11,7 +11,9 @@ Ein Blender-Add-on, das das automatische Tracking von Markern vereinfacht.
 1. Movie Clip Editor öffnen und einen Clip laden.
 2. In der Sidebar den Tab **"Kaiserlich"** wählen.
 3. **Auto Track** drücken. Das Add-on erkennt Features, verfolgt sie und bereinigt neue Marker.
-4. Optional können im Panel weitere Parameter angepasst werden:
+4. **Detect Features** führt nur die Feature-Erkennung aus.
+5. **Tracking Marker** startet den benutzerdefinierten Workflow.
+6. Optional können im Panel weitere Parameter angepasst werden:
    - **Minimale Markeranzahl**
    - **Tracking-Länge**
    - **Fehler-Schwelle**
