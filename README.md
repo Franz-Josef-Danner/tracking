@@ -11,3 +11,4 @@ Seit Version 1.3 liegt dieses Panel in einem separaten Tab "Addon" im Clip Edito
 Seit Version 1.4 baut der Button Proxys mit 50 % Gr\u00f6\u00dfe und einer Qualit\u00e4t von 50 im benutzerdefinierten Verzeichnis `//proxies`.
 Seit Version 1.4.1 wird nur `clip.proxy.directory` gesetzt. Das Attribut `clip.proxy.use_proxy_custom_directory` entfällt.
 Seit Version 1.5 entfernt der Button vorhandene Proxy-Verzeichnisse, bevor neue Proxys erstellt werden.
+Seit Version 1.6 gibt es ein Eingabefeld "Marker / Frame" und einen zus\u00e4tzlichen "Marker"-Button, der einen Timeline Marker setzt.

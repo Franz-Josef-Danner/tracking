@@ -11,6 +11,7 @@ bl_info = {
 import bpy
 import os
 import shutil
+from bpy.props import IntProperty
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
     bl_idname = "object.simple_operator"
@@ -24,7 +25,7 @@ class OBJECT_OT_simple_operator(bpy.types.Operator):
 
 class CLIP_OT_panel_button(bpy.types.Operator):
     bl_idname = "clip.panel_button"
-    bl_label = "Panel Button"
+    bl_label = "Proxy"
     bl_description = "Erstellt Proxy-Dateien mit 50% Gr\u00f6\u00dfe"
 
     def execute(self, context):
@@ -61,6 +62,19 @@ class CLIP_OT_panel_button(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_marker_button(bpy.types.Operator):
+    bl_idname = "clip.marker_button"
+    bl_label = "Marker"
+    bl_description = "Setzt einen Timeline Marker an der angegebenen Frame-Nummer"
+
+    def execute(self, context):
+        frame = context.scene.marker_frame
+        context.scene.frame_current = frame
+        bpy.ops.marker.add()
+        self.report({'INFO'}, f"Marker bei Frame {frame} gesetzt")
+        return {'FINISHED'}
+
+
 class CLIP_PT_tracking_panel(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
@@ -80,23 +94,32 @@ class CLIP_PT_button_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
+        layout.prop(context.scene, 'marker_frame', text='Marker / Frame')
+        layout.operator('clip.marker_button')
         layout.operator('clip.panel_button')
 
 classes = (
     OBJECT_OT_simple_operator,
     CLIP_OT_panel_button,
+    CLIP_OT_marker_button,
     CLIP_PT_tracking_panel,
     CLIP_PT_button_panel,
 )
 
 
 def register():
+    bpy.types.Scene.marker_frame = IntProperty(
+        name="Marker / Frame",
+        description="Frame f\u00fcr neuen Timeline Marker",
+        default=1,
+    )
     for cls in classes:
         bpy.utils.register_class(cls)
 
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
+    del bpy.types.Scene.marker_frame
 
 if __name__ == "__main__":
     register()
