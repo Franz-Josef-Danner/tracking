@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 5),
+    "version": (1, 7),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -11,7 +11,7 @@ bl_info = {
 import bpy
 import os
 import shutil
-from bpy.props import IntProperty
+from bpy.props import IntProperty, BoolProperty
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
     bl_idname = "object.simple_operator"
@@ -78,7 +78,16 @@ class CLIP_OT_marker_button(bpy.types.Operator):
 class CLIP_OT_clean_new_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_new_tracks"
     bl_label = "Clean NEW Tracks"
-    bl_description = "Entfernt neu erkannte Tracks, die zu nahe an GOOD_ Tracks liegen"
+    bl_description = (
+        "Entfernt neu erkannte Tracks, die zu nahe an bestehenden GOOD_ "
+        "Tracks im aktuellen Frame liegen"
+    )
+
+    detect: BoolProperty(
+        name="Detect New Features",
+        description="Vor dem Bereinigen neue Features erkennen",
+        default=True,
+    )
 
     def execute(self, context):
         space = context.space_data
@@ -95,11 +104,12 @@ class CLIP_OT_clean_new_tracks(bpy.types.Operator):
         space.detection_distance = distance_px
         space.detection_threshold = 1.0
 
-        bpy.ops.clip.detect_features()
+        if self.detect:
+            bpy.ops.clip.detect_features()
 
-        for track in clip.tracking.tracks:
-            if track.select and not track.name.startswith("NEW_"):
-                track.name = "NEW_" + track.name
+            for track in clip.tracking.tracks:
+                if track.select and not track.name.startswith("NEW_"):
+                    track.name = "NEW_" + track.name
 
         frame = context.scene.frame_current
         good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]
@@ -126,7 +136,10 @@ class CLIP_OT_clean_new_tracks(bpy.types.Operator):
                     break
 
         for track in to_remove:
-            clip.tracking.tracks.remove(track)
+            try:
+                clip.tracking.tracks.remove(track)
+            except Exception as e:
+                self.report({'WARNING'}, f"Fehler beim Entfernen von {track.name}: {e}")
 
         self.report({'INFO'}, f"Entfernte {len(to_remove)} NEW_ Tracks")
         return {'FINISHED'}
@@ -154,7 +167,11 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.prop(context.scene, 'marker_frame', text='Marker / Frame')
         layout.operator('clip.marker_button')
         layout.operator('clip.panel_button')
-        layout.operator('clip.clean_new_tracks')
+        row = layout.row(align=True)
+        op = row.operator('clip.clean_new_tracks', text='Detect & Clean')
+        op.detect = True
+        op = row.operator('clip.clean_new_tracks', text='Clean Only')
+        op.detect = False
 
 classes = (
     OBJECT_OT_simple_operator,

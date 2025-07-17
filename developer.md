@@ -25,3 +25,8 @@
 ## Version 1.7
 - Neuer Operator `clip.clean_new_tracks` entfernt `NEW_`-Tracks, die im aktuellen
   Frame näher als die berechnete Pixel-Distanz zu `GOOD_`-Tracks liegen.
+
+## Version 1.7.1
+- `clip.clean_new_tracks` besitzt jetzt eine Option `detect`, um die Feature-
+  Erkennung wahlweise zu überspringen.
+- Fehler beim Löschen von Tracks werden abgefangen.

@@ -13,3 +13,4 @@ Seit Version 1.4.1 wird nur `clip.proxy.directory` gesetzt. Das Attribut `clip.p
 Seit Version 1.5 entfernt der Button vorhandene Proxy-Verzeichnisse, bevor neue Proxys erstellt werden.
 Seit Version 1.6 gibt es ein Eingabefeld "Marker / Frame" und einen zus\u00e4tzlichen "Marker"-Button, der einen Timeline Marker setzt.
 Seit Version 1.7 bietet das Panel einen Button "Clean NEW Tracks", der neu erkannte Tracks l\u00f6scht, wenn sie zu nah an bestehenden GOOD_ Tracks liegen.
+Seit Version 1.7.1 kann derselbe Operator auch ohne erneute Feature-Erkennung ausgef\u00fchrt werden.
