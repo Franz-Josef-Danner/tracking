@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 7),
+    "version": (1, 8),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -65,12 +65,14 @@ class CLIP_OT_panel_button(bpy.types.Operator):
 class CLIP_OT_marker_button(bpy.types.Operator):
     bl_idname = "clip.marker_button"
     bl_label = "Marker"
-    bl_description = "Setzt einen Timeline Marker an der angegebenen Frame-Nummer"
+    bl_description = (
+        "Setzt einen Clip Marker (Movie Tracking Marker) am angegebenen Frame"
+    )
 
     def execute(self, context):
         frame = context.scene.marker_frame
         context.scene.frame_current = frame
-        bpy.ops.marker.add()
+        bpy.ops.clip.add_marker()
         self.report({'INFO'}, f"Marker bei Frame {frame} gesetzt")
         return {'FINISHED'}
 

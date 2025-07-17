@@ -30,3 +30,7 @@
 - `clip.clean_new_tracks` besitzt jetzt eine Option `detect`, um die Feature-
   Erkennung wahlweise zu überspringen.
 - Fehler beim Löschen von Tracks werden abgefangen.
+
+## Version 1.8
+- Der "Marker"-Button setzt nun einen Clip Marker (Movie Tracking Marker) im
+  Clip Editor statt eines Timeline Markers.
