@@ -160,8 +160,8 @@ hard_remove_new_tracks(clip, logger=logger)
 `bpy_prop_collection` nicht immer eine zuverlässige `remove()`-Methode
 bereitstellt. `hard_remove_new_tracks()` nutzt daher mehrere Stufen:
 
-1. Zuerst wird `safe_remove_track` aufgerufen, das `bpy.ops.clip.track_remove`
-   versucht und bei Bedarf auf `tracks.remove()` zurückfällt.
+1. Zuerst wird `safe_remove_track` aufgerufen, das ausschließlich
+   `bpy.ops.clip.track_remove` im gültigen UI-Kontext nutzt.
 2. Falls der Track danach noch existiert, wird bei verfügbarem `get()` und
    `remove()` die Referenz über `track.id_data.tracking.tracks.get(name)`
    entfernt.

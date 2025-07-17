@@ -83,7 +83,10 @@ def test_safe_remove_track_operator(monkeypatch):
     track.id_data = clip
 
     import bpy
-    bpy.ops.clip.track_remove = lambda: called.setdefault("op", True)
+    bpy.ops.clip.track_remove = lambda: (
+        called.setdefault("op", True),
+        clip.tracking.tracks.remove(track),
+    )
     bpy.context = _setup_context(clip, with_area=True)
 
     logger = DummyLogger()
