@@ -78,21 +78,33 @@ def safe_remove_track(clip, track, logger=None):
                 if hasattr(track, "select"):
                     track.select = True
                 tracks.active = track
+                if logger:
+                    logger.debug(f"Attempting to remove track {track.name} via operator")
                 with context.temp_override(
                     area=area, region=region, space_data=space, clip=clip
                 ):
-                    op()
-        except Exception:  # pragma: no cover - fallback
-            pass
+                    result = op()
+                if logger:
+                    logger.debug(f"track_remove result for {track.name}: {result}")
+        except Exception as exc:  # pragma: no cover - fallback
+            if logger:
+                logger.warning(f"track_remove operator failed for {track.name}: {exc}")
     if op is not None and not clip_editor_found:
         if logger:
             logger.warning("No CLIP_EDITOR area found")
         return False
 
     still_there = _track_exists(tracks, track)
-    if still_there and logger:
-        logger.warning(f"Track '{track.name}' still exists after attempted removal!")
-    return not still_there
+    if still_there:
+        if logger:
+            logger.warning(
+                f"Track '{track.name}' still exists after attempted removal!"
+            )
+        return False
+
+    if logger:
+        logger.info(f"Successfully removed track {track.name}")
+    return True
 
 
 def count_markers_in_frame(tracks, frame):
@@ -134,6 +146,7 @@ def hard_remove_new_tracks(clip, logger=None):
     tracks = clip.tracking.tracks
     all_tracks = list(tracks)
     failed = []
+    removed_names = []
 
     for track in all_tracks:
         if not getattr(track, "name", "").startswith("NEW_"):
@@ -141,6 +154,7 @@ def hard_remove_new_tracks(clip, logger=None):
 
         removed = safe_remove_track(clip, track, logger=logger)
         if removed:
+            removed_names.append(track.name)
             continue
 
         ref_clip = getattr(track, "id_data", clip)
@@ -153,6 +167,7 @@ def hard_remove_new_tracks(clip, logger=None):
                     ref_tracks.remove(target)
                     if logger:
                         logger.info(f"Force removed track by id_data: {track.name}")
+                    removed_names.append(track.name)
                     continue
             except Exception as exc:  # pragma: no cover - fallback
                 if logger:
@@ -165,6 +180,7 @@ def hard_remove_new_tracks(clip, logger=None):
                         ref_tracks.remove(t)
                         if logger:
                             logger.info(f"Removed NEW_ track by name match: {track.name}")
+                        removed_names.append(track.name)
                         break
                     except Exception as exc:  # pragma: no cover - fallback
                         if logger:
@@ -182,6 +198,11 @@ def hard_remove_new_tracks(clip, logger=None):
         bpy.context.view_layer.update()
     except Exception:  # pragma: no cover - update might not be available in tests
         pass
+
+    if removed_names and logger:
+        logger.info(
+            f"Successfully removed {len(removed_names)} NEW_ tracks: {removed_names}"
+        )
 
     if failed and logger:
         logger.warning(f"{len(failed)} NEW_ tracks could not be removed: {failed}")
