@@ -105,7 +105,7 @@ class CLIP_OT_clean_new_tracks(bpy.types.Operator):
 
         width, height = clip.size
         margin = width / 100.0
-        distance_px = width / 20.0
+        min_distance_px = width / 20.0
 
         threshold = 1.0
 
