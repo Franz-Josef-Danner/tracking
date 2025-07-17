@@ -56,13 +56,20 @@ def safe_remove_track(clip, track, logger=None):
 
     try:
         op = bpy.ops.clip.track_remove
-    except AttributeError:
+        if logger:
+            logger.debug("bpy.ops.clip.track_remove operator available")
+    except AttributeError as exc:  # pragma: no cover - operator missing
+        if logger:
+            logger.error(f"track_remove operator not available: {exc}")
         op = None
 
     clip_editor_found = False
     if op is not None:
         try:
             context = bpy.context
+            area_types = [a.type for a in context.screen.areas]
+            if logger:
+                logger.debug(f"Available areas: {area_types}")
             area = next(
                 (a for a in context.screen.areas if a.type == "CLIP_EDITOR"),
                 None,
@@ -72,6 +79,10 @@ def safe_remove_track(clip, track, logger=None):
                 if area
                 else None
             )
+            if logger:
+                logger.debug(
+                    f"CLIP_EDITOR area found: {bool(area)}, region: {getattr(region, 'type', None)}"
+                )
             if area and region:
                 clip_editor_found = True
                 space = area.spaces.active
@@ -159,6 +170,10 @@ def hard_remove_new_tracks(clip, logger=None):
 
         ref_clip = getattr(track, "id_data", clip)
         ref_tracks = getattr(getattr(ref_clip, "tracking", None), "tracks", None)
+        if logger:
+            logger.debug(
+                f"ref_tracks type for {track.name}: {type(ref_tracks).__name__}"
+            )
 
         if hasattr(ref_tracks, "get") and hasattr(ref_tracks, "remove"):
             try:
