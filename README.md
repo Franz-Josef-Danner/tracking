@@ -9,5 +9,5 @@ Seit Version 1.1 gibt es im Clip Editor unter *Track* ein neues Panel mit einem 
 Seit Version 1.2 befindet sich der Button in einem eigenen Panel.
 Seit Version 1.3 liegt dieses Panel in einem separaten Tab "Addon" im Clip Editor.
 Seit Version 1.4 baut der Button Proxys mit 50 % Gr\u00f6\u00dfe und einer Qualit\u00e4t von 50 im benutzerdefinierten Verzeichnis `//proxies`.
-Seit Version 1.4.1 wird für Blender 4.4 das Attribut `clip.proxy.use_proxy_custom_directory` verwendet.
+Seit Version 1.4.1 wird nur `clip.proxy.directory` gesetzt. Das Attribut `clip.proxy.use_proxy_custom_directory` entfällt.
 Seit Version 1.5 entfernt der Button vorhandene Proxy-Verzeichnisse, bevor neue Proxys erstellt werden.

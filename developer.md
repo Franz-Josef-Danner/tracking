@@ -13,7 +13,7 @@
 - Der Operator `clip.panel_button` baut jetzt 50%-Proxys mit Qualit\u00e4t 50 im Ordner `//proxies`.
 
 ## Version 1.4.1
-- `clip.proxy.use_custom_directory` ersetzt durch `clip.proxy.use_proxy_custom_directory` (API-Anpassung ab Blender 4.4).
+- Das Addon verwendet nur `clip.proxy.directory`. Ein explizites `clip.proxy.use_proxy_custom_directory` ist nicht mehr erforderlich.
 
 ## Version 1.5
 - Vor dem Proxy-Bau wird das Proxy-Verzeichnis (falls vorhanden) gel\u00f6scht, bevor neue Proxys erstellt werden.

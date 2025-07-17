@@ -40,7 +40,6 @@ class CLIP_OT_panel_button(bpy.types.Operator):
         # Proxy mit Qualität 50 erzeugen
         clip.proxy.quality = 50
 
-        clip.proxy.use_proxy_custom_directory = True
         clip.proxy.directory = "//proxies"
 
         # absoluten Pfad zum Proxy-Verzeichnis auflösen
