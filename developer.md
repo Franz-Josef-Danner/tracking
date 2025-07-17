@@ -37,7 +37,7 @@
 
 ## Version 1.9
 - Der "Marker"-Button führt nun `clip.detect_features()` aus. Dabei werden
-  `detection_threshold`, `detection_distance` und `detection_margin` gesetzt.
+  `detection_threshold`, `min_distance` und `detection_margin` gesetzt.
 
 ## Version 1.10
 - Die Parameter für `clip.detect_features()` werden nun direkt beim
@@ -48,3 +48,8 @@
 - Der Parameter `detection_distance` wurde durch `min_distance`
   ersetzt, der nun beim Aufruf von `clip.detect_features()`
   verwendet wird.
+
+## Version 1.12
+- Beim Aufruf von `clip.detect_features()` werden die verwendeten Werte für
+  `margin` und `min_distance` in der Konsole ausgegeben. Beide Werte sind
+  nun ganze Zahlen.
