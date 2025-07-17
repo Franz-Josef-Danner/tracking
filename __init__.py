@@ -249,6 +249,52 @@ class CLIP_OT_clean_new_tracks(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_distance_report(bpy.types.Operator):
+    bl_idname = "clip.distance_report"
+    bl_label = "Report Track Distances"
+    bl_description = (
+        "Gibt den Abstand zwischen korrespondierenden a_ und b_ Tracks aus"
+    )
+
+    def execute(self, context):
+        space = context.space_data
+        clip = space.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        frame = context.scene.frame_current
+        tracks = clip.tracking.tracks
+        width, height = clip.size
+
+        a_tracks = [t for t in tracks if t.name.startswith("a_")]
+        b_tracks = [t for t in tracks if t.name.startswith("b_")]
+
+        for a in a_tracks:
+            suffix = a.name[2:]
+            b = next((t for t in b_tracks if t.name == "b_" + suffix), None)
+            if not b:
+                continue
+
+            am = a.markers.find_frame(frame, exact=True)
+            bm = b.markers.find_frame(frame, exact=True)
+            if not am or not bm:
+                continue
+
+            ax, ay = am.co
+            bx, by = bm.co
+            dist_norm = math.hypot(bx - ax, by - ay)
+            dist_px = dist_norm * math.hypot(width, height)
+
+            print(
+                f"{a.name} \u2194 {b.name} @ Frame {frame}: "
+                f"{dist_norm:.4f} (normalisiert), {dist_px:.1f} px"
+            )
+
+        self.report({'INFO'}, "Distance report abgeschlossen")
+        return {'FINISHED'}
+
+
 
 
 class CLIP_PT_tracking_panel(bpy.types.Panel):
@@ -278,12 +324,14 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         op.detect = True
         op = row.operator('clip.clean_new_tracks', text='Clean Only')
         op.detect = False
+        layout.operator('clip.distance_report')
 
 classes = (
     OBJECT_OT_simple_operator,
     CLIP_OT_panel_button,
     CLIP_OT_marker_button,
     CLIP_OT_clean_new_tracks,
+    CLIP_OT_distance_report,
     CLIP_PT_tracking_panel,
     CLIP_PT_button_panel,
 )
