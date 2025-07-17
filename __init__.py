@@ -112,7 +112,7 @@ class CLIP_OT_clean_new_tracks(bpy.types.Operator):
         if self.detect:
             bpy.ops.clip.detect_features(
                 threshold=threshold,
-                min_distance=distance_px,
+                min_distance=min_distance_px,
                 margin=margin,
             )
 
@@ -140,7 +140,7 @@ class CLIP_OT_clean_new_tracks(bpy.types.Operator):
                 gx = g_marker.co[0] * width
                 gy = g_marker.co[1] * height
                 dist = ((nx - gx) ** 2 + (ny - gy) ** 2) ** 0.5
-                if dist < distance_px:
+                if dist < min_distance_px:
                     to_remove.append(track)
                     break
 
