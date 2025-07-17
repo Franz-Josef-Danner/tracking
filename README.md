@@ -152,6 +152,8 @@ Sollte die Erkennung zu wenige oder zu viele Marker liefern, lassen sich alle te
 from modules.util.tracking_utils import hard_remove_new_tracks
 
 hard_remove_new_tracks(clip, logger=logger)
+# or via UI:
+# bpy.ops.kaiserlich.cleanup_new_tracks()
 ```
 
 ### ⚠️ Hinweise zur Track-Entfernung (Blender 4.4+)
