@@ -14,6 +14,7 @@ from .modules.operators.detect_features_operator import KAISERLICH_OT_detect_fea
 from .modules.operators.cleanup_new_tracks_operator import (
     KAISERLICH_OT_cleanup_new_tracks,
 )
+from .modules.operators.tracking_marker_operator import KAISERLICH_OT_tracking_marker
 from .modules.ui.kaiserlich_panel import (
     KAISERLICH_PT_tracking_tools,
     KAISERLICH_PT_cleanup_tools,
@@ -35,6 +36,7 @@ classes = [
     KAISERLICH_OT_rename_tracks_modal,
     KAISERLICH_OT_detect_features,
     KAISERLICH_OT_cleanup_new_tracks,
+    KAISERLICH_OT_tracking_marker,
     KAISERLICH_PT_tracking_tools,
     KAISERLICH_PT_cleanup_tools,
 ]
