@@ -55,6 +55,5 @@
   nun ganze Zahlen.
 
 ## Version 1.13
-- Neuer Operator `clip.tracking_marker` führt eine dynamische Feature-Erkennung
-  durch und entfernt NEW_-Tracks, die zu nahe an GOOD_-Tracks liegen.
-- Zusätzlicher Button "Tracking Marker" ruft diesen Operator auf.
+- Der "Marker"-Button führt jetzt eine dynamische Feature-Erkennung durch und
+  entfernt NEW_-Tracks, die zu nahe an GOOD_-Tracks liegen.
