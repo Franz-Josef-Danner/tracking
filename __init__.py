@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 8),
+    "version": (1, 9),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -72,8 +72,14 @@ class CLIP_OT_marker_button(bpy.types.Operator):
     def execute(self, context):
         frame = context.scene.marker_frame
         context.scene.frame_current = frame
-        bpy.ops.clip.add_marker()
-        self.report({'INFO'}, f"Marker bei Frame {frame} gesetzt")
+
+        space = context.space_data
+        space.detection_threshold = 0.8
+        space.detection_distance = 120
+        space.detection_margin = 1
+
+        bpy.ops.clip.detect_features()
+        self.report({'INFO'}, f"Features bei Frame {frame} erkannt")
         return {'FINISHED'}
 
 

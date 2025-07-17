@@ -34,3 +34,7 @@
 ## Version 1.8
 - Der "Marker"-Button setzt nun einen Clip Marker (Movie Tracking Marker) im
   Clip Editor statt eines Timeline Markers.
+
+## Version 1.9
+- Der "Marker"-Button führt nun `clip.detect_features()` aus. Dabei werden
+  `detection_threshold`, `detection_distance` und `detection_margin` gesetzt.
