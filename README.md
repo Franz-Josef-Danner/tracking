@@ -16,3 +16,6 @@ Seit Version 1.7 bietet das Panel einen Button "Clean NEW Tracks", der neu erkan
 Seit Version 1.7.1 kann derselbe Operator auch ohne erneute Feature-Erkennung ausgef\u00fchrt werden.
 Seit Version 1.8 setzt der "Marker"-Button nun einen Clip Marker (Movie Tracking
 Marker) im Clip Editor anstatt eines Timeline Markers.
+Seit Version 1.9 ruft der "Marker"-Button `clip.detect_features()` auf und setzt
+vorher die Parameter `detection_threshold`, `detection_distance` und
+`detection_margin`.
