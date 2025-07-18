@@ -55,3 +55,8 @@
 ## Version 1.13
 - Der "Marker"-Button führt jetzt eine dynamische Feature-Erkennung durch und
   entfernt NEW_-Tracks, die zu nahe an GOOD_-Tracks liegen.
+
+## Version 1.14
+- Der aktive Track wird über `space.tracking.active_track` ermittelt,
+  wodurch keine Attribute mehr auf `clip.tracking` fälschlich
+  zugegriffen werden.

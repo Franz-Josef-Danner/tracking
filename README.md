@@ -28,3 +28,6 @@ Seit Version 1.12 werden die verwendeten Werte für `margin` und `min_distance`
 beim Aufruf von `clip.detect_features()` in der Konsole ausgegeben.
 Seit Version 1.13 führt der "Marker"-Button eine erweiterte
 Feature-Erkennung mit dynamischen Parametern aus.
+Seit Version 1.14 wird der aktive Track direkt über
+`space.tracking.active_track` angesprochen, um die Pattern- und
+Search-Size zu setzen.
