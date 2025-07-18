@@ -62,3 +62,5 @@ zu zählen.
 Seit Version 1.27 werden Margin und Mindestabstand auf Basis von 1 % bzw.
 5 % der Breite mit `log10(threshold * 10000000000) / 10` skaliert und die
 Berechnungsformeln sowie Ergebnisse in der Konsole ausgegeben.
+Seit Version 1.28 merkt sich der "Detect"-Button den zuletzt
+verwendeten Threshold-Wert und nutzt ihn f\u00fcr die n\u00e4chste Berechnung.

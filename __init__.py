@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 27),
+    "version": (1, 28),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -12,7 +12,7 @@ import bpy
 import os
 import shutil
 import math
-from bpy.props import IntProperty, BoolProperty
+from bpy.props import IntProperty, BoolProperty, FloatProperty
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
     bl_idname = "object.simple_operator"
@@ -86,12 +86,13 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         nm_current = sum(1 for t in clip.tracking.tracks if t.name.startswith("NEW_"))
         nm = context.scene.nm_count
 
-        threshold_value = 1.0
+        threshold_value = context.scene.threshold_value
         if nm >= 1:
             formula = f"{threshold_value} * (({nm} + 0.1) / {track_plus})"
             threshold_value = threshold_value * ((nm + 0.1) / track_plus)
             print(f"Formel angewendet: {formula} = {threshold_value:.3f}")
         else:
+            threshold_value = 1.0
             print("Formel nicht angewendet, NM < 1")
 
         detection_threshold = max(min(threshold_value, 1.0), 0.001)
@@ -127,6 +128,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             min_distance=min_distance,
             margin=margin,
         )
+        context.scene.threshold_value = threshold_value
         return {'FINISHED'}
 
 
@@ -312,6 +314,11 @@ def register():
         description="Anzahl der NEW_-Tracks nach Count",
         default=0,
     )
+    bpy.types.Scene.threshold_value = FloatProperty(
+        name="Threshold Value",
+        description="Gespeicherter Threshold-Wert",
+        default=1.0,
+    )
     for cls in classes:
         bpy.utils.register_class(cls)
 
@@ -322,6 +329,8 @@ def unregister():
         del bpy.types.Scene.marker_frame
     if hasattr(bpy.types.Scene, "nm_count"):
         del bpy.types.Scene.nm_count
+    if hasattr(bpy.types.Scene, "threshold_value"):
+        del bpy.types.Scene.threshold_value
 
 if __name__ == "__main__":
     register()

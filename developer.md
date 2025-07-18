@@ -125,3 +125,8 @@
 - `clip.detect_button` berechnet Margin und Mindestabstand weiterhin aus 1 %
   bzw. 5 % der Breite und skaliert diese Werte nun zusätzlich mit dem Faktor
   `log10(threshold * 10000000000) / 10`. Die Formeln und Ergebnisse werden in der Konsole ausgegeben.
+
+## Version 1.28
+- `clip.detect_button` speichert den berechneten Threshold-Wert in
+  `Scene.threshold_value` und verwendet ihn beim n\u00e4chsten Durchlauf als
+  Ausgangswert.
