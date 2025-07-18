@@ -121,3 +121,4 @@ Seit Version 1.58 gibt es ein neues Eingabefeld "Frames/Track" direkt unter "Mar
 Seit Version 1.59 bietet das Panel einen Button "Tracking Length", der alle TRACK_-Marker löscht,
 deren Länge unter dem Wert aus "Frames/Track" liegt.
 Seit Version 1.60 legt der Track-Button die Blockgröße beim Rückwärts-Tracking einmalig auf die Hälfte des verbleibenden Bereichs fest.
+Seit Version 1.61 gibt der "Tracking Length"-Button den verwendeten Frames/Track-Wert in der Konsole aus.

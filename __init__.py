@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 60),
+    "version": (1, 61),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -423,7 +423,11 @@ class CLIP_OT_tracking_length(bpy.types.Operator):
             return {'CANCELLED'}
 
         min_frames = context.scene.frames_track
+        print(f"\u23F3 Tracking Length nutzt mindestens {min_frames} Frames")
         undertracked = get_undertracked_markers(clip, min_frames=min_frames)
+        print(f"Gefundene zu kurze Marker: {len(undertracked)}")
+        for name, frames in undertracked:
+            print(f" - {name}: {frames} Frames")
 
         if not undertracked:
             self.report({'INFO'}, "Alle TRACK_-Marker erreichen die gewünschte Länge")

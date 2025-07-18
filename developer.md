@@ -262,3 +262,6 @@
 
 ## Version 1.60
 - `clip.track_sequence` berechnet die Blockgröße für das Rückwärts-Tracking nur einmal als Hälfte des Bereichs.
+
+## Version 1.61
+- `clip.tracking_length` gibt den verwendeten Frames/Track-Wert in der Konsole aus.
