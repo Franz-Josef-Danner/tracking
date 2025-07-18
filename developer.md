@@ -122,5 +122,6 @@
   NM-Wert für die Threshold-Berechnung und zählt die NEW_-Tracks nicht mehr neu.
 
 ## Version 1.27
-- `clip.detect_button` skaliert Margin und Mindestabstand nun zusätzlich mit dem
-  Faktor `log10(threshold * 10000000000) / 10`.
+- `clip.detect_button` berechnet Margin und Mindestabstand weiterhin aus 1 %
+  bzw. 5 % der Breite und skaliert diese Werte nun zusätzlich mit dem Faktor
+  `log10(threshold * 10000000000) / 10`.

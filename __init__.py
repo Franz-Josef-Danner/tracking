@@ -99,8 +99,8 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             f"NEW_ Tracks aktuell: {nm_current}, NM: {nm}, track_plus: {track_plus:.2f}"
         )
 
-        margin_base = int((width * 0.01) * detection_threshold)
-        min_distance_base = int((width * 0.05) * detection_threshold)
+        margin_base = int(width * 0.01)
+        min_distance_base = int(width * 0.05)
 
         factor = math.log10(detection_threshold * 10000000000) / 10
         margin = int(margin_base * factor)
