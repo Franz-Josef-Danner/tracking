@@ -120,3 +120,7 @@
 ## Version 1.26
 - `clip.detect_button` verwendet jetzt den in `Scene.nm_count` gespeicherten
   NM-Wert für die Threshold-Berechnung und zählt die NEW_-Tracks nicht mehr neu.
+
+## Version 1.27
+- `clip.detect_button` skaliert Margin und Mindestabstand nun zusätzlich mit dem
+  Faktor `log10(threshold * 100000) / 10`.
