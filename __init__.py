@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 43),
+    "version": (1, 44),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -295,7 +295,7 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
     bl_idname = "clip.track_sequence"
     bl_label = "Track"
     bl_description = (
-        "Verfolgt TRACK_-Marker jeweils bis zu zehn Frames vor und zur\xFCck"
+        "Verfolgt TRACK_-Marker in Schritten von zehn Frames, bis keine mehr aktiv sind"
     )
 
     def execute(self, context):
@@ -309,9 +309,9 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
 
         scene = context.scene
 
-        current = scene.frame_current
         original_start = scene.frame_start
         original_end = scene.frame_end
+        current = scene.frame_current
 
         # TRACK_-Marker ausw\xE4hlen
         for t in clip.tracking.tracks:
@@ -324,19 +324,41 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
             print("⚠️ Keine selektierten Marker zum Tracken.")
             return {'CANCELLED'}
 
-        # R\xFCckw\xE4rts
-        limited_start = max(original_start, current - 10)
-        scene.frame_start = limited_start
-        scene.frame_end = current
-        print(f"🔁 R\xFCckw\xE4rts-Tracking von {current} bis {limited_start}")
-        bpy.ops.clip.track_markers(backwards=True, sequence=True)
+        # R\xFCckw\xE4rts in 10er-Schritten
+        start = max(original_start, current - 10)
+        while True:
+            scene.frame_start = start
+            scene.frame_end = current
+            scene.frame_current = current
+            print(f"🔁 R\xFCckw\xE4rts-Tracking von {current} bis {start}")
+            bpy.ops.clip.track_markers(backwards=True, sequence=True)
 
-        # Vorw\xE4rts
-        limited_end = min(original_end, current + 10)
-        scene.frame_start = current
-        scene.frame_end = limited_end
-        print(f"🔁 Vorw\xE4rts-Tracking von {current} bis {limited_end}")
-        bpy.ops.clip.track_markers(backwards=False, sequence=True)
+            for t in clip.tracking.tracks:
+                t.select = t.name.startswith("TRACK_")
+            if not any(t.select for t in clip.tracking.tracks if t.name.startswith("TRACK_")):
+                break
+            if start <= original_start:
+                break
+            current = start
+            start = max(original_start, start - 10)
+
+        # Vorw\xE4rts in 10er-Schritten
+        end = min(original_end, current + 10)
+        while True:
+            scene.frame_start = current
+            scene.frame_end = end
+            scene.frame_current = current
+            print(f"🔁 Vorw\xE4rts-Tracking von {current} bis {end}")
+            bpy.ops.clip.track_markers(backwards=False, sequence=True)
+
+            for t in clip.tracking.tracks:
+                t.select = t.name.startswith("TRACK_")
+            if not any(t.select for t in clip.tracking.tracks if t.name.startswith("TRACK_")):
+                break
+            if end >= original_end:
+                break
+            current = end
+            end = min(original_end, end + 10)
 
         # Urspr\xFCngliche Einstellungen wiederherstellen
         scene.frame_start = original_start

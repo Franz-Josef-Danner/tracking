@@ -195,3 +195,7 @@
   `sequence=True`, um die Marker jeweils maximal zehn Frames rückwärts
   und danach wieder vorwärts zu verfolgen.
 
+## Version 1.44
+- `clip.track_sequence` arbeitet in Schritten von zehn Frames und wiederholt
+  das Tracking, bis keine ausgewählten `TRACK_`-Marker mehr vorhanden sind.
+
