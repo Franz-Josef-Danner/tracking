@@ -184,3 +184,9 @@
   schrittweise vorwärts. Es werden höchstens zehn Frames getrackt und das
   Tracking stoppt am Endframe.
 
+## Version 1.42
+- `clip.track_sequence` wählt automatisch alle `TRACK_`-Marker aus,
+  verfolgt sie bis zu zehn Frames rückwärts und danach wieder vorwärts.
+  Der zuvor gespeicherte Frame wird zwischen den Richtungen
+  wiederhergestellt.
+

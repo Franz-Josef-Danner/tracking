@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 41),
+    "version": (1, 42),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -307,26 +307,54 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
 
         scene = context.scene
 
-        start_frame = scene.frame_current
+        play_frame = scene.frame_current
+        start_frame = scene.frame_start
         end_frame = scene.frame_end
         max_steps = 10
 
-        tracks = [t for t in clip.tracking.tracks if t.select]
+        # TRACK_-Marker auswählen
+        for t in clip.tracking.tracks:
+            t.select = t.name.startswith("TRACK_")
 
-        if not tracks:
+        selected = [t for t in clip.tracking.tracks if t.select]
+        print(f"🔢 Selektierte Marker: {len(selected)}")
+        print(f"💾 Playhead gespeichert: {play_frame}")
+
+        if not selected:
             print("⚠️ Keine selektierten Marker zum Tracken.")
             return {'CANCELLED'}
 
+        # Rückwärts tracken
         for i in range(max_steps):
-            current_frame = start_frame + i
+            current_frame = play_frame - i
+            if current_frame < start_frame:
+                print("🛑 Start der Sequenz erreicht.")
+                break
+            scene.frame_current = current_frame
+            bpy.ops.clip.track_markers(backwards=True, sequence=False)
+            print(f"◀️ Rückwärts-Tracking: Frame {current_frame}")
+            for area in bpy.context.screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    area.tag_redraw()
+
+        scene.frame_current = play_frame
+        print(f"↩️ Playhead zurück zu Frame {play_frame}")
+
+        # TRACK_-Marker erneut auswählen
+        for t in clip.tracking.tracks:
+            t.select = t.name.startswith("TRACK_")
+        selected = [t for t in clip.tracking.tracks if t.select]
+        print(f"🔢 Selektierte Marker: {len(selected)}")
+
+        # Vorwärts tracken
+        for i in range(max_steps):
+            current_frame = play_frame + i
             if current_frame > end_frame:
                 print("🛑 Sequenzende erreicht.")
                 break
-
             scene.frame_current = current_frame
             bpy.ops.clip.track_markers(backwards=False, sequence=False)
             print(f"▶️ Tracking Frame {current_frame}")
-
             for area in bpy.context.screen.areas:
                 if area.type == 'CLIP_EDITOR':
                     area.tag_redraw()

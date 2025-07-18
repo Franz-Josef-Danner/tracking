@@ -85,3 +85,5 @@ Seit Version 1.40 meldet der Track-Button jeden Arbeitsschritt in der Konsole
 und pausiert beim Vorwärts-Tracking alle zehn Frames für 0,1 Sekunden.
 Seit Version 1.41 verfolgt der Track-Button die ausgewählten Marker maximal
 zehn Frames nach vorne und bricht am Endframe ab.
+Seit Version 1.42 führt der Track-Button die TRACK_-Marker bis zu zehn Frames
+rückwärts und danach wieder vorwärts, wobei er Start- und Endframe beachtet.
