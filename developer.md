@@ -92,3 +92,8 @@
 - `clip.count_button` speichert die gezählte Anzahl als `Scene.nm_count`.
 - Liegt sie außerhalb des Zielbereichs, werden stattdessen alle `TRACK_`-Tracks
   selektiert.
+
+## Version 1.22
+- Das Panel enthält nun ein Eingabefeld "Marker / Frame" über dem Proxy-Button.
+- Der Proxy-Button steht direkt am Anfang des Panels.
+- Nach dem "Count"-Button wird ein zusätzlicher "Delete"-Button angezeigt.

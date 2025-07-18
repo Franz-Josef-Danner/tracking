@@ -43,3 +43,6 @@ Seit Version 1.19 wählt der "Count"-Button alle NEW_-Tracks aus, zählt sie und
 Seit Version 1.20 gibt der "Detect"-Button die Zahl der NEW_-Tracks und den berechneten Threshold in der Konsole aus.
 Seit Version 1.21 speichert der "Count"-Button das Ergebnis als `Scene.nm_count` und
 wählt bei Abweichungen stattdessen alle TRACK_-Tracks aus.
+Seit Version 1.22 befindet sich oben im Panel ein Eingabefeld "Marker / Frame".
+Der Proxy-Button steht nun direkt darunter und nach dem "Count"-Button erscheint
+ein weiterer "Delete"-Button.

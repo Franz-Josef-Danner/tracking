@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 21),
+    "version": (1, 22),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -259,12 +259,14 @@ class CLIP_PT_button_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
+        layout.prop(context.scene, 'marker_frame', text='Marker / Frame')
+        layout.operator('clip.panel_button')
         layout.operator('clip.detect_button')
         layout.operator('clip.prefix_new')
         layout.operator('clip.distance_button')
         layout.operator('clip.delete_selected')
         layout.operator('clip.count_button')
-        layout.operator('clip.panel_button')
+        layout.operator('clip.delete_selected', text='Delete')
 
 classes = (
     OBJECT_OT_simple_operator,
@@ -280,6 +282,11 @@ classes = (
 
 
 def register():
+    bpy.types.Scene.marker_frame = IntProperty(
+        name="Marker / Frame",
+        description="Frame f\u00fcr neuen Marker",
+        default=1,
+    )
     bpy.types.Scene.nm_count = IntProperty(
         name="NM",
         description="Anzahl der NEW_-Tracks nach Count",
@@ -291,6 +298,8 @@ def register():
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
+    if hasattr(bpy.types.Scene, "marker_frame"):
+        del bpy.types.Scene.marker_frame
     if hasattr(bpy.types.Scene, "nm_count"):
         del bpy.types.Scene.nm_count
 
