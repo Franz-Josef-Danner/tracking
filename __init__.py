@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 57),
+    "version": (1, 58),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -417,6 +417,7 @@ class CLIP_PT_button_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.prop(context.scene, 'marker_frame', text='Marker / Frame')
+        layout.prop(context.scene, 'frames_track', text='Frames/Track')
         layout.operator('clip.panel_button')
         layout.operator('clip.all_buttons', text='All')
         layout.operator('clip.track_sequence', text='Track')
@@ -442,6 +443,11 @@ def register():
         description="Frame f\u00fcr neuen Marker",
         default=20,
     )
+    bpy.types.Scene.frames_track = IntProperty(
+        name="Frames/Track",
+        description="Anzahl der Frames pro Tracking-Schritt",
+        default=25,
+    )
     bpy.types.Scene.nm_count = IntProperty(
         name="NM",
         description="Anzahl der NEW_-Tracks nach Count",
@@ -460,6 +466,8 @@ def unregister():
         bpy.utils.unregister_class(cls)
     if hasattr(bpy.types.Scene, "marker_frame"):
         del bpy.types.Scene.marker_frame
+    if hasattr(bpy.types.Scene, "frames_track"):
+        del bpy.types.Scene.frames_track
     if hasattr(bpy.types.Scene, "nm_count"):
         del bpy.types.Scene.nm_count
     if hasattr(bpy.types.Scene, "threshold_value"):

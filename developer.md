@@ -252,3 +252,6 @@
 
 ## Version 1.57
 - Die Buttons 'Proxy+Track', 'Live Fwd' und 'Live Back' wurden entfernt.
+
+## Version 1.58
+- Neues Eingabefeld 'Frames/Track' unterhalb von 'Marker / Frame' im Panel.
