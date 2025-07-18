@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 23),
+    "version": (1, 24),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -74,6 +74,8 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
+
+        clip.use_proxy = False
 
         width, height = clip.size
         print(f"Auflösung: {width} x {height}")

@@ -104,3 +104,7 @@
   diesem Bereich, werden sie in `TRACK_` umbenannt, die Auswahl wird
   aufgehoben und `Scene.nm_count` zurückgesetzt. Das Feld besitzt nun einen
   Standardwert von 20.
+
+## Version 1.24
+- `clip.detect_button` deaktiviert nun zuerst den Proxy, bevor die
+  Feature-Erkennung gestartet wird.
