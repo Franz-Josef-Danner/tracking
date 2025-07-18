@@ -120,3 +120,4 @@ Seit Version 1.57 wurden die Buttons "Proxy Track", "Live Fwd" und "Live Back" e
 Seit Version 1.58 gibt es ein neues Eingabefeld "Frames/Track" direkt unter "Marker / Frame".
 Seit Version 1.59 bietet das Panel einen Button "Tracking Length", der alle TRACK_-Marker löscht,
 deren Länge unter dem Wert aus "Frames/Track" liegt.
+Seit Version 1.60 legt der Track-Button die Blockgröße beim Rückwärts-Tracking einmalig auf die Hälfte des verbleibenden Bereichs fest.

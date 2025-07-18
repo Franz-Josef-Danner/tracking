@@ -259,3 +259,6 @@
 ## Version 1.59
 - Neuer Button 'Tracking Length' löscht TRACK_-Marker, deren Länge
   unter dem Wert aus 'Frames/Track' liegt.
+
+## Version 1.60
+- `clip.track_sequence` berechnet die Blockgröße für das Rückwärts-Tracking nur einmal als Hälfte des Bereichs.
