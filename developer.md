@@ -232,3 +232,8 @@
   verwenden einen Timer, um w\u00e4hrend des UI-Trackings zu \u00fcberpr\u00fcfen,
   ob noch aktive `TRACK_`-Marker vorhanden sind und stoppen das Tracking,
   sobald keine mehr existieren.
+
+## Version 1.53
+- Neuer Operator `clip.proxy_track` ruft automatisch `clip.panel_button` auf,
+  speichert den aktuellen Frame und verfolgt `TRACK_`-Marker jeweils zehn
+  Frames r\u00fcckw\u00e4rts und danach wieder vorw\u00e4rts zum gespeicherten Frame.

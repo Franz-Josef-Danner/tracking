@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 52),
+    "version": (1, 53),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -485,6 +485,51 @@ class CLIP_OT_live_track_backward(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_proxy_track(bpy.types.Operator):
+    """Proxy erstellen und Marker vor- und zurückverfolgen"""
+
+    bl_idname = "clip.proxy_track"
+    bl_label = "Proxy Track"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        if bpy.ops.clip.panel_button.poll():
+            bpy.ops.clip.panel_button()
+
+        scene = context.scene
+        saved_frame = scene.frame_current
+
+        original_start = scene.frame_start
+        original_end = scene.frame_end
+
+        limited_start = max(original_start, saved_frame - 10)
+        scene.frame_start = limited_start
+        scene.frame_end = saved_frame
+        print(f"\U0001F501 R\u00fcckw\u00e4rts-Tracking von {saved_frame} bis {limited_start}")
+        bpy.ops.clip.track_markers(backwards=True, sequence=True)
+
+        scene.frame_start = original_start
+        scene.frame_end = original_end
+        scene.frame_current = saved_frame
+
+        limited_end = min(original_end, saved_frame + 10)
+        scene.frame_start = saved_frame
+        scene.frame_end = limited_end
+        print(f"\U0001F501 Vorw\u00e4rts-Tracking von {saved_frame} bis {limited_end}")
+        bpy.ops.clip.track_markers(backwards=False, sequence=True)
+
+        scene.frame_start = original_start
+        scene.frame_end = original_end
+        scene.frame_current = saved_frame
+
+        return {'FINISHED'}
+
+
 
 
 class CLIP_PT_tracking_panel(bpy.types.Panel):
@@ -508,6 +553,7 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout = self.layout
         layout.prop(context.scene, 'marker_frame', text='Marker / Frame')
         layout.operator('clip.panel_button')
+        layout.operator('clip.proxy_track', text='Proxy+Track')
         layout.operator('clip.all_buttons', text='All')
         layout.operator('clip.track_sequence', text='Track')
         layout.operator('clip.live_track_forward', text='Live Fwd')
@@ -523,6 +569,7 @@ classes = (
     CLIP_OT_count_button,
     CLIP_OT_all_buttons,
     CLIP_OT_track_sequence,
+    CLIP_OT_proxy_track,
     CLIP_OT_live_track_forward,
     CLIP_OT_live_track_backward,
     CLIP_PT_tracking_panel,

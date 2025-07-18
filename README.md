@@ -107,3 +107,6 @@ verteilt den verbleibenden Bereich auf vier Abschnitte.
 Seit Version 1.52 gibt es experimentelle "Live Track"-Operatoren, die per
 Timer laufendes Tracking \xFCberwachen und stoppen, sobald keine TRACK_-Marker
 mehr aktiv sind.
+Seit Version 1.53 f\u00fchrt der neue "Proxy Track"-Button automatisch den Proxy-Befehl aus,
+speichert den aktuellen Frame und verfolgt TRACK_-Marker zehn Frames r\u00fcckw\u00e4rts
+und anschlie\xDFend wieder vorw\u00e4rts.
