@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 29),
+    "version": (1, 30),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -264,16 +264,31 @@ class CLIP_OT_all_buttons(bpy.types.Operator):
     bl_idname = "clip.all_buttons"
     bl_label = "All"
     bl_description = (
-        "Führt Detect, NEW, Distance, Delete, Count und Delete aus"
+        "Führt Detect, NEW, Distance, Delete, Count und Delete mehrfach aus"
     )
 
     def execute(self, context):
-        bpy.ops.clip.detect_button()
-        bpy.ops.clip.prefix_new()
-        bpy.ops.clip.distance_button()
-        bpy.ops.clip.delete_selected()
-        bpy.ops.clip.count_button()
-        bpy.ops.clip.delete_selected()
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        for _ in range(10):
+            bpy.ops.clip.detect_button()
+            bpy.ops.clip.prefix_new()
+            bpy.ops.clip.distance_button()
+            bpy.ops.clip.delete_selected()
+            bpy.ops.clip.count_button()
+            bpy.ops.clip.delete_selected()
+
+            remaining = any(
+                not t.name.startswith("TRACK_") for t in clip.tracking.tracks
+            )
+            if not remaining:
+                break
+        else:
+            self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
+
         return {'FINISHED'}
 
 
