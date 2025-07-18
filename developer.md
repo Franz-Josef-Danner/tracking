@@ -142,3 +142,6 @@
 
 ## Version 1.31
 - Der zusätzliche Delete-Button im Panel wurde entfernt.
+
+## Version 1.32
+- Das Panel zeigt nur noch den Proxy-Button und den "All"-Button an.

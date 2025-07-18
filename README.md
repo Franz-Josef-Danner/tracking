@@ -69,3 +69,4 @@ Proxy-Button nacheinander ausf\u00fchrt.
 Seit Version 1.30 wiederholt dieser Button den Ablauf maximal zehnmal,
 bis TRACK_-Marker vorhanden sind.
 Seit Version 1.31 wird im Panel nur noch ein Delete-Button angezeigt.
+Seit Version 1.32 zeigt das Panel nur noch den Proxy-Button und den "All"-Button.

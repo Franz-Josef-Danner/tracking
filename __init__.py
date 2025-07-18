@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 31),
+    "version": (1, 32),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -313,11 +313,6 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout = self.layout
         layout.prop(context.scene, 'marker_frame', text='Marker / Frame')
         layout.operator('clip.panel_button')
-        layout.operator('clip.detect_button')
-        layout.operator('clip.prefix_new')
-        layout.operator('clip.distance_button')
-        layout.operator('clip.delete_selected')
-        layout.operator('clip.count_button')
         layout.operator('clip.all_buttons', text='All')
 
 classes = (
