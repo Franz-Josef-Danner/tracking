@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 36),
+    "version": (1, 37),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -294,7 +294,7 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
     bl_idname = "clip.track_sequence"
     bl_label = "Track"
     bl_description = (
-        "Verfolgt TRACK_-Marker vorwärts bis zum Endframe und gibt den Fortschritt aus"
+        "Verfolgt TRACK_-Marker vorwärts und bricht ab, wenn alle verloren sind"
     )
 
     def execute(self, context):
@@ -303,13 +303,16 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
+        # Proxy aktivieren
         clip.use_proxy = True
 
         scene = context.scene
 
+        # Aktuellen Frame merken
         play_frame = scene.frame_current
         print(f"Gemerkter Playhead-Frame: {play_frame}")
 
+        # TRACK_-Marker selektieren
         selected = 0
         for t in clip.tracking.tracks:
             t.select = t.name.startswith("TRACK_")
@@ -320,14 +323,30 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
         start = scene.frame_current
         end = scene.frame_end
 
+        # Liste der selektierten Tracks merken
+        tracks = [t for t in clip.tracking.tracks if t.select]
+
         for frame in range(start, end + 1):
             scene.frame_current = frame
+
             if bpy.ops.clip.track_markers.poll():
                 bpy.ops.clip.track_markers(backwards=False, sequence=False)
-                print(f"📌 Tracking Frame: {frame}")
             else:
                 self.report({'WARNING'}, "Tracken nicht möglich")
                 return {'CANCELLED'}
+
+            print(f"\u25B6\uFE0F Tracking Frame: {frame}")
+
+            # Nur noch aktive Tracks ber\u00fccksichtigen
+            active_tracks = []
+            for t in tracks:
+                marker = t.markers.find_frame(frame)
+                if not marker or marker.pattern_corners[0] != 0.0:
+                    active_tracks.append(t)
+
+            if not active_tracks:
+                print("\u2705 Alle selektierten Tracks verloren oder beendet.")
+                break
 
         scene.frame_current = play_frame
         print(f"Playhead zurück auf Frame {play_frame}")

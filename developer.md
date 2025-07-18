@@ -163,3 +163,7 @@
 - `clip.track_sequence` verfolgt die TRACK_-Marker jetzt Frame für Frame bis zum
   Endframe und gibt den Fortschritt in der Konsole aus.
 
+## Version 1.37
+- `clip.track_sequence` bricht das Tracking ab, sobald keine aktiven TRACK_-Marker
+  mehr vorhanden sind.
+
