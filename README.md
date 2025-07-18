@@ -35,3 +35,5 @@ Seit Version 1.15 bietet das Addon separate Buttons zum Detecten,
 Umbenennen, Distanzprüfen, Löschen und Zählen von Tracks.
 Seit Version 1.16 verwendet die Feature-Erkennung einen Margin von 1 %
 und einen Mindestabstand von 5 % der Clip-Breite.
+Seit Version 1.17 wählt der "Distance"-Button nur noch NEW_-Tracks aus,
+die zu nah an GOOD_-Tracks liegen.

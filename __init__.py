@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 16),
+    "version": (1, 17),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -132,7 +132,10 @@ class CLIP_OT_prefix_new(bpy.types.Operator):
 class CLIP_OT_distance_button(bpy.types.Operator):
     bl_idname = "clip.distance_button"
     bl_label = "Distance"
-    bl_description = "Markiert NEW_ Tracks, die zu nah an GOOD_ Tracks liegen"
+    bl_description = (
+        "Markiert NEW_ Tracks, die zu nah an GOOD_ Tracks liegen und "
+        "deselektiert alle anderen"
+    )
 
     def execute(self, context):
         clip = context.space_data.clip
@@ -143,6 +146,10 @@ class CLIP_OT_distance_button(bpy.types.Operator):
         frame = context.scene.frame_current
         width, height = clip.size
         min_distance_px = int(width * 0.002)
+
+        # Alle Tracks zunächst deselektieren
+        for t in clip.tracking.tracks:
+            t.select = False
 
         new_tracks = [t for t in clip.tracking.tracks if t.name.startswith("NEW_")]
         good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]

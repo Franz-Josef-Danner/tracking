@@ -69,3 +69,8 @@
 ## Version 1.16
 - `clip.detect_button` verwendet nun einen Mindestabstand von 5 % der
   Clip-Breite und einen Margin von 1 % der Breite.
+
+## Version 1.17
+- `clip.distance_button` deselektiert jetzt alle Tracks und
+  markiert ausschließlich NEW_-Tracks, die innerhalb des
+  Mindestabstands zu GOOD_-Tracks liegen.
