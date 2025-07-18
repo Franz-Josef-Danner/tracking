@@ -60,4 +60,5 @@ Seit Version 1.26 verwendet der "Detect"-Button den gespeicherten Wert
 `Scene.nm_count`, um den Threshold zu berechnen, anstatt die NEW_-Tracks erneut
 zu zählen.
 Seit Version 1.27 werden Margin und Mindestabstand auf Basis von 1 % bzw.
-5 % der Breite mit `log10(threshold * 10000000000) / 10` skaliert.
+5 % der Breite mit `log10(threshold * 10000000000) / 10` skaliert und die
+Berechnungsformeln sowie Ergebnisse in der Konsole ausgegeben.

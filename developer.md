@@ -124,4 +124,4 @@
 ## Version 1.27
 - `clip.detect_button` berechnet Margin und Mindestabstand weiterhin aus 1 %
   bzw. 5 % der Breite und skaliert diese Werte nun zusätzlich mit dem Faktor
-  `log10(threshold * 10000000000) / 10`.
+  `log10(threshold * 10000000000) / 10`. Die Formeln und Ergebnisse werden in der Konsole ausgegeben.

@@ -105,6 +105,12 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         factor = math.log10(detection_threshold * 10000000000) / 10
         margin = int(margin_base * factor)
         min_distance = int(min_distance_base * factor)
+        factor_formula = f"log10({detection_threshold:.3f} * 10000000000) / 10"
+        print(f"Faktor: {factor_formula} = {factor:.3f}")
+        print(f"Margin: int({margin_base} * {factor:.3f}) = {margin}")
+        print(
+            f"Min Distance: int({min_distance_base} * {factor:.3f}) = {min_distance}"
+        )
 
         active = None
         if hasattr(space, "tracking"):
