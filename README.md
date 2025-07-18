@@ -56,3 +56,6 @@ Seit Version 1.25 berechnet der "Detect"-Button den Threshold mit dem Wert aus
 "Marker / Frame". Dabei wird in der Konsole ausgegeben, wenn die Formel
 angewendet wird. Der "Count"-Button gibt den NM-Wert in der Konsole aus und setzt
 ihn bei ausreichender Track-Anzahl wieder auf 0.
+Seit Version 1.26 verwendet der "Detect"-Button den gespeicherten Wert
+`Scene.nm_count`, um den Threshold zu berechnen, anstatt die NEW_-Tracks erneut
+zu zählen.

@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 25),
+    "version": (1, 26),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -83,7 +83,8 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         mframe = context.scene.marker_frame
         track_plus = mframe * 4
 
-        nm = sum(1 for t in clip.tracking.tracks if t.name.startswith("NEW_"))
+        nm_current = sum(1 for t in clip.tracking.tracks if t.name.startswith("NEW_"))
+        nm = context.scene.nm_count
 
         threshold_value = 1.0
         if nm >= 1:
@@ -91,10 +92,12 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             threshold_value = threshold_value * ((nm + 0.1) / track_plus)
             print(f"Formel angewendet: {formula} = {threshold_value:.3f}")
         else:
-            print("Formel nicht angewendet, weniger als 1 NEW_-Track")
+            print("Formel nicht angewendet, NM < 1")
 
         detection_threshold = max(min(threshold_value, 1.0), 0.001)
-        print(f"NEW_ Tracks: {nm}, track_plus: {track_plus:.2f}")
+        print(
+            f"NEW_ Tracks aktuell: {nm_current}, NM: {nm}, track_plus: {track_plus:.2f}"
+        )
 
         margin = int((width * 0.01) * detection_threshold)
         min_distance = int((width * 0.05) * detection_threshold)

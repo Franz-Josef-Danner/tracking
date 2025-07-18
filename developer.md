@@ -116,3 +116,7 @@
   Threshold anhand der Formel
   `threshold_value * ((NM + 0.1) / (marker_frame * 4))` zu berechnen und meldet,
   wann diese Formel angewendet wird.
+
+## Version 1.26
+- `clip.detect_button` verwendet jetzt den in `Scene.nm_count` gespeicherten
+  NM-Wert für die Threshold-Berechnung und zählt die NEW_-Tracks nicht mehr neu.
