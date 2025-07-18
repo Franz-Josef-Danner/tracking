@@ -78,3 +78,4 @@ dem gespeicherten Frame und dem Zurücksetzen des Playheads in der Konsole aus.
 Seit Version 1.36 verfolgt der "Track"-Button TRACK_-Marker Frame für Frame bis
  zum Endframe und meldet jeden Schritt in der Konsole.
 Seit Version 1.37 bricht das Tracking ab, sobald alle selektierten Marker verloren sind.
+Seit Version 1.38 aktualisiert der Track-Button die Anzeige jedes Frame und macht den Fortschritt sichtbar.

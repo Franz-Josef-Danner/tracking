@@ -167,3 +167,7 @@
 - `clip.track_sequence` bricht das Tracking ab, sobald keine aktiven TRACK_-Marker
   mehr vorhanden sind.
 
+## Version 1.38
+- `clip.track_sequence` zeigt nun jeden getrackten Frame im Clip Editor an und
+  pausiert kurz, um das UI-Update sichtbar zu machen.
+
