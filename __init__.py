@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 44),
+    "version": (1, 45),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -96,7 +96,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             threshold_value = 1.0
             print("Formel nicht angewendet, NM < 1")
 
-        detection_threshold = max(min(threshold_value, 1.0), 0.001)
+        detection_threshold = max(min(threshold_value, 1.0), 0.0001)
         print(
             f"NEW_ Tracks aktuell: {nm_current}, NM: {nm}, track_plus: {track_plus:.2f}"
         )

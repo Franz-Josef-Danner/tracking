@@ -92,3 +92,5 @@ Seit Version 1.43 setzt der Track-Button den Frame-Bereich temporär und nutzt
 vorwärts zu verfolgen.
 Seit Version 1.44 verfolgt der Track-Button die TRACK_-Marker in
 Zehnerschritten, bis keine mehr aktiv sind.
+Seit Version 1.45 verwendet der Detect-Button einen minimalen
+`detection_threshold` von 0.0001 statt 0.001.

@@ -199,3 +199,7 @@
 - `clip.track_sequence` arbeitet in Schritten von zehn Frames und wiederholt
   das Tracking, bis keine ausgewählten `TRACK_`-Marker mehr vorhanden sind.
 
+## Version 1.45
+- `clip.detect_button` setzt den minimalen `detection_threshold` nun auf
+  `0.0001` statt `0.001`.
+
