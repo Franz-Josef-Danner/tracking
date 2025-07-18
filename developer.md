@@ -151,3 +151,6 @@
   und anschließend wieder vorwärts bis zum gespeicherten Frame.
 - Das Panel enthält nun einen zusätzlichen "Track"-Button.
 
+## Version 1.34
+- `clip.track_sequence` aktiviert nun vor dem Tracking den Proxy.
+

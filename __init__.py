@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 33),
+    "version": (1, 34),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -302,6 +302,8 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
+
+        clip.use_proxy = True
 
         play_frame = context.scene.frame_current
 
