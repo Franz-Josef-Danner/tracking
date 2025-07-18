@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 30),
+    "version": (1, 31),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -318,7 +318,6 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.operator('clip.distance_button')
         layout.operator('clip.delete_selected')
         layout.operator('clip.count_button')
-        layout.operator('clip.delete_selected', text='Delete')
         layout.operator('clip.all_buttons', text='All')
 
 classes = (

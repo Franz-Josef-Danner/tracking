@@ -139,3 +139,6 @@
 ## Version 1.30
 - `clip.all_buttons` wiederholt den Ablauf, bis `TRACK_`-Marker
   vorhanden sind oder zehn Durchläufe erreicht wurden.
+
+## Version 1.31
+- Der zusätzliche Delete-Button im Panel wurde entfernt.
