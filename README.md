@@ -104,3 +104,6 @@ Seit Version 1.50 arbeitet der Track-Button in 25er-Schritten und pr\u00FCft nac
 jeder Passage von 25 Frames erneut die verbleibenden TRACK_-Marker.
 Seit Version 1.51 passt der Track-Button die Blockgr\xF6\xDFe dynamisch an und
 verteilt den verbleibenden Bereich auf vier Abschnitte.
+Seit Version 1.52 gibt es experimentelle "Live Track"-Operatoren, die per
+Timer laufendes Tracking \xFCberwachen und stoppen, sobald keine TRACK_-Marker
+mehr aktiv sind.

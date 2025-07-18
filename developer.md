@@ -226,3 +226,9 @@
 ## Version 1.51
 - `clip.track_sequence` berechnet die Blockgr\xF6\xDFe dynamisch, indem der
   verbleibende Bereich in vier Teile aufgeteilt wird.
+
+## Version 1.52
+- Neue Operatoren `clip.live_track_forward` und `clip.live_track_backward`
+  verwenden einen Timer, um w\u00e4hrend des UI-Trackings zu \u00fcberpr\u00fcfen,
+  ob noch aktive `TRACK_`-Marker vorhanden sind und stoppen das Tracking,
+  sobald keine mehr existieren.
