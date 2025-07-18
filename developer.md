@@ -154,3 +154,8 @@
 ## Version 1.34
 - `clip.track_sequence` aktiviert nun vor dem Tracking den Proxy.
 
+## Version 1.35
+- `clip.track_sequence` gibt beim Selektieren der TRACK_-Marker,
+  beim Speichern und Wiederherstellen des Playhead-Frames
+  Meldungen in der Konsole aus.
+

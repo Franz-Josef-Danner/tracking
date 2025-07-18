@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 34),
+    "version": (1, 35),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -306,9 +306,14 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
         clip.use_proxy = True
 
         play_frame = context.scene.frame_current
+        print(f"Gemerkter Playhead-Frame: {play_frame}")
 
+        selected = 0
         for t in clip.tracking.tracks:
             t.select = t.name.startswith("TRACK_")
+            if t.select:
+                selected += 1
+        print(f"TRACK_-Marker selektiert: {selected}")
 
         if bpy.ops.clip.track_markers.poll():
             bpy.ops.clip.track_markers(backwards=True, sequence=True)
@@ -317,9 +322,14 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
             return {'CANCELLED'}
 
         context.scene.frame_current = play_frame
+        print(f"Playhead zurück auf Frame {play_frame}")
 
+        selected = 0
         for t in clip.tracking.tracks:
             t.select = t.name.startswith("TRACK_")
+            if t.select:
+                selected += 1
+        print(f"TRACK_-Marker selektiert: {selected}")
 
         if bpy.ops.clip.track_markers.poll():
             bpy.ops.clip.track_markers(backwards=False, sequence=True)

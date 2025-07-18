@@ -73,3 +73,5 @@ Seit Version 1.32 zeigt das Panel nur noch den Proxy-Button und den "All"-Button
 Seit Version 1.33 verfügt das Panel über einen "Track"-Button, der TRACK_-Marker
 rückwärts und anschließend wieder vorwärts bis zum aktuellen Frame verfolgt.
 Seit Version 1.34 aktiviert der "Track"-Button vor dem Tracking den Proxy.
+Seit Version 1.35 gibt der "Track"-Button Ausgaben zur Marker-Selektion,
+dem gespeicherten Frame und dem Zurücksetzen des Playheads in der Konsole aus.
