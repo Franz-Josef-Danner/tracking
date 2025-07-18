@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 48),
+    "version": (1, 49),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -315,13 +315,14 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
 
         current = scene.frame_current
 
-        def is_any_track_active(frame_value):
+        def count_active_tracks(frame_value):
+            count = 0
             for t in clip.tracking.tracks:
                 if t.name.startswith("TRACK_"):
                     m = t.markers.find_frame(frame_value)
                     if m and not m.mute and m.co.length_squared != 0.0:
-                        return True
-            return False
+                        count += 1
+            return count
 
         for t in clip.tracking.tracks:
             t.select = t.name.startswith("TRACK_")
@@ -343,7 +344,9 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
             bpy.ops.clip.track_markers(backwards=True, sequence=True)
             scene.frame_start = original_start
             scene.frame_end = original_end
-            if not is_any_track_active(limited_start):
+            active_count = count_active_tracks(limited_start)
+            print(f"📈 Aktive Marker: {active_count}")
+            if active_count == 0:
                 print(
                     "✅ Keine aktiven TRACK_-Marker mehr vorhanden. Tracking gestoppt."
                 )
@@ -360,7 +363,9 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
             scene.frame_start = original_start
             scene.frame_end = original_end
-            if not is_any_track_active(limited_end):
+            active_count = count_active_tracks(limited_end)
+            print(f"📈 Aktive Marker: {active_count}")
+            if active_count == 0:
                 print("✅ Keine aktiven TRACK_-Marker mehr vorhanden. Tracking gestoppt.")
                 break
             frame = limited_end + 1

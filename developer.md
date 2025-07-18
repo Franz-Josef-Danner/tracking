@@ -214,3 +214,7 @@
 
 ## Version 1.48
 - `clip.track_sequence` betrachtet Marker als inaktiv, wenn sie stummgeschaltet sind oder Koordinaten von (0,0) aufweisen.
+
+## Version 1.49
+- `clip.track_sequence` meldet nach jedem Tracking-Schritt die Anzahl der noch
+  aktiven `TRACK_`-Marker.
