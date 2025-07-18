@@ -108,3 +108,6 @@
 ## Version 1.24
 - `clip.detect_button` deaktiviert nun zuerst den Proxy, bevor die
   Feature-Erkennung gestartet wird.
+
+## Version 1.25
+- `clip.count_button` gibt den Wert von `Scene.nm_count` in der Konsole aus.

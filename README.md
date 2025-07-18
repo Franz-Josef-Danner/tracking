@@ -52,3 +52,4 @@ innerhalb dieses Bereichs, werden sie in TRACK_-Tracks umbenannt und die
 Auswahl wird aufgehoben.
 Der Standardwert des Feldes beträgt nun 20.
 Seit Version 1.24 deaktiviert der "Detect"-Button zunächst den Proxy.
+Seit Version 1.25 gibt der "Count"-Button den NM-Wert in der Konsole aus.
