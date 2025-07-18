@@ -82,3 +82,8 @@
 
 ## Version 1.19
 - `clip.count_button` selektiert nun alle `NEW_`-Tracks, zählt sie und hebt die Selektion auf, wenn die Anzahl im erwarteten Bereich liegt.
+
+## Version 1.20
+- `clip.detect_button` berechnet den Threshold anhand der Anzahl vorhandener
+  `NEW_`-Tracks und gibt sowohl diese Zahl als auch den Wert des Thresholds in
+  der Konsole aus.
