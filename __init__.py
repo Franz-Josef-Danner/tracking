@@ -86,10 +86,9 @@ class CLIP_OT_detect_button(bpy.types.Operator):
 
         nm = sum(1 for t in clip.tracking.tracks if t.name.startswith("NEW_"))
 
-        if nm < 1:
-            detection_threshold = 1.0
-        else:
-            detection_threshold = 1.0 * ((nm + 0.1) / track_plus)
+        detection_threshold = 1.0
+        if nm >= 1:
+            detection_threshold = detection_threshold * ((nm + 0.1) / track_plus)
 
         detection_threshold = max(min(detection_threshold, 1.0), 0.001)
         print(f"NEW_ Tracks: {nm}, track_plus: {track_plus:.2f}")
