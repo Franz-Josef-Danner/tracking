@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 40),
+    "version": (1, 41),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -294,9 +294,7 @@ class CLIP_OT_all_buttons(bpy.types.Operator):
 class CLIP_OT_track_sequence(bpy.types.Operator):
     bl_idname = "clip.track_sequence"
     bl_label = "Track"
-    bl_description = (
-        "Verfolgt TRACK_-Marker erst rückwärts und anschließend vorwärts"
-    )
+    bl_description = "Verfolgt ausgewählte Marker schrittweise vorwärts"
 
     def execute(self, context):
         clip = context.space_data.clip
@@ -309,49 +307,31 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
 
         scene = context.scene
 
-        # Aktuellen Frame merken
-        play_frame = scene.frame_current
-        print(f"Gemerkter Playhead-Frame: {play_frame}")
+        start_frame = scene.frame_current
+        end_frame = scene.frame_end
+        max_steps = 10
 
-        # TRACK_-Marker selektieren
-        selected = 0
-        for t in clip.tracking.tracks:
-            t.select = t.name.startswith("TRACK_")
-            if t.select:
-                selected += 1
-        print(f"TRACK_-Marker selektiert: {selected}")
+        tracks = [t for t in clip.tracking.tracks if t.select]
 
-        if bpy.ops.clip.track_markers.poll():
-            bpy.ops.clip.track_markers(backwards=True, sequence=True)
-            print("Rückwärts-Tracking ausgeführt")
-        else:
-            self.report({'WARNING'}, "Rückwärts-Tracking nicht möglich")
+        if not tracks:
+            print("⚠️ Keine selektierten Marker zum Tracken.")
             return {'CANCELLED'}
 
-        scene.frame_current = play_frame
-        print(f"Playhead zurück auf Frame {play_frame}")
+        for i in range(max_steps):
+            current_frame = start_frame + i
+            if current_frame > end_frame:
+                print("🛑 Sequenzende erreicht.")
+                break
 
-        for t in clip.tracking.tracks:
-            t.select = t.name.startswith("TRACK_")
-
-        if not bpy.ops.clip.track_markers.poll():
-            self.report({'WARNING'}, "Vorwärts-Tracking nicht möglich")
-            return {'CANCELLED'}
-
-        start = play_frame
-        end = scene.frame_end
-        print(f"Starte Vorwärts-Tracking von Frame {start} bis {end}")
-
-        step_count = 0
-        for frame in range(start, end + 1):
-            scene.frame_current = frame
+            scene.frame_current = current_frame
             bpy.ops.clip.track_markers(backwards=False, sequence=False)
-            print(f"Tracking Frame: {frame}")
-            step_count += 1
-            if step_count % 10 == 0:
-                time.sleep(0.1)
+            print(f"▶️ Tracking Frame {current_frame}")
 
-        print("Vorwärts-Tracking abgeschlossen")
+            for area in bpy.context.screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    area.tag_redraw()
+
+        print("✅ Tracking abgeschlossen")
 
         return {'FINISHED'}
 
