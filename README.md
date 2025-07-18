@@ -37,3 +37,5 @@ Seit Version 1.16 verwendet die Feature-Erkennung einen Margin von 1 %
 und einen Mindestabstand von 5 % der Clip-Breite.
 Seit Version 1.17 wählt der "Distance"-Button nur noch NEW_-Tracks aus,
 die zu nah an GOOD_-Tracks liegen.
+Seit Version 1.18 führt der "Delete"-Button nur dann eine
+Löschung aus, wenn tatsächlich Tracks ausgewählt sind.

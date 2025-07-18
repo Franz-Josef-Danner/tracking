@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 17),
+    "version": (1, 18),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -181,11 +181,21 @@ class CLIP_OT_delete_selected(bpy.types.Operator):
     bl_description = "Löscht selektierte Tracks"
 
     def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        has_selection = any(t.select for t in clip.tracking.tracks)
+        if not has_selection:
+            self.report({'WARNING'}, "Keine Tracks ausgewählt")
+            return {'CANCELLED'}
+
         if bpy.ops.clip.delete_track.poll():
             bpy.ops.clip.delete_track()
             self.report({'INFO'}, "Tracks gelöscht")
         else:
-            self.report({'WARNING'}, "Keine Tracks ausgewählt")
+            self.report({'WARNING'}, "Löschen nicht möglich")
         return {'FINISHED'}
 
 

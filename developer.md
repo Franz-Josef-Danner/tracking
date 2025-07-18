@@ -74,3 +74,7 @@
 - `clip.distance_button` deselektiert jetzt alle Tracks und
   markiert ausschließlich NEW_-Tracks, die innerhalb des
   Mindestabstands zu GOOD_-Tracks liegen.
+
+## Version 1.18
+- `clip.delete_selected` überprüft jetzt, ob überhaupt Tracks
+  ausgewählt sind und bricht andernfalls mit einer Warnung ab.
