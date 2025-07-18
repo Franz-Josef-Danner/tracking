@@ -130,3 +130,18 @@
 - `clip.detect_button` speichert den berechneten Threshold-Wert in
   `Scene.threshold_value` und verwendet ihn beim n\u00e4chsten Durchlauf als
   Ausgangswert.
+
+## Version 1.29
+- Neuer Operator `clip.all_buttons` f\u00fchrt Detect, NEW, Distance, Delete, Count
+  und ein weiteres Delete in dieser Reihenfolge aus.
+- Das Panel enth\u00e4lt nun einen "All"-Button, der diese Funktion aufruft.
+
+## Version 1.30
+- `clip.all_buttons` wiederholt den Ablauf, bis `TRACK_`-Marker
+  vorhanden sind oder zehn Durchläufe erreicht wurden.
+
+## Version 1.31
+- Der zusätzliche Delete-Button im Panel wurde entfernt.
+
+## Version 1.32
+- Das Panel zeigt nur noch den Proxy-Button und den "All"-Button an.
