@@ -112,3 +112,6 @@
 ## Version 1.25
 - `clip.count_button` gibt den Wert von `Scene.nm_count` in der Konsole aus und
   setzt ihn bei ausreichender Track-Anzahl wieder auf `0`.
+- `clip.detect_button` nutzt nun den Wert aus `Scene.marker_frame`, um den
+  Threshold anhand der Formel
+  `threshold_value * ((NM + 0.1) / (marker_frame * 4))` zu berechnen.

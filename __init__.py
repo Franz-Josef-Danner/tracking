@@ -80,17 +80,16 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         width, height = clip.size
         print(f"Auflösung: {width} x {height}")
 
-        frames = clip.frame_duration or 1
-        tracks_per_frame = len(clip.tracking.tracks) / frames
-        track_plus = tracks_per_frame * 4
+        mframe = context.scene.marker_frame
+        track_plus = mframe * 4
 
         nm = sum(1 for t in clip.tracking.tracks if t.name.startswith("NEW_"))
 
-        detection_threshold = 1.0
+        threshold_value = 1.0
         if nm >= 1:
-            detection_threshold = detection_threshold * ((nm + 0.1) / track_plus)
+            threshold_value = threshold_value * ((nm + 0.1) / track_plus)
 
-        detection_threshold = max(min(detection_threshold, 1.0), 0.001)
+        detection_threshold = max(min(threshold_value, 1.0), 0.001)
         print(f"NEW_ Tracks: {nm}, track_plus: {track_plus:.2f}")
 
         margin = int((width * 0.01) * detection_threshold)
@@ -221,6 +220,8 @@ class CLIP_OT_count_button(bpy.types.Operator):
             t.select = t.name.startswith(prefix)
         count = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
         print(f"Anzahl der Tracking Marker mit Präfix '{prefix}': {count}")
+        context.scene.nm_count = count
+        print(f"NM-Wert: {context.scene.nm_count}")
 
         mframe = context.scene.marker_frame
         track_plus = mframe * 4
@@ -236,8 +237,6 @@ class CLIP_OT_count_button(bpy.types.Operator):
             print(f"NM-Wert: {context.scene.nm_count}")
             self.report({'INFO'}, f"{count} Tracks in TRACK_ umbenannt")
         else:
-            context.scene.nm_count = count
-            print(f"NM-Wert: {context.scene.nm_count}")
             self.report({'INFO'}, f"{count} NEW_-Tracks ausserhalb des Bereichs")
         return {'FINISHED'}
 
