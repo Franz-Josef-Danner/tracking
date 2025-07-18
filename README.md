@@ -46,3 +46,8 @@ wählt bei Abweichungen stattdessen alle TRACK_-Tracks aus.
 Seit Version 1.22 befindet sich oben im Panel ein Eingabefeld "Marker / Frame".
 Der Proxy-Button steht nun direkt darunter und nach dem "Count"-Button erscheint
 ein weiterer "Delete"-Button.
+Seit Version 1.23 verwendet der "Count"-Button den Wert aus "Marker / Frame"
+zur Berechnung des erwarteten Bereichs. Liegt die Anzahl der NEW_-Tracks
+innerhalb dieses Bereichs, werden sie in TRACK_-Tracks umbenannt und die
+Auswahl wird aufgehoben.
+Der Standardwert des Feldes beträgt nun 20.

@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 22),
+    "version": (1, 23),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -219,21 +219,19 @@ class CLIP_OT_count_button(bpy.types.Operator):
 
         context.scene.nm_count = count
 
-        frames = clip.frame_duration or 1
-        tracks_per_frame = len(clip.tracking.tracks) / frames
-        track_plus = tracks_per_frame * 4
+        mframe = context.scene.marker_frame
+        track_plus = mframe * 4
         track_min = track_plus * 0.8
         track_max = track_plus * 1.2
 
         if track_min <= count <= track_max:
-            context.scene.nm_count = 0
             for t in clip.tracking.tracks:
                 if t.name.startswith(prefix):
+                    t.name = "TRACK_" + t.name[4:]
                     t.select = False
-            self.report({'INFO'}, f"{count} NEW_-Tracks im erwarteten Bereich")
+            context.scene.nm_count = 0
+            self.report({'INFO'}, f"{count} Tracks in TRACK_ umbenannt")
         else:
-            for t in clip.tracking.tracks:
-                t.select = t.name.startswith("TRACK_")
             self.report({'INFO'}, f"{count} NEW_-Tracks ausserhalb des Bereichs")
         return {'FINISHED'}
 
@@ -285,7 +283,7 @@ def register():
     bpy.types.Scene.marker_frame = IntProperty(
         name="Marker / Frame",
         description="Frame f\u00fcr neuen Marker",
-        default=1,
+        default=20,
     )
     bpy.types.Scene.nm_count = IntProperty(
         name="NM",

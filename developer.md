@@ -97,3 +97,10 @@
 - Das Panel enthält nun ein Eingabefeld "Marker / Frame" über dem Proxy-Button.
 - Der Proxy-Button steht direkt am Anfang des Panels.
 - Nach dem "Count"-Button wird ein zusätzlicher "Delete"-Button angezeigt.
+
+## Version 1.23
+- `clip.count_button` verwendet jetzt den Wert aus `Scene.marker_frame` zur
+  Berechnung des erwarteten Bereichs. Liegt die Anzahl der `NEW_`-Tracks in
+  diesem Bereich, werden sie in `TRACK_` umbenannt, die Auswahl wird
+  aufgehoben und `Scene.nm_count` zurückgesetzt. Das Feld besitzt nun einen
+  Standardwert von 20.
