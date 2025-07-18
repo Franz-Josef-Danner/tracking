@@ -203,3 +203,7 @@
 - `clip.detect_button` setzt den minimalen `detection_threshold` nun auf
   `0.0001` statt `0.001`.
 
+## Version 1.46
+- `clip.track_sequence` gibt nach jedem Tracking-Schritt die Anzahl
+  der noch aktiven TRACK_-Marker aus.
+

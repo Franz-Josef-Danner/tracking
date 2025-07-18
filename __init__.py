@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 45),
+    "version": (1, 46),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -335,7 +335,9 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
 
             for t in clip.tracking.tracks:
                 t.select = t.name.startswith("TRACK_")
-            if not any(t.select for t in clip.tracking.tracks if t.name.startswith("TRACK_")):
+            selected = [t for t in clip.tracking.tracks if t.select]
+            print(f"🔢 Aktive Marker: {len(selected)}")
+            if not selected:
                 break
             if start <= original_start:
                 break
@@ -353,7 +355,9 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
 
             for t in clip.tracking.tracks:
                 t.select = t.name.startswith("TRACK_")
-            if not any(t.select for t in clip.tracking.tracks if t.name.startswith("TRACK_")):
+            selected = [t for t in clip.tracking.tracks if t.select]
+            print(f"🔢 Aktive Marker: {len(selected)}")
+            if not selected:
                 break
             if end >= original_end:
                 break
