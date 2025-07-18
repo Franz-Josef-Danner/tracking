@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 55),
+    "version": (1, 56),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -486,7 +486,7 @@ class CLIP_OT_live_track_backward(bpy.types.Operator):
 
 
 class CLIP_OT_proxy_track(bpy.types.Operator):
-    """Proxy deaktivieren und Marker vor- und zurückverfolgen"""
+    """Proxy aktivieren und Marker vor- und zurückverfolgen"""
 
     bl_idname = "clip.proxy_track"
     bl_label = "Proxy Track"
@@ -498,8 +498,8 @@ class CLIP_OT_proxy_track(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        # Proxy deaktivieren
-        clip.use_proxy = False
+        # Proxy aktivieren
+        clip.use_proxy = True
 
         # Aktuellen Frame merken
         scene = context.scene

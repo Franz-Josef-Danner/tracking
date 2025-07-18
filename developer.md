@@ -246,3 +246,6 @@
 
 ## Version 1.55
 - `clip.proxy_track` nutzt beim Rückwärts-Tracking den dynamischen Block-Algorithmus aus `clip.track_sequence` und wiederholt die Schritte, bis keine TRACK_-Marker mehr aktiv sind. Anschließend wird der gespeicherte Frame wiederhergestellt und ohne Unterteilung vorwärts getrackt.
+
+## Version 1.56
+- `clip.proxy_track` aktiviert nun den Proxy bevor das Tracking beginnt.
