@@ -94,5 +94,6 @@ Seit Version 1.44 verfolgt der Track-Button die TRACK_-Marker in
 Zehnerschritten, bis keine mehr aktiv sind.
 Seit Version 1.45 verwendet der Detect-Button einen minimalen
 `detection_threshold` von 0.0001 statt 0.001.
-Seit Version 1.46 meldet der Track-Button nach jedem Schritt,
-wie viele TRACK_-Marker noch aktiv sind.
+Seit Version 1.47 prüft der Track-Button nach jedem Zehnerblock,
+ob noch TRACK_-Marker aktiv sind und beendet das Tracking,
+sobald keine mehr vorhanden sind.

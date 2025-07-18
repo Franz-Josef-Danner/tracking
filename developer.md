@@ -204,6 +204,10 @@
   `0.0001` statt `0.001`.
 
 ## Version 1.46
-- `clip.track_sequence` gibt nach jedem Tracking-Schritt die Anzahl
+- `clip.track_sequence` gab nach jedem Tracking-Schritt die Anzahl
   der noch aktiven TRACK_-Marker aus.
+
+## Version 1.47
+- `clip.track_sequence` pr\xFCft am Ende jedes Zehnerblocks, ob noch
+  TRACK_-Marker aktiv sind und beendet das Tracking gegebenenfalls fr\xFChzeitig.
 

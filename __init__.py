@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 46),
+    "version": (1, 47),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -295,7 +295,7 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
     bl_idname = "clip.track_sequence"
     bl_label = "Track"
     bl_description = (
-        "Verfolgt TRACK_-Marker in Schritten von zehn Frames, bis keine mehr aktiv sind"
+        "Verfolgt TRACK_-Marker in Zehnerbl\xF6cken r\xFCckw\xE4rts und vorw\xE4rts"
     )
 
     def execute(self, context):
@@ -311,9 +311,18 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
 
         original_start = scene.frame_start
         original_end = scene.frame_end
+        block_size = 10
+
         current = scene.frame_current
 
-        # TRACK_-Marker ausw\xE4hlen
+        def is_any_track_active(frame_value):
+            for t in clip.tracking.tracks:
+                if t.name.startswith("TRACK_"):
+                    m = t.markers.find_frame(frame_value)
+                    if m and not m.disabled:
+                        return True
+            return False
+
         for t in clip.tracking.tracks:
             t.select = t.name.startswith("TRACK_")
 
@@ -324,47 +333,38 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
             print("⚠️ Keine selektierten Marker zum Tracken.")
             return {'CANCELLED'}
 
-        # R\xFCckw\xE4rts in 10er-Schritten
-        start = max(original_start, current - 10)
-        while True:
-            scene.frame_start = start
-            scene.frame_end = current
-            scene.frame_current = current
-            print(f"🔁 R\xFCckw\xE4rts-Tracking von {current} bis {start}")
+        frame = current
+        start_frame = original_start
+        while frame >= start_frame:
+            limited_start = max(frame - block_size, start_frame)
+            scene.frame_start = limited_start
+            scene.frame_end = frame
+            print(f"🔁 R\xFCckw\xE4rts-Tracking von {frame} bis {limited_start}")
             bpy.ops.clip.track_markers(backwards=True, sequence=True)
-
-            for t in clip.tracking.tracks:
-                t.select = t.name.startswith("TRACK_")
-            selected = [t for t in clip.tracking.tracks if t.select]
-            print(f"🔢 Aktive Marker: {len(selected)}")
-            if not selected:
+            scene.frame_start = original_start
+            scene.frame_end = original_end
+            if not is_any_track_active(limited_start):
+                print(
+                    "✅ Keine aktiven TRACK_-Marker mehr vorhanden. R\xFCckw\xE4rts-Tracking gestoppt."
+                )
                 break
-            if start <= original_start:
-                break
-            current = start
-            start = max(original_start, start - 10)
+            frame = limited_start - 1
 
-        # Vorw\xE4rts in 10er-Schritten
-        end = min(original_end, current + 10)
-        while True:
-            scene.frame_start = current
-            scene.frame_end = end
-            scene.frame_current = current
-            print(f"🔁 Vorw\xE4rts-Tracking von {current} bis {end}")
+        frame = current
+        end_frame = original_end
+        while frame <= end_frame:
+            limited_end = min(frame + block_size, end_frame)
+            scene.frame_start = frame
+            scene.frame_end = limited_end
+            print(f"🔁 Tracking {frame} bis {limited_end}")
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
-
-            for t in clip.tracking.tracks:
-                t.select = t.name.startswith("TRACK_")
-            selected = [t for t in clip.tracking.tracks if t.select]
-            print(f"🔢 Aktive Marker: {len(selected)}")
-            if not selected:
+            scene.frame_start = original_start
+            scene.frame_end = original_end
+            if not is_any_track_active(limited_end):
+                print("✅ Keine aktiven TRACK_-Marker mehr vorhanden. Tracking gestoppt.")
                 break
-            if end >= original_end:
-                break
-            current = end
-            end = min(original_end, end + 10)
+            frame = limited_end + 1
 
-        # Urspr\xFCngliche Einstellungen wiederherstellen
         scene.frame_start = original_start
         scene.frame_end = original_end
 
