@@ -175,3 +175,7 @@
 - `clip.track_sequence` verwendet wieder die einfache Variante: TRACK_-Marker
   werden einmal rückwärts und danach vorwärts verfolgt.
 
+## Version 1.40
+- `clip.track_sequence` gibt die Arbeitsschritte aus und legt beim
+  Vorwärts-Tracking nach jeweils zehn Frames eine Pause von 0,1 Sekunden ein.
+

@@ -81,3 +81,5 @@ Seit Version 1.37 bricht das Tracking ab, sobald alle selektierten Marker verlor
 Seit Version 1.38 aktualisiert der Track-Button die Anzeige jedes Frame und macht den Fortschritt sichtbar.
 Seit Version 1.39 führt der Track-Button wieder nur ein einmaliges Rückwärts-
 und Vorwärts-Tracking der TRACK_-Marker aus.
+Seit Version 1.40 meldet der Track-Button jeden Arbeitsschritt in der Konsole
+und pausiert beim Vorwärts-Tracking alle zehn Frames für 0,1 Sekunden.

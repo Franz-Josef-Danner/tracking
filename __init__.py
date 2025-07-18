@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 39),
+    "version": (1, 40),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -9,6 +9,7 @@ bl_info = {
 }
 
 import bpy
+import time
 import os
 import shutil
 import math
@@ -333,12 +334,24 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
         for t in clip.tracking.tracks:
             t.select = t.name.startswith("TRACK_")
 
-        if bpy.ops.clip.track_markers.poll():
-            bpy.ops.clip.track_markers(backwards=False, sequence=True)
-            print("Vorwärts-Tracking ausgeführt")
-        else:
+        if not bpy.ops.clip.track_markers.poll():
             self.report({'WARNING'}, "Vorwärts-Tracking nicht möglich")
             return {'CANCELLED'}
+
+        start = play_frame
+        end = scene.frame_end
+        print(f"Starte Vorwärts-Tracking von Frame {start} bis {end}")
+
+        step_count = 0
+        for frame in range(start, end + 1):
+            scene.frame_current = frame
+            bpy.ops.clip.track_markers(backwards=False, sequence=False)
+            print(f"Tracking Frame: {frame}")
+            step_count += 1
+            if step_count % 10 == 0:
+                time.sleep(0.1)
+
+        print("Vorwärts-Tracking abgeschlossen")
 
         return {'FINISHED'}
 
