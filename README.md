@@ -33,3 +33,5 @@ Seit Version 1.14 wird der aktive Track direkt über
 Search-Size zu setzen.
 Seit Version 1.15 bietet das Addon separate Buttons zum Detecten,
 Umbenennen, Distanzprüfen, Löschen und Zählen von Tracks.
+Seit Version 1.16 verwendet die Feature-Erkennung einen Margin von 1 %
+und einen Mindestabstand von 5 % der Clip-Breite.

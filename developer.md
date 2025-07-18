@@ -65,3 +65,7 @@
 - Neue Operatoren: `clip.detect_button`, `clip.prefix_new`,
   `clip.distance_button`, `clip.delete_selected` und `clip.count_button`.
 - Das Panel zeigt nun diese Buttons für einen modularen Workflow.
+
+## Version 1.16
+- `clip.detect_button` verwendet nun einen Mindestabstand von 5 % der
+  Clip-Breite und einen Margin von 1 % der Breite.

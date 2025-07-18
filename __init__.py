@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 15),
+    "version": (1, 16),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -86,8 +86,9 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         threshold = 1.0 if nm < 1 else 1.0 * ((nm + 0.1) / track_plus)
         threshold = max(min(threshold, 1.0), 0.001)
 
+        # Margin is 1% of the clip width, minimum distance 5%
         margin = int(width * 0.01)
-        min_distance = int(width * 0.002)
+        min_distance = int(width * 0.05)
 
         active = None
         if hasattr(space, "tracking"):
