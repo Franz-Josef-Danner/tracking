@@ -118,3 +118,5 @@ Seit Version 1.55 verwendet der "Proxy Track"-Button beim Rückwärts-Tracking d
 Seit Version 1.56 aktiviert der "Proxy Track"-Button den Proxy, bevor er das Tracking startet.
 Seit Version 1.57 wurden die Buttons "Proxy Track", "Live Fwd" und "Live Back" entfernt.
 Seit Version 1.58 gibt es ein neues Eingabefeld "Frames/Track" direkt unter "Marker / Frame".
+Seit Version 1.59 bietet das Panel einen Button "Tracking Length", der alle TRACK_-Marker löscht,
+deren Länge unter dem Wert aus "Frames/Track" liegt.

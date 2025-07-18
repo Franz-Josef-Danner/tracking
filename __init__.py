@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 58),
+    "version": (1, 59),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -391,6 +391,58 @@ def has_active_marker(tracks, frame):
     return False
 
 
+def get_undertracked_markers(clip, min_frames=10):
+    undertracked = []
+
+    for track in clip.tracking.tracks:
+        if not track.name.startswith("TRACK_"):
+            continue
+
+        tracked_frames = [
+            m for m in track.markers
+            if not m.mute and m.co.length_squared != 0.0
+        ]
+
+        if len(tracked_frames) < min_frames:
+            undertracked.append((track.name, len(tracked_frames)))
+
+    return undertracked
+
+
+class CLIP_OT_tracking_length(bpy.types.Operator):
+    bl_idname = "clip.tracking_length"
+    bl_label = "Tracking Length"
+    bl_description = (
+        "Löscht TRACK_-Marker, deren Länge unter 'Frames/Track' liegt"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        min_frames = context.scene.frames_track
+        undertracked = get_undertracked_markers(clip, min_frames=min_frames)
+
+        if not undertracked:
+            self.report({'INFO'}, "Alle TRACK_-Marker erreichen die gewünschte Länge")
+            return {'FINISHED'}
+
+        for name, _ in undertracked:
+            track = clip.tracking.tracks.get(name)
+            if track:
+                track.select = True
+
+        if bpy.ops.clip.delete_track.poll():
+            bpy.ops.clip.delete_track()
+            self.report({'INFO'}, f"{len(undertracked)} TRACK_-Marker gelöscht")
+        else:
+            self.report({'WARNING'}, "Löschen nicht möglich")
+
+        return {'FINISHED'}
+
+
 
 
 
@@ -421,6 +473,7 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.operator('clip.panel_button')
         layout.operator('clip.all_buttons', text='All')
         layout.operator('clip.track_sequence', text='Track')
+        layout.operator('clip.tracking_length', text='Tracking Length')
 
 classes = (
     OBJECT_OT_simple_operator,
@@ -432,6 +485,7 @@ classes = (
     CLIP_OT_count_button,
     CLIP_OT_all_buttons,
     CLIP_OT_track_sequence,
+    CLIP_OT_tracking_length,
     CLIP_PT_tracking_panel,
     CLIP_PT_button_panel,
 )
