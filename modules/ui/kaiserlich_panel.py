@@ -8,6 +8,7 @@ from ..operators.cleanup_new_tracks_operator import (
 )
 from ..operators.detect_features_operator import KAISERLICH_OT_detect_features
 from ..operators.tracking_marker_operator import KAISERLICH_OT_tracking_marker
+from ..operators.combine_actions_operator import KAISERLICH_OT_run_all_except_proxy
 
 
 class KAISERLICH_PT_tracking_tools(bpy.types.Panel):
@@ -35,6 +36,10 @@ class KAISERLICH_PT_tracking_tools(bpy.types.Panel):
         )
         layout.operator(
             KAISERLICH_OT_tracking_marker.bl_idname, text="Tracking Marker"
+        )
+        layout.operator(
+            KAISERLICH_OT_run_all_except_proxy.bl_idname,
+            text="Alles außer Proxy",
         )
         layout.prop(scene, "min_marker_count")
         layout.prop(scene, "min_track_length")
