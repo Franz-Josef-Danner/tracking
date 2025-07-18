@@ -211,3 +211,6 @@
 - `clip.track_sequence` pr\xFCft am Ende jedes Zehnerblocks, ob noch
   TRACK_-Marker aktiv sind und beendet das Tracking gegebenenfalls fr\xFChzeitig.
 
+
+## Version 1.48
+- `clip.track_sequence` betrachtet Marker als inaktiv, wenn sie stummgeschaltet sind oder Koordinaten von (0,0) aufweisen.

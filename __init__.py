@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 47),
+    "version": (1, 48),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -319,7 +319,7 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
             for t in clip.tracking.tracks:
                 if t.name.startswith("TRACK_"):
                     m = t.markers.find_frame(frame_value)
-                    if m and not m.disabled:
+                    if m and not m.mute and m.co.length_squared != 0.0:
                         return True
             return False
 
@@ -345,7 +345,7 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
             scene.frame_end = original_end
             if not is_any_track_active(limited_start):
                 print(
-                    "✅ Keine aktiven TRACK_-Marker mehr vorhanden. R\xFCckw\xE4rts-Tracking gestoppt."
+                    "✅ Keine aktiven TRACK_-Marker mehr vorhanden. Tracking gestoppt."
                 )
                 break
             frame = limited_start - 1

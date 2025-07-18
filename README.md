@@ -97,3 +97,4 @@ Seit Version 1.45 verwendet der Detect-Button einen minimalen
 Seit Version 1.47 prüft der Track-Button nach jedem Zehnerblock,
 ob noch TRACK_-Marker aktiv sind und beendet das Tracking,
 sobald keine mehr vorhanden sind.
+Seit Version 1.48 erkennt der Track-Button Marker als inaktiv, wenn sie stummgeschaltet sind oder Koordinaten von (0,0) besitzen.
