@@ -222,9 +222,6 @@ class CLIP_OT_count_button(bpy.types.Operator):
         count = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
         print(f"Anzahl der Tracking Marker mit Präfix '{prefix}': {count}")
 
-        context.scene.nm_count = count
-        print(f"NM-Wert: {context.scene.nm_count}")
-
         mframe = context.scene.marker_frame
         track_plus = mframe * 4
         track_min = track_plus * 0.8
@@ -236,8 +233,11 @@ class CLIP_OT_count_button(bpy.types.Operator):
                     t.name = "TRACK_" + t.name[4:]
                     t.select = False
             context.scene.nm_count = 0
+            print(f"NM-Wert: {context.scene.nm_count}")
             self.report({'INFO'}, f"{count} Tracks in TRACK_ umbenannt")
         else:
+            context.scene.nm_count = count
+            print(f"NM-Wert: {context.scene.nm_count}")
             self.report({'INFO'}, f"{count} NEW_-Tracks ausserhalb des Bereichs")
         return {'FINISHED'}
 

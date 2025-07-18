@@ -110,4 +110,5 @@
   Feature-Erkennung gestartet wird.
 
 ## Version 1.25
-- `clip.count_button` gibt den Wert von `Scene.nm_count` in der Konsole aus.
+- `clip.count_button` gibt den Wert von `Scene.nm_count` in der Konsole aus und
+  setzt ihn bei ausreichender Track-Anzahl wieder auf `0`.
