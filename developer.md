@@ -137,5 +137,5 @@
 - Das Panel enth\u00e4lt nun einen "All"-Button, der diese Funktion aufruft.
 
 ## Version 1.30
-- `clip.all_buttons` wiederholt den Ablauf, bis nur noch `TRACK_`-Marker
-  vorhanden sind oder zehn Durchl\u00e4ufe erreicht wurden.
+- `clip.all_buttons` wiederholt den Ablauf, bis `TRACK_`-Marker
+  vorhanden sind oder zehn Durchläufe erreicht wurden.

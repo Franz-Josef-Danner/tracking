@@ -67,4 +67,4 @@ verwendeten Threshold-Wert und nutzt ihn f\u00fcr die n\u00e4chste Berechnung.
 Seit Version 1.29 gibt es einen "All"-Button, der alle Buttons bis auf den
 Proxy-Button nacheinander ausf\u00fchrt.
 Seit Version 1.30 wiederholt dieser Button den Ablauf maximal zehnmal,
-bis nur noch TRACK_-Marker vorhanden sind.
+bis TRACK_-Marker vorhanden sind.

@@ -282,8 +282,7 @@ class CLIP_OT_all_buttons(bpy.types.Operator):
             bpy.ops.clip.delete_selected()
 
             has_track = any(t.name.startswith("TRACK_") for t in clip.tracking.tracks)
-            others = any(not t.name.startswith("TRACK_") for t in clip.tracking.tracks)
-            if has_track and not others:
+            if has_track:
                 break
         else:
             self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
