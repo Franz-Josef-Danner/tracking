@@ -18,9 +18,7 @@
 ## Version 1.5
 - Vor dem Proxy-Bau wird das Proxy-Verzeichnis (falls vorhanden) gel\u00f6scht, bevor neue Proxys erstellt werden.
 
-## Version 1.6
-- Neues Eingabefeld "Marker / Frame" oberhalb des Panels
-- Neuer Button "Marker", der einen Timeline Marker am angegebenen Frame setzt.
+- Neuer Button "Marker", der einen Timeline Marker setzt.
 
 ## Version 1.7
 - Neuer Operator `clip.clean_new_tracks` entfernt `NEW_`-Tracks, die im aktuellen
@@ -57,3 +55,52 @@
 ## Version 1.13
 - Der "Marker"-Button führt jetzt eine dynamische Feature-Erkennung durch und
   entfernt NEW_-Tracks, die zu nahe an GOOD_-Tracks liegen.
+
+## Version 1.14
+- Der aktive Track wird über `space.tracking.active_track` ermittelt,
+  wodurch keine Attribute mehr auf `clip.tracking` fälschlich
+  zugegriffen werden.
+
+## Version 1.15
+- Neue Operatoren: `clip.detect_button`, `clip.prefix_new`,
+  `clip.distance_button`, `clip.delete_selected` und `clip.count_button`.
+- Das Panel zeigt nun diese Buttons für einen modularen Workflow.
+
+## Version 1.16
+- `clip.detect_button` verwendet nun einen Mindestabstand von 5 % der
+  Clip-Breite und einen Margin von 1 % der Breite.
+
+## Version 1.17
+- `clip.distance_button` deselektiert jetzt alle Tracks und
+  markiert ausschließlich NEW_-Tracks, die innerhalb des
+  Mindestabstands zu GOOD_-Tracks liegen.
+
+## Version 1.18
+- `clip.delete_selected` überprüft jetzt, ob überhaupt Tracks
+  ausgewählt sind und bricht andernfalls mit einer Warnung ab.
+
+
+## Version 1.19
+- `clip.count_button` selektiert nun alle `NEW_`-Tracks, zählt sie und hebt die Selektion auf, wenn die Anzahl im erwarteten Bereich liegt.
+
+## Version 1.20
+- `clip.detect_button` berechnet den Threshold anhand der Anzahl vorhandener
+  `NEW_`-Tracks und gibt sowohl diese Zahl als auch den Wert des Thresholds in
+  der Konsole aus.
+
+## Version 1.21
+- `clip.count_button` speichert die gezählte Anzahl als `Scene.nm_count`.
+- Liegt sie außerhalb des Zielbereichs, werden stattdessen alle `TRACK_`-Tracks
+  selektiert.
+
+## Version 1.22
+- Das Panel enthält nun ein Eingabefeld "Marker / Frame" über dem Proxy-Button.
+- Der Proxy-Button steht direkt am Anfang des Panels.
+- Nach dem "Count"-Button wird ein zusätzlicher "Delete"-Button angezeigt.
+
+## Version 1.23
+- `clip.count_button` verwendet jetzt den Wert aus `Scene.marker_frame` zur
+  Berechnung des erwarteten Bereichs. Liegt die Anzahl der `NEW_`-Tracks in
+  diesem Bereich, werden sie in `TRACK_` umbenannt, die Auswahl wird
+  aufgehoben und `Scene.nm_count` zurückgesetzt. Das Feld besitzt nun einen
+  Standardwert von 20.
