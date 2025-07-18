@@ -131,7 +131,9 @@ class CLIP_OT_marker_button(bpy.types.Operator):
         margin = int(width * 0.01)
         min_distance = int(width * 0.002)
 
-        active = clip.tracking.active_track
+        active = None
+        if hasattr(space, "tracking"):
+            active = space.tracking.active_track
         if active:
             active.pattern_size = 50
             active.search_size = 100
@@ -316,7 +318,6 @@ class CLIP_PT_button_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.prop(context.scene, 'marker_frame', text='Marker / Frame')
         layout.operator('clip.marker_button')
         layout.operator('clip.panel_button')
         row = layout.row(align=True)
@@ -338,18 +339,12 @@ classes = (
 
 
 def register():
-    bpy.types.Scene.marker_frame = IntProperty(
-        name="Marker / Frame",
-        description="Frame f\u00fcr neuen Timeline Marker",
-        default=1,
-    )
     for cls in classes:
         bpy.utils.register_class(cls)
 
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
-    del bpy.types.Scene.marker_frame
 
 if __name__ == "__main__":
     register()

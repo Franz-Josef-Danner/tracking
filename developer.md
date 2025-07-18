@@ -18,9 +18,7 @@
 ## Version 1.5
 - Vor dem Proxy-Bau wird das Proxy-Verzeichnis (falls vorhanden) gel\u00f6scht, bevor neue Proxys erstellt werden.
 
-## Version 1.6
-- Neues Eingabefeld "Marker / Frame" oberhalb des Panels
-- Neuer Button "Marker", der einen Timeline Marker am angegebenen Frame setzt.
+- Neuer Button "Marker", der einen Timeline Marker setzt.
 
 ## Version 1.7
 - Neuer Operator `clip.clean_new_tracks` entfernt `NEW_`-Tracks, die im aktuellen
