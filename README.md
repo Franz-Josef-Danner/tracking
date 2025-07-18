@@ -75,3 +75,5 @@ rückwärts und anschließend wieder vorwärts bis zum aktuellen Frame verfolgt.
 Seit Version 1.34 aktiviert der "Track"-Button vor dem Tracking den Proxy.
 Seit Version 1.35 gibt der "Track"-Button Ausgaben zur Marker-Selektion,
 dem gespeicherten Frame und dem Zurücksetzen des Playheads in der Konsole aus.
+Seit Version 1.36 verfolgt der "Track"-Button TRACK_-Marker Frame für Frame bis
+ zum Endframe und meldet jeden Schritt in der Konsole.

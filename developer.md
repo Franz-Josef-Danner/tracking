@@ -159,3 +159,7 @@
   beim Speichern und Wiederherstellen des Playhead-Frames
   Meldungen in der Konsole aus.
 
+## Version 1.36
+- `clip.track_sequence` verfolgt die TRACK_-Marker jetzt Frame für Frame bis zum
+  Endframe und gibt den Fortschritt in der Konsole aus.
+
