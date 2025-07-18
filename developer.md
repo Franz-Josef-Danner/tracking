@@ -108,3 +108,25 @@
 ## Version 1.24
 - `clip.detect_button` deaktiviert nun zuerst den Proxy, bevor die
   Feature-Erkennung gestartet wird.
+
+## Version 1.25
+- `clip.count_button` gibt den Wert von `Scene.nm_count` in der Konsole aus und
+  setzt ihn bei ausreichender Track-Anzahl wieder auf `0`.
+- `clip.detect_button` nutzt nun den Wert aus `Scene.marker_frame`, um den
+  Threshold anhand der Formel
+  `threshold_value * ((NM + 0.1) / (marker_frame * 4))` zu berechnen und meldet,
+  wann diese Formel angewendet wird.
+
+## Version 1.26
+- `clip.detect_button` verwendet jetzt den in `Scene.nm_count` gespeicherten
+  NM-Wert für die Threshold-Berechnung und zählt die NEW_-Tracks nicht mehr neu.
+
+## Version 1.27
+- `clip.detect_button` berechnet Margin und Mindestabstand weiterhin aus 1 %
+  bzw. 5 % der Breite und skaliert diese Werte nun zusätzlich mit dem Faktor
+  `log10(threshold * 10000000000) / 10`. Die Formeln und Ergebnisse werden in der Konsole ausgegeben.
+
+## Version 1.28
+- `clip.detect_button` speichert den berechneten Threshold-Wert in
+  `Scene.threshold_value` und verwendet ihn beim n\u00e4chsten Durchlauf als
+  Ausgangswert.

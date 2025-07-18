@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 24),
+    "version": (1, 28),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -12,7 +12,7 @@ import bpy
 import os
 import shutil
 import math
-from bpy.props import IntProperty, BoolProperty
+from bpy.props import IntProperty, BoolProperty, FloatProperty
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
     bl_idname = "object.simple_operator"
@@ -80,18 +80,38 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         width, height = clip.size
         print(f"Auflösung: {width} x {height}")
 
-        frames = clip.frame_duration or 1
-        tracks_per_frame = len(clip.tracking.tracks) / frames
-        track_plus = tracks_per_frame * 4
+        mframe = context.scene.marker_frame
+        track_plus = mframe * 4
 
-        nm = sum(1 for t in clip.tracking.tracks if t.name.startswith("NEW_"))
-        threshold = 1.0 if nm < 1 else 1.0 * ((nm + 0.1) / track_plus)
-        threshold = max(min(threshold, 1.0), 0.001)
-        print(f"NEW_ Tracks: {nm}, track_plus: {track_plus:.2f}")
+        nm_current = sum(1 for t in clip.tracking.tracks if t.name.startswith("NEW_"))
+        nm = context.scene.nm_count
 
-        # Margin is 1% of the clip width, minimum distance 5%
-        margin = int(width * 0.01)
-        min_distance = int(width * 0.05)
+        threshold_value = context.scene.threshold_value
+        if nm >= 1:
+            formula = f"{threshold_value} * (({nm} + 0.1) / {track_plus})"
+            threshold_value = threshold_value * ((nm + 0.1) / track_plus)
+            print(f"Formel angewendet: {formula} = {threshold_value:.3f}")
+        else:
+            threshold_value = 1.0
+            print("Formel nicht angewendet, NM < 1")
+
+        detection_threshold = max(min(threshold_value, 1.0), 0.001)
+        print(
+            f"NEW_ Tracks aktuell: {nm_current}, NM: {nm}, track_plus: {track_plus:.2f}"
+        )
+
+        margin_base = int(width * 0.01)
+        min_distance_base = int(width * 0.05)
+
+        factor = math.log10(detection_threshold * 10000000000) / 10
+        margin = int(margin_base * factor)
+        min_distance = int(min_distance_base * factor)
+        factor_formula = f"log10({detection_threshold:.3f} * 10000000000) / 10"
+        print(f"Faktor: {factor_formula} = {factor:.3f}")
+        print(f"Margin: int({margin_base} * {factor:.3f}) = {margin}")
+        print(
+            f"Min Distance: int({min_distance_base} * {factor:.3f}) = {min_distance}"
+        )
 
         active = None
         if hasattr(space, "tracking"):
@@ -101,13 +121,14 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             active.search_size = 100
 
         print(
-            f"detect_features: threshold={threshold:.3f}, margin={margin}, min_distance={min_distance}"
+            f"detect_features: threshold={detection_threshold:.3f}, margin={margin}, min_distance={min_distance}"
         )
         bpy.ops.clip.detect_features(
-            threshold=threshold,
+            threshold=detection_threshold,
             min_distance=min_distance,
             margin=margin,
         )
+        context.scene.threshold_value = threshold_value
         return {'FINISHED'}
 
 
@@ -218,8 +239,8 @@ class CLIP_OT_count_button(bpy.types.Operator):
             t.select = t.name.startswith(prefix)
         count = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
         print(f"Anzahl der Tracking Marker mit Präfix '{prefix}': {count}")
-
         context.scene.nm_count = count
+        print(f"NM-Wert: {context.scene.nm_count}")
 
         mframe = context.scene.marker_frame
         track_plus = mframe * 4
@@ -232,6 +253,7 @@ class CLIP_OT_count_button(bpy.types.Operator):
                     t.name = "TRACK_" + t.name[4:]
                     t.select = False
             context.scene.nm_count = 0
+            print(f"NM-Wert: {context.scene.nm_count}")
             self.report({'INFO'}, f"{count} Tracks in TRACK_ umbenannt")
         else:
             self.report({'INFO'}, f"{count} NEW_-Tracks ausserhalb des Bereichs")
@@ -292,6 +314,11 @@ def register():
         description="Anzahl der NEW_-Tracks nach Count",
         default=0,
     )
+    bpy.types.Scene.threshold_value = FloatProperty(
+        name="Threshold Value",
+        description="Gespeicherter Threshold-Wert",
+        default=1.0,
+    )
     for cls in classes:
         bpy.utils.register_class(cls)
 
@@ -302,6 +329,8 @@ def unregister():
         del bpy.types.Scene.marker_frame
     if hasattr(bpy.types.Scene, "nm_count"):
         del bpy.types.Scene.nm_count
+    if hasattr(bpy.types.Scene, "threshold_value"):
+        del bpy.types.Scene.threshold_value
 
 if __name__ == "__main__":
     register()

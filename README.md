@@ -52,3 +52,15 @@ innerhalb dieses Bereichs, werden sie in TRACK_-Tracks umbenannt und die
 Auswahl wird aufgehoben.
 Der Standardwert des Feldes beträgt nun 20.
 Seit Version 1.24 deaktiviert der "Detect"-Button zunächst den Proxy.
+Seit Version 1.25 berechnet der "Detect"-Button den Threshold mit dem Wert aus
+"Marker / Frame". Dabei wird in der Konsole ausgegeben, wenn die Formel
+angewendet wird. Der "Count"-Button gibt den NM-Wert in der Konsole aus und setzt
+ihn bei ausreichender Track-Anzahl wieder auf 0.
+Seit Version 1.26 verwendet der "Detect"-Button den gespeicherten Wert
+`Scene.nm_count`, um den Threshold zu berechnen, anstatt die NEW_-Tracks erneut
+zu zählen.
+Seit Version 1.27 werden Margin und Mindestabstand auf Basis von 1 % bzw.
+5 % der Breite mit `log10(threshold * 10000000000) / 10` skaliert und die
+Berechnungsformeln sowie Ergebnisse in der Konsole ausgegeben.
+Seit Version 1.28 merkt sich der "Detect"-Button den zuletzt
+verwendeten Threshold-Wert und nutzt ihn f\u00fcr die n\u00e4chste Berechnung.
