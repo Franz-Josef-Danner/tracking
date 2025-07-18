@@ -87,3 +87,6 @@ Seit Version 1.41 verfolgt der Track-Button die ausgewählten Marker maximal
 zehn Frames nach vorne und bricht am Endframe ab.
 Seit Version 1.42 führt der Track-Button die TRACK_-Marker bis zu zehn Frames
 rückwärts und danach wieder vorwärts, wobei er Start- und Endframe beachtet.
+Seit Version 1.43 setzt der Track-Button den Frame-Bereich temporär und nutzt
+`sequence=True`, um die Marker bis zu zehn Frames zurück und anschließend
+vorwärts zu verfolgen.

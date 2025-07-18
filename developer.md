@@ -190,3 +190,8 @@
   Der zuvor gespeicherte Frame wird zwischen den Richtungen
   wiederhergestellt.
 
+## Version 1.43
+- `clip.track_sequence` setzt den Frame-Bereich temporär und verwendet
+  `sequence=True`, um die Marker jeweils maximal zehn Frames rückwärts
+  und danach wieder vorwärts zu verfolgen.
+
