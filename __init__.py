@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 32),
+    "version": (1, 33),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -290,6 +290,44 @@ class CLIP_OT_all_buttons(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_track_sequence(bpy.types.Operator):
+    bl_idname = "clip.track_sequence"
+    bl_label = "Track"
+    bl_description = (
+        "Trackt TRACK_-Marker rückwärts und dann vorwärts bis zum Ausgangsframe"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        play_frame = context.scene.frame_current
+
+        for t in clip.tracking.tracks:
+            t.select = t.name.startswith("TRACK_")
+
+        if bpy.ops.clip.track_markers.poll():
+            bpy.ops.clip.track_markers(backwards=True, sequence=True)
+        else:
+            self.report({'WARNING'}, "Tracken nicht möglich")
+            return {'CANCELLED'}
+
+        context.scene.frame_current = play_frame
+
+        for t in clip.tracking.tracks:
+            t.select = t.name.startswith("TRACK_")
+
+        if bpy.ops.clip.track_markers.poll():
+            bpy.ops.clip.track_markers(backwards=False, sequence=True)
+        else:
+            self.report({'WARNING'}, "Tracken nicht möglich")
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
+
+
 
 
 class CLIP_PT_tracking_panel(bpy.types.Panel):
@@ -314,6 +352,7 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.prop(context.scene, 'marker_frame', text='Marker / Frame')
         layout.operator('clip.panel_button')
         layout.operator('clip.all_buttons', text='All')
+        layout.operator('clip.track_sequence', text='Track')
 
 classes = (
     OBJECT_OT_simple_operator,
@@ -324,6 +363,7 @@ classes = (
     CLIP_OT_delete_selected,
     CLIP_OT_count_button,
     CLIP_OT_all_buttons,
+    CLIP_OT_track_sequence,
     CLIP_PT_tracking_panel,
     CLIP_PT_button_panel,
 )

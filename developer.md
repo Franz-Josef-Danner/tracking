@@ -145,3 +145,9 @@
 
 ## Version 1.32
 - Das Panel zeigt nur noch den Proxy-Button und den "All"-Button an.
+
+## Version 1.33
+- Neuer Operator `clip.track_sequence` verfolgt TRACK_-Marker erst rückwärts
+  und anschließend wieder vorwärts bis zum gespeicherten Frame.
+- Das Panel enthält nun einen zusätzlichen "Track"-Button.
+
