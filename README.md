@@ -110,3 +110,7 @@ mehr aktiv sind.
 Seit Version 1.53 f\u00fchrt der neue "Proxy Track"-Button automatisch den Proxy-Befehl aus,
 speichert den aktuellen Frame und verfolgt TRACK_-Marker zehn Frames r\u00fcckw\u00e4rts
 und anschlie\xDFend wieder vorw\u00e4rts.
+Seit Version 1.54 deaktiviert der "Proxy Track"-Button zun\u00e4chst den Proxy,
+speichert den aktuellen Frame, w\u00e4hlt alle TRACK_-Marker aus und verfolgt sie
+zehn Frames r\u00fcckw\u00e4rts. Danach setzt er den Playhead zur\u00fcck und trackt
+vorw\u00e4rts.

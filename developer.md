@@ -237,3 +237,9 @@
 - Neuer Operator `clip.proxy_track` ruft automatisch `clip.panel_button` auf,
   speichert den aktuellen Frame und verfolgt `TRACK_`-Marker jeweils zehn
   Frames r\u00fcckw\u00e4rts und danach wieder vorw\u00e4rts zum gespeicherten Frame.
+
+## Version 1.54
+- `clip.proxy_track` deaktiviert zun\u00e4chst den Proxy, merkt sich den
+  aktuellen Frame und w\u00e4hlt alle `TRACK_`-Marker aus. Anschlie\u00dfend werden
+  die Marker zehn Frames r\u00fcckw\u00e4rts getrackt, der Playhead wird
+  wiederhergestellt und das Tracking l\u00e4uft vorw\u00e4rts weiter.
