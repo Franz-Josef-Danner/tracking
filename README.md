@@ -53,5 +53,6 @@ Auswahl wird aufgehoben.
 Der Standardwert des Feldes beträgt nun 20.
 Seit Version 1.24 deaktiviert der "Detect"-Button zunächst den Proxy.
 Seit Version 1.25 berechnet der "Detect"-Button den Threshold mit dem Wert aus
-"Marker / Frame" und der "Count"-Button gibt den NM-Wert in der Konsole aus und
-setzt ihn bei ausreichender Track-Anzahl wieder auf 0.
+"Marker / Frame". Dabei wird in der Konsole ausgegeben, wenn die Formel
+angewendet wird. Der "Count"-Button gibt den NM-Wert in der Konsole aus und setzt
+ihn bei ausreichender Track-Anzahl wieder auf 0.

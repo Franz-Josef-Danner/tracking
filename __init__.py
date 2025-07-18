@@ -87,7 +87,11 @@ class CLIP_OT_detect_button(bpy.types.Operator):
 
         threshold_value = 1.0
         if nm >= 1:
+            formula = f"{threshold_value} * (({nm} + 0.1) / {track_plus})"
             threshold_value = threshold_value * ((nm + 0.1) / track_plus)
+            print(f"Formel angewendet: {formula} = {threshold_value:.3f}")
+        else:
+            print("Formel nicht angewendet, weniger als 1 NEW_-Track")
 
         detection_threshold = max(min(threshold_value, 1.0), 0.001)
         print(f"NEW_ Tracks: {nm}, track_plus: {track_plus:.2f}")

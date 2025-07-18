@@ -114,4 +114,5 @@
   setzt ihn bei ausreichender Track-Anzahl wieder auf `0`.
 - `clip.detect_button` nutzt nun den Wert aus `Scene.marker_frame`, um den
   Threshold anhand der Formel
-  `threshold_value * ((NM + 0.1) / (marker_frame * 4))` zu berechnen.
+  `threshold_value * ((NM + 0.1) / (marker_frame * 4))` zu berechnen und meldet,
+  wann diese Formel angewendet wird.
