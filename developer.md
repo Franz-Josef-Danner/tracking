@@ -218,3 +218,7 @@
 ## Version 1.49
 - `clip.track_sequence` meldet nach jedem Tracking-Schritt die Anzahl der noch
   aktiven `TRACK_`-Marker.
+
+## Version 1.50
+- `clip.track_sequence` verwendet nun Bl\xF6cke von 25 Frames und pr\xFCft nach
+  jedem dieser Abschnitte erneut, ob noch TRACK_-Marker aktiv sind.

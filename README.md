@@ -100,3 +100,5 @@ sobald keine mehr vorhanden sind.
 Seit Version 1.48 erkennt der Track-Button Marker als inaktiv, wenn sie stummgeschaltet sind oder Koordinaten von (0,0) besitzen.
 Seit Version 1.49 gibt der Track-Button nach jedem Tracking-Schritt die Anzahl
 der aktiven Marker aus.
+Seit Version 1.50 arbeitet der Track-Button in 25er-Schritten und pr\u00FCft nach
+jeder Passage von 25 Frames erneut die verbleibenden TRACK_-Marker.

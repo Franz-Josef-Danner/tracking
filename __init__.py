@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 49),
+    "version": (1, 50),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -295,7 +295,7 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
     bl_idname = "clip.track_sequence"
     bl_label = "Track"
     bl_description = (
-        "Verfolgt TRACK_-Marker in Zehnerbl\xF6cken r\xFCckw\xE4rts und vorw\xE4rts"
+        "Verfolgt TRACK_-Marker in 25er-Bl\xF6cken r\xFCckw\xE4rts und vorw\xE4rts"
     )
 
     def execute(self, context):
@@ -311,7 +311,7 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
 
         original_start = scene.frame_start
         original_end = scene.frame_end
-        block_size = 10
+        block_size = 25
 
         current = scene.frame_current
 
