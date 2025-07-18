@@ -171,3 +171,7 @@
 - `clip.track_sequence` zeigt nun jeden getrackten Frame im Clip Editor an und
   pausiert kurz, um das UI-Update sichtbar zu machen.
 
+## Version 1.39
+- `clip.track_sequence` verwendet wieder die einfache Variante: TRACK_-Marker
+  werden einmal rückwärts und danach vorwärts verfolgt.
+
