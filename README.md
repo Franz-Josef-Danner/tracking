@@ -39,3 +39,4 @@ Seit Version 1.17 wählt der "Distance"-Button nur noch NEW_-Tracks aus,
 die zu nah an GOOD_-Tracks liegen.
 Seit Version 1.18 führt der "Delete"-Button nur dann eine
 Löschung aus, wenn tatsächlich Tracks ausgewählt sind.
+Seit Version 1.19 wählt der "Count"-Button alle NEW_-Tracks aus, zählt sie und hebt die Selektion wieder auf, wenn ihre Anzahl im erwarteten Bereich liegt.

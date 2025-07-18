@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 18),
+    "version": (1, 19),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -202,7 +202,7 @@ class CLIP_OT_delete_selected(bpy.types.Operator):
 class CLIP_OT_count_button(bpy.types.Operator):
     bl_idname = "clip.count_button"
     bl_label = "Count"
-    bl_description = "Zählt Shot_-Tracks und prüft Bereich"
+    bl_description = "Selektiert und zählt NEW_-Tracks"
 
     def execute(self, context):
         clip = context.space_data.clip
@@ -210,7 +210,9 @@ class CLIP_OT_count_button(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        prefix = "Shot_"
+        prefix = "NEW_"
+        for t in clip.tracking.tracks:
+            t.select = t.name.startswith(prefix)
         count = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
         print(f"Anzahl der Tracking Marker mit Präfix '{prefix}': {count}")
 
@@ -220,16 +222,13 @@ class CLIP_OT_count_button(bpy.types.Operator):
         track_min = track_plus * 0.8
         track_max = track_plus * 1.2
 
-        if count < track_min or count > track_max:
-            to_remove = [t for t in clip.tracking.tracks if t.name.startswith("NEW_")]
-            for t in to_remove:
-                clip.tracking.tracks.remove(t)
-            self.report({'INFO'}, "NM gelöscht")
-        else:
+        if track_min <= count <= track_max:
             for t in clip.tracking.tracks:
-                t.select = t.name.startswith("Track_")
-            if bpy.ops.clip.delete_track.poll():
-                bpy.ops.clip.delete_track()
+                if t.name.startswith(prefix):
+                    t.select = False
+            self.report({'INFO'}, f"{count} NEW_-Tracks im erwarteten Bereich")
+        else:
+            self.report({'INFO'}, f"{count} NEW_-Tracks ausserhalb des Bereichs")
         return {'FINISHED'}
 
 

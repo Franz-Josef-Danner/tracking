@@ -78,3 +78,7 @@
 ## Version 1.18
 - `clip.delete_selected` überprüft jetzt, ob überhaupt Tracks
   ausgewählt sind und bricht andernfalls mit einer Warnung ab.
+
+
+## Version 1.19
+- `clip.count_button` selektiert nun alle `NEW_`-Tracks, zählt sie und hebt die Selektion auf, wenn die Anzahl im erwarteten Bereich liegt.
