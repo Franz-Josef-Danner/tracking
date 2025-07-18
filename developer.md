@@ -18,9 +18,7 @@
 ## Version 1.5
 - Vor dem Proxy-Bau wird das Proxy-Verzeichnis (falls vorhanden) gel\u00f6scht, bevor neue Proxys erstellt werden.
 
-## Version 1.6
-- Neues Eingabefeld "Marker / Frame" oberhalb des Panels
-- Neuer Button "Marker", der einen Timeline Marker am angegebenen Frame setzt.
+- Neuer Button "Marker", der einen Timeline Marker setzt.
 
 ## Version 1.7
 - Neuer Operator `clip.clean_new_tracks` entfernt `NEW_`-Tracks, die im aktuellen
@@ -57,3 +55,13 @@
 ## Version 1.13
 - Der "Marker"-Button führt jetzt eine dynamische Feature-Erkennung durch und
   entfernt NEW_-Tracks, die zu nahe an GOOD_-Tracks liegen.
+
+## Version 1.14
+- Der aktive Track wird über `space.tracking.active_track` ermittelt,
+  wodurch keine Attribute mehr auf `clip.tracking` fälschlich
+  zugegriffen werden.
+
+## Version 1.15
+- Neue Operatoren: `clip.detect_button`, `clip.prefix_new`,
+  `clip.distance_button`, `clip.delete_selected` und `clip.count_button`.
+- Das Panel zeigt nun diese Buttons für einen modularen Workflow.

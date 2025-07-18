@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 13),
+    "version": (1, 15),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -63,48 +63,10 @@ class CLIP_OT_panel_button(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class CLIP_OT_marker_button(bpy.types.Operator):
-    bl_idname = "clip.marker_button"
-    bl_label = "Tracking Marker"
+class CLIP_OT_detect_button(bpy.types.Operator):
+    bl_idname = "clip.detect_button"
+    bl_label = "Detect"
     bl_description = "Erkennt Features mit dynamischen Parametern"
-
-    def _print_positions(self, clip, prefix, width, height, frame):
-        for track in clip.tracking.tracks:
-            if track.name.startswith(prefix):
-                marker = track.markers.find_frame(frame)
-                if marker:
-                    x, y = marker.co
-                    print(
-                        f"{track.name} @ Frame {frame}: X={x:.4f}, Y={y:.4f}"
-                    )
-                    print(
-                        f"   -> Pixel: X={x * width:.1f}, Y={y * height:.1f}"
-                    )
-
-    def _remove_close_tracks(self, clip, width, height, dist_px):
-        good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]
-        frame = bpy.context.scene.frame_current
-        to_remove = []
-        for track in clip.tracking.tracks:
-            if not track.name.startswith("NEW_"):
-                continue
-            marker = track.markers.find_frame(frame)
-            if not marker:
-                continue
-            nx = marker.co[0] * width
-            ny = marker.co[1] * height
-            for good in good_tracks:
-                gm = good.markers.find_frame(frame)
-                if not gm:
-                    continue
-                gx = gm.co[0] * width
-                gy = gm.co[1] * height
-                dist = math.hypot(nx - gx, ny - gy)
-                if dist < dist_px:
-                    to_remove.append(track)
-                    break
-        for track in to_remove:
-            clip.tracking.tracks.remove(track)
 
     def execute(self, context):
         space = context.space_data
@@ -120,178 +82,136 @@ class CLIP_OT_marker_button(bpy.types.Operator):
         tracks_per_frame = len(clip.tracking.tracks) / frames
         track_plus = tracks_per_frame * 4
 
-        prefix = "NEW_"
-        nm = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
-
-        threshold = 1.0
-        if nm >= 1:
-            threshold *= (nm + 0.1) / track_plus
+        nm = sum(1 for t in clip.tracking.tracks if t.name.startswith("NEW_"))
+        threshold = 1.0 if nm < 1 else 1.0 * ((nm + 0.1) / track_plus)
         threshold = max(min(threshold, 1.0), 0.001)
 
         margin = int(width * 0.01)
         min_distance = int(width * 0.002)
 
-        active = clip.tracking.active_track
+        active = None
+        if hasattr(space, "tracking"):
+            active = space.tracking.active_track
         if active:
             active.pattern_size = 50
             active.search_size = 100
 
-        attempts = 0
-        while attempts < 10:
-            print(
-                f"detect_features: threshold={threshold:.3f}, margin={margin}, min_distance={min_distance}"
-            )
-            bpy.ops.clip.detect_features(
-                threshold=threshold,
-                min_distance=min_distance,
-                margin=margin,
-            )
-
-            for track in clip.tracking.tracks:
-                if track.select and not track.name.startswith(prefix):
-                    track.name = prefix + track.name
-
-            frame = context.scene.frame_current
-            self._print_positions(clip, "NEW_", width, height, frame)
-            self._print_positions(clip, "GOOD_", width, height, frame)
-
-            self._remove_close_tracks(clip, width, height, min_distance)
-
-            nm = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
-            print(f"Anzahl der Tracking Marker mit Präfix '{prefix}': {nm}")
-
-            track_min = track_plus * 0.8
-            track_max = track_plus * 1.2
-
-            if track_min <= nm <= track_max:
-                break
-
-            for track in list(clip.tracking.tracks):
-                if track.name.startswith(prefix):
-                    clip.tracking.tracks.remove(track)
-            attempts += 1
-
+        print(
+            f"detect_features: threshold={threshold:.3f}, margin={margin}, min_distance={min_distance}"
+        )
+        bpy.ops.clip.detect_features(
+            threshold=threshold,
+            min_distance=min_distance,
+            margin=margin,
+        )
         return {'FINISHED'}
 
 
-class CLIP_OT_clean_new_tracks(bpy.types.Operator):
-    bl_idname = "clip.clean_new_tracks"
-    bl_label = "Clean NEW Tracks"
-    bl_description = (
-        "Entfernt neu erkannte Tracks, die zu nahe an bestehenden GOOD_ "
-        "Tracks im aktuellen Frame liegen"
-    )
-
-    detect: BoolProperty(
-        name="Detect New Features",
-        description="Vor dem Bereinigen neue Features erkennen",
-        default=True,
-    )
+class CLIP_OT_prefix_new(bpy.types.Operator):
+    bl_idname = "clip.prefix_new"
+    bl_label = "NEW"
+    bl_description = "Präfix NEW_ für selektierte Tracks setzen"
 
     def execute(self, context):
-        space = context.space_data
-        clip = space.clip
+        clip = context.space_data.clip
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        width, height = clip.size
-        margin = width // 100
-        min_distance_px = width // 20
-
-        threshold = 1.0
-
-        if self.detect:
-            print(
-                f"detect_features: margin={margin}, min_distance={min_distance_px}"
-            )
-            bpy.ops.clip.detect_features(
-                threshold=threshold,
-                min_distance=min_distance_px,
-                margin=margin,
-            )
-
-            for track in clip.tracking.tracks:
-                if track.select and not track.name.startswith("NEW_"):
-                    track.name = "NEW_" + track.name
-
-        frame = context.scene.frame_current
-        good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]
-
-        to_remove = []
+        prefix = "NEW_"
+        count = 0
         for track in clip.tracking.tracks:
-            if not track.name.startswith("NEW_"):
-                continue
-            marker = track.markers.find_frame(frame)
-            if not marker:
-                continue
-            nx = marker.co[0] * width
-            ny = marker.co[1] * height
-
-            for good in good_tracks:
-                g_marker = good.markers.find_frame(frame)
-                if not g_marker:
-                    continue
-                gx = g_marker.co[0] * width
-                gy = g_marker.co[1] * height
-                dist = ((nx - gx) ** 2 + (ny - gy) ** 2) ** 0.5
-                if dist < min_distance_px:
-                    to_remove.append(track)
-                    break
-
-        for track in to_remove:
-            try:
-                clip.tracking.tracks.remove(track)
-            except Exception as e:
-                self.report({'WARNING'}, f"Fehler beim Entfernen von {track.name}: {e}")
-
-        self.report({'INFO'}, f"Entfernte {len(to_remove)} NEW_ Tracks")
+            if track.select and not track.name.startswith(prefix):
+                track.name = prefix + track.name
+                count += 1
+        self.report({'INFO'}, f"{count} Tracks umbenannt")
         return {'FINISHED'}
 
 
-class CLIP_OT_distance_report(bpy.types.Operator):
-    bl_idname = "clip.distance_report"
-    bl_label = "Report Track Distances"
-    bl_description = (
-        "Gibt den Abstand zwischen korrespondierenden a_ und b_ Tracks aus"
-    )
+class CLIP_OT_distance_button(bpy.types.Operator):
+    bl_idname = "clip.distance_button"
+    bl_label = "Distance"
+    bl_description = "Markiert NEW_ Tracks, die zu nah an GOOD_ Tracks liegen"
 
     def execute(self, context):
-        space = context.space_data
-        clip = space.clip
+        clip = context.space_data.clip
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
         frame = context.scene.frame_current
-        tracks = clip.tracking.tracks
         width, height = clip.size
+        min_distance_px = int(width * 0.002)
 
-        a_tracks = [t for t in tracks if t.name.startswith("a_")]
-        b_tracks = [t for t in tracks if t.name.startswith("b_")]
-
-        for a in a_tracks:
-            suffix = a.name[2:]
-            b = next((t for t in b_tracks if t.name == "b_" + suffix), None)
-            if not b:
+        new_tracks = [t for t in clip.tracking.tracks if t.name.startswith("NEW_")]
+        good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]
+        marked = 0
+        for nt in new_tracks:
+            nm = nt.markers.find_frame(frame)
+            if not nm:
                 continue
+            nx = nm.co[0] * width
+            ny = nm.co[1] * height
+            for gt in good_tracks:
+                gm = gt.markers.find_frame(frame)
+                if not gm:
+                    continue
+                gx = gm.co[0] * width
+                gy = gm.co[1] * height
+                dist = math.hypot(nx - gx, ny - gy)
+                if dist < min_distance_px:
+                    nt.select = True
+                    marked += 1
+                    break
+        self.report({'INFO'}, f"{marked} Tracks markiert")
+        return {'FINISHED'}
 
-            am = a.markers.find_frame(frame, exact=True)
-            bm = b.markers.find_frame(frame, exact=True)
-            if not am or not bm:
-                continue
 
-            ax, ay = am.co
-            bx, by = bm.co
-            dist_norm = math.hypot(bx - ax, by - ay)
-            dist_px = dist_norm * math.hypot(width, height)
+class CLIP_OT_delete_selected(bpy.types.Operator):
+    bl_idname = "clip.delete_selected"
+    bl_label = "Delete"
+    bl_description = "Löscht selektierte Tracks"
 
-            print(
-                f"{a.name} \u2194 {b.name} @ Frame {frame}: "
-                f"{dist_norm:.4f} (normalisiert), {dist_px:.1f} px"
-            )
+    def execute(self, context):
+        if bpy.ops.clip.delete_track.poll():
+            bpy.ops.clip.delete_track()
+            self.report({'INFO'}, "Tracks gelöscht")
+        else:
+            self.report({'WARNING'}, "Keine Tracks ausgewählt")
+        return {'FINISHED'}
 
-        self.report({'INFO'}, "Distance report abgeschlossen")
+
+class CLIP_OT_count_button(bpy.types.Operator):
+    bl_idname = "clip.count_button"
+    bl_label = "Count"
+    bl_description = "Zählt Shot_-Tracks und prüft Bereich"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        prefix = "Shot_"
+        count = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
+        print(f"Anzahl der Tracking Marker mit Präfix '{prefix}': {count}")
+
+        frames = clip.frame_duration or 1
+        tracks_per_frame = len(clip.tracking.tracks) / frames
+        track_plus = tracks_per_frame * 4
+        track_min = track_plus * 0.8
+        track_max = track_plus * 1.2
+
+        if count < track_min or count > track_max:
+            to_remove = [t for t in clip.tracking.tracks if t.name.startswith("NEW_")]
+            for t in to_remove:
+                clip.tracking.tracks.remove(t)
+            self.report({'INFO'}, "NM gelöscht")
+        else:
+            for t in clip.tracking.tracks:
+                t.select = t.name.startswith("Track_")
+            if bpy.ops.clip.delete_track.poll():
+                bpy.ops.clip.delete_track()
         return {'FINISHED'}
 
 
@@ -316,40 +236,33 @@ class CLIP_PT_button_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.prop(context.scene, 'marker_frame', text='Marker / Frame')
-        layout.operator('clip.marker_button')
+        layout.operator('clip.detect_button')
+        layout.operator('clip.prefix_new')
+        layout.operator('clip.distance_button')
+        layout.operator('clip.delete_selected')
+        layout.operator('clip.count_button')
         layout.operator('clip.panel_button')
-        row = layout.row(align=True)
-        op = row.operator('clip.clean_new_tracks', text='Detect & Clean')
-        op.detect = True
-        op = row.operator('clip.clean_new_tracks', text='Clean Only')
-        op.detect = False
-        layout.operator('clip.distance_report')
 
 classes = (
     OBJECT_OT_simple_operator,
     CLIP_OT_panel_button,
-    CLIP_OT_marker_button,
-    CLIP_OT_clean_new_tracks,
-    CLIP_OT_distance_report,
+    CLIP_OT_detect_button,
+    CLIP_OT_prefix_new,
+    CLIP_OT_distance_button,
+    CLIP_OT_delete_selected,
+    CLIP_OT_count_button,
     CLIP_PT_tracking_panel,
     CLIP_PT_button_panel,
 )
 
 
 def register():
-    bpy.types.Scene.marker_frame = IntProperty(
-        name="Marker / Frame",
-        description="Frame f\u00fcr neuen Timeline Marker",
-        default=1,
-    )
     for cls in classes:
         bpy.utils.register_class(cls)
 
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
-    del bpy.types.Scene.marker_frame
 
 if __name__ == "__main__":
     register()
