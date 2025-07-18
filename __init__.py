@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 20),
+    "version": (1, 21),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -217,6 +217,8 @@ class CLIP_OT_count_button(bpy.types.Operator):
         count = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
         print(f"Anzahl der Tracking Marker mit Präfix '{prefix}': {count}")
 
+        context.scene.nm_count = count
+
         frames = clip.frame_duration or 1
         tracks_per_frame = len(clip.tracking.tracks) / frames
         track_plus = tracks_per_frame * 4
@@ -224,11 +226,14 @@ class CLIP_OT_count_button(bpy.types.Operator):
         track_max = track_plus * 1.2
 
         if track_min <= count <= track_max:
+            context.scene.nm_count = 0
             for t in clip.tracking.tracks:
                 if t.name.startswith(prefix):
                     t.select = False
             self.report({'INFO'}, f"{count} NEW_-Tracks im erwarteten Bereich")
         else:
+            for t in clip.tracking.tracks:
+                t.select = t.name.startswith("TRACK_")
             self.report({'INFO'}, f"{count} NEW_-Tracks ausserhalb des Bereichs")
         return {'FINISHED'}
 
@@ -275,12 +280,19 @@ classes = (
 
 
 def register():
+    bpy.types.Scene.nm_count = IntProperty(
+        name="NM",
+        description="Anzahl der NEW_-Tracks nach Count",
+        default=0,
+    )
     for cls in classes:
         bpy.utils.register_class(cls)
 
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
+    if hasattr(bpy.types.Scene, "nm_count"):
+        del bpy.types.Scene.nm_count
 
 if __name__ == "__main__":
     register()

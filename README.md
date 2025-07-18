@@ -41,3 +41,5 @@ Seit Version 1.18 führt der "Delete"-Button nur dann eine
 Löschung aus, wenn tatsächlich Tracks ausgewählt sind.
 Seit Version 1.19 wählt der "Count"-Button alle NEW_-Tracks aus, zählt sie und hebt die Selektion wieder auf, wenn ihre Anzahl im erwarteten Bereich liegt.
 Seit Version 1.20 gibt der "Detect"-Button die Zahl der NEW_-Tracks und den berechneten Threshold in der Konsole aus.
+Seit Version 1.21 speichert der "Count"-Button das Ergebnis als `Scene.nm_count` und
+wählt bei Abweichungen stattdessen alle TRACK_-Tracks aus.

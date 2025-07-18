@@ -87,3 +87,8 @@
 - `clip.detect_button` berechnet den Threshold anhand der Anzahl vorhandener
   `NEW_`-Tracks und gibt sowohl diese Zahl als auch den Wert des Thresholds in
   der Konsole aus.
+
+## Version 1.21
+- `clip.count_button` speichert die gezählte Anzahl als `Scene.nm_count`.
+- Liegt sie außerhalb des Zielbereichs, werden stattdessen alle `TRACK_`-Tracks
+  selektiert.
