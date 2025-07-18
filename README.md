@@ -87,3 +87,32 @@ Seit Version 1.41 verfolgt der Track-Button die ausgewählten Marker maximal
 zehn Frames nach vorne und bricht am Endframe ab.
 Seit Version 1.42 führt der Track-Button die TRACK_-Marker bis zu zehn Frames
 rückwärts und danach wieder vorwärts, wobei er Start- und Endframe beachtet.
+Seit Version 1.43 setzt der Track-Button den Frame-Bereich temporär und nutzt
+`sequence=True`, um die Marker bis zu zehn Frames zurück und anschließend
+vorwärts zu verfolgen.
+Seit Version 1.44 verfolgt der Track-Button die TRACK_-Marker in
+Zehnerschritten, bis keine mehr aktiv sind.
+Seit Version 1.45 verwendet der Detect-Button einen minimalen
+`detection_threshold` von 0.0001 statt 0.001.
+Seit Version 1.47 prüft der Track-Button nach jedem Zehnerblock,
+ob noch TRACK_-Marker aktiv sind und beendet das Tracking,
+sobald keine mehr vorhanden sind.
+Seit Version 1.48 erkennt der Track-Button Marker als inaktiv, wenn sie stummgeschaltet sind oder Koordinaten von (0,0) besitzen.
+Seit Version 1.49 gibt der Track-Button nach jedem Tracking-Schritt die Anzahl
+der aktiven Marker aus.
+Seit Version 1.50 arbeitet der Track-Button in 25er-Schritten und pr\u00FCft nach
+jeder Passage von 25 Frames erneut die verbleibenden TRACK_-Marker.
+Seit Version 1.51 passt der Track-Button die Blockgr\xF6\xDFe dynamisch an und
+verteilt den verbleibenden Bereich auf vier Abschnitte.
+Seit Version 1.52 gibt es experimentelle "Live Track"-Operatoren, die per
+Timer laufendes Tracking \xFCberwachen und stoppen, sobald keine TRACK_-Marker
+mehr aktiv sind.
+Seit Version 1.53 f\u00fchrt der neue "Proxy Track"-Button automatisch den Proxy-Befehl aus,
+speichert den aktuellen Frame und verfolgt TRACK_-Marker zehn Frames r\u00fcckw\u00e4rts
+und anschlie\xDFend wieder vorw\u00e4rts.
+Seit Version 1.54 deaktiviert der "Proxy Track"-Button zun\u00e4chst den Proxy,
+speichert den aktuellen Frame, w\u00e4hlt alle TRACK_-Marker aus und verfolgt sie
+zehn Frames r\u00fcckw\u00e4rts. Danach setzt er den Playhead zur\u00fcck und trackt
+vorw\u00e4rts.
+Seit Version 1.55 verwendet der "Proxy Track"-Button beim Rückwärts-Tracking denselben dynamischen Block-Algorithmus wie der Track-Button. Die Marker werden in Abschnitten eines Viertels des verbleibenden Bereichs verfolgt, bis keine aktiven TRACK_-Marker mehr übrig sind. Danach wird der gespeicherte Frame wiederhergestellt und ohne Unterteilung vorwärts getrackt.
+Seit Version 1.56 aktiviert der "Proxy Track"-Button den Proxy, bevor er das Tracking startet.

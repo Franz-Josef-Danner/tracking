@@ -190,3 +190,62 @@
   Der zuvor gespeicherte Frame wird zwischen den Richtungen
   wiederhergestellt.
 
+## Version 1.43
+- `clip.track_sequence` setzt den Frame-Bereich temporär und verwendet
+  `sequence=True`, um die Marker jeweils maximal zehn Frames rückwärts
+  und danach wieder vorwärts zu verfolgen.
+
+## Version 1.44
+- `clip.track_sequence` arbeitet in Schritten von zehn Frames und wiederholt
+  das Tracking, bis keine ausgewählten `TRACK_`-Marker mehr vorhanden sind.
+
+## Version 1.45
+- `clip.detect_button` setzt den minimalen `detection_threshold` nun auf
+  `0.0001` statt `0.001`.
+
+## Version 1.46
+- `clip.track_sequence` gab nach jedem Tracking-Schritt die Anzahl
+  der noch aktiven TRACK_-Marker aus.
+
+## Version 1.47
+- `clip.track_sequence` pr\xFCft am Ende jedes Zehnerblocks, ob noch
+  TRACK_-Marker aktiv sind und beendet das Tracking gegebenenfalls fr\xFChzeitig.
+
+
+## Version 1.48
+- `clip.track_sequence` betrachtet Marker als inaktiv, wenn sie stummgeschaltet sind oder Koordinaten von (0,0) aufweisen.
+
+## Version 1.49
+- `clip.track_sequence` meldet nach jedem Tracking-Schritt die Anzahl der noch
+  aktiven `TRACK_`-Marker.
+
+## Version 1.50
+- `clip.track_sequence` verwendet nun Bl\xF6cke von 25 Frames und pr\xFCft nach
+  jedem dieser Abschnitte erneut, ob noch TRACK_-Marker aktiv sind.
+
+## Version 1.51
+- `clip.track_sequence` berechnet die Blockgr\xF6\xDFe dynamisch, indem der
+  verbleibende Bereich in vier Teile aufgeteilt wird.
+
+## Version 1.52
+- Neue Operatoren `clip.live_track_forward` und `clip.live_track_backward`
+  verwenden einen Timer, um w\u00e4hrend des UI-Trackings zu \u00fcberpr\u00fcfen,
+  ob noch aktive `TRACK_`-Marker vorhanden sind und stoppen das Tracking,
+  sobald keine mehr existieren.
+
+## Version 1.53
+- Neuer Operator `clip.proxy_track` ruft automatisch `clip.panel_button` auf,
+  speichert den aktuellen Frame und verfolgt `TRACK_`-Marker jeweils zehn
+  Frames r\u00fcckw\u00e4rts und danach wieder vorw\u00e4rts zum gespeicherten Frame.
+
+## Version 1.54
+- `clip.proxy_track` deaktiviert zun\u00e4chst den Proxy, merkt sich den
+  aktuellen Frame und w\u00e4hlt alle `TRACK_`-Marker aus. Anschlie\u00dfend werden
+  die Marker zehn Frames r\u00fcckw\u00e4rts getrackt, der Playhead wird
+  wiederhergestellt und das Tracking l\u00e4uft vorw\u00e4rts weiter.
+
+## Version 1.55
+- `clip.proxy_track` nutzt beim Rückwärts-Tracking den dynamischen Block-Algorithmus aus `clip.track_sequence` und wiederholt die Schritte, bis keine TRACK_-Marker mehr aktiv sind. Anschließend wird der gespeicherte Frame wiederhergestellt und ohne Unterteilung vorwärts getrackt.
+
+## Version 1.56
+- `clip.proxy_track` aktiviert nun den Proxy bevor das Tracking beginnt.

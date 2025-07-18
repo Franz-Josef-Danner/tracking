@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 42),
+    "version": (1, 56),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -96,7 +96,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             threshold_value = 1.0
             print("Formel nicht angewendet, NM < 1")
 
-        detection_threshold = max(min(threshold_value, 1.0), 0.001)
+        detection_threshold = max(min(threshold_value, 1.0), 0.0001)
         print(
             f"NEW_ Tracks aktuell: {nm_current}, NM: {nm}, track_plus: {track_plus:.2f}"
         )
@@ -294,7 +294,9 @@ class CLIP_OT_all_buttons(bpy.types.Operator):
 class CLIP_OT_track_sequence(bpy.types.Operator):
     bl_idname = "clip.track_sequence"
     bl_label = "Track"
-    bl_description = "Verfolgt ausgewählte Marker schrittweise vorwärts"
+    bl_description = (
+        "Verfolgt TRACK_-Marker in dynamischen Bl\xF6cken r\xFCckw\xE4rts und vorw\xE4rts"
+    )
 
     def execute(self, context):
         clip = context.space_data.clip
@@ -307,59 +309,249 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
 
         scene = context.scene
 
-        play_frame = scene.frame_current
-        start_frame = scene.frame_start
-        end_frame = scene.frame_end
-        max_steps = 10
+        original_start = scene.frame_start
+        original_end = scene.frame_end
 
-        # TRACK_-Marker auswählen
+        current = scene.frame_current
+
+        def count_active_tracks(frame_value):
+            count = 0
+            for t in clip.tracking.tracks:
+                if t.name.startswith("TRACK_"):
+                    m = t.markers.find_frame(frame_value)
+                    if m and not m.mute and m.co.length_squared != 0.0:
+                        count += 1
+            return count
+
         for t in clip.tracking.tracks:
             t.select = t.name.startswith("TRACK_")
 
         selected = [t for t in clip.tracking.tracks if t.select]
         print(f"🔢 Selektierte Marker: {len(selected)}")
-        print(f"💾 Playhead gespeichert: {play_frame}")
 
         if not selected:
             print("⚠️ Keine selektierten Marker zum Tracken.")
             return {'CANCELLED'}
 
-        # Rückwärts tracken
-        for i in range(max_steps):
-            current_frame = play_frame - i
-            if current_frame < start_frame:
-                print("🛑 Start der Sequenz erreicht.")
+        frame = current
+        start_frame = original_start
+        while frame >= start_frame:
+            remaining = frame - start_frame
+            block_size = max(1, math.ceil(remaining / 4))
+            limited_start = max(start_frame, frame - block_size)
+            scene.frame_start = limited_start
+            scene.frame_end = frame
+            print(
+                f"🔁 R\xFCckw\xE4rts-Tracking von {frame} bis {limited_start} (Blockgr\xF6\xDFe: {block_size})"
+            )
+            bpy.ops.clip.track_markers(backwards=True, sequence=True)
+            scene.frame_start = original_start
+            scene.frame_end = original_end
+            active_count = count_active_tracks(limited_start)
+            print(f"📈 Aktive Marker: {active_count}")
+            if active_count == 0:
+                print(
+                    "✅ Keine aktiven TRACK_-Marker mehr vorhanden. Tracking gestoppt."
+                )
                 break
-            scene.frame_current = current_frame
-            bpy.ops.clip.track_markers(backwards=True, sequence=False)
-            print(f"◀️ Rückwärts-Tracking: Frame {current_frame}")
-            for area in bpy.context.screen.areas:
-                if area.type == 'CLIP_EDITOR':
-                    area.tag_redraw()
+            frame = limited_start - 1
 
-        scene.frame_current = play_frame
-        print(f"↩️ Playhead zurück zu Frame {play_frame}")
+        frame = current
+        end_frame = original_end
+        while frame <= end_frame:
+            remaining = end_frame - frame
+            block_size = max(1, math.ceil(remaining / 4))
+            limited_end = min(frame + block_size, end_frame)
+            scene.frame_start = frame
+            scene.frame_end = limited_end
+            print(
+                f"🔁 Vorw\xE4rts-Tracking von {frame} bis {limited_end} (Blockgr\xF6\xDFe: {block_size})"
+            )
+            bpy.ops.clip.track_markers(backwards=False, sequence=True)
+            scene.frame_start = original_start
+            scene.frame_end = original_end
+            active_count = count_active_tracks(limited_end)
+            print(f"📈 Aktive Marker: {active_count}")
+            if active_count == 0:
+                print("✅ Keine aktiven TRACK_-Marker mehr vorhanden. Tracking gestoppt.")
+                break
+            frame = limited_end + 1
 
-        # TRACK_-Marker erneut auswählen
+        scene.frame_start = original_start
+        scene.frame_end = original_end
+
+        return {'FINISHED'}
+
+
+def has_active_marker(tracks, frame):
+    for t in tracks:
+        m = t.markers.find_frame(frame)
+        if m and not m.mute and m.co.length_squared != 0.0:
+            return True
+    return False
+
+
+class CLIP_OT_live_track_forward(bpy.types.Operator):
+    """Starte UI-Tracking vorw\u00e4rts und \u00fcberpr\u00fcfe aktive Marker"""
+
+    bl_idname = "clip.live_track_forward"
+    bl_label = "UI Live Track Forward"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    _timer = None
+    _last_checked_frame = None
+    _tracks = []
+
+    def modal(self, context, event):
+        scene = context.scene
+        if event.type == 'TIMER':
+            current_frame = scene.frame_current
+            if current_frame == self._last_checked_frame:
+                self.report({'INFO'}, "Tracking abgeschlossen.")
+                return self.finish(context)
+            self._last_checked_frame = current_frame
+            if not has_active_marker(self._tracks, current_frame):
+                self.report(
+                    {'INFO'},
+                    f"Tracking gestoppt: Keine aktiven TRACK_-Marker bei Frame {current_frame}",
+                )
+                return self.finish(context)
+        return {'PASS_THROUGH'}
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        scene = context.scene
+        self._tracks = [t for t in clip.tracking.tracks if t.name.startswith('TRACK_')]
+        if not self._tracks:
+            self.report({'WARNING'}, "Keine TRACK_-Marker gefunden.")
+            return {'CANCELLED'}
+        self._last_checked_frame = scene.frame_current
+        bpy.ops.clip.track_markers(backwards=False, sequence=True)
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.2, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def finish(self, context):
+        wm = context.window_manager
+        wm.event_timer_remove(self._timer)
+        return {'FINISHED'}
+
+
+class CLIP_OT_live_track_backward(bpy.types.Operator):
+    """Starte UI-Tracking r\u00fcckw\u00e4rts und \u00fcberpr\u00fcfe aktive Marker"""
+
+    bl_idname = "clip.live_track_backward"
+    bl_label = "UI Live Track Backward"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    _timer = None
+    _last_checked_frame = None
+    _tracks = []
+
+    def modal(self, context, event):
+        scene = context.scene
+        if event.type == 'TIMER':
+            current_frame = scene.frame_current
+            if current_frame == self._last_checked_frame:
+                self.report({'INFO'}, "R\u00fcckw\u00e4rts-Tracking abgeschlossen.")
+                return self.finish(context)
+            self._last_checked_frame = current_frame
+            if not has_active_marker(self._tracks, current_frame):
+                self.report(
+                    {'INFO'},
+                    f"Tracking gestoppt: Keine aktiven TRACK_-Marker bei Frame {current_frame}",
+                )
+                return self.finish(context)
+        return {'PASS_THROUGH'}
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        scene = context.scene
+        self._tracks = [t for t in clip.tracking.tracks if t.name.startswith('TRACK_')]
+        if not self._tracks:
+            self.report({'WARNING'}, "Keine TRACK_-Marker gefunden.")
+            return {'CANCELLED'}
+        self._last_checked_frame = scene.frame_current
+        bpy.ops.clip.track_markers(backwards=True, sequence=True)
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.2, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def finish(self, context):
+        wm = context.window_manager
+        wm.event_timer_remove(self._timer)
+        return {'FINISHED'}
+
+
+class CLIP_OT_proxy_track(bpy.types.Operator):
+    """Proxy aktivieren und Marker vor- und zurückverfolgen"""
+
+    bl_idname = "clip.proxy_track"
+    bl_label = "Proxy Track"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        # Proxy aktivieren
+        clip.use_proxy = True
+
+        # Aktuellen Frame merken
+        scene = context.scene
+        saved_frame = scene.frame_current
+
+        # TRACK_-Marker auswählen
         for t in clip.tracking.tracks:
             t.select = t.name.startswith("TRACK_")
-        selected = [t for t in clip.tracking.tracks if t.select]
-        print(f"🔢 Selektierte Marker: {len(selected)}")
 
-        # Vorwärts tracken
-        for i in range(max_steps):
-            current_frame = play_frame + i
-            if current_frame > end_frame:
-                print("🛑 Sequenzende erreicht.")
+
+        original_start = scene.frame_start
+        original_end = scene.frame_end
+
+        def count_active_tracks(frame_value):
+            count = 0
+            for tr in clip.tracking.tracks:
+                if tr.name.startswith("TRACK_"):
+                    m = tr.markers.find_frame(frame_value)
+                    if m and not m.mute and m.co.length_squared != 0.0:
+                        count += 1
+            return count
+
+        frame = saved_frame
+        start_frame = original_start
+        while frame >= start_frame:
+            remaining = frame - start_frame
+            block_size = max(1, math.ceil(remaining / 4))
+            limited_start = max(start_frame, frame - block_size)
+            scene.frame_start = limited_start
+            scene.frame_end = frame
+            print(
+                f"\U0001F501 R\u00fcckw\u00e4rts-Tracking von {frame} bis {limited_start} (Blockgr\u00f6\u00dfe: {block_size})"
+            )
+            bpy.ops.clip.track_markers(backwards=True, sequence=True)
+            scene.frame_start = original_start
+            scene.frame_end = original_end
+            active = count_active_tracks(limited_start)
+            print(f"\U0001F4C8 Aktive Marker: {active}")
+            if active == 0:
+                print("✅ Keine aktiven TRACK_-Marker mehr vorhanden. Tracking gestoppt.")
                 break
-            scene.frame_current = current_frame
-            bpy.ops.clip.track_markers(backwards=False, sequence=False)
-            print(f"▶️ Tracking Frame {current_frame}")
-            for area in bpy.context.screen.areas:
-                if area.type == 'CLIP_EDITOR':
-                    area.tag_redraw()
+            frame = limited_start - 1
 
-        print("✅ Tracking abgeschlossen")
+        scene.frame_start = saved_frame
+        scene.frame_end = original_end
+        scene.frame_current = saved_frame
+        print(f"\U0001F501 Vorw\u00e4rts-Tracking von {saved_frame} bis {original_end}")
+        bpy.ops.clip.track_markers(backwards=False, sequence=True)
+
+        scene.frame_start = original_start
+        scene.frame_end = original_end
+        scene.frame_current = saved_frame
 
         return {'FINISHED'}
 
@@ -387,8 +579,11 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout = self.layout
         layout.prop(context.scene, 'marker_frame', text='Marker / Frame')
         layout.operator('clip.panel_button')
+        layout.operator('clip.proxy_track', text='Proxy+Track')
         layout.operator('clip.all_buttons', text='All')
         layout.operator('clip.track_sequence', text='Track')
+        layout.operator('clip.live_track_forward', text='Live Fwd')
+        layout.operator('clip.live_track_backward', text='Live Back')
 
 classes = (
     OBJECT_OT_simple_operator,
@@ -400,6 +595,9 @@ classes = (
     CLIP_OT_count_button,
     CLIP_OT_all_buttons,
     CLIP_OT_track_sequence,
+    CLIP_OT_proxy_track,
+    CLIP_OT_live_track_forward,
+    CLIP_OT_live_track_backward,
     CLIP_PT_tracking_panel,
     CLIP_PT_button_panel,
 )
