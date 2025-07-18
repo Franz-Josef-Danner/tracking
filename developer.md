@@ -249,3 +249,6 @@
 
 ## Version 1.56
 - `clip.proxy_track` aktiviert nun den Proxy bevor das Tracking beginnt.
+
+## Version 1.57
+- Die Buttons 'Proxy+Track', 'Live Fwd' und 'Live Back' wurden entfernt.

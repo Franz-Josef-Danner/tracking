@@ -116,3 +116,4 @@ zehn Frames r\u00fcckw\u00e4rts. Danach setzt er den Playhead zur\u00fcck und tr
 vorw\u00e4rts.
 Seit Version 1.55 verwendet der "Proxy Track"-Button beim Rückwärts-Tracking denselben dynamischen Block-Algorithmus wie der Track-Button. Die Marker werden in Abschnitten eines Viertels des verbleibenden Bereichs verfolgt, bis keine aktiven TRACK_-Marker mehr übrig sind. Danach wird der gespeicherte Frame wiederhergestellt und ohne Unterteilung vorwärts getrackt.
 Seit Version 1.56 aktiviert der "Proxy Track"-Button den Proxy, bevor er das Tracking startet.
+Seit Version 1.57 wurden die Buttons "Proxy Track", "Live Fwd" und "Live Back" entfernt.
