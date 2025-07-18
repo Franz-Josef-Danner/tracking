@@ -85,13 +85,17 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         track_plus = tracks_per_frame * 4
 
         nm = sum(1 for t in clip.tracking.tracks if t.name.startswith("NEW_"))
-        threshold = 1.0 if nm < 1 else 1.0 * ((nm + 0.1) / track_plus)
-        threshold = max(min(threshold, 1.0), 0.001)
+
+        if nm < 1:
+            detection_threshold = 1.0
+        else:
+            detection_threshold = 1.0 * ((nm + 0.1) / track_plus)
+
+        detection_threshold = max(min(detection_threshold, 1.0), 0.001)
         print(f"NEW_ Tracks: {nm}, track_plus: {track_plus:.2f}")
 
-        # Margin is 1% of the clip width, minimum distance 5%
-        margin = int(width * 0.01)
-        min_distance = int(width * 0.05)
+        margin = int((width * 0.01) * detection_threshold)
+        min_distance = int((width * 0.05) * detection_threshold)
 
         active = None
         if hasattr(space, "tracking"):
@@ -101,10 +105,10 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             active.search_size = 100
 
         print(
-            f"detect_features: threshold={threshold:.3f}, margin={margin}, min_distance={min_distance}"
+            f"detect_features: threshold={detection_threshold:.3f}, margin={margin}, min_distance={min_distance}"
         )
         bpy.ops.clip.detect_features(
-            threshold=threshold,
+            threshold=detection_threshold,
             min_distance=min_distance,
             margin=margin,
         )
