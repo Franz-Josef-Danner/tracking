@@ -222,3 +222,7 @@
 ## Version 1.50
 - `clip.track_sequence` verwendet nun Bl\xF6cke von 25 Frames und pr\xFCft nach
   jedem dieser Abschnitte erneut, ob noch TRACK_-Marker aktiv sind.
+
+## Version 1.51
+- `clip.track_sequence` berechnet die Blockgr\xF6\xDFe dynamisch, indem der
+  verbleibende Bereich in vier Teile aufgeteilt wird.

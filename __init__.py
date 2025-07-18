@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 50),
+    "version": (1, 51),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -295,7 +295,7 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
     bl_idname = "clip.track_sequence"
     bl_label = "Track"
     bl_description = (
-        "Verfolgt TRACK_-Marker in 25er-Bl\xF6cken r\xFCckw\xE4rts und vorw\xE4rts"
+        "Verfolgt TRACK_-Marker in dynamischen Bl\xF6cken r\xFCckw\xE4rts und vorw\xE4rts"
     )
 
     def execute(self, context):
@@ -311,7 +311,6 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
 
         original_start = scene.frame_start
         original_end = scene.frame_end
-        block_size = 25
 
         current = scene.frame_current
 
@@ -337,10 +336,14 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
         frame = current
         start_frame = original_start
         while frame >= start_frame:
-            limited_start = max(frame - block_size, start_frame)
+            remaining = frame - start_frame
+            block_size = max(1, math.ceil(remaining / 4))
+            limited_start = max(start_frame, frame - block_size)
             scene.frame_start = limited_start
             scene.frame_end = frame
-            print(f"🔁 R\xFCckw\xE4rts-Tracking von {frame} bis {limited_start}")
+            print(
+                f"🔁 R\xFCckw\xE4rts-Tracking von {frame} bis {limited_start} (Blockgr\xF6\xDFe: {block_size})"
+            )
             bpy.ops.clip.track_markers(backwards=True, sequence=True)
             scene.frame_start = original_start
             scene.frame_end = original_end
@@ -356,10 +359,14 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
         frame = current
         end_frame = original_end
         while frame <= end_frame:
+            remaining = end_frame - frame
+            block_size = max(1, math.ceil(remaining / 4))
             limited_end = min(frame + block_size, end_frame)
             scene.frame_start = frame
             scene.frame_end = limited_end
-            print(f"🔁 Tracking {frame} bis {limited_end}")
+            print(
+                f"🔁 Vorw\xE4rts-Tracking von {frame} bis {limited_end} (Blockgr\xF6\xDFe: {block_size})"
+            )
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
             scene.frame_start = original_start
             scene.frame_end = original_end
