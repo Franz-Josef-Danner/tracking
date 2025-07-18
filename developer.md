@@ -130,3 +130,8 @@
 - `clip.detect_button` speichert den berechneten Threshold-Wert in
   `Scene.threshold_value` und verwendet ihn beim n\u00e4chsten Durchlauf als
   Ausgangswert.
+
+## Version 1.29
+- Neuer Operator `clip.all_buttons` f\u00fchrt Detect, NEW, Distance, Delete, Count
+  und ein weiteres Delete in dieser Reihenfolge aus.
+- Das Panel enth\u00e4lt nun einen "All"-Button, der diese Funktion aufruft.

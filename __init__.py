@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 28),
+    "version": (1, 29),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -260,6 +260,23 @@ class CLIP_OT_count_button(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_all_buttons(bpy.types.Operator):
+    bl_idname = "clip.all_buttons"
+    bl_label = "All"
+    bl_description = (
+        "Führt Detect, NEW, Distance, Delete, Count und Delete aus"
+    )
+
+    def execute(self, context):
+        bpy.ops.clip.detect_button()
+        bpy.ops.clip.prefix_new()
+        bpy.ops.clip.distance_button()
+        bpy.ops.clip.delete_selected()
+        bpy.ops.clip.count_button()
+        bpy.ops.clip.delete_selected()
+        return {'FINISHED'}
+
+
 
 
 class CLIP_PT_tracking_panel(bpy.types.Panel):
@@ -289,6 +306,7 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.operator('clip.delete_selected')
         layout.operator('clip.count_button')
         layout.operator('clip.delete_selected', text='Delete')
+        layout.operator('clip.all_buttons', text='All')
 
 classes = (
     OBJECT_OT_simple_operator,
@@ -298,6 +316,7 @@ classes = (
     CLIP_OT_distance_button,
     CLIP_OT_delete_selected,
     CLIP_OT_count_button,
+    CLIP_OT_all_buttons,
     CLIP_PT_tracking_panel,
     CLIP_PT_button_panel,
 )

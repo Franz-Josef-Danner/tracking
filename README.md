@@ -64,3 +64,5 @@ Seit Version 1.27 werden Margin und Mindestabstand auf Basis von 1 % bzw.
 Berechnungsformeln sowie Ergebnisse in der Konsole ausgegeben.
 Seit Version 1.28 merkt sich der "Detect"-Button den zuletzt
 verwendeten Threshold-Wert und nutzt ihn f\u00fcr die n\u00e4chste Berechnung.
+Seit Version 1.29 gibt es einen "All"-Button, der alle Buttons bis auf den
+Proxy-Button nacheinander ausf\u00fchrt.
