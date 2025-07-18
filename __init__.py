@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 54),
+    "version": (1, 55),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -513,20 +513,40 @@ class CLIP_OT_proxy_track(bpy.types.Operator):
         original_start = scene.frame_start
         original_end = scene.frame_end
 
-        limited_start = max(original_start, saved_frame - 10)
-        scene.frame_start = limited_start
-        scene.frame_end = saved_frame
-        print(f"\U0001F501 R\u00fcckw\u00e4rts-Tracking von {saved_frame} bis {limited_start}")
-        bpy.ops.clip.track_markers(backwards=True, sequence=True)
+        def count_active_tracks(frame_value):
+            count = 0
+            for tr in clip.tracking.tracks:
+                if tr.name.startswith("TRACK_"):
+                    m = tr.markers.find_frame(frame_value)
+                    if m and not m.mute and m.co.length_squared != 0.0:
+                        count += 1
+            return count
 
-        scene.frame_start = original_start
+        frame = saved_frame
+        start_frame = original_start
+        while frame >= start_frame:
+            remaining = frame - start_frame
+            block_size = max(1, math.ceil(remaining / 4))
+            limited_start = max(start_frame, frame - block_size)
+            scene.frame_start = limited_start
+            scene.frame_end = frame
+            print(
+                f"\U0001F501 R\u00fcckw\u00e4rts-Tracking von {frame} bis {limited_start} (Blockgr\u00f6\u00dfe: {block_size})"
+            )
+            bpy.ops.clip.track_markers(backwards=True, sequence=True)
+            scene.frame_start = original_start
+            scene.frame_end = original_end
+            active = count_active_tracks(limited_start)
+            print(f"\U0001F4C8 Aktive Marker: {active}")
+            if active == 0:
+                print("✅ Keine aktiven TRACK_-Marker mehr vorhanden. Tracking gestoppt.")
+                break
+            frame = limited_start - 1
+
+        scene.frame_start = saved_frame
         scene.frame_end = original_end
         scene.frame_current = saved_frame
-
-        limited_end = min(original_end, saved_frame + 10)
-        scene.frame_start = saved_frame
-        scene.frame_end = limited_end
-        print(f"\U0001F501 Vorw\u00e4rts-Tracking von {saved_frame} bis {limited_end}")
+        print(f"\U0001F501 Vorw\u00e4rts-Tracking von {saved_frame} bis {original_end}")
         bpy.ops.clip.track_markers(backwards=False, sequence=True)
 
         scene.frame_start = original_start

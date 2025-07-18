@@ -243,3 +243,6 @@
   aktuellen Frame und w\u00e4hlt alle `TRACK_`-Marker aus. Anschlie\u00dfend werden
   die Marker zehn Frames r\u00fcckw\u00e4rts getrackt, der Playhead wird
   wiederhergestellt und das Tracking l\u00e4uft vorw\u00e4rts weiter.
+
+## Version 1.55
+- `clip.proxy_track` nutzt beim Rückwärts-Tracking den dynamischen Block-Algorithmus aus `clip.track_sequence` und wiederholt die Schritte, bis keine TRACK_-Marker mehr aktiv sind. Anschließend wird der gespeicherte Frame wiederhergestellt und ohne Unterteilung vorwärts getrackt.
