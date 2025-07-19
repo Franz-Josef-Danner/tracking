@@ -298,7 +298,3 @@
 - Entfernt nahezu alle Konsolenausgaben. Beim Detect-Vorgang wird
   lediglich die angewandte Threshold-Formel ausgegeben.
 
-## Version 1.69
-- Die Threshold-Formel wird nur noch angewendet, wenn `Scene.nm_count`
-  größer als 0 ist. In allen anderen Fällen wird die Meldung
-  "NM <= 0" ausgegeben.
