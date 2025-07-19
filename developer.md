@@ -323,6 +323,7 @@
 - Beim erneuten Auftreten eines bekannten Frames wird die Pattern Size
   um 10 % erhöht (maximal 100). Bei neuen Frames verringert sich die
   Pattern Size um 10 %.
+- Die Anpassung der Pattern Size erfolgt kumulativ auf Basis des aktuellen Werts.
 
 ## Version 1.75
 - Der "Motion"-Button setzt die Pattern Size auf 50 und stellt die

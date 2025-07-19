@@ -150,6 +150,7 @@ Model, andernfalls wird es auf den Standard "Loc" zurückgesetzt.
 Seit Version 1.74 wird die Pattern Size bei bekannten Frames um 10 %
 erhöht und bei neuen Frames um 10 % reduziert. Der Wert überschreitet
 nie 100.
+Die Anpassung erfolgt kumulativ, also basierend auf dem jeweils aktuellen Wert.
 Seit Version 1.75 setzt der "Motion"-Button die Pattern Size auf 50 und
 passt die Search Size entsprechend an. Ein weiterer Button "Pattern+"
 erhöht die Pattern Size um 10 % und verdoppelt die Search Size.
