@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 75),
+    "version": (1, 76),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -460,14 +460,18 @@ def _update_nf_and_motion_model(frame, clip):
     settings = clip.tracking.settings
     if frame in NF:
         bpy.ops.clip.motion_button()
-        settings.pattern_size = min(int(settings.pattern_size * 1.1), 100)
+        settings.default_pattern_size = min(
+            int(settings.default_pattern_size * 1.1),
+            100,
+        )
     else:
         NF.append(frame)
         settings.default_motion_model = DEFAULT_MOTION_MODEL
-        settings.pattern_size = int(settings.pattern_size * 0.9)
-    settings.search_size = settings.pattern_size * 2
+        settings.default_pattern_size = int(settings.default_pattern_size * 0.9)
+    settings.default_search_size = settings.default_pattern_size * 2
     print(
-        f"Pattern Size gesetzt auf: {settings.pattern_size}, Search Size auf: {settings.search_size}"
+        f"Pattern Size gesetzt auf: {settings.default_pattern_size}, "
+        f"Search Size auf: {settings.default_search_size}"
     )
 
 
@@ -556,8 +560,8 @@ class CLIP_OT_motion_button(bpy.types.Operator):
 
         next_model = self._models[(index + 1) % len(self._models)]
         settings.default_motion_model = next_model
-        settings.pattern_size = 50
-        settings.search_size = settings.pattern_size * 2
+        settings.default_pattern_size = 50
+        settings.default_search_size = settings.default_pattern_size * 2
 
         self.report(
             {'INFO'},
@@ -581,12 +585,16 @@ class CLIP_OT_pattern_button(bpy.types.Operator):
             return {'CANCELLED'}
 
         settings = clip.tracking.settings
-        settings.pattern_size = min(int(settings.pattern_size * 1.1), 100)
-        settings.search_size = settings.pattern_size * 2
+        settings.default_pattern_size = min(
+            int(settings.default_pattern_size * 1.1),
+            100,
+        )
+        settings.default_search_size = settings.default_pattern_size * 2
 
         self.report(
             {'INFO'},
-            f"Pattern Size: {settings.pattern_size}, Search Size: {settings.search_size}"
+            f"Pattern Size: {settings.default_pattern_size}, "
+            f"Search Size: {settings.default_search_size}"
         )
         return {'FINISHED'}
 

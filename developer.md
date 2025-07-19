@@ -330,3 +330,7 @@
 - Ein neuer "Pattern+"-Button vergrößert die Pattern Size um 10 % und
   passt die Search Size entsprechend an.
 
+## Version 1.76
+- Die Buttons beeinflussen nun die Default Pattern und Search Size, die
+  bei neu erstellten Markern verwendet werden.
+
