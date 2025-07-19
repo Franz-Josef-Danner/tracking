@@ -309,3 +309,7 @@
   wurden aus dem Panel entfernt. Ihre Funktionen sind weiterhin über
   `clip.all_cycle` verfügbar.
 
+## Version 1.71
+- Neues Panel-Element "Motion" wechselt beim Anklicken zyklisch das
+  Motion Model des Movie Trackings.
+

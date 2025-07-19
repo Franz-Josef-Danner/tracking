@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 70),
+    "version": (1, 71),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -500,6 +500,39 @@ class CLIP_OT_playhead_to_frame(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_motion_button(bpy.types.Operator):
+    bl_idname = "clip.motion_button"
+    bl_label = "Motion"
+    bl_description = "Wechselt das Motion Model"
+
+    _models = [
+        'Loc',
+        'LocRot',
+        'LocScale',
+        'LocRotScale',
+        'Affine',
+        'Perspective',
+    ]
+
+    def execute(self, context):
+        space = context.space_data
+        clip = space.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        settings = clip.tracking.settings
+        current = settings.motion_model
+        try:
+            index = self._models.index(current)
+        except ValueError:
+            index = -1
+        next_model = self._models[(index + 1) % len(self._models)]
+        settings.motion_model = next_model
+        self.report({'INFO'}, f"Motion Model gesetzt auf: {next_model}")
+        return {'FINISHED'}
+
+
 
 
 
@@ -529,6 +562,7 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.prop(context.scene, 'frames_track', text='Frames/Track')
         layout.operator('clip.panel_button')
         layout.operator('clip.all_cycle', text='All Cycle')
+        layout.operator('clip.motion_button', text='Motion')
 
 classes = (
     OBJECT_OT_simple_operator,
@@ -542,6 +576,7 @@ classes = (
     CLIP_OT_track_sequence,
     CLIP_OT_tracking_length,
     CLIP_OT_playhead_to_frame,
+    CLIP_OT_motion_button,
     CLIP_PT_tracking_panel,
     CLIP_PT_button_panel,
 )
