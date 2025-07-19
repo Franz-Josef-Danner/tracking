@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 64),
+    "version": (1, 70),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -79,27 +79,18 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         clip.use_proxy = False
 
         width, height = clip.size
-        print(f"Auflösung: {width} x {height}")
 
         mframe = context.scene.marker_frame
         track_plus = mframe * 4
 
-        nm_current = sum(1 for t in clip.tracking.tracks if t.name.startswith("NEW_"))
         nm = context.scene.nm_count
 
         threshold_value = context.scene.threshold_value
-        if nm >= 1:
-            formula = f"{threshold_value} * (({nm} + 0.1) / {track_plus})"
-            threshold_value = threshold_value * ((nm + 0.1) / track_plus)
-            print(f"Formel angewendet: {formula} = {threshold_value:.3f}")
-        else:
-            threshold_value = 1.0
-            print("Formel nicht angewendet, NM < 1")
+        formula = f"{threshold_value} * (({nm} + 0.1) / {track_plus})"
+        threshold_value = threshold_value * ((nm + 0.1) / track_plus)
+        print(f"Formel angewendet: {formula} = {threshold_value:.3f}")
 
         detection_threshold = max(min(threshold_value, 1.0), 0.0001)
-        print(
-            f"NEW_ Tracks aktuell: {nm_current}, NM: {nm}, track_plus: {track_plus:.2f}"
-        )
 
         margin_base = int(width * 0.01)
         min_distance_base = int(width * 0.05)
@@ -108,11 +99,6 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         margin = int(margin_base * factor)
         min_distance = int(min_distance_base * factor)
         factor_formula = f"log10({detection_threshold:.3f} * 10000000000) / 10"
-        print(f"Faktor: {factor_formula} = {factor:.3f}")
-        print(f"Margin: int({margin_base} * {factor:.3f}) = {margin}")
-        print(
-            f"Min Distance: int({min_distance_base} * {factor:.3f}) = {min_distance}"
-        )
 
         active = None
         if hasattr(space, "tracking"):
@@ -121,9 +107,6 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             active.pattern_size = 50
             active.search_size = 100
 
-        print(
-            f"detect_features: threshold={detection_threshold:.3f}, margin={margin}, min_distance={min_distance}"
-        )
         bpy.ops.clip.detect_features(
             threshold=detection_threshold,
             min_distance=min_distance,
@@ -239,9 +222,7 @@ class CLIP_OT_count_button(bpy.types.Operator):
         for t in clip.tracking.tracks:
             t.select = t.name.startswith(prefix)
         count = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
-        print(f"Anzahl der Tracking Marker mit Präfix '{prefix}': {count}")
         context.scene.nm_count = count
-        print(f"NM-Wert: {context.scene.nm_count}")
 
         mframe = context.scene.marker_frame
         track_plus = mframe * 4
@@ -253,42 +234,83 @@ class CLIP_OT_count_button(bpy.types.Operator):
                 if t.name.startswith(prefix):
                     t.name = "TRACK_" + t.name[4:]
                     t.select = False
-            context.scene.nm_count = 0
-            print(f"NM-Wert: {context.scene.nm_count}")
             self.report({'INFO'}, f"{count} Tracks in TRACK_ umbenannt")
         else:
             self.report({'INFO'}, f"{count} NEW_-Tracks ausserhalb des Bereichs")
         return {'FINISHED'}
 
 
-class CLIP_OT_all_buttons(bpy.types.Operator):
-    bl_idname = "clip.all_buttons"
-    bl_label = "All"
+class CLIP_OT_all_cycle(bpy.types.Operator):
+    bl_idname = "clip.all_cycle"
+    bl_label = "All Cycle"
     bl_description = (
-        "Führt Detect, NEW, Distance, Delete, Count und Delete mehrfach aus"
+        "Startet einen kombinierten Tracking-Zyklus ohne Proxy-Bau, der mit Esc abgebrochen werden kann"
     )
 
-    def execute(self, context):
+    _timer = None
+    _state = "DETECT"
+    _detect_attempts = 0
+
+    def modal(self, context, event):
+        if event.type == 'ESC':
+            return self.cancel(context)
+
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+
         clip = context.space_data.clip
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            return self.cancel(context)
 
-        for _ in range(10):
+        if self._state == 'DETECT':
             bpy.ops.clip.detect_button()
             bpy.ops.clip.prefix_new()
             bpy.ops.clip.distance_button()
             bpy.ops.clip.delete_selected()
             bpy.ops.clip.count_button()
             bpy.ops.clip.delete_selected()
-
+            self._detect_attempts += 1
             has_track = any(t.name.startswith("TRACK_") for t in clip.tracking.tracks)
             if has_track:
-                break
-        else:
-            self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
+                self._detect_attempts = 0
+                self._state = 'TRACK'
+            elif self._detect_attempts >= 20:
+                self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
+                return self.cancel(context)
 
-        return {'FINISHED'}
+        elif self._state == 'TRACK':
+            bpy.ops.clip.track_sequence()
+            self._state = 'CLEAN'
+
+        elif self._state == 'CLEAN':
+            bpy.ops.clip.tracking_length()
+            self._state = 'JUMP'
+
+        elif self._state == 'JUMP':
+            frame = jump_to_first_frame_with_few_active_markers(
+                min_required=context.scene.marker_frame
+            )
+            if frame is None:
+                return self.cancel(context)
+            context.scene.frame_current = frame
+            self._state = 'DETECT'
+
+        return {'PASS_THROUGH'}
+
+    def execute(self, context):
+        self._state = 'DETECT'
+        self._detect_attempts = 0
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.1, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def cancel(self, context):
+        if self._timer:
+            context.window_manager.event_timer_remove(self._timer)
+            self._timer = None
+        return {'CANCELLED'}
 
 
 class CLIP_OT_track_sequence(bpy.types.Operator):
@@ -327,10 +349,9 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
             t.select = t.name.startswith("TRACK_")
 
         selected = [t for t in clip.tracking.tracks if t.select]
-        print(f"Selektierte Marker: {len(selected)}")
+        selected_names = [t.name for t in selected]
 
         if not selected:
-            print("Keine selektierten Marker zum Tracken.")
             return {'CANCELLED'}
 
         frame = current
@@ -345,18 +366,12 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
             limited_start = max(start_frame, frame - block_size)
             scene.frame_start = limited_start
             scene.frame_end = frame
-            print(
-                f"R\xFCckw\xE4rts-Tracking von {frame} bis {limited_start} (Blockgr\xF6\xDFe: {block_size})"
-            )
             bpy.ops.clip.track_markers(backwards=True, sequence=True)
             scene.frame_start = original_start
             scene.frame_end = original_end
             active_count = count_active_tracks(limited_start)
-            print(f"Aktive Marker: {active_count}")
             if active_count == 0:
-                print(
-                    "Keine aktiven TRACK_-Marker mehr vorhanden. Tracking gestoppt."
-                )
+                
                 break
             frame = limited_start - 1
 
@@ -368,16 +383,11 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
             limited_end = min(frame + block_size, end_frame)
             scene.frame_start = frame
             scene.frame_end = limited_end
-            print(
-                f"Vorw\xE4rts-Tracking von {frame} bis {limited_end} (Blockgr\xF6\xDFe: {block_size})"
-            )
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
             scene.frame_start = original_start
             scene.frame_end = original_end
             active_count = count_active_tracks(limited_end)
-            print(f"Aktive Marker: {active_count}")
             if active_count == 0:
-                print("Keine aktiven TRACK_-Marker mehr vorhanden. Tracking gestoppt.")
                 break
             frame = limited_end + 1
 
@@ -432,12 +442,8 @@ def jump_to_first_frame_with_few_active_markers(min_required=5):
 
         if count < min_required:
             scene.frame_current = frame
-            print(
-                f"Weniger als {min_required} aktive Marker bei Frame {frame}"
-            )
             return frame
 
-    print("In keinem Frame fiel die Markeranzahl unter", min_required)
     return None
 
 
@@ -455,11 +461,7 @@ class CLIP_OT_tracking_length(bpy.types.Operator):
             return {'CANCELLED'}
 
         min_frames = context.scene.frames_track
-        print(f"\u23F3 Tracking Length nutzt mindestens {min_frames} Frames")
         undertracked = get_undertracked_markers(clip, min_frames=min_frames)
-        print(f"Gefundene zu kurze Marker: {len(undertracked)}")
-        for name, frames in undertracked:
-            print(f" - {name}: {frames} Frames")
 
         if not undertracked:
             self.report({'INFO'}, "Alle TRACK_-Marker erreichen die gewünschte Länge")
@@ -526,10 +528,7 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.prop(context.scene, 'marker_frame', text='Marker / Frame')
         layout.prop(context.scene, 'frames_track', text='Frames/Track')
         layout.operator('clip.panel_button')
-        layout.operator('clip.all_buttons', text='All')
-        layout.operator('clip.track_sequence', text='Track')
-        layout.operator('clip.tracking_length', text='Tracking Length')
-        layout.operator('clip.playhead_to_frame', text='Playhead to Frame')
+        layout.operator('clip.all_cycle', text='All Cycle')
 
 classes = (
     OBJECT_OT_simple_operator,
@@ -539,7 +538,7 @@ classes = (
     CLIP_OT_distance_button,
     CLIP_OT_delete_selected,
     CLIP_OT_count_button,
-    CLIP_OT_all_buttons,
+    CLIP_OT_all_cycle,
     CLIP_OT_track_sequence,
     CLIP_OT_tracking_length,
     CLIP_OT_playhead_to_frame,

@@ -68,6 +68,7 @@ Seit Version 1.29 gibt es einen "All"-Button, der alle Buttons bis auf den
 Proxy-Button nacheinander ausf\u00fchrt.
 Seit Version 1.30 wiederholt dieser Button den Ablauf maximal zehnmal,
 bis TRACK_-Marker vorhanden sind.
+Seit Version 1.69 erhöht sich diese Grenze auf zwanzig Durchläufe.
 Seit Version 1.31 wird im Panel nur noch ein Delete-Button angezeigt.
 Seit Version 1.32 zeigt das Panel nur noch den Proxy-Button und den "All"-Button.
 Seit Version 1.33 verfügt das Panel über einen "Track"-Button, der TRACK_-Marker
@@ -128,3 +129,16 @@ selektiert danach alle verbleibenden TRACK_-Marker und benennt sie in GOOD_ um.
 Seit Version 1.64 gibt es einen Button "Playhead to Frame", der den Playhead
 zum ersten Frame springt, in dem weniger GOOD_-Marker aktiv sind als im Feld
 "Marker / Frame" angegeben.
+Seit Version 1.67 gibt es einen neuen Button "All Cycle", der Detect,
+Track, Tracking Length und Playhead to Frame in einem Zyklus ausführt.
+Der Proxy wird dabei nicht automatisch neu erstellt und der Ablauf kann
+mit Esc beendet werden. Der "All"-Button führt wieder nur die einzelnen
+Erkennungsschritte einmalig aus.
+Seit Version 1.68 werden alle Konsolenausgaben bis auf die ausgegebene
+Threshold-Formel entfernt.
+Seit Version 1.69 wird der NM-Wert nach dem Umbenennen der NEW_-Tracks
+nicht mehr auf 0 gesetzt. Der "All"-Button versucht Detect nun bis zu
+zwanzig Mal.
+Seit Version 1.70 wurden die Buttons "All", "Track", "Tracking Length" und
+"Playhead to Frame" aus dem Panel entfernt. Die kombinierte Funktionalität
+ist weiterhin über den Button "All Cycle" erreichbar.

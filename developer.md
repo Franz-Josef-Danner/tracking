@@ -276,3 +276,36 @@
 ## Version 1.64
 - Neuer Button `clip.playhead_to_frame` springt zum ersten Frame mit weniger
   GOOD_-Markern als im Feld "Marker / Frame" vorgegeben.
+
+## Version 1.65
+- `clip.all_buttons` wurde zu einem modalen Operator, der Detect,
+  Track, Tracking Length und Playhead to Frame kombiniert.
+  Nach jedem Durchlauf wird der Proxy neu erstellt. Der Zyklus
+  endet, wenn der Benutzer Esc drückt oder kein weiterer Frame
+  gefunden wird.
+
+## Version 1.66
+- `clip.all_buttons` erstellt den Proxy nicht mehr automatisch neu.
+  Der Ablauf aus Detect, Track, Tracking Length und Playhead to Frame
+  bleibt unverändert und kann weiterhin mit Esc beendet werden.
+
+## Version 1.67
+- `clip.all_buttons` führt wieder nur die Erkennungsschritte einmalig aus.
+- Neuer Operator `clip.all_cycle` übernimmt den bisherigen Zyklus ohne
+  Proxy-Bau und kann mit Esc beendet werden.
+
+## Version 1.68
+- Entfernt nahezu alle Konsolenausgaben. Beim Detect-Vorgang wird
+  lediglich die angewandte Threshold-Formel ausgegeben.
+
+## Version 1.69
+- `clip.all_buttons` versucht Detect nun bis zu zwanzigmal, bevor der
+  Vorgang abgebrochen wird.
+- `clip.count_button` setzt den gespeicherten NM-Wert nicht mehr auf 0
+  zurück.
+
+## Version 1.70
+- Die Buttons "All", "Track", "Tracking Length" und "Playhead to Frame"
+  wurden aus dem Panel entfernt. Ihre Funktionen sind weiterhin über
+  `clip.all_cycle` verfügbar.
+
