@@ -143,4 +143,4 @@ Seit Version 1.70 wurden die Buttons "All", "Track", "Tracking Length" und
 "Playhead to Frame" aus dem Panel entfernt. Die kombinierte Funktionalität
 ist weiterhin über den Button "All Cycle" erreichbar.
 Seit Version 1.71 bietet das Panel zusätzlich einen Button "Motion", der
-das Motion Model zyklisch durchschaltet.
+das Motion Model des aktiven Tracks zyklisch durchschaltet.

@@ -311,5 +311,5 @@
 
 ## Version 1.71
 - Neues Panel-Element "Motion" wechselt beim Anklicken zyklisch das
-  Motion Model des Movie Trackings.
+  Motion Model des aktiven Tracks.
 
