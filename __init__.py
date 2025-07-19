@@ -294,6 +294,8 @@ class CLIP_OT_all_buttons(bpy.types.Operator):
             self._detect_attempts += 1
             has_track = any(t.name.startswith("TRACK_") for t in clip.tracking.tracks)
             if has_track:
+                track_names = [t.name for t in clip.tracking.tracks if t.name.startswith("TRACK_")]
+                print(f"TRACK_-Marker gefunden: {', '.join(track_names)}")
                 self._detect_attempts = 0
                 self._state = 'TRACK'
             elif self._detect_attempts >= 10:
@@ -375,7 +377,9 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
             t.select = t.name.startswith("TRACK_")
 
         selected = [t for t in clip.tracking.tracks if t.select]
-        print(f"Selektierte Marker: {len(selected)}")
+        selected_names = [t.name for t in selected]
+        print(f"Selektierte Marker: {len(selected)} -> {', '.join(selected_names)}")
+        print(f"Playhead-Startframe: {current}")
 
         if not selected:
             print("Keine selektierten Marker zum Tracken.")
