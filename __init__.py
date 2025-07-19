@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 74),
+    "version": (1, 75),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -465,7 +465,10 @@ def _update_nf_and_motion_model(frame, clip):
         NF.append(frame)
         settings.default_motion_model = DEFAULT_MOTION_MODEL
         settings.pattern_size = int(settings.pattern_size * 0.9)
-    print(f"Pattern Size erh\u00f6ht auf: {settings.pattern_size}")
+    settings.search_size = settings.pattern_size * 2
+    print(
+        f"Pattern Size gesetzt auf: {settings.pattern_size}, Search Size auf: {settings.search_size}"
+    )
 
 
 class CLIP_OT_tracking_length(bpy.types.Operator):
@@ -553,10 +556,37 @@ class CLIP_OT_motion_button(bpy.types.Operator):
 
         next_model = self._models[(index + 1) % len(self._models)]
         settings.default_motion_model = next_model
+        settings.pattern_size = 50
+        settings.search_size = settings.pattern_size * 2
 
         self.report(
             {'INFO'},
             f"Default Motion Model f\u00fcr neue Marker gesetzt auf: {next_model}",
+        )
+        return {'FINISHED'}
+
+
+class CLIP_OT_pattern_button(bpy.types.Operator):
+    bl_idname = "clip.pattern_button"
+    bl_label = "Pattern+"
+    bl_description = (
+        "Erh\u00f6ht die Pattern Size um 10 % und passt die Search Size an"
+    )
+
+    def execute(self, context):
+        space = context.space_data
+        clip = space.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        settings = clip.tracking.settings
+        settings.pattern_size = min(int(settings.pattern_size * 1.1), 100)
+        settings.search_size = settings.pattern_size * 2
+
+        self.report(
+            {'INFO'},
+            f"Pattern Size: {settings.pattern_size}, Search Size: {settings.search_size}"
         )
         return {'FINISHED'}
 
@@ -591,6 +621,7 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.operator('clip.panel_button')
         layout.operator('clip.all_cycle', text='All Cycle')
         layout.operator('clip.motion_button', text='Motion')
+        layout.operator('clip.pattern_button', text='Pattern+')
 
 classes = (
     OBJECT_OT_simple_operator,
@@ -605,6 +636,7 @@ classes = (
     CLIP_OT_tracking_length,
     CLIP_OT_playhead_to_frame,
     CLIP_OT_motion_button,
+    CLIP_OT_pattern_button,
     CLIP_PT_tracking_panel,
     CLIP_PT_button_panel,
 )

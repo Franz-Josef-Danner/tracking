@@ -324,3 +324,9 @@
   um 10 % erhöht (maximal 100). Bei neuen Frames verringert sich die
   Pattern Size um 10 %.
 
+## Version 1.75
+- Der "Motion"-Button setzt die Pattern Size auf 50 und stellt die
+  Search Size auf das Doppelte ein.
+- Ein neuer "Pattern+"-Button vergrößert die Pattern Size um 10 % und
+  passt die Search Size entsprechend an.
+
