@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 71),
+    "version": (1, 72),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -503,7 +503,9 @@ class CLIP_OT_playhead_to_frame(bpy.types.Operator):
 class CLIP_OT_motion_button(bpy.types.Operator):
     bl_idname = "clip.motion_button"
     bl_label = "Motion"
-    bl_description = "Wechselt das Motion Model des aktiven Tracks"
+    bl_description = (
+        "Wechselt das Default Motion Model f\u00fcr neu erstellte Marker"
+    )
 
     _models = [
         'Loc',
@@ -521,22 +523,20 @@ class CLIP_OT_motion_button(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        tracking = clip.tracking
-        active_track = tracking.tracks.active
-        if active_track is None:
-            self.report({'WARNING'}, "Kein aktiver Track")
-            return {'CANCELLED'}
-
-        current = active_track.motion_model
+        settings = clip.tracking.settings
+        current = settings.default_motion_model
         try:
             index = self._models.index(current)
         except ValueError:
             index = -1
 
         next_model = self._models[(index + 1) % len(self._models)]
-        active_track.motion_model = next_model
+        settings.default_motion_model = next_model
 
-        self.report({'INFO'}, f"Track '{active_track.name}' Motion Model ge\u00e4ndert zu: {next_model}")
+        self.report(
+            {'INFO'},
+            f"Default Motion Model f\u00fcr neue Marker gesetzt auf: {next_model}",
+        )
         return {'FINISHED'}
 
 
