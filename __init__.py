@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 67),
+    "version": (1, 68),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -79,7 +79,6 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         clip.use_proxy = False
 
         width, height = clip.size
-        print(f"Auflösung: {width} x {height}")
 
         mframe = context.scene.marker_frame
         track_plus = mframe * 4
@@ -97,9 +96,6 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             print("Formel nicht angewendet, NM < 1")
 
         detection_threshold = max(min(threshold_value, 1.0), 0.0001)
-        print(
-            f"NEW_ Tracks aktuell: {nm_current}, NM: {nm}, track_plus: {track_plus:.2f}"
-        )
 
         margin_base = int(width * 0.01)
         min_distance_base = int(width * 0.05)
@@ -108,11 +104,6 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         margin = int(margin_base * factor)
         min_distance = int(min_distance_base * factor)
         factor_formula = f"log10({detection_threshold:.3f} * 10000000000) / 10"
-        print(f"Faktor: {factor_formula} = {factor:.3f}")
-        print(f"Margin: int({margin_base} * {factor:.3f}) = {margin}")
-        print(
-            f"Min Distance: int({min_distance_base} * {factor:.3f}) = {min_distance}"
-        )
 
         active = None
         if hasattr(space, "tracking"):
@@ -121,9 +112,6 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             active.pattern_size = 50
             active.search_size = 100
 
-        print(
-            f"detect_features: threshold={detection_threshold:.3f}, margin={margin}, min_distance={min_distance}"
-        )
         bpy.ops.clip.detect_features(
             threshold=detection_threshold,
             min_distance=min_distance,
@@ -239,9 +227,7 @@ class CLIP_OT_count_button(bpy.types.Operator):
         for t in clip.tracking.tracks:
             t.select = t.name.startswith(prefix)
         count = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
-        print(f"Anzahl der Tracking Marker mit Präfix '{prefix}': {count}")
         context.scene.nm_count = count
-        print(f"NM-Wert: {context.scene.nm_count}")
 
         mframe = context.scene.marker_frame
         track_plus = mframe * 4
@@ -254,7 +240,6 @@ class CLIP_OT_count_button(bpy.types.Operator):
                     t.name = "TRACK_" + t.name[4:]
                     t.select = False
             context.scene.nm_count = 0
-            print(f"NM-Wert: {context.scene.nm_count}")
             self.report({'INFO'}, f"{count} Tracks in TRACK_ umbenannt")
         else:
             self.report({'INFO'}, f"{count} NEW_-Tracks ausserhalb des Bereichs")
@@ -324,8 +309,6 @@ class CLIP_OT_all_cycle(bpy.types.Operator):
             self._detect_attempts += 1
             has_track = any(t.name.startswith("TRACK_") for t in clip.tracking.tracks)
             if has_track:
-                track_names = [t.name for t in clip.tracking.tracks if t.name.startswith("TRACK_")]
-                print(f"TRACK_-Marker gefunden: {', '.join(track_names)}")
                 self._detect_attempts = 0
                 self._state = 'TRACK'
             elif self._detect_attempts >= 10:
@@ -363,7 +346,6 @@ class CLIP_OT_all_cycle(bpy.types.Operator):
         if self._timer:
             context.window_manager.event_timer_remove(self._timer)
             self._timer = None
-        print("Tracking-Zyklus beendet")
         return {'CANCELLED'}
 
 
@@ -404,11 +386,8 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
 
         selected = [t for t in clip.tracking.tracks if t.select]
         selected_names = [t.name for t in selected]
-        print(f"Selektierte Marker: {len(selected)} -> {', '.join(selected_names)}")
-        print(f"Playhead-Startframe: {current}")
 
         if not selected:
-            print("Keine selektierten Marker zum Tracken.")
             return {'CANCELLED'}
 
         frame = current
@@ -423,18 +402,12 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
             limited_start = max(start_frame, frame - block_size)
             scene.frame_start = limited_start
             scene.frame_end = frame
-            print(
-                f"R\xFCckw\xE4rts-Tracking von {frame} bis {limited_start} (Blockgr\xF6\xDFe: {block_size})"
-            )
             bpy.ops.clip.track_markers(backwards=True, sequence=True)
             scene.frame_start = original_start
             scene.frame_end = original_end
             active_count = count_active_tracks(limited_start)
-            print(f"Aktive Marker: {active_count}")
             if active_count == 0:
-                print(
-                    "Keine aktiven TRACK_-Marker mehr vorhanden. Tracking gestoppt."
-                )
+                
                 break
             frame = limited_start - 1
 
@@ -446,16 +419,11 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
             limited_end = min(frame + block_size, end_frame)
             scene.frame_start = frame
             scene.frame_end = limited_end
-            print(
-                f"Vorw\xE4rts-Tracking von {frame} bis {limited_end} (Blockgr\xF6\xDFe: {block_size})"
-            )
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
             scene.frame_start = original_start
             scene.frame_end = original_end
             active_count = count_active_tracks(limited_end)
-            print(f"Aktive Marker: {active_count}")
             if active_count == 0:
-                print("Keine aktiven TRACK_-Marker mehr vorhanden. Tracking gestoppt.")
                 break
             frame = limited_end + 1
 
@@ -510,12 +478,8 @@ def jump_to_first_frame_with_few_active_markers(min_required=5):
 
         if count < min_required:
             scene.frame_current = frame
-            print(
-                f"Weniger als {min_required} aktive Marker bei Frame {frame}"
-            )
             return frame
 
-    print("In keinem Frame fiel die Markeranzahl unter", min_required)
     return None
 
 
@@ -533,11 +497,7 @@ class CLIP_OT_tracking_length(bpy.types.Operator):
             return {'CANCELLED'}
 
         min_frames = context.scene.frames_track
-        print(f"\u23F3 Tracking Length nutzt mindestens {min_frames} Frames")
         undertracked = get_undertracked_markers(clip, min_frames=min_frames)
-        print(f"Gefundene zu kurze Marker: {len(undertracked)}")
-        for name, frames in undertracked:
-            print(f" - {name}: {frames} Frames")
 
         if not undertracked:
             self.report({'INFO'}, "Alle TRACK_-Marker erreichen die gewünschte Länge")

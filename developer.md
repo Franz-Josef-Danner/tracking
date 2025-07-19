@@ -293,3 +293,7 @@
 - `clip.all_buttons` führt wieder nur die Erkennungsschritte einmalig aus.
 - Neuer Operator `clip.all_cycle` übernimmt den bisherigen Zyklus ohne
   Proxy-Bau und kann mit Esc beendet werden.
+
+## Version 1.68
+- Entfernt nahezu alle Konsolenausgaben. Beim Detect-Vorgang wird
+  lediglich die angewandte Threshold-Formel ausgegeben.

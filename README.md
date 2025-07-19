@@ -133,3 +133,5 @@ Track, Tracking Length und Playhead to Frame in einem Zyklus ausführt.
 Der Proxy wird dabei nicht automatisch neu erstellt und der Ablauf kann
 mit Esc beendet werden. Der "All"-Button führt wieder nur die einzelnen
 Erkennungsschritte einmalig aus.
+Seit Version 1.68 werden alle Konsolenausgaben bis auf die ausgegebene
+Threshold-Formel entfernt.
