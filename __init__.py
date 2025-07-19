@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 73),
+    "version": (1, 74),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -455,14 +455,17 @@ def jump_to_first_frame_with_few_active_markers(min_required=5):
 
 
 def _update_nf_and_motion_model(frame, clip):
-    """Maintain NF list and adjust motion model."""
+    """Maintain NF list and adjust motion model and pattern size."""
     global NF
     settings = clip.tracking.settings
     if frame in NF:
         bpy.ops.clip.motion_button()
+        settings.pattern_size = min(int(settings.pattern_size * 1.1), 100)
     else:
         NF.append(frame)
         settings.default_motion_model = DEFAULT_MOTION_MODEL
+        settings.pattern_size = int(settings.pattern_size * 0.9)
+    print(f"Pattern Size erh\u00f6ht auf: {settings.pattern_size}")
 
 
 class CLIP_OT_tracking_length(bpy.types.Operator):

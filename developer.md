@@ -319,3 +319,8 @@
   löst das Skript den Motion-Button aus, ansonsten wird das
   Motion Model auf `Loc` zurückgesetzt.
 
+## Version 1.74
+- Beim erneuten Auftreten eines bekannten Frames wird die Pattern Size
+  um 10 % erhöht (maximal 100). Bei neuen Frames verringert sich die
+  Pattern Size um 10 %.
+

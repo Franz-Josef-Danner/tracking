@@ -147,3 +147,6 @@ das Default Motion Model für neue Marker zyklisch durchschaltet.
 Seit Version 1.73 merkt sich das Skript jeden gefundenen Frame mit zu wenig
 GOOD_-Markern. Wird erneut derselbe Frame gefunden, wechselt das Motion
 Model, andernfalls wird es auf den Standard "Loc" zurückgesetzt.
+Seit Version 1.74 wird die Pattern Size bei bekannten Frames um 10 %
+erhöht und bei neuen Frames um 10 % reduziert. Der Wert überschreitet
+nie 100.
