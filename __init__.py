@@ -84,7 +84,8 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         track_plus = mframe * 4
 
         nm_current = sum(1 for t in clip.tracking.tracks if t.name.startswith("NEW_"))
-        nm = context.scene.nm_count
+        context.scene.nm_count = nm_current
+        nm = nm_current
 
         threshold_value = context.scene.threshold_value
         if nm > 0:
