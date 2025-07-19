@@ -272,3 +272,7 @@
 ## Version 1.63
 - `clip.tracking_length` wählt die zu kurzen TRACK_-Marker aus,
   löscht sie und benennt verbleibende TRACK_-Marker in GOOD_ um.
+
+## Version 1.64
+- Neuer Button `clip.playhead_to_frame` springt zum ersten Frame mit weniger
+  GOOD_-Markern als im Feld "Marker / Frame" vorgegeben.

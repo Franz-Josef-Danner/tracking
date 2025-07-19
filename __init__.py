@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 63),
+    "version": (1, 64),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -418,6 +418,29 @@ def select_tracks_by_names(clip, name_list):
         track.select = track.name in name_list
 
 
+def jump_to_first_frame_with_few_active_markers(min_required=5):
+    scene = bpy.context.scene
+    clip = bpy.context.space_data.clip
+
+    for frame in range(scene.frame_start, scene.frame_end + 1):
+        count = 0
+        for track in clip.tracking.tracks:
+            if track.name.startswith("GOOD_"):
+                marker = track.markers.find_frame(frame)
+                if marker and not marker.mute and marker.co.length_squared != 0.0:
+                    count += 1
+
+        if count < min_required:
+            scene.frame_current = frame
+            print(
+                f"\ud83d\udd34 Weniger als {min_required} aktive Marker bei Frame {frame}"
+            )
+            return frame
+
+    print("\u2705 In keinem Frame fiel die Markeranzahl unter", min_required)
+    return None
+
+
 class CLIP_OT_tracking_length(bpy.types.Operator):
     bl_idname = "clip.tracking_length"
     bl_label = "Tracking Length"
@@ -462,6 +485,19 @@ class CLIP_OT_tracking_length(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_playhead_to_frame(bpy.types.Operator):
+    bl_idname = "clip.playhead_to_frame"
+    bl_label = "Playhead to Frame"
+    bl_description = (
+        "Springt zum ersten Frame, in dem weniger GOOD_-Marker aktiv sind als 'Marker / Frame' vorgibt"
+    )
+
+    def execute(self, context):
+        min_required = context.scene.marker_frame
+        jump_to_first_frame_with_few_active_markers(min_required=min_required)
+        return {'FINISHED'}
+
+
 
 
 
@@ -493,6 +529,7 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.operator('clip.all_buttons', text='All')
         layout.operator('clip.track_sequence', text='Track')
         layout.operator('clip.tracking_length', text='Tracking Length')
+        layout.operator('clip.playhead_to_frame', text='Playhead to Frame')
 
 classes = (
     OBJECT_OT_simple_operator,
@@ -505,6 +542,7 @@ classes = (
     CLIP_OT_all_buttons,
     CLIP_OT_track_sequence,
     CLIP_OT_tracking_length,
+    CLIP_OT_playhead_to_frame,
     CLIP_PT_tracking_panel,
     CLIP_PT_button_panel,
 )

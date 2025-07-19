@@ -125,3 +125,6 @@ Seit Version 1.61 gibt der "Tracking Length"-Button den verwendeten Frames/Track
 Seit Version 1.62 verwendet der Track-Button beim Rückwärts-Tracking eine Blockgröße nach der Formel `GF / log10(GF*GF)`.
 Seit Version 1.63 löscht der "Tracking Length"-Button die kurzen TRACK_-Marker,
 selektiert danach alle verbleibenden TRACK_-Marker und benennt sie in GOOD_ um.
+Seit Version 1.64 gibt es einen Button "Playhead to Frame", der den Playhead
+zum ersten Frame springt, in dem weniger GOOD_-Marker aktiv sind als im Feld
+"Marker / Frame" angegeben.
