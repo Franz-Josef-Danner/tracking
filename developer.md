@@ -249,3 +249,26 @@
 
 ## Version 1.56
 - `clip.proxy_track` aktiviert nun den Proxy bevor das Tracking beginnt.
+
+## Version 1.57
+- Die Buttons 'Proxy+Track', 'Live Fwd' und 'Live Back' wurden entfernt.
+
+## Version 1.58
+- Neues Eingabefeld 'Frames/Track' unterhalb von 'Marker / Frame' im Panel.
+
+## Version 1.59
+- Neuer Button 'Tracking Length' löscht TRACK_-Marker, deren Länge
+  unter dem Wert aus 'Frames/Track' liegt.
+
+## Version 1.60
+- `clip.track_sequence` berechnet die Blockgröße für das Rückwärts-Tracking nur einmal als Hälfte des Bereichs.
+
+## Version 1.61
+- `clip.tracking_length` gibt den verwendeten Frames/Track-Wert in der Konsole aus.
+
+## Version 1.62
+- `clip.track_sequence` berechnet die Blockgröße beim Rückwärts-Tracking mit `GF / log10(GF*GF)`.
+
+## Version 1.63
+- `clip.tracking_length` wählt die zu kurzen TRACK_-Marker aus,
+  löscht sie und benennt verbleibende TRACK_-Marker in GOOD_ um.
