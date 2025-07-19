@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 65),
+    "version": (1, 66),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -265,7 +265,7 @@ class CLIP_OT_all_buttons(bpy.types.Operator):
     bl_idname = "clip.all_buttons"
     bl_label = "All"
     bl_description = (
-        "Startet einen kombinierten Tracking-Zyklus, der mit Esc abgebrochen werden kann"
+        "Startet einen kombinierten Tracking-Zyklus ohne Proxy-Bau, der mit Esc abgebrochen werden kann"
     )
 
     _timer = None
@@ -317,10 +317,6 @@ class CLIP_OT_all_buttons(bpy.types.Operator):
             if frame is None:
                 return self.cancel(context)
             context.scene.frame_current = frame
-            self._state = 'PROXY'
-
-        elif self._state == 'PROXY':
-            bpy.ops.clip.panel_button()
             self._state = 'DETECT'
 
         return {'PASS_THROUGH'}

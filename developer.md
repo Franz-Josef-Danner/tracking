@@ -283,3 +283,8 @@
   Nach jedem Durchlauf wird der Proxy neu erstellt. Der Zyklus
   endet, wenn der Benutzer Esc drückt oder kein weiterer Frame
   gefunden wird.
+
+## Version 1.66
+- `clip.all_buttons` erstellt den Proxy nicht mehr automatisch neu.
+  Der Ablauf aus Detect, Track, Tracking Length und Playhead to Frame
+  bleibt unverändert und kann weiterhin mit Esc beendet werden.
