@@ -304,3 +304,8 @@
 - `clip.count_button` setzt den gespeicherten NM-Wert nicht mehr auf 0
   zurück.
 
+## Version 1.70
+- Die Buttons "All", "Track", "Tracking Length" und "Playhead to Frame"
+  wurden aus dem Panel entfernt. Ihre Funktionen sind weiterhin über
+  `clip.all_cycle` verfügbar.
+

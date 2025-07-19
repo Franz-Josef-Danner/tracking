@@ -139,3 +139,6 @@ Threshold-Formel entfernt.
 Seit Version 1.69 wird der NM-Wert nach dem Umbenennen der NEW_-Tracks
 nicht mehr auf 0 gesetzt. Der "All"-Button versucht Detect nun bis zu
 zwanzig Mal.
+Seit Version 1.70 wurden die Buttons "All", "Track", "Tracking Length" und
+"Playhead to Frame" aus dem Panel entfernt. Die kombinierte Funktionalität
+ist weiterhin über den Button "All Cycle" erreichbar.
