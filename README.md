@@ -135,3 +135,6 @@ mit Esc beendet werden. Der "All"-Button führt wieder nur die einzelnen
 Erkennungsschritte einmalig aus.
 Seit Version 1.68 werden alle Konsolenausgaben bis auf die ausgegebene
 Threshold-Formel entfernt.
+Seit Version 1.69 wird die Threshold-Formel nur angewendet,
+wenn der NM-Wert größer als 0 ist. Andernfalls erscheint
+die Meldung "NM <= 0".
