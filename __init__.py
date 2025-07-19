@@ -327,10 +327,10 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
             t.select = t.name.startswith("TRACK_")
 
         selected = [t for t in clip.tracking.tracks if t.select]
-        print(f"🔢 Selektierte Marker: {len(selected)}")
+        print(f"Selektierte Marker: {len(selected)}")
 
         if not selected:
-            print("⚠️ Keine selektierten Marker zum Tracken.")
+            print("Keine selektierten Marker zum Tracken.")
             return {'CANCELLED'}
 
         frame = current
@@ -346,16 +346,16 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
             scene.frame_start = limited_start
             scene.frame_end = frame
             print(
-                f"🔁 R\xFCckw\xE4rts-Tracking von {frame} bis {limited_start} (Blockgr\xF6\xDFe: {block_size})"
+                f"R\xFCckw\xE4rts-Tracking von {frame} bis {limited_start} (Blockgr\xF6\xDFe: {block_size})"
             )
             bpy.ops.clip.track_markers(backwards=True, sequence=True)
             scene.frame_start = original_start
             scene.frame_end = original_end
             active_count = count_active_tracks(limited_start)
-            print(f"📈 Aktive Marker: {active_count}")
+            print(f"Aktive Marker: {active_count}")
             if active_count == 0:
                 print(
-                    "✅ Keine aktiven TRACK_-Marker mehr vorhanden. Tracking gestoppt."
+                    "Keine aktiven TRACK_-Marker mehr vorhanden. Tracking gestoppt."
                 )
                 break
             frame = limited_start - 1
@@ -369,15 +369,15 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
             scene.frame_start = frame
             scene.frame_end = limited_end
             print(
-                f"🔁 Vorw\xE4rts-Tracking von {frame} bis {limited_end} (Blockgr\xF6\xDFe: {block_size})"
+                f"Vorw\xE4rts-Tracking von {frame} bis {limited_end} (Blockgr\xF6\xDFe: {block_size})"
             )
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
             scene.frame_start = original_start
             scene.frame_end = original_end
             active_count = count_active_tracks(limited_end)
-            print(f"📈 Aktive Marker: {active_count}")
+            print(f"Aktive Marker: {active_count}")
             if active_count == 0:
-                print("✅ Keine aktiven TRACK_-Marker mehr vorhanden. Tracking gestoppt.")
+                print("Keine aktiven TRACK_-Marker mehr vorhanden. Tracking gestoppt.")
                 break
             frame = limited_end + 1
 
@@ -433,11 +433,11 @@ def jump_to_first_frame_with_few_active_markers(min_required=5):
         if count < min_required:
             scene.frame_current = frame
             print(
-                f"\ud83d\udd34 Weniger als {min_required} aktive Marker bei Frame {frame}"
+                f"Weniger als {min_required} aktive Marker bei Frame {frame}"
             )
             return frame
 
-    print("\u2705 In keinem Frame fiel die Markeranzahl unter", min_required)
+    print("In keinem Frame fiel die Markeranzahl unter", min_required)
     return None
 
 
