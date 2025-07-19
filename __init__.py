@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 72),
+    "version": (1, 73),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -14,6 +14,12 @@ import os
 import shutil
 import math
 from bpy.props import IntProperty, BoolProperty, FloatProperty
+
+# Frames, die mit zu wenig Markern gefunden wurden
+NF = []
+
+# Standard Motion Model
+DEFAULT_MOTION_MODEL = 'Loc'
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
     bl_idname = "object.simple_operator"
@@ -442,9 +448,21 @@ def jump_to_first_frame_with_few_active_markers(min_required=5):
 
         if count < min_required:
             scene.frame_current = frame
+            _update_nf_and_motion_model(frame, clip)
             return frame
 
     return None
+
+
+def _update_nf_and_motion_model(frame, clip):
+    """Maintain NF list and adjust motion model."""
+    global NF
+    settings = clip.tracking.settings
+    if frame in NF:
+        bpy.ops.clip.motion_button()
+    else:
+        NF.append(frame)
+        settings.default_motion_model = DEFAULT_MOTION_MODEL
 
 
 class CLIP_OT_tracking_length(bpy.types.Operator):

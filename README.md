@@ -144,3 +144,6 @@ Seit Version 1.70 wurden die Buttons "All", "Track", "Tracking Length" und
 ist weiterhin über den Button "All Cycle" erreichbar.
 Seit Version 1.72 bietet das Panel zusätzlich einen Button "Motion", der
 das Default Motion Model für neue Marker zyklisch durchschaltet.
+Seit Version 1.73 merkt sich das Skript jeden gefundenen Frame mit zu wenig
+GOOD_-Markern. Wird erneut derselbe Frame gefunden, wechselt das Motion
+Model, andernfalls wird es auf den Standard "Loc" zurückgesetzt.

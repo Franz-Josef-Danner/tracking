@@ -313,3 +313,9 @@
 - Der "Motion"-Button wechselt das Default Motion Model, das beim Anlegen
   neuer Marker verwendet wird.
 
+## Version 1.73
+- Gespeicherte Frames mit wenigen GOOD_-Markern werden in der Liste `NF`
+  aufbewahrt. Tritt ein bereits bekannter Frame erneut auf,
+  löst das Skript den Motion-Button aus, ansonsten wird das
+  Motion Model auf `Loc` zurückgesetzt.
+
