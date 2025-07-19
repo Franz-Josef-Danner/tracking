@@ -298,3 +298,9 @@
 - Entfernt nahezu alle Konsolenausgaben. Beim Detect-Vorgang wird
   lediglich die angewandte Threshold-Formel ausgegeben.
 
+## Version 1.69
+- `clip.all_buttons` versucht Detect nun bis zu zwanzigmal, bevor der
+  Vorgang abgebrochen wird.
+- `clip.count_button` setzt den gespeicherten NM-Wert nicht mehr auf 0
+  zurück.
+

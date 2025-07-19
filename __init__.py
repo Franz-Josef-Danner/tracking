@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 68),
+    "version": (1, 69),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -234,7 +234,6 @@ class CLIP_OT_count_button(bpy.types.Operator):
                 if t.name.startswith(prefix):
                     t.name = "TRACK_" + t.name[4:]
                     t.select = False
-            context.scene.nm_count = 0
             self.report({'INFO'}, f"{count} Tracks in TRACK_ umbenannt")
         else:
             self.report({'INFO'}, f"{count} NEW_-Tracks ausserhalb des Bereichs")
@@ -254,7 +253,7 @@ class CLIP_OT_all_buttons(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        for _ in range(10):
+        for _ in range(20):
             bpy.ops.clip.detect_button()
             bpy.ops.clip.prefix_new()
             bpy.ops.clip.distance_button()
@@ -306,7 +305,7 @@ class CLIP_OT_all_cycle(bpy.types.Operator):
             if has_track:
                 self._detect_attempts = 0
                 self._state = 'TRACK'
-            elif self._detect_attempts >= 10:
+            elif self._detect_attempts >= 20:
                 self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
                 return self.cancel(context)
 
