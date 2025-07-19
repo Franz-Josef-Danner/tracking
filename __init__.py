@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 66),
+    "version": (1, 67),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -264,6 +264,36 @@ class CLIP_OT_count_button(bpy.types.Operator):
 class CLIP_OT_all_buttons(bpy.types.Operator):
     bl_idname = "clip.all_buttons"
     bl_label = "All"
+    bl_description = (
+        "Führt Detect, NEW, Distance, Delete, Count und Delete mehrfach aus"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        for _ in range(10):
+            bpy.ops.clip.detect_button()
+            bpy.ops.clip.prefix_new()
+            bpy.ops.clip.distance_button()
+            bpy.ops.clip.delete_selected()
+            bpy.ops.clip.count_button()
+            bpy.ops.clip.delete_selected()
+
+            has_track = any(t.name.startswith("TRACK_") for t in clip.tracking.tracks)
+            if has_track:
+                break
+        else:
+            self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
+
+        return {'FINISHED'}
+
+
+class CLIP_OT_all_cycle(bpy.types.Operator):
+    bl_idname = "clip.all_cycle"
+    bl_label = "All Cycle"
     bl_description = (
         "Startet einen kombinierten Tracking-Zyklus ohne Proxy-Bau, der mit Esc abgebrochen werden kann"
     )
@@ -575,6 +605,7 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.prop(context.scene, 'frames_track', text='Frames/Track')
         layout.operator('clip.panel_button')
         layout.operator('clip.all_buttons', text='All')
+        layout.operator('clip.all_cycle', text='All Cycle')
         layout.operator('clip.track_sequence', text='Track')
         layout.operator('clip.tracking_length', text='Tracking Length')
         layout.operator('clip.playhead_to_frame', text='Playhead to Frame')
@@ -588,6 +619,7 @@ classes = (
     CLIP_OT_delete_selected,
     CLIP_OT_count_button,
     CLIP_OT_all_buttons,
+    CLIP_OT_all_cycle,
     CLIP_OT_track_sequence,
     CLIP_OT_tracking_length,
     CLIP_OT_playhead_to_frame,

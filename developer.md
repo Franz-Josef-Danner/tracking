@@ -288,3 +288,8 @@
 - `clip.all_buttons` erstellt den Proxy nicht mehr automatisch neu.
   Der Ablauf aus Detect, Track, Tracking Length und Playhead to Frame
   bleibt unverändert und kann weiterhin mit Esc beendet werden.
+
+## Version 1.67
+- `clip.all_buttons` führt wieder nur die Erkennungsschritte einmalig aus.
+- Neuer Operator `clip.all_cycle` übernimmt den bisherigen Zyklus ohne
+  Proxy-Bau und kann mit Esc beendet werden.
