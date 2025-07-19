@@ -276,3 +276,10 @@
 ## Version 1.64
 - Neuer Button `clip.playhead_to_frame` springt zum ersten Frame mit weniger
   GOOD_-Markern als im Feld "Marker / Frame" vorgegeben.
+
+## Version 1.65
+- `clip.all_buttons` wurde zu einem modalen Operator, der Detect,
+  Track, Tracking Length und Playhead to Frame kombiniert.
+  Nach jedem Durchlauf wird der Proxy neu erstellt. Der Zyklus
+  endet, wenn der Benutzer Esc drückt oder kein weiterer Frame
+  gefunden wird.

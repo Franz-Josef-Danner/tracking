@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 64),
+    "version": (1, 65),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -265,30 +265,78 @@ class CLIP_OT_all_buttons(bpy.types.Operator):
     bl_idname = "clip.all_buttons"
     bl_label = "All"
     bl_description = (
-        "Führt Detect, NEW, Distance, Delete, Count und Delete mehrfach aus"
+        "Startet einen kombinierten Tracking-Zyklus, der mit Esc abgebrochen werden kann"
     )
 
-    def execute(self, context):
+    _timer = None
+    _state = "DETECT"
+    _detect_attempts = 0
+
+    def modal(self, context, event):
+        if event.type == 'ESC':
+            return self.cancel(context)
+
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+
         clip = context.space_data.clip
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            return self.cancel(context)
 
-        for _ in range(10):
+        if self._state == 'DETECT':
             bpy.ops.clip.detect_button()
             bpy.ops.clip.prefix_new()
             bpy.ops.clip.distance_button()
             bpy.ops.clip.delete_selected()
             bpy.ops.clip.count_button()
             bpy.ops.clip.delete_selected()
-
+            self._detect_attempts += 1
             has_track = any(t.name.startswith("TRACK_") for t in clip.tracking.tracks)
             if has_track:
-                break
-        else:
-            self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
+                self._detect_attempts = 0
+                self._state = 'TRACK'
+            elif self._detect_attempts >= 10:
+                self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
+                return self.cancel(context)
 
-        return {'FINISHED'}
+        elif self._state == 'TRACK':
+            bpy.ops.clip.track_sequence()
+            self._state = 'CLEAN'
+
+        elif self._state == 'CLEAN':
+            bpy.ops.clip.tracking_length()
+            self._state = 'JUMP'
+
+        elif self._state == 'JUMP':
+            frame = jump_to_first_frame_with_few_active_markers(
+                min_required=context.scene.marker_frame
+            )
+            if frame is None:
+                return self.cancel(context)
+            context.scene.frame_current = frame
+            self._state = 'PROXY'
+
+        elif self._state == 'PROXY':
+            bpy.ops.clip.panel_button()
+            self._state = 'DETECT'
+
+        return {'PASS_THROUGH'}
+
+    def execute(self, context):
+        self._state = 'DETECT'
+        self._detect_attempts = 0
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.1, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def cancel(self, context):
+        if self._timer:
+            context.window_manager.event_timer_remove(self._timer)
+            self._timer = None
+        print("Tracking-Zyklus beendet")
+        return {'CANCELLED'}
 
 
 class CLIP_OT_track_sequence(bpy.types.Operator):

@@ -128,3 +128,6 @@ selektiert danach alle verbleibenden TRACK_-Marker und benennt sie in GOOD_ um.
 Seit Version 1.64 gibt es einen Button "Playhead to Frame", der den Playhead
 zum ersten Frame springt, in dem weniger GOOD_-Marker aktiv sind als im Feld
 "Marker / Frame" angegeben.
+Seit Version 1.65 startet der "All"-Button einen Zyklus aus Detect,
+Track, Tracking Length und Playhead to Frame. Nach jedem Sprung wird
+der Proxy erneut gebaut und der Ablauf kann mit Esc beendet werden.
