@@ -156,3 +156,6 @@ passt die Search Size entsprechend an. Ein weiterer Button "Pattern+"
 erhöht die Pattern Size um 10 % und verdoppelt die Search Size.
 Seit Version 1.76 wirken sich diese Änderungen auf die Default Pattern
 und Search Size aus, die für neue Marker gelten.
+Seit Version 1.77 setzt das Skript die Pattern Size nur noch einmal
+nach allen zurücksetzenden Schritten. Der Motion-Button selbst kann die
+Größe weiterhin auf 50 zurücksetzen.

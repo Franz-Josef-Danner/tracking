@@ -335,3 +335,8 @@
 - Die Buttons beeinflussen nun die Default Pattern und Search Size, die
   bei neu erstellten Markern verwendet werden.
 
+## Version 1.77
+- Beim automatischen Wechsel des Motion Models wird die Pattern Size erst
+  nach allen Reset-Schritten angepasst. Das direkte Betätigen des
+  Motion-Buttons setzt sie weiterhin auf 50.
+

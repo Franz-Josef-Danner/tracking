@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 76),
+    "version": (1, 77),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -459,7 +459,7 @@ def _update_nf_and_motion_model(frame, clip):
     global NF
     settings = clip.tracking.settings
     if frame in NF:
-        bpy.ops.clip.motion_button()
+        bpy.ops.clip.motion_button(reset_size=False)
         settings.default_pattern_size = min(
             int(settings.default_pattern_size * 1.1),
             100,
@@ -544,6 +544,13 @@ class CLIP_OT_motion_button(bpy.types.Operator):
         'Perspective',
     ]
 
+    reset_size: BoolProperty(
+        name="Reset Pattern Size",
+        description="Pattern/Search Size auf 50 bzw. 100 setzen",
+        default=True,
+        options={'SKIP_SAVE'},
+    )
+
     def execute(self, context):
         space = context.space_data
         clip = space.clip
@@ -560,8 +567,9 @@ class CLIP_OT_motion_button(bpy.types.Operator):
 
         next_model = self._models[(index + 1) % len(self._models)]
         settings.default_motion_model = next_model
-        settings.default_pattern_size = 50
-        settings.default_search_size = settings.default_pattern_size * 2
+        if self.reset_size:
+            settings.default_pattern_size = 50
+            settings.default_search_size = 100
 
         self.report(
             {'INFO'},
