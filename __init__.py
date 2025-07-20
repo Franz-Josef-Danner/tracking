@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 70),
+    "version": (1, 78),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -14,6 +14,15 @@ import os
 import shutil
 import math
 from bpy.props import IntProperty, BoolProperty, FloatProperty
+
+# Frames, die mit zu wenig Markern gefunden wurden
+NF = []
+
+# Standard Motion Model
+DEFAULT_MOTION_MODEL = 'Loc'
+
+# Urspr\u00fcnglicher Wert f\u00fcr "Marker / Frame"
+DEFAULT_MARKER_FRAME = 20
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
     bl_idname = "object.simple_operator"
@@ -442,9 +451,46 @@ def jump_to_first_frame_with_few_active_markers(min_required=5):
 
         if count < min_required:
             scene.frame_current = frame
+            _update_nf_and_motion_model(frame, clip)
             return frame
 
     return None
+
+
+def _update_nf_and_motion_model(frame, clip):
+    """Maintain NF list and adjust motion model and pattern size.
+
+    Wenn die Pattern Size 100 erreicht, wird stattdessen der Wert aus
+    ``Scene.marker_frame`` um 10 % erh\u00f6ht (maximal das Doppelte des
+    Ausgangswerts). Sinkt die Pattern Size wieder unter 100, verkleinert sich
+    ``marker_frame`` schrittweise um 10 %, bis der Startwert erreicht ist.
+    """
+
+    global NF
+    settings = clip.tracking.settings
+    scene = bpy.context.scene
+    if frame in NF:
+        bpy.ops.clip.motion_button(reset_size=False)
+        if settings.default_pattern_size < 100:
+            settings.default_pattern_size = min(
+                int(settings.default_pattern_size * 1.1),
+                100,
+            )
+        else:
+            max_mf = DEFAULT_MARKER_FRAME * 2
+            scene.marker_frame = min(int(scene.marker_frame * 1.1), max_mf)
+    else:
+        NF.append(frame)
+        settings.default_motion_model = DEFAULT_MOTION_MODEL
+        settings.default_pattern_size = int(settings.default_pattern_size * 0.9)
+        if settings.default_pattern_size < 100 and scene.marker_frame > DEFAULT_MARKER_FRAME:
+            scene.marker_frame = max(int(scene.marker_frame * 0.9), DEFAULT_MARKER_FRAME)
+    settings.default_search_size = settings.default_pattern_size * 2
+    print(
+        f"Pattern Size gesetzt auf: {settings.default_pattern_size}, "
+        f"Search Size auf: {settings.default_search_size}, "
+        f"Marker / Frame: {scene.marker_frame}"
+    )
 
 
 class CLIP_OT_tracking_length(bpy.types.Operator):
@@ -500,6 +546,85 @@ class CLIP_OT_playhead_to_frame(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_motion_button(bpy.types.Operator):
+    bl_idname = "clip.motion_button"
+    bl_label = "Motion"
+    bl_description = (
+        "Wechselt das Default Motion Model f\u00fcr neu erstellte Marker"
+    )
+
+    _models = [
+        'Loc',
+        'LocRot',
+        'LocScale',
+        'LocRotScale',
+        'Affine',
+        'Perspective',
+    ]
+
+    reset_size: BoolProperty(
+        name="Reset Pattern Size",
+        description="Pattern/Search Size auf 50 bzw. 100 setzen",
+        default=True,
+        options={'SKIP_SAVE'},
+    )
+
+    def execute(self, context):
+        space = context.space_data
+        clip = space.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        settings = clip.tracking.settings
+        current = settings.default_motion_model
+        try:
+            index = self._models.index(current)
+        except ValueError:
+            index = -1
+
+        next_model = self._models[(index + 1) % len(self._models)]
+        settings.default_motion_model = next_model
+        if self.reset_size:
+            settings.default_pattern_size = 50
+            settings.default_search_size = 100
+
+        self.report(
+            {'INFO'},
+            f"Default Motion Model f\u00fcr neue Marker gesetzt auf: {next_model}",
+        )
+        return {'FINISHED'}
+
+
+class CLIP_OT_pattern_button(bpy.types.Operator):
+    bl_idname = "clip.pattern_button"
+    bl_label = "Pattern+"
+    bl_description = (
+        "Erh\u00f6ht die Pattern Size um 10 % und passt die Search Size an"
+    )
+
+    def execute(self, context):
+        space = context.space_data
+        clip = space.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        settings = clip.tracking.settings
+        settings.default_pattern_size = min(
+            int(settings.default_pattern_size * 1.1),
+            100,
+        )
+        settings.default_search_size = settings.default_pattern_size * 2
+
+        self.report(
+            {'INFO'},
+            f"Pattern Size: {settings.default_pattern_size}, "
+            f"Search Size: {settings.default_search_size}"
+        )
+        return {'FINISHED'}
+
+
 
 
 
@@ -529,6 +654,8 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.prop(context.scene, 'frames_track', text='Frames/Track')
         layout.operator('clip.panel_button')
         layout.operator('clip.all_cycle', text='All Cycle')
+        layout.operator('clip.motion_button', text='Motion')
+        layout.operator('clip.pattern_button', text='Pattern+')
 
 classes = (
     OBJECT_OT_simple_operator,
@@ -542,6 +669,8 @@ classes = (
     CLIP_OT_track_sequence,
     CLIP_OT_tracking_length,
     CLIP_OT_playhead_to_frame,
+    CLIP_OT_motion_button,
+    CLIP_OT_pattern_button,
     CLIP_PT_tracking_panel,
     CLIP_PT_button_panel,
 )

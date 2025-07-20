@@ -309,3 +309,40 @@
   wurden aus dem Panel entfernt. Ihre Funktionen sind weiterhin über
   `clip.all_cycle` verfügbar.
 
+## Version 1.72
+- Der "Motion"-Button wechselt das Default Motion Model, das beim Anlegen
+  neuer Marker verwendet wird.
+
+## Version 1.73
+- Gespeicherte Frames mit wenigen GOOD_-Markern werden in der Liste `NF`
+  aufbewahrt. Tritt ein bereits bekannter Frame erneut auf,
+  löst das Skript den Motion-Button aus, ansonsten wird das
+  Motion Model auf `Loc` zurückgesetzt.
+
+## Version 1.74
+- Beim erneuten Auftreten eines bekannten Frames wird die Pattern Size
+  um 10 % erhöht (maximal 100). Bei neuen Frames verringert sich die
+  Pattern Size um 10 %.
+- Die Anpassung der Pattern Size erfolgt kumulativ auf Basis des aktuellen Werts.
+
+## Version 1.75
+- Der "Motion"-Button setzt die Pattern Size auf 50 und stellt die
+  Search Size auf das Doppelte ein.
+- Ein neuer "Pattern+"-Button vergrößert die Pattern Size um 10 % und
+  passt die Search Size entsprechend an.
+
+## Version 1.76
+- Die Buttons beeinflussen nun die Default Pattern und Search Size, die
+  bei neu erstellten Markern verwendet werden.
+
+## Version 1.77
+- Beim automatischen Wechsel des Motion Models wird die Pattern Size erst
+  nach allen Reset-Schritten angepasst. Das direkte Betätigen des
+  Motion-Buttons setzt sie weiterhin auf 50.
+
+## Version 1.78
+- Erreicht die Pattern Size den Maximalwert von 100, wächst der Wert aus
+  "Marker / Frame" um 10 %, maximal auf das Doppelte des Startwerts.
+- Fällt die Pattern Size wieder unter 100, schrumpft "Marker / Frame" in
+  10-%-Schritten zurück auf den Ausgangswert.
+
