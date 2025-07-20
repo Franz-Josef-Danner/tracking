@@ -151,7 +151,6 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         mf_base = mframe / 3
 
         threshold_value = 1.0
-        # Threshold formula output removed to keep the console clean
 
         detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
 
@@ -161,7 +160,23 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         factor = math.log10(detection_threshold * 10000000000) / 10
         margin = int(margin_base * factor)
         min_distance = int(min_distance_base * factor)
-        factor_formula = f"log10({detection_threshold:.3f} * 10000000000) / 10"
+
+        print(
+            "Initial threshold calculation:",
+            f"mf_base={mf_base:.3f}, track_plus={track_plus:.3f}, ",
+            f"threshold={threshold_value:.3f}",
+        )
+        print(
+            "detection_threshold = max(min("
+            f"{threshold_value:.5f}, 1.0), {MIN_THRESHOLD}) = {detection_threshold:.5f}"
+        )
+        print(
+            f"factor = log10({detection_threshold:.5f} * 10000000000) / 10 = {factor:.5f}"
+        )
+        print(
+            f"margin = int({margin_base} * {factor:.5f}) = {margin}, "
+            f"min_distance = int({min_distance_base} * {factor:.5f}) = {min_distance}"
+        )
 
         active = None
         if hasattr(space, "tracking"):
@@ -207,11 +222,25 @@ class CLIP_OT_detect_button(bpy.types.Operator):
                 bpy.ops.clip.delete_track()
             for track in clip.tracking.tracks:
                 track.select = False
+            old_tv = threshold_value
             threshold_value = threshold_value * ((mf_base + 0.1) / track_plus)
+            print(
+                f"threshold_value = {old_tv:.5f} * (({mf_base:.5f} + 0.1) / {track_plus:.5f}) = {threshold_value:.5f}"
+            )
             detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
+            print(
+                "detection_threshold = max(min("
+                f"{threshold_value:.5f}, 1.0), {MIN_THRESHOLD}) = {detection_threshold:.5f}"
+            )
             factor = math.log10(detection_threshold * 10000000000) / 10
             margin = int(margin_base * factor)
             min_distance = int(min_distance_base * factor)
+            print(
+                f"factor = log10({detection_threshold:.5f} * 10000000000) / 10 = {factor:.5f}"
+            )
+            print(
+                f"margin = int({margin_base} * {factor:.5f}) = {margin}, min_distance = int({min_distance_base} * {factor:.5f}) = {min_distance}"
+            )
             attempt += 1
 
         settings = clip.tracking.settings
