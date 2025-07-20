@@ -182,3 +182,4 @@ Seit Version 1.85 setzen diese Buttons die Eigenschaften
 in den Tracking-Einstellungen.
 Seit Version 1.86 aktiviert der "All Cycle"-Button
 nach dem Proxy-Wechsel automatisch Prepass und Normalize.
+Seit Version 1.87 wurden die Buttons Motion, Pattern+, Prepass und Normalize aus dem Panel entfernt. Prepass und Normalize werden beim All Cycle weiterhin automatisch aktiviert.

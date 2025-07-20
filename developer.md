@@ -375,3 +375,5 @@
 - Nach dem Proxy-Wechsel schaltet der All-Cycle-Operator
   automatisch Prepass und Normalize für neue Tracks ein.
 
+## Version 1.87
+- Die Buttons Motion, Pattern+, Prepass und Normalize wurden entfernt. Prepass und Normalize werden nun automatisch durch All Cycle gesetzt.
