@@ -107,10 +107,33 @@ def track_forward(context):
     return end - start
 
 
+def track_sequence_length(context):
+    """Run the full track sequence and return the longest marker span."""
+    clip = context.space_data.clip
+    scene = context.scene
+    start_frame = scene.frame_current
+
+    if bpy.ops.clip.track_sequence.poll():
+        bpy.ops.clip.track_sequence()
+
+    def marker_span(track):
+        frames = [
+            m.frame for m in track.markers
+            if not m.mute and m.co.length_squared != 0.0
+        ]
+        return frames[-1] - frames[0] if len(frames) > 1 else 0
+
+    spans = [marker_span(t) for t in clip.tracking.tracks if t.name.startswith(("TRACK_", "GOOD_"))]
+
+    scene.frame_current = start_frame
+
+    return max(spans) if spans else 0
+
+
 def detection_track_cycle(context):
     """Run detection and tracking and return the track length."""
     detect_and_prepare(context)
-    length = track_forward(context)
+    length = track_sequence_length(context)
     bpy.ops.clip.tracking_length()
     return length
 
