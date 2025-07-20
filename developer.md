@@ -393,3 +393,7 @@
   Bereichs werden gelöscht und Threshold, Margin sowie Distance neu berechnet.
 ## Version 1.92
 - Neuer Button 'Defaults + Test' vereint das Setzen der Tracking-Defaults mit dem anschlie\xDFenden Testlauf.
+## Version 1.93
+- Unter "Defaults" sind nun zus\u00e4tzliche Buttons verf\u00fcgbar: Detect, Count, Track,
+  Delete, Pattern+ und Pattern-, Motion Model, Match sowie Schalter f\u00fcr die
+  einzelnen Farbkan\u00e4le.

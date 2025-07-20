@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 92),
+    "version": (1, 93),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -757,6 +757,216 @@ class CLIP_OT_defaults_test(bpy.types.Operator):
         return bpy.ops.clip.test_button()
 
 
+class CLIP_OT_track_full(bpy.types.Operator):
+    bl_idname = "clip.track_full"
+    bl_label = "Track"
+    bl_description = (
+        "Trackt die Sequenz vorw\u00e4rts und speichert den letzten Frame"
+    )
+
+    def execute(self, context):
+        global TEST_END_FRAME, TEST_SETTINGS
+
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        scene = context.scene
+        start = scene.frame_current
+
+        if bpy.ops.clip.track_markers.poll():
+            bpy.ops.clip.track_markers(backwards=False, sequence=True)
+        else:
+            self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
+            return {'CANCELLED'}
+
+        end_frame = scene.frame_current
+        if TEST_END_FRAME is None or end_frame > TEST_END_FRAME:
+            TEST_END_FRAME = end_frame
+            settings = clip.tracking.settings
+            TEST_SETTINGS = {
+                "pattern_size": settings.default_pattern_size,
+                "motion_model": settings.default_motion_model,
+                "pattern_match": settings.default_pattern_match,
+                "channels_active": (
+                    settings.use_default_red_channel,
+                    settings.use_default_green_channel,
+                    settings.use_default_blue_channel,
+                ),
+            }
+
+        scene.frame_current = start
+        self.report({'INFO'}, f"Tracking bis Frame {end_frame} abgeschlossen")
+        return {'FINISHED'}
+
+
+class CLIP_OT_pattern_up(bpy.types.Operator):
+    bl_idname = "clip.pattern_up"
+    bl_label = "Pattern+"
+    bl_description = "Erh\u00f6ht die Pattern Size um 10 %"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        settings = clip.tracking.settings
+        settings.default_pattern_size = int(settings.default_pattern_size * 1.1)
+        settings.default_pattern_size = clamp_pattern_size(
+            settings.default_pattern_size, clip
+        )
+        settings.default_search_size = settings.default_pattern_size * 2
+        return {'FINISHED'}
+
+
+class CLIP_OT_pattern_down(bpy.types.Operator):
+    bl_idname = "clip.pattern_down"
+    bl_label = "Pattern-"
+    bl_description = "Verringert die Pattern Size um 10 %"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        settings = clip.tracking.settings
+        settings.default_pattern_size = int(settings.default_pattern_size * 0.9)
+        settings.default_pattern_size = clamp_pattern_size(
+            settings.default_pattern_size, clip
+        )
+        settings.default_search_size = settings.default_pattern_size * 2
+        return {'FINISHED'}
+
+
+class CLIP_OT_motion_cycle(bpy.types.Operator):
+    bl_idname = "clip.motion_cycle"
+    bl_label = "Motion"
+    bl_description = "Wechselt zum n\u00e4chsten Motion Model"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        settings = clip.tracking.settings
+        cycle_motion_model(settings, clip, reset_size=False)
+        return {'FINISHED'}
+
+
+class CLIP_OT_match_cycle(bpy.types.Operator):
+    bl_idname = "clip.match_cycle"
+    bl_label = "Match"
+    bl_description = "Schaltet das Pattern Match um"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        settings = clip.tracking.settings
+        current = settings.default_pattern_match
+        if current == 'KEYFRAME':
+            settings.default_pattern_match = 'PREV_FRAME'
+        else:
+            settings.default_pattern_match = 'KEYFRAME'
+        return {'FINISHED'}
+
+
+class CLIP_OT_channel_r_on(bpy.types.Operator):
+    bl_idname = "clip.channel_r_on"
+    bl_label = "R On"
+    bl_description = "Aktiviert den Rotkanal"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        clip.tracking.settings.use_default_red_channel = True
+        return {'FINISHED'}
+
+
+class CLIP_OT_channel_r_off(bpy.types.Operator):
+    bl_idname = "clip.channel_r_off"
+    bl_label = "R Off"
+    bl_description = "Deaktiviert den Rotkanal"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        clip.tracking.settings.use_default_red_channel = False
+        return {'FINISHED'}
+
+
+class CLIP_OT_channel_g_on(bpy.types.Operator):
+    bl_idname = "clip.channel_g_on"
+    bl_label = "G On"
+    bl_description = "Aktiviert den Gr\u00fcnkanal"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        clip.tracking.settings.use_default_green_channel = True
+        return {'FINISHED'}
+
+
+class CLIP_OT_channel_g_off(bpy.types.Operator):
+    bl_idname = "clip.channel_g_off"
+    bl_label = "G Off"
+    bl_description = "Deaktiviert den Gr\u00fcnkanal"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        clip.tracking.settings.use_default_green_channel = False
+        return {'FINISHED'}
+
+
+class CLIP_OT_channel_b_on(bpy.types.Operator):
+    bl_idname = "clip.channel_b_on"
+    bl_label = "B On"
+    bl_description = "Aktiviert den Blaukanal"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        clip.tracking.settings.use_default_blue_channel = True
+        return {'FINISHED'}
+
+
+class CLIP_OT_channel_b_off(bpy.types.Operator):
+    bl_idname = "clip.channel_b_off"
+    bl_label = "B Off"
+    bl_description = "Deaktiviert den Blaukanal"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        clip.tracking.settings.use_default_blue_channel = False
+        return {'FINISHED'}
+
+
 class CLIP_PT_tracking_panel(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
@@ -779,6 +989,21 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.prop(context.scene, 'marker_frame', text='Marker / Frame')
         layout.prop(context.scene, 'frames_track', text='Frames/Track')
         layout.operator('clip.panel_button')
+        layout.operator('clip.setup_defaults', text='Defaults')
+        layout.operator('clip.detect_button', text='Detect')
+        layout.operator('clip.count_button', text='Count')
+        layout.operator('clip.track_full', text='Track')
+        layout.operator('clip.delete_selected', text='Delete')
+        layout.operator('clip.pattern_up', text='Pattern+')
+        layout.operator('clip.pattern_down', text='Pattern-')
+        layout.operator('clip.motion_cycle', text='Motion Model')
+        layout.operator('clip.match_cycle', text='Match')
+        layout.operator('clip.channel_r_on', text='Chanal RI')
+        layout.operator('clip.channel_r_off', text='Chanal RO')
+        layout.operator('clip.channel_b_on', text='Chanal BI')
+        layout.operator('clip.channel_b_off', text='Chanal BO')
+        layout.operator('clip.channel_g_on', text='Chanal GI')
+        layout.operator('clip.channel_g_off', text='Chanal GO')
         layout.operator('clip.defaults_test', text='Defaults + Test')
         layout.operator('clip.all_cycle', text='All Cycle')
 
@@ -791,6 +1016,17 @@ classes = (
     CLIP_OT_delete_selected,
     CLIP_OT_count_button,
     CLIP_OT_setup_defaults,
+    CLIP_OT_track_full,
+    CLIP_OT_pattern_up,
+    CLIP_OT_pattern_down,
+    CLIP_OT_motion_cycle,
+    CLIP_OT_match_cycle,
+    CLIP_OT_channel_r_on,
+    CLIP_OT_channel_r_off,
+    CLIP_OT_channel_g_on,
+    CLIP_OT_channel_g_off,
+    CLIP_OT_channel_b_on,
+    CLIP_OT_channel_b_off,
     CLIP_OT_test_button,
     CLIP_OT_defaults_test,
     CLIP_OT_all_cycle,
