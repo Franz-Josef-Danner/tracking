@@ -393,3 +393,8 @@
   Bereichs werden gelöscht und Threshold, Margin sowie Distance neu berechnet.
 ## Version 1.92
 - Neuer Button 'Defaults + Test' vereint das Setzen der Tracking-Defaults mit dem anschlie\xDFenden Testlauf.
+
+## Version 1.93
+- Der Defaults-Button setzt nur noch die Werte, ohne automatisch Marker zu erzeugen.
+- Der bisherige 'Defaults + Test'-Button heißt jetzt 'Detect' und startet den getesteten Erkennungsablauf.
+- Beide Buttons erscheinen wieder getrennt im Panel.

@@ -760,8 +760,6 @@ class CLIP_OT_setup_defaults(bpy.types.Operator):
             f"margin={settings.default_margin}"
         )
 
-        bpy.ops.clip.detect_features()
-
         self.report({'INFO'}, "Tracking-Defaults gesetzt")
         return {'FINISHED'}
 
@@ -819,16 +817,12 @@ class CLIP_OT_test_button(bpy.types.Operator):
 
 class CLIP_OT_defaults_test(bpy.types.Operator):
     bl_idname = "clip.defaults_test"
-    bl_label = "Defaults + Test"
+    bl_label = "Detect"
     bl_description = (
-        "Setzt Tracking-Defaults und führt anschließend den Test aus"
+        "Führt den automatischen Erkennungs- und Testlauf aus"
     )
 
     def execute(self, context):
-        result = bpy.ops.clip.setup_defaults()
-        if result != {'FINISHED'}:
-            return result
-
         clip = context.space_data.clip
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
@@ -900,7 +894,8 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.prop(context.scene, 'marker_frame', text='Marker / Frame')
         layout.prop(context.scene, 'frames_track', text='Frames/Track')
         layout.operator('clip.panel_button')
-        layout.operator('clip.defaults_test', text='Defaults + Test')
+        layout.operator('clip.setup_defaults', text='Defaults')
+        layout.operator('clip.defaults_test', text='Detect')
         layout.operator('clip.all_cycle', text='All Cycle')
 
 classes = (
