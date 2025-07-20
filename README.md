@@ -175,4 +175,5 @@ wenn bei wiederholten Detect-Durchgängen dieselbe Anzahl
 neuer Marker entsteht und der Threshold seinen Minimalwert
 erreicht hat.
 Seit Version 1.84 bietet das Panel zwei Buttons,
-die Prepass und Normalize für den aktiven Track aktivieren.
+die Prepass und Normalize in den Standardeinstellungen
+für neue Tracks aktivieren.

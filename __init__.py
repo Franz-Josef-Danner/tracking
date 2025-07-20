@@ -673,7 +673,9 @@ class CLIP_OT_pattern_button(bpy.types.Operator):
 class CLIP_OT_prepass_button(bpy.types.Operator):
     bl_idname = "clip.prepass_button"
     bl_label = "Prepass"
-    bl_description = "Setzt use_brute f\u00fcr den aktiven Track auf True"
+    bl_description = (
+        "Aktiviert default_use_brute in den Track-Einstellungen"
+    )
 
     def execute(self, context):
         clip = context.space_data.clip
@@ -681,20 +683,18 @@ class CLIP_OT_prepass_button(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        active_track = clip.tracking.objects.active.tracks.active if clip.tracking.objects.active else None
-        if not active_track:
-            self.report({'WARNING'}, "Kein aktiver Track")
-            return {'CANCELLED'}
-
-        active_track.use_brute = True
-        self.report({'INFO'}, "Prepass aktiviert")
+        settings = clip.tracking.settings
+        settings.default_use_brute = True
+        self.report({'INFO'}, "Prepass f\u00fcr neue Tracks aktiviert")
         return {'FINISHED'}
 
 
 class CLIP_OT_normalize_button(bpy.types.Operator):
     bl_idname = "clip.normalize_button"
     bl_label = "Normalize"
-    bl_description = "Setzt use_normalization f\u00fcr den aktiven Track auf True"
+    bl_description = (
+        "Aktiviert default_use_normalization in den Track-Einstellungen"
+    )
 
     def execute(self, context):
         clip = context.space_data.clip
@@ -702,13 +702,9 @@ class CLIP_OT_normalize_button(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        active_track = clip.tracking.objects.active.tracks.active if clip.tracking.objects.active else None
-        if not active_track:
-            self.report({'WARNING'}, "Kein aktiver Track")
-            return {'CANCELLED'}
-
-        active_track.use_normalization = True
-        self.report({'INFO'}, "Normalize aktiviert")
+        settings = clip.tracking.settings
+        settings.default_use_normalization = True
+        self.report({'INFO'}, "Normalize f\u00fcr neue Tracks aktiviert")
         return {'FINISHED'}
 
 

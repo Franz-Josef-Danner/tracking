@@ -363,6 +363,7 @@
   der berechnete Threshold seinen Minimalwert erreicht hat.
 
 ## Version 1.84
-- Zwei neue Buttons schalten Prepass (use_brute) und
-  Normalize (use_normalization) f\u00fcr den aktiven Track ein.
+- Zwei neue Buttons aktivieren default_use_brute (Prepass)
+  und default_use_normalization (Normalize) in den
+  Track-Einstellungen f\u00fcr neue Tracks.
 
