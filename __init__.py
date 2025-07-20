@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 79),
+    "version": (1, 80),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -25,7 +25,7 @@ DEFAULT_MOTION_MODEL = 'Loc'
 DEFAULT_MARKER_FRAME = 20
 
 # Minimale und maximale Pattern Size
-MIN_PATTERN_SIZE = 10
+MIN_PATTERN_SIZE = 20
 MAX_PATTERN_SIZE = 100
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):

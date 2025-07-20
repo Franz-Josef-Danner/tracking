@@ -346,6 +346,6 @@
 - Fällt die Pattern Size wieder unter 100, schrumpft "Marker / Frame" in
   10-%-Schritten zurück auf den Ausgangswert.
 
-## Version 1.79
-- Die Pattern Size unterschreitet nie den Wert 10.
+## Version 1.80
+- Die Pattern Size unterschreitet nie den Wert 20.
 
