@@ -346,6 +346,8 @@
 - Fällt die Pattern Size wieder unter 100, schrumpft "Marker / Frame" in
   10-%-Schritten zurück auf den Ausgangswert.
 
-## Version 1.80
-- Die Pattern Size unterschreitet nie den Wert 20.
+## Version 1.81
+- Die Pattern Size richtet sich nach der Breite des Clips. Der Basiswert
+  betr\u00e4gt die halbe Aufl\u00f6sung. Daraus ergibt sich ein Minimum von
+  einem Drittel und ein Maximum vom Dreifachen dieses Wertes.
 

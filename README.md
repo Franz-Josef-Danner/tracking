@@ -162,4 +162,7 @@ Größe weiterhin auf 50 zurücksetzen.
 Seit Version 1.78 wird "Marker / Frame" um 10 % erhöht, wenn die
 Pattern Size 100 erreicht. Sinkt die Pattern Size wieder unter 100,
 verringert sich der Wert schrittweise zurück bis zum Ausgangswert.
-Seit Version 1.80 unterschreitet die Pattern Size niemals 20.
+Seit Version 1.81 richtet sich die Pattern Size nach der horizontalen
+Aufl\u00f6sung des Clips. Der Basiswert entspricht der halben Breite. Die
+Pattern Size kann h\u00f6chstens das Dreifache und mindestens ein Drittel
+dieses Basiswerts betragen.
