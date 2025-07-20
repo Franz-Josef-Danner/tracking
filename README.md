@@ -190,7 +190,7 @@ Beim Ausführen wird außerdem eine Meldung mit den gesetzten Werten, einschlie�
 Seit Version 1.90 löst der Button nach dem Setzen der Werte automatisch
 `clip.detect_features()` aus.
 Seit Version 1.91 wiederholt der Detect-Button die Feature-Erkennung,
-bis die Anzahl neuer Marker zwischen 80 % und 120 % von (Marker / Frame) / 3 liegt.
+bis die Anzahl neuer Marker zwischen 90 % und 110 % von (Marker / Frame) / 3 liegt.
 Ansonsten passt er Threshold, Margin und Distance an und startet die Erkennung erneut.
 Seit Version 1.93 befinden sich unter "Defaults" weitere Buttons zum Detekten, Zählen, Tracken, Löschen, Anpassen der Pattern Size,
 zum Wechseln des Motion Models und des Pattern Match sowie zum Ein- und Ausschalten der Farbkanäle.

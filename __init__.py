@@ -174,8 +174,8 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             active.search_size = active.pattern_size * 2
 
         mf_base = mframe / 3
-        mf_min = mf_base * 0.8
-        mf_max = mf_base * 1.2
+        mf_min = mf_base * 0.9
+        mf_max = mf_base * 1.1
         attempt = 0
         new_markers = 0
 

@@ -389,7 +389,7 @@
   `clip.detect_features()` auf.
 ## Version 1.91
 - Der Detect-Button wiederholt die Feature-Erkennung, bis die Zahl neuer Marker
-  zwischen 80 % und 120 % von (Marker / Frame) / 3 liegt. Marker außerhalb dieses
+  zwischen 90 % und 110 % von (Marker / Frame) / 3 liegt. Marker außerhalb dieses
   Bereichs werden gelöscht und Threshold, Margin sowie Distance neu berechnet.
 ## Version 1.93
 - Unter "Defaults" sind nun zus\u00e4tzliche Buttons verf\u00fcgbar: Detect, Count, Track,
