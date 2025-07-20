@@ -80,7 +80,8 @@ def cycle_motion_model(settings, clip, reset_size=True):
 
 def delete_all_tracks(clip):
     """Select and delete all tracks using Blender's delete operator."""
-    for track in clip.tracking.tracks:
+    tracks = clip.tracking.objects.active.tracks
+    for track in tracks:
         track.select = True
     if bpy.ops.clip.delete_track.poll():
         bpy.ops.clip.delete_track()
@@ -123,7 +124,8 @@ def track_sequence_length(context):
         ]
         return frames[-1] - frames[0] if len(frames) > 1 else 0
 
-    spans = [marker_span(t) for t in clip.tracking.tracks if t.name.startswith(("TRACK_", "GOOD_"))]
+    tracks = clip.tracking.objects.active.tracks
+    spans = [marker_span(t) for t in tracks if t.name.startswith(("TRACK_", "GOOD_"))]
 
     scene.frame_current = start_frame
 
@@ -201,7 +203,8 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         clip.use_proxy = False
 
         global LAST_DETECT_COUNT
-        start_tracks = len(clip.tracking.tracks)
+        tracks = clip.tracking.objects.active.tracks
+        start_tracks = len(tracks)
 
         width, height = clip.size
 
@@ -240,21 +243,21 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         new_markers = 0
 
         while True:
-            names_before = {t.name for t in clip.tracking.tracks}
+            names_before = {t.name for t in tracks}
             bpy.ops.clip.detect_features(
                 threshold=detection_threshold,
                 min_distance=min_distance,
                 margin=margin,
             )
-            names_after = {t.name for t in clip.tracking.tracks}
+            names_after = {t.name for t in tracks}
             new_tracks = [
-                t for t in clip.tracking.tracks if t.name in names_after - names_before
+                t for t in tracks if t.name in names_after - names_before
             ]
             new_markers = len(new_tracks)
             if mf_min <= new_markers <= mf_max or attempt >= 10:
                 break
             for t in new_tracks:
-                clip.tracking.tracks.remove(t)
+                tracks.remove(t)
             threshold_value = threshold_value * ((nm + 0.1) / track_plus)
             detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
             factor = math.log10(detection_threshold * 10000000000) / 10
@@ -292,7 +295,8 @@ class CLIP_OT_prefix_new(bpy.types.Operator):
 
         prefix = "NEW_"
         count = 0
-        for track in clip.tracking.tracks:
+        tracks = clip.tracking.objects.active.tracks
+        for track in tracks:
             if track.select and not track.name.startswith(prefix):
                 track.name = prefix + track.name
                 count += 1
@@ -319,11 +323,12 @@ class CLIP_OT_distance_button(bpy.types.Operator):
         min_distance_px = int(width * 0.002)
 
         # Alle Tracks zunächst deselektieren
-        for t in clip.tracking.tracks:
+        tracks = clip.tracking.objects.active.tracks
+        for t in tracks:
             t.select = False
 
-        new_tracks = [t for t in clip.tracking.tracks if t.name.startswith("NEW_")]
-        good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]
+        new_tracks = [t for t in tracks if t.name.startswith("NEW_")]
+        good_tracks = [t for t in tracks if t.name.startswith("GOOD_")]
         marked = 0
         for nt in new_tracks:
             nm = nt.markers.find_frame(frame)
@@ -357,7 +362,8 @@ class CLIP_OT_delete_selected(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        has_selection = any(t.select for t in clip.tracking.tracks)
+        tracks = clip.tracking.objects.active.tracks
+        has_selection = any(t.select for t in tracks)
         if not has_selection:
             self.report({'WARNING'}, "Keine Tracks ausgewählt")
             return {'CANCELLED'}
@@ -382,9 +388,10 @@ class CLIP_OT_count_button(bpy.types.Operator):
             return {'CANCELLED'}
 
         prefix = "NEW_"
-        for t in clip.tracking.tracks:
+        tracks = clip.tracking.objects.active.tracks
+        for t in tracks:
             t.select = t.name.startswith(prefix)
-        count = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
+        count = sum(1 for t in tracks if t.name.startswith(prefix))
         context.scene.nm_count = count
 
         mframe = context.scene.marker_frame
@@ -393,7 +400,7 @@ class CLIP_OT_count_button(bpy.types.Operator):
         track_max = track_plus * 1.2
 
         if track_min <= count <= track_max:
-            for t in clip.tracking.tracks:
+            for t in tracks:
                 if t.name.startswith(prefix):
                     t.name = "TRACK_" + t.name[4:]
                     t.select = False
@@ -434,7 +441,8 @@ class CLIP_OT_all_cycle(bpy.types.Operator):
             bpy.ops.clip.count_button()
             bpy.ops.clip.delete_selected()
             self._detect_attempts += 1
-            has_track = any(t.name.startswith("TRACK_") for t in clip.tracking.tracks)
+            tracks = clip.tracking.objects.active.tracks
+            has_track = any(t.name.startswith("TRACK_") for t in tracks)
             if has_track:
                 self._detect_attempts = 0
                 self._state = 'TRACK'
@@ -503,19 +511,21 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
 
         current = scene.frame_current
 
+        tracks = clip.tracking.objects.active.tracks
+
         def count_active_tracks(frame_value):
             count = 0
-            for t in clip.tracking.tracks:
+            for t in tracks:
                 if t.name.startswith("TRACK_"):
                     m = t.markers.find_frame(frame_value)
                     if m and not m.mute and m.co.length_squared != 0.0:
                         count += 1
             return count
 
-        for t in clip.tracking.tracks:
+        for t in tracks:
             t.select = t.name.startswith("TRACK_")
 
-        selected = [t for t in clip.tracking.tracks if t.select]
+        selected = [t for t in tracks if t.select]
         selected_names = [t.name for t in selected]
 
         if not selected:
@@ -575,7 +585,8 @@ def has_active_marker(tracks, frame):
 def get_undertracked_markers(clip, min_frames=10):
     undertracked = []
 
-    for track in clip.tracking.tracks:
+    tracks = clip.tracking.objects.active.tracks
+    for track in tracks:
         if not track.name.startswith("TRACK_"):
             continue
 
@@ -591,7 +602,8 @@ def get_undertracked_markers(clip, min_frames=10):
 
 
 def select_tracks_by_names(clip, name_list):
-    for track in clip.tracking.tracks:
+    tracks = clip.tracking.objects.active.tracks
+    for track in tracks:
         track.select = track.name in name_list
 
 
@@ -599,9 +611,10 @@ def jump_to_first_frame_with_few_active_markers(min_required=5):
     scene = bpy.context.scene
     clip = bpy.context.space_data.clip
 
+    tracks = clip.tracking.objects.active.tracks
     for frame in range(scene.frame_start, scene.frame_end + 1):
         count = 0
-        for track in clip.tracking.tracks:
+        for track in tracks:
             if track.name.startswith("GOOD_"):
                 marker = track.markers.find_frame(frame)
                 if marker and not marker.mute and marker.co.length_squared != 0.0:
@@ -678,12 +691,13 @@ class CLIP_OT_tracking_length(bpy.types.Operator):
         else:
             self.report({'WARNING'}, "Löschen nicht möglich")
 
-        remaining = [t for t in clip.tracking.tracks if t.name.startswith("TRACK_")]
+        tracks = clip.tracking.objects.active.tracks
+        remaining = [t for t in tracks if t.name.startswith("TRACK_")]
         select_tracks_by_names(clip, [t.name for t in remaining])
         for t in remaining:
             t.name = "GOOD_" + t.name[6:]
 
-        for t in clip.tracking.tracks:
+        for t in tracks:
             t.select = False
 
         return {'FINISHED'}
