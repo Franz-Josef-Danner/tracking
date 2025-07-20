@@ -387,3 +387,7 @@
 ## Version 1.90
 - Nach dem Setzen der Werte ruft der Defaults-Button automatisch
   `clip.detect_features()` auf.
+## Version 1.91
+- Der Detect-Button wiederholt die Feature-Erkennung, bis die Zahl neuer Marker
+  zwischen 80 % und 120 % von (Marker / Frame) / 3 liegt. Marker außerhalb dieses
+  Bereichs werden gelöscht und Threshold, Margin sowie Distance neu berechnet.
