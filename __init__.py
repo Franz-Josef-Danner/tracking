@@ -148,11 +148,11 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         mframe = context.scene.marker_frame
         track_plus = mframe * 4
 
-        nm = context.scene.nm_count
+        mf_base = mframe / 3
 
         threshold_value = context.scene.threshold_value
-        formula = f"{threshold_value} * (({nm} + 0.1) / {track_plus})"
-        threshold_value = threshold_value * ((nm + 0.1) / track_plus)
+        formula = f"{threshold_value} * (({mf_base} + 0.1) / {track_plus})"
+        threshold_value = threshold_value * ((mf_base + 0.1) / track_plus)
         # Threshold formula output removed to keep the console clean
 
         detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
@@ -173,7 +173,6 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             active.pattern_size = clamp_pattern_size(base, clip)
             active.search_size = active.pattern_size * 2
 
-        mf_base = mframe / 3
         mf_min = mf_base * 0.9
         mf_max = mf_base * 1.1
         attempt = 0
@@ -202,7 +201,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
                 bpy.ops.clip.delete_track()
             for track in clip.tracking.tracks:
                 track.select = False
-            threshold_value = threshold_value * ((nm + 0.1) / track_plus)
+            threshold_value = threshold_value * ((mf_base + 0.1) / track_plus)
             detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
             factor = math.log10(detection_threshold * 10000000000) / 10
             margin = int(margin_base * factor)

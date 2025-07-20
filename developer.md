@@ -398,3 +398,5 @@
 ## Version 1.94
 - Button "Defaults + Test" entfernt.
 - Neuer Button "Name Test" vergibt TEST_-Pr\u00e4fixe. Pattern+ und Pattern- haben keine Begrenzung mehr und Detect l\u00f6scht Marker wie der Delete-Operator.
+## Version 1.95
+- Der Detect-Button berechnet den Threshold jetzt mit `mf_base` (ein Drittel von "Marker / Frame") statt dem NM-Wert.
