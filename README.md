@@ -159,3 +159,6 @@ und Search Size aus, die für neue Marker gelten.
 Seit Version 1.77 setzt das Skript die Pattern Size nur noch einmal
 nach allen zurücksetzenden Schritten. Der Motion-Button selbst kann die
 Größe weiterhin auf 50 zurücksetzen.
+Seit Version 1.78 wird "Marker / Frame" um 10 % erhöht, wenn die
+Pattern Size 100 erreicht. Sinkt die Pattern Size wieder unter 100,
+verringert sich der Wert schrittweise zurück bis zum Ausgangswert.

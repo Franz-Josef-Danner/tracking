@@ -340,3 +340,9 @@
   nach allen Reset-Schritten angepasst. Das direkte Betätigen des
   Motion-Buttons setzt sie weiterhin auf 50.
 
+## Version 1.78
+- Erreicht die Pattern Size den Maximalwert von 100, wächst der Wert aus
+  "Marker / Frame" um 10 %, maximal auf das Doppelte des Startwerts.
+- Fällt die Pattern Size wieder unter 100, schrumpft "Marker / Frame" in
+  10-%-Schritten zurück auf den Ausgangswert.
+

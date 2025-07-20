@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 77),
+    "version": (1, 78),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -20,6 +20,9 @@ NF = []
 
 # Standard Motion Model
 DEFAULT_MOTION_MODEL = 'Loc'
+
+# Urspr\u00fcnglicher Wert f\u00fcr "Marker / Frame"
+DEFAULT_MARKER_FRAME = 20
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
     bl_idname = "object.simple_operator"
@@ -455,23 +458,38 @@ def jump_to_first_frame_with_few_active_markers(min_required=5):
 
 
 def _update_nf_and_motion_model(frame, clip):
-    """Maintain NF list and adjust motion model and pattern size."""
+    """Maintain NF list and adjust motion model and pattern size.
+
+    Wenn die Pattern Size 100 erreicht, wird stattdessen der Wert aus
+    ``Scene.marker_frame`` um 10 % erh\u00f6ht (maximal das Doppelte des
+    Ausgangswerts). Sinkt die Pattern Size wieder unter 100, verkleinert sich
+    ``marker_frame`` schrittweise um 10 %, bis der Startwert erreicht ist.
+    """
+
     global NF
     settings = clip.tracking.settings
+    scene = bpy.context.scene
     if frame in NF:
         bpy.ops.clip.motion_button(reset_size=False)
-        settings.default_pattern_size = min(
-            int(settings.default_pattern_size * 1.1),
-            100,
-        )
+        if settings.default_pattern_size < 100:
+            settings.default_pattern_size = min(
+                int(settings.default_pattern_size * 1.1),
+                100,
+            )
+        else:
+            max_mf = DEFAULT_MARKER_FRAME * 2
+            scene.marker_frame = min(int(scene.marker_frame * 1.1), max_mf)
     else:
         NF.append(frame)
         settings.default_motion_model = DEFAULT_MOTION_MODEL
         settings.default_pattern_size = int(settings.default_pattern_size * 0.9)
+        if settings.default_pattern_size < 100 and scene.marker_frame > DEFAULT_MARKER_FRAME:
+            scene.marker_frame = max(int(scene.marker_frame * 0.9), DEFAULT_MARKER_FRAME)
     settings.default_search_size = settings.default_pattern_size * 2
     print(
         f"Pattern Size gesetzt auf: {settings.default_pattern_size}, "
-        f"Search Size auf: {settings.default_search_size}"
+        f"Search Size auf: {settings.default_search_size}, "
+        f"Marker / Frame: {scene.marker_frame}"
     )
 
 
