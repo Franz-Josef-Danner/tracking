@@ -641,11 +641,27 @@ class CLIP_OT_setup_defaults(bpy.types.Operator):
 
         # Mindestkorrelation und Margin für den aktiven Track setzen
         active_obj = clip.tracking.objects.active
+        track = None
         if active_obj:
             track = active_obj.tracks.active
             if track:
                 track.correlation_min = 0.85
                 track.margin = 10
+
+        print(
+            "Defaults gesetzt:" +
+            f" pattern_size={settings.default_pattern_size}," +
+            f" search_size={settings.default_search_size}," +
+            f" motion_model={settings.default_motion_model}," +
+            f" pattern_match={settings.default_pattern_match}," +
+            f" prepass={settings.use_default_brute}," +
+            f" normalize={settings.use_default_normalization}," +
+            f" channels={(settings.use_default_red_channel, settings.use_default_green_channel, settings.use_default_blue_channel)}," +
+            (
+                f" correlation_min={track.correlation_min}, margin={track.margin}"
+                if active_obj and track else ""
+            )
+        )
 
         self.report({'INFO'}, "Tracking-Defaults gesetzt")
         return {'FINISHED'}

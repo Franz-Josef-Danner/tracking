@@ -382,3 +382,5 @@
 ## Version 1.89
 - Der Defaults-Button setzt nun auch correlation_min auf 0.85 und margin auf 10
   Pixel für den aktiven Track.
+- Nach dem Ausführen wird eine Zeile mit den aktuellen Werten in der Konsole
+  ausgegeben.
