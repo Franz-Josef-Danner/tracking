@@ -380,7 +380,7 @@
 ## Version 1.88
 - Neuer "Defaults"-Button setzt Pattern Size 10, Search Size 20, Motion Model "Loc", Keyframe Match, Prepass, Normalize und Farbkanäle.
 ## Version 1.89
-- Der Defaults-Button setzt nun auch correlation_min auf 0.85 und margin auf 10
-  Pixel für den aktiven Track.
+- Der Defaults-Button setzt nun auch die Tracking-Defaults
+  `default_correlation_min` auf 0.85 und `default_margin` auf 10 Pixel.
 - Nach dem Ausführen wird eine Zeile mit den aktuellen Werten, einschließlich
-  correlation_min und margin, in der Konsole ausgegeben.
+  Mindestkorrelation und Margin, in der Konsole ausgegeben.

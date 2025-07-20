@@ -639,14 +639,9 @@ class CLIP_OT_setup_defaults(bpy.types.Operator):
         settings.use_default_green_channel = True
         settings.use_default_blue_channel = True
 
-        # Mindestkorrelation und Margin für den aktiven Track setzen
-        active_obj = clip.tracking.objects.active
-        track = None
-        if active_obj:
-            track = active_obj.tracks.active
-            if track:
-                track.correlation_min = 0.85
-                track.margin = 10
+        # Mindestkorrelation und Margin für neue Tracks setzen
+        settings.default_correlation_min = 0.85
+        settings.default_margin = 10
 
         print(
             "Defaults gesetzt: "
@@ -660,10 +655,8 @@ class CLIP_OT_setup_defaults(bpy.types.Operator):
             f"{settings.use_default_red_channel}, "
             f"{settings.use_default_green_channel}, "
             f"{settings.use_default_blue_channel}), "
-            f"correlation_min="
-            f"{track.correlation_min if track else 0.85}, "
-            f"margin="
-            f"{track.margin if track else 10}"
+            f"correlation_min={settings.default_correlation_min}, "
+            f"margin={settings.default_margin}"
         )
 
         self.report({'INFO'}, "Tracking-Defaults gesetzt")
