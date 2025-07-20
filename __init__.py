@@ -31,7 +31,7 @@ DEFAULT_MARKER_FRAME = 20
 def pattern_base(clip):
     """Return the default pattern size based on the clip width."""
     width, _ = clip.size
-    return int(width / 2)
+    return int(width / 100)
 
 
 def pattern_limits(clip):

@@ -348,8 +348,8 @@
 
 ## Version 1.81
 - Die Pattern Size richtet sich nach der Breite des Clips. Der Basiswert
-  betr\u00e4gt die halbe Aufl\u00f6sung. Daraus ergibt sich ein Minimum von
-  einem Drittel und ein Maximum vom Dreifachen dieses Wertes.
+  betr\u00e4gt ein Hundertstel der Aufl\u00f6sung. Daraus ergibt sich ein Minimum
+  von einem Drittel und ein Maximum vom Dreifachen dieses Wertes.
 
 ## Version 1.82
 - Verringert sich die Anzahl neu erzeugter Marker zwischen zwei Detect-
