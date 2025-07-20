@@ -170,3 +170,9 @@ Seit Version 1.82 verringert sich die Pattern Size um 10 %,
 wenn bei aufeinanderfolgenden Detect-Durchg\u00e4ngen dieselbe Anzahl
 neuer Marker entsteht. Diese Anpassung erfolgt kumulativ und bleibt
 innerhalb der dynamischen Mindest- und Maximalgrenzen.
+Seit Version 1.83 wird die Pattern Size erst reduziert,
+wenn bei wiederholten Detect-Durchgängen dieselbe Anzahl
+neuer Marker entsteht und der Threshold seinen Minimalwert
+erreicht hat.
+Seit Version 1.84 bietet das Panel zwei Buttons,
+die Prepass und Normalize für den aktiven Track aktivieren.

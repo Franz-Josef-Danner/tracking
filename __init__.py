@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 82),
+    "version": (1, 84),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -26,6 +26,9 @@ DEFAULT_MOTION_MODEL = 'Loc'
 
 # Urspr\u00fcnglicher Wert f\u00fcr "Marker / Frame"
 DEFAULT_MARKER_FRAME = 20
+
+# Minimaler Threshold-Wert f\u00fcr die Feature-Erkennung
+MIN_THRESHOLD = 0.0001
 
 
 def pattern_base(clip):
@@ -122,9 +125,9 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         threshold_value = context.scene.threshold_value
         formula = f"{threshold_value} * (({nm} + 0.1) / {track_plus})"
         threshold_value = threshold_value * ((nm + 0.1) / track_plus)
-        print(f"Formel angewendet: {formula} = {threshold_value:.3f}")
+        # Threshold formula output removed to keep the console clean
 
-        detection_threshold = max(min(threshold_value, 1.0), 0.0001)
+        detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
 
         margin_base = int(width * 0.01)
         min_distance_base = int(width * 0.05)
@@ -150,9 +153,16 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         end_count = len(clip.tracking.tracks)
         new_markers = end_count - start_tracks
         settings = clip.tracking.settings
-        if LAST_DETECT_COUNT is not None and new_markers == LAST_DETECT_COUNT and new_markers > 0:
+        if (
+            LAST_DETECT_COUNT is not None
+            and new_markers == LAST_DETECT_COUNT
+            and new_markers > 0
+            and detection_threshold <= MIN_THRESHOLD
+        ):
             settings.default_pattern_size = int(settings.default_pattern_size * 0.9)
-            settings.default_pattern_size = clamp_pattern_size(settings.default_pattern_size, clip)
+            settings.default_pattern_size = clamp_pattern_size(
+                settings.default_pattern_size, clip
+            )
             settings.default_search_size = settings.default_pattern_size * 2
         LAST_DETECT_COUNT = new_markers
         context.scene.threshold_value = threshold_value
@@ -522,11 +532,7 @@ def _update_nf_and_motion_model(frame, clip):
             scene.marker_frame = max(int(scene.marker_frame * 0.9), DEFAULT_MARKER_FRAME)
     settings.default_pattern_size = clamp_pattern_size(settings.default_pattern_size, clip)
     settings.default_search_size = settings.default_pattern_size * 2
-    print(
-        f"Pattern Size gesetzt auf: {settings.default_pattern_size}, "
-        f"Search Size auf: {settings.default_search_size}, "
-        f"Marker / Frame: {scene.marker_frame}"
-    )
+    print(f"NF frames: {NF}")
 
 
 class CLIP_OT_tracking_length(bpy.types.Operator):
@@ -664,6 +670,48 @@ class CLIP_OT_pattern_button(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_prepass_button(bpy.types.Operator):
+    bl_idname = "clip.prepass_button"
+    bl_label = "Prepass"
+    bl_description = "Setzt use_brute f\u00fcr den aktiven Track auf True"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        active_track = clip.tracking.objects.active.tracks.active if clip.tracking.objects.active else None
+        if not active_track:
+            self.report({'WARNING'}, "Kein aktiver Track")
+            return {'CANCELLED'}
+
+        active_track.use_brute = True
+        self.report({'INFO'}, "Prepass aktiviert")
+        return {'FINISHED'}
+
+
+class CLIP_OT_normalize_button(bpy.types.Operator):
+    bl_idname = "clip.normalize_button"
+    bl_label = "Normalize"
+    bl_description = "Setzt use_normalization f\u00fcr den aktiven Track auf True"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        active_track = clip.tracking.objects.active.tracks.active if clip.tracking.objects.active else None
+        if not active_track:
+            self.report({'WARNING'}, "Kein aktiver Track")
+            return {'CANCELLED'}
+
+        active_track.use_normalization = True
+        self.report({'INFO'}, "Normalize aktiviert")
+        return {'FINISHED'}
+
+
 
 
 
@@ -695,6 +743,8 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.operator('clip.all_cycle', text='All Cycle')
         layout.operator('clip.motion_button', text='Motion')
         layout.operator('clip.pattern_button', text='Pattern+')
+        layout.operator('clip.prepass_button', text='Prepass')
+        layout.operator('clip.normalize_button', text='Normalize')
 
 classes = (
     OBJECT_OT_simple_operator,
@@ -710,6 +760,8 @@ classes = (
     CLIP_OT_playhead_to_frame,
     CLIP_OT_motion_button,
     CLIP_OT_pattern_button,
+    CLIP_OT_prepass_button,
+    CLIP_OT_normalize_button,
     CLIP_PT_tracking_panel,
     CLIP_PT_button_panel,
 )

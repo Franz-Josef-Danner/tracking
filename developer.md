@@ -357,3 +357,12 @@
   Diese Anpassung summiert sich \u00fcber Durchg\u00e4nge hinweg und
   bleibt innerhalb der vom Clip abh\u00e4ngigen Grenzen.
 
+## Version 1.83
+- Die Pattern Size wird erst reduziert, wenn
+  wiederholt dieselbe Anzahl Marker entsteht und
+  der berechnete Threshold seinen Minimalwert erreicht hat.
+
+## Version 1.84
+- Zwei neue Buttons schalten Prepass (use_brute) und
+  Normalize (use_normalization) f\u00fcr den aktiven Track ein.
+
