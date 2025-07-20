@@ -38,6 +38,11 @@ DEFAULT_MARKER_FRAME = 20
 # Minimaler Threshold-Wert f\u00fcr die Feature-Erkennung
 MIN_THRESHOLD = 0.0001
 
+# Test-Operator Ergebnisse
+TEST_START_FRAME = None
+TEST_END_FRAME = None
+TEST_SETTINGS = {}
+
 
 def pattern_base(clip):
     """Return the default pattern size based on the clip width."""
@@ -687,6 +692,57 @@ class CLIP_OT_setup_defaults(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_test_button(bpy.types.Operator):
+    bl_idname = "clip.test_button"
+    bl_label = "Test"
+    bl_description = (
+        "Trackt die Sequenz vorw\u00e4rts und speichert Start- und Endframe sowie Einstellungen"
+    )
+
+    def execute(self, context):
+        global TEST_START_FRAME, TEST_END_FRAME, TEST_SETTINGS
+
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        scene = context.scene
+        TEST_START_FRAME = scene.frame_current
+
+        if bpy.ops.clip.track_markers.poll():
+            bpy.ops.clip.track_markers(backwards=False, sequence=True)
+        else:
+            self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
+
+        TEST_END_FRAME = scene.frame_current
+
+        settings = clip.tracking.settings
+        TEST_SETTINGS = {
+            "pattern_size": settings.default_pattern_size,
+            "motion_model": settings.default_motion_model,
+            "pattern_match": settings.default_pattern_match,
+            "channels_active": (
+                settings.use_default_red_channel,
+                settings.use_default_green_channel,
+                settings.use_default_blue_channel,
+            ),
+        }
+
+        scene.frame_current = TEST_START_FRAME
+
+        print(
+            f"Test: start={TEST_START_FRAME}, end={TEST_END_FRAME}, "
+            f"pattern_size={TEST_SETTINGS['pattern_size']}, "
+            f"motion_model={TEST_SETTINGS['motion_model']}, "
+            f"pattern_match={TEST_SETTINGS['pattern_match']}, "
+            f"channels={TEST_SETTINGS['channels_active']}"
+        )
+
+        self.report({'INFO'}, "Test abgeschlossen")
+        return {'FINISHED'}
+
+
 class CLIP_PT_tracking_panel(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
@@ -710,6 +766,7 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.prop(context.scene, 'frames_track', text='Frames/Track')
         layout.operator('clip.panel_button')
         layout.operator('clip.setup_defaults', text='Defaults')
+        layout.operator('clip.test_button', text='Test')
         layout.operator('clip.all_cycle', text='All Cycle')
 
 classes = (
@@ -721,6 +778,7 @@ classes = (
     CLIP_OT_delete_selected,
     CLIP_OT_count_button,
     CLIP_OT_setup_defaults,
+    CLIP_OT_test_button,
     CLIP_OT_all_cycle,
     CLIP_OT_track_sequence,
     CLIP_OT_tracking_length,
