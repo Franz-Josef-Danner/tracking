@@ -122,7 +122,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         threshold_value = context.scene.threshold_value
         formula = f"{threshold_value} * (({nm} + 0.1) / {track_plus})"
         threshold_value = threshold_value * ((nm + 0.1) / track_plus)
-        print(f"Formel angewendet: {formula} = {threshold_value:.3f}")
+        # Threshold formula output removed to keep the console clean
 
         detection_threshold = max(min(threshold_value, 1.0), 0.0001)
 
@@ -522,11 +522,7 @@ def _update_nf_and_motion_model(frame, clip):
             scene.marker_frame = max(int(scene.marker_frame * 0.9), DEFAULT_MARKER_FRAME)
     settings.default_pattern_size = clamp_pattern_size(settings.default_pattern_size, clip)
     settings.default_search_size = settings.default_pattern_size * 2
-    print(
-        f"Pattern Size gesetzt auf: {settings.default_pattern_size}, "
-        f"Search Size auf: {settings.default_search_size}, "
-        f"Marker / Frame: {scene.marker_frame}"
-    )
+    print(f"NF frames: {NF}")
 
 
 class CLIP_OT_tracking_length(bpy.types.Operator):
