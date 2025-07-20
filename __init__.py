@@ -78,66 +78,6 @@ def cycle_motion_model(settings, clip, reset_size=True):
         settings.default_search_size = settings.default_pattern_size * 2
 
 
-def delete_all_tracks(clip):
-    """Select and delete all tracks using Blender's delete operator."""
-    tracks = clip.tracking.objects.active.tracks
-    for track in tracks:
-        track.select = True
-    if bpy.ops.clip.delete_track.poll():
-        bpy.ops.clip.delete_track()
-
-
-def detect_and_prepare(context):
-    """Run the detection workflow to create new markers."""
-    bpy.ops.clip.detect_button()
-    bpy.ops.clip.prefix_new()
-    bpy.ops.clip.distance_button()
-    bpy.ops.clip.delete_selected()
-    bpy.ops.clip.count_button()
-    bpy.ops.clip.delete_selected()
-
-
-def track_forward(context):
-    """Track markers forward and return the tracked length."""
-    scene = context.scene
-    start = scene.frame_current
-    if bpy.ops.clip.track_markers.poll():
-        bpy.ops.clip.track_markers(backwards=False, sequence=True)
-    end = scene.frame_current
-    scene.frame_current = start
-    return end - start
-
-
-def track_sequence_length(context):
-    """Run the full track sequence and return the longest marker span."""
-    clip = context.space_data.clip
-    scene = context.scene
-    start_frame = scene.frame_current
-
-    if bpy.ops.clip.track_sequence.poll():
-        bpy.ops.clip.track_sequence()
-
-    def marker_span(track):
-        frames = [
-            m.frame for m in track.markers
-            if not m.mute and m.co.length_squared != 0.0
-        ]
-        return frames[-1] - frames[0] if len(frames) > 1 else 0
-
-    tracks = clip.tracking.objects.active.tracks
-    spans = [marker_span(t) for t in tracks if t.name.startswith(("TRACK_", "GOOD_"))]
-
-    scene.frame_current = start_frame
-
-    return max(spans) if spans else 0
-
-
-def detection_track_cycle(context):
-    """Run detection and tracking and return the track length."""
-    detect_and_prepare(context)
-    length = track_sequence_length(context)
-    bpy.ops.clip.tracking_length()
-    return length
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
     bl_idname = "object.simple_operator"
@@ -815,61 +755,6 @@ class CLIP_OT_test_button(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class CLIP_OT_defaults_test(bpy.types.Operator):
-    bl_idname = "clip.defaults_test"
-    bl_label = "Detect"
-    bl_description = (
-        "Führt den automatischen Erkennungs- und Testlauf aus"
-    )
-
-    def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
-
-        settings = clip.tracking.settings
-        original_size = settings.default_pattern_size
-
-        delete_all_tracks(clip)
-        best_length = detection_track_cycle(context)
-        best_size = settings.default_pattern_size
-
-        while True:
-            new_size = int(settings.default_pattern_size * 1.1)
-            if new_size == settings.default_pattern_size:
-                break
-            settings.default_pattern_size = clamp_pattern_size(new_size, clip)
-            settings.default_search_size = settings.default_pattern_size * 2
-            delete_all_tracks(clip)
-            length = detection_track_cycle(context)
-            if length > best_length:
-                best_length = length
-                best_size = settings.default_pattern_size
-            else:
-                break
-
-        settings.default_pattern_size = original_size
-        settings.default_search_size = settings.default_pattern_size * 2
-
-        while True:
-            new_size = int(settings.default_pattern_size * 0.9)
-            if new_size == settings.default_pattern_size:
-                break
-            settings.default_pattern_size = clamp_pattern_size(new_size, clip)
-            settings.default_search_size = settings.default_pattern_size * 2
-            delete_all_tracks(clip)
-            length = detection_track_cycle(context)
-            if length > best_length:
-                best_length = length
-                best_size = settings.default_pattern_size
-            else:
-                break
-
-        settings.default_pattern_size = best_size
-        settings.default_search_size = settings.default_pattern_size * 2
-        self.report({'INFO'}, f"Beste Tracking-L\u00e4nge: {best_length} Frames")
-        return {'FINISHED'}
 
 
 class CLIP_PT_tracking_panel(bpy.types.Panel):
@@ -895,7 +780,6 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.prop(context.scene, 'frames_track', text='Frames/Track')
         layout.operator('clip.panel_button')
         layout.operator('clip.setup_defaults', text='Defaults')
-        layout.operator('clip.defaults_test', text='Detect')
         layout.operator('clip.all_cycle', text='All Cycle')
 
 classes = (
@@ -908,7 +792,6 @@ classes = (
     CLIP_OT_count_button,
     CLIP_OT_setup_defaults,
     CLIP_OT_test_button,
-    CLIP_OT_defaults_test,
     CLIP_OT_all_cycle,
     CLIP_OT_track_sequence,
     CLIP_OT_tracking_length,

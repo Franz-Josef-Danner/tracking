@@ -398,3 +398,7 @@
 - Der Defaults-Button setzt nur noch die Werte, ohne automatisch Marker zu erzeugen.
 - Der bisherige 'Defaults + Test'-Button heißt jetzt 'Detect' und startet den getesteten Erkennungsablauf.
 - Beide Buttons erscheinen wieder getrennt im Panel.
+
+## Version 1.94
+- Der Detect-Button wurde entfernt. Die Standardwerte lassen sich weiterhin über den
+  Defaults-Button setzen, während die Erkennung über andere Operatoren erfolgt.
