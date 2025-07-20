@@ -21,14 +21,15 @@ from modules.util.tracker_logger import configure_logger
 
 
 def cycle_models(steps: int) -> None:
-    """Cycle through motion models and print them."""
+    """Cycle through motion models without console output."""
     for _ in range(steps):
-        model = motion_model.next_model()
-        print(model)
+        motion_model.next_model()
 
 
 def show_track_length(frames):
-    """Display the length of a dummy track."""
+    """Print only the frame list and return the track length."""
+    FN = frames
+    print(FN)
     class DummyMarker:
         def __init__(self, frame):
             self.frame = frame
@@ -39,7 +40,7 @@ def show_track_length(frames):
 
     track = DummyTrack(frames)
     length = get_track_length(track)
-    print(f"Track length: {length}")
+    return length
 
 
 def main(argv=None):
