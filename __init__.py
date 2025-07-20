@@ -386,16 +386,18 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
         mf_min = mf_base * 0.9
         mf_max = mf_base * 1.1
 
+        bpy.ops.clip.setup_defaults()
+        context.scene.threshold_value = 1.0
+
         attempt = 0
         while True:
-            bpy.ops.clip.setup_defaults()
-            context.scene.threshold_value = 1.0
             bpy.ops.clip.detect_button()
             bpy.ops.clip.count_button()
             count = context.scene.nm_count
             if mf_min <= count <= mf_max or attempt >= 10:
                 break
             bpy.ops.clip.delete_selected()
+            context.scene.threshold_value = 1.0
             attempt += 1
 
         if attempt >= 10 and not (mf_min <= count <= mf_max):

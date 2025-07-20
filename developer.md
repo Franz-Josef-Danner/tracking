@@ -401,6 +401,5 @@
 ## Version 1.95
 - Der Detect-Button berechnet den Threshold jetzt mit `mf_base` (ein Drittel von "Marker / Frame") statt dem NM-Wert.
 ## Version 1.96
-- Neuer Button "Auto Detect" f\u00fchrt Defaults, Detect und Count automatisch aus und
-  wiederholt den Vorgang nach einem Delete, bis die Markeranzahl im Bereich
-  von 90 bis 110 % von (Marker / Frame) / 3 liegt.
+- Neuer Button "Auto Detect" ruft einmal die Defaults auf und wiederholt anschlie\u00dfend Detect und Count.
+- Liegt die Markeranzahl nicht zwischen 90 und 110 % von (Marker / Frame) / 3, werden alle Marker gel\u00f6scht und die Erkennung startet erneut.
