@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 91),
+    "version": (1, 92),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -743,6 +743,20 @@ class CLIP_OT_test_button(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_defaults_test(bpy.types.Operator):
+    bl_idname = "clip.defaults_test"
+    bl_label = "Defaults + Test"
+    bl_description = (
+        "Setzt Tracking-Defaults und führt anschließend den Test aus"
+    )
+
+    def execute(self, context):
+        result = bpy.ops.clip.setup_defaults()
+        if result != {'FINISHED'}:
+            return result
+        return bpy.ops.clip.test_button()
+
+
 class CLIP_PT_tracking_panel(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
@@ -765,8 +779,7 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.prop(context.scene, 'marker_frame', text='Marker / Frame')
         layout.prop(context.scene, 'frames_track', text='Frames/Track')
         layout.operator('clip.panel_button')
-        layout.operator('clip.setup_defaults', text='Defaults')
-        layout.operator('clip.test_button', text='Test')
+        layout.operator('clip.defaults_test', text='Defaults + Test')
         layout.operator('clip.all_cycle', text='All Cycle')
 
 classes = (
@@ -779,6 +792,7 @@ classes = (
     CLIP_OT_count_button,
     CLIP_OT_setup_defaults,
     CLIP_OT_test_button,
+    CLIP_OT_defaults_test,
     CLIP_OT_all_cycle,
     CLIP_OT_track_sequence,
     CLIP_OT_tracking_length,
