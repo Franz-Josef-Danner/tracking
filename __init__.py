@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 94),
+    "version": (1, 96),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -150,9 +150,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
 
         mf_base = mframe / 3
 
-        threshold_value = context.scene.threshold_value
-        formula = f"{threshold_value} * (({mf_base} + 0.1) / {track_plus})"
-        threshold_value = threshold_value * ((mf_base + 0.1) / track_plus)
+        threshold_value = 1.0
         # Threshold formula output removed to keep the console clean
 
         detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
@@ -222,6 +220,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             settings.default_search_size = settings.default_pattern_size * 2
         LAST_DETECT_COUNT = new_markers
         context.scene.threshold_value = threshold_value
+        context.scene.nm_count = new_markers
         return {'FINISHED'}
 
 
@@ -367,6 +366,43 @@ class CLIP_OT_count_button(bpy.types.Operator):
             self.report({'INFO'}, f"{count} Tracks in TRACK_ umbenannt")
         else:
             self.report({'INFO'}, f"{count} TEST_-Tracks ausserhalb des Bereichs")
+        return {'FINISHED'}
+
+
+class CLIP_OT_defaults_detect(bpy.types.Operator):
+    bl_idname = "clip.defaults_detect"
+    bl_label = "Auto Detect"
+    bl_description = (
+        "Setzt Defaults und wiederholt Detect und Count, bis genug Marker vorhanden sind"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        mf_base = context.scene.marker_frame / 3
+        mf_min = mf_base * 0.9
+        mf_max = mf_base * 1.1
+
+        attempt = 0
+        while True:
+            bpy.ops.clip.setup_defaults()
+            context.scene.threshold_value = 1.0
+            bpy.ops.clip.detect_button()
+            bpy.ops.clip.count_button()
+            count = context.scene.nm_count
+            if mf_min <= count <= mf_max or attempt >= 10:
+                break
+            bpy.ops.clip.delete_selected()
+            attempt += 1
+
+        if attempt >= 10 and not (mf_min <= count <= mf_max):
+            self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
+            return {'CANCELLED'}
+
+        self.report({'INFO'}, f"{count} Marker gefunden")
         return {'FINISHED'}
 
 
@@ -997,6 +1033,7 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.prop(context.scene, 'frames_track', text='Frames/Track')
         layout.operator('clip.panel_button')
         layout.operator('clip.setup_defaults', text='Defaults')
+        layout.operator('clip.defaults_detect', text='Auto Detect')
         layout.operator('clip.detect_button', text='Detect')
         layout.operator('clip.prefix_test', text='Name Test')
         layout.operator('clip.count_button', text='Count')
@@ -1023,6 +1060,7 @@ classes = (
     CLIP_OT_distance_button,
     CLIP_OT_delete_selected,
     CLIP_OT_count_button,
+    CLIP_OT_defaults_detect,
     CLIP_OT_setup_defaults,
     CLIP_OT_track_full,
     CLIP_OT_pattern_up,

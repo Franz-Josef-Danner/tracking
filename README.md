@@ -196,3 +196,4 @@ Seit Version 1.93 befinden sich unter "Defaults" weitere Buttons zum Detekten, Z
 zum Wechseln des Motion Models und des Pattern Match sowie zum Ein- und Ausschalten der Farbkanäle.
 Seit Version 1.94 wurde der Button "Defaults + Test" entfernt. Neu ist "Name Test", der TEST_-Präfixe setzt. Pattern+ und Pattern- haben keine Größenbegrenzung mehr und Detect löscht Marker wie der Delete-Button.
 Seit Version 1.95 berechnet der Detect-Button den Threshold mit einem Drittel von "Marker / Frame" (mf_base) statt des NM-Werts.
+Seit Version 1.96 vereint der Button "Auto Detect" die Schritte Defaults, Detect und Count und wiederholt die Erkennung nach einem Delete, bis die Markeranzahl zwischen 90 % und 110 % von (Marker / Frame) / 3 liegt.
