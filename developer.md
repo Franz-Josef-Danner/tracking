@@ -367,3 +367,7 @@
   und default_use_normalization (Normalize) in den
   Track-Einstellungen f\u00fcr neue Tracks.
 
+## Version 1.85
+- Die Buttons setzen nun die Eigenschaften
+  `use_default_brute` und `use_default_normalization`.
+

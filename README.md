@@ -177,3 +177,6 @@ erreicht hat.
 Seit Version 1.84 bietet das Panel zwei Buttons,
 die Prepass und Normalize in den Standardeinstellungen
 für neue Tracks aktivieren.
+Seit Version 1.85 setzen diese Buttons die Eigenschaften
+`use_default_brute` und `use_default_normalization`
+in den Tracking-Einstellungen.

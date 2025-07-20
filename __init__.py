@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 84),
+    "version": (1, 85),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -674,7 +674,7 @@ class CLIP_OT_prepass_button(bpy.types.Operator):
     bl_idname = "clip.prepass_button"
     bl_label = "Prepass"
     bl_description = (
-        "Aktiviert default_use_brute in den Track-Einstellungen"
+        "Aktiviert use_default_brute in den Track-Einstellungen"
     )
 
     def execute(self, context):
@@ -684,7 +684,7 @@ class CLIP_OT_prepass_button(bpy.types.Operator):
             return {'CANCELLED'}
 
         settings = clip.tracking.settings
-        settings.default_use_brute = True
+        settings.use_default_brute = True
         self.report({'INFO'}, "Prepass f\u00fcr neue Tracks aktiviert")
         return {'FINISHED'}
 
@@ -693,7 +693,7 @@ class CLIP_OT_normalize_button(bpy.types.Operator):
     bl_idname = "clip.normalize_button"
     bl_label = "Normalize"
     bl_description = (
-        "Aktiviert default_use_normalization in den Track-Einstellungen"
+        "Aktiviert use_default_normalization in den Track-Einstellungen"
     )
 
     def execute(self, context):
@@ -703,7 +703,7 @@ class CLIP_OT_normalize_button(bpy.types.Operator):
             return {'CANCELLED'}
 
         settings = clip.tracking.settings
-        settings.default_use_normalization = True
+        settings.use_default_normalization = True
         self.report({'INFO'}, "Normalize f\u00fcr neue Tracks aktiviert")
         return {'FINISHED'}
 
