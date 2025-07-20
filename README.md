@@ -162,3 +162,4 @@ Größe weiterhin auf 50 zurücksetzen.
 Seit Version 1.78 wird "Marker / Frame" um 10 % erhöht, wenn die
 Pattern Size 100 erreicht. Sinkt die Pattern Size wieder unter 100,
 verringert sich der Wert schrittweise zurück bis zum Ausgangswert.
+Seit Version 1.79 unterschreitet die Pattern Size niemals 10.

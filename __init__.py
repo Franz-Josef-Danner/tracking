@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 78),
+    "version": (1, 79),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -23,6 +23,10 @@ DEFAULT_MOTION_MODEL = 'Loc'
 
 # Urspr\u00fcnglicher Wert f\u00fcr "Marker / Frame"
 DEFAULT_MARKER_FRAME = 20
+
+# Minimale und maximale Pattern Size
+MIN_PATTERN_SIZE = 10
+MAX_PATTERN_SIZE = 100
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
     bl_idname = "object.simple_operator"
@@ -471,10 +475,10 @@ def _update_nf_and_motion_model(frame, clip):
     scene = bpy.context.scene
     if frame in NF:
         bpy.ops.clip.motion_button(reset_size=False)
-        if settings.default_pattern_size < 100:
+        if settings.default_pattern_size < MAX_PATTERN_SIZE:
             settings.default_pattern_size = min(
                 int(settings.default_pattern_size * 1.1),
-                100,
+                MAX_PATTERN_SIZE,
             )
         else:
             max_mf = DEFAULT_MARKER_FRAME * 2
@@ -483,8 +487,9 @@ def _update_nf_and_motion_model(frame, clip):
         NF.append(frame)
         settings.default_motion_model = DEFAULT_MOTION_MODEL
         settings.default_pattern_size = int(settings.default_pattern_size * 0.9)
-        if settings.default_pattern_size < 100 and scene.marker_frame > DEFAULT_MARKER_FRAME:
+        if settings.default_pattern_size < MAX_PATTERN_SIZE and scene.marker_frame > DEFAULT_MARKER_FRAME:
             scene.marker_frame = max(int(scene.marker_frame * 0.9), DEFAULT_MARKER_FRAME)
+    settings.default_pattern_size = max(settings.default_pattern_size, MIN_PATTERN_SIZE)
     settings.default_search_size = settings.default_pattern_size * 2
     print(
         f"Pattern Size gesetzt auf: {settings.default_pattern_size}, "
@@ -586,7 +591,7 @@ class CLIP_OT_motion_button(bpy.types.Operator):
         next_model = self._models[(index + 1) % len(self._models)]
         settings.default_motion_model = next_model
         if self.reset_size:
-            settings.default_pattern_size = 50
+            settings.default_pattern_size = max(50, MIN_PATTERN_SIZE)
             settings.default_search_size = 100
 
         self.report(
@@ -613,8 +618,9 @@ class CLIP_OT_pattern_button(bpy.types.Operator):
         settings = clip.tracking.settings
         settings.default_pattern_size = min(
             int(settings.default_pattern_size * 1.1),
-            100,
+            MAX_PATTERN_SIZE,
         )
+        settings.default_pattern_size = max(settings.default_pattern_size, MIN_PATTERN_SIZE)
         settings.default_search_size = settings.default_pattern_size * 2
 
         self.report(
