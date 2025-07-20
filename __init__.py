@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 96),
+    "version": (1, 97),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -187,6 +187,14 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             new_tracks = [
                 t for t in clip.tracking.tracks if t.name in names_after - names_before
             ]
+            for track in clip.tracking.tracks:
+                track.select = False
+            for t in new_tracks:
+                t.select = True
+            if new_tracks:
+                bpy.ops.clip.prefix_test()
+            for track in clip.tracking.tracks:
+                track.select = False
             new_markers = len(new_tracks)
             if mf_min <= new_markers <= mf_max or attempt >= 10:
                 break

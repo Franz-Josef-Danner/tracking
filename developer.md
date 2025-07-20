@@ -403,3 +403,6 @@
 ## Version 1.96
 - Neuer Button "Auto Detect" ruft einmal die Defaults auf und wiederholt anschlie\u00dfend Detect und Count.
 - Liegt die Markeranzahl nicht zwischen 90 und 110 % von (Marker / Frame) / 3, werden alle Marker gel\u00f6scht und die Erkennung startet erneut.
+
+## Version 1.97
+- `clip.detect_button` ruft nach jeder Ausführung von `clip.detect_features` automatisch `clip.prefix_test` auf, damit neue Marker sofort das TEST_-Präfix erhalten.
