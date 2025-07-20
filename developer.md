@@ -377,3 +377,17 @@
 
 ## Version 1.87
 - Die Buttons Motion, Pattern+, Prepass und Normalize wurden entfernt. Prepass und Normalize werden nun automatisch durch All Cycle gesetzt.
+## Version 1.88
+- Neuer "Defaults"-Button setzt Pattern Size 10, Search Size 20, Motion Model "Loc", Keyframe Match, Prepass, Normalize und Farbkanäle.
+## Version 1.89
+- Der Defaults-Button setzt nun auch die Tracking-Defaults
+  `default_correlation_min` auf 0.85 und `default_margin` auf 10 Pixel.
+- Nach dem Ausführen wird eine Zeile mit den aktuellen Werten, einschließlich
+  Mindestkorrelation und Margin, in der Konsole ausgegeben.
+## Version 1.90
+- Nach dem Setzen der Werte ruft der Defaults-Button automatisch
+  `clip.detect_features()` auf.
+## Version 1.91
+- Der Detect-Button wiederholt die Feature-Erkennung, bis die Zahl neuer Marker
+  zwischen 80 % und 120 % von (Marker / Frame) / 3 liegt. Marker außerhalb dieses
+  Bereichs werden gelöscht und Threshold, Margin sowie Distance neu berechnet.

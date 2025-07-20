@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 87),
+    "version": (1, 91),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -168,13 +168,35 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             active.pattern_size = clamp_pattern_size(base, clip)
             active.search_size = active.pattern_size * 2
 
-        bpy.ops.clip.detect_features(
-            threshold=detection_threshold,
-            min_distance=min_distance,
-            margin=margin,
-        )
-        end_count = len(clip.tracking.tracks)
-        new_markers = end_count - start_tracks
+        mf_base = mframe / 3
+        mf_min = mf_base * 0.8
+        mf_max = mf_base * 1.2
+        attempt = 0
+        new_markers = 0
+
+        while True:
+            names_before = {t.name for t in clip.tracking.tracks}
+            bpy.ops.clip.detect_features(
+                threshold=detection_threshold,
+                min_distance=min_distance,
+                margin=margin,
+            )
+            names_after = {t.name for t in clip.tracking.tracks}
+            new_tracks = [
+                t for t in clip.tracking.tracks if t.name in names_after - names_before
+            ]
+            new_markers = len(new_tracks)
+            if mf_min <= new_markers <= mf_max or attempt >= 10:
+                break
+            for t in new_tracks:
+                clip.tracking.tracks.remove(t)
+            threshold_value = threshold_value * ((nm + 0.1) / track_plus)
+            detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
+            factor = math.log10(detection_threshold * 10000000000) / 10
+            margin = int(margin_base * factor)
+            min_distance = int(min_distance_base * factor)
+            attempt += 1
+
         settings = clip.tracking.settings
         if (
             LAST_DETECT_COUNT is not None
@@ -615,6 +637,56 @@ class CLIP_OT_playhead_to_frame(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_setup_defaults(bpy.types.Operator):
+    bl_idname = "clip.setup_defaults"
+    bl_label = "Defaults"
+    bl_description = (
+        "Setzt Tracking-Standards: Pattern 10, Motion Loc, Keyframe-Match"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        settings = clip.tracking.settings
+        settings.default_pattern_size = 10
+        settings.default_search_size = settings.default_pattern_size * 2
+        settings.default_motion_model = 'Loc'
+        settings.default_pattern_match = 'KEYFRAME'
+        settings.use_default_brute = True
+        settings.use_default_normalization = True
+        settings.use_default_red_channel = True
+        settings.use_default_green_channel = True
+        settings.use_default_blue_channel = True
+
+        # Mindestkorrelation und Margin für neue Tracks setzen
+        settings.default_correlation_min = 0.85
+        settings.default_margin = 10
+
+        print(
+            "Defaults gesetzt: "
+            f"pattern_size={settings.default_pattern_size}, "
+            f"search_size={settings.default_search_size}, "
+            f"motion_model={settings.default_motion_model}, "
+            f"pattern_match={settings.default_pattern_match}, "
+            f"prepass={settings.use_default_brute}, "
+            f"normalize={settings.use_default_normalization}, "
+            f"channels=("
+            f"{settings.use_default_red_channel}, "
+            f"{settings.use_default_green_channel}, "
+            f"{settings.use_default_blue_channel}), "
+            f"correlation_min={settings.default_correlation_min}, "
+            f"margin={settings.default_margin}"
+        )
+
+        bpy.ops.clip.detect_features()
+
+        self.report({'INFO'}, "Tracking-Defaults gesetzt")
+        return {'FINISHED'}
+
+
 class CLIP_PT_tracking_panel(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
@@ -637,6 +709,7 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.prop(context.scene, 'marker_frame', text='Marker / Frame')
         layout.prop(context.scene, 'frames_track', text='Frames/Track')
         layout.operator('clip.panel_button')
+        layout.operator('clip.setup_defaults', text='Defaults')
         layout.operator('clip.all_cycle', text='All Cycle')
 
 classes = (
@@ -647,6 +720,7 @@ classes = (
     CLIP_OT_distance_button,
     CLIP_OT_delete_selected,
     CLIP_OT_count_button,
+    CLIP_OT_setup_defaults,
     CLIP_OT_all_cycle,
     CLIP_OT_track_sequence,
     CLIP_OT_tracking_length,

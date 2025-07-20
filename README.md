@@ -183,3 +183,12 @@ in den Tracking-Einstellungen.
 Seit Version 1.86 aktiviert der "All Cycle"-Button
 nach dem Proxy-Wechsel automatisch Prepass und Normalize.
 Seit Version 1.87 wurden die Buttons Motion, Pattern+, Prepass und Normalize aus dem Panel entfernt. Prepass und Normalize werden beim All Cycle weiterhin automatisch aktiviert.
+Seit Version 1.88 gibt es einen "Defaults"-Button unter dem Proxy. Er setzt die Pattern Size auf 10, passt die Search Size an, stellt das Motion Model auf "Loc", verwendet Keyframe-Matching und aktiviert Prepass, Normalize sowie alle Farbkanäle.
+Seit Version 1.89 stellt der Button zusätzlich die Tracking-Defaults
+`default_correlation_min` auf 0.85 und `default_margin` auf 10 Pixel ein.
+Beim Ausführen wird außerdem eine Meldung mit den gesetzten Werten, einschließlich Mindestkorrelation und Margin, in der Konsole ausgegeben.
+Seit Version 1.90 löst der Button nach dem Setzen der Werte automatisch
+`clip.detect_features()` aus.
+Seit Version 1.91 wiederholt der Detect-Button die Feature-Erkennung,
+bis die Anzahl neuer Marker zwischen 80 % und 120 % von (Marker / Frame) / 3 liegt.
+Ansonsten passt er Threshold, Margin und Distance an und startet die Erkennung erneut.
