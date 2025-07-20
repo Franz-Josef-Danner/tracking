@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 89),
+    "version": (1, 90),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -658,6 +658,8 @@ class CLIP_OT_setup_defaults(bpy.types.Operator):
             f"correlation_min={settings.default_correlation_min}, "
             f"margin={settings.default_margin}"
         )
+
+        bpy.ops.clip.detect_features()
 
         self.report({'INFO'}, "Tracking-Defaults gesetzt")
         return {'FINISHED'}

@@ -187,3 +187,5 @@ Seit Version 1.88 gibt es einen "Defaults"-Button unter dem Proxy. Er setzt die 
 Seit Version 1.89 stellt der Button zusätzlich die Tracking-Defaults
 `default_correlation_min` auf 0.85 und `default_margin` auf 10 Pixel ein.
 Beim Ausführen wird außerdem eine Meldung mit den gesetzten Werten, einschließlich Mindestkorrelation und Margin, in der Konsole ausgegeben.
+Seit Version 1.90 löst der Button nach dem Setzen der Werte automatisch
+`clip.detect_features()` aus.

@@ -384,3 +384,6 @@
   `default_correlation_min` auf 0.85 und `default_margin` auf 10 Pixel.
 - Nach dem Ausführen wird eine Zeile mit den aktuellen Werten, einschließlich
   Mindestkorrelation und Margin, in der Konsole ausgegeben.
+## Version 1.90
+- Nach dem Setzen der Werte ruft der Defaults-Button automatisch
+  `clip.detect_features()` auf.
