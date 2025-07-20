@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 87),
+    "version": (1, 89),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -615,6 +615,42 @@ class CLIP_OT_playhead_to_frame(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_setup_defaults(bpy.types.Operator):
+    bl_idname = "clip.setup_defaults"
+    bl_label = "Defaults"
+    bl_description = (
+        "Setzt Tracking-Standards: Pattern 10, Motion Loc, Keyframe-Match"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        settings = clip.tracking.settings
+        settings.default_pattern_size = 10
+        settings.default_search_size = settings.default_pattern_size * 2
+        settings.default_motion_model = 'Loc'
+        settings.default_pattern_match = 'KEYFRAME'
+        settings.use_default_brute = True
+        settings.use_default_normalization = True
+        settings.use_default_red_channel = True
+        settings.use_default_green_channel = True
+        settings.use_default_blue_channel = True
+
+        # Mindestkorrelation und Margin für den aktiven Track setzen
+        active_obj = clip.tracking.objects.active
+        if active_obj:
+            track = active_obj.tracks.active
+            if track:
+                track.correlation_min = 0.85
+                track.margin = 10
+
+        self.report({'INFO'}, "Tracking-Defaults gesetzt")
+        return {'FINISHED'}
+
+
 class CLIP_PT_tracking_panel(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
@@ -637,6 +673,7 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.prop(context.scene, 'marker_frame', text='Marker / Frame')
         layout.prop(context.scene, 'frames_track', text='Frames/Track')
         layout.operator('clip.panel_button')
+        layout.operator('clip.setup_defaults', text='Defaults')
         layout.operator('clip.all_cycle', text='All Cycle')
 
 classes = (
@@ -647,6 +684,7 @@ classes = (
     CLIP_OT_distance_button,
     CLIP_OT_delete_selected,
     CLIP_OT_count_button,
+    CLIP_OT_setup_defaults,
     CLIP_OT_all_cycle,
     CLIP_OT_track_sequence,
     CLIP_OT_tracking_length,

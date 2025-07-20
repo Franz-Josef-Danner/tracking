@@ -377,3 +377,8 @@
 
 ## Version 1.87
 - Die Buttons Motion, Pattern+, Prepass und Normalize wurden entfernt. Prepass und Normalize werden nun automatisch durch All Cycle gesetzt.
+## Version 1.88
+- Neuer "Defaults"-Button setzt Pattern Size 10, Search Size 20, Motion Model "Loc", Keyframe Match, Prepass, Normalize und Farbkanäle.
+## Version 1.89
+- Der Defaults-Button setzt nun auch correlation_min auf 0.85 und margin auf 10
+  Pixel für den aktiven Track.
