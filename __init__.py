@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 85),
+    "version": (1, 86),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -381,6 +381,10 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
 
         # Proxy aktivieren
         clip.use_proxy = True
+        # Prepass und Normalize einschalten
+        settings = clip.tracking.settings
+        settings.use_default_brute = True
+        settings.use_default_normalization = True
 
         scene = context.scene
 

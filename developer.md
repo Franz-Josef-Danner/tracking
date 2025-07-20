@@ -371,3 +371,7 @@
 - Die Buttons setzen nun die Eigenschaften
   `use_default_brute` und `use_default_normalization`.
 
+## Version 1.86
+- Nach dem Proxy-Wechsel schaltet der All-Cycle-Operator
+  automatisch Prepass und Normalize für neue Tracks ein.
+

@@ -180,3 +180,5 @@ für neue Tracks aktivieren.
 Seit Version 1.85 setzen diese Buttons die Eigenschaften
 `use_default_brute` und `use_default_normalization`
 in den Tracking-Einstellungen.
+Seit Version 1.86 aktiviert der "All Cycle"-Button
+nach dem Proxy-Wechsel automatisch Prepass und Normalize.
