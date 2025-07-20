@@ -78,10 +78,12 @@ def cycle_motion_model(settings, clip, reset_size=True):
         settings.default_search_size = settings.default_pattern_size * 2
 
 
-def remove_all_tracks(clip):
-    """Delete all tracking markers from the clip."""
-    for track in list(clip.tracking.tracks):
-        clip.tracking.tracks.remove(track)
+def delete_all_tracks(clip):
+    """Select and delete all tracks using Blender's delete operator."""
+    for track in clip.tracking.tracks:
+        track.select = True
+    if bpy.ops.clip.delete_track.poll():
+        bpy.ops.clip.delete_track()
 
 
 def detect_and_prepare(context):
@@ -108,7 +110,9 @@ def track_forward(context):
 def detection_track_cycle(context):
     """Run detection and tracking and return the track length."""
     detect_and_prepare(context)
-    return track_forward(context)
+    length = track_forward(context)
+    bpy.ops.clip.tracking_length()
+    return length
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
     bl_idname = "object.simple_operator"
@@ -796,7 +800,7 @@ class CLIP_OT_defaults_test(bpy.types.Operator):
         settings = clip.tracking.settings
         original_size = settings.default_pattern_size
 
-        remove_all_tracks(clip)
+        delete_all_tracks(clip)
         best_length = detection_track_cycle(context)
         best_size = settings.default_pattern_size
 
@@ -806,7 +810,7 @@ class CLIP_OT_defaults_test(bpy.types.Operator):
                 break
             settings.default_pattern_size = clamp_pattern_size(new_size, clip)
             settings.default_search_size = settings.default_pattern_size * 2
-            remove_all_tracks(clip)
+            delete_all_tracks(clip)
             length = detection_track_cycle(context)
             if length > best_length:
                 best_length = length
@@ -823,7 +827,7 @@ class CLIP_OT_defaults_test(bpy.types.Operator):
                 break
             settings.default_pattern_size = clamp_pattern_size(new_size, clip)
             settings.default_search_size = settings.default_pattern_size * 2
-            remove_all_tracks(clip)
+            delete_all_tracks(clip)
             length = detection_track_cycle(context)
             if length > best_length:
                 best_length = length
