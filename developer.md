@@ -351,3 +351,9 @@
   betr\u00e4gt die halbe Aufl\u00f6sung. Daraus ergibt sich ein Minimum von
   einem Drittel und ein Maximum vom Dreifachen dieses Wertes.
 
+## Version 1.82
+- Verringert sich die Anzahl neu erzeugter Marker zwischen zwei Detect-
+  Vorg\u00e4ngen nicht, reduziert sich die Pattern Size jeweils um 10 %.
+  Diese Anpassung summiert sich \u00fcber Durchg\u00e4nge hinweg und
+  bleibt innerhalb der vom Clip abh\u00e4ngigen Grenzen.
+

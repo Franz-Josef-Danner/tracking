@@ -166,3 +166,7 @@ Seit Version 1.81 richtet sich die Pattern Size nach der horizontalen
 Aufl\u00f6sung des Clips. Der Basiswert entspricht der halben Breite. Die
 Pattern Size kann h\u00f6chstens das Dreifache und mindestens ein Drittel
 dieses Basiswerts betragen.
+Seit Version 1.82 verringert sich die Pattern Size um 10 %,
+wenn bei aufeinanderfolgenden Detect-Durchg\u00e4ngen dieselbe Anzahl
+neuer Marker entsteht. Diese Anpassung erfolgt kumulativ und bleibt
+innerhalb der dynamischen Mindest- und Maximalgrenzen.

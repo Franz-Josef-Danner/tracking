@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 81),
+    "version": (1, 82),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -17,6 +17,9 @@ from bpy.props import IntProperty, BoolProperty, FloatProperty
 
 # Frames, die mit zu wenig Markern gefunden wurden
 NF = []
+
+# Marker count of the previous detection run
+LAST_DETECT_COUNT = None
 
 # Standard Motion Model
 DEFAULT_MOTION_MODEL = 'Loc'
@@ -106,6 +109,9 @@ class CLIP_OT_detect_button(bpy.types.Operator):
 
         clip.use_proxy = False
 
+        global LAST_DETECT_COUNT
+        start_tracks = len(clip.tracking.tracks)
+
         width, height = clip.size
 
         mframe = context.scene.marker_frame
@@ -141,6 +147,14 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             min_distance=min_distance,
             margin=margin,
         )
+        end_count = len(clip.tracking.tracks)
+        new_markers = end_count - start_tracks
+        settings = clip.tracking.settings
+        if LAST_DETECT_COUNT is not None and new_markers == LAST_DETECT_COUNT and new_markers > 0:
+            settings.default_pattern_size = int(settings.default_pattern_size * 0.9)
+            settings.default_pattern_size = clamp_pattern_size(settings.default_pattern_size, clip)
+            settings.default_search_size = settings.default_pattern_size * 2
+        LAST_DETECT_COUNT = new_markers
         context.scene.threshold_value = threshold_value
         return {'FINISHED'}
 
