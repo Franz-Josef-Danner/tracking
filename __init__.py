@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 93),
+    "version": (1, 94),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -193,8 +193,15 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             new_markers = len(new_tracks)
             if mf_min <= new_markers <= mf_max or attempt >= 10:
                 break
+            # neu erkannte Marker wie beim Delete-Operator entfernen
+            for track in clip.tracking.tracks:
+                track.select = False
             for t in new_tracks:
-                clip.tracking.tracks.remove(t)
+                t.select = True
+            if new_tracks and bpy.ops.clip.delete_track.poll():
+                bpy.ops.clip.delete_track()
+            for track in clip.tracking.tracks:
+                track.select = False
             threshold_value = threshold_value * ((nm + 0.1) / track_plus)
             detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
             factor = math.log10(detection_threshold * 10000000000) / 10
@@ -231,6 +238,27 @@ class CLIP_OT_prefix_new(bpy.types.Operator):
             return {'CANCELLED'}
 
         prefix = "NEW_"
+        count = 0
+        for track in clip.tracking.tracks:
+            if track.select and not track.name.startswith(prefix):
+                track.name = prefix + track.name
+                count += 1
+        self.report({'INFO'}, f"{count} Tracks umbenannt")
+        return {'FINISHED'}
+
+
+class CLIP_OT_prefix_test(bpy.types.Operator):
+    bl_idname = "clip.prefix_test"
+    bl_label = "Name Test"
+    bl_description = "Präfix TEST_ für selektierte Tracks setzen"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        prefix = "TEST_"
         count = 0
         for track in clip.tracking.tracks:
             if track.select and not track.name.startswith(prefix):
@@ -313,7 +341,7 @@ class CLIP_OT_delete_selected(bpy.types.Operator):
 class CLIP_OT_count_button(bpy.types.Operator):
     bl_idname = "clip.count_button"
     bl_label = "Count"
-    bl_description = "Selektiert und zählt NEW_-Tracks"
+    bl_description = "Selektiert und zählt TEST_-Tracks"
 
     def execute(self, context):
         clip = context.space_data.clip
@@ -321,7 +349,7 @@ class CLIP_OT_count_button(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        prefix = "NEW_"
+        prefix = "TEST_"
         for t in clip.tracking.tracks:
             t.select = t.name.startswith(prefix)
         count = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
@@ -335,11 +363,11 @@ class CLIP_OT_count_button(bpy.types.Operator):
         if track_min <= count <= track_max:
             for t in clip.tracking.tracks:
                 if t.name.startswith(prefix):
-                    t.name = "TRACK_" + t.name[4:]
+                    t.name = "TRACK_" + t.name[len(prefix):]
                     t.select = False
             self.report({'INFO'}, f"{count} Tracks in TRACK_ umbenannt")
         else:
-            self.report({'INFO'}, f"{count} NEW_-Tracks ausserhalb des Bereichs")
+            self.report({'INFO'}, f"{count} TEST_-Tracks ausserhalb des Bereichs")
         return {'FINISHED'}
 
 
@@ -686,8 +714,6 @@ class CLIP_OT_setup_defaults(bpy.types.Operator):
             f"margin={settings.default_margin}"
         )
 
-        bpy.ops.clip.detect_features()
-
         self.report({'INFO'}, "Tracking-Defaults gesetzt")
         return {'FINISHED'}
 
@@ -743,18 +769,6 @@ class CLIP_OT_test_button(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class CLIP_OT_defaults_test(bpy.types.Operator):
-    bl_idname = "clip.defaults_test"
-    bl_label = "Defaults + Test"
-    bl_description = (
-        "Setzt Tracking-Defaults und führt anschließend den Test aus"
-    )
-
-    def execute(self, context):
-        result = bpy.ops.clip.setup_defaults()
-        if result != {'FINISHED'}:
-            return result
-        return bpy.ops.clip.test_button()
 
 
 class CLIP_OT_track_full(bpy.types.Operator):
@@ -813,10 +827,7 @@ class CLIP_OT_pattern_up(bpy.types.Operator):
             return {'CANCELLED'}
 
         settings = clip.tracking.settings
-        settings.default_pattern_size = int(settings.default_pattern_size * 1.1)
-        settings.default_pattern_size = clamp_pattern_size(
-            settings.default_pattern_size, clip
-        )
+        settings.default_pattern_size = max(1, int(settings.default_pattern_size * 1.1))
         settings.default_search_size = settings.default_pattern_size * 2
         return {'FINISHED'}
 
@@ -833,10 +844,7 @@ class CLIP_OT_pattern_down(bpy.types.Operator):
             return {'CANCELLED'}
 
         settings = clip.tracking.settings
-        settings.default_pattern_size = int(settings.default_pattern_size * 0.9)
-        settings.default_pattern_size = clamp_pattern_size(
-            settings.default_pattern_size, clip
-        )
+        settings.default_pattern_size = max(1, int(settings.default_pattern_size * 0.9))
         settings.default_search_size = settings.default_pattern_size * 2
         return {'FINISHED'}
 
@@ -991,6 +999,7 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.operator('clip.panel_button')
         layout.operator('clip.setup_defaults', text='Defaults')
         layout.operator('clip.detect_button', text='Detect')
+        layout.operator('clip.prefix_test', text='Name Test')
         layout.operator('clip.count_button', text='Count')
         layout.operator('clip.track_full', text='Track')
         layout.operator('clip.delete_selected', text='Delete')
@@ -1004,7 +1013,6 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.operator('clip.channel_b_off', text='Chanal BO')
         layout.operator('clip.channel_g_on', text='Chanal GI')
         layout.operator('clip.channel_g_off', text='Chanal GO')
-        layout.operator('clip.defaults_test', text='Defaults + Test')
         layout.operator('clip.all_cycle', text='All Cycle')
 
 classes = (
@@ -1012,6 +1020,7 @@ classes = (
     CLIP_OT_panel_button,
     CLIP_OT_detect_button,
     CLIP_OT_prefix_new,
+    CLIP_OT_prefix_test,
     CLIP_OT_distance_button,
     CLIP_OT_delete_selected,
     CLIP_OT_count_button,
@@ -1028,7 +1037,6 @@ classes = (
     CLIP_OT_channel_b_on,
     CLIP_OT_channel_b_off,
     CLIP_OT_test_button,
-    CLIP_OT_defaults_test,
     CLIP_OT_all_cycle,
     CLIP_OT_track_sequence,
     CLIP_OT_tracking_length,
@@ -1051,7 +1059,7 @@ def register():
     )
     bpy.types.Scene.nm_count = IntProperty(
         name="NM",
-        description="Anzahl der NEW_-Tracks nach Count",
+        description="Anzahl der TEST_-Tracks nach Count",
         default=0,
     )
     bpy.types.Scene.threshold_value = FloatProperty(

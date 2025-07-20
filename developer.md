@@ -391,9 +391,10 @@
 - Der Detect-Button wiederholt die Feature-Erkennung, bis die Zahl neuer Marker
   zwischen 80 % und 120 % von (Marker / Frame) / 3 liegt. Marker außerhalb dieses
   Bereichs werden gelöscht und Threshold, Margin sowie Distance neu berechnet.
-## Version 1.92
-- Neuer Button 'Defaults + Test' vereint das Setzen der Tracking-Defaults mit dem anschlie\xDFenden Testlauf.
 ## Version 1.93
 - Unter "Defaults" sind nun zus\u00e4tzliche Buttons verf\u00fcgbar: Detect, Count, Track,
   Delete, Pattern+ und Pattern-, Motion Model, Match sowie Schalter f\u00fcr die
   einzelnen Farbkan\u00e4le.
+## Version 1.94
+- Button "Defaults + Test" entfernt.
+- Neuer Button "Name Test" vergibt TEST_-Pr\u00e4fixe. Pattern+ und Pattern- haben keine Begrenzung mehr und Detect l\u00f6scht Marker wie der Delete-Operator.
