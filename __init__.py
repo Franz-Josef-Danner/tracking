@@ -368,7 +368,7 @@ class CLIP_OT_delete_selected(bpy.types.Operator):
 
 class CLIP_OT_count_button(bpy.types.Operator):
     bl_idname = "clip.count_button"
-    bl_label = "Count"
+    bl_label = "Test Count"
     bl_description = "Selektiert und zählt TEST_-Tracks"
     silent: BoolProperty(default=False, options={"HIDDEN"})
 
@@ -563,7 +563,7 @@ class CLIP_OT_channel_detect(bpy.types.Operator):
 
 class CLIP_OT_apply_settings(bpy.types.Operator):
     bl_idname = "clip.apply_detect_settings"
-    bl_label = "Apply Detect"
+    bl_label = "Apply Test Results"
     bl_description = (
         "Setzt gespeicherte Test Detect Werte f\u00fcr Pattern, Motion Model und RGB"
         " Kan\u00e4le"
@@ -1417,12 +1417,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.operator('clip.setup_defaults', text='Defaults')
-        layout.operator('clip.defaults_detect', text='Test Detect Pattern')
-        layout.operator('clip.motion_detect', text='Test Detect MM')
-        layout.operator('clip.channel_detect', text='Test Detect CH')
-        layout.operator('clip.apply_detect_settings', text='Apply Detect')
         layout.operator('clip.track_bidirectional', text='Track')
-        layout.operator('clip.count_button', text='Count')
         layout.operator('clip.delete_selected', text='Delete')
         layout.operator('clip.pattern_up', text='Pattern+')
         layout.operator('clip.pattern_down', text='Pattern-')
@@ -1448,6 +1443,11 @@ class CLIP_PT_test_subpanel(bpy.types.Panel):
         layout.operator('clip.detect_button', text='Test Detect')
         layout.operator('clip.prefix_test', text='Name Test')
         layout.operator('clip.track_full', text='Track Test')
+        layout.operator('clip.defaults_detect', text='Test Detect Pattern')
+        layout.operator('clip.motion_detect', text='Test Detect MM')
+        layout.operator('clip.channel_detect', text='Test Detect CH')
+        layout.operator('clip.apply_detect_settings', text='Apply Test Results')
+        layout.operator('clip.count_button', text='Test Count')
 
 classes = (
     OBJECT_OT_simple_operator,
