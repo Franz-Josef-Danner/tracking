@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 98),
+    "version": (1, 99),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -438,6 +438,13 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
             self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
             return {'CANCELLED'}
 
+        # Nach erfolgreicher Erkennung TEST_-Tracks tracken
+        select_tracks_by_prefix(clip, "TEST_")
+        if bpy.ops.clip.track_full.poll():
+            bpy.ops.clip.track_full()
+        else:
+            self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
+
         self.report({'INFO'}, f"{count} Marker gefunden")
         return {'FINISHED'}
 
@@ -632,6 +639,12 @@ def get_undertracked_markers(clip, min_frames=10):
 def select_tracks_by_names(clip, name_list):
     for track in clip.tracking.tracks:
         track.select = track.name in name_list
+
+
+def select_tracks_by_prefix(clip, prefix):
+    """Select all tracks whose names start with the given prefix."""
+    for track in clip.tracking.tracks:
+        track.select = track.name.startswith(prefix)
 
 
 def jump_to_first_frame_with_few_active_markers(min_required=5):

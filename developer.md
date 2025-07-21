@@ -409,3 +409,7 @@
 ## Version 1.98
 - Die Aktualisierung des Thresholds erfolgt nun mit
   `aktueller * ((letzte Markeranzahl + 0.1) / (Marker / Frame / 3))`.
+## Version 1.99
+- "Auto Detect" w\u00e4hlt danach alle TEST_-Tracks aus, ruft den Track-Operator
+  auf und \u00fcberschreibt TEST_END_FRAME sowie TEST_SETTINGS, wenn der
+  resultierende Endframe h\u00f6her liegt.

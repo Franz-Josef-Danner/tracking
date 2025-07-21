@@ -200,3 +200,6 @@ Seit Version 1.96 f\u00fchrt der Button "Auto Detect" zun\u00e4chst die Defaults
 Seit Version 1.97 vergibt der Detect-Button nach jeder Feature-Erkennung automatisch das TEST_-Präfix an neu entstandene Marker.
 Seit Version 1.98 passt der Detect-Button den Threshold mit der Formel
 `aktueller * ((letzte Markeranzahl + 0.1) / (Marker / Frame / 3))` an.
+Seit Version 1.99 w\u00e4hlt der "Auto Detect"-Button alle TEST_-Tracks aus,
+startet das Tracking und aktualisiert den gespeicherten Test-Frame samt
+Einstellungen, wenn das Ergebnis besser ist.
