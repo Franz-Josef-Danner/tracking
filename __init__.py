@@ -589,6 +589,10 @@ class CLIP_OT_apply_settings(bpy.types.Operator):
             settings.default_pattern_size = pattern_size
             settings.default_search_size = pattern_size * 2
 
+        # Extras: Mindestkorrelation und Margin
+        settings.default_correlation_min = 0.9
+        settings.default_margin = settings.default_pattern_size * 2
+
         motion_model = TEST_SETTINGS.get("motion_model")
         if motion_model is not None:
             settings.default_motion_model = motion_model
