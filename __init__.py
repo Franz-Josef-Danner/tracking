@@ -173,21 +173,6 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         margin = int(margin_base * factor)
         min_distance = int(min_distance_base * factor)
 
-        print(
-            "Initial threshold calculation:",
-            f"mf_base={mf_base:.3f}, threshold={threshold_value:.3f}",
-        )
-        print(
-            "detection_threshold = max(min("
-            f"{threshold_value:.5f}, 1.0), {MIN_THRESHOLD}) = {detection_threshold:.5f}"
-        )
-        print(
-            f"factor = log10({detection_threshold:.5f} * 10000000000) / 10 = {factor:.5f}"
-        )
-        print(
-            f"margin = int({margin_base} * {factor:.5f}) = {margin}, "
-            f"min_distance = int({min_distance_base} * {factor:.5f}) = {min_distance}"
-        )
 
         active = None
         if hasattr(space, "tracking"):
@@ -233,25 +218,12 @@ class CLIP_OT_detect_button(bpy.types.Operator):
                 bpy.ops.clip.delete_track()
             for track in clip.tracking.tracks:
                 track.select = False
-            old_tv = threshold_value
             threshold_value = threshold_value * ((new_markers + 0.1) / mf_base)
-            print(
-                f"threshold_value = {old_tv:.5f} * (({new_markers} + 0.1) / {mf_base:.5f}) = {threshold_value:.5f}"
-            )
+            # adjust detection threshold dynamically
             detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
-            print(
-                "detection_threshold = max(min("
-                f"{threshold_value:.5f}, 1.0), {MIN_THRESHOLD}) = {detection_threshold:.5f}"
-            )
             factor = math.log10(detection_threshold * 10000000000) / 10
             margin = int(margin_base * factor)
             min_distance = int(min_distance_base * factor)
-            print(
-                f"factor = log10({detection_threshold:.5f} * 10000000000) / 10 = {factor:.5f}"
-            )
-            print(
-                f"margin = int({margin_base} * {factor:.5f}) = {margin}, min_distance = int({min_distance_base} * {factor:.5f}) = {min_distance}"
-            )
             attempt += 1
 
         settings = clip.tracking.settings
@@ -811,8 +783,6 @@ def _update_nf_and_motion_model(frame, clip):
             scene.marker_frame = max(int(scene.marker_frame * 0.9), DEFAULT_MARKER_FRAME)
     settings.default_pattern_size = clamp_pattern_size(settings.default_pattern_size, clip)
     settings.default_search_size = settings.default_pattern_size * 2
-    print(f"NF frames: {NF}")
-
 
 def _auto_detect(self, context, use_defaults=True):
     """Run the auto detect cycle optionally using default settings."""
@@ -1010,21 +980,7 @@ class CLIP_OT_setup_defaults(bpy.types.Operator):
         settings.default_correlation_min = 0.85
         settings.default_margin = 10
 
-        print(
-            "Defaults gesetzt: "
-            f"pattern_size={settings.default_pattern_size}, "
-            f"search_size={settings.default_search_size}, "
-            f"motion_model={settings.default_motion_model}, "
-            f"pattern_match={settings.default_pattern_match}, "
-            f"prepass={settings.use_default_brute}, "
-            f"normalize={settings.use_default_normalization}, "
-            f"channels=("
-            f"{settings.use_default_red_channel}, "
-            f"{settings.use_default_green_channel}, "
-            f"{settings.use_default_blue_channel}), "
-            f"correlation_min={settings.default_correlation_min}, "
-            f"margin={settings.default_margin}"
-        )
+
 
         self.report({'INFO'}, "Tracking-Defaults gesetzt")
         return {'FINISHED'}
@@ -1069,13 +1025,7 @@ class CLIP_OT_test_button(bpy.types.Operator):
 
         scene.frame_current = TEST_START_FRAME
 
-        print(
-            f"Test: start={TEST_START_FRAME}, end={TEST_END_FRAME}, "
-            f"pattern_size={TEST_SETTINGS['pattern_size']}, "
-            f"motion_model={TEST_SETTINGS['motion_model']}, "
-            f"pattern_match={TEST_SETTINGS['pattern_match']}, "
-            f"channels={TEST_SETTINGS['channels_active']}"
-        )
+
 
         self.report({'INFO'}, "Test abgeschlossen")
         return {'FINISHED'}
@@ -1102,12 +1052,9 @@ class CLIP_OT_track_full(bpy.types.Operator):
         start = scene.frame_current
         TEST_START_FRAME = start
 
-        print("Track Full: gestartet")
-
         if bpy.ops.clip.track_markers.poll():
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
         else:
-            print("Track Full: Tracking nicht m\u00f6glich")
             self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
             return {'CANCELLED'}
 
@@ -1129,8 +1076,6 @@ class CLIP_OT_track_full(bpy.types.Operator):
             }
 
         scene.frame_current = start
-        print(f"Track Full: Ende bei Frame {end_frame}")
-        print(f"Track Full: {TRACKED_FRAMES} Frames getrackt")
         self.report({'INFO'}, f"Tracking bis Frame {end_frame} abgeschlossen")
         return {'FINISHED'}
 
