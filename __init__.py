@@ -428,7 +428,7 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
         print("Auto Detect: gestartet")
         prev_best = TEST_END_FRAME
         while True:
-            for cycle in range(4):
+            for cycle in range(6):
                 attempt = 0
                 while True:
                     print(f"Auto Detect Durchlauf {cycle * 10 + attempt + 1}")
