@@ -443,7 +443,7 @@ class CLIP_OT_motion_detect(bpy.types.Operator):
         best_end = TEST_END_FRAME
         best_model = original_model
 
-        # Set stored defaults once
+        # Apply stored defaults once
         settings.default_pattern_size = TEST_SETTINGS.get(
             "pattern_size", settings.default_pattern_size
         )
@@ -467,16 +467,7 @@ class CLIP_OT_motion_detect(bpy.types.Operator):
 
         settings.default_motion_model = best_model
         TEST_END_FRAME = best_end
-        TEST_SETTINGS = {
-            "pattern_size": settings.default_pattern_size,
-            "motion_model": best_model,
-            "pattern_match": settings.default_pattern_match,
-            "channels_active": (
-                settings.use_default_red_channel,
-                settings.use_default_green_channel,
-                settings.use_default_blue_channel,
-            ),
-        }
+        TEST_SETTINGS["motion_model"] = best_model
 
         print(
             "Auto Detect MM gespeichert: ",
@@ -840,7 +831,6 @@ def _auto_detect_mm(self, context):
         return None
 
     scene = context.scene
-    settings = clip.tracking.settings
 
     start = TEST_START_FRAME if TEST_START_FRAME is not None else scene.frame_current
 
@@ -864,8 +854,6 @@ def _auto_detect_mm(self, context):
         select_tracks_by_prefix(clip, "TEST_")
         if bpy.ops.clip.delete_selected.poll():
             bpy.ops.clip.delete_selected()
-        if bpy.ops.clip.pattern_up.poll():
-            bpy.ops.clip.pattern_up()
         for t in clip.tracking.tracks:
             t.select = False
 
