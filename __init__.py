@@ -146,9 +146,9 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         width, height = clip.size
 
         mframe = context.scene.marker_frame
-        track_plus = mframe * 4
+        track_plus = mframe / 3
 
-        mf_base = mframe / 3
+        mf_base = track_plus
 
         threshold_value = 1.0
 
@@ -163,7 +163,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
 
         print(
             "Initial threshold calculation:",
-            f"mf_base={mf_base:.3f}, track_plus={track_plus:.3f}, ",
+            f"mf_base={mf_base:.3f}, track_plus={track_plus:.3f} (mf/3), ",
             f"threshold={threshold_value:.3f}",
         )
         print(
