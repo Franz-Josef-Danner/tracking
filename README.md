@@ -231,3 +231,4 @@ Seit Version 1.115 gibt dieser Button zus\u00e4tzliche Konsolenausgaben zum Thre
 Seit Version 1.116 berechnet der Button Margin und Min Distance logarithmisch aus dem Threshold.
 Seit Version 1.117 findet im Detect-Button keine automatische Umbenennung der Marker mehr statt.
 Seit Version 1.118 bleiben neu erkannte Marker nach dem Detect-Button ausgewählt.
+Seit Version 1.119 bietet das API-Panel einen Button "Name New", der selektierte Tracks mit dem Präfix NEW_ versieht.
