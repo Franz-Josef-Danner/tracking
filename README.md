@@ -222,4 +222,4 @@ Seit Version 1.106 sucht "Auto Detect" nun sechsmal in einem Block nach einem ho
 Seit Version 1.107 sucht "Auto Detect" nur noch in Zweierblöcken nach einem höheren Endframe und speichert das Ergebnis nur, wenn es besser ist. Der Zyklus endet, sobald der nächste Track früher stoppt als der bereits gespeicherte Endframe.
 Seit Version 1.108 sucht "Auto Detect" wieder in Viererblöcken nach einem höheren Endframe. Der Vorgang endet, wenn der nächste Track früher stoppt als der gespeicherte Endframe.
 Seit Version 1.109 gibt "Auto Detect" am Ende den gespeicherten Endframe und dessen Einstellungen in der Konsole aus.
-Seit Version 1.110 testet ein neuer Button "Auto Detect CH" verschiedene RGB-Kombinationen, speichert das beste Ergebnis und gibt es in der Konsole aus.
+Seit Version 1.110 testet ein neuer Button "Auto Detect CH" verschiedene RGB-Kombinationen, speichert das beste Ergebnis und gibt Pattern Size, Motion Model sowie die Farbkanäle in der Konsole aus.

@@ -481,7 +481,10 @@ class CLIP_OT_motion_detect(bpy.types.Operator):
 
         print(
             "Auto Detect MM gespeichert: ",
-            f"end_frame={TEST_END_FRAME}, motion_model={best_model}"
+            f"end_frame={TEST_END_FRAME}, ",
+            f"pattern_size={TEST_SETTINGS.get('pattern_size')}, ",
+            f"motion_model={best_model}, ",
+            f"channels={TEST_SETTINGS.get('channels_active')}"
         )
 
         self.report({'INFO'}, "Auto Detect MM abgeschlossen")
@@ -551,7 +554,10 @@ class CLIP_OT_channel_detect(bpy.types.Operator):
 
         print(
             "Auto Detect CH gespeichert: ",
-            f"end_frame={TEST_END_FRAME}, channels={best_channels}"
+            f"end_frame={TEST_END_FRAME}, ",
+            f"pattern_size={TEST_SETTINGS.get('pattern_size')}, ",
+            f"motion_model={TEST_SETTINGS.get('motion_model')}, ",
+            f"channels={best_channels}"
         )
 
         self.report({'INFO'}, "Auto Detect CH abgeschlossen")
