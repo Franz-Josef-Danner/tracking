@@ -142,7 +142,7 @@ class CLIP_OT_panel_button(bpy.types.Operator):
 
 class CLIP_OT_detect_button(bpy.types.Operator):
     bl_idname = "clip.detect_button"
-    bl_label = "Detect"
+    bl_label = "Test Detect"
     bl_description = "Erkennt Features mit dynamischen Parametern"
 
     def execute(self, context):
@@ -1413,7 +1413,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
     bl_category = 'Addon'
-    bl_label = 'Test'
+    bl_label = 'API Funktionen'
 
     def draw(self, context):
         layout = self.layout
@@ -1423,10 +1423,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.channel_detect', text='Auto Detect CH')
         layout.operator('clip.apply_detect_settings', text='Apply Detect')
         layout.operator('clip.track_bidirectional', text='Track')
-        layout.operator('clip.detect_button', text='Detect')
-        layout.operator('clip.prefix_test', text='Name Test')
         layout.operator('clip.count_button', text='Count')
-        layout.operator('clip.track_full', text='Track Test')
         layout.operator('clip.delete_selected', text='Delete')
         layout.operator('clip.pattern_up', text='Pattern+')
         layout.operator('clip.pattern_down', text='Pattern-')
@@ -1438,6 +1435,20 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.channel_b_off', text='Chanal B off')
         layout.operator('clip.channel_g_on', text='Chanal G on')
         layout.operator('clip.channel_g_off', text='Chanal G off')
+
+
+class CLIP_PT_test_subpanel(bpy.types.Panel):
+    bl_space_type = 'CLIP_EDITOR'
+    bl_region_type = 'UI'
+    bl_category = 'Addon'
+    bl_parent_id = 'CLIP_PT_test_panel'
+    bl_label = 'Test'
+
+    def draw(self, context):
+        layout = self.layout
+        layout.operator('clip.detect_button', text='Test Detect')
+        layout.operator('clip.prefix_test', text='Name Test')
+        layout.operator('clip.track_full', text='Track Test')
 
 classes = (
     OBJECT_OT_simple_operator,
@@ -1474,6 +1485,7 @@ classes = (
     CLIP_PT_final_panel,
     CLIP_PT_stufen_panel,
     CLIP_PT_test_panel,
+    CLIP_PT_test_subpanel,
 )
 
 
