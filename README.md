@@ -229,3 +229,4 @@ Seit Version 1.113 gibt es einen Button 'Detect', der den Detect-Schritt aus 'Al
 Seit Version 1.114 befindet sich der Button im API-Panel und verwendet eine eigene Threshold-Formel.
 Seit Version 1.115 gibt dieser Button zus\u00e4tzliche Konsolenausgaben zum Threshold und der Anzahl neuer Marker aus.
 Seit Version 1.116 berechnet der Button Margin und Min Distance logarithmisch aus dem Threshold.
+Seit Version 1.117 findet im Detect-Button keine automatische Umbenennung der Marker mehr statt.

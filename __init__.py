@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 116),
+    "version": (1, 117),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -205,8 +205,6 @@ class CLIP_OT_detect_button(bpy.types.Operator):
                 track.select = False
             for t in new_tracks:
                 t.select = True
-            if new_tracks:
-                bpy.ops.clip.prefix_test(silent=True)
             for track in clip.tracking.tracks:
                 track.select = False
             new_markers = len(new_tracks)
@@ -711,8 +709,6 @@ class CLIP_OT_all_detect(bpy.types.Operator):
                 track.select = False
             for t in new_tracks:
                 t.select = True
-            if new_tracks:
-                bpy.ops.clip.prefix_test(silent=True)
             for track in clip.tracking.tracks:
                 track.select = False
 
@@ -742,12 +738,6 @@ class CLIP_OT_all_detect(bpy.types.Operator):
 
         context.scene.threshold_value = threshold_value
         context.scene.nm_count = new_markers
-
-        bpy.ops.clip.prefix_new()
-        bpy.ops.clip.distance_button()
-        bpy.ops.clip.delete_selected()
-        bpy.ops.clip.count_button()
-        bpy.ops.clip.delete_selected()
 
         return {'FINISHED'}
 
