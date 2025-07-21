@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 112),
+    "version": (1, 113),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -645,6 +645,28 @@ class CLIP_OT_track_bidirectional(bpy.types.Operator):
         scene.frame_start = original_start
         scene.frame_end = original_end
         scene.frame_current = current
+
+        return {'FINISHED'}
+
+class CLIP_OT_all_detect(bpy.types.Operator):
+    bl_idname = "clip.all_detect"
+    bl_label = "Detect"
+    bl_description = (
+        "F\u00fchrt den Detect-Schritt aus All Cycle einzeln aus"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        bpy.ops.clip.detect_button()
+        bpy.ops.clip.prefix_new()
+        bpy.ops.clip.distance_button()
+        bpy.ops.clip.delete_selected()
+        bpy.ops.clip.count_button()
+        bpy.ops.clip.delete_selected()
 
         return {'FINISHED'}
 
@@ -1405,6 +1427,7 @@ class CLIP_PT_stufen_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.operator('clip.panel_button', text='Proxy')
+        layout.operator('clip.all_detect', text='Detect')
         layout.operator('clip.all_cycle', text='All Cycle')
 
 
@@ -1476,6 +1499,7 @@ classes = (
     CLIP_OT_channel_b_on,
     CLIP_OT_channel_b_off,
     CLIP_OT_test_button,
+    CLIP_OT_all_detect,
     CLIP_OT_all_cycle,
     CLIP_OT_track_sequence,
     CLIP_OT_tracking_length,
