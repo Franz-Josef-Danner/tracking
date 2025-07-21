@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 112),
+    "version": (1, 118),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -187,6 +187,10 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         new_markers = 0
 
         while True:
+            print(
+                f"Attempt {attempt+1}: thresh={detection_threshold:.4f}, "
+                f"margin={margin}, min_dist={min_distance}"
+            )
             names_before = {t.name for t in clip.tracking.tracks}
             bpy.ops.clip.detect_features(
                 threshold=detection_threshold,
@@ -201,8 +205,6 @@ class CLIP_OT_detect_button(bpy.types.Operator):
                 track.select = False
             for t in new_tracks:
                 t.select = True
-            if new_tracks:
-                bpy.ops.clip.prefix_test(silent=True)
             for track in clip.tracking.tracks:
                 track.select = False
             new_markers = len(new_tracks)
@@ -238,8 +240,18 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             )
             settings.default_search_size = settings.default_pattern_size * 2
         LAST_DETECT_COUNT = new_markers
+        print(
+            f"Done: attempts={attempt+1}, markers={new_markers}, "
+            f"final_thresh={detection_threshold:.4f}"
+        )
         context.scene.threshold_value = threshold_value
         context.scene.nm_count = new_markers
+        # Keep newly detected tracks selected
+        for track in clip.tracking.tracks:
+            track.select = False
+        for t in new_tracks:
+            t.select = True
+        self.report({'INFO'}, f"{new_markers} Marker nach {attempt+1} Durchläufen")
         return {'FINISHED'}
 
 
@@ -368,7 +380,7 @@ class CLIP_OT_delete_selected(bpy.types.Operator):
 
 class CLIP_OT_count_button(bpy.types.Operator):
     bl_idname = "clip.count_button"
-    bl_label = "Test Count"
+    bl_label = "Count"
     bl_description = "Selektiert und zählt TEST_-Tracks"
     silent: BoolProperty(default=False, options={"HIDDEN"})
 
@@ -563,7 +575,7 @@ class CLIP_OT_channel_detect(bpy.types.Operator):
 
 class CLIP_OT_apply_settings(bpy.types.Operator):
     bl_idname = "clip.apply_detect_settings"
-    bl_label = "Apply Test Results"
+    bl_label = "Apply Detect"
     bl_description = (
         "Setzt gespeicherte Test Detect Werte f\u00fcr Pattern, Motion Model und RGB"
         " Kan\u00e4le"
@@ -645,6 +657,98 @@ class CLIP_OT_track_bidirectional(bpy.types.Operator):
         scene.frame_start = original_start
         scene.frame_end = original_end
         scene.frame_current = current
+
+        return {'FINISHED'}
+
+class CLIP_OT_all_detect(bpy.types.Operator):
+    bl_idname = "clip.all_detect"
+    bl_label = "Detect"
+    bl_description = (
+        "F\u00fchrt den Detect-Schritt aus All Cycle einzeln aus"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        width, _ = clip.size
+
+        margin_base = int(width * 0.01)
+        min_distance_base = int(width * 0.05)
+
+        mfp = context.scene.marker_frame * 4
+        mfp_min = mfp * 0.9
+        mfp_max = mfp * 1.1
+
+        threshold_value = 1.0
+        detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
+        factor = math.log10(detection_threshold * 10000000000) / 10
+        margin = int(margin_base * factor)
+        min_distance = int(min_distance_base * factor)
+
+        print(
+            f"Start Detect: mfp={mfp}, range=({mfp_min:.2f}, {mfp_max:.2f}), "
+            f"threshold={detection_threshold:.4f}, margin={margin}, "
+            f"min_distance={min_distance}"
+        )
+
+        attempt = 0
+        new_markers = 0
+        while True:
+            names_before = {t.name for t in clip.tracking.tracks}
+            bpy.ops.clip.detect_features(
+                threshold=detection_threshold,
+                min_distance=min_distance,
+                margin=margin,
+            )
+            names_after = {t.name for t in clip.tracking.tracks}
+            new_tracks = [
+                t for t in clip.tracking.tracks if t.name in names_after - names_before
+            ]
+
+            new_markers = len(new_tracks)
+
+            for track in clip.tracking.tracks:
+                track.select = False
+            for t in new_tracks:
+                t.select = True
+            for track in clip.tracking.tracks:
+                track.select = False
+
+            print(f" -> new markers: {new_markers}")
+            if mfp_min <= new_markers <= mfp_max or attempt >= 10:
+                break
+
+            for track in clip.tracking.tracks:
+                track.select = False
+            for t in new_tracks:
+                t.select = True
+            if new_tracks and bpy.ops.clip.delete_track.poll():
+                bpy.ops.clip.delete_track()
+            for track in clip.tracking.tracks:
+                track.select = False
+
+            threshold_value = threshold_value * ((new_markers + 0.1) / mfp)
+            detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
+            factor = math.log10(detection_threshold * 10000000000) / 10
+            margin = int(margin_base * factor)
+            min_distance = int(min_distance_base * factor)
+            attempt += 1
+            print(
+                f"Adjusted: thresh={detection_threshold:.4f}, margin={margin}, "
+                f"min_dist={min_distance}"
+            )
+
+        context.scene.threshold_value = threshold_value
+        context.scene.nm_count = new_markers
+
+        # Keep newly detected tracks selected
+        for track in clip.tracking.tracks:
+            track.select = False
+        for t in new_tracks:
+            t.select = True
 
         return {'FINISHED'}
 
@@ -1417,7 +1521,13 @@ class CLIP_PT_test_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.operator('clip.setup_defaults', text='Defaults')
+        layout.operator('clip.defaults_detect', text='Test Detect Pattern')
+        layout.operator('clip.motion_detect', text='Test Detect MM')
+        layout.operator('clip.channel_detect', text='Test Detect CH')
+        layout.operator('clip.apply_detect_settings', text='Apply Detect')
+        layout.operator('clip.all_detect', text='Detect')
         layout.operator('clip.track_bidirectional', text='Track')
+        layout.operator('clip.count_button', text='Count')
         layout.operator('clip.delete_selected', text='Delete')
         layout.operator('clip.pattern_up', text='Pattern+')
         layout.operator('clip.pattern_down', text='Pattern-')
@@ -1443,11 +1553,6 @@ class CLIP_PT_test_subpanel(bpy.types.Panel):
         layout.operator('clip.detect_button', text='Test Detect')
         layout.operator('clip.prefix_test', text='Name Test')
         layout.operator('clip.track_full', text='Track Test')
-        layout.operator('clip.defaults_detect', text='Test Detect Pattern')
-        layout.operator('clip.motion_detect', text='Test Detect MM')
-        layout.operator('clip.channel_detect', text='Test Detect CH')
-        layout.operator('clip.apply_detect_settings', text='Apply Test Results')
-        layout.operator('clip.count_button', text='Test Count')
 
 classes = (
     OBJECT_OT_simple_operator,
@@ -1476,6 +1581,7 @@ classes = (
     CLIP_OT_channel_b_on,
     CLIP_OT_channel_b_off,
     CLIP_OT_test_button,
+    CLIP_OT_all_detect,
     CLIP_OT_all_cycle,
     CLIP_OT_track_sequence,
     CLIP_OT_tracking_length,
