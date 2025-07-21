@@ -425,3 +425,6 @@
 - Die TEST_-Tracks werden nach dem Tracking nicht mehr in TRACK_ umbenannt.
 - Stattdessen selektiert "Auto Detect" alle TEST_-Tracks,
   löscht sie über den Delete-Operator und führt anschließend Pattern+ aus.
+## Version 1.103
+- "Auto Detect" wiederholt Detect, Track, Delete und Pattern+, bis der neu
+  getrackte Endframe kleiner ist als der bereits gespeicherte Endframe.
