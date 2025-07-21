@@ -407,11 +407,11 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
     bl_idname = "clip.defaults_detect"
     bl_label = "Auto Detect"
     bl_description = (
-        "Setzt Defaults und wiederholt Detect und Count, bis genug Marker vorhanden sind"
+        "Wiederholt Detect und Count, bis genug Marker vorhanden sind"
     )
 
     def execute(self, context):
-        return _auto_detect(self, context, use_defaults=True)
+        return _auto_detect(self, context, use_defaults=False)
 
 
 class CLIP_OT_motion_detect(bpy.types.Operator):
