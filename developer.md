@@ -421,3 +421,23 @@
 - Am Ende gibt "Auto Detect" die Anzahl der getrackten Frames sowie
   Pattern Size, Motion Model, Pattern Match und die aktiven RGB-Kanäle in der
   Konsole aus.
+## Version 1.102
+- Die TEST_-Tracks werden nach dem Tracking nicht mehr in TRACK_ umbenannt.
+- Stattdessen selektiert "Auto Detect" alle TEST_-Tracks,
+  löscht sie über den Delete-Operator und führt anschließend Pattern+ aus.
+## Version 1.103
+- "Auto Detect" wiederholt Detect, Track, Delete und Pattern+, bis der neu
+  getrackte Endframe kleiner ist als der bereits gespeicherte Endframe.
+## Version 1.105
+- "Auto Detect" sucht in Viererbl\u00f6cken nach einem h\u00f6heren Endframe.
+- Bleibt der Endframe nach vier Versuchen unver\u00e4ndert, wird der Vorgang beendet.
+## Version 1.106
+- "Auto Detect" arbeitet jetzt mit Sechserbl\u00f6cken. F\u00fchrt keiner der sechs Versuche zu einem h\u00f6heren Endframe, endet der Ablauf.
+## Version 1.107
+- "Auto Detect" verwendet nur noch Zweierbl\u00f6cke und speichert den Endframe samt Einstellungen nur, wenn dieser h\u00f6her liegt.
+- Der Vorgang endet, sobald der n\u00e4chste Track fr\u00fcher stoppt als der bereits gespeicherte Endframe.
+## Version 1.108
+- "Auto Detect" sucht wieder in Viererblöcken nach einem höheren Endframe.
+- Der Ablauf endet, wenn der nächste Track früher stoppt als der gespeicherte Endframe.
+## Version 1.109
+- Am Ende gibt "Auto Detect" den gespeicherten Endframe und die dazugehörigen Einstellungen in der Konsole aus.
