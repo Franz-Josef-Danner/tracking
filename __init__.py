@@ -608,6 +608,47 @@ class CLIP_OT_apply_settings(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_track_bidirectional(bpy.types.Operator):
+    bl_idname = "clip.track_bidirectional"
+    bl_label = "Track"
+    bl_description = (
+        "Trackt selektierte Marker r\u00fcckw\u00e4rts zum Szenenanfang und danach vorw\u00e4rts"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        if not any(t.select for t in clip.tracking.tracks):
+            self.report({'WARNING'}, "Keine Tracks ausgew\u00e4hlt")
+            return {'CANCELLED'}
+
+        scene = context.scene
+        original_start = scene.frame_start
+        original_end = scene.frame_end
+        current = scene.frame_current
+
+        if not bpy.ops.clip.track_markers.poll():
+            self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
+            return {'CANCELLED'}
+
+        scene.frame_start = original_start
+        scene.frame_end = current
+        bpy.ops.clip.track_markers(backwards=True, sequence=True)
+
+        scene.frame_start = current
+        scene.frame_end = original_end
+        scene.frame_current = current
+        bpy.ops.clip.track_markers(backwards=False, sequence=True)
+
+        scene.frame_start = original_start
+        scene.frame_end = original_end
+        scene.frame_current = current
+
+        return {'FINISHED'}
+
 class CLIP_OT_all_cycle(bpy.types.Operator):
     bl_idname = "clip.all_cycle"
     bl_label = "All Cycle"
@@ -1381,10 +1422,11 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.motion_detect', text='Auto Detect MM')
         layout.operator('clip.channel_detect', text='Auto Detect CH')
         layout.operator('clip.apply_detect_settings', text='Apply Detect')
+        layout.operator('clip.track_bidirectional', text='Track')
         layout.operator('clip.detect_button', text='Detect')
         layout.operator('clip.prefix_test', text='Name Test')
         layout.operator('clip.count_button', text='Count')
-        layout.operator('clip.track_full', text='Track')
+        layout.operator('clip.track_full', text='Track Test')
         layout.operator('clip.delete_selected', text='Delete')
         layout.operator('clip.pattern_up', text='Pattern+')
         layout.operator('clip.pattern_down', text='Pattern-')
@@ -1410,6 +1452,7 @@ classes = (
     CLIP_OT_motion_detect,
     CLIP_OT_channel_detect,
     CLIP_OT_apply_settings,
+    CLIP_OT_track_bidirectional,
     CLIP_OT_setup_defaults,
     CLIP_OT_track_full,
     CLIP_OT_pattern_up,
