@@ -1202,17 +1202,38 @@ class CLIP_PT_tracking_panel(bpy.types.Panel):
         layout.label(text="Addon Informationen")
 
 
-class CLIP_PT_button_panel(bpy.types.Panel):
+class CLIP_PT_final_panel(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
     bl_category = 'Addon'
-    bl_label = 'Button Panel'
+    bl_label = 'Final'
 
     def draw(self, context):
         layout = self.layout
         layout.prop(context.scene, 'marker_frame', text='Marker / Frame')
         layout.prop(context.scene, 'frames_track', text='Frames/Track')
-        layout.operator('clip.panel_button')
+
+
+class CLIP_PT_stufen_panel(bpy.types.Panel):
+    bl_space_type = 'CLIP_EDITOR'
+    bl_region_type = 'UI'
+    bl_category = 'Addon'
+    bl_label = 'Stufen'
+
+    def draw(self, context):
+        layout = self.layout
+        layout.operator('clip.panel_button', text='Proxy')
+        layout.operator('clip.all_cycle', text='All Cycle')
+
+
+class CLIP_PT_test_panel(bpy.types.Panel):
+    bl_space_type = 'CLIP_EDITOR'
+    bl_region_type = 'UI'
+    bl_category = 'Addon'
+    bl_label = 'Test'
+
+    def draw(self, context):
+        layout = self.layout
         layout.operator('clip.setup_defaults', text='Defaults')
         layout.operator('clip.defaults_detect', text='Auto Detect')
         layout.operator('clip.motion_detect', text='Auto Detect MM')
@@ -1231,7 +1252,6 @@ class CLIP_PT_button_panel(bpy.types.Panel):
         layout.operator('clip.channel_b_off', text='Chanal BO')
         layout.operator('clip.channel_g_on', text='Chanal GI')
         layout.operator('clip.channel_g_off', text='Chanal GO')
-        layout.operator('clip.all_cycle', text='All Cycle')
 
 classes = (
     OBJECT_OT_simple_operator,
@@ -1262,7 +1282,9 @@ classes = (
     CLIP_OT_tracking_length,
     CLIP_OT_playhead_to_frame,
     CLIP_PT_tracking_panel,
-    CLIP_PT_button_panel,
+    CLIP_PT_final_panel,
+    CLIP_PT_stufen_panel,
+    CLIP_PT_test_panel,
 )
 
 
