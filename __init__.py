@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 113),
+    "version": (1, 114),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -661,7 +661,63 @@ class CLIP_OT_all_detect(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        bpy.ops.clip.detect_button()
+        width, _ = clip.size
+
+        mfp = context.scene.marker_frame * 4
+        mfp_min = mfp * 0.9
+        mfp_max = mfp * 1.1
+
+        threshold_value = 1.0
+        detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
+        margin = int((width / 100) * detection_threshold)
+        min_distance = int((width / 20) * detection_threshold)
+
+        attempt = 0
+        new_markers = 0
+        while True:
+            names_before = {t.name for t in clip.tracking.tracks}
+            bpy.ops.clip.detect_features(
+                threshold=detection_threshold,
+                min_distance=min_distance,
+                margin=margin,
+            )
+            names_after = {t.name for t in clip.tracking.tracks}
+            new_tracks = [
+                t for t in clip.tracking.tracks if t.name in names_after - names_before
+            ]
+
+            new_markers = len(new_tracks)
+
+            for track in clip.tracking.tracks:
+                track.select = False
+            for t in new_tracks:
+                t.select = True
+            if new_tracks:
+                bpy.ops.clip.prefix_test(silent=True)
+            for track in clip.tracking.tracks:
+                track.select = False
+
+            if mfp_min <= new_markers <= mfp_max or attempt >= 10:
+                break
+
+            for track in clip.tracking.tracks:
+                track.select = False
+            for t in new_tracks:
+                t.select = True
+            if new_tracks and bpy.ops.clip.delete_track.poll():
+                bpy.ops.clip.delete_track()
+            for track in clip.tracking.tracks:
+                track.select = False
+
+            threshold_value = threshold_value * ((new_markers + 0.1) / mfp)
+            detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
+            margin = int((width / 100) * detection_threshold)
+            min_distance = int((width / 20) * detection_threshold)
+            attempt += 1
+
+        context.scene.threshold_value = threshold_value
+        context.scene.nm_count = new_markers
+
         bpy.ops.clip.prefix_new()
         bpy.ops.clip.distance_button()
         bpy.ops.clip.delete_selected()
@@ -1427,7 +1483,6 @@ class CLIP_PT_stufen_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.operator('clip.panel_button', text='Proxy')
-        layout.operator('clip.all_detect', text='Detect')
         layout.operator('clip.all_cycle', text='All Cycle')
 
 
@@ -1444,6 +1499,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.motion_detect', text='Test Detect MM')
         layout.operator('clip.channel_detect', text='Test Detect CH')
         layout.operator('clip.apply_detect_settings', text='Apply Detect')
+        layout.operator('clip.all_detect', text='Detect')
         layout.operator('clip.track_bidirectional', text='Track')
         layout.operator('clip.count_button', text='Count')
         layout.operator('clip.delete_selected', text='Delete')
