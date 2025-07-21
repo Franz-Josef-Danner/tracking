@@ -9,7 +9,6 @@ bl_info = {
 }
 
 import bpy
-import time
 import os
 import shutil
 import math
