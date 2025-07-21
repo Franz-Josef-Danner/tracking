@@ -42,8 +42,8 @@ MIN_THRESHOLD = 0.0001
 TEST_START_FRAME = None
 TEST_END_FRAME = None
 TEST_SETTINGS = {}
-# Gespeicherte Namen nach Auto Detect
-TN = []
+# Anzahl der zuletzt getrackten Frames
+TRACKED_FRAMES = 0
 
 
 def pattern_base(clip):
@@ -470,9 +470,15 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
             print(f"{renamed} Tracks in TRACK_ umbenannt")
 
         print(f"Auto Detect: {count} Marker gefunden")
-        global TN
-        TN = [t.name for t in clip.tracking.tracks if t.name.startswith("TRACK_")]
-        print(f"Auto Detect: TN gespeichert: {TN}")
+        from_settings = TEST_SETTINGS or {}
+        print(
+            "Auto Detect: ",
+            f"tracked_frames={TRACKED_FRAMES}, ",
+            f"pattern_size={from_settings.get('pattern_size')}, ",
+            f"motion_model={from_settings.get('motion_model')}, ",
+            f"pattern_match={from_settings.get('pattern_match')}, ",
+            f"channels={from_settings.get('channels_active')}"
+        )
         self.report({'INFO'}, f"{count} Marker gefunden")
         return {'FINISHED'}
 
@@ -891,7 +897,7 @@ class CLIP_OT_track_full(bpy.types.Operator):
     )
 
     def execute(self, context):
-        global TEST_END_FRAME, TEST_SETTINGS
+        global TEST_END_FRAME, TEST_SETTINGS, TRACKED_FRAMES
 
         clip = context.space_data.clip
         if not clip:
@@ -911,6 +917,7 @@ class CLIP_OT_track_full(bpy.types.Operator):
             return {'CANCELLED'}
 
         end_frame = scene.frame_current
+        TRACKED_FRAMES = end_frame - start
         if TEST_END_FRAME is None or end_frame > TEST_END_FRAME:
             TEST_END_FRAME = end_frame
             settings = clip.tracking.settings
@@ -927,6 +934,7 @@ class CLIP_OT_track_full(bpy.types.Operator):
 
         scene.frame_current = start
         print(f"Track Full: Ende bei Frame {end_frame}")
+        print(f"Track Full: {TRACKED_FRAMES} Frames getrackt")
         self.report({'INFO'}, f"Tracking bis Frame {end_frame} abgeschlossen")
         return {'FINISHED'}
 

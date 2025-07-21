@@ -205,5 +205,6 @@ startet das Tracking und aktualisiert den gespeicherten Test-Frame samt
 Einstellungen, wenn das Ergebnis besser ist.
 Seit Version 1.100 gibt "Auto Detect" den Start, jeden Durchlauf und das
 Tracking in der Konsole aus.
-Seit Version 1.101 speichert "Auto Detect" die Namen aller TRACK_-Marker in der
-Variablen `TN` und gibt dies in der Konsole aus.
+Seit Version 1.101 gibt "Auto Detect" am Ende die Anzahl der getrackten Frames
+sowie Pattern Size, Motion Model, Pattern Match und die aktiven RGB-Kanäle in
+der Konsole aus.
