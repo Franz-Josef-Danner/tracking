@@ -227,3 +227,4 @@ Seit Version 1.111 setzt ein neuer Button "Apply Detect" unter "Auto Detect CH" 
 Seit Version 1.112 ruft "Auto Detect" zu Beginn nicht mehr "Defaults" auf, sondern verwendet die aktuellen Tracking-Einstellungen.
 Seit Version 1.113 gibt es einen Button 'Detect', der den Detect-Schritt aus 'All Cycle' separat ausführt.
 Seit Version 1.114 befindet sich der Button im API-Panel und verwendet eine eigene Threshold-Formel.
+Seit Version 1.115 gibt dieser Button zus\u00e4tzliche Konsolenausgaben zum Threshold und der Anzahl neuer Marker aus.

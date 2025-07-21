@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 114),
+    "version": (1, 115),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -187,6 +187,10 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         new_markers = 0
 
         while True:
+            print(
+                f"Attempt {attempt+1}: thresh={detection_threshold:.4f}, "
+                f"margin={margin}, min_dist={min_distance}"
+            )
             names_before = {t.name for t in clip.tracking.tracks}
             bpy.ops.clip.detect_features(
                 threshold=detection_threshold,
@@ -238,8 +242,13 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             )
             settings.default_search_size = settings.default_pattern_size * 2
         LAST_DETECT_COUNT = new_markers
+        print(
+            f"Done: attempts={attempt+1}, markers={new_markers}, "
+            f"final_thresh={detection_threshold:.4f}"
+        )
         context.scene.threshold_value = threshold_value
         context.scene.nm_count = new_markers
+        self.report({'INFO'}, f"{new_markers} Marker nach {attempt+1} Durchl\u00e4ufen")
         return {'FINISHED'}
 
 
@@ -672,6 +681,12 @@ class CLIP_OT_all_detect(bpy.types.Operator):
         margin = int((width / 100) * detection_threshold)
         min_distance = int((width / 20) * detection_threshold)
 
+        print(
+            f"Start Detect: mfp={mfp}, range=({mfp_min:.2f}, {mfp_max:.2f}), "
+            f"threshold={detection_threshold:.4f}, margin={margin}, "
+            f"min_distance={min_distance}"
+        )
+
         attempt = 0
         new_markers = 0
         while True:
@@ -697,6 +712,7 @@ class CLIP_OT_all_detect(bpy.types.Operator):
             for track in clip.tracking.tracks:
                 track.select = False
 
+            print(f" -> new markers: {new_markers}")
             if mfp_min <= new_markers <= mfp_max or attempt >= 10:
                 break
 
@@ -714,6 +730,10 @@ class CLIP_OT_all_detect(bpy.types.Operator):
             margin = int((width / 100) * detection_threshold)
             min_distance = int((width / 20) * detection_threshold)
             attempt += 1
+            print(
+                f"Adjusted: thresh={detection_threshold:.4f}, margin={margin}, "
+                f"min_dist={min_distance}"
+            )
 
         context.scene.threshold_value = threshold_value
         context.scene.nm_count = new_markers
