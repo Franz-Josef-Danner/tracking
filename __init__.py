@@ -32,6 +32,16 @@ MOTION_MODELS = [
     'Perspective',
 ]
 
+# Channel combinations for Auto Detect CH
+CHANNEL_COMBOS = [
+    (True, False, False),
+    (True, True, False),
+    (True, True, True),
+    (False, True, False),
+    (False, True, True),
+    (False, False, True),
+]
+
 # Urspr\u00fcnglicher Wert f\u00fcr "Marker / Frame"
 DEFAULT_MARKER_FRAME = 20
 
@@ -471,10 +481,86 @@ class CLIP_OT_motion_detect(bpy.types.Operator):
 
         print(
             "Auto Detect MM gespeichert: ",
-            f"end_frame={TEST_END_FRAME}, motion_model={best_model}"
+            f"end_frame={TEST_END_FRAME}, ",
+            f"pattern_size={TEST_SETTINGS.get('pattern_size')}, ",
+            f"motion_model={best_model}, ",
+            f"channels={TEST_SETTINGS.get('channels_active')}"
         )
 
         self.report({'INFO'}, "Auto Detect MM abgeschlossen")
+        return {'FINISHED'}
+
+
+class CLIP_OT_channel_detect(bpy.types.Operator):
+    bl_idname = "clip.channel_detect"
+    bl_label = "Auto Detect CH"
+    bl_description = (
+        "F\u00fchrt Auto Detect mit verschiedenen Farbkan\u00e4len aus und speichert das beste Ergebnis"
+    )
+
+    def execute(self, context):
+        global TEST_END_FRAME, TEST_SETTINGS
+
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        if not TEST_SETTINGS:
+            self.report({'WARNING'}, "Keine gespeicherten Einstellungen")
+            return {'CANCELLED'}
+
+        settings = clip.tracking.settings
+
+        best_end = TEST_END_FRAME
+        best_channels = (
+            settings.use_default_red_channel,
+            settings.use_default_green_channel,
+            settings.use_default_blue_channel,
+        )
+
+        # Apply stored defaults once
+        settings.default_pattern_size = TEST_SETTINGS.get(
+            "pattern_size", settings.default_pattern_size
+        )
+        settings.default_search_size = settings.default_pattern_size * 2
+        settings.default_motion_model = TEST_SETTINGS.get(
+            "motion_model", settings.default_motion_model
+        )
+        settings.default_pattern_match = TEST_SETTINGS.get(
+            "pattern_match", settings.default_pattern_match
+        )
+
+        for channels in CHANNEL_COMBOS:
+            (
+                settings.use_default_red_channel,
+                settings.use_default_green_channel,
+                settings.use_default_blue_channel,
+            ) = channels
+            end_frame = _auto_detect_mm(self, context)
+            if end_frame is None:
+                continue
+            if best_end is None or end_frame > best_end:
+                best_end = end_frame
+                best_channels = channels
+
+        (
+            settings.use_default_red_channel,
+            settings.use_default_green_channel,
+            settings.use_default_blue_channel,
+        ) = best_channels
+        TEST_END_FRAME = best_end
+        TEST_SETTINGS["channels_active"] = best_channels
+
+        print(
+            "Auto Detect CH gespeichert: ",
+            f"end_frame={TEST_END_FRAME}, ",
+            f"pattern_size={TEST_SETTINGS.get('pattern_size')}, ",
+            f"motion_model={TEST_SETTINGS.get('motion_model')}, ",
+            f"channels={best_channels}"
+        )
+
+        self.report({'INFO'}, "Auto Detect CH abgeschlossen")
         return {'FINISHED'}
 
 
@@ -1274,6 +1360,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.setup_defaults', text='Defaults')
         layout.operator('clip.defaults_detect', text='Auto Detect')
         layout.operator('clip.motion_detect', text='Auto Detect MM')
+        layout.operator('clip.channel_detect', text='Auto Detect CH')
         layout.operator('clip.detect_button', text='Detect')
         layout.operator('clip.prefix_test', text='Name Test')
         layout.operator('clip.count_button', text='Count')
@@ -1301,6 +1388,7 @@ classes = (
     CLIP_OT_count_button,
     CLIP_OT_defaults_detect,
     CLIP_OT_motion_detect,
+    CLIP_OT_channel_detect,
     CLIP_OT_setup_defaults,
     CLIP_OT_track_full,
     CLIP_OT_pattern_up,
