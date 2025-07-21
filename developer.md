@@ -428,3 +428,7 @@
 ## Version 1.103
 - "Auto Detect" wiederholt Detect, Track, Delete und Pattern+, bis der neu
   getrackte Endframe kleiner ist als der bereits gespeicherte Endframe.
+## Version 1.104
+- Wird ein kleinerer Endframe getrackt, f\u00fchrt "Auto Detect" trotzdem drei
+  weitere Durchl\u00e4ufe aus. Erst wenn keiner dieser Versuche einen h\u00f6heren
+  Endframe liefert, endet der Vorgang.

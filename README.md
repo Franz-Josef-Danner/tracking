@@ -217,3 +217,6 @@ löst den Delete-Operator aus und führt anschließend Pattern+ aus.
 Seit Version 1.103 wiederholt "Auto Detect" Detect, Track, Delete und Pattern+
 so lange, bis der neu getrackte Endframe kleiner ist als der zuvor gespeicherte
 Endframe.
+Seit Version 1.104 f\u00fchrt "Auto Detect" nach einem kleineren Endframe noch
+drei weitere Durchl\u00e4ufe aus. Erst wenn keiner dieser Versuche einen h\u00f6heren
+Endframe erzielt, bricht der Vorgang ab.

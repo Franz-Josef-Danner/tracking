@@ -426,47 +426,58 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
         context.scene.threshold_value = 1.0
 
         print("Auto Detect: gestartet")
-        attempt = 0
+        failures = 0
         while True:
-            print(f"Auto Detect Durchlauf {attempt + 1}")
-            bpy.ops.clip.detect_button()
-            count = sum(
-                1 for t in clip.tracking.tracks if t.name.startswith("TEST_")
-            )
-            context.scene.nm_count = count
-            print(f"Auto Detect Markeranzahl: {count}")
-            if mf_min <= count <= mf_max or attempt >= 10:
-                break
-            for t in clip.tracking.tracks:
-                t.select = t.name.startswith("TEST_")
-            if bpy.ops.clip.delete_track.poll():
-                bpy.ops.clip.delete_track()
+            attempt = 0
+            while True:
+                print(f"Auto Detect Durchlauf {attempt + 1}")
+                bpy.ops.clip.detect_button()
+                count = sum(
+                    1 for t in clip.tracking.tracks if t.name.startswith("TEST_")
+                )
+                context.scene.nm_count = count
+                print(f"Auto Detect Markeranzahl: {count}")
+                if mf_min <= count <= mf_max or attempt >= 10:
+                    break
+                for t in clip.tracking.tracks:
+                    t.select = t.name.startswith("TEST_")
+                if bpy.ops.clip.delete_track.poll():
+                    bpy.ops.clip.delete_track()
+                for t in clip.tracking.tracks:
+                    t.select = False
+                context.scene.threshold_value = 1.0
+                attempt += 1
+
+            if attempt >= 10 and not (mf_min <= count <= mf_max):
+                print("Auto Detect: Abbruch nach maximalen Durchl\u00e4ufen")
+                self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
+                return {'CANCELLED'}
+
+            print("Auto Detect: Tracking TEST_-Marker")
+            select_tracks_by_prefix(clip, "TEST_")
+            if bpy.ops.clip.track_full.poll():
+                bpy.ops.clip.track_full()
+            else:
+                print("Auto Detect: Tracking nicht m\u00f6glich")
+                self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
+
+            end_frame = context.scene.frame_current
+            if TEST_END_FRAME is None or end_frame > TEST_END_FRAME:
+                failures = 0
+            else:
+                failures += 1
+
+            # Nach dem Tracking TEST_-Marker selektieren, l\xF6schen und Pattern+ anwenden
+            select_tracks_by_prefix(clip, "TEST_")
+            if bpy.ops.clip.delete_selected.poll():
+                bpy.ops.clip.delete_selected()
+            if bpy.ops.clip.pattern_up.poll():
+                bpy.ops.clip.pattern_up()
             for t in clip.tracking.tracks:
                 t.select = False
-            context.scene.threshold_value = 1.0
-            attempt += 1
 
-        if attempt >= 10 and not (mf_min <= count <= mf_max):
-            print("Auto Detect: Abbruch nach maximalen Durchl\u00e4ufen")
-            self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
-            return {'CANCELLED'}
-
-        print("Auto Detect: Tracking TEST_-Marker")
-        select_tracks_by_prefix(clip, "TEST_")
-        if bpy.ops.clip.track_full.poll():
-            bpy.ops.clip.track_full()
-        else:
-            print("Auto Detect: Tracking nicht m\u00f6glich")
-            self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
-
-        # Nach dem Tracking TEST_-Marker selektieren, l\xF6schen und Pattern+ anwenden
-        select_tracks_by_prefix(clip, "TEST_")
-        if bpy.ops.clip.delete_selected.poll():
-            bpy.ops.clip.delete_selected()
-        if bpy.ops.clip.pattern_up.poll():
-            bpy.ops.clip.pattern_up()
-        for t in clip.tracking.tracks:
-            t.select = False
+            if failures >= 4:
+                break
 
         print(f"Auto Detect: {count} Marker gefunden")
         from_settings = TEST_SETTINGS or {}
