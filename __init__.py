@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 117),
+    "version": (1, 118),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -246,7 +246,12 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         )
         context.scene.threshold_value = threshold_value
         context.scene.nm_count = new_markers
-        self.report({'INFO'}, f"{new_markers} Marker nach {attempt+1} Durchl\u00e4ufen")
+        # Keep newly detected tracks selected
+        for track in clip.tracking.tracks:
+            track.select = False
+        for t in new_tracks:
+            t.select = True
+        self.report({'INFO'}, f"{new_markers} Marker nach {attempt+1} Durchläufen")
         return {'FINISHED'}
 
 
@@ -738,6 +743,12 @@ class CLIP_OT_all_detect(bpy.types.Operator):
 
         context.scene.threshold_value = threshold_value
         context.scene.nm_count = new_markers
+
+        # Keep newly detected tracks selected
+        for track in clip.tracking.tracks:
+            track.select = False
+        for t in new_tracks:
+            t.select = True
 
         return {'FINISHED'}
 
