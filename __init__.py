@@ -391,9 +391,9 @@ class CLIP_OT_count_button(bpy.types.Operator):
         context.scene.nm_count = count
 
         mframe = context.scene.marker_frame
-        track_plus = mframe * 4
-        track_min = track_plus * 0.8
-        track_max = track_plus * 1.2
+        mf_base = mframe / 3
+        track_min = mf_base * 0.8
+        track_max = mf_base * 1.2
 
         if track_min <= count <= track_max:
             for t in clip.tracking.tracks:
