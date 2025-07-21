@@ -389,7 +389,23 @@
   `clip.detect_features()` auf.
 ## Version 1.91
 - Der Detect-Button wiederholt die Feature-Erkennung, bis die Zahl neuer Marker
-  zwischen 80 % und 120 % von (Marker / Frame) / 3 liegt. Marker außerhalb dieses
+  zwischen 90 % und 110 % von (Marker / Frame) / 3 liegt. Marker außerhalb dieses
   Bereichs werden gelöscht und Threshold, Margin sowie Distance neu berechnet.
-## Version 1.92
-- Neuer Button 'Defaults + Test' vereint das Setzen der Tracking-Defaults mit dem anschlie\xDFenden Testlauf.
+## Version 1.93
+- Unter "Defaults" sind nun zus\u00e4tzliche Buttons verf\u00fcgbar: Detect, Count, Track,
+  Delete, Pattern+ und Pattern-, Motion Model, Match sowie Schalter f\u00fcr die
+  einzelnen Farbkan\u00e4le.
+## Version 1.94
+- Button "Defaults + Test" entfernt.
+- Neuer Button "Name Test" vergibt TEST_-Pr\u00e4fixe. Pattern+ und Pattern- haben keine Begrenzung mehr und Detect l\u00f6scht Marker wie der Delete-Operator.
+## Version 1.95
+- Der Detect-Button berechnet den Threshold jetzt mit `mf_base` (ein Drittel von "Marker / Frame") statt dem NM-Wert.
+## Version 1.96
+- Neuer Button "Auto Detect" ruft einmal die Defaults auf und wiederholt anschlie\u00dfend Detect und Count.
+- Liegt die Markeranzahl nicht zwischen 90 und 110 % von (Marker / Frame) / 3, werden alle Marker gel\u00f6scht und die Erkennung startet erneut.
+
+## Version 1.97
+- `clip.detect_button` ruft nach jeder Ausführung von `clip.detect_features` automatisch `clip.prefix_test` auf, damit neue Marker sofort das TEST_-Präfix erhalten.
+## Version 1.98
+- Die Aktualisierung des Thresholds erfolgt nun mit
+  `aktueller * ((letzte Markeranzahl + 0.1) / (Marker / Frame / 3))`.
