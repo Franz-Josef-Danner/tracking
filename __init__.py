@@ -457,6 +457,12 @@ class CLIP_OT_motion_detect(bpy.types.Operator):
             end_frame = _auto_detect_mm(self, context)
             if end_frame is None:
                 continue
+            self.report(
+                {'INFO'},
+                f"Run end_frame={end_frame}, pattern_size={settings.default_pattern_size}, "
+                f"motion_model={model}, "
+                f"channels=({settings.use_default_red_channel}, {settings.use_default_green_channel}, {settings.use_default_blue_channel})",
+            )
             if best_end is None or end_frame > best_end:
                 best_end = end_frame
                 best_model = model
@@ -526,6 +532,12 @@ class CLIP_OT_channel_detect(bpy.types.Operator):
             end_frame = _auto_detect_mm(self, context)
             if end_frame is None:
                 continue
+            self.report(
+                {'INFO'},
+                f"Run end_frame={end_frame}, pattern_size={settings.default_pattern_size}, "
+                f"motion_model={settings.default_motion_model}, "
+                f"channels={channels}",
+            )
             if best_end is None or end_frame > best_end:
                 best_end = end_frame
                 best_channels = channels
@@ -847,6 +859,13 @@ def _auto_detect(self, context, use_defaults=True):
             if bpy.ops.clip.track_full.poll():
                 bpy.ops.clip.track_full(silent=True)
                 last_end = LAST_TRACK_END
+                s = clip.tracking.settings
+                self.report(
+                    {'INFO'},
+                    f"Run end_frame={last_end}, pattern_size={s.default_pattern_size}, "
+                    f"motion_model={s.default_motion_model}, "
+                    f"channels=({s.use_default_red_channel}, {s.use_default_green_channel}, {s.use_default_blue_channel})",
+                )
             else:
                 self.report({'WARNING'}, "Tracking nicht möglich")
 
