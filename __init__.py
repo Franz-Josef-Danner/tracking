@@ -459,15 +459,14 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
             print("Auto Detect: Tracking nicht m\u00f6glich")
             self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
 
-        renamed = 0
+        # Nach dem Tracking TEST_-Marker selektieren, l\xF6schen und Pattern+ anwenden
+        select_tracks_by_prefix(clip, "TEST_")
+        if bpy.ops.clip.delete_selected.poll():
+            bpy.ops.clip.delete_selected()
+        if bpy.ops.clip.pattern_up.poll():
+            bpy.ops.clip.pattern_up()
         for t in clip.tracking.tracks:
-            if t.name.startswith("TEST_"):
-                t.name = "TRACK_" + t.name[5:]
-                renamed += 1
-                t.select = False
-
-        if renamed:
-            print(f"{renamed} Tracks in TRACK_ umbenannt")
+            t.select = False
 
         print(f"Auto Detect: {count} Marker gefunden")
         from_settings = TEST_SETTINGS or {}

@@ -211,3 +211,6 @@ Tracking in der Konsole aus.
 Seit Version 1.101 gibt "Auto Detect" am Ende die Anzahl der getrackten Frames
 sowie Pattern Size, Motion Model, Pattern Match und die aktiven RGB-Kanäle in
 der Konsole aus.
+Seit Version 1.102 werden die TEST_-Tracks nach dem Tracking nicht mehr in
+TRACK_ umbenannt. Stattdessen wählt "Auto Detect" alle TEST_-Tracks aus,
+löst den Delete-Operator aus und führt anschließend Pattern+ aus.
