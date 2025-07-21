@@ -416,3 +416,6 @@
 ## Version 1.100
 - "Auto Detect" meldet Start, jeden Versuch und den Tracking-Schritt in der
   Konsole, um den Ablauf besser nachverfolgen zu k\u00f6nnen.
+## Version 1.101
+- Am Ende speichert "Auto Detect" alle TRACK_-Namen in der Variablen `TN` und
+  gibt diese Speicherung in der Konsole aus.

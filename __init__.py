@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 100),
+    "version": (1, 101),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -42,6 +42,8 @@ MIN_THRESHOLD = 0.0001
 TEST_START_FRAME = None
 TEST_END_FRAME = None
 TEST_SETTINGS = {}
+# Gespeicherte Namen nach Auto Detect
+TN = []
 
 
 def pattern_base(clip):
@@ -468,6 +470,9 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
             print(f"{renamed} Tracks in TRACK_ umbenannt")
 
         print(f"Auto Detect: {count} Marker gefunden")
+        global TN
+        TN = [t.name for t in clip.tracking.tracks if t.name.startswith("TRACK_")]
+        print(f"Auto Detect: TN gespeichert: {TN}")
         self.report({'INFO'}, f"{count} Marker gefunden")
         return {'FINISHED'}
 
