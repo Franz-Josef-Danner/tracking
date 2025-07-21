@@ -421,3 +421,6 @@
 - Am Ende gibt "Auto Detect" die Anzahl der getrackten Frames sowie
   Pattern Size, Motion Model, Pattern Match und die aktiven RGB-Kanäle in der
   Konsole aus.
+## Version 1.102
+- Die Auto-Detect-Schleife beendet sich, wenn der n\u00e4chste Track fr\u00fcher
+  endet als das bislang beste Ergebnis.

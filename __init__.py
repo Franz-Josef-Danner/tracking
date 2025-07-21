@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 101),
+    "version": (1, 102),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -44,6 +44,8 @@ TEST_END_FRAME = None
 TEST_SETTINGS = {}
 # Anzahl der zuletzt getrackten Frames
 TRACKED_FRAMES = 0
+# Letzter Endframe eines Tracking-Vorgangs
+LAST_TRACK_END = None
 
 
 def pattern_base(clip):
@@ -427,6 +429,7 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
 
         print("Auto Detect: gestartet")
         attempt = 0
+        prev_best = None
         while True:
             print(f"Auto Detect Durchlauf {attempt + 1}")
             bpy.ops.clip.detect_button()
@@ -435,6 +438,43 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
             )
             context.scene.nm_count = count
             print(f"Auto Detect Markeranzahl: {count}")
+
+            print("Auto Detect: Tracking TEST_-Marker")
+            select_tracks_by_prefix(clip, "TEST_")
+            if bpy.ops.clip.track_full.poll():
+                bpy.ops.clip.track_full()
+                last_end = LAST_TRACK_END
+            else:
+                print("Auto Detect: Tracking nicht m\u00f6glich")
+                self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
+                break
+
+            renamed = 0
+            for t in clip.tracking.tracks:
+                if t.name.startswith("TEST_"):
+                    t.name = "TRACK_" + t.name[5:]
+                    renamed += 1
+                    t.select = False
+
+            if renamed:
+                print(f"{renamed} Tracks in TRACK_ umbenannt")
+
+            if prev_best is None or last_end > prev_best:
+                prev_best = last_end
+            elif last_end < prev_best:
+                break
+
+            print(f"Auto Detect: {count} Marker gefunden")
+            from_settings = TEST_SETTINGS or {}
+            print(
+                "Auto Detect: ",
+                f"tracked_frames={TRACKED_FRAMES}, ",
+                f"pattern_size={from_settings.get('pattern_size')}, ",
+                f"motion_model={from_settings.get('motion_model')}, ",
+                f"pattern_match={from_settings.get('pattern_match')}, ",
+                f"channels={from_settings.get('channels_active')}"
+            )
+
             if mf_min <= count <= mf_max or attempt >= 10:
                 break
             for t in clip.tracking.tracks:
@@ -451,34 +491,6 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
             self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
             return {'CANCELLED'}
 
-        print("Auto Detect: Tracking TEST_-Marker")
-        select_tracks_by_prefix(clip, "TEST_")
-        if bpy.ops.clip.track_full.poll():
-            bpy.ops.clip.track_full()
-        else:
-            print("Auto Detect: Tracking nicht m\u00f6glich")
-            self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
-
-        renamed = 0
-        for t in clip.tracking.tracks:
-            if t.name.startswith("TEST_"):
-                t.name = "TRACK_" + t.name[5:]
-                renamed += 1
-                t.select = False
-
-        if renamed:
-            print(f"{renamed} Tracks in TRACK_ umbenannt")
-
-        print(f"Auto Detect: {count} Marker gefunden")
-        from_settings = TEST_SETTINGS or {}
-        print(
-            "Auto Detect: ",
-            f"tracked_frames={TRACKED_FRAMES}, ",
-            f"pattern_size={from_settings.get('pattern_size')}, ",
-            f"motion_model={from_settings.get('motion_model')}, ",
-            f"pattern_match={from_settings.get('pattern_match')}, ",
-            f"channels={from_settings.get('channels_active')}"
-        )
         self.report({'INFO'}, f"{count} Marker gefunden")
         return {'FINISHED'}
 
@@ -897,7 +909,7 @@ class CLIP_OT_track_full(bpy.types.Operator):
     )
 
     def execute(self, context):
-        global TEST_START_FRAME, TEST_END_FRAME, TEST_SETTINGS, TRACKED_FRAMES
+        global TEST_START_FRAME, TEST_END_FRAME, TEST_SETTINGS, TRACKED_FRAMES, LAST_TRACK_END
 
         clip = context.space_data.clip
         if not clip:
@@ -918,6 +930,7 @@ class CLIP_OT_track_full(bpy.types.Operator):
             return {'CANCELLED'}
 
         end_frame = scene.frame_current
+        LAST_TRACK_END = end_frame
         TRACKED_FRAMES = end_frame - start
         if TEST_END_FRAME is None or end_frame > TEST_END_FRAME:
             TEST_END_FRAME = end_frame
