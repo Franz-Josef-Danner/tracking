@@ -13,7 +13,7 @@ import time
 import os
 import shutil
 import math
-from bpy.props import IntProperty, FloatProperty
+from bpy.props import IntProperty, FloatProperty, BoolProperty
 
 # Frames, die mit zu wenig Markern gefunden wurden
 NF = []
