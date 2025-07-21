@@ -428,12 +428,19 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
         while True:
             print(f"Auto Detect Durchlauf {attempt + 1}")
             bpy.ops.clip.detect_button()
-            bpy.ops.clip.count_button()
-            count = context.scene.nm_count
+            count = sum(
+                1 for t in clip.tracking.tracks if t.name.startswith("TEST_")
+            )
+            context.scene.nm_count = count
             print(f"Auto Detect Markeranzahl: {count}")
             if mf_min <= count <= mf_max or attempt >= 10:
                 break
-            bpy.ops.clip.delete_selected()
+            for t in clip.tracking.tracks:
+                t.select = t.name.startswith("TEST_")
+            if bpy.ops.clip.delete_track.poll():
+                bpy.ops.clip.delete_track()
+            for t in clip.tracking.tracks:
+                t.select = False
             context.scene.threshold_value = 1.0
             attempt += 1
 
@@ -449,6 +456,16 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
         else:
             print("Auto Detect: Tracking nicht m\u00f6glich")
             self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
+
+        renamed = 0
+        for t in clip.tracking.tracks:
+            if t.name.startswith("TEST_"):
+                t.name = "TRACK_" + t.name[5:]
+                renamed += 1
+                t.select = False
+
+        if renamed:
+            print(f"{renamed} Tracks in TRACK_ umbenannt")
 
         print(f"Auto Detect: {count} Marker gefunden")
         self.report({'INFO'}, f"{count} Marker gefunden")
