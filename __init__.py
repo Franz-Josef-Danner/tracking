@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 115),
+    "version": (1, 116),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -672,14 +672,18 @@ class CLIP_OT_all_detect(bpy.types.Operator):
 
         width, _ = clip.size
 
+        margin_base = int(width * 0.01)
+        min_distance_base = int(width * 0.05)
+
         mfp = context.scene.marker_frame * 4
         mfp_min = mfp * 0.9
         mfp_max = mfp * 1.1
 
         threshold_value = 1.0
         detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
-        margin = int((width / 100) * detection_threshold)
-        min_distance = int((width / 20) * detection_threshold)
+        factor = math.log10(detection_threshold * 10000000000) / 10
+        margin = int(margin_base * factor)
+        min_distance = int(min_distance_base * factor)
 
         print(
             f"Start Detect: mfp={mfp}, range=({mfp_min:.2f}, {mfp_max:.2f}), "
@@ -727,8 +731,9 @@ class CLIP_OT_all_detect(bpy.types.Operator):
 
             threshold_value = threshold_value * ((new_markers + 0.1) / mfp)
             detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
-            margin = int((width / 100) * detection_threshold)
-            min_distance = int((width / 20) * detection_threshold)
+            factor = math.log10(detection_threshold * 10000000000) / 10
+            margin = int(margin_base * factor)
+            min_distance = int(min_distance_base * factor)
             attempt += 1
             print(
                 f"Adjusted: thresh={detection_threshold:.4f}, margin={margin}, "
