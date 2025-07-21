@@ -897,7 +897,7 @@ class CLIP_OT_track_full(bpy.types.Operator):
     )
 
     def execute(self, context):
-        global TEST_END_FRAME, TEST_SETTINGS, TRACKED_FRAMES
+        global TEST_START_FRAME, TEST_END_FRAME, TEST_SETTINGS, TRACKED_FRAMES
 
         clip = context.space_data.clip
         if not clip:
@@ -906,6 +906,7 @@ class CLIP_OT_track_full(bpy.types.Operator):
 
         scene = context.scene
         start = scene.frame_current
+        TEST_START_FRAME = start
 
         print("Track Full: gestartet")
 

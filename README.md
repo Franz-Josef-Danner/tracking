@@ -203,6 +203,9 @@ Seit Version 1.98 passt der Detect-Button den Threshold mit der Formel
 Seit Version 1.99 w\u00e4hlt der "Auto Detect"-Button alle TEST_-Tracks aus,
 startet das Tracking und aktualisiert den gespeicherten Test-Frame samt
 Einstellungen, wenn das Ergebnis besser ist.
+Der Startframe wird dabei in `TEST_START_FRAME` gesichert, der Endframe in
+`TEST_END_FRAME`. Die verwendeten Einstellungen (Pattern Size, Motion Model,
+Pattern Match und aktive RGB-Kanäle) landen in `TEST_SETTINGS`.
 Seit Version 1.100 gibt "Auto Detect" den Start, jeden Durchlauf und das
 Tracking in der Konsole aus.
 Seit Version 1.101 gibt "Auto Detect" am Ende die Anzahl der getrackten Frames

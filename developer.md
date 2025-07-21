@@ -413,6 +413,7 @@
 - "Auto Detect" w\u00e4hlt danach alle TEST_-Tracks aus, ruft den Track-Operator
   auf und \u00fcberschreibt TEST_END_FRAME sowie TEST_SETTINGS, wenn der
   resultierende Endframe h\u00f6her liegt.
+  Der Startframe wird in `TEST_START_FRAME` gespeichert.
 ## Version 1.100
 - "Auto Detect" meldet Start, jeden Versuch und den Tracking-Schritt in der
   Konsole, um den Ablauf besser nachverfolgen zu k\u00f6nnen.
