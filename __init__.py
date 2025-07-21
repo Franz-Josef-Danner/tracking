@@ -203,7 +203,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             for t in new_tracks:
                 t.select = True
             if new_tracks:
-                bpy.ops.clip.prefix_test()
+                bpy.ops.clip.prefix_test(silent=True)
             for track in clip.tracking.tracks:
                 track.select = False
             new_markers = len(new_tracks)
@@ -249,6 +249,8 @@ class CLIP_OT_prefix_new(bpy.types.Operator):
     bl_label = "NEW"
     bl_description = "Präfix NEW_ für selektierte Tracks setzen"
 
+    silent: BoolProperty(default=False, options={'HIDDEN'})
+
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
@@ -261,7 +263,8 @@ class CLIP_OT_prefix_new(bpy.types.Operator):
             if track.select and not track.name.startswith(prefix):
                 track.name = prefix + track.name
                 count += 1
-        self.report({'INFO'}, f"{count} Tracks umbenannt")
+        if not self.silent:
+            self.report({'INFO'}, f"{count} Tracks umbenannt")
         return {'FINISHED'}
 
 
@@ -269,6 +272,8 @@ class CLIP_OT_prefix_test(bpy.types.Operator):
     bl_idname = "clip.prefix_test"
     bl_label = "Name Test"
     bl_description = "Präfix TEST_ für selektierte Tracks setzen"
+
+    silent: BoolProperty(default=False, options={'HIDDEN'})
 
     def execute(self, context):
         clip = context.space_data.clip
@@ -282,7 +287,8 @@ class CLIP_OT_prefix_test(bpy.types.Operator):
             if track.select and not track.name.startswith(prefix):
                 track.name = prefix + track.name
                 count += 1
-        self.report({'INFO'}, f"{count} Tracks umbenannt")
+        if not self.silent:
+            self.report({'INFO'}, f"{count} Tracks umbenannt")
         return {'FINISHED'}
 
 
@@ -337,6 +343,8 @@ class CLIP_OT_delete_selected(bpy.types.Operator):
     bl_label = "Delete"
     bl_description = "Löscht selektierte Tracks"
 
+    silent: BoolProperty(default=False, options={'HIDDEN'})
+
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
@@ -345,14 +353,17 @@ class CLIP_OT_delete_selected(bpy.types.Operator):
 
         has_selection = any(t.select for t in clip.tracking.tracks)
         if not has_selection:
-            self.report({'WARNING'}, "Keine Tracks ausgewählt")
+            if not self.silent:
+                self.report({'WARNING'}, "Keine Tracks ausgewählt")
             return {'CANCELLED'}
 
         if bpy.ops.clip.delete_track.poll():
             bpy.ops.clip.delete_track()
-            self.report({'INFO'}, "Tracks gelöscht")
+            if not self.silent:
+                self.report({'INFO'}, "Tracks gelöscht")
         else:
-            self.report({'WARNING'}, "Löschen nicht möglich")
+            if not self.silent:
+                self.report({'WARNING'}, "Löschen nicht möglich")
         return {'FINISHED'}
 
 
@@ -360,6 +371,7 @@ class CLIP_OT_count_button(bpy.types.Operator):
     bl_idname = "clip.count_button"
     bl_label = "Count"
     bl_description = "Selektiert und zählt TEST_-Tracks"
+    silent: BoolProperty(default=False, options={"HIDDEN"})
 
     def execute(self, context):
         clip = context.space_data.clip
@@ -383,9 +395,11 @@ class CLIP_OT_count_button(bpy.types.Operator):
                 if t.name.startswith(prefix):
                     t.name = "TRACK_" + t.name[len(prefix):]
                     t.select = False
-            self.report({'INFO'}, f"{count} Tracks in TRACK_ umbenannt")
+            if not self.silent:
+                self.report({'INFO'}, f"{count} Tracks in TRACK_ umbenannt")
         else:
-            self.report({'INFO'}, f"{count} TEST_-Tracks ausserhalb des Bereichs")
+            if not self.silent:
+                self.report({'INFO'}, f"{count} TEST_-Tracks ausserhalb des Bereichs")
         return {'FINISHED'}
 
 
@@ -451,7 +465,8 @@ class CLIP_OT_motion_detect(bpy.types.Operator):
         TEST_END_FRAME = best_end
         TEST_SETTINGS["motion_model"] = best_model
 
-        print(
+        self.report(
+            {'INFO'},
             f"Auto Detect MM best_end_frame={TEST_END_FRAME}, "
             f"pattern_size={TEST_SETTINGS.get('pattern_size')}, "
             f"motion_model={best_model}, "
@@ -523,7 +538,8 @@ class CLIP_OT_channel_detect(bpy.types.Operator):
         TEST_END_FRAME = best_end
         TEST_SETTINGS["channels_active"] = best_channels
 
-        print(
+        self.report(
+            {'INFO'},
             f"Auto Detect CH best_end_frame={TEST_END_FRAME}, "
             f"pattern_size={TEST_SETTINGS.get('pattern_size')}, "
             f"motion_model={TEST_SETTINGS.get('motion_model')}, "
@@ -796,7 +812,7 @@ def _auto_detect(self, context, use_defaults=True):
     mf_max = mf_base * 1.1
 
     if use_defaults:
-        bpy.ops.clip.setup_defaults()
+        bpy.ops.clip.setup_defaults(silent=True)
     context.scene.threshold_value = 1.0
 
     # Begin auto detect cycle
@@ -829,14 +845,14 @@ def _auto_detect(self, context, use_defaults=True):
 
             select_tracks_by_prefix(clip, "TEST_")
             if bpy.ops.clip.track_full.poll():
-                bpy.ops.clip.track_full()
+                bpy.ops.clip.track_full(silent=True)
                 last_end = LAST_TRACK_END
             else:
                 self.report({'WARNING'}, "Tracking nicht möglich")
 
             select_tracks_by_prefix(clip, "TEST_")
             if bpy.ops.clip.delete_selected.poll():
-                bpy.ops.clip.delete_selected()
+                bpy.ops.clip.delete_selected(silent=True)
             if bpy.ops.clip.pattern_up.poll():
                 bpy.ops.clip.pattern_up()
             for t in clip.tracking.tracks:
@@ -848,7 +864,8 @@ def _auto_detect(self, context, use_defaults=True):
             break
 
     from_settings = TEST_SETTINGS or {}
-    print(
+    self.report(
+        {'INFO'},
         f"Auto Detect best_end_frame={TEST_END_FRAME}, "
         f"pattern_size={from_settings.get('pattern_size')}, "
         f"motion_model={from_settings.get('motion_model')}, "
@@ -891,7 +908,7 @@ def _auto_detect_mm(self, context):
 
         select_tracks_by_prefix(clip, "TEST_")
         if bpy.ops.clip.delete_selected.poll():
-            bpy.ops.clip.delete_selected()
+            bpy.ops.clip.delete_selected(silent=True)
         for t in clip.tracking.tracks:
             t.select = False
 
@@ -959,6 +976,8 @@ class CLIP_OT_setup_defaults(bpy.types.Operator):
         "Setzt Tracking-Standards: Pattern 10, Motion Loc, Keyframe-Match"
     )
 
+    silent: BoolProperty(default=False, options={'HIDDEN'})
+
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
@@ -982,7 +1001,8 @@ class CLIP_OT_setup_defaults(bpy.types.Operator):
 
 
 
-        self.report({'INFO'}, "Tracking-Defaults gesetzt")
+        if not self.silent:
+            self.report({'INFO'}, "Tracking-Defaults gesetzt")
         return {'FINISHED'}
 
 
@@ -1040,6 +1060,8 @@ class CLIP_OT_track_full(bpy.types.Operator):
         "Trackt die Sequenz vorw\u00e4rts und speichert den letzten Frame"
     )
 
+    silent: BoolProperty(default=False, options={'HIDDEN'})
+
     def execute(self, context):
         global TEST_START_FRAME, TEST_END_FRAME, TEST_SETTINGS, TRACKED_FRAMES, LAST_TRACK_END
 
@@ -1076,7 +1098,8 @@ class CLIP_OT_track_full(bpy.types.Operator):
             }
 
         scene.frame_current = start
-        self.report({'INFO'}, f"Tracking bis Frame {end_frame} abgeschlossen")
+        if not self.silent:
+            self.report({'INFO'}, f"Tracking bis Frame {end_frame} abgeschlossen")
         return {'FINISHED'}
 
 
