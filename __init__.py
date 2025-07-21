@@ -480,10 +480,9 @@ class CLIP_OT_motion_detect(bpy.types.Operator):
         TEST_SETTINGS["motion_model"] = best_model
 
         print(
-            "Auto Detect MM gespeichert: ",
-            f"end_frame={TEST_END_FRAME}, ",
-            f"pattern_size={TEST_SETTINGS.get('pattern_size')}, ",
-            f"motion_model={best_model}, ",
+            f"Auto Detect MM best_end_frame={TEST_END_FRAME}, "
+            f"pattern_size={TEST_SETTINGS.get('pattern_size')}, "
+            f"motion_model={best_model}, "
             f"channels={TEST_SETTINGS.get('channels_active')}"
         )
 
@@ -553,10 +552,9 @@ class CLIP_OT_channel_detect(bpy.types.Operator):
         TEST_SETTINGS["channels_active"] = best_channels
 
         print(
-            "Auto Detect CH gespeichert: ",
-            f"end_frame={TEST_END_FRAME}, ",
-            f"pattern_size={TEST_SETTINGS.get('pattern_size')}, ",
-            f"motion_model={TEST_SETTINGS.get('motion_model')}, ",
+            f"Auto Detect CH best_end_frame={TEST_END_FRAME}, "
+            f"pattern_size={TEST_SETTINGS.get('pattern_size')}, "
+            f"motion_model={TEST_SETTINGS.get('motion_model')}, "
             f"channels={best_channels}"
         )
 
@@ -831,20 +829,19 @@ def _auto_detect(self, context, use_defaults=True):
         bpy.ops.clip.setup_defaults()
     context.scene.threshold_value = 1.0
 
-    print("Auto Detect: gestartet")
+    # Begin auto detect cycle
     prev_best = TEST_END_FRAME
     last_end = None
     while True:
         for cycle in range(4):
             attempt = 0
             while True:
-                print(f"Auto Detect Durchlauf {cycle * 10 + attempt + 1}")
+                # run detection for each attempt
                 bpy.ops.clip.detect_button()
                 count = sum(
                     1 for t in clip.tracking.tracks if t.name.startswith("TEST_")
                 )
                 context.scene.nm_count = count
-                print(f"Auto Detect Markeranzahl: {count}")
                 if mf_min <= count <= mf_max or attempt >= 10:
                     break
                 for t in clip.tracking.tracks:
@@ -857,17 +854,14 @@ def _auto_detect(self, context, use_defaults=True):
                 attempt += 1
 
             if attempt >= 10 and not (mf_min <= count <= mf_max):
-                print("Auto Detect: Abbruch nach maximalen Durchläufen")
                 self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
                 return {'CANCELLED'}
 
-            print("Auto Detect: Tracking TEST_-Marker")
             select_tracks_by_prefix(clip, "TEST_")
             if bpy.ops.clip.track_full.poll():
                 bpy.ops.clip.track_full()
                 last_end = LAST_TRACK_END
             else:
-                print("Auto Detect: Tracking nicht möglich")
                 self.report({'WARNING'}, "Tracking nicht möglich")
 
             select_tracks_by_prefix(clip, "TEST_")
@@ -883,23 +877,12 @@ def _auto_detect(self, context, use_defaults=True):
         elif last_end is not None and last_end < prev_best:
             break
 
-    print(f"Auto Detect: {count} Marker gefunden")
     from_settings = TEST_SETTINGS or {}
     print(
-        "Auto Detect: ",
-        f"tracked_frames={TRACKED_FRAMES}, ",
-        f"pattern_size={from_settings.get('pattern_size')}, ",
-        f"motion_model={from_settings.get('motion_model')}, ",
-        f"pattern_match={from_settings.get('pattern_match')}, ",
-        f"channels={from_settings.get('channels_active')}",
-    )
-    print(
-        "Auto Detect gespeichert: ",
-        f"end_frame={TEST_END_FRAME}, ",
-        f"pattern_size={from_settings.get('pattern_size')}, ",
-        f"motion_model={from_settings.get('motion_model')}, ",
-        f"pattern_match={from_settings.get('pattern_match')}, ",
-        f"channels={from_settings.get('channels_active')}",
+        f"Auto Detect best_end_frame={TEST_END_FRAME}, "
+        f"pattern_size={from_settings.get('pattern_size')}, "
+        f"motion_model={from_settings.get('motion_model')}, "
+        f"channels={from_settings.get('channels_active')}"
     )
     self.report({'INFO'}, f"{count} Marker gefunden")
     return {'FINISHED'}
@@ -923,7 +906,7 @@ def _auto_detect_mm(self, context):
     best_end = None
     for cycle in range(4):
         scene.frame_current = start
-        print(f"Auto Detect MM Durchlauf {cycle + 1}")
+        # run detect for each motion model cycle
         bpy.ops.clip.detect_button()
 
         select_tracks_by_prefix(clip, "TEST_")
@@ -933,7 +916,6 @@ def _auto_detect_mm(self, context):
             if best_end is None or end_frame > best_end:
                 best_end = end_frame
         else:
-            print("Auto Detect MM: Tracking nicht möglich")
             self.report({'WARNING'}, "Tracking nicht möglich")
             break
 
@@ -944,7 +926,6 @@ def _auto_detect_mm(self, context):
             t.select = False
 
     scene.frame_current = start
-    print(f"Auto Detect MM Ergebnis: best_end={best_end}")
     return best_end
 
 
