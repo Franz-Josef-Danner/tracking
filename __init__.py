@@ -431,7 +431,7 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
         prev_best = TEST_END_FRAME
         last_end = None
         while True:
-            for cycle in range(2):
+            for cycle in range(4):
                 attempt = 0
                 while True:
                     print(f"Auto Detect Durchlauf {cycle * 10 + attempt + 1}")

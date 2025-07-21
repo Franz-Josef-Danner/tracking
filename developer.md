@@ -436,3 +436,6 @@
 ## Version 1.107
 - "Auto Detect" verwendet nur noch Zweierbl\u00f6cke und speichert den Endframe samt Einstellungen nur, wenn dieser h\u00f6her liegt.
 - Der Vorgang endet, sobald der n\u00e4chste Track fr\u00fcher stoppt als der bereits gespeicherte Endframe.
+## Version 1.108
+- "Auto Detect" sucht wieder in Viererblöcken nach einem höheren Endframe.
+- Der Ablauf endet, wenn der nächste Track früher stoppt als der gespeicherte Endframe.
