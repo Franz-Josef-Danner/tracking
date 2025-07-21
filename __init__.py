@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 99),
+    "version": (1, 100),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -423,11 +423,14 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
         bpy.ops.clip.setup_defaults()
         context.scene.threshold_value = 1.0
 
+        print("Auto Detect: gestartet")
         attempt = 0
         while True:
+            print(f"Auto Detect Durchlauf {attempt + 1}")
             bpy.ops.clip.detect_button()
             bpy.ops.clip.count_button()
             count = context.scene.nm_count
+            print(f"Auto Detect Markeranzahl: {count}")
             if mf_min <= count <= mf_max or attempt >= 10:
                 break
             bpy.ops.clip.delete_selected()
@@ -435,16 +438,19 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
             attempt += 1
 
         if attempt >= 10 and not (mf_min <= count <= mf_max):
+            print("Auto Detect: Abbruch nach maximalen Durchl\u00e4ufen")
             self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
             return {'CANCELLED'}
 
-        # Nach erfolgreicher Erkennung TEST_-Tracks tracken
+        print("Auto Detect: Tracking TEST_-Marker")
         select_tracks_by_prefix(clip, "TEST_")
         if bpy.ops.clip.track_full.poll():
             bpy.ops.clip.track_full()
         else:
+            print("Auto Detect: Tracking nicht m\u00f6glich")
             self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
 
+        print(f"Auto Detect: {count} Marker gefunden")
         self.report({'INFO'}, f"{count} Marker gefunden")
         return {'FINISHED'}
 
@@ -873,9 +879,12 @@ class CLIP_OT_track_full(bpy.types.Operator):
         scene = context.scene
         start = scene.frame_current
 
+        print("Track Full: gestartet")
+
         if bpy.ops.clip.track_markers.poll():
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
         else:
+            print("Track Full: Tracking nicht m\u00f6glich")
             self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
             return {'CANCELLED'}
 
@@ -895,6 +904,7 @@ class CLIP_OT_track_full(bpy.types.Operator):
             }
 
         scene.frame_current = start
+        print(f"Track Full: Ende bei Frame {end_frame}")
         self.report({'INFO'}, f"Tracking bis Frame {end_frame} abgeschlossen")
         return {'FINISHED'}
 

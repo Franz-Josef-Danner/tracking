@@ -203,3 +203,5 @@ Seit Version 1.98 passt der Detect-Button den Threshold mit der Formel
 Seit Version 1.99 w\u00e4hlt der "Auto Detect"-Button alle TEST_-Tracks aus,
 startet das Tracking und aktualisiert den gespeicherten Test-Frame samt
 Einstellungen, wenn das Ergebnis besser ist.
+Seit Version 1.100 gibt "Auto Detect" den Start, jeden Durchlauf und das
+Tracking in der Konsole aus.
