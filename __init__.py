@@ -1429,12 +1429,12 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.pattern_down', text='Pattern-')
         layout.operator('clip.motion_cycle', text='Motion Model')
         layout.operator('clip.match_cycle', text='Match')
-        layout.operator('clip.channel_r_on', text='Chanal R on')
-        layout.operator('clip.channel_r_off', text='Chanal R off')
-        layout.operator('clip.channel_b_on', text='Chanal B on')
-        layout.operator('clip.channel_b_off', text='Chanal B off')
-        layout.operator('clip.channel_g_on', text='Chanal G on')
-        layout.operator('clip.channel_g_off', text='Chanal G off')
+        layout.operator('clip.channel_r_on', text='Channel R on')
+        layout.operator('clip.channel_r_off', text='Channel R off')
+        layout.operator('clip.channel_b_on', text='Channel B on')
+        layout.operator('clip.channel_b_off', text='Channel B off')
+        layout.operator('clip.channel_g_on', text='Channel G on')
+        layout.operator('clip.channel_g_off', text='Channel G off')
 
 
 class CLIP_PT_test_subpanel(bpy.types.Panel):
