@@ -428,7 +428,7 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
         print("Auto Detect: gestartet")
         prev_best = TEST_END_FRAME
         while True:
-            for cycle in range(6):
+            for cycle in range(2):
                 attempt = 0
                 while True:
                     print(f"Auto Detect Durchlauf {cycle * 10 + attempt + 1}")
@@ -472,10 +472,12 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
 
             if prev_best is None:
                 prev_best = TEST_END_FRAME
-            elif TEST_END_FRAME is None or TEST_END_FRAME <= prev_best:
+            elif TEST_END_FRAME is None:
                 break
-            else:
+            elif TEST_END_FRAME > prev_best:
                 prev_best = TEST_END_FRAME
+            elif TEST_END_FRAME < prev_best:
+                break
 
         print(f"Auto Detect: {count} Marker gefunden")
         from_settings = TEST_SETTINGS or {}
