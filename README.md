@@ -225,3 +225,9 @@ Seit Version 1.109 gibt "Auto Detect" am Ende den gespeicherten Endframe und des
 Seit Version 1.110 testet ein neuer Button "Auto Detect CH" verschiedene RGB-Kombinationen, speichert das beste Ergebnis und gibt Pattern Size, Motion Model sowie die Farbkanäle in der Konsole aus.
 Seit Version 1.111 setzt ein neuer Button "Apply Detect" unter "Auto Detect CH" die gespeicherten Werte für Pattern Size, Motion Model und die aktiven RGB-Kanäle. Zusätzlich stellt er die Mindestkorrelation auf 0,9 und den Margin-Wert auf das Doppelte der Pattern Size ein.
 Seit Version 1.112 ruft "Auto Detect" zu Beginn nicht mehr "Defaults" auf, sondern verwendet die aktuellen Tracking-Einstellungen.
+Seit Version 1.113 gibt es einen Button 'Detect', der den Detect-Schritt aus 'All Cycle' separat ausführt.
+Seit Version 1.114 befindet sich der Button im API-Panel und verwendet eine eigene Threshold-Formel.
+Seit Version 1.115 gibt dieser Button zus\u00e4tzliche Konsolenausgaben zum Threshold und der Anzahl neuer Marker aus.
+Seit Version 1.116 berechnet der Button Margin und Min Distance logarithmisch aus dem Threshold.
+Seit Version 1.117 findet im Detect-Button keine automatische Umbenennung der Marker mehr statt.
+Seit Version 1.118 bleiben neu erkannte Marker nach dem Detect-Button ausgewählt.
