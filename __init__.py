@@ -441,57 +441,48 @@ class CLIP_OT_motion_detect(bpy.types.Operator):
 
         base_settings = TEST_SETTINGS.copy()
 
-        orig_settings = {
-            'motion_model': settings.default_motion_model,
-            'pattern_size': settings.default_pattern_size,
-            'pattern_match': settings.default_pattern_match,
-            'channels_active': (
-                settings.use_default_red_channel,
-                settings.use_default_green_channel,
-                settings.use_default_blue_channel,
-            ),
-        }
-
-        best_end = None
-        best_model = None
-        best_frames = -1
+        original_frames = TRACKED_FRAMES
+        best_end = TEST_END_FRAME
+        best_model = base_settings.get('motion_model', settings.default_motion_model)
+        best_frames = TRACKED_FRAMES
 
         for model in MOTION_MODELS:
-            settings.default_pattern_size = base_settings.get('pattern_size', settings.default_pattern_size)
-            settings.default_search_size = settings.default_pattern_size * 2
-            settings.default_pattern_match = base_settings.get('pattern_match', settings.default_pattern_match)
-            r, g, b = base_settings.get('channels_active', (True, True, True))
-            settings.use_default_red_channel = r
-            settings.use_default_green_channel = g
-            settings.use_default_blue_channel = b
-            settings.default_motion_model = model
+            for _ in range(4):
+                settings.default_pattern_size = base_settings.get('pattern_size', settings.default_pattern_size)
+                settings.default_search_size = settings.default_pattern_size * 2
+                settings.default_pattern_match = base_settings.get('pattern_match', settings.default_pattern_match)
+                r, g, b = base_settings.get('channels_active', (True, True, True))
+                settings.use_default_red_channel = r
+                settings.use_default_green_channel = g
+                settings.use_default_blue_channel = b
+                settings.default_motion_model = model
 
-            TEST_START_FRAME = None
-            TEST_END_FRAME = None
-            TEST_SETTINGS = {}
-            TRACKED_FRAMES = 0
-            LAST_TRACK_END = None
+                TEST_START_FRAME = None
+                TEST_END_FRAME = None
+                TEST_SETTINGS = {}
+                TRACKED_FRAMES = 0
+                LAST_TRACK_END = None
 
-            result = _auto_detect(self, context, use_defaults=False)
-            if 'FINISHED' not in result:
-                break
+                result = _auto_detect(self, context, use_defaults=False)
+                if 'FINISHED' not in result:
+                    break
 
-            frames = TRACKED_FRAMES
-            if best_end is None or frames > best_frames:
-                best_end = TEST_END_FRAME
-                best_model = model
-                best_frames = frames
+                frames = TRACKED_FRAMES
+                if frames > best_frames:
+                    best_end = TEST_END_FRAME
+                    best_model = model
+                    best_frames = frames
 
-            # Settings may have been modified during detection. Restore baseline for next run.
-            settings.default_pattern_size = base_settings.get('pattern_size', settings.default_pattern_size)
-            settings.default_search_size = settings.default_pattern_size * 2
-            settings.default_pattern_match = base_settings.get('pattern_match', settings.default_pattern_match)
-            r, g, b = base_settings.get('channels_active', (True, True, True))
-            settings.use_default_red_channel = r
-            settings.use_default_green_channel = g
-            settings.use_default_blue_channel = b
+                # Restore baseline settings for next run
+                settings.default_pattern_size = base_settings.get('pattern_size', settings.default_pattern_size)
+                settings.default_search_size = settings.default_pattern_size * 2
+                settings.default_pattern_match = base_settings.get('pattern_match', settings.default_pattern_match)
+                r, g, b = base_settings.get('channels_active', (True, True, True))
+                settings.use_default_red_channel = r
+                settings.use_default_green_channel = g
+                settings.use_default_blue_channel = b
 
-        if best_model is not None:
+        if best_frames > original_frames:
             settings.default_pattern_size = base_settings.get('pattern_size', settings.default_pattern_size)
             settings.default_search_size = settings.default_pattern_size * 2
             settings.default_pattern_match = base_settings.get('pattern_match', settings.default_pattern_match)
@@ -511,16 +502,15 @@ class CLIP_OT_motion_detect(bpy.types.Operator):
                 f"end_frame={TEST_END_FRAME}, ",
                 f"motion_model={best_model}"
             )
-
         else:
-            settings.default_pattern_size = orig_settings['pattern_size']
+            settings.default_pattern_size = base_settings.get('pattern_size', settings.default_pattern_size)
             settings.default_search_size = settings.default_pattern_size * 2
-            settings.default_pattern_match = orig_settings['pattern_match']
-            r, g, b = orig_settings['channels_active']
+            settings.default_pattern_match = base_settings.get('pattern_match', settings.default_pattern_match)
+            r, g, b = base_settings.get('channels_active', (True, True, True))
             settings.use_default_red_channel = r
             settings.use_default_green_channel = g
             settings.use_default_blue_channel = b
-            settings.default_motion_model = orig_settings['motion_model']
+            settings.default_motion_model = base_settings.get('motion_model', settings.default_motion_model)
 
         self.report({'INFO'}, "Auto Detect MM abgeschlossen")
         return {'FINISHED'}
