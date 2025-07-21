@@ -407,11 +407,11 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
     bl_idname = "clip.defaults_detect"
     bl_label = "Auto Detect"
     bl_description = (
-        "Setzt Defaults und wiederholt Detect und Count, bis genug Marker vorhanden sind"
+        "Wiederholt Detect und Count, bis genug Marker vorhanden sind"
     )
 
     def execute(self, context):
-        return _auto_detect(self, context, use_defaults=True)
+        return _auto_detect(self, context, use_defaults=False)
 
 
 class CLIP_OT_motion_detect(bpy.types.Operator):
@@ -559,6 +559,52 @@ class CLIP_OT_channel_detect(bpy.types.Operator):
         )
 
         self.report({'INFO'}, "Auto Detect CH abgeschlossen")
+        return {'FINISHED'}
+
+
+class CLIP_OT_apply_settings(bpy.types.Operator):
+    bl_idname = "clip.apply_detect_settings"
+    bl_label = "Apply Detect"
+    bl_description = (
+        "Setzt gespeicherte Auto Detect Werte f\u00fcr Pattern, Motion Model und RGB"
+        " Kan\u00e4le"
+    )
+
+    def execute(self, context):
+        global TEST_SETTINGS
+
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        if not TEST_SETTINGS:
+            self.report({'WARNING'}, "Keine gespeicherten Einstellungen")
+            return {'CANCELLED'}
+
+        settings = clip.tracking.settings
+
+        pattern_size = TEST_SETTINGS.get("pattern_size")
+        if pattern_size is not None:
+            settings.default_pattern_size = pattern_size
+            settings.default_search_size = pattern_size * 2
+
+        # Extras: Mindestkorrelation und Margin
+        settings.default_correlation_min = 0.9
+        settings.default_margin = settings.default_pattern_size * 2
+
+        motion_model = TEST_SETTINGS.get("motion_model")
+        if motion_model is not None:
+            settings.default_motion_model = motion_model
+
+        channels = TEST_SETTINGS.get("channels_active")
+        if channels:
+            r, g, b = channels
+            settings.use_default_red_channel = r
+            settings.use_default_green_channel = g
+            settings.use_default_blue_channel = b
+
+        self.report({'INFO'}, "Gespeicherte Auto Detect Werte gesetzt")
         return {'FINISHED'}
 
 
@@ -1329,6 +1375,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.defaults_detect', text='Auto Detect')
         layout.operator('clip.motion_detect', text='Auto Detect MM')
         layout.operator('clip.channel_detect', text='Auto Detect CH')
+        layout.operator('clip.apply_detect_settings', text='Apply Detect')
         layout.operator('clip.detect_button', text='Detect')
         layout.operator('clip.prefix_test', text='Name Test')
         layout.operator('clip.count_button', text='Count')
@@ -1357,6 +1404,7 @@ classes = (
     CLIP_OT_defaults_detect,
     CLIP_OT_motion_detect,
     CLIP_OT_channel_detect,
+    CLIP_OT_apply_settings,
     CLIP_OT_setup_defaults,
     CLIP_OT_track_full,
     CLIP_OT_pattern_up,
