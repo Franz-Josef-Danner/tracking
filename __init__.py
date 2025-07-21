@@ -832,8 +832,8 @@ def _auto_detect(self, context, use_defaults=True):
 
         if prev_best is None or (last_end is not None and last_end > prev_best):
             prev_best = last_end
-        elif last_end is not None and last_end < prev_best:
-            break
+        else:
+            break  # also break when last_end == prev_best
 
     print(f"Auto Detect: {count} Marker gefunden")
     from_settings = TEST_SETTINGS or {}
