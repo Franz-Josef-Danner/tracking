@@ -406,3 +406,6 @@
 
 ## Version 1.97
 - `clip.detect_button` ruft nach jeder Ausführung von `clip.detect_features` automatisch `clip.prefix_test` auf, damit neue Marker sofort das TEST_-Präfix erhalten.
+## Version 1.98
+- Die Aktualisierung des Thresholds erfolgt nun mit
+  `aktueller * ((letzte Markeranzahl + 0.1) / (Marker / Frame / 3))`.

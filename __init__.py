@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 97),
+    "version": (1, 98),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -146,9 +146,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         width, height = clip.size
 
         mframe = context.scene.marker_frame
-        track_plus = mframe / 3
-
-        mf_base = track_plus
+        mf_base = mframe / 3
 
         threshold_value = 1.0
 
@@ -163,8 +161,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
 
         print(
             "Initial threshold calculation:",
-            f"mf_base={mf_base:.3f}, track_plus={track_plus:.3f} (mf/3), ",
-            f"threshold={threshold_value:.3f}",
+            f"mf_base={mf_base:.3f}, threshold={threshold_value:.3f}",
         )
         print(
             "detection_threshold = max(min("
@@ -223,9 +220,9 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             for track in clip.tracking.tracks:
                 track.select = False
             old_tv = threshold_value
-            threshold_value = threshold_value * ((mf_base + 0.1) / track_plus)
+            threshold_value = threshold_value * ((new_markers + 0.1) / mf_base)
             print(
-                f"threshold_value = {old_tv:.5f} * (({mf_base:.5f} + 0.1) / {track_plus:.5f}) = {threshold_value:.5f}"
+                f"threshold_value = {old_tv:.5f} * (({new_markers} + 0.1) / {mf_base:.5f}) = {threshold_value:.5f}"
             )
             detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
             print(
