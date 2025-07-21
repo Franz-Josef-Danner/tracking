@@ -32,7 +32,7 @@ MOTION_MODELS = [
     'Perspective',
 ]
 
-# Channel combinations for Auto Detect CH
+# Channel combinations for Test Detect CH
 CHANNEL_COMBOS = [
     (True, False, False),
     (True, True, False),
@@ -42,7 +42,7 @@ CHANNEL_COMBOS = [
     (False, False, True),
 ]
 
-# Urspr\u00fcnglicher Wert f\u00fcr "Marker / Frame"
+# Urspr\u00fcnglicher Wert f\u00fcr "Marker/Frame"
 DEFAULT_MARKER_FRAME = 20
 
 # Minimaler Threshold-Wert f\u00fcr die Feature-Erkennung
@@ -405,20 +405,20 @@ class CLIP_OT_count_button(bpy.types.Operator):
 
 class CLIP_OT_defaults_detect(bpy.types.Operator):
     bl_idname = "clip.defaults_detect"
-    bl_label = "Auto Detect"
+    bl_label = "Test Detect"
     bl_description = (
         "Wiederholt Detect und Count, bis genug Marker vorhanden sind"
     )
 
     def execute(self, context):
-        return _auto_detect(self, context, use_defaults=False)
+        return _Test_detect(self, context, use_defaults=False)
 
 
 class CLIP_OT_motion_detect(bpy.types.Operator):
     bl_idname = "clip.motion_detect"
-    bl_label = "Auto Detect MM"
+    bl_label = "Test Detect MM"
     bl_description = (
-        "F\u00fchrt Auto Detect mit jedem Motion Model aus und speichert das beste Ergebnis"
+        "F\u00fchrt Test Detect mit jedem Motion Model aus und speichert das beste Ergebnis"
     )
 
     def execute(self, context):
@@ -454,7 +454,7 @@ class CLIP_OT_motion_detect(bpy.types.Operator):
 
         for model in MOTION_MODELS:
             settings.default_motion_model = model
-            end_frame = _auto_detect_mm(self, context)
+            end_frame = _Test_detect_mm(self, context)
             if end_frame is None:
                 continue
             self.report(
@@ -473,21 +473,21 @@ class CLIP_OT_motion_detect(bpy.types.Operator):
 
         self.report(
             {'INFO'},
-            f"Auto Detect MM best_end_frame={TEST_END_FRAME}, "
+            f"Test Detect MM best_end_frame={TEST_END_FRAME}, "
             f"pattern_size={TEST_SETTINGS.get('pattern_size')}, "
             f"motion_model={best_model}, "
             f"channels={TEST_SETTINGS.get('channels_active')}"
         )
 
-        self.report({'INFO'}, "Auto Detect MM abgeschlossen")
+        self.report({'INFO'}, "Test Detect MM abgeschlossen")
         return {'FINISHED'}
 
 
 class CLIP_OT_channel_detect(bpy.types.Operator):
     bl_idname = "clip.channel_detect"
-    bl_label = "Auto Detect CH"
+    bl_label = "Test Detect CH"
     bl_description = (
-        "F\u00fchrt Auto Detect mit verschiedenen Farbkan\u00e4len aus und speichert das beste Ergebnis"
+        "F\u00fchrt Test Detect mit verschiedenen Farbkan\u00e4len aus und speichert das beste Ergebnis"
     )
 
     def execute(self, context):
@@ -529,7 +529,7 @@ class CLIP_OT_channel_detect(bpy.types.Operator):
                 settings.use_default_green_channel,
                 settings.use_default_blue_channel,
             ) = channels
-            end_frame = _auto_detect_mm(self, context)
+            end_frame = _Test_detect_mm(self, context)
             if end_frame is None:
                 continue
             self.report(
@@ -552,13 +552,13 @@ class CLIP_OT_channel_detect(bpy.types.Operator):
 
         self.report(
             {'INFO'},
-            f"Auto Detect CH best_end_frame={TEST_END_FRAME}, "
+            f"Test Detect CH best_end_frame={TEST_END_FRAME}, "
             f"pattern_size={TEST_SETTINGS.get('pattern_size')}, "
             f"motion_model={TEST_SETTINGS.get('motion_model')}, "
             f"channels={best_channels}"
         )
 
-        self.report({'INFO'}, "Auto Detect CH abgeschlossen")
+        self.report({'INFO'}, "Test Detect CH abgeschlossen")
         return {'FINISHED'}
 
 
@@ -566,7 +566,7 @@ class CLIP_OT_apply_settings(bpy.types.Operator):
     bl_idname = "clip.apply_detect_settings"
     bl_label = "Apply Detect"
     bl_description = (
-        "Setzt gespeicherte Auto Detect Werte f\u00fcr Pattern, Motion Model und RGB"
+        "Setzt gespeicherte Test Detect Werte f\u00fcr Pattern, Motion Model und RGB"
         " Kan\u00e4le"
     )
 
@@ -604,7 +604,7 @@ class CLIP_OT_apply_settings(bpy.types.Operator):
             settings.use_default_green_channel = g
             settings.use_default_blue_channel = b
 
-        self.report({'INFO'}, "Gespeicherte Auto Detect Werte gesetzt")
+        self.report({'INFO'}, "Gespeicherte Test Detect Werte gesetzt")
         return {'FINISHED'}
 
 
@@ -899,8 +899,8 @@ def _update_nf_and_motion_model(frame, clip):
     settings.default_pattern_size = clamp_pattern_size(settings.default_pattern_size, clip)
     settings.default_search_size = settings.default_pattern_size * 2
 
-def _auto_detect(self, context, use_defaults=True):
-    """Run the auto detect cycle optionally using default settings."""
+def _Test_detect(self, context, use_defaults=True):
+    """Run the Test detect cycle optionally using default settings."""
     clip = context.space_data.clip
     if not clip:
         self.report({'WARNING'}, "Kein Clip geladen")
@@ -914,7 +914,7 @@ def _auto_detect(self, context, use_defaults=True):
         bpy.ops.clip.setup_defaults(silent=True)
     context.scene.threshold_value = 1.0
 
-    # Begin auto detect cycle
+    # Begin Test detect cycle
     prev_best = TEST_END_FRAME
     last_end = None
     while True:
@@ -972,7 +972,7 @@ def _auto_detect(self, context, use_defaults=True):
     from_settings = TEST_SETTINGS or {}
     self.report(
         {'INFO'},
-        f"Auto Detect best_end_frame={TEST_END_FRAME}, "
+        f"Test Detect best_end_frame={TEST_END_FRAME}, "
         f"pattern_size={from_settings.get('pattern_size')}, "
         f"motion_model={from_settings.get('motion_model')}, "
         f"channels={from_settings.get('channels_active')}"
@@ -981,8 +981,8 @@ def _auto_detect(self, context, use_defaults=True):
     return {'FINISHED'}
 
 
-def _auto_detect_mm(self, context):
-    """Run a shortened auto detect cycle for motion-model tests."""
+def _Test_detect_mm(self, context):
+    """Run a shortened Test detect cycle for motion-model tests."""
     clip = context.space_data.clip
     if not clip:
         self.report({'WARNING'}, "Kein Clip geladen")
@@ -1068,7 +1068,7 @@ class CLIP_OT_playhead_to_frame(bpy.types.Operator):
     bl_idname = "clip.playhead_to_frame"
     bl_label = "Playhead to Frame"
     bl_description = (
-        "Springt zum ersten Frame, in dem weniger GOOD_-Marker aktiv sind als 'Marker / Frame' vorgibt"
+        "Springt zum ersten Frame, in dem weniger GOOD_-Marker aktiv sind als 'Marker/Frame' vorgibt"
     )
 
     def execute(self, context):
@@ -1393,7 +1393,7 @@ class CLIP_PT_final_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.prop(context.scene, 'marker_frame', text='Marker / Frame')
+        layout.prop(context.scene, 'marker_frame', text='Marker/Frame')
         layout.prop(context.scene, 'frames_track', text='Frames/Track')
 
 
@@ -1418,9 +1418,9 @@ class CLIP_PT_test_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.operator('clip.setup_defaults', text='Defaults')
-        layout.operator('clip.defaults_detect', text='Auto Detect')
-        layout.operator('clip.motion_detect', text='Auto Detect MM')
-        layout.operator('clip.channel_detect', text='Auto Detect CH')
+        layout.operator('clip.defaults_detect', text='Test Detect Pattern')
+        layout.operator('clip.motion_detect', text='Test Detect MM')
+        layout.operator('clip.channel_detect', text='Test Detect CH')
         layout.operator('clip.apply_detect_settings', text='Apply Detect')
         layout.operator('clip.track_bidirectional', text='Track')
         layout.operator('clip.count_button', text='Count')
@@ -1491,7 +1491,7 @@ classes = (
 
 def register():
     bpy.types.Scene.marker_frame = IntProperty(
-        name="Marker / Frame",
+        name="Marker/Frame",
         description="Frame f\u00fcr neuen Marker",
         default=20,
     )
