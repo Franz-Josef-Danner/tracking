@@ -435,4 +435,4 @@
 - "Auto Detect" arbeitet jetzt mit Sechserbl\u00f6cken. F\u00fchrt keiner der sechs Versuche zu einem h\u00f6heren Endframe, endet der Ablauf.
 ## Version 1.107
 - "Auto Detect" verwendet nur noch Zweierbl\u00f6cke und speichert den Endframe samt Einstellungen nur, wenn dieser h\u00f6her liegt.
-- Der Vorgang endet, sobald ein kleinerer Endframe erzielt wird.
+- Der Vorgang endet, sobald der n\u00e4chste Track fr\u00fcher stoppt als der bereits gespeicherte Endframe.

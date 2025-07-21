@@ -44,6 +44,8 @@ TEST_END_FRAME = None
 TEST_SETTINGS = {}
 # Anzahl der zuletzt getrackten Frames
 TRACKED_FRAMES = 0
+# Letztes End-Frame-Ergebnis aus Track Full
+LAST_TRACK_END = None
 
 
 def pattern_base(clip):
@@ -427,6 +429,7 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
 
         print("Auto Detect: gestartet")
         prev_best = TEST_END_FRAME
+        last_end = None
         while True:
             for cycle in range(2):
                 attempt = 0
@@ -458,6 +461,7 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
                 select_tracks_by_prefix(clip, "TEST_")
                 if bpy.ops.clip.track_full.poll():
                     bpy.ops.clip.track_full()
+                    last_end = LAST_TRACK_END
                 else:
                     print("Auto Detect: Tracking nicht möglich")
                     self.report({'WARNING'}, "Tracking nicht möglich")
@@ -470,13 +474,9 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
                 for t in clip.tracking.tracks:
                     t.select = False
 
-            if prev_best is None:
-                prev_best = TEST_END_FRAME
-            elif TEST_END_FRAME is None:
-                break
-            elif TEST_END_FRAME > prev_best:
-                prev_best = TEST_END_FRAME
-            elif TEST_END_FRAME < prev_best:
+            if prev_best is None or (last_end is not None and last_end > prev_best):
+                prev_best = last_end
+            elif last_end is not None and last_end < prev_best:
                 break
 
         print(f"Auto Detect: {count} Marker gefunden")
@@ -907,7 +907,7 @@ class CLIP_OT_track_full(bpy.types.Operator):
     )
 
     def execute(self, context):
-        global TEST_START_FRAME, TEST_END_FRAME, TEST_SETTINGS, TRACKED_FRAMES
+        global TEST_START_FRAME, TEST_END_FRAME, TEST_SETTINGS, TRACKED_FRAMES, LAST_TRACK_END
 
         clip = context.space_data.clip
         if not clip:
@@ -928,6 +928,7 @@ class CLIP_OT_track_full(bpy.types.Operator):
             return {'CANCELLED'}
 
         end_frame = scene.frame_current
+        LAST_TRACK_END = end_frame
         TRACKED_FRAMES = end_frame - start
         if TEST_END_FRAME is None or end_frame > TEST_END_FRAME:
             TEST_END_FRAME = end_frame
