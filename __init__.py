@@ -963,6 +963,8 @@ def _auto_detect_mm(self, context):
 
         select_tracks_by_prefix(clip, "TEST_")
         if bpy.ops.clip.track_markers.poll():
+            # Proxy aktivieren für das Tracking
+            clip.use_proxy = True
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
             end_frame = scene.frame_current
             if best_end is None or end_frame > best_end:
@@ -1134,6 +1136,9 @@ class CLIP_OT_track_full(bpy.types.Operator):
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
+
+        # Proxy aktivieren für das Tracking
+        clip.use_proxy = True
 
         scene = context.scene
         start = scene.frame_current
