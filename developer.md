@@ -439,3 +439,5 @@
 ## Version 1.108
 - "Auto Detect" sucht wieder in Viererblöcken nach einem höheren Endframe.
 - Der Ablauf endet, wenn der nächste Track früher stoppt als der gespeicherte Endframe.
+## Version 1.109
+- Am Ende gibt "Auto Detect" den gespeicherten Endframe und die dazugehörigen Einstellungen in der Konsole aus.

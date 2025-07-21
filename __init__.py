@@ -489,6 +489,14 @@ class CLIP_OT_defaults_detect(bpy.types.Operator):
             f"pattern_match={from_settings.get('pattern_match')}, ",
             f"channels={from_settings.get('channels_active')}"
         )
+        print(
+            "Auto Detect gespeichert: ",
+            f"end_frame={TEST_END_FRAME}, ",
+            f"pattern_size={from_settings.get('pattern_size')}, ",
+            f"motion_model={from_settings.get('motion_model')}, ",
+            f"pattern_match={from_settings.get('pattern_match')}, ",
+            f"channels={from_settings.get('channels_active')}"
+        )
         self.report({'INFO'}, f"{count} Marker gefunden")
         return {'FINISHED'}
 
