@@ -426,59 +426,62 @@ class CLIP_OT_motion_detect(bpy.types.Operator):
     )
 
     def execute(self, context):
+        global TEST_END_FRAME, TEST_SETTINGS
+
         clip = context.space_data.clip
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
+        if not TEST_SETTINGS:
+            self.report({'WARNING'}, "Keine gespeicherten Einstellungen")
+            return {'CANCELLED'}
+
         settings = clip.tracking.settings
         original_model = settings.default_motion_model
 
-        global TEST_START_FRAME, TEST_END_FRAME, TEST_SETTINGS, TRACKED_FRAMES, LAST_TRACK_END
+        best_end = TEST_END_FRAME
+        best_model = original_model
 
-        best_end = None
-        best_settings = None
-        best_frames = -1
+        # Set stored defaults once
+        settings.default_pattern_size = TEST_SETTINGS.get(
+            "pattern_size", settings.default_pattern_size
+        )
+        settings.default_search_size = settings.default_pattern_size * 2
+        settings.default_pattern_match = TEST_SETTINGS.get(
+            "pattern_match", settings.default_pattern_match
+        )
+        r, g, b = TEST_SETTINGS.get("channels_active", (True, True, True))
+        settings.use_default_red_channel = r
+        settings.use_default_green_channel = g
+        settings.use_default_blue_channel = b
 
         for model in MOTION_MODELS:
             settings.default_motion_model = model
-            TEST_START_FRAME = None
-            TEST_END_FRAME = None
-            TEST_SETTINGS = {}
-            TRACKED_FRAMES = 0
-            LAST_TRACK_END = None
+            end_frame = _auto_detect_mm(self, context)
+            if end_frame is None:
+                continue
+            if best_end is None or end_frame > best_end:
+                best_end = end_frame
+                best_model = model
 
-            result = _auto_detect(self, context, use_defaults=False)
-            if 'FINISHED' not in result:
-                break
+        settings.default_motion_model = best_model
+        TEST_END_FRAME = best_end
+        TEST_SETTINGS = {
+            "pattern_size": settings.default_pattern_size,
+            "motion_model": best_model,
+            "pattern_match": settings.default_pattern_match,
+            "channels_active": (
+                settings.use_default_red_channel,
+                settings.use_default_green_channel,
+                settings.use_default_blue_channel,
+            ),
+        }
 
-            frames = TRACKED_FRAMES
-            if best_end is None or frames > best_frames:
-                best_end = TEST_END_FRAME
-                best_settings = TEST_SETTINGS.copy()
-                best_frames = frames
-
-        if best_settings:
-            settings.default_motion_model = best_settings.get('motion_model', original_model)
-            settings.default_pattern_size = best_settings.get('pattern_size', settings.default_pattern_size)
-            settings.default_search_size = settings.default_pattern_size * 2
-            settings.default_pattern_match = best_settings.get('pattern_match', settings.default_pattern_match)
-            r, g, b = best_settings.get('channels_active', (True, True, True))
-            settings.use_default_red_channel = r
-            settings.use_default_green_channel = g
-            settings.use_default_blue_channel = b
-            TEST_END_FRAME = best_end
-            TEST_SETTINGS = best_settings
-            TRACKED_FRAMES = best_frames
-
-            print(
-                "Auto Detect MM gespeichert: ",
-                f"end_frame={TEST_END_FRAME}, ",
-                f"motion_model={best_settings.get('motion_model')}"
-            )
-
-        else:
-            settings.default_motion_model = original_model
+        print(
+            "Auto Detect MM gespeichert: ",
+            f"end_frame={TEST_END_FRAME}, motion_model={best_model}"
+        )
 
         self.report({'INFO'}, "Auto Detect MM abgeschlossen")
         return {'FINISHED'}
@@ -823,6 +826,52 @@ def _auto_detect(self, context, use_defaults=True):
     )
     self.report({'INFO'}, f"{count} Marker gefunden")
     return {'FINISHED'}
+
+
+def _auto_detect_mm(self, context):
+    """Run a shortened auto detect cycle for motion-model tests."""
+    clip = context.space_data.clip
+    if not clip:
+        self.report({'WARNING'}, "Kein Clip geladen")
+        return None
+
+    if not TEST_SETTINGS:
+        self.report({'WARNING'}, "Keine gespeicherten Einstellungen")
+        return None
+
+    scene = context.scene
+    settings = clip.tracking.settings
+
+    start = TEST_START_FRAME if TEST_START_FRAME is not None else scene.frame_current
+
+    best_end = None
+    for cycle in range(4):
+        scene.frame_current = start
+        print(f"Auto Detect MM Durchlauf {cycle + 1}")
+        bpy.ops.clip.detect_button()
+
+        select_tracks_by_prefix(clip, "TEST_")
+        if bpy.ops.clip.track_markers.poll():
+            bpy.ops.clip.track_markers(backwards=False, sequence=True)
+            end_frame = scene.frame_current
+            if best_end is None or end_frame > best_end:
+                best_end = end_frame
+        else:
+            print("Auto Detect MM: Tracking nicht möglich")
+            self.report({'WARNING'}, "Tracking nicht möglich")
+            break
+
+        select_tracks_by_prefix(clip, "TEST_")
+        if bpy.ops.clip.delete_selected.poll():
+            bpy.ops.clip.delete_selected()
+        if bpy.ops.clip.pattern_up.poll():
+            bpy.ops.clip.pattern_up()
+        for t in clip.tracking.tracks:
+            t.select = False
+
+    scene.frame_current = start
+    print(f"Auto Detect MM Ergebnis: best_end={best_end}")
+    return best_end
 
 
 class CLIP_OT_tracking_length(bpy.types.Operator):
