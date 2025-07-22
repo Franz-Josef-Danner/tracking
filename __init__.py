@@ -1311,7 +1311,6 @@ class CLIP_OT_select_active_tracks(bpy.types.Operator):
             active = (
                 marker
                 and not marker.mute
-                and marker.co.length_squared != 0.0
             )
             if track.name.startswith("TRACK_") and active:
                 track.select = True
