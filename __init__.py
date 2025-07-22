@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 131),
+    "version": (1, 132),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -1357,6 +1357,21 @@ class CLIP_OT_step_track(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_frame_jump(bpy.types.Operator):
+    bl_idname = "clip.frame_jump"
+    bl_label = "Frame jump"
+    bl_description = "Springt um 'Frames/Track' nach vorne"
+
+    def execute(self, context):
+        scene = context.scene
+        step = scene.frames_track
+        if step <= 0:
+            self.report({'WARNING'}, "Frames/Track muss > 0 sein")
+            return {'CANCELLED'}
+        scene.frame_current = min(scene.frame_current + step, scene.frame_end)
+        return {'FINISHED'}
+
+
 class CLIP_OT_setup_defaults(bpy.types.Operator):
     bl_idname = "clip.setup_defaults"
     bl_label = "Test Defaults"
@@ -1715,6 +1730,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.channel_b_off', text='Channel B off')
         layout.operator('clip.channel_g_on', text='Channel G on')
         layout.operator('clip.channel_g_off', text='Channel G off')
+        layout.operator('clip.frame_jump', text='Frame Jump')
 
 
 class CLIP_PT_test_subpanel(bpy.types.Panel):
@@ -1754,6 +1770,7 @@ classes = (
     CLIP_OT_track_bidirectional,
     CLIP_OT_track_partial,
     CLIP_OT_step_track,
+    CLIP_OT_frame_jump,
     CLIP_OT_setup_defaults,
     CLIP_OT_track_full,
     CLIP_OT_pattern_up,
