@@ -761,65 +761,39 @@ class CLIP_OT_track_partial(bpy.types.Operator):
     bl_idname = "clip.track_partial"
     bl_label = "Track Partial"
     bl_description = (
-        "Trackt selektierte Marker r\u00fcckw\u00e4rts zum Szenenanfang "
-        "und anschlie\u00dfend f\u00fcr eine begrenzte Anzahl von Frames vorw\u00e4rts"
+        "Trackt selektierte Marker r\u00fcckw\u00e4rts bis Frame 1 und "
+        "dann vorw\u00e4rts f\u00fcr eine begrenzte Anzahl von Frames"
     )
 
     def execute(self, context):
+        scene = context.scene
         clip = context.space_data.clip
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        selected = [t for t in clip.tracking.tracks if t.select]
-        if not selected:
-            self.report({'WARNING'}, "Keine Tracks ausgew\u00e4hlt")
-            return {'CANCELLED'}
-
-        scene = context.scene
-        frames_forward = scene.frames_track
-        original_start = scene.frame_start
-        original_end = scene.frame_end
         current = scene.frame_current
+        step = scene.frames_track
 
-        if current == original_start and current < original_end:
-            scene.frame_current = current + 1
-            current = scene.frame_current
-            self.report({'INFO'}, 'Moved playhead from scene start')
-        elif current == original_end and current > original_start:
-            scene.frame_current = current - 1
-            current = scene.frame_current
-            self.report({'INFO'}, 'Moved playhead from scene end')
+        print(f"[Track Partial] Start at frame {current}, step {step}")
 
-
-        if not bpy.ops.clip.track_markers.poll():
-            self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
-            return {'CANCELLED'}
-
-        total_back = current - original_start
-        step = max(1, int(total_back / 4))
-        frame = current
-
-        while frame > original_start:
-            next_frame = max(original_start, frame - step)
-            scene.frame_start = next_frame
-            scene.frame_end = frame
-            scene.frame_current = frame
+        if bpy.ops.clip.track_markers.poll():
+            print("[Track Partial] Tracking backwards …")
             bpy.ops.clip.track_markers(backwards=True, sequence=True)
-            frame = next_frame
-            if not has_active_marker(selected, frame):
-                break
 
-        scene.frame_start = current
-        scene.frame_end = min(original_end, current + frames_forward)
         scene.frame_current = current
-        bpy.ops.clip.track_markers(backwards=False, sequence=True)
+        if bpy.ops.clip.track_markers.poll():
+            print("[Track Partial] Tracking forwards …")
+            bpy.ops.clip.track_markers(backwards=False, sequence=False)
+            for i in range(step):
+                bpy.ops.clip.track_markers(backwards=False, sequence=False)
+                scene.frame_current += 1
+                print(f"[Track Partial] Forward step {i + 1} -> frame {scene.frame_current}")
+                if scene.frame_current >= scene.frame_end:
+                    break
 
-        scene.frame_start = original_start
-        scene.frame_end = original_end
         scene.frame_current = current
-
-
+        print("[Track Partial] Done")
         return {'FINISHED'}
 
 class CLIP_OT_all_detect(bpy.types.Operator):
