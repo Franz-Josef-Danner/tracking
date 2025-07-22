@@ -1295,7 +1295,7 @@ class CLIP_OT_select_active_tracks(bpy.types.Operator):
     bl_idname = "clip.select_active_tracks"
     bl_label = "Select TRACK"
     bl_description = (
-        "Selektiert TRACK_-Marker, die im aktuellen Frame aktiv sind"
+        "Selektiert alle TRACK_-Marker ungeachtet ihres Status"
     )
 
     def execute(self, context):
@@ -1304,19 +1304,8 @@ class CLIP_OT_select_active_tracks(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        frame = context.scene.frame_current
-        count = 0
-        for track in clip.tracking.tracks:
-            marker = track.markers.find_frame(frame)
-            active = (
-                marker
-                and not marker.mute
-            )
-            if track.name.startswith("TRACK_") and active:
-                track.select = True
-                count += 1
-            else:
-                track.select = False
+        select_tracks_by_prefix(clip, "TRACK_")
+        count = sum(1 for t in clip.tracking.tracks if t.select)
 
         self.report({'INFO'}, f"{count} TRACK_-Marker ausgewählt")
         return {'FINISHED'}
