@@ -1554,7 +1554,6 @@ class CLIP_PT_stufen_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.operator('clip.panel_button', text='Proxy')
-        layout.operator('clip.all_cycle', text='All Cycle')
 
 
 class CLIP_PT_test_panel(bpy.types.Panel):

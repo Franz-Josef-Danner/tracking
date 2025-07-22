@@ -234,3 +234,4 @@ Seit Version 1.118 bleiben neu erkannte Marker nach dem Detect-Button ausgewähl
 Seit Version 1.119 bietet das API-Panel einen Button "Name New", der selektierte Tracks mit dem Präfix NEW_ versieht.
 Seit Version 1.120 bietet das API-Panel einen Button "Name Track", der selektierte Tracks mit dem Präfix TRACK_ versieht.
 Seit Version 1.121 entfernt dieser Button vorhandene Präfixe, bevor er TRACK_ einfügt.
+Seit Version 1.122 wurde der Button "All Cycle" aus dem Panel entfernt.
