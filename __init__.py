@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 124),
+    "version": (1, 125),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -1282,7 +1282,7 @@ class CLIP_OT_playhead_to_frame(bpy.types.Operator):
 
 class CLIP_OT_select_active_tracks(bpy.types.Operator):
     bl_idname = "clip.select_active_tracks"
-    bl_label = "Select Active"
+    bl_label = "Select TRACK"
     bl_description = (
         "Selektiert TRACK_-Marker, die im aktuellen Frame aktiv sind"
     )
@@ -1657,7 +1657,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.count_button', text='Count')
         layout.operator('clip.prefix_new', text='Name New')
         layout.operator('clip.prefix_track', text='Name Track')
-        layout.operator('clip.select_active_tracks', text='Select Active')
+        layout.operator('clip.select_active_tracks', text='Select TRACK')
         layout.operator('clip.delete_selected', text='Delete')
         layout.operator('clip.pattern_up', text='Pattern+')
         layout.operator('clip.pattern_down', text='Pattern-')

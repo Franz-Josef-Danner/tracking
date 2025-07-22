@@ -236,4 +236,4 @@ Seit Version 1.120 bietet das API-Panel einen Button "Name Track", der selektier
 Seit Version 1.121 entfernt dieser Button vorhandene Präfixe, bevor er TRACK_ einfügt.
 Seit Version 1.122 wurde der Button "All Cycle" aus dem Panel entfernt.
 Seit Version 1.123 gibt es einen Button 'Track Partial', der ausgew\u00e4hlte Marker blockweise r\u00fcckw\u00e4rts verfolgt und anschlie\u00dfend f\u00fcr eine begrenzte Anzahl von Frames vorw\u00e4rts trackt.
-Seit Version 1.124 wählt ein Button im API-Panel alle aktiven TRACK_-Marker im aktuellen Frame aus.
+Seit Version 1.125 bietet das API-Panel einen Button "Select TRACK", der alle aktiven TRACK_-Marker im aktuellen Frame auswählt.
