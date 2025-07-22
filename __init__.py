@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 127),
+    "version": (1, 128),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -737,6 +737,7 @@ class CLIP_OT_track_partial(bpy.types.Operator):
 
             while frame > original_start:
                 next_frame = max(original_start, frame - step)
+                print(f"Backward {frame} -> {next_frame}")
                 scene.frame_start = next_frame
                 scene.frame_end = frame
                 scene.frame_current = frame
@@ -749,6 +750,7 @@ class CLIP_OT_track_partial(bpy.types.Operator):
             scene.frame_start = current
             scene.frame_end = min(original_end, current + frames_forward)
             scene.frame_current = current
+            print(f"Forward {current} -> {scene.frame_end}")
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
 
         scene.frame_start = original_start
