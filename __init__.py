@@ -213,6 +213,12 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             for track in clip.tracking.tracks:
                 track.select = False
             new_markers = len(new_tracks)
+            print(f" -> new markers: {new_markers}")
+            for t in new_tracks:
+                if t.markers:
+                    last = t.markers[-1]
+                    print(f"    {t.name}: {last.co}")
+            print(f"Total marker count: {len(clip.tracking.tracks)}")
             if mf_min <= new_markers <= mf_max or attempt >= 10:
                 break
             # neu erkannte Marker wie beim Delete-Operator entfernen
@@ -423,6 +429,7 @@ class CLIP_OT_count_button(bpy.types.Operator):
             return {'CANCELLED'}
 
         prefix = "TEST_"
+        print("Markeranzahl wird gepr\u00fcft")
         for t in clip.tracking.tracks:
             t.select = t.name.startswith(prefix)
         count = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
@@ -674,6 +681,8 @@ class CLIP_OT_track_bidirectional(bpy.types.Operator):
         original_end = scene.frame_end
         current = scene.frame_current
 
+        print(f"Tracking-Start: frame {current}")
+
         if not bpy.ops.clip.track_markers.poll():
             self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
             return {'CANCELLED'}
@@ -690,6 +699,8 @@ class CLIP_OT_track_bidirectional(bpy.types.Operator):
         scene.frame_start = original_start
         scene.frame_end = original_end
         scene.frame_current = current
+
+        print("Tracking-Ende erreicht")
 
         return {'FINISHED'}
 
@@ -994,6 +1005,8 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
         if not selected:
             return {'CANCELLED'}
 
+        print(f"Tracking-Start: frame {current}")
+
         frame = current
         start_frame = original_start
         total_range = frame - start_frame
@@ -1033,6 +1046,8 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
 
         scene.frame_start = original_start
         scene.frame_end = original_end
+
+        print("Tracking-Ende erreicht")
 
         return {'FINISHED'}
 
@@ -1479,6 +1494,7 @@ class CLIP_OT_track_full(bpy.types.Operator):
         scene = context.scene
         start = scene.frame_current
         TEST_START_FRAME = start
+        print(f"Tracking-Start: frame {start}")
 
         if bpy.ops.clip.track_markers.poll():
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
@@ -1506,6 +1522,7 @@ class CLIP_OT_track_full(bpy.types.Operator):
         scene.frame_current = start
         if not self.silent:
             self.report({'INFO'}, f"Tracking bis Frame {end_frame} abgeschlossen")
+        print(f"Tracking-Ende: frame {end_frame}")
         return {'FINISHED'}
 
 
