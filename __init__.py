@@ -13,6 +13,7 @@ import os
 import shutil
 import math
 import re
+import time
 from bpy.props import IntProperty, FloatProperty, BoolProperty
 
 # Frames, die mit zu wenig Markern gefunden wurden
@@ -191,27 +192,35 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         while scene.frame_current <= end_frame:
             if bpy.ops.clip.proxy_off.poll():
                 bpy.ops.clip.proxy_off()
+                time.sleep(0.1)
 
             bpy.ops.clip.all_detect()
+            time.sleep(0.1)
 
             if bpy.ops.clip.prefix_track.poll():
                 bpy.ops.clip.prefix_track()
+                time.sleep(0.1)
 
             if bpy.ops.clip.select_active_tracks.poll():
                 bpy.ops.clip.select_active_tracks()
+                time.sleep(0.1)
 
             if bpy.ops.clip.proxy_on.poll():
                 bpy.ops.clip.proxy_on()
+                time.sleep(0.1)
 
             if bpy.ops.clip.track_partial.poll():
                 bpy.ops.clip.track_partial()
+                time.sleep(0.1)
 
             # Neue Marker nach dem Tracking erkennen
             if bpy.ops.clip.all_detect.poll():
                 bpy.ops.clip.all_detect()
+                time.sleep(0.1)
 
             if bpy.ops.clip.frame_jump_custom.poll():
                 bpy.ops.clip.frame_jump_custom()
+                time.sleep(0.1)
 
             if scene.frame_current >= end_frame:
                 break
