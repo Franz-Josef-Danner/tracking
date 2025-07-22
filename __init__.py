@@ -1533,11 +1533,6 @@ class CLIP_PT_test_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.operator('clip.setup_defaults', text='Test Defaults')
-        layout.operator('clip.defaults_detect', text='Test Detect Pattern')
-        layout.operator('clip.motion_detect', text='Test Detect MM')
-        layout.operator('clip.channel_detect', text='Test Detect CH')
-        layout.operator('clip.apply_detect_settings', text='Test Detect Apply')
         layout.operator('clip.all_detect', text='Detect')
         layout.operator('clip.track_bidirectional', text='Track')
         layout.operator('clip.count_button', text='Count')
@@ -1564,6 +1559,11 @@ class CLIP_PT_test_subpanel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
+        layout.operator('clip.setup_defaults', text='Test Defaults')
+        layout.operator('clip.defaults_detect', text='Test Detect Pattern')
+        layout.operator('clip.motion_detect', text='Test Detect MM')
+        layout.operator('clip.channel_detect', text='Test Detect CH')
+        layout.operator('clip.apply_detect_settings', text='Test Detect Apply')
         layout.operator('clip.detect_button', text='Test Detect')
         layout.operator('clip.prefix_test', text='Name Test')
         layout.operator('clip.track_full', text='Track Test')
