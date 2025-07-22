@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 146),
+    "version": (1, 147),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -213,6 +213,8 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         scene = context.scene
 
         if self._state == "INIT":
+            if bpy.ops.clip.api_defaults.poll():
+                bpy.ops.clip.api_defaults()
             if bpy.ops.clip.proxy_off.poll():
                 bpy.ops.clip.proxy_off()
             self._state = "DETECT"
