@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 137),
+    "version": (1, 138),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -183,13 +183,23 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
     bl_description = "Löst den Detect-Button aus"
 
     def execute(self, context):
+        if bpy.ops.clip.proxy_off.poll():
+            bpy.ops.clip.proxy_off()
+
         bpy.ops.clip.all_detect()
+
         if bpy.ops.clip.prefix_track.poll():
             bpy.ops.clip.prefix_track()
+
         if bpy.ops.clip.select_active_tracks.poll():
             bpy.ops.clip.select_active_tracks()
+
+        if bpy.ops.clip.proxy_on.poll():
+            bpy.ops.clip.proxy_on()
+
         if bpy.ops.clip.track_partial.poll():
             bpy.ops.clip.track_partial()
+
         if bpy.ops.clip.frame_jump_custom.poll():
             bpy.ops.clip.frame_jump_custom()
         return {'FINISHED'}
