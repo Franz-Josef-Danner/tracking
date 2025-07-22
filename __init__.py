@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 120),
+    "version": (1, 121),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -12,6 +12,7 @@ import bpy
 import os
 import shutil
 import math
+import re
 from bpy.props import IntProperty, FloatProperty, BoolProperty
 
 # Frames, die mit zu wenig Markern gefunden wurden
@@ -74,6 +75,11 @@ def pattern_limits(clip):
 def clamp_pattern_size(value, clip):
     min_size, max_size = pattern_limits(clip)
     return max(min(value, max_size), min_size)
+
+
+def strip_prefix(name):
+    """Remove an existing uppercase prefix from a track name."""
+    return re.sub(r'^[A-Z]+_', '', name)
 
 
 def cycle_motion_model(settings, clip, reset_size=True):
@@ -318,9 +324,12 @@ class CLIP_OT_prefix_track(bpy.types.Operator):
         prefix = "TRACK_"
         count = 0
         for track in clip.tracking.tracks:
-            if track.select and not track.name.startswith(prefix):
-                track.name = prefix + track.name
-                count += 1
+            if track.select:
+                base_name = strip_prefix(track.name)
+                new_name = prefix + base_name
+                if track.name != new_name:
+                    track.name = new_name
+                    count += 1
         if not self.silent:
             self.report({'INFO'}, f"{count} Tracks umbenannt")
         return {'FINISHED'}
