@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 139),
+    "version": (1, 140),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -205,6 +205,10 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
 
             if bpy.ops.clip.track_partial.poll():
                 bpy.ops.clip.track_partial()
+
+            # Neue Marker nach dem Tracking erkennen
+            if bpy.ops.clip.all_detect.poll():
+                bpy.ops.clip.all_detect()
 
             if bpy.ops.clip.frame_jump_custom.poll():
                 bpy.ops.clip.frame_jump_custom()
@@ -1373,6 +1377,10 @@ class CLIP_OT_step_track(bpy.types.Operator):
                 bpy.ops.clip.select_active_tracks()
             if bpy.ops.clip.track_partial.poll():
                 bpy.ops.clip.track_partial()
+
+            # Nach dem Tracken erneut Marker erkennen
+            if bpy.ops.clip.all_detect.poll():
+                bpy.ops.clip.all_detect()
 
             next_frame = scene.frame_current + step
             if next_frame > end_frame:
