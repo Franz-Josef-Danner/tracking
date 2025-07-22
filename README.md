@@ -243,3 +243,4 @@ Seit Version 1.128 zeigt der Button "Track Partial" den Fortschritt der Tracking
 Seit Version 1.129 verschiebt der Button "Track Partial" den Playhead einen Frame ins Innere, wenn dieser am Szenenanfang oder -ende steht.
 Seit Version 1.130 protokolliert "Track Partial" Markeranzahl und Tracking-Bereich in der Konsole und listet neu erkannte Marker mit Position auf.
 Seit Version 1.131 befindet sich unter dem Proxy ein Button "Track Nr. 1", der den Detect-Button auslöst.
+Seit Version 1.132 gibt es im API-Panel einen Button "Frame jump", der den Playhead um "Frames/Track" nach vorne bewegt.
