@@ -180,43 +180,71 @@ class CLIP_OT_proxy_off(bpy.types.Operator):
 class CLIP_OT_track_nr1(bpy.types.Operator):
     bl_idname = "clip.track_nr1"
     bl_label = "Track Nr. 1"
-    bl_description = (
-        "Führt den Track-Nr.-1 Ablauf aus und wiederholt ihn bis zum Szenenende"
-    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    _timer = None
+    _state = "INIT"
 
     def execute(self, context):
-        scene = context.scene
-        end_frame = scene.frame_end
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.2, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
 
-        while scene.frame_current <= end_frame:
+    def cancel(self, context):
+        wm = context.window_manager
+        wm.event_timer_remove(self._timer)
+        return {'CANCELLED'}
+
+    def modal(self, context, event):
+        if event.type == 'ESC':
+            return self.cancel(context)
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+
+        scene = context.scene
+
+        if self._state == "INIT":
             if bpy.ops.clip.proxy_off.poll():
                 bpy.ops.clip.proxy_off()
+            self._state = "DETECT"
 
+        elif self._state == "DETECT":
             bpy.ops.clip.all_detect()
+            self._state = "PREFIX"
 
+        elif self._state == "PREFIX":
             if bpy.ops.clip.prefix_track.poll():
                 bpy.ops.clip.prefix_track()
+            self._state = "SELECT"
 
+        elif self._state == "SELECT":
             if bpy.ops.clip.select_active_tracks.poll():
                 bpy.ops.clip.select_active_tracks()
+            self._state = "PROXY_ON"
 
+        elif self._state == "PROXY_ON":
             if bpy.ops.clip.proxy_on.poll():
                 bpy.ops.clip.proxy_on()
+            self._state = "TRACK"
 
+        elif self._state == "TRACK":
             if bpy.ops.clip.track_partial.poll():
                 bpy.ops.clip.track_partial()
+            self._state = "REDETECT"
 
-            # Neue Marker nach dem Tracking erkennen
-            if bpy.ops.clip.all_detect.poll():
-                bpy.ops.clip.all_detect()
+        elif self._state == "REDETECT":
+            bpy.ops.clip.all_detect()
+            self._state = "NEXT"
 
+        elif self._state == "NEXT":
             if bpy.ops.clip.frame_jump_custom.poll():
                 bpy.ops.clip.frame_jump_custom()
+            if scene.frame_current >= scene.frame_end:
+                return self.cancel(context)
+            self._state = "DETECT"
 
-            if scene.frame_current >= end_frame:
-                break
-
-        return {'FINISHED'}
+        return {'RUNNING_MODAL'}
 
 
 class CLIP_OT_detect_button(bpy.types.Operator):
