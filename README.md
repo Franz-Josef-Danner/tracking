@@ -232,3 +232,4 @@ Seit Version 1.116 berechnet der Button Margin und Min Distance logarithmisch au
 Seit Version 1.117 findet im Detect-Button keine automatische Umbenennung der Marker mehr statt.
 Seit Version 1.118 bleiben neu erkannte Marker nach dem Detect-Button ausgewählt.
 Seit Version 1.119 bietet das API-Panel einen Button "Name New", der selektierte Tracks mit dem Präfix NEW_ versieht.
+Seit Version 1.120 bietet das API-Panel einen Button "Name Track", der selektierte Tracks mit dem Präfix TRACK_ versieht.

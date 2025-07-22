@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 119),
+    "version": (1, 120),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -292,6 +292,30 @@ class CLIP_OT_prefix_test(bpy.types.Operator):
             return {'CANCELLED'}
 
         prefix = "TEST_"
+        count = 0
+        for track in clip.tracking.tracks:
+            if track.select and not track.name.startswith(prefix):
+                track.name = prefix + track.name
+                count += 1
+        if not self.silent:
+            self.report({'INFO'}, f"{count} Tracks umbenannt")
+        return {'FINISHED'}
+
+
+class CLIP_OT_prefix_track(bpy.types.Operator):
+    bl_idname = "clip.prefix_track"
+    bl_label = "Name Track"
+    bl_description = "Präfix TRACK_ für selektierte Tracks setzen"
+
+    silent: BoolProperty(default=False, options={'HIDDEN'})
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        prefix = "TRACK_"
         count = 0
         for track in clip.tracking.tracks:
             if track.select and not track.name.startswith(prefix):
@@ -1537,6 +1561,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.track_bidirectional', text='Track')
         layout.operator('clip.count_button', text='Count')
         layout.operator('clip.prefix_new', text='Name New')
+        layout.operator('clip.prefix_track', text='Name Track')
         layout.operator('clip.delete_selected', text='Delete')
         layout.operator('clip.pattern_up', text='Pattern+')
         layout.operator('clip.pattern_down', text='Pattern-')
@@ -1575,6 +1600,7 @@ classes = (
     CLIP_OT_detect_button,
     CLIP_OT_prefix_new,
     CLIP_OT_prefix_test,
+    CLIP_OT_prefix_track,
     CLIP_OT_distance_button,
     CLIP_OT_delete_selected,
     CLIP_OT_count_button,
