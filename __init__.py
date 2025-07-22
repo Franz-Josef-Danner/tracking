@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 140),
+    "version": (1, 141),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -509,6 +509,37 @@ class CLIP_OT_delete_selected(bpy.types.Operator):
         else:
             if not self.silent:
                 self.report({'WARNING'}, "Löschen nicht möglich")
+        return {'FINISHED'}
+
+
+class CLIP_OT_short_delete(bpy.types.Operator):
+    bl_idname = "clip.short_delete"
+    bl_label = "Short delet"
+    bl_description = (
+        "Selektiert TRACK_-Marker, deren Länge unter 'Frames/Track' liegt"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        min_frames = context.scene.frames_track
+        undertracked = get_undertracked_markers(clip, min_frames=min_frames)
+
+        # Clear existing selection
+        for t in clip.tracking.tracks:
+            t.select = False
+
+        if not undertracked:
+            self.report({'INFO'}, "Keine kurzen TRACK_-Marker gefunden")
+            return {'FINISHED'}
+
+        names = [name for name, _ in undertracked]
+        select_tracks_by_names(clip, names)
+
+        self.report({'INFO'}, f"{len(names)} TRACK_-Marker ausgewählt")
         return {'FINISHED'}
 
 
@@ -1823,6 +1854,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.prefix_track', text='Name Track')
         layout.operator('clip.select_active_tracks', text='Select TRACK')
         layout.operator('clip.delete_selected', text='Delete')
+        layout.operator('clip.short_delete', text='Short delet')
         layout.operator('clip.pattern_up', text='Pattern+')
         layout.operator('clip.pattern_down', text='Pattern-')
         layout.operator('clip.motion_cycle', text='Motion Model')
@@ -1867,6 +1899,7 @@ classes = (
     CLIP_OT_prefix_track,
     CLIP_OT_distance_button,
     CLIP_OT_delete_selected,
+    CLIP_OT_short_delete,
     CLIP_OT_count_button,
     CLIP_OT_api_defaults,
     CLIP_OT_defaults_detect,

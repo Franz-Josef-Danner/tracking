@@ -252,3 +252,4 @@ Seit Version 1.137 gibt es im API-Panel die Buttons "Proxy on" und "Proxy off", 
 Seit Version 1.138 schaltet der Button "Track Nr. 1" zunächst das Proxy aus und aktiviert es erneut direkt vor "Track Partial".
 Seit Version 1.139 wiederholt der Button "Track Nr. 1" den gesamten Ablauf, bis der Szenenendframe erreicht ist.
 Seit Version 1.140 setzen die Buttons "Track Nr. 1" und "Step Track" nach dem "Track Partial" erneut Marker, um l\u00fcckenlose TRACK_-Marker zu erhalten.
+Seit Version 1.141 bietet das API-Panel einen Button "Short delet", der TRACK_-Marker ausw\u00e4hlt, deren L\u00e4nge unter dem Wert aus "Frames/Track" liegt.
