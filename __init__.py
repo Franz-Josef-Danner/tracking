@@ -48,6 +48,9 @@ DEFAULT_MARKER_FRAME = 20
 # Minimaler Threshold-Wert f\u00fcr die Feature-Erkennung
 MIN_THRESHOLD = 0.0001
 
+# Zeitintervall für Timer-Operationen in Sekunden
+TIMER_INTERVAL = 0.2
+
 # Test-Operator Ergebnisse
 TEST_START_FRAME = None
 TEST_END_FRAME = None
@@ -56,6 +59,11 @@ TEST_SETTINGS = {}
 TRACKED_FRAMES = 0
 # Letztes End-Frame-Ergebnis aus Track Full
 LAST_TRACK_END = None
+
+
+def add_timer(window_manager, window):
+    """Create a timer using the global `TIMER_INTERVAL`."""
+    return window_manager.event_timer_add(TIMER_INTERVAL, window=window)
 
 
 def pattern_base(clip):
@@ -187,7 +195,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
 
     def execute(self, context):
         wm = context.window_manager
-        self._timer = wm.event_timer_add(0.2, window=context.window)
+        self._timer = add_timer(wm, context.window)
         wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
@@ -990,7 +998,7 @@ class CLIP_OT_all_cycle(bpy.types.Operator):
         self._state = 'DETECT'
         self._detect_attempts = 0
         wm = context.window_manager
-        self._timer = wm.event_timer_add(0.1, window=context.window)
+        self._timer = add_timer(wm, context.window)
         wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
