@@ -718,6 +718,10 @@ class CLIP_OT_track_partial(bpy.types.Operator):
         original_end = scene.frame_end
         current = scene.frame_current
 
+        if current == original_start or current == original_end:
+            self.report({'WARNING'}, 'Playhead at scene start or end')
+            return {'CANCELLED'}
+
         if not bpy.ops.clip.track_markers.poll():
             self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
             return {'CANCELLED'}
