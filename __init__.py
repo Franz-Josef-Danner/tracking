@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 142),
+    "version": (1, 143),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -436,6 +436,29 @@ class CLIP_OT_prefix_track(bpy.types.Operator):
                 if track.name != new_name:
                     track.name = new_name
                     count += 1
+        if not self.silent:
+            self.report({'INFO'}, f"{count} Tracks umbenannt")
+        return {'FINISHED'}
+
+
+class CLIP_OT_prefix_good(bpy.types.Operator):
+    bl_idname = "clip.prefix_good"
+    bl_label = "Name GOOD"
+    bl_description = "TRACK_ durch GOOD_ ersetzen"
+
+    silent: BoolProperty(default=False, options={'HIDDEN'})
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        count = 0
+        for track in clip.tracking.tracks:
+            if track.name.startswith("TRACK_"):
+                track.name = "GOOD_" + track.name[6:]
+                count += 1
         if not self.silent:
             self.report({'INFO'}, f"{count} Tracks umbenannt")
         return {'FINISHED'}
@@ -1856,6 +1879,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.count_button', text='Count')
         layout.operator('clip.prefix_new', text='Name New')
         layout.operator('clip.prefix_track', text='Name Track')
+        layout.operator('clip.prefix_good', text='Name GOOD')
         layout.operator('clip.select_active_tracks', text='Select TRACK')
         layout.operator('clip.delete_selected', text='Delete')
         layout.operator('clip.short_track', text='Short Track')
@@ -1901,6 +1925,7 @@ classes = (
     CLIP_OT_prefix_new,
     CLIP_OT_prefix_test,
     CLIP_OT_prefix_track,
+    CLIP_OT_prefix_good,
     CLIP_OT_distance_button,
     CLIP_OT_delete_selected,
     CLIP_OT_short_track,
