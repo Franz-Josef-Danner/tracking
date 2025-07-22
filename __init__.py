@@ -825,8 +825,6 @@ class CLIP_OT_all_cycle(bpy.types.Operator):
                 for t in clip.tracking.tracks:
                     t.select = t.name.startswith(prefix)
                 bpy.ops.clip.prefix_track(silent=True)
-                for t in clip.tracking.tracks:
-                    t.select = False
                 self._detect_attempts = 0
                 self._state = 'TRACK'
             else:
