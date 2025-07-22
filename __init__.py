@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 129),
+    "version": (1, 130),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -427,6 +427,7 @@ class CLIP_OT_count_button(bpy.types.Operator):
             t.select = t.name.startswith(prefix)
         count = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
         context.scene.nm_count = count
+        print(f"Count TEST_-Tracks: {count}")
 
         mframe = context.scene.marker_frame
         mf_base = mframe / 3
@@ -711,6 +712,7 @@ class CLIP_OT_track_partial(bpy.types.Operator):
         if not selected:
             self.report({'WARNING'}, "Keine Tracks ausgew\u00e4hlt")
             return {'CANCELLED'}
+        print(f"Track Partial: {len(selected)} ausgew\u00e4hlte Tracks")
 
         scene = context.scene
         frames_forward = scene.frames_track
@@ -726,6 +728,10 @@ class CLIP_OT_track_partial(bpy.types.Operator):
             scene.frame_current = current - 1
             current = scene.frame_current
             self.report({'INFO'}, 'Moved playhead from scene end')
+
+        print(
+            f"Tracking-Start: frame {current}, Scene {original_start}-{original_end}"
+        )
 
         if not bpy.ops.clip.track_markers.poll():
             self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
@@ -755,6 +761,8 @@ class CLIP_OT_track_partial(bpy.types.Operator):
         scene.frame_start = original_start
         scene.frame_end = original_end
         scene.frame_current = current
+
+        print("Tracking-Ende erreicht")
 
         return {'FINISHED'}
 
@@ -816,6 +824,11 @@ class CLIP_OT_all_detect(bpy.types.Operator):
                 track.select = False
 
             print(f" -> new markers: {new_markers}")
+            for t in new_tracks:
+                if t.markers:
+                    last = t.markers[-1]
+                    print(f"    {t.name}: {last.co}")
+            print(f"Total marker count: {len(clip.tracking.tracks)}")
             if mfp_min <= new_markers <= mfp_max or attempt >= 10:
                 break
 
