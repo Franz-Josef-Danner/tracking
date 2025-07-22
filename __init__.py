@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 145),
+    "version": (1, 146),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -252,7 +252,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
                 if bpy.ops.clip.prefix_good.poll():
                     bpy.ops.clip.prefix_good()
                 return self.cancel(context)
-            self._state = "DETECT"
+            self._state = "SELECT"
 
         return {'RUNNING_MODAL'}
 
