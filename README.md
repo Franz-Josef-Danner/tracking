@@ -256,3 +256,4 @@ Seit Version 1.141 bietet das API-Panel einen Button "Short Track", der TRACK_-M
 Seit Version 1.142 l\u00f6st der Button "Track Nr. 1" am Szenenende automatisch "Short Track" und danach "Delete" aus.
 Seit Version 1.143 bietet das API-Panel einen Button "Name GOOD", der alle TRACK_-Marker in GOOD_-Marker umbenennt.
 Seit Version 1.144 führt der Button "Track Nr. 1" nach dem Tracking keine automatische Feature-Erkennung mehr aus.
+Seit Version 1.145 l\u00f6st der Button "Track Nr. 1" am Ende automatisch "Name GOOD" aus.
