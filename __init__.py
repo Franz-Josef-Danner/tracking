@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 121),
+    "version": (1, 124),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -1280,6 +1280,38 @@ class CLIP_OT_playhead_to_frame(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_select_active_tracks(bpy.types.Operator):
+    bl_idname = "clip.select_active_tracks"
+    bl_label = "Select Active"
+    bl_description = (
+        "Selektiert TRACK_-Marker, die im aktuellen Frame aktiv sind"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        frame = context.scene.frame_current
+        count = 0
+        for track in clip.tracking.tracks:
+            marker = track.markers.find_frame(frame)
+            active = (
+                marker
+                and not marker.mute
+                and marker.co.length_squared != 0.0
+            )
+            if track.name.startswith("TRACK_") and active:
+                track.select = True
+                count += 1
+            else:
+                track.select = False
+
+        self.report({'INFO'}, f"{count} TRACK_-Marker ausgewählt")
+        return {'FINISHED'}
+
+
 class CLIP_OT_setup_defaults(bpy.types.Operator):
     bl_idname = "clip.setup_defaults"
     bl_label = "Test Defaults"
@@ -1625,6 +1657,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.count_button', text='Count')
         layout.operator('clip.prefix_new', text='Name New')
         layout.operator('clip.prefix_track', text='Name Track')
+        layout.operator('clip.select_active_tracks', text='Select Active')
         layout.operator('clip.delete_selected', text='Delete')
         layout.operator('clip.pattern_up', text='Pattern+')
         layout.operator('clip.pattern_down', text='Pattern-')
@@ -1691,6 +1724,7 @@ classes = (
     CLIP_OT_track_sequence,
     CLIP_OT_tracking_length,
     CLIP_OT_playhead_to_frame,
+    CLIP_OT_select_active_tracks,
     CLIP_PT_tracking_panel,
     CLIP_PT_final_panel,
     CLIP_PT_stufen_panel,
