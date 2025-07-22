@@ -244,3 +244,4 @@ Seit Version 1.129 verschiebt der Button "Track Partial" den Playhead einen Fram
 Seit Version 1.130 protokolliert "Track Partial" Markeranzahl und Tracking-Bereich in der Konsole und listet neu erkannte Marker mit Position auf.
 Seit Version 1.131 befindet sich unter dem Proxy ein Button "Track Nr. 1", der den Detect-Button auslöst.
 Seit Version 1.132 gibt es im API-Panel einen Button "Frame jump", der den Playhead um "Frames/Track" nach vorne bewegt.
+Seit Version 1.133 löst der Button "Track Nr. 1" nach dem Detect-Schritt zusätzlich "Select TRACK" aus.
