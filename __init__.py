@@ -154,9 +154,8 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         clip.use_proxy = False
 
         global LAST_DETECT_COUNT
-        start_tracks = len(clip.tracking.tracks)
 
-        width, height = clip.size
+        width, _ = clip.size
 
         mframe = context.scene.marker_frame
         mf_base = mframe / 3
