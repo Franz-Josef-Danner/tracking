@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 136),
+    "version": (1, 137),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -142,6 +142,38 @@ class CLIP_OT_panel_button(bpy.types.Operator):
         bpy.ops.clip.rebuild_proxy()
 
         self.report({'INFO'}, "Proxy auf 50% erstellt")
+        return {'FINISHED'}
+
+
+class CLIP_OT_proxy_on(bpy.types.Operator):
+    bl_idname = "clip.proxy_on"
+    bl_label = "Proxy on"
+    bl_description = "Aktiviert das Proxy"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        clip.use_proxy = True
+        self.report({'INFO'}, "Proxy aktiviert")
+        return {'FINISHED'}
+
+
+class CLIP_OT_proxy_off(bpy.types.Operator):
+    bl_idname = "clip.proxy_off"
+    bl_label = "Proxy off"
+    bl_description = "Deaktiviert das Proxy"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        clip.use_proxy = False
+        self.report({'INFO'}, "Proxy deaktiviert")
         return {'FINISHED'}
 
 
@@ -1739,6 +1771,8 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout = self.layout
         layout.operator('clip.all_detect', text='Detect')
         layout.operator('clip.api_defaults', text='Defaults')
+        layout.operator('clip.proxy_on', text='Proxy on')
+        layout.operator('clip.proxy_off', text='Proxy off')
         layout.operator('clip.track_bidirectional', text='Track')
         layout.operator('clip.track_partial', text='Track Partial')
         layout.operator('clip.count_button', text='Count')
@@ -1781,6 +1815,8 @@ class CLIP_PT_test_subpanel(bpy.types.Panel):
 classes = (
     OBJECT_OT_simple_operator,
     CLIP_OT_panel_button,
+    CLIP_OT_proxy_on,
+    CLIP_OT_proxy_off,
     CLIP_OT_track_nr1,
     CLIP_OT_detect_button,
     CLIP_OT_prefix_new,
