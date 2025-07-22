@@ -192,10 +192,6 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         new_markers = 0
 
         while True:
-            print(
-                f"Attempt {attempt+1}: thresh={detection_threshold:.4f}, "
-                f"margin={margin}, min_dist={min_distance}"
-            )
             names_before = {t.name for t in clip.tracking.tracks}
             bpy.ops.clip.detect_features(
                 threshold=detection_threshold,
@@ -245,10 +241,6 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             )
             settings.default_search_size = settings.default_pattern_size * 2
         LAST_DETECT_COUNT = new_markers
-        print(
-            f"Done: attempts={attempt+1}, markers={new_markers}, "
-            f"final_thresh={detection_threshold:.4f}"
-        )
         context.scene.threshold_value = threshold_value
         context.scene.nm_count = new_markers
         # Keep newly detected tracks selected
@@ -427,7 +419,6 @@ class CLIP_OT_count_button(bpy.types.Operator):
             t.select = t.name.startswith(prefix)
         count = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
         context.scene.nm_count = count
-        print(f"Count TEST_-Tracks: {count}")
 
         mframe = context.scene.marker_frame
         mf_base = mframe / 3
@@ -674,6 +665,7 @@ class CLIP_OT_track_bidirectional(bpy.types.Operator):
         original_end = scene.frame_end
         current = scene.frame_current
 
+
         if not bpy.ops.clip.track_markers.poll():
             self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
             return {'CANCELLED'}
@@ -690,6 +682,7 @@ class CLIP_OT_track_bidirectional(bpy.types.Operator):
         scene.frame_start = original_start
         scene.frame_end = original_end
         scene.frame_current = current
+
 
         return {'FINISHED'}
 
@@ -712,7 +705,6 @@ class CLIP_OT_track_partial(bpy.types.Operator):
         if not selected:
             self.report({'WARNING'}, "Keine Tracks ausgew\u00e4hlt")
             return {'CANCELLED'}
-        print(f"Track Partial: {len(selected)} ausgew\u00e4hlte Tracks")
 
         scene = context.scene
         frames_forward = scene.frames_track
@@ -729,9 +721,6 @@ class CLIP_OT_track_partial(bpy.types.Operator):
             current = scene.frame_current
             self.report({'INFO'}, 'Moved playhead from scene end')
 
-        print(
-            f"Tracking-Start: frame {current}, Scene {original_start}-{original_end}"
-        )
 
         if not bpy.ops.clip.track_markers.poll():
             self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
@@ -743,7 +732,6 @@ class CLIP_OT_track_partial(bpy.types.Operator):
 
         while frame > original_start:
             next_frame = max(original_start, frame - step)
-            print(f"Backward {frame} -> {next_frame}")
             scene.frame_start = next_frame
             scene.frame_end = frame
             scene.frame_current = frame
@@ -755,14 +743,12 @@ class CLIP_OT_track_partial(bpy.types.Operator):
         scene.frame_start = current
         scene.frame_end = min(original_end, current + frames_forward)
         scene.frame_current = current
-        print(f"Forward {current} -> {scene.frame_end}")
         bpy.ops.clip.track_markers(backwards=False, sequence=True)
 
         scene.frame_start = original_start
         scene.frame_end = original_end
         scene.frame_current = current
 
-        print("Tracking-Ende erreicht")
 
         return {'FINISHED'}
 
@@ -794,11 +780,6 @@ class CLIP_OT_all_detect(bpy.types.Operator):
         margin = int(margin_base * factor)
         min_distance = int(min_distance_base * factor)
 
-        print(
-            f"Start Detect: mfp={mfp}, range=({mfp_min:.2f}, {mfp_max:.2f}), "
-            f"threshold={detection_threshold:.4f}, margin={margin}, "
-            f"min_distance={min_distance}"
-        )
 
         attempt = 0
         new_markers = 0
@@ -823,12 +804,6 @@ class CLIP_OT_all_detect(bpy.types.Operator):
             for track in clip.tracking.tracks:
                 track.select = False
 
-            print(f" -> new markers: {new_markers}")
-            for t in new_tracks:
-                if t.markers:
-                    last = t.markers[-1]
-                    print(f"    {t.name}: {last.co}")
-            print(f"Total marker count: {len(clip.tracking.tracks)}")
             if mfp_min <= new_markers <= mfp_max or attempt >= 10:
                 break
 
@@ -847,10 +822,6 @@ class CLIP_OT_all_detect(bpy.types.Operator):
             margin = int(margin_base * factor)
             min_distance = int(min_distance_base * factor)
             attempt += 1
-            print(
-                f"Adjusted: thresh={detection_threshold:.4f}, margin={margin}, "
-                f"min_dist={min_distance}"
-            )
 
         context.scene.threshold_value = threshold_value
         context.scene.nm_count = new_markers
@@ -994,6 +965,7 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
         if not selected:
             return {'CANCELLED'}
 
+
         frame = current
         start_frame = original_start
         total_range = frame - start_frame
@@ -1033,6 +1005,7 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
 
         scene.frame_start = original_start
         scene.frame_end = original_end
+
 
         return {'FINISHED'}
 
@@ -1701,7 +1674,6 @@ class CLIP_PT_stufen_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.operator('clip.panel_button', text='Proxy')
-        layout.operator('clip.step_track', text='Step Track')
 
 
 class CLIP_PT_test_panel(bpy.types.Panel):
