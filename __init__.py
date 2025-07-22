@@ -20,6 +20,8 @@ NF = []
 
 # Marker count of the previous detection run
 LAST_DETECT_COUNT = None
+# min_distance value from the last detection run
+LAST_MIN_DISTANCE = 0
 
 # Standard Motion Model
 DEFAULT_MOTION_MODEL = 'Loc'
@@ -329,19 +331,20 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             new_tracks = [
                 t for t in clip.tracking.tracks if t.name in names_after - names_before
             ]
-            # Remove newly detected tracks that are too close to active GOOD_ tracks
+            # Remove tracks that are too close to existing GOOD_ tracks
             frame = context.scene.frame_current
             good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]
+            candidates = [t for t in clip.tracking.tracks if not t.name.startswith("GOOD_")]
             near_tracks = []
             max_dist = min_distance / width
-            for nt in new_tracks:
-                nm = get_marker_at_frame(nt, frame)
-                if not nm:
+            for ct in candidates:
+                cm = get_marker_at_frame(ct, frame)
+                if not cm:
                     continue
                 for gt in good_tracks:
                     gm = get_marker_at_frame(gt, frame)
-                    if gm and distance(nm.co, gm.co) < max_dist:
-                        near_tracks.append(nt)
+                    if gm and distance(cm.co, gm.co) < max_dist:
+                        near_tracks.append(ct)
                         break
             if near_tracks and bpy.ops.clip.delete_track.poll():
                 for track in clip.tracking.tracks:
@@ -392,14 +395,20 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             )
             settings.default_search_size = settings.default_pattern_size * 2
         LAST_DETECT_COUNT = new_markers
+        global LAST_MIN_DISTANCE
+        LAST_MIN_DISTANCE = min_distance
         context.scene.threshold_value = threshold_value
         context.scene.nm_count = new_markers
+        context.scene.last_min_distance = min_distance
         # Keep newly detected tracks selected
         for track in clip.tracking.tracks:
             track.select = False
         for t in new_tracks:
             t.select = True
-        self.report({'INFO'}, f"{new_markers} Marker nach {attempt+1} Durchläufen")
+        self.report(
+            {'INFO'},
+            f"{new_markers} Marker nach {attempt+1} Durchläufen (min_distance {min_distance})",
+        )
         return {'FINISHED'}
 
 
@@ -2059,6 +2068,11 @@ def register():
         description="Anzahl der TEST_-Tracks nach Count",
         default=0,
     )
+    bpy.types.Scene.last_min_distance = IntProperty(
+        name="Min Distance",
+        description="Zuletzt verwendeter min_distance Wert",
+        default=0,
+    )
     bpy.types.Scene.threshold_value = FloatProperty(
         name="Threshold Value",
         description="Gespeicherter Threshold-Wert",
@@ -2076,6 +2090,8 @@ def unregister():
         del bpy.types.Scene.frames_track
     if hasattr(bpy.types.Scene, "nm_count"):
         del bpy.types.Scene.nm_count
+    if hasattr(bpy.types.Scene, "last_min_distance"):
+        del bpy.types.Scene.last_min_distance
     if hasattr(bpy.types.Scene, "threshold_value"):
         del bpy.types.Scene.threshold_value
 
