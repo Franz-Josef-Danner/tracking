@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 128),
+    "version": (1, 129),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -718,40 +718,39 @@ class CLIP_OT_track_partial(bpy.types.Operator):
         original_end = scene.frame_end
         current = scene.frame_current
 
-        skip_backward = current == original_start
-        skip_forward = current == original_end
-
-        if skip_backward:
-            self.report({'INFO'}, 'Skipping backward tracking at scene start')
-        if skip_forward:
-            self.report({'INFO'}, 'Skipping forward tracking at scene end')
+        if current == original_start and current < original_end:
+            scene.frame_current = current + 1
+            current = scene.frame_current
+            self.report({'INFO'}, 'Moved playhead from scene start')
+        elif current == original_end and current > original_start:
+            scene.frame_current = current - 1
+            current = scene.frame_current
+            self.report({'INFO'}, 'Moved playhead from scene end')
 
         if not bpy.ops.clip.track_markers.poll():
             self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
             return {'CANCELLED'}
 
-        if not skip_backward:
-            total_back = current - original_start
-            step = max(1, int(total_back / 4))
-            frame = current
+        total_back = current - original_start
+        step = max(1, int(total_back / 4))
+        frame = current
 
-            while frame > original_start:
-                next_frame = max(original_start, frame - step)
-                print(f"Backward {frame} -> {next_frame}")
-                scene.frame_start = next_frame
-                scene.frame_end = frame
-                scene.frame_current = frame
-                bpy.ops.clip.track_markers(backwards=True, sequence=True)
-                frame = next_frame
-                if not has_active_marker(selected, frame):
-                    break
+        while frame > original_start:
+            next_frame = max(original_start, frame - step)
+            print(f"Backward {frame} -> {next_frame}")
+            scene.frame_start = next_frame
+            scene.frame_end = frame
+            scene.frame_current = frame
+            bpy.ops.clip.track_markers(backwards=True, sequence=True)
+            frame = next_frame
+            if not has_active_marker(selected, frame):
+                break
 
-        if not skip_forward:
-            scene.frame_start = current
-            scene.frame_end = min(original_end, current + frames_forward)
-            scene.frame_current = current
-            print(f"Forward {current} -> {scene.frame_end}")
-            bpy.ops.clip.track_markers(backwards=False, sequence=True)
+        scene.frame_start = current
+        scene.frame_end = min(original_end, current + frames_forward)
+        scene.frame_current = current
+        print(f"Forward {current} -> {scene.frame_end}")
+        bpy.ops.clip.track_markers(backwards=False, sequence=True)
 
         scene.frame_start = original_start
         scene.frame_end = original_end

@@ -240,3 +240,4 @@ Seit Version 1.125 bietet das API-Panel einen Button "Select TRACK", der alle ak
 Seit Version 1.126 bricht der Button "Track Partial" ab, wenn der Playhead am Szenenanfang oder -ende steht.
 Seit Version 1.127 überspringt der Button "Track Partial" das rückwärts Tracking am Szenenanfang und das vorwärts Tracking am Szenenende.
 Seit Version 1.128 zeigt der Button "Track Partial" den Fortschritt der Tracking-Frames in der Konsole an.
+Seit Version 1.129 verschiebt der Button "Track Partial" den Playhead einen Frame ins Innere, wenn dieser am Szenenanfang oder -ende steht.
