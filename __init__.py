@@ -823,9 +823,8 @@ class CLIP_OT_all_cycle(bpy.types.Operator):
 
             if track_min <= count <= track_max:
                 for t in clip.tracking.tracks:
-                    if t.name.startswith(prefix):
-                        t.name = "TRACK_" + t.name[len(prefix):]
-                        t.select = False
+                    t.select = t.name.startswith(prefix)
+                bpy.ops.clip.prefix_track(silent=True)
                 self._detect_attempts = 0
                 self._state = 'TRACK'
             else:
