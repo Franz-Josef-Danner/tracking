@@ -1567,6 +1567,7 @@ class CLIP_PT_test_subpanel(bpy.types.Panel):
         layout.operator('clip.detect_button', text='Test Detect')
         layout.operator('clip.prefix_test', text='Name Test')
         layout.operator('clip.track_full', text='Track Test')
+        layout.operator('clip.test_button', text='Test')
 
 classes = (
     OBJECT_OT_simple_operator,
