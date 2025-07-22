@@ -817,7 +817,7 @@ class CLIP_OT_all_cycle(bpy.types.Operator):
             prefix = "NEW_"
             count = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
             mframe = context.scene.marker_frame
-            mf_base = mframe / 3
+            mf_base = mframe * 4
             track_min = mf_base * 0.8
             track_max = mf_base * 1.2
 
