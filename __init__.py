@@ -740,6 +740,19 @@ class CLIP_OT_track_partial(bpy.types.Operator):
             current = scene.frame_current
             self.report({'INFO'}, 'Moved playhead from scene end')
 
+        # Debug output for selected tracks and marker positions
+        dbg_clip = bpy.context.space_data.clip
+        dbg_tracks = dbg_clip.tracking.tracks
+        selected_tracks = [t for t in dbg_tracks if t.select]
+
+        print(f"[Track Partial] Frame: {current}")
+        print(f"[Track Partial] Szene: {scene.frame_start} → {scene.frame_end}")
+        print(f"[Track Partial] {len(selected_tracks)} Marker ausgewählt")
+        for track in selected_tracks:
+            print(f"  - {track.name}: {len(track.markers)} Marker vorhanden")
+            for marker in track.markers:
+                print(f"    • Frame {marker.frame}, Pos {marker.co}")
+
         print(
             f"Tracking-Start: frame {current}, Scene {original_start}-{original_end}"
         )
