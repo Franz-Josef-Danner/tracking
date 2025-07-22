@@ -316,6 +316,36 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             new_tracks = [
                 t for t in clip.tracking.tracks if t.name in names_after - names_before
             ]
+            # Remove newly detected tracks that are too close to active GOOD_ tracks
+            frame = context.scene.frame_current
+            good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]
+            near_tracks = []
+            for nt in new_tracks:
+                nm = nt.markers.find_frame(frame)
+                if not nm:
+                    continue
+                nx = nm.co[0] * width
+                ny = nm.co[1] * height
+                for gt in good_tracks:
+                    gm = gt.markers.find_frame(frame)
+                    if not gm:
+                        continue
+                    gx = gm.co[0] * width
+                    gy = gm.co[1] * height
+                    dist = math.hypot(nx - gx, ny - gy)
+                    if dist < min_distance:
+                        near_tracks.append(nt)
+                        break
+            if near_tracks and bpy.ops.clip.delete_track.poll():
+                for track in clip.tracking.tracks:
+                    track.select = False
+                for t in near_tracks:
+                    t.select = True
+                bpy.ops.clip.delete_track()
+                names_after = {t.name for t in clip.tracking.tracks}
+                new_tracks = [
+                    t for t in clip.tracking.tracks if t.name in names_after - names_before
+                ]
             for track in clip.tracking.tracks:
                 track.select = False
             for t in new_tracks:
