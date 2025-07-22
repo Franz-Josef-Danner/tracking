@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 130),
+    "version": (1, 131),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -142,6 +142,16 @@ class CLIP_OT_panel_button(bpy.types.Operator):
         bpy.ops.clip.rebuild_proxy()
 
         self.report({'INFO'}, "Proxy auf 50% erstellt")
+        return {'FINISHED'}
+
+
+class CLIP_OT_track_nr1(bpy.types.Operator):
+    bl_idname = "clip.track_nr1"
+    bl_label = "Track Nr. 1"
+    bl_description = "Löst den Detect-Button aus"
+
+    def execute(self, context):
+        bpy.ops.clip.all_detect()
         return {'FINISHED'}
 
 
@@ -1674,6 +1684,7 @@ class CLIP_PT_stufen_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.operator('clip.panel_button', text='Proxy')
+        layout.operator('clip.track_nr1', text='Track Nr. 1')
 
 
 class CLIP_PT_test_panel(bpy.types.Panel):
@@ -1726,6 +1737,7 @@ class CLIP_PT_test_subpanel(bpy.types.Panel):
 classes = (
     OBJECT_OT_simple_operator,
     CLIP_OT_panel_button,
+    CLIP_OT_track_nr1,
     CLIP_OT_detect_button,
     CLIP_OT_prefix_new,
     CLIP_OT_prefix_test,
