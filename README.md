@@ -254,3 +254,4 @@ Seit Version 1.139 wiederholt der Button "Track Nr. 1" den gesamten Ablauf, bis 
 Seit Version 1.140 setzen die Buttons "Track Nr. 1" und "Step Track" nach dem "Track Partial" erneut Marker, um l\u00fcckenlose TRACK_-Marker zu erhalten.
 Seit Version 1.141 bietet das API-Panel einen Button "Short Track", der TRACK_-Marker ausw\u00e4hlt, deren L\u00e4nge unter dem Wert aus "Frames/Track" liegt.
 Seit Version 1.142 l\u00f6st der Button "Track Nr. 1" am Szenenende automatisch "Short Track" und danach "Delete" aus.
+Seit Version 1.143 bietet das API-Panel einen Button "Name GOOD", der alle TRACK_-Marker in GOOD_-Marker umbenennt.
