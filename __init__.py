@@ -692,6 +692,61 @@ class CLIP_OT_track_bidirectional(bpy.types.Operator):
 
         return {'FINISHED'}
 
+
+class CLIP_OT_track_partial(bpy.types.Operator):
+    bl_idname = "clip.track_partial"
+    bl_label = "Track Partial"
+    bl_description = (
+        "Trackt selektierte Marker r\u00fcckw\u00e4rts zum Szenenanfang "
+        "und anschlie\u00dfend f\u00fcr eine begrenzte Anzahl von Frames vorw\u00e4rts"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        selected = [t for t in clip.tracking.tracks if t.select]
+        if not selected:
+            self.report({'WARNING'}, "Keine Tracks ausgew\u00e4hlt")
+            return {'CANCELLED'}
+
+        scene = context.scene
+        frames_forward = scene.frames_track
+        original_start = scene.frame_start
+        original_end = scene.frame_end
+        current = scene.frame_current
+
+        if not bpy.ops.clip.track_markers.poll():
+            self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
+            return {'CANCELLED'}
+
+        total_back = current - original_start
+        step = max(1, int(total_back / 4))
+        frame = current
+
+        while frame > original_start:
+            next_frame = max(original_start, frame - step)
+            scene.frame_start = next_frame
+            scene.frame_end = frame
+            scene.frame_current = frame
+            bpy.ops.clip.track_markers(backwards=True, sequence=True)
+            frame = next_frame
+            if not has_active_marker(selected, frame):
+                break
+
+        scene.frame_start = current
+        scene.frame_end = min(original_end, current + frames_forward)
+        scene.frame_current = current
+        bpy.ops.clip.track_markers(backwards=False, sequence=True)
+
+        scene.frame_start = original_start
+        scene.frame_end = original_end
+        scene.frame_current = current
+
+        return {'FINISHED'}
+
 class CLIP_OT_all_detect(bpy.types.Operator):
     bl_idname = "clip.all_detect"
     bl_label = "Detect"
@@ -1566,6 +1621,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout = self.layout
         layout.operator('clip.all_detect', text='Detect')
         layout.operator('clip.track_bidirectional', text='Track')
+        layout.operator('clip.track_partial', text='Track Partial')
         layout.operator('clip.count_button', text='Count')
         layout.operator('clip.prefix_new', text='Name New')
         layout.operator('clip.prefix_track', text='Name Track')
@@ -1616,6 +1672,7 @@ classes = (
     CLIP_OT_channel_detect,
     CLIP_OT_apply_settings,
     CLIP_OT_track_bidirectional,
+    CLIP_OT_track_partial,
     CLIP_OT_setup_defaults,
     CLIP_OT_track_full,
     CLIP_OT_pattern_up,
