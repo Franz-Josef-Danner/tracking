@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 125),
+    "version": (1, 126),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -1312,6 +1312,42 @@ class CLIP_OT_select_active_tracks(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_step_track(bpy.types.Operator):
+    bl_idname = "clip.step_track"
+    bl_label = "Step Track"
+    bl_description = (
+        "Führt Detect, Name Track, Select TRACK und Track Partial aus "
+        "und springt anschließend um 'Frames/Track' vor"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        scene = context.scene
+        step = scene.frames_track
+        end_frame = scene.frame_end
+
+        while scene.frame_current <= end_frame:
+            if bpy.ops.clip.all_detect.poll():
+                bpy.ops.clip.all_detect()
+            if bpy.ops.clip.prefix_track.poll():
+                bpy.ops.clip.prefix_track()
+            if bpy.ops.clip.select_active_tracks.poll():
+                bpy.ops.clip.select_active_tracks()
+            if bpy.ops.clip.track_partial.poll():
+                bpy.ops.clip.track_partial()
+
+            next_frame = scene.frame_current + step
+            if next_frame > end_frame:
+                break
+            scene.frame_current = next_frame
+
+        return {'FINISHED'}
+
+
 class CLIP_OT_setup_defaults(bpy.types.Operator):
     bl_idname = "clip.setup_defaults"
     bl_label = "Test Defaults"
@@ -1641,6 +1677,7 @@ class CLIP_PT_stufen_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.operator('clip.panel_button', text='Proxy')
+        layout.operator('clip.step_track', text='Step Track')
 
 
 class CLIP_PT_test_panel(bpy.types.Panel):
@@ -1706,6 +1743,7 @@ classes = (
     CLIP_OT_apply_settings,
     CLIP_OT_track_bidirectional,
     CLIP_OT_track_partial,
+    CLIP_OT_step_track,
     CLIP_OT_setup_defaults,
     CLIP_OT_track_full,
     CLIP_OT_pattern_up,
