@@ -152,6 +152,8 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
 
     def execute(self, context):
         bpy.ops.clip.all_detect()
+        if bpy.ops.clip.prefix_track.poll():
+            bpy.ops.clip.prefix_track()
         return {'FINISHED'}
 
 
