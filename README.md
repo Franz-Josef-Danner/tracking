@@ -246,3 +246,4 @@ Seit Version 1.131 befindet sich unter dem Proxy ein Button "Track Nr. 1", der d
 Seit Version 1.132 gibt es im API-Panel einen Button "Frame jump", der den Playhead um "Frames/Track" nach vorne bewegt.
 Seit Version 1.133 löst der Button "Track Nr. 1" nach dem Detect-Schritt zusätzlich "Select TRACK" aus.
 Seit Version 1.134 löst der Button "Track Nr. 1" im Anschluss "Track Partial" aus.
+Seit Version 1.135 löst der Button "Track Nr. 1" am Ende "Frame Jump" aus.

@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 134),
+    "version": (1, 135),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -158,6 +158,8 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
             bpy.ops.clip.select_active_tracks()
         if bpy.ops.clip.track_partial.poll():
             bpy.ops.clip.track_partial()
+        if bpy.ops.clip.frame_jump_custom.poll():
+            bpy.ops.clip.frame_jump_custom()
         return {'FINISHED'}
 
 
