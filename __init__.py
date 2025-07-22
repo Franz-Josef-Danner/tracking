@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 140),
+    "version": (1, 141),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -186,32 +186,54 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
         end_frame = scene.frame_end
+        prev_frame = -1
+        same_frame = 0
 
         while scene.frame_current <= end_frame:
             if bpy.ops.clip.proxy_off.poll():
                 bpy.ops.clip.proxy_off()
 
             bpy.ops.clip.all_detect()
+            new_tracks = scene.nm_count
+            mfp = scene.marker_frame * 4
+            if mfp * 0.9 <= new_tracks <= mfp * 1.1:
+                before_count = sum(
+                    1 for t in clip.tracking.tracks if t.name.startswith("TRACK_")
+                )
+                if bpy.ops.clip.prefix_track.poll():
+                    bpy.ops.clip.prefix_track()
 
-            if bpy.ops.clip.prefix_track.poll():
-                bpy.ops.clip.prefix_track()
+                after_count = sum(
+                    1 for t in clip.tracking.tracks if t.name.startswith("TRACK_")
+                )
 
-            if bpy.ops.clip.select_active_tracks.poll():
-                bpy.ops.clip.select_active_tracks()
+                if after_count > before_count and bpy.ops.clip.select_active_tracks.poll():
+                    bpy.ops.clip.select_active_tracks()
 
-            if bpy.ops.clip.proxy_on.poll():
-                bpy.ops.clip.proxy_on()
+                    if bpy.ops.clip.proxy_on.poll():
+                        bpy.ops.clip.proxy_on()
 
-            if bpy.ops.clip.track_partial.poll():
-                bpy.ops.clip.track_partial()
+                    if bpy.ops.clip.track_partial.poll():
+                        bpy.ops.clip.track_partial()
 
-            # Neue Marker nach dem Tracking erkennen
-            if bpy.ops.clip.all_detect.poll():
-                bpy.ops.clip.all_detect()
+                    if bpy.ops.clip.all_detect.poll():
+                        bpy.ops.clip.all_detect()
 
-            if bpy.ops.clip.frame_jump_custom.poll():
-                bpy.ops.clip.frame_jump_custom()
+                    if scene.frame_current == prev_frame:
+                        same_frame += 1
+                    else:
+                        same_frame = 0
+                    prev_frame = scene.frame_current
+
+                    if same_frame >= 2 and bpy.ops.clip.frame_jump_custom.poll():
+                        bpy.ops.clip.frame_jump_custom()
+                        same_frame = 0
 
             if scene.frame_current >= end_frame:
                 break
