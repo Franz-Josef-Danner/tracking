@@ -104,6 +104,19 @@ def cycle_motion_model(settings, clip, reset_size=True):
         settings.default_pattern_size = clamp_pattern_size(base, clip)
         settings.default_search_size = settings.default_pattern_size * 2
 
+
+def distance(p1, p2):
+    """Berechnet den euklidischen Abstand zwischen zwei Punkten."""
+    return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
+
+
+def get_marker_at_frame(track, frame):
+    """Gibt den Marker im gegebenen Frame zurück, falls vorhanden."""
+    for marker in track.markers:
+        if marker.frame == frame:
+            return marker
+    return None
+
 class OBJECT_OT_simple_operator(bpy.types.Operator):
     bl_idname = "object.simple_operator"
     bl_label = "Simple Operator"
@@ -320,20 +333,14 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             frame = context.scene.frame_current
             good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]
             near_tracks = []
+            max_dist = min_distance / width
             for nt in new_tracks:
-                nm = nt.markers.find_frame(frame)
+                nm = get_marker_at_frame(nt, frame)
                 if not nm:
                     continue
-                nx = nm.co[0] * width
-                ny = nm.co[1] * height
                 for gt in good_tracks:
-                    gm = gt.markers.find_frame(frame)
-                    if not gm:
-                        continue
-                    gx = gm.co[0] * width
-                    gy = gm.co[1] * height
-                    dist = math.hypot(nx - gx, ny - gy)
-                    if dist < min_distance:
+                    gm = get_marker_at_frame(gt, frame)
+                    if gm and distance(nm.co, gm.co) < max_dist:
                         near_tracks.append(nt)
                         break
             if near_tracks and bpy.ops.clip.delete_track.poll():
