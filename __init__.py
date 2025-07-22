@@ -574,7 +574,7 @@ class CLIP_OT_channel_detect(bpy.types.Operator):
 
 class CLIP_OT_apply_settings(bpy.types.Operator):
     bl_idname = "clip.apply_detect_settings"
-    bl_label = "Apply Detect"
+    bl_label = "Test Detect Apply"
     bl_description = (
         "Setzt gespeicherte Test Detect Werte f\u00fcr Pattern, Motion Model und RGB"
         " Kan\u00e4le"
@@ -779,6 +779,7 @@ class CLIP_OT_all_cycle(bpy.types.Operator):
             bpy.ops.clip.prefix_new()
             bpy.ops.clip.distance_button()
             bpy.ops.clip.delete_selected()
+            # Im All Cycle werden nur NEW_-Marker ausgewertet, keine TEST_-Tracks
 
             prefix = "NEW_"
             count = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
@@ -1536,7 +1537,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.defaults_detect', text='Test Detect Pattern')
         layout.operator('clip.motion_detect', text='Test Detect MM')
         layout.operator('clip.channel_detect', text='Test Detect CH')
-        layout.operator('clip.apply_detect_settings', text='Apply Detect')
+        layout.operator('clip.apply_detect_settings', text='Test Detect Apply')
         layout.operator('clip.all_detect', text='Detect')
         layout.operator('clip.track_bidirectional', text='Track')
         layout.operator('clip.count_button', text='Count')
