@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 125),
+    "version": (1, 126),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -717,6 +717,10 @@ class CLIP_OT_track_partial(bpy.types.Operator):
         original_start = scene.frame_start
         original_end = scene.frame_end
         current = scene.frame_current
+
+        if current == original_start or current == original_end:
+            self.report({'WARNING'}, 'Playhead at scene start or end')
+            return {'CANCELLED'}
 
         if not bpy.ops.clip.track_markers.poll():
             self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
