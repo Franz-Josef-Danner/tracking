@@ -1212,6 +1212,20 @@ def jump_to_first_frame_with_few_active_markers(min_required=5):
     return None
 
 
+def find_low_marker_frame(clip, threshold):
+    """Return the first frame with fewer markers than ``threshold``."""
+    scene = bpy.context.scene
+    for frame in range(scene.frame_start, scene.frame_end + 1):
+        count = 0
+        for track in clip.tracking.tracks:
+            marker = track.markers.find_frame(frame)
+            if marker and not marker.mute and marker.co.length_squared != 0.0:
+                count += 1
+        if count < threshold:
+            return frame, count
+    return None, None
+
+
 def _update_nf_and_motion_model(frame, clip):
     """Maintain NF list and adjust motion model and pattern size.
 
@@ -1419,6 +1433,30 @@ class CLIP_OT_playhead_to_frame(bpy.types.Operator):
     def execute(self, context):
         min_required = context.scene.marker_frame
         jump_to_first_frame_with_few_active_markers(min_required=min_required)
+        return {'FINISHED'}
+
+
+class CLIP_OT_low_marker_frame(bpy.types.Operator):
+    bl_idname = "clip.low_marker_frame"
+    bl_label = "Low Marker Frame"
+    bl_description = (
+        "Springt zum ersten Frame mit weniger Markern als 'Marker/Frame'"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        threshold = context.scene.marker_frame
+        frame, count = find_low_marker_frame(clip, threshold)
+        if frame is not None:
+            context.scene.frame_current = frame
+            self.report({'INFO'}, f"Frame {frame} hat nur {count} Marker")
+        else:
+            self.report({'INFO'}, "Kein Frame mit weniger Markern gefunden")
+
         return {'FINISHED'}
 
 
@@ -1892,6 +1930,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.channel_g_on', text='Channel G on')
         layout.operator('clip.channel_g_off', text='Channel G off')
         layout.operator('clip.frame_jump_custom', text='Frame Jump')
+        layout.operator('clip.low_marker_frame', text='Low Marker Frame')
 
 
 class CLIP_PT_test_subpanel(bpy.types.Panel):
@@ -1955,6 +1994,7 @@ classes = (
     CLIP_OT_track_sequence,
     CLIP_OT_tracking_length,
     CLIP_OT_playhead_to_frame,
+    CLIP_OT_low_marker_frame,
     CLIP_OT_select_active_tracks,
     CLIP_PT_tracking_panel,
     CLIP_PT_final_panel,

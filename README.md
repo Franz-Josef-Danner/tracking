@@ -257,3 +257,4 @@ Seit Version 1.142 l\u00f6st der Button "Track Nr. 1" am Szenenende automatisch 
 Seit Version 1.143 bietet das API-Panel einen Button "Name GOOD", der alle TRACK_-Marker in GOOD_-Marker umbenennt.
 Seit Version 1.144 führt der Button "Track Nr. 1" nach dem Tracking keine automatische Feature-Erkennung mehr aus.
 Seit Version 1.145 l\u00f6st der Button "Track Nr. 1" am Ende automatisch "Name GOOD" aus.
+Seit Version 1.146 bietet das API-Panel einen Button "Low Marker Frame", der zum ersten Frame springt, in dem weniger Marker aktiv sind als im Feld "Marker / Frame" angegeben.
