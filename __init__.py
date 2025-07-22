@@ -218,6 +218,9 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
             self._state = "DETECT"
 
         elif self._state == "DETECT":
+            print(
+                f"[Track Nr.1] Detect Features at frame {scene.frame_current}"
+            )
             bpy.ops.clip.all_detect()
             self._state = "PREFIX"
 
@@ -305,6 +308,9 @@ class CLIP_OT_detect_button(bpy.types.Operator):
 
         while True:
             names_before = {t.name for t in clip.tracking.tracks}
+            print(
+                f"[Detect] detect_features at frame {context.scene.frame_current}"
+            )
             bpy.ops.clip.detect_features(
                 threshold=detection_threshold,
                 min_distance=min_distance,
@@ -930,6 +936,9 @@ class CLIP_OT_all_detect(bpy.types.Operator):
         new_markers = 0
         while True:
             names_before = {t.name for t in clip.tracking.tracks}
+            print(
+                f"[Detect] detect_features at frame {context.scene.frame_current}"
+            )
             bpy.ops.clip.detect_features(
                 threshold=detection_threshold,
                 min_distance=min_distance,
