@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 141),
+    "version": (1, 142),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -249,6 +249,10 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
             if bpy.ops.clip.frame_jump_custom.poll():
                 bpy.ops.clip.frame_jump_custom()
             if scene.frame_current >= scene.frame_end:
+                if bpy.ops.clip.short_track.poll():
+                    bpy.ops.clip.short_track()
+                if bpy.ops.clip.delete_selected.poll():
+                    bpy.ops.clip.delete_selected()
                 return self.cancel(context)
             self._state = "DETECT"
 
@@ -512,9 +516,9 @@ class CLIP_OT_delete_selected(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class CLIP_OT_short_delete(bpy.types.Operator):
-    bl_idname = "clip.short_delete"
-    bl_label = "Short delet"
+class CLIP_OT_short_track(bpy.types.Operator):
+    bl_idname = "clip.short_track"
+    bl_label = "Short Track"
     bl_description = (
         "Selektiert TRACK_-Marker, deren Länge unter 'Frames/Track' liegt"
     )
@@ -1854,7 +1858,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.prefix_track', text='Name Track')
         layout.operator('clip.select_active_tracks', text='Select TRACK')
         layout.operator('clip.delete_selected', text='Delete')
-        layout.operator('clip.short_delete', text='Short delet')
+        layout.operator('clip.short_track', text='Short Track')
         layout.operator('clip.pattern_up', text='Pattern+')
         layout.operator('clip.pattern_down', text='Pattern-')
         layout.operator('clip.motion_cycle', text='Motion Model')
@@ -1899,7 +1903,7 @@ classes = (
     CLIP_OT_prefix_track,
     CLIP_OT_distance_button,
     CLIP_OT_delete_selected,
-    CLIP_OT_short_delete,
+    CLIP_OT_short_track,
     CLIP_OT_count_button,
     CLIP_OT_api_defaults,
     CLIP_OT_defaults_detect,
