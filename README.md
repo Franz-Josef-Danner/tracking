@@ -258,3 +258,4 @@ Seit Version 1.143 bietet das API-Panel einen Button "Name GOOD", der alle TRACK
 Seit Version 1.144 führt der Button "Track Nr. 1" nach dem Tracking keine automatische Feature-Erkennung mehr aus.
 Seit Version 1.145 l\u00f6st der Button "Track Nr. 1" am Ende automatisch "Name GOOD" aus.
 Seit Version 1.146 bietet das API-Panel einen Button "Low Marker Frame", der zum ersten Frame springt, in dem weniger Marker aktiv sind als im Feld "Marker / Frame" angegeben.
+Seit Version 1.147 ruft der Button "Track Nr. 1" zu Beginn automatisch "Defaults" auf.
