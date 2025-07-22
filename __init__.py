@@ -779,6 +779,7 @@ class CLIP_OT_all_cycle(bpy.types.Operator):
             bpy.ops.clip.prefix_new()
             bpy.ops.clip.distance_button()
             bpy.ops.clip.delete_selected()
+            # Im All Cycle werden nur NEW_-Marker ausgewertet, keine TEST_-Tracks
 
             prefix = "NEW_"
             count = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
