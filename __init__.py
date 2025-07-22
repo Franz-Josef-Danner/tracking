@@ -776,7 +776,7 @@ class CLIP_OT_all_cycle(bpy.types.Operator):
             return self.cancel(context)
 
         if self._state == 'DETECT':
-            bpy.ops.clip.detect_button()
+            bpy.ops.clip.all_detect()
             bpy.ops.clip.prefix_new()
             bpy.ops.clip.distance_button()
             bpy.ops.clip.delete_selected()
