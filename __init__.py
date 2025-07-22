@@ -780,16 +780,29 @@ class CLIP_OT_all_cycle(bpy.types.Operator):
             bpy.ops.clip.prefix_new()
             bpy.ops.clip.distance_button()
             bpy.ops.clip.delete_selected()
-            bpy.ops.clip.count_button()
-            bpy.ops.clip.delete_selected()
-            self._detect_attempts += 1
-            has_track = any(t.name.startswith("TRACK_") for t in clip.tracking.tracks)
-            if has_track:
+
+            prefix = "NEW_"
+            count = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
+            mframe = context.scene.marker_frame
+            mf_base = mframe / 3
+            track_min = mf_base * 0.8
+            track_max = mf_base * 1.2
+
+            if track_min <= count <= track_max:
+                for t in clip.tracking.tracks:
+                    if t.name.startswith(prefix):
+                        t.name = "TRACK_" + t.name[len(prefix):]
+                        t.select = False
                 self._detect_attempts = 0
                 self._state = 'TRACK'
-            elif self._detect_attempts >= 20:
-                self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
-                return self.cancel(context)
+            else:
+                for t in clip.tracking.tracks:
+                    t.select = t.name.startswith(prefix)
+                bpy.ops.clip.delete_selected()
+                self._detect_attempts += 1
+                if self._detect_attempts >= 20:
+                    self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
+                    return self.cancel(context)
 
         elif self._state == 'TRACK':
             bpy.ops.clip.track_sequence()
@@ -1182,7 +1195,7 @@ class CLIP_OT_playhead_to_frame(bpy.types.Operator):
 
 class CLIP_OT_setup_defaults(bpy.types.Operator):
     bl_idname = "clip.setup_defaults"
-    bl_label = "Defaults"
+    bl_label = "Test Defaults"
     bl_description = (
         "Setzt Tracking-Standards: Pattern 10, Motion Loc, Keyframe-Match"
     )
@@ -1520,7 +1533,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.operator('clip.setup_defaults', text='Defaults')
+        layout.operator('clip.setup_defaults', text='Test Defaults')
         layout.operator('clip.defaults_detect', text='Test Detect Pattern')
         layout.operator('clip.motion_detect', text='Test Detect MM')
         layout.operator('clip.channel_detect', text='Test Detect CH')
