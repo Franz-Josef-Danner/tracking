@@ -775,19 +775,25 @@ class CLIP_OT_track_partial(bpy.types.Operator):
         current = scene.frame_current
         step = scene.frames_track
 
+        print(f"[Track Partial] Start at frame {current}, step {step}")
+
         if bpy.ops.clip.track_markers.poll():
+            print("[Track Partial] Tracking backwards …")
             bpy.ops.clip.track_markers(backwards=True, sequence=True)
 
         scene.frame_current = current
         if bpy.ops.clip.track_markers.poll():
+            print("[Track Partial] Tracking forwards …")
             bpy.ops.clip.track_markers(backwards=False, sequence=False)
-            for _ in range(step):
+            for i in range(step):
                 bpy.ops.clip.track_markers(backwards=False, sequence=False)
                 scene.frame_current += 1
+                print(f"[Track Partial] Forward step {i + 1} -> frame {scene.frame_current}")
                 if scene.frame_current >= scene.frame_end:
                     break
 
         scene.frame_current = current
+        print("[Track Partial] Done")
         return {'FINISHED'}
 
 class CLIP_OT_all_detect(bpy.types.Operator):
