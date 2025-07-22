@@ -249,3 +249,4 @@ Seit Version 1.134 löst der Button "Track Nr. 1" im Anschluss "Track Partial" a
 Seit Version 1.135 löst der Button "Track Nr. 1" am Ende "Frame Jump" aus.
 Seit Version 1.136 bietet das API-Panel einen Button "Defaults", der Pattern Size 50, Search Size 100, Motion Model "Loc", Keyframe-Matching, Prepass, Normalize, alle RGB-Kanäle, Gewicht 1, Mindestkorrelation 0.9 und Margin 100 einstellt.
 Seit Version 1.137 gibt es im API-Panel die Buttons "Proxy on" und "Proxy off", die das Proxy aktivieren bzw. deaktivieren.
+Seit Version 1.138 schaltet der Button "Track Nr. 1" zunächst das Proxy aus und aktiviert es erneut direkt vor "Track Partial".
