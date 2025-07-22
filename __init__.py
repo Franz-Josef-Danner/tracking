@@ -1358,7 +1358,7 @@ class CLIP_OT_step_track(bpy.types.Operator):
 
 
 class CLIP_OT_frame_jump(bpy.types.Operator):
-    bl_idname = "clip.frame_jump"
+    bl_idname = "clip.frame_jump_custom"
     bl_label = "Frame jump"
     bl_description = "Springt um 'Frames/Track' nach vorne"
 
@@ -1730,7 +1730,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.channel_b_off', text='Channel B off')
         layout.operator('clip.channel_g_on', text='Channel G on')
         layout.operator('clip.channel_g_off', text='Channel G off')
-        layout.operator('clip.frame_jump', text='Frame Jump')
+        layout.operator('clip.frame_jump_custom', text='Frame Jump')
 
 
 class CLIP_PT_test_subpanel(bpy.types.Panel):
