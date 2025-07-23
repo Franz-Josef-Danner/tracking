@@ -264,3 +264,5 @@ Seit Version 1.149 gibt der Button "Marker Position" die Pixelkoordinaten aller 
 Seit Version 1.150 bietet das API-Panel einen Button "Kamera solve", der den Camera Solver ausführt.
 Seit Version 1.151 enthält das Final-Panel ein Eingabefeld "Error Threshold" mit dem Standardwert 2.
 Seit Version 1.152 besitzt das API-Panel einen Button "Track Cleanup", der GOOD_-Tracks anhand ihrer Positionen löscht.
+Seit Version 1.153 verfügt das Stufen-Panel über einen Button "Cleanup", der
+"Short Track" und danach "Track Cleanup" ausführt.

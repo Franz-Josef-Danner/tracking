@@ -1721,6 +1721,21 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_cleanup(bpy.types.Operator):
+    bl_idname = "clip.cleanup"
+    bl_label = "Cleanup"
+    bl_description = (
+        "F\u00fchrt Short Track und Track Cleanup nacheinander aus"
+    )
+
+    def execute(self, context):
+        if bpy.ops.clip.short_track.poll():
+            bpy.ops.clip.short_track()
+        if bpy.ops.clip.track_cleanup.poll():
+            bpy.ops.clip.track_cleanup()
+        return {'FINISHED'}
+
+
 class CLIP_OT_step_track(bpy.types.Operator):
     bl_idname = "clip.step_track"
     bl_label = "Step Track"
@@ -2153,5 +2168,6 @@ operator_classes = (
     CLIP_OT_good_marker_position,
     CLIP_OT_camera_solve,
     CLIP_OT_track_cleanup,
+    CLIP_OT_cleanup,
 )
 
