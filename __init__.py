@@ -901,7 +901,7 @@ class CLIP_OT_track_partial(bpy.types.Operator):
 
 class CLIP_OT_all_detect(bpy.types.Operator):
     bl_idname = "clip.all_detect"
-    bl_label = "Cycle Detect"
+    bl_label = "Detect"
     bl_description = (
         "F\u00fchrt den Detect-Schritt aus All Cycle einzeln aus"
     )
