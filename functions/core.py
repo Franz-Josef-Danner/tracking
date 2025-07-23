@@ -193,8 +193,9 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         return "DETECT"
 
     def step_detect(self, context):
-        """Run auto detection."""
-        bpy.ops.clip.all_detect()
+        """Run auto detection with repeated attempts."""
+        if bpy.ops.clip.detect_button.poll():
+            bpy.ops.clip.detect_button()
         return "PREFIX"
 
     def step_prefix(self, context):
@@ -234,7 +235,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
             if bpy.ops.clip.prefix_good.poll():
                 bpy.ops.clip.prefix_good()
             return None
-        return "SELECT"
+        return "DETECT"
 
     def execute(self, context):
         wm = context.window_manager
