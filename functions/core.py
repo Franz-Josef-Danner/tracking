@@ -1687,35 +1687,59 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
         scene.frame_current = original_frame
 
         valid = {}
-        mx_sum = 0.0
-        my_sum = 0.0
         for track, coords in data.items():
             if all(k in coords for k in ("x1", "x2", "x3", "y1", "y2", "y3")):
                 mx = (coords["x1"] + coords["x2"] + coords["x3"]) / 3.0
                 my = (coords["y1"] + coords["y2"] + coords["y3"]) / 3.0
-                ma = (mx + my) / 2.0
-                valid[track] = ma
-                mx_sum += mx
-                my_sum += my
+                valid[track] = {"mx": mx, "my": my, "ma": (mx + my) / 2.0}
 
-        am = len(valid)
-        if am == 0:
+        if not valid:
             self.report({'WARNING'}, "Keine gültigen Marker gefunden")
             return {'CANCELLED'}
 
-        ama = ((mx_sum / am) + (my_sum / am)) / 2.0
-        g = (scene.error_threshold * 2.0) / 100.0
-
-        removed = 0
-        for track, ma in valid.items():
-            error = ama - ma
-            if abs(error) > g:
+        def remove_outliers(subset, g):
+            if not subset:
+                return []
+            mx_sum = sum(v["mx"] for v in subset.values())
+            my_sum = sum(v["my"] for v in subset.values())
+            count = len(subset)
+            ama = ((mx_sum / count) + (my_sum / count)) / 2.0
+            to_remove = [t for t, v in subset.items() if abs(ama - v["ma"]) > g]
+            for track in to_remove:
                 for t in clip.tracking.tracks:
                     t.select = False
                 track.select = True
                 if bpy.ops.clip.delete_selected.poll():
                     bpy.ops.clip.delete_selected(silent=True)
-                    removed += 1
+            return to_remove
+
+        removed = 0
+        g_base = (scene.error_threshold * 2.0) / 100.0
+
+        removed_tracks = remove_outliers(valid, g_base)
+        removed += len(removed_tracks)
+        for t in removed_tracks:
+            valid.pop(t, None)
+
+        def cleanup_regions(cols, rows, divider):
+            nonlocal removed
+            g_local = g_base / divider
+            cell_w = width / cols
+            cell_h = height / rows
+            groups = {}
+            for track, info in valid.items():
+                col = int(info["mx"] / cell_w)
+                row = int(info["my"] / cell_h)
+                key = (col, row)
+                groups.setdefault(key, {})[track] = info
+            for subset in groups.values():
+                rm = remove_outliers(subset, g_local)
+                removed += len(rm)
+                for t in rm:
+                    valid.pop(t, None)
+
+        cleanup_regions(2, 2, 2)
+        cleanup_regions(4, 2, 4)
 
         self.report({'INFO'}, f"{removed} Tracks entfernt")
         return {'FINISHED'}
