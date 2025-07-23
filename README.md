@@ -261,3 +261,4 @@ Seit Version 1.146 bietet das API-Panel einen Button "Low Marker Frame", der zum
 Seit Version 1.147 ruft der Button "Track Nr. 1" zu Beginn automatisch "Defaults" auf.
 Seit Version 1.148 besitzt das API-Panel die Buttons "Marker Position" und "GOOD Marker Position". Sie geben die Pixelkoordinaten der Marker in ausgewählten Tracks beziehungsweise aller GOOD_-Marker im aktuellen Frame aus.
 Seit Version 1.149 gibt der Button "Marker Position" die Pixelkoordinaten aller Marker in den selektierten Tracks aus.
+Seit Version 1.150 bietet das API-Panel einen Button "Kamera solve", der den Camera Solver ausführt.

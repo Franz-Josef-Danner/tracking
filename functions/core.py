@@ -1634,6 +1634,22 @@ class CLIP_OT_good_marker_position(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_camera_solve(bpy.types.Operator):
+    bl_idname = "clip.camera_solve"
+    bl_label = "Kamera solve"
+    bl_description = "Löst die Kamera anhand des aktuellen Clips"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if clip is None:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        bpy.ops.clip.solve_camera()
+        self.report({'INFO'}, "Camera solve complete.")
+        return {'FINISHED'}
+
+
 class CLIP_OT_step_track(bpy.types.Operator):
     bl_idname = "clip.step_track"
     bl_label = "Step Track"
@@ -2064,5 +2080,6 @@ operator_classes = (
     CLIP_OT_select_active_tracks,
     CLIP_OT_marker_position,
     CLIP_OT_good_marker_position,
+    CLIP_OT_camera_solve,
 )
 
