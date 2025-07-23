@@ -43,7 +43,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.operator('clip.all_detect', text='Detect')
+        layout.operator('clip.all_detect', text='Cycle Detect')
         layout.operator('clip.api_defaults', text='Defaults')
         layout.operator('clip.proxy_on', text='Proxy on')
         layout.operator('clip.proxy_off', text='Proxy off')
