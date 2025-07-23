@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 147),
+    "version": (1, 149),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -1482,6 +1482,106 @@ class CLIP_OT_select_active_tracks(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_marker_position(bpy.types.Operator):
+    bl_idname = "clip.marker_position"
+    bl_label = "Marker Position"
+    bl_description = (
+        "Gibt die Pixelposition der Marker in selektierten Tracks im aktuellen Frame aus"
+    )
+
+    def get_selected_marker_positions_in_pixels(self, scene):
+        frame = scene.frame_current
+        clip = scene.active_clip
+
+        if clip is None:
+            raise RuntimeError("Kein aktiver Clip im Clip-Editor.")
+
+        width, height = clip.size
+        result = []
+
+        for track in clip.tracking.tracks:
+            if not track.select:
+                continue
+
+            marker = track.markers.find_frame(frame, exact=True)
+            if marker is None or marker.mute:
+                continue
+
+            x_px = marker.co[0] * width
+            y_px = marker.co[1] * height
+
+            result.append(
+                {
+                    "track_name": track.name,
+                    "frame": frame,
+                    "x_px": x_px,
+                    "y_px": y_px,
+                }
+            )
+
+        return result
+
+    def execute(self, context):
+        try:
+            markers = self.get_selected_marker_positions_in_pixels(context.scene)
+        except RuntimeError as e:
+            self.report({'WARNING'}, str(e))
+            return {'CANCELLED'}
+
+        for m in markers:
+            print(
+                f"[{m['track_name']}] Frame {m['frame']}: "
+                f"X={m['x_px']:.1f}px, Y={m['y_px']:.1f}px"
+            )
+
+        return {'FINISHED'}
+
+
+class CLIP_OT_good_marker_position(bpy.types.Operator):
+    bl_idname = "clip.good_marker_position"
+    bl_label = "GOOD Marker Position"
+    bl_description = (
+        "Gibt die Pixelposition aller sichtbaren GOOD_-Marker im aktuellen Frame aus"
+    )
+
+    def execute(self, context):
+        scene = context.scene
+        frame = scene.frame_current
+        clip = scene.active_clip
+
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Clip im Clip-Editor gefunden")
+            return {'CANCELLED'}
+
+        width, height = clip.size
+        good_markers_px = []
+
+        for track in clip.tracking.tracks:
+            if not track.name.startswith("GOOD_"):
+                continue
+
+            marker = track.markers.find_frame(frame, exact=True)
+            if marker is None or marker.mute:
+                continue
+
+            nx, ny = marker.co
+            px, py = nx * width, ny * height
+
+            good_markers_px.append({
+                "track_name": track.name,
+                "frame": frame,
+                "x_px": px,
+                "y_px": py,
+            })
+
+        for m in good_markers_px:
+            print(
+                f"[{m['track_name']} @ frame {m['frame']}] -> X: {m['x_px']:.1f} px, Y: {m['y_px']:.1f} px"
+            )
+
+        return {'FINISHED'}
+
+
 class CLIP_OT_step_track(bpy.types.Operator):
     bl_idname = "clip.step_track"
     bl_label = "Step Track"
@@ -1933,6 +2033,8 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.channel_g_off', text='Channel G off')
         layout.operator('clip.frame_jump_custom', text='Frame Jump')
         layout.operator('clip.low_marker_frame', text='Low Marker Frame')
+        layout.operator('clip.marker_position', text='Marker Position')
+        layout.operator('clip.good_marker_position', text='GOOD Marker Position')
 
 
 class CLIP_PT_test_subpanel(bpy.types.Panel):
@@ -1998,6 +2100,8 @@ classes = (
     CLIP_OT_playhead_to_frame,
     CLIP_OT_low_marker_frame,
     CLIP_OT_select_active_tracks,
+    CLIP_OT_marker_position,
+    CLIP_OT_good_marker_position,
     CLIP_PT_tracking_panel,
     CLIP_PT_final_panel,
     CLIP_PT_stufen_panel,
