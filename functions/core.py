@@ -935,10 +935,57 @@ class CLIP_OT_all_detect(bpy.types.Operator):
 
             new_markers = len(new_tracks)
 
+            # Select new tracks for position logging
             for track in clip.tracking.tracks:
                 track.select = False
             for t in new_tracks:
                 t.select = True
+
+            # Output marker positions before validation
+            if bpy.ops.clip.marker_position.poll():
+                bpy.ops.clip.marker_position()
+            if bpy.ops.clip.good_marker_position.poll():
+                bpy.ops.clip.good_marker_position()
+
+            # Compare coordinates with GOOD_ markers and mark nearby tracks
+            frame = context.scene.frame_current
+            width, height = clip.size
+            # Use the computed min_distance as pixel radius
+            distance_px = min_distance
+            close_tracks = []
+            good_positions = []
+            for gt in clip.tracking.tracks:
+                if not gt.name.startswith("GOOD_"):
+                    continue
+                gm = gt.markers.find_frame(frame, exact=True)
+                if gm and not gm.mute:
+                    good_positions.append((gm.co[0] * width, gm.co[1] * height))
+            for nt in new_tracks:
+                nm = nt.markers.find_frame(frame, exact=True)
+                if nm and not nm.mute:
+                    nx = nm.co[0] * width
+                    ny = nm.co[1] * height
+                    for gx, gy in good_positions:
+                        if math.hypot(nx - gx, ny - gy) < distance_px:
+                            close_tracks.append(nt)
+                            break
+
+            # Delete tracks that are too close to GOOD_ markers
+            for track in clip.tracking.tracks:
+                track.select = False
+            for t in close_tracks:
+                t.select = True
+            if close_tracks and bpy.ops.clip.delete_selected.poll():
+                bpy.ops.clip.delete_selected()
+
+            # Recompute new tracks after deletion
+            names_after = {t.name for t in clip.tracking.tracks}
+            new_tracks = [
+                t for t in clip.tracking.tracks if t.name in names_after - names_before
+            ]
+            new_markers = len(new_tracks)
+
+            # Clear selection again
             for track in clip.tracking.tracks:
                 track.select = False
 
