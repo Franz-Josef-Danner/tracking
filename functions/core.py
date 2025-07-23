@@ -184,9 +184,62 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
     _timer = None
     _state = "INIT"
 
+    def step_init(self, context):
+        """Apply default settings and disable proxies."""
+        if bpy.ops.clip.api_defaults.poll():
+            bpy.ops.clip.api_defaults()
+        if bpy.ops.clip.proxy_off.poll():
+            bpy.ops.clip.proxy_off()
+        return "DETECT"
+
+    def step_detect(self, context):
+        """Run auto detection."""
+        bpy.ops.clip.all_detect()
+        return "PREFIX"
+
+    def step_prefix(self, context):
+        """Prefix detected tracks with TRACK_."""
+        if bpy.ops.clip.prefix_track.poll():
+            bpy.ops.clip.prefix_track()
+        return "SELECT"
+
+    def step_select(self, context):
+        """Select active TRACK_ markers."""
+        if bpy.ops.clip.select_active_tracks.poll():
+            bpy.ops.clip.select_active_tracks()
+        return "PROXY_ON"
+
+    def step_proxy_on(self, context):
+        """Enable proxies before tracking."""
+        if bpy.ops.clip.proxy_on.poll():
+            bpy.ops.clip.proxy_on()
+        return "TRACK"
+
+    def step_track(self, context):
+        """Run partial tracking."""
+        if bpy.ops.clip.track_partial.poll():
+            bpy.ops.clip.track_partial()
+        return "NEXT"
+
+    def step_next(self, context):
+        """Jump forward and finish at end frame."""
+        scene = context.scene
+        if bpy.ops.clip.frame_jump_custom.poll():
+            bpy.ops.clip.frame_jump_custom()
+        if scene.frame_current >= scene.frame_end:
+            if bpy.ops.clip.short_track.poll():
+                bpy.ops.clip.short_track()
+            if bpy.ops.clip.delete_selected.poll():
+                bpy.ops.clip.delete_selected()
+            if bpy.ops.clip.prefix_good.poll():
+                bpy.ops.clip.prefix_good()
+            return None
+        return "SELECT"
+
     def execute(self, context):
         wm = context.window_manager
         self._timer = add_timer(wm, context.window)
+        self._state = "INIT"
         wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
@@ -200,52 +253,12 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
             return self.cancel(context)
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
-
-        scene = context.scene
-
-        if self._state == "INIT":
-            if bpy.ops.clip.api_defaults.poll():
-                bpy.ops.clip.api_defaults()
-            if bpy.ops.clip.proxy_off.poll():
-                bpy.ops.clip.proxy_off()
-            self._state = "DETECT"
-
-        elif self._state == "DETECT":
-            bpy.ops.clip.all_detect()
-            self._state = "PREFIX"
-
-        elif self._state == "PREFIX":
-            if bpy.ops.clip.prefix_track.poll():
-                bpy.ops.clip.prefix_track()
-            self._state = "SELECT"
-
-        elif self._state == "SELECT":
-            if bpy.ops.clip.select_active_tracks.poll():
-                bpy.ops.clip.select_active_tracks()
-            self._state = "PROXY_ON"
-
-        elif self._state == "PROXY_ON":
-            if bpy.ops.clip.proxy_on.poll():
-                bpy.ops.clip.proxy_on()
-            self._state = "TRACK"
-
-        elif self._state == "TRACK":
-            if bpy.ops.clip.track_partial.poll():
-                bpy.ops.clip.track_partial()
-            self._state = "NEXT"
-
-        elif self._state == "NEXT":
-            if bpy.ops.clip.frame_jump_custom.poll():
-                bpy.ops.clip.frame_jump_custom()
-            if scene.frame_current >= scene.frame_end:
-                if bpy.ops.clip.short_track.poll():
-                    bpy.ops.clip.short_track()
-                if bpy.ops.clip.delete_selected.poll():
-                    bpy.ops.clip.delete_selected()
-                if bpy.ops.clip.prefix_good.poll():
-                    bpy.ops.clip.prefix_good()
+        step_method = getattr(self, f"step_{self._state.lower()}", None)
+        if step_method:
+            next_state = step_method(context)
+            if next_state is None:
                 return self.cancel(context)
-            self._state = "SELECT"
+            self._state = next_state
 
         return {'RUNNING_MODAL'}
 
