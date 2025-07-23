@@ -1652,7 +1652,7 @@ class CLIP_OT_camera_solve(bpy.types.Operator):
 
 class CLIP_OT_track_cleanup(bpy.types.Operator):
     bl_idname = "clip.track_cleanup"
-    bl_label = "Cleanup"
+    bl_label = "Track Cleanup"
     bl_description = (
         "Entfernt GOOD_-Tracks, deren mittlere Position zu stark vom Gesamtmittel abweicht"
     )
