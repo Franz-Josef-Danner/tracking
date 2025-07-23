@@ -277,83 +277,107 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
 class CLIP_OT_detect_button(bpy.types.Operator):
     bl_idname = "clip.detect_button"
     bl_label = "Test Detect"
-    bl_description = "Erkennt Features und filtert zu nahe Marker zu GOOD_"
-
-    threshold: FloatProperty(
-        name="Threshold",
-        description="Detektions-Schwelle",
-        default=0.8,
-        min=0.0,
-        max=1.0,
-    )
-    margin: IntProperty(
-        name="Margin",
-        description="Abstand zum Cliprand in Pixeln",
-        default=16,
-    )
-    min_distance: IntProperty(
-        name="Min Distance (px)",
-        description="Mindestabstand zwischen den Markern in Pixeln",
-        default=12,
-    )
-    limit: IntProperty(
-        name="Max Marker",
-        description="Maximale Anzahl Marker",
-        default=1000,
-    )
+    bl_description = "Erkennt Features mit dynamischen Parametern"
 
     def execute(self, context):
-        scene = context.scene
-        clip = context.space_data.clip
+        space = context.space_data
+        clip = space.clip
         if not clip:
-            self.report({'ERROR'}, "Kein Clip im Movie Clip Editor aktiv.")
+            self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        print("[Detect] Start execute")
+        clip.use_proxy = False
 
-        width = clip.size[0]
-        max_dist = self.min_distance / width
-        frame = scene.frame_current
+        global LAST_DETECT_COUNT
 
-        # Bestehende GOOD_-Marker
-        good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]
+        width, _ = clip.size
 
-        # Detect ausführen
-        bpy.ops.clip.detect_features(
-            sequence=False,
-            threshold=self.threshold,
-            margin=self.margin,
-            min_distance=self.min_distance,
-            limit=self.limit,
-        )
+        mframe = context.scene.marker_frame
+        mf_base = mframe / 3
 
-        # Neue Marker-Kandidaten (alle außer GOOD_)
-        candidates = [t for t in clip.tracking.tracks if not t.name.startswith("GOOD_")]
-        print(f"[Detect] FRAME {frame}, GOOD: {len(good_tracks)}, Kandidaten: {len(candidates)}")
+        threshold_value = 1.0
 
-        to_delete = []
-        for ct in candidates:
-            cm = get_marker_at_frame(ct, frame)
-            if not cm:
-                continue
-            for gt in good_tracks:
-                gm = get_marker_at_frame(gt, frame)
-                if not gm:
-                    continue
-                dist = distance(cm.co, gm.co)
-                print(f"Distanz {ct.name} → {gt.name}: {dist:.4f} (max {max_dist:.4f})")
-                if dist < max_dist:
-                    print(f"→ {ct.name} ist zu nah, wird gelöscht.")
-                    to_delete.append(ct)
-                    break
+        detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
 
-        # Marker entfernen
-        for nt in to_delete:
-            clip.tracking.tracks.remove(nt)
+        margin_base = int(width * 0.01)
+        min_distance_base = int(width * 0.05)
 
-        print(f"[Detect] Entfernt: {len(to_delete)} Marker.")
-        print("[Detect] Finish execute")
+        factor = math.log10(detection_threshold * 10000000000) / 10
+        margin = int(margin_base * factor)
+        min_distance = int(min_distance_base * factor)
 
+
+        active = None
+        if hasattr(space, "tracking"):
+            active = space.tracking.active_track
+        if active:
+            base = pattern_base(clip)
+            active.pattern_size = clamp_pattern_size(base, clip)
+            active.search_size = active.pattern_size * 2
+
+        mf_min = mf_base * 0.9
+        mf_max = mf_base * 1.1
+        attempt = 0
+        new_markers = 0
+
+        while True:
+            names_before = {t.name for t in clip.tracking.tracks}
+            bpy.ops.clip.detect_features(
+                threshold=detection_threshold,
+                min_distance=min_distance,
+                margin=margin,
+            )
+            names_after = {t.name for t in clip.tracking.tracks}
+            new_tracks = [
+                t for t in clip.tracking.tracks if t.name in names_after - names_before
+            ]
+            for track in clip.tracking.tracks:
+                track.select = False
+            for t in new_tracks:
+                t.select = True
+            for track in clip.tracking.tracks:
+                track.select = False
+            new_markers = len(new_tracks)
+            if mf_min <= new_markers <= mf_max or attempt >= 10:
+                break
+            # neu erkannte Marker wie beim Delete-Operator entfernen
+            for track in clip.tracking.tracks:
+                track.select = False
+            for t in new_tracks:
+                t.select = True
+            if new_tracks and bpy.ops.clip.delete_track.poll():
+                bpy.ops.clip.delete_track()
+            for track in clip.tracking.tracks:
+                track.select = False
+            threshold_value = threshold_value * ((new_markers + 0.1) / mf_base)
+            # adjust detection threshold dynamically
+            detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
+            factor = math.log10(detection_threshold * 10000000000) / 10
+            margin = int(margin_base * factor)
+            min_distance = int(min_distance_base * factor)
+            attempt += 1
+
+        settings = clip.tracking.settings
+        if (
+            LAST_DETECT_COUNT is not None
+            and new_markers == LAST_DETECT_COUNT
+            and new_markers > 0
+            and detection_threshold <= MIN_THRESHOLD
+        ):
+            settings.default_pattern_size = int(settings.default_pattern_size * 0.9)
+            settings.default_pattern_size = clamp_pattern_size(
+                settings.default_pattern_size, clip
+            )
+            settings.default_search_size = settings.default_pattern_size * 2
+        LAST_DETECT_COUNT = new_markers
+        context.scene.threshold_value = threshold_value
+        context.scene.nm_count = new_markers
+        # Keep newly detected tracks selected
+        for track in clip.tracking.tracks:
+            track.select = False
+        for t in new_tracks:
+            t.select = True
+        self.report({'INFO'}, f"{new_markers} Marker nach {attempt+1} Durchläufen")
         return {'FINISHED'}
 
 
@@ -900,79 +924,80 @@ class CLIP_OT_all_detect(bpy.types.Operator):
     bl_description = (
         "F\u00fchrt den Detect-Schritt aus All Cycle einzeln aus"
     )
+    threshold: FloatProperty(
+        name="Threshold",
+        description="Detektions-Schwelle",
+        default=0.8,
+        min=0.0,
+        max=1.0,
+    )
+    margin: IntProperty(
+        name="Margin",
+        description="Abstand zum Cliprand in Pixeln",
+        default=16,
+    )
+    min_distance: IntProperty(
+        name="Min Distance (px)",
+        description="Mindestabstand zwischen den Markern in Pixeln",
+        default=12,
+    )
+    limit: IntProperty(
+        name="Max Marker",
+        description="Maximale Anzahl Marker",
+        default=1000,
+    )
 
     def execute(self, context):
+        scene = context.scene
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
+            self.report({'ERROR'}, "Kein Clip im Movie Clip Editor aktiv.")
             return {'CANCELLED'}
 
-        width, _ = clip.size
+        print("[Detect] Start execute")
 
-        margin_base = int(width * 0.01)
-        min_distance_base = int(width * 0.05)
+        width, height = clip.size
+        max_dist = self.min_distance / width
+        frame = scene.frame_current
 
-        mfp = context.scene.marker_frame * 4
-        mfp_min = mfp * 0.9
-        mfp_max = mfp * 1.1
+        bpy.ops.clip.detect_features(
+            sequence=False,
+            threshold=self.threshold,
+            margin=self.margin,
+            min_distance=self.min_distance,
+            limit=self.limit,
+        )
+        context.scene.last_min_distance = self.min_distance
 
-        threshold_value = 1.0
-        detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
-        factor = math.log10(detection_threshold * 10000000000) / 10
-        margin = int(margin_base * factor)
-        min_distance = int(min_distance_base * factor)
+        good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]
+        candidates = [t for t in clip.tracking.tracks if not t.name.startswith("GOOD_")]
+        print(f"[Detect] FRAME {frame}, GOOD: {len(good_tracks)}, Kandidaten: {len(candidates)}")
 
+        to_delete = []
+        for ct in candidates:
+            cm = get_marker_at_frame(ct, frame)
+            if not cm:
+                continue
+            cpos = (cm.co[0] * width, cm.co[1] * height)
+            for gt in good_tracks:
+                gm = get_marker_at_frame(gt, frame)
+                if not gm:
+                    continue
+                gpos = (gm.co[0] * width, gm.co[1] * height)
+                dist = distance(cm.co, gm.co)
+                print(
+                    f"{ct.name} {cpos} → {gt.name} {gpos}: {dist:.4f} (max {max_dist:.4f})"
+                )
+                if dist < max_dist:
+                    print(f"→ {ct.name} ist zu nah, wird gelöscht.")
+                    to_delete.append(ct)
+                    break
 
-        attempt = 0
-        new_markers = 0
-        while True:
-            names_before = {t.name for t in clip.tracking.tracks}
-            bpy.ops.clip.detect_features(
-                threshold=detection_threshold,
-                min_distance=min_distance,
-                margin=margin,
-            )
-            names_after = {t.name for t in clip.tracking.tracks}
-            new_tracks = [
-                t for t in clip.tracking.tracks if t.name in names_after - names_before
-            ]
+        for nt in to_delete:
+            clip.tracking.tracks.remove(nt)
 
-            new_markers = len(new_tracks)
-
-            for track in clip.tracking.tracks:
-                track.select = False
-            for t in new_tracks:
-                t.select = True
-            for track in clip.tracking.tracks:
-                track.select = False
-
-            if mfp_min <= new_markers <= mfp_max or attempt >= 10:
-                break
-
-            for track in clip.tracking.tracks:
-                track.select = False
-            for t in new_tracks:
-                t.select = True
-            if new_tracks and bpy.ops.clip.delete_track.poll():
-                bpy.ops.clip.delete_track()
-            for track in clip.tracking.tracks:
-                track.select = False
-
-            threshold_value = threshold_value * ((new_markers + 0.1) / mfp)
-            detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
-            factor = math.log10(detection_threshold * 10000000000) / 10
-            margin = int(margin_base * factor)
-            min_distance = int(min_distance_base * factor)
-            attempt += 1
-
-        context.scene.threshold_value = threshold_value
-        context.scene.nm_count = new_markers
-
-        # Keep newly detected tracks selected
-        for track in clip.tracking.tracks:
-            track.select = False
-        for t in new_tracks:
-            t.select = True
+        print(f"[Detect] Entfernt: {len(to_delete)} Marker.")
+        print("[Detect] Finish execute")
 
         return {'FINISHED'}
 
