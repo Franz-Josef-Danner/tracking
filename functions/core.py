@@ -1634,6 +1634,45 @@ class CLIP_OT_good_marker_position(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_camera_solve(bpy.types.Operator):
+    bl_idname = "clip.camera_solve"
+    bl_label = "Kamera solve"
+    bl_description = "Löst die Kamera anhand des aktuellen Clips"
+
+    def execute(self, context):
+        scene = context.scene
+        cam_obj = scene.camera
+        if cam_obj is None:
+            self.report({'WARNING'}, "Keine Kamera in der Szene")
+            return {'CANCELLED'}
+
+        clip = context.space_data.clip
+        if clip is None:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        constraint = None
+        for con in cam_obj.constraints:
+            if con.type == 'CAMERA_SOLVER':
+                constraint = con
+                break
+        if constraint is None:
+            constraint = cam_obj.constraints.new('CAMERA_SOLVER')
+
+        constraint.clip = clip
+        constraint.use_active_clip = False
+        constraint.influence = 1.0
+        constraint.owner_space = 'WORLD'
+
+        if bpy.ops.clip.solve_camera.poll():
+            bpy.ops.clip.solve_camera()
+            self.report({'INFO'}, "Kameralösung durchgeführt")
+            return {'FINISHED'}
+
+        self.report({'WARNING'}, "Camera Solve nicht möglich")
+        return {'CANCELLED'}
+
+
 class CLIP_OT_step_track(bpy.types.Operator):
     bl_idname = "clip.step_track"
     bl_label = "Step Track"
@@ -2064,5 +2103,6 @@ operator_classes = (
     CLIP_OT_select_active_tracks,
     CLIP_OT_marker_position,
     CLIP_OT_good_marker_position,
+    CLIP_OT_camera_solve,
 )
 
