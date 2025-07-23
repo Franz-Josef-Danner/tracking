@@ -23,12 +23,6 @@ def register():
         description="Frame für neuen Marker",
         default=20,
     )
-    bpy.types.Scene.marker_threshold = IntProperty(
-        name="Marker/Frame",
-        description="Minimum number of active markers required",
-        default=5,
-        min=1,
-    )
     bpy.types.Scene.frames_track = IntProperty(
         name="Frames/Track",
         description="Anzahl der Frames pro Tracking-Schritt",
@@ -59,8 +53,6 @@ def unregister():
         del bpy.types.Scene.nm_count
     if hasattr(bpy.types.Scene, "threshold_value"):
         del bpy.types.Scene.threshold_value
-    if hasattr(bpy.types.Scene, "marker_threshold"):
-        del bpy.types.Scene.marker_threshold
 
 
 if __name__ == "__main__":

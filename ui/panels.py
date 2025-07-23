@@ -67,6 +67,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.channel_g_on', text='Channel G on')
         layout.operator('clip.channel_g_off', text='Channel G off')
         layout.operator('clip.frame_jump_custom', text='Frame Jump')
+        layout.operator('clip.low_marker_frame', text='Low Marker Frame')
         layout.operator('clip.marker_position', text='Marker Position')
         layout.operator('clip.good_marker_position', text='GOOD Marker Position')
 
@@ -91,25 +92,11 @@ class CLIP_PT_test_subpanel(bpy.types.Panel):
         layout.operator('clip.test_button', text='Test')
 
 
-class CLIP_PT_low_marker_panel(bpy.types.Panel):
-    bl_label = "Low Marker Finder"
-    bl_space_type = 'CLIP_EDITOR'
-    bl_region_type = 'UI'
-    bl_category = "Tracking Tools"
-
-    def draw(self, context):
-        layout = self.layout
-        scene = context.scene
-
-        layout.prop(scene, "marker_threshold")
-        layout.operator("clip.low_marker_frame", icon="VIEWZOOM")
-
 panel_classes = (
     CLIP_PT_tracking_panel,
     CLIP_PT_final_panel,
     CLIP_PT_stufen_panel,
     CLIP_PT_test_panel,
     CLIP_PT_test_subpanel,
-    CLIP_PT_low_marker_panel,
 )
 

@@ -1491,7 +1491,7 @@ class CLIP_OT_low_marker_frame(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        threshold = context.scene.marker_threshold
+        threshold = context.scene.marker_frame
         frame, count = find_low_marker_frame(clip, threshold)
         if frame is not None:
             context.scene.frame_current = frame
