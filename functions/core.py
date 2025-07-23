@@ -1645,7 +1645,7 @@ class CLIP_OT_camera_solve(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        clip.tracking.solve_camera()
+        bpy.ops.clip.solve_camera()
         self.report({'INFO'}, "Camera solve complete.")
         return {'FINISHED'}
 
