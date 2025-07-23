@@ -290,7 +290,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
 
         global LAST_DETECT_COUNT
 
-        width, _ = clip.size
+        width, height = clip.size
 
         mframe = context.scene.marker_frame
         mf_base = mframe / 3
@@ -331,6 +331,23 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             new_tracks = [
                 t for t in clip.tracking.tracks if t.name in names_after - names_before
             ]
+            # Ausgabe der Positionen aller neuen und GOOD_ Marker
+            frame = context.scene.frame_current
+            good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]
+            print("GOOD marker positions:")
+            for gt in good_tracks:
+                gm = get_marker_at_frame(gt, frame)
+                if gm:
+                    gx = gm.co[0] * width
+                    gy = gm.co[1] * height
+                    print(f"  {gt.name}: ({gx:.1f}, {gy:.1f})")
+            print("NEW marker positions:")
+            for nt in new_tracks:
+                nm = get_marker_at_frame(nt, frame)
+                if nm:
+                    nx = nm.co[0] * width
+                    ny = nm.co[1] * height
+                    print(f"  {nt.name}: ({nx:.1f}, {ny:.1f})")
             # Remove tracks that are too close to existing GOOD_ tracks
             frame = context.scene.frame_current
             good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]
@@ -343,9 +360,17 @@ class CLIP_OT_detect_button(bpy.types.Operator):
                     continue
                 for gt in good_tracks:
                     gm = get_marker_at_frame(gt, frame)
-                    if gm and distance(cm.co, gm.co) < max_dist:
-                        near_tracks.append(ct)
-                        break
+                    if gm:
+                        if distance(cm.co, gm.co) < max_dist:
+                            cx = cm.co[0] * width
+                            cy = cm.co[1] * height
+                            gx = gm.co[0] * width
+                            gy = gm.co[1] * height
+                            print(
+                                f"remove {ct.name} ({cx:.1f}, {cy:.1f}) near {gt.name} ({gx:.1f}, {gy:.1f})"
+                            )
+                            near_tracks.append(ct)
+                            break
             if near_tracks and bpy.ops.clip.delete_track.poll():
                 for track in clip.tracking.tracks:
                     track.select = False
@@ -549,6 +574,9 @@ class CLIP_OT_distance_button(bpy.types.Operator):
                 gy = gm.co[1] * height
                 dist = math.hypot(nx - gx, ny - gy)
                 if dist < min_distance_px:
+                    print(
+                        f"{nt.name} ({nx:.1f}, {ny:.1f}) near {gt.name} ({gx:.1f}, {gy:.1f})"
+                    )
                     nt.select = True
                     marked += 1
                     break
