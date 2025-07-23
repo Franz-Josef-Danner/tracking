@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 150),
+    "version": (1, 151),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -38,6 +38,11 @@ def register():
         description="Gespeicherter Threshold-Wert",
         default=1.0,
     )
+    bpy.types.Scene.error_threshold = FloatProperty(
+        name="Error Threshold",
+        description="Fehlergrenze für Operationen",
+        default=2.0,
+    )
     for cls in classes:
         bpy.utils.register_class(cls)
 
@@ -53,6 +58,8 @@ def unregister():
         del bpy.types.Scene.nm_count
     if hasattr(bpy.types.Scene, "threshold_value"):
         del bpy.types.Scene.threshold_value
+    if hasattr(bpy.types.Scene, "error_threshold"):
+        del bpy.types.Scene.error_threshold
 
 
 if __name__ == "__main__":
