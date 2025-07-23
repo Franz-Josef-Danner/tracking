@@ -93,7 +93,32 @@ def cycle_motion_model(settings, clip, reset_size=True):
     if reset_size:
         base = pattern_base(clip)
         settings.default_pattern_size = clamp_pattern_size(base, clip)
+
         settings.default_search_size = settings.default_pattern_size * 2
+
+
+def place_and_track_markers(track, clip, scene, step=30, forward_margin=10):
+    """Place markers at intervals and track backwards then slightly forwards."""
+
+    tracking = clip.tracking
+    tracking_object = tracking.objects.active
+
+    current_frame = scene.frame_end
+    start = scene.frame_start
+
+    while current_frame >= start:
+        track.markers.insert(current_frame, co=(0.5, 0.5))
+
+        bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True)
+
+        scene.frame_current = current_frame
+        for _ in range(forward_margin):
+            scene.frame_current += 1
+            if scene.frame_current > scene.frame_end:
+                break
+            bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False)
+
+        current_frame -= step
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
     bl_idname = "object.simple_operator"
