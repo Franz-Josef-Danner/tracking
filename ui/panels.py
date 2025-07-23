@@ -74,6 +74,17 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.camera_solve', text='Kamera solve')
 
 
+class CLIP_PT_cleanup_panel(bpy.types.Panel):
+    bl_space_type = 'CLIP_EDITOR'
+    bl_region_type = 'UI'
+    bl_category = 'Addon'
+    bl_label = 'Track Cleanup'
+
+    def draw(self, context):
+        layout = self.layout
+        layout.operator('clip.track_cleanup', text='Cleanup')
+
+
 class CLIP_PT_test_subpanel(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
@@ -98,6 +109,7 @@ panel_classes = (
     CLIP_PT_final_panel,
     CLIP_PT_stufen_panel,
     CLIP_PT_test_panel,
+    CLIP_PT_cleanup_panel,
     CLIP_PT_test_subpanel,
 )
 

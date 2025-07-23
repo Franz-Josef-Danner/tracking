@@ -1650,6 +1650,77 @@ class CLIP_OT_camera_solve(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_track_cleanup(bpy.types.Operator):
+    bl_idname = "clip.track_cleanup"
+    bl_label = "Cleanup"
+    bl_description = (
+        "Entfernt GOOD_-Tracks, deren mittlere Position zu stark vom Gesamtmittel abweicht"
+    )
+
+    def execute(self, context):
+        scene = context.scene
+        clip = context.space_data.clip
+        if clip is None:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        start = scene.frame_start
+        frames = [start, start + 1, start + 2]
+        original_frame = scene.frame_current
+
+        width, height = clip.size
+        data = {}
+        for idx, frame in enumerate(frames, start=1):
+            scene.frame_current = frame
+            for track in clip.tracking.tracks:
+                if not track.name.startswith("GOOD_"):
+                    continue
+                marker = track.markers.find_frame(frame, exact=True)
+                if marker is None or marker.mute:
+                    continue
+                px = marker.co[0] * width
+                py = marker.co[1] * height
+                entry = data.setdefault(track, {})
+                entry[f"x{idx}"] = px
+                entry[f"y{idx}"] = py
+
+        scene.frame_current = original_frame
+
+        valid = {}
+        mx_sum = 0.0
+        my_sum = 0.0
+        for track, coords in data.items():
+            if all(k in coords for k in ("x1", "x2", "x3", "y1", "y2", "y3")):
+                mx = (coords["x1"] + coords["x2"] + coords["x3"]) / 3.0
+                my = (coords["y1"] + coords["y2"] + coords["y3"]) / 3.0
+                ma = (mx + my) / 2.0
+                valid[track] = ma
+                mx_sum += mx
+                my_sum += my
+
+        am = len(valid)
+        if am == 0:
+            self.report({'WARNING'}, "Keine gültigen Marker gefunden")
+            return {'CANCELLED'}
+
+        ama = ((mx_sum / am) + (my_sum / am)) / 2.0
+        g = (scene.error_threshold * 2.0) / 100.0
+
+        removed = 0
+        for track, ma in valid.items():
+            error = ama - ma
+            if abs(error) > g:
+                for t in clip.tracking.tracks:
+                    t.select = False
+                track.select = True
+                if bpy.ops.clip.delete_selected.poll():
+                    bpy.ops.clip.delete_selected(silent=True)
+                    removed += 1
+
+        self.report({'INFO'}, f"{removed} Tracks entfernt")
+        return {'FINISHED'}
+
+
 class CLIP_OT_step_track(bpy.types.Operator):
     bl_idname = "clip.step_track"
     bl_label = "Step Track"
@@ -2081,5 +2152,6 @@ operator_classes = (
     CLIP_OT_marker_position,
     CLIP_OT_good_marker_position,
     CLIP_OT_camera_solve,
+    CLIP_OT_track_cleanup,
 )
 
