@@ -113,11 +113,8 @@ def distance(p1, p2):
 
 
 def get_marker_at_frame(track, frame):
-    """Gibt den Marker im gegebenen Frame zurück, falls vorhanden."""
-    for marker in track.markers:
-        if marker.frame == frame:
-            return marker
-    return None
+    """Return the marker at the given frame if it exists."""
+    return track.markers.find_frame(frame)
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
     bl_idname = "object.simple_operator"
