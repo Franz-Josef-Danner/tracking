@@ -371,17 +371,11 @@ class CLIP_OT_detect_button(bpy.types.Operator):
                     if dist_norm < max_dist:
                         near_tracks.append(ct)
                         break  # schon zu nah, reicht
-            # Entferne alle zu nahen neuen Marker über den Delete-Operator
+            # Entferne alle zu nahen neuen Marker direkt
             if near_tracks:
-                for t in clip.tracking.tracks:
-                    t.select = False
                 for nt in near_tracks:
                     print(f"Lösche Marker zu nah an GOOD: {nt.name}")
-                    nt.select = True
-                if bpy.ops.clip.delete_selected.poll():
-                    bpy.ops.clip.delete_selected(silent=True)
-                for t in clip.tracking.tracks:
-                    t.select = False
+                    clip.tracking.tracks.remove(nt)
                 new_tracks = [t for t in new_tracks if t not in near_tracks]
                 print(f"{len(near_tracks)} Marker gelöscht")
             else:
