@@ -113,8 +113,11 @@ def distance(p1, p2):
 
 
 def get_marker_at_frame(track, frame):
-    """Return the marker at the given frame if it exists."""
-    return track.markers.find_frame(frame)
+    """Gibt den Marker im angegebenen Frame zur\u00fcck, falls vorhanden."""
+    for marker in track.markers:
+        if marker.frame == frame:
+            return marker
+    return None
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
     bl_idname = "object.simple_operator"
@@ -274,12 +277,14 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
 class CLIP_OT_detect_button(bpy.types.Operator):
     bl_idname = "clip.detect_button"
     bl_label = "Test Detect"
-    bl_description = "Erkennt Features mit dynamischen Parametern"
+    bl_description = "Erkennt Features und filtert zu nahe Marker zu GOOD_"
 
     threshold: FloatProperty(
         name="Threshold",
         description="Detektions-Schwelle",
-        default=0.5,
+        default=0.8,
+        min=0.0,
+        max=1.0,
     )
     margin: IntProperty(
         name="Margin",
@@ -287,14 +292,14 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         default=16,
     )
     min_distance: IntProperty(
-        name="Min Distance",
+        name="Min Distance (px)",
         description="Mindestabstand zwischen den Markern in Pixeln",
-        default=16,
+        default=12,
     )
     limit: IntProperty(
-        name="Limit",
+        name="Max Marker",
         description="Maximale Anzahl Marker",
-        default=0,
+        default=1000,
     )
 
     def execute(self, context):
@@ -306,33 +311,26 @@ class CLIP_OT_detect_button(bpy.types.Operator):
 
         print("[Detect] Start execute")
 
-        min_distance = self.min_distance
         width = clip.size[0]
-        max_dist = min_distance / width
-
+        max_dist = self.min_distance / width
         frame = scene.frame_current
 
+        # Bestehende GOOD_-Marker
         good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]
-        candidates = [t for t in clip.tracking.tracks if not t.name.startswith("GOOD_")]
 
-        print(
-            f"[Detect] call detect_features threshold={self.threshold} margin={self.margin}"
-            f" min_distance={min_distance} limit={self.limit}"
-        )
+        # Detect ausführen
         bpy.ops.clip.detect_features(
             clip=clip.name,
             sequence=False,
             threshold=self.threshold,
             margin=self.margin,
-            min_distance=min_distance,
+            min_distance=self.min_distance,
             limit=self.limit,
         )
 
+        # Neue Marker-Kandidaten (alle außer GOOD_)
         candidates = [t for t in clip.tracking.tracks if not t.name.startswith("GOOD_")]
-
-        print(
-            f"[Detect] FRAME {frame}, GOOD-Tracks: {len(good_tracks)}, neue Tracks insgesamt: {len(candidates)}"
-        )
+        print(f"[Detect] FRAME {frame}, GOOD: {len(good_tracks)}, Kandidaten: {len(candidates)}")
 
         to_delete = []
         for ct in candidates:
@@ -344,28 +342,21 @@ class CLIP_OT_detect_button(bpy.types.Operator):
                 if not gm:
                     continue
                 dist = distance(cm.co, gm.co)
-                print(
-                    f"Distanz {ct.name} → {gt.name}: {dist:.4f} (max {max_dist:.4f})"
-                )
+                print(f"Distanz {ct.name} → {gt.name}: {dist:.4f} (max {max_dist:.4f})")
                 if dist < max_dist:
-                    print(f"→ {ct.name} ist zu nah ({dist:.4f}), wird gelöscht.")
+                    print(f"→ {ct.name} ist zu nah, wird gelöscht.")
                     to_delete.append(ct)
                     break
 
+        # Marker entfernen
         for nt in to_delete:
             clip.tracking.tracks.remove(nt)
 
-        print(
-            f"[Detect] Entfernt: {len(to_delete)} Marker. Gesamt im Clip jetzt: {len(clip.tracking.tracks)}"
-        )
-
+        print(f"[Detect] Entfernt: {len(to_delete)} Marker.")
         print("[Detect] Finish execute")
 
-        global LAST_MIN_DISTANCE
-        LAST_MIN_DISTANCE = min_distance
-        context.scene.last_min_distance = min_distance
-
         return {'FINISHED'}
+
 
 
 class CLIP_OT_prefix_new(bpy.types.Operator):
