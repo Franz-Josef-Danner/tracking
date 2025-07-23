@@ -357,27 +357,15 @@ class CLIP_OT_detect_button(bpy.types.Operator):
                     continue
                 for gt in good_tracks:
                     gm = get_marker_at_frame(gt, frame)
-                    if gm:
-                        if distance(cm.co, gm.co) < max_dist:
-                            cx = cm.co[0] * width
-                            cy = cm.co[1] * height
-                            gx = gm.co[0] * width
-                            gy = gm.co[1] * height
-                            print(
-                                f"remove {ct.name} ({cx:.1f}, {cy:.1f}) near {gt.name} ({gx:.1f}, {gy:.1f})"
-                            )
-                            near_tracks.append(ct)
-                            break
-            if near_tracks and bpy.ops.clip.delete_track.poll():
-                for track in clip.tracking.tracks:
-                    track.select = False
-                for t in near_tracks:
-                    t.select = True
-                bpy.ops.clip.delete_track()
-                names_after = {t.name for t in clip.tracking.tracks}
-                new_tracks = [
-                    t for t in clip.tracking.tracks if t.name in names_after - names_before
-                ]
+                    if not gm:
+                        continue
+                    if distance(cm.co, gm.co) < max_dist:
+                        near_tracks.append(ct)
+                        break  # schon zu nah, reicht
+            # Entferne alle zu nahen neuen Marker
+            for nt in near_tracks:
+                print(f"Lösche Marker zu nah an GOOD: {nt.name}")
+                clip.tracking.tracks.remove(nt)
             for track in clip.tracking.tracks:
                 track.select = False
             for t in new_tracks:
