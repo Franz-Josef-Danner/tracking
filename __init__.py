@@ -320,7 +320,6 @@ class CLIP_OT_detect_button(bpy.types.Operator):
 
         # Detect ausführen
         bpy.ops.clip.detect_features(
-            clip=clip.name,
             sequence=False,
             threshold=self.threshold,
             margin=self.margin,
