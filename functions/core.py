@@ -1255,12 +1255,18 @@ def jump_to_first_frame_with_few_active_markers(min_required=5):
 def find_low_marker_frame(clip, threshold):
     """Return the first frame with fewer markers than ``threshold``."""
     scene = bpy.context.scene
+    tracks = clip.tracking.tracks
     for frame in range(scene.frame_start, scene.frame_end + 1):
         count = 0
-        for track in clip.tracking.tracks:
-            marker = track.markers.find_frame(frame)
-            if marker and not marker.mute and marker.co.length_squared != 0.0:
-                count += 1
+        for track in tracks:
+            for marker in track.markers:
+                if (
+                    not marker.mute
+                    and not marker.disabled
+                    and marker.frame == frame
+                ):
+                    count += 1
+                    break
         if count < threshold:
             return frame, count
     return None, None
@@ -1480,7 +1486,7 @@ class CLIP_OT_low_marker_frame(bpy.types.Operator):
     bl_idname = "clip.low_marker_frame"
     bl_label = "Low Marker Frame"
     bl_description = (
-        "Springt zum ersten Frame mit weniger Markern als 'Marker/Frame'"
+        "Find the first frame with fewer active markers than defined threshold"
     )
 
     def execute(self, context):
@@ -1489,15 +1495,15 @@ class CLIP_OT_low_marker_frame(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        threshold = context.scene.marker_frame
+        threshold = context.scene.marker_threshold
         frame, count = find_low_marker_frame(clip, threshold)
         if frame is not None:
             context.scene.frame_current = frame
-            self.report({'INFO'}, f"Frame {frame} hat nur {count} Marker")
-        else:
-            self.report({'INFO'}, "Kein Frame mit weniger Markern gefunden")
+            self.report({'INFO'}, f"Found frame {frame} with only {count} markers.")
+            return {'FINISHED'}
 
-        return {'FINISHED'}
+        self.report({'INFO'}, "No frame found with fewer markers than threshold.")
+        return {'CANCELLED'}
 
 
 class CLIP_OT_select_active_tracks(bpy.types.Operator):

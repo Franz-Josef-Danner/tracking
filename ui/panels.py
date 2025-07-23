@@ -91,11 +91,26 @@ class CLIP_PT_test_subpanel(bpy.types.Panel):
         layout.operator('clip.track_full', text='Track Test')
         layout.operator('clip.test_button', text='Test')
 
+
+class CLIP_PT_low_marker_panel(bpy.types.Panel):
+    bl_label = "Low Marker Finder"
+    bl_space_type = 'CLIP_EDITOR'
+    bl_region_type = 'UI'
+    bl_category = "Tracking Tools"
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+
+        layout.prop(scene, "marker_threshold")
+        layout.operator("clip.low_marker_frame", icon="VIEWZOOM")
+
 panel_classes = (
     CLIP_PT_tracking_panel,
     CLIP_PT_final_panel,
     CLIP_PT_stufen_panel,
     CLIP_PT_test_panel,
     CLIP_PT_test_subpanel,
+    CLIP_PT_low_marker_panel,
 )
 
