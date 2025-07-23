@@ -323,7 +323,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         while True:
             names_before = {t.name for t in clip.tracking.tracks}
             bpy.ops.clip.detect_features(
-                threshold=detection_threshold,
+                placement='FRAME',
                 min_distance=min_distance,
                 margin=margin,
             )
@@ -924,13 +924,6 @@ class CLIP_OT_all_detect(bpy.types.Operator):
     bl_description = (
         "F\u00fchrt den Detect-Schritt aus All Cycle einzeln aus"
     )
-    threshold: FloatProperty(
-        name="Threshold",
-        description="Detektions-Schwelle",
-        default=0.8,
-        min=0.0,
-        max=1.0,
-    )
     margin: IntProperty(
         name="Margin",
         description="Abstand zum Cliprand in Pixeln",
@@ -961,8 +954,7 @@ class CLIP_OT_all_detect(bpy.types.Operator):
         frame = scene.frame_current
 
         bpy.ops.clip.detect_features(
-            sequence=False,
-            threshold=self.threshold,
+            placement='FRAME',
             margin=self.margin,
             min_distance=self.min_distance,
             limit=self.limit,
