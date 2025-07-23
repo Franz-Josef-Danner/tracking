@@ -1260,11 +1260,7 @@ def find_low_marker_frame(clip, threshold):
         count = 0
         for track in tracks:
             for marker in track.markers:
-                if (
-                    not marker.mute
-                    and not marker.disabled
-                    and marker.frame == frame
-                ):
+                if not marker.mute and marker.frame == frame:
                     count += 1
                     break
         if count < threshold:
