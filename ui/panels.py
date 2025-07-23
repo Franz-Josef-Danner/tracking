@@ -21,6 +21,7 @@ class CLIP_PT_final_panel(bpy.types.Panel):
         layout = self.layout
         layout.prop(context.scene, 'marker_frame', text='Marker/Frame')
         layout.prop(context.scene, 'frames_track', text='Frames/Track')
+        layout.prop(context.scene, 'error_threshold', text='Error Threshold')
 
 
 class CLIP_PT_stufen_panel(bpy.types.Panel):
