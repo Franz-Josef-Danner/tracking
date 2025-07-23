@@ -304,6 +304,8 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             self.report({'ERROR'}, "Kein Clip im Movie Clip Editor aktiv.")
             return {'CANCELLED'}
 
+        print("[Detect] Start execute")
+
         min_distance = self.min_distance
         width = clip.size[0]
         max_dist = min_distance / width
@@ -313,6 +315,10 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]
         candidates = [t for t in clip.tracking.tracks if not t.name.startswith("GOOD_")]
 
+        print(
+            f"[Detect] call detect_features threshold={self.threshold} margin={self.margin}"
+            f" min_distance={min_distance} limit={self.limit}"
+        )
         bpy.ops.clip.detect_features(
             clip=clip.name,
             sequence=False,
@@ -352,6 +358,8 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         print(
             f"[Detect] Entfernt: {len(to_delete)} Marker. Gesamt im Clip jetzt: {len(clip.tracking.tracks)}"
         )
+
+        print("[Detect] Finish execute")
 
         global LAST_MIN_DISTANCE
         LAST_MIN_DISTANCE = min_distance
