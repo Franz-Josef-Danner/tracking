@@ -259,4 +259,5 @@ Seit Version 1.144 führt der Button "Track Nr. 1" nach dem Tracking keine autom
 Seit Version 1.145 l\u00f6st der Button "Track Nr. 1" am Ende automatisch "Name GOOD" aus.
 Seit Version 1.146 bietet das API-Panel einen Button "Low Marker Frame", der zum ersten Frame springt, in dem weniger Marker aktiv sind als im Feld "Marker / Frame" angegeben.
 Seit Version 1.147 ruft der Button "Track Nr. 1" zu Beginn automatisch "Defaults" auf.
-Seit Version 1.148 besitzt das API-Panel die Buttons "Marker Position" und "GOOD Marker Position". Sie geben die Pixelkoordinaten des aktiven Markers beziehungsweise aller GOOD_-Marker im aktuellen Frame aus.
+Seit Version 1.148 besitzt das API-Panel die Buttons "Marker Position" und "GOOD Marker Position". Sie geben die Pixelkoordinaten der Marker in ausgewählten Tracks beziehungsweise aller GOOD_-Marker im aktuellen Frame aus.
+Seit Version 1.149 gibt der Button "Marker Position" die Pixelkoordinaten aller Marker in den selektierten Tracks aus.

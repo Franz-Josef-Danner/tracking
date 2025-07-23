@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 148),
+    "version": (1, 149),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -1486,33 +1486,54 @@ class CLIP_OT_marker_position(bpy.types.Operator):
     bl_idname = "clip.marker_position"
     bl_label = "Marker Position"
     bl_description = (
-        "Gibt die Pixelposition des aktiven Markers im aktuellen Frame aus"
+        "Gibt die Pixelposition der Marker in selektierten Tracks im aktuellen Frame aus"
     )
 
-    def execute(self, context):
-        scene = context.scene
+    def get_selected_marker_positions_in_pixels(self, scene):
         frame = scene.frame_current
         clip = scene.active_clip
 
         if clip is None:
-            self.report({'WARNING'}, "Im Clip-Editor ist kein Clip aktiv")
+            raise RuntimeError("Kein aktiver Clip im Clip-Editor.")
+
+        width, height = clip.size
+        result = []
+
+        for track in clip.tracking.tracks:
+            if not track.select:
+                continue
+
+            marker = track.markers.find_frame(frame, exact=True)
+            if marker is None or marker.mute:
+                continue
+
+            x_px = marker.co[0] * width
+            y_px = marker.co[1] * height
+
+            result.append(
+                {
+                    "track_name": track.name,
+                    "frame": frame,
+                    "x_px": x_px,
+                    "y_px": y_px,
+                }
+            )
+
+        return result
+
+    def execute(self, context):
+        try:
+            markers = self.get_selected_marker_positions_in_pixels(context.scene)
+        except RuntimeError as e:
+            self.report({'WARNING'}, str(e))
             return {'CANCELLED'}
 
-        track = clip.tracking.tracks.active
-        if track is None:
-            self.report({'WARNING'}, "Kein Track aktiv")
-            return {'CANCELLED'}
+        for m in markers:
+            print(
+                f"[{m['track_name']}] Frame {m['frame']}: "
+                f"X={m['x_px']:.1f}px, Y={m['y_px']:.1f}px"
+            )
 
-        marker = track.markers.find_frame(frame, exact=True)
-        if marker is None:
-            self.report({'WARNING'}, f"Kein Marker im Frame {frame} für Track {track.name}")
-            return {'CANCELLED'}
-
-        nx, ny = marker.co
-        w, h = clip.size
-        px, py = nx * w, ny * h
-
-        print(f"Marker im Frame {frame}: (x_pix, y_pix) = ({px:.1f}, {py:.1f})")
         return {'FINISHED'}
 
 
