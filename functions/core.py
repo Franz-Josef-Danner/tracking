@@ -1640,37 +1640,14 @@ class CLIP_OT_camera_solve(bpy.types.Operator):
     bl_description = "Löst die Kamera anhand des aktuellen Clips"
 
     def execute(self, context):
-        scene = context.scene
-        cam_obj = scene.camera
-        if cam_obj is None:
-            self.report({'WARNING'}, "Keine Kamera in der Szene")
-            return {'CANCELLED'}
-
         clip = context.space_data.clip
         if clip is None:
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        constraint = None
-        for con in cam_obj.constraints:
-            if con.type == 'CAMERA_SOLVER':
-                constraint = con
-                break
-        if constraint is None:
-            constraint = cam_obj.constraints.new('CAMERA_SOLVER')
-
-        constraint.clip = clip
-        constraint.use_active_clip = False
-        constraint.influence = 1.0
-        constraint.owner_space = 'WORLD'
-
-        if bpy.ops.clip.solve_camera.poll():
-            bpy.ops.clip.solve_camera()
-            self.report({'INFO'}, "Kameralösung durchgeführt")
-            return {'FINISHED'}
-
-        self.report({'WARNING'}, "Camera Solve nicht möglich")
-        return {'CANCELLED'}
+        clip.tracking.solve_camera()
+        self.report({'INFO'}, "Camera solve complete.")
+        return {'FINISHED'}
 
 
 class CLIP_OT_step_track(bpy.types.Operator):
