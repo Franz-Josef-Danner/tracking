@@ -266,3 +266,5 @@ Seit Version 1.151 enthält das Final-Panel ein Eingabefeld "Error Threshold" mi
 Seit Version 1.152 besitzt das API-Panel einen Button "Track Cleanup", der GOOD_-Tracks anhand ihrer Positionen löscht.
 Seit Version 1.153 verfügt das Stufen-Panel über einen Button "Cleanup", der
 "Short Track" und danach "Track Cleanup" ausführt.
+Seit Version 1.154 unterteilt "Track Cleanup" das Bild in Viertel und Achtel
+und verwendet dabei halbierte bzw. geviertelte Error-Threshold-Werte.
