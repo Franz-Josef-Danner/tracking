@@ -72,6 +72,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.marker_position', text='Marker Position')
         layout.operator('clip.good_marker_position', text='GOOD Marker Position')
         layout.operator('clip.camera_solve', text='Kamera solve')
+        layout.operator('clip.track_cleanup', text='Track Cleanup')
 
 
 class CLIP_PT_test_subpanel(bpy.types.Panel):
