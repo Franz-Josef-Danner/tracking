@@ -1676,24 +1676,25 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
 
         start = scene.frame_start + 1
         end = scene.frame_end
-        threshold = (scene.error_threshold * 2.0) / 100.0
 
-        selected = 0
+        g_global = (scene.error_threshold * 2.0) / 100.0
+        g_quarter = ((scene.error_threshold / 2.0) * 2.0) / 100.0
+        g_eighth = ((scene.error_threshold / 4.0) * 2.0) / 100.0
 
-        def select_outliers(tracks_info, g):
-            nonlocal selected
+        selected_tracks = set()
+
+        def analyze(tracks_info, g):
             if not tracks_info:
                 return
 
             mean_x = sum(t[1] for t in tracks_info) / len(tracks_info)
             mean_y = sum(t[2] for t in tracks_info) / len(tracks_info)
+            ama = ((mean_x) + (mean_y)) / 2.0
 
-            for track, mx, my in tracks_info:
-                dist = ((mx - mean_x) ** 2 + (my - mean_y) ** 2) ** 0.5
-                if dist > g:
-                    if not track.select:
-                        track.select = True
-                        selected += 1
+            for track, mx, my, ma in tracks_info:
+                if abs(ama - ma) > g:
+                    track.select = True
+                    selected_tracks.add(track)
 
         for frame in range(start, end):
             valid = []
@@ -1711,34 +1712,35 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
                 if len(coords) == 3:
                     mx = sum(c[0] for c in coords) / 3.0 * width
                     my = sum(c[1] for c in coords) / 3.0 * height
-                    valid.append((track, mx, my))
+                    ma = (mx + my) / 2.0
+                    valid.append((track, mx, my, ma))
 
             # Globale Analyse
-            select_outliers(valid, threshold)
+            analyze(valid, g_global)
 
             # Viertel-Analyse
             groups = {}
             cell_w = width / 2
             cell_h = height / 2
-            for track, mx, my in valid:
+            for track, mx, my, ma in valid:
                 col = int(mx // cell_w)
                 row = int(my // cell_h)
-                groups.setdefault((col, row), []).append((track, mx, my))
+                groups.setdefault((col, row), []).append((track, mx, my, ma))
             for subset in groups.values():
-                select_outliers(subset, threshold / 2.0)
+                analyze(subset, g_quarter)
 
             # Achtel-Analyse
             groups = {}
             cell_w = width / 4
             cell_h = height / 2
-            for track, mx, my in valid:
+            for track, mx, my, ma in valid:
                 col = int(mx // cell_w)
                 row = int(my // cell_h)
-                groups.setdefault((col, row), []).append((track, mx, my))
+                groups.setdefault((col, row), []).append((track, mx, my, ma))
             for subset in groups.values():
-                select_outliers(subset, threshold / 4.0)
+                analyze(subset, g_eighth)
 
-        self.report({'INFO'}, f"{selected} Tracks ausgewählt")
+        self.report({'INFO'}, f"{len(selected_tracks)} Tracks ausgewählt")
         return {'FINISHED'}
 
 
