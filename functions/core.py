@@ -553,29 +553,6 @@ def select_short_tracks(clip, min_frames):
     return len(names)
 
 
-class CLIP_OT_select_short_tracks(bpy.types.Operator):
-    bl_idname = "clip.select_short_tracks"
-    bl_label = "Select Short"
-    bl_description = (
-        "Selektiert TRACK_-Marker, deren Länge unter 'Frames/Track' liegt"
-    )
-
-    def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
-
-        min_frames = context.scene.frames_track
-        count = select_short_tracks(clip, min_frames)
-
-        if count == 0:
-            self.report({'INFO'}, "Keine kurzen TRACK_-Marker gefunden")
-        else:
-            self.report({'INFO'}, f"{count} TRACK_-Marker ausgewählt")
-
-        return {'FINISHED'}
-
 
 class CLIP_OT_short_track(bpy.types.Operator):
     bl_idname = "clip.short_track"
@@ -1680,9 +1657,9 @@ class CLIP_OT_camera_solve(bpy.types.Operator):
 
 class CLIP_OT_track_cleanup(bpy.types.Operator):
     bl_idname = "clip.track_cleanup"
-    bl_label = "Track Cleanup"
+    bl_label = "Track Error Selekt"
     bl_description = (
-        "Entfernt TRACK_-Tracks, deren mittlere Position zu stark vom Gesamtmittel abweicht"
+        "Wählt TRACK_-Tracks aus, deren mittlere Position zu stark vom Gesamtmittel abweicht"
     )
 
     def execute(self, context):
@@ -1732,14 +1709,10 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
             my_sum = sum(v["my"] for v in subset.values())
             count = len(subset)
             ama = ((mx_sum / count) + (my_sum / count)) / 2.0
-            to_remove = [t for t, v in subset.items() if abs(ama - v["ma"]) > g]
-            for track in to_remove:
-                for t in clip.tracking.tracks:
-                    t.select = False
+            to_select = [t for t, v in subset.items() if abs(ama - v["ma"]) > g]
+            for track in to_select:
                 track.select = True
-                if bpy.ops.clip.delete_selected.poll():
-                    bpy.ops.clip.delete_selected(silent=True)
-            return to_remove
+            return to_select
 
         removed = 0
         g_base = (scene.error_threshold * 2.0) / 100.0
@@ -1769,7 +1742,7 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
         cleanup_regions(2, 2, 2)
         cleanup_regions(4, 2, 4)
 
-        self.report({'INFO'}, f"{removed} Tracks entfernt")
+        self.report({'INFO'}, f"{removed} Tracks ausgewählt")
         return {'FINISHED'}
 
 
@@ -2209,7 +2182,6 @@ operator_classes = (
     CLIP_OT_prefix_good,
     CLIP_OT_distance_button,
     CLIP_OT_delete_selected,
-    CLIP_OT_select_short_tracks,
     CLIP_OT_short_track,
     CLIP_OT_count_button,
     CLIP_OT_api_defaults,
