@@ -1681,9 +1681,19 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
         g_quarter = ((scene.error_threshold / 2.0) * 2.0) / 100.0
         g_eighth = ((scene.error_threshold / 4.0) * 2.0) / 100.0
 
+        print(
+            f"[Select Error Tracks] G_global = (ET * 2) / 100 = ({scene.error_threshold} * 2) / 100 = {g_global}"
+        )
+        print(
+            f"[Select Error Tracks] G_quarter = ((ET / 2) * 2) / 100 = (({scene.error_threshold} / 2) * 2) / 100 = {g_quarter}"
+        )
+        print(
+            f"[Select Error Tracks] G_eighth = ((ET / 4) * 2) / 100 = (({scene.error_threshold} / 4) * 2) / 100 = {g_eighth}"
+        )
+
         selected_tracks = set()
 
-        def analyze(tracks_info, g):
+        def analyze(tracks_info, g, label):
             if not tracks_info:
                 return
 
@@ -1691,8 +1701,19 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
             mean_y = sum(t[2] for t in tracks_info) / len(tracks_info)
             ama = ((mean_x) + (mean_y)) / 2.0
 
+            print(
+                f"[{label}] AMA = (({mean_x:.3f} + {mean_y:.3f}) / 2) = {ama:.3f}"
+            )
+
             for track, mx, my, ma in tracks_info:
-                if abs(ama - ma) > g:
+                diff = abs(ama - ma)
+                print(
+                    f"[{label}] {track.name}: MA=(( {mx:.3f} + {my:.3f} ) / 2) = {ma:.3f}; |{ama:.3f} - {ma:.3f}| = {diff:.3f}"
+                )
+                if diff > g:
+                    print(
+                        f"[{label}] {track.name} selected because {diff:.3f} > G={g:.3f}"
+                    )
                     track.select = True
                     selected_tracks.add(track)
 
@@ -1716,7 +1737,7 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
                     valid.append((track, mx, my, ma))
 
             # Globale Analyse
-            analyze(valid, g_global)
+            analyze(valid, g_global, "Global")
 
             # Viertel-Analyse
             groups = {}
@@ -1726,8 +1747,8 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
                 col = int(mx // cell_w)
                 row = int(my // cell_h)
                 groups.setdefault((col, row), []).append((track, mx, my, ma))
-            for subset in groups.values():
-                analyze(subset, g_quarter)
+            for key, subset in groups.items():
+                analyze(subset, g_quarter, f"Quarter {key}")
 
             # Achtel-Analyse
             groups = {}
@@ -1737,8 +1758,8 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
                 col = int(mx // cell_w)
                 row = int(my // cell_h)
                 groups.setdefault((col, row), []).append((track, mx, my, ma))
-            for subset in groups.values():
-                analyze(subset, g_eighth)
+            for key, subset in groups.items():
+                analyze(subset, g_eighth, f"Eighth {key}")
 
         self.report({'INFO'}, f"{len(selected_tracks)} Tracks ausgewählt")
         return {'FINISHED'}
