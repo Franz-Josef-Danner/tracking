@@ -1677,7 +1677,7 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
         start = scene.frame_start + 1
         end = scene.frame_end
 
-        g_global = scene.error_threshold * 2.0)
+        g_global = scene.error_threshold * 2.0
         g_quarter = ((scene.error_threshold / 2.0) * 2.0)
         g_eighth = ((scene.error_threshold / 4.0) * 2.0)
 
