@@ -1677,18 +1677,18 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
         start = scene.frame_start + 1
         end = scene.frame_end
 
-        g_global = (scene.error_threshold * 2.0) / 100.0
-        g_quarter = ((scene.error_threshold / 2.0) * 2.0) / 100.0
-        g_eighth = ((scene.error_threshold / 4.0) * 2.0) / 100.0
+        g_global = (scene.error_threshold * 2.0) / 10.0
+        g_quarter = ((scene.error_threshold / 2.0) * 2.0) / 10.0
+        g_eighth = ((scene.error_threshold / 4.0) * 2.0) / 10.0
 
         print(
-            f"[Select Error Tracks] G_global = (ET * 2) / 100 = ({scene.error_threshold} * 2) / 100 = {g_global}"
+            f"[Select Error Tracks] G_global = (ET * 2) / 100 = ({scene.error_threshold} * 2) / 10 = {g_global}"
         )
         print(
-            f"[Select Error Tracks] G_quarter = ((ET / 2) * 2) / 100 = (({scene.error_threshold} / 2) * 2) / 100 = {g_quarter}"
+            f"[Select Error Tracks] G_quarter = ((ET / 2) * 2) / 100 = (({scene.error_threshold} / 2) * 2) / 10 = {g_quarter}"
         )
         print(
-            f"[Select Error Tracks] G_eighth = ((ET / 4) * 2) / 100 = (({scene.error_threshold} / 4) * 2) / 100 = {g_eighth}"
+            f"[Select Error Tracks] G_eighth = ((ET / 4) * 2) / 100 = (({scene.error_threshold} / 4) * 2) / 10 = {g_eighth}"
         )
 
         selected_tracks = set()
