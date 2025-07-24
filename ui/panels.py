@@ -57,7 +57,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.prefix_good', text='Name GOOD')
         layout.operator('clip.select_active_tracks', text='Select TRACK')
         layout.operator('clip.delete_selected', text='Delete')
-        layout.operator('clip.short_track', text='Short Track')
+        layout.operator('clip.select_short_tracks', text='Select Short Tracks')
         layout.operator('clip.pattern_up', text='Pattern+')
         layout.operator('clip.pattern_down', text='Pattern-')
         layout.operator('clip.motion_cycle', text='Motion Model')
@@ -73,7 +73,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.marker_position', text='Marker Position')
         layout.operator('clip.good_marker_position', text='GOOD Marker Position')
         layout.operator('clip.camera_solve', text='Kamera solve')
-        layout.operator('clip.track_cleanup', text='Track Error Selekt')
+        layout.operator('clip.track_cleanup', text='Select Error Tracks')
 
 
 class CLIP_PT_test_subpanel(bpy.types.Panel):

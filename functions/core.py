@@ -554,11 +554,12 @@ def select_short_tracks(clip, min_frames):
 
 
 
-class CLIP_OT_short_track(bpy.types.Operator):
-    bl_idname = "clip.short_track"
-    bl_label = "Short Track"
+
+class CLIP_OT_select_short_tracks(bpy.types.Operator):
+    bl_idname = "clip.select_short_tracks"
+    bl_label = "Select Short Tracks"
     bl_description = (
-        "Löscht TRACK_-Marker, deren Länge unter 'Frames/Track' liegt"
+        "Selektiert TRACK_-Marker, deren Länge unter 'Frames/Track' liegt"
     )
 
     def execute(self, context):
@@ -572,10 +573,8 @@ class CLIP_OT_short_track(bpy.types.Operator):
 
         if count == 0:
             self.report({'INFO'}, "Keine kurzen TRACK_-Marker gefunden")
-            return {'FINISHED'}
-
-        if bpy.ops.clip.delete_selected.poll():
-            bpy.ops.clip.delete_selected()
+        else:
+            self.report({'INFO'}, f"{count} TRACK_-Marker ausgewählt")
 
         return {'FINISHED'}
 
@@ -1657,7 +1656,7 @@ class CLIP_OT_camera_solve(bpy.types.Operator):
 
 class CLIP_OT_track_cleanup(bpy.types.Operator):
     bl_idname = "clip.track_cleanup"
-    bl_label = "Track Error Selekt"
+    bl_label = "Select Error Tracks"
     bl_description = (
         "Wählt TRACK_-Tracks aus, deren mittlere Position zu stark vom Gesamtmittel abweicht"
     )
@@ -1766,11 +1765,13 @@ class CLIP_OT_cleanup(bpy.types.Operator):
         while scene.frame_current <= end_frame:
             print(f"[Cleanup] Frame {scene.frame_current}")
 
-            if bpy.ops.clip.short_track.poll():
-                print("[Cleanup] short_track")
-                bpy.ops.clip.short_track()
+            if bpy.ops.clip.select_short_tracks.poll():
+                print("[Cleanup] select_short_tracks")
+                bpy.ops.clip.select_short_tracks()
+                if bpy.ops.clip.delete_selected.poll():
+                    bpy.ops.clip.delete_selected(silent=True)
             else:
-                print("[Cleanup] short_track nicht verf\u00fcgbar")
+                print("[Cleanup] select_short_tracks nicht verf\u00fcgbar")
 
             if bpy.ops.clip.track_cleanup.poll():
                 print("[Cleanup] track_cleanup")
@@ -2182,7 +2183,7 @@ operator_classes = (
     CLIP_OT_prefix_good,
     CLIP_OT_distance_button,
     CLIP_OT_delete_selected,
-    CLIP_OT_short_track,
+    CLIP_OT_select_short_tracks,
     CLIP_OT_count_button,
     CLIP_OT_api_defaults,
     CLIP_OT_defaults_detect,
