@@ -191,6 +191,7 @@ class CLIP_OT_proxy_on(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
+        scene = context.scene
         original_start = scene.frame_start
         original_end = scene.frame_end
         step = scene.frames_track
