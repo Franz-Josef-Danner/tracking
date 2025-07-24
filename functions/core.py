@@ -1668,80 +1668,131 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        start = scene.frame_start
-        frames = [start, start + 1, start + 2]
-        original_frame = scene.frame_current
-
         width, height = clip.size
-        data = {}
-        for idx, frame in enumerate(frames, start=1):
-            scene.frame_current = frame
+
+        # Alle Marker abwählen
+        for track in clip.tracking.tracks:
+            track.select = False
+
+        start = scene.frame_start + 1
+        end = scene.frame_end
+
+        g_global = scene.error_threshold * 6
+        g_quarter = scene.error_threshold * 4
+        g_eighth = scene.error_threshold * 2
+
+        print(
+            f"[Select Error Tracks] G_global = ET * 6 = {scene.error_threshold} * 6 = {g_global}"
+        )
+        print(
+            f"[Select Error Tracks] G_quarter = ET * 4 = {scene.error_threshold} * 4 = {g_quarter}"
+        )
+        print(
+            f"[Select Error Tracks] G_eighth = ET * 2 = {scene.error_threshold} * 2 = {g_eighth}"
+        )
+
+        selected_tracks = set()
+
+        def analyze(tracks_info, g, label):
+            if not tracks_info:
+                return
+
+            ava = sum(t["av"] for t in tracks_info) / len(tracks_info)
+            print(
+                f"[{label}] AVA = (Sum AV / AM) = ({sum(t['av'] for t in tracks_info):.3f} / {len(tracks_info)}) = {ava:.3f}"
+            )
+
+            for info in tracks_info:
+                track = info["track"]
+                av = info["av"]
+                avx = info["avx"]
+                avy = info["avy"]
+                mxp1 = info["mxp1"]
+                mxp2 = info["mxp2"]
+                myp1 = info["myp1"]
+                myp2 = info["myp2"]
+                error_val = ava - av
+
+                print(
+                    f"[{label}] {track.name}: |MX1-MX2|={mxp1:.3f}, |MX2-MX3|={mxp2:.3f}, |MY1-MY2|={myp1:.3f}, |MY2-MY3|={myp2:.3f}, AVX=({mxp1:.3f}+{mxp2:.3f})/2={avx:.3f}, AVY=({myp1:.3f}+{myp2:.3f})/2={avy:.3f}, AV=({avx:.3f}+{avy:.3f})/2={av:.3f}; errorValue={ava:.3f}-{av:.3f}={error_val:.3f}"
+                )
+
+                if abs(error_val) > g:
+                    print(
+                        f"[{label}] {track.name} selected because |{error_val:.3f}| > G={g:.3f}"
+                    )
+                    track.select = True
+                    selected_tracks.add(track)
+
+        for frame in range(start, end):
+            valid = []
             for track in clip.tracking.tracks:
                 if not track.name.startswith("TRACK_"):
                     continue
-                marker = track.markers.find_frame(frame, exact=True)
-                if marker is None or marker.mute:
-                    continue
-                px = marker.co[0] * width
-                py = marker.co[1] * height
-                entry = data.setdefault(track, {})
-                entry[f"x{idx}"] = px
-                entry[f"y{idx}"] = py
 
-        scene.frame_current = original_frame
+                coords = []
+                for f in (frame - 1, frame, frame + 1):
+                    marker = track.markers.find_frame(f, exact=True)
+                    if marker is None or marker.mute:
+                        break
+                    coords.append((marker.co[0] * width, marker.co[1] * height))
 
-        valid = {}
-        for track, coords in data.items():
-            if all(k in coords for k in ("x1", "x2", "x3", "y1", "y2", "y3")):
-                mx = (coords["x1"] + coords["x2"] + coords["x3"]) / 3.0
-                my = (coords["y1"] + coords["y2"] + coords["y3"]) / 3.0
-                valid[track] = {"mx": mx, "my": my, "ma": (mx + my) / 2.0}
+                if len(coords) == 3:
+                    px1, py1 = coords[0]
+                    px2, py2 = coords[1]
+                    px3, py3 = coords[2]
 
-        if not valid:
-            self.report({'WARNING'}, "Keine gültigen Marker gefunden")
-            return {'CANCELLED'}
+                    mxp1 = abs(px1 - px2)
+                    mxp2 = abs(px2 - px3)
+                    myp1 = abs(py1 - py2)
+                    myp2 = abs(py2 - py3)
+                    avx = (mxp1 + mxp2) / 2.0
+                    avy = (myp1 + myp2) / 2.0
+                    av = (avx + avy) / 2.0
+                    mx_mean = (px1 + px2 + px3) / 3.0
+                    my_mean = (py1 + py2 + py3) / 3.0
 
-        def remove_outliers(subset, g):
-            if not subset:
-                return []
-            mx_sum = sum(v["mx"] for v in subset.values())
-            my_sum = sum(v["my"] for v in subset.values())
-            count = len(subset)
-            ama = ((mx_sum / count) + (my_sum / count)) / 2.0
-            to_select = [t for t, v in subset.items() if abs(ama - v["ma"]) > g]
-            for track in to_select:
-                track.select = True
-            return to_select
+                    valid.append(
+                        {
+                            "track": track,
+                            "mx_mean": mx_mean,
+                            "my_mean": my_mean,
+                            "mxp1": mxp1,
+                            "mxp2": mxp2,
+                            "myp1": myp1,
+                            "myp2": myp2,
+                            "avx": avx,
+                            "avy": avy,
+                            "av": av,
+                        }
+                    )
 
-        removed = 0
-        g_base = (scene.error_threshold * 2.0) / 100.0
+            # Globale Analyse
+            analyze(valid, g_global, "Global")
 
-        removed_tracks = remove_outliers(valid, g_base)
-        removed += len(removed_tracks)
-        for t in removed_tracks:
-            valid.pop(t, None)
-
-        def cleanup_regions(cols, rows, divider):
-            nonlocal removed
-            g_local = g_base / divider
-            cell_w = width / cols
-            cell_h = height / rows
+            # Viertel-Analyse
             groups = {}
-            for track, info in valid.items():
-                col = int(info["mx"] / cell_w)
-                row = int(info["my"] / cell_h)
-                key = (col, row)
-                groups.setdefault(key, {})[track] = info
-            for subset in groups.values():
-                rm = remove_outliers(subset, g_local)
-                removed += len(rm)
-                for t in rm:
-                    valid.pop(t, None)
+            cell_w = width / 2
+            cell_h = height / 2
+            for info in valid:
+                col = int(info["mx_mean"] // cell_w)
+                row = int(info["my_mean"] // cell_h)
+                groups.setdefault((col, row), []).append(info)
+            for key, subset in groups.items():
+                analyze(subset, g_quarter, f"Quarter {key}")
 
-        cleanup_regions(2, 2, 2)
-        cleanup_regions(4, 2, 4)
+            # Achtel-Analyse
+            groups = {}
+            cell_w = width / 4
+            cell_h = height / 2
+            for info in valid:
+                col = int(info["mx_mean"] // cell_w)
+                row = int(info["my_mean"] // cell_h)
+                groups.setdefault((col, row), []).append(info)
+            for key, subset in groups.items():
+                analyze(subset, g_eighth, f"Eighth {key}")
 
-        self.report({'INFO'}, f"{removed} Tracks ausgewählt")
+        self.report({'INFO'}, f"{len(selected_tracks)} Tracks ausgewählt")
         return {'FINISHED'}
 
 
