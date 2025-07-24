@@ -1753,10 +1753,34 @@ class CLIP_OT_cleanup(bpy.types.Operator):
     )
 
     def execute(self, context):
-        if bpy.ops.clip.short_track.poll():
-            bpy.ops.clip.short_track()
-        if bpy.ops.clip.track_cleanup.poll():
-            bpy.ops.clip.track_cleanup()
+        scene = context.scene
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        end_frame = scene.frame_end - 1
+        print("[Cleanup] Start")
+
+        while scene.frame_current <= end_frame:
+            print(f"[Cleanup] Frame {scene.frame_current}")
+
+            if bpy.ops.clip.short_track.poll():
+                print("[Cleanup] short_track")
+                bpy.ops.clip.short_track()
+            else:
+                print("[Cleanup] short_track nicht verf\u00fcgbar")
+
+            if bpy.ops.clip.track_cleanup.poll():
+                print("[Cleanup] track_cleanup")
+                bpy.ops.clip.track_cleanup()
+            else:
+                print("[Cleanup] track_cleanup nicht verf\u00fcgbar")
+
+            scene.frame_current += 1
+            print(f"[Cleanup] Jump to {scene.frame_current}")
+
+        print("[Cleanup] Ende")
         return {'FINISHED'}
 
 

@@ -268,3 +268,6 @@ Seit Version 1.153 verfügt das Stufen-Panel über einen Button "Cleanup", der
 "Short Track" und danach "Track Cleanup" ausführt.
 Seit Version 1.154 unterteilt "Track Cleanup" das Bild in Viertel und Achtel
 und verwendet dabei halbierte bzw. geviertelte Error-Threshold-Werte.
+Seit Version 1.155 springt der "Cleanup"-Button nach jedem Durchlauf einen Frame
+vor, wiederholt den Vorgang bis zum vorletzten Szenenframe und meldet jeden
+Schritt in der Konsole.
