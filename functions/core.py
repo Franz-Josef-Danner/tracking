@@ -1668,80 +1668,77 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        start = scene.frame_start
-        frames = [start, start + 1, start + 2]
-        original_frame = scene.frame_current
-
         width, height = clip.size
-        data = {}
-        for idx, frame in enumerate(frames, start=1):
-            scene.frame_current = frame
+
+        # Alle Marker abwählen
+        for track in clip.tracking.tracks:
+            track.select = False
+
+        start = scene.frame_start + 1
+        end = scene.frame_end
+        threshold = (scene.error_threshold * 2.0) / 100.0
+
+        selected = 0
+
+        def select_outliers(tracks_info, g):
+            nonlocal selected
+            if not tracks_info:
+                return
+
+            mean_x = sum(t[1] for t in tracks_info) / len(tracks_info)
+            mean_y = sum(t[2] for t in tracks_info) / len(tracks_info)
+
+            for track, mx, my in tracks_info:
+                dist = ((mx - mean_x) ** 2 + (my - mean_y) ** 2) ** 0.5
+                if dist > g:
+                    if not track.select:
+                        track.select = True
+                        selected += 1
+
+        for frame in range(start, end):
+            valid = []
             for track in clip.tracking.tracks:
                 if not track.name.startswith("TRACK_"):
                     continue
-                marker = track.markers.find_frame(frame, exact=True)
-                if marker is None or marker.mute:
-                    continue
-                px = marker.co[0] * width
-                py = marker.co[1] * height
-                entry = data.setdefault(track, {})
-                entry[f"x{idx}"] = px
-                entry[f"y{idx}"] = py
 
-        scene.frame_current = original_frame
+                coords = []
+                for f in (frame - 1, frame, frame + 1):
+                    marker = track.markers.find_frame(f, exact=True)
+                    if marker is None or marker.mute:
+                        break
+                    coords.append(marker.co)
 
-        valid = {}
-        for track, coords in data.items():
-            if all(k in coords for k in ("x1", "x2", "x3", "y1", "y2", "y3")):
-                mx = (coords["x1"] + coords["x2"] + coords["x3"]) / 3.0
-                my = (coords["y1"] + coords["y2"] + coords["y3"]) / 3.0
-                valid[track] = {"mx": mx, "my": my, "ma": (mx + my) / 2.0}
+                if len(coords) == 3:
+                    mx = sum(c[0] for c in coords) / 3.0 * width
+                    my = sum(c[1] for c in coords) / 3.0 * height
+                    valid.append((track, mx, my))
 
-        if not valid:
-            self.report({'WARNING'}, "Keine gültigen Marker gefunden")
-            return {'CANCELLED'}
+            # Globale Analyse
+            select_outliers(valid, threshold)
 
-        def remove_outliers(subset, g):
-            if not subset:
-                return []
-            mx_sum = sum(v["mx"] for v in subset.values())
-            my_sum = sum(v["my"] for v in subset.values())
-            count = len(subset)
-            ama = ((mx_sum / count) + (my_sum / count)) / 2.0
-            to_select = [t for t, v in subset.items() if abs(ama - v["ma"]) > g]
-            for track in to_select:
-                track.select = True
-            return to_select
-
-        removed = 0
-        g_base = (scene.error_threshold * 2.0) / 100.0
-
-        removed_tracks = remove_outliers(valid, g_base)
-        removed += len(removed_tracks)
-        for t in removed_tracks:
-            valid.pop(t, None)
-
-        def cleanup_regions(cols, rows, divider):
-            nonlocal removed
-            g_local = g_base / divider
-            cell_w = width / cols
-            cell_h = height / rows
+            # Viertel-Analyse
             groups = {}
-            for track, info in valid.items():
-                col = int(info["mx"] / cell_w)
-                row = int(info["my"] / cell_h)
-                key = (col, row)
-                groups.setdefault(key, {})[track] = info
+            cell_w = width / 2
+            cell_h = height / 2
+            for track, mx, my in valid:
+                col = int(mx // cell_w)
+                row = int(my // cell_h)
+                groups.setdefault((col, row), []).append((track, mx, my))
             for subset in groups.values():
-                rm = remove_outliers(subset, g_local)
-                removed += len(rm)
-                for t in rm:
-                    valid.pop(t, None)
+                select_outliers(subset, threshold / 2.0)
 
-        cleanup_regions(2, 2, 2)
-        cleanup_regions(4, 2, 4)
+            # Achtel-Analyse
+            groups = {}
+            cell_w = width / 4
+            cell_h = height / 2
+            for track, mx, my in valid:
+                col = int(mx // cell_w)
+                row = int(my // cell_h)
+                groups.setdefault((col, row), []).append((track, mx, my))
+            for subset in groups.values():
+                select_outliers(subset, threshold / 4.0)
 
-        self.report({'INFO'}, f"{removed} Tracks ausgewählt")
+        self.report({'INFO'}, f"{selected} Tracks ausgewählt")
         return {'FINISHED'}
 
 
