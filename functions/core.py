@@ -244,19 +244,23 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
             bpy.ops.clip.track_partial()
         self._end = scene.frame_current
         self._tracked = self._end - self._start
+        print(
+            f"[Track Nr.1] start {self._start} end {self._end} tracked {self._tracked}"
+        )
         return "DECIDE"
     def step_decide(self, context):
         """Evaluate progress and continue or finish."""
         scene = context.scene
-        if self._end >= scene.frame_end:
-            return "RENAME"
+        print(
+            f"[Track Nr.1] decide end {self._end} tracked {self._tracked} threshold {scene.frames_track}"
+        )
         if self._tracked < scene.frames_track:
-            scene.frame_current = self._start + scene.frames_track
-        else:
-            scene.frame_current = self._end + scene.frames_track
-        if scene.frame_current >= scene.frame_end:
-            scene.frame_current = scene.frame_end
+            print("[Track Nr.1] stop cycle: progress below threshold")
             return "RENAME"
+        scene.frame_current = min(
+            self._end + scene.frames_track, scene.frame_end
+        )
+        print(f"[Track Nr.1] next frame {scene.frame_current}")
         return "DETECT"
 
     def step_rename(self, context):
@@ -931,17 +935,25 @@ class CLIP_OT_track_partial(bpy.types.Operator):
         original_end = scene.frame_end
         current = scene.frame_current
 
+        print(
+            f"[Track Partial] current {current} start {original_start} end {original_end}"
+        )
+
         clip.use_proxy = True
 
         if bpy.ops.clip.track_markers.poll():
+            print("[Track Partial] track backwards")
             scene.frame_start = original_start
             scene.frame_end = current
             bpy.ops.clip.track_markers(backwards=True, sequence=True)
 
+            print("[Track Partial] track forwards")
             scene.frame_start = current
             scene.frame_end = original_end
             scene.frame_current = current
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
+
+        print(f"[Track Partial] done at frame {scene.frame_current}")
 
         scene.frame_start = original_start
         scene.frame_end = original_end
