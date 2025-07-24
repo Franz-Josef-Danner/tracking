@@ -566,6 +566,10 @@ class CLIP_OT_short_track(bpy.types.Operator):
         select_tracks_by_names(clip, names)
 
         self.report({'INFO'}, f"{len(names)} TRACK_-Marker ausgewählt")
+
+        if bpy.ops.clip.delete_selected.poll():
+            bpy.ops.clip.delete_selected()
+
         return {'FINISHED'}
 
 
