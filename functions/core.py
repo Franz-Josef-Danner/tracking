@@ -538,9 +538,24 @@ class CLIP_OT_delete_selected(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class CLIP_OT_short_track(bpy.types.Operator):
-    bl_idname = "clip.short_track"
-    bl_label = "Short Track"
+def select_short_tracks(clip, min_frames):
+    """Select TRACK_ markers shorter than ``min_frames`` and return count."""
+    undertracked = get_undertracked_markers(clip, min_frames=min_frames)
+
+    for t in clip.tracking.tracks:
+        t.select = False
+
+    if not undertracked:
+        return 0
+
+    names = [name for name, _ in undertracked]
+    select_tracks_by_names(clip, names)
+    return len(names)
+
+
+class CLIP_OT_select_short_tracks(bpy.types.Operator):
+    bl_idname = "clip.select_short_tracks"
+    bl_label = "Select Short"
     bl_description = (
         "Selektiert TRACK_-Marker, deren Länge unter 'Frames/Track' liegt"
     )
@@ -552,20 +567,35 @@ class CLIP_OT_short_track(bpy.types.Operator):
             return {'CANCELLED'}
 
         min_frames = context.scene.frames_track
-        undertracked = get_undertracked_markers(clip, min_frames=min_frames)
+        count = select_short_tracks(clip, min_frames)
 
-        # Clear existing selection
-        for t in clip.tracking.tracks:
-            t.select = False
+        if count == 0:
+            self.report({'INFO'}, "Keine kurzen TRACK_-Marker gefunden")
+        else:
+            self.report({'INFO'}, f"{count} TRACK_-Marker ausgewählt")
 
-        if not undertracked:
+        return {'FINISHED'}
+
+
+class CLIP_OT_short_track(bpy.types.Operator):
+    bl_idname = "clip.short_track"
+    bl_label = "Short Track"
+    bl_description = (
+        "Löscht TRACK_-Marker, deren Länge unter 'Frames/Track' liegt"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        min_frames = context.scene.frames_track
+        count = select_short_tracks(clip, min_frames)
+
+        if count == 0:
             self.report({'INFO'}, "Keine kurzen TRACK_-Marker gefunden")
             return {'FINISHED'}
-
-        names = [name for name, _ in undertracked]
-        select_tracks_by_names(clip, names)
-
-        self.report({'INFO'}, f"{len(names)} TRACK_-Marker ausgewählt")
 
         if bpy.ops.clip.delete_selected.poll():
             bpy.ops.clip.delete_selected()
@@ -2179,6 +2209,7 @@ operator_classes = (
     CLIP_OT_prefix_good,
     CLIP_OT_distance_button,
     CLIP_OT_delete_selected,
+    CLIP_OT_select_short_tracks,
     CLIP_OT_short_track,
     CLIP_OT_count_button,
     CLIP_OT_api_defaults,

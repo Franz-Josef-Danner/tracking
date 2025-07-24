@@ -275,3 +275,4 @@ Seit Version 1.156 führt der Button "Track Nr. 1" am Szenenende keinen "Short T
 Seit Version 1.157 löscht oder benennt der Button "Track Nr. 1" am Ende keine Tracks mehr um.
 Seit Version 1.158 wendet "Track Cleanup" seinen Löschvorgang auf TRACK_-Marker an.
 Seit Version 1.159 löscht der Button "Short Track" die ausgewählten TRACK_-Marker sofort.
+Seit Version 1.160 ist "Short Track" modular aufgebaut: Ein neuer Button "Select Short" wählt kurze TRACK_-Marker aus, der Button "Short Track" löscht sie anschließend.
