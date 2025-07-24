@@ -879,6 +879,12 @@ class CLIP_OT_track_partial(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
+        for track in clip.tracking.tracks:
+            if track.select:
+                marker = track.markers.find_frame(scene.frame_current, exact=True)
+                if marker is None or marker.mute:
+                    track.select = False
+
         current = scene.frame_current
         step = scene.frames_track
         original_end = scene.frame_end
@@ -1532,6 +1538,15 @@ class CLIP_OT_select_active_tracks(bpy.types.Operator):
             return {'CANCELLED'}
 
         select_tracks_by_prefix(clip, "TRACK_")
+
+        frame = context.scene.frame_current
+
+        for track in clip.tracking.tracks:
+            if track.select:
+                marker = track.markers.find_frame(frame, exact=True)
+                if marker is None or marker.mute:
+                    track.select = False
+
         count = sum(1 for t in clip.tracking.tracks if t.select)
 
         self.report({'INFO'}, f"{count} TRACK_-Marker ausgewählt")
