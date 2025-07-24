@@ -1749,40 +1749,29 @@ class CLIP_OT_cleanup(bpy.types.Operator):
     bl_idname = "clip.cleanup"
     bl_label = "Cleanup"
     bl_description = (
-        "F\u00fchrt Short Track und Track Cleanup nacheinander aus"
+        "Ruft 'Select Short Tracks', 'Select Error Tracks' und danach 'Delete' auf"
     )
 
     def execute(self, context):
-        scene = context.scene
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+        print("[Cleanup] select_short_tracks")
+        if bpy.ops.clip.select_short_tracks.poll():
+            bpy.ops.clip.select_short_tracks()
+        else:
+            print("[Cleanup] select_short_tracks nicht verf\u00fcgbar")
 
-        end_frame = scene.frame_end - 1
-        print("[Cleanup] Start")
+        print("[Cleanup] track_cleanup")
+        if bpy.ops.clip.track_cleanup.poll():
+            bpy.ops.clip.track_cleanup()
+        else:
+            print("[Cleanup] track_cleanup nicht verf\u00fcgbar")
 
-        while scene.frame_current <= end_frame:
-            print(f"[Cleanup] Frame {scene.frame_current}")
+        print("[Cleanup] delete_selected")
+        if bpy.ops.clip.delete_selected.poll():
+            bpy.ops.clip.delete_selected()
+        else:
+            print("[Cleanup] delete_selected nicht verf\u00fcgbar")
 
-            if bpy.ops.clip.select_short_tracks.poll():
-                print("[Cleanup] select_short_tracks")
-                bpy.ops.clip.select_short_tracks()
-                if bpy.ops.clip.delete_selected.poll():
-                    bpy.ops.clip.delete_selected(silent=True)
-            else:
-                print("[Cleanup] select_short_tracks nicht verf\u00fcgbar")
-
-            if bpy.ops.clip.track_cleanup.poll():
-                print("[Cleanup] track_cleanup")
-                bpy.ops.clip.track_cleanup()
-            else:
-                print("[Cleanup] track_cleanup nicht verf\u00fcgbar")
-
-            scene.frame_current += 1
-            print(f"[Cleanup] Jump to {scene.frame_current}")
-
-        print("[Cleanup] Ende")
+        print("[Cleanup] fertig")
         return {'FINISHED'}
 
 

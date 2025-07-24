@@ -278,3 +278,4 @@ Seit Version 1.159 löscht der Button "Short Track" die ausgewählten TRACK_-Mar
 Seit Version 1.160 ist "Short Track" modular aufgebaut: Ein neuer Button "Select Short" wählt kurze TRACK_-Marker aus, der Button "Short Track" löscht sie anschließend.
 Seit Version 1.161 entfällt der Button "Select Short" wieder. "Track Cleanup" heißt nun "Track Error Selekt" und markiert fehlerhafte TRACK_-Marker, ohne sie zu löschen.
 Seit Version 1.162 kehrt der Button als "Select Short Tracks" zurück, während "Short Track" entfernt wurde. "Track Error Selekt" heißt jetzt "Select Error Tracks".
+Seit Version 1.163 ruft der "Cleanup"-Button nacheinander "Select Short Tracks", "Select Error Tracks" und "Delete" auf.
