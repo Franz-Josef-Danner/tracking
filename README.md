@@ -272,3 +272,4 @@ Seit Version 1.155 springt der "Cleanup"-Button nach jedem Durchlauf einen Frame
 vor, wiederholt den Vorgang bis zum vorletzten Szenenframe und meldet jeden
 Schritt in der Konsole.
 Seit Version 1.156 führt der Button "Track Nr. 1" am Szenenende keinen "Short Track" mehr aus.
+Seit Version 1.157 löscht oder benennt der Button "Track Nr. 1" am Ende keine Tracks mehr um.

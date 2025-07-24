@@ -228,10 +228,6 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         if bpy.ops.clip.frame_jump_custom.poll():
             bpy.ops.clip.frame_jump_custom()
         if scene.frame_current >= scene.frame_end:
-            if bpy.ops.clip.delete_selected.poll():
-                bpy.ops.clip.delete_selected()
-            if bpy.ops.clip.prefix_good.poll():
-                bpy.ops.clip.prefix_good()
             return None
         return "DETECT"
 
