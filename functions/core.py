@@ -254,14 +254,13 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         print(
             f"[Track Nr.1] decide end {self._end} tracked {self._tracked} threshold {scene.frames_track}"
         )
-        if self._tracked < scene.frames_track:
-            print("[Track Nr.1] stop cycle: progress below threshold")
-            return "RENAME"
-        scene.frame_current = min(
-            self._end + scene.frames_track, scene.frame_end
-        )
-        print(f"[Track Nr.1] next frame {scene.frame_current}")
-        return "DETECT"
+        if self._tracked > scene.frames_track or self._end < scene.frame_end:
+            next_start = min(self._start + scene.frames_track, scene.frame_end)
+            scene.frame_current = next_start
+            print(f"[Track Nr.1] next start {scene.frame_current}")
+            return "DETECT"
+        print("[Track Nr.1] finish cycle")
+        return "RENAME"
 
     def step_rename(self, context):
         if bpy.ops.clip.prefix_track.poll():
