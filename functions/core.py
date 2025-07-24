@@ -938,9 +938,13 @@ class CLIP_OT_track_partial(bpy.types.Operator):
                     if marker is None or marker.mute:
                         track.select = False
 
+            if not any(t.select for t in clip.tracking.tracks):
+                break
+
             print(f"[Track Partial] Start at frame {current}")
 
-            if any(t.select for t in clip.tracking.tracks) and bpy.ops.clip.track_markers.poll():
+            end_frame = current
+            if bpy.ops.clip.track_markers.poll():
                 print("[Track Partial] Tracking backwards …")
                 scene.frame_start = original_start
                 scene.frame_end = current
@@ -950,15 +954,23 @@ class CLIP_OT_track_partial(bpy.types.Operator):
                 scene.frame_end = original_end
                 scene.frame_current = current
                 print("[Track Partial] Tracking forwards …")
+                start_frame = scene.frame_current
                 bpy.ops.clip.track_markers(backwards=False, sequence=True)
+                end_frame = scene.frame_current
+                forward_frames = end_frame - start_frame
+            else:
+                forward_frames = 0
 
             scene.frame_start = original_start
             scene.frame_end = original_end
-            scene.frame_current = current
+            scene.frame_current = end_frame
 
             print("[Track Partial] Done")
 
-            current += step
+            if forward_frames < step:
+                break
+
+            current = end_frame + step
             if current > original_end:
                 break
             scene.frame_current = current
