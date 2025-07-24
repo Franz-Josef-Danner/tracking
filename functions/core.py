@@ -1648,7 +1648,7 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
     bl_idname = "clip.track_cleanup"
     bl_label = "Track Cleanup"
     bl_description = (
-        "Entfernt GOOD_-Tracks, deren mittlere Position zu stark vom Gesamtmittel abweicht"
+        "Entfernt TRACK_-Tracks, deren mittlere Position zu stark vom Gesamtmittel abweicht"
     )
 
     def execute(self, context):
@@ -1667,7 +1667,7 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
         for idx, frame in enumerate(frames, start=1):
             scene.frame_current = frame
             for track in clip.tracking.tracks:
-                if not track.name.startswith("GOOD_"):
+                if not track.name.startswith("TRACK_"):
                     continue
                 marker = track.markers.find_frame(frame, exact=True)
                 if marker is None or marker.mute:

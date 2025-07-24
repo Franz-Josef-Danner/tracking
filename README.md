@@ -273,3 +273,4 @@ vor, wiederholt den Vorgang bis zum vorletzten Szenenframe und meldet jeden
 Schritt in der Konsole.
 Seit Version 1.156 führt der Button "Track Nr. 1" am Szenenende keinen "Short Track" mehr aus.
 Seit Version 1.157 löscht oder benennt der Button "Track Nr. 1" am Ende keine Tracks mehr um.
+Seit Version 1.158 wendet "Track Cleanup" seinen Löschvorgang auf TRACK_-Marker an.
