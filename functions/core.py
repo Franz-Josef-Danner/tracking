@@ -1697,22 +1697,29 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
             if not tracks_info:
                 return
 
-            mean_x = sum(t[1] for t in tracks_info) / len(tracks_info)
-            mean_y = sum(t[2] for t in tracks_info) / len(tracks_info)
-            ama = ((mean_x) + (mean_y)) / 2.0
-
+            ava = sum(t["av"] for t in tracks_info) / len(tracks_info)
             print(
-                f"[{label}] AMA = (({mean_x:.3f} + {mean_y:.3f}) / 2) = {ama:.3f}"
+                f"[{label}] AVA = (Sum AV / AM) = ({sum(t['av'] for t in tracks_info):.3f} / {len(tracks_info)}) = {ava:.3f}"
             )
 
-            for track, mx, my, ma in tracks_info:
-                diff = abs(ama - ma)
+            for info in tracks_info:
+                track = info["track"]
+                av = info["av"]
+                avx = info["avx"]
+                avy = info["avy"]
+                mxp1 = info["mxp1"]
+                mxp2 = info["mxp2"]
+                myp1 = info["myp1"]
+                myp2 = info["myp2"]
+                error_val = ava - av
+
                 print(
-                    f"[{label}] {track.name}: MA=(( {mx:.3f} + {my:.3f} ) / 2) = {ma:.3f}; |{ama:.3f} - {ma:.3f}| = {diff:.3f}"
+                    f"[{label}] {track.name}: |MX1-MX2|={mxp1:.3f}, |MX2-MX3|={mxp2:.3f}, |MY1-MY2|={myp1:.3f}, |MY2-MY3|={myp2:.3f}, AVX=({mxp1:.3f}+{mxp2:.3f})/2={avx:.3f}, AVY=({myp1:.3f}+{myp2:.3f})/2={avy:.3f}, AV=({avx:.3f}+{avy:.3f})/2={av:.3f}; errorValue={ava:.3f}-{av:.3f}={error_val:.3f}"
                 )
-                if diff > g:
+
+                if abs(error_val) > g:
                     print(
-                        f"[{label}] {track.name} selected because {diff:.3f} > G={g:.3f}"
+                        f"[{label}] {track.name} selected because |{error_val:.3f}| > G={g:.3f}"
                     )
                     track.select = True
                     selected_tracks.add(track)
@@ -1728,13 +1735,37 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
                     marker = track.markers.find_frame(f, exact=True)
                     if marker is None or marker.mute:
                         break
-                    coords.append(marker.co)
+                    coords.append((marker.co[0] * width, marker.co[1] * height))
 
                 if len(coords) == 3:
-                    mx = sum(c[0] for c in coords) / 3.0 * width
-                    my = sum(c[1] for c in coords) / 3.0 * height
-                    ma = (mx + my) / 2.0
-                    valid.append((track, mx, my, ma))
+                    px1, py1 = coords[0]
+                    px2, py2 = coords[1]
+                    px3, py3 = coords[2]
+
+                    mxp1 = abs(px1 - px2)
+                    mxp2 = abs(px2 - px3)
+                    myp1 = abs(py1 - py2)
+                    myp2 = abs(py2 - py3)
+                    avx = (mxp1 + mxp2) / 2.0
+                    avy = (myp1 + myp2) / 2.0
+                    av = (avx + avy) / 2.0
+                    mx_mean = (px1 + px2 + px3) / 3.0
+                    my_mean = (py1 + py2 + py3) / 3.0
+
+                    valid.append(
+                        {
+                            "track": track,
+                            "mx_mean": mx_mean,
+                            "my_mean": my_mean,
+                            "mxp1": mxp1,
+                            "mxp2": mxp2,
+                            "myp1": myp1,
+                            "myp2": myp2,
+                            "avx": avx,
+                            "avy": avy,
+                            "av": av,
+                        }
+                    )
 
             # Globale Analyse
             analyze(valid, g_global, "Global")
@@ -1743,10 +1774,10 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
             groups = {}
             cell_w = width / 2
             cell_h = height / 2
-            for track, mx, my, ma in valid:
-                col = int(mx // cell_w)
-                row = int(my // cell_h)
-                groups.setdefault((col, row), []).append((track, mx, my, ma))
+            for info in valid:
+                col = int(info["mx_mean"] // cell_w)
+                row = int(info["my_mean"] // cell_h)
+                groups.setdefault((col, row), []).append(info)
             for key, subset in groups.items():
                 analyze(subset, g_quarter, f"Quarter {key}")
 
@@ -1754,10 +1785,10 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
             groups = {}
             cell_w = width / 4
             cell_h = height / 2
-            for track, mx, my, ma in valid:
-                col = int(mx // cell_w)
-                row = int(my // cell_h)
-                groups.setdefault((col, row), []).append((track, mx, my, ma))
+            for info in valid:
+                col = int(info["mx_mean"] // cell_w)
+                row = int(info["my_mean"] // cell_h)
+                groups.setdefault((col, row), []).append(info)
             for key, subset in groups.items():
                 analyze(subset, g_eighth, f"Eighth {key}")
 
