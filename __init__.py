@@ -9,7 +9,7 @@ bl_info = {
 }
 
 import bpy
-from bpy.props import IntProperty, FloatProperty
+from bpy.props import IntProperty, FloatProperty, StringProperty
 
 from .functions import core as functions
 from .ui import panels
@@ -43,6 +43,11 @@ def register():
         description="Fehlergrenze für Operationen",
         default=2.0,
     )
+    bpy.types.Scene.test_value = StringProperty(
+        name="Test Value",
+        description="Speichert Werte aus Testoperationen",
+        default="",
+    )
     for cls in classes:
         bpy.utils.register_class(cls)
 
@@ -60,6 +65,8 @@ def unregister():
         del bpy.types.Scene.threshold_value
     if hasattr(bpy.types.Scene, "error_threshold"):
         del bpy.types.Scene.error_threshold
+    if hasattr(bpy.types.Scene, "test_value"):
+        del bpy.types.Scene.test_value
 
 
 if __name__ == "__main__":

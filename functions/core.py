@@ -1663,6 +1663,44 @@ def _Test_detect_mm(self, context):
     return best_end
 
 
+def _run_test_cycle(context, pattern_size=None, motion_model=None, channels=None):
+    """Run Detect, Track and Delete sequence four times.
+
+    Returns the highest frame reached during tracking.
+    """
+    clip = context.space_data.clip
+    if not clip:
+        return None
+
+    bpy.ops.clip.setup_defaults()
+
+    settings = clip.tracking.settings
+    if pattern_size is not None:
+        settings.default_pattern_size = int(pattern_size)
+        settings.default_search_size = settings.default_pattern_size * 2
+    if motion_model is not None:
+        settings.default_motion_model = motion_model
+    if channels is not None:
+        (
+            settings.use_default_red_channel,
+            settings.use_default_green_channel,
+            settings.use_default_blue_channel,
+        ) = channels
+
+    best_end = None
+    for _ in range(4):
+        bpy.ops.clip.detect_button()
+        if bpy.ops.clip.track_full.poll():
+            bpy.ops.clip.track_full(silent=True)
+            end_frame = LAST_TRACK_END
+            if best_end is None or (end_frame is not None and end_frame > best_end):
+                best_end = end_frame
+        if bpy.ops.clip.delete_selected.poll():
+            bpy.ops.clip.delete_selected(silent=True)
+
+    return best_end
+
+
 class CLIP_OT_tracking_length(bpy.types.Operator):
     bl_idname = "clip.tracking_length"
     bl_label = "Tracking Length"
@@ -2632,6 +2670,108 @@ class CLIP_OT_channel_b_off(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_test_pattern(bpy.types.Operator):
+    bl_idname = "clip.test_pattern"
+    bl_label = "Test Pattern"
+    bl_description = (
+        "Sucht die beste Pattern Size durch wiederholtes Testen"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        settings = clip.tracking.settings
+        min_size, max_size = pattern_limits(clip)
+        current = settings.default_pattern_size
+        best_size = current
+        best_end = -1
+
+        while True:
+            end = _run_test_cycle(context, pattern_size=current)
+            if end is None:
+                break
+            if end > best_end:
+                best_end = end
+                best_size = current
+                next_size = min(int(current * 1.1), max_size)
+                if next_size == current or next_size > max_size:
+                    break
+                current = next_size
+            else:
+                break
+
+        context.scene.test_value = str(best_size)
+        self.report({'INFO'}, f"Best Pattern {best_size} End {best_end}")
+        return {'FINISHED'}
+
+
+class CLIP_OT_test_motion(bpy.types.Operator):
+    bl_idname = "clip.test_motion"
+    bl_label = "Test Motion"
+    bl_description = (
+        "Testet alle Motion Models und merkt sich das beste"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        settings = clip.tracking.settings
+        best_model = settings.default_motion_model
+        best_end = -1
+
+        for model in MOTION_MODELS:
+            end = _run_test_cycle(context, motion_model=model)
+            if end is None:
+                continue
+            if end > best_end:
+                best_end = end
+                best_model = model
+
+        context.scene.test_value = best_model
+        self.report({'INFO'}, f"Best Motion {best_model} End {best_end}")
+        return {'FINISHED'}
+
+
+class CLIP_OT_test_channel(bpy.types.Operator):
+    bl_idname = "clip.test_channel"
+    bl_label = "Test Chanal"
+    bl_description = (
+        "Testet verschiedene RGB-Kanal Kombinationen"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        best_channels = (
+            clip.tracking.settings.use_default_red_channel,
+            clip.tracking.settings.use_default_green_channel,
+            clip.tracking.settings.use_default_blue_channel,
+        )
+        best_end = -1
+
+        for combo in CHANNEL_COMBOS:
+            end = _run_test_cycle(context, channels=combo)
+            if end is None:
+                continue
+            if end > best_end:
+                best_end = end
+                best_channels = combo
+
+        r, g, b = best_channels
+        context.scene.test_value = f"R:{r} G:{g} B:{b}"
+        self.report({'INFO'}, f"Best Channels {best_channels} End {best_end}")
+        return {'FINISHED'}
+
+
 
 operator_classes = (
     OBJECT_OT_simple_operator,
@@ -2671,6 +2811,9 @@ operator_classes = (
     CLIP_OT_channel_g_off,
     CLIP_OT_channel_b_on,
     CLIP_OT_channel_b_off,
+    CLIP_OT_test_pattern,
+    CLIP_OT_test_motion,
+    CLIP_OT_test_channel,
     CLIP_OT_test_button,
     CLIP_OT_all_detect,
     CLIP_OT_cycle_detect,
