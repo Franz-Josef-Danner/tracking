@@ -2374,6 +2374,47 @@ class CLIP_OT_track_full(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_test_track_backwards(bpy.types.Operator):
+    bl_idname = "clip.test_track_backwards"
+    bl_label = "Test Track backwards"
+    bl_description = (
+        "Trackt alle TEST_-Marker r\u00fcckw\u00e4rts bis zum Szenenanfang"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        select_tracks_by_prefix(clip, "TEST_")
+        if not any(t.select for t in clip.tracking.tracks):
+            self.report({'WARNING'}, "Keine TEST_-Tracks gefunden")
+            return {'CANCELLED'}
+
+        scene = context.scene
+        original_start = scene.frame_start
+        original_end = scene.frame_end
+        current = scene.frame_current
+
+        if bpy.ops.clip.track_markers.poll():
+            scene.frame_start = original_start
+            scene.frame_end = current
+            clip.use_proxy = True
+            bpy.ops.clip.track_markers(backwards=True, sequence=True)
+        else:
+            self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
+
+        scene.frame_start = original_start
+        scene.frame_end = original_end
+        scene.frame_current = current
+
+        for t in clip.tracking.tracks:
+            t.select = False
+
+        return {'FINISHED'}
+
+
 class CLIP_OT_pattern_up(bpy.types.Operator):
     bl_idname = "clip.pattern_up"
     bl_label = "Pattern+"
@@ -2561,6 +2602,7 @@ operator_classes = (
     CLIP_OT_frame_jump,
     CLIP_OT_setup_defaults,
     CLIP_OT_track_full,
+    CLIP_OT_test_track_backwards,
     CLIP_OT_pattern_up,
     CLIP_OT_pattern_down,
     CLIP_OT_motion_cycle,
