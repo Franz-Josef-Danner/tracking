@@ -1105,7 +1105,7 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
     bl_idname = "clip.cycle_detect"
     bl_label = "Cycle Detect"
     bl_description = (
-        "Wiederholt Detect Features bis zur Zielanzahl und pr\u00fcft den Abstand zu GOOD_- und TRACK_-Markern"
+        "Wiederholt Detect Features bis zur Zielanzahl und pr\u00fcft den Abstand zu GOOD_-, TRACK_- und NEW_-Markern"
     )
 
     def execute(self, context):
@@ -1151,7 +1151,11 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
             close_tracks = []
             valid_positions = []
             for gt in clip.tracking.tracks:
-                if gt.name.startswith("GOOD_") or gt.name.startswith("TRACK_"):
+                if (
+                    gt.name.startswith("GOOD_")
+                    or gt.name.startswith("TRACK_")
+                    or gt.name.startswith("NEW_")
+                ):
                     gm = gt.markers.find_frame(frame, exact=True)
                     if gm and not gm.mute:
                         valid_positions.append((gm.co[0] * width, gm.co[1] * height))
