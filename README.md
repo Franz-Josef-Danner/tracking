@@ -305,6 +305,7 @@ mit "Name New" um. Findet "Low Marker Frame" keinen weiteren Frame, wird
 zuerst "Select NEW" und anschließend "Name Track" ausgeführt.
 Seit Version 1.181 besitzt das API-Unterpanel einen Button "TEST select", der alle Marker mit dem Präfix TEST_ auswählt.
 Seit Version 1.182 gibt es dort zusätzlich einen Button "Test Detect", der Marker erkennt, bis ihre Anzahl im Zielbereich liegt.
+Seit Version 1.183 besitzt dieses Unter-Panel auch einen Button "Test Track", der selektierte Marker bis zum Sequenzende vorwärts verfolgt.
 
 ## License
 
