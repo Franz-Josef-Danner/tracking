@@ -2682,9 +2682,10 @@ class CLIP_OT_test_pattern(bpy.types.Operator):
             end = _run_test_cycle(context, pattern_size=current)
             if end is None:
                 break
-            if end > best_end:
-                best_end = end
-                best_size = current
+            if end >= best_end:
+                if end > best_end:
+                    best_end = end
+                    best_size = current
                 next_size = min(int(current * 1.1), max_size)
                 if next_size == current or next_size > max_size:
                     break
