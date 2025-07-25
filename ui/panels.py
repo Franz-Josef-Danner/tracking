@@ -86,7 +86,8 @@ class CLIP_PT_test_subpanel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        
+
+        layout.operator('clip.prefix_test', text='TEST Name')
 
 panel_classes = (
     CLIP_PT_tracking_panel,
