@@ -231,14 +231,12 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
     _start = 0
     _end = 0
     _tracked = 0
-    _next_state = None
 
     def step_init(self, context):
         """Set defaults and remember the start frame."""
         if bpy.ops.clip.api_defaults.poll():
             bpy.ops.clip.api_defaults()
         self._start = context.scene.frame_current
-        self._next_state = "DETECT"
         return "DETECT"
 
     def step_detect(self, context):
@@ -258,13 +256,13 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         print(
             f"[Track Nr.1] start {self._start} end {self._end} tracked {self._tracked}"
         )
-        return "JUMP"
+        return "CLEANUP"
 
     def step_cleanup(self, context):
         """Remove short tracks before continuing."""
         clip = context.space_data.clip
         if not clip or self._tracked <= 0:
-            return self._next_state
+            return "JUMP"
 
         print("[Track Nr.1] select_short_tracks")
         if bpy.ops.clip.select_short_tracks.poll():
@@ -278,7 +276,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         else:
             print("[Track Nr.1] delete_selected nicht verfügbar")
 
-        return self._next_state
+        return "JUMP"
 
     def step_jump(self, context):
         """Use Low Marker Frame to continue or finish the cycle."""
@@ -295,12 +293,10 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         if frame is not None and frame != current:
             scene.frame_current = frame
             print(f"[Track Nr.1] next low frame {frame} ({count} markers)")
-            self._next_state = "DETECT"
+            return "DETECT"
         else:
             print("[Track Nr.1] finish cycle")
-            self._next_state = "RENAME"
-
-        return "CLEANUP"
+            return "RENAME"
 
     def step_rename(self, context):
         if bpy.ops.clip.select_new_tracks.poll():
