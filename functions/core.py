@@ -1655,10 +1655,20 @@ def _Test_detect_mm(self, context):
     return best_end
 
 
-def _run_test_cycle(context, pattern_size=None, motion_model=None, channels=None):
-    """Run Detect, Track and Delete sequence four times.
+def calc_total_error(clip):
+    """Return the summed average error of all selected tracks."""
+    total = 0.0
+    for track in clip.tracking.tracks:
+        if track.select:
+            total += getattr(track, "average_error", 0.0)
+    return total
 
-    Returns the sum of the end frames from each run.
+
+def _run_test_cycle(context, pattern_size=None, motion_model=None, channels=None):
+    """Run Detect, Track and cleanup sequence four times.
+
+    Returns a tuple ``(total_end, total_error)`` with the sum of end
+    frames and the summed error from all runs.
     """
     clip = context.space_data.clip
     if not clip:
@@ -1678,6 +1688,7 @@ def _run_test_cycle(context, pattern_size=None, motion_model=None, channels=None
         ) = channels
 
     total_end = 0
+    total_error = 0.0
     for i in range(4):
         print(f"Cycle {i + 1} Start")
         if bpy.ops.clip.detect_features.poll():
@@ -1692,12 +1703,21 @@ def _run_test_cycle(context, pattern_size=None, motion_model=None, channels=None
             if end_frame is not None:
                 total_end += end_frame
                 print(f"   end_frame={end_frame}")
+        if bpy.ops.clip.prefix_track.poll():
+            print(" - Name Track")
+            bpy.ops.clip.prefix_track(silent=True)
+        if bpy.ops.clip.track_cleanup.poll():
+            print(" - Select Error Tracks")
+            bpy.ops.clip.track_cleanup()
+        err = calc_total_error(clip)
+        total_error += err
+        print(f"   error={err}")
         if bpy.ops.clip.delete_selected.poll():
             print(" - Delete Selected")
             bpy.ops.clip.delete_selected(silent=True)
 
-    print(f"_run_test_cycle total={total_end}")
-    return total_end
+    print(f"_run_test_cycle total_end={total_end} total_error={total_error}")
+    return total_end, total_error
 
 
 class CLIP_OT_tracking_length(bpy.types.Operator):
@@ -2689,26 +2709,42 @@ class CLIP_OT_test_pattern(bpy.types.Operator):
         current = settings.default_pattern_size
         best_size = current
         best_total = -1
+        best_error = None
 
+        min_error = None
+        prev_total = -1
         while True:
-            total = _run_test_cycle(context, pattern_size=current)
-            if total is None:
+            result = _run_test_cycle(context, pattern_size=current)
+            if result is None:
                 break
-            print(f"Pattern {current} -> score {total}")
-            if total >= best_total:
-                if total > best_total:
-                    best_total = total
-                    best_size = current
+            total, error = result
+            print(f"Pattern {current} -> end {total} error {error}")
+            if total > best_total or (total == best_total and (best_error is None or error < best_error)):
+                best_total = total
+                best_error = error
+                best_size = current
+
+            if total > prev_total:
+                prev_total = total
+                min_error = error if min_error is None else min(min_error, error)
                 next_size = min(int(current * 1.1), max_size)
                 if next_size == current or next_size > max_size:
                     break
                 current = next_size
-            else:
+                continue
+            elif total < prev_total:
                 break
+            else:  # total == prev_total
+                if min_error is not None and error > min_error * 1.1:
+                    break
+                next_size = min(int(current * 1.1), max_size)
+                if next_size == current or next_size > max_size:
+                    break
+                current = next_size
 
         context.scene.test_value = str(best_size)
-        self.report({'INFO'}, f"Best Pattern {best_size} Score {best_total}")
-        print(f"Best Pattern {best_size} Score {best_total}")
+        self.report({'INFO'}, f"Best Pattern {best_size} Score {best_total} Error {best_error}")
+        print(f"Best Pattern {best_size} Score {best_total} Error {best_error}")
         return {'FINISHED'}
 
 
@@ -2730,20 +2766,23 @@ class CLIP_OT_test_motion(bpy.types.Operator):
         settings = clip.tracking.settings
         best_model = settings.default_motion_model
         best_total = -1
+        best_error = None
 
         for model in MOTION_MODELS:
             print(f"Testing motion {model}")
-            total = _run_test_cycle(context, motion_model=model)
-            if total is None:
+            result = _run_test_cycle(context, motion_model=model)
+            if result is None:
                 continue
-            print(f" -> score {total}")
-            if total > best_total:
+            total, error = result
+            print(f" -> end {total} error {error}")
+            if (total > best_total) or (total == best_total and (best_error is None or error < best_error)):
                 best_total = total
+                best_error = error
                 best_model = model
 
         context.scene.test_value = best_model
-        self.report({'INFO'}, f"Best Motion {best_model} Score {best_total}")
-        print(f"Best Motion {best_model} Score {best_total}")
+        self.report({'INFO'}, f"Best Motion {best_model} Score {best_total} Error {best_error}")
+        print(f"Best Motion {best_model} Score {best_total} Error {best_error}")
         return {'FINISHED'}
 
 
@@ -2768,21 +2807,24 @@ class CLIP_OT_test_channel(bpy.types.Operator):
             clip.tracking.settings.use_default_blue_channel,
         )
         best_total = -1
+        best_error = None
 
         for combo in CHANNEL_COMBOS:
             print(f"Testing channels {combo}")
-            total = _run_test_cycle(context, channels=combo)
-            if total is None:
+            result = _run_test_cycle(context, channels=combo)
+            if result is None:
                 continue
-            print(f" -> score {total}")
-            if total > best_total:
+            total, error = result
+            print(f" -> end {total} error {error}")
+            if (total > best_total) or (total == best_total and (best_error is None or error < best_error)):
                 best_total = total
+                best_error = error
                 best_channels = combo
 
         r, g, b = best_channels
         context.scene.test_value = f"R:{r} G:{g} B:{b}"
-        self.report({'INFO'}, f"Best Channels {best_channels} Score {best_total}")
-        print(f"Best Channels {best_channels} Score {best_total}")
+        self.report({'INFO'}, f"Best Channels {best_channels} Score {best_total} Error {best_error}")
+        print(f"Best Channels {best_channels} Score {best_total} Error {best_error}")
         return {'FINISHED'}
 
 
