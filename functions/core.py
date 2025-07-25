@@ -94,7 +94,16 @@ def add_pending_tracks(tracks):
 def clean_pending_tracks(clip):
     """Remove deleted tracks from the pending list."""
     names = {t.name for t in clip.tracking.tracks}
-    remaining = [t for t in PENDING_RENAME if t.name in names]
+    remaining = []
+    for t in PENDING_RENAME:
+        try:
+            if t.name in names:
+                remaining.append(t)
+        except UnicodeDecodeError:
+            print(
+                f"\u26a0\ufe0f Warnung: Marker-Name kann nicht gelesen werden (wahrscheinlich defekt): {t}"
+            )
+            continue
     PENDING_RENAME.clear()
     PENDING_RENAME.extend(remaining)
 
@@ -219,53 +228,53 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
 
     _timer = None
     _state = "INIT"
+    _start = 0
+    _end = 0
+    _tracked = 0
 
     def step_init(self, context):
-        """Apply default settings and disable proxies."""
+        """Set defaults and remember the start frame."""
         if bpy.ops.clip.api_defaults.poll():
             bpy.ops.clip.api_defaults()
-        if bpy.ops.clip.proxy_off.poll():
-            bpy.ops.clip.proxy_off()
+        self._start = context.scene.frame_current
         return "DETECT"
 
     def step_detect(self, context):
-        """Run auto detection using the all_detect operator."""
-        if bpy.ops.clip.all_detect.poll():
-            bpy.ops.clip.all_detect()
-        return "PREFIX"
-
-    def step_prefix(self, context):
-        """Prefix detected tracks with TRACK_."""
-        if bpy.ops.clip.prefix_track.poll():
-            bpy.ops.clip.prefix_track()
-        return "SELECT"
-
-    def step_select(self, context):
-        """Select active TRACK_ markers."""
-        if bpy.ops.clip.select_active_tracks.poll():
-            bpy.ops.clip.select_active_tracks()
-        return "PROXY_ON"
-
-    def step_proxy_on(self, context):
-        """Enable proxies before tracking."""
-        if bpy.ops.clip.proxy_on.poll():
-            bpy.ops.clip.proxy_on()
+        """Generate markers using Cycle Detect."""
+        if bpy.ops.clip.cycle_detect.poll():
+            bpy.ops.clip.cycle_detect()
         return "TRACK"
 
     def step_track(self, context):
-        """Run partial tracking."""
+        """Track markers backward and forward."""
+        scene = context.scene
+        self._start = scene.frame_current
         if bpy.ops.clip.track_partial.poll():
             bpy.ops.clip.track_partial()
-        return "NEXT"
-
-    def step_next(self, context):
-        """Jump forward and finish at end frame."""
+        self._end = scene.frame_current
+        self._tracked = self._end - self._start
+        print(
+            f"[Track Nr.1] start {self._start} end {self._end} tracked {self._tracked}"
+        )
+        return "DECIDE"
+    def step_decide(self, context):
+        """Evaluate progress and continue or finish."""
         scene = context.scene
-        if bpy.ops.clip.frame_jump_custom.poll():
-            bpy.ops.clip.frame_jump_custom()
-        if scene.frame_current >= scene.frame_end:
-            return None
-        return "DETECT"
+        print(
+            f"[Track Nr.1] decide end {self._end} tracked {self._tracked} threshold {scene.frames_track}"
+        )
+        if self._tracked > scene.frames_track or self._end < scene.frame_end:
+            next_start = min(self._start + scene.frames_track, scene.frame_end)
+            scene.frame_current = next_start
+            print(f"[Track Nr.1] next start {scene.frame_current}")
+            return "DETECT"
+        print("[Track Nr.1] finish cycle")
+        return "RENAME"
+
+    def step_rename(self, context):
+        if bpy.ops.clip.prefix_track.poll():
+            bpy.ops.clip.prefix_track()
+        return None
 
     def execute(self, context):
         wm = context.window_manager
@@ -909,8 +918,8 @@ class CLIP_OT_track_partial(bpy.types.Operator):
     bl_idname = "clip.track_partial"
     bl_label = "Track Partial"
     bl_description = (
-        "Trackt selektierte Marker r\u00fcckw\u00e4rts bis Frame 1 und "
-        "dann vorw\u00e4rts f\u00fcr eine begrenzte Anzahl von Frames"
+        "Trackt selektierte Marker r\u00fcckw\u00e4rts bis zum Szenenanfang "
+        "und danach vorw\u00e4rts bis zum Szenenende"
     )
 
     def execute(self, context):
@@ -926,34 +935,37 @@ class CLIP_OT_track_partial(bpy.types.Operator):
                 if marker is None or marker.mute:
                     track.select = False
 
-        current = scene.frame_current
-        step = scene.frames_track
+        if not any(t.select for t in clip.tracking.tracks):
+            self.report({'WARNING'}, "Keine g\u00fcltigen Marker ausgew\xe4hlt")
+            return {'CANCELLED'}
+
+        original_start = scene.frame_start
         original_end = scene.frame_end
+        current = scene.frame_current
 
-        print(f"[Track Partial] Start at frame {current}, step {step}")
+        print(
+            f"[Track Partial] current {current} start {original_start} end {original_end}"
+        )
 
-        # Rückwärts-Tracking bis zum Anfang
+        clip.use_proxy = True
+
         if bpy.ops.clip.track_markers.poll():
-            print("[Track Partial] Tracking backwards …")
-            scene.frame_start = 1
+            print("[Track Partial] track backwards")
+            scene.frame_start = original_start
             scene.frame_end = current
             bpy.ops.clip.track_markers(backwards=True, sequence=True)
 
-        # Vorwärts-Tracking, aber nur begrenzt
-        scene.frame_current = current
-        scene.frame_start = current
-        scene.frame_end = min(original_end, current + step)
-        if bpy.ops.clip.track_markers.poll():
-            print("[Track Partial] Tracking forwards …")
+            print("[Track Partial] track forwards")
+            scene.frame_start = current
+            scene.frame_end = original_end
+            scene.frame_current = current
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
 
-        # Rücksetzen der Frame-Grenzen und Playhead
-        scene.frame_start = 1
-        scene.frame_end = original_end
-        scene.frame_current = current
+        print(f"[Track Partial] done at frame {scene.frame_current}")
 
-        print("[Track Partial] Done")
-        rename_pending_tracks(clip)
+        scene.frame_start = original_start
+        scene.frame_end = original_end
+
         return {'FINISHED'}
 
 class CLIP_OT_all_detect(bpy.types.Operator):
@@ -1084,6 +1096,121 @@ class CLIP_OT_all_detect(bpy.types.Operator):
             track.select = False
         for t in new_tracks:
             t.select = True
+        add_pending_tracks(new_tracks)
+
+        return {'FINISHED'}
+
+
+class CLIP_OT_cycle_detect(bpy.types.Operator):
+    bl_idname = "clip.cycle_detect"
+    bl_label = "Cycle Detect"
+    bl_description = (
+        "Wiederholt Detect Features bis zur Zielanzahl und pr\u00fcft den Abstand zu GOOD_-, TRACK_- und NEW_-Markern"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        clip.use_proxy = False
+
+        width, _ = clip.size
+
+        margin_base = int(width * 0.01)
+        min_distance_base = int(width * 0.05)
+
+        target = context.scene.marker_frame * 4
+        target_min = target * 0.9
+        target_max = target * 1.1
+
+        threshold_value = 1.0
+        detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
+        factor = math.log10(detection_threshold * 10000000000) / 10
+        margin = int(margin_base * factor)
+        min_distance = int(min_distance_base * factor)
+
+        attempt = 0
+        new_tracks = []
+        while True:
+            names_before = {t.name for t in clip.tracking.tracks}
+            bpy.ops.clip.detect_features(
+                threshold=detection_threshold,
+                min_distance=min_distance,
+                margin=margin,
+            )
+            names_after = {t.name for t in clip.tracking.tracks}
+            new_tracks = [
+                t for t in clip.tracking.tracks if t.name in names_after - names_before
+            ]
+
+            frame = context.scene.frame_current
+            width, height = clip.size
+            distance_px = min_distance
+            close_tracks = []
+            valid_positions = []
+            for gt in clip.tracking.tracks:
+                if (
+                    gt.name.startswith("GOOD_")
+                    or gt.name.startswith("TRACK_")
+                    or gt.name.startswith("NEW_")
+                ):
+                    gm = gt.markers.find_frame(frame, exact=True)
+                    if gm and not gm.mute:
+                        valid_positions.append((gm.co[0] * width, gm.co[1] * height))
+
+            for nt in new_tracks:
+                nm = nt.markers.find_frame(frame, exact=True)
+                if nm and not nm.mute:
+                    nx = nm.co[0] * width
+                    ny = nm.co[1] * height
+                    for vx, vy in valid_positions:
+                        if math.hypot(nx - vx, ny - vy) < distance_px:
+                            close_tracks.append(nt)
+                            break
+
+            for track in clip.tracking.tracks:
+                track.select = False
+            for t in close_tracks:
+                t.select = True
+            if close_tracks and bpy.ops.clip.delete_selected.poll():
+                bpy.ops.clip.delete_selected()
+                clean_pending_tracks(clip)
+
+            names_after = {t.name for t in clip.tracking.tracks}
+            new_tracks = [
+                t for t in clip.tracking.tracks if t.name in names_after - names_before
+            ]
+            count = len(new_tracks)
+
+            for track in clip.tracking.tracks:
+                track.select = False
+
+            if target_min <= count <= target_max or attempt >= 10:
+                break
+
+            for t in new_tracks:
+                t.select = True
+            if new_tracks and bpy.ops.clip.delete_track.poll():
+                bpy.ops.clip.delete_track()
+                clean_pending_tracks(clip)
+            for track in clip.tracking.tracks:
+                track.select = False
+
+            threshold_value = threshold_value * ((count + 0.1) / target)
+            detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
+            factor = math.log10(detection_threshold * 10000000000) / 10
+            margin = int(margin_base * factor)
+            min_distance = int(min_distance_base * factor)
+            attempt += 1
+
+        for track in clip.tracking.tracks:
+            track.select = False
+        for t in new_tracks:
+            t.select = True
+        if new_tracks and bpy.ops.clip.prefix_new.poll():
+            bpy.ops.clip.prefix_new(silent=True)
         add_pending_tracks(new_tracks)
 
         return {'FINISHED'}
@@ -2312,6 +2439,7 @@ operator_classes = (
     CLIP_OT_channel_b_off,
     CLIP_OT_test_button,
     CLIP_OT_all_detect,
+    CLIP_OT_cycle_detect,
     CLIP_OT_all_cycle,
     CLIP_OT_track_sequence,
     CLIP_OT_tracking_length,
