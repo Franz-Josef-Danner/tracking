@@ -2168,6 +2168,43 @@ class CLIP_OT_cleanup(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_heavy_track(bpy.types.Operator):
+    bl_idname = "clip.heavy_track"
+    bl_label = "Heavy Track"
+    bl_description = (
+        "Sucht den nächsten Low Marker Frame und testet verschiedene "
+        "Tracking-Einstellungen"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        scene = context.scene
+        threshold = scene.marker_frame
+        frame, _ = find_low_marker_frame(clip, threshold)
+        if frame is None:
+            self.report({'INFO'}, "Kein Frame mit zu wenigen Markern gefunden")
+            return {'FINISHED'}
+
+        scene.frame_current = frame
+
+        bpy.ops.clip.setup_defaults(silent=True)
+        bpy.ops.clip.defaults_detect()
+        bpy.ops.clip.motion_detect()
+        bpy.ops.clip.channel_detect()
+        bpy.ops.clip.apply_detect_settings()
+
+        settings = clip.tracking.settings
+        settings.default_search_size = settings.default_pattern_size * 2
+        settings.default_margin = settings.default_pattern_size * 2
+
+        self.report({'INFO'}, "Heavy Track abgeschlossen")
+        return {'FINISHED'}
+
+
 class CLIP_OT_step_track(bpy.types.Operator):
     bl_idname = "clip.step_track"
     bl_label = "Step Track"
@@ -2687,5 +2724,6 @@ operator_classes = (
     CLIP_OT_camera_solve,
     CLIP_OT_track_cleanup,
     CLIP_OT_cleanup,
+    CLIP_OT_heavy_track,
 )
 
