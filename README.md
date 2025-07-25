@@ -297,6 +297,9 @@ Seit Version 1.178 setzt der "Cleanup"-Button zunächst den größten gefundenen
 "Error Threshold" und löscht TRACK_-Marker iterativ. Dabei verringert er den Threshold
 nach jedem Durchlauf auf 90 % des vorherigen Werts, bis der ursprüngliche
 Schwellwert erreicht ist.
+Seit Version 1.179 gibt der "Cleanup"-Button nach jedem Durchlauf nur noch die
+Anzahl der gelöschten Marker und den jeweils verwendeten Error Threshold in der
+Konsole aus.
 
 ## License
 

@@ -2002,7 +2002,9 @@ def cleanup_error_tracks(scene, clip):
             else:
                 break
 
-            if any(t.select for t in clip.tracking.tracks):
+            selected = sum(1 for t in clip.tracking.tracks if t.select)
+            if selected:
+                print(f"[Cleanup] {selected} Tracks, Threshold {threshold:.2f}")
                 if bpy.ops.clip.delete_selected.poll():
                     bpy.ops.clip.delete_selected()
             else:
@@ -2056,8 +2058,6 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
                 yv = info["yv"]
                 etx = xvg - xv
                 ety = yvg - yv
-
-                print(f"[{label}] {track.name}: ETX={etx:.3f}, ETY={ety:.3f}")
 
                 if abs(etx) > g or abs(ety) > g:
                     track.select = True
