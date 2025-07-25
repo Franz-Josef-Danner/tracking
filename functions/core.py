@@ -1901,6 +1901,180 @@ class CLIP_OT_good_marker_position(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_error_value(bpy.types.Operator):
+    bl_idname = "clip.error_value"
+    bl_label = "Error Value"
+    bl_description = (
+        "Berechnet die Standardabweichung der Markerpositionen der Selektion"
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        x_positions = []
+        y_positions = []
+        for track in clip.tracking.tracks:
+            if not track.select:
+                continue
+            for marker in track.markers:
+                if marker.mute:
+                    continue
+                x_positions.append(marker.co[0])
+                y_positions.append(marker.co[1])
+
+        if not x_positions:
+            self.report({'WARNING'}, "Keine Marker ausgewählt")
+            return {'CANCELLED'}
+
+        def std_dev(values):
+            mean_val = sum(values) / len(values)
+            return (sum((v - mean_val) ** 2 for v in values) / len(values)) ** 0.5
+
+        error_x = std_dev(x_positions)
+        error_y = std_dev(y_positions)
+        total_error = error_x + error_y
+
+        self.report(
+            {'INFO'},
+            f"Error X: {error_x:.4f} Error Y: {error_y:.4f} Total: {total_error:.4f}",
+        )
+        print(
+            f"[Error Value] error_x={error_x:.6f} error_y={error_y:.6f} total={total_error:.6f}"
+        )
+
+        return {'FINISHED'}
+
+
+def _run_test_cycle(context):
+    """Run a detection and tracking cycle and return the sum of end frames."""
+    scene = context.scene
+    total_end = 0
+    for i in range(4):
+        print(f"[Test Cycle] Durchgang {i + 1}")
+        if bpy.ops.clip.setup_defaults.poll():
+            bpy.ops.clip.setup_defaults(silent=True)
+        if bpy.ops.clip.detect_button.poll():
+            bpy.ops.clip.detect_button()
+        if bpy.ops.clip.track_full.poll():
+            bpy.ops.clip.track_full(silent=True)
+            if LAST_TRACK_END is not None:
+                total_end += LAST_TRACK_END
+        if bpy.ops.clip.delete_selected.poll():
+            bpy.ops.clip.delete_selected(silent=True)
+    print(f"[Test Cycle] Summe End-Frames: {total_end}")
+    return total_end
+
+
+class CLIP_OT_test_pattern(bpy.types.Operator):
+    bl_idname = "clip.test_pattern"
+    bl_label = "Test Pattern"
+    bl_description = "Testet verschiedene Pattern-Gr\u00f6\u00dfen"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        settings = clip.tracking.settings
+        best_size = settings.default_pattern_size
+        best_score = None
+
+        while True:
+            score = _run_test_cycle(context)
+            print(f"[Test Pattern] size={settings.default_pattern_size} score={score}")
+            if best_score is None or score >= best_score:
+                best_score = score
+                best_size = settings.default_pattern_size
+                if bpy.ops.clip.pattern_up.poll():
+                    bpy.ops.clip.pattern_up()
+                else:
+                    break
+            else:
+                break
+
+        settings.default_pattern_size = best_size
+        settings.default_search_size = best_size * 2
+        context.scene.test_value = best_size
+        print(f"[Test Pattern] best_size={best_size} best_score={best_score}")
+        self.report({'INFO'}, f"Best Pattern Size: {best_size}")
+        return {'FINISHED'}
+
+
+class CLIP_OT_test_motion(bpy.types.Operator):
+    bl_idname = "clip.test_motion"
+    bl_label = "Test Motion"
+    bl_description = "Testet verschiedene Motion Models"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        settings = clip.tracking.settings
+        best_model = settings.default_motion_model
+        best_score = None
+
+        for model in MOTION_MODELS:
+            settings.default_motion_model = model
+            score = _run_test_cycle(context)
+            print(f"[Test Motion] model={model} score={score}")
+            if best_score is None or score > best_score:
+                best_score = score
+                best_model = model
+
+        settings.default_motion_model = best_model
+        context.scene.test_value = MOTION_MODELS.index(best_model)
+        print(f"[Test Motion] best_model={best_model} best_score={best_score}")
+        self.report({'INFO'}, f"Best Motion Model: {best_model}")
+        return {'FINISHED'}
+
+
+class CLIP_OT_test_channel(bpy.types.Operator):
+    bl_idname = "clip.test_channel"
+    bl_label = "Test Chanal"
+    bl_description = "Testet verschiedene Farbkanal-Kombinationen"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        settings = clip.tracking.settings
+        best_combo = (
+            settings.use_default_red_channel,
+            settings.use_default_green_channel,
+            settings.use_default_blue_channel,
+        )
+        best_score = None
+
+        for combo in CHANNEL_COMBOS:
+            r, g, b = combo
+            settings.use_default_red_channel = r
+            settings.use_default_green_channel = g
+            settings.use_default_blue_channel = b
+            score = _run_test_cycle(context)
+            print(f"[Test Channel] combo={combo} score={score}")
+            if best_score is None or score > best_score:
+                best_score = score
+                best_combo = combo
+
+        (
+            settings.use_default_red_channel,
+            settings.use_default_green_channel,
+            settings.use_default_blue_channel,
+        ) = best_combo
+        context.scene.test_value = CHANNEL_COMBOS.index(best_combo)
+        print(f"[Test Channel] best_combo={best_combo} best_score={best_score}")
+        self.report({'INFO'}, "Beste Kanal-Einstellung gewählt")
+        return {'FINISHED'}
+
+
 class CLIP_OT_camera_solve(bpy.types.Operator):
     bl_idname = "clip.camera_solve"
     bl_label = "Kamera solve"
@@ -2661,6 +2835,9 @@ operator_classes = (
     CLIP_OT_track_full,
     CLIP_OT_test_track_backwards,
     CLIP_OT_test_track,
+    CLIP_OT_test_pattern,
+    CLIP_OT_test_motion,
+    CLIP_OT_test_channel,
     CLIP_OT_pattern_up,
     CLIP_OT_pattern_down,
     CLIP_OT_motion_cycle,
@@ -2684,6 +2861,7 @@ operator_classes = (
     CLIP_OT_select_test_tracks,
     CLIP_OT_marker_position,
     CLIP_OT_good_marker_position,
+    CLIP_OT_error_value,
     CLIP_OT_camera_solve,
     CLIP_OT_track_cleanup,
     CLIP_OT_cleanup,

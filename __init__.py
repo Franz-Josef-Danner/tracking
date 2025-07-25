@@ -38,6 +38,11 @@ def register():
         description="Gespeicherter Threshold-Wert",
         default=1.0,
     )
+    bpy.types.Scene.test_value = IntProperty(
+        name="Test Value",
+        description="Ergebniswert aus Testfunktionen",
+        default=0,
+    )
     bpy.types.Scene.error_threshold = FloatProperty(
         name="Error Threshold",
         description="Fehlergrenze für Operationen",
@@ -58,6 +63,8 @@ def unregister():
         del bpy.types.Scene.nm_count
     if hasattr(bpy.types.Scene, "threshold_value"):
         del bpy.types.Scene.threshold_value
+    if hasattr(bpy.types.Scene, "test_value"):
+        del bpy.types.Scene.test_value
     if hasattr(bpy.types.Scene, "error_threshold"):
         del bpy.types.Scene.error_threshold
 

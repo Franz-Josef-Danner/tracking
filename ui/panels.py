@@ -86,12 +86,29 @@ class CLIP_PT_test_subpanel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        
+
+        layout.label(text="Test Aktionen")
+        layout.operator('clip.test_pattern', text='Test Pattern')
+        layout.operator('clip.test_motion', text='Test Motion')
+        layout.operator('clip.test_channel', text='Test Chanal')
+
+
+class CLIP_PT_test_detail_panel(bpy.types.Panel):
+    bl_space_type = 'CLIP_EDITOR'
+    bl_region_type = 'UI'
+    bl_category = 'Addon'
+    bl_parent_id = 'CLIP_PT_test_subpanel'
+    bl_label = 'Details'
+
+    def draw(self, context):
+        layout = self.layout
+
         layout.operator('clip.setup_defaults', text='Test Defaults')
         layout.operator('clip.detect_button', text='Test Detect')
         layout.operator('clip.test_track', text='Test Track')
         layout.operator('clip.prefix_test', text='TEST Name')
         layout.operator('clip.select_test_tracks', text='TEST select')
+        layout.operator('clip.error_value', text='Error Value')
 
 panel_classes = (
     CLIP_PT_tracking_panel,
@@ -99,5 +116,6 @@ panel_classes = (
     CLIP_PT_stufen_panel,
     CLIP_PT_test_panel,
     CLIP_PT_test_subpanel,
+    CLIP_PT_test_detail_panel,
 )
 
