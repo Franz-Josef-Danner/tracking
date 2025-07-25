@@ -1992,7 +1992,6 @@ def cleanup_error_tracks(scene, clip, min_value=10):
     while True:
         max_err = max_track_error(scene, clip)
         threshold = max_err * 0.9
-        print(f"[Cleanup] max error {max_err:.3f} -> threshold {threshold:.3f}")
 
         if threshold < min_value:
             scene.error_threshold = min_value
