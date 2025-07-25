@@ -427,18 +427,6 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             min_distance = int(min_distance_base * factor)
             attempt += 1
 
-        settings = clip.tracking.settings
-        if (
-            LAST_DETECT_COUNT is not None
-            and new_markers == LAST_DETECT_COUNT
-            and new_markers > 0
-            and detection_threshold <= MIN_THRESHOLD
-        ):
-            settings.default_pattern_size = int(settings.default_pattern_size * 0.9)
-            settings.default_pattern_size = clamp_pattern_size(
-                settings.default_pattern_size, clip
-            )
-            settings.default_search_size = settings.default_pattern_size * 2
         LAST_DETECT_COUNT = new_markers
         context.scene.threshold_value = threshold_value
         context.scene.nm_count = new_markers
@@ -1687,8 +1675,6 @@ def _run_test_cycle(context, pattern_size=None, motion_model=None, channels=None
 
     best_end = None
     for _ in range(4):
-        if bpy.ops.clip.setup_defaults.poll():
-            bpy.ops.clip.setup_defaults(silent=True)
         if bpy.ops.clip.detect_features.poll():
             bpy.ops.clip.detect_features()
         else:
