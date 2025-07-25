@@ -292,4 +292,8 @@ Seit Version 1.173 setzt "Track Nr. 1" nach jedem Durchlauf den Playhead mit "Lo
 Seit Version 1.174 löscht "Track Nr. 1" nach jedem Durchlauf zunächst kurze TRACK_-Marker mit "Select Short Tracks" und "Delete" und springt danach mit "Low Marker Frame" zum nächsten Start.
 Seit Version 1.175 wird dieser Ablauf modular ausgeführt, sodass die Bereinigung und der Sprung zum nächsten Start nacheinander erfolgen.
 Seit Version 1.176 ruft der "Cleanup"-Button nur noch 'Select Error Tracks' und danach 'Delete' auf.
-Seit Version 1.177 wiederholt derselbe Button 'Select Error Tracks' und 'Delete', wobei der Error Threshold auf 90% des jeweils gr\xc3\xb6\xc3\x9ften Fehlers gesetzt wird, bis der Wert unter 10 f\xc3\xa4llt.
+Seit Version 1.177 wiederholt derselbe Button 'Select Error Tracks' und 'Delete', wobei der Error Threshold auf 90% des jeweils größten Fehlers gesetzt wird, bis der Wert unter 10 fällt.
+
+## License
+
+Dieses Projekt steht unter der MIT-Lizenz. Siehe [LICENSE](LICENSE) für Details.
