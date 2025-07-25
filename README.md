@@ -303,6 +303,7 @@ Konsole aus.
 Seit Version 1.180 benennt "Track Nr. 1" nach jedem "Cycle Detect" die Marker
 mit "Name New" um. Findet "Low Marker Frame" keinen weiteren Frame, wird
 zuerst "Select NEW" und anschließend "Name Track" ausgeführt.
+Seit Version 1.181 besitzt das API-Unterpanel einen Button "TEST select", der alle Marker mit dem Präfix TEST_ auswählt.
 
 ## License
 

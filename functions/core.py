@@ -1784,6 +1784,23 @@ class CLIP_OT_select_new_tracks(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_select_test_tracks(bpy.types.Operator):
+    bl_idname = "clip.select_test_tracks"
+    bl_label = "Select TEST"
+    bl_description = "Selektiert alle TEST_-Marker"
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        select_tracks_by_prefix(clip, "TEST_")
+        count = sum(1 for t in clip.tracking.tracks if t.select)
+        self.report({'INFO'}, f"{count} TEST_-Marker ausgewählt")
+        return {'FINISHED'}
+
+
 class CLIP_OT_marker_position(bpy.types.Operator):
     bl_idname = "clip.marker_position"
     bl_label = "Marker Position"
@@ -2623,6 +2640,7 @@ operator_classes = (
     CLIP_OT_low_marker_frame,
     CLIP_OT_select_active_tracks,
     CLIP_OT_select_new_tracks,
+    CLIP_OT_select_test_tracks,
     CLIP_OT_marker_position,
     CLIP_OT_good_marker_position,
     CLIP_OT_camera_solve,
