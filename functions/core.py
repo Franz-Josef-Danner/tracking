@@ -1505,6 +1505,10 @@ def _update_nf_and_motion_model(frame, clip):
 
     global NF
     settings = clip.tracking.settings
+    print(
+        f"Start _run_test_cycle pattern_size={pattern_size} "
+        f"motion_model={motion_model} channels={channels}"
+    )
     scene = bpy.context.scene
     min_size, max_size = pattern_limits(clip)
     if frame in NF:
@@ -1674,19 +1678,25 @@ def _run_test_cycle(context, pattern_size=None, motion_model=None, channels=None
         ) = channels
 
     total_end = 0
-    for _ in range(4):
+    for i in range(4):
+        print(f"Cycle {i + 1} Start")
         if bpy.ops.clip.detect_features.poll():
+            print(" - Detect Features")
             bpy.ops.clip.detect_features()
         else:
-            print("\u274c 'detect_features' kann im aktuellen Kontext nicht ausgef\u00fchrt werden.")
+            print("\u274c detect_features can't run in current context")
         if bpy.ops.clip.track_full.poll():
+            print(" - Track Full")
             bpy.ops.clip.track_full(silent=True)
             end_frame = LAST_TRACK_END
             if end_frame is not None:
                 total_end += end_frame
+                print(f"   end_frame={end_frame}")
         if bpy.ops.clip.delete_selected.poll():
+            print(" - Delete Selected")
             bpy.ops.clip.delete_selected(silent=True)
 
+    print(f"_run_test_cycle total={total_end}")
     return total_end
 
 
@@ -2672,6 +2682,8 @@ class CLIP_OT_test_pattern(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
+        print("Start Test Pattern")
+
         settings = clip.tracking.settings
         min_size, max_size = pattern_limits(clip)
         current = settings.default_pattern_size
@@ -2682,6 +2694,7 @@ class CLIP_OT_test_pattern(bpy.types.Operator):
             total = _run_test_cycle(context, pattern_size=current)
             if total is None:
                 break
+            print(f"Pattern {current} -> score {total}")
             if total >= best_total:
                 if total > best_total:
                     best_total = total
@@ -2695,6 +2708,7 @@ class CLIP_OT_test_pattern(bpy.types.Operator):
 
         context.scene.test_value = str(best_size)
         self.report({'INFO'}, f"Best Pattern {best_size} Score {best_total}")
+        print(f"Best Pattern {best_size} Score {best_total}")
         return {'FINISHED'}
 
 
@@ -2711,20 +2725,25 @@ class CLIP_OT_test_motion(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
+        print("Start Test Motion")
+
         settings = clip.tracking.settings
         best_model = settings.default_motion_model
         best_total = -1
 
         for model in MOTION_MODELS:
+            print(f"Testing motion {model}")
             total = _run_test_cycle(context, motion_model=model)
             if total is None:
                 continue
+            print(f" -> score {total}")
             if total > best_total:
                 best_total = total
                 best_model = model
 
         context.scene.test_value = best_model
         self.report({'INFO'}, f"Best Motion {best_model} Score {best_total}")
+        print(f"Best Motion {best_model} Score {best_total}")
         return {'FINISHED'}
 
 
@@ -2741,6 +2760,8 @@ class CLIP_OT_test_channel(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
+        print("Start Test Channel")
+
         best_channels = (
             clip.tracking.settings.use_default_red_channel,
             clip.tracking.settings.use_default_green_channel,
@@ -2749,9 +2770,11 @@ class CLIP_OT_test_channel(bpy.types.Operator):
         best_total = -1
 
         for combo in CHANNEL_COMBOS:
+            print(f"Testing channels {combo}")
             total = _run_test_cycle(context, channels=combo)
             if total is None:
                 continue
+            print(f" -> score {total}")
             if total > best_total:
                 best_total = total
                 best_channels = combo
@@ -2759,6 +2782,7 @@ class CLIP_OT_test_channel(bpy.types.Operator):
         r, g, b = best_channels
         context.scene.test_value = f"R:{r} G:{g} B:{b}"
         self.report({'INFO'}, f"Best Channels {best_channels} Score {best_total}")
+        print(f"Best Channels {best_channels} Score {best_total}")
         return {'FINISHED'}
 
 
