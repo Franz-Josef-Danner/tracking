@@ -56,6 +56,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.prefix_track', text='Name Track')
         layout.operator('clip.prefix_good', text='Name GOOD')
         layout.operator('clip.select_active_tracks', text='Select TRACK')
+        layout.operator('clip.select_new_tracks', text='Select NEW')
         layout.operator('clip.delete_selected', text='Delete')
         layout.operator('clip.select_short_tracks', text='Select Short Tracks')
         layout.operator('clip.pattern_up', text='Pattern+')
