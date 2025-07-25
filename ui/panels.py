@@ -45,8 +45,36 @@ class CLIP_PT_test_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        # Intentionally left empty to reset the panel
-        layout.label(text="Keine Aktionen verf\xfcgbar")
+        layout.operator('clip.all_detect', text='Cycle Detect')
+        layout.operator('clip.api_defaults', text='Defaults')
+        layout.operator('clip.proxy_on', text='Proxy on')
+        layout.operator('clip.proxy_off', text='Proxy off')
+        layout.operator('clip.track_bidirectional', text='Track')
+        layout.operator('clip.track_partial', text='Track Partial')
+        layout.operator('clip.count_button', text='Count')
+        layout.operator('clip.prefix_new', text='Name New')
+        layout.operator('clip.prefix_track', text='Name Track')
+        layout.operator('clip.prefix_good', text='Name GOOD')
+        layout.operator('clip.select_active_tracks', text='Select TRACK')
+        layout.operator('clip.select_new_tracks', text='Select NEW')
+        layout.operator('clip.delete_selected', text='Delete')
+        layout.operator('clip.select_short_tracks', text='Select Short Tracks')
+        layout.operator('clip.pattern_up', text='Pattern+')
+        layout.operator('clip.pattern_down', text='Pattern-')
+        layout.operator('clip.motion_cycle', text='Motion Model')
+        layout.operator('clip.match_cycle', text='Match')
+        layout.operator('clip.channel_r_on', text='Channel R on')
+        layout.operator('clip.channel_r_off', text='Channel R off')
+        layout.operator('clip.channel_b_on', text='Channel B on')
+        layout.operator('clip.channel_b_off', text='Channel B off')
+        layout.operator('clip.channel_g_on', text='Channel G on')
+        layout.operator('clip.channel_g_off', text='Channel G off')
+        layout.operator('clip.frame_jump_custom', text='Frame Jump')
+        layout.operator('clip.low_marker_frame', text='Low Marker Frame')
+        layout.operator('clip.marker_position', text='Marker Position')
+        layout.operator('clip.good_marker_position', text='GOOD Marker Position')
+        layout.operator('clip.camera_solve', text='Kamera solve')
+        layout.operator('clip.track_cleanup', text='Select Error Tracks')
 
 
 class CLIP_PT_test_subpanel(bpy.types.Panel):
@@ -58,8 +86,16 @@ class CLIP_PT_test_subpanel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        # Intentionally left empty to reset the panel
-        layout.label(text="Keine Test-Optionen")
+        layout.operator('clip.setup_defaults', text='Test Defaults')
+        layout.operator('clip.defaults_detect', text='Test Detect Pattern')
+        layout.operator('clip.motion_detect', text='Test Detect MM')
+        layout.operator('clip.channel_detect', text='Test Detect CH')
+        layout.operator('clip.apply_detect_settings', text='Test Detect Apply')
+        layout.operator('clip.detect_button', text='Test Detect')
+        layout.operator('clip.prefix_test', text='Name Test')
+        layout.operator('clip.track_full', text='Track Test')
+        layout.operator('clip.test_track_backwards', text='Test Track backwards')
+        layout.operator('clip.test_button', text='Test')
 
 panel_classes = (
     CLIP_PT_tracking_panel,
