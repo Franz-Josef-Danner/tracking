@@ -300,6 +300,9 @@ Schwellwert erreicht ist.
 Seit Version 1.179 gibt der "Cleanup"-Button nach jedem Durchlauf nur noch die
 Anzahl der gelöschten Marker und den jeweils verwendeten Error Threshold in der
 Konsole aus.
+Seit Version 1.180 benennt "Track Nr. 1" nach jedem "Cycle Detect" die Marker
+mit "Name New" um. Findet "Low Marker Frame" keinen weiteren Frame, wird
+zuerst "Select NEW" und anschließend "Name Track" ausgeführt.
 
 ## License
 
