@@ -1687,7 +1687,12 @@ def _run_test_cycle(context, pattern_size=None, motion_model=None, channels=None
 
     best_end = None
     for _ in range(4):
-        bpy.ops.clip.detect_button()
+        if bpy.ops.clip.setup_defaults.poll():
+            bpy.ops.clip.setup_defaults(silent=True)
+        if bpy.ops.clip.detect_features.poll():
+            bpy.ops.clip.detect_features()
+        else:
+            print("\u274c 'detect_features' kann im aktuellen Kontext nicht ausgef\u00fchrt werden.")
         if bpy.ops.clip.track_full.poll():
             bpy.ops.clip.track_full(silent=True)
             end_frame = LAST_TRACK_END
