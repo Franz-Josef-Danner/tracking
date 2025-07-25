@@ -293,6 +293,13 @@ Seit Version 1.174 löscht "Track Nr. 1" nach jedem Durchlauf zunächst kurze TR
 Seit Version 1.175 wird dieser Ablauf modular ausgeführt, sodass die Bereinigung und der Sprung zum nächsten Start nacheinander erfolgen.
 Seit Version 1.176 ruft der "Cleanup"-Button nur noch 'Select Error Tracks' und danach 'Delete' auf.
 Seit Version 1.177 wiederholt derselbe Button 'Select Error Tracks' und 'Delete', wobei der Error Threshold auf 90% des jeweils größten Fehlers gesetzt wird, bis der Wert unter 10 fällt.
+Seit Version 1.178 setzt der "Cleanup"-Button zunächst den größten gefundenen Fehler in
+"Error Threshold" und löscht TRACK_-Marker iterativ. Dabei verringert er den Threshold
+nach jedem Durchlauf auf 90 % des vorherigen Werts, bis der ursprüngliche
+Schwellwert erreicht ist.
+Seit Version 1.179 gibt der "Cleanup"-Button nach jedem Durchlauf nur noch die
+Anzahl der gelöschten Marker und den jeweils verwendeten Error Threshold in der
+Konsole aus.
 
 ## License
 

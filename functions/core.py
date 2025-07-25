@@ -1987,25 +1987,33 @@ def max_track_error(scene, clip):
     return max_error
 
 
-def cleanup_error_tracks(scene, clip, min_value=10):
-    """Delete TRACK_ markers iteratively based on error threshold."""
-    while True:
-        max_err = max_track_error(scene, clip)
-        threshold = max_err * 0.9
+def cleanup_error_tracks(scene, clip):
+    """Delete TRACK_ markers while decreasing the error threshold."""
+    original = scene.error_threshold
 
-        if threshold < min_value:
-            scene.error_threshold = min_value
+    max_err = max_track_error(scene, clip)
+    scene.error_threshold = max_err
+    threshold = max_err
+
+    while threshold >= original:
+        while True:
             if bpy.ops.clip.track_cleanup.poll():
                 bpy.ops.clip.track_cleanup()
-            if bpy.ops.clip.delete_selected.poll():
-                bpy.ops.clip.delete_selected()
-            break
+            else:
+                break
 
+            selected = sum(1 for t in clip.tracking.tracks if t.select)
+            if selected:
+                print(f"[Cleanup] {selected} Tracks, Threshold {threshold:.2f}")
+                if bpy.ops.clip.delete_selected.poll():
+                    bpy.ops.clip.delete_selected()
+            else:
+                break
+
+        threshold *= 0.9
         scene.error_threshold = threshold
-        if bpy.ops.clip.track_cleanup.poll():
-            bpy.ops.clip.track_cleanup()
-        if bpy.ops.clip.delete_selected.poll():
-            bpy.ops.clip.delete_selected()
+
+    scene.error_threshold = original
 
 
 class CLIP_OT_track_cleanup(bpy.types.Operator):
@@ -2050,8 +2058,6 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
                 yv = info["yv"]
                 etx = xvg - xv
                 ety = yvg - yv
-
-                print(f"[{label}] {track.name}: ETX={etx:.3f}, ETY={ety:.3f}")
 
                 if abs(etx) > g or abs(ety) > g:
                     track.select = True
