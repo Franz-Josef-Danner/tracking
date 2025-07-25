@@ -89,6 +89,7 @@ class CLIP_PT_test_subpanel(bpy.types.Panel):
 
         layout.operator('clip.prefix_test', text='TEST Name')
         layout.operator('clip.select_test_tracks', text='TEST select')
+        layout.operator('clip.setup_defaults', text='Test Defaults')
 
 panel_classes = (
     CLIP_PT_tracking_panel,
