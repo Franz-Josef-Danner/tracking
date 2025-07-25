@@ -1654,7 +1654,7 @@ def _Test_detect_mm(self, context):
 def _run_test_cycle(context, pattern_size=None, motion_model=None, channels=None):
     """Run Detect, Track and Delete sequence four times.
 
-    Returns the highest frame reached during tracking.
+    Returns the sum of the end frames from each run.
     """
     clip = context.space_data.clip
     if not clip:
@@ -1673,8 +1673,10 @@ def _run_test_cycle(context, pattern_size=None, motion_model=None, channels=None
             settings.use_default_blue_channel,
         ) = channels
 
-    best_end = None
+    total_end = 0
     for _ in range(4):
+        if bpy.ops.clip.setup_defaults.poll():
+            bpy.ops.clip.setup_defaults(silent=True)
         if bpy.ops.clip.detect_features.poll():
             bpy.ops.clip.detect_features()
         else:
@@ -1682,12 +1684,12 @@ def _run_test_cycle(context, pattern_size=None, motion_model=None, channels=None
         if bpy.ops.clip.track_full.poll():
             bpy.ops.clip.track_full(silent=True)
             end_frame = LAST_TRACK_END
-            if best_end is None or (end_frame is not None and end_frame > best_end):
-                best_end = end_frame
+            if end_frame is not None:
+                total_end += end_frame
         if bpy.ops.clip.delete_selected.poll():
             bpy.ops.clip.delete_selected(silent=True)
 
-    return best_end
+    return total_end
 
 
 class CLIP_OT_tracking_length(bpy.types.Operator):
@@ -2676,15 +2678,15 @@ class CLIP_OT_test_pattern(bpy.types.Operator):
         min_size, max_size = pattern_limits(clip)
         current = settings.default_pattern_size
         best_size = current
-        best_end = -1
+        best_total = -1
 
         while True:
-            end = _run_test_cycle(context, pattern_size=current)
-            if end is None:
+            total = _run_test_cycle(context, pattern_size=current)
+            if total is None:
                 break
-            if end >= best_end:
-                if end > best_end:
-                    best_end = end
+            if total >= best_total:
+                if total > best_total:
+                    best_total = total
                     best_size = current
                 next_size = min(int(current * 1.1), max_size)
                 if next_size == current or next_size > max_size:
@@ -2694,7 +2696,7 @@ class CLIP_OT_test_pattern(bpy.types.Operator):
                 break
 
         context.scene.test_value = str(best_size)
-        self.report({'INFO'}, f"Best Pattern {best_size} End {best_end}")
+        self.report({'INFO'}, f"Best Pattern {best_size} Score {best_total}")
         return {'FINISHED'}
 
 
@@ -2713,18 +2715,18 @@ class CLIP_OT_test_motion(bpy.types.Operator):
 
         settings = clip.tracking.settings
         best_model = settings.default_motion_model
-        best_end = -1
+        best_total = -1
 
         for model in MOTION_MODELS:
-            end = _run_test_cycle(context, motion_model=model)
-            if end is None:
+            total = _run_test_cycle(context, motion_model=model)
+            if total is None:
                 continue
-            if end > best_end:
-                best_end = end
+            if total > best_total:
+                best_total = total
                 best_model = model
 
         context.scene.test_value = best_model
-        self.report({'INFO'}, f"Best Motion {best_model} End {best_end}")
+        self.report({'INFO'}, f"Best Motion {best_model} Score {best_total}")
         return {'FINISHED'}
 
 
@@ -2746,19 +2748,19 @@ class CLIP_OT_test_channel(bpy.types.Operator):
             clip.tracking.settings.use_default_green_channel,
             clip.tracking.settings.use_default_blue_channel,
         )
-        best_end = -1
+        best_total = -1
 
         for combo in CHANNEL_COMBOS:
-            end = _run_test_cycle(context, channels=combo)
-            if end is None:
+            total = _run_test_cycle(context, channels=combo)
+            if total is None:
                 continue
-            if end > best_end:
-                best_end = end
+            if total > best_total:
+                best_total = total
                 best_channels = combo
 
         r, g, b = best_channels
         context.scene.test_value = f"R:{r} G:{g} B:{b}"
-        self.report({'INFO'}, f"Best Channels {best_channels} End {best_end}")
+        self.report({'INFO'}, f"Best Channels {best_channels} Score {best_total}")
         return {'FINISHED'}
 
 
