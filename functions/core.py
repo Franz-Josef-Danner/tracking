@@ -231,6 +231,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
     _start = 0
     _end = 0
     _tracked = 0
+    _next_frame = None
 
     def step_init(self, context):
         """Set defaults and remember the start frame."""
@@ -256,13 +257,34 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         print(
             f"[Track Nr.1] start {self._start} end {self._end} tracked {self._tracked}"
         )
-        return "CLEANUP"
+        return "DECIDE"
+
+    def step_decide(self, context):
+        """Move the playhead to the next frame before cleanup."""
+        scene = context.scene
+        clip = context.space_data.clip
+
+        print(
+            f"[Track Nr.1] decide end {self._end} tracked {self._tracked} threshold {scene.marker_frame}"
+        )
+
+        current = scene.frame_current
+        threshold = scene.marker_frame
+        frame, count = find_low_marker_frame(clip, threshold)
+        self._next_frame = frame
+        if frame is not None and frame != current:
+            scene.frame_current = frame
+            print(f"[Track Nr.1] next low frame {frame} ({count} markers)")
+            return "CLEANUP"
+        else:
+            print("[Track Nr.1] finish cycle")
+            return "RENAME"
 
     def step_cleanup(self, context):
-        """Remove short tracks after tracking."""
+        """Remove short tracks and keep the playhead at the target frame."""
         clip = context.space_data.clip
-        if not clip:
-            return "RENAME"
+        if not clip or self._tracked <= 0:
+            return "MOVE"
 
         print("[Track Nr.1] select_short_tracks")
         if bpy.ops.clip.select_short_tracks.poll():
@@ -276,27 +298,14 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         else:
             print("[Track Nr.1] delete_selected nicht verfügbar")
 
-        return "JUMP"
+        return "MOVE"
 
-    def step_jump(self, context):
-        """Use Low Marker Frame to continue or finish the cycle."""
+    def step_move(self, context):
+        """Ensure the playhead is on the chosen frame before the next detect."""
         scene = context.scene
-        clip = context.space_data.clip
-
-        print(
-            f"[Track Nr.1] decide end {self._end} tracked {self._tracked} threshold {scene.frames_track}"
-        )
-
-        current = scene.frame_current
-        threshold = scene.marker_frame
-        frame, count = find_low_marker_frame(clip, threshold)
-        if frame is not None and frame != current:
-            scene.frame_current = frame
-            print(f"[Track Nr.1] next low frame {frame} ({count} markers)")
-            return "DETECT"
-        else:
-            print("[Track Nr.1] finish cycle")
-            return "RENAME"
+        if self._next_frame is not None:
+            scene.frame_current = self._next_frame
+        return "DETECT"
 
     def step_rename(self, context):
         if bpy.ops.clip.select_new_tracks.poll():
