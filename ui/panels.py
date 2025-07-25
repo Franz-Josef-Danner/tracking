@@ -88,6 +88,9 @@ class CLIP_PT_test_subpanel(bpy.types.Panel):
         layout = self.layout
 
         layout.label(text="Test Aktionen")
+        layout.operator('clip.test_pattern', text='Test Pattern')
+        layout.operator('clip.test_motion', text='Test Motion')
+        layout.operator('clip.test_channel', text='Test Chanal')
 
 
 class CLIP_PT_test_detail_panel(bpy.types.Panel):
