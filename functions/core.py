@@ -244,6 +244,8 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         """Generate markers using Cycle Detect."""
         if bpy.ops.clip.cycle_detect.poll():
             bpy.ops.clip.cycle_detect()
+        if bpy.ops.clip.prefix_new.poll():
+            bpy.ops.clip.prefix_new()
         return "TRACK"
 
     def step_track(self, context):
@@ -312,9 +314,6 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
             bpy.ops.clip.select_new_tracks()
         if bpy.ops.clip.prefix_track.poll():
             bpy.ops.clip.prefix_track()
-        clip = context.space_data.clip
-        if clip:
-            rename_pending_tracks(clip)
         return None
 
     def execute(self, context):
