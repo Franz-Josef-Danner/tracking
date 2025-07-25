@@ -1889,6 +1889,102 @@ class CLIP_OT_camera_solve(bpy.types.Operator):
         return {'FINISHED'}
 
 
+def max_track_error(scene, clip):
+    """Return the maximum absolute error value among TRACK_ markers."""
+    width, height = clip.size
+    start = scene.frame_start + 1
+    end = scene.frame_end
+
+    max_error = 0.0
+
+    def collect(tracks_info):
+        nonlocal max_error
+        if not tracks_info:
+            return
+
+        ava = sum(t["av"] for t in tracks_info) / len(tracks_info)
+        for info in tracks_info:
+            error_val = abs(ava - info["av"])
+            if error_val > max_error:
+                max_error = error_val
+
+    for frame in range(start, end):
+        valid = []
+        for track in clip.tracking.tracks:
+            if not track.name.startswith("TRACK_"):
+                continue
+
+            coords = []
+            for f in (frame - 1, frame, frame + 1):
+                marker = track.markers.find_frame(f, exact=True)
+                if marker is None or marker.mute:
+                    break
+                coords.append((marker.co[0] * width, marker.co[1] * height))
+
+            if len(coords) == 3:
+                px1, py1 = coords[0]
+                px2, py2 = coords[1]
+                px3, py3 = coords[2]
+
+                mxp1 = abs(px1 - px2)
+                mxp2 = abs(px2 - px3)
+                myp1 = abs(py1 - py2)
+                myp2 = abs(py2 - py3)
+                avx = (mxp1 + mxp2) / 2.0
+                avy = (myp1 + myp2) / 2.0
+                av = (avx + avy) / 2.0
+                mx_mean = (px1 + px2 + px3) / 3.0
+                my_mean = (py1 + py2 + py3) / 3.0
+
+                valid.append({"mx_mean": mx_mean, "my_mean": my_mean, "av": av})
+
+        collect(valid)
+
+        groups = {}
+        cell_w = width / 2
+        cell_h = height / 2
+        for info in valid:
+            col = int(info["mx_mean"] // cell_w)
+            row = int(info["my_mean"] // cell_h)
+            groups.setdefault((col, row), []).append(info)
+        for subset in groups.values():
+            collect(subset)
+
+        groups = {}
+        cell_w = width / 4
+        cell_h = height / 2
+        for info in valid:
+            col = int(info["mx_mean"] // cell_w)
+            row = int(info["my_mean"] // cell_h)
+            groups.setdefault((col, row), []).append(info)
+        for subset in groups.values():
+            collect(subset)
+
+    return max_error
+
+
+def cleanup_error_tracks(scene, clip, min_value=10):
+    """Delete TRACK_ markers iteratively based on error threshold."""
+    while True:
+        max_err = max_track_error(scene, clip)
+        threshold = max_err * 0.9
+        print(f"[Cleanup] max error {max_err:.3f} -> threshold {threshold:.3f}")
+
+        if threshold < min_value:
+            scene.error_threshold = min_value
+            if bpy.ops.clip.track_cleanup.poll():
+                bpy.ops.clip.track_cleanup()
+            if bpy.ops.clip.delete_selected.poll():
+                bpy.ops.clip.delete_selected()
+            break
+
+        scene.error_threshold = threshold
+        if bpy.ops.clip.track_cleanup.poll():
+            bpy.ops.clip.track_cleanup()
+        if bpy.ops.clip.delete_selected.poll():
+            bpy.ops.clip.delete_selected()
+
+
 class CLIP_OT_track_cleanup(bpy.types.Operator):
     bl_idname = "clip.track_cleanup"
     bl_label = "Select Error Tracks"
@@ -2035,33 +2131,16 @@ class CLIP_OT_cleanup(bpy.types.Operator):
     bl_idname = "clip.cleanup"
     bl_label = "Cleanup"
     bl_description = (
-        "Ruft 'Select Short Tracks', 'Delete', 'Select Error Tracks' und nochmal 'Delete' auf"
+        "Ruft 'Select Error Tracks' und danach 'Delete' auf"
     )
 
     def execute(self, context):
-        print("[Cleanup] select_short_tracks")
-        if bpy.ops.clip.select_short_tracks.poll():
-            bpy.ops.clip.select_short_tracks()
-        else:
-            print("[Cleanup] select_short_tracks nicht verf\u00fcgbar")
+        clip = context.space_data.clip
+        if clip is None:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
 
-        print("[Cleanup] delete_selected")
-        if bpy.ops.clip.delete_selected.poll():
-            bpy.ops.clip.delete_selected()
-        else:
-            print("[Cleanup] delete_selected nicht verf\u00fcgbar")
-
-        print("[Cleanup] track_cleanup")
-        if bpy.ops.clip.track_cleanup.poll():
-            bpy.ops.clip.track_cleanup()
-        else:
-            print("[Cleanup] track_cleanup nicht verf\u00fcgbar")
-
-        print("[Cleanup] delete_selected")
-        if bpy.ops.clip.delete_selected.poll():
-            bpy.ops.clip.delete_selected()
-        else:
-            print("[Cleanup] delete_selected nicht verf\u00fcgbar")
+        cleanup_error_tracks(context.scene, clip)
 
         print("[Cleanup] fertig")
         return {'FINISHED'}
