@@ -1675,8 +1675,6 @@ def _run_test_cycle(context, pattern_size=None, motion_model=None, channels=None
 
     total_end = 0
     for _ in range(4):
-        if bpy.ops.clip.setup_defaults.poll():
-            bpy.ops.clip.setup_defaults(silent=True)
         if bpy.ops.clip.detect_features.poll():
             bpy.ops.clip.detect_features()
         else:
