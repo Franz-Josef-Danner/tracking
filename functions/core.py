@@ -500,6 +500,30 @@ class CLIP_OT_prefix_test(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_prefix_test_name(bpy.types.Operator):
+    bl_idname = "clip.prefix_test_name"
+    bl_label = "TEST Name"
+    bl_description = "Präfix Test_ für selektierte Tracks setzen"
+
+    silent: BoolProperty(default=False, options={'HIDDEN'})
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        prefix = "Test_"
+        count = 0
+        for track in clip.tracking.tracks:
+            if track.select and not track.name.startswith(prefix):
+                track.name = prefix + track.name
+                count += 1
+        if not self.silent:
+            self.report({'INFO'}, f"{count} Tracks umbenannt")
+        return {'FINISHED'}
+
+
 class CLIP_OT_prefix_track(bpy.types.Operator):
     bl_idname = "clip.prefix_track"
     bl_label = "Name Track"
@@ -2585,6 +2609,7 @@ operator_classes = (
     CLIP_OT_detect_button,
     CLIP_OT_prefix_new,
     CLIP_OT_prefix_test,
+    CLIP_OT_prefix_test_name,
     CLIP_OT_prefix_track,
     CLIP_OT_prefix_good,
     CLIP_OT_distance_button,

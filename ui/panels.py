@@ -58,8 +58,7 @@ class CLIP_PT_test_subpanel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        # Intentionally left empty to reset the panel
-        layout.label(text="Keine Test-Optionen")
+        layout.operator('clip.prefix_test_name', text='TEST Name')
 
 panel_classes = (
     CLIP_PT_tracking_panel,
