@@ -303,6 +303,8 @@ Konsole aus.
 Seit Version 1.180 benennt "Track Nr. 1" nach jedem "Cycle Detect" die Marker
 mit "Name New" um. Findet "Low Marker Frame" keinen weiteren Frame, wird
 zuerst "Select NEW" und anschließend "Name Track" ausgeführt.
+Seit Version 1.181 bietet das Stufen-Panel einen Button "Detail Track", der
+einen erweiterten Test-Zyklus mit automatischem Tracking startet.
 
 ## License
 

@@ -2575,6 +2575,73 @@ class CLIP_OT_channel_b_off(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_optimized_test_cycle(bpy.types.Operator):
+    bl_idname = "clip.optimized_test_cycle"
+    bl_label = "Optimierter Test-Zyklus"
+    bl_description = (
+        "F\u00fchrt einen erweiterten Test- und Tracking-Zyklus aus"
+    )
+
+    max_cycles: IntProperty(
+        name="Max Cycles",
+        default=10,
+        options={'HIDDEN'},
+        description="Schutz vor Endlosschleifen",
+    )
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        scene = context.scene
+        threshold = scene.marker_frame
+        cycles = self.max_cycles
+
+        while cycles > 0:
+            frame, _ = find_low_marker_frame(clip, threshold)
+            if frame is None:
+                break
+            scene.frame_current = frame
+            bpy.ops.clip.low_marker_frame()
+
+            remaining = scene.frame_end - scene.frame_current
+            min_len = scene.frames_track
+            direction = (
+                "vorw\u00e4rts" if remaining >= 4 * min_len else "r\u00fcckw\u00e4rts"
+            )
+            print(f"[Detail Track] Richtung {direction}")
+
+            if bpy.ops.clip.setup_defaults.poll():
+                bpy.ops.clip.setup_defaults(silent=True)
+            if bpy.ops.clip.defaults_detect.poll():
+                bpy.ops.clip.defaults_detect()
+            if bpy.ops.clip.prefix_test.poll():
+                bpy.ops.clip.prefix_test()
+            if bpy.ops.clip.motion_detect.poll():
+                bpy.ops.clip.motion_detect()
+            if bpy.ops.clip.channel_detect.poll():
+                bpy.ops.clip.channel_detect()
+            if bpy.ops.clip.apply_detect_settings.poll():
+                bpy.ops.clip.apply_detect_settings()
+            if bpy.ops.clip.count_button.poll():
+                bpy.ops.clip.count_button()
+            if bpy.ops.clip.cycle_detect.poll():
+                bpy.ops.clip.cycle_detect()
+            if bpy.ops.clip.track_partial.poll():
+                bpy.ops.clip.track_partial()
+
+            cycles -= 1
+
+        if cycles == 0:
+            self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
+        else:
+            self.report({'INFO'}, "Detail Track abgeschlossen")
+
+        return {'FINISHED'}
+
+
 
 operator_classes = (
     OBJECT_OT_simple_operator,
@@ -2613,6 +2680,7 @@ operator_classes = (
     CLIP_OT_channel_g_off,
     CLIP_OT_channel_b_on,
     CLIP_OT_channel_b_off,
+    CLIP_OT_optimized_test_cycle,
     CLIP_OT_test_button,
     CLIP_OT_all_detect,
     CLIP_OT_cycle_detect,
