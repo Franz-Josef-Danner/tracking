@@ -256,15 +256,11 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         print(
             f"[Track Nr.1] start {self._start} end {self._end} tracked {self._tracked}"
         )
-        return "DECIDE"
-    def step_decide(self, context):
-        """Evaluate progress and continue or finish using Low Marker Frame."""
-        scene = context.scene
-        clip = context.space_data.clip
-        print(
-            f"[Track Nr.1] decide end {self._end} tracked {self._tracked} threshold {scene.frames_track}"
-        )
+        return "CLEANUP"
 
+    def step_cleanup(self, context):
+        """Remove short tracks before searching the next frame."""
+        clip = context.space_data.clip
         if not clip:
             return "RENAME"
 
@@ -279,6 +275,17 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
             bpy.ops.clip.delete_selected()
         else:
             print("[Track Nr.1] delete_selected nicht verfügbar")
+
+        return "JUMP"
+
+    def step_jump(self, context):
+        """Use Low Marker Frame to continue or finish the cycle."""
+        scene = context.scene
+        clip = context.space_data.clip
+
+        print(
+            f"[Track Nr.1] decide end {self._end} tracked {self._tracked} threshold {scene.frames_track}"
+        )
 
         current = scene.frame_current
         threshold = scene.marker_frame

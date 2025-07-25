@@ -290,3 +290,4 @@ Seit Version 1.171 löscht der "Cleanup"-Button nach "Select Short Tracks" direk
 Seit Version 1.172 ruft derselbe Button danach "Select Error Tracks" und erneut "Delete" auf.
 Seit Version 1.173 setzt "Track Nr. 1" nach jedem Durchlauf den Playhead mit "Low Marker Frame" auf den nächsten Frame mit zu wenigen Markern. Der Zyklus endet, wenn kein solcher Frame mehr gefunden wird.
 Seit Version 1.174 löscht "Track Nr. 1" nach jedem Durchlauf zunächst kurze TRACK_-Marker mit "Select Short Tracks" und "Delete" und springt danach mit "Low Marker Frame" zum nächsten Start.
+Seit Version 1.175 wird dieser Ablauf modular ausgeführt, sodass die Bereinigung und der Sprung zum nächsten Start nacheinander erfolgen.
