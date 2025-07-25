@@ -86,16 +86,8 @@ class CLIP_PT_test_subpanel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.operator('clip.setup_defaults', text='Test Defaults')
-        layout.operator('clip.defaults_detect', text='Test Detect Pattern')
-        layout.operator('clip.motion_detect', text='Test Detect MM')
-        layout.operator('clip.channel_detect', text='Test Detect CH')
-        layout.operator('clip.apply_detect_settings', text='Test Detect Apply')
-        layout.operator('clip.detect_button', text='Test Detect')
-        layout.operator('clip.prefix_test', text='Name Test')
-        layout.operator('clip.track_full', text='Track Test')
-        layout.operator('clip.test_track_backwards', text='Test Track backwards')
-        layout.operator('clip.test_button', text='Test')
+        # Intentionally left empty to reset the panel
+        layout.label(text="Keine Test-Optionen")
 
 panel_classes = (
     CLIP_PT_tracking_panel,
