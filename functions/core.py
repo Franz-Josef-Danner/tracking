@@ -259,10 +259,10 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         return "CLEANUP"
 
     def step_cleanup(self, context):
-        """Remove short tracks before continuing."""
+        """Remove short tracks after tracking."""
         clip = context.space_data.clip
-        if not clip or self._tracked <= 0:
-            return "JUMP"
+        if not clip:
+            return "RENAME"
 
         print("[Track Nr.1] select_short_tracks")
         if bpy.ops.clip.select_short_tracks.poll():
