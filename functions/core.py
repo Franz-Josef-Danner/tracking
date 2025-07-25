@@ -1965,9 +1965,10 @@ def max_track_error(scene, clip):
 
 def cleanup_error_tracks(scene, clip, min_value=10):
     """Delete TRACK_ markers iteratively based on error threshold."""
+    max_err = max_track_error(scene, clip)
+    threshold = max_err * 0.9
+
     while True:
-        max_err = max_track_error(scene, clip)
-        threshold = max_err * 0.9
         print(f"[Cleanup] max error {max_err:.3f} -> threshold {threshold:.3f}")
 
         if threshold < min_value:
@@ -1979,10 +1980,18 @@ def cleanup_error_tracks(scene, clip, min_value=10):
             break
 
         scene.error_threshold = threshold
+        before = len(clip.tracking.tracks)
         if bpy.ops.clip.track_cleanup.poll():
             bpy.ops.clip.track_cleanup()
         if bpy.ops.clip.delete_selected.poll():
             bpy.ops.clip.delete_selected()
+        after = len(clip.tracking.tracks)
+
+        if after < before:
+            max_err = max_track_error(scene, clip)
+            threshold = max_err * 0.9
+        else:
+            threshold *= 0.9
 
 
 class CLIP_OT_track_cleanup(bpy.types.Operator):
