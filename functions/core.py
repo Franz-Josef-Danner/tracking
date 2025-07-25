@@ -2036,16 +2036,6 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
         g_quarter = scene.error_threshold * 4
         g_eighth = scene.error_threshold * 2
 
-        print(
-            f"[Select Error Tracks] G_global = ET * 6 = {scene.error_threshold} * 6 = {g_global}"
-        )
-        print(
-            f"[Select Error Tracks] G_quarter = ET * 4 = {scene.error_threshold} * 4 = {g_quarter}"
-        )
-        print(
-            f"[Select Error Tracks] G_eighth = ET * 2 = {scene.error_threshold} * 2 = {g_eighth}"
-        )
-
         selected_tracks = set()
 
         def analyze(tracks_info, g, label):
@@ -2065,9 +2055,6 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
                 print(f"[{label}] {track.name}: ETX={etx:.3f}, ETY={ety:.3f}")
 
                 if abs(etx) > g or abs(ety) > g:
-                    print(
-                        f"[{label}] {track.name} selected because |ETX|={abs(etx):.3f} or |ETY|={abs(ety):.3f} > G={g:.3f}"
-                    )
                     track.select = True
                     selected_tracks.add(track)
 
