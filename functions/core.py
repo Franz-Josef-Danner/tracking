@@ -1980,12 +1980,12 @@ def cleanup_error_tracks(scene, clip, min_value=10):
             break
 
         scene.error_threshold = threshold
-        before = len(clip.tracking.tracks)
+        before = sum(1 for t in clip.tracking.tracks if t.name.startswith("TRACK_"))
         if bpy.ops.clip.track_cleanup.poll():
             bpy.ops.clip.track_cleanup()
         if bpy.ops.clip.delete_selected.poll():
             bpy.ops.clip.delete_selected()
-        after = len(clip.tracking.tracks)
+        after = sum(1 for t in clip.tracking.tracks if t.name.startswith("TRACK_"))
 
         if after < before:
             max_err = max_track_error(scene, clip)
