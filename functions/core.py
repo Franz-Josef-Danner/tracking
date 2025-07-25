@@ -1914,9 +1914,12 @@ def max_track_error(scene, clip):
         if not tracks_info:
             return
 
-        ava = sum(t["av"] for t in tracks_info) / len(tracks_info)
+        xvg = sum(t["xv"] for t in tracks_info) / len(tracks_info)
+        yvg = sum(t["yv"] for t in tracks_info) / len(tracks_info)
         for info in tracks_info:
-            error_val = abs(ava - info["av"])
+            etx = xvg - info["xv"]
+            ety = yvg - info["yv"]
+            error_val = max(abs(etx), abs(ety))
             if error_val > max_error:
                 max_error = error_val
 
@@ -1938,17 +1941,26 @@ def max_track_error(scene, clip):
                 px2, py2 = coords[1]
                 px3, py3 = coords[2]
 
-                mxp1 = abs(px1 - px2)
-                mxp2 = abs(px2 - px3)
-                myp1 = abs(py1 - py2)
-                myp2 = abs(py2 - py3)
-                avx = (mxp1 + mxp2) / 2.0
-                avy = (myp1 + myp2) / 2.0
-                av = (avx + avy) / 2.0
+                xv1 = px1 - px2
+                xv2 = px2 - px3
+                yv1 = py1 - py2
+                yv2 = py2 - py3
+                xv = xv1 + xv2
+                yv = yv1 + yv2
                 mx_mean = (px1 + px2 + px3) / 3.0
                 my_mean = (py1 + py2 + py3) / 3.0
 
-                valid.append({"mx_mean": mx_mean, "my_mean": my_mean, "av": av})
+                valid.append({
+                    "mx_mean": mx_mean,
+                    "my_mean": my_mean,
+                    "xv": xv,
+                    "yv": yv,
+                    "xv1": xv1,
+                    "xv2": xv2,
+                    "yv1": yv1,
+                    "yv2": yv2,
+                    "track": track,
+                })
 
         collect(valid)
 
@@ -1980,7 +1992,6 @@ def cleanup_error_tracks(scene, clip, min_value=10):
     while True:
         max_err = max_track_error(scene, clip)
         threshold = max_err * 0.9
-        print(f"[Cleanup] max error {max_err:.3f} -> threshold {threshold:.3f}")
 
         if threshold < min_value:
             scene.error_threshold = min_value
@@ -2024,46 +2035,25 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
         g_quarter = scene.error_threshold * 4
         g_eighth = scene.error_threshold * 2
 
-        print(
-            f"[Select Error Tracks] G_global = ET * 6 = {scene.error_threshold} * 6 = {g_global}"
-        )
-        print(
-            f"[Select Error Tracks] G_quarter = ET * 4 = {scene.error_threshold} * 4 = {g_quarter}"
-        )
-        print(
-            f"[Select Error Tracks] G_eighth = ET * 2 = {scene.error_threshold} * 2 = {g_eighth}"
-        )
-
         selected_tracks = set()
 
         def analyze(tracks_info, g, label):
             if not tracks_info:
                 return
 
-            ava = sum(t["av"] for t in tracks_info) / len(tracks_info)
-            print(
-                f"[{label}] AVA = (Sum AV / AM) = ({sum(t['av'] for t in tracks_info):.3f} / {len(tracks_info)}) = {ava:.3f}"
-            )
+            xvg = sum(t["xv"] for t in tracks_info) / len(tracks_info)
+            yvg = sum(t["yv"] for t in tracks_info) / len(tracks_info)
 
             for info in tracks_info:
                 track = info["track"]
-                av = info["av"]
-                avx = info["avx"]
-                avy = info["avy"]
-                mxp1 = info["mxp1"]
-                mxp2 = info["mxp2"]
-                myp1 = info["myp1"]
-                myp2 = info["myp2"]
-                error_val = ava - av
+                xv = info["xv"]
+                yv = info["yv"]
+                etx = xvg - xv
+                ety = yvg - yv
 
-                print(
-                    f"[{label}] {track.name}: |MX1-MX2|={mxp1:.3f}, |MX2-MX3|={mxp2:.3f}, |MY1-MY2|={myp1:.3f}, |MY2-MY3|={myp2:.3f}, AVX=({mxp1:.3f}+{mxp2:.3f})/2={avx:.3f}, AVY=({myp1:.3f}+{myp2:.3f})/2={avy:.3f}, AV=({avx:.3f}+{avy:.3f})/2={av:.3f}; errorValue={ava:.3f}-{av:.3f}={error_val:.3f}"
-                )
+                print(f"[{label}] {track.name}: ETX={etx:.3f}, ETY={ety:.3f}")
 
-                if abs(error_val) > g:
-                    print(
-                        f"[{label}] {track.name} selected because |{error_val:.3f}| > G={g:.3f}"
-                    )
+                if abs(etx) > g or abs(ety) > g:
                     track.select = True
                     selected_tracks.add(track)
 
@@ -2085,13 +2075,12 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
                     px2, py2 = coords[1]
                     px3, py3 = coords[2]
 
-                    mxp1 = abs(px1 - px2)
-                    mxp2 = abs(px2 - px3)
-                    myp1 = abs(py1 - py2)
-                    myp2 = abs(py2 - py3)
-                    avx = (mxp1 + mxp2) / 2.0
-                    avy = (myp1 + myp2) / 2.0
-                    av = (avx + avy) / 2.0
+                    xv1 = px1 - px2
+                    xv2 = px2 - px3
+                    yv1 = py1 - py2
+                    yv2 = py2 - py3
+                    xv = xv1 + xv2
+                    yv = yv1 + yv2
                     mx_mean = (px1 + px2 + px3) / 3.0
                     my_mean = (py1 + py2 + py3) / 3.0
 
@@ -2100,13 +2089,12 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
                             "track": track,
                             "mx_mean": mx_mean,
                             "my_mean": my_mean,
-                            "mxp1": mxp1,
-                            "mxp2": mxp2,
-                            "myp1": myp1,
-                            "myp2": myp2,
-                            "avx": avx,
-                            "avy": avy,
-                            "av": av,
+                            "xv1": xv1,
+                            "xv2": xv2,
+                            "yv1": yv1,
+                            "yv2": yv2,
+                            "xv": xv,
+                            "yv": yv,
                         }
                     )
 
