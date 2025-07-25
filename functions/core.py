@@ -272,6 +272,8 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         return "RENAME"
 
     def step_rename(self, context):
+        if bpy.ops.clip.select_new_tracks.poll():
+            bpy.ops.clip.select_new_tracks()
         if bpy.ops.clip.prefix_track.poll():
             bpy.ops.clip.prefix_track()
         return None

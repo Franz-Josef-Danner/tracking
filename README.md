@@ -284,3 +284,5 @@ Seit Version 1.165 führt "Cycle Detect" wiederholte Feature-Erkennungen ohne Pr
 Seit Version 1.166 gibt "Track Nr. 1" Start- und Endframe in der Konsole aus und beendet den Zyklus, wenn beim Vorwärtstracking weniger Frames als in "Frames/Track" erreicht werden.
 Seit Version 1.167 springt der Playhead nach jedem Durchlauf um "Frames/Track" nach vorn, sofern dabei noch Fortschritt erzielt wird. Erst wenn weniger oder gar kein Fortschritt mehr erreicht wird, werden alle Marker abschließend mit TRACK_ umbenannt.
 Seit Version 1.168 prüft "Cycle Detect" nun auch den Abstand zu vorhandenen NEW_-Markern, sodass neu erkannte Marker ebenfalls ausreichend Abstand zu ihnen einhalten müssen.
+Seit Version 1.169 bietet das API-Panel einen Button "Select NEW", der alle Marker mit dem Präfix NEW_ auswählt.
+Seit Version 1.170 wählt "Track Nr. 1" vor dem Umbenennen alle NEW_-Marker aus.
