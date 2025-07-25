@@ -288,3 +288,5 @@ Seit Version 1.169 bietet das API-Panel einen Button "Select NEW", der alle Mark
 Seit Version 1.170 wählt "Track Nr. 1" vor dem Umbenennen alle NEW_-Marker aus.
 Seit Version 1.171 löscht der "Cleanup"-Button nach "Select Short Tracks" direkt die ausgewählten Marker.
 Seit Version 1.172 ruft derselbe Button danach "Select Error Tracks" und erneut "Delete" auf.
+Seit Version 1.173 ruft der "Cleanup"-Button nur noch 'Select Error Tracks' und danach 'Delete' auf.
+Seit Version 1.174 wiederholt derselbe Button 'Select Error Tracks' und 'Delete', wobei der Error Threshold auf 90% des jeweils größten Fehlers gesetzt wird, bis der Wert unter 10 fällt.
