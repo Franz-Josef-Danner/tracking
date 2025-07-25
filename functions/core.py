@@ -2054,27 +2054,15 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
 
             xvg = sum(t["xv"] for t in tracks_info) / len(tracks_info)
             yvg = sum(t["yv"] for t in tracks_info) / len(tracks_info)
-            print(
-                f"[{label}] XVG = (Sum XV / AM) = ({sum(t['xv'] for t in tracks_info):.3f} / {len(tracks_info)}) = {xvg:.3f}"
-            )
-            print(
-                f"[{label}] YVG = (Sum YV / AM) = ({sum(t['yv'] for t in tracks_info):.3f} / {len(tracks_info)}) = {yvg:.3f}"
-            )
 
             for info in tracks_info:
                 track = info["track"]
                 xv = info["xv"]
                 yv = info["yv"]
-                xv1 = info["xv1"]
-                xv2 = info["xv2"]
-                yv1 = info["yv1"]
-                yv2 = info["yv2"]
                 etx = xvg - xv
                 ety = yvg - yv
 
-                print(
-                    f"[{label}] {track.name}: XV1={xv1:.3f}, XV2={xv2:.3f}, YV1={yv1:.3f}, YV2={yv2:.3f}, XV={xv1:.3f}+{xv2:.3f}={xv:.3f}, YV={yv1:.3f}+{yv2:.3f}={yv:.3f}; ETX={xvg:.3f}-{xv:.3f}={etx:.3f}, ETY={yvg:.3f}-{yv:.3f}={ety:.3f}"
-                )
+                print(f"[{label}] {track.name}: ETX={etx:.3f}, ETY={ety:.3f}")
 
                 if abs(etx) > g or abs(ety) > g:
                     print(
