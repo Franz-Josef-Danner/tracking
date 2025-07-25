@@ -286,3 +286,5 @@ Seit Version 1.167 springt der Playhead nach jedem Durchlauf um "Frames/Track" n
 Seit Version 1.168 prüft "Cycle Detect" nun auch den Abstand zu vorhandenen NEW_-Markern, sodass neu erkannte Marker ebenfalls ausreichend Abstand zu ihnen einhalten müssen.
 Seit Version 1.169 bietet das API-Panel einen Button "Select NEW", der alle Marker mit dem Präfix NEW_ auswählt.
 Seit Version 1.170 wählt "Track Nr. 1" vor dem Umbenennen alle NEW_-Marker aus.
+Seit Version 1.171 löscht der "Cleanup"-Button nach "Select Short Tracks" direkt die ausgewählten Marker.
+Seit Version 1.172 ruft derselbe Button danach "Select Error Tracks" und erneut "Delete" auf.

@@ -2008,7 +2008,7 @@ class CLIP_OT_cleanup(bpy.types.Operator):
     bl_idname = "clip.cleanup"
     bl_label = "Cleanup"
     bl_description = (
-        "Ruft 'Select Short Tracks', 'Select Error Tracks' und danach 'Delete' auf"
+        "Ruft 'Select Short Tracks', 'Delete', 'Select Error Tracks' und nochmal 'Delete' auf"
     )
 
     def execute(self, context):
@@ -2017,6 +2017,12 @@ class CLIP_OT_cleanup(bpy.types.Operator):
             bpy.ops.clip.select_short_tracks()
         else:
             print("[Cleanup] select_short_tracks nicht verf\u00fcgbar")
+
+        print("[Cleanup] delete_selected")
+        if bpy.ops.clip.delete_selected.poll():
+            bpy.ops.clip.delete_selected()
+        else:
+            print("[Cleanup] delete_selected nicht verf\u00fcgbar")
 
         print("[Cleanup] track_cleanup")
         if bpy.ops.clip.track_cleanup.poll():
