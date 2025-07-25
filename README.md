@@ -288,3 +288,5 @@ Seit Version 1.169 bietet das API-Panel einen Button "Select NEW", der alle Mark
 Seit Version 1.170 wählt "Track Nr. 1" vor dem Umbenennen alle NEW_-Marker aus.
 Seit Version 1.171 löscht der "Cleanup"-Button nach "Select Short Tracks" direkt die ausgewählten Marker.
 Seit Version 1.172 ruft derselbe Button danach "Select Error Tracks" und erneut "Delete" auf.
+Seit Version 1.173 setzt "Track Nr. 1" nach jedem Durchlauf den Playhead mit "Low Marker Frame" auf den nächsten Frame mit zu wenigen Markern. Der Zyklus endet, wenn kein solcher Frame mehr gefunden wird.
+Seit Version 1.174 löscht "Track Nr. 1" nach jedem Durchlauf zunächst kurze TRACK_-Marker mit "Select Short Tracks" und "Delete" und springt danach mit "Low Marker Frame" zum nächsten Start.

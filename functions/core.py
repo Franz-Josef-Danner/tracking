@@ -258,16 +258,36 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         )
         return "DECIDE"
     def step_decide(self, context):
-        """Evaluate progress and continue or finish."""
+        """Evaluate progress and continue or finish using Low Marker Frame."""
         scene = context.scene
+        clip = context.space_data.clip
         print(
             f"[Track Nr.1] decide end {self._end} tracked {self._tracked} threshold {scene.frames_track}"
         )
-        if self._tracked > scene.frames_track or self._end < scene.frame_end:
-            next_start = min(self._start + scene.frames_track, scene.frame_end)
-            scene.frame_current = next_start
-            print(f"[Track Nr.1] next start {scene.frame_current}")
+
+        if not clip:
+            return "RENAME"
+
+        print("[Track Nr.1] select_short_tracks")
+        if bpy.ops.clip.select_short_tracks.poll():
+            bpy.ops.clip.select_short_tracks()
+        else:
+            print("[Track Nr.1] select_short_tracks nicht verfügbar")
+
+        print("[Track Nr.1] delete_selected")
+        if bpy.ops.clip.delete_selected.poll():
+            bpy.ops.clip.delete_selected()
+        else:
+            print("[Track Nr.1] delete_selected nicht verfügbar")
+
+        current = scene.frame_current
+        threshold = scene.marker_frame
+        frame, count = find_low_marker_frame(clip, threshold)
+        if frame is not None and frame != current:
+            scene.frame_current = frame
+            print(f"[Track Nr.1] next low frame {frame} ({count} markers)")
             return "DETECT"
+
         print("[Track Nr.1] finish cycle")
         return "RENAME"
 
