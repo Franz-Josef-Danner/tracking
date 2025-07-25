@@ -38,6 +38,8 @@ DEFAULT_MARKER_FRAME = 20
 
 # Minimaler Threshold-Wert f\u00fcr die Feature-Erkennung
 MIN_THRESHOLD = 0.0001
+# Faktor, mit dem Error-Threshold-Werte intern multipliziert werden
+THRESHOLD_SCALE = 10
 
 # Zeitintervall für Timer-Operationen in Sekunden
 TIMER_INTERVAL = 0.2
@@ -1992,8 +1994,8 @@ def cleanup_error_tracks(scene, clip):
     original = scene.error_threshold
 
     max_err = max_track_error(scene, clip)
-    scene.error_threshold = max_err
-    threshold = max_err
+    threshold = max_err / THRESHOLD_SCALE
+    scene.error_threshold = threshold
 
     while threshold >= original:
         while True:
@@ -2004,7 +2006,8 @@ def cleanup_error_tracks(scene, clip):
 
             selected = sum(1 for t in clip.tracking.tracks if t.select)
             if selected:
-                print(f"[Cleanup] {selected} Tracks, Threshold {threshold:.2f}")
+                display = threshold * THRESHOLD_SCALE
+                print(f"[Cleanup] {selected} Tracks, Threshold {display:.2f}")
                 if bpy.ops.clip.delete_selected.poll():
                     bpy.ops.clip.delete_selected()
             else:
@@ -2039,9 +2042,10 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
         start = scene.frame_start + 1
         end = scene.frame_end
 
-        g_global = scene.error_threshold * 6
-        g_quarter = scene.error_threshold * 4
-        g_eighth = scene.error_threshold * 2
+        base_threshold = scene.error_threshold * THRESHOLD_SCALE
+        g_global = base_threshold * 6
+        g_quarter = base_threshold * 4
+        g_eighth = base_threshold * 2
 
         selected_tracks = set()
 
