@@ -2280,9 +2280,11 @@ class CLIP_OT_setup_defaults(bpy.types.Operator):
         settings.use_default_green_channel = True
         settings.use_default_blue_channel = True
 
-        # Mindestkorrelation und Margin für neue Tracks setzen
-        settings.default_correlation_min = 0.85
+        settings.default_weight = 1.0
+        settings.default_correlation_min = 0.9
         settings.default_margin = 10
+        if hasattr(settings, 'use_default_mask'):
+            settings.use_default_mask = False
 
 
 
