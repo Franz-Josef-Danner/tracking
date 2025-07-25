@@ -1666,7 +1666,6 @@ def _Test_detect_mm(self, context):
 def _run_test_cycle(context, pattern_size=None, motion_model=None, channels=None):
     """Run Detect, Track and Delete sequence four times.
 
-    Each cycle begins with ``Test Defaults`` to mirror manual testing.
     Returns the highest frame reached during tracking.
     """
     clip = context.space_data.clip
@@ -1688,7 +1687,6 @@ def _run_test_cycle(context, pattern_size=None, motion_model=None, channels=None
 
     best_end = None
     for _ in range(4):
-        bpy.ops.clip.setup_defaults()
         bpy.ops.clip.detect_button()
         if bpy.ops.clip.track_full.poll():
             bpy.ops.clip.track_full(silent=True)
