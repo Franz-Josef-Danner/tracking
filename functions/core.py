@@ -100,7 +100,13 @@ def add_pending_tracks(tracks):
 
 def clean_pending_tracks(clip):
     """Remove deleted tracks from the pending list."""
-    names = {t.name for t in clip.tracking.tracks}
+    names = set()
+    for t in clip.tracking.tracks:
+        try:
+            if isinstance(t.name, str) and t.name.strip():
+                names.add(t.name)
+        except Exception as e:
+            print(f"\u26a0\ufe0f Fehler beim Zugriff auf Marker-Name: {t} ({e})")
     remaining = []
     for t in PENDING_RENAME:
         try:
@@ -160,6 +166,8 @@ def compute_detection_params(threshold_value, margin_base, min_distance_base):
 def detect_new_tracks(clip, detection_threshold, min_distance, margin):
     """Detect features and return new tracks and the state before detection."""
     names_before = {t.name for t in clip.tracking.tracks}
+    if bpy.ops.clip.proxy_off.poll():
+        bpy.ops.clip.proxy_off()
     bpy.ops.clip.detect_features(
         threshold=detection_threshold,
         min_distance=min_distance,
@@ -316,6 +324,8 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
             return "TRACK"
 
         if bpy.ops.clip.cycle_detect.poll():
+            if bpy.ops.clip.proxy_off.poll():
+                bpy.ops.clip.proxy_off()
             bpy.ops.clip.cycle_detect()
 
         if bpy.ops.clip.prefix_new.poll():
@@ -334,6 +344,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         """Track markers backward and forward."""
         scene = context.scene
         self._start = scene.frame_current
+        enable_proxy()
         if bpy.ops.clip.track_partial.poll():
             bpy.ops.clip.track_partial()
         self._end = scene.frame_current
@@ -455,6 +466,8 @@ class CLIP_OT_track_nr2(bpy.types.Operator):
             if bpy.ops.clip.test_channel.poll():
                 bpy.ops.clip.test_channel()
             if bpy.ops.clip.cycle_detect.poll():
+                if bpy.ops.clip.proxy_off.poll():
+                    bpy.ops.clip.proxy_off()
                 bpy.ops.clip.cycle_detect()
             renamed = rename_new_tracks(context)
             if renamed:
@@ -528,6 +541,8 @@ class CLIP_OT_detect_button(bpy.types.Operator):
 
         while True:
             names_before = {t.name for t in clip.tracking.tracks}
+            if bpy.ops.clip.proxy_off.poll():
+                bpy.ops.clip.proxy_off()
             bpy.ops.clip.detect_features(
                 threshold=detection_threshold,
                 min_distance=min_distance,
@@ -1167,6 +1182,8 @@ class CLIP_OT_all_detect(bpy.types.Operator):
         new_markers = 0
         while True:
             names_before = {t.name for t in clip.tracking.tracks}
+            if bpy.ops.clip.proxy_off.poll():
+                bpy.ops.clip.proxy_off()
             bpy.ops.clip.detect_features(
                 threshold=detection_threshold,
                 min_distance=min_distance,
@@ -2088,6 +2105,8 @@ def enable_proxy():
 def detect_features_once():
     """Run feature detection if available."""
     if bpy.ops.clip.detect_features.poll():
+        if bpy.ops.clip.proxy_off.poll():
+            bpy.ops.clip.proxy_off()
         bpy.ops.clip.detect_features()
 
 
@@ -2121,12 +2140,17 @@ def rename_new_tracks(context):
     select_tracks_by_prefix(clip, "NEW_")
     renamed = 0
     for track in clip.tracking.tracks:
-        if track.select:
-            base = strip_prefix(track.name)
-            new_name = "TRACK_" + base
-            if track.name != new_name:
-                track.name = new_name
-                renamed += 1
+        if not track.select:
+            continue
+        try:
+            if isinstance(track.name, str) and track.name.strip():
+                base = strip_prefix(track.name)
+                new_name = "TRACK_" + base
+                if track.name != new_name:
+                    track.name = new_name
+                    renamed += 1
+        except Exception as e:
+            print(f"\u26a0\ufe0f Fehler beim Umbenennen des Markers: {track} ({e})")
     return renamed
 
 
