@@ -100,7 +100,13 @@ def add_pending_tracks(tracks):
 
 def clean_pending_tracks(clip):
     """Remove deleted tracks from the pending list."""
-    names = {t.name for t in clip.tracking.tracks}
+    names = set()
+    for t in clip.tracking.tracks:
+        try:
+            if isinstance(t.name, str) and t.name.strip():
+                names.add(t.name)
+        except Exception as e:
+            print(f"\u26a0\ufe0f Fehler beim Zugriff auf Marker-Name: {t} ({e})")
     remaining = []
     for t in PENDING_RENAME:
         try:
