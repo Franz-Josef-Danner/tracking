@@ -284,7 +284,7 @@ class CLIP_OT_proxy_off(bpy.types.Operator):
 class CLIP_OT_track_nr1(bpy.types.Operator):
     bl_idname = "clip.track_nr1"
     bl_label = "Track Nr. 1"
-    bl_options = {'REGISTER', 'UNDO'}
+    bl_options = {'REGISTER', 'UNDO', 'MODAL'}
 
     _timer = None
     _state = "INIT"
@@ -368,6 +368,31 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         self._timer = add_timer(wm, context.window)
         self._state = "INIT"
         wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def cancel(self, context):
+        if self._timer:
+            context.window_manager.event_timer_remove(self._timer)
+            self._timer = None
+        return {'CANCELLED'}
+
+    def modal(self, context, event):
+        if event.type == 'ESC':
+            return self.cancel(context)
+
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+
+        state_method = getattr(self, f"step_{self._state.lower()}", None)
+        if state_method:
+            result = state_method(context)
+            if result is None:
+                return self.cancel(context)
+            self._state = result
+        else:
+            print(f"Unbekannter Zustand: {self._state}")
+            return self.cancel(context)
+
         return {'RUNNING_MODAL'}
 
 
