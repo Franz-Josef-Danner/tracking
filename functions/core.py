@@ -1948,27 +1948,106 @@ class CLIP_OT_error_value(bpy.types.Operator):
         return {'FINISHED'}
 
 
+def calculate_clip_error(clip):
+    """Return the sum of standard deviations for all marker positions."""
+    x_pos = []
+    y_pos = []
+    for track in clip.tracking.tracks:
+        for marker in track.markers:
+            if marker.mute:
+                continue
+            x_pos.append(marker.co[0])
+            y_pos.append(marker.co[1])
+
+    if not x_pos:
+        return 0.0
+
+    def std_dev(values):
+        mean_val = sum(values) / len(values)
+        return (sum((v - mean_val) ** 2 for v in values) / len(values)) ** 0.5
+
+    return std_dev(x_pos) + std_dev(y_pos)
+
+
+def disable_proxy():
+    """Disable proxies if possible."""
+    if bpy.ops.clip.proxy_off.poll():
+        bpy.ops.clip.proxy_off()
+
+
+def enable_proxy():
+    """Enable proxies if possible."""
+    if bpy.ops.clip.proxy_on.poll():
+        bpy.ops.clip.proxy_on()
+
+
+def detect_features_once():
+    """Run feature detection if available."""
+    if bpy.ops.clip.detect_features.poll():
+        bpy.ops.clip.detect_features()
+
+
+def track_full_clip():
+    """Track the clip forward if possible."""
+    if bpy.ops.clip.track_full.poll():
+        bpy.ops.clip.track_full(silent=True)
+
+
+def delete_selected_tracks():
+    """Delete all selected tracks."""
+    if bpy.ops.clip.delete_selected.poll():
+        bpy.ops.clip.delete_selected(silent=True)
+
+
+def cleanup_all_tracks(clip):
+    """Remove all tracks from the clip."""
+    for t in clip.tracking.tracks:
+        t.select = True
+    if bpy.ops.clip.delete_track.poll():
+        bpy.ops.clip.delete_track()
+
+
+def run_iteration(context):
+    """Execute one detection and tracking iteration."""
+    clip = context.space_data.clip
+    disable_proxy()
+    detect_features_once()
+    enable_proxy()
+    track_full_clip()
+    frames = LAST_TRACK_END if LAST_TRACK_END is not None else 0
+    error_val = calculate_clip_error(clip)
+    delete_selected_tracks()
+    return frames, error_val
+
+
 def _run_test_cycle(context, cleanup=False):
-    """Run detection and tracking four times and sum the end frames."""
+    """Run detection and tracking four times and return total frames and error."""
     clip = context.space_data.clip
     total_end = 0
+    total_error = 0.0
     for i in range(4):
         print(f"[Test Cycle] Durchgang {i + 1}")
-        if bpy.ops.clip.detect_features.poll():
-            bpy.ops.clip.detect_features()
-        if bpy.ops.clip.track_full.poll():
-            bpy.ops.clip.track_full(silent=True)
-            if LAST_TRACK_END is not None:
-                total_end += LAST_TRACK_END
-        if bpy.ops.clip.delete_selected.poll():
-            bpy.ops.clip.delete_selected(silent=True)
-        if cleanup:
-            for t in clip.tracking.tracks:
-                t.select = True
-            if bpy.ops.clip.delete_track.poll():
-                bpy.ops.clip.delete_track()
-    print(f"[Test Cycle] Summe End-Frames: {total_end}")
-    return total_end
+        frames, err = run_iteration(context)
+        total_end += frames
+        total_error += err
+
+    if cleanup:
+        cleanup_all_tracks(clip)
+
+    print(f"[Test Cycle] Summe End-Frames: {total_end}, Error: {total_error:.4f}")
+    return total_end, total_error
+
+
+def run_pattern_size_test(context):
+    """Execute two cycles for the current pattern size and return the best."""
+    first_frames, first_err = _run_test_cycle(context, cleanup=True)
+    second_frames, second_err = _run_test_cycle(context, cleanup=True)
+
+    if second_frames > first_frames or (
+        second_frames == first_frames and second_err < first_err
+    ):
+        return second_frames, second_err
+    return first_frames, first_err
 
 
 class CLIP_OT_test_pattern(bpy.types.Operator):
@@ -1985,24 +2064,55 @@ class CLIP_OT_test_pattern(bpy.types.Operator):
         settings = clip.tracking.settings
         best_size = settings.default_pattern_size
         best_score = None
+        best_error = None
+        min_error = None
+        last_score = None
+        drops_left = 0
 
         while True:
-            score = _run_test_cycle(context, cleanup=True)
-            print(f"[Test Pattern] size={settings.default_pattern_size} score={score}")
-            if best_score is None or score >= best_score:
+            score, error_sum = run_pattern_size_test(context)
+
+            print(
+                f"[Test Pattern] size={settings.default_pattern_size} frames={score} error={error_sum:.4f}"
+            )
+
+            if best_score is None or score > best_score or (
+                score == best_score and (best_error is None or error_sum < best_error)
+            ):
                 best_score = score
+                best_error = error_sum
                 best_size = settings.default_pattern_size
-                if bpy.ops.clip.pattern_up.poll():
-                    bpy.ops.clip.pattern_up()
-                else:
+
+            if min_error is None or error_sum < min_error:
+                min_error = error_sum
+
+            if last_score is not None:
+                if score == last_score and error_sum > min_error * 1.2:
                     break
+
+                if drops_left > 0:
+                    if score > last_score:
+                        drops_left = 0
+                    else:
+                        drops_left -= 1
+                        if drops_left == 0:
+                            break
+                elif score < last_score:
+                    drops_left = 4
+
+            last_score = score
+
+            if bpy.ops.clip.pattern_up.poll():
+                bpy.ops.clip.pattern_up()
             else:
                 break
 
         settings.default_pattern_size = best_size
         settings.default_search_size = best_size * 2
         context.scene.test_value = best_size
-        print(f"[Test Pattern] best_size={best_size} best_score={best_score}")
+        print(
+            f"[Test Pattern] best_size={best_size} frames={best_score} error={best_error:.4f}"
+        )
         self.report({'INFO'}, f"Best Pattern Size: {best_size}")
         return {'FINISHED'}
 
@@ -2021,18 +2131,24 @@ class CLIP_OT_test_motion(bpy.types.Operator):
         settings = clip.tracking.settings
         best_model = settings.default_motion_model
         best_score = None
+        best_error = None
 
         for model in MOTION_MODELS:
             settings.default_motion_model = model
-            score = _run_test_cycle(context)
-            print(f"[Test Motion] model={model} score={score}")
-            if best_score is None or score > best_score:
+            score, err = _run_test_cycle(context)
+            print(f"[Test Motion] model={model} frames={score} error={err:.4f}")
+            if best_score is None or score > best_score or (
+                score == best_score and (best_error is None or err < best_error)
+            ):
                 best_score = score
+                best_error = err
                 best_model = model
 
         settings.default_motion_model = best_model
         context.scene.test_value = MOTION_MODELS.index(best_model)
-        print(f"[Test Motion] best_model={best_model} best_score={best_score}")
+        print(
+            f"[Test Motion] best_model={best_model} frames={best_score} error={best_error:.4f}"
+        )
         self.report({'INFO'}, f"Best Motion Model: {best_model}")
         return {'FINISHED'}
 
@@ -2055,16 +2171,22 @@ class CLIP_OT_test_channel(bpy.types.Operator):
             settings.use_default_blue_channel,
         )
         best_score = None
+        best_error = None
 
         for combo in CHANNEL_COMBOS:
             r, g, b = combo
             settings.use_default_red_channel = r
             settings.use_default_green_channel = g
             settings.use_default_blue_channel = b
-            score = _run_test_cycle(context)
-            print(f"[Test Channel] combo={combo} score={score}")
-            if best_score is None or score > best_score:
+            score, err = _run_test_cycle(context)
+            print(
+                f"[Test Channel] combo={combo} frames={score} error={err:.4f}"
+            )
+            if best_score is None or score > best_score or (
+                score == best_score and (best_error is None or err < best_error)
+            ):
                 best_score = score
+                best_error = err
                 best_combo = combo
 
         (
@@ -2073,7 +2195,9 @@ class CLIP_OT_test_channel(bpy.types.Operator):
             settings.use_default_blue_channel,
         ) = best_combo
         context.scene.test_value = CHANNEL_COMBOS.index(best_combo)
-        print(f"[Test Channel] best_combo={best_combo} best_score={best_score}")
+        print(
+            f"[Test Channel] best_combo={best_combo} frames={best_score} error={best_error:.4f}"
+        )
         self.report({'INFO'}, "Beste Kanal-Einstellung gewählt")
         return {'FINISHED'}
 
