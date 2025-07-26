@@ -284,21 +284,11 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
 
     def step_cleanup(self, context):
         """Remove short tracks and keep the playhead at the target frame."""
-        clip = context.space_data.clip
-        if not clip or self._tracked <= 0:
+        if not context.space_data.clip or self._tracked <= 0:
             return "MOVE"
 
-        print("[Track Nr.1] select_short_tracks")
-        if bpy.ops.clip.select_short_tracks.poll():
-            bpy.ops.clip.select_short_tracks()
-        else:
-            print("[Track Nr.1] select_short_tracks nicht verfügbar")
-
-        print("[Track Nr.1] delete_selected")
-        if bpy.ops.clip.delete_selected.poll():
-            bpy.ops.clip.delete_selected()
-        else:
-            print("[Track Nr.1] delete_selected nicht verfügbar")
+        print("[Track Nr.1] cleanup short tracks")
+        cleanup_short_tracks(context)
 
         return "MOVE"
 
@@ -310,10 +300,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         return "DETECT"
 
     def step_rename(self, context):
-        if bpy.ops.clip.select_new_tracks.poll():
-            bpy.ops.clip.select_new_tracks()
-        if bpy.ops.clip.prefix_track.poll():
-            bpy.ops.clip.prefix_track()
+        rename_new_tracks(context)
         return None
 
     def execute(self, context):
@@ -1997,6 +1984,26 @@ def delete_selected_tracks():
     """Delete all selected tracks."""
     if bpy.ops.clip.delete_selected.poll():
         bpy.ops.clip.delete_selected(silent=True)
+
+
+def cleanup_short_tracks(context):
+    """Select short TRACK_ markers and delete them."""
+    clip = context.space_data.clip
+    if not clip:
+        return
+    min_frames = context.scene.frames_track
+    select_short_tracks(clip, min_frames)
+    delete_selected_tracks()
+
+
+def rename_new_tracks(context):
+    """Rename NEW_ markers to TRACK_."""
+    clip = context.space_data.clip
+    if not clip:
+        return
+    select_tracks_by_prefix(clip, "NEW_")
+    if bpy.ops.clip.prefix_track.poll():
+        bpy.ops.clip.prefix_track()
 
 
 def cleanup_all_tracks(clip):
