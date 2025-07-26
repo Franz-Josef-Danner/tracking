@@ -1965,7 +1965,10 @@ def _run_test_cycle(context, cleanup=False):
         if bpy.ops.clip.delete_selected.poll():
             bpy.ops.clip.delete_selected(silent=True)
         if cleanup:
-            clip.tracking.tracks.clear()
+            for t in clip.tracking.tracks:
+                t.select = True
+            if bpy.ops.clip.delete_track.poll():
+                bpy.ops.clip.delete_track()
     print(f"[Test Cycle] Summe End-Frames: {total_end}")
     return total_end
 
