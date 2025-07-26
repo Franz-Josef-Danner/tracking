@@ -126,6 +126,14 @@ def rename_pending_tracks(clip):
     PENDING_RENAME.clear()
 
 
+def run_detect(**kwargs):
+    """Safely invoke Blender's feature detection operator."""
+    if bpy.ops.clip.detect_features.poll():
+        bpy.ops.clip.detect_features(**kwargs)
+    else:
+        print("❌ Detect Features konnte im aktuellen Kontext nicht ausgeführt werden.")
+
+
 def cycle_motion_model(settings, clip, reset_size=True):
     """Cycle to the next default motion model."""
     current = settings.default_motion_model
@@ -392,16 +400,11 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         while True:
             names_before = {t.name for t in clip.tracking.tracks}
             # Sicherer Aufruf des internen Operators
-            if bpy.ops.clip.detect_features.poll():
-                bpy.ops.clip.detect_features(
-                    threshold=detection_threshold,
-                    min_distance=min_distance,
-                    margin=margin,
-                )
-            else:
-                print(
-                    "❌ 'detect_features' kann im aktuellen Kontext nicht ausgeführt werden."
-                )
+            run_detect(
+                threshold=detection_threshold,
+                min_distance=min_distance,
+                margin=margin,
+            )
             names_after = {t.name for t in clip.tracking.tracks}
             new_tracks = [
                 t for t in clip.tracking.tracks if t.name in names_after - names_before
@@ -1047,16 +1050,11 @@ class CLIP_OT_all_detect(bpy.types.Operator):
         new_markers = 0
         while True:
             names_before = {t.name for t in clip.tracking.tracks}
-            if bpy.ops.clip.detect_features.poll():
-                bpy.ops.clip.detect_features(
-                    threshold=detection_threshold,
-                    min_distance=min_distance,
-                    margin=margin,
-                )
-            else:
-                print(
-                    "❌ 'detect_features' kann im aktuellen Kontext nicht ausgeführt werden."
-                )
+            run_detect(
+                threshold=detection_threshold,
+                min_distance=min_distance,
+                margin=margin,
+            )
             names_after = {t.name for t in clip.tracking.tracks}
             new_tracks = [
                 t for t in clip.tracking.tracks if t.name in names_after - names_before
@@ -1186,16 +1184,11 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
         new_tracks = []
         while True:
             names_before = {t.name for t in clip.tracking.tracks}
-            if bpy.ops.clip.detect_features.poll():
-                bpy.ops.clip.detect_features(
-                    threshold=detection_threshold,
-                    min_distance=min_distance,
-                    margin=margin,
-                )
-            else:
-                print(
-                    "❌ 'detect_features' kann im aktuellen Kontext nicht ausgeführt werden."
-                )
+            run_detect(
+                threshold=detection_threshold,
+                min_distance=min_distance,
+                margin=margin,
+            )
             names_after = {t.name for t in clip.tracking.tracks}
             new_tracks = [
                 t for t in clip.tracking.tracks if t.name in names_after - names_before
