@@ -2128,7 +2128,7 @@ class CLIP_OT_test_motion(bpy.types.Operator):
 
         for model in MOTION_MODELS:
             settings.default_motion_model = model
-            score, err = _run_test_cycle(context)
+            score, err = _run_test_cycle(context, cycles=2)
             print(f"[Test Motion] model={model} frames={score} error={err:.4f}")
             if best_score is None or score > best_score or (
                 score == best_score and (best_error is None or err < best_error)
@@ -2171,7 +2171,7 @@ class CLIP_OT_test_channel(bpy.types.Operator):
             settings.use_default_red_channel = r
             settings.use_default_green_channel = g
             settings.use_default_blue_channel = b
-            score, err = _run_test_cycle(context)
+            score, err = _run_test_cycle(context, cycles=2)
             print(
                 f"[Test Channel] combo={combo} frames={score} error={err:.4f}"
             )
