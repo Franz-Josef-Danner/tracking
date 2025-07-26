@@ -34,6 +34,7 @@ class CLIP_PT_stufen_panel(bpy.types.Panel):
         layout = self.layout
         layout.operator('clip.panel_button', text='Proxy')
         layout.operator('clip.track_nr1', text='Track Nr. 1')
+        layout.operator('clip.track_nr2', text='Track Nr. 2')
         layout.operator('clip.cleanup', text='Cleanup')
 
 

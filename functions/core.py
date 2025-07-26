@@ -370,24 +370,52 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
-    def cancel(self, context):
-        wm = context.window_manager
-        wm.event_timer_remove(self._timer)
-        return {'CANCELLED'}
 
-    def modal(self, context, event):
-        if event.type == 'ESC':
-            return self.cancel(context)
-        if event.type != 'TIMER':
-            return {'PASS_THROUGH'}
-        step_method = getattr(self, f"step_{self._state.lower()}", None)
-        if step_method:
-            next_state = step_method(context)
-            if next_state is None:
-                return self.cancel(context)
-            self._state = next_state
+class CLIP_OT_track_nr2(bpy.types.Operator):
+    bl_idname = "clip.track_nr2"
+    bl_label = "Track Nr. 2"
+    bl_options = {'REGISTER', 'UNDO'}
 
-        return {'RUNNING_MODAL'}
+    def execute(self, context):
+        scene = context.scene
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        if bpy.ops.clip.setup_defaults.poll():
+            bpy.ops.clip.setup_defaults()
+
+        threshold = scene.marker_frame
+        frame, count = find_low_marker_frame(clip, threshold)
+        if frame is not None:
+            scene.frame_current = frame
+
+        while True:
+            if bpy.ops.clip.test_pattern.poll():
+                bpy.ops.clip.test_pattern()
+            if bpy.ops.clip.test_motion.poll():
+                bpy.ops.clip.test_motion()
+            if bpy.ops.clip.test_channel.poll():
+                bpy.ops.clip.test_channel()
+            if bpy.ops.clip.cycle_detect.poll():
+                bpy.ops.clip.cycle_detect()
+            rename_new_tracks(context)
+            if bpy.ops.clip.track_partial.poll():
+                bpy.ops.clip.track_partial()
+            if bpy.ops.clip.cleanup.poll():
+                bpy.ops.clip.cleanup()
+
+            current = scene.frame_current
+            frame, count = find_low_marker_frame(clip, threshold)
+            if frame is not None and frame != current:
+                scene.frame_current = frame
+                continue
+            break
+
+        return {'FINISHED'}
+
+
 
 
 class CLIP_OT_detect_button(bpy.types.Operator):
@@ -2984,6 +3012,7 @@ operator_classes = (
     CLIP_OT_proxy_on,
     CLIP_OT_proxy_off,
     CLIP_OT_track_nr1,
+    CLIP_OT_track_nr2,
     CLIP_OT_detect_button,
     CLIP_OT_prefix_new,
     CLIP_OT_prefix_test,
