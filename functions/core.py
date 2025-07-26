@@ -134,6 +134,15 @@ def rename_pending_tracks(clip, report=None):
     PENDING_RENAME.clear()
 
 
+def prefix_new_tracks(clip):
+    """Rename NEW_ tracks to TRACK_ and mark them for renaming."""
+    for track in clip.tracking.tracks:
+        if track.name.startswith("NEW_"):
+            track.name = track.name.replace("NEW_", "TRACK_", 1)
+            if track not in PENDING_RENAME:
+                PENDING_RENAME.append(track)
+
+
 def count_active_tracks_with_prefix(clip, prefix, frame):
     """Return the number of active tracks starting with ``prefix`` at ``frame``."""
     count = 0
@@ -353,8 +362,8 @@ class CLIP_OT_track_nr1(ClipOperator):
 
         if bpy.ops.clip.cycle_detect.poll():
             bpy.ops.clip.cycle_detect()
-        if bpy.ops.clip.prefix_new.poll():
-            bpy.ops.clip.prefix_new()
+
+        prefix_new_tracks(clip)
         return "TRACK"
 
     def step_track(self, context):
