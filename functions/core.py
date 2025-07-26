@@ -2043,6 +2043,63 @@ def run_pattern_size_test(context):
     return _run_test_cycle(context, cleanup=True, cycles=1)
 
 
+def evaluate_motion_models(context, models=MOTION_MODELS, cycles=2):
+    """Return the best motion model along with its score and error."""
+    clip = context.space_data.clip
+    settings = clip.tracking.settings
+    best_model = settings.default_motion_model
+    best_score = None
+    best_error = None
+
+    for model in models:
+        settings.default_motion_model = model
+        score, err = _run_test_cycle(context, cycles=cycles)
+        print(f"[Test Motion] model={model} frames={score} error={err:.4f}")
+        if best_score is None or score > best_score or (
+            score == best_score and (best_error is None or err < best_error)
+        ):
+            best_score = score
+            best_error = err
+            best_model = model
+
+    settings.default_motion_model = best_model
+    return best_model, best_score, best_error
+
+
+def evaluate_channel_combinations(context, combos=CHANNEL_COMBOS, cycles=2):
+    """Return the best RGB channel combination with its score and error."""
+    clip = context.space_data.clip
+    settings = clip.tracking.settings
+    best_combo = (
+        settings.use_default_red_channel,
+        settings.use_default_green_channel,
+        settings.use_default_blue_channel,
+    )
+    best_score = None
+    best_error = None
+
+    for combo in combos:
+        r, g, b = combo
+        settings.use_default_red_channel = r
+        settings.use_default_green_channel = g
+        settings.use_default_blue_channel = b
+        score, err = _run_test_cycle(context, cycles=cycles)
+        print(f"[Test Channel] combo={combo} frames={score} error={err:.4f}")
+        if best_score is None or score > best_score or (
+            score == best_score and (best_error is None or err < best_error)
+        ):
+            best_score = score
+            best_error = err
+            best_combo = combo
+
+    (
+        settings.use_default_red_channel,
+        settings.use_default_green_channel,
+        settings.use_default_blue_channel,
+    ) = best_combo
+    return best_combo, best_score, best_error
+
+
 class CLIP_OT_test_pattern(bpy.types.Operator):
     bl_idname = "clip.test_pattern"
     bl_label = "Test Pattern"
@@ -2121,26 +2178,10 @@ class CLIP_OT_test_motion(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        settings = clip.tracking.settings
-        best_model = settings.default_motion_model
-        best_score = None
-        best_error = None
-
-        for model in MOTION_MODELS:
-            settings.default_motion_model = model
-            score, err = _run_test_cycle(context, cycles=2)
-            print(f"[Test Motion] model={model} frames={score} error={err:.4f}")
-            if best_score is None or score > best_score or (
-                score == best_score and (best_error is None or err < best_error)
-            ):
-                best_score = score
-                best_error = err
-                best_model = model
-
-        settings.default_motion_model = best_model
+        best_model, score, error_val = evaluate_motion_models(context)
         context.scene.test_value = MOTION_MODELS.index(best_model)
         print(
-            f"[Test Motion] best_model={best_model} frames={best_score} error={best_error:.4f}"
+            f"[Test Motion] best_model={best_model} frames={score} error={error_val:.4f}"
         )
         self.report({'INFO'}, f"Best Motion Model: {best_model}")
         return {'FINISHED'}
@@ -2148,7 +2189,7 @@ class CLIP_OT_test_motion(bpy.types.Operator):
 
 class CLIP_OT_test_channel(bpy.types.Operator):
     bl_idname = "clip.test_channel"
-    bl_label = "Test Chanal"
+    bl_label = "Test Channel"
     bl_description = "Testet verschiedene Farbkanal-Kombinationen"
 
     def execute(self, context):
@@ -2157,39 +2198,10 @@ class CLIP_OT_test_channel(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        settings = clip.tracking.settings
-        best_combo = (
-            settings.use_default_red_channel,
-            settings.use_default_green_channel,
-            settings.use_default_blue_channel,
-        )
-        best_score = None
-        best_error = None
-
-        for combo in CHANNEL_COMBOS:
-            r, g, b = combo
-            settings.use_default_red_channel = r
-            settings.use_default_green_channel = g
-            settings.use_default_blue_channel = b
-            score, err = _run_test_cycle(context, cycles=2)
-            print(
-                f"[Test Channel] combo={combo} frames={score} error={err:.4f}"
-            )
-            if best_score is None or score > best_score or (
-                score == best_score and (best_error is None or err < best_error)
-            ):
-                best_score = score
-                best_error = err
-                best_combo = combo
-
-        (
-            settings.use_default_red_channel,
-            settings.use_default_green_channel,
-            settings.use_default_blue_channel,
-        ) = best_combo
+        best_combo, score, error_val = evaluate_channel_combinations(context)
         context.scene.test_value = CHANNEL_COMBOS.index(best_combo)
         print(
-            f"[Test Channel] best_combo={best_combo} frames={best_score} error={best_error:.4f}"
+            f"[Test Channel] best_combo={best_combo} frames={score} error={error_val:.4f}"
         )
         self.report({'INFO'}, "Beste Kanal-Einstellung gewählt")
         return {'FINISHED'}
