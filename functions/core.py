@@ -2046,7 +2046,7 @@ class CLIP_OT_test_pattern(bpy.types.Operator):
             if last_score is not None:
                 if score < last_score:
                     break
-                if score == last_score and error_sum > min_error * 1.1:
+                if score == last_score and error_sum > min_error * 1.2:
                     break
 
             last_score = score
