@@ -308,6 +308,7 @@ Seit Version 1.182 gibt es dort zusätzlich einen Button "Test Detect", der Mark
 Seit Version 1.183 besitzt dieses Unter-Panel auch einen Button "Test Track", der selektierte Marker bis zum Sequenzende vorwärts verfolgt.
 Seit Version 1.184 werten die Testfunktionen zusätzlich den Fehler der Markerpositionen aus. Nach jedem der vier Tracking-Durchgänge wird der Error berechnet und aufsummiert. Bei der Pattern-Größe wird der Test beendet, sobald keine Fortschritte mehr erzielt werden oder der Fehlerwert um mehr als 10 % über dem bisherigen Minimum liegt. Motion Model und Farbkanäle wählen direkt die Kombination mit dem besten Verhältnis aus maximaler Frame-Anzahl und minimalem Error.
 Seit Version 1.185 führt "Test Pattern" jeden Größenwert zweimal aus und verwendet das bessere Ergebnis, um Ausreißer durch Tracking-Fehler zu vermeiden.
+Seit Version 1.186 schalten die Testfunktionen den Proxy vor der Feature-Erkennung aus und vor dem Tracking wieder ein, damit alle Schritte mit konsistenten Einstellungen ausgeführt werden.
 
 ## License
 

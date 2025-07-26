@@ -1976,8 +1976,12 @@ def _run_test_cycle(context, cleanup=False):
     total_error = 0.0
     for i in range(4):
         print(f"[Test Cycle] Durchgang {i + 1}")
+        if bpy.ops.clip.proxy_off.poll():
+            bpy.ops.clip.proxy_off()
         if bpy.ops.clip.detect_features.poll():
             bpy.ops.clip.detect_features()
+        if bpy.ops.clip.proxy_on.poll():
+            bpy.ops.clip.proxy_on()
         if bpy.ops.clip.track_full.poll():
             bpy.ops.clip.track_full(silent=True)
             if LAST_TRACK_END is not None:
