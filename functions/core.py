@@ -352,13 +352,13 @@ class CLIP_OT_track_nr1(ClipOperator):
         """Generate markers using Cycle Detect if needed."""
         clip = context.space_data.clip
         if not clip:
-            return None
+            return "DONE"
 
         threshold = context.scene.marker_frame
         frame, _ = find_low_marker_frame(clip, threshold)
         if frame is None:
             self.report({"INFO"}, "Keine Frames mit wenigen Markern gefunden")
-            return None
+            return "DONE"
 
         if bpy.ops.clip.cycle_detect.poll():
             bpy.ops.clip.cycle_detect()
@@ -369,16 +369,29 @@ class CLIP_OT_track_nr1(ClipOperator):
     def step_track(self, context):
         """Track markers backward and forward."""
         scene = context.scene
+        clip = context.space_data.clip
         self._start = scene.frame_current
+
+        bpy.ops.clip.proxy_off()
         if bpy.ops.clip.track_partial.poll():
             bpy.ops.clip.track_partial()
+        bpy.ops.clip.proxy_on()
+
         self._end = scene.frame_current
         self._tracked = self._end - self._start
+
+        tracked_count = count_active_tracks_with_prefix(
+            clip, "NEW_", frame=scene.frame_current
+        )
+        if tracked_count == 0:
+            self.report({"WARNING"}, "Keine neuen Tracks gefunden.")
+            return "DONE"
+
         self.report(
             {"INFO"},
-            f"[Track Nr.1] start {self._start} end {self._end} tracked {self._tracked}",
+            f"[Track Nr.1] start {self._start} end {self._end} tracked {self._tracked}"
         )
-        return "DECIDE"
+        return "WAIT_TRACKING"
 
     def step_wait_tracking(self, context):
         """Wait until all NEW_ markers are tracked for the current frame."""
@@ -432,7 +445,7 @@ class CLIP_OT_track_nr1(ClipOperator):
         clip = context.space_data.clip
         clean_pending_tracks(clip)
         if not PENDING_RENAME:
-            return "DONE"
+            return "DETECT"
 
         existing_numbers = []
         for t in clip.tracking.tracks:
@@ -454,7 +467,7 @@ class CLIP_OT_track_nr1(ClipOperator):
                 continue
 
         PENDING_RENAME.clear()
-        return "DONE"
+        return "DETECT"
 
     def step_done(self, context):
         """Finish the operator."""
