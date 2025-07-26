@@ -291,7 +291,7 @@ class CLIP_OT_proxy_off(bpy.types.Operator):
 class CLIP_OT_track_nr1(bpy.types.Operator):
     bl_idname = "clip.track_nr1"
     bl_label = "Track Nr. 1"
-    bl_options = {'REGISTER', 'UNDO', 'MODAL'}
+    bl_options = {'REGISTER', 'UNDO', 'BLOCKING'}
 
     _timer = None
     _state = "INIT"
