@@ -969,13 +969,7 @@ class CLIP_OT_track_partial(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        for track in clip.tracking.tracks:
-            if track.select:
-                marker = track.markers.find_frame(scene.frame_current, exact=True)
-                if marker is None or marker.mute:
-                    track.select = False
-
-        if not any(t.select for t in clip.tracking.tracks):
+        if not ensure_valid_selection(clip, scene.frame_current):
             self.report({'WARNING'}, "Keine g\u00fcltigen Marker ausgew\xe4hlt")
             return {'CANCELLED'}
 
@@ -991,15 +985,10 @@ class CLIP_OT_track_partial(bpy.types.Operator):
 
         if bpy.ops.clip.track_markers.poll():
             print("[Track Partial] track backwards")
-            scene.frame_start = original_start
-            scene.frame_end = current
-            bpy.ops.clip.track_markers(backwards=True, sequence=True)
+            track_markers_range(scene, original_start, current, current, True)
 
             print("[Track Partial] track forwards")
-            scene.frame_start = current
-            scene.frame_end = original_end
-            scene.frame_current = current
-            bpy.ops.clip.track_markers(backwards=False, sequence=True)
+            track_markers_range(scene, current, original_end, current, False)
 
         print(f"[Track Partial] done at frame {scene.frame_current}")
 
@@ -1470,6 +1459,28 @@ def select_tracks_by_prefix(clip, prefix):
     """Select all tracks whose names start with the given prefix."""
     for track in clip.tracking.tracks:
         track.select = track.name.startswith(prefix)
+
+
+def ensure_valid_selection(clip, frame):
+    """Validate selected tracks for the given frame."""
+    valid = False
+    for track in clip.tracking.tracks:
+        if track.select:
+            marker = track.markers.find_frame(frame, exact=True)
+            if marker is None or marker.mute:
+                track.select = False
+            else:
+                valid = True
+    return valid
+
+
+def track_markers_range(scene, start, end, current, backwards):
+    """Run clip.track_markers for ``start`` to ``end``."""
+    scene.frame_start = start
+    scene.frame_end = end
+    if not backwards:
+        scene.frame_current = current
+    bpy.ops.clip.track_markers(backwards=backwards, sequence=True)
 
 
 def jump_to_first_frame_with_few_active_markers(min_required=5):
