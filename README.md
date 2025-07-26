@@ -316,6 +316,7 @@ Seit Version 1.190 testet "Test Pattern" jede Größe nur noch einmal mit vier D
 Seit Version 1.191 führt "Test Pattern" pro Größe nur noch drei Tracking-Durchgänge aus.
 Seit Version 1.192 führt "Test Pattern" pro Größe nur noch einen Tracking-Durchgang aus.
 Seit Version 1.193 verringert sich die Abbruchschwelle für den Fehler beim Pattern-Test auf 15 %.
+Seit Version 1.194 ignorieren "Test Pattern", "Test Motion" und "Test Channel" GOOD_-Marker und löschen diese nicht mehr.
 
 ## License
 

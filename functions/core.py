@@ -2005,7 +2005,12 @@ def track_full_clip():
 
 
 def delete_selected_tracks():
-    """Delete all selected tracks."""
+    """Delete all selected tracks, ignoring GOOD_ tracks."""
+    clip = bpy.context.space_data.clip
+    if clip:
+        for t in clip.tracking.tracks:
+            if t.select and t.name.startswith("GOOD_"):
+                t.select = False
     if bpy.ops.clip.delete_selected.poll():
         bpy.ops.clip.delete_selected(silent=True)
 
@@ -2031,9 +2036,9 @@ def rename_new_tracks(context):
 
 
 def cleanup_all_tracks(clip):
-    """Remove all tracks from the clip."""
+    """Remove all non-GOOD_ tracks from the clip."""
     for t in clip.tracking.tracks:
-        t.select = True
+        t.select = not t.name.startswith("GOOD_")
     if bpy.ops.clip.delete_track.poll():
         bpy.ops.clip.delete_track()
 
