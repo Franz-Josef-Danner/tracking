@@ -1954,8 +1954,6 @@ def _run_test_cycle(context, cleanup=False):
     total_end = 0
     for i in range(4):
         print(f"[Test Cycle] Durchgang {i + 1}")
-        if bpy.ops.clip.setup_defaults.poll():
-            bpy.ops.clip.setup_defaults(silent=True)
         if bpy.ops.clip.detect_features.poll():
             bpy.ops.clip.detect_features()
         if bpy.ops.clip.track_full.poll():
