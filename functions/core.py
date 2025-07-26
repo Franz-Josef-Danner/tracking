@@ -2139,12 +2139,17 @@ def rename_new_tracks(context):
     select_tracks_by_prefix(clip, "NEW_")
     renamed = 0
     for track in clip.tracking.tracks:
-        if track.select:
-            base = strip_prefix(track.name)
-            new_name = "TRACK_" + base
-            if track.name != new_name:
-                track.name = new_name
-                renamed += 1
+        if not track.select:
+            continue
+        try:
+            if isinstance(track.name, str) and track.name.strip():
+                base = strip_prefix(track.name)
+                new_name = "TRACK_" + base
+                if track.name != new_name:
+                    track.name = new_name
+                    renamed += 1
+        except Exception as e:
+            print(f"\u26a0\ufe0f Fehler beim Umbenennen des Markers: {track} ({e})")
     return renamed
 
 
