@@ -134,6 +134,27 @@ def rename_pending_tracks(clip, report=None):
     PENDING_RENAME.clear()
 
 
+def count_active_tracks_with_prefix(clip, prefix, frame):
+    """Return the number of active tracks starting with ``prefix`` at ``frame``."""
+    count = 0
+    for t in clip.tracking.tracks:
+        if t.name.startswith(prefix):
+            marker = t.markers.find_frame(frame, exact=True)
+            if marker and not marker.mute and marker.co.length_squared != 0.0:
+                count += 1
+    return count
+
+
+def tracking_is_complete(clip):
+    """Check if all NEW_ tracks have a marker on the current frame."""
+    frame = bpy.context.scene.frame_current
+    for track in clip.tracking.tracks:
+        if track.name.startswith("NEW_"):
+            if track.markers.find_frame(frame, exact=True) is None:
+                return False
+    return True
+
+
 def cycle_motion_model(settings, clip, reset_size=True):
     """Cycle to the next default motion model."""
     current = settings.default_motion_model
@@ -338,7 +359,21 @@ class CLIP_OT_track_nr1(ClipOperator):
             {"INFO"},
             f"[Track Nr.1] start {self._start} end {self._end} tracked {self._tracked}",
         )
-        return "DECIDE"
+        return "WAIT_TRACKING"
+
+    def step_wait_tracking(self, context):
+        """Wait until all NEW_ markers are tracked for the current frame."""
+        clip = context.space_data.clip
+        if not clip:
+            return "DECIDE"
+        if tracking_is_complete(clip):
+            count = count_active_tracks_with_prefix(
+                clip, "NEW_", frame=context.scene.frame_current
+            )
+            if count == 0:
+                self.report({"WARNING"}, "Keine neuen Tracks gefunden.")
+            return "DECIDE"
+        return "WAIT_TRACKING"
 
     def step_decide(self, context):
         """Move the playhead to the next frame before cleanup."""
