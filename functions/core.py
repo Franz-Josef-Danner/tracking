@@ -2039,15 +2039,8 @@ def _run_test_cycle(context, cleanup=False):
 
 
 def run_pattern_size_test(context):
-    """Execute two cycles for the current pattern size and return the best."""
-    first_frames, first_err = _run_test_cycle(context, cleanup=True)
-    second_frames, second_err = _run_test_cycle(context, cleanup=True)
-
-    if second_frames > first_frames or (
-        second_frames == first_frames and second_err < first_err
-    ):
-        return second_frames, second_err
-    return first_frames, first_err
+    """Execute a single cycle for the current pattern size."""
+    return _run_test_cycle(context, cleanup=True)
 
 
 class CLIP_OT_test_pattern(bpy.types.Operator):

@@ -312,6 +312,7 @@ Seit Version 1.186 schalten die Testfunktionen den Proxy vor der Feature-Erkennu
 Seit Version 1.187 erhöht sich die Abbruchschwelle für den Fehler beim Pattern-Test auf 20 %.
 Seit Version 1.188 wird beim Pattern-Test nach einem Rückgang der Frame-Anzahl noch vier weitere Größenwerte getestet, bevor der Vorgang abgebrochen wird.
 Seit Version 1.189 sind die Abläufe der Testfunktionen in modulare Schritte unterteilt, um die Wartbarkeit des Codes zu verbessern.
+Seit Version 1.190 testet "Test Pattern" jede Größe nur noch einmal mit vier Durchgängen.
 
 ## License
 
