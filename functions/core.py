@@ -216,6 +216,10 @@ class OBJECT_OT_simple_operator(bpy.types.Operator):
     bl_label = "Simple Operator"
     bl_description = "Gibt eine Meldung aus"
 
+    @classmethod
+    def poll(cls, context):
+        return True
+
     def execute(self, context):
         self.report({"INFO"}, "Hello World from Addon")
         return {"FINISHED"}
