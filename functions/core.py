@@ -93,7 +93,16 @@ def add_pending_tracks(tracks):
 
 def clean_pending_tracks(clip):
     """Remove deleted tracks from the pending list."""
-    names = {t.name for t in clip.tracking.tracks}
+    names = set()
+    for tr in clip.tracking.tracks:
+        try:
+            names.add(tr.name)
+        except UnicodeDecodeError:
+            print(
+                f"\u26a0\ufe0f Warnung: Marker-Name kann nicht gelesen werden (wahrscheinlich defekt): {tr}"
+            )
+            continue
+
     remaining = []
     for t in PENDING_RENAME:
         try:
