@@ -99,7 +99,7 @@ def add_pending_tracks(tracks):
             PENDING_RENAME.append(t)
 
 
-def clean_pending_tracks(clip):
+def clean_pending_tracks(clip, report=None):
     """Remove deleted tracks from the pending list."""
     names = {t.name for t in clip.tracking.tracks}
     remaining = []
@@ -108,17 +108,17 @@ def clean_pending_tracks(clip):
             if t.name in names:
                 remaining.append(t)
         except UnicodeDecodeError:
-            print(
-                f"\u26a0\ufe0f Warnung: Marker-Name kann nicht gelesen werden (wahrscheinlich defekt): {t}"
-            )
+            msg = f"\u26a0\ufe0f Warnung: Marker-Name kann nicht gelesen werden (wahrscheinlich defekt): {t}"
+            if report:
+                report({"WARNING"}, msg)
             continue
     PENDING_RENAME.clear()
     PENDING_RENAME.extend(remaining)
 
 
-def rename_pending_tracks(clip):
+def rename_pending_tracks(clip, report=None):
     """Rename pending tracks sequentially and clear the list."""
-    clean_pending_tracks(clip)
+    clean_pending_tracks(clip, report)
     if not PENDING_RENAME:
         return
     existing_numbers = []
@@ -173,7 +173,7 @@ def detect_new_tracks(clip, detection_threshold, min_distance, margin):
     return new_tracks, names_before
 
 
-def remove_close_tracks(clip, new_tracks, distance_px, names_before):
+def remove_close_tracks(clip, new_tracks, distance_px, names_before, report=None):
     """Delete new tracks too close to existing ones."""
     frame = bpy.context.scene.frame_current
     width, height = clip.size
@@ -205,7 +205,7 @@ def remove_close_tracks(clip, new_tracks, distance_px, names_before):
         t.select = True
     if close_tracks and bpy.ops.clip.delete_selected.poll():
         bpy.ops.clip.delete_selected()
-        clean_pending_tracks(clip)
+        clean_pending_tracks(clip, report)
 
     names_after = {t.name for t in clip.tracking.tracks}
     return [t for t in clip.tracking.tracks if t.name in names_after - names_before]
@@ -478,7 +478,7 @@ class CLIP_OT_detect_button(ClipOperator):
                 t.select = True
             if new_tracks and bpy.ops.clip.delete_track.poll():
                 bpy.ops.clip.delete_track()
-                clean_pending_tracks(clip)
+                clean_pending_tracks(clip, self.report)
             for track in clip.tracking.tracks:
                 track.select = False
             threshold_value = threshold_value * ((new_markers + 0.1) / mf_base)
@@ -628,7 +628,7 @@ class CLIP_OT_distance_button(ClipOperator):
         width, height = clip.size
         min_distance_px = int(width * 0.002)
 
-        clean_pending_tracks(clip)
+        clean_pending_tracks(clip, self.report)
 
         # Alle Tracks zunächst deselektieren
         for t in clip.tracking.tracks:
@@ -679,7 +679,7 @@ class CLIP_OT_delete_selected(ClipOperator):
 
         if bpy.ops.clip.delete_track.poll():
             bpy.ops.clip.delete_track()
-            clean_pending_tracks(clip)
+            clean_pending_tracks(clip, self.report)
             if not self.silent:
                 self.report({"INFO"}, "Tracks gelöscht")
         else:
@@ -688,9 +688,9 @@ class CLIP_OT_delete_selected(ClipOperator):
         return {"FINISHED"}
 
 
-def select_short_tracks(clip, min_frames):
+def select_short_tracks(clip, min_frames, report=None):
     """Select TRACK_ markers shorter than ``min_frames`` and return count."""
-    undertracked = get_undertracked_markers(clip, min_frames=min_frames)
+    undertracked = get_undertracked_markers(clip, min_frames=min_frames, report=report)
 
     for t in clip.tracking.tracks:
         t.select = False
@@ -715,7 +715,7 @@ class CLIP_OT_select_short_tracks(ClipOperator):
             return {"CANCELLED"}
 
         min_frames = context.scene.frames_track
-        count = select_short_tracks(clip, min_frames)
+        count = select_short_tracks(clip, min_frames, self.report)
 
         if count == 0:
             self.report({"INFO"}, "Keine kurzen TRACK_-Marker gefunden")
@@ -1128,7 +1128,7 @@ class CLIP_OT_all_detect(ClipOperator):
                 t.select = True
             if close_tracks and bpy.ops.clip.delete_selected.poll():
                 bpy.ops.clip.delete_selected()
-                clean_pending_tracks(clip)
+                clean_pending_tracks(clip, self.report)
 
             # Recompute new tracks after deletion
             names_after = {t.name for t in clip.tracking.tracks}
@@ -1150,7 +1150,7 @@ class CLIP_OT_all_detect(ClipOperator):
                 t.select = True
             if new_tracks and bpy.ops.clip.delete_track.poll():
                 bpy.ops.clip.delete_track()
-                clean_pending_tracks(clip)
+                clean_pending_tracks(clip, self.report)
             for track in clip.tracking.tracks:
                 track.select = False
 
@@ -1206,7 +1206,9 @@ class CLIP_OT_cycle_detect(ClipOperator):
             new_tracks, before = detect_new_tracks(
                 clip, detection_threshold, min_distance, margin
             )
-            new_tracks = remove_close_tracks(clip, new_tracks, min_distance, before)
+            new_tracks = remove_close_tracks(
+                clip, new_tracks, min_distance, before, self.report
+            )
             count = len(new_tracks)
 
             for track in clip.tracking.tracks:
@@ -1219,7 +1221,7 @@ class CLIP_OT_cycle_detect(ClipOperator):
                 t.select = True
             if new_tracks and bpy.ops.clip.delete_track.poll():
                 bpy.ops.clip.delete_track()
-                clean_pending_tracks(clip)
+                clean_pending_tracks(clip, self.report)
             for track in clip.tracking.tracks:
                 track.select = False
 
@@ -1265,7 +1267,7 @@ class CLIP_OT_all_cycle(ClipOperator):
             bpy.ops.clip.all_detect()
             bpy.ops.clip.distance_button()
             bpy.ops.clip.delete_selected()
-            clean_pending_tracks(clip)
+            clean_pending_tracks(clip, self.report)
 
             count = len(PENDING_RENAME)
             mframe = context.scene.marker_frame
@@ -1282,7 +1284,7 @@ class CLIP_OT_all_cycle(ClipOperator):
                 for t in PENDING_RENAME:
                     t.select = True
                 bpy.ops.clip.delete_selected()
-                clean_pending_tracks(clip)
+                clean_pending_tracks(clip, self.report)
                 self._detect_attempts += 1
                 if self._detect_attempts >= 20:
                     self.report({"WARNING"}, "Maximale Wiederholungen erreicht")
@@ -1321,7 +1323,7 @@ class CLIP_OT_all_cycle(ClipOperator):
             self._timer = None
         clip = context.space_data.clip
         if clip:
-            rename_pending_tracks(clip)
+            rename_pending_tracks(clip, self.report)
         return {"CANCELLED"}
 
 
@@ -1359,7 +1361,7 @@ class CLIP_OT_track_sequence(ClipOperator):
                         count += 1
             return count
 
-        clean_pending_tracks(clip)
+        clean_pending_tracks(clip, self.report)
         for t in clip.tracking.tracks:
             t.select = t.name.startswith("TRACK_") or t in PENDING_RENAME
 
@@ -1420,10 +1422,10 @@ def has_active_marker(tracks, frame):
     return False
 
 
-def get_undertracked_markers(clip, min_frames=10):
+def get_undertracked_markers(clip, min_frames=10, report=None):
     undertracked = []
 
-    clean_pending_tracks(clip)
+    clean_pending_tracks(clip, report)
 
     for track in clip.tracking.tracks:
         if not (track.name.startswith("TRACK_") or track in PENDING_RENAME):
@@ -1683,7 +1685,9 @@ class CLIP_OT_tracking_length(ClipOperator):
             return {"CANCELLED"}
 
         min_frames = context.scene.frames_track
-        undertracked = get_undertracked_markers(clip, min_frames=min_frames)
+        undertracked = get_undertracked_markers(
+            clip, min_frames=min_frames, report=self.report
+        )
 
         if not undertracked:
             self.report({"INFO"}, "Alle TRACK_-Marker erreichen die gewünschte Länge")
@@ -1847,9 +1851,9 @@ class CLIP_OT_marker_position(ClipOperator):
             return {"CANCELLED"}
 
         for m in markers:
-            print(
-                f"[{m['track_name']}] Frame {m['frame']}: "
-                f"X={m['x_px']:.1f}px, Y={m['y_px']:.1f}px"
+            self.report(
+                {"INFO"},
+                f"[{m['track_name']}] Frame {m['frame']}: X={m['x_px']:.1f}px, Y={m['y_px']:.1f}px",
             )
 
         return {"FINISHED"}
@@ -1895,8 +1899,9 @@ class CLIP_OT_good_marker_position(ClipOperator):
             )
 
         for m in good_markers_px:
-            print(
-                f"[{m['track_name']} @ frame {m['frame']}] -> X: {m['x_px']:.1f} px, Y: {m['y_px']:.1f} px"
+            self.report(
+                {"INFO"},
+                f"[{m['track_name']} @ frame {m['frame']}] -> X: {m['x_px']:.1f} px, Y: {m['y_px']:.1f} px",
             )
 
         return {"FINISHED"}
@@ -2042,13 +2047,15 @@ def run_iteration(context):
     return frames, error_val
 
 
-def _run_test_cycle(context, cleanup=False, cycles=4):
+def _run_test_cycle(context, cleanup=False, cycles=4, report=None):
     """Run detection and tracking multiple times and return total frames and error."""
     clip = context.space_data.clip
     total_end = 0
     total_error = 0.0
     for i in range(cycles):
-        print(f"[Test Cycle] Durchgang {i + 1}")
+        msg = f"[Test Cycle] Durchgang {i + 1}"
+        if report:
+            report({"INFO"}, msg)
         frames, err = run_iteration(context)
         total_end += frames
         total_error += err
@@ -2056,16 +2063,18 @@ def _run_test_cycle(context, cleanup=False, cycles=4):
     if cleanup:
         cleanup_all_tracks(clip)
 
-    print(f"[Test Cycle] Summe End-Frames: {total_end}, Error: {total_error:.4f}")
+    summary = f"[Test Cycle] Summe End-Frames: {total_end}, Error: {total_error:.4f}"
+    if report:
+        report({"INFO"}, summary)
     return total_end, total_error
 
 
-def run_pattern_size_test(context):
+def run_pattern_size_test(context, report=None):
     """Execute a single cycle for the current pattern size with one tracking pass."""
-    return _run_test_cycle(context, cleanup=True, cycles=1)
+    return _run_test_cycle(context, cleanup=True, cycles=1, report=report)
 
 
-def evaluate_motion_models(context, models=MOTION_MODELS, cycles=2):
+def evaluate_motion_models(context, models=MOTION_MODELS, cycles=2, report=None):
     """Return the best motion model along with its score and error."""
     clip = context.space_data.clip
     settings = clip.tracking.settings
@@ -2075,8 +2084,10 @@ def evaluate_motion_models(context, models=MOTION_MODELS, cycles=2):
 
     for model in models:
         settings.default_motion_model = model
-        score, err = _run_test_cycle(context, cycles=cycles)
-        print(f"[Test Motion] model={model} frames={score} error={err:.4f}")
+        score, err = _run_test_cycle(context, cycles=cycles, report=report)
+        msg = f"[Test Motion] model={model} frames={score} error={err:.4f}"
+        if report:
+            report({"INFO"}, msg)
         if (
             best_score is None
             or score > best_score
@@ -2090,7 +2101,9 @@ def evaluate_motion_models(context, models=MOTION_MODELS, cycles=2):
     return best_model, best_score, best_error
 
 
-def evaluate_channel_combinations(context, combos=CHANNEL_COMBOS, cycles=2):
+def evaluate_channel_combinations(
+    context, combos=CHANNEL_COMBOS, cycles=2, report=None
+):
     """Return the best RGB channel combination with its score and error."""
     clip = context.space_data.clip
     settings = clip.tracking.settings
@@ -2107,8 +2120,10 @@ def evaluate_channel_combinations(context, combos=CHANNEL_COMBOS, cycles=2):
         settings.use_default_red_channel = r
         settings.use_default_green_channel = g
         settings.use_default_blue_channel = b
-        score, err = _run_test_cycle(context, cycles=cycles)
-        print(f"[Test Channel] combo={combo} frames={score} error={err:.4f}")
+        score, err = _run_test_cycle(context, cycles=cycles, report=report)
+        msg = f"[Test Channel] combo={combo} frames={score} error={err:.4f}"
+        if report:
+            report({"INFO"}, msg)
         if (
             best_score is None
             or score > best_score
@@ -2146,7 +2161,7 @@ class CLIP_OT_test_pattern(ClipOperator):
         drops_left = 0
 
         while True:
-            score, error_sum = run_pattern_size_test(context)
+            score, error_sum = run_pattern_size_test(context, report=self.report)
 
             self.report(
                 {"INFO"},
@@ -2211,7 +2226,9 @@ class CLIP_OT_test_motion(ClipOperator):
             self.report({"WARNING"}, "Kein Clip geladen")
             return {"CANCELLED"}
 
-        best_model, score, error_val = evaluate_motion_models(context)
+        best_model, score, error_val = evaluate_motion_models(
+            context, report=self.report
+        )
         context.scene.test_value = MOTION_MODELS.index(best_model)
         self.report(
             {"INFO"},
@@ -2232,7 +2249,9 @@ class CLIP_OT_test_channel(ClipOperator):
             self.report({"WARNING"}, "Kein Clip geladen")
             return {"CANCELLED"}
 
-        best_combo, score, error_val = evaluate_channel_combinations(context)
+        best_combo, score, error_val = evaluate_channel_combinations(
+            context, report=self.report
+        )
         context.scene.test_value = CHANNEL_COMBOS.index(best_combo)
         self.report(
             {"INFO"},
@@ -2346,7 +2365,7 @@ def max_track_error(scene, clip):
     return max_error
 
 
-def cleanup_error_tracks(scene, clip):
+def cleanup_error_tracks(scene, clip, report=None):
     """Delete TRACK_ markers while decreasing the error threshold."""
     original = scene.error_threshold
 
@@ -2355,7 +2374,7 @@ def cleanup_error_tracks(scene, clip):
     threshold = max_err
 
     while threshold >= original:
-        while cleanup_pass(scene, clip, threshold):
+        while cleanup_pass(scene, clip, threshold, report):
             pass
 
         threshold *= 0.9
@@ -2364,7 +2383,7 @@ def cleanup_error_tracks(scene, clip):
     scene.error_threshold = original
 
 
-def cleanup_pass(scene, clip, threshold):
+def cleanup_pass(scene, clip, threshold, report=None):
     """Run a single cleanup pass and return True if tracks were deleted."""
     if not bpy.ops.clip.track_cleanup.poll():
         return False
@@ -2372,7 +2391,9 @@ def cleanup_pass(scene, clip, threshold):
 
     selected = sum(1 for t in clip.tracking.tracks if t.select)
     if selected:
-        print(f"[Cleanup] {selected} Tracks, Threshold {threshold:.2f}")
+        msg = f"[Cleanup] {selected} Tracks, Threshold {threshold:.2f}"
+        if report:
+            report({"INFO"}, msg)
         if bpy.ops.clip.delete_selected.poll():
             bpy.ops.clip.delete_selected()
         return True
@@ -2506,7 +2527,7 @@ class CLIP_OT_cleanup(ClipOperator):
             self.report({"WARNING"}, "Kein Clip geladen")
             return {"CANCELLED"}
 
-        cleanup_error_tracks(context.scene, clip)
+        cleanup_error_tracks(context.scene, clip, report=self.report)
 
         self.report({"INFO"}, "[Cleanup] fertig")
         return {"FINISHED"}
