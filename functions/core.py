@@ -369,7 +369,7 @@ class CLIP_OT_track_nr1(ClipOperator):
             {"INFO"},
             f"[Track Nr.1] start {self._start} end {self._end} tracked {self._tracked}",
         )
-        return "WAIT_TRACKING"
+        return "DECIDE"
 
     def step_wait_tracking(self, context):
         """Wait until all NEW_ markers are tracked for the current frame."""
@@ -386,28 +386,20 @@ class CLIP_OT_track_nr1(ClipOperator):
         return "WAIT_TRACKING"
 
     def step_decide(self, context):
-        """Move the playhead to the next frame before cleanup."""
+        """Determine whether to continue detection or finish."""
         scene = context.scene
         clip = context.space_data.clip
-
-        self.report(
-            {"INFO"},
-            f"[Track Nr.1] decide end {self._end} tracked {self._tracked} threshold {scene.marker_frame}",
-        )
-
         current = scene.frame_current
         threshold = scene.marker_frame
+
         frame, count = find_low_marker_frame(clip, threshold)
         self._next_frame = frame
+
         if frame is not None and frame != current:
             scene.frame_current = frame
-            self.report(
-                {"INFO"}, f"[Track Nr.1] next low frame {frame} ({count} markers)"
-            )
-            return "CLEANUP"
-        else:
-            self.report({"INFO"}, "[Track Nr.1] finish cycle")
-            return "RENAME"
+            return "DETECT"
+
+        return "RENAME"
 
     def step_cleanup(self, context):
         """Remove short tracks and keep the playhead at the target frame."""
@@ -427,8 +419,37 @@ class CLIP_OT_track_nr1(ClipOperator):
         return "DETECT"
 
     def step_rename(self, context):
-        rename_new_tracks(context)
-        return "DETECT"
+        """Rename all pending tracks once tracking is done."""
+        clip = context.space_data.clip
+        clean_pending_tracks(clip)
+        if not PENDING_RENAME:
+            return "DONE"
+
+        existing_numbers = []
+        for t in clip.tracking.tracks:
+            try:
+                m = re.search(r"(\d+)$", t.name)
+                if m:
+                    existing_numbers.append(int(m.group(1)))
+            except Exception:
+                continue
+
+        next_num = max(existing_numbers) + 1 if existing_numbers else 1
+
+        for t in PENDING_RENAME:
+            try:
+                base = strip_prefix(t.name)
+                t.name = f"Track {next_num:03d}"
+                next_num += 1
+            except Exception:
+                continue
+
+        PENDING_RENAME.clear()
+        return "DONE"
+
+    def step_done(self, context):
+        """Finish the operator."""
+        return None
 
     def execute(self, context):
         wm = context.window_manager
