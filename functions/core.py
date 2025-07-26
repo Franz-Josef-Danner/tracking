@@ -1,10 +1,9 @@
+import math
+import os
+import re
+import shutil
 
 import bpy
-import os
-import shutil
-import math
-import re
-from bpy.props import IntProperty, FloatProperty, BoolProperty
 
 # Frames, die mit zu wenig Markern gefunden wurden
 NF = []
@@ -13,14 +12,14 @@ NF = []
 LAST_DETECT_COUNT = None
 
 # Standard Motion Model
-DEFAULT_MOTION_MODEL = 'Loc'
+DEFAULT_MOTION_MODEL = "Loc"
 MOTION_MODELS = [
-    'Loc',
-    'LocRot',
-    'LocScale',
-    'LocRotScale',
-    'Affine',
-    'Perspective',
+    "Loc",
+    "LocRot",
+    "LocScale",
+    "LocRotScale",
+    "Affine",
+    "Perspective",
 ]
 
 # Channel combinations for Test Detect CH
@@ -55,6 +54,15 @@ TRACKED_FRAMES = 0
 LAST_TRACK_END = None
 
 
+class ClipOperator(bpy.types.Operator):
+    """Base class for operators requiring an active clip."""
+
+    @classmethod
+    def poll(cls, context):
+        space = getattr(context, "space_data", None)
+        return space and getattr(space, "clip", None) is not None
+
+
 def add_timer(window_manager, window):
     """Create a timer using the global `TIMER_INTERVAL`."""
     return window_manager.event_timer_add(TIMER_INTERVAL, window=window)
@@ -81,7 +89,7 @@ def clamp_pattern_size(value, clip):
 
 def strip_prefix(name):
     """Remove an existing uppercase prefix from a track name."""
-    return re.sub(r'^[A-Z]+_', '', name)
+    return re.sub(r"^[A-Z]+_", "", name)
 
 
 def add_pending_tracks(tracks):
@@ -159,7 +167,9 @@ def detect_new_tracks(clip, detection_threshold, min_distance, margin):
         margin=margin,
     )
     names_after = {t.name for t in clip.tracking.tracks}
-    new_tracks = [t for t in clip.tracking.tracks if t.name in names_after - names_before]
+    new_tracks = [
+        t for t in clip.tracking.tracks if t.name in names_after - names_before
+    ]
     return new_tracks, names_before
 
 
@@ -200,17 +210,18 @@ def remove_close_tracks(clip, new_tracks, distance_px, names_before):
     names_after = {t.name for t in clip.tracking.tracks}
     return [t for t in clip.tracking.tracks if t.name in names_after - names_before]
 
+
 class OBJECT_OT_simple_operator(bpy.types.Operator):
     bl_idname = "object.simple_operator"
     bl_label = "Simple Operator"
     bl_description = "Gibt eine Meldung aus"
 
     def execute(self, context):
-        self.report({'INFO'}, "Hello World from Addon")
-        return {'FINISHED'}
+        self.report({"INFO"}, "Hello World from Addon")
+        return {"FINISHED"}
 
 
-class CLIP_OT_panel_button(bpy.types.Operator):
+class CLIP_OT_panel_button(ClipOperator):
     bl_idname = "clip.panel_button"
     bl_label = "Proxy"
     bl_description = "Erstellt Proxy-Dateien mit 50% Gr\u00f6\u00dfe"
@@ -240,16 +251,19 @@ class CLIP_OT_panel_button(bpy.types.Operator):
                 try:
                     shutil.rmtree(proxy_dir)
                 except Exception as e:
-                    self.report({'WARNING'}, f"Fehler beim L\u00f6schen des Proxy-Verzeichnisses: {e}")
+                    self.report(
+                        {"WARNING"},
+                        f"Fehler beim L\u00f6schen des Proxy-Verzeichnisses: {e}",
+                    )
 
         # Blender-Operator zum Erzeugen der Proxys aufrufen
         bpy.ops.clip.rebuild_proxy()
 
-        self.report({'INFO'}, "Proxy auf 50% erstellt")
-        return {'FINISHED'}
+        self.report({"INFO"}, "Proxy auf 50% erstellt")
+        return {"FINISHED"}
 
 
-class CLIP_OT_proxy_on(bpy.types.Operator):
+class CLIP_OT_proxy_on(ClipOperator):
     bl_idname = "clip.proxy_on"
     bl_label = "Proxy on"
     bl_description = "Aktiviert das Proxy"
@@ -257,15 +271,15 @@ class CLIP_OT_proxy_on(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         clip.use_proxy = True
-        self.report({'INFO'}, "Proxy aktiviert")
-        return {'FINISHED'}
+        self.report({"INFO"}, "Proxy aktiviert")
+        return {"FINISHED"}
 
 
-class CLIP_OT_proxy_off(bpy.types.Operator):
+class CLIP_OT_proxy_off(ClipOperator):
     bl_idname = "clip.proxy_off"
     bl_label = "Proxy off"
     bl_description = "Deaktiviert das Proxy"
@@ -273,18 +287,18 @@ class CLIP_OT_proxy_off(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         clip.use_proxy = False
-        self.report({'INFO'}, "Proxy deaktiviert")
-        return {'FINISHED'}
+        self.report({"INFO"}, "Proxy deaktiviert")
+        return {"FINISHED"}
 
 
-class CLIP_OT_track_nr1(bpy.types.Operator):
+class CLIP_OT_track_nr1(ClipOperator):
     bl_idname = "clip.track_nr1"
     bl_label = "Track Nr. 1"
-    bl_options = {'REGISTER', 'UNDO'}
+    bl_options = {"REGISTER", "UNDO"}
 
     _timer = None
     _state = "INIT"
@@ -316,8 +330,9 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
             bpy.ops.clip.track_partial()
         self._end = scene.frame_current
         self._tracked = self._end - self._start
-        print(
-            f"[Track Nr.1] start {self._start} end {self._end} tracked {self._tracked}"
+        self.report(
+            {"INFO"},
+            f"[Track Nr.1] start {self._start} end {self._end} tracked {self._tracked}",
         )
         return "DECIDE"
 
@@ -326,8 +341,9 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         scene = context.scene
         clip = context.space_data.clip
 
-        print(
-            f"[Track Nr.1] decide end {self._end} tracked {self._tracked} threshold {scene.marker_frame}"
+        self.report(
+            {"INFO"},
+            f"[Track Nr.1] decide end {self._end} tracked {self._tracked} threshold {scene.marker_frame}",
         )
 
         current = scene.frame_current
@@ -336,10 +352,12 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         self._next_frame = frame
         if frame is not None and frame != current:
             scene.frame_current = frame
-            print(f"[Track Nr.1] next low frame {frame} ({count} markers)")
+            self.report(
+                {"INFO"}, f"[Track Nr.1] next low frame {frame} ({count} markers)"
+            )
             return "CLEANUP"
         else:
-            print("[Track Nr.1] finish cycle")
+            self.report({"INFO"}, "[Track Nr.1] finish cycle")
             return "RENAME"
 
     def step_cleanup(self, context):
@@ -347,7 +365,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         if not context.space_data.clip or self._tracked <= 0:
             return "MOVE"
 
-        print("[Track Nr.1] cleanup short tracks")
+        self.report({"INFO"}, "[Track Nr.1] cleanup short tracks")
         cleanup_short_tracks(context)
 
         return "MOVE"
@@ -368,18 +386,18 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         self._timer = add_timer(wm, context.window)
         self._state = "INIT"
         wm.modal_handler_add(self)
-        return {'RUNNING_MODAL'}
+        return {"RUNNING_MODAL"}
 
     def cancel(self, context):
         wm = context.window_manager
         wm.event_timer_remove(self._timer)
-        return {'CANCELLED'}
+        return {"CANCELLED"}
 
     def modal(self, context, event):
-        if event.type == 'ESC':
+        if event.type == "ESC":
             return self.cancel(context)
-        if event.type != 'TIMER':
-            return {'PASS_THROUGH'}
+        if event.type != "TIMER":
+            return {"PASS_THROUGH"}
         step_method = getattr(self, f"step_{self._state.lower()}", None)
         if step_method:
             next_state = step_method(context)
@@ -387,10 +405,10 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
                 return self.cancel(context)
             self._state = next_state
 
-        return {'RUNNING_MODAL'}
+        return {"RUNNING_MODAL"}
 
 
-class CLIP_OT_detect_button(bpy.types.Operator):
+class CLIP_OT_detect_button(ClipOperator):
     bl_idname = "clip.detect_button"
     bl_label = "Test Detect"
     bl_description = "Erkennt Features mit dynamischen Parametern"
@@ -399,8 +417,8 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         space = context.space_data
         clip = space.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         clip.use_proxy = False
 
@@ -413,15 +431,12 @@ class CLIP_OT_detect_button(bpy.types.Operator):
 
         threshold_value = 1.0
 
-        detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
-
         margin_base = int(width * 0.01)
         min_distance_base = int(width * 0.05)
 
-        factor = math.log10(detection_threshold * 10000000000) / 10
-        margin = int(margin_base * factor)
-        min_distance = int(min_distance_base * factor)
-
+        detection_threshold, margin, min_distance = compute_detection_params(
+            threshold_value, margin_base, min_distance_base
+        )
 
         active = None
         if hasattr(space, "tracking"):
@@ -467,11 +482,9 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             for track in clip.tracking.tracks:
                 track.select = False
             threshold_value = threshold_value * ((new_markers + 0.1) / mf_base)
-            # adjust detection threshold dynamically
-            detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
-            factor = math.log10(detection_threshold * 10000000000) / 10
-            margin = int(margin_base * factor)
-            min_distance = int(min_distance_base * factor)
+            detection_threshold, margin, min_distance = compute_detection_params(
+                threshold_value, margin_base, min_distance_base
+            )
             attempt += 1
 
         settings = clip.tracking.settings
@@ -495,22 +508,22 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         for t in new_tracks:
             t.select = True
         add_pending_tracks(new_tracks)
-        self.report({'INFO'}, f"{new_markers} Marker nach {attempt+1} Durchläufen")
-        return {'FINISHED'}
+        self.report({"INFO"}, f"{new_markers} Marker nach {attempt+1} Durchläufen")
+        return {"FINISHED"}
 
 
-class CLIP_OT_prefix_new(bpy.types.Operator):
+class CLIP_OT_prefix_new(ClipOperator):
     bl_idname = "clip.prefix_new"
     bl_label = "NEW"
     bl_description = "Präfix NEW_ für selektierte Tracks setzen"
 
-    silent: BoolProperty(default=False, options={'HIDDEN'})
+    silent: bpy.props.BoolProperty(default=False, options={"HIDDEN"})
 
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         prefix = "NEW_"
         count = 0
@@ -519,22 +532,22 @@ class CLIP_OT_prefix_new(bpy.types.Operator):
                 track.name = prefix + track.name
                 count += 1
         if not self.silent:
-            self.report({'INFO'}, f"{count} Tracks umbenannt")
-        return {'FINISHED'}
+            self.report({"INFO"}, f"{count} Tracks umbenannt")
+        return {"FINISHED"}
 
 
-class CLIP_OT_prefix_test(bpy.types.Operator):
+class CLIP_OT_prefix_test(ClipOperator):
     bl_idname = "clip.prefix_test"
     bl_label = "Name Test"
     bl_description = "Präfix TEST_ für selektierte Tracks setzen"
 
-    silent: BoolProperty(default=False, options={'HIDDEN'})
+    silent: bpy.props.BoolProperty(default=False, options={"HIDDEN"})
 
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         prefix = "TEST_"
         count = 0
@@ -543,22 +556,22 @@ class CLIP_OT_prefix_test(bpy.types.Operator):
                 track.name = prefix + track.name
                 count += 1
         if not self.silent:
-            self.report({'INFO'}, f"{count} Tracks umbenannt")
-        return {'FINISHED'}
+            self.report({"INFO"}, f"{count} Tracks umbenannt")
+        return {"FINISHED"}
 
 
-class CLIP_OT_prefix_track(bpy.types.Operator):
+class CLIP_OT_prefix_track(ClipOperator):
     bl_idname = "clip.prefix_track"
     bl_label = "Name Track"
     bl_description = "Präfix TRACK_ für selektierte Tracks setzen"
 
-    silent: BoolProperty(default=False, options={'HIDDEN'})
+    silent: bpy.props.BoolProperty(default=False, options={"HIDDEN"})
 
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         prefix = "TRACK_"
         count = 0
@@ -570,22 +583,22 @@ class CLIP_OT_prefix_track(bpy.types.Operator):
                     track.name = new_name
                     count += 1
         if not self.silent:
-            self.report({'INFO'}, f"{count} Tracks umbenannt")
-        return {'FINISHED'}
+            self.report({"INFO"}, f"{count} Tracks umbenannt")
+        return {"FINISHED"}
 
 
-class CLIP_OT_prefix_good(bpy.types.Operator):
+class CLIP_OT_prefix_good(ClipOperator):
     bl_idname = "clip.prefix_good"
     bl_label = "Name GOOD"
     bl_description = "TRACK_ durch GOOD_ ersetzen"
 
-    silent: BoolProperty(default=False, options={'HIDDEN'})
+    silent: bpy.props.BoolProperty(default=False, options={"HIDDEN"})
 
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         count = 0
         for track in clip.tracking.tracks:
@@ -593,11 +606,11 @@ class CLIP_OT_prefix_good(bpy.types.Operator):
                 track.name = "GOOD_" + track.name[6:]
                 count += 1
         if not self.silent:
-            self.report({'INFO'}, f"{count} Tracks umbenannt")
-        return {'FINISHED'}
+            self.report({"INFO"}, f"{count} Tracks umbenannt")
+        return {"FINISHED"}
 
 
-class CLIP_OT_distance_button(bpy.types.Operator):
+class CLIP_OT_distance_button(ClipOperator):
     bl_idname = "clip.distance_button"
     bl_label = "Distance"
     bl_description = (
@@ -608,8 +621,8 @@ class CLIP_OT_distance_button(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         frame = context.scene.frame_current
         width, height = clip.size
@@ -641,38 +654,38 @@ class CLIP_OT_distance_button(bpy.types.Operator):
                     nt.select = True
                     marked += 1
                     break
-        self.report({'INFO'}, f"{marked} Tracks markiert")
-        return {'FINISHED'}
+        self.report({"INFO"}, f"{marked} Tracks markiert")
+        return {"FINISHED"}
 
 
-class CLIP_OT_delete_selected(bpy.types.Operator):
+class CLIP_OT_delete_selected(ClipOperator):
     bl_idname = "clip.delete_selected"
     bl_label = "Delete"
     bl_description = "Löscht selektierte Tracks"
 
-    silent: BoolProperty(default=False, options={'HIDDEN'})
+    silent: bpy.props.BoolProperty(default=False, options={"HIDDEN"})
 
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         has_selection = any(t.select for t in clip.tracking.tracks)
         if not has_selection:
             if not self.silent:
-                self.report({'WARNING'}, "Keine Tracks ausgewählt")
-            return {'CANCELLED'}
+                self.report({"WARNING"}, "Keine Tracks ausgewählt")
+            return {"CANCELLED"}
 
         if bpy.ops.clip.delete_track.poll():
             bpy.ops.clip.delete_track()
             clean_pending_tracks(clip)
             if not self.silent:
-                self.report({'INFO'}, "Tracks gelöscht")
+                self.report({"INFO"}, "Tracks gelöscht")
         else:
             if not self.silent:
-                self.report({'WARNING'}, "Löschen nicht möglich")
-        return {'FINISHED'}
+                self.report({"WARNING"}, "Löschen nicht möglich")
+        return {"FINISHED"}
 
 
 def select_short_tracks(clip, min_frames):
@@ -690,43 +703,39 @@ def select_short_tracks(clip, min_frames):
     return len(names)
 
 
-
-
-class CLIP_OT_select_short_tracks(bpy.types.Operator):
+class CLIP_OT_select_short_tracks(ClipOperator):
     bl_idname = "clip.select_short_tracks"
     bl_label = "Select Short Tracks"
-    bl_description = (
-        "Selektiert TRACK_-Marker, deren Länge unter 'Frames/Track' liegt"
-    )
+    bl_description = "Selektiert TRACK_-Marker, deren Länge unter 'Frames/Track' liegt"
 
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         min_frames = context.scene.frames_track
         count = select_short_tracks(clip, min_frames)
 
         if count == 0:
-            self.report({'INFO'}, "Keine kurzen TRACK_-Marker gefunden")
+            self.report({"INFO"}, "Keine kurzen TRACK_-Marker gefunden")
         else:
-            self.report({'INFO'}, f"{count} TRACK_-Marker ausgewählt")
+            self.report({"INFO"}, f"{count} TRACK_-Marker ausgewählt")
 
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
-class CLIP_OT_count_button(bpy.types.Operator):
+class CLIP_OT_count_button(ClipOperator):
     bl_idname = "clip.count_button"
     bl_label = "Count"
     bl_description = "Selektiert und zählt TEST_-Tracks"
-    silent: BoolProperty(default=False, options={"HIDDEN"})
+    silent: bpy.props.BoolProperty(default=False, options={"HIDDEN"})
 
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         prefix = "TEST_"
         for t in clip.tracking.tracks:
@@ -742,45 +751,41 @@ class CLIP_OT_count_button(bpy.types.Operator):
         if track_min <= count <= track_max:
             for t in clip.tracking.tracks:
                 if t.name.startswith(prefix):
-                    t.name = "TRACK_" + t.name[len(prefix):]
+                    t.name = "TRACK_" + t.name[len(prefix) :]
                     t.select = False
             if not self.silent:
-                self.report({'INFO'}, f"{count} Tracks in TRACK_ umbenannt")
+                self.report({"INFO"}, f"{count} Tracks in TRACK_ umbenannt")
         else:
             if not self.silent:
-                self.report({'INFO'}, f"{count} TEST_-Tracks ausserhalb des Bereichs")
-        return {'FINISHED'}
+                self.report({"INFO"}, f"{count} TEST_-Tracks ausserhalb des Bereichs")
+        return {"FINISHED"}
 
 
-class CLIP_OT_defaults_detect(bpy.types.Operator):
+class CLIP_OT_defaults_detect(ClipOperator):
     bl_idname = "clip.defaults_detect"
     bl_label = "Test Detect"
-    bl_description = (
-        "Wiederholt Detect und Count, bis genug Marker vorhanden sind"
-    )
+    bl_description = "Wiederholt Detect und Count, bis genug Marker vorhanden sind"
 
     def execute(self, context):
         return _Test_detect(self, context, use_defaults=False)
 
 
-class CLIP_OT_motion_detect(bpy.types.Operator):
+class CLIP_OT_motion_detect(ClipOperator):
     bl_idname = "clip.motion_detect"
     bl_label = "Test Detect MM"
-    bl_description = (
-        "F\u00fchrt Test Detect mit jedem Motion Model aus und speichert das beste Ergebnis"
-    )
+    bl_description = "F\u00fchrt Test Detect mit jedem Motion Model aus und speichert das beste Ergebnis"
 
     def execute(self, context):
         global TEST_END_FRAME, TEST_SETTINGS
 
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         if not TEST_SETTINGS:
-            self.report({'WARNING'}, "Keine gespeicherten Einstellungen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Keine gespeicherten Einstellungen")
+            return {"CANCELLED"}
 
         settings = clip.tracking.settings
         original_model = settings.default_motion_model
@@ -807,7 +812,7 @@ class CLIP_OT_motion_detect(bpy.types.Operator):
             if end_frame is None:
                 continue
             self.report(
-                {'INFO'},
+                {"INFO"},
                 f"Run end_frame={end_frame}, pattern_size={settings.default_pattern_size}, "
                 f"motion_model={model}, "
                 f"channels=({settings.use_default_red_channel}, {settings.use_default_green_channel}, {settings.use_default_blue_channel})",
@@ -821,35 +826,33 @@ class CLIP_OT_motion_detect(bpy.types.Operator):
         TEST_SETTINGS["motion_model"] = best_model
 
         self.report(
-            {'INFO'},
+            {"INFO"},
             f"Test Detect MM best_end_frame={TEST_END_FRAME}, "
             f"pattern_size={TEST_SETTINGS.get('pattern_size')}, "
             f"motion_model={best_model}, "
-            f"channels={TEST_SETTINGS.get('channels_active')}"
+            f"channels={TEST_SETTINGS.get('channels_active')}",
         )
 
-        self.report({'INFO'}, "Test Detect MM abgeschlossen")
-        return {'FINISHED'}
+        self.report({"INFO"}, "Test Detect MM abgeschlossen")
+        return {"FINISHED"}
 
 
-class CLIP_OT_channel_detect(bpy.types.Operator):
+class CLIP_OT_channel_detect(ClipOperator):
     bl_idname = "clip.channel_detect"
     bl_label = "Test Detect CH"
-    bl_description = (
-        "F\u00fchrt Test Detect mit verschiedenen Farbkan\u00e4len aus und speichert das beste Ergebnis"
-    )
+    bl_description = "F\u00fchrt Test Detect mit verschiedenen Farbkan\u00e4len aus und speichert das beste Ergebnis"
 
     def execute(self, context):
         global TEST_END_FRAME, TEST_SETTINGS
 
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         if not TEST_SETTINGS:
-            self.report({'WARNING'}, "Keine gespeicherten Einstellungen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Keine gespeicherten Einstellungen")
+            return {"CANCELLED"}
 
         settings = clip.tracking.settings
 
@@ -882,7 +885,7 @@ class CLIP_OT_channel_detect(bpy.types.Operator):
             if end_frame is None:
                 continue
             self.report(
-                {'INFO'},
+                {"INFO"},
                 f"Run end_frame={end_frame}, pattern_size={settings.default_pattern_size}, "
                 f"motion_model={settings.default_motion_model}, "
                 f"channels={channels}",
@@ -900,18 +903,18 @@ class CLIP_OT_channel_detect(bpy.types.Operator):
         TEST_SETTINGS["channels_active"] = best_channels
 
         self.report(
-            {'INFO'},
+            {"INFO"},
             f"Test Detect CH best_end_frame={TEST_END_FRAME}, "
             f"pattern_size={TEST_SETTINGS.get('pattern_size')}, "
             f"motion_model={TEST_SETTINGS.get('motion_model')}, "
-            f"channels={best_channels}"
+            f"channels={best_channels}",
         )
 
-        self.report({'INFO'}, "Test Detect CH abgeschlossen")
-        return {'FINISHED'}
+        self.report({"INFO"}, "Test Detect CH abgeschlossen")
+        return {"FINISHED"}
 
 
-class CLIP_OT_apply_settings(bpy.types.Operator):
+class CLIP_OT_apply_settings(ClipOperator):
     bl_idname = "clip.apply_detect_settings"
     bl_label = "Test Detect Apply"
     bl_description = (
@@ -924,12 +927,12 @@ class CLIP_OT_apply_settings(bpy.types.Operator):
 
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         if not TEST_SETTINGS:
-            self.report({'WARNING'}, "Keine gespeicherten Einstellungen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Keine gespeicherten Einstellungen")
+            return {"CANCELLED"}
 
         settings = clip.tracking.settings
 
@@ -953,36 +956,33 @@ class CLIP_OT_apply_settings(bpy.types.Operator):
             settings.use_default_green_channel = g
             settings.use_default_blue_channel = b
 
-        self.report({'INFO'}, "Gespeicherte Test Detect Werte gesetzt")
-        return {'FINISHED'}
+        self.report({"INFO"}, "Gespeicherte Test Detect Werte gesetzt")
+        return {"FINISHED"}
 
 
-class CLIP_OT_track_bidirectional(bpy.types.Operator):
+class CLIP_OT_track_bidirectional(ClipOperator):
     bl_idname = "clip.track_bidirectional"
     bl_label = "Track"
-    bl_description = (
-        "Trackt selektierte Marker r\u00fcckw\u00e4rts zum Szenenanfang und danach vorw\u00e4rts"
-    )
+    bl_description = "Trackt selektierte Marker r\u00fcckw\u00e4rts zum Szenenanfang und danach vorw\u00e4rts"
 
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         if not any(t.select for t in clip.tracking.tracks):
-            self.report({'WARNING'}, "Keine Tracks ausgew\u00e4hlt")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Keine Tracks ausgew\u00e4hlt")
+            return {"CANCELLED"}
 
         scene = context.scene
         original_start = scene.frame_start
         original_end = scene.frame_end
         current = scene.frame_current
 
-
         if not bpy.ops.clip.track_markers.poll():
-            self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Tracking nicht m\u00f6glich")
+            return {"CANCELLED"}
 
         scene.frame_start = original_start
         scene.frame_end = current
@@ -997,11 +997,10 @@ class CLIP_OT_track_bidirectional(bpy.types.Operator):
         scene.frame_end = original_end
         scene.frame_current = current
 
+        return {"FINISHED"}
 
-        return {'FINISHED'}
 
-
-class CLIP_OT_track_partial(bpy.types.Operator):
+class CLIP_OT_track_partial(ClipOperator):
     bl_idname = "clip.track_partial"
     bl_label = "Track Partial"
     bl_description = (
@@ -1013,49 +1012,49 @@ class CLIP_OT_track_partial(bpy.types.Operator):
         scene = context.scene
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         if not ensure_valid_selection(clip, scene.frame_current):
-            self.report({'WARNING'}, "Keine g\u00fcltigen Marker ausgew\xe4hlt")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Keine g\u00fcltigen Marker ausgew\xe4hlt")
+            return {"CANCELLED"}
 
         original_start = scene.frame_start
         original_end = scene.frame_end
         current = scene.frame_current
 
-        print(
-            f"[Track Partial] current {current} start {original_start} end {original_end}"
+        self.report(
+            {"INFO"},
+            f"[Track Partial] current {current} start {original_start} end {original_end}",
         )
 
         clip.use_proxy = True
 
         if bpy.ops.clip.track_markers.poll():
-            print("[Track Partial] track backwards")
+            self.report({"INFO"}, "[Track Partial] track backwards")
             track_markers_range(scene, original_start, current, current, True)
 
-            print("[Track Partial] track forwards")
+            self.report({"INFO"}, "[Track Partial] track forwards")
             track_markers_range(scene, current, original_end, current, False)
 
-        print(f"[Track Partial] done at frame {scene.frame_current}")
+        self.report({"INFO"}, f"[Track Partial] done at frame {scene.frame_current}")
 
         scene.frame_start = original_start
         scene.frame_end = original_end
 
-        return {'FINISHED'}
+        return {"FINISHED"}
 
-class CLIP_OT_all_detect(bpy.types.Operator):
+
+class CLIP_OT_all_detect(ClipOperator):
     bl_idname = "clip.all_detect"
     bl_label = "Detect"
-    bl_description = (
-        "F\u00fchrt den Detect-Schritt aus All Cycle einzeln aus"
-    )
+    bl_description = "F\u00fchrt den Detect-Schritt aus All Cycle einzeln aus"
 
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         width, _ = clip.size
 
@@ -1067,11 +1066,9 @@ class CLIP_OT_all_detect(bpy.types.Operator):
         mfp_max = mfp * 1.1
 
         threshold_value = 1.0
-        detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
-        factor = math.log10(detection_threshold * 10000000000) / 10
-        margin = int(margin_base * factor)
-        min_distance = int(min_distance_base * factor)
-
+        detection_threshold, margin, min_distance = compute_detection_params(
+            threshold_value, margin_base, min_distance_base
+        )
 
         attempt = 0
         new_markers = 0
@@ -1158,10 +1155,9 @@ class CLIP_OT_all_detect(bpy.types.Operator):
                 track.select = False
 
             threshold_value = threshold_value * ((new_markers + 0.1) / mfp)
-            detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
-            factor = math.log10(detection_threshold * 10000000000) / 10
-            margin = int(margin_base * factor)
-            min_distance = int(min_distance_base * factor)
+            detection_threshold, margin, min_distance = compute_detection_params(
+                threshold_value, margin_base, min_distance_base
+            )
             attempt += 1
 
         context.scene.threshold_value = threshold_value
@@ -1174,21 +1170,19 @@ class CLIP_OT_all_detect(bpy.types.Operator):
             t.select = True
         add_pending_tracks(new_tracks)
 
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
-class CLIP_OT_cycle_detect(bpy.types.Operator):
+class CLIP_OT_cycle_detect(ClipOperator):
     bl_idname = "clip.cycle_detect"
     bl_label = "Cycle Detect"
-    bl_description = (
-        "Wiederholt Detect Features bis zur Zielanzahl und pr\u00fcft den Abstand zu GOOD_-, TRACK_- und NEW_-Markern"
-    )
+    bl_description = "Wiederholt Detect Features bis zur Zielanzahl und pr\u00fcft den Abstand zu GOOD_-, TRACK_- und NEW_-Markern"
 
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         clip.use_proxy = False
 
@@ -1212,9 +1206,7 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
             new_tracks, before = detect_new_tracks(
                 clip, detection_threshold, min_distance, margin
             )
-            new_tracks = remove_close_tracks(
-                clip, new_tracks, min_distance, before
-            )
+            new_tracks = remove_close_tracks(clip, new_tracks, min_distance, before)
             count = len(new_tracks)
 
             for track in clip.tracking.tracks:
@@ -1245,32 +1237,31 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
             bpy.ops.clip.prefix_new(silent=True)
         add_pending_tracks(new_tracks)
 
-        return {'FINISHED'}
+        return {"FINISHED"}
 
-class CLIP_OT_all_cycle(bpy.types.Operator):
+
+class CLIP_OT_all_cycle(ClipOperator):
     bl_idname = "clip.all_cycle"
     bl_label = "All Cycle"
-    bl_description = (
-        "Startet einen kombinierten Tracking-Zyklus ohne Proxy-Bau, der mit Esc abgebrochen werden kann"
-    )
+    bl_description = "Startet einen kombinierten Tracking-Zyklus ohne Proxy-Bau, der mit Esc abgebrochen werden kann"
 
     _timer = None
     _state = "DETECT"
     _detect_attempts = 0
 
     def modal(self, context, event):
-        if event.type == 'ESC':
+        if event.type == "ESC":
             return self.cancel(context)
 
-        if event.type != 'TIMER':
-            return {'PASS_THROUGH'}
+        if event.type != "TIMER":
+            return {"PASS_THROUGH"}
 
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
+            self.report({"WARNING"}, "Kein Clip geladen")
             return self.cancel(context)
 
-        if self._state == 'DETECT':
+        if self._state == "DETECT":
             bpy.ops.clip.all_detect()
             bpy.ops.clip.distance_button()
             bpy.ops.clip.delete_selected()
@@ -1286,7 +1277,7 @@ class CLIP_OT_all_cycle(bpy.types.Operator):
                 for t in PENDING_RENAME:
                     t.select = True
                 self._detect_attempts = 0
-                self._state = 'TRACK'
+                self._state = "TRACK"
             else:
                 for t in PENDING_RENAME:
                     t.select = True
@@ -1294,35 +1285,35 @@ class CLIP_OT_all_cycle(bpy.types.Operator):
                 clean_pending_tracks(clip)
                 self._detect_attempts += 1
                 if self._detect_attempts >= 20:
-                    self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
+                    self.report({"WARNING"}, "Maximale Wiederholungen erreicht")
                     return self.cancel(context)
 
-        elif self._state == 'TRACK':
+        elif self._state == "TRACK":
             bpy.ops.clip.track_sequence()
-            self._state = 'CLEAN'
+            self._state = "CLEAN"
 
-        elif self._state == 'CLEAN':
+        elif self._state == "CLEAN":
             bpy.ops.clip.tracking_length()
-            self._state = 'JUMP'
+            self._state = "JUMP"
 
-        elif self._state == 'JUMP':
+        elif self._state == "JUMP":
             frame = jump_to_first_frame_with_few_active_markers(
                 min_required=context.scene.marker_frame
             )
             if frame is None:
                 return self.cancel(context)
             context.scene.frame_current = frame
-            self._state = 'DETECT'
+            self._state = "DETECT"
 
-        return {'PASS_THROUGH'}
+        return {"PASS_THROUGH"}
 
     def execute(self, context):
-        self._state = 'DETECT'
+        self._state = "DETECT"
         self._detect_attempts = 0
         wm = context.window_manager
         self._timer = add_timer(wm, context.window)
         wm.modal_handler_add(self)
-        return {'RUNNING_MODAL'}
+        return {"RUNNING_MODAL"}
 
     def cancel(self, context):
         if self._timer:
@@ -1331,21 +1322,19 @@ class CLIP_OT_all_cycle(bpy.types.Operator):
         clip = context.space_data.clip
         if clip:
             rename_pending_tracks(clip)
-        return {'CANCELLED'}
+        return {"CANCELLED"}
 
 
-class CLIP_OT_track_sequence(bpy.types.Operator):
+class CLIP_OT_track_sequence(ClipOperator):
     bl_idname = "clip.track_sequence"
     bl_label = "Track"
-    bl_description = (
-        "Verfolgt TRACK_-Marker r\xFCckw\xE4rts in gro\xDFen Bl\xF6cken und danach vorw\xE4rts"
-    )
+    bl_description = "Verfolgt TRACK_-Marker r\xfcckw\xe4rts in gro\xdfen Bl\xf6cken und danach vorw\xe4rts"
 
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         # Proxy aktivieren
         clip.use_proxy = True
@@ -1378,8 +1367,7 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
         selected_names = [t.name for t in selected]
 
         if not selected:
-            return {'CANCELLED'}
-
+            return {"CANCELLED"}
 
         frame = current
         start_frame = original_start
@@ -1398,7 +1386,7 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
             scene.frame_end = original_end
             active_count = count_active_tracks(limited_start)
             if active_count == 0:
-                
+
                 break
             frame = limited_start - 1
 
@@ -1421,8 +1409,7 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
         scene.frame_start = original_start
         scene.frame_end = original_end
 
-
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 def has_active_marker(tracks, frame):
@@ -1443,8 +1430,7 @@ def get_undertracked_markers(clip, min_frames=10):
             continue
 
         tracked_frames = [
-            m for m in track.markers
-            if not m.mute and m.co.length_squared != 0.0
+            m for m in track.markers if not m.mute and m.co.length_squared != 0.0
         ]
 
         if len(tracked_frames) < min_frames:
@@ -1547,17 +1533,25 @@ def _update_nf_and_motion_model(frame, clip):
         NF.append(frame)
         settings.default_motion_model = DEFAULT_MOTION_MODEL
         settings.default_pattern_size = int(settings.default_pattern_size * 0.9)
-        if settings.default_pattern_size < max_size and scene.marker_frame > DEFAULT_MARKER_FRAME:
-            scene.marker_frame = max(int(scene.marker_frame * 0.9), DEFAULT_MARKER_FRAME)
-    settings.default_pattern_size = clamp_pattern_size(settings.default_pattern_size, clip)
+        if (
+            settings.default_pattern_size < max_size
+            and scene.marker_frame > DEFAULT_MARKER_FRAME
+        ):
+            scene.marker_frame = max(
+                int(scene.marker_frame * 0.9), DEFAULT_MARKER_FRAME
+            )
+    settings.default_pattern_size = clamp_pattern_size(
+        settings.default_pattern_size, clip
+    )
     settings.default_search_size = settings.default_pattern_size * 2
+
 
 def _Test_detect(self, context, use_defaults=True):
     """Run the Test detect cycle optionally using default settings."""
     clip = context.space_data.clip
     if not clip:
-        self.report({'WARNING'}, "Kein Clip geladen")
-        return {'CANCELLED'}
+        self.report({"WARNING"}, "Kein Clip geladen")
+        return {"CANCELLED"}
 
     mf_base = context.scene.marker_frame / 3
     mf_min = mf_base * 0.9
@@ -1592,8 +1586,8 @@ def _Test_detect(self, context, use_defaults=True):
                 attempt += 1
 
             if attempt >= 10 and not (mf_min <= count <= mf_max):
-                self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
-                return {'CANCELLED'}
+                self.report({"WARNING"}, "Maximale Wiederholungen erreicht")
+                return {"CANCELLED"}
 
             select_tracks_by_prefix(clip, "TEST_")
             if bpy.ops.clip.track_full.poll():
@@ -1601,13 +1595,13 @@ def _Test_detect(self, context, use_defaults=True):
                 last_end = LAST_TRACK_END
                 s = clip.tracking.settings
                 self.report(
-                    {'INFO'},
+                    {"INFO"},
                     f"Run end_frame={last_end}, pattern_size={s.default_pattern_size}, "
                     f"motion_model={s.default_motion_model}, "
                     f"channels=({s.use_default_red_channel}, {s.use_default_green_channel}, {s.use_default_blue_channel})",
                 )
             else:
-                self.report({'WARNING'}, "Tracking nicht möglich")
+                self.report({"WARNING"}, "Tracking nicht möglich")
 
             select_tracks_by_prefix(clip, "TEST_")
             if bpy.ops.clip.delete_selected.poll():
@@ -1624,25 +1618,25 @@ def _Test_detect(self, context, use_defaults=True):
 
     from_settings = TEST_SETTINGS or {}
     self.report(
-        {'INFO'},
+        {"INFO"},
         f"Test Detect best_end_frame={TEST_END_FRAME}, "
         f"pattern_size={from_settings.get('pattern_size')}, "
         f"motion_model={from_settings.get('motion_model')}, "
-        f"channels={from_settings.get('channels_active')}"
+        f"channels={from_settings.get('channels_active')}",
     )
-    self.report({'INFO'}, f"{count} Marker gefunden")
-    return {'FINISHED'}
+    self.report({"INFO"}, f"{count} Marker gefunden")
+    return {"FINISHED"}
 
 
 def _Test_detect_mm(self, context):
     """Run a shortened Test detect cycle for motion-model tests."""
     clip = context.space_data.clip
     if not clip:
-        self.report({'WARNING'}, "Kein Clip geladen")
+        self.report({"WARNING"}, "Kein Clip geladen")
         return None
 
     if not TEST_SETTINGS:
-        self.report({'WARNING'}, "Keine gespeicherten Einstellungen")
+        self.report({"WARNING"}, "Keine gespeicherten Einstellungen")
         return None
 
     scene = context.scene
@@ -1664,7 +1658,7 @@ def _Test_detect_mm(self, context):
             if best_end is None or end_frame > best_end:
                 best_end = end_frame
         else:
-            self.report({'WARNING'}, "Tracking nicht möglich")
+            self.report({"WARNING"}, "Tracking nicht möglich")
             break
 
         select_tracks_by_prefix(clip, "TEST_")
@@ -1677,34 +1671,32 @@ def _Test_detect_mm(self, context):
     return best_end
 
 
-class CLIP_OT_tracking_length(bpy.types.Operator):
+class CLIP_OT_tracking_length(ClipOperator):
     bl_idname = "clip.tracking_length"
     bl_label = "Tracking Length"
-    bl_description = (
-        "Löscht TRACK_-Marker, deren Länge unter 'Frames/Track' liegt"
-    )
+    bl_description = "Löscht TRACK_-Marker, deren Länge unter 'Frames/Track' liegt"
 
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         min_frames = context.scene.frames_track
         undertracked = get_undertracked_markers(clip, min_frames=min_frames)
 
         if not undertracked:
-            self.report({'INFO'}, "Alle TRACK_-Marker erreichen die gewünschte Länge")
-            return {'FINISHED'}
+            self.report({"INFO"}, "Alle TRACK_-Marker erreichen die gewünschte Länge")
+            return {"FINISHED"}
 
         names = [name for name, _ in undertracked]
         select_tracks_by_names(clip, names)
 
         if bpy.ops.clip.delete_track.poll():
             bpy.ops.clip.delete_track()
-            self.report({'INFO'}, f"{len(names)} TRACK_-Marker gelöscht")
+            self.report({"INFO"}, f"{len(names)} TRACK_-Marker gelöscht")
         else:
-            self.report({'WARNING'}, "Löschen nicht möglich")
+            self.report({"WARNING"}, "Löschen nicht möglich")
 
         remaining = [t for t in clip.tracking.tracks if t.name.startswith("TRACK_")]
         select_tracks_by_names(clip, [t.name for t in remaining])
@@ -1714,58 +1706,52 @@ class CLIP_OT_tracking_length(bpy.types.Operator):
         for t in clip.tracking.tracks:
             t.select = False
 
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
-class CLIP_OT_playhead_to_frame(bpy.types.Operator):
+class CLIP_OT_playhead_to_frame(ClipOperator):
     bl_idname = "clip.playhead_to_frame"
     bl_label = "Playhead to Frame"
-    bl_description = (
-        "Springt zum ersten Frame, in dem weniger GOOD_-Marker aktiv sind als 'Marker/Frame' vorgibt"
-    )
+    bl_description = "Springt zum ersten Frame, in dem weniger GOOD_-Marker aktiv sind als 'Marker/Frame' vorgibt"
 
     def execute(self, context):
         min_required = context.scene.marker_frame
         jump_to_first_frame_with_few_active_markers(min_required=min_required)
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
-class CLIP_OT_low_marker_frame(bpy.types.Operator):
+class CLIP_OT_low_marker_frame(ClipOperator):
     bl_idname = "clip.low_marker_frame"
     bl_label = "Low Marker Frame"
-    bl_description = (
-        "Springt zum ersten Frame mit weniger Markern als 'Marker/Frame'"
-    )
+    bl_description = "Springt zum ersten Frame mit weniger Markern als 'Marker/Frame'"
 
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         threshold = context.scene.marker_frame
         frame, count = find_low_marker_frame(clip, threshold)
         if frame is not None:
             context.scene.frame_current = frame
-            self.report({'INFO'}, f"Frame {frame} hat nur {count} Marker")
+            self.report({"INFO"}, f"Frame {frame} hat nur {count} Marker")
         else:
-            self.report({'INFO'}, "Kein Frame mit weniger Markern gefunden")
+            self.report({"INFO"}, "Kein Frame mit weniger Markern gefunden")
 
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
-class CLIP_OT_select_active_tracks(bpy.types.Operator):
+class CLIP_OT_select_active_tracks(ClipOperator):
     bl_idname = "clip.select_active_tracks"
     bl_label = "Select TRACK"
-    bl_description = (
-        "Selektiert alle TRACK_-Marker ungeachtet ihres Status"
-    )
+    bl_description = "Selektiert alle TRACK_-Marker ungeachtet ihres Status"
 
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         select_tracks_by_prefix(clip, "TRACK_")
 
@@ -1779,10 +1765,11 @@ class CLIP_OT_select_active_tracks(bpy.types.Operator):
 
         count = sum(1 for t in clip.tracking.tracks if t.select)
 
-        self.report({'INFO'}, f"{count} TRACK_-Marker ausgewählt")
-        return {'FINISHED'}
+        self.report({"INFO"}, f"{count} TRACK_-Marker ausgewählt")
+        return {"FINISHED"}
 
-class CLIP_OT_select_new_tracks(bpy.types.Operator):
+
+class CLIP_OT_select_new_tracks(ClipOperator):
     bl_idname = "clip.select_new_tracks"
     bl_label = "Select NEW"
     bl_description = "Selektiert alle NEW_-Marker"
@@ -1790,15 +1777,15 @@ class CLIP_OT_select_new_tracks(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
         select_tracks_by_prefix(clip, "NEW_")
         count = sum(1 for t in clip.tracking.tracks if t.select)
-        self.report({'INFO'}, f"{count} NEW_-Marker ausgewählt")
-        return {'FINISHED'}
+        self.report({"INFO"}, f"{count} NEW_-Marker ausgewählt")
+        return {"FINISHED"}
 
 
-class CLIP_OT_select_test_tracks(bpy.types.Operator):
+class CLIP_OT_select_test_tracks(ClipOperator):
     bl_idname = "clip.select_test_tracks"
     bl_label = "Select TEST"
     bl_description = "Selektiert alle TEST_-Marker"
@@ -1806,21 +1793,19 @@ class CLIP_OT_select_test_tracks(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         select_tracks_by_prefix(clip, "TEST_")
         count = sum(1 for t in clip.tracking.tracks if t.select)
-        self.report({'INFO'}, f"{count} TEST_-Marker ausgewählt")
-        return {'FINISHED'}
+        self.report({"INFO"}, f"{count} TEST_-Marker ausgewählt")
+        return {"FINISHED"}
 
 
-class CLIP_OT_marker_position(bpy.types.Operator):
+class CLIP_OT_marker_position(ClipOperator):
     bl_idname = "clip.marker_position"
     bl_label = "Marker Position"
-    bl_description = (
-        "Gibt die Pixelposition der Marker in selektierten Tracks im aktuellen Frame aus"
-    )
+    bl_description = "Gibt die Pixelposition der Marker in selektierten Tracks im aktuellen Frame aus"
 
     def get_selected_marker_positions_in_pixels(self, scene):
         frame = scene.frame_current
@@ -1858,8 +1843,8 @@ class CLIP_OT_marker_position(bpy.types.Operator):
         try:
             markers = self.get_selected_marker_positions_in_pixels(context.scene)
         except RuntimeError as e:
-            self.report({'WARNING'}, str(e))
-            return {'CANCELLED'}
+            self.report({"WARNING"}, str(e))
+            return {"CANCELLED"}
 
         for m in markers:
             print(
@@ -1867,10 +1852,10 @@ class CLIP_OT_marker_position(bpy.types.Operator):
                 f"X={m['x_px']:.1f}px, Y={m['y_px']:.1f}px"
             )
 
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
-class CLIP_OT_good_marker_position(bpy.types.Operator):
+class CLIP_OT_good_marker_position(ClipOperator):
     bl_idname = "clip.good_marker_position"
     bl_label = "GOOD Marker Position"
     bl_description = (
@@ -1883,8 +1868,8 @@ class CLIP_OT_good_marker_position(bpy.types.Operator):
         clip = scene.active_clip
 
         if clip is None:
-            self.report({'WARNING'}, "Kein aktiver Clip im Clip-Editor gefunden")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein aktiver Clip im Clip-Editor gefunden")
+            return {"CANCELLED"}
 
         width, height = clip.size
         good_markers_px = []
@@ -1900,22 +1885,24 @@ class CLIP_OT_good_marker_position(bpy.types.Operator):
             nx, ny = marker.co
             px, py = nx * width, ny * height
 
-            good_markers_px.append({
-                "track_name": track.name,
-                "frame": frame,
-                "x_px": px,
-                "y_px": py,
-            })
+            good_markers_px.append(
+                {
+                    "track_name": track.name,
+                    "frame": frame,
+                    "x_px": px,
+                    "y_px": py,
+                }
+            )
 
         for m in good_markers_px:
             print(
                 f"[{m['track_name']} @ frame {m['frame']}] -> X: {m['x_px']:.1f} px, Y: {m['y_px']:.1f} px"
             )
 
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
-class CLIP_OT_error_value(bpy.types.Operator):
+class CLIP_OT_error_value(ClipOperator):
     bl_idname = "clip.error_value"
     bl_label = "Error Value"
     bl_description = (
@@ -1925,8 +1912,8 @@ class CLIP_OT_error_value(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         x_positions = []
         y_positions = []
@@ -1940,8 +1927,8 @@ class CLIP_OT_error_value(bpy.types.Operator):
                 y_positions.append(marker.co[1])
 
         if not x_positions:
-            self.report({'WARNING'}, "Keine Marker ausgewählt")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Keine Marker ausgewählt")
+            return {"CANCELLED"}
 
         def std_dev(values):
             mean_val = sum(values) / len(values)
@@ -1952,14 +1939,15 @@ class CLIP_OT_error_value(bpy.types.Operator):
         total_error = error_x + error_y
 
         self.report(
-            {'INFO'},
+            {"INFO"},
             f"Error X: {error_x:.4f} Error Y: {error_y:.4f} Total: {total_error:.4f}",
         )
-        print(
-            f"[Error Value] error_x={error_x:.6f} error_y={error_y:.6f} total={total_error:.6f}"
+        self.report(
+            {"INFO"},
+            f"[Error Value] error_x={error_x:.6f} error_y={error_y:.6f} total={total_error:.6f}",
         )
 
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 def calculate_clip_error(clip):
@@ -2089,8 +2077,10 @@ def evaluate_motion_models(context, models=MOTION_MODELS, cycles=2):
         settings.default_motion_model = model
         score, err = _run_test_cycle(context, cycles=cycles)
         print(f"[Test Motion] model={model} frames={score} error={err:.4f}")
-        if best_score is None or score > best_score or (
-            score == best_score and (best_error is None or err < best_error)
+        if (
+            best_score is None
+            or score > best_score
+            or (score == best_score and (best_error is None or err < best_error))
         ):
             best_score = score
             best_error = err
@@ -2119,8 +2109,10 @@ def evaluate_channel_combinations(context, combos=CHANNEL_COMBOS, cycles=2):
         settings.use_default_blue_channel = b
         score, err = _run_test_cycle(context, cycles=cycles)
         print(f"[Test Channel] combo={combo} frames={score} error={err:.4f}")
-        if best_score is None or score > best_score or (
-            score == best_score and (best_error is None or err < best_error)
+        if (
+            best_score is None
+            or score > best_score
+            or (score == best_score and (best_error is None or err < best_error))
         ):
             best_score = score
             best_error = err
@@ -2134,7 +2126,7 @@ def evaluate_channel_combinations(context, combos=CHANNEL_COMBOS, cycles=2):
     return best_combo, best_score, best_error
 
 
-class CLIP_OT_test_pattern(bpy.types.Operator):
+class CLIP_OT_test_pattern(ClipOperator):
     bl_idname = "clip.test_pattern"
     bl_label = "Test Pattern"
     bl_description = "Testet verschiedene Pattern-Gr\u00f6\u00dfen"
@@ -2142,8 +2134,8 @@ class CLIP_OT_test_pattern(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         settings = clip.tracking.settings
         best_size = settings.default_pattern_size
@@ -2156,12 +2148,18 @@ class CLIP_OT_test_pattern(bpy.types.Operator):
         while True:
             score, error_sum = run_pattern_size_test(context)
 
-            print(
-                f"[Test Pattern] size={settings.default_pattern_size} frames={score} error={error_sum:.4f}"
+            self.report(
+                {"INFO"},
+                f"[Test Pattern] size={settings.default_pattern_size} frames={score} error={error_sum:.4f}",
             )
 
-            if best_score is None or score > best_score or (
-                score == best_score and (best_error is None or error_sum < best_error)
+            if (
+                best_score is None
+                or score > best_score
+                or (
+                    score == best_score
+                    and (best_error is None or error_sum < best_error)
+                )
             ):
                 best_score = score
                 best_error = error_sum
@@ -2194,14 +2192,15 @@ class CLIP_OT_test_pattern(bpy.types.Operator):
         settings.default_pattern_size = best_size
         settings.default_search_size = best_size * 2
         context.scene.test_value = best_size
-        print(
-            f"[Test Pattern] best_size={best_size} frames={best_score} error={best_error:.4f}"
+        self.report(
+            {"INFO"},
+            f"[Test Pattern] best_size={best_size} frames={best_score} error={best_error:.4f}",
         )
-        self.report({'INFO'}, f"Best Pattern Size: {best_size}")
-        return {'FINISHED'}
+        self.report({"INFO"}, f"Best Pattern Size: {best_size}")
+        return {"FINISHED"}
 
 
-class CLIP_OT_test_motion(bpy.types.Operator):
+class CLIP_OT_test_motion(ClipOperator):
     bl_idname = "clip.test_motion"
     bl_label = "Test Motion"
     bl_description = "Testet verschiedene Motion Models"
@@ -2209,19 +2208,20 @@ class CLIP_OT_test_motion(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         best_model, score, error_val = evaluate_motion_models(context)
         context.scene.test_value = MOTION_MODELS.index(best_model)
-        print(
-            f"[Test Motion] best_model={best_model} frames={score} error={error_val:.4f}"
+        self.report(
+            {"INFO"},
+            f"[Test Motion] best_model={best_model} frames={score} error={error_val:.4f}",
         )
-        self.report({'INFO'}, f"Best Motion Model: {best_model}")
-        return {'FINISHED'}
+        self.report({"INFO"}, f"Best Motion Model: {best_model}")
+        return {"FINISHED"}
 
 
-class CLIP_OT_test_channel(bpy.types.Operator):
+class CLIP_OT_test_channel(ClipOperator):
     bl_idname = "clip.test_channel"
     bl_label = "Test Channel"
     bl_description = "Testet verschiedene Farbkanal-Kombinationen"
@@ -2229,19 +2229,20 @@ class CLIP_OT_test_channel(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         best_combo, score, error_val = evaluate_channel_combinations(context)
         context.scene.test_value = CHANNEL_COMBOS.index(best_combo)
-        print(
-            f"[Test Channel] best_combo={best_combo} frames={score} error={error_val:.4f}"
+        self.report(
+            {"INFO"},
+            f"[Test Channel] best_combo={best_combo} frames={score} error={error_val:.4f}",
         )
-        self.report({'INFO'}, "Beste Kanal-Einstellung gewählt")
-        return {'FINISHED'}
+        self.report({"INFO"}, "Beste Kanal-Einstellung gewählt")
+        return {"FINISHED"}
 
 
-class CLIP_OT_camera_solve(bpy.types.Operator):
+class CLIP_OT_camera_solve(ClipOperator):
     bl_idname = "clip.camera_solve"
     bl_label = "Kamera solve"
     bl_description = "Löst die Kamera anhand des aktuellen Clips"
@@ -2249,12 +2250,12 @@ class CLIP_OT_camera_solve(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if clip is None:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         bpy.ops.clip.solve_camera()
-        self.report({'INFO'}, "Camera solve complete.")
-        return {'FINISHED'}
+        self.report({"INFO"}, "Camera solve complete.")
+        return {"FINISHED"}
 
 
 def max_track_error(scene, clip):
@@ -2306,17 +2307,19 @@ def max_track_error(scene, clip):
                 mx_mean = (px1 + px2 + px3) / 3.0
                 my_mean = (py1 + py2 + py3) / 3.0
 
-                valid.append({
-                    "mx_mean": mx_mean,
-                    "my_mean": my_mean,
-                    "xv": xv,
-                    "yv": yv,
-                    "xv1": xv1,
-                    "xv2": xv2,
-                    "yv1": yv1,
-                    "yv2": yv2,
-                    "track": track,
-                })
+                valid.append(
+                    {
+                        "mx_mean": mx_mean,
+                        "my_mean": my_mean,
+                        "xv": xv,
+                        "yv": yv,
+                        "xv1": xv1,
+                        "xv2": xv2,
+                        "yv1": yv1,
+                        "yv2": yv2,
+                        "track": track,
+                    }
+                )
 
         collect(valid)
 
@@ -2377,19 +2380,17 @@ def cleanup_pass(scene, clip, threshold):
     return False
 
 
-class CLIP_OT_track_cleanup(bpy.types.Operator):
+class CLIP_OT_track_cleanup(ClipOperator):
     bl_idname = "clip.track_cleanup"
     bl_label = "Select Error Tracks"
-    bl_description = (
-        "Wählt TRACK_-Tracks aus, deren mittlere Position zu stark vom Gesamtmittel abweicht"
-    )
+    bl_description = "Wählt TRACK_-Tracks aus, deren mittlere Position zu stark vom Gesamtmittel abweicht"
 
     def execute(self, context):
         scene = context.scene
         clip = context.space_data.clip
         if clip is None:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         width, height = clip.size
 
@@ -2490,30 +2491,28 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
             for key, subset in groups.items():
                 analyze(subset, g_eighth, f"Eighth {key}")
 
-        self.report({'INFO'}, f"{len(selected_tracks)} Tracks ausgewählt")
-        return {'FINISHED'}
+        self.report({"INFO"}, f"{len(selected_tracks)} Tracks ausgewählt")
+        return {"FINISHED"}
 
 
-class CLIP_OT_cleanup(bpy.types.Operator):
+class CLIP_OT_cleanup(ClipOperator):
     bl_idname = "clip.cleanup"
     bl_label = "Cleanup"
-    bl_description = (
-        "Ruft 'Select Error Tracks' und danach 'Delete' auf"
-    )
+    bl_description = "Ruft 'Select Error Tracks' und danach 'Delete' auf"
 
     def execute(self, context):
         clip = context.space_data.clip
         if clip is None:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         cleanup_error_tracks(context.scene, clip)
 
-        print("[Cleanup] fertig")
-        return {'FINISHED'}
+        self.report({"INFO"}, "[Cleanup] fertig")
+        return {"FINISHED"}
 
 
-class CLIP_OT_step_track(bpy.types.Operator):
+class CLIP_OT_step_track(ClipOperator):
     bl_idname = "clip.step_track"
     bl_label = "Step Track"
     bl_description = (
@@ -2524,8 +2523,8 @@ class CLIP_OT_step_track(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         scene = context.scene
         step = scene.frames_track
@@ -2550,10 +2549,10 @@ class CLIP_OT_step_track(bpy.types.Operator):
                 break
             scene.frame_current = next_frame
 
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
-class CLIP_OT_frame_jump(bpy.types.Operator):
+class CLIP_OT_frame_jump(ClipOperator):
     bl_idname = "clip.frame_jump_custom"
     bl_label = "Frame jump"
     bl_description = "Springt um 'Frames/Track' nach vorne"
@@ -2562,13 +2561,13 @@ class CLIP_OT_frame_jump(bpy.types.Operator):
         scene = context.scene
         step = scene.frames_track
         if step <= 0:
-            self.report({'WARNING'}, "Frames/Track muss > 0 sein")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Frames/Track muss > 0 sein")
+            return {"CANCELLED"}
         scene.frame_current = min(scene.frame_current + step, scene.frame_end)
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
-class CLIP_OT_api_defaults(bpy.types.Operator):
+class CLIP_OT_api_defaults(ClipOperator):
     bl_idname = "clip.api_defaults"
     bl_label = "Defaults"
     bl_description = (
@@ -2578,14 +2577,14 @@ class CLIP_OT_api_defaults(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         settings = clip.tracking.settings
         settings.default_pattern_size = 50
         settings.default_search_size = 100
-        settings.default_motion_model = 'Loc'
-        settings.default_pattern_match = 'KEYFRAME'
+        settings.default_motion_model = "Loc"
+        settings.default_pattern_match = "KEYFRAME"
         settings.use_default_brute = True
         settings.use_default_normalization = True
         settings.use_default_red_channel = True
@@ -2595,30 +2594,28 @@ class CLIP_OT_api_defaults(bpy.types.Operator):
         settings.default_correlation_min = 0.9
         settings.default_margin = 100
 
-        self.report({'INFO'}, "Tracking-Defaults gesetzt")
-        return {'FINISHED'}
+        self.report({"INFO"}, "Tracking-Defaults gesetzt")
+        return {"FINISHED"}
 
 
-class CLIP_OT_setup_defaults(bpy.types.Operator):
+class CLIP_OT_setup_defaults(ClipOperator):
     bl_idname = "clip.setup_defaults"
     bl_label = "Test Defaults"
-    bl_description = (
-        "Setzt Tracking-Standards: Pattern 10, Motion Loc, Keyframe-Match"
-    )
+    bl_description = "Setzt Tracking-Standards: Pattern 10, Motion Loc, Keyframe-Match"
 
-    silent: BoolProperty(default=False, options={'HIDDEN'})
+    silent: bpy.props.BoolProperty(default=False, options={"HIDDEN"})
 
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         settings = clip.tracking.settings
         settings.default_pattern_size = 10
         settings.default_search_size = settings.default_pattern_size * 2
-        settings.default_motion_model = 'Loc'
-        settings.default_pattern_match = 'KEYFRAME'
+        settings.default_motion_model = "Loc"
+        settings.default_pattern_match = "KEYFRAME"
         settings.use_default_brute = True
         settings.use_default_normalization = True
         settings.use_default_red_channel = True
@@ -2628,30 +2625,26 @@ class CLIP_OT_setup_defaults(bpy.types.Operator):
         settings.default_weight = 1.0
         settings.default_correlation_min = 0.9
         settings.default_margin = 10
-        if hasattr(settings, 'use_default_mask'):
+        if hasattr(settings, "use_default_mask"):
             settings.use_default_mask = False
 
-
-
         if not self.silent:
-            self.report({'INFO'}, "Tracking-Defaults gesetzt")
-        return {'FINISHED'}
+            self.report({"INFO"}, "Tracking-Defaults gesetzt")
+        return {"FINISHED"}
 
 
-class CLIP_OT_test_button(bpy.types.Operator):
+class CLIP_OT_test_button(ClipOperator):
     bl_idname = "clip.test_button"
     bl_label = "Test"
-    bl_description = (
-        "Trackt die Sequenz vorw\u00e4rts und speichert Start- und Endframe sowie Einstellungen"
-    )
+    bl_description = "Trackt die Sequenz vorw\u00e4rts und speichert Start- und Endframe sowie Einstellungen"
 
     def execute(self, context):
         global TEST_START_FRAME, TEST_END_FRAME, TEST_SETTINGS
 
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         scene = context.scene
         TEST_START_FRAME = scene.frame_current
@@ -2659,7 +2652,7 @@ class CLIP_OT_test_button(bpy.types.Operator):
         if bpy.ops.clip.track_markers.poll():
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
         else:
-            self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
+            self.report({"WARNING"}, "Tracking nicht m\u00f6glich")
 
         TEST_END_FRAME = scene.frame_current
 
@@ -2677,30 +2670,24 @@ class CLIP_OT_test_button(bpy.types.Operator):
 
         scene.frame_current = TEST_START_FRAME
 
+        self.report({"INFO"}, "Test abgeschlossen")
+        return {"FINISHED"}
 
 
-        self.report({'INFO'}, "Test abgeschlossen")
-        return {'FINISHED'}
-
-
-
-
-class CLIP_OT_track_full(bpy.types.Operator):
+class CLIP_OT_track_full(ClipOperator):
     bl_idname = "clip.track_full"
     bl_label = "Track"
-    bl_description = (
-        "Trackt die Sequenz vorw\u00e4rts und speichert den letzten Frame"
-    )
+    bl_description = "Trackt die Sequenz vorw\u00e4rts und speichert den letzten Frame"
 
-    silent: BoolProperty(default=False, options={'HIDDEN'})
+    silent: bpy.props.BoolProperty(default=False, options={"HIDDEN"})
 
     def execute(self, context):
         global TEST_START_FRAME, TEST_END_FRAME, TEST_SETTINGS, TRACKED_FRAMES, LAST_TRACK_END
 
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         # Proxy aktivieren für das Tracking
         clip.use_proxy = True
@@ -2712,8 +2699,8 @@ class CLIP_OT_track_full(bpy.types.Operator):
         if bpy.ops.clip.track_markers.poll():
             bpy.ops.clip.track_markers(backwards=False, sequence=True)
         else:
-            self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Tracking nicht m\u00f6glich")
+            return {"CANCELLED"}
 
         end_frame = scene.frame_current
         LAST_TRACK_END = end_frame
@@ -2734,27 +2721,25 @@ class CLIP_OT_track_full(bpy.types.Operator):
 
         scene.frame_current = start
         if not self.silent:
-            self.report({'INFO'}, f"Tracking bis Frame {end_frame} abgeschlossen")
-        return {'FINISHED'}
+            self.report({"INFO"}, f"Tracking bis Frame {end_frame} abgeschlossen")
+        return {"FINISHED"}
 
 
-class CLIP_OT_test_track_backwards(bpy.types.Operator):
+class CLIP_OT_test_track_backwards(ClipOperator):
     bl_idname = "clip.test_track_backwards"
     bl_label = "Test Track backwards"
-    bl_description = (
-        "Trackt alle TEST_-Marker r\u00fcckw\u00e4rts bis zum Szenenanfang"
-    )
+    bl_description = "Trackt alle TEST_-Marker r\u00fcckw\u00e4rts bis zum Szenenanfang"
 
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         select_tracks_by_prefix(clip, "TEST_")
         if not any(t.select for t in clip.tracking.tracks):
-            self.report({'WARNING'}, "Keine TEST_-Tracks gefunden")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Keine TEST_-Tracks gefunden")
+            return {"CANCELLED"}
 
         scene = context.scene
         original_start = scene.frame_start
@@ -2767,7 +2752,7 @@ class CLIP_OT_test_track_backwards(bpy.types.Operator):
             clip.use_proxy = True
             bpy.ops.clip.track_markers(backwards=True, sequence=True)
         else:
-            self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
+            self.report({"WARNING"}, "Tracking nicht m\u00f6glich")
 
         scene.frame_start = original_start
         scene.frame_end = original_end
@@ -2776,25 +2761,23 @@ class CLIP_OT_test_track_backwards(bpy.types.Operator):
         for t in clip.tracking.tracks:
             t.select = False
 
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
-class CLIP_OT_test_track(bpy.types.Operator):
+class CLIP_OT_test_track(ClipOperator):
     bl_idname = "clip.test_track"
     bl_label = "Test Track"
-    bl_description = (
-        "Trackt selektierte Marker vorwärts bis zum Sequenzende"
-    )
+    bl_description = "Trackt selektierte Marker vorwärts bis zum Sequenzende"
 
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         if not any(t.select for t in clip.tracking.tracks):
-            self.report({'WARNING'}, "Keine Tracks ausgewählt")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Keine Tracks ausgewählt")
+            return {"CANCELLED"}
 
         scene = context.scene
         original_start = scene.frame_start
@@ -2802,8 +2785,8 @@ class CLIP_OT_test_track(bpy.types.Operator):
         current = scene.frame_current
 
         if not bpy.ops.clip.track_markers.poll():
-            self.report({'WARNING'}, "Tracking nicht möglich")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Tracking nicht möglich")
+            return {"CANCELLED"}
 
         scene.frame_start = current
         scene.frame_end = original_end
@@ -2813,11 +2796,11 @@ class CLIP_OT_test_track(bpy.types.Operator):
         scene.frame_end = original_end
         scene.frame_current = current
 
-        self.report({'INFO'}, "Tracking abgeschlossen")
-        return {'FINISHED'}
+        self.report({"INFO"}, "Tracking abgeschlossen")
+        return {"FINISHED"}
 
 
-class CLIP_OT_pattern_up(bpy.types.Operator):
+class CLIP_OT_pattern_up(ClipOperator):
     bl_idname = "clip.pattern_up"
     bl_label = "Pattern+"
     bl_description = "Erh\u00f6ht die Pattern Size um 10 %"
@@ -2825,16 +2808,16 @@ class CLIP_OT_pattern_up(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         settings = clip.tracking.settings
         settings.default_pattern_size = max(1, int(settings.default_pattern_size * 1.1))
         settings.default_search_size = settings.default_pattern_size * 2
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
-class CLIP_OT_pattern_down(bpy.types.Operator):
+class CLIP_OT_pattern_down(ClipOperator):
     bl_idname = "clip.pattern_down"
     bl_label = "Pattern-"
     bl_description = "Verringert die Pattern Size um 10 %"
@@ -2842,16 +2825,16 @@ class CLIP_OT_pattern_down(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         settings = clip.tracking.settings
         settings.default_pattern_size = max(1, int(settings.default_pattern_size * 0.9))
         settings.default_search_size = settings.default_pattern_size * 2
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
-class CLIP_OT_motion_cycle(bpy.types.Operator):
+class CLIP_OT_motion_cycle(ClipOperator):
     bl_idname = "clip.motion_cycle"
     bl_label = "Motion"
     bl_description = "Wechselt zum n\u00e4chsten Motion Model"
@@ -2859,15 +2842,15 @@ class CLIP_OT_motion_cycle(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         settings = clip.tracking.settings
         cycle_motion_model(settings, clip, reset_size=False)
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
-class CLIP_OT_match_cycle(bpy.types.Operator):
+class CLIP_OT_match_cycle(ClipOperator):
     bl_idname = "clip.match_cycle"
     bl_label = "Match"
     bl_description = "Schaltet das Pattern Match um"
@@ -2875,19 +2858,19 @@ class CLIP_OT_match_cycle(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         settings = clip.tracking.settings
         current = settings.default_pattern_match
-        if current == 'KEYFRAME':
-            settings.default_pattern_match = 'PREV_FRAME'
+        if current == "KEYFRAME":
+            settings.default_pattern_match = "PREV_FRAME"
         else:
-            settings.default_pattern_match = 'KEYFRAME'
-        return {'FINISHED'}
+            settings.default_pattern_match = "KEYFRAME"
+        return {"FINISHED"}
 
 
-class CLIP_OT_channel_r_on(bpy.types.Operator):
+class CLIP_OT_channel_r_on(ClipOperator):
     bl_idname = "clip.channel_r_on"
     bl_label = "R On"
     bl_description = "Aktiviert den Rotkanal"
@@ -2895,14 +2878,14 @@ class CLIP_OT_channel_r_on(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         clip.tracking.settings.use_default_red_channel = True
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
-class CLIP_OT_channel_r_off(bpy.types.Operator):
+class CLIP_OT_channel_r_off(ClipOperator):
     bl_idname = "clip.channel_r_off"
     bl_label = "R Off"
     bl_description = "Deaktiviert den Rotkanal"
@@ -2910,14 +2893,14 @@ class CLIP_OT_channel_r_off(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         clip.tracking.settings.use_default_red_channel = False
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
-class CLIP_OT_channel_g_on(bpy.types.Operator):
+class CLIP_OT_channel_g_on(ClipOperator):
     bl_idname = "clip.channel_g_on"
     bl_label = "G On"
     bl_description = "Aktiviert den Gr\u00fcnkanal"
@@ -2925,14 +2908,14 @@ class CLIP_OT_channel_g_on(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         clip.tracking.settings.use_default_green_channel = True
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
-class CLIP_OT_channel_g_off(bpy.types.Operator):
+class CLIP_OT_channel_g_off(ClipOperator):
     bl_idname = "clip.channel_g_off"
     bl_label = "G Off"
     bl_description = "Deaktiviert den Gr\u00fcnkanal"
@@ -2940,14 +2923,14 @@ class CLIP_OT_channel_g_off(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         clip.tracking.settings.use_default_green_channel = False
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
-class CLIP_OT_channel_b_on(bpy.types.Operator):
+class CLIP_OT_channel_b_on(ClipOperator):
     bl_idname = "clip.channel_b_on"
     bl_label = "B On"
     bl_description = "Aktiviert den Blaukanal"
@@ -2955,14 +2938,14 @@ class CLIP_OT_channel_b_on(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         clip.tracking.settings.use_default_blue_channel = True
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
-class CLIP_OT_channel_b_off(bpy.types.Operator):
+class CLIP_OT_channel_b_off(ClipOperator):
     bl_idname = "clip.channel_b_off"
     bl_label = "B Off"
     bl_description = "Deaktiviert den Blaukanal"
@@ -2970,12 +2953,11 @@ class CLIP_OT_channel_b_off(bpy.types.Operator):
     def execute(self, context):
         clip = context.space_data.clip
         if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, "Kein Clip geladen")
+            return {"CANCELLED"}
 
         clip.tracking.settings.use_default_blue_channel = False
-        return {'FINISHED'}
-
+        return {"FINISHED"}
 
 
 operator_classes = (
@@ -3037,4 +3019,3 @@ operator_classes = (
     CLIP_OT_track_cleanup,
     CLIP_OT_cleanup,
 )
-

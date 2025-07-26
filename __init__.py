@@ -9,7 +9,7 @@ bl_info = {
 }
 
 import bpy
-from bpy.props import IntProperty, FloatProperty
+from bpy.props import FloatProperty, IntProperty
 
 from .functions import core as functions
 from .ui import panels
@@ -67,6 +67,10 @@ def unregister():
         del bpy.types.Scene.test_value
     if hasattr(bpy.types.Scene, "error_threshold"):
         del bpy.types.Scene.error_threshold
+
+    # Clear global state lists
+    functions.NF.clear()
+    functions.PENDING_RENAME.clear()
 
 
 if __name__ == "__main__":
