@@ -401,6 +401,9 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         count = rename_new_tracks(context)
         if count:
             self.report({'INFO'}, f"{count} Tracks umbenannt")
+
+        # abschließend kurze TRACK_-Marker entfernen
+        cleanup_short_tracks(context)
         return None
 
     def execute(self, context):
