@@ -2017,6 +2017,7 @@ class CLIP_OT_test_pattern(bpy.types.Operator):
         best_error = None
         min_error = None
         last_score = None
+        drops_left = 0
 
         while True:
             first_frames, first_err = _run_test_cycle(context, cleanup=True)
@@ -2044,10 +2045,18 @@ class CLIP_OT_test_pattern(bpy.types.Operator):
                 min_error = error_sum
 
             if last_score is not None:
-                if score < last_score:
-                    break
                 if score == last_score and error_sum > min_error * 1.2:
                     break
+
+                if drops_left > 0:
+                    if score > last_score:
+                        drops_left = 0
+                    else:
+                        drops_left -= 1
+                        if drops_left == 0:
+                            break
+                elif score < last_score:
+                    drops_left = 4
 
             last_score = score
 
