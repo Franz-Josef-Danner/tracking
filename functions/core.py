@@ -2020,12 +2020,12 @@ def run_iteration(context):
     return frames, error_val
 
 
-def _run_test_cycle(context, cleanup=False):
-    """Run detection and tracking four times and return total frames and error."""
+def _run_test_cycle(context, cleanup=False, cycles=4):
+    """Run detection and tracking multiple times and return total frames and error."""
     clip = context.space_data.clip
     total_end = 0
     total_error = 0.0
-    for i in range(4):
+    for i in range(cycles):
         print(f"[Test Cycle] Durchgang {i + 1}")
         frames, err = run_iteration(context)
         total_end += frames
@@ -2039,8 +2039,8 @@ def _run_test_cycle(context, cleanup=False):
 
 
 def run_pattern_size_test(context):
-    """Execute a single cycle for the current pattern size."""
-    return _run_test_cycle(context, cleanup=True)
+    """Execute a single cycle for the current pattern size with one tracking pass."""
+    return _run_test_cycle(context, cleanup=True, cycles=1)
 
 
 class CLIP_OT_test_pattern(bpy.types.Operator):
@@ -2080,7 +2080,7 @@ class CLIP_OT_test_pattern(bpy.types.Operator):
                 min_error = error_sum
 
             if last_score is not None:
-                if score == last_score and error_sum > min_error * 1.2:
+                if score == last_score and error_sum > min_error * 1.1:
                     break
 
                 if drops_left > 0:
