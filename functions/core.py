@@ -459,6 +459,11 @@ class CLIP_OT_track_nr2(bpy.types.Operator):
         frame, _ = find_low_marker_frame(clip, threshold)
         if frame is not None:
             scene.frame_current = frame
+            for area in context.screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    for space in area.spaces:
+                        if space.type == 'CLIP_EDITOR':
+                            space.clip_user.frame_number = frame
 
         cycles = 0
         while True:
