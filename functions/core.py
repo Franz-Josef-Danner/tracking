@@ -160,6 +160,8 @@ def compute_detection_params(threshold_value, margin_base, min_distance_base):
 def detect_new_tracks(clip, detection_threshold, min_distance, margin):
     """Detect features and return new tracks and the state before detection."""
     names_before = {t.name for t in clip.tracking.tracks}
+    if bpy.ops.clip.proxy_off.poll():
+        bpy.ops.clip.proxy_off()
     bpy.ops.clip.detect_features(
         threshold=detection_threshold,
         min_distance=min_distance,
@@ -316,6 +318,8 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
             return "TRACK"
 
         if bpy.ops.clip.cycle_detect.poll():
+            if bpy.ops.clip.proxy_off.poll():
+                bpy.ops.clip.proxy_off()
             bpy.ops.clip.cycle_detect()
 
         if bpy.ops.clip.prefix_new.poll():
@@ -455,6 +459,8 @@ class CLIP_OT_track_nr2(bpy.types.Operator):
             if bpy.ops.clip.test_channel.poll():
                 bpy.ops.clip.test_channel()
             if bpy.ops.clip.cycle_detect.poll():
+                if bpy.ops.clip.proxy_off.poll():
+                    bpy.ops.clip.proxy_off()
                 bpy.ops.clip.cycle_detect()
             renamed = rename_new_tracks(context)
             if renamed:
@@ -528,6 +534,8 @@ class CLIP_OT_detect_button(bpy.types.Operator):
 
         while True:
             names_before = {t.name for t in clip.tracking.tracks}
+            if bpy.ops.clip.proxy_off.poll():
+                bpy.ops.clip.proxy_off()
             bpy.ops.clip.detect_features(
                 threshold=detection_threshold,
                 min_distance=min_distance,
@@ -1167,6 +1175,8 @@ class CLIP_OT_all_detect(bpy.types.Operator):
         new_markers = 0
         while True:
             names_before = {t.name for t in clip.tracking.tracks}
+            if bpy.ops.clip.proxy_off.poll():
+                bpy.ops.clip.proxy_off()
             bpy.ops.clip.detect_features(
                 threshold=detection_threshold,
                 min_distance=min_distance,
@@ -2088,6 +2098,8 @@ def enable_proxy():
 def detect_features_once():
     """Run feature detection if available."""
     if bpy.ops.clip.detect_features.poll():
+        if bpy.ops.clip.proxy_off.poll():
+            bpy.ops.clip.proxy_off()
         bpy.ops.clip.detect_features()
 
 
