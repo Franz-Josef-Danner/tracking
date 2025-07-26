@@ -2352,24 +2352,29 @@ def cleanup_error_tracks(scene, clip):
     threshold = max_err
 
     while threshold >= original:
-        while True:
-            if bpy.ops.clip.track_cleanup.poll():
-                bpy.ops.clip.track_cleanup()
-            else:
-                break
-
-            selected = sum(1 for t in clip.tracking.tracks if t.select)
-            if selected:
-                print(f"[Cleanup] {selected} Tracks, Threshold {threshold:.2f}")
-                if bpy.ops.clip.delete_selected.poll():
-                    bpy.ops.clip.delete_selected()
-            else:
-                break
+        while cleanup_pass(scene, clip, threshold):
+            pass
 
         threshold *= 0.9
         scene.error_threshold = threshold
 
     scene.error_threshold = original
+
+
+def cleanup_pass(scene, clip, threshold):
+    """Run a single cleanup pass and return True if tracks were deleted."""
+    if not bpy.ops.clip.track_cleanup.poll():
+        return False
+    bpy.ops.clip.track_cleanup()
+
+    selected = sum(1 for t in clip.tracking.tracks if t.select)
+    if selected:
+        print(f"[Cleanup] {selected} Tracks, Threshold {threshold:.2f}")
+        if bpy.ops.clip.delete_selected.poll():
+            bpy.ops.clip.delete_selected()
+        return True
+
+    return False
 
 
 class CLIP_OT_track_cleanup(bpy.types.Operator):
