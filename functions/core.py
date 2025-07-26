@@ -2015,7 +2015,16 @@ class CLIP_OT_test_pattern(bpy.types.Operator):
         last_score = None
 
         while True:
-            score, error_sum = _run_test_cycle(context, cleanup=True)
+            first_frames, first_err = _run_test_cycle(context, cleanup=True)
+            second_frames, second_err = _run_test_cycle(context, cleanup=True)
+
+            if second_frames > first_frames or (
+                second_frames == first_frames and second_err < first_err
+            ):
+                score, error_sum = second_frames, second_err
+            else:
+                score, error_sum = first_frames, first_err
+
             print(
                 f"[Test Pattern] size={settings.default_pattern_size} frames={score} error={error_sum:.4f}"
             )
