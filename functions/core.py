@@ -1969,6 +1969,57 @@ def calculate_clip_error(clip):
     return std_dev(x_pos) + std_dev(y_pos)
 
 
+def disable_proxy():
+    """Disable proxies if possible."""
+    if bpy.ops.clip.proxy_off.poll():
+        bpy.ops.clip.proxy_off()
+
+
+def enable_proxy():
+    """Enable proxies if possible."""
+    if bpy.ops.clip.proxy_on.poll():
+        bpy.ops.clip.proxy_on()
+
+
+def detect_features_once():
+    """Run feature detection if available."""
+    if bpy.ops.clip.detect_features.poll():
+        bpy.ops.clip.detect_features()
+
+
+def track_full_clip():
+    """Track the clip forward if possible."""
+    if bpy.ops.clip.track_full.poll():
+        bpy.ops.clip.track_full(silent=True)
+
+
+def delete_selected_tracks():
+    """Delete all selected tracks."""
+    if bpy.ops.clip.delete_selected.poll():
+        bpy.ops.clip.delete_selected(silent=True)
+
+
+def cleanup_all_tracks(clip):
+    """Remove all tracks from the clip."""
+    for t in clip.tracking.tracks:
+        t.select = True
+    if bpy.ops.clip.delete_track.poll():
+        bpy.ops.clip.delete_track()
+
+
+def run_iteration(context):
+    """Execute one detection and tracking iteration."""
+    clip = context.space_data.clip
+    disable_proxy()
+    detect_features_once()
+    enable_proxy()
+    track_full_clip()
+    frames = LAST_TRACK_END if LAST_TRACK_END is not None else 0
+    error_val = calculate_clip_error(clip)
+    delete_selected_tracks()
+    return frames, error_val
+
+
 def _run_test_cycle(context, cleanup=False):
     """Run detection and tracking four times and return total frames and error."""
     clip = context.space_data.clip
@@ -1976,28 +2027,27 @@ def _run_test_cycle(context, cleanup=False):
     total_error = 0.0
     for i in range(4):
         print(f"[Test Cycle] Durchgang {i + 1}")
-        if bpy.ops.clip.proxy_off.poll():
-            bpy.ops.clip.proxy_off()
-        if bpy.ops.clip.detect_features.poll():
-            bpy.ops.clip.detect_features()
-        if bpy.ops.clip.proxy_on.poll():
-            bpy.ops.clip.proxy_on()
-        if bpy.ops.clip.track_full.poll():
-            bpy.ops.clip.track_full(silent=True)
-            if LAST_TRACK_END is not None:
-                total_end += LAST_TRACK_END
+        frames, err = run_iteration(context)
+        total_end += frames
+        total_error += err
 
-        total_error += calculate_clip_error(clip)
+    if cleanup:
+        cleanup_all_tracks(clip)
 
-        if bpy.ops.clip.delete_selected.poll():
-            bpy.ops.clip.delete_selected(silent=True)
-        if cleanup:
-            for t in clip.tracking.tracks:
-                t.select = True
-            if bpy.ops.clip.delete_track.poll():
-                bpy.ops.clip.delete_track()
     print(f"[Test Cycle] Summe End-Frames: {total_end}, Error: {total_error:.4f}")
     return total_end, total_error
+
+
+def run_pattern_size_test(context):
+    """Execute two cycles for the current pattern size and return the best."""
+    first_frames, first_err = _run_test_cycle(context, cleanup=True)
+    second_frames, second_err = _run_test_cycle(context, cleanup=True)
+
+    if second_frames > first_frames or (
+        second_frames == first_frames and second_err < first_err
+    ):
+        return second_frames, second_err
+    return first_frames, first_err
 
 
 class CLIP_OT_test_pattern(bpy.types.Operator):
@@ -2020,15 +2070,7 @@ class CLIP_OT_test_pattern(bpy.types.Operator):
         drops_left = 0
 
         while True:
-            first_frames, first_err = _run_test_cycle(context, cleanup=True)
-            second_frames, second_err = _run_test_cycle(context, cleanup=True)
-
-            if second_frames > first_frames or (
-                second_frames == first_frames and second_err < first_err
-            ):
-                score, error_sum = second_frames, second_err
-            else:
-                score, error_sum = first_frames, first_err
+            score, error_sum = run_pattern_size_test(context)
 
             print(
                 f"[Test Pattern] size={settings.default_pattern_size} frames={score} error={error_sum:.4f}"
