@@ -85,10 +85,17 @@ def strip_prefix(name):
 
 
 def add_pending_tracks(tracks):
-    """Store new tracks for later renaming."""
+    """Store new tracks for later renaming with validation."""
     for t in tracks:
-        if t not in PENDING_RENAME:
-            PENDING_RENAME.append(t)
+        try:
+            if (
+                isinstance(t.name, str)
+                and t.name.strip()
+                and t not in PENDING_RENAME
+            ):
+                PENDING_RENAME.append(t)
+        except Exception:
+            print(f"\u26a0\ufe0f Ungültiger Marker übersprungen: {t}")
 
 
 def clean_pending_tracks(clip):
@@ -284,7 +291,7 @@ class CLIP_OT_proxy_off(bpy.types.Operator):
 class CLIP_OT_track_nr1(bpy.types.Operator):
     bl_idname = "clip.track_nr1"
     bl_label = "Track Nr. 1"
-    bl_options = {'REGISTER', 'UNDO', 'BLOCKING'}
+    bl_options = {'REGISTER', 'UNDO', 'MODAL'}
 
     _timer = None
     _state = "INIT"
@@ -303,10 +310,24 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
 
     def step_detect(self, context):
         """Generate markers using Cycle Detect."""
+        clip = context.space_data.clip
+        if not clip or not clip.tracking:
+            print("\u26a0\ufe0f Kein gültiger Clip – detect wird übersprungen")
+            return "TRACK"
+
         if bpy.ops.clip.cycle_detect.poll():
             bpy.ops.clip.cycle_detect()
+
         if bpy.ops.clip.prefix_new.poll():
             bpy.ops.clip.prefix_new()
+
+        for t in clip.tracking.tracks:
+            try:
+                if not isinstance(t.name, str) or not t.name.strip():
+                    print(f"\u26a0\ufe0f Detected Marker mit ungültigem Namen: {t}")
+            except Exception as e:
+                print(f"\u26a0\ufe0f Fehler beim Marker-Check: {e}")
+
         return "TRACK"
 
     def step_track(self, context):
