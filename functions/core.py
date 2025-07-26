@@ -340,7 +340,17 @@ class CLIP_OT_track_nr1(ClipOperator):
         return "DETECT"
 
     def step_detect(self, context):
-        """Generate markers using Cycle Detect."""
+        """Generate markers using Cycle Detect if needed."""
+        clip = context.space_data.clip
+        if not clip:
+            return None
+
+        threshold = context.scene.marker_frame
+        frame, _ = find_low_marker_frame(clip, threshold)
+        if frame is None:
+            self.report({"INFO"}, "Keine Frames mit wenigen Markern gefunden")
+            return None
+
         if bpy.ops.clip.cycle_detect.poll():
             bpy.ops.clip.cycle_detect()
         if bpy.ops.clip.prefix_new.poll():
@@ -418,7 +428,7 @@ class CLIP_OT_track_nr1(ClipOperator):
 
     def step_rename(self, context):
         rename_new_tracks(context)
-        return None
+        return "DETECT"
 
     def execute(self, context):
         wm = context.window_manager
