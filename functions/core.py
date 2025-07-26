@@ -2035,10 +2035,24 @@ class CLIP_OT_test_pattern(bpy.types.Operator):
         min_error = None
 
         while True:
-            frames, err = _run_test_cycle(context)
+            frames1, err1 = _run_test_cycle(context)
             print(
-                f"[Test Pattern] size={settings.default_pattern_size} frames={frames} error={err}"
+                f"[Test Pattern] size={settings.default_pattern_size} run=1 frames={frames1} error={err1}"
             )
+
+            # Zweiter Durchgang zur Absicherung gegen Tracking-Fehler
+            frames2, err2 = _run_test_cycle(context)
+            print(
+                f"[Test Pattern] size={settings.default_pattern_size} run=2 frames={frames2} error={err2}"
+            )
+
+            if frames2 > frames1 or (frames2 == frames1 and err2 < err1):
+                frames = frames2
+                err = err2
+            else:
+                frames = frames1
+                err = err1
+
 
             if (
                 best_frames is None
