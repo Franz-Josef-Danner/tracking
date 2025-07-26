@@ -344,6 +344,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         """Track markers backward and forward."""
         scene = context.scene
         self._start = scene.frame_current
+        enable_proxy()
         if bpy.ops.clip.track_partial.poll():
             bpy.ops.clip.track_partial()
         self._end = scene.frame_current
