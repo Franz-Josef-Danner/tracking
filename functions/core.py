@@ -284,7 +284,7 @@ class CLIP_OT_proxy_off(bpy.types.Operator):
 class CLIP_OT_track_nr1(bpy.types.Operator):
     bl_idname = "clip.track_nr1"
     bl_label = "Track Nr. 1"
-    bl_options = {'REGISTER', 'UNDO'}
+    bl_options = {'REGISTER', 'UNDO', 'BLOCKING'}
 
     _timer = None
     _state = "INIT"
@@ -292,6 +292,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
     _end = 0
     _tracked = 0
     _next_frame = None
+    _cycle_count = 0
 
     def step_init(self, context):
         """Set defaults and remember the start frame."""
@@ -340,6 +341,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
             return "CLEANUP"
         else:
             print("[Track Nr.1] finish cycle")
+            self.report({'INFO'}, "Zyklus beendet")
             return "RENAME"
 
     def step_cleanup(self, context):
@@ -357,37 +359,104 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         scene = context.scene
         if self._next_frame is not None:
             scene.frame_current = self._next_frame
+        self._cycle_count += 1
+        if self._cycle_count >= 100:
+            self.report({'INFO'}, "Maximale Zyklen erreicht")
+            return "RENAME"
         return "DETECT"
 
     def step_rename(self, context):
-        rename_new_tracks(context)
+        count = rename_new_tracks(context)
+        if count:
+            self.report({'INFO'}, f"{count} Tracks umbenannt")
         return None
 
     def execute(self, context):
         wm = context.window_manager
         self._timer = add_timer(wm, context.window)
         self._state = "INIT"
+        self._cycle_count = 0
         wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
     def cancel(self, context):
-        wm = context.window_manager
-        wm.event_timer_remove(self._timer)
+        if self._timer:
+            context.window_manager.event_timer_remove(self._timer)
+            self._timer = None
         return {'CANCELLED'}
 
     def modal(self, context, event):
         if event.type == 'ESC':
             return self.cancel(context)
+
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
-        step_method = getattr(self, f"step_{self._state.lower()}", None)
-        if step_method:
-            next_state = step_method(context)
-            if next_state is None:
+
+        state_method = getattr(self, f"step_{self._state.lower()}", None)
+        if state_method:
+            result = state_method(context)
+            if result is None:
                 return self.cancel(context)
-            self._state = next_state
+            self._state = result
+        else:
+            self.report({'ERROR'}, f"Unbekannter Zustand: {self._state}")
+            return self.cancel(context)
 
         return {'RUNNING_MODAL'}
+
+
+class CLIP_OT_track_nr2(bpy.types.Operator):
+    bl_idname = "clip.track_nr2"
+    bl_label = "Track Nr. 2"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        scene = context.scene
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
+
+        if bpy.ops.clip.setup_defaults.poll():
+            bpy.ops.clip.setup_defaults()
+
+        threshold = scene.marker_frame
+        frame, _ = find_low_marker_frame(clip, threshold)
+        if frame is not None:
+            scene.frame_current = frame
+
+        cycles = 0
+        while True:
+            if bpy.ops.clip.test_pattern.poll():
+                bpy.ops.clip.test_pattern()
+            if bpy.ops.clip.test_motion.poll():
+                bpy.ops.clip.test_motion()
+            if bpy.ops.clip.test_channel.poll():
+                bpy.ops.clip.test_channel()
+            if bpy.ops.clip.cycle_detect.poll():
+                bpy.ops.clip.cycle_detect()
+            renamed = rename_new_tracks(context)
+            if renamed:
+                self.report({'INFO'}, f"{renamed} Tracks umbenannt")
+            if bpy.ops.clip.track_partial.poll():
+                bpy.ops.clip.track_partial()
+            if bpy.ops.clip.cleanup.poll():
+                bpy.ops.clip.cleanup()
+
+            cycles += 1
+            current = scene.frame_current
+            frame, _ = find_low_marker_frame(clip, threshold)
+            if frame is not None and frame != current and cycles < 100:
+                scene.frame_current = frame
+                continue
+            if cycles >= 100:
+                self.report({'WARNING'}, "Abbruch nach 100 Durchl\u00e4ufen")
+            break
+
+        self.report({'INFO'}, f"{cycles} Durchl\u00e4ufe ausgef\u00fchrt")
+        return {'FINISHED'}
+
+
 
 
 class CLIP_OT_detect_button(bpy.types.Operator):
@@ -2024,13 +2093,20 @@ def cleanup_short_tracks(context):
 
 
 def rename_new_tracks(context):
-    """Rename NEW_ markers to TRACK_."""
+    """Rename NEW_ markers to TRACK_ and return the count."""
     clip = context.space_data.clip
     if not clip:
-        return
+        return 0
     select_tracks_by_prefix(clip, "NEW_")
-    if bpy.ops.clip.prefix_track.poll():
-        bpy.ops.clip.prefix_track()
+    renamed = 0
+    for track in clip.tracking.tracks:
+        if track.select:
+            base = strip_prefix(track.name)
+            new_name = "TRACK_" + base
+            if track.name != new_name:
+                track.name = new_name
+                renamed += 1
+    return renamed
 
 
 def cleanup_all_tracks(clip):
@@ -2984,6 +3060,7 @@ operator_classes = (
     CLIP_OT_proxy_on,
     CLIP_OT_proxy_off,
     CLIP_OT_track_nr1,
+    CLIP_OT_track_nr2,
     CLIP_OT_detect_button,
     CLIP_OT_prefix_new,
     CLIP_OT_prefix_test,
