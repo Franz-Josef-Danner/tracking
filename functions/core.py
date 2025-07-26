@@ -140,6 +140,66 @@ def cycle_motion_model(settings, clip, reset_size=True):
         settings.default_pattern_size = clamp_pattern_size(base, clip)
         settings.default_search_size = settings.default_pattern_size * 2
 
+
+def compute_detection_params(threshold_value, margin_base, min_distance_base):
+    """Return detection threshold, margin and min distance."""
+    detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
+    factor = math.log10(detection_threshold * 10000000000) / 10
+    margin = int(margin_base * factor)
+    min_distance = int(min_distance_base * factor)
+    return detection_threshold, margin, min_distance
+
+
+def detect_new_tracks(clip, detection_threshold, min_distance, margin):
+    """Detect features and return new tracks and the state before detection."""
+    names_before = {t.name for t in clip.tracking.tracks}
+    bpy.ops.clip.detect_features(
+        threshold=detection_threshold,
+        min_distance=min_distance,
+        margin=margin,
+    )
+    names_after = {t.name for t in clip.tracking.tracks}
+    new_tracks = [t for t in clip.tracking.tracks if t.name in names_after - names_before]
+    return new_tracks, names_before
+
+
+def remove_close_tracks(clip, new_tracks, distance_px, names_before):
+    """Delete new tracks too close to existing ones."""
+    frame = bpy.context.scene.frame_current
+    width, height = clip.size
+    valid_positions = []
+    for gt in clip.tracking.tracks:
+        if (
+            gt.name.startswith("GOOD_")
+            or gt.name.startswith("TRACK_")
+            or gt.name.startswith("NEW_")
+        ):
+            gm = gt.markers.find_frame(frame, exact=True)
+            if gm and not gm.mute:
+                valid_positions.append((gm.co[0] * width, gm.co[1] * height))
+
+    close_tracks = []
+    for nt in new_tracks:
+        nm = nt.markers.find_frame(frame, exact=True)
+        if nm and not nm.mute:
+            nx = nm.co[0] * width
+            ny = nm.co[1] * height
+            for vx, vy in valid_positions:
+                if math.hypot(nx - vx, ny - vy) < distance_px:
+                    close_tracks.append(nt)
+                    break
+
+    for track in clip.tracking.tracks:
+        track.select = False
+    for t in close_tracks:
+        t.select = True
+    if close_tracks and bpy.ops.clip.delete_selected.poll():
+        bpy.ops.clip.delete_selected()
+        clean_pending_tracks(clip)
+
+    names_after = {t.name for t in clip.tracking.tracks}
+    return [t for t in clip.tracking.tracks if t.name in names_after - names_before]
+
 class OBJECT_OT_simple_operator(bpy.types.Operator):
     bl_idname = "object.simple_operator"
     bl_label = "Simple Operator"
@@ -1166,62 +1226,19 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
         target_max = target * 1.1
 
         threshold_value = 1.0
-        detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
-        factor = math.log10(detection_threshold * 10000000000) / 10
-        margin = int(margin_base * factor)
-        min_distance = int(min_distance_base * factor)
+        detection_threshold, margin, min_distance = compute_detection_params(
+            threshold_value, margin_base, min_distance_base
+        )
 
         attempt = 0
         new_tracks = []
         while True:
-            names_before = {t.name for t in clip.tracking.tracks}
-            bpy.ops.clip.detect_features(
-                threshold=detection_threshold,
-                min_distance=min_distance,
-                margin=margin,
+            new_tracks, before = detect_new_tracks(
+                clip, detection_threshold, min_distance, margin
             )
-            names_after = {t.name for t in clip.tracking.tracks}
-            new_tracks = [
-                t for t in clip.tracking.tracks if t.name in names_after - names_before
-            ]
-
-            frame = context.scene.frame_current
-            width, height = clip.size
-            distance_px = min_distance
-            close_tracks = []
-            valid_positions = []
-            for gt in clip.tracking.tracks:
-                if (
-                    gt.name.startswith("GOOD_")
-                    or gt.name.startswith("TRACK_")
-                    or gt.name.startswith("NEW_")
-                ):
-                    gm = gt.markers.find_frame(frame, exact=True)
-                    if gm and not gm.mute:
-                        valid_positions.append((gm.co[0] * width, gm.co[1] * height))
-
-            for nt in new_tracks:
-                nm = nt.markers.find_frame(frame, exact=True)
-                if nm and not nm.mute:
-                    nx = nm.co[0] * width
-                    ny = nm.co[1] * height
-                    for vx, vy in valid_positions:
-                        if math.hypot(nx - vx, ny - vy) < distance_px:
-                            close_tracks.append(nt)
-                            break
-
-            for track in clip.tracking.tracks:
-                track.select = False
-            for t in close_tracks:
-                t.select = True
-            if close_tracks and bpy.ops.clip.delete_selected.poll():
-                bpy.ops.clip.delete_selected()
-                clean_pending_tracks(clip)
-
-            names_after = {t.name for t in clip.tracking.tracks}
-            new_tracks = [
-                t for t in clip.tracking.tracks if t.name in names_after - names_before
-            ]
+            new_tracks = remove_close_tracks(
+                clip, new_tracks, min_distance, before
+            )
             count = len(new_tracks)
 
             for track in clip.tracking.tracks:
@@ -1239,10 +1256,9 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
                 track.select = False
 
             threshold_value = threshold_value * ((count + 0.1) / target)
-            detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
-            factor = math.log10(detection_threshold * 10000000000) / 10
-            margin = int(margin_base * factor)
-            min_distance = int(min_distance_base * factor)
+            detection_threshold, margin, min_distance = compute_detection_params(
+                threshold_value, margin_base, min_distance_base
+            )
             attempt += 1
 
         for track in clip.tracking.tracks:
