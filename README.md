@@ -306,7 +306,7 @@ zuerst "Select NEW" und anschließend "Name Track" ausgeführt.
 Seit Version 1.181 besitzt das API-Unterpanel einen Button "TEST select", der alle Marker mit dem Präfix TEST_ auswählt.
 Seit Version 1.182 gibt es dort zusätzlich einen Button "Test Detect", der Marker erkennt, bis ihre Anzahl im Zielbereich liegt.
 Seit Version 1.183 besitzt dieses Unter-Panel auch einen Button "Test Track", der selektierte Marker bis zum Sequenzende vorwärts verfolgt.
-Seit Version 1.184 werten die Testfunktionen zusätzlich den Fehler der Markerpositionen aus. Nach jedem der vier Tracking-Durchgänge wird der Error berechnet und aufsummiert. Bei der Pattern-Größe wird der Test beendet, sobald keine Fortschritte mehr erzielt werden oder der Fehlerwert um mehr als 20 % über dem bisherigen Minimum liegt. Motion Model und Farbkanäle wählen direkt die Kombination mit dem besten Verhältnis aus maximaler Frame-Anzahl und minimalem Error.
+Seit Version 1.184 werten die Testfunktionen zusätzlich den Fehler der Markerpositionen aus. Nach jedem der vier Tracking-Durchgänge wird der Error berechnet und aufsummiert. Bei der Pattern-Größe wird der Test beendet, sobald keine Fortschritte mehr erzielt werden oder der Fehlerwert um mehr als 15 % über dem bisherigen Minimum liegt. Motion Model und Farbkanäle wählen direkt die Kombination mit dem besten Verhältnis aus maximaler Frame-Anzahl und minimalem Error.
 Seit Version 1.185 führt "Test Pattern" jeden Größenwert zweimal aus und verwendet das bessere Ergebnis, um Ausreißer durch Tracking-Fehler zu vermeiden.
 Seit Version 1.186 schalten die Testfunktionen den Proxy vor der Feature-Erkennung aus und vor dem Tracking wieder ein, damit alle Schritte mit konsistenten Einstellungen ausgeführt werden.
 Seit Version 1.187 erhöht sich die Abbruchschwelle für den Fehler beim Pattern-Test auf 20 %.
@@ -315,6 +315,7 @@ Seit Version 1.189 sind die Abläufe der Testfunktionen in modulare Schritte unt
 Seit Version 1.190 testet "Test Pattern" jede Größe nur noch einmal mit vier Durchgängen.
 Seit Version 1.191 führt "Test Pattern" pro Größe nur noch drei Tracking-Durchgänge aus.
 Seit Version 1.192 führt "Test Pattern" pro Größe nur noch einen Tracking-Durchgang aus.
+Seit Version 1.193 verringert sich die Abbruchschwelle für den Fehler beim Pattern-Test auf 15 %.
 
 ## License
 
