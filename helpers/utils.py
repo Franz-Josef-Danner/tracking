@@ -179,7 +179,7 @@ def cycle_motion_model(settings, clip, reset_size=True):
 def compute_detection_params(threshold_value, margin_base, min_distance_base):
     """Return detection threshold, margin and min distance."""
     detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
-    factor = math.log10(detection_threshold * 10000000000) / 10
+    factor = math.log10(detection_threshold * 100000000) / 8
     margin = int(margin_base * factor)
     min_distance = int(min_distance_base * factor)
     return detection_threshold, margin, min_distance
