@@ -1524,95 +1524,103 @@ class CLIP_OT_all_cycle(StepOperator):
         return result
 
 
-class CLIP_OT_track_sequence(bpy.types.Operator):
+class CLIP_OT_track_sequence(StepOperator):
     bl_idname = "clip.track_sequence"
     bl_label = "Track"
     bl_description = (
         "Verfolgt TRACK_-Marker r\xFCckw\xE4rts in gro\xDFen Bl\xF6cken und danach vorw\xE4rts"
     )
 
-    def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+    def count_active_tracks(self, frame_value):
+        count = 0
+        for t in self.clip.tracking.tracks:
+            if t.name.startswith("TRACK_") or t in PENDING_RENAME:
+                m = t.markers.find_frame(frame_value)
+                if m and not m.mute and m.co.length_squared != 0.0:
+                    count += 1
+        return count
 
-        # Proxy aktivieren
-        clip.use_proxy = True
-        # Prepass und Normalize einschalten
-        settings = clip.tracking.settings
+    def step_init(self, context):
+        self.clip = context.space_data.clip
+        if not self.clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return None
+
+        self.scene = context.scene
+        self.clip.use_proxy = True
+        settings = self.clip.tracking.settings
         settings.use_default_brute = True
         settings.use_default_normalization = True
 
-        scene = context.scene
+        self.original_start = self.scene.frame_start
+        self.original_end = self.scene.frame_end
 
-        original_start = scene.frame_start
-        original_end = scene.frame_end
-
-        current = scene.frame_current
-
-        def count_active_tracks(frame_value):
-            count = 0
-            for t in clip.tracking.tracks:
-                if t.name.startswith("TRACK_") or t in PENDING_RENAME:
-                    m = t.markers.find_frame(frame_value)
-                    if m and not m.mute and m.co.length_squared != 0.0:
-                        count += 1
-            return count
-
-        clean_pending_tracks(clip)
-        for t in clip.tracking.tracks:
+        clean_pending_tracks(self.clip)
+        for t in self.clip.tracking.tracks:
             t.select = t.name.startswith("TRACK_") or t in PENDING_RENAME
 
-        selected = [t for t in clip.tracking.tracks if t.select]
-        selected_names = [t.name for t in selected]
+        if not any(t.select for t in self.clip.tracking.tracks):
+            self.report({'WARNING'}, "Keine TRACK_-Marker gew\xe4hlt")
+            return None
 
-        if not selected:
-            return {'CANCELLED'}
+        self.back_frame = self.scene.frame_current
+        self.report({'INFO'}, "Starte R\u00fcckw\xe4rts-Tracking")
+        return "BACKWARD_SETUP"
 
-
-        frame = current
-        start_frame = original_start
-        total_range = frame - start_frame
+    def step_backward_setup(self, context):
+        start_frame = self.original_start
+        total_range = self.back_frame - start_frame
         if total_range > 1:
-            block_size = int(total_range / math.log10(total_range * total_range))
-            block_size = max(1, block_size)
+            self.block_size = int(total_range / math.log10(total_range * total_range))
+            self.block_size = max(1, self.block_size)
         else:
-            block_size = 1
-        while frame >= start_frame:
-            limited_start = max(start_frame, frame - block_size)
-            scene.frame_start = limited_start
-            scene.frame_end = frame
-            bpy.ops.clip.track_markers(backwards=True, sequence=True)
-            scene.frame_start = original_start
-            scene.frame_end = original_end
-            active_count = count_active_tracks(limited_start)
-            if active_count == 0:
-                
-                break
-            frame = limited_start - 1
+            self.block_size = 1
+        return "BACKWARD"
 
-        frame = current
-        end_frame = original_end
-        while frame <= end_frame:
-            remaining = end_frame - frame
-            block_size = max(1, math.ceil(remaining / 4))
-            limited_end = min(frame + block_size, end_frame)
-            scene.frame_start = frame
-            scene.frame_end = limited_end
-            bpy.ops.clip.track_markers(backwards=False, sequence=True)
-            scene.frame_start = original_start
-            scene.frame_end = original_end
-            active_count = count_active_tracks(limited_end)
-            if active_count == 0:
-                break
-            frame = limited_end + 1
+    def step_backward(self, context):
+        if self.back_frame < self.original_start:
+            self.forward_frame = self.scene.frame_current
+            self.report({'INFO'}, "Starte Vorw\u00e4rts-Tracking")
+            return "FORWARD"
 
-        scene.frame_start = original_start
-        scene.frame_end = original_end
+        limited_start = max(self.original_start, self.back_frame - self.block_size)
+        self.scene.frame_start = limited_start
+        self.scene.frame_end = self.back_frame
+        bpy.ops.clip.track_markers(backwards=True, sequence=True)
+        self.scene.frame_start = self.original_start
+        self.scene.frame_end = self.original_end
+        print(f"[Track Sequence] backward {limited_start}-{self.back_frame}")
+        self.back_frame = limited_start - 1
+        active_count = self.count_active_tracks(limited_start)
+        if active_count == 0:
+            self.forward_frame = self.scene.frame_current
+            return "FORWARD"
+        return "BACKWARD"
 
+    def step_forward(self, context):
+        frame = getattr(self, "forward_frame", self.scene.frame_current)
+        if frame > self.original_end:
+            return "FINISH"
+        remaining = self.original_end - frame
+        block_size = max(1, math.ceil(remaining / 4))
+        limited_end = min(frame + block_size, self.original_end)
+        self.scene.frame_start = frame
+        self.scene.frame_end = limited_end
+        bpy.ops.clip.track_markers(backwards=False, sequence=True)
+        self.scene.frame_start = self.original_start
+        self.scene.frame_end = self.original_end
+        print(f"[Track Sequence] forward {frame}-{limited_end}")
+        self.forward_frame = limited_end + 1
+        active_count = self.count_active_tracks(limited_end)
+        if active_count == 0:
+            return "FINISH"
+        return "FORWARD"
 
-        return {'FINISHED'}
+    def step_finish(self, context):
+        self.scene.frame_start = self.original_start
+        self.scene.frame_end = self.original_end
+        self.report({'INFO'}, "Sequenztracking abgeschlossen")
+        return None
 
 
 def has_active_marker(tracks, frame):
