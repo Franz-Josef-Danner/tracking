@@ -451,7 +451,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             print(f"[Detect Features] updated threshold = {threshold_value:.8f}")
             # adjust detection threshold dynamically
             detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
-            factor = math.log10(detection_threshold * 10000000000) / 10
+            factor = math.log10(detection_threshold * 100000000) / 8
             margin = int(margin_base * factor)
             min_distance = int(min_distance_base * factor)
             attempt += 1
@@ -948,8 +948,8 @@ class CLIP_OT_all_detect(bpy.types.Operator):
 
         width, _ = clip.size
 
-        margin_base = int(width * 0.01)
-        min_distance_base = int(width * 0.05)
+        margin_base = int(width * 0.06)
+        min_distance_base = int(width * 0.12)
 
         mfp = context.scene.marker_frame * 4
         mfp_min = mfp * 0.9
@@ -957,7 +957,7 @@ class CLIP_OT_all_detect(bpy.types.Operator):
 
         threshold_value = context.scene.tracker_threshold
         detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
-        factor = math.log10(detection_threshold * 10000000000) / 10
+        factor = math.log10(detection_threshold * 100000000) / 8
         margin = int(margin_base * factor)
         min_distance = int(min_distance_base * factor)
 
@@ -1059,7 +1059,7 @@ class CLIP_OT_all_detect(bpy.types.Operator):
             threshold_value = threshold_value * ((new_markers + 0.1) / mfp)
             print(f"[Detect Features] updated threshold = {threshold_value:.8f}")
             detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
-            factor = math.log10(detection_threshold * 10000000000) / 10
+            factor = math.log10(detection_threshold * 100000000) / 8
             margin = int(margin_base * factor)
             min_distance = int(min_distance_base * factor)
             attempt += 1
@@ -1095,8 +1095,8 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
 
         width, _ = clip.size
 
-        margin_base = int(width * 0.01)
-        min_distance_base = int(width * 0.05)
+        margin_base = int(width * 0.06)
+        min_distance_base = int(width * 0.12)
 
         target = context.scene.marker_frame * 4
         target_min = target * 0.9
@@ -1916,8 +1916,8 @@ def detect_features_once(context=None, clip=None, threshold=None):
 
     if bpy.ops.clip.detect_features.poll():
         width, _ = clip.size
-        margin_base = int(width * 0.01)
-        min_distance_base = int(width * 0.05)
+        margin_base = int(width * 0.06)
+        min_distance_base = int(width * 0.12)
 
         margin = max(4, int(margin_base * threshold))
         min_distance = max(20, int(min_distance_base * threshold))
