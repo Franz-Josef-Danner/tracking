@@ -72,6 +72,7 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.channel_g_off', text='Channel G off')
         layout.operator('clip.frame_jump_custom', text='Frame Jump')
         layout.operator('clip.low_marker_frame', text='Low Marker Frame')
+        layout.operator('clip.marker_frame_plus', text='Marker/Frame+')
         layout.operator('clip.marker_position', text='Marker Position')
         layout.operator('clip.good_marker_position', text='GOOD Marker Position')
         layout.operator('clip.camera_solve', text='Kamera solve')

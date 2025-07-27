@@ -317,6 +317,7 @@ Seit Version 1.191 führt "Test Pattern" pro Größe nur noch drei Tracking-Durc
 Seit Version 1.192 führt "Test Pattern" pro Größe nur noch einen Tracking-Durchgang aus.
 Seit Version 1.193 verringert sich die Abbruchschwelle für den Fehler beim Pattern-Test auf 15 %.
 Seit Version 1.194 f\u00fchrt der Button "Track Nr. 1" am Ende einmalig "Select Short Tracks" und anschlie\u00dfend "Delete" aus.
+Seit Version 1.195 verf\u00fcgt das API-Panel \u00fcber einen Button "Marker/Frame+", der den Wert im Feld "Marker/Frame" um 10 % erh\u00f6ht.
 
 ## License
 

@@ -2719,6 +2719,17 @@ class CLIP_OT_frame_jump(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class CLIP_OT_marker_frame_plus(bpy.types.Operator):
+    bl_idname = "clip.marker_frame_plus"
+    bl_label = "Marker/Frame+"
+    bl_description = "Erh\u00f6ht 'Marker/Frame' um 10 %"
+
+    def execute(self, context):
+        scene = context.scene
+        scene.marker_frame = int(scene.marker_frame * 1.1)
+        return {'FINISHED'}
+
+
 class CLIP_OT_api_defaults(bpy.types.Operator):
     bl_idname = "clip.api_defaults"
     bl_label = "Defaults"
@@ -3158,6 +3169,7 @@ operator_classes = (
     CLIP_OT_track_partial,
     CLIP_OT_step_track,
     CLIP_OT_frame_jump,
+    CLIP_OT_marker_frame_plus,
     CLIP_OT_setup_defaults,
     CLIP_OT_track_full,
     CLIP_OT_test_track_backwards,
