@@ -10,11 +10,11 @@ bl_info = {
 
 import bpy
 
-from .operators import tracking as ops
-from .ui import panels
-from .properties import register_properties, unregister_properties
-
-classes = ops.operator_classes + panels.panel_classes
+# Use absolute imports starting from the add-on package root
+from t.operators import operator_classes
+from t.ui import panel_classes
+from t.properties import register_properties, unregister_properties
+classes = operator_classes + panel_classes
 
 
 def register():
