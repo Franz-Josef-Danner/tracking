@@ -1415,7 +1415,8 @@ def _Test_detect(self, context, use_defaults=True):
 
     if use_defaults:
         bpy.ops.clip.setup_defaults(silent=True)
-    context.scene.threshold_value = 1.0
+        context.scene.threshold_value = 1.0
+
 
     # Begin Test detect cycle
     prev_best = TEST_END_FRAME
