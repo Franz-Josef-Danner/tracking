@@ -21,7 +21,7 @@ tracking_properties = {
         name="Tracker Threshold",
         description="Persistent threshold value for detect features",
         default=0.5,
-        min=0.00000001,
+        min=0.0,
         max=1.0,
     ),
     "error_threshold": FloatProperty(
