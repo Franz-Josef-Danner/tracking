@@ -1,7 +1,7 @@
 import bpy
 from bpy.props import BoolProperty
-# Import helper via absolute package path
-from t.helpers import strip_prefix
+# Import helper via relative package path
+from ...helpers import strip_prefix
 
 class CLIP_OT_prefix_new(bpy.types.Operator):
     bl_idname = "clip.prefix_new"

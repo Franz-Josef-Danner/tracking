@@ -5,8 +5,8 @@ import math
 import re
 from bpy.props import IntProperty, FloatProperty, BoolProperty
 
-# Import utility functions via absolute path
-from t.helpers import *
+# Import utility functions via relative path
+from ...helpers import *
 
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
