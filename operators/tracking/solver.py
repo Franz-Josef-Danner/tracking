@@ -239,6 +239,9 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         return None
 
     def execute(self, context):
+        # set the starting threshold only once when the operator is triggered
+        context.scene.threshold_value = 0.5
+        context.scene.tracker_threshold = 0.5
         print(
             f"[Track Nr.1] starting threshold {context.scene.threshold_value:.8f}"
         )
