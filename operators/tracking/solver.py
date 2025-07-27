@@ -119,13 +119,15 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
             print("\u26a0\ufe0f Kein gültiger Clip – detect wird übersprungen")
             return "TRACK"
 
-        if bpy.ops.clip.cycle_detect.poll():
-            if bpy.ops.clip.proxy_off.poll():
-                bpy.ops.clip.proxy_off()
-            bpy.ops.clip.cycle_detect()
-            threshold_value = context.scene.threshold_value
-            context.scene.tracker_threshold = threshold_value
-            print(f"[Track Nr.1] saved threshold {threshold_value:.8f}")
+        if bpy.ops.clip.proxy_off.poll():
+            bpy.ops.clip.proxy_off()
+
+        clip = context.space_data.clip
+        threshold = context.scene.threshold_value
+        detect_features_once(context, clip, threshold)
+
+        context.scene.tracker_threshold = threshold
+        print(f"[Track Nr.1] saved threshold {threshold:.8f}")
 
         if bpy.ops.clip.prefix_new.poll():
             bpy.ops.clip.prefix_new()
@@ -1871,11 +1873,16 @@ def enable_proxy():
         bpy.ops.clip.proxy_on()
 
 
-def detect_features_once():
+def detect_features_once(context=None, clip=None, threshold=None):
     """Run feature detection if available."""
+    if context is None:
+        context = bpy.context
+    if clip is None:
+        clip = context.space_data.clip
+    if threshold is None:
+        threshold = context.scene.tracker_threshold
+
     if bpy.ops.clip.detect_features.poll():
-        clip = bpy.context.space_data.clip
-        threshold = bpy.context.scene.tracker_threshold
         width, _ = clip.size
         margin_base = int(width * 0.01)
         min_distance_base = int(width * 0.05)
