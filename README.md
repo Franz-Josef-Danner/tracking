@@ -1,4 +1,3 @@
-@@ -1,325 +0,0 @@
 # Simple Blender Addon
 
 Dieses Verzeichnis enthaelt ein minimales Blender Addon für Blender 4.4 oder neuer. Kopiere den Ordner `t` in deinen Blender Addons-Ordner und aktiviere das Addon in den Einstellungen.
