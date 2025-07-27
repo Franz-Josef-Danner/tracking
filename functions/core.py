@@ -466,88 +466,101 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
 
+def track_steps(context, steps=5, delay=0.5, callback=None):
+    """Run tracking cycles with optional delay and feedback."""
+    scene = context.scene
+    clip = context.space_data.clip
+
+    def notify(level, message):
+        if callback:
+            callback(level, message)
+        else:
+            print(message)
+
+    if not clip:
+        notify('WARNING', "Kein Clip geladen")
+        return 0
+
+    def handle_frame(frame_number):
+        global TRACK_ATTEMPTS
+        attempts = TRACK_ATTEMPTS.get(frame_number, 0)
+        if attempts > 0:
+            if bpy.ops.clip.marker_frame_plus.poll():
+                bpy.ops.clip.marker_frame_plus()
+        else:
+            if bpy.ops.clip.marker_frame_minus.poll():
+                bpy.ops.clip.marker_frame_minus()
+        attempts += 1
+        TRACK_ATTEMPTS[frame_number] = attempts
+        if attempts > 10:
+            notify('ERROR', f"Zu viele Tracking-Versuche in Frame {frame_number}")
+            return False
+        return True
+
+    if bpy.ops.clip.setup_defaults.poll():
+        bpy.ops.clip.setup_defaults()
+
+    threshold = scene.marker_frame
+    frame, _ = find_low_marker_frame(clip, threshold)
+    if frame is not None:
+        scene.frame_current = frame
+        update_frame_display(context)
+        notify('INFO', f"[Track Nr.2] playhead to frame {frame}")
+        if not handle_frame(frame):
+            return 0
+
+    cycles = 0
+    while cycles < steps:
+        if bpy.ops.clip.test_pattern.poll():
+            bpy.ops.clip.test_pattern()
+        if bpy.ops.clip.test_motion.poll():
+            bpy.ops.clip.test_motion()
+        if bpy.ops.clip.test_channel.poll():
+            bpy.ops.clip.test_channel()
+        if bpy.ops.clip.cycle_detect.poll():
+            if bpy.ops.clip.proxy_off.poll():
+                bpy.ops.clip.proxy_off()
+            bpy.ops.clip.cycle_detect()
+        renamed = rename_new_tracks(context)
+        if renamed:
+            notify('INFO', f"{renamed} Tracks umbenannt")
+        if bpy.ops.clip.track_partial.poll():
+            bpy.ops.clip.track_partial()
+        if bpy.ops.clip.cleanup.poll():
+            bpy.ops.clip.cleanup()
+            if bpy.ops.clip.setup_defaults.poll():
+                bpy.ops.clip.setup_defaults()
+
+        cycles += 1
+        current = scene.frame_current
+        frame, _ = find_low_marker_frame(clip, threshold)
+        if frame is not None and frame != current:
+            scene.frame_current = frame
+            update_frame_display(context)
+            notify('INFO', f"[Track Nr.2] playhead to frame {frame}")
+            if not handle_frame(frame):
+                break
+
+        time.sleep(delay)
+    return cycles
+
 class CLIP_OT_track_nr2(bpy.types.Operator):
     bl_idname = "clip.track_nr2"
     bl_label = "Track Nr. 2"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        scene = context.scene
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
+
+        def cb(level, message):
+            self.report({level}, message)
+
+        steps = getattr(context.scene, "frames_track", 5)
+        cycles = track_steps(context, steps=steps, delay=STEP_DELAY, callback=cb)
+        if cycles <= 0:
             return {'CANCELLED'}
 
-        def handle_frame(frame_number):
-            global TRACK_ATTEMPTS
-            attempts = TRACK_ATTEMPTS.get(frame_number, 0)
-            if attempts > 0:
-                if bpy.ops.clip.marker_frame_plus.poll():
-                    bpy.ops.clip.marker_frame_plus()
-            else:
-                if bpy.ops.clip.marker_frame_minus.poll():
-                    bpy.ops.clip.marker_frame_minus()
-            attempts += 1
-            TRACK_ATTEMPTS[frame_number] = attempts
-            if attempts > 10:
-                self.report(
-                    {'ERROR'},
-                    f"Zu viele Tracking-Versuche in Frame {frame_number}",
-                )
-                return False
-            return True
-
-        if bpy.ops.clip.setup_defaults.poll():
-            bpy.ops.clip.setup_defaults()
-
-        threshold = scene.marker_frame
-        frame, _ = find_low_marker_frame(clip, threshold)
-        if frame is not None:
-            scene.frame_current = frame
-            update_frame_display(context)
-            print(f"[Track Nr.2] playhead to frame {frame}")
-            if not handle_frame(frame):
-                return {'CANCELLED'}
-
-        cycles = 0
-        while True:
-            if bpy.ops.clip.test_pattern.poll():
-                bpy.ops.clip.test_pattern()
-            if bpy.ops.clip.test_motion.poll():
-                bpy.ops.clip.test_motion()
-            if bpy.ops.clip.test_channel.poll():
-                bpy.ops.clip.test_channel()
-            if bpy.ops.clip.cycle_detect.poll():
-                if bpy.ops.clip.proxy_off.poll():
-                    bpy.ops.clip.proxy_off()
-                bpy.ops.clip.cycle_detect()
-            renamed = rename_new_tracks(context)
-            if renamed:
-                self.report({'INFO'}, f"{renamed} Tracks umbenannt")
-            if bpy.ops.clip.track_partial.poll():
-                bpy.ops.clip.track_partial()
-            if bpy.ops.clip.cleanup.poll():
-                bpy.ops.clip.cleanup()
-                if bpy.ops.clip.setup_defaults.poll():
-                    bpy.ops.clip.setup_defaults()
-
-            cycles += 1
-            current = scene.frame_current
-            frame, _ = find_low_marker_frame(clip, threshold)
-            if frame is not None and frame != current and cycles < 100:
-                scene.frame_current = frame
-                update_frame_display(context)
-                print(f"[Track Nr.2] playhead to frame {frame}")
-                if not handle_frame(frame):
-                    return {'CANCELLED'}
-                continue
-            if cycles >= 100:
-                self.report({'WARNING'}, "Abbruch nach 100 Durchl\u00e4ufen")
-            break
-
-        self.report({'INFO'}, f"{cycles} Durchl\u00e4ufe ausgef\u00fchrt")
+        self.report({'INFO'}, f"{cycles} Durchläufe ausgeführt")
         return {'FINISHED'}
-
 
 
 
