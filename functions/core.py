@@ -493,6 +493,8 @@ class CLIP_OT_track_nr2(bpy.types.Operator):
                 bpy.ops.clip.track_partial()
             if bpy.ops.clip.cleanup.poll():
                 bpy.ops.clip.cleanup()
+                if bpy.ops.clip.setup_defaults.poll():
+                    bpy.ops.clip.setup_defaults()
 
             cycles += 1
             current = scene.frame_current
@@ -1120,11 +1122,6 @@ class CLIP_OT_track_bidirectional(bpy.types.Operator):
         scene.frame_start = original_start
         scene.frame_end = original_end
         scene.frame_current = current
-        update_frame_display(context)
-        update_frame_display(context)
-        update_frame_display(context)
-        update_frame_display(context)
-        update_frame_display(context)
         update_frame_display(context)
 
 
