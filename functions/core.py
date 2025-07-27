@@ -54,6 +54,9 @@ TRACKED_FRAMES = 0
 # Letztes End-Frame-Ergebnis aus Track Full
 LAST_TRACK_END = None
 
+# Tracking attempts per frame for Track Nr. 2
+TRACK_ATTEMPTS = {}
+
 
 def add_timer(window_manager, window):
     """Create a timer using the global `TIMER_INTERVAL`."""
@@ -465,6 +468,25 @@ class CLIP_OT_track_nr2(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
+        def handle_frame(frame_number):
+            global TRACK_ATTEMPTS
+            attempts = TRACK_ATTEMPTS.get(frame_number, 0)
+            if attempts > 0:
+                if bpy.ops.clip.marker_frame_plus.poll():
+                    bpy.ops.clip.marker_frame_plus()
+            else:
+                if bpy.ops.clip.marker_frame_minus.poll():
+                    bpy.ops.clip.marker_frame_minus()
+            attempts += 1
+            TRACK_ATTEMPTS[frame_number] = attempts
+            if attempts > 10:
+                self.report(
+                    {'ERROR'},
+                    f"Zu viele Tracking-Versuche in Frame {frame_number}",
+                )
+                return False
+            return True
+
         if bpy.ops.clip.setup_defaults.poll():
             bpy.ops.clip.setup_defaults()
 
@@ -473,6 +495,8 @@ class CLIP_OT_track_nr2(bpy.types.Operator):
         if frame is not None:
             scene.frame_current = frame
             update_frame_display(context)
+            if not handle_frame(frame):
+                return {'CANCELLED'}
 
         cycles = 0
         while True:
@@ -502,6 +526,8 @@ class CLIP_OT_track_nr2(bpy.types.Operator):
             if frame is not None and frame != current and cycles < 100:
                 scene.frame_current = frame
                 update_frame_display(context)
+                if not handle_frame(frame):
+                    return {'CANCELLED'}
                 continue
             if cycles >= 100:
                 self.report({'WARNING'}, "Abbruch nach 100 Durchl\u00e4ufen")
@@ -2726,7 +2752,20 @@ class CLIP_OT_marker_frame_plus(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        scene.marker_frame = int(scene.marker_frame * 1.1)
+        scene.marker_frame = min(int(scene.marker_frame * 1.1), 200)
+        return {'FINISHED'}
+
+
+class CLIP_OT_marker_frame_minus(bpy.types.Operator):
+    bl_idname = "clip.marker_frame_minus"
+    bl_label = "Marker/Frame-"
+    bl_description = "Verringert 'Marker/Frame' um 10 %"
+
+    def execute(self, context):
+        scene = context.scene
+        scene.marker_frame = max(
+            int(scene.marker_frame * 0.9), DEFAULT_MARKER_FRAME
+        )
         return {'FINISHED'}
 
 
@@ -3170,6 +3209,7 @@ operator_classes = (
     CLIP_OT_step_track,
     CLIP_OT_frame_jump,
     CLIP_OT_marker_frame_plus,
+    CLIP_OT_marker_frame_minus,
     CLIP_OT_setup_defaults,
     CLIP_OT_track_full,
     CLIP_OT_test_track_backwards,
