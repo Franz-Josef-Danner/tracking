@@ -1,4 +1,4 @@
 # Absolute import to the tracking operator package
-from operators import tracking
+from tracking-main.operators import tracking
 
 operator_classes = tracking.operator_classes
