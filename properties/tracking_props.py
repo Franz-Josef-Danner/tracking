@@ -17,6 +17,13 @@ tracking_properties = {
         description="Gespeicherter Threshold-Wert",
         default=1.0,
     ),
+    "tracker_threshold": FloatProperty(
+        name="Tracker Threshold",
+        description="Persistent threshold value for detect features",
+        default=0.5,
+        min=0.00000001,
+        max=1.0,
+    ),
     "error_threshold": FloatProperty(
         name="Error Threshold",
         description="Fehlergrenze für Operationen",

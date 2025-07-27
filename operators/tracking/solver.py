@@ -110,6 +110,8 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         self._start = context.scene.frame_current
         return "DETECT"
 
+    MIN_THRESHOLD = 0.0000001  # oder dein gewünschter Mindestwer
+    
     def step_detect(self, context):
         """Generate markers using Cycle Detect."""
         clip = context.space_data.clip
@@ -121,6 +123,9 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
             if bpy.ops.clip.proxy_off.poll():
                 bpy.ops.clip.proxy_off()
             bpy.ops.clip.cycle_detect()
+            threshold_value = context.scene.threshold_value
+            context.scene.tracker_threshold = threshold_value
+            print(f"[Track Nr.1] saved threshold {threshold_value:.8f}")
 
         if bpy.ops.clip.prefix_new.poll():
             bpy.ops.clip.prefix_new()
@@ -203,6 +208,9 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         return None
 
     def execute(self, context):
+        print(
+            f"[Track Nr.1] starting threshold {context.scene.threshold_value:.8f}"
+        )
         wm = context.window_manager
         self._timer = add_timer(wm, context.window)
         self._state = "INIT"
@@ -340,7 +348,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         mframe = context.scene.marker_frame
         mf_base = mframe / 3
 
-        threshold_value = 1.0
+        threshold_value = context.scene.tracker_threshold
 
         detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
 
@@ -369,10 +377,18 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             names_before = {t.name for t in clip.tracking.tracks}
             if bpy.ops.clip.proxy_off.poll():
                 bpy.ops.clip.proxy_off()
+            print(
+                f"[Detect Features] threshold {detection_threshold:.8f}, "
+                f"margin {margin}, min_distance {min_distance}"
+            )
             bpy.ops.clip.detect_features(
                 threshold=detection_threshold,
                 min_distance=min_distance,
                 margin=margin,
+            )
+            print(
+                f"[Detect Features] finished threshold {detection_threshold:.8f}, "
+                f"margin {margin}, min_distance {min_distance}"
             )
             names_after = {t.name for t in clip.tracking.tracks}
             new_tracks = [
@@ -398,6 +414,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             for track in clip.tracking.tracks:
                 track.select = False
             threshold_value = threshold_value * ((new_markers + 0.1) / mf_base)
+            print(f"[Detect Features] updated threshold = {threshold_value:.8f}")
             # adjust detection threshold dynamically
             detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
             factor = math.log10(detection_threshold * 10000000000) / 10
@@ -419,6 +436,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             settings.default_search_size = settings.default_pattern_size * 2
         LAST_DETECT_COUNT = new_markers
         context.scene.threshold_value = threshold_value
+        context.scene.tracker_threshold = threshold_value
         context.scene.nm_count = new_markers
         # Keep newly detected tracks selected
         for track in clip.tracking.tracks:
@@ -903,7 +921,7 @@ class CLIP_OT_all_detect(bpy.types.Operator):
         mfp_min = mfp * 0.9
         mfp_max = mfp * 1.1
 
-        threshold_value = 1.0
+        threshold_value = context.scene.tracker_threshold
         detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
         factor = math.log10(detection_threshold * 10000000000) / 10
         margin = int(margin_base * factor)
@@ -916,10 +934,18 @@ class CLIP_OT_all_detect(bpy.types.Operator):
             names_before = {t.name for t in clip.tracking.tracks}
             if bpy.ops.clip.proxy_off.poll():
                 bpy.ops.clip.proxy_off()
+            print(
+                f"[Detect Features] threshold {detection_threshold:.8f}, "
+                f"margin {margin}, min_distance {min_distance}"
+            )
             bpy.ops.clip.detect_features(
                 threshold=detection_threshold,
                 min_distance=min_distance,
                 margin=margin,
+            )
+            print(
+                f"[Detect Features] finished threshold {detection_threshold:.8f}, "
+                f"margin {margin}, min_distance {min_distance}"
             )
             names_after = {t.name for t in clip.tracking.tracks}
             new_tracks = [
@@ -997,6 +1023,7 @@ class CLIP_OT_all_detect(bpy.types.Operator):
                 track.select = False
 
             threshold_value = threshold_value * ((new_markers + 0.1) / mfp)
+            print(f"[Detect Features] updated threshold = {threshold_value:.8f}")
             detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
             factor = math.log10(detection_threshold * 10000000000) / 10
             margin = int(margin_base * factor)
@@ -1004,6 +1031,7 @@ class CLIP_OT_all_detect(bpy.types.Operator):
             attempt += 1
 
         context.scene.threshold_value = threshold_value
+        context.scene.tracker_threshold = threshold_value
         context.scene.nm_count = new_markers
 
         # Keep newly detected tracks selected
@@ -1040,7 +1068,7 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
         target_min = target * 0.9
         target_max = target * 1.1
 
-        threshold_value = 1.0
+        threshold_value = context.scene.tracker_threshold
         detection_threshold, margin, min_distance = compute_detection_params(
             threshold_value, margin_base, min_distance_base
         )
@@ -1071,6 +1099,7 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
                 track.select = False
 
             threshold_value = threshold_value * ((count + 0.1) / target)
+            print(f"[Detect Features] updated threshold = {threshold_value:.8f}")
             detection_threshold, margin, min_distance = compute_detection_params(
                 threshold_value, margin_base, min_distance_base
             )
@@ -1083,6 +1112,9 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
         if new_tracks and bpy.ops.clip.prefix_new.poll():
             bpy.ops.clip.prefix_new(silent=True)
         add_pending_tracks(new_tracks)
+
+        context.scene.threshold_value = threshold_value
+        context.scene.tracker_threshold = threshold_value
 
         return {'FINISHED'}
 
@@ -1407,7 +1439,7 @@ def _Test_detect(self, context, use_defaults=True):
 
     if use_defaults:
         bpy.ops.clip.setup_defaults(silent=True)
-    context.scene.threshold_value = 1.0
+
 
     # Begin Test detect cycle
     prev_best = TEST_END_FRAME
@@ -1430,7 +1462,6 @@ def _Test_detect(self, context, use_defaults=True):
                     bpy.ops.clip.delete_track()
                 for t in clip.tracking.tracks:
                     t.select = False
-                context.scene.threshold_value = 1.0
                 attempt += 1
 
             if attempt >= 10 and not (mf_min <= count <= mf_max):
@@ -1843,9 +1874,14 @@ def enable_proxy():
 def detect_features_once():
     """Run feature detection if available."""
     if bpy.ops.clip.detect_features.poll():
+        threshold = bpy.context.scene.tracker_threshold
+        print(f"[Detect Features] using threshold {threshold:.8f}")
         if bpy.ops.clip.proxy_off.poll():
             bpy.ops.clip.proxy_off()
-        bpy.ops.clip.detect_features()
+        bpy.ops.clip.detect_features(threshold=threshold)
+        print(
+            f"[Detect Features] finished with threshold {threshold:.8f}"
+        )
 
 
 def track_full_clip():
