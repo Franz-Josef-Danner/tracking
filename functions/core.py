@@ -547,20 +547,143 @@ def track_steps(context, steps=5, delay=0.5, callback=None):
 class CLIP_OT_track_nr2(bpy.types.Operator):
     bl_idname = "clip.track_nr2"
     bl_label = "Track Nr. 2"
-    bl_options = {'REGISTER', 'UNDO'}
+    bl_options = {'REGISTER', 'UNDO', 'BLOCKING'}
+
+    _timer = None
+    _state = "INIT"
+    _cycles_done = 0
+    _target_cycles = 0
+    _next_frame = None
+
+    def _handle_frame(self, frame_number):
+        global TRACK_ATTEMPTS
+        attempts = TRACK_ATTEMPTS.get(frame_number, 0)
+        if attempts > 0:
+            if bpy.ops.clip.marker_frame_plus.poll():
+                bpy.ops.clip.marker_frame_plus()
+        else:
+            if bpy.ops.clip.marker_frame_minus.poll():
+                bpy.ops.clip.marker_frame_minus()
+        attempts += 1
+        TRACK_ATTEMPTS[frame_number] = attempts
+        if attempts > 10:
+            self.report({'ERROR'}, f"Zu viele Tracking-Versuche in Frame {frame_number}")
+            return False
+        return True
+
+    def step_init(self, context):
+        time.sleep(STEP_DELAY)
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return None
+        if bpy.ops.clip.setup_defaults.poll():
+            bpy.ops.clip.setup_defaults()
+        self._target_cycles = getattr(context.scene, "frames_track", 5)
+        self._cycles_done = 0
+        threshold = context.scene.marker_frame
+        frame, _ = find_low_marker_frame(clip, threshold)
+        self._next_frame = frame
+        if frame is not None:
+            context.scene.frame_current = frame
+            update_frame_display(context)
+            self.report({'INFO'}, f"Start bei Frame {frame}")
+            if not self._handle_frame(frame):
+                return None
+        return "DETECT"
+
+    def step_detect(self, context):
+        time.sleep(STEP_DELAY)
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return None
+        if bpy.ops.clip.test_pattern.poll():
+            bpy.ops.clip.test_pattern()
+        if bpy.ops.clip.test_motion.poll():
+            bpy.ops.clip.test_motion()
+        if bpy.ops.clip.test_channel.poll():
+            bpy.ops.clip.test_channel()
+        if bpy.ops.clip.cycle_detect.poll():
+            if bpy.ops.clip.proxy_off.poll():
+                bpy.ops.clip.proxy_off()
+            bpy.ops.clip.cycle_detect()
+        return "TRACK"
+
+    def step_track(self, context):
+        time.sleep(STEP_DELAY)
+        renamed = rename_new_tracks(context)
+        if renamed:
+            self.report({'INFO'}, f"{renamed} Tracks umbenannt")
+        if bpy.ops.clip.track_partial.poll():
+            bpy.ops.clip.track_partial()
+        return "CLEANUP"
+
+    def step_cleanup(self, context):
+        time.sleep(STEP_DELAY)
+        if bpy.ops.clip.cleanup.poll():
+            bpy.ops.clip.cleanup()
+            if bpy.ops.clip.setup_defaults.poll():
+                bpy.ops.clip.setup_defaults()
+        return "DECIDE"
+
+    def step_decide(self, context):
+        time.sleep(STEP_DELAY)
+        scene = context.scene
+        clip = context.space_data.clip
+        self._cycles_done += 1
+        threshold = scene.marker_frame
+        frame, _ = find_low_marker_frame(clip, threshold)
+        self._next_frame = frame
+        if self._cycles_done >= self._target_cycles or frame is None:
+            return "RENAME"
+        if frame != scene.frame_current:
+            scene.frame_current = frame
+            update_frame_display(context)
+            self.report({'INFO'}, f"Nächster Frame {frame}")
+            if not self._handle_frame(frame):
+                return "RENAME"
+        return "DETECT"
+
+    def step_rename(self, context):
+        time.sleep(STEP_DELAY)
+        count = rename_new_tracks(context)
+        if count:
+            self.report({'INFO'}, f"{count} Tracks umbenannt")
+        cleanup_short_tracks(context)
+        return None
 
     def execute(self, context):
+        wm = context.window_manager
+        self._timer = add_timer(wm, context.window)
+        self._state = "INIT"
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
 
-        def cb(level, message):
-            self.report({level}, message)
+    def cancel(self, context):
+        if self._timer:
+            context.window_manager.event_timer_remove(self._timer)
+            self._timer = None
+        return {'CANCELLED'}
 
-        steps = getattr(context.scene, "frames_track", 5)
-        cycles = track_steps(context, steps=steps, delay=STEP_DELAY, callback=cb)
-        if cycles <= 0:
-            return {'CANCELLED'}
+    def modal(self, context, event):
+        if event.type == 'ESC':
+            return self.cancel(context)
 
-        self.report({'INFO'}, f"{cycles} Durchläufe ausgeführt")
-        return {'FINISHED'}
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+
+        state_method = getattr(self, f"step_{self._state.lower()}", None)
+        if state_method:
+            result = state_method(context)
+            if result is None:
+                return self.cancel(context)
+            self._state = result
+        else:
+            self.report({'ERROR'}, f"Unbekannter Zustand: {self._state}")
+            return self.cancel(context)
+
+        return {'RUNNING_MODAL'}
 
 
 
