@@ -25,7 +25,10 @@ class CLIP_OT_panel_button(bpy.types.Operator):
     bl_description = "Erstellt Proxy-Dateien mit 50% Gr\u00f6\u00dfe"
 
     def execute(self, context):
-        clip = bpy.context.scene.clip
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
+            return {'CANCELLED'}
 
         clip.use_proxy = True
 
@@ -64,9 +67,9 @@ class CLIP_OT_proxy_on(bpy.types.Operator):
     bl_description = "Aktiviert das Proxy"
 
     def execute(self, context):
-        clip = bpy.context.scene.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
             return {'CANCELLED'}
 
         clip.use_proxy = True
@@ -80,9 +83,9 @@ class CLIP_OT_proxy_off(bpy.types.Operator):
     bl_description = "Deaktiviert das Proxy"
 
     def execute(self, context):
-        clip = bpy.context.scene.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
             return {'CANCELLED'}
 
         clip.use_proxy = False
@@ -493,9 +496,9 @@ class CLIP_OT_distance_button(bpy.types.Operator):
     )
 
     def execute(self, context):
-        clip = bpy.context.scene.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
             return {'CANCELLED'}
 
         frame = context.scene.frame_current
@@ -540,9 +543,9 @@ class CLIP_OT_delete_selected(bpy.types.Operator):
     silent: BoolProperty(default=False, options={'HIDDEN'})
 
     def execute(self, context):
-        clip = bpy.context.scene.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
             return {'CANCELLED'}
 
         has_selection = any(t.select for t in clip.tracking.tracks)
@@ -587,9 +590,9 @@ class CLIP_OT_select_short_tracks(bpy.types.Operator):
     )
 
     def execute(self, context):
-        clip = bpy.context.scene.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
             return {'CANCELLED'}
 
         min_frames = context.scene.frames_track
@@ -610,9 +613,9 @@ class CLIP_OT_count_button(bpy.types.Operator):
     silent: BoolProperty(default=False, options={"HIDDEN"})
 
     def execute(self, context):
-        clip = bpy.context.scene.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
             return {'CANCELLED'}
 
         prefix = "TEST_"
@@ -941,9 +944,9 @@ class CLIP_OT_all_detect(bpy.types.Operator):
     )
 
     def execute(self, context):
-        clip = bpy.context.scene.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
             return {'CANCELLED'}
 
         width, _ = clip.size
@@ -1089,9 +1092,9 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
     )
 
     def execute(self, context):
-        clip = bpy.context.scene.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
             return {'CANCELLED'}
 
         clip.use_proxy = False
