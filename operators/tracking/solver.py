@@ -389,7 +389,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         margin_base = int(width * 0.06)
         min_distance_base = int(width * 0.12)
 
-        factor = math.log10(detection_threshold * 1000000) / 6
+        factor = math.log10(detection_threshold * 100000000) / 8
         margin = int(margin_base * factor)
         min_distance = int(min_distance_base * factor)
 
