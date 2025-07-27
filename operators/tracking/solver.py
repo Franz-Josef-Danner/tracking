@@ -393,8 +393,8 @@ class CLIP_OT_detect_button(bpy.types.Operator):
 
         threshold_value = context.scene.tracker_threshold
 
-        margin_base = int(width * 0.06)
-        min_distance_base = int(width * 0.12)
+        margin_base = int(width * 0.025)
+        min_distance_base = int(width * 0.05)
         print(
             f"[BASE DEBUG] width={width}, margin_base={margin_base}, min_distance_base={min_distance_base}"
         )
@@ -959,8 +959,8 @@ class CLIP_OT_all_detect(bpy.types.Operator):
             self.report({'WARNING'}, "Ung\u00fcltige Clipgr\u00f6\u00dfe")
             return {'CANCELLED'}
 
-        margin_base = int(width * 0.06)
-        min_distance_base = int(width * 0.12)
+        margin_base = int(width * 0.025)
+        min_distance_base = int(width * 0.05)
         print(
             f"[BASE DEBUG] width={width}, margin_base={margin_base}, min_distance_base={min_distance_base}"
         )
@@ -1107,8 +1107,8 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
 
         width, _ = clip.size
 
-        margin_base = int(width * 0.06)
-        min_distance_base = int(width * 0.12)
+        margin_base = int(width * 0.025)
+        min_distance_base = int(width * 0.05)
         print(f"[BASE DEBUG] width={width}, margin_base={margin_base}, min_distance_base={min_distance_base}")
 
         target = context.scene.marker_frame * 4
@@ -1939,8 +1939,8 @@ def detect_features_once(context=None, clip=None, threshold=None):
             print("\u26a0\ufe0f Clipgr\u00f6\u00dfe ist 0 - Detect abgebrochen")
             return
 
-        margin_base = int(width * 0.06)
-        min_distance_base = int(width * 0.12)
+        margin_base = int(width * 0.025)
+        min_distance_base = int(width * 0.05)
         print(
             f"[BASE DEBUG] width={width}, margin_base={margin_base}, min_distance_base={min_distance_base}"
         )
