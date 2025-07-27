@@ -25,7 +25,10 @@ class CLIP_OT_panel_button(bpy.types.Operator):
     bl_description = "Erstellt Proxy-Dateien mit 50% Gr\u00f6\u00dfe"
 
     def execute(self, context):
-        clip = context.space_data.clip
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
+            return {'CANCELLED'}
 
         clip.use_proxy = True
 
@@ -64,9 +67,9 @@ class CLIP_OT_proxy_on(bpy.types.Operator):
     bl_description = "Aktiviert das Proxy"
 
     def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
             return {'CANCELLED'}
 
         clip.use_proxy = True
@@ -80,9 +83,9 @@ class CLIP_OT_proxy_off(bpy.types.Operator):
     bl_description = "Deaktiviert das Proxy"
 
     def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
             return {'CANCELLED'}
 
         clip.use_proxy = False
@@ -114,8 +117,8 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
     
     def step_detect(self, context):
         """Generate markers using Cycle Detect."""
-        clip = context.space_data.clip
-        if not clip or not clip.tracking:
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None or not clip.tracking:
             print("\u26a0\ufe0f Kein gültiger Clip – detect wird übersprungen")
             return "TRACK"
 
@@ -123,7 +126,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
             bpy.ops.clip.proxy_off()
 
 
-        clip = context.space_data.clip
+        clip = getattr(context.space_data, "clip", None)
 
         target = context.scene.marker_frame * 4
         target_min = int(target * 0.9)
@@ -187,7 +190,10 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
     def step_decide(self, context):
         """Move the playhead to the next frame before cleanup."""
         scene = context.scene
-        clip = context.space_data.clip
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            print("\u26a0\ufe0f Kein g\u00fcltiger Clip")
+            return "MOVE"
 
         print(
             f"[Track Nr.1] decide end {self._end} tracked {self._tracked} threshold {scene.marker_frame}"
@@ -239,6 +245,9 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         return None
 
     def execute(self, context):
+        # set the starting threshold only once when the operator is triggered
+        context.scene.threshold_value = 0.5
+        context.scene.tracker_threshold = 0.5
         print(
             f"[Track Nr.1] starting threshold {context.scene.threshold_value:.8f}"
         )
@@ -282,9 +291,9 @@ class CLIP_OT_track_nr2(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
             return {'CANCELLED'}
 
         def handle_frame(frame_number):
@@ -375,20 +384,23 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         global LAST_DETECT_COUNT
 
         width, _ = clip.size
+        if width == 0:
+            self.report({'WARNING'}, "Ung\u00fcltige Clipgr\u00f6\u00dfe")
+            return {'CANCELLED'}
 
         mframe = context.scene.marker_frame
         mf_base = mframe / 3
 
         threshold_value = context.scene.tracker_threshold
 
-        detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
-
-        margin_base = int(width * 0.03)
-        min_distance_base = int(width * 0.04)
-
-        factor = math.log10(detection_threshold * 1000000) / 6
-        margin = int(margin_base * factor)
-        min_distance = int(min_distance_base * factor)
+        margin_base = int(width * 0.025)
+        min_distance_base = int(width * 0.05)
+        print(
+            f"[BASE DEBUG] width={width}, margin_base={margin_base}, min_distance_base={min_distance_base}"
+        )
+        detection_threshold, margin, min_distance = compute_detection_params(
+            threshold_value, margin_base, min_distance_base
+        )
 
 
         active = None
@@ -447,10 +459,9 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             threshold_value = threshold_value * ((new_markers + 0.1) / mf_base)
             print(f"[Detect Features] updated threshold = {threshold_value:.8f}")
             # adjust detection threshold dynamically
-            detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
-            factor = math.log10(detection_threshold * 10000000000) / 10
-            margin = int(margin_base * factor)
-            min_distance = int(min_distance_base * factor)
+            detection_threshold, margin, min_distance = compute_detection_params(
+                threshold_value, margin_base, min_distance_base
+            )
             attempt += 1
 
         settings = clip.tracking.settings
@@ -490,9 +501,9 @@ class CLIP_OT_distance_button(bpy.types.Operator):
     )
 
     def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
             return {'CANCELLED'}
 
         frame = context.scene.frame_current
@@ -537,9 +548,9 @@ class CLIP_OT_delete_selected(bpy.types.Operator):
     silent: BoolProperty(default=False, options={'HIDDEN'})
 
     def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
             return {'CANCELLED'}
 
         has_selection = any(t.select for t in clip.tracking.tracks)
@@ -584,9 +595,9 @@ class CLIP_OT_select_short_tracks(bpy.types.Operator):
     )
 
     def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
             return {'CANCELLED'}
 
         min_frames = context.scene.frames_track
@@ -607,9 +618,9 @@ class CLIP_OT_count_button(bpy.types.Operator):
     silent: BoolProperty(default=False, options={"HIDDEN"})
 
     def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
             return {'CANCELLED'}
 
         prefix = "TEST_"
@@ -938,25 +949,30 @@ class CLIP_OT_all_detect(bpy.types.Operator):
     )
 
     def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
             return {'CANCELLED'}
 
         width, _ = clip.size
+        if width == 0:
+            self.report({'WARNING'}, "Ung\u00fcltige Clipgr\u00f6\u00dfe")
+            return {'CANCELLED'}
 
-        margin_base = int(width * 0.01)
+        margin_base = int(width * 0.025)
         min_distance_base = int(width * 0.05)
+        print(
+            f"[BASE DEBUG] width={width}, margin_base={margin_base}, min_distance_base={min_distance_base}"
+        )
 
         mfp = context.scene.marker_frame * 4
         mfp_min = mfp * 0.9
         mfp_max = mfp * 1.1
 
         threshold_value = context.scene.tracker_threshold
-        detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
-        factor = math.log10(detection_threshold * 10000000000) / 10
-        margin = int(margin_base * factor)
-        min_distance = int(min_distance_base * factor)
+        detection_threshold, margin, min_distance = compute_detection_params(
+            threshold_value, margin_base, min_distance_base
+        )
 
 
         attempt = 0
@@ -1055,10 +1071,9 @@ class CLIP_OT_all_detect(bpy.types.Operator):
 
             threshold_value = threshold_value * ((new_markers + 0.1) / mfp)
             print(f"[Detect Features] updated threshold = {threshold_value:.8f}")
-            detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
-            factor = math.log10(detection_threshold * 10000000000) / 10
-            margin = int(margin_base * factor)
-            min_distance = int(min_distance_base * factor)
+            detection_threshold, margin, min_distance = compute_detection_params(
+                threshold_value, margin_base, min_distance_base
+            )
             attempt += 1
 
         context.scene.threshold_value = threshold_value
@@ -1083,17 +1098,18 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
     )
 
     def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
             return {'CANCELLED'}
 
         clip.use_proxy = False
 
         width, _ = clip.size
 
-        margin_base = int(width * 0.01)
+        margin_base = int(width * 0.025)
         min_distance_base = int(width * 0.05)
+        print(f"[BASE DEBUG] width={width}, margin_base={margin_base}, min_distance_base={min_distance_base}")
 
         target = context.scene.marker_frame * 4
         target_min = target * 0.9
@@ -1131,6 +1147,9 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
 
             threshold_value = threshold_value * ((count + 0.1) / target)
             print(f"[Detect Features] updated threshold = {threshold_value:.8f}")
+            print(
+                f"[BASE DEBUG] width={width}, margin_base={margin_base}, min_distance_base={min_distance_base}"
+            )
             detection_threshold, margin, min_distance = compute_detection_params(
                 threshold_value, margin_base, min_distance_base
             )
@@ -1907,17 +1926,28 @@ def detect_features_once(context=None, clip=None, threshold=None):
     if context is None:
         context = bpy.context
     if clip is None:
-        clip = context.space_data.clip
+        clip = getattr(context.space_data, "clip", None)
+    if clip is None:
+        print("\u26a0\ufe0f Kein aktiver Movie Clip gefunden.")
+        return
     if threshold is None:
         threshold = context.scene.tracker_threshold
 
     if bpy.ops.clip.detect_features.poll():
         width, _ = clip.size
-        margin_base = int(width * 0.01)
-        min_distance_base = int(width * 0.05)
+        if width == 0:
+            print("\u26a0\ufe0f Clipgr\u00f6\u00dfe ist 0 - Detect abgebrochen")
+            return
 
-        margin = max(4, int(margin_base * threshold))
-        min_distance = max(20, int(min_distance_base * threshold))
+        margin_base = int(width * 0.025)
+        min_distance_base = int(width * 0.05)
+        print(
+            f"[BASE DEBUG] width={width}, margin_base={margin_base}, min_distance_base={min_distance_base}"
+        )
+
+        detection_threshold, margin, min_distance = compute_detection_params(
+            threshold, margin_base, min_distance_base
+        )
 
         print(
             f"[Detect Features] threshold={threshold:.8f}, "
@@ -1949,8 +1979,8 @@ def delete_selected_tracks():
 
 def cleanup_short_tracks(context):
     """Select short TRACK_ markers and delete them."""
-    clip = context.space_data.clip
-    if not clip:
+    clip = getattr(context.space_data, "clip", None)
+    if clip is None:
         return
     min_frames = context.scene.frames_track
     select_short_tracks(clip, min_frames)
