@@ -41,6 +41,8 @@ MIN_THRESHOLD = 0.0001
 
 # Zeitintervall für Timer-Operationen in Sekunden
 TIMER_INTERVAL = 0.2
+# Verzögerung zwischen Einzelschritten in Sekunden
+STEP_DELAY = 0.5
 
 # Tracks that should be renamed after processing
 PENDING_RENAME = []
@@ -61,6 +63,51 @@ TRACK_ATTEMPTS = {}
 def add_timer(window_manager, window):
     """Create a timer using the global `TIMER_INTERVAL`."""
     return window_manager.event_timer_add(TIMER_INTERVAL, window=window)
+
+
+class StepOperator(bpy.types.Operator):
+    """Basis-Klasse für modulare Operatoren mit Schrittverzögerung."""
+
+    bl_options = {'BLOCKING'}
+
+    step_delay: FloatProperty(default=STEP_DELAY, options={'HIDDEN'})
+
+    _timer = None
+    _state = "INIT"
+
+    def start(self, context):
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(self.step_delay, window=context.window)
+        wm.modal_handler_add(self)
+
+    def execute(self, context):
+        self._state = "INIT"
+        self.start(context)
+        return {'RUNNING_MODAL'}
+
+    def cancel(self, context):
+        if self._timer:
+            context.window_manager.event_timer_remove(self._timer)
+            self._timer = None
+        return {'CANCELLED'}
+
+    def modal(self, context, event):
+        if event.type == 'ESC':
+            return self.cancel(context)
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+
+        method = getattr(self, f"step_{self._state.lower()}", None)
+        if method:
+            new_state = method(context)
+            if new_state is None:
+                return self.cancel(context)
+            self._state = new_state
+        else:
+            self.report({'ERROR'}, f"Unbekannter Zustand: {self._state}")
+            return self.cancel(context)
+
+        return {'RUNNING_MODAL'}
 
 
 def pattern_base(clip):
@@ -1402,92 +1449,79 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
 
         return {'FINISHED'}
 
-class CLIP_OT_all_cycle(bpy.types.Operator):
+class CLIP_OT_all_cycle(StepOperator):
     bl_idname = "clip.all_cycle"
     bl_label = "All Cycle"
     bl_description = (
         "Startet einen kombinierten Tracking-Zyklus ohne Proxy-Bau, der mit Esc abgebrochen werden kann"
     )
 
-    _timer = None
-    _state = "DETECT"
     _detect_attempts = 0
 
-    def modal(self, context, event):
-        if event.type == 'ESC':
-            return self.cancel(context)
+    def step_init(self, context):
+        self._detect_attempts = 0
+        return "DETECT"
 
-        if event.type != 'TIMER':
-            return {'PASS_THROUGH'}
-
+    def step_detect(self, context):
         clip = context.space_data.clip
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
-            return self.cancel(context)
+            return None
+        bpy.ops.clip.all_detect()
+        bpy.ops.clip.distance_button()
+        bpy.ops.clip.delete_selected()
+        clean_pending_tracks(clip)
 
-        if self._state == 'DETECT':
-            bpy.ops.clip.all_detect()
-            bpy.ops.clip.distance_button()
-            bpy.ops.clip.delete_selected()
-            clean_pending_tracks(clip)
+        count = len(PENDING_RENAME)
+        mframe = context.scene.marker_frame
+        mf_base = mframe * 4
+        track_min = mf_base * 0.8
+        track_max = mf_base * 1.2
 
-            count = len(PENDING_RENAME)
-            mframe = context.scene.marker_frame
-            mf_base = mframe * 4
-            track_min = mf_base * 0.8
-            track_max = mf_base * 1.2
+        for t in PENDING_RENAME:
+            t.select = True
 
-            if track_min <= count <= track_max:
-                for t in PENDING_RENAME:
-                    t.select = True
-                self._detect_attempts = 0
-                self._state = 'TRACK'
-            else:
-                for t in PENDING_RENAME:
-                    t.select = True
-                bpy.ops.clip.delete_selected()
-                clean_pending_tracks(clip)
-                self._detect_attempts += 1
-                if self._detect_attempts >= 20:
-                    self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
-                    return self.cancel(context)
+        if track_min <= count <= track_max:
+            self._detect_attempts = 0
+            return "TRACK"
 
-        elif self._state == 'TRACK':
+        bpy.ops.clip.delete_selected()
+        clean_pending_tracks(clip)
+        self._detect_attempts += 1
+        if self._detect_attempts >= 20:
+            self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
+            return None
+        return "DETECT"
+
+    def step_track(self, context):
+        if bpy.ops.clip.track_sequence.poll():
             bpy.ops.clip.track_sequence()
-            self._state = 'CLEAN'
+        return "CLEANUP"
 
-        elif self._state == 'CLEAN':
+    def step_cleanup(self, context):
+        if bpy.ops.clip.tracking_length.poll():
             bpy.ops.clip.tracking_length()
-            self._state = 'JUMP'
+        return "JUMP"
 
-        elif self._state == 'JUMP':
-            frame = jump_to_first_frame_with_few_active_markers(
-                min_required=context.scene.marker_frame
-            )
-            if frame is None:
-                return self.cancel(context)
-            context.scene.frame_current = frame
-            update_frame_display(context)
-            self._state = 'DETECT'
-
-        return {'PASS_THROUGH'}
-
-    def execute(self, context):
-        self._state = 'DETECT'
-        self._detect_attempts = 0
-        wm = context.window_manager
-        self._timer = add_timer(wm, context.window)
-        wm.modal_handler_add(self)
-        return {'RUNNING_MODAL'}
+    def step_jump(self, context):
+        frame = jump_to_first_frame_with_few_active_markers(
+            min_required=context.scene.marker_frame
+        )
+        if frame is None:
+            clip = context.space_data.clip
+            if clip:
+                rename_pending_tracks(clip)
+            return None
+        context.scene.frame_current = frame
+        update_frame_display(context)
+        return "DETECT"
 
     def cancel(self, context):
-        if self._timer:
-            context.window_manager.event_timer_remove(self._timer)
-            self._timer = None
+        result = super().cancel(context)
         clip = context.space_data.clip
         if clip:
             rename_pending_tracks(clip)
-        return {'CANCELLED'}
+        return result
 
 
 class CLIP_OT_track_sequence(bpy.types.Operator):
