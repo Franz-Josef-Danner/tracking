@@ -110,6 +110,8 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         self._start = context.scene.frame_current
         return "DETECT"
 
+    MIN_THRESHOLD = 0.0000001  # oder dein gewünschter Mindestwer
+    
     def step_detect(self, context):
         """Generate markers using Cycle Detect."""
         clip = context.space_data.clip
