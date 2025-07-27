@@ -1,5 +1,5 @@
 # Absolute imports for panel modules
-from ui.panels import tracking_panel, settings_panel, test_panels
+from tracking-main.ui.panels import tracking_panel, settings_panel, test_panels
 
 panel_classes = (
     *tracking_panel.panel_classes,
