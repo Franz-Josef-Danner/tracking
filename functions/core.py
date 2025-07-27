@@ -2264,7 +2264,7 @@ def run_pattern_size_test(context):
     return _run_test_cycle(context, cleanup=True, cycles=1)
 
 
-def evaluate_motion_models(context, models=MOTION_MODELS, cycles=2):
+def evaluate_motion_models(context, models=MOTION_MODELS, cycles=1):
     """Return the best motion model along with its score and error."""
     clip = context.space_data.clip
     settings = clip.tracking.settings
@@ -2287,7 +2287,7 @@ def evaluate_motion_models(context, models=MOTION_MODELS, cycles=2):
     return best_model, best_score, best_error
 
 
-def evaluate_channel_combinations(context, combos=CHANNEL_COMBOS, cycles=2):
+def evaluate_channel_combinations(context, combos=CHANNEL_COMBOS, cycles=1):
     """Return the best RGB channel combination with its score and error."""
     clip = context.space_data.clip
     settings = clip.tracking.settings
