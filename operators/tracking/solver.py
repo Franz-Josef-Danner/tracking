@@ -6,7 +6,7 @@ import re
 from bpy.props import IntProperty, FloatProperty, BoolProperty
 
 # Import utility functions via absolute path
-from t.helpers import *
+from tracking_main.helpers import *
 
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
