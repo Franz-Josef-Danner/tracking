@@ -505,6 +505,7 @@ class CLIP_OT_track_nr2(bpy.types.Operator):
         if frame is not None:
             scene.frame_current = frame
             update_frame_display(context)
+            print(f"[Track Nr.2] playhead to frame {frame}")
             if not handle_frame(frame):
                 return {'CANCELLED'}
 
@@ -536,6 +537,7 @@ class CLIP_OT_track_nr2(bpy.types.Operator):
             if frame is not None and frame != current and cycles < 100:
                 scene.frame_current = frame
                 update_frame_display(context)
+                print(f"[Track Nr.2] playhead to frame {frame}")
                 if not handle_frame(frame):
                     return {'CANCELLED'}
                 continue
