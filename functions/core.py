@@ -4,6 +4,7 @@ import os
 import shutil
 import math
 import re
+import time
 from bpy.props import IntProperty, FloatProperty, BoolProperty
 
 # Frames, die mit zu wenig Markern gefunden wurden
@@ -41,6 +42,8 @@ MIN_THRESHOLD = 0.0001
 
 # Zeitintervall für Timer-Operationen in Sekunden
 TIMER_INTERVAL = 0.2
+# Verzögerung zwischen modularen Schritten in Sekunden
+STEP_DELAY = 0.5
 
 # Tracks that should be renamed after processing
 PENDING_RENAME = []
@@ -325,6 +328,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
 
     def step_init(self, context):
         """Set defaults and remember the start frame."""
+        time.sleep(STEP_DELAY)
         if bpy.ops.clip.api_defaults.poll():
             bpy.ops.clip.api_defaults()
         self._start = context.scene.frame_current
@@ -332,6 +336,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
 
     def step_detect(self, context):
         """Generate markers using Cycle Detect."""
+        time.sleep(STEP_DELAY)
         clip = context.space_data.clip
         if not clip or not clip.tracking:
             print("\u26a0\ufe0f Kein gültiger Clip – detect wird übersprungen")
@@ -356,6 +361,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
 
     def step_track(self, context):
         """Track markers backward and forward."""
+        time.sleep(STEP_DELAY)
         scene = context.scene
         self._start = scene.frame_current
         enable_proxy()
@@ -370,6 +376,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
 
     def step_decide(self, context):
         """Move the playhead to the next frame before cleanup."""
+        time.sleep(STEP_DELAY)
         scene = context.scene
         clip = context.space_data.clip
 
@@ -393,6 +400,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
 
     def step_cleanup(self, context):
         """Remove short tracks and keep the playhead at the target frame."""
+        time.sleep(STEP_DELAY)
         if not context.space_data.clip or self._tracked <= 0:
             return "MOVE"
 
@@ -403,6 +411,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
 
     def step_move(self, context):
         """Ensure the playhead is on the chosen frame before the next detect."""
+        time.sleep(STEP_DELAY)
         scene = context.scene
         if self._next_frame is not None:
             scene.frame_current = self._next_frame
@@ -414,6 +423,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         return "DETECT"
 
     def step_rename(self, context):
+        time.sleep(STEP_DELAY)
         count = rename_new_tracks(context)
         if count:
             self.report({'INFO'}, f"{count} Tracks umbenannt")
