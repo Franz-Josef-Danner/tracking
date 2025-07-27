@@ -123,10 +123,6 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
             bpy.ops.clip.cycle_detect()
             threshold = context.scene.threshold_value
             context.scene.tracker_threshold = threshold
-            settings = clip.tracking.settings
-            settings.default_correlation_min = threshold
-            for track in clip.tracking.tracks:
-                track.correlation_min = threshold
             print(f"[Track Nr.1] saved threshold {threshold:.3f}")
 
         if bpy.ops.clip.prefix_new.poll():
@@ -1855,14 +1851,8 @@ def enable_proxy():
 def detect_features_once():
     """Run feature detection if available."""
     if bpy.ops.clip.detect_features.poll():
-        clip = bpy.context.space_data.clip
-        if clip and clip.tracking:
-            threshold = bpy.context.scene.tracker_threshold
-            settings = clip.tracking.settings
-            settings.default_correlation_min = threshold
-            for track in clip.tracking.tracks:
-                track.correlation_min = threshold
-            print(f"[Detect Features] using threshold {threshold:.3f}")
+        threshold = bpy.context.scene.tracker_threshold
+        print(f"[Detect Features] using threshold {threshold:.3f}")
         if bpy.ops.clip.proxy_off.poll():
             bpy.ops.clip.proxy_off()
         bpy.ops.clip.detect_features(threshold=threshold)
