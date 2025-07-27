@@ -1,5 +1,6 @@
 import bpy
 from bpy.props import BoolProperty
+import unicodedata
 # Import helper via relative package path
 from ...helpers import strip_prefix
 
@@ -16,12 +17,23 @@ class CLIP_OT_prefix_new(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        prefix = "NEW_"
+        selected = [t for t in clip.tracking.tracks if t.select]
         count = 0
-        for track in clip.tracking.tracks:
-            if track.select and not track.name.startswith(prefix):
-                track.name = prefix + track.name
-                count += 1
+        for i, track in enumerate(selected):
+            try:
+                _ = track.name
+            except Exception as e:
+                print(f"\u26a0\ufe0f Marker-Name fehlerhaft: {track} ({e})")
+                track.name = f"RECOVERED_{i:03d}"
+            else:
+                safe = unicodedata.normalize("NFKD", track.name).encode(
+                    "ascii", "ignore"
+                ).decode("ascii")
+                if not safe:
+                    safe = f"TRACK_{i:03d}"
+                track.name = safe
+            track.name = f"NEW_{i:03d}"
+            count += 1
         if not self.silent:
             self.report({'INFO'}, f"{count} Tracks umbenannt")
         return {'FINISHED'}
