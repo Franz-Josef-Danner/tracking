@@ -1,5 +1,5 @@
 # Absolute imports for property modules
-from t.properties import tracking_props, test_props
+from properties import tracking_props, test_props
 
 
 def register_properties():
