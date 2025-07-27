@@ -25,7 +25,7 @@ class CLIP_OT_panel_button(bpy.types.Operator):
     bl_description = "Erstellt Proxy-Dateien mit 50% Gr\u00f6\u00dfe"
 
     def execute(self, context):
-        clip = context.space_data.clip
+        clip = bpy.context.scene.clip
 
         clip.use_proxy = True
 
@@ -64,7 +64,7 @@ class CLIP_OT_proxy_on(bpy.types.Operator):
     bl_description = "Aktiviert das Proxy"
 
     def execute(self, context):
-        clip = context.space_data.clip
+        clip = bpy.context.scene.clip
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
@@ -80,7 +80,7 @@ class CLIP_OT_proxy_off(bpy.types.Operator):
     bl_description = "Deaktiviert das Proxy"
 
     def execute(self, context):
-        clip = context.space_data.clip
+        clip = bpy.context.scene.clip
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
@@ -493,7 +493,7 @@ class CLIP_OT_distance_button(bpy.types.Operator):
     )
 
     def execute(self, context):
-        clip = context.space_data.clip
+        clip = bpy.context.scene.clip
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
@@ -540,7 +540,7 @@ class CLIP_OT_delete_selected(bpy.types.Operator):
     silent: BoolProperty(default=False, options={'HIDDEN'})
 
     def execute(self, context):
-        clip = context.space_data.clip
+        clip = bpy.context.scene.clip
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
@@ -587,7 +587,7 @@ class CLIP_OT_select_short_tracks(bpy.types.Operator):
     )
 
     def execute(self, context):
-        clip = context.space_data.clip
+        clip = bpy.context.scene.clip
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
@@ -610,7 +610,7 @@ class CLIP_OT_count_button(bpy.types.Operator):
     silent: BoolProperty(default=False, options={"HIDDEN"})
 
     def execute(self, context):
-        clip = context.space_data.clip
+        clip = bpy.context.scene.clip
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
@@ -941,7 +941,7 @@ class CLIP_OT_all_detect(bpy.types.Operator):
     )
 
     def execute(self, context):
-        clip = context.space_data.clip
+        clip = bpy.context.scene.clip
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
@@ -950,6 +950,9 @@ class CLIP_OT_all_detect(bpy.types.Operator):
 
         margin_base = int(width * 0.06)
         min_distance_base = int(width * 0.12)
+        print(
+            f"[BASE DEBUG] width={width}, margin_base={margin_base}, min_distance_base={min_distance_base}"
+        )
 
         mfp = context.scene.marker_frame * 4
         mfp_min = mfp * 0.9
@@ -1086,7 +1089,7 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
     )
 
     def execute(self, context):
-        clip = context.space_data.clip
+        clip = bpy.context.scene.clip
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
@@ -1097,6 +1100,7 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
 
         margin_base = int(width * 0.06)
         min_distance_base = int(width * 0.12)
+        print(f"[BASE DEBUG] width={width}, margin_base={margin_base}, min_distance_base={min_distance_base}")
 
         target = context.scene.marker_frame * 4
         target_min = target * 0.9
@@ -1134,6 +1138,9 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
 
             threshold_value = threshold_value * ((count + 0.1) / target)
             print(f"[Detect Features] updated threshold = {threshold_value:.8f}")
+            print(
+                f"[BASE DEBUG] width={width}, margin_base={margin_base}, min_distance_base={min_distance_base}"
+            )
             detection_threshold, margin, min_distance = compute_detection_params(
                 threshold_value, margin_base, min_distance_base
             )
