@@ -1,1 +1,1 @@
-from tracking-main.panels import *
+from tracking_main.panels import *
