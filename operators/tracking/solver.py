@@ -347,7 +347,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         mframe = context.scene.marker_frame
         mf_base = mframe / 3
 
-        threshold_value = 1.0
+        threshold_value = context.scene.tracker_threshold
 
         detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
 
@@ -426,6 +426,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             settings.default_search_size = settings.default_pattern_size * 2
         LAST_DETECT_COUNT = new_markers
         context.scene.threshold_value = threshold_value
+        context.scene.tracker_threshold = threshold_value
         context.scene.nm_count = new_markers
         # Keep newly detected tracks selected
         for track in clip.tracking.tracks:
@@ -910,7 +911,7 @@ class CLIP_OT_all_detect(bpy.types.Operator):
         mfp_min = mfp * 0.9
         mfp_max = mfp * 1.1
 
-        threshold_value = 1.0
+        threshold_value = context.scene.tracker_threshold
         detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
         factor = math.log10(detection_threshold * 10000000000) / 10
         margin = int(margin_base * factor)
@@ -1011,6 +1012,7 @@ class CLIP_OT_all_detect(bpy.types.Operator):
             attempt += 1
 
         context.scene.threshold_value = threshold_value
+        context.scene.tracker_threshold = threshold_value
         context.scene.nm_count = new_markers
 
         # Keep newly detected tracks selected
@@ -1047,7 +1049,7 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
         target_min = target * 0.9
         target_max = target * 1.1
 
-        threshold_value = 1.0
+        threshold_value = context.scene.tracker_threshold
         detection_threshold, margin, min_distance = compute_detection_params(
             threshold_value, margin_base, min_distance_base
         )
@@ -1090,6 +1092,9 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
         if new_tracks and bpy.ops.clip.prefix_new.poll():
             bpy.ops.clip.prefix_new(silent=True)
         add_pending_tracks(new_tracks)
+
+        context.scene.threshold_value = threshold_value
+        context.scene.tracker_threshold = threshold_value
 
         return {'FINISHED'}
 
