@@ -1860,7 +1860,7 @@ def detect_features_once():
             print(f"[Detect Features] using threshold {threshold:.3f}")
         if bpy.ops.clip.proxy_off.poll():
             bpy.ops.clip.proxy_off()
-        bpy.ops.clip.detect_features()
+        bpy.ops.clip.detect_features(threshold=threshold)
         print(
             f"[Detect Features] finished with threshold {threshold:.3f}"
         )
