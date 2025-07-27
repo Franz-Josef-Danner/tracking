@@ -1232,10 +1232,10 @@ class CLIP_OT_track_partial(bpy.types.Operator):
 
         if bpy.ops.clip.track_markers.poll():
             print("[Track Partial] track backwards")
-            track_markers_range(scene, original_start, current, current, True)
+            track_markers_range(scene, original_start, current, current, True, context)
 
             print("[Track Partial] track forwards")
-            track_markers_range(scene, current, original_end, current, False)
+            track_markers_range(scene, current, original_end, current, False, context)
 
         print(f"[Track Partial] done at frame {scene.frame_current}")
 
@@ -1675,14 +1675,28 @@ def ensure_valid_selection(clip, frame):
     return valid
 
 
-def track_markers_range(scene, start, end, current, backwards):
-    """Run clip.track_markers for ``start`` to ``end``."""
+def track_markers_range(scene, start, end, current, backwards, context):
+    """Track markers frame by frame with progress feedback."""
     scene.frame_start = start
     scene.frame_end = end
-    if not backwards:
-        scene.frame_current = current
-        update_frame_display()
-    bpy.ops.clip.track_markers(backwards=backwards, sequence=True)
+    wm = context.window_manager
+    frame_range = (
+        range(current, start - 1, -1)
+        if backwards
+        else range(current, end + 1)
+    )
+    total = len(frame_range)
+    wm.progress_begin(0, total)
+    for idx, frame in enumerate(frame_range, 1):
+        scene.frame_current = frame
+        update_frame_display(context)
+        context.scene.track_status = f"Tracking Frame {idx} / {total}..."
+        wm.status_text_set(context.scene.track_status)
+        bpy.ops.clip.track_markers(backwards=backwards, sequence=False)
+        wm.progress_update(idx)
+    wm.progress_end()
+    wm.status_text_set(None)
+    context.scene.track_status = "Tracking complete"
 
 
 def jump_to_first_frame_with_few_active_markers(min_required=5):

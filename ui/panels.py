@@ -32,6 +32,8 @@ class CLIP_PT_stufen_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
+        if context.scene.track_status:
+            layout.label(text=context.scene.track_status)
         layout.operator('clip.panel_button', text='Proxy')
         layout.operator('clip.track_nr1', text='Track Nr. 1')
         layout.operator('clip.cleanup', text='Cleanup')

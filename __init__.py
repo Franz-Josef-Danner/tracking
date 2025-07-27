@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Simple Addon",
     "author": "Your Name",
-    "version": (1, 196),
+    "version": (1, 197),
     "blender": (4, 4, 0),
     "location": "View3D > Object",
     "description": "Zeigt eine einfache Meldung an",
@@ -48,6 +48,11 @@ def register():
         description="Fehlergrenze für Operationen",
         default=2.0,
     )
+    bpy.types.Scene.track_status = bpy.props.StringProperty(
+        name="Track Status",
+        description="Aktueller Tracking-Status",
+        default="",
+    )
     for cls in classes:
         bpy.utils.register_class(cls)
 
@@ -67,6 +72,8 @@ def unregister():
         del bpy.types.Scene.test_value
     if hasattr(bpy.types.Scene, "error_threshold"):
         del bpy.types.Scene.error_threshold
+    if hasattr(bpy.types.Scene, "track_status"):
+        del bpy.types.Scene.track_status
 
 
 if __name__ == "__main__":
