@@ -1415,7 +1415,6 @@ def _Test_detect(self, context, use_defaults=True):
 
     if use_defaults:
         bpy.ops.clip.setup_defaults(silent=True)
-        context.scene.threshold_value = 1.0
 
 
     # Begin Test detect cycle
@@ -1439,7 +1438,6 @@ def _Test_detect(self, context, use_defaults=True):
                     bpy.ops.clip.delete_track()
                 for t in clip.tracking.tracks:
                     t.select = False
-                context.scene.threshold_value = 1.0
                 attempt += 1
 
             if attempt >= 10 and not (mf_min <= count <= mf_max):
