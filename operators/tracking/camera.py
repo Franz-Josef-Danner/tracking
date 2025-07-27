@@ -127,7 +127,7 @@ def cleanup_pass(scene, clip, threshold):
 
     selected = sum(1 for t in clip.tracking.tracks if t.select)
     if selected:
-        print(f"[Cleanup] {selected} Tracks, Threshold {threshold:.2f}")
+        print(f"[Cleanup] {selected} Tracks, Threshold {threshold:.5f}")
         if bpy.ops.clip.delete_selected.poll():
             bpy.ops.clip.delete_selected()
         return True
