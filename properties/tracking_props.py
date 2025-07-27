@@ -3,9 +3,11 @@ from bpy.props import IntProperty, FloatProperty
 
 tracking_properties = {
     "marker_frame": IntProperty(
-        name="Marker/Frame",
+        name="Marker Frames",
         description="Frame für neuen Marker",
-        default=20,
+        default=50,
+        min=1,
+        max=300,
     ),
     "frames_track": IntProperty(
         name="Frames/Track",

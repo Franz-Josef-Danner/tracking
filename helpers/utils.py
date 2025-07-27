@@ -34,7 +34,7 @@ CHANNEL_COMBOS = [
 ]
 
 # Urspr\u00fcnglicher Wert f\u00fcr "Marker/Frame"
-DEFAULT_MARKER_FRAME = 20
+DEFAULT_MARKER_FRAME = 50
 
 # Minimaler Threshold-Wert f\u00fcr die Feature-Erkennung
 MIN_THRESHOLD = 0.0001

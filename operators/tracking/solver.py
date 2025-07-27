@@ -122,9 +122,38 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         if bpy.ops.clip.proxy_off.poll():
             bpy.ops.clip.proxy_off()
 
+
         clip = context.space_data.clip
+
+        target = context.scene.marker_frame * 4
+        target_min = int(target * 0.9)
+        target_max = int(target * 1.1)
+
+        attempt = 0
+        max_attempts = 10
         threshold = context.scene.threshold_value
-        detect_features_once(context, clip, threshold)
+
+        while attempt < max_attempts:
+            if bpy.ops.clip.proxy_off.poll():
+                bpy.ops.clip.proxy_off()
+            detect_features_once(context, clip, threshold)
+
+            marker_count = len(clip.tracking.tracks)
+            print(
+                f"[Detect Features] count={marker_count}, threshold={threshold:.8f}"
+            )
+
+            if target_min <= marker_count <= target_max:
+                print("[Detect Features] Zielbereich erreicht")
+                break
+
+            threshold *= (marker_count + 0.1) / target
+            threshold = max(self.MIN_THRESHOLD, min(threshold, 1.0))
+
+            context.scene.threshold_value = threshold
+
+            cleanup_all_tracks(clip)
+            attempt += 1
 
         context.scene.tracker_threshold = threshold
         print(f"[Track Nr.1] saved threshold {threshold:.8f}")
@@ -355,7 +384,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
         detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
 
         margin_base = int(width * 0.03)
-        min_distance_base = int(width * 0,04)
+        min_distance_base = int(width * 0.04)
 
         factor = math.log10(detection_threshold * 1000000) / 6
         margin = int(margin_base * factor)
