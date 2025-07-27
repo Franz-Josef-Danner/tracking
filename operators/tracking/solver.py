@@ -1874,11 +1874,26 @@ def enable_proxy():
 def detect_features_once():
     """Run feature detection if available."""
     if bpy.ops.clip.detect_features.poll():
+        clip = bpy.context.space_data.clip
         threshold = bpy.context.scene.tracker_threshold
-        print(f"[Detect Features] using threshold {threshold:.8f}")
+        width, _ = clip.size
+        margin_base = int(width * 0.01)
+        min_distance_base = int(width * 0.05)
+
+        margin = max(4, int(margin_base * threshold))
+        min_distance = max(20, int(min_distance_base * threshold))
+
+        print(
+            f"[Detect Features] threshold={threshold:.8f}, "
+            f"margin={margin}, min_distance={min_distance}"
+        )
         if bpy.ops.clip.proxy_off.poll():
             bpy.ops.clip.proxy_off()
-        bpy.ops.clip.detect_features(threshold=threshold)
+        bpy.ops.clip.detect_features(
+            threshold=threshold,
+            margin=margin,
+            min_distance=min_distance,
+        )
         print(
             f"[Detect Features] finished with threshold {threshold:.8f}"
         )
