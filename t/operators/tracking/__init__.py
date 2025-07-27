@@ -1,5 +1,5 @@
 # Import operator modules via absolute paths
-from tracking.operators.tracking import solver, camera, export
+from t.operators.tracking import solver, camera, export
 
 operator_classes = (
     *solver.operator_classes,
