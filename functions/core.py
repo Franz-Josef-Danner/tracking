@@ -139,6 +139,17 @@ def rename_pending_tracks(clip):
     PENDING_RENAME.clear()
 
 
+def update_frame_display(context=None):
+    """Sync the Clip Editor to the scene frame and redraw."""
+    if context is None:
+        context = bpy.context
+    space = context.space_data
+    if hasattr(space, "clip_user"):
+        space.clip_user.frame_current = context.scene.frame_current
+    if context.area:
+        context.area.tag_redraw()
+
+
 def cycle_motion_model(settings, clip, reset_size=True):
     """Cycle to the next default motion model."""
     current = settings.default_motion_model
@@ -369,6 +380,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         self._next_frame = frame
         if frame is not None and frame != current:
             scene.frame_current = frame
+            update_frame_display(context)
             print(f"[Track Nr.1] next low frame {frame} ({count} markers)")
             return "CLEANUP"
         else:
@@ -391,6 +403,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         scene = context.scene
         if self._next_frame is not None:
             scene.frame_current = self._next_frame
+            update_frame_display(context)
         self._cycle_count += 1
         if self._cycle_count >= 100:
             self.report({'INFO'}, "Maximale Zyklen erreicht")
@@ -459,6 +472,7 @@ class CLIP_OT_track_nr2(bpy.types.Operator):
         frame, _ = find_low_marker_frame(clip, threshold)
         if frame is not None:
             scene.frame_current = frame
+            update_frame_display(context)
 
         cycles = 0
         while True:
@@ -479,12 +493,15 @@ class CLIP_OT_track_nr2(bpy.types.Operator):
                 bpy.ops.clip.track_partial()
             if bpy.ops.clip.cleanup.poll():
                 bpy.ops.clip.cleanup()
+                if bpy.ops.clip.setup_defaults.poll():
+                    bpy.ops.clip.setup_defaults()
 
             cycles += 1
             current = scene.frame_current
             frame, _ = find_low_marker_frame(clip, threshold)
             if frame is not None and frame != current and cycles < 100:
                 scene.frame_current = frame
+                update_frame_display(context)
                 continue
             if cycles >= 100:
                 self.report({'WARNING'}, "Abbruch nach 100 Durchl\u00e4ufen")
@@ -1099,11 +1116,13 @@ class CLIP_OT_track_bidirectional(bpy.types.Operator):
         scene.frame_start = current
         scene.frame_end = original_end
         scene.frame_current = current
+        update_frame_display(context)
         bpy.ops.clip.track_markers(backwards=False, sequence=True)
 
         scene.frame_start = original_start
         scene.frame_end = original_end
         scene.frame_current = current
+        update_frame_display(context)
 
 
         return {'FINISHED'}
@@ -1422,6 +1441,7 @@ class CLIP_OT_all_cycle(bpy.types.Operator):
             if frame is None:
                 return self.cancel(context)
             context.scene.frame_current = frame
+            update_frame_display(context)
             self._state = 'DETECT'
 
         return {'PASS_THROUGH'}
@@ -1593,6 +1613,7 @@ def track_markers_range(scene, start, end, current, backwards):
     scene.frame_end = end
     if not backwards:
         scene.frame_current = current
+        update_frame_display()
     bpy.ops.clip.track_markers(backwards=backwards, sequence=True)
 
 
@@ -1610,6 +1631,7 @@ def jump_to_first_frame_with_few_active_markers(min_required=5):
 
         if count < min_required:
             scene.frame_current = frame
+            update_frame_display()
             _update_nf_and_motion_model(frame, clip)
             return frame
 
@@ -1762,6 +1784,7 @@ def _Test_detect_mm(self, context):
     best_end = None
     for cycle in range(4):
         scene.frame_current = start
+        update_frame_display(context)
         # run detect for each motion model cycle
         bpy.ops.clip.detect_button()
 
@@ -1784,6 +1807,7 @@ def _Test_detect_mm(self, context):
             t.select = False
 
     scene.frame_current = start
+    update_frame_display(context)
     return best_end
 
 
@@ -1857,6 +1881,7 @@ class CLIP_OT_low_marker_frame(bpy.types.Operator):
         frame, count = find_low_marker_frame(clip, threshold)
         if frame is not None:
             context.scene.frame_current = frame
+            update_frame_display(context)
             self.report({'INFO'}, f"Frame {frame} hat nur {count} Marker")
         else:
             self.report({'INFO'}, "Kein Frame mit weniger Markern gefunden")
@@ -2673,6 +2698,7 @@ class CLIP_OT_step_track(bpy.types.Operator):
             if next_frame > end_frame:
                 break
             scene.frame_current = next_frame
+            update_frame_display(context)
 
         return {'FINISHED'}
 
@@ -2689,6 +2715,7 @@ class CLIP_OT_frame_jump(bpy.types.Operator):
             self.report({'WARNING'}, "Frames/Track muss > 0 sein")
             return {'CANCELLED'}
         scene.frame_current = min(scene.frame_current + step, scene.frame_end)
+        update_frame_display(context)
         return {'FINISHED'}
 
 
@@ -2800,6 +2827,7 @@ class CLIP_OT_test_button(bpy.types.Operator):
         }
 
         scene.frame_current = TEST_START_FRAME
+        update_frame_display(context)
 
 
 
@@ -2857,6 +2885,7 @@ class CLIP_OT_track_full(bpy.types.Operator):
             }
 
         scene.frame_current = start
+        update_frame_display(context)
         if not self.silent:
             self.report({'INFO'}, f"Tracking bis Frame {end_frame} abgeschlossen")
         return {'FINISHED'}
@@ -2896,6 +2925,7 @@ class CLIP_OT_test_track_backwards(bpy.types.Operator):
         scene.frame_start = original_start
         scene.frame_end = original_end
         scene.frame_current = current
+        update_frame_display(context)
 
         for t in clip.tracking.tracks:
             t.select = False
@@ -2936,6 +2966,7 @@ class CLIP_OT_test_track(bpy.types.Operator):
         scene.frame_start = original_start
         scene.frame_end = original_end
         scene.frame_current = current
+        update_frame_display(context)
 
         self.report({'INFO'}, "Tracking abgeschlossen")
         return {'FINISHED'}
