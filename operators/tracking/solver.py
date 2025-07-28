@@ -22,7 +22,12 @@ from ...helpers.tracking_variants import (
     track_bidirectional,
     track_forward_only,
 )
-from ...t.helpers import delete_selected_tracks
+from ...t.helpers import (
+    delete_selected_tracks,
+    select_short_tracks,
+    find_next_low_marker_frame,
+    set_playhead_to_frame,
+)
 from ..proxy import CLIP_OT_proxy_on, CLIP_OT_proxy_off, CLIP_OT_proxy_build
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
@@ -146,10 +151,9 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         current = scene.frame_current
         threshold = scene.marker_frame
         frame, count = find_next_low_marker_frame(
+            scene,
             clip,
             threshold,
-            self._visited_frames,
-            self._marker_per_frame_start,
         )
         self._next_frame = frame
         if frame is not None and frame != current:
@@ -526,19 +530,6 @@ class CLIP_OT_delete_selected(bpy.types.Operator):
         return {'FINISHED'}
 
 
-def select_short_tracks(clip, min_frames):
-    """Select TRACK_ markers shorter than ``min_frames`` and return count."""
-    undertracked = get_undertracked_markers(clip, min_frames=min_frames)
-
-    for t in clip.tracking.tracks:
-        t.select = False
-
-    if not undertracked:
-        return 0
-
-    names = [name for name, _ in undertracked]
-    select_tracks_by_names(clip, names)
-    return len(names)
 
 
 
@@ -1405,32 +1396,6 @@ def find_low_marker_frame(clip, threshold):
     return None, None
 
 
-def find_next_low_marker_frame(clip, threshold, visited_frames, marker_start):
-    """Set the playhead to the next frame with fewer markers than ``threshold``.
-
-    ``visited_frames`` keeps track of frames that were already processed to
-    decide whether to increase or decrease ``marker_frame``. ``marker_start``
-    defines the lower bound for ``marker_frame``.
-    """
-
-    scene = bpy.context.scene
-    start = scene.frame_current + 1
-    for candidate_frame in range(start, scene.frame_end + 1):
-        count = 0
-        for track in clip.tracking.tracks:
-            marker = track.markers.find_frame(candidate_frame)
-            if marker and not marker.mute and marker.co.length_squared != 0.0:
-                count += 1
-        if count < threshold:
-            if candidate_frame in visited_frames:
-                if scene.marker_frame < 100:
-                    bpy.ops.clip.marker_frame_plus()
-            else:
-                if scene.marker_frame > marker_start:
-                    bpy.ops.clip.marker_frame_minus()
-                visited_frames.add(candidate_frame)
-            return candidate_frame, count
-    return None, None
 
 
 def _update_nf_and_motion_model(frame, clip):
@@ -1635,13 +1600,15 @@ class CLIP_OT_playhead_to_frame(bpy.types.Operator):
     )
 
     def execute(self, context):
+        scene = context.scene
         clip = context.space_data.clip
-        jump_to_frame_with_few_markers(
+        frame, _ = find_next_low_marker_frame(
+            scene,
             clip,
-            min_marker_count=context.scene.marker_frame,
-            start_frame=context.scene.frame_start,
-            end_frame=context.scene.frame_end,
+            scene.marker_frame,
         )
+        if frame is not None:
+            set_playhead_to_frame(scene, frame)
         return {'FINISHED'}
 
 
@@ -1658,15 +1625,15 @@ class CLIP_OT_low_marker_frame(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        threshold = context.scene.marker_frame
-        frame = jump_to_frame_with_few_markers(
+        scene = context.scene
+        threshold = scene.marker_frame
+        frame, count = find_next_low_marker_frame(
+            scene,
             clip,
-            min_marker_count=threshold,
-            start_frame=context.scene.frame_start,
-            end_frame=context.scene.frame_end,
+            threshold,
         )
         if frame is not None:
-            update_frame_display(context)
+            set_playhead_to_frame(scene, frame)
             self.report(
                 {'INFO'},
                 f"Frame {frame} hat weniger als {threshold} Marker",
