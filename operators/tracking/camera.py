@@ -1,4 +1,6 @@
 import bpy
+from ...t.helpers import delete_selected_tracks
+from ...helpers.prefix_track import PREFIX_TRACK
 class CLIP_OT_camera_solve(bpy.types.Operator):
     bl_idname = "clip.camera_solve"
     bl_label = "Kamera solve"
@@ -40,7 +42,7 @@ def max_track_error(scene, clip):
     for frame in range(start, end):
         valid = []
         for track in clip.tracking.tracks:
-            if not track.name.startswith("TRACK_"):
+            if not track.name.startswith(PREFIX_TRACK):
                 continue
 
             coords = []
@@ -128,8 +130,7 @@ def cleanup_pass(scene, clip, threshold):
     selected = sum(1 for t in clip.tracking.tracks if t.select)
     if selected:
         print(f"[Cleanup] {selected} Tracks, Threshold {threshold:.5f}")
-        if bpy.ops.clip.delete_selected.poll():
-            bpy.ops.clip.delete_selected()
+        delete_selected_tracks()
         return True
 
     return False
@@ -185,7 +186,7 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
         for frame in range(start, end):
             valid = []
             for track in clip.tracking.tracks:
-                if not track.name.startswith("TRACK_"):
+                if not track.name.startswith(PREFIX_TRACK):
                     continue
 
                 coords = []

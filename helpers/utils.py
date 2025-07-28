@@ -6,6 +6,15 @@ import math
 import re
 from bpy.props import IntProperty, FloatProperty, BoolProperty
 
+from .prefix_good import PREFIX_GOOD
+from .prefix_track import PREFIX_TRACK
+from .prefix_new import PREFIX_NEW
+
+from .feature_math import (
+    calculate_base_values,
+    apply_threshold_to_margin_and_distance,
+)
+
 # Frames, die mit zu wenig Markern gefunden wurden
 NF = []
 
@@ -184,8 +193,9 @@ def compute_detection_params(threshold_value, margin_base, min_distance_base):
         )
     detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
     factor = math.log10(detection_threshold * 100000000) / 8
-    margin = int(margin_base * factor)
-    min_distance = int(min_distance_base * factor)
+    margin, min_distance = apply_threshold_to_margin_and_distance(
+        factor, margin_base, min_distance_base
+    )
     return detection_threshold, margin, min_distance
 
 
@@ -219,9 +229,9 @@ def remove_close_tracks(clip, new_tracks, distance_px, names_before):
     valid_positions = []
     for gt in clip.tracking.tracks:
         if (
-            gt.name.startswith("GOOD_")
-            or gt.name.startswith("TRACK_")
-            or gt.name.startswith("NEW_")
+            gt.name.startswith(PREFIX_GOOD)
+            or gt.name.startswith(PREFIX_TRACK)
+            or gt.name.startswith(PREFIX_NEW)
         ):
             gm = gt.markers.find_frame(frame, exact=True)
             if gm and not gm.mute:
@@ -242,10 +252,36 @@ def remove_close_tracks(clip, new_tracks, distance_px, names_before):
         track.select = False
     for t in close_tracks:
         t.select = True
-    if close_tracks and bpy.ops.clip.delete_selected.poll():
-        bpy.ops.clip.delete_selected()
-        clean_pending_tracks(clip)
+    if close_tracks:
+        from ..t.helpers.delete_tracks import delete_selected_tracks
+        if delete_selected_tracks():
+            clean_pending_tracks(clip)
 
     names_after = {t.name for t in clip.tracking.tracks}
     return [t for t in clip.tracking.tracks if t.name in names_after - names_before]
+
+
+def jump_to_frame_with_few_markers(clip, min_marker_count, start_frame, end_frame):
+    """Move the playhead to the first frame with too few markers.
+
+    Iterates over ``start_frame``..``end_frame`` and sets ``scene.frame_current``
+    to the first frame containing fewer than ``min_marker_count`` markers.
+
+    Returns the found frame or ``None`` if all frames meet the requirement.
+    """
+
+    scene = bpy.context.scene
+    for frame in range(start_frame, end_frame + 1):
+        marker_count = sum(
+            1
+            for track in clip.tracking.tracks
+            if any(marker.frame == frame for marker in track.markers)
+        )
+        if marker_count < min_marker_count:
+            scene.frame_current = frame
+            print(f"[JUMP] Weniger Marker ({marker_count}) in Frame {frame}")
+            return frame
+
+    print("[JUMP] Kein Frame mit zu wenig Markern gefunden.")
+    return None
 
