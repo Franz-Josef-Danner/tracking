@@ -320,6 +320,10 @@ Seit Version 1.194 f\u00fchrt der Button "Track Nr. 1" am Ende einmalig "Select 
 Seit Version 1.195 verf\u00fcgt das API-Panel \u00fcber einen Button "Marker/Frame+", der den Wert im Feld "Marker/Frame" um 10 % erh\u00f6ht.
 Seit Version 1.196 gibt es zus\u00e4tzlich einen Button "Marker/Frame-", der diesen Wert um 10 % senkt. "Track Nr. 2" merkt sich nun f\u00fcr jeden Frame die Anzahl der Tracking-Versuche, erh\u00f6ht den Wert bei Wiederholungen und reduziert ihn bei neuen Frames. Nach zehn erfolglosen Versuchen bricht der Vorgang ab.
 Seit Version 1.197 passt "Track Nr. 1" den Threshold dynamisch an, bis die Markeranzahl im Zielbereich liegt.
+Seit Version 1.198 weist die Dokumentation darauf hin, dass Blender keine
+direkte Zuweisung eigener Attribute an `bpy.types.Scene` erlaubt. Temporäre
+Daten wie besuchte Frames müssen lokal im Operator gehalten oder als
+Custom Property registriert werden.
 
 ## License
 

@@ -29,3 +29,11 @@ Benutzeroberflächen werden mit Klassen auf Basis von `bpy.types.Panel` erstellt
 
 Alle Operator- und Panel-Klassen werden innerhalb der Funktion `register()` mit `bpy.utils.register_class` registriert. Zusätzlich fügt `register()` der Szene eigene Properties wie `marker_frame` oder `nm_count` hinzu. Beim Beenden des Add-ons entfernt `unregister()` diese Elemente wieder.
 
+
+### Temporäre Datenhaltung
+
+Blender erlaubt keine direkte Zuweisung neuer Attribute an Datenblöcke wie
+`bpy.types.Scene`. Der Ausdruck `scene.visited_frames = set()` führt daher zu
+ einem `AttributeError`. Temporäre Informationen sollten in Instanzvariablen
+ der Operatoren gehalten oder als Custom Property über `bpy.props` bzw.
+ `scene["key"]` angelegt werden.
