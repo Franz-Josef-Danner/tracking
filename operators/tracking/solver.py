@@ -201,10 +201,9 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
 
         current = scene.frame_current
         threshold = scene.marker_frame
-        frame, count = find_low_marker_frame(clip, threshold)
+        frame, count = find_next_low_marker_frame(clip, threshold)
         self._next_frame = frame
         if frame is not None and frame != current:
-            scene.frame_current = frame
             update_frame_display(context)
             print(f"[Track Nr.1] next low frame {frame} ({count} markers)")
             return "CLEANUP"
@@ -245,11 +244,14 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         return None
 
     def execute(self, context):
+        scene = context.scene
+        scene.visited_frames = set()
+        scene.marker_per_frame_start = scene.marker_frame
         # set the starting threshold only once when the operator is triggered
-        context.scene.threshold_value = 0.5
-        context.scene.tracker_threshold = 0.5
+        scene.threshold_value = 0.5
+        scene.tracker_threshold = 0.5
         print(
-            f"[Track Nr.1] starting threshold {context.scene.threshold_value:.8f}"
+            f"[Track Nr.1] starting threshold {scene.threshold_value:.8f}"
         )
         wm = context.window_manager
         self._timer = add_timer(wm, context.window)
@@ -1441,6 +1443,30 @@ def find_low_marker_frame(clip, threshold):
                 count += 1
         if count < threshold:
             return frame, count
+    return None, None
+
+
+def find_next_low_marker_frame(clip, threshold):
+    """Set the playhead to the next frame with fewer markers than ``threshold``."""
+    scene = bpy.context.scene
+    start = scene.frame_current + 1
+    for candidate_frame in range(start, scene.frame_end + 1):
+        count = 0
+        for track in clip.tracking.tracks:
+            marker = track.markers.find_frame(candidate_frame)
+            if marker and not marker.mute and marker.co.length_squared != 0.0:
+                count += 1
+        if count < threshold:
+            scene.frame_current = candidate_frame
+            if hasattr(scene, "visited_frames") and hasattr(scene, "marker_per_frame_start"):
+                if candidate_frame in scene.visited_frames:
+                    if scene.marker_frame < 100:
+                        bpy.ops.clip.marker_frame_plus()
+                else:
+                    if scene.marker_frame > scene.marker_per_frame_start:
+                        bpy.ops.clip.marker_frame_minus()
+                    scene.visited_frames.add(candidate_frame)
+            return candidate_frame, count
     return None, None
 
 
