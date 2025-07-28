@@ -253,7 +253,7 @@ def remove_close_tracks(clip, new_tracks, distance_px, names_before):
     for t in close_tracks:
         t.select = True
     if close_tracks:
-        from ..t.helpers.delete_tracks import delete_selected_tracks
+        from .delete_tracks import delete_selected_tracks
         if delete_selected_tracks():
             clean_pending_tracks(clip)
 

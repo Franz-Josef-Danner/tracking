@@ -22,7 +22,7 @@ from ...helpers.tracking_variants import (
     track_bidirectional,
     track_forward_only,
 )
-from ...t.helpers import (
+from ...helpers import (
     delete_selected_tracks,
     select_short_tracks,
     find_next_low_marker_frame,
