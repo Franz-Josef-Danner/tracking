@@ -5,6 +5,7 @@ from bpy.props import IntProperty, FloatProperty, BoolProperty
 
 # Import utility functions via relative path
 from ...helpers import *
+from ...helpers.utils import jump_to_frame_with_few_markers
 from ...helpers.feature_math import (
     calculate_base_values,
     apply_threshold_to_margin_and_distance,
@@ -141,7 +142,12 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         )
         self._next_frame = frame
         if frame is not None and frame != current:
-            scene.frame_current = frame
+            jump_to_frame_with_few_markers(
+                clip,
+                min_marker_count=threshold,
+                start_frame=frame,
+                end_frame=frame,
+            )
             update_frame_display(context)
             print(f"[Track Nr.1] next low frame {frame} ({count} markers)")
             return "CLEANUP"
@@ -255,9 +261,13 @@ class CLIP_OT_track_nr2(bpy.types.Operator):
             bpy.ops.clip.setup_defaults()
 
         threshold = scene.marker_frame
-        frame, _ = find_low_marker_frame(clip, threshold)
+        frame = jump_to_frame_with_few_markers(
+            clip,
+            min_marker_count=threshold,
+            start_frame=scene.frame_start,
+            end_frame=scene.frame_end,
+        )
         if frame is not None:
-            scene.frame_current = frame
             update_frame_display(context)
             if not handle_frame(frame):
                 return {'CANCELLED'}
@@ -283,9 +293,13 @@ class CLIP_OT_track_nr2(bpy.types.Operator):
 
             cycles += 1
             current = scene.frame_current
-            frame, _ = find_low_marker_frame(clip, threshold)
+            frame = jump_to_frame_with_few_markers(
+                clip,
+                min_marker_count=threshold,
+                start_frame=current + 1,
+                end_frame=scene.frame_end,
+            )
             if frame is not None and frame != current and cycles < 100:
-                scene.frame_current = frame
                 update_frame_display(context)
                 if not handle_frame(frame):
                     return {'CANCELLED'}
@@ -1157,12 +1171,14 @@ class CLIP_OT_all_cycle(bpy.types.Operator):
             self._state = 'JUMP'
 
         elif self._state == 'JUMP':
-            frame = jump_to_first_frame_with_few_active_markers(
-                min_required=context.scene.marker_frame
+            frame = jump_to_frame_with_few_markers(
+                context.space_data.clip,
+                min_marker_count=context.scene.marker_frame,
+                start_frame=context.scene.frame_start,
+                end_frame=context.scene.frame_end,
             )
             if frame is None:
                 return self.cancel(context)
-            context.scene.frame_current = frame
             update_frame_display(context)
             self._state = 'DETECT'
 
@@ -1352,7 +1368,12 @@ def jump_to_first_frame_with_few_active_markers(min_required=5):
                     count += 1
 
         if count < min_required:
-            scene.frame_current = frame
+            jump_to_frame_with_few_markers(
+                clip,
+                min_marker_count=min_required,
+                start_frame=frame,
+                end_frame=frame,
+            )
             update_frame_display()
             _update_nf_and_motion_model(frame, clip)
             return frame
@@ -1608,8 +1629,13 @@ class CLIP_OT_playhead_to_frame(bpy.types.Operator):
     )
 
     def execute(self, context):
-        min_required = context.scene.marker_frame
-        jump_to_first_frame_with_few_active_markers(min_required=min_required)
+        clip = context.space_data.clip
+        jump_to_frame_with_few_markers(
+            clip,
+            min_marker_count=context.scene.marker_frame,
+            start_frame=context.scene.frame_start,
+            end_frame=context.scene.frame_end,
+        )
         return {'FINISHED'}
 
 
@@ -1627,11 +1653,18 @@ class CLIP_OT_low_marker_frame(bpy.types.Operator):
             return {'CANCELLED'}
 
         threshold = context.scene.marker_frame
-        frame, count = find_low_marker_frame(clip, threshold)
+        frame = jump_to_frame_with_few_markers(
+            clip,
+            min_marker_count=threshold,
+            start_frame=context.scene.frame_start,
+            end_frame=context.scene.frame_end,
+        )
         if frame is not None:
-            context.scene.frame_current = frame
             update_frame_display(context)
-            self.report({'INFO'}, f"Frame {frame} hat nur {count} Marker")
+            self.report(
+                {'INFO'},
+                f"Frame {frame} hat weniger als {threshold} Marker",
+            )
         else:
             self.report({'INFO'}, "Kein Frame mit weniger Markern gefunden")
 

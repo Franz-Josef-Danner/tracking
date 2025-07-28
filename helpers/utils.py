@@ -255,3 +255,28 @@ def remove_close_tracks(clip, new_tracks, distance_px, names_before):
     names_after = {t.name for t in clip.tracking.tracks}
     return [t for t in clip.tracking.tracks if t.name in names_after - names_before]
 
+
+def jump_to_frame_with_few_markers(clip, min_marker_count, start_frame, end_frame):
+    """Move the playhead to the first frame with too few markers.
+
+    Iterates over ``start_frame``..``end_frame`` and sets ``scene.frame_current``
+    to the first frame containing fewer than ``min_marker_count`` markers.
+
+    Returns the found frame or ``None`` if all frames meet the requirement.
+    """
+
+    scene = bpy.context.scene
+    for frame in range(start_frame, end_frame + 1):
+        marker_count = sum(
+            1
+            for track in clip.tracking.tracks
+            if any(marker.frame == frame for marker in track.markers)
+        )
+        if marker_count < min_marker_count:
+            scene.frame_current = frame
+            print(f"[JUMP] Weniger Marker ({marker_count}) in Frame {frame}")
+            return frame
+
+    print("[JUMP] Kein Frame mit zu wenig Markern gefunden.")
+    return None
+
