@@ -10,6 +10,8 @@ from ...helpers import *
 from ...helpers.feature_math import (
     calculate_base_values,
     apply_threshold_to_margin_and_distance,
+    marker_target_aggressive,
+    marker_target_conservative,
 )
 
 
@@ -132,7 +134,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
 
         clip = getattr(context.space_data, "clip", None)
 
-        target = context.scene.marker_frame * 4
+        target = marker_target_aggressive(context.scene.marker_frame)
         target_min = int(target * 0.9)
         target_max = int(target * 1.1)
 
@@ -394,7 +396,7 @@ class CLIP_OT_detect_button(bpy.types.Operator):
             return {'CANCELLED'}
 
         mframe = context.scene.marker_frame
-        mf_base = mframe / 3
+        mf_base = marker_target_conservative(mframe)
 
         threshold_value = context.scene.tracker_threshold
 
@@ -634,7 +636,7 @@ class CLIP_OT_count_button(bpy.types.Operator):
         context.scene.nm_count = count
 
         mframe = context.scene.marker_frame
-        mf_base = mframe / 3
+        mf_base = marker_target_conservative(mframe)
         track_min = mf_base * 0.8
         track_max = mf_base * 1.2
 
@@ -968,7 +970,7 @@ class CLIP_OT_all_detect(bpy.types.Operator):
             f"[BASE DEBUG] width={width}, margin_base={margin_base}, min_distance_base={min_distance_base}"
         )
 
-        mfp = context.scene.marker_frame * 4
+        mfp = marker_target_aggressive(context.scene.marker_frame)
         mfp_min = mfp * 0.9
         mfp_max = mfp * 1.1
 
@@ -1113,7 +1115,7 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
         margin_base, min_distance_base = calculate_base_values(width)
         print(f"[BASE DEBUG] width={width}, margin_base={margin_base}, min_distance_base={min_distance_base}")
 
-        target = context.scene.marker_frame * 4
+        target = marker_target_aggressive(context.scene.marker_frame)
         target_min = target * 0.9
         target_max = target * 1.1
 
@@ -1201,7 +1203,7 @@ class CLIP_OT_all_cycle(bpy.types.Operator):
 
             count = len(PENDING_RENAME)
             mframe = context.scene.marker_frame
-            mf_base = mframe * 4
+            mf_base = marker_target_aggressive(mframe)
             track_min = mf_base * 0.8
             track_max = mf_base * 1.2
 
@@ -1513,7 +1515,7 @@ def _Test_detect(self, context, use_defaults=True):
         self.report({'WARNING'}, "Kein Clip geladen")
         return {'CANCELLED'}
 
-    mf_base = context.scene.marker_frame / 3
+    mf_base = marker_target_conservative(context.scene.marker_frame)
     mf_min = mf_base * 0.9
     mf_max = mf_base * 1.1
 
