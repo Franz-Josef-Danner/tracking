@@ -1,5 +1,5 @@
 import bpy
-from ...helpers.utils import update_frame_display
+from .utils import update_frame_display
 
 
 def set_playhead_to_frame(scene, frame: int):

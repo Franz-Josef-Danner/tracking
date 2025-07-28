@@ -1,7 +1,7 @@
 import bpy
 
-from ...helpers.prefix_track import PREFIX_TRACK
-from ...helpers.utils import clean_pending_tracks, PENDING_RENAME
+from .prefix_track import PREFIX_TRACK
+from .utils import clean_pending_tracks, PENDING_RENAME
 
 
 def _get_undertracked_markers(clip, min_frames=10):
