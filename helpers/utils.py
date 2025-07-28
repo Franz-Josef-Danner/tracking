@@ -9,7 +9,6 @@ from bpy.props import IntProperty, FloatProperty, BoolProperty
 from .prefix_good import PREFIX_GOOD
 from .prefix_track import PREFIX_TRACK
 from .prefix_new import PREFIX_NEW
-from ..t.helpers import delete_selected_tracks
 
 from .feature_math import (
     calculate_base_values,
@@ -254,6 +253,7 @@ def remove_close_tracks(clip, new_tracks, distance_px, names_before):
     for t in close_tracks:
         t.select = True
     if close_tracks:
+        from ..t.helpers.delete_tracks import delete_selected_tracks
         if delete_selected_tracks():
             clean_pending_tracks(clip)
 
