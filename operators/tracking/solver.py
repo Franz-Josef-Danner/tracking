@@ -6,6 +6,12 @@ from bpy.props import IntProperty, FloatProperty, BoolProperty
 # Import utility functions via relative path
 from ...helpers import *
 from ...helpers.utils import jump_to_frame_with_few_markers
+from ...helpers.prefix_new import PREFIX_NEW
+from ...helpers.prefix_track import PREFIX_TRACK
+from ...helpers.prefix_good import PREFIX_GOOD
+from ...helpers.prefixes import PREFIX_TEST, PREFIX_RECOVERED
+from ...helpers.select_track_tracks import select_track_tracks
+from ...helpers.select_new_tracks import select_new_tracks
 from ...helpers.feature_math import (
     calculate_base_values,
     apply_threshold_to_margin_and_distance,
@@ -467,7 +473,7 @@ class CLIP_OT_distance_button(bpy.types.Operator):
             t.select = False
 
         new_tracks = list(PENDING_RENAME)
-        good_tracks = [t for t in clip.tracking.tracks if t.name.startswith("GOOD_")]
+        good_tracks = [t for t in clip.tracking.tracks if t.name.startswith(PREFIX_GOOD)]
         marked = 0
         for nt in new_tracks:
             nm = nt.markers.find_frame(frame)
@@ -573,7 +579,7 @@ class CLIP_OT_count_button(bpy.types.Operator):
             self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
             return {'CANCELLED'}
 
-        prefix = "TEST_"
+        prefix = PREFIX_TEST
         for t in clip.tracking.tracks:
             t.select = t.name.startswith(prefix)
         count = sum(1 for t in clip.tracking.tracks if t.name.startswith(prefix))
@@ -587,7 +593,7 @@ class CLIP_OT_count_button(bpy.types.Operator):
         if track_min <= count <= track_max:
             for t in clip.tracking.tracks:
                 if t.name.startswith(prefix):
-                    t.name = "TRACK_" + t.name[len(prefix):]
+                    t.name = PREFIX_TRACK + t.name[len(prefix):]
                     t.select = False
             if not self.silent:
                 self.report({'INFO'}, f"{count} Tracks in TRACK_ umbenannt")
@@ -970,7 +976,7 @@ class CLIP_OT_all_detect(bpy.types.Operator):
             close_tracks = []
             good_positions = []
             for gt in clip.tracking.tracks:
-                if not gt.name.startswith("GOOD_"):
+                if not gt.name.startswith(PREFIX_GOOD):
                     continue
                 gm = gt.markers.find_frame(frame, exact=True)
                 if gm and not gm.mute:
@@ -1236,7 +1242,7 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
         def count_active_tracks(frame_value):
             count = 0
             for t in clip.tracking.tracks:
-                if t.name.startswith("TRACK_") or t in PENDING_RENAME:
+                if t.name.startswith(PREFIX_TRACK) or t in PENDING_RENAME:
                     m = t.markers.find_frame(frame_value)
                     if m and not m.mute and m.co.length_squared != 0.0:
                         count += 1
@@ -1244,7 +1250,7 @@ class CLIP_OT_track_sequence(bpy.types.Operator):
 
         clean_pending_tracks(clip)
         for t in clip.tracking.tracks:
-            t.select = t.name.startswith("TRACK_") or t in PENDING_RENAME
+            t.select = t.name.startswith(PREFIX_TRACK) or t in PENDING_RENAME
 
         selected = [t for t in clip.tracking.tracks if t.select]
         selected_names = [t.name for t in selected]
@@ -1311,7 +1317,7 @@ def get_undertracked_markers(clip, min_frames=10):
     clean_pending_tracks(clip)
 
     for track in clip.tracking.tracks:
-        if not (track.name.startswith("TRACK_") or track in PENDING_RENAME):
+        if not (track.name.startswith(PREFIX_TRACK) or track in PENDING_RENAME):
             continue
 
         tracked_frames = [
@@ -1366,7 +1372,7 @@ def jump_to_first_frame_with_few_active_markers(min_required=5):
     for frame in range(scene.frame_start, scene.frame_end + 1):
         count = 0
         for track in clip.tracking.tracks:
-            if track.name.startswith("GOOD_"):
+            if track.name.startswith(PREFIX_GOOD):
                 marker = track.markers.find_frame(frame)
                 if marker and not marker.mute and marker.co.length_squared != 0.0:
                     count += 1
@@ -1484,13 +1490,13 @@ def _Test_detect(self, context, use_defaults=True):
                 # run detection for each attempt
                 bpy.ops.clip.detect_button()
                 count = sum(
-                    1 for t in clip.tracking.tracks if t.name.startswith("TEST_")
+                    1 for t in clip.tracking.tracks if t.name.startswith(PREFIX_TEST)
                 )
                 context.scene.nm_count = count
                 if mf_min <= count <= mf_max or attempt >= 10:
                     break
                 for t in clip.tracking.tracks:
-                    t.select = t.name.startswith("TEST_")
+                    t.select = t.name.startswith(PREFIX_TEST)
                 if bpy.ops.clip.delete_track.poll():
                     bpy.ops.clip.delete_track()
                 for t in clip.tracking.tracks:
@@ -1501,7 +1507,7 @@ def _Test_detect(self, context, use_defaults=True):
                 self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
                 return {'CANCELLED'}
 
-            select_tracks_by_prefix(clip, "TEST_")
+            select_tracks_by_prefix(clip, PREFIX_TEST)
             if bpy.ops.clip.track_full.poll():
                 bpy.ops.clip.track_full(silent=True)
                 last_end = LAST_TRACK_END
@@ -1515,7 +1521,7 @@ def _Test_detect(self, context, use_defaults=True):
             else:
                 self.report({'WARNING'}, "Tracking nicht möglich")
 
-            select_tracks_by_prefix(clip, "TEST_")
+            select_tracks_by_prefix(clip, PREFIX_TEST)
             if bpy.ops.clip.delete_selected.poll():
                 bpy.ops.clip.delete_selected(silent=True)
             if bpy.ops.clip.pattern_up.poll():
@@ -1562,7 +1568,7 @@ def _Test_detect_mm(self, context):
         # run detect for each motion model cycle
         bpy.ops.clip.detect_button()
 
-        select_tracks_by_prefix(clip, "TEST_")
+        select_tracks_by_prefix(clip, PREFIX_TEST)
         if bpy.ops.clip.track_markers.poll():
             # Proxy aktivieren für das Tracking
             clip.use_proxy = True
@@ -1574,7 +1580,7 @@ def _Test_detect_mm(self, context):
             self.report({'WARNING'}, "Tracking nicht möglich")
             break
 
-        select_tracks_by_prefix(clip, "TEST_")
+        select_tracks_by_prefix(clip, PREFIX_TEST)
         if bpy.ops.clip.delete_selected.poll():
             bpy.ops.clip.delete_selected(silent=True)
         for t in clip.tracking.tracks:
@@ -1614,10 +1620,10 @@ class CLIP_OT_tracking_length(bpy.types.Operator):
         else:
             self.report({'WARNING'}, "Löschen nicht möglich")
 
-        remaining = [t for t in clip.tracking.tracks if t.name.startswith("TRACK_")]
+        remaining = [t for t in clip.tracking.tracks if t.name.startswith(PREFIX_TRACK)]
         select_tracks_by_names(clip, [t.name for t in remaining])
         for t in remaining:
-            t.name = "GOOD_" + t.name[6:]
+            t.name = PREFIX_GOOD + t.name[len(PREFIX_TRACK):]
 
         for t in clip.tracking.tracks:
             t.select = False
@@ -1688,7 +1694,7 @@ class CLIP_OT_select_active_tracks(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        select_tracks_by_prefix(clip, "TRACK_")
+        select_track_tracks(clip)
 
         frame = context.scene.frame_current
 
@@ -1713,7 +1719,7 @@ class CLIP_OT_select_new_tracks(bpy.types.Operator):
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
-        select_tracks_by_prefix(clip, "NEW_")
+        select_new_tracks(clip)
         count = sum(1 for t in clip.tracking.tracks if t.select)
         self.report({'INFO'}, f"{count} NEW_-Marker ausgewählt")
         return {'FINISHED'}
@@ -1730,7 +1736,7 @@ class CLIP_OT_select_test_tracks(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        select_tracks_by_prefix(clip, "TEST_")
+        select_tracks_by_prefix(clip, PREFIX_TEST)
         count = sum(1 for t in clip.tracking.tracks if t.select)
         self.report({'INFO'}, f"{count} TEST_-Marker ausgewählt")
         return {'FINISHED'}
@@ -1811,7 +1817,7 @@ class CLIP_OT_good_marker_position(bpy.types.Operator):
         good_markers_px = []
 
         for track in clip.tracking.tracks:
-            if not track.name.startswith("GOOD_"):
+            if not track.name.startswith(PREFIX_GOOD):
                 continue
 
             marker = track.markers.find_frame(frame, exact=True)
@@ -2014,11 +2020,11 @@ def rename_new_tracks(context):
 
         if not isinstance(name, str):
             continue
-        if name.startswith("TRACK_"):
+        if name.startswith(PREFIX_TRACK):
             continue
-        if name.startswith("NEW_"):
-            base_name = name[4:]
-            new_name = "TRACK_" + base_name
+        if name.startswith(PREFIX_NEW):
+            base_name = name[len(PREFIX_NEW):]
+            new_name = PREFIX_TRACK + base_name
             if track.name != new_name:
                 track.name = new_name
                 renamed += 1
@@ -2502,7 +2508,7 @@ class CLIP_OT_test_track_backwards(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        select_tracks_by_prefix(clip, "TEST_")
+        select_tracks_by_prefix(clip, PREFIX_TEST)
         if not any(t.select for t in clip.tracking.tracks):
             self.report({'WARNING'}, "Keine TEST_-Tracks gefunden")
             return {'CANCELLED'}
