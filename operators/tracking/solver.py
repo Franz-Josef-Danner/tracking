@@ -342,9 +342,6 @@ class CLIP_OT_track_nr2(bpy.types.Operator):
                 if bpy.ops.clip.proxy_off.poll():
                     bpy.ops.clip.proxy_off()
                 bpy.ops.clip.cycle_detect()
-            renamed = rename_new_tracks(context)
-            if renamed:
-                self.report({'INFO'}, f"{renamed} Tracks umbenannt")
             if bpy.ops.clip.track_partial.poll():
                 bpy.ops.clip.track_partial()
             if bpy.ops.clip.cleanup.poll():
@@ -2019,25 +2016,34 @@ def cleanup_short_tracks(context):
     delete_selected_tracks()
 
 
+# Nur Präfix-Umbenennung von "NEW_" zu "TRACK_"
+# Der Rest des Namens bleibt unberührt.
+# Diese Funktion ist vollständig isoliert vom restlichen Tracking- und Analyseprozess.
 def rename_new_tracks(context):
-    """Rename NEW_ markers to TRACK_ and return the count."""
+    """Return the number of markers renamed from NEW_ to TRACK_."""
     clip = context.space_data.clip
     if not clip:
         return 0
-    select_tracks_by_prefix(clip, "NEW_")
+
     renamed = 0
     for track in clip.tracking.tracks:
-        if not track.select:
-            continue
         try:
-            if isinstance(track.name, str) and track.name.strip():
-                base = strip_prefix(track.name)
-                new_name = "TRACK_" + base
-                if track.name != new_name:
-                    track.name = new_name
-                    renamed += 1
+            name = track.name
         except Exception as e:
-            print(f"\u26a0\ufe0f Fehler beim Umbenennen des Markers: {track} ({e})")
+            print(f"\u26a0\ufe0f Fehler beim Lesen des Marker-Namens: {track} ({e})")
+            continue
+
+        if not isinstance(name, str):
+            continue
+        if name.startswith("TRACK_"):
+            continue
+        if name.startswith("NEW_"):
+            base_name = name[4:]
+            new_name = "TRACK_" + base_name
+            if track.name != new_name:
+                track.name = new_name
+                renamed += 1
+
     return renamed
 
 

@@ -324,6 +324,15 @@ Seit Version 1.198 weist die Dokumentation darauf hin, dass Blender keine
 direkte Zuweisung eigener Attribute an `bpy.types.Scene` erlaubt. Temporäre
 Daten wie besuchte Frames müssen lokal im Operator gehalten oder als
 Custom Property registriert werden.
+Seit Version 1.199 werden NEW_-Marker nur noch im Schritt "Rename" von Track Nr. 1
+in TRACK_ umbenannt. Dabei wird ausschließlich das Präfix ersetzt.
+
+## Tracker Lifecycle & Naming
+
+Tracker Naming Policy: Während des Track-Zyklus erhalten neue Marker zunächst den
+Präfix NEW_. Erst am Ende jedes Zyklus, wenn der Operator `CLIP_OT_track_nr1` seine
+Arbeit abgeschlossen hat, werden diese in TRACK_ umbenannt. Es erfolgt keine andere
+Namensänderung, um maximale Kompatibilität mit dem internen Tracking-System zu gewährleisten.
 
 ## License
 

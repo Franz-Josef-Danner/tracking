@@ -37,3 +37,11 @@ Blender erlaubt keine direkte Zuweisung neuer Attribute an Datenblöcke wie
  einem `AttributeError`. Temporäre Informationen sollten in Instanzvariablen
  der Operatoren gehalten oder als Custom Property über `bpy.props` bzw.
  `scene["key"]` angelegt werden.
+
+### Tracker Lifecycle & Naming
+
+Tracker Naming Policy: Während des Track-Zyklus erhalten neue Marker zunächst den
+Präfix `NEW_`. Erst am Ende jedes Zyklus, wenn der Operator `CLIP_OT_track_nr1`
+sein Tracking abgeschlossen hat (Schritt `step_rename`), werden diese Marker in
+`TRACK_` umbenannt. Andere Namensanpassungen finden nicht statt, um
+Kompatibilitätsprobleme zu vermeiden.
