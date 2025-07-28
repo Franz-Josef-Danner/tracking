@@ -1805,78 +1805,8 @@ class CLIP_OT_good_marker_position(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class CLIP_OT_error_value(bpy.types.Operator):
-    bl_idname = "clip.error_value"
-    bl_label = "Error Value"
-    bl_description = (
-        "Berechnet die Standardabweichung der Markerpositionen der Selektion"
-    )
-
-    def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
-
-        x_positions = []
-        y_positions = []
-        for track in clip.tracking.tracks:
-            if not track.select:
-                continue
-            for marker in track.markers:
-                if marker.mute:
-                    continue
-                x_positions.append(marker.co[0])
-                y_positions.append(marker.co[1])
-
-        if not x_positions:
-            self.report({'WARNING'}, "Keine Marker ausgewählt")
-            return {'CANCELLED'}
-
-        def std_dev(values):
-            mean_val = sum(values) / len(values)
-            return (sum((v - mean_val) ** 2 for v in values) / len(values)) ** 0.5
-
-        error_x = std_dev(x_positions)
-        error_y = std_dev(y_positions)
-        total_error = error_x + error_y
-
-        self.report(
-            {'INFO'},
-            f"Error X: {error_x:.4f} Error Y: {error_y:.4f} Total: {total_error:.4f}",
-        )
-        print(
-            f"[Error Value] error_x={error_x:.6f} error_y={error_y:.6f} total={total_error:.6f}"
-        )
-
-        return {'FINISHED'}
 
 
-def calculate_clip_error(clip):
-    """Return the sum of standard deviations for all marker positions."""
-    x_pos = []
-    y_pos = []
-    for track in clip.tracking.tracks:
-        for marker in track.markers:
-            if marker.mute:
-                continue
-            x_pos.append(marker.co[0])
-            y_pos.append(marker.co[1])
-
-    if not x_pos:
-        return 0.0
-
-    def std_dev(values):
-        mean_val = sum(values) / len(values)
-        return (sum((v - mean_val) ** 2 for v in values) / len(values)) ** 0.5
-
-    return std_dev(x_pos) + std_dev(y_pos)
-
-
-def disable_proxy():
-    """Disable proxies if possible."""
-    if bpy.ops.clip.proxy_off.poll():
-        bpy.ops.clip.proxy_off()
 
 
 def enable_proxy():
@@ -1942,257 +1872,8 @@ def detect_features_test(context, clip, threshold):
     return target
 
 
-def track_full_clip():
-    """Track the clip forward if possible."""
-    if bpy.ops.clip.track_full.poll():
-        bpy.ops.clip.track_full(silent=True)
-
-def cleanup_short_tracks(context):
-    """Select short TRACK_ markers and delete them."""
-    clip = getattr(context.space_data, "clip", None)
-    if clip is None:
-        return
-    min_frames = context.scene.frames_track
-    select_short_tracks(clip, min_frames)
-    delete_selected_tracks()
 
 
-# Nur Präfix-Umbenennung von "NEW_" zu "TRACK_"
-# Der Rest des Namens bleibt unberührt.
-# Diese Funktion ist vollständig isoliert vom restlichen Tracking- und Analyseprozess.
-def rename_new_tracks(context):
-    """Return the number of markers renamed from NEW_ to TRACK_."""
-    clip = context.space_data.clip
-    if not clip:
-        return 0
-
-    renamed = 0
-    for track in clip.tracking.tracks:
-        try:
-            name = track.name
-        except Exception as e:
-            print(f"\u26a0\ufe0f Fehler beim Lesen des Marker-Namens: {track} ({e})")
-            continue
-
-        if not isinstance(name, str):
-            continue
-        if name.startswith(PREFIX_TRACK):
-            continue
-        if name.startswith(PREFIX_NEW):
-            base_name = name[len(PREFIX_NEW):]
-            new_name = PREFIX_TRACK + base_name
-            if track.name != new_name:
-                track.name = new_name
-                renamed += 1
-
-    return renamed
-
-
-def cleanup_all_tracks(clip):
-    """Remove all tracks from the clip."""
-    for t in clip.tracking.tracks:
-        t.select = True
-    delete_selected_tracks()
-                    
-
-def run_iteration(context):
-    """Execute one detection and tracking iteration."""
-    clip = context.space_data.clip
-    disable_proxy()
-    detect_features_once()
-    enable_proxy()
-    track_full_clip()
-    frames = LAST_TRACK_END if LAST_TRACK_END is not None else 0
-    error_val = calculate_clip_error(clip)
-    delete_selected_tracks()
-    return frames, error_val
-
-
-def _run_test_cycle(context, cleanup=False, cycles=4):
-    """Run detection and tracking multiple times and return total frames and error."""
-    clip = context.space_data.clip
-    total_end = 0
-    total_error = 0.0
-    for i in range(cycles):
-        print(f"[Test Cycle] Durchgang {i + 1}")
-        frames, err = run_iteration(context)
-        total_end += frames
-        total_error += err
-
-    if cleanup:
-        cleanup_all_tracks(clip)
-
-    print(f"[Test Cycle] Summe End-Frames: {total_end}, Error: {total_error:.4f}")
-    return total_end, total_error
-
-
-def run_pattern_size_test(context):
-    """Execute a single cycle for the current pattern size with one tracking pass."""
-    return _run_test_cycle(context, cleanup=True, cycles=1)
-
-
-def evaluate_motion_models(context, models=MOTION_MODELS, cycles=2):
-    """Return the best motion model along with its score and error."""
-    clip = context.space_data.clip
-    settings = clip.tracking.settings
-    best_model = settings.default_motion_model
-    best_score = None
-    best_error = None
-
-    for model in models:
-        settings.default_motion_model = model
-        score, err = _run_test_cycle(context, cycles=cycles)
-        print(f"[Test Motion] model={model} frames={score} error={err:.4f}")
-        if best_score is None or score > best_score or (
-            score == best_score and (best_error is None or err < best_error)
-        ):
-            best_score = score
-            best_error = err
-            best_model = model
-
-    settings.default_motion_model = best_model
-    return best_model, best_score, best_error
-
-
-def evaluate_channel_combinations(context, combos=CHANNEL_COMBOS, cycles=2):
-    """Return the best RGB channel combination with its score and error."""
-    clip = context.space_data.clip
-    settings = clip.tracking.settings
-    best_combo = (
-        settings.use_default_red_channel,
-        settings.use_default_green_channel,
-        settings.use_default_blue_channel,
-    )
-    best_score = None
-    best_error = None
-
-    for combo in combos:
-        r, g, b = combo
-        settings.use_default_red_channel = r
-        settings.use_default_green_channel = g
-        settings.use_default_blue_channel = b
-        score, err = _run_test_cycle(context, cycles=cycles)
-        print(f"[Test Channel] combo={combo} frames={score} error={err:.4f}")
-        if best_score is None or score > best_score or (
-            score == best_score and (best_error is None or err < best_error)
-        ):
-            best_score = score
-            best_error = err
-            best_combo = combo
-
-    (
-        settings.use_default_red_channel,
-        settings.use_default_green_channel,
-        settings.use_default_blue_channel,
-    ) = best_combo
-    return best_combo, best_score, best_error
-
-
-class CLIP_OT_test_pattern(bpy.types.Operator):
-    bl_idname = "clip.test_pattern"
-    bl_label = "Test Pattern"
-    bl_description = "Testet verschiedene Pattern-Gr\u00f6\u00dfen"
-
-    def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
-
-        settings = clip.tracking.settings
-        best_size = settings.default_pattern_size
-        best_score = None
-        best_error = None
-        min_error = None
-        last_score = None
-        drops_left = 0
-
-        while True:
-            score, error_sum = run_pattern_size_test(context)
-
-            print(
-                f"[Test Pattern] size={settings.default_pattern_size} frames={score} error={error_sum:.4f}"
-            )
-
-            if best_score is None or score > best_score or (
-                score == best_score and (best_error is None or error_sum < best_error)
-            ):
-                best_score = score
-                best_error = error_sum
-                best_size = settings.default_pattern_size
-
-            if min_error is None or error_sum < min_error:
-                min_error = error_sum
-
-            if last_score is not None:
-                if score == last_score and error_sum > min_error * 1.1:
-                    break
-
-                if drops_left > 0:
-                    if score > last_score:
-                        drops_left = 0
-                    else:
-                        drops_left -= 1
-                        if drops_left == 0:
-                            break
-                elif score < last_score:
-                    drops_left = 4
-
-            last_score = score
-
-            if bpy.ops.clip.pattern_up.poll():
-                bpy.ops.clip.pattern_up()
-            else:
-                break
-
-        settings.default_pattern_size = best_size
-        settings.default_search_size = best_size * 2
-        context.scene.test_value = best_size
-        print(
-            f"[Test Pattern] best_size={best_size} frames={best_score} error={best_error:.4f}"
-        )
-        self.report({'INFO'}, f"Best Pattern Size: {best_size}")
-        return {'FINISHED'}
-
-
-class CLIP_OT_test_motion(bpy.types.Operator):
-    bl_idname = "clip.test_motion"
-    bl_label = "Test Motion"
-    bl_description = "Testet verschiedene Motion Models"
-
-    def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
-
-        best_model, score, error_val = evaluate_motion_models(context)
-        context.scene.test_value = MOTION_MODELS.index(best_model)
-        print(
-            f"[Test Motion] best_model={best_model} frames={score} error={error_val:.4f}"
-        )
-        self.report({'INFO'}, f"Best Motion Model: {best_model}")
-        return {'FINISHED'}
-
-
-class CLIP_OT_test_channel(bpy.types.Operator):
-    bl_idname = "clip.test_channel"
-    bl_label = "Test Channel"
-    bl_description = "Testet verschiedene Farbkanal-Kombinationen"
-
-    def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
-
-        best_combo, score, error_val = evaluate_channel_combinations(context)
-        context.scene.test_value = CHANNEL_COMBOS.index(best_combo)
-        print(
-            f"[Test Channel] best_combo={best_combo} frames={score} error={error_val:.4f}"
-        )
-        self.report({'INFO'}, "Beste Kanal-Einstellung gewählt")
-        return {'FINISHED'}
 
 
 
@@ -2278,74 +1959,6 @@ class CLIP_OT_marker_frame_minus(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class CLIP_OT_api_defaults(bpy.types.Operator):
-    bl_idname = "clip.api_defaults"
-    bl_label = "Defaults"
-    bl_description = (
-        "Setzt Standardwerte f\u00fcr Pattern, Suche, Motion Model und mehr"
-    )
-
-    def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
-
-        settings = clip.tracking.settings
-        settings.default_pattern_size = 50
-        settings.default_search_size = 100
-        settings.default_motion_model = 'Loc'
-        settings.default_pattern_match = 'KEYFRAME'
-        settings.use_default_brute = True
-        settings.use_default_normalization = True
-        settings.use_default_red_channel = True
-        settings.use_default_green_channel = True
-        settings.use_default_blue_channel = True
-        settings.default_weight = 1.0
-        settings.default_correlation_min = 0.9
-        settings.default_margin = 100
-
-        self.report({'INFO'}, "Tracking-Defaults gesetzt")
-        return {'FINISHED'}
-
-
-class CLIP_OT_setup_defaults(bpy.types.Operator):
-    bl_idname = "clip.setup_defaults"
-    bl_label = "Test Defaults"
-    bl_description = (
-        "Setzt Tracking-Standards: Pattern 10, Motion Loc, Keyframe-Match"
-    )
-
-    silent: BoolProperty(default=False, options={'HIDDEN'})
-
-    def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
-
-        settings = clip.tracking.settings
-        settings.default_pattern_size = 10
-        settings.default_search_size = settings.default_pattern_size * 2
-        settings.default_motion_model = 'Loc'
-        settings.default_pattern_match = 'KEYFRAME'
-        settings.use_default_brute = True
-        settings.use_default_normalization = True
-        settings.use_default_red_channel = True
-        settings.use_default_green_channel = True
-        settings.use_default_blue_channel = True
-
-        settings.default_weight = 1.0
-        settings.default_correlation_min = 0.9
-        settings.default_margin = 10
-        if hasattr(settings, 'use_default_mask'):
-            settings.use_default_mask = False
-
-
-
-        if not self.silent:
-            self.report({'INFO'}, "Tracking-Defaults gesetzt")
-        return {'FINISHED'}
 
 
 class CLIP_OT_test_button(bpy.types.Operator):
@@ -2701,7 +2314,6 @@ operator_classes = (
     CLIP_OT_delete_selected,
     CLIP_OT_select_short_tracks,
     CLIP_OT_count_button,
-    CLIP_OT_api_defaults,
     CLIP_OT_defaults_detect,
     CLIP_OT_motion_detect,
     CLIP_OT_channel_detect,
@@ -2712,13 +2324,9 @@ operator_classes = (
     CLIP_OT_frame_jump,
     CLIP_OT_marker_frame_plus,
     CLIP_OT_marker_frame_minus,
-    CLIP_OT_setup_defaults,
     CLIP_OT_track_full,
     CLIP_OT_test_track_backwards,
     CLIP_OT_test_track,
-    CLIP_OT_test_pattern,
-    CLIP_OT_test_motion,
-    CLIP_OT_test_channel,
     CLIP_OT_pattern_up,
     CLIP_OT_pattern_down,
     CLIP_OT_motion_cycle,
@@ -2742,6 +2350,5 @@ operator_classes = (
     CLIP_OT_select_test_tracks,
     CLIP_OT_marker_position,
     CLIP_OT_good_marker_position,
-    CLIP_OT_error_value,
 )
 
