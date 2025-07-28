@@ -1,5 +1,5 @@
 import bpy
-from ...t.helpers import delete_selected_tracks
+from ...helpers.delete_tracks import delete_selected_tracks
 from ...helpers.prefix_track import PREFIX_TRACK
 class CLIP_OT_camera_solve(bpy.types.Operator):
     bl_idname = "clip.camera_solve"
