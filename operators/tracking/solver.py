@@ -12,6 +12,10 @@ from ...helpers.feature_math import (
     marker_target_aggressive,
     marker_target_conservative,
 )
+from ...helpers.tracking_variants import (
+    track_bidirectional,
+    track_forward_only,
+)
 from ..proxy import CLIP_OT_proxy_on, CLIP_OT_proxy_off, CLIP_OT_proxy_build
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
@@ -112,7 +116,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         self._start = scene.frame_current
         enable_proxy()
         if bpy.ops.clip.track_partial.poll():
-            bpy.ops.clip.track_partial()
+            track_bidirectional(scene.frame_start, scene.frame_end)
         self._end = scene.frame_current
         self._tracked = self._end - self._start
         print(
@@ -285,7 +289,7 @@ class CLIP_OT_track_nr2(bpy.types.Operator):
                     bpy.ops.clip.proxy_off()
                 bpy.ops.clip.cycle_detect()
             if bpy.ops.clip.track_partial.poll():
-                bpy.ops.clip.track_partial()
+                track_forward_only(scene.frame_start, scene.frame_end)
             if bpy.ops.clip.cleanup.poll():
                 bpy.ops.clip.cleanup()
                 if bpy.ops.clip.setup_defaults.poll():
