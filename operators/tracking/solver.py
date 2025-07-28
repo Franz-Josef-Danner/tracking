@@ -7,6 +7,12 @@ from bpy.props import IntProperty, FloatProperty, BoolProperty
 
 # Import utility functions via relative path
 from ...helpers import *
+from ...helpers.feature_math import (
+    marker_target_aggressive,
+    marker_target_conservative,
+    calculate_base_values,
+    apply_threshold_to_margin_and_distance,
+)
 
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
@@ -1992,6 +1998,20 @@ def detect_features_once(context=None, clip=None, threshold=None):
         print(
             f"[Detect Features] finished with threshold {threshold:.8f}"
         )
+
+
+def detect_features_main(context, clip, threshold):
+    """Run feature detection with an aggressive target value."""
+    target = marker_target_aggressive(context.scene.marker_frame)
+    detect_features_once(context=context, clip=clip, threshold=threshold)
+    return target
+
+
+def detect_features_test(context, clip, threshold):
+    """Run feature detection with a conservative target value."""
+    target = marker_target_conservative(context.scene.marker_frame)
+    detect_features_once(context=context, clip=clip, threshold=threshold)
+    return target
 
 
 def track_full_clip():
