@@ -22,6 +22,7 @@ from ...helpers.tracking_variants import (
     track_bidirectional,
     track_forward_only,
 )
+from ...t.helpers import delete_selected_tracks
 from ..proxy import CLIP_OT_proxy_on, CLIP_OT_proxy_off, CLIP_OT_proxy_build
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
@@ -407,9 +408,9 @@ class CLIP_OT_detect_button(bpy.types.Operator):
                 track.select = False
             for t in new_tracks:
                 t.select = True
-            if new_tracks and bpy.ops.clip.delete_track.poll():
-                bpy.ops.clip.delete_track()
-                clean_pending_tracks(clip)
+            if new_tracks:
+                if delete_selected_tracks():
+                    clean_pending_tracks(clip)
             for track in clip.tracking.tracks:
                 track.select = False
             threshold_value = threshold_value * ((new_markers + 0.1) / mf_base)
@@ -515,8 +516,7 @@ class CLIP_OT_delete_selected(bpy.types.Operator):
                 self.report({'WARNING'}, "Keine Tracks ausgewählt")
             return {'CANCELLED'}
 
-        if bpy.ops.clip.delete_track.poll():
-            bpy.ops.clip.delete_track()
+        if delete_selected_tracks():
             clean_pending_tracks(clip)
             if not self.silent:
                 self.report({'INFO'}, "Tracks gelöscht")
@@ -996,9 +996,9 @@ class CLIP_OT_all_detect(bpy.types.Operator):
                 track.select = False
             for t in close_tracks:
                 t.select = True
-            if close_tracks and bpy.ops.clip.delete_selected.poll():
-                bpy.ops.clip.delete_selected()
-                clean_pending_tracks(clip)
+            if close_tracks:
+                if delete_selected_tracks():
+                    clean_pending_tracks(clip)
 
             # Recompute new tracks after deletion
             names_after = {t.name for t in clip.tracking.tracks}
@@ -1018,9 +1018,9 @@ class CLIP_OT_all_detect(bpy.types.Operator):
                 track.select = False
             for t in new_tracks:
                 t.select = True
-            if new_tracks and bpy.ops.clip.delete_track.poll():
-                bpy.ops.clip.delete_track()
-                clean_pending_tracks(clip)
+            if new_tracks:
+                if delete_selected_tracks():
+                    clean_pending_tracks(clip)
             for track in clip.tracking.tracks:
                 track.select = False
 
@@ -1093,9 +1093,9 @@ class CLIP_OT_cycle_detect(bpy.types.Operator):
 
             for t in new_tracks:
                 t.select = True
-            if new_tracks and bpy.ops.clip.delete_track.poll():
-                bpy.ops.clip.delete_track()
-                clean_pending_tracks(clip)
+            if new_tracks:
+                if delete_selected_tracks():
+                    clean_pending_tracks(clip)
             for track in clip.tracking.tracks:
                 track.select = False
 
@@ -1148,7 +1148,7 @@ class CLIP_OT_all_cycle(bpy.types.Operator):
         if self._state == 'DETECT':
             bpy.ops.clip.all_detect()
             bpy.ops.clip.distance_button()
-            bpy.ops.clip.delete_selected()
+            delete_selected_tracks()
             clean_pending_tracks(clip)
 
             count = len(PENDING_RENAME)
@@ -1165,7 +1165,7 @@ class CLIP_OT_all_cycle(bpy.types.Operator):
             else:
                 for t in PENDING_RENAME:
                     t.select = True
-                bpy.ops.clip.delete_selected()
+                delete_selected_tracks()
                 clean_pending_tracks(clip)
                 self._detect_attempts += 1
                 if self._detect_attempts >= 20:
@@ -1497,8 +1497,7 @@ def _Test_detect(self, context, use_defaults=True):
                     break
                 for t in clip.tracking.tracks:
                     t.select = t.name.startswith(PREFIX_TEST)
-                if bpy.ops.clip.delete_track.poll():
-                    bpy.ops.clip.delete_track()
+                delete_selected_tracks()
                 for t in clip.tracking.tracks:
                     t.select = False
                 attempt += 1
@@ -1522,8 +1521,7 @@ def _Test_detect(self, context, use_defaults=True):
                 self.report({'WARNING'}, "Tracking nicht möglich")
 
             select_tracks_by_prefix(clip, PREFIX_TEST)
-            if bpy.ops.clip.delete_selected.poll():
-                bpy.ops.clip.delete_selected(silent=True)
+            delete_selected_tracks()
             if bpy.ops.clip.pattern_up.poll():
                 bpy.ops.clip.pattern_up()
             for t in clip.tracking.tracks:
@@ -1581,8 +1579,7 @@ def _Test_detect_mm(self, context):
             break
 
         select_tracks_by_prefix(clip, PREFIX_TEST)
-        if bpy.ops.clip.delete_selected.poll():
-            bpy.ops.clip.delete_selected(silent=True)
+        delete_selected_tracks()
         for t in clip.tracking.tracks:
             t.select = False
 
@@ -1614,8 +1611,7 @@ class CLIP_OT_tracking_length(bpy.types.Operator):
         names = [name for name, _ in undertracked]
         select_tracks_by_names(clip, names)
 
-        if bpy.ops.clip.delete_track.poll():
-            bpy.ops.clip.delete_track()
+        if delete_selected_tracks():
             self.report({'INFO'}, f"{len(names)} TRACK_-Marker gelöscht")
         else:
             self.report({'WARNING'}, "Löschen nicht möglich")
@@ -1984,13 +1980,6 @@ def track_full_clip():
     if bpy.ops.clip.track_full.poll():
         bpy.ops.clip.track_full(silent=True)
 
-
-def delete_selected_tracks():
-    """Delete all selected tracks."""
-    if bpy.ops.clip.delete_selected.poll():
-        bpy.ops.clip.delete_selected(silent=True)
-
-
 def cleanup_short_tracks(context):
     """Select short TRACK_ markers and delete them."""
     clip = getattr(context.space_data, "clip", None)
@@ -2036,9 +2025,8 @@ def cleanup_all_tracks(clip):
     """Remove all tracks from the clip."""
     for t in clip.tracking.tracks:
         t.select = True
-    if bpy.ops.clip.delete_track.poll():
-        bpy.ops.clip.delete_track()
-
+    delete_selected_tracks()
+                    
 
 def run_iteration(context):
     """Execute one detection and tracking iteration."""
