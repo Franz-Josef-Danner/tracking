@@ -11,7 +11,7 @@ from ...helpers.feature_math import (
     marker_target_aggressive,
     marker_target_conservative,
 )
-from ..proxy import CLIP_OT_proxy_on, CLIP_OT_proxy_off, CLIP_OT_panel_button
+from ..proxy import CLIP_OT_proxy_on, CLIP_OT_proxy_off, CLIP_OT_proxy_build
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
     bl_idname = "object.simple_operator"

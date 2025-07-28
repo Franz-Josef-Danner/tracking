@@ -12,6 +12,8 @@ class CLIP_PT_test_panel(bpy.types.Panel):
         layout.operator('clip.api_defaults', text='Defaults')
         layout.operator('clip.proxy_on', text='Proxy on')
         layout.operator('clip.proxy_off', text='Proxy off')
+        layout.operator('clip.proxy_build', text='Proxy erstellen (50%)')
+        layout.separator()
         layout.operator('clip.track_bidirectional', text='Track')
         layout.operator('clip.track_partial', text='Track Partial')
         layout.operator('clip.count_button', text='Count')
