@@ -3,13 +3,10 @@ from bpy.props import BoolProperty
 import unicodedata
 # Import helper via relative package path
 from ...helpers import strip_prefix
-from ...helpers.prefixes import (
-    PREFIX_NEW,
-    PREFIX_TRACK,
-    PREFIX_GOOD,
-    PREFIX_TEST,
-    PREFIX_RECOVERED,
-)
+from ...helpers.prefix_new import PREFIX_NEW
+from ...helpers.prefix_track import PREFIX_TRACK
+from ...helpers.prefix_good import PREFIX_GOOD
+from ...helpers.prefixes import PREFIX_TEST, PREFIX_RECOVERED
 
 class CLIP_OT_prefix_new(bpy.types.Operator):
     bl_idname = "clip.prefix_new"

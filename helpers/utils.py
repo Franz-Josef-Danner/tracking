@@ -6,7 +6,9 @@ import math
 import re
 from bpy.props import IntProperty, FloatProperty, BoolProperty
 
-from .prefixes import PREFIX_GOOD, PREFIX_TRACK, PREFIX_NEW
+from .prefix_good import PREFIX_GOOD
+from .prefix_track import PREFIX_TRACK
+from .prefix_new import PREFIX_NEW
 
 from .feature_math import (
     calculate_base_values,

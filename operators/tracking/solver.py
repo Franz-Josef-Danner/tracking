@@ -6,13 +6,12 @@ from bpy.props import IntProperty, FloatProperty, BoolProperty
 # Import utility functions via relative path
 from ...helpers import *
 from ...helpers.utils import jump_to_frame_with_few_markers
-from ...helpers.prefixes import (
-    PREFIX_NEW,
-    PREFIX_TRACK,
-    PREFIX_GOOD,
-    PREFIX_TEST,
-    PREFIX_RECOVERED,
-)
+from ...helpers.prefix_new import PREFIX_NEW
+from ...helpers.prefix_track import PREFIX_TRACK
+from ...helpers.prefix_good import PREFIX_GOOD
+from ...helpers.prefixes import PREFIX_TEST, PREFIX_RECOVERED
+from ...helpers.select_track_tracks import select_track_tracks
+from ...helpers.select_new_tracks import select_new_tracks
 from ...helpers.feature_math import (
     calculate_base_values,
     apply_threshold_to_margin_and_distance,
@@ -1695,7 +1694,7 @@ class CLIP_OT_select_active_tracks(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        select_tracks_by_prefix(clip, PREFIX_TRACK)
+        select_track_tracks(clip)
 
         frame = context.scene.frame_current
 
@@ -1720,7 +1719,7 @@ class CLIP_OT_select_new_tracks(bpy.types.Operator):
         if not clip:
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
-        select_tracks_by_prefix(clip, PREFIX_NEW)
+        select_new_tracks(clip)
         count = sum(1 for t in clip.tracking.tracks if t.select)
         self.report({'INFO'}, f"{count} NEW_-Marker ausgewählt")
         return {'FINISHED'}

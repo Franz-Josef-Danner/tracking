@@ -1,5 +1,5 @@
 import bpy
-from ...helpers.prefixes import PREFIX_TRACK
+from ...helpers.prefix_track import PREFIX_TRACK
 class CLIP_OT_camera_solve(bpy.types.Operator):
     bl_idname = "clip.camera_solve"
     bl_label = "Kamera solve"

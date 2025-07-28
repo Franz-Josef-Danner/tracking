@@ -1,6 +1,3 @@
-# Zentrale Präfixe für Track-Namen
-PREFIX_NEW = "NEW_"
-PREFIX_TRACK = "TRACK_"
-PREFIX_GOOD = "GOOD_"
+# Zusätzliche Präfixe für Marker
 PREFIX_TEST = "TEST_"
 PREFIX_RECOVERED = "RECOVERED_"
