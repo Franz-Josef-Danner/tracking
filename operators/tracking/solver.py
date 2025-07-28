@@ -209,6 +209,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         )
         self._next_frame = frame
         if frame is not None and frame != current:
+            scene.frame_current = frame
             update_frame_display(context)
             print(f"[Track Nr.1] next low frame {frame} ({count} markers)")
             return "CLEANUP"
@@ -228,11 +229,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         return "MOVE"
 
     def step_move(self, context):
-        """Ensure the playhead is on the chosen frame before the next detect."""
-        scene = context.scene
-        if self._next_frame is not None:
-            scene.frame_current = self._next_frame
-            update_frame_display(context)
+        """Continue to the detection step after housekeeping."""
         self._cycle_count += 1
         if self._cycle_count >= 100:
             self.report({'INFO'}, "Maximale Zyklen erreicht")
@@ -1468,7 +1465,6 @@ def find_next_low_marker_frame(clip, threshold, visited_frames, marker_start):
             if marker and not marker.mute and marker.co.length_squared != 0.0:
                 count += 1
         if count < threshold:
-            scene.frame_current = candidate_frame
             if candidate_frame in visited_frames:
                 if scene.marker_frame < 100:
                     bpy.ops.clip.marker_frame_plus()
