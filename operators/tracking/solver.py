@@ -7,6 +7,12 @@ from bpy.props import IntProperty, FloatProperty, BoolProperty
 
 # Import utility functions via relative path
 from ...helpers import *
+# Import proxy operators
+from ..proxy import (
+    CLIP_OT_proxy_on,
+    CLIP_OT_proxy_off,
+    CLIP_OT_panel_button,
+)
 
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
@@ -18,79 +24,6 @@ class OBJECT_OT_simple_operator(bpy.types.Operator):
         self.report({'INFO'}, "Hello World from Addon")
         return {'FINISHED'}
 
-
-class CLIP_OT_panel_button(bpy.types.Operator):
-    bl_idname = "clip.panel_button"
-    bl_label = "Proxy"
-    bl_description = "Erstellt Proxy-Dateien mit 50% Gr\u00f6\u00dfe"
-
-    def execute(self, context):
-        clip = getattr(context.space_data, "clip", None)
-        if clip is None:
-            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
-            return {'CANCELLED'}
-
-        clip.use_proxy = True
-
-        clip.proxy.build_25 = False
-        clip.proxy.build_50 = True
-        clip.proxy.build_75 = False
-        clip.proxy.build_100 = False
-
-        # Proxy mit Qualität 50 erzeugen
-        clip.proxy.quality = 50
-
-        clip.proxy.directory = "//proxies"
-
-        # absoluten Pfad zum Proxy-Verzeichnis auflösen
-        proxy_dir = bpy.path.abspath(clip.proxy.directory)
-        project_dir = bpy.path.abspath("//")
-
-        # nur löschen, wenn das Verzeichnis innerhalb des Projektes liegt
-        if os.path.abspath(proxy_dir).startswith(os.path.abspath(project_dir)):
-            if os.path.exists(proxy_dir):
-                try:
-                    shutil.rmtree(proxy_dir)
-                except Exception as e:
-                    self.report({'WARNING'}, f"Fehler beim L\u00f6schen des Proxy-Verzeichnisses: {e}")
-
-        # Blender-Operator zum Erzeugen der Proxys aufrufen
-        bpy.ops.clip.rebuild_proxy()
-
-        self.report({'INFO'}, "Proxy auf 50% erstellt")
-        return {'FINISHED'}
-
-
-class CLIP_OT_proxy_on(bpy.types.Operator):
-    bl_idname = "clip.proxy_on"
-    bl_label = "Proxy on"
-    bl_description = "Aktiviert das Proxy"
-
-    def execute(self, context):
-        clip = getattr(context.space_data, "clip", None)
-        if clip is None:
-            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
-            return {'CANCELLED'}
-
-        clip.use_proxy = True
-        self.report({'INFO'}, "Proxy aktiviert")
-        return {'FINISHED'}
-
-
-class CLIP_OT_proxy_off(bpy.types.Operator):
-    bl_idname = "clip.proxy_off"
-    bl_label = "Proxy off"
-    bl_description = "Deaktiviert das Proxy"
-
-    def execute(self, context):
-        clip = getattr(context.space_data, "clip", None)
-        if clip is None:
-            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
-            return {'CANCELLED'}
-
-        clip.use_proxy = False
-        self.report({'INFO'}, "Proxy deaktiviert")
-        return {'FINISHED'}
 
 
 class CLIP_OT_track_nr1(bpy.types.Operator):
@@ -2754,9 +2687,6 @@ class CLIP_OT_channel_b_off(bpy.types.Operator):
 
 operator_classes = (
     OBJECT_OT_simple_operator,
-    CLIP_OT_panel_button,
-    CLIP_OT_proxy_on,
-    CLIP_OT_proxy_off,
     CLIP_OT_track_nr1,
     CLIP_OT_track_nr2,
     CLIP_OT_detect_button,

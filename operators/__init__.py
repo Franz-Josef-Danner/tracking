@@ -1,4 +1,7 @@
 # Relative import to the tracking operator package
-from . import tracking
+from . import tracking, proxy
 
-operator_classes = tracking.operator_classes
+operator_classes = (
+    *proxy.operator_classes,
+    *tracking.operator_classes,
+)
