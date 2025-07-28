@@ -1996,6 +1996,20 @@ def detect_features_once(context=None, clip=None, threshold=None):
         )
 
 
+def detect_features_main(context, clip, threshold):
+    """Run feature detection with the aggressive marker target."""
+    target = marker_target_aggressive(context.scene.marker_frame)
+    detect_features_once(context=context, clip=clip, threshold=threshold)
+    return target
+
+
+def detect_features_test(context, clip, threshold):
+    """Run feature detection with the conservative marker target."""
+    target = marker_target_conservative(context.scene.marker_frame)
+    detect_features_once(context=context, clip=clip, threshold=threshold)
+    return target
+
+
 def track_full_clip():
     """Track the clip forward if possible."""
     if bpy.ops.clip.track_full.poll():
