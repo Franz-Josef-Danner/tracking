@@ -3,6 +3,13 @@ from bpy.props import BoolProperty
 import unicodedata
 # Import helper via relative package path
 from ...helpers import strip_prefix
+from ...helpers.prefixes import (
+    PREFIX_NEW,
+    PREFIX_TRACK,
+    PREFIX_GOOD,
+    PREFIX_TEST,
+    PREFIX_RECOVERED,
+)
 
 class CLIP_OT_prefix_new(bpy.types.Operator):
     bl_idname = "clip.prefix_new"
@@ -24,15 +31,15 @@ class CLIP_OT_prefix_new(bpy.types.Operator):
                 _ = track.name
             except Exception as e:
                 print(f"\u26a0\ufe0f Marker-Name fehlerhaft: {track} ({e})")
-                track.name = f"RECOVERED_{i:03d}"
+                track.name = f"{PREFIX_RECOVERED}{i:03d}"
             else:
                 safe = unicodedata.normalize("NFKD", track.name).encode(
                     "ascii", "ignore"
                 ).decode("ascii")
                 if not safe:
-                    safe = f"TRACK_{i:03d}"
+                    safe = f"{PREFIX_TRACK}{i:03d}"
                 track.name = safe
-            track.name = f"NEW_{i:03d}"
+            track.name = f"{PREFIX_NEW}{i:03d}"
             count += 1
         if not self.silent:
             self.report({'INFO'}, f"{count} Tracks umbenannt")
@@ -52,7 +59,7 @@ class CLIP_OT_prefix_test(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        prefix = "TEST_"
+        prefix = PREFIX_TEST
         count = 0
         for track in clip.tracking.tracks:
             if track.select and not track.name.startswith(prefix):
@@ -76,7 +83,7 @@ class CLIP_OT_prefix_track(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        prefix = "TRACK_"
+        prefix = PREFIX_TRACK
         count = 0
         for track in clip.tracking.tracks:
             if track.select:
@@ -105,8 +112,8 @@ class CLIP_OT_prefix_good(bpy.types.Operator):
 
         count = 0
         for track in clip.tracking.tracks:
-            if track.name.startswith("TRACK_"):
-                track.name = "GOOD_" + track.name[6:]
+            if track.name.startswith(PREFIX_TRACK):
+                track.name = PREFIX_GOOD + track.name[len(PREFIX_TRACK):]
                 count += 1
         if not self.silent:
             self.report({'INFO'}, f"{count} Tracks umbenannt")

@@ -6,6 +6,8 @@ import math
 import re
 from bpy.props import IntProperty, FloatProperty, BoolProperty
 
+from .prefixes import PREFIX_GOOD, PREFIX_TRACK, PREFIX_NEW
+
 from .feature_math import (
     calculate_base_values,
     apply_threshold_to_margin_and_distance,
@@ -225,9 +227,9 @@ def remove_close_tracks(clip, new_tracks, distance_px, names_before):
     valid_positions = []
     for gt in clip.tracking.tracks:
         if (
-            gt.name.startswith("GOOD_")
-            or gt.name.startswith("TRACK_")
-            or gt.name.startswith("NEW_")
+            gt.name.startswith(PREFIX_GOOD)
+            or gt.name.startswith(PREFIX_TRACK)
+            or gt.name.startswith(PREFIX_NEW)
         ):
             gm = gt.markers.find_frame(frame, exact=True)
             if gm and not gm.mute:

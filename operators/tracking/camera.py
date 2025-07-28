@@ -1,4 +1,5 @@
 import bpy
+from ...helpers.prefixes import PREFIX_TRACK
 class CLIP_OT_camera_solve(bpy.types.Operator):
     bl_idname = "clip.camera_solve"
     bl_label = "Kamera solve"
@@ -40,7 +41,7 @@ def max_track_error(scene, clip):
     for frame in range(start, end):
         valid = []
         for track in clip.tracking.tracks:
-            if not track.name.startswith("TRACK_"):
+            if not track.name.startswith(PREFIX_TRACK):
                 continue
 
             coords = []
@@ -185,7 +186,7 @@ class CLIP_OT_track_cleanup(bpy.types.Operator):
         for frame in range(start, end):
             valid = []
             for track in clip.tracking.tracks:
-                if not track.name.startswith("TRACK_"):
+                if not track.name.startswith(PREFIX_TRACK):
                     continue
 
                 coords = []
