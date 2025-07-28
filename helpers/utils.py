@@ -6,6 +6,11 @@ import math
 import re
 from bpy.props import IntProperty, FloatProperty, BoolProperty
 
+from .feature_math import (
+    calculate_base_values,
+    apply_threshold_to_margin_and_distance,
+)
+
 # Frames, die mit zu wenig Markern gefunden wurden
 NF = []
 
@@ -184,8 +189,9 @@ def compute_detection_params(threshold_value, margin_base, min_distance_base):
         )
     detection_threshold = max(min(threshold_value, 1.0), MIN_THRESHOLD)
     factor = math.log10(detection_threshold * 100000000) / 8
-    margin = int(margin_base * factor)
-    min_distance = int(min_distance_base * factor)
+    margin, min_distance = apply_threshold_to_margin_and_distance(
+        factor, margin_base, min_distance_base
+    )
     return detection_threshold, margin, min_distance
 
 
