@@ -19,7 +19,7 @@ Bei der Erstellung und Bearbeitung von Blender Skripten und Add-ons sollten stet
 
 ## Eigene Operatoren
 
-Das Add-on implementiert mehrere Operatoren wie `clip.panel_button`, `clip.detect_button`, `clip.prefix_new` und andere. Sie leiten sich von `bpy.types.Operator` ab und greifen über `context.space_data.clip` direkt auf den aktiven Movie Clip zu.
+Das Add-on implementiert mehrere Operatoren wie `clip.proxy_build`, `clip.detect_button`, `clip.prefix_new` und andere. Sie leiten sich von `bpy.types.Operator` ab und greifen über `context.space_data.clip` direkt auf den aktiven Movie Clip zu.
 
 ## Panels
 

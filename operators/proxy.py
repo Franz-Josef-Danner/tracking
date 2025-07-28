@@ -32,9 +32,9 @@ class CLIP_OT_proxy_off(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class CLIP_OT_panel_button(bpy.types.Operator):
+class CLIP_OT_proxy_build(bpy.types.Operator):
     bl_idname = "clip.proxy_build"
-    bl_label = "Proxy bauen"
+    bl_label = "Proxy erstellen (50%)"
     bl_description = "Erstellt Proxy-Dateien mit 50% Größe"
 
     def execute(self, context):
@@ -68,5 +68,5 @@ class CLIP_OT_panel_button(bpy.types.Operator):
 operator_classes = (
     CLIP_OT_proxy_on,
     CLIP_OT_proxy_off,
-    CLIP_OT_panel_button,
+    CLIP_OT_proxy_build,
 )
