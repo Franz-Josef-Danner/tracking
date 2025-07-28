@@ -6,7 +6,7 @@ from ...helpers import strip_prefix
 from ...helpers.prefix_new import PREFIX_NEW
 from ...helpers.prefix_track import PREFIX_TRACK
 from ...helpers.prefix_good import PREFIX_GOOD
-from ...helpers.prefixes import PREFIX_TEST, PREFIX_RECOVERED
+from ...helpers.prefix_test import PREFIX_TEST
 
 class CLIP_OT_prefix_new(bpy.types.Operator):
     bl_idname = "clip.prefix_new"
@@ -28,7 +28,7 @@ class CLIP_OT_prefix_new(bpy.types.Operator):
                 _ = track.name
             except Exception as e:
                 print(f"\u26a0\ufe0f Marker-Name fehlerhaft: {track} ({e})")
-                track.name = f"{PREFIX_RECOVERED}{i:03d}"
+                track.name = f"RECOVERED_{i:03d}"
             else:
                 safe = unicodedata.normalize("NFKD", track.name).encode(
                     "ascii", "ignore"
