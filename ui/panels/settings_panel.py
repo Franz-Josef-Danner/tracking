@@ -1,7 +1,7 @@
 import bpy
 import os
 
-from ...helpers.step_order import extract_step_sequence_from_cycle
+from tracking_tools.helpers.step_order import extract_step_sequence_from_cycle
 
 
 def get_fsm_sequence() -> list:

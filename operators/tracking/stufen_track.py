@@ -1,7 +1,7 @@
 import bpy
 from bpy.types import Operator
 
-from ...helpers import (
+from tracking_tools.helpers import (
     apply_threshold_to_margin_and_distance,
     marker_target_aggressive,
     enable_proxy,
@@ -15,9 +15,9 @@ from ...helpers import (
     set_playhead_to_frame,
     optimize_tracking_parameters,
 )
-from ...helpers.tracking_variants import track_bidirectional
+from tracking_tools.helpers.tracking_variants import track_bidirectional
 from ..cleanup_tracks import cleanup_error_tracks
-from ...helpers.threshold_math import compute_threshold_factor, adjust_threshold
+from tracking_tools.helpers.threshold_math import compute_threshold_factor, adjust_threshold
 
 
 class CLIP_OT_stufen_track(Operator):
