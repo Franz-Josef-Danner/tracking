@@ -1,14 +1,14 @@
 import bpy
 import os
 
-from ...helpers.step_introspection import get_step_methods_with_calls
+from ...helpers.step_order import extract_step_sequence_from_cycle
 
 
-def get_tracking_steps_info() -> list:
-    """Return step method info from the tracking operator source file."""
+def get_fsm_sequence() -> list:
+    """Return the FSM step sequence from the tracking operator source file."""
     base = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     path = os.path.join(base, "operators", "tracking", "cycle.py")
-    return get_step_methods_with_calls(os.path.abspath(path))
+    return extract_step_sequence_from_cycle(os.path.abspath(path))
 
 class CLIP_PT_final_panel(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
@@ -34,11 +34,9 @@ class CLIP_PT_stufen_panel(bpy.types.Panel):
         layout.operator('clip.proxy_build', text='Proxy erstellen (50%)')
         layout.operator('clip.track_nr1', text='Track Nr. 1')
         layout.label(text="Automatischer Ablauf:")
-        for step in get_tracking_steps_info():
+        for key in get_fsm_sequence():
             box = layout.box()
-            box.label(text=f"{step['name']} – {step['doc']}")
-            for call in step['calls']:
-                box.label(text=f"\u21b3 {call}", icon='DOT')
+            box.label(text=key)
         layout.operator('clip.cleanup', text='Cleanup')
         layout.operator('clip.track_nr2', text='Track Nr. 2')
 

@@ -10,6 +10,7 @@ from .feature_math import (
     marker_target_aggressive,
     marker_target_conservative,
 )
+from .step_order import extract_step_sequence_from_cycle
 
 if bpy is not None:
     from .utils import *
