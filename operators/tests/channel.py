@@ -1,4 +1,5 @@
 import bpy
+from .pattern import CLIP_OT_test_pattern
 from ...helpers.tracking_helpers import (
     run_pattern_size_test,
     evaluate_motion_models,
@@ -36,6 +37,4 @@ operator_classes = (
     CLIP_OT_test_motion,
     CLIP_OT_test_channel,
 )
-
-operator_classes = (CLIP_OT_test_channel,)
 
