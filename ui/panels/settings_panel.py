@@ -31,14 +31,10 @@ class CLIP_PT_stufen_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.operator('clip.proxy_build', text='Proxy erstellen (50%)')
-        layout.operator('clip.track_nr1', text='Track Nr. 1')
         layout.label(text="Automatischer Ablauf:")
         for key in get_fsm_sequence():
             box = layout.box()
             box.label(text=key)
-        layout.operator('clip.cleanup', text='Cleanup')
-        layout.operator('clip.track_nr2', text='Track Nr. 2')
 
 
 panel_classes = (
