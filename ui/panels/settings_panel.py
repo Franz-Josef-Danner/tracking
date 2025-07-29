@@ -1,4 +1,18 @@
 import bpy
+import inspect
+
+from ...operators.tracking.cycle import CLIP_OT_track_nr1
+
+
+def get_tracking_steps_info():
+    """Return (name, doc) pairs for all step_ methods in CLIP_OT_track_nr1."""
+    steps = []
+    for name, method in inspect.getmembers(CLIP_OT_track_nr1, predicate=inspect.isfunction):
+        if name.startswith("step_"):
+            doc = inspect.getdoc(method) or "Keine Beschreibung vorhanden"
+            first_line = doc.splitlines()[0] if doc else ""
+            steps.append((name, first_line))
+    return steps
 
 class CLIP_PT_final_panel(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
