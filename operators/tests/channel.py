@@ -1,5 +1,6 @@
 import bpy
 from .pattern import CLIP_OT_test_pattern
+from .motion import CLIP_OT_test_motion
 from ...helpers.tracking_helpers import (
     run_pattern_size_test,
     evaluate_motion_models,
