@@ -7,6 +7,7 @@ from . import (
     setup_test_defaults,
     tests,
     error_value,
+    api_functions,
 )
 
 operator_classes = (
@@ -17,4 +18,5 @@ operator_classes = (
     *setup_test_defaults.operator_classes,
     *tests.operator_classes,
     *error_value.operator_classes,
+    *api_functions.operator_classes,
 )
