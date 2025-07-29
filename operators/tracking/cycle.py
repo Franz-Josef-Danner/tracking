@@ -105,8 +105,6 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         threshold = context.scene.threshold_value
 
         while attempt < max_attempts:
-            if bpy.ops.clip.proxy_off.poll():
-                bpy.ops.clip.proxy_off()
             detect_features_once(context, clip, threshold)
 
             marker_count = len(clip.tracking.tracks)
@@ -153,10 +151,10 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         print(
             f"[Track Nr.1] start {self._start} end {self._end} tracked {self._tracked}"
         )
-        return "DECIDE"
+        return "CLEANUP"
 
     def step_decide(self, context):
-        """Move the playhead to the next frame before cleanup."""
+        """Decide the next action after cleanup."""
         scene = context.scene
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
@@ -184,7 +182,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
             )
             update_frame_display(context)
             print(f"[Track Nr.1] next low frame {frame} ({count} markers)")
-            return "CLEANUP"
+            return "MOVE"
         else:
             print("[Track Nr.1] finish cycle")
             self.report({'INFO'}, "Zyklus beendet")
@@ -193,12 +191,12 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
     def step_cleanup(self, context):
         """Remove short tracks and keep the playhead at the target frame."""
         if not context.space_data.clip or self._tracked <= 0:
-            return "MOVE"
+            return "DECIDE"
 
         print("[Track Nr.1] cleanup short tracks")
         cleanup_short_tracks(context)
 
-        return "MOVE"
+        return "DECIDE"
 
     def step_move(self, context):
         """Continue to the detection step after housekeeping."""
@@ -324,8 +322,6 @@ class CLIP_OT_track_nr2(bpy.types.Operator):
             if bpy.ops.clip.test_channel.poll():
                 bpy.ops.clip.test_channel()
             if bpy.ops.clip.cycle_detect.poll():
-                if bpy.ops.clip.proxy_off.poll():
-                    bpy.ops.clip.proxy_off()
                 bpy.ops.clip.cycle_detect()
             if bpy.ops.clip.track_partial.poll():
                 track_forward_only(scene.frame_start, scene.frame_end)
