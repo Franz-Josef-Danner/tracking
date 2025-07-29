@@ -32,6 +32,7 @@ class CLIP_PT_stufen_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.label(text="Automatischer Ablauf:")
+        layout.operator("clip.stufen_track", text="Track")
         for key in get_fsm_sequence():
             box = layout.box()
             box.label(text=key)
