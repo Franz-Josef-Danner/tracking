@@ -6,7 +6,7 @@ from .feature_math import (
     marker_target_aggressive,
     marker_target_conservative,
 )
-from .delete_tracks import delete_selected_tracks
+from .delete_selected_tracks import delete_selected_tracks
 from .select_short_tracks import select_short_tracks
 from .detection_helpers import (
     find_next_low_marker_frame,

@@ -55,6 +55,6 @@ def cleanup_all_tracks(clip):
     """Remove all tracks from the clip."""
     for t in clip.tracking.tracks:
         t.select = True
-    from .delete_tracks import delete_selected_tracks
+    from .delete_selected_tracks import delete_selected_tracks
 
     delete_selected_tracks()
