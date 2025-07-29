@@ -11,7 +11,7 @@ from ...helpers.prefix_test import PREFIX_TEST
 from ...helpers.select_track_tracks import select_track_tracks
 from ...helpers.select_new_tracks import select_new_tracks
 from ...helpers.select_short_tracks import select_short_tracks
-from ...helpers.delete_tracks import delete_selected_tracks
+from ...helpers.delete_selected_tracks import delete_selected_tracks
 from ...helpers.detection_helpers import (
     detect_features_once,
     find_next_low_marker_frame,

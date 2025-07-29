@@ -2,7 +2,10 @@ import bpy
 from .prefix_new import PREFIX_NEW
 
 def select_new_tracks(clip=None):
-    """Selektiert alle Tracks mit dem Präfix NEW_."""
+    """Select all tracks starting with ``NEW_``.
+
+    Used by :class:`~operators.tracking.cleanup.CLIP_OT_select_new_tracks`.
+    """
     if clip is None:
         clip = bpy.context.space_data.clip
     if not clip:

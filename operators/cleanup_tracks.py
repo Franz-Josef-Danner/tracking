@@ -1,5 +1,5 @@
 import bpy
-from ..helpers.delete_tracks import delete_selected_tracks
+from ..helpers.delete_selected_tracks import delete_selected_tracks
 from ..helpers.prefix_track import PREFIX_TRACK
 
 

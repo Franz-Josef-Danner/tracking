@@ -2,7 +2,10 @@ import bpy
 from .prefix_track import PREFIX_TRACK
 
 def select_track_tracks(clip=None):
-    """Selektiert alle Tracks mit dem Präfix TRACK_."""
+    """Select all tracks starting with ``TRACK_``.
+
+    Used by :class:`~operators.tracking.cleanup.CLIP_OT_select_active_tracks`.
+    """
     if clip is None:
         clip = bpy.context.space_data.clip
     if not clip:

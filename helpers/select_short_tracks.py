@@ -25,7 +25,10 @@ def _select_tracks_by_names(clip, name_list):
 
 
 def select_short_tracks(clip, min_length: int):
-    """Select TRACK_ markers shorter than ``min_length`` and return count."""
+    """Select ``TRACK_`` markers shorter than ``min_length`` and return count.
+
+    Used by :class:`~operators.tracking.cleanup.CLIP_OT_select_short_tracks`.
+    """
     undertracked = _get_undertracked_markers(clip, min_frames=min_length)
     for t in clip.tracking.tracks:
         t.select = False

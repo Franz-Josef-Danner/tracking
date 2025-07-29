@@ -11,7 +11,7 @@ from .utils import (
 )
 from .detection_helpers import detect_features_once
 from .proxy_helpers import enable_proxy, disable_proxy
-from .delete_tracks import delete_selected_tracks
+from .delete_selected_tracks import delete_selected_tracks
 from .marker_helpers import cleanup_all_tracks
 
 
