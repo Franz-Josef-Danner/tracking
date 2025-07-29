@@ -326,6 +326,8 @@ Daten wie besuchte Frames müssen lokal im Operator gehalten oder als
 Custom Property registriert werden.
 Seit Version 1.199 werden NEW_-Marker nur noch im Schritt "Rename" von Track Nr. 1
 in TRACK_ umbenannt. Dabei wird ausschließlich das Präfix ersetzt.
+Seit Version 1.200 verfügt das Stufen-Panel über einen Button "Track", der den
+vollständigen Tracking-Ablauf mit adaptivem Threshold startet.
 
 ## Tracker Lifecycle & Naming
 
