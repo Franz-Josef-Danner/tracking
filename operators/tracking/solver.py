@@ -4,14 +4,25 @@ import re
 from bpy.props import IntProperty, FloatProperty, BoolProperty
 
 # Import utility functions via relative path
-from ...helpers import *
-from ...helpers.utils import jump_to_frame_with_few_markers
 from ...helpers.prefix_new import PREFIX_NEW
 from ...helpers.prefix_track import PREFIX_TRACK
 from ...helpers.prefix_good import PREFIX_GOOD
 from ...helpers.prefix_test import PREFIX_TEST
 from ...helpers.select_track_tracks import select_track_tracks
 from ...helpers.select_new_tracks import select_new_tracks
+from ...helpers.select_short_tracks import select_short_tracks
+from ...helpers.delete_tracks import delete_selected_tracks
+from ...helpers.detection_helpers import (
+    detect_features_once,
+    find_next_low_marker_frame,
+)
+from ...helpers.marker_helpers import (
+    cleanup_all_tracks,
+    ensure_valid_selection,
+    select_tracks_by_names,
+    select_tracks_by_prefix,
+    get_undertracked_markers,
+)
 from ...helpers.feature_math import (
     calculate_base_values,
     apply_threshold_to_margin_and_distance,
@@ -22,12 +33,22 @@ from ...helpers.tracking_variants import (
     track_bidirectional,
     track_forward_only,
 )
-from ...helpers import (
-    delete_selected_tracks,
-    select_short_tracks,
-    find_next_low_marker_frame,
-    set_playhead_to_frame,
+from ...helpers.tracking_helpers import track_markers_range
+from ...helpers.utils import (
+    add_timer,
+    jump_to_frame_with_few_markers,
+    compute_detection_params,
+    pattern_base,
+    clamp_pattern_size,
+    detect_new_tracks,
+    remove_close_tracks,
+    add_pending_tracks,
+    clean_pending_tracks,
+    rename_pending_tracks,
+    update_frame_display,
+    cycle_motion_model,
 )
+from ...helpers.set_playhead_to_frame import set_playhead_to_frame
 from ..proxy import CLIP_OT_proxy_on, CLIP_OT_proxy_off, CLIP_OT_proxy_build
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
