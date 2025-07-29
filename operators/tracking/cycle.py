@@ -151,10 +151,10 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         print(
             f"[Track Nr.1] start {self._start} end {self._end} tracked {self._tracked}"
         )
-        return "DECIDE"
+        return "CLEANUP"
 
     def step_decide(self, context):
-        """Move the playhead to the next frame before cleanup."""
+        """Decide the next action after cleanup."""
         scene = context.scene
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
@@ -182,7 +182,7 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
             )
             update_frame_display(context)
             print(f"[Track Nr.1] next low frame {frame} ({count} markers)")
-            return "CLEANUP"
+            return "MOVE"
         else:
             print("[Track Nr.1] finish cycle")
             self.report({'INFO'}, "Zyklus beendet")
@@ -191,12 +191,12 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
     def step_cleanup(self, context):
         """Remove short tracks and keep the playhead at the target frame."""
         if not context.space_data.clip or self._tracked <= 0:
-            return "MOVE"
+            return "DECIDE"
 
         print("[Track Nr.1] cleanup short tracks")
         cleanup_short_tracks(context)
 
-        return "MOVE"
+        return "DECIDE"
 
     def step_move(self, context):
         """Continue to the detection step after housekeeping."""
