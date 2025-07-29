@@ -18,7 +18,6 @@ from ...helpers.detection_helpers import (
 )
 from ...helpers.marker_helpers import (
     cleanup_all_tracks,
-    ensure_valid_selection,
     select_tracks_by_names,
     select_tracks_by_prefix,
     get_undertracked_markers,
@@ -50,14 +49,18 @@ from ...helpers.utils import (
 )
 from ...helpers.set_playhead_to_frame import set_playhead_to_frame
 from ..proxy import CLIP_OT_proxy_on, CLIP_OT_proxy_off, CLIP_OT_proxy_build
+
+# Execute method implementations moved to separate modules
+from .exec.simple_operator import execute as simple_operator_execute
+from .exec.track_bidirectional import execute as track_bidirectional_execute
+from .exec.track_partial import execute as track_partial_execute
 class OBJECT_OT_simple_operator(bpy.types.Operator):
     bl_idname = "object.simple_operator"
     bl_label = "Simple Operator"
     bl_description = "Gibt eine Meldung aus"
 
     def execute(self, context):
-        self.report({'INFO'}, "Hello World from Addon")
-        return {'FINISHED'}
+        return simple_operator_execute(self, context)
 
 
 
@@ -70,42 +73,7 @@ class CLIP_OT_track_bidirectional(bpy.types.Operator):
     )
 
     def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
-
-        if not any(t.select for t in clip.tracking.tracks):
-            self.report({'WARNING'}, "Keine Tracks ausgew\u00e4hlt")
-            return {'CANCELLED'}
-
-        scene = context.scene
-        original_start = scene.frame_start
-        original_end = scene.frame_end
-        current = scene.frame_current
-
-
-        if not bpy.ops.clip.track_markers.poll():
-            self.report({'WARNING'}, "Tracking nicht m\u00f6glich")
-            return {'CANCELLED'}
-
-        scene.frame_start = original_start
-        scene.frame_end = current
-        bpy.ops.clip.track_markers(backwards=True, sequence=True)
-
-        scene.frame_start = current
-        scene.frame_end = original_end
-        scene.frame_current = current
-        update_frame_display(context)
-        bpy.ops.clip.track_markers(backwards=False, sequence=True)
-
-        scene.frame_start = original_start
-        scene.frame_end = original_end
-        scene.frame_current = current
-        update_frame_display(context)
-
-
-        return {'FINISHED'}
+        return track_bidirectional_execute(self, context)
 
 
 class CLIP_OT_track_partial(bpy.types.Operator):
@@ -117,39 +85,7 @@ class CLIP_OT_track_partial(bpy.types.Operator):
     )
 
     def execute(self, context):
-        scene = context.scene
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
-
-        if not ensure_valid_selection(clip, scene.frame_current):
-            self.report({'WARNING'}, "Keine g\u00fcltigen Marker ausgew\xe4hlt")
-            return {'CANCELLED'}
-
-        original_start = scene.frame_start
-        original_end = scene.frame_end
-        current = scene.frame_current
-
-        print(
-            f"[Track Partial] current {current} start {original_start} end {original_end}"
-        )
-
-        clip.use_proxy = True
-
-        if bpy.ops.clip.track_markers.poll():
-            print("[Track Partial] track backwards")
-            track_markers_range(scene, original_start, current, current, True)
-
-            print("[Track Partial] track forwards")
-            track_markers_range(scene, current, original_end, current, False)
-
-        print(f"[Track Partial] done at frame {scene.frame_current}")
-
-        scene.frame_start = original_start
-        scene.frame_end = original_end
-
-        return {'FINISHED'}
+        return track_partial_execute(self, context)
 
 class CLIP_OT_track_sequence(bpy.types.Operator):
     bl_idname = "clip.track_sequence"
