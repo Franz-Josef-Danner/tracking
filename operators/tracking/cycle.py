@@ -48,6 +48,7 @@ from ...helpers.utils import (
     update_frame_display,
     cycle_motion_model,
 )
+from ...helpers.proxy_helpers import enable_proxy
 from ...helpers.set_playhead_to_frame import set_playhead_to_frame
 from ..proxy import CLIP_OT_proxy_on, CLIP_OT_proxy_off, CLIP_OT_proxy_build
 class CLIP_OT_track_nr1(bpy.types.Operator):
