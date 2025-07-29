@@ -1,7 +1,7 @@
 import bpy
 import os
 
-from ...helpers.step_order import extract_step_sequence_from_cycle
+from tracking_tools.helpers.step_order import extract_step_sequence_from_cycle
 
 
 def get_fsm_sequence() -> list:
@@ -32,6 +32,7 @@ class CLIP_PT_stufen_panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.label(text="Automatischer Ablauf:")
+        layout.operator("clip.stufen_track", text="Track")
         for key in get_fsm_sequence():
             box = layout.box()
             box.label(text=key)

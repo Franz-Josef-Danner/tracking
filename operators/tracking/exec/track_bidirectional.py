@@ -1,5 +1,7 @@
 import bpy
-from ...helpers.utils import update_frame_display
+# NOTE: Absolute import ensures the module is found regardless of the
+# execution context within Blender.
+from tracking_tools.helpers.utils import update_frame_display
 
 
 def execute(self, context):

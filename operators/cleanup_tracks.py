@@ -1,6 +1,6 @@
 import bpy
-from ..helpers.delete_selected_tracks import delete_selected_tracks
-from ..helpers.prefix_track import PREFIX_TRACK
+from tracking_tools.helpers.delete_selected_tracks import delete_selected_tracks
+from tracking_tools.helpers.prefix_track import PREFIX_TRACK
 
 
 def max_track_error(scene, clip):

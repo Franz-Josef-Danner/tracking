@@ -1,6 +1,6 @@
 import bpy
 
-from ...helpers.set_playhead_to_frame import set_playhead_to_frame
+from tracking_tools.helpers.set_playhead_to_frame import set_playhead_to_frame
 
 class CLIP_OT_frame_jump_custom(bpy.types.Operator):
     bl_idname = "clip.frame_jump_custom"

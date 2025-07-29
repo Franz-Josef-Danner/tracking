@@ -10,6 +10,7 @@ from .marker_targeting import (
     marker_target_aggressive,
     marker_target_conservative,
 )
+from .threshold_math import compute_threshold_factor, adjust_threshold
 from .step_order import extract_step_sequence_from_cycle
 
 if bpy is not None:

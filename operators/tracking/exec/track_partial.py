@@ -1,6 +1,6 @@
 import bpy
-from ...helpers.marker_helpers import ensure_valid_selection
-from ...helpers.tracking_helpers import track_markers_range
+from tracking_tools.helpers.marker_helpers import ensure_valid_selection
+from tracking_tools.helpers.tracking_helpers import track_markers_range
 
 
 def execute(self, context):
