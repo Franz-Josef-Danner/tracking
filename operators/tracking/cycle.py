@@ -105,8 +105,6 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
         threshold = context.scene.threshold_value
 
         while attempt < max_attempts:
-            if bpy.ops.clip.proxy_off.poll():
-                bpy.ops.clip.proxy_off()
             detect_features_once(context, clip, threshold)
 
             marker_count = len(clip.tracking.tracks)
@@ -324,8 +322,6 @@ class CLIP_OT_track_nr2(bpy.types.Operator):
             if bpy.ops.clip.test_channel.poll():
                 bpy.ops.clip.test_channel()
             if bpy.ops.clip.cycle_detect.poll():
-                if bpy.ops.clip.proxy_off.poll():
-                    bpy.ops.clip.proxy_off()
                 bpy.ops.clip.cycle_detect()
             if bpy.ops.clip.track_partial.poll():
                 track_forward_only(scene.frame_start, scene.frame_end)

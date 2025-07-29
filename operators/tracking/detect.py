@@ -100,8 +100,6 @@ class CLIP_OT_detect_button(bpy.types.Operator):
 
         while True:
             names_before = {t.name for t in clip.tracking.tracks}
-            if bpy.ops.clip.proxy_off.poll():
-                bpy.ops.clip.proxy_off()
             print(
                 f"[Detect Features] threshold {detection_threshold:.8f}, "
                 f"margin {margin}, min_distance {min_distance}"
@@ -464,8 +462,6 @@ class CLIP_OT_all_detect(bpy.types.Operator):
         new_markers = 0
         while True:
             names_before = {t.name for t in clip.tracking.tracks}
-            if bpy.ops.clip.proxy_off.poll():
-                bpy.ops.clip.proxy_off()
             print(
                 f"[Detect Features] threshold {detection_threshold:.8f}, "
                 f"margin {margin}, min_distance {min_distance}"
