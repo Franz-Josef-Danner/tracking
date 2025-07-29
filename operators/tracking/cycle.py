@@ -55,6 +55,15 @@ from .cleanup import cleanup_short_tracks
 class CLIP_OT_track_nr1(bpy.types.Operator):
     bl_idname = "clip.track_nr1"
     bl_label = "Track Nr. 1"
+    bl_description = (
+        "1. Suche Frame mit zu wenig Markern\n"
+        "2. Setze Playhead\n"
+        "3. F\u00fchre Feature Detection durch\n"
+        "4. Wende Threshold-Tests an\n"
+        "5. Track bidirektional\n"
+        "6. Entferne schlechte Tracks\n"
+        "7. Wiederhole Zyklus bis Ende"
+    )
     bl_options = {'REGISTER', 'UNDO', 'BLOCKING'}
 
     _timer = None
@@ -254,6 +263,15 @@ class CLIP_OT_track_nr1(bpy.types.Operator):
 class CLIP_OT_track_nr2(bpy.types.Operator):
     bl_idname = "clip.track_nr2"
     bl_label = "Track Nr. 2"
+    bl_description = (
+        "1. Suche Frame mit zu wenig Markern\n"
+        "2. Setze Playhead\n"
+        "3. F\u00fchre Feature Detection durch\n"
+        "4. Wende Threshold-Tests an\n"
+        "5. Track bidirektional\n"
+        "6. Entferne schlechte Tracks\n"
+        "7. Wiederhole Zyklus bis Ende"
+    )
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
