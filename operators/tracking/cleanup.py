@@ -50,6 +50,44 @@ from ...helpers.utils import (
 )
 from ...helpers.set_playhead_to_frame import set_playhead_to_frame
 from ..proxy import CLIP_OT_proxy_on, CLIP_OT_proxy_off, CLIP_OT_proxy_build
+
+
+def cleanup_short_tracks(context):
+    """Delete ``TRACK_`` markers shorter than ``scene.frames_track``.
+
+    Parameters
+    ----------
+    context : :class:`bpy.types.Context`
+        Current Blender context providing ``space_data`` and ``scene``.
+
+    Returns
+    -------
+    int
+        Number of tracks removed.
+    """
+
+    clip = getattr(context.space_data, "clip", None)
+    if clip is None:
+        return 0
+
+    min_frames = getattr(context.scene, "frames_track", 0)
+    undertracked = get_undertracked_markers(clip, min_frames=min_frames)
+    if not undertracked:
+        return 0
+
+    names = [name for name, _ in undertracked]
+    select_tracks_by_names(clip, names)
+
+    removed = 0
+    if delete_selected_tracks():
+        removed = len(names)
+        clean_pending_tracks(clip)
+
+    for t in clip.tracking.tracks:
+        t.select = False
+
+    return removed
+
 class CLIP_OT_delete_selected(bpy.types.Operator):
     bl_idname = "clip.delete_selected"
     bl_label = "Delete"

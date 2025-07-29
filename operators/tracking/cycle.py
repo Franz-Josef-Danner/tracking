@@ -51,6 +51,7 @@ from ...helpers.utils import (
 from ...helpers.proxy_helpers import enable_proxy
 from ...helpers.set_playhead_to_frame import set_playhead_to_frame
 from ..proxy import CLIP_OT_proxy_on, CLIP_OT_proxy_off, CLIP_OT_proxy_build
+from .cleanup import cleanup_short_tracks
 class CLIP_OT_track_nr1(bpy.types.Operator):
     bl_idname = "clip.track_nr1"
     bl_label = "Track Nr. 1"
