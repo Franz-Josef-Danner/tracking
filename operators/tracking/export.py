@@ -2,11 +2,11 @@ import bpy
 from bpy.props import BoolProperty
 import unicodedata
 # Import helper via relative package path
-from ..helpers import strip_prefix
-from ..helpers.prefix_new import PREFIX_NEW
-from ..helpers.prefix_track import PREFIX_TRACK
-from ..helpers.prefix_good import PREFIX_GOOD
-from ..helpers.prefix_testing import PREFIX_TEST
+from ...helpers import strip_prefix
+from ...helpers.prefix_new import PREFIX_NEW
+from ...helpers.prefix_track import PREFIX_TRACK
+from ...helpers.prefix_good import PREFIX_GOOD
+from ...helpers.prefix_testing import PREFIX_TEST
 
 class CLIP_OT_prefix_new(bpy.types.Operator):
     bl_idname = "clip.prefix_new"
