@@ -10,13 +10,13 @@ from ...helpers import (
     get_undertracked_markers,
     delete_selected_tracks,
     select_short_tracks,
-    track_bidirectional,
     find_next_low_marker_frame,
     cleanup_all_tracks,
-    cleanup_error_tracks,
     set_playhead_to_frame,
     optimize_tracking_parameters,
 )
+from ...helpers.tracking_variants import track_bidirectional
+from ..cleanup_tracks import cleanup_error_tracks
 from ...helpers.threshold_math import compute_threshold_factor, adjust_threshold
 
 
