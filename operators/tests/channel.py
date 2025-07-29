@@ -1,5 +1,5 @@
 import bpy
-from ..helpers.tracking_helpers import (
+from ...helpers.tracking_helpers import (
     run_pattern_size_test,
     evaluate_motion_models,
     evaluate_channel_combinations,

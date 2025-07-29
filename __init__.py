@@ -15,6 +15,8 @@ except ModuleNotFoundError:  # allow import outside Blender
 
 # Use relative imports within the add-on package
 import os
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), "helpers"))
 if bpy is not None and not os.environ.get("BLENDER_TEST"):
     from .operators import operator_classes
     from .ui import panel_classes
