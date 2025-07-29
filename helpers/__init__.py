@@ -44,4 +44,8 @@ if bpy is not None:
         evaluate_channel_combinations,
     )
     from .set_playhead_to_frame import set_playhead_to_frame
+    from .optimize_tracking import (
+        set_color_channels,
+        optimize_tracking_parameters,
+    )
 
