@@ -1,18 +1,14 @@
 import bpy
-import inspect
+import os
 
-from ...operators.tracking.cycle import CLIP_OT_track_nr1
+from ...helpers.step_introspection import get_step_methods_with_calls
 
 
-def get_tracking_steps_info():
-    """Return (name, doc) pairs for all step_ methods in CLIP_OT_track_nr1."""
-    steps = []
-    for name, method in inspect.getmembers(CLIP_OT_track_nr1, predicate=inspect.isfunction):
-        if name.startswith("step_"):
-            doc = inspect.getdoc(method) or "Keine Beschreibung vorhanden"
-            first_line = doc.splitlines()[0] if doc else ""
-            steps.append((name, first_line))
-    return steps
+def get_tracking_steps_info() -> list:
+    """Return step method info from the tracking operator source file."""
+    base = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    path = os.path.join(base, "operators", "tracking", "cycle.py")
+    return get_step_methods_with_calls(os.path.abspath(path))
 
 class CLIP_PT_final_panel(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
@@ -38,9 +34,11 @@ class CLIP_PT_stufen_panel(bpy.types.Panel):
         layout.operator('clip.proxy_build', text='Proxy erstellen (50%)')
         layout.operator('clip.track_nr1', text='Track Nr. 1')
         layout.label(text="Automatischer Ablauf:")
-        box = layout.box()
-        for name, desc in get_tracking_steps_info():
-            box.label(text=f"{name} – {desc}")
+        for step in get_tracking_steps_info():
+            box = layout.box()
+            box.label(text=f"{step['name']} – {step['doc']}")
+            for call in step['calls']:
+                box.label(text=f"\u21b3 {call}", icon='DOT')
         layout.operator('clip.cleanup', text='Cleanup')
         layout.operator('clip.track_nr2', text='Track Nr. 2')
 
