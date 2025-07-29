@@ -5,7 +5,7 @@ from . import (
     cleanup_tracks,
     setup_defaults,
     test_setup_defaults,
-    test_variants,
+    tests,
     error_value,
 )
 
@@ -15,6 +15,6 @@ operator_classes = (
     *cleanup_tracks.operator_classes,
     *setup_defaults.operator_classes,
     *test_setup_defaults.operator_classes,
-    *test_variants.operator_classes,
+    *tests.operator_classes,
     *error_value.operator_classes,
 )
