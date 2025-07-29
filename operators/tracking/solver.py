@@ -28,6 +28,8 @@ from ...helpers import (
     find_next_low_marker_frame,
     set_playhead_to_frame,
 )
+from ...helpers.track_markers_range import track_markers_range
+from ...helpers._update_nf_and_motion_model import _update_nf_and_motion_model
 from ..proxy import CLIP_OT_proxy_on, CLIP_OT_proxy_off, CLIP_OT_proxy_build
 
 class OBJECT_OT_simple_operator(bpy.types.Operator):
@@ -1346,17 +1348,6 @@ def ensure_valid_selection(clip, frame):
     return valid
 
 
-def track_markers_range(scene, start, end, current, backwards):
-    """Run clip.track_markers for ``start`` to ``end``."""
-    scene.frame_start = start
-    scene.frame_end = end
-    if not backwards:
-        scene.frame_current = current
-        update_frame_display()
-    bpy.ops.clip.track_markers(backwards=backwards, sequence=True)
-
-
-def jump_to_first_frame_with_few_active_markers(min_required=5):
     scene = bpy.context.scene
     clip = bpy.context.space_data.clip
 
@@ -1397,116 +1388,6 @@ def find_low_marker_frame(clip, threshold):
 
 
 
-
-def _update_nf_and_motion_model(frame, clip):
-    """Maintain NF list and adjust motion model and pattern size.
-
-    Wenn die Pattern Size 100 erreicht, wird stattdessen der Wert aus
-    ``Scene.marker_frame`` um 10 % erh\u00f6ht (maximal das Doppelte des
-    Ausgangswerts). Sinkt die Pattern Size wieder unter 100, verkleinert sich
-    ``marker_frame`` schrittweise um 10 %, bis der Startwert erreicht ist.
-    """
-
-    global NF
-    settings = clip.tracking.settings
-    scene = bpy.context.scene
-    min_size, max_size = pattern_limits(clip)
-    if frame in NF:
-        cycle_motion_model(settings, clip, reset_size=False)
-        if settings.default_pattern_size < max_size:
-            settings.default_pattern_size = min(
-                int(settings.default_pattern_size * 1.1),
-                max_size,
-            )
-        else:
-            max_mf = DEFAULT_MARKER_FRAME * 2
-            scene.marker_frame = min(int(scene.marker_frame * 1.1), max_mf)
-    else:
-        NF.append(frame)
-        settings.default_motion_model = DEFAULT_MOTION_MODEL
-        settings.default_pattern_size = int(settings.default_pattern_size * 0.9)
-        if settings.default_pattern_size < max_size and scene.marker_frame > DEFAULT_MARKER_FRAME:
-            scene.marker_frame = max(int(scene.marker_frame * 0.9), DEFAULT_MARKER_FRAME)
-    settings.default_pattern_size = clamp_pattern_size(settings.default_pattern_size, clip)
-    settings.default_search_size = settings.default_pattern_size * 2
-
-def _Test_detect(self, context, use_defaults=True):
-    """Run the Test detect cycle optionally using default settings."""
-    clip = context.space_data.clip
-    if not clip:
-        self.report({'WARNING'}, "Kein Clip geladen")
-        return {'CANCELLED'}
-
-    mf_base = marker_target_conservative(context.scene.marker_frame)
-    mf_min = mf_base * 0.9
-    mf_max = mf_base * 1.1
-
-    if use_defaults:
-        bpy.ops.clip.setup_defaults(silent=True)
-
-
-    # Begin Test detect cycle
-    prev_best = TEST_END_FRAME
-    last_end = None
-    while True:
-        for cycle in range(4):
-            attempt = 0
-            while True:
-                # run detection for each attempt
-                bpy.ops.clip.detect_button()
-                count = sum(
-                    1 for t in clip.tracking.tracks if t.name.startswith(PREFIX_TEST)
-                )
-                context.scene.nm_count = count
-                if mf_min <= count <= mf_max or attempt >= 10:
-                    break
-                for t in clip.tracking.tracks:
-                    t.select = t.name.startswith(PREFIX_TEST)
-                delete_selected_tracks()
-                for t in clip.tracking.tracks:
-                    t.select = False
-                attempt += 1
-
-            if attempt >= 10 and not (mf_min <= count <= mf_max):
-                self.report({'WARNING'}, "Maximale Wiederholungen erreicht")
-                return {'CANCELLED'}
-
-            select_tracks_by_prefix(clip, PREFIX_TEST)
-            if bpy.ops.clip.track_full.poll():
-                bpy.ops.clip.track_full(silent=True)
-                last_end = LAST_TRACK_END
-                s = clip.tracking.settings
-                self.report(
-                    {'INFO'},
-                    f"Run end_frame={last_end}, pattern_size={s.default_pattern_size}, "
-                    f"motion_model={s.default_motion_model}, "
-                    f"channels=({s.use_default_red_channel}, {s.use_default_green_channel}, {s.use_default_blue_channel})",
-                )
-            else:
-                self.report({'WARNING'}, "Tracking nicht möglich")
-
-            select_tracks_by_prefix(clip, PREFIX_TEST)
-            delete_selected_tracks()
-            if bpy.ops.clip.pattern_up.poll():
-                bpy.ops.clip.pattern_up()
-            for t in clip.tracking.tracks:
-                t.select = False
-
-        if prev_best is None or (last_end is not None and last_end > prev_best):
-            prev_best = last_end
-        elif last_end is not None and last_end < prev_best:
-            break
-
-    from_settings = TEST_SETTINGS or {}
-    self.report(
-        {'INFO'},
-        f"Test Detect best_end_frame={TEST_END_FRAME}, "
-        f"pattern_size={from_settings.get('pattern_size')}, "
-        f"motion_model={from_settings.get('motion_model')}, "
-        f"channels={from_settings.get('channels_active')}"
-    )
-    self.report({'INFO'}, f"{count} Marker gefunden")
-    return {'FINISHED'}
 
 
 def _Test_detect_mm(self, context):
