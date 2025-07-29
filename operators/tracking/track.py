@@ -7,7 +7,7 @@ from bpy.props import IntProperty, FloatProperty, BoolProperty
 from ...helpers.prefix_new import PREFIX_NEW
 from ...helpers.prefix_track import PREFIX_TRACK
 from ...helpers.prefix_good import PREFIX_GOOD
-from ...helpers.prefix_test import PREFIX_TEST
+from ...helpers.prefix_testing import PREFIX_TEST
 from ...helpers.select_track_tracks import select_track_tracks
 from ...helpers.select_new_tracks import select_new_tracks
 from ...helpers.select_short_tracks import select_short_tracks
