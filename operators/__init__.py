@@ -10,6 +10,7 @@ from .proxy_toggle_operators import (
     CLIP_OT_proxy_disable,
 )
 from .marker_validierung import CLIP_OT_marker_valurierung
+from ..ui.ui_helpers import CLIP_OT_marker_status_popup
 from .bidirectional_tracking_operator import TRACKING_OT_bidirectional_tracking
 from .track_default_settings import TRACKING_OT_set_default_settings
 from .test_panel_operators import (
@@ -44,4 +45,5 @@ operator_classes = (
     TRACKING_OT_bidirectional_tracking,
     TRACKING_OT_set_default_settings,
     CLIP_OT_marker_valurierung,
+    CLIP_OT_marker_status_popup,
 )

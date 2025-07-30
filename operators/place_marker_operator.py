@@ -59,6 +59,16 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
             selected_tracks = [t for t in tracking.tracks if t.select]
             anzahl_neu = len(selected_tracks)
 
+            meldung = f"Versuch {attempt + 1}:\nGesetzte Marker: {anzahl_neu}"
+            if anzahl_neu < min_marker:
+                meldung += "\nMarkeranzahl zu niedrig.\nMarker werden gel\u00f6scht."
+            elif anzahl_neu > max_marker:
+                meldung += "\nMarkeranzahl ausreichend. Vorgang wird beendet."
+            else:
+                meldung += "\nMarkeranzahl im mittleren Bereich.\nErneuter Versuch folgt."
+
+            bpy.ops.clip.marker_status_popup('INVOKE_DEFAULT', message=meldung)
+
             if anzahl_neu > min_marker:
                 if anzahl_neu > max_marker:
                     self.report({'INFO'}, f"Marker erfolgreich gesetzt: {anzahl_neu}")
