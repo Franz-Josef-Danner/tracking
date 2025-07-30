@@ -69,23 +69,35 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
 
             bpy.ops.clip.marker_status_popup('INVOKE_DEFAULT', message=meldung)
 
+            new_threshold = detection_threshold
+
             if anzahl_neu > min_marker:
                 if anzahl_neu > max_marker:
                     self.report({'INFO'}, f"Marker erfolgreich gesetzt: {anzahl_neu}")
                     success = True
-                    break
                 else:
-                    detection_threshold = max(
+                    new_threshold = max(
                         detection_threshold * ((anzahl_neu + 0.1) / marker_adapt),
                         0.0001,
                     )
                     bpy.ops.clip.delete_track()
             else:
-                detection_threshold = max(
+                new_threshold = max(
                     detection_threshold * ((anzahl_neu + 0.1) / marker_adapt),
                     0.0001,
                 )
                 bpy.ops.clip.delete_track()
+
+            print(
+                f"\U0001F4CC Versuch {attempt + 1}: Marker={anzahl_neu}, "
+                f"Threshold={new_threshold:.4f}, Margin={margin}, "
+                f"Min-Dist={min_distance}"
+            )
+
+            detection_threshold = new_threshold
+
+            if success:
+                break
 
         if not success:
             self.report({'WARNING'}, "Maximale Versuche erreicht, Markeranzahl unzureichend.")
