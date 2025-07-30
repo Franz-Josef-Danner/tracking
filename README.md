@@ -328,6 +328,8 @@ Seit Version 1.199 werden NEW_-Marker nur noch im Schritt "Rename" von Track Nr.
 in TRACK_ umbenannt. Dabei wird ausschließlich das Präfix ersetzt.
 Seit Version 1.200 verfügt das Stufen-Panel über einen Button "Track", der den
 vollständigen Tracking-Ablauf mit adaptivem Threshold startet.
+Seit Version 1.201 kann über die Funktion `set_tracking_channels()` festgelegt
+werden, welche Farbkanäle beim Tracking berücksichtigt werden.
 
 ## Tracker Lifecycle & Naming
 
