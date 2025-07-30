@@ -18,6 +18,3 @@ class TRACKING_PT_api_functions(bpy.types.Panel):
         layout.operator('tracking.bidirectional_tracking')
 
 
-panel_classes = (
-    TRACKING_PT_api_functions,
-)
