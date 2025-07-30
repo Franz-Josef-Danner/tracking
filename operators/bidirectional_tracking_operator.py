@@ -1,5 +1,5 @@
 import bpy
-from ..helpers import invoke_clip_operator_safely
+from ..helpers.invoke_clip_operator_safely import invoke_clip_operator_safely
 
 
 class TrackingController:
@@ -69,7 +69,7 @@ class TrackingController:
         if short_tracks:
             for t in short_tracks:
                 t.select = True
-            bpy.ops.clip.delete_track()
+            invoke_clip_operator_safely("delete_track")
             print(f"{len(short_tracks)} kurze Tracks gel\u00f6scht (< {min_length} Frames).")
         else:
             print("Keine kurzen Tracks gefunden.")
