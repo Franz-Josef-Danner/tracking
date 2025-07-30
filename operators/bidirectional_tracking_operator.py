@@ -40,7 +40,7 @@ class TRACKING_OT_bidirectional_tracking(bpy.types.Operator):
         short_tracks = []
 
         for track in tracking.tracks:
-            if not track.select or track.mute:
+            if not track.select or all(marker.mute for marker in track.markers):
                 continue
 
             frame_numbers = [m.frame for m in track.markers if not m.mute]
