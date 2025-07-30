@@ -9,8 +9,7 @@ class TrackingController:
         self.context = context
         self.clip = context.space_data.clip
         self.tracking = self.clip.tracking
-        # 0 = forward, 1 = wait, 2 = backward, 3 = wait, 4 = cleanup
-        self.step = 0
+        self.step = 0  # 0 = forward, 1 = wait, 2 = backward, 3 = wait, 4 = cleanup
         self.prev_frame = context.scene.frame_current
         self.frame_stable_counter = 0
         self.marker_counts_prev = [len(t.markers) for t in self.tracking.tracks]
@@ -30,9 +29,7 @@ class TrackingController:
         self.prev_frame = current_frame
 
         marker_counts_now = [len(t.markers) for t in self.tracking.tracks]
-        new_markers = any(
-            now > prev for now, prev in zip(marker_counts_now, self.marker_counts_prev)
-        )
+        new_markers = any(now > prev for now, prev in zip(marker_counts_now, self.marker_counts_prev))
         self.marker_counts_prev = marker_counts_now
 
         if new_markers:
@@ -50,11 +47,7 @@ class TrackingController:
         print(f"[Tracking] Schritt: {self.step}")
         if self.step == 0:
             print("→ Starte Vorwärts-Tracking...")
-            invoke_clip_operator_safely(
-                "track_markers",
-                backwards=False,
-                sequence=True,
-            )
+            invoke_clip_operator_safely("track_markers", backwards=False, sequence=True)
             self.step = 1
         elif self.step == 1:
             print("→ Warte auf Abschluss des Vorwärts-Trackings...")
@@ -63,11 +56,7 @@ class TrackingController:
                 self.step = 2
         elif self.step == 2:
             print("→ Starte Rückwärts-Tracking...")
-            invoke_clip_operator_safely(
-                "track_markers",
-                backwards=True,
-                sequence=True,
-            )
+            invoke_clip_operator_safely("track_markers", backwards=True, sequence=True)
             self.step = 3
         elif self.step == 3:
             print("→ Warte auf Abschluss des Rückwärts-Trackings...")
@@ -101,9 +90,21 @@ class TrackingController:
             print(f"{len(short_tracks)} kurze Tracks gefunden (< {min_length} Frames):")
             for t in short_tracks:
                 print(f"  - {t.name}")
-            for t in short_tracks:
-                self.tracking.tracks.remove(t)
-            print(f"✓ {len(short_tracks)} kurze Tracks direkt entfernt.")
+                t.select = True
+
+            # Sicheren Clip-Editor-Kontext finden
+            area = next((a for a in self.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
+            if not area:
+                print("⚠ Kein CLIP_EDITOR im aktuellen Screen gefunden. Kann Tracks nicht löschen.")
+                return
+
+            override = self.context.copy()
+            override["area"] = area
+            override["region"] = next((r for r in area.regions if r.type == 'WINDOW'), None)
+            override["space_data"] = area.spaces.active
+
+            bpy.ops.clip.delete_track(override)
+            print("✓ Kurze Tracks über Operator gelöscht.")
         else:
             print("Keine kurzen Tracks gefunden.")
 
