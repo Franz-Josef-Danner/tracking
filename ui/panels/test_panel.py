@@ -24,7 +24,7 @@ class TRACKING_PT_test_details(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.operator("tracking.test_base", text="Test Base")
+        layout.operator('tracking.test_marker_base')
         layout.operator("tracking.test_place_marker", text="Place Marker")
         layout.operator("tracking.test_track_markers", text="Track Markers")
         layout.operator("tracking.test_error_value", text="Error Value")
