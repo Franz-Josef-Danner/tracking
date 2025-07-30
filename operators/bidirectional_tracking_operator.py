@@ -92,7 +92,7 @@ class TrackingController:
                 print(f"  - {t.name}")
                 t.select = True
 
-            # Versuche Kontext zu setzen
+            success = False
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
                     if area.type == 'CLIP_EDITOR':
@@ -109,10 +109,18 @@ class TrackingController:
                         try:
                             bpy.ops.clip.delete_track(**override)
                             print("✓ Tracks per Operator im Clip Editor gelöscht.")
-                            return
+                            success = True
+                            break
                         except RuntimeError as e:
                             print(f"⚠ Fehler beim Löschen: {e}")
-            print("⚠ Kein Clip Editor gefunden – Löschung per Operator nicht möglich.")
+                if success:
+                    break
+
+            if not success:
+                print("⚠ Operator fehlgeschlagen – Lösche Tracks direkt per API…")
+                for t in short_tracks:
+                    self.tracking.tracks.remove(t)
+                print("✓ Tracks direkt aus tracking.tracks entfernt.")
         else:
             print("Keine kurzen Tracks gefunden.")
 
