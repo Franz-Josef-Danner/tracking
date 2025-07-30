@@ -119,7 +119,7 @@ class TrackingController:
             if not success:
                 print("⚠ Operator fehlgeschlagen – Lösche Tracks direkt per API…")
                 for t in short_tracks:
-                    self.tracking.tracks.remove(t)
+                    self.tracking.tracks.remove(self.tracking.tracks.get(t.name))
                 print("✓ Tracks direkt aus tracking.tracks entfernt.")
         else:
             print("Keine kurzen Tracks gefunden.")
