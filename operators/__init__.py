@@ -5,6 +5,7 @@ from . import (
     cleanup_tracks,
     setup_defaults,
     setup_test_defaults,
+    tracking_default_settings_operator,
     tests,
     error_value,
 )
@@ -15,6 +16,7 @@ operator_classes = (
     *cleanup_tracks.operator_classes,
     *setup_defaults.operator_classes,
     *setup_test_defaults.operator_classes,
+    *tracking_default_settings_operator.operator_classes,
     *tests.operator_classes,
     *error_value.operator_classes,
 )
