@@ -20,5 +20,4 @@ class TRACKING_PT_api_functions(bpy.types.Panel):
         layout.operator('clip.proxy_enable', text='Proxy on')
         layout.operator('tracking.set_default_settings', text='Track Default')
         layout.operator('tracking.bidirectional_tracking')
-        layout.operator('tracking.test_marker_base')
         layout.operator("clip.cleanup_tracks", text="Cleanup Tracks")
