@@ -6,19 +6,19 @@ tracking_properties = {
         name="Marker/Frame",
         description="Basiswert f\u00fcr Marker pro Frame",
         default=20,
-        min=1,
+        min=5,
     ),
     "frames_per_track": IntProperty(
         name="Frames/Track",
         description="Minimale L\u00e4nge eines g\u00fcltigen Tracks",
-        default=10,
-        min=1,
+        default=25,
+        min=5,
     ),
-    "error_per_track": IntProperty(
+    "error_per_track": FloatProperty(
         name="Error/Track",
         description="Maximaler Fehler pro Track",
         default=2.0,
-        min=0.0
+        min=0.1
     ),
 }
 
