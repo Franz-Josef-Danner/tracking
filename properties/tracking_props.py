@@ -3,7 +3,7 @@ from bpy.props import IntProperty
 
 tracking_properties = {
     "marker_basis": IntProperty(
-        name="Marker / Frame",
+        name="Marker/Frame",
         description="Basiswert f\u00fcr Marker pro Frame",
         default=20,
         min=1,
