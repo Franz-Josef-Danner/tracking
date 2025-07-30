@@ -73,10 +73,42 @@ class TrackingController:
     def cleanup_short_tracks(self) -> None:
         scene = self.context.scene
         min_length = scene.get("frames_per_track", 10)
+        short_tracks: list[bpy.types.MovieTrackingTrack] = []
 
-        print(f"Starte automatische Bereinigung mit clean_tracks (Frames < {min_length})…")
-        bpy.ops.clip.clean_tracks(frames=min_length, error=0.0, action='DELETE_TRACK')
-        print(f"✓ Alle Tracks mit weniger als {min_length} Frames wurden entfernt.")
+        for track in self.tracking.tracks:
+            if not track.select or all(m.mute for m in track.markers):
+                continue
+
+            frames = [m.frame for m in track.markers if not m.mute]
+            if not frames:
+                continue
+
+            if (max(frames) - min(frames) + 1) < min_length:
+                short_tracks.append(track)
+
+        if short_tracks:
+            print(f"{len(short_tracks)} kurze Tracks gefunden (< {min_length} Frames):")
+            for t in short_tracks:
+                print(f"  - {t.name}")
+                t.select = True
+
+            area = next((a for a in self.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
+            if not area:
+                print("⚠ Kein CLIP_EDITOR im aktuellen Screen gefunden. Kann Tracks nicht löschen.")
+                return
+
+            override = self.context.copy()
+            override["area"] = area
+            override["region"] = next((r for r in area.regions if r.type == 'WINDOW'), None)
+            override["space_data"] = area.spaces.active
+
+            try:
+                bpy.ops.clip.delete_track(**override)
+                print("✓ Kurze Tracks per Operator im Clip Editor gelöscht.")
+            except RuntimeError:
+                print("⚠ Kontext nicht gültig für clip.delete_track. Tracks bleiben erhalten.")
+        else:
+            print("Keine kurzen Tracks gefunden.")
 
 
 _tracking_controller = None
