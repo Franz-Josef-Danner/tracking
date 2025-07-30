@@ -14,6 +14,8 @@ class TrackingController:
         self.prev_frame = context.scene.frame_current
         self.frame_stable_counter = 0
 
+        print("Bidirektionales Tracking initialisiert.")
+
     def is_tracking_done(self) -> bool:
         """Return ``True`` when the playhead stops moving."""
         current = self.context.scene.frame_current
@@ -25,7 +27,9 @@ class TrackingController:
         return self.frame_stable_counter >= 3
 
     def run(self):
+        print(f"[Tracking] Schritt: {self.step}")
         if self.step == 0:
+            print("→ Starte Vorwärts-Tracking...")
             invoke_clip_operator_safely(
                 "track_markers",
                 backwards=False,
@@ -33,9 +37,12 @@ class TrackingController:
             )
             self.step = 1
         elif self.step == 1:
+            print("→ Warte auf Abschluss des Vorwärts-Trackings...")
             if self.is_tracking_done():
+                print("✓ Vorwärts-Tracking abgeschlossen.")
                 self.step = 2
         elif self.step == 2:
+            print("→ Starte Rückwärts-Tracking...")
             invoke_clip_operator_safely(
                 "track_markers",
                 backwards=True,
@@ -43,10 +50,14 @@ class TrackingController:
             )
             self.step = 3
         elif self.step == 3:
+            print("→ Warte auf Abschluss des Rückwärts-Trackings...")
             if self.is_tracking_done():
+                print("✓ Rückwärts-Tracking abgeschlossen.")
                 self.step = 4
         elif self.step == 4:
+            print("→ Starte Bereinigung kurzer Tracks...")
             self.cleanup_short_tracks()
+            print("✓ Tracking und Cleanup abgeschlossen.")
             return None
         return 0.5
 
@@ -67,10 +78,12 @@ class TrackingController:
                 short_tracks.append(track)
 
         if short_tracks:
+            print(f"{len(short_tracks)} kurze Tracks gefunden (< {min_length} Frames):")
             for t in short_tracks:
+                print(f"  - {t.name}")
                 t.select = True
             invoke_clip_operator_safely("delete_track")
-            print(f"{len(short_tracks)} kurze Tracks gel\u00f6scht (< {min_length} Frames).")
+            print("✓ Kurze Tracks gelöscht.")
         else:
             print("Keine kurzen Tracks gefunden.")
 
@@ -82,13 +95,14 @@ def start_bidirectional_tracking(context: bpy.types.Context) -> None:
     global _tracking_controller
     _tracking_controller = TrackingController(context)
     bpy.app.timers.register(_tracking_controller.run, first_interval=0.5)
+    print("Timer für bidirektionales Tracking gestartet.")
 
 
 class TRACKING_OT_bidirectional_tracking(bpy.types.Operator):
     bl_idname = "tracking.bidirectional_tracking"
     bl_label = "Tracking"
     bl_description = (
-        "Bidirektionales Tracking aller selektierten Marker mit L\u00f6schung kurzer Tracks"
+        "Bidirektionales Tracking aller selektierten Marker mit Löschung kurzer Tracks"
     )
 
     @classmethod
@@ -104,14 +118,13 @@ class TRACKING_OT_bidirectional_tracking(bpy.types.Operator):
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
             self.report({'WARNING'}, "Kein Clip geladen")
+            print("⚠ Kein Clip geladen.")
             return {'CANCELLED'}
-        tracking = clip.tracking
 
-        # 1. Proxy aktivieren
         if not clip.use_proxy:
             clip.use_proxy = True
+            print("Proxy-Generierung aktiviert.")
 
-        # 2. Bidirektionales Tracking per Timer starten
+        print("Tracking wird gestartet...")
         start_bidirectional_tracking(context)
-
         return {'FINISHED'}
