@@ -6,6 +6,7 @@ from . import (
     cleanup_operator,
     test_setup_defaults,
     test_variants,
+    marker_valurierung,
 )
 
 from ..helpers import (
@@ -22,4 +23,5 @@ operator_classes = (
     *test_variants.operator_classes,
     *track_default_settings.operator_classes,
     *error_value_operator.operator_classes,
+    *marker_valurierung.operator_classes,
 )

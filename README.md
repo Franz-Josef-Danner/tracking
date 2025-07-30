@@ -328,6 +328,7 @@ Seit Version 1.199 werden NEW_-Marker nur noch im Schritt "Rename" von Track Nr.
 in TRACK_ umbenannt. Dabei wird ausschließlich das Präfix ersetzt.
 Seit Version 1.200 besitzt das Stufen-Panel einen Button "Cleanup Tracks", der
 das Skript `cleanup_operator` ausführt.
+Seit Version 1.201 startet der Operator "Marker Valurierung" einen Tracking-Zyklus, wenn zu wenige Marker vorhanden sind.
 
 ## Tracker Lifecycle & Naming
 

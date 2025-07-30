@@ -74,6 +74,11 @@ class CLIP_PT_test_detail_panel(bpy.types.Panel):
         layout.operator('clip.prefix_test', text='TEST Name')
         layout.operator('clip.select_test_tracks', text='TEST select')
         layout.operator('clip.error_value', text='Error Value')
+        layout.operator(
+            'clip.marker_valurierung',
+            text='Marker Valuierung',
+            icon='VIEWZOOM'
+        )
 
 
 panel_classes = (
