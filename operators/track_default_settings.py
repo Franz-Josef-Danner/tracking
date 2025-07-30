@@ -1,12 +1,4 @@
-bl_info = {
-    "name": "Tracking Tools",
-    "author": "Addon Maintainer",
-    "version": (1, 0),
-    "blender": (4, 4, 0),
-    "location": "Clip Editor > Sidebar > Addon",
-    "description": "Minimal tracking addon with custom properties",
-    "category": "Tracking",
-}
+"""Operator to set default Blender tracking settings."""
 
 import bpy
 
@@ -37,61 +29,18 @@ class TRACKING_OT_set_default_settings(bpy.types.Operator):
         self.report({'INFO'}, "Tracking-Defaults gesetzt")
         return {'FINISHED'}
 
-class TRACKING_PT_api_functions(bpy.types.Panel):
-    bl_label = "API Funktionen"
-    bl_idname = "TRACKING_PT_api_functions"
-    bl_space_type = 'CLIP_EDITOR'
-    bl_region_type = 'UI'
-    bl_category = "Addon"
 
-    def draw(self, context):
-        layout = self.layout
-        layout.label(text="Tracking-Vorgaben:")
-        layout.prop(context.scene, "marker_basis")
-        layout.prop(context.scene, "frames_per_track")
-
-        layout.separator()
-        layout.label(text="Initialisierung:")
-        layout.operator("tracking.set_default_settings")
-        layout.operator("tracking.marker_basis_values")
+classes = (TRACKING_OT_set_default_settings,)
 
 
-classes = (
-    TRACKING_OT_set_default_settings,
-    TRACKING_OT_marker_basis_values,
-    TRACKING_PT_api_functions,
-)
-
-
-def register():
-    if not hasattr(bpy.types.Scene, "marker_basis"):
-        bpy.types.Scene.marker_basis = bpy.props.IntProperty(
-            name="Marker/Frame",
-            default=20,
-            min=1,
-            description="Zielanzahl von Markern pro Frame",
-        )
-
-    if not hasattr(bpy.types.Scene, "frames_per_track"):
-        bpy.types.Scene.frames_per_track = bpy.props.IntProperty(
-            name="Frames/Track",
-            default=10,
-            min=1,
-            description="Minimale Länge eines gültigen Tracks",
-        )
-
+def register() -> None:
     for cls in classes:
         bpy.utils.register_class(cls)
 
 
-def unregister():
+def unregister() -> None:
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
-
-    if hasattr(bpy.types.Scene, "marker_basis"):
-        del bpy.types.Scene.marker_basis
-    if hasattr(bpy.types.Scene, "frames_per_track"):
-        del bpy.types.Scene.frames_per_track
 
 
 if __name__ == "__main__":
