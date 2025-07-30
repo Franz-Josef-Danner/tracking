@@ -52,4 +52,10 @@ if bpy is not None:
     from .clip_resolution import calculate_base_values_from_clip
     from .marker_validation import calculate_marker_target_from_ui
     from .tracking_defaults import set_default_tracking_settings
+    from .tracking_core import track_bidirectional
+    from .track_cleanup import cleanup_error_tracks, cleanup_tracks
+    from .frame_navigation import (
+        find_next_low_marker_frame,
+        set_playhead_to_frame_from_ui,
+    )
 

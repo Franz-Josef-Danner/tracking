@@ -2,19 +2,19 @@ import bpy
 
 from ..helpers.proxy_utils import create_proxy, enable_proxy, disable_proxy
 from ..helpers.feature_detection import detect_features_once
-from ..helpers.tracking_variants import track_bidirectional
+from ..helpers.tracking_core import track_bidirectional
 from ..helpers.select_short_tracks import select_short_tracks
-from ..operators.cleanup_tracks import cleanup_error_tracks
+from ..helpers.track_cleanup import cleanup_error_tracks, cleanup_tracks
+from ..helpers.frame_navigation import (
+    find_next_low_marker_frame,
+    set_playhead_to_frame_from_ui,
+)
 from ..helpers.optimize_tracking import optimize_tracking_parameters
 from ..helpers.clip_resolution import calculate_base_values_from_clip
 from ..helpers.marker_validation import calculate_marker_target_from_ui
 from ..helpers.tracking_defaults import set_default_tracking_settings
 
 
-def cleanup_tracks():
-    """Run the cleanup operator if available."""
-    if bpy.ops.clip.cleanup.poll():
-        bpy.ops.clip.cleanup()
 
 
 class TRACKING_OT_create_proxy(bpy.types.Operator):
@@ -146,6 +146,29 @@ class TRACKING_OT_optimize_tracking(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class TRACKING_OT_find_next_low_marker_frame(bpy.types.Operator):
+    bl_idname = "tracking.find_next_low_marker_frame"
+    bl_label = "Next Low Marker Frame"
+
+    def execute(self, context):
+        frame, count = find_next_low_marker_frame(context=context)
+        if frame is None:
+            self.report({'INFO'}, "Kein Frame gefunden")
+        else:
+            self.report({'INFO'}, f"Frame {frame} ({count} Marker)")
+        return {'FINISHED'}
+
+
+class TRACKING_OT_set_playhead_to_frame(bpy.types.Operator):
+    bl_idname = "tracking.set_playhead_to_frame"
+    bl_label = "Set Playhead"
+
+    def execute(self, context):
+        set_playhead_to_frame_from_ui(context=context)
+        self.report({'INFO'}, "Playhead gesetzt")
+        return {'FINISHED'}
+
+
 operator_classes = (
     TRACKING_OT_create_proxy,
     TRACKING_OT_enable_proxy,
@@ -159,4 +182,6 @@ operator_classes = (
     TRACKING_OT_cleanup_error_tracks,
     TRACKING_OT_cleanup_tracks,
     TRACKING_OT_optimize_tracking,
+    TRACKING_OT_find_next_low_marker_frame,
+    TRACKING_OT_set_playhead_to_frame,
 )
