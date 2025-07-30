@@ -20,6 +20,7 @@ class TRACKING_PT_api_functions(bpy.types.Panel):
         layout.operator("clip.proxy_enable", text="Proxy on")
         layout.operator("tracking.set_default_settings", text="Track Default")
         layout.operator("tracking.bidirectional_tracking")
+        layout.operator("tracking.delete_short_tracks", text="Delete Short Tracks")
         layout.operator("clip.cleanup_tracks", text="Cleanup Tracks")
         layout.operator("clip.low_marker_frame", text="Low Marker Frame")
         layout.operator(
