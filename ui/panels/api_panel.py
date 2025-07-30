@@ -15,5 +15,6 @@ class TRACKING_PT_api_functions(bpy.types.Panel):
         layout.prop(context.scene, 'error_per_track', text='Error/Track')
         layout.operator('tracking.marker_basis_values')
         layout.operator('tracking.place_marker')
+        layout.operator('tracking.set_default_settings', text='Track Default')
         layout.operator('tracking.bidirectional_tracking')
         layout.operator("clip.cleanup_tracks", text="Cleanup Tracks")
