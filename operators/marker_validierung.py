@@ -17,9 +17,17 @@ class CLIP_OT_marker_valurierung(bpy.types.Operator):
     bl_label = "Marker Valurierung"
     bl_description = "\u00dcberpr\u00fcft die Markeranzahl pro Frame und startet bei Bedarf den Tracking-Zyklus"
 
+    @classmethod
+    def poll(cls, context):
+        return (
+            context.area
+            and context.area.type == "CLIP_EDITOR"
+            and getattr(context.space_data, "clip", None)
+        )
+
     def execute(self, context):
         scene = context.scene
-        clip = context.space_data.clip
+        clip = getattr(context.space_data, "clip", None)
         if clip is None:
             self.report({"WARNING"}, "Kein Clip geladen")
             return {"CANCELLED"}

@@ -20,6 +20,30 @@ tracking_properties = {
         default=2.0,
         min=0.1
     ),
+    "marker_plus": IntProperty(
+        name="Marker Plus",
+        description="Interner Markerwert",
+        default=0,
+        min=0,
+    ),
+    "marker_adapt": IntProperty(
+        name="Marker Adapt",
+        description="Angepasste Markeranzahl",
+        default=0,
+        min=0,
+    ),
+    "max_marker": IntProperty(
+        name="Max Marker",
+        description="Obere Markergrenze",
+        default=0,
+        min=0,
+    ),
+    "min_marker": IntProperty(
+        name="Min Marker",
+        description="Untere Markergrenze",
+        default=0,
+        min=0,
+    ),
 }
 
 

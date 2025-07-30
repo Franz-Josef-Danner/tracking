@@ -7,9 +7,17 @@ class CLIP_OT_error_value(Operator):
     bl_label = "Error Value"
     bl_description = "Berechnet die Standardabweichung der Markerpositionen der Selektion"
 
+    @classmethod
+    def poll(cls, context):
+        return (
+            context.area
+            and context.area.type == "CLIP_EDITOR"
+            and getattr(context.space_data, "clip", None)
+        )
+
     def execute(self, context):
-        clip = context.space_data.clip
-        if not clip:
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
