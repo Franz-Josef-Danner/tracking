@@ -3,3 +3,4 @@ from .delete_tracks import delete_selected_tracks
 from .test_marker_base import test_marker_base
 from .track_markers_until_end import track_markers_until_end
 from .get_tracking_lengths import get_tracking_lengths
+from .cycle_motion_model import cycle_motion_model
