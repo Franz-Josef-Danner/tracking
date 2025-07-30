@@ -25,7 +25,7 @@ if bpy is not None:
         detect_features_main,
         detect_features_test,
     )
-    from .proxy_helpers import enable_proxy, disable_proxy
+    from .proxy_utils import create_proxy, enable_proxy, disable_proxy
     from .marker_helpers import (
         has_active_marker,
         get_undertracked_markers,
@@ -49,4 +49,7 @@ if bpy is not None:
         set_color_channels,
         optimize_tracking_parameters,
     )
+    from .clip_resolution import calculate_base_values_from_clip
+    from .marker_validation import calculate_marker_target_from_ui
+    from .tracking_defaults import set_default_tracking_settings
 
