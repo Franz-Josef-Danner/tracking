@@ -8,11 +8,17 @@ tracking_properties = {
         default=20,
         min=1,
     ),
-    "frames_track": IntProperty(
+    "frames_per_track": IntProperty(
         name="Frames/Track",
         description="Minimale L\u00e4nge eines g\u00fcltigen Tracks",
         default=10,
         min=1,
+    ),
+    "error_per_track": IntProperty(
+        name="Error/Track",
+        description="Maximaler Fehler pro Track",
+        default=2.0,
+        min=0.0
     ),
 }
 
