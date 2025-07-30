@@ -79,16 +79,16 @@ def max_track_error(scene: bpy.types.Scene, clip: bpy.types.MovieClip) -> float:
 
 def cleanup_error_tracks(scene: bpy.types.Scene, clip: bpy.types.MovieClip) -> None:
     """Delete tracking markers while decreasing the error threshold."""
-    original = scene.error_threshold
+    original = scene.error_per_track
     max_err = max_track_error(scene, clip)
-    scene.error_threshold = max_err
+    scene.error_per_track = max_err
     threshold = max_err
     while threshold >= original:
         while cleanup_pass(scene, clip, threshold):
             pass
         threshold *= 0.9
-        scene.error_threshold = threshold
-    scene.error_threshold = original
+        scene.error_per_track = threshold
+    scene.error_per_track = original
 
 
 def cleanup_pass(scene: bpy.types.Scene, clip: bpy.types.MovieClip, threshold: float) -> bool:
