@@ -7,8 +7,16 @@ class CLIP_OT_cleanup_tracks(bpy.types.Operator):
     bl_label = "Cleanup Error Tracks"
     bl_description = "Bereinigt automatisch alle fehlerhaften Tracks"
 
+    @classmethod
+    def poll(cls, context):
+        return (
+            context.area
+            and context.area.type == "CLIP_EDITOR"
+            and getattr(context.space_data, "clip", None)
+        )
+
     def execute(self, context):
-        clip = context.space_data.clip
+        clip = getattr(context.space_data, "clip", None)
         if clip is None:
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}

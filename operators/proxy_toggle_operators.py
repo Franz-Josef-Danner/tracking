@@ -10,10 +10,17 @@ class CLIP_OT_proxy_enable(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.space_data and context.space_data.clip
+        return (
+            context.area
+            and context.area.type == "CLIP_EDITOR"
+            and getattr(context.space_data, "clip", None)
+        )
 
     def execute(self, context):
-        clip = context.space_data.clip
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
         enable_proxy(clip)
         self.report({'INFO'}, "Proxy aktiviert")
         return {'FINISHED'}
@@ -26,10 +33,17 @@ class CLIP_OT_proxy_disable(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.space_data and context.space_data.clip
+        return (
+            context.area
+            and context.area.type == "CLIP_EDITOR"
+            and getattr(context.space_data, "clip", None)
+        )
 
     def execute(self, context):
-        clip = context.space_data.clip
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
         disable_proxy(clip)
         self.report({'INFO'}, "Proxy deaktiviert")
         return {'FINISHED'}

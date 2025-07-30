@@ -18,11 +18,18 @@ class CLIP_OT_low_marker_frame(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.space_data and context.space_data.clip
+        return (
+            context.area
+            and context.area.type == "CLIP_EDITOR"
+            and getattr(context.space_data, "clip", None)
+        )
 
     def execute(self, context):
         scene = context.scene
-        clip = context.space_data.clip
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({'WARNING'}, "Kein Clip geladen")
+            return {'CANCELLED'}
         threshold = scene.get("marker_basis", 20)
         marker_adapt = scene.get("marker_adapt", 20)
         marker_plus = scene.get("marker_plus", 25)
