@@ -65,7 +65,7 @@ class TrackingController:
                 self.step = 4
         elif self.step == 4:
             print("→ Starte Bereinigung kurzer Tracks...")
-            self.cleanup_short_tracks()
+            bpy.ops.tracking.delete_short_tracks()
             print("✓ Tracking und Cleanup abgeschlossen.")
             return None
         return 0.5
