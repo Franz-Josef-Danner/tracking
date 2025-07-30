@@ -15,3 +15,4 @@ from .test_cyclus import (
     run_tracking_optimization,
 )
 from .low_marker_frame import low_marker_frame
+from .invoke_clip_operator_safely import invoke_clip_operator_safely

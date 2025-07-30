@@ -1,4 +1,5 @@
 import bpy
+from ..helpers import invoke_clip_operator_safely
 
 
 class TrackingController:
@@ -25,16 +26,22 @@ class TrackingController:
 
     def run(self):
         if self.step == 0:
-            bpy.ops.clip.track_markers(
-                "INVOKE_DEFAULT", backwards=False, sequence=True
+            invoke_clip_operator_safely(
+                "track_markers",
+                invoke="INVOKE_DEFAULT",
+                backwards=False,
+                sequence=True,
             )
             self.step = 1
         elif self.step == 1:
             if self.is_tracking_done():
                 self.step = 2
         elif self.step == 2:
-            bpy.ops.clip.track_markers(
-                "INVOKE_DEFAULT", backwards=True, sequence=True
+            invoke_clip_operator_safely(
+                "track_markers",
+                invoke="INVOKE_DEFAULT",
+                backwards=True,
+                sequence=True,
             )
             self.step = 3
         elif self.step == 3:
