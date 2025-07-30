@@ -48,7 +48,7 @@ class TRACKING_PT_api_functions(bpy.types.Panel):
         layout = self.layout
         layout.label(text="Tracking-Vorgaben:")
         layout.prop(context.scene, "marker_basis")
-        layout.prop(context.scene, "frames_track")
+        layout.prop(context.scene, "frames_per_track")
 
         layout.separator()
         layout.label(text="Initialisierung:")
@@ -64,19 +64,21 @@ classes = (
 
 
 def register():
-    bpy.types.Scene.marker_basis = bpy.props.IntProperty(
-        name="Marker/Frame",
-        default=20,
-        min=1,
-        description="Zielanzahl von Markern pro Frame",
-    )
+    if not hasattr(bpy.types.Scene, "marker_basis"):
+        bpy.types.Scene.marker_basis = bpy.props.IntProperty(
+            name="Marker/Frame",
+            default=20,
+            min=1,
+            description="Zielanzahl von Markern pro Frame",
+        )
 
-    bpy.types.Scene.frames_track = bpy.props.IntProperty(
-        name="Frames/Track",
-        default=10,
-        min=1,
-        description="Minimale Länge eines gültigen Tracks",
-    )
+    if not hasattr(bpy.types.Scene, "frames_per_track"):
+        bpy.types.Scene.frames_per_track = bpy.props.IntProperty(
+            name="Frames/Track",
+            default=10,
+            min=1,
+            description="Minimale Länge eines gültigen Tracks",
+        )
 
     for cls in classes:
         bpy.utils.register_class(cls)
@@ -86,8 +88,10 @@ def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
 
-    del bpy.types.Scene.marker_basis
-    del bpy.types.Scene.frames_track
+    if hasattr(bpy.types.Scene, "marker_basis"):
+        del bpy.types.Scene.marker_basis
+    if hasattr(bpy.types.Scene, "frames_per_track"):
+        del bpy.types.Scene.frames_per_track
 
 
 if __name__ == "__main__":
