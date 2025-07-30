@@ -51,7 +51,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
             # Feature Detection
             bpy.ops.clip.detect_features(
                 margin=margin,
-                minimum_distance=min_distance,
+                min_distance=min_distance,
                 threshold=detection_threshold,
             )
 
