@@ -101,9 +101,9 @@ class TrackingController:
             print(f"{len(short_tracks)} kurze Tracks gefunden (< {min_length} Frames):")
             for t in short_tracks:
                 print(f"  - {t.name}")
-                t.select = True
-            invoke_clip_operator_safely("delete_track")
-            print("✓ Kurze Tracks gelöscht.")
+            for t in short_tracks:
+                self.tracking.tracks.remove(t)
+            print(f"✓ {len(short_tracks)} kurze Tracks direkt entfernt.")
         else:
             print("Keine kurzen Tracks gefunden.")
 
