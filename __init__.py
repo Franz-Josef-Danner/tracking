@@ -27,6 +27,12 @@ def register():
     if bpy is None:
         return
     register_properties()
+    bpy.types.Scene.error_threshold = bpy.props.FloatProperty(
+        name="Fehlertoleranz",
+        description="Maximal erlaubter Trackingfehler",
+        default=0.1,
+        min=0.0,
+    )
     for cls in classes:
         bpy.utils.register_class(cls)
 
@@ -36,6 +42,8 @@ def unregister():
         return
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
+    if hasattr(bpy.types.Scene, "error_threshold"):
+        del bpy.types.Scene.error_threshold
     unregister_properties()
 
 
