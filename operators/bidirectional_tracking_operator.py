@@ -36,9 +36,9 @@ class TrackingController:
             self.tracking_done_delay = 0
             return False
 
-        if self.frame_stable_counter >= 2:
+        if self.frame_stable_counter >= 3:
             self.tracking_done_delay += 1
-            if self.tracking_done_delay >= 2:
+            if self.tracking_done_delay >= 3:
                 return True
 
         return False
@@ -90,7 +90,6 @@ class TrackingController:
             print(f"{len(short_tracks)} kurze Tracks gefunden (< {min_length} Frames):")
             for t in short_tracks:
                 print(f"  - {t.name}")
-                t.select = True
 
             success = False
             for window in bpy.context.window_manager.windows:
@@ -107,6 +106,8 @@ class TrackingController:
                             "blend_data": bpy.data
                         }
                         try:
+                            for t in short_tracks:
+                                t.select = True
                             bpy.ops.clip.delete_track(**override)
                             print("✓ Tracks per Operator im Clip Editor gelöscht.")
                             success = True
@@ -118,10 +119,12 @@ class TrackingController:
 
             if not success:
                 print("⚠ Operator fehlgeschlagen – Lösche Tracks direkt per API…")
-                # Neue Methode: Track entfernen über name-basierte Löschung
                 names_to_remove = [t.name for t in short_tracks]
-                self.tracking.tracks.clear()
-                print(f"✓ Alle Tracks gelöscht, bitte gewünschte erneut setzen (Workaround).")
+                for name in names_to_remove:
+                    track = self.tracking.tracks.get(name)
+                    if track:
+                        self.tracking.tracks.remove(track)
+                        print(f"✓ Track '{name}' gelöscht.")
         else:
             print("Keine kurzen Tracks gefunden.")
 
