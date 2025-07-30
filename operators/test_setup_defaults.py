@@ -1,5 +1,6 @@
 import bpy
 from bpy.props import BoolProperty
+from ..helpers import set_tracking_channels
 
 class CLIP_OT_setup_defaults(bpy.types.Operator):
     bl_idname = "clip.setup_defaults"
@@ -23,9 +24,7 @@ class CLIP_OT_setup_defaults(bpy.types.Operator):
         settings.default_pattern_match = 'KEYFRAME'
         settings.use_default_brute = True
         settings.use_default_normalization = True
-        settings.use_default_red_channel = True
-        settings.use_default_green_channel = True
-        settings.use_default_blue_channel = True
+        set_tracking_channels(clip, True, True, True)
 
         settings.default_weight = 1.0
         settings.default_correlation_min = 0.9

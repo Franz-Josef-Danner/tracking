@@ -10,6 +10,7 @@ from ...helpers.prefix_new import PREFIX_NEW
 from ...helpers.prefix_track import PREFIX_TRACK
 from ...helpers.prefix_good import PREFIX_GOOD
 from ...helpers.prefix_test import PREFIX_TEST
+from ...helpers import set_tracking_channels
 from ...helpers.select_track_tracks import select_track_tracks
 from ...helpers.select_new_tracks import select_new_tracks
 from ...helpers.feature_math import (
@@ -641,9 +642,7 @@ class CLIP_OT_motion_detect(bpy.types.Operator):
             "pattern_match", settings.default_pattern_match
         )
         r, g, b = TEST_SETTINGS.get("channels_active", (True, True, True))
-        settings.use_default_red_channel = r
-        settings.use_default_green_channel = g
-        settings.use_default_blue_channel = b
+        set_tracking_channels(clip, r, g, b)
 
         for model in MOTION_MODELS:
             settings.default_motion_model = model
@@ -717,11 +716,8 @@ class CLIP_OT_channel_detect(bpy.types.Operator):
         )
 
         for channels in CHANNEL_COMBOS:
-            (
-                settings.use_default_red_channel,
-                settings.use_default_green_channel,
-                settings.use_default_blue_channel,
-            ) = channels
+            r, g, b = channels
+            set_tracking_channels(clip, r, g, b)
             end_frame = _Test_detect_mm(self, context)
             if end_frame is None:
                 continue
@@ -735,11 +731,8 @@ class CLIP_OT_channel_detect(bpy.types.Operator):
                 best_end = end_frame
                 best_channels = channels
 
-        (
-            settings.use_default_red_channel,
-            settings.use_default_green_channel,
-            settings.use_default_blue_channel,
-        ) = best_channels
+        r, g, b = best_channels
+        set_tracking_channels(clip, r, g, b)
         TEST_END_FRAME = best_end
         TEST_SETTINGS["channels_active"] = best_channels
 
@@ -793,9 +786,7 @@ class CLIP_OT_apply_settings(bpy.types.Operator):
         channels = TEST_SETTINGS.get("channels_active")
         if channels:
             r, g, b = channels
-            settings.use_default_red_channel = r
-            settings.use_default_green_channel = g
-            settings.use_default_blue_channel = b
+            set_tracking_channels(clip, r, g, b)
 
         self.report({'INFO'}, "Gespeicherte Test Detect Werte gesetzt")
         return {'FINISHED'}
@@ -2106,7 +2097,7 @@ class CLIP_OT_channel_r_on(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        clip.tracking.settings.use_default_red_channel = True
+        set_tracking_channels(clip, red=True)
         return {'FINISHED'}
 
 
@@ -2121,7 +2112,7 @@ class CLIP_OT_channel_r_off(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        clip.tracking.settings.use_default_red_channel = False
+        set_tracking_channels(clip, red=False)
         return {'FINISHED'}
 
 
@@ -2136,7 +2127,7 @@ class CLIP_OT_channel_g_on(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        clip.tracking.settings.use_default_green_channel = True
+        set_tracking_channels(clip, green=True)
         return {'FINISHED'}
 
 
@@ -2151,7 +2142,7 @@ class CLIP_OT_channel_g_off(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        clip.tracking.settings.use_default_green_channel = False
+        set_tracking_channels(clip, green=False)
         return {'FINISHED'}
 
 
@@ -2166,7 +2157,7 @@ class CLIP_OT_channel_b_on(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        clip.tracking.settings.use_default_blue_channel = True
+        set_tracking_channels(clip, blue=True)
         return {'FINISHED'}
 
 
@@ -2181,7 +2172,7 @@ class CLIP_OT_channel_b_off(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        clip.tracking.settings.use_default_blue_channel = False
+        set_tracking_channels(clip, blue=False)
         return {'FINISHED'}
 
 
