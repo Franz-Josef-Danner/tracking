@@ -37,27 +37,6 @@ class TRACKING_OT_set_default_settings(bpy.types.Operator):
         self.report({'INFO'}, "Tracking-Defaults gesetzt")
         return {'FINISHED'}
 
-
-class TRACKING_OT_marker_basis_values(bpy.types.Operator):
-    """Berechnet Marker Basis Werte"""
-    bl_idname = "tracking.marker_basis_values"
-    bl_label = "Marker Basis Value"
-
-    def execute(self, context):
-        scene = context.scene
-        basis = scene.marker_basis
-        marker_plus = basis * 4
-        marker_adapt = marker_plus
-        max_marker = int(marker_adapt * 1.1)
-        min_marker = int(marker_adapt * 0.9)
-        scene["marker_plus"] = marker_plus
-        scene["marker_adapt"] = marker_adapt
-        scene["max_marker"] = max_marker
-        scene["min_marker"] = min_marker
-        self.report({'INFO'}, f"Max {max_marker} Min {min_marker}")
-        return {'FINISHED'}
-
-
 class TRACKING_PT_api_functions(bpy.types.Panel):
     bl_label = "API Funktionen"
     bl_idname = "TRACKING_PT_api_functions"
