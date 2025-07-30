@@ -13,6 +13,7 @@ class TRACKING_PT_api_functions(bpy.types.Panel):
         layout.prop(context.scene, 'marker_basis', text='Marker/Frame')
         layout.operator('tracking.marker_basis_values')
         layout.operator('tracking.place_marker')
+        layout.operator('tracking.bidirectional_tracking')
 
 
 panel_classes = (
