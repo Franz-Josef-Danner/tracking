@@ -5,7 +5,7 @@ def test_marker_base(context):
     """Berechnet Marker-Basiswerte aus dem Eingabefeld 'marker/Frame'."""
 
     scene = context.scene
-    marker_basis = scene.get("marker_per_frame", 12)
+    marker_basis = scene.get("marker_basis", 12)
 
     marker_plus = marker_basis / 3
     marker_adapt = marker_plus
