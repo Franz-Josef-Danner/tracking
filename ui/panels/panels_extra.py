@@ -8,8 +8,8 @@ class CLIP_PT_test_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        # Dieses Panel bleibt bewusst leer, um die API-Funktionen
-        # nicht doppelt darzustellen.
+        layout.label(text="Initialisierung:")
+        layout.operator("tracking.set_default_settings")
         
 
 class CLIP_PT_test_subpanel(bpy.types.Panel):
