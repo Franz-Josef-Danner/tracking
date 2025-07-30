@@ -29,7 +29,11 @@ class TRACKING_OT_bidirectional_tracking(bpy.types.Operator):
             clip.use_proxy = True
 
         # 2. Selektierte Marker bidirektional tracken
-        bpy.ops.clip.track_markers(backwards=True, forwards=True)
+        # Marker vorwärts tracken
+        bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
+
+        # Dann rückwärts tracken
+        bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
 
         # 3. Kurze Tracks identifizieren und l\u00f6schen
         min_length = scene.get("frames_per_track", 10)
