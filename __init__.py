@@ -18,7 +18,10 @@ if bpy is not None and not os.environ.get("BLENDER_TEST"):
     from .operators import operator_classes
     from .ui.panels import panel_classes
     from .properties import register_properties, unregister_properties
-    classes = operator_classes + panel_classes
+    from .operators.bidirectional_tracking_operator import (
+        TRACKING_OT_bidirectional_tracking,
+    )
+    classes = operator_classes + panel_classes + (TRACKING_OT_bidirectional_tracking,)
 else:
     classes = ()
 
