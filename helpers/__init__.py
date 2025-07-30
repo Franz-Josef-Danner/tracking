@@ -5,6 +5,8 @@ from .track_markers_until_end import track_markers_until_end
 from .get_tracking_lengths import get_tracking_lengths
 from .cycle_motion_model import cycle_motion_model
 from .set_tracking_channels import set_tracking_channels
+from .proxy_enable import enable_proxy
+from .proxy_disable import disable_proxy
 from .test_cyclus import (
     evaluate_tracking,
     find_optimal_pattern,
