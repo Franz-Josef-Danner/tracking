@@ -1,5 +1,5 @@
 import bpy
-from ..helpers.test_marker_base import test_marker_base
+from .test_marker_base import test_marker_base
 
 
 class TRACKING_OT_test_marker_base(bpy.types.Operator):
