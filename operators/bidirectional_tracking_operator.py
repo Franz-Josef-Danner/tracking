@@ -13,18 +13,38 @@ class TrackingController:
         self.step = 0
         self.prev_frame = context.scene.frame_current
         self.frame_stable_counter = 0
+        self.marker_counts_prev = [len(t.markers) for t in self.tracking.tracks]
+        self.tracking_done_delay = 0
 
         print("Bidirektionales Tracking initialisiert.")
 
-    def is_tracking_done(self) -> bool:
-        """Return ``True`` when the playhead stops moving."""
-        current = self.context.scene.frame_current
-        if current == self.prev_frame:
+    def is_tracking_done_robust(self) -> bool:
+        current_frame = self.context.scene.frame_current
+        same_frame = current_frame == self.prev_frame
+
+        if same_frame:
             self.frame_stable_counter += 1
         else:
             self.frame_stable_counter = 0
-        self.prev_frame = current
-        return self.frame_stable_counter >= 3
+
+        self.prev_frame = current_frame
+
+        marker_counts_now = [len(t.markers) for t in self.tracking.tracks]
+        new_markers = any(
+            now > prev for now, prev in zip(marker_counts_now, self.marker_counts_prev)
+        )
+        self.marker_counts_prev = marker_counts_now
+
+        if new_markers:
+            self.tracking_done_delay = 0
+            return False
+
+        if self.frame_stable_counter >= 3:
+            self.tracking_done_delay += 1
+            if self.tracking_done_delay >= 3:
+                return True
+
+        return False
 
     def run(self):
         print(f"[Tracking] Schritt: {self.step}")
@@ -38,7 +58,7 @@ class TrackingController:
             self.step = 1
         elif self.step == 1:
             print("→ Warte auf Abschluss des Vorwärts-Trackings...")
-            if self.is_tracking_done():
+            if self.is_tracking_done_robust():
                 print("✓ Vorwärts-Tracking abgeschlossen.")
                 self.step = 2
         elif self.step == 2:
@@ -51,7 +71,7 @@ class TrackingController:
             self.step = 3
         elif self.step == 3:
             print("→ Warte auf Abschluss des Rückwärts-Trackings...")
-            if self.is_tracking_done():
+            if self.is_tracking_done_robust():
                 print("✓ Rückwärts-Tracking abgeschlossen.")
                 self.step = 4
         elif self.step == 4:
