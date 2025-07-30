@@ -92,7 +92,6 @@ class TrackingController:
                 print(f"  - {t.name}")
                 t.select = True
 
-            # Sicheren Clip-Editor-Kontext finden
             area = next((a for a in self.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
             if not area:
                 print("⚠ Kein CLIP_EDITOR im aktuellen Screen gefunden. Kann Tracks nicht löschen.")
@@ -103,7 +102,7 @@ class TrackingController:
             override["region"] = next((r for r in area.regions if r.type == 'WINDOW'), None)
             override["space_data"] = area.spaces.active
 
-            bpy.ops.clip.delete_track(override)
+            bpy.ops.clip.delete_track(**override)
             print("✓ Kurze Tracks über Operator gelöscht.")
         else:
             print("Keine kurzen Tracks gefunden.")
