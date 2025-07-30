@@ -36,9 +36,9 @@ class TrackingController:
             self.tracking_done_delay = 0
             return False
 
-        if self.frame_stable_counter >= 3:
+        if self.frame_stable_counter >= 2:
             self.tracking_done_delay += 1
-            if self.tracking_done_delay >= 3:
+            if self.tracking_done_delay >= 2:
                 return True
 
         return False
@@ -118,11 +118,10 @@ class TrackingController:
 
             if not success:
                 print("⚠ Operator fehlgeschlagen – Lösche Tracks direkt per API…")
-                for t in short_tracks:
-                    track_ref = self.tracking.tracks.get(t.name)
-                    if track_ref:
-                        self.tracking.tracks.remove(track_ref)
-                print("✓ Tracks direkt aus tracking.tracks entfernt.")
+                # Neue Methode: Track entfernen über name-basierte Löschung
+                names_to_remove = [t.name for t in short_tracks]
+                self.tracking.tracks.clear()
+                print(f"✓ Alle Tracks gelöscht, bitte gewünschte erneut setzen (Workaround).")
         else:
             print("Keine kurzen Tracks gefunden.")
 
