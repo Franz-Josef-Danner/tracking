@@ -1,7 +1,7 @@
 import bpy
 
 from ..helpers.low_marker_frame import low_marker_frame
-from ..helpers.test_cyclus import test_cyclus
+from ..helpers.test_cyclus import run_tracking_optimization
 
 
 class CLIP_OT_low_marker_frame(bpy.types.Operator):
@@ -49,7 +49,7 @@ class CLIP_OT_low_marker_frame(bpy.types.Operator):
             self.repeat_frame[frame] += 1
 
             if self.repeat_frame[frame] >= self.fund_grenze:
-                test_cyclus()
+                run_tracking_optimization(context)
                 self.report(
                     {'INFO'},
                     f"Zyklus-Test ausgelöst nach {self.fund_grenze} Funden bei Frame {frame}",
