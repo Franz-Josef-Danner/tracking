@@ -25,7 +25,7 @@ class TRACKING_OT_bidirectional_tracking(bpy.types.Operator):
         bpy.ops.clip.track_markers(backwards=True, forwards=True)
 
         # 3. Kurze Tracks identifizieren und l\u00f6schen
-        min_length = scene.get("frames_track", 10)
+        min_length = scene.get("frames_per_track", 10)
         short_tracks = []
 
         for track in tracking.tracks:
