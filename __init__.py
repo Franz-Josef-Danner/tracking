@@ -18,6 +18,7 @@ if bpy is not None and not os.environ.get("BLENDER_TEST"):
     from .operators import operator_classes
     from .ui.panels import panel_classes
     from .properties import register_properties, unregister_properties
+    from .operators import track_default_settings
     from .operators.bidirectional_tracking_operator import (
         TRACKING_OT_bidirectional_tracking,
     )
@@ -30,6 +31,7 @@ def register():
     if bpy is None:
         return
     register_properties()
+    track_default_settings.register()
     for cls in classes:
         bpy.utils.register_class(cls)
 
@@ -39,6 +41,7 @@ def unregister():
         return
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
+    track_default_settings.unregister()
     unregister_properties()
 
 
