@@ -16,5 +16,4 @@ class TRACKING_PT_api_functions(bpy.types.Panel):
         layout.operator('tracking.marker_basis_values')
         layout.operator('tracking.place_marker')
         layout.operator('tracking.bidirectional_tracking')
-
-
+        layout.operator("clip.cleanup_tracks", text="Cleanup Tracks")
