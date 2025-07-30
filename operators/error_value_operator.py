@@ -41,3 +41,7 @@ class CLIP_OT_error_value(Operator):
         print(f"[Error Value] error_x={error_x:.6f}, error_y={error_y:.6f}, total={total_error:.6f}")
 
         return {'FINISHED'}
+
+
+# Alias for backward compatibility
+error_value = CLIP_OT_error_value
