@@ -11,18 +11,18 @@ class TrackingController:
         self.tracking = self.clip.tracking
         # 0 = forward, 1 = wait, 2 = backward, 3 = wait, 4 = cleanup
         self.step = 0
-        self.prev_marker_counts = self.get_marker_lengths()
-
-    def get_marker_lengths(self) -> list[int]:
-        """Return marker count per selected track."""
-        return [len(t.markers) for t in self.tracking.tracks if t.select]
+        self.prev_frame = context.scene.frame_current
+        self.frame_stable_counter = 0
 
     def is_tracking_done(self) -> bool:
-        """Check if marker counts stopped changing."""
-        current_counts = self.get_marker_lengths()
-        changed = current_counts != self.prev_marker_counts
-        self.prev_marker_counts = current_counts
-        return changed
+        """Return ``True`` when the playhead stops moving."""
+        current = self.context.scene.frame_current
+        if current == self.prev_frame:
+            self.frame_stable_counter += 1
+        else:
+            self.frame_stable_counter = 0
+        self.prev_frame = current
+        return self.frame_stable_counter >= 3
 
     def run(self):
         if self.step == 0:
