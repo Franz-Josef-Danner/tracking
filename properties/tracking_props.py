@@ -1,5 +1,5 @@
 import bpy
-from bpy.props import IntProperty
+from bpy.props import IntProperty, FloatProperty
 
 tracking_properties = {
     "marker_basis": IntProperty(
