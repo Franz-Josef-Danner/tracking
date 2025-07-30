@@ -26,7 +26,9 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
         tracking = clip.tracking
         settings = tracking.settings
 
-        detection_threshold = settings.correlation_min
+        detection_threshold = getattr(
+            settings, "default_correlation_min", 0.75
+        )
         marker_adapt = scene.get("marker_adapt", 80)
         max_marker = scene.get("max_marker", marker_adapt * 1.1)
         min_marker = scene.get("min_marker", marker_adapt * 0.9)
