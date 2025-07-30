@@ -2,6 +2,38 @@ import bpy
 import math
 
 
+def perform_marker_detection(
+    clip: bpy.types.MovieClip,
+    tracking: bpy.types.MovieTracking,
+    threshold: float,
+    margin_base: int,
+    min_distance_base: int,
+) -> int:
+    """F\u00fchrt ``bpy.ops.clip.detect_features()`` aus und gibt die
+    Anzahl der selektierten Marker zur\u00fcck."""
+
+    import math
+
+    factor = math.log10(threshold * 1e8) / 8
+    margin = max(1, int(margin_base * factor))
+    min_distance = max(1, int(min_distance_base * factor))
+
+    if clip.use_proxy:
+        clip.use_proxy = False
+
+    result = bpy.ops.clip.detect_features(
+        margin=margin,
+        min_distance=min_distance,
+        threshold=threshold,
+    )
+
+    if result != {"FINISHED"}:
+        print(f"[Warnung] Feature Detection nicht erfolgreich: {result}")
+
+    selected_tracks = [t for t in tracking.tracks if t.select]
+    return len(selected_tracks)
+
+
 class TRACKING_OT_place_marker(bpy.types.Operator):
     bl_idname = "tracking.place_marker"
     bl_label = "Place Marker"
@@ -40,24 +72,13 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
         success = False
 
         for attempt in range(20):
-            factor = math.log10(detection_threshold * 1e8) / 8
-            margin = max(1, int(margin_base * factor))
-            min_distance = max(1, int(min_distance_base * factor))
-
-            # Proxy deaktivieren
-            if clip.use_proxy:
-                clip.use_proxy = False
-
-            # Feature Detection
-            bpy.ops.clip.detect_features(
-                margin=margin,
-                min_distance=min_distance,
-                threshold=detection_threshold,
+            anzahl_neu = perform_marker_detection(
+                clip,
+                tracking,
+                detection_threshold,
+                margin_base,
+                min_distance_base,
             )
-
-            # Selektierte Marker z\u00e4hlen
-            selected_tracks = [t for t in tracking.tracks if t.select]
-            anzahl_neu = len(selected_tracks)
 
             meldung = f"Versuch {attempt + 1}:\nGesetzte Marker: {anzahl_neu}"
             if anzahl_neu < min_marker:
@@ -90,8 +111,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
 
             print(
                 f"\U0001F4CC Versuch {attempt + 1}: Marker={anzahl_neu}, "
-                f"Threshold={new_threshold:.4f}, Margin={margin}, "
-                f"Min-Dist={min_distance}"
+                f"Threshold={new_threshold:.4f}"
             )
 
             detection_threshold = new_threshold
