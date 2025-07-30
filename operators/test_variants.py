@@ -1,7 +1,7 @@
 import bpy
 from ..helpers.delete_tracks import delete_selected_tracks
 from ..helpers.utils import LAST_TRACK_END
-from .error_value import calculate_clip_error
+from ..helpers.error_value_operator import calculate_clip_error
 from .tracking.solver import detect_features_once, enable_proxy
 
 from ..helpers.track_full_clip import track_full_clip
