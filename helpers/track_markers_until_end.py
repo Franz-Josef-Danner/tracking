@@ -1,5 +1,7 @@
 import bpy
 
+from .invoke_clip_operator_safely import invoke_clip_operator_safely
+
 
 def track_markers_until_end() -> None:
     """Track selected markers forward until the end frame."""
@@ -11,8 +13,8 @@ def track_markers_until_end() -> None:
         print("❌ Kein Clip aktiv oder falscher Editor.")
         return
 
-    result = bpy.ops.clip.track_markers(
-        'INVOKE_DEFAULT',
+    result = invoke_clip_operator_safely(
+        "track_markers",
         backwards=False,
         sequence=True,
     )

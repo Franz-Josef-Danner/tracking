@@ -28,7 +28,6 @@ class TrackingController:
         if self.step == 0:
             invoke_clip_operator_safely(
                 "track_markers",
-                invoke="INVOKE_DEFAULT",
                 backwards=False,
                 sequence=True,
             )
@@ -39,7 +38,6 @@ class TrackingController:
         elif self.step == 2:
             invoke_clip_operator_safely(
                 "track_markers",
-                invoke="INVOKE_DEFAULT",
                 backwards=True,
                 sequence=True,
             )
