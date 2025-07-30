@@ -92,21 +92,27 @@ class TrackingController:
                 print(f"  - {t.name}")
                 t.select = True
 
-            area = next((a for a in self.context.screen.areas if a.type == 'CLIP_EDITOR'), None)
-            if not area:
-                print("⚠ Kein CLIP_EDITOR im aktuellen Screen gefunden. Kann Tracks nicht löschen.")
-                return
-
-            override = self.context.copy()
-            override["area"] = area
-            override["region"] = next((r for r in area.regions if r.type == 'WINDOW'), None)
-            override["space_data"] = area.spaces.active
-
-            try:
-                bpy.ops.clip.delete_track(**override)
-                print("✓ Kurze Tracks per Operator im Clip Editor gelöscht.")
-            except RuntimeError:
-                print("⚠ Kontext nicht gültig für clip.delete_track. Tracks bleiben erhalten.")
+            # Versuche Kontext zu setzen
+            for window in bpy.context.window_manager.windows:
+                for area in window.screen.areas:
+                    if area.type == 'CLIP_EDITOR':
+                        region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+                        override = {
+                            "window": window,
+                            "screen": window.screen,
+                            "area": area,
+                            "region": region,
+                            "space_data": area.spaces.active,
+                            "scene": scene,
+                            "blend_data": bpy.data
+                        }
+                        try:
+                            bpy.ops.clip.delete_track(**override)
+                            print("✓ Tracks per Operator im Clip Editor gelöscht.")
+                            return
+                        except RuntimeError as e:
+                            print(f"⚠ Fehler beim Löschen: {e}")
+            print("⚠ Kein Clip Editor gefunden – Löschung per Operator nicht möglich.")
         else:
             print("Keine kurzen Tracks gefunden.")
 
