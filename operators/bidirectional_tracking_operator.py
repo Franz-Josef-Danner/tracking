@@ -65,7 +65,7 @@ class TrackingController:
                 self.step = 4
         elif self.step == 4:
             print("→ Starte Bereinigung kurzer Tracks...")
-            bpy.ops.tracking.delete_short_tracks()
+            self.cleanup_short_tracks()
             print("✓ Tracking und Cleanup abgeschlossen.")
             return None
         return 0.5
@@ -119,7 +119,9 @@ class TrackingController:
             if not success:
                 print("⚠ Operator fehlgeschlagen – Lösche Tracks direkt per API…")
                 for t in short_tracks:
-                    self.tracking.tracks.remove(self.tracking.tracks.get(t.name))
+                    track_ref = self.tracking.tracks.get(t.name)
+                    if track_ref:
+                        self.tracking.tracks.remove(track_ref)
                 print("✓ Tracks direkt aus tracking.tracks entfernt.")
         else:
             print("Keine kurzen Tracks gefunden.")
