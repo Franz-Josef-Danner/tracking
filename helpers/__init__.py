@@ -33,3 +33,9 @@ from .delete_tracks import delete_selected_tracks
 from .select_short_tracks import select_short_tracks
 from .find_low_marker_frame import find_next_low_marker_frame
 from .set_playhead_to_frame import set_playhead_to_frame
+from .track_default_settings import CLIP_OT_api_defaults, operator_classes as track_default_settings_operator_classes
+from .error_value_operator import (
+    CLIP_OT_error_value,
+    calculate_clip_error,
+    operator_classes as error_value_operator_classes,
+)

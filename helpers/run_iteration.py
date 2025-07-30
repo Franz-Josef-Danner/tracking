@@ -1,6 +1,6 @@
 import bpy
 from ..operators.tracking.solver import detect_features_once, enable_proxy
-from ..operators.error_value import calculate_clip_error
+from .error_value_operator import calculate_clip_error
 from .track_full_clip import track_full_clip
 from .delete_tracks import delete_selected_tracks
 from .utils import LAST_TRACK_END
