@@ -42,7 +42,23 @@ class CLIP_OT_low_marker_frame(bpy.types.Operator):
             return {'CANCELLED'}
 
         frame, count = frames[0]
-        scene.frame_set(frame)
+
+        # Playhead und Viewer auf neuen Frame setzen
+        for area in context.window.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        override = {
+                            'window': context.window,
+                            'screen': context.window.screen,
+                            'area': area,
+                            'region': region,
+                            'scene': scene,
+                            'space_data': area.spaces.active
+                        }
+                        with bpy.context.temp_override(**override):
+                            bpy.ops.clip.change_frame(frame=frame)
+                        break
 
         # Wiederholungslogik
         if frame in self.repeat_frame:
