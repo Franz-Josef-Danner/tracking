@@ -91,40 +91,36 @@ class TrackingController:
             for t in short_tracks:
                 print(f"  - {t.name}")
 
+            for t in short_tracks:
+                t.select = True
+
             success = False
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
                     if area.type == 'CLIP_EDITOR':
                         region = next((r for r in area.regions if r.type == 'WINDOW'), None)
-                        override = {
+                        override_ctx = self.context.copy()
+                        override_ctx.update({
                             "window": window,
                             "screen": window.screen,
                             "area": area,
                             "region": region,
-                            "space_data": area.spaces.active,
-                            "scene": scene,
-                            "blend_data": bpy.data
-                        }
+                            "space_data": area.spaces.active
+                        })
                         try:
-                            for t in short_tracks:
-                                t.select = True
-                            bpy.ops.clip.delete_track(**override)
-                            print("✓ Tracks per Operator im Clip Editor gelöscht.")
+                            bpy.ops.clip.clean_tracks(override_ctx,
+                                                      frames=min_length,
+                                                      action='DELETE_TRACK')
+                            print("✓ Kurze Tracks über clean_tracks gelöscht.")
                             success = True
                             break
                         except RuntimeError as e:
-                            print(f"⚠ Fehler beim Löschen: {e}")
+                            print(f"⚠ Fehler beim Löschen über clean_tracks: {e}")
                 if success:
                     break
 
             if not success:
-                print("⚠ Operator fehlgeschlagen – Lösche Tracks direkt per API…")
-                names_to_remove = [t.name for t in short_tracks]
-                for name in names_to_remove:
-                    track = self.tracking.tracks.get(name)
-                    if track:
-                        self.tracking.tracks.remove(track)
-                        print(f"✓ Track '{name}' gelöscht.")
+                print("⚠ Kein gültiger Clip-Kontext gefunden – keine Tracks gelöscht.")
         else:
             print("Keine kurzen Tracks gefunden.")
 
