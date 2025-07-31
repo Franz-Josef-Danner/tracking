@@ -1,8 +1,8 @@
 import bpy
 
-
-def delete_selected_tracks() -> None:
-    """Delete all selected tracks in the Clip Editor."""
-    if bpy.ops.clip.delete_track.poll():
-        bpy.ops.clip.delete_track()
-
+def delete_selected_tracks():
+    clip = bpy.context.space_data.clip
+    tracks = clip.tracking.tracks
+    to_delete = [t for t in tracks if t.select]
+    for t in to_delete:
+        tracks.remove(t)
