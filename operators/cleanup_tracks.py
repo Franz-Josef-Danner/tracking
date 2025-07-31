@@ -80,12 +80,12 @@ def cleanup_error_tracks(scene: bpy.types.Scene, clip: bpy.types.MovieClip) -> b
     deleted_any = False
 
     while threshold >= original_threshold:
-        changed = False
+        print(f"→ Aktueller Schwellenwert: {threshold:.3f}")
+        # Versuche Marker zu löschen, auch wenn keiner gefunden wird
         while cleanup_pass(scene, clip, threshold):
-            changed = True
             deleted_any = True
         threshold *= 0.9
-        scene.error_threshold = threshold
+        scene.error_threshold = threshold  # Optional: zur Anzeige im UI
 
     scene.error_threshold = original_threshold
     return deleted_any
@@ -105,9 +105,9 @@ class CLIP_OT_cleanup_tracks(bpy.types.Operator):
 
         deleted = cleanup_error_tracks(context.scene, clip)
         if deleted:
-            self.report({'INFO'}, "Fehlerhafte Marker wurden gelöscht.")
+            self.report({'INFO'}, "Cleanup abgeschlossen. Fehlerhafte Marker wurden gelöscht.")
         else:
-            self.report({'INFO'}, "Keine fehlerhaften Marker gefunden.")
+            self.report({'INFO'}, "Cleanup abgeschlossen. Keine Marker lagen über dem Fehler-Schwellenwert.")
         return {'FINISHED'}
 
 # Registrierung
