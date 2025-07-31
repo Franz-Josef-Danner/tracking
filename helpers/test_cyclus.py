@@ -50,12 +50,8 @@ def evaluate_tracking(context: bpy.types.Context):
     if hasattr(place_marker_operator, "detect"):
         place_marker_operator.detect(context)
     else:
-        operator_start = place_marker_operator.TRACKING_OT_place_marker_start()
-        operator_start.execute(context)
-        operator_continue = (
-            place_marker_operator.TRACKING_OT_place_marker_continue()
-        )
-        operator_continue.execute(context)
+        operator = place_marker_operator.TRACKING_OT_place_marker()
+        operator.execute(context)
 
     track_markers_until_end()
     error = error_value(context)
