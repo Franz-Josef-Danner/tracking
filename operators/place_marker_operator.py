@@ -132,11 +132,17 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
                 success = True
                 break
             else:
+                if anzahl_neu < min_marker:
+                    for t in tracking.tracks:
+                        t.select = False
+                    for t in cleaned_tracks:
+                        t.select = True
+                    bpy.ops.clip.delete_track()
+
                 detection_threshold = max(
                     detection_threshold * ((anzahl_neu + 0.1) / marker_adapt),
                     0.0001,
                 )
-                bpy.ops.clip.delete_track()
 
             print(
                 f"📌 Versuch {attempt + 1}: Marker={anzahl_neu}, "
