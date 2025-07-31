@@ -1,5 +1,5 @@
 import bpy
-from ..helpers.delete_tracks import delete_selected_tracks
+from ..helpers.delete_tracks import cleanup_error_tracks
 
 def max_track_error(scene: bpy.types.Scene, clip: bpy.types.MovieClip) -> float:
     """Return the maximum absolute error among tracking markers."""
