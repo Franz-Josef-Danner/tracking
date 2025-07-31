@@ -69,7 +69,19 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
             for t in tracking.tracks:
                 t.select = False
 
-            # 1. Marker setzen
+            # Frame und Bildgröße vorbereiten
+            frame = scene.frame_current
+            width, height = clip.size
+            distance_px = int(width * 0.04)
+
+            # Alte Marker-Positionen im Frame sammeln
+            existing_positions = []
+            for track in tracking.tracks:
+                marker = track.markers.find_frame(frame, exact=True)
+                if marker and not marker.mute:
+                    existing_positions.append((marker.co[0] * width, marker.co[1] * height))
+
+            # Marker setzen
             perform_marker_detection(
                 clip,
                 tracking,
@@ -78,34 +90,22 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
                 min_distance_base,
             )
 
-            # 2. Neue Marker selektiert -> merken
+            # Neue Marker selektiert -> merken
             new_tracks = [t for t in tracking.tracks if t.select]
 
-            # 3. Alte Marker = alle, die NICHT ausgewählt sind
-            frame = scene.frame_current
-            width, height = clip.size
-            distance_px = int(width * 0.04)
-
-            valid_positions = []
-            for track in tracking.tracks:
-                if track not in new_tracks:
-                    marker = track.markers.find_frame(frame, exact=True)
-                    if marker and not marker.mute:
-                        valid_positions.append((marker.co[0] * width, marker.co[1] * height))
-
-            # 4. Neue Marker mit alten vergleichen
+            # Neue Marker mit alten vergleichen
             close_tracks = []
             for track in new_tracks:
                 marker = track.markers.find_frame(frame, exact=True)
                 if marker and not marker.mute:
                     x = marker.co[0] * width
                     y = marker.co[1] * height
-                    for vx, vy in valid_positions:
-                        if math.hypot(x - vx, y - vy) < distance_px:
+                    for ex, ey in existing_positions:
+                        if math.hypot(x - ex, y - ey) < distance_px:
                             close_tracks.append(track)
                             break
 
-            # 5. Zu nahe Marker entfernen
+            # Zu nahe neue Marker entfernen
             for t in tracking.tracks:
                 t.select = False
             for t in close_tracks:
@@ -113,7 +113,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
             if close_tracks:
                 bpy.ops.clip.delete_track()
 
-            # 6. Nur neue, nicht gelöschte Marker zählen
+            # Gültige neue Marker bestimmen
             cleaned_tracks = [t for t in new_tracks if t not in close_tracks]
             anzahl_neu = len(cleaned_tracks)
 
@@ -123,6 +123,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
             for t in cleaned_tracks:
                 t.select = True
 
+            # Meldung ausgeben
             meldung = f"Versuch {attempt + 1}:\nGesetzte Marker (nach Filterung): {anzahl_neu}"
             if anzahl_neu < min_marker:
                 meldung += "\nMarkeranzahl zu niedrig.\nMarker werden gelöscht."
