@@ -100,15 +100,15 @@ def cleanup_pass(scene, clip, threshold: float) -> bool:
 
 def cleanup_error_tracks(scene: bpy.types.Scene, clip: bpy.types.MovieClip) -> bool:
     print("→ Starte vollständigen Cleanup-Vorgang...")
-    original_threshold = scene.error_threshold
+    final_threshold = 10.0  # Feste Untergrenze
     max_error = max_track_error(scene, clip)
-    print(f"→ Start bei max_error = {max_error:.3f}, untere Grenze = {original_threshold}")
+    print(f"→ Start bei max_error = {max_error:.3f}, untere Grenze = {final_threshold}")
 
     threshold = max_error
     deleted_any = False
     iteration = 0
 
-    while threshold >= original_threshold:
+    while threshold >= final_threshold:
         iteration += 1
         print(f"\n===== Iteration {iteration} - Threshold: {threshold:.3f} =====")
         deleted_this_round = False
@@ -118,11 +118,9 @@ def cleanup_error_tracks(scene: bpy.types.Scene, clip: bpy.types.MovieClip) -> b
         if not deleted_this_round:
             print(f"→ Kein Track gelöscht bei Schwelle {threshold:.3f}")
         threshold *= 0.9
-        scene.error_threshold = threshold
 
     print("\n→ Cleanup abgeschlossen.")
     print(f"→ Insgesamt Tracks gelöscht: {'JA' if deleted_any else 'NEIN'}")
-    scene.error_threshold = original_threshold
     return deleted_any
 
 class CLIP_OT_cleanup_tracks(bpy.types.Operator):
