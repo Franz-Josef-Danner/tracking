@@ -2,8 +2,6 @@ import bpy
 import math
 import time
 
-# Globaler Kontext für Markerprüfung
-_global_marker_context = {}
 
 def perform_marker_detection(
     clip: bpy.types.MovieClip,
@@ -12,6 +10,7 @@ def perform_marker_detection(
     margin_base: int,
     min_distance_base: int,
 ) -> int:
+    """Detect features and return number of selected tracks."""
     factor = math.log10(threshold * 1e8) / 8
     margin = max(1, int(margin_base * factor))
     min_distance = max(1, int(min_distance_base * factor))
@@ -32,28 +31,19 @@ def perform_marker_detection(
     return len(selected_tracks)
 
 
-def marker_wait_callback():
-    tracking = _global_marker_context["tracking"]
-    current_names = {t.name for t in tracking.tracks}
-    initial_names = _global_marker_context["initial_track_names"]
-    start_time = _global_marker_context["start_time"]
+class TRACKING_OT_place_marker(bpy.types.Operator):
+    """Setzt Marker und pr\u00fcft sie innerhalb eines modalen Operators."""
 
-    if current_names != initial_names:
-        print("📌 Neue Marker erkannt – fortsetzen.")
-        bpy.ops.tracking.place_marker_continue()
-        return None
+    bl_idname = "tracking.place_marker"
+    bl_label = "Marker setzen"
 
-    if time.time() - start_time > 3.0:
-        print("⏱ Timeout (3s) – fortsetzen auch ohne neue Marker.")
-        bpy.ops.tracking.place_marker_continue()
-        return None
-
-    return 0.25  # In 0.25 Sekunden erneut prüfen
-
-
-class TRACKING_OT_place_marker_start(bpy.types.Operator):
-    bl_idname = "tracking.place_marker_start"
-    bl_label = "Marker setzen – Schritt 1"
+    _timer = None
+    clip: bpy.types.MovieClip | None
+    tracking: bpy.types.MovieTracking | None
+    frame: int
+    marker_adapt: int
+    initial_track_names: set[str]
+    start_time: float
 
     @classmethod
     def poll(cls, context):
@@ -65,52 +55,52 @@ class TRACKING_OT_place_marker_start(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        clip = context.space_data.clip
-        tracking = clip.tracking
-        settings = tracking.settings
+        self.clip = context.space_data.clip
+        self.tracking = self.clip.tracking
+        settings = self.tracking.settings
 
         detection_threshold = getattr(settings, "default_correlation_min", 0.75)
-        image_width = clip.size[0]
+        image_width = self.clip.size[0]
         margin_base = int(image_width * 0.025)
         min_distance_base = int(image_width * 0.05)
 
-        for t in tracking.tracks:
+        for t in self.tracking.tracks:
             t.select = False
 
         perform_marker_detection(
-            clip,
-            tracking,
+            self.clip,
+            self.tracking,
             detection_threshold,
             margin_base,
             min_distance_base,
         )
 
-        _global_marker_context["clip"] = clip
-        _global_marker_context["tracking"] = tracking
-        _global_marker_context["frame"] = scene.frame_current
-        _global_marker_context["marker_adapt"] = scene.get("marker_adapt", 80)
-        _global_marker_context["initial_track_names"] = {t.name for t in tracking.tracks}
-        _global_marker_context["start_time"] = time.time()
+        self.frame = scene.frame_current
+        self.marker_adapt = scene.get("marker_adapt", 80)
+        self.initial_track_names = {t.name for t in self.tracking.tracks}
+        self.start_time = time.time()
 
-        bpy.app.timers.register(marker_wait_callback, first_interval=0.25)
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.25, window=context.window)
+        wm.modal_handler_add(self)
 
-        self.report({'INFO'}, "Marker gesetzt. Warten auf Benutzeraktion oder Timeout...")
-        return {'FINISHED'}
+        self.report({'INFO'}, "Marker gesetzt. Warten auf Abschluss...")
+        return {'RUNNING_MODAL'}
 
+    def modal(self, context, event):
+        if event.type == 'TIMER':
+            current_names = {t.name for t in self.tracking.tracks}
+            if current_names != self.initial_track_names or time.time() - self.start_time > 3.0:
+                self.finish_processing(context)
+                context.window_manager.event_timer_remove(self._timer)
+                return {'FINISHED'}
+        return {'PASS_THROUGH'}
 
-class TRACKING_OT_place_marker_continue(bpy.types.Operator):
-    bl_idname = "tracking.place_marker_continue"
-    bl_label = "Marker setzen – Schritt 2"
-
-    def execute(self, context):
-        if not _global_marker_context:
-            self.report({'ERROR'}, "Kontextdaten fehlen.")
-            return {'CANCELLED'}
-
-        clip = _global_marker_context["clip"]
-        tracking = _global_marker_context["tracking"]
-        frame = _global_marker_context["frame"]
-        marker_adapt = _global_marker_context["marker_adapt"]
+    def finish_processing(self, context):
+        clip = self.clip
+        tracking = self.tracking
+        frame = self.frame
+        marker_adapt = self.marker_adapt
         width, height = clip.size
         distance_px = int(width * 0.04)
 
@@ -151,22 +141,20 @@ class TRACKING_OT_place_marker_continue(bpy.types.Operator):
 
         anzahl_neu = len(cleaned_tracks)
 
-        meldung = f"Auswertung abgeschlossen:\nGültige Marker: {anzahl_neu}"
+        meldung = f"Auswertung abgeschlossen:\nG\u00fcltige Marker: {anzahl_neu}"
         bpy.ops.clip.marker_status_popup('INVOKE_DEFAULT', message=meldung)
 
-        self.report({'INFO'}, f"{anzahl_neu} Marker nach Prüfung beibehalten.")
-        return {'FINISHED'}
+        self.report({'INFO'}, f"{anzahl_neu} Marker nach Pr\u00fcfung beibehalten.")
 
 
 # Registrierung
+
 def register():
-    bpy.utils.register_class(TRACKING_OT_place_marker_start)
-    bpy.utils.register_class(TRACKING_OT_place_marker_continue)
+    bpy.utils.register_class(TRACKING_OT_place_marker)
 
 
 def unregister():
-    bpy.utils.unregister_class(TRACKING_OT_place_marker_start)
-    bpy.utils.unregister_class(TRACKING_OT_place_marker_continue)
+    bpy.utils.unregister_class(TRACKING_OT_place_marker)
 
 
 if __name__ == "__main__":
