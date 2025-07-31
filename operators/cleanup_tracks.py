@@ -1,92 +1,48 @@
 import bpy
-from ..helpers.delete_tracks import delete_selected_tracks
+from ..helpers.delete_selected_tracks import delete_selected_tracks
 
 def max_track_error(scene: bpy.types.Scene, clip: bpy.types.MovieClip) -> float:
-    """Return the maximum absolute error among tracking markers."""
     width, height = clip.size
     start = scene.frame_start + 1
     end = scene.frame_end - 1
-
     max_error = 0.0
 
-    def collect(tracks_info):
-        nonlocal max_error
-        if not tracks_info:
-            return
-        xvg = sum(t["xv"] for t in tracks_info) / len(tracks_info)
-        yvg = sum(t["yv"] for t in tracks_info) / len(tracks_info)
-        for info in tracks_info:
-            etx = xvg - info["xv"]
-            ety = yvg - info["yv"]
-            error_val = max(abs(etx), abs(ety))
-            if error_val > max_error:
-                max_error = error_val
-
     for frame in range(start, end):
-        valid = []
+        velocities = []
         for track in clip.tracking.tracks:
             coords = []
             for f in (frame - 1, frame, frame + 1):
                 marker = track.markers.find_frame(f, exact=True)
-                if marker is None or marker.mute:
+                if not marker or marker.mute:
                     break
                 coords.append((marker.co[0] * width, marker.co[1] * height))
             if len(coords) == 3:
                 px1, py1 = coords[0]
                 px2, py2 = coords[1]
                 px3, py3 = coords[2]
-                xv1 = px1 - px2
-                xv2 = px2 - px3
-                yv1 = py1 - py2
-                yv2 = py2 - py3
-                xv = xv1 + xv2
-                yv = yv1 + yv2
-                mx_mean = (px1 + px2 + px3) / 3.0
-                my_mean = (py1 + py2 + py3) / 3.0
-                valid.append({
-                    "mx_mean": mx_mean,
-                    "my_mean": my_mean,
-                    "xv": xv,
-                    "yv": yv,
-                    "track": track,
-                })
-        collect(valid)
+                xv = (px1 - px2) + (px2 - px3)
+                yv = (py1 - py2) + (py2 - py3)
+                velocities.append((xv, yv))
+
+        if velocities:
+            avg_xv = sum(v[0] for v in velocities) / len(velocities)
+            avg_yv = sum(v[1] for v in velocities) / len(velocities)
+            for xv, yv in velocities:
+                dx = abs(xv - avg_xv)
+                dy = abs(yv - avg_yv)
+                max_error = max(max_error, dx, dy)
+
     return max_error
-
-
-def cleanup_error_tracks(scene: bpy.types.Scene, clip: bpy.types.MovieClip) -> bool:
-    """Delete tracking markers while decreasing the error threshold."""
-    original = scene.error_threshold
-    max_err = max_track_error(scene, clip)
-    print(f"Maximaler Trackingfehler: {max_err:.3f}")
-    scene.error_threshold = max_err
-    threshold = max_err
-
-    deleted_any = False
-    while threshold >= original:
-        print(f"Prüfe mit Threshold: {threshold:.3f}")
-        changed = False
-        while cleanup_pass(scene, clip, threshold):
-            changed = True
-            deleted_any = True
-        threshold *= 0.9
-        scene.error_threshold = threshold
-
-        if not changed:
-            break
-
-    scene.error_threshold = original
-    return deleted_any
-
 
 def cleanup_pass(scene, clip, threshold: float) -> bool:
     width, height = clip.size
+    start = scene.frame_start + 1
+    end = scene.frame_end - 1
     selected = False
 
     for track in clip.tracking.tracks:
         errors = []
-
-        for f in range(scene.frame_start + 1, scene.frame_end - 1):
+        for f in range(start, end):
             coords = []
             for offset in (-1, 0, 1):
                 marker = track.markers.find_frame(f + offset, exact=True)
@@ -97,20 +53,13 @@ def cleanup_pass(scene, clip, threshold: float) -> bool:
                 px1, py1 = coords[0]
                 px2, py2 = coords[1]
                 px3, py3 = coords[2]
-
-                xv1 = px1 - px2
-                xv2 = px2 - px3
-                yv1 = py1 - py2
-                yv2 = py2 - py3
-
-                xv = xv1 + xv2
-                yv = yv1 + yv2
-
+                xv = (px1 - px2) + (px2 - px3)
+                yv = (py1 - py2) + (py2 - py3)
                 error = max(abs(xv), abs(yv))
                 errors.append(error)
 
         if errors and max(errors) > threshold:
-            print(f"Selektiert: {track.name} mit Fehler={max(errors):.2f}")
+            print(f"Selektiert: {track.name} mit Fehler {max(errors):.2f}")
             track.select = True
             selected = True
         else:
@@ -121,3 +70,51 @@ def cleanup_pass(scene, clip, threshold: float) -> bool:
         return True
 
     return False
+
+def cleanup_error_tracks(scene: bpy.types.Scene, clip: bpy.types.MovieClip) -> bool:
+    original_threshold = scene.error_threshold
+    max_error = max_track_error(scene, clip)
+    print(f"Maximaler Trackingfehler: {max_error:.3f}")
+
+    threshold = max_error
+    deleted_any = False
+
+    while threshold >= original_threshold:
+        changed = False
+        while cleanup_pass(scene, clip, threshold):
+            changed = True
+            deleted_any = True
+        threshold *= 0.9
+        scene.error_threshold = threshold
+        if not changed:
+            break
+
+    scene.error_threshold = original_threshold
+    return deleted_any
+
+# Blender Operator
+class CLIP_OT_cleanup_tracks(bpy.types.Operator):
+    """Bereinigt fehlerhafte Marker basierend auf Bewegungsabweichung"""
+    bl_idname = "clip.cleanup_tracks"
+    bl_label = "Cleanup Tracks"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'ERROR'}, "Kein aktiver Clip im Kontext.")
+            return {'CANCELLED'}
+
+        deleted = cleanup_error_tracks(context.scene, clip)
+        if deleted:
+            self.report({'INFO'}, "Fehlerhafte Marker wurden gelöscht.")
+        else:
+            self.report({'INFO'}, "Keine fehlerhaften Marker gefunden.")
+        return {'FINISHED'}
+
+# Registrierung
+def register():
+    bpy.utils.register_class(CLIP_OT_cleanup_tracks)
+
+def unregister():
+    bpy.utils.unregister_class(CLIP_OT_cleanup_tracks)
