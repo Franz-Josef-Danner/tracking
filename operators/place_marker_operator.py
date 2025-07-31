@@ -82,7 +82,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
 
             valid_positions = []
             for track in tracking.tracks:
-                if track.name not in {t.name for t in new_tracks}:
+                if track not in new_tracks:
                     marker = track.markers.find_frame(frame, exact=True)
                     if marker and not marker.mute:
                         valid_positions.append((marker.co[0] * width, marker.co[1] * height))
@@ -105,7 +105,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
             if close_tracks:
                 bpy.ops.clip.delete_track()
 
-            cleaned_tracks = [t for t in tracking.tracks if t.name in {t.name for t in new_tracks} - {t.name for t in close_tracks}]
+            cleaned_tracks = [t for t in new_tracks if t not in close_tracks]
             anzahl_neu = len(cleaned_tracks)
 
             meldung = f"Versuch {attempt + 1}:\nGesetzte Marker (nach Filterung): {anzahl_neu}"
