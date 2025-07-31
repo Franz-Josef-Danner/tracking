@@ -2,7 +2,7 @@ from .tracking_marker_basis_operator import TRACKING_OT_marker_basis_values
 from .place_marker_operator import TRACKING_OT_place_marker
 from .cleanup_tracks import CLIP_OT_cleanup_tracks
 from .low_marker_frame_operator import CLIP_OT_low_marker_frame
-from .helpers.test_marker_base_operator import TRACKING_OT_test_marker_base
+from ..helpers.test_marker_base_operator import TRACKING_OT_test_marker_base
 from .error_value_operator import CLIP_OT_error_value
 from .proxy_builder import CLIP_OT_proxy_build
 from .proxy_toggle_operators import (
