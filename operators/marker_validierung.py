@@ -1,7 +1,6 @@
 import bpy
 
 from ..helpers.test_marker_base import test_marker_base
-from .place_marker_operator import TRACKING_OT_place_marker
 from ..helpers.track_markers_until_end import track_markers_until_end
 from .error_value_operator import CLIP_OT_error_value
 from ..helpers.get_tracking_lengths import get_tracking_lengths
