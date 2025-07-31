@@ -1,5 +1,4 @@
 import bpy
-from ..helpers.delete_tracks import delete_selected_tracks
 
 def max_track_error(scene: bpy.types.Scene, clip: bpy.types.MovieClip) -> float:
     width, height = clip.size
@@ -13,9 +12,7 @@ def max_track_error(scene: bpy.types.Scene, clip: bpy.types.MovieClip) -> float:
             coords = []
             for f in (frame - 1, frame, frame + 1):
                 marker = track.markers.find_frame(f, exact=True)
-                if not marker:
-                    break
-                if marker.mute:
+                if not marker or marker.mute:
                     break
                 coords.append((marker.co[0] * width, marker.co[1] * height))
             if len(coords) == 3:
@@ -48,9 +45,7 @@ def cleanup_pass(scene, clip, threshold: float) -> bool:
             coords = []
             for offset in (-1, 0, 1):
                 marker = track.markers.find_frame(f + offset, exact=True)
-                if not marker:
-                    break
-                if marker.mute:
+                if not marker or marker.mute:
                     break
                 coords.append((marker.co[0] * width, marker.co[1] * height))
             if len(coords) == 3:
@@ -72,33 +67,27 @@ def cleanup_pass(scene, clip, threshold: float) -> bool:
         else:
             track.select = False
 
-    if selected:
-        delete_selected_tracks()
-        return True
-
-    return False
+    return selected  # Kein Löschen mehr, nur Selektion
 
 def cleanup_error_tracks(scene: bpy.types.Scene, clip: bpy.types.MovieClip) -> bool:
     final_threshold = 10.0
     max_error = max_track_error(scene, clip)
     threshold = max_error
-    deleted_any = False
+    any_selected = False
 
     while threshold >= final_threshold:
-        deleted_this_round = False
-        while cleanup_pass(scene, clip, threshold):
-            deleted_any = True
-            deleted_this_round = True
-        if not deleted_this_round:
+        selected_this_round = cleanup_pass(scene, clip, threshold)
+        if not selected_this_round:
             break
+        any_selected = True
         threshold *= 0.9
 
-    return deleted_any
+    return any_selected
 
 class CLIP_OT_cleanup_tracks(bpy.types.Operator):
-    """Bereinigt fehlerhafte Marker basierend auf Bewegungsabweichung"""
+    """Selektiert Marker mit überdurchschnittlicher Bewegung"""
     bl_idname = "clip.cleanup_tracks"
-    bl_label = "Cleanup Tracks"
+    bl_label = "Select Error Tracks"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -107,11 +96,11 @@ class CLIP_OT_cleanup_tracks(bpy.types.Operator):
             self.report({'ERROR'}, "Kein aktiver Clip im Kontext.")
             return {'CANCELLED'}
 
-        deleted = cleanup_error_tracks(context.scene, clip)
-        if deleted:
-            self.report({'INFO'}, "✅ Cleanup abgeschlossen. Fehlerhafte Marker wurden gelöscht.")
+        found = cleanup_error_tracks(context.scene, clip)
+        if found:
+            self.report({'INFO'}, "✅ Marker mit zu hoher Abweichung selektiert.")
         else:
-            self.report({'INFO'}, "ℹ️ Cleanup abgeschlossen. Keine Marker lagen über dem Fehler-Schwellenwert.")
+            self.report({'INFO'}, "ℹ️ Keine Marker mit übermäßigem Bewegungsfehler gefunden.")
         return {'FINISHED'}
 
 def register():
