@@ -86,8 +86,6 @@ def cleanup_error_tracks(scene: bpy.types.Scene, clip: bpy.types.MovieClip) -> b
             deleted_any = True
         threshold *= 0.9
         scene.error_threshold = threshold
-        if not changed:
-            break
 
     scene.error_threshold = original_threshold
     return deleted_any
