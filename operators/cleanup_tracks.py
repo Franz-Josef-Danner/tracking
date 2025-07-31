@@ -1,7 +1,6 @@
 import bpy
 from ..helpers.delete_tracks import delete_selected_tracks
 
-
 def max_track_error(scene: bpy.types.Scene, clip: bpy.types.MovieClip) -> float:
     """Return the maximum absolute error among tracking markers."""
     width, height = clip.size
@@ -55,18 +54,29 @@ def max_track_error(scene: bpy.types.Scene, clip: bpy.types.MovieClip) -> float:
     return max_error
 
 
-def cleanup_error_tracks(scene: bpy.types.Scene, clip: bpy.types.MovieClip) -> None:
+def cleanup_error_tracks(scene: bpy.types.Scene, clip: bpy.types.MovieClip) -> bool:
     """Delete tracking markers while decreasing the error threshold."""
     original = scene.error_threshold
     max_err = max_track_error(scene, clip)
+    print(f"Maximaler Trackingfehler: {max_err:.3f}")
     scene.error_threshold = max_err
     threshold = max_err
+
+    deleted_any = False
     while threshold >= original:
+        print(f"Prüfe mit Threshold: {threshold:.3f}")
+        changed = False
         while cleanup_pass(scene, clip, threshold):
-            pass
+            changed = True
+            deleted_any = True
         threshold *= 0.9
         scene.error_threshold = threshold
+
+        if not changed:
+            break
+
     scene.error_threshold = original
+    return deleted_any
 
 
 def cleanup_pass(scene, clip, threshold: float) -> bool:
@@ -96,9 +106,11 @@ def cleanup_pass(scene, clip, threshold: float) -> bool:
                 xv = xv1 + xv2
                 yv = yv1 + yv2
 
-                errors.append(max(abs(xv), abs(yv)))
+                error = max(abs(xv), abs(yv))
+                errors.append(error)
 
         if errors and max(errors) > threshold:
+            print(f"Selektiert: {track.name} mit Fehler={max(errors):.2f}")
             track.select = True
             selected = True
         else:
@@ -109,27 +121,3 @@ def cleanup_pass(scene, clip, threshold: float) -> bool:
         return True
 
     return False
-
-
-class CLIP_OT_cleanup_tracks(bpy.types.Operator):
-    bl_idname = "clip.cleanup_tracks"
-    bl_label = "Cleanup Error Tracks"
-    bl_description = "Bereinigt automatisch alle fehlerhaften Tracks"
-
-    @classmethod
-    def poll(cls, context):
-        return (
-            context.area
-            and context.area.type == "CLIP_EDITOR"
-            and getattr(context.space_data, "clip", None)
-        )
-
-    def execute(self, context):
-        clip = getattr(context.space_data, "clip", None)
-        if clip is None:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
-        cleanup_error_tracks(context.scene, clip)
-        self.report({'INFO'}, "Bereinigung abgeschlossen")
-        return {'FINISHED'}
-
