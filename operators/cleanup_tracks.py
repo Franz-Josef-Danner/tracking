@@ -35,14 +35,14 @@ def cleanup_tracks(context):
                 if p1 and p2 and p3:
                     vx, vy, vm = compute_velocity(p1, p2, p3)
                     vm_values.append(vm)
-                    velocities.append((track, vm))
+                    velocities.append((vx, vy))
                     valid_tracks.append((track, vx, vy, vm, p2))
 
             if not vm_values:
                 continue
 
-            vxa = sum(v[1] for v in velocities) / len(velocities)
-            vya = sum(v[2] for v in velocities) / len(velocities)
+            vxa = sum(v[0] for v in velocities) / len(velocities)
+            vya = sum(v[1] for v in velocities) / len(velocities)
             va = (vxa + vya) / 2
             eb = max(abs(vm - va) for (_, _, _, vm, _) in valid_tracks)
 
@@ -60,24 +60,29 @@ def cleanup_tracks(context):
     if filter_tracks(frame_range, ee):
         print("Tracks bereinigt.")
 
-# Optional: als Operator, wenn du es mit Button verknüpfen willst
-class CLIP_OT_cleanup_motion_tracks(bpy.types.Operator):
-    bl_idname = "clip.cleanup_motion_tracks"
-    bl_label = "Cleanup Motion Tracks"
+# --------------------------------------------------
+# Hier kommt jetzt die fehlende Operator-Klasse:
+# --------------------------------------------------
+
+class CLIP_OT_cleanup_tracks(bpy.types.Operator):
+    bl_idname = "clip.cleanup_tracks"
+    bl_label = "Cleanup Tracks"
 
     @classmethod
     def poll(cls, context):
-        return context.space_data.clip is not None
+        return context.space_data and context.space_data.clip is not None
 
     def execute(self, context):
         cleanup_tracks(context)
+        self.report({'INFO'}, "Tracking-Daten bereinigt.")
         return {'FINISHED'}
 
+# Optional für Testläufe außerhalb des Add-ons
 def register():
-    bpy.utils.register_class(CLIP_OT_cleanup_motion_tracks)
+    bpy.utils.register_class(CLIP_OT_cleanup_tracks)
 
 def unregister():
-    bpy.utils.unregister_class(CLIP_OT_cleanup_motion_tracks)
+    bpy.utils.unregister_class(CLIP_OT_cleanup_tracks)
 
 if __name__ == "__main__":
     register()
