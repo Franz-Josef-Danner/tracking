@@ -1,5 +1,8 @@
 from .tracking_marker_basis_operator import TRACKING_OT_marker_basis_values
-from .place_marker_operator import TRACKING_OT_place_marker
+from .place_marker_operator import (
+    TRACKING_OT_place_marker_start,
+    TRACKING_OT_place_marker_continue,
+)
 from .cleanup_operator import CLIP_OT_cleanup_tracks
 from .low_marker_frame_operator import CLIP_OT_low_marker_frame
 from ..helpers.test_marker_base_operator import TRACKING_OT_test_marker_base
@@ -26,7 +29,8 @@ from .test_panel_operators import (
 
 operator_classes = (
     TRACKING_OT_marker_basis_values,
-    TRACKING_OT_place_marker,
+    TRACKING_OT_place_marker_start,
+    TRACKING_OT_place_marker_continue,
     CLIP_OT_cleanup_tracks,
     CLIP_OT_low_marker_frame,
     TRACKING_OT_test_marker_base,
