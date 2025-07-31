@@ -1,10 +1,10 @@
 import bpy
 
 def delete_selected_tracks():
-    """Entfernt alle selektierten Tracks im aktiven Clip."""
+    """Löscht alle selektierten Tracks im aktiven Clip."""
     clip = bpy.context.space_data.clip
     if not clip:
-        print("⚠ Kein aktiver Clip gefunden.")
+        print("⚠ Kein aktiver Clip.")
         return
 
     tracks = clip.tracking.tracks
