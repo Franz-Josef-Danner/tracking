@@ -117,6 +117,12 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
             cleaned_tracks = [t for t in new_tracks if t not in close_tracks]
             anzahl_neu = len(cleaned_tracks)
 
+            # Neue Marker selektiert lassen
+            for t in tracking.tracks:
+                t.select = False
+            for t in cleaned_tracks:
+                t.select = True
+
             meldung = f"Versuch {attempt + 1}:\nGesetzte Marker (nach Filterung): {anzahl_neu}"
             if anzahl_neu < min_marker:
                 meldung += "\nMarkeranzahl zu niedrig.\nMarker werden gelöscht."
