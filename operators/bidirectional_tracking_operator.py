@@ -94,33 +94,13 @@ class TrackingController:
             for t in short_tracks:
                 t.select = True
 
-            success = False
-            for window in bpy.context.window_manager.windows:
-                for area in window.screen.areas:
-                    if area.type == 'CLIP_EDITOR':
-                        region = next((r for r in area.regions if r.type == 'WINDOW'), None)
-                        override_ctx = self.context.copy()
-                        override_ctx.update({
-                            "window": window,
-                            "screen": window.screen,
-                            "area": area,
-                            "region": region,
-                            "space_data": area.spaces.active
-                        })
-                        try:
-                            bpy.ops.clip.clean_tracks(override_ctx,
-                                                      frames=min_length,
-                                                      action='DELETE_TRACK')
-                            print("✓ Kurze Tracks über clean_tracks gelöscht.")
-                            success = True
-                            break
-                        except RuntimeError as e:
-                            print(f"⚠ Fehler beim Löschen über clean_tracks: {e}")
-                if success:
-                    break
-
-            if not success:
-                print("⚠ Kein gültiger Clip-Kontext gefunden – keine Tracks gelöscht.")
+            try:
+                clip_area = next(area for area in bpy.context.window.screen.areas if area.type == 'CLIP_EDITOR')
+                with bpy.context.temp_override(area=clip_area):
+                    bpy.ops.clip.clean_tracks(frames=min_length, action='DELETE_TRACK')
+                    print("✓ Kurze Tracks über clean_tracks gelöscht.")
+            except Exception as e:
+                print(f"⚠ Fehler beim Löschen über clean_tracks: {e}")
         else:
             print("Keine kurzen Tracks gefunden.")
 
