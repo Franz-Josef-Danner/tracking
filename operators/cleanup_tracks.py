@@ -13,7 +13,9 @@ def max_track_error(scene: bpy.types.Scene, clip: bpy.types.MovieClip) -> float:
             coords = []
             for f in (frame - 1, frame, frame + 1):
                 marker = track.markers.find_frame(f, exact=True)
-                if not marker or marker.mute:
+                if not marker:
+                    break
+                if marker.mute:
                     break
                 coords.append((marker.co[0] * width, marker.co[1] * height))
             if len(coords) == 3:
@@ -46,7 +48,9 @@ def cleanup_pass(scene, clip, threshold: float) -> bool:
             coords = []
             for offset in (-1, 0, 1):
                 marker = track.markers.find_frame(f + offset, exact=True)
-                if not marker or marker.mute:
+                if not marker:
+                    break
+                if marker.mute:
                     break
                 coords.append((marker.co[0] * width, marker.co[1] * height))
             if len(coords) == 3:
@@ -58,20 +62,24 @@ def cleanup_pass(scene, clip, threshold: float) -> bool:
                 error = max(abs(xv), abs(yv))
                 errors.append(error)
 
-        if errors and max(errors) > threshold:
-            track.select = True
-            selected = True
+        if errors:
+            max_err = max(errors)
+            if max_err > threshold:
+                track.select = True
+                selected = True
+            else:
+                track.select = False
         else:
             track.select = False
 
     if selected:
-        deleted_count = delete_selected_tracks()
-        return deleted_count > 0
+        delete_selected_tracks()
+        return True
 
     return False
 
 def cleanup_error_tracks(scene: bpy.types.Scene, clip: bpy.types.MovieClip) -> bool:
-    final_threshold = 10.0  # Feste Untergrenze
+    final_threshold = 10.0
     max_error = max_track_error(scene, clip)
     threshold = max_error
     deleted_any = False
