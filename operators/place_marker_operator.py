@@ -1,6 +1,9 @@
 import bpy
 import math
+import time
 
+# Globaler Kontext für Markerprüfung
+_global_marker_context = {}
 
 def perform_marker_detection(
     clip: bpy.types.MovieClip,
@@ -29,12 +32,28 @@ def perform_marker_detection(
     return len(selected_tracks)
 
 
-class TRACKING_OT_place_marker(bpy.types.Operator):
-    bl_idname = "tracking.place_marker"
-    bl_label = "Place Marker"
-    bl_description = (
-        "Führt Marker-Platzierungs-Zyklus aus (Teil-Zyklus 1, max. 20 Versuche inkl. Proxy-Deaktivierung)"
-    )
+def marker_wait_callback():
+    tracking = _global_marker_context["tracking"]
+    current_names = {t.name for t in tracking.tracks}
+    initial_names = _global_marker_context["initial_track_names"]
+    start_time = _global_marker_context["start_time"]
+
+    if current_names != initial_names:
+        print("📌 Neue Marker erkannt – fortsetzen.")
+        bpy.ops.tracking.place_marker_continue()
+        return None
+
+    if time.time() - start_time > 3.0:
+        print("⏱ Timeout (3s) – fortsetzen auch ohne neue Marker.")
+        bpy.ops.tracking.place_marker_continue()
+        return None
+
+    return 0.25  # In 0.25 Sekunden erneut prüfen
+
+
+class TRACKING_OT_place_marker_start(bpy.types.Operator):
+    bl_idname = "tracking.place_marker_start"
+    bl_label = "Marker setzen – Schritt 1"
 
     @classmethod
     def poll(cls, context):
@@ -46,117 +65,109 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        clip = getattr(context.space_data, "clip", None)
-        if clip is None:
-            self.report({'WARNING'}, "Kein Clip geladen")
-            return {'CANCELLED'}
+        clip = context.space_data.clip
         tracking = clip.tracking
         settings = tracking.settings
 
         detection_threshold = getattr(settings, "default_correlation_min", 0.75)
-        marker_adapt = scene.get("marker_adapt", 80)
-        max_marker = scene.get("max_marker", marker_adapt * 1.1)
-        min_marker = scene.get("min_marker", marker_adapt * 0.9)
-
         image_width = clip.size[0]
         margin_base = int(image_width * 0.025)
         min_distance_base = int(image_width * 0.05)
 
-        success = False
+        for t in tracking.tracks:
+            t.select = False
 
-        for attempt in range(20):
-            # Alle Marker vorher deselektieren
-            for t in tracking.tracks:
-                t.select = False
+        perform_marker_detection(
+            clip,
+            tracking,
+            detection_threshold,
+            margin_base,
+            min_distance_base,
+        )
 
-            # Frame und Bildgröße vorbereiten
-            frame = scene.frame_current
-            width, height = clip.size
-            distance_px = int(width * 0.04)
+        _global_marker_context["clip"] = clip
+        _global_marker_context["tracking"] = tracking
+        _global_marker_context["frame"] = scene.frame_current
+        _global_marker_context["marker_adapt"] = scene.get("marker_adapt", 80)
+        _global_marker_context["initial_track_names"] = {t.name for t in tracking.tracks}
+        _global_marker_context["start_time"] = time.time()
 
-            # Alte Marker-Positionen im Frame sammeln
-            existing_positions = []
-            for track in tracking.tracks:
-                marker = track.markers.find_frame(frame, exact=True)
-                if marker and not marker.mute:
-                    existing_positions.append((marker.co[0] * width, marker.co[1] * height))
+        bpy.app.timers.register(marker_wait_callback, first_interval=0.25)
 
-            # Marker setzen
-            perform_marker_detection(
-                clip,
-                tracking,
-                detection_threshold,
-                margin_base,
-                min_distance_base,
-            )
-
-            # Neue Marker selektiert -> merken
-            new_tracks = [t for t in tracking.tracks if t.select]
-
-            # Neue Marker mit alten vergleichen
-            close_tracks = []
-            for track in new_tracks:
-                marker = track.markers.find_frame(frame, exact=True)
-                if marker and not marker.mute:
-                    x = marker.co[0] * width
-                    y = marker.co[1] * height
-                    for ex, ey in existing_positions:
-                        if math.hypot(x - ex, y - ey) < distance_px:
-                            close_tracks.append(track)
-                            break
-
-            # Zu nahe neue Marker entfernen
-            for t in tracking.tracks:
-                t.select = False
-            for t in close_tracks:
-                t.select = True
-            if close_tracks:
-                bpy.ops.clip.delete_track()
-
-            # Gültige neue Marker bestimmen
-            cleaned_tracks = [t for t in new_tracks if t not in close_tracks]
-            anzahl_neu = len(cleaned_tracks)
-
-            # Neue Marker selektiert lassen
-            for t in tracking.tracks:
-                t.select = False
-            for t in cleaned_tracks:
-                t.select = True
-
-            # Meldung ausgeben
-            meldung = f"Versuch {attempt + 1}:\nGesetzte Marker (nach Filterung): {anzahl_neu}"
-            if anzahl_neu < min_marker:
-                meldung += "\nMarkeranzahl zu niedrig.\nMarker werden gelöscht."
-            elif anzahl_neu > max_marker:
-                meldung += "\nMarkeranzahl ausreichend. Vorgang wird beendet."
-            else:
-                meldung += "\nMarkeranzahl im mittleren Bereich.\nErneuter Versuch folgt."
-
-            bpy.ops.clip.marker_status_popup('INVOKE_DEFAULT', message=meldung)
-
-            if min_marker <= anzahl_neu <= max_marker:
-                self.report({'INFO'}, f"Markeranzahl im Zielbereich: {anzahl_neu}")
-                success = True
-                break
-            else:
-                if anzahl_neu < min_marker:
-                    for t in tracking.tracks:
-                        t.select = False
-                    for t in cleaned_tracks:
-                        t.select = True
-                    bpy.ops.clip.delete_track()
-
-                detection_threshold = max(
-                    detection_threshold * ((anzahl_neu + 0.1) / marker_adapt),
-                    0.0001,
-                )
-
-            print(
-                f"📌 Versuch {attempt + 1}: Marker={anzahl_neu}, "
-                f"Threshold={detection_threshold:.4f}"
-            )
-
-        if not success:
-            self.report({'WARNING'}, "Maximale Versuche erreicht, Markeranzahl unzureichend.")
-
+        self.report({'INFO'}, "Marker gesetzt. Warten auf Benutzeraktion oder Timeout...")
         return {'FINISHED'}
+
+
+class TRACKING_OT_place_marker_continue(bpy.types.Operator):
+    bl_idname = "tracking.place_marker_continue"
+    bl_label = "Marker setzen – Schritt 2"
+
+    def execute(self, context):
+        if not _global_marker_context:
+            self.report({'ERROR'}, "Kontextdaten fehlen.")
+            return {'CANCELLED'}
+
+        clip = _global_marker_context["clip"]
+        tracking = _global_marker_context["tracking"]
+        frame = _global_marker_context["frame"]
+        marker_adapt = _global_marker_context["marker_adapt"]
+        width, height = clip.size
+        distance_px = int(width * 0.04)
+
+        max_marker = marker_adapt * 1.1
+        min_marker = marker_adapt * 0.9
+
+        existing_positions = []
+        for track in tracking.tracks:
+            marker = track.markers.find_frame(frame, exact=True)
+            if marker and not marker.mute:
+                existing_positions.append((marker.co[0] * width, marker.co[1] * height))
+
+        new_tracks = [t for t in tracking.tracks if t.select]
+        close_tracks = []
+
+        for track in new_tracks:
+            marker = track.markers.find_frame(frame, exact=True)
+            if marker and not marker.mute:
+                x = marker.co[0] * width
+                y = marker.co[1] * height
+                for ex, ey in existing_positions:
+                    if math.hypot(x - ex, y - ey) < distance_px:
+                        close_tracks.append(track)
+                        break
+
+        for t in tracking.tracks:
+            t.select = False
+        for t in close_tracks:
+            t.select = True
+        if close_tracks:
+            bpy.ops.clip.delete_track()
+
+        cleaned_tracks = [t for t in new_tracks if t not in close_tracks]
+        for t in tracking.tracks:
+            t.select = False
+        for t in cleaned_tracks:
+            t.select = True
+
+        anzahl_neu = len(cleaned_tracks)
+
+        meldung = f"Auswertung abgeschlossen:\nGültige Marker: {anzahl_neu}"
+        bpy.ops.clip.marker_status_popup('INVOKE_DEFAULT', message=meldung)
+
+        self.report({'INFO'}, f"{anzahl_neu} Marker nach Prüfung beibehalten.")
+        return {'FINISHED'}
+
+
+# Registrierung
+def register():
+    bpy.utils.register_class(TRACKING_OT_place_marker_start)
+    bpy.utils.register_class(TRACKING_OT_place_marker_continue)
+
+
+def unregister():
+    bpy.utils.unregister_class(TRACKING_OT_place_marker_start)
+    bpy.utils.unregister_class(TRACKING_OT_place_marker_continue)
+
+
+if __name__ == "__main__":
+    register()
