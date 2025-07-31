@@ -9,11 +9,6 @@ def perform_marker_detection(
     margin_base: int,
     min_distance_base: int,
 ) -> int:
-    """F\u00fchrt ``bpy.ops.clip.detect_features()`` aus und gibt die
-    Anzahl der selektierten Marker zur\u00fcck."""
-
-    import math
-
     factor = math.log10(threshold * 1e8) / 8
     margin = max(1, int(margin_base * factor))
     min_distance = max(1, int(min_distance_base * factor))
@@ -38,7 +33,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
     bl_idname = "tracking.place_marker"
     bl_label = "Place Marker"
     bl_description = (
-        "F\u00fchrt Marker-Platzierungs-Zyklus aus (Teil-Zyklus 1, max. 20 Versuche inkl. Proxy-Deaktivierung)"
+        "Führt Marker-Platzierungs-Zyklus aus (Teil-Zyklus 1, max. 20 Versuche inkl. Proxy-Deaktivierung)"
     )
 
     @classmethod
@@ -58,9 +53,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
         tracking = clip.tracking
         settings = tracking.settings
 
-        detection_threshold = getattr(
-            settings, "default_correlation_min", 0.75
-        )
+        detection_threshold = getattr(settings, "default_correlation_min", 0.75)
         marker_adapt = scene.get("marker_adapt", 80)
         max_marker = scene.get("max_marker", marker_adapt * 1.1)
         min_marker = scene.get("min_marker", marker_adapt * 0.9)
@@ -72,7 +65,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
         success = False
 
         for attempt in range(20):
-            anzahl_neu = perform_marker_detection(
+            perform_marker_detection(
                 clip,
                 tracking,
                 detection_threshold,
@@ -80,9 +73,44 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
                 min_distance_base,
             )
 
-            meldung = f"Versuch {attempt + 1}:\nGesetzte Marker: {anzahl_neu}"
+            names_before = {t.name for t in tracking.tracks}
+            new_tracks = [t for t in tracking.tracks if t.select]
+
+            frame = scene.frame_current
+            width, height = clip.size
+            distance_px = int(width * 0.04)
+
+            valid_positions = []
+            for track in tracking.tracks:
+                if track.name not in {t.name for t in new_tracks}:
+                    marker = track.markers.find_frame(frame, exact=True)
+                    if marker and not marker.mute:
+                        valid_positions.append((marker.co[0] * width, marker.co[1] * height))
+
+            close_tracks = []
+            for track in new_tracks:
+                marker = track.markers.find_frame(frame, exact=True)
+                if marker and not marker.mute:
+                    x = marker.co[0] * width
+                    y = marker.co[1] * height
+                    for vx, vy in valid_positions:
+                        if math.hypot(x - vx, y - vy) < distance_px:
+                            close_tracks.append(track)
+                            break
+
+            for t in tracking.tracks:
+                t.select = False
+            for t in close_tracks:
+                t.select = True
+            if close_tracks:
+                bpy.ops.clip.delete_track()
+
+            cleaned_tracks = [t for t in tracking.tracks if t.name in {t.name for t in new_tracks} - {t.name for t in close_tracks}]
+            anzahl_neu = len(cleaned_tracks)
+
+            meldung = f"Versuch {attempt + 1}:\nGesetzte Marker (nach Filterung): {anzahl_neu}"
             if anzahl_neu < min_marker:
-                meldung += "\nMarkeranzahl zu niedrig.\nMarker werden gel\u00f6scht."
+                meldung += "\nMarkeranzahl zu niedrig.\nMarker werden gelöscht."
             elif anzahl_neu > max_marker:
                 meldung += "\nMarkeranzahl ausreichend. Vorgang wird beendet."
             else:
@@ -102,13 +130,11 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
                 bpy.ops.clip.delete_track()
 
             print(
-                f"\U0001F4CC Versuch {attempt + 1}: Marker={anzahl_neu}, "
+                f"📌 Versuch {attempt + 1}: Marker={anzahl_neu}, "
                 f"Threshold={detection_threshold:.4f}"
             )
 
-            if success:
-                break
-
         if not success:
             self.report({'WARNING'}, "Maximale Versuche erreicht, Markeranzahl unzureichend.")
+
         return {'FINISHED'}
