@@ -65,6 +65,11 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
         success = False
 
         for attempt in range(20):
+            # Alle Marker vorher deselektieren
+            for t in tracking.tracks:
+                t.select = False
+
+            # 1. Marker setzen
             perform_marker_detection(
                 clip,
                 tracking,
@@ -73,9 +78,10 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
                 min_distance_base,
             )
 
-            names_before = {t.name for t in tracking.tracks}
+            # 2. Neue Marker selektiert -> merken
             new_tracks = [t for t in tracking.tracks if t.select]
 
+            # 3. Alte Marker = alle, die NICHT ausgewählt sind
             frame = scene.frame_current
             width, height = clip.size
             distance_px = int(width * 0.04)
@@ -87,6 +93,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
                     if marker and not marker.mute:
                         valid_positions.append((marker.co[0] * width, marker.co[1] * height))
 
+            # 4. Neue Marker mit alten vergleichen
             close_tracks = []
             for track in new_tracks:
                 marker = track.markers.find_frame(frame, exact=True)
@@ -98,6 +105,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
                             close_tracks.append(track)
                             break
 
+            # 5. Zu nahe Marker entfernen
             for t in tracking.tracks:
                 t.select = False
             for t in close_tracks:
@@ -105,6 +113,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
             if close_tracks:
                 bpy.ops.clip.delete_track()
 
+            # 6. Nur neue, nicht gelöschte Marker zählen
             cleaned_tracks = [t for t in new_tracks if t not in close_tracks]
             anzahl_neu = len(cleaned_tracks)
 
