@@ -213,18 +213,20 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
             context.window_manager.event_timer_remove(self._timer)
         context.window_manager.is_marker_operator_running = False
 
-# --- Registrierung ---
+
+# WICHTIG: Registrierung der Property
 def register():
     bpy.utils.register_class(TRACKING_OT_place_marker)
     bpy.types.WindowManager.is_marker_operator_running = BoolProperty(
         name="Is Marker Operator Running",
-        description="Verhindert Mehrfachausführung des Marker-Operators",
-        default=False
+        default=False,
+        description="Verhindert gleichzeitige Marker-Platzierung"
     )
 
 def unregister():
     bpy.utils.unregister_class(TRACKING_OT_place_marker)
     del bpy.types.WindowManager.is_marker_operator_running
+
 
 if __name__ == "__main__":
     register()
