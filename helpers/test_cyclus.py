@@ -71,14 +71,14 @@ def find_optimal_motion(context: bpy.types.Context):
     bestes_modell = None
 
     for modell in modelle:
-        clip.tracking.settings.motion_model = modell
+        clip.tracking.settings.default_motion_model = modell
         _, _, score = evaluate_tracking(context)
         if score > bester_score:
             bester_score = score
             bestes_modell = modell
 
     if bestes_modell:
-        clip.tracking.settings.motion_model = bestes_modell
+        clip.tracking.settings.default_motion_model = modell
     return bestes_modell
 
 
