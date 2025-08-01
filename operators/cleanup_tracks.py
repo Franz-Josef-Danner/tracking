@@ -12,10 +12,9 @@ def cleanup_tracks(context):
     threshold_factor = 0.9
 
     passes = [
-        {"x_min": 0.0, "x_max": 1.0, "y_min": 0.0, "y_max": 1.0, "ee_factor": 1.0},
-        {"x_min": 0.25, "x_max": 0.75, "y_min": 0.25, "y_max": 0.75, "ee_factor": 0.5},
-        {"x_min": 0.375, "x_max": 0.625, "y_min": 0.375, "y_max": 0.625, "ee_factor": 0.25},
+        {"x_min": 0.0, "x_max": 1.0, "y_min": 0.0, "y_max": 1.0}
     ]
+
 
     def get_marker_position(track, frame):
         for marker in track.markers:
@@ -27,7 +26,7 @@ def cleanup_tracks(context):
     overall_max_error = 0.0
 
     for p in passes:
-        ee = ee_initial * p["ee_factor"]
+        ee = ee_initial
         for frame in range(frame_range[0] + 1, frame_range[1] - 1):
             valid_tracks = []
             vm_values = []
