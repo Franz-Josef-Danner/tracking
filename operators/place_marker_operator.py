@@ -1,7 +1,6 @@
 import bpy
 import math
 import time
-from bpy.props import BoolProperty
 
 def perform_marker_detection(
     clip: bpy.types.MovieClip,
@@ -33,6 +32,7 @@ def deselect_all_markers(tracking):
     for t in tracking.tracks:
         t.select = False
 
+
 class TRACKING_OT_place_marker(bpy.types.Operator):
     bl_idname = "tracking.place_marker"
     bl_label = "Place Marker"
@@ -51,17 +51,10 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
         )
 
     def execute(self, context):
-        if context.window_manager.is_marker_operator_running:
-            self.report({'WARNING'}, "Marker-Platzierung läuft bereits")
-            return {'CANCELLED'}
-
-        context.window_manager.is_marker_operator_running = True
-
         scene = context.scene
         self.clip = getattr(context.space_data, "clip", None)
         if self.clip is None:
             self.report({'WARNING'}, "Kein Clip geladen")
-            context.window_manager.is_marker_operator_running = False
             return {'CANCELLED'}
 
         self.tracking = self.clip.tracking
@@ -193,7 +186,6 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
                 if self.attempt >= 20:
                     self.report({'WARNING'}, "Maximale Versuche erreicht, Markeranzahl unzureichend.")
                     context.window_manager.event_timer_remove(self._timer)
-                    context.window_manager.is_marker_operator_running = False
                     return {'FINISHED'}
 
                 self.state = "DETECT"
@@ -203,7 +195,6 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
                 self.report({'INFO'}, f"Markeranzahl im Zielbereich: {anzahl_neu}")
                 self.success = True
                 context.window_manager.event_timer_remove(self._timer)
-                context.window_manager.is_marker_operator_running = False
                 return {'FINISHED'}
 
         return {'PASS_THROUGH'}
@@ -211,21 +202,13 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
     def cancel(self, context):
         if self._timer is not None:
             context.window_manager.event_timer_remove(self._timer)
-        context.window_manager.is_marker_operator_running = False
 
 
-# WICHTIG: Registrierung der Property
 def register():
     bpy.utils.register_class(TRACKING_OT_place_marker)
-    bpy.types.WindowManager.is_marker_operator_running = BoolProperty(
-        name="Is Marker Operator Running",
-        default=False,
-        description="Verhindert gleichzeitige Marker-Platzierung"
-    )
 
 def unregister():
     bpy.utils.unregister_class(TRACKING_OT_place_marker)
-    del bpy.types.WindowManager.is_marker_operator_running
 
 
 if __name__ == "__main__":
