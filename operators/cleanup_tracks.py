@@ -5,13 +5,12 @@ def cleanup_tracks(context):
     clip = context.space_data.clip
     tracking = clip.tracking
     tracks = tracking.tracks
-    width = clip.size[0]
-    height = clip.size[1]
 
     frame_range = (scene.frame_start, scene.frame_end)
     ee_initial = 10.0
     threshold_factor = 0.9
 
+    # Durchläufe durch Bildbereiche
     passes = [
         {"x_min": 0.0, "x_max": 1.0, "y_min": 0.0, "y_max": 1.0, "ee_factor": 1.0},
         {"x_min": 0.25, "x_max": 0.75, "y_min": 0.25, "y_max": 0.75, "ee_factor": 0.5},
@@ -23,11 +22,6 @@ def cleanup_tracks(context):
             if marker.frame == frame:
                 return marker.co
         return None
-
-    def compute_velocity(p1, p2, p3):
-        vx = (p2[0] - p1[0]) + (p3[0] - p2[0])
-        vy = (p2[1] - p1[1]) + (p3[1] - p2[1])
-        return vx, vy, (vx + vy) / 2
 
     total_deleted = 0
     overall_max_error = 0.0
@@ -45,14 +39,21 @@ def cleanup_tracks(context):
                 p3 = get_marker_position(track, frame + 1)
                 if not (p1 and p2 and p3):
                     continue
+
+                # Bildbereich filtern
                 if not (p["x_min"] <= p2[0] <= p["x_max"] and p["y_min"] <= p2[1] <= p["y_max"]):
                     continue
 
-                vx, vy, vm = compute_velocity(p1, p2, p3)
-                print(f"vm_i: {vm:.6f}")  # 👉 Nur diese Ausgabe bleibt
+                # === Hier deine Formel für vm ===
+                vxm = (p2[0] - p1[0]) + (p3[0] - p2[0])
+                vym = (p2[1] - p1[1]) + (p3[1] - p2[1])
+                vm = (vxm + vym) / 2
+
+                print(f"vm_i: {vm:.6f}")  # 👉 Einzige Konsolenausgabe
+
                 vm_values.append(vm)
-                velocities.append((vx, vy))
-                valid_tracks.append((track, vx, vy, vm))
+                velocities.append((vxm, vym))
+                valid_tracks.append((track, vxm, vym, vm))
 
             maa = len(valid_tracks)
             if maa == 0:
@@ -66,7 +67,7 @@ def cleanup_tracks(context):
 
             while eb > ee:
                 deleted_this_round = 0
-                for track, vx, vy, vm in valid_tracks:
+                for track, vxm, vym, vm in valid_tracks:
                     if abs(vm - va) >= eb:
                         track.select = True
                         deleted_this_round += 1
