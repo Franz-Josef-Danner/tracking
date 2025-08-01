@@ -18,7 +18,6 @@ class TRACK_OT_test_combined(bpy.types.Operator):
 
         settings = clip.tracking.settings
         width = clip.size[0]
-
         pattern_size = int(width / 500)
         search_size = pattern_size * 2
 
@@ -37,11 +36,3 @@ class TRACK_OT_test_combined(bpy.types.Operator):
 
         self.report({'INFO'}, f"Tracking-Defaults gesetzt (Pattern: {pattern_size}, Search: {search_size})")
         return {'FINISHED'}
-
-
-# Registrierung (optional, falls nicht zentral erledigt)
-def register():
-    bpy.utils.register_class(TRACK_OT_test_combined)
-
-def unregister():
-    bpy.utils.unregister_class(TRACK_OT_test_combined)

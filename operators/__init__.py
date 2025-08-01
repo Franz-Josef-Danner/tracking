@@ -1,5 +1,5 @@
 from .tracking_marker_basis_operator import TRACKING_OT_marker_basis_values
-from .test_track_default_settings import TRACK_OT_test_combined
+from .track_default_settings import TRACK_OT_test_combined
 from .place_marker_operator import TRACKING_OT_place_marker
 from .cleanup_tracks import CLIP_OT_cleanup_tracks
 from .low_marker_frame_operator import CLIP_OT_low_marker_frame
