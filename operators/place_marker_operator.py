@@ -89,9 +89,8 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
 
         if self.state == "DETECT":
             if self.attempt == 0:
-                print("[Info] Starte mit leerem Clip – lösche alle vorhandenen Marker.")
-                bpy.ops.clip.select_all(action='SELECT')
-                bpy.ops.clip.delete_track()
+                print("[Info] Starte mit vorhandenen Marker – keine Löschung, nur neue setzen.")
+                deselect_all_markers(self.tracking)
 
             for t in self.tracking.tracks:
                 t.select = False
