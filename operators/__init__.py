@@ -46,7 +46,6 @@ operator_classes = (
     CLIP_OT_proxy_enable,
     CLIP_OT_proxy_disable,
     TRACKING_OT_bidirectional_tracking,
-    CLIP_OT_track_default_settings,
     TRACK_OT_test_combined,
     CLIP_OT_marker_valurierung,
     CLIP_OT_marker_status_popup,
