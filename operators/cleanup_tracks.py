@@ -30,18 +30,16 @@ def cleanup_tracks(context):
 
         for track in tracks:
             errors = []
-            for frame in range(frame_range[0] + 2, frame_range[1] - 2):
-                p0 = get_marker_position(track, frame - 2)
+            for frame in range(frame_range[0] + 1, frame_range[1] - 1):
                 p1 = get_marker_position(track, frame - 1)
                 p2 = get_marker_position(track, frame)
                 p3 = get_marker_position(track, frame + 1)
-                p4 = get_marker_position(track, frame + 2)
 
-                if not (p0 and p1 and p2 and p3 and p4):
+                if not (p1 and p2 and p3):
                     continue
 
-                vxm = ((p1[0] - p0[0]) + (p2[0] - p1[0]) + (p3[0] - p2[0]) + (p4[0] - p3[0])) / 4
-                vym = ((p1[1] - p0[1]) + (p2[1] - p1[1]) + (p3[1] - p2[1]) + (p4[1] - p3[1])) / 4
+                vxm = (p3[0] - p1[0]) / 2
+                vym = (p3[1] - p1[1]) / 2
                 vm = (vxm + vym) / 2
 
                 px = p2[0]
