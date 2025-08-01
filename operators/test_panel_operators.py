@@ -7,7 +7,6 @@ from ..helpers import (
     cycle_motion_model,
     set_tracking_channels,
 )
-from ..helpers.test_cyclus import error_value
 
 
 class TRACKING_OT_test_cycle(bpy.types.Operator):
@@ -51,8 +50,8 @@ class TRACKING_OT_test_error_value(bpy.types.Operator):
     bl_label = "Error Value"
 
     def execute(self, context):
-        value = error_value(context)
-        self.report({'INFO'}, f"Error: {value:.4f}")
+        bpy.ops.clip.error_value('INVOKE_DEFAULT')
+        self.report({'INFO'}, "Error value calculated")
         return {'FINISHED'}
 
 
