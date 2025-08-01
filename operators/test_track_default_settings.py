@@ -19,7 +19,7 @@ class TRACK_OT_test_combined(bpy.types.Operator):
         settings = clip.tracking.settings
         width = clip.size[0]
 
-        pattern_size = int(width / 500)
+        pattern_size = int(width / 200)
         search_size = pattern_size * 2
 
         settings.default_pattern_size = pattern_size
