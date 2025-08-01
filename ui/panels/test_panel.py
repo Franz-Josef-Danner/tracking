@@ -7,7 +7,6 @@ class TRACKING_PT_test(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
     bl_category = "Tracking Tools"
-    # bl_parent_id = "TRACKING_PT_api_functions"
 
     def draw(self, context):
         layout = self.layout
@@ -24,7 +23,7 @@ class TRACKING_PT_test_details(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.operator('tracking.test_marker_base')
+        layout.operator("track.test_combined", text="Test Default")  # ✅ ersetzt zwei Buttons
         layout.operator("tracking.place_marker", text="Place Marker")
         layout.operator("tracking.test_track_markers", text="Track Markers")
         layout.operator("clip.error_value", text="Error Value")
