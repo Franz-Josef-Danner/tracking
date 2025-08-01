@@ -7,7 +7,7 @@ class TRACKING_PT_test(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
     bl_category = "Tracking Tools"
-    bl_parent_id = "TRACKING_PT_api_functions"
+    # bl_parent_id = "TRACKING_PT_api_functions"
 
     def draw(self, context):
         layout = self.layout
