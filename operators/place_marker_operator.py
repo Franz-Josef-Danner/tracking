@@ -58,7 +58,6 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
         self.tracking = self.clip.tracking
         settings = self.tracking.settings
 
-        # Threshold aus Szene lesen oder default setzen
         self.detection_threshold = scene.get("last_detection_threshold", getattr(settings, "default_correlation_min", 0.75))
         self.marker_adapt = scene.get("marker_adapt", 80)
         self.max_marker = scene.get("max_marker", self.marker_adapt * 1.1)
@@ -84,6 +83,11 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
         scene = context.scene
 
         if self.state == "DETECT":
+            if self.attempt == 0:
+                print("[Info] Starte mit leerem Clip – lösche alle vorhandenen Marker.")
+                bpy.ops.clip.select_all(action='SELECT')
+                bpy.ops.clip.delete_track()
+
             for t in self.tracking.tracks:
                 t.select = False
 
@@ -145,34 +149,27 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
 
             anzahl_neu = len(cleaned_tracks)
 
-            meldung = f"Versuch {self.attempt + 1}:\nGesetzte Marker (nach Filterung): {anzahl_neu}"
+            meldung = f"Versuch {self.attempt + 1}:
+Gesetzte Marker (nach Filterung): {anzahl_neu}"
             if anzahl_neu < self.min_marker:
-                meldung += "\nMarkeranzahl zu niedrig.\nMarker werden gelöscht."
+                meldung += "\nMarkeranzahl zu niedrig. Marker werden gelöscht."
             elif anzahl_neu > self.max_marker:
-                meldung += "\nMarkeranzahl ausreichend. Vorgang wird beendet."
+                meldung += "\nMarkeranzahl zu hoch. Marker werden gelöscht."
             else:
-                meldung += "\nMarkeranzahl im mittleren Bereich.\nErneuter Versuch folgt."
+                meldung += "\nMarkeranzahl im Zielbereich. Vorgang abgeschlossen."
             bpy.ops.clip.marker_status_popup('INVOKE_DEFAULT', message=meldung)
 
-            if self.min_marker <= anzahl_neu <= self.max_marker:
-                self.report({'INFO'}, f"Markeranzahl im Zielbereich: {anzahl_neu}")
-                self.success = True
-                context.window_manager.event_timer_remove(self._timer)
-                return {'FINISHED'}
-            else:
-                if anzahl_neu < self.min_marker:
-                    for t in self.tracking.tracks:
-                        t.select = False
-                    for t in cleaned_tracks:
-                        t.select = True
-                    bpy.ops.clip.delete_track()
+            if anzahl_neu < self.min_marker or anzahl_neu > self.max_marker:
+                for t in self.tracking.tracks:
+                    t.select = False
+                for t in cleaned_tracks:
+                    t.select = True
+                bpy.ops.clip.delete_track()
 
-                # Threshold anpassen
                 self.detection_threshold = max(
                     self.detection_threshold * ((anzahl_neu + 0.1) / self.marker_adapt),
                     0.0001,
                 )
-                # In Szene speichern
                 scene["last_detection_threshold"] = self.detection_threshold
 
                 print(
@@ -189,6 +186,12 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
                 self.state = "DETECT"
                 return {'PASS_THROUGH'}
 
+            else:
+                self.report({'INFO'}, f"Markeranzahl im Zielbereich: {anzahl_neu}")
+                self.success = True
+                context.window_manager.event_timer_remove(self._timer)
+                return {'FINISHED'}
+
         return {'PASS_THROUGH'}
 
     def cancel(self, context):
@@ -196,10 +199,8 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
             context.window_manager.event_timer_remove(self._timer)
 
 
-# Registrierung
 def register():
     bpy.utils.register_class(TRACKING_OT_place_marker)
-
 
 def unregister():
     bpy.utils.unregister_class(TRACKING_OT_place_marker)
