@@ -2,11 +2,8 @@ import bpy
 
 
 def cycle_motion_model() -> None:
-    """Toggle the motion model of the active clip."""
-    area = next(
-        (a for a in bpy.context.screen.areas if a.type == "CLIP_EDITOR"),
-        None,
-    )
+    """Cycle through common motion models on the active clip."""
+    area = next((a for a in bpy.context.screen.areas if a.type == "CLIP_EDITOR"), None)
     if area is None:
         print("⚠️ Kein Clip-Editor gefunden")
         return
@@ -14,12 +11,18 @@ def cycle_motion_model() -> None:
     if clip is None:
         print("⚠️ Kein Clip geladen")
         return
+
     tracking = clip.tracking
-    model = tracking.settings.motion_model
-    tracking.settings.motion_model = (
-        "Affine" if model != "Affine" else "Perspective"
-    )
-    print(f"🔄 Motion Model gewechselt: {model} → {tracking.settings.motion_model}")
+    models = ["Perspective", "Affine", "LocRotScale", "Loc"]
+    current = tracking.settings.motion_model
+
+    try:
+        next_index = (models.index(current) + 1) % len(models)
+    except ValueError:
+        next_index = 0
+
+    tracking.settings.motion_model = models[next_index]
+    print("Motion Model gewechselt zu:", models[next_index])
 
 
 class TRACKING_OT_cycle_motion_model(bpy.types.Operator):

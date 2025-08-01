@@ -36,14 +36,20 @@ def register():
         min=0.0,
     )
     for cls in classes:
-        bpy.utils.register_class(cls)
+        try:
+            bpy.utils.register_class(cls)
+        except ValueError:
+            pass
 
 
 def unregister():
     if bpy is None:
         return
     for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
+        try:
+            bpy.utils.unregister_class(cls)
+        except ValueError:
+            pass
     if hasattr(bpy.types.Scene, "error_threshold"):
         del bpy.types.Scene.error_threshold
     unregister_properties()

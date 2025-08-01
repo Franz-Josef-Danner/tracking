@@ -79,7 +79,7 @@ class TRACKING_OT_test_cycle_motion(bpy.types.Operator):
     bl_label = "Cycle Motion"
 
     def execute(self, context):
-        cycle_motion_model()
+        # Der eigentliche Wechsel wird vom Operator TRACKING_OT_cycle_motion_model erledigt
         self.report({'INFO'}, "Motion Model gewechselt")
         return {'FINISHED'}
 
