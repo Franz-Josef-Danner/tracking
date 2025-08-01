@@ -15,7 +15,7 @@ __all__ = [
 def evaluate_tracking(context: bpy.types.Context):
     """Durchführen von Detection, Tracking und Fehlerbewertung."""
     try:
-        bpy.ops.tracking.place_marker('EXEC_DEFAULT')
+        bpy.ops.tracking.place_marker()
     except Exception as e:
         print(f"[Fehler] Marker-Platzierung fehlgeschlagen: {e}")
         return 0, float("inf"), 0
