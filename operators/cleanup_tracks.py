@@ -7,14 +7,15 @@ def cleanup_tracks(context):
     tracks = tracking.tracks
 
     width, height = clip.size
-    frame_range = (scene.frame_start, scene.frame_end)
-    ee_initial = 10.0
-    threshold_factor = 0.9
+    ee_initial = width / 100.0         # Dynamischer Schwellwert in Abhängigkeit von Auflösung
+    threshold_factor = 0.9             # Reduktionsfaktor für eb
 
+    frame_range = (scene.frame_start, scene.frame_end)
+
+    # Nur ein Durchlauf über das ganze Bild
     passes = [
         {"x_min": 0.0, "x_max": 1.0, "y_min": 0.0, "y_max": 1.0}
     ]
-
 
     def get_marker_position(track, frame):
         for marker in track.markers:
@@ -26,7 +27,7 @@ def cleanup_tracks(context):
     overall_max_error = 0.0
 
     for p in passes:
-        ee = ee_initial
+        ee = ee_initial  # Einheitlicher Fehlerwert für gesamten Framebereich
         for frame in range(frame_range[0] + 1, frame_range[1] - 1):
             valid_tracks = []
             vm_values = []
@@ -39,10 +40,11 @@ def cleanup_tracks(context):
                 if not (p1 and p2 and p3):
                     continue
 
+                # Nur Marker im erlaubten Bildbereich
                 if not (p["x_min"] <= p2[0] <= p["x_max"] and p["y_min"] <= p2[1] <= p["y_max"]):
                     continue
 
-                # Koordinaten von normiert → Pixel
+                # Koordinaten in Pixel umrechnen
                 pxi_f1 = p1[0] * width
                 pyi_f1 = p1[1] * height
                 pxi_fi = p2[0] * width
@@ -50,12 +52,12 @@ def cleanup_tracks(context):
                 pxi_f2 = p3[0] * width
                 pyi_f2 = p3[1] * height
 
-                # Deine Formel (jetzt in Pixeln)
+                # Formel: vm_i = ((fi - f1) + (f2 - fi)) / 2, getrennt für x und y
                 vxm = (pxi_fi - pxi_f1) + (pxi_f2 - pxi_fi)
                 vym = (pyi_fi - pyi_f1) + (pyi_f2 - pyi_fi)
                 vm = (vxm + vym) / 2
 
-                print(f"vm_i: {vm:.6f}")  # 👉 Ausgabe in Pixeln
+                print(f"vm_i: {vm:.6f}")  # einzige Konsolenausgabe
 
                 vm_values.append(vm)
                 velocities.append((vxm, vym))
@@ -65,12 +67,15 @@ def cleanup_tracks(context):
             if maa == 0:
                 continue
 
+            # Durchschnittliche Bewegung aller gültigen Marker
             vxa = sum(v[0] for v in velocities) / maa
             vya = sum(v[1] for v in velocities) / maa
             va = (vxa + vya) / 2
+
             eb = max(abs(vm - va) for (_, _, _, vm) in valid_tracks)
             overall_max_error = max(overall_max_error, eb)
 
+            # Stufenweise Bereinigung (Ausreißer entfernen)
             while eb > ee:
                 deleted_this_round = 0
                 for track, vxm, vym, vm in valid_tracks:
@@ -80,7 +85,7 @@ def cleanup_tracks(context):
                 if deleted_this_round > 0:
                     bpy.ops.clip.delete_track()
                     total_deleted += deleted_this_round
-                eb *= threshold_factor
+                eb *= threshold_factor  # schrittweise Reduktion
 
     return total_deleted, overall_max_error
 
@@ -96,7 +101,7 @@ class CLIP_OT_cleanup_tracks(bpy.types.Operator):
     def execute(self, context):
         deleted, max_error = cleanup_tracks(context)
         if deleted:
-            self.report({'INFO'}, f"{deleted} Marker gelöscht. Max. Fehler: {max_error:.4f}")
+            self.report({'INFO'}, f"{deleted} Marker gelöscht. Max. Fehler: {max_error:.2f}")
         else:
             self.report({'INFO'}, "Keine Marker gelöscht.")
         return {'FINISHED'}
