@@ -6,7 +6,7 @@ def cleanup_tracks(context):
     tracking = clip.tracking
     tracks = tracking.tracks
 
-    ee_initial = (context.scene.tracking_props.error_per_track + 0.1) / 1000
+    ee_initial = (context.scene.error_per_track + 0.1) / 1000
     threshold_factor = 0.9
     frame_range = (scene.frame_start, scene.frame_end)
 
