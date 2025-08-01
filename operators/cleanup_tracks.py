@@ -7,7 +7,7 @@ def cleanup_tracks(context):
     tracks = tracking.tracks
 
     width, height = clip.size
-    ee_initial = width / 200.0         # Dynamischer Schwellwert in Abhängigkeit von Auflösung
+    ee_initial = width / 300.0         # Dynamischer Schwellwert in Abhängigkeit von Auflösung
     threshold_factor = 0.9             # Reduktionsfaktor für eb
 
     frame_range = (scene.frame_start, scene.frame_end)
