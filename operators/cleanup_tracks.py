@@ -6,11 +6,11 @@ def cleanup_tracks(context):
     tracking = clip.tracking
     tracks = tracking.tracks
 
+    width, height = clip.size
     frame_range = (scene.frame_start, scene.frame_end)
     ee_initial = 10.0
     threshold_factor = 0.9
 
-    # Durchläufe durch Bildbereiche
     passes = [
         {"x_min": 0.0, "x_max": 1.0, "y_min": 0.0, "y_max": 1.0, "ee_factor": 1.0},
         {"x_min": 0.25, "x_max": 0.75, "y_min": 0.25, "y_max": 0.75, "ee_factor": 0.5},
@@ -40,16 +40,23 @@ def cleanup_tracks(context):
                 if not (p1 and p2 and p3):
                     continue
 
-                # Bildbereich filtern
                 if not (p["x_min"] <= p2[0] <= p["x_max"] and p["y_min"] <= p2[1] <= p["y_max"]):
                     continue
 
-                # === Hier deine Formel für vm ===
-                vxm = (p2[0] - p1[0]) + (p3[0] - p2[0])
-                vym = (p2[1] - p1[1]) + (p3[1] - p2[1])
+                # Koordinaten von normiert → Pixel
+                pxi_f1 = p1[0] * width
+                pyi_f1 = p1[1] * height
+                pxi_fi = p2[0] * width
+                pyi_fi = p2[1] * height
+                pxi_f2 = p3[0] * width
+                pyi_f2 = p3[1] * height
+
+                # Deine Formel (jetzt in Pixeln)
+                vxm = (pxi_fi - pxi_f1) + (pxi_f2 - pxi_fi)
+                vym = (pyi_fi - pyi_f1) + (pyi_f2 - pyi_fi)
                 vm = (vxm + vym) / 2
 
-                print(f"vm_i: {vm:.6f}")  # 👉 Einzige Konsolenausgabe
+                print(f"vm_i: {vm:.6f}")  # 👉 Ausgabe in Pixeln
 
                 vm_values.append(vm)
                 velocities.append((vxm, vym))
