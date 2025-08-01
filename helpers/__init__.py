@@ -8,9 +8,6 @@ from .proxy_enable import enable_proxy
 from .proxy_disable import disable_proxy
 from .test_cyclus import (
     evaluate_tracking,
-    find_optimal_pattern,
-    find_optimal_motion,
-    find_best_channel_combination,
     run_tracking_optimization,
 )
 from .low_marker_frame import low_marker_frame
