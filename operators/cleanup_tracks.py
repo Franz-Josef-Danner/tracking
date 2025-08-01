@@ -109,11 +109,11 @@ class CLIP_OT_cleanup_tracks(bpy.types.Operator):
         return {'FINISHED'}
 
 
-def register():
-    bpy.utils.register_class(CLIP_OT_cleanup_tracks)
-
-def unregister():
-    bpy.utils.unregister_class(CLIP_OT_cleanup_tracks)
+    def register():
+        bpy.utils.register_class(CLIP_OT_cleanup_tracks)
+    
+    def unregister():
+        bpy.utils.unregister_class(CLIP_OT_cleanup_tracks)
 
 if __name__ == "__main__":
     register()
