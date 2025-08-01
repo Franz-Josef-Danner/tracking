@@ -1,27 +1,19 @@
 import bpy
+from ..helpers import run_default_tracking_settings
 
-from ..helpers import (
-    run_tracking_optimization,
-    track_markers_until_end,
-    get_tracking_lengths,
-    cycle_motion_model,
-    set_tracking_channels,
-)
-from ..helpers.test_cyclus import error_value
+class CLIP_OT_run_default_tracking_settings(bpy.types.Operator):
+    bl_idname = "clip.run_default_tracking_settings"
+    bl_label = "Test Default"
+    bl_description = "Führt die standardmäßigen Tracking-Einstellungen aus"
+    bl_options = {'REGISTER', 'UNDO'}
 
-
-class TRACKING_OT_test_cycle(bpy.types.Operator):
-    bl_idname = "tracking.test_cycle"
-    bl_label = "Test Cycle"
+    @classmethod
+    def poll(cls, context):
+        return context.space_data and context.space_data.type == 'CLIP_EDITOR'
 
     def execute(self, context):
-        result = run_tracking_optimization(context)
-        self.report(
-            {'INFO'},
-            f"pattern={result.get('pattern')} motion={result.get('motion')} channels={result.get('channels')}"
-        )
+        run_default_tracking_settings(context)
         return {'FINISHED'}
-
 
 class TRACKING_OT_test_base(bpy.types.Operator):
     bl_idname = "tracking.test_base"
