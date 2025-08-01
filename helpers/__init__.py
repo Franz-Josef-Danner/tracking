@@ -6,6 +6,6 @@ from .cycle_motion_model import cycle_motion_model
 from .set_tracking_channels import set_tracking_channels, CLIP_OT_set_tracking_channels
 from .proxy_enable import enable_proxy
 from .proxy_disable import disable_proxy
-from .test_cyclus import run_tracking_optimization
+from .test_cyclus import run_default_tracking_settings
 from .low_marker_frame import low_marker_frame
 from .invoke_clip_operator_safely import invoke_clip_operator_safely
