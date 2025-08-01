@@ -1,75 +1,28 @@
-"""Automatischer Optimierungszyklus für das Tracking.
-
-Dieses Modul nutzt mehrere bereits vorhandene Helferfunktionen um in drei
-Stufen optimale Einstellungen zu finden:
-- Pattern-Größe
-- Motion-Model
-- Farbkanal Kombinationen
-"""
-
-from __future__ import annotations
-
-import bpy
-
-from ..operators import place_marker_operator
-from .track_markers_until_end import track_markers_until_end
-from .get_tracking_lengths import get_tracking_lengths
-from .cycle_motion_model import cycle_motion_model
-from .set_tracking_channels import set_tracking_channels
-
-
-# fallback error calculation if not provided by module
-try:
-    from ..operators.error_value_operator import error_value  # type: ignore
-except Exception:  # pragma: no cover - optional import
-    def error_value(context: bpy.types.Context) -> float:
-        """Return the total error of all selected tracks."""
-        clip = context.space_data.clip if context.space_data else None
-        if clip is None:
-            return 0.0
-        x_pos, y_pos = [], []
-        for track in clip.tracking.tracks:
-            if not track.select:
-                continue
-            for marker in track.markers:
-                if marker.mute:
-                    continue
-                x_pos.append(marker.co[0])
-                y_pos.append(marker.co[1])
-        if not x_pos:
-            return 0.0
-        mean_x = sum(x_pos) / len(x_pos)
-        mean_y = sum(y_pos) / len(y_pos)
-        dev_x = sum((x - mean_x) ** 2 for x in x_pos) / len(x_pos)
-        dev_y = sum((y - mean_y) ** 2 for y in y_pos) / len(y_pos)
-        return (dev_x ** 0.5) + (dev_y ** 0.5)
-
-
 def evaluate_tracking(context: bpy.types.Context):
     """Durchführen von Detection, Tracking und Fehlerbewertung."""
-    # Standardausführung über Blender Operator-Aufruf
+    # Marker platzieren und Tracking bis zum Ende durchführen
     try:
         bpy.ops.tracking.place_marker('EXEC_DEFAULT')
     except Exception as e:
         print(f"[Fehler] Marker-Platzierung fehlgeschlagen: {e}")
         return 0, float("inf"), 0
 
-
     track_markers_until_end()
     error = error_value(context)
 
+    # Gesamtlänge aller Tracks ermitteln
     length_info = get_tracking_lengths()
     if isinstance(length_info, dict):
         length = sum(v["length"] for v in length_info.values())
     else:
         length = float(length_info) if length_info else 0.0
 
+    # Score als Verhältnis von Länge zu Fehler
     score = length / error if error else 0
     return length, error, score
 
-
 def find_optimal_pattern(context: bpy.types.Context):
-    """Ermittelt die beste Pattern-Größe."""
+    """Ermittelt die beste Pattern-Größe durch iteratives Vergrößern."""
     pattern = 1.0
     pattern_final = None
     bester_score = 0.0
@@ -82,18 +35,17 @@ def find_optimal_pattern(context: bpy.types.Context):
         if score > bester_score:
             bester_score = score
             pattern_final = pattern
-            wiederholungen = 0
+            wiederholungen = 0  # Verbesserung erzielt, Zähler zurücksetzen
         else:
             wiederholungen += 1
             if wiederholungen > max_wiederholungen:
-                break
-        pattern *= 1.1
+                break  # Abbruch nach 4 erfolglosen Wiederholungen
+        pattern *= 1.1  # Pattern-Größe für nächsten Zyklus um 10% erhöhen
 
     return pattern_final
 
-
 def find_optimal_motion(context: bpy.types.Context):
-    """Bestimmt das optimal passende Motion-Model."""
+    """Bestimmt das optimal passende Motion-Model durch iteratives Umschalten."""
     motion = 1.0
     motion_final = None
     bester_score = 0.0
@@ -103,13 +55,13 @@ def find_optimal_motion(context: bpy.types.Context):
         if score > bester_score:
             bester_score = score
             motion_final = motion
-        cycle_motion_model()
+        cycle_motion_model()  # Zum nächsten Motion-Model wechseln
+        # (Hier wird angenommen, dass cycle_motion_model() intern `motion` weiterstellt)
 
     return motion_final
 
-
 def find_best_channel_combination(context: bpy.types.Context):
-    """Finde die beste Farbkanal-Kombination."""
+    """Findet die beste Kombination der Farbkanäle für das Tracking."""
     kombinationen = [
         ("R",),
         ("G",),
@@ -124,6 +76,7 @@ def find_best_channel_combination(context: bpy.types.Context):
     bester_error = float("inf")
 
     for kombi in kombinationen:
+        # Boolean-Werte für die einzelnen Farbkanäle bestimmen
         red = "R" in kombi
         green = "G" in kombi
         blue = "B" in kombi
@@ -137,9 +90,8 @@ def find_best_channel_combination(context: bpy.types.Context):
 
     return beste_kombination, beste_length, bester_error
 
-
 def run_tracking_optimization(context: bpy.types.Context):
-    """Starte den kompletten Optimierungszyklus."""
+    """Startet den kompletten Optimierungszyklus und gibt die besten Parameter zurück."""
     pattern_final = find_optimal_pattern(context)
     motion_final = find_optimal_motion(context)
     best_channels, best_length, best_error = find_best_channel_combination(context)
@@ -152,4 +104,3 @@ def run_tracking_optimization(context: bpy.types.Context):
         "error": best_error,
         "search_size": search_size,
     }
-
