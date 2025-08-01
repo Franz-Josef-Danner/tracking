@@ -16,6 +16,11 @@ def evaluate_tracking(context: bpy.types.Context):
     """Durchführen von Detection, Tracking und Fehlerbewertung."""
     try:
         bpy.ops.tracking.place_marker()
+        wait_for_marker_change(context)
+    except Exception as e:
+        print(f"[Fehler] Marker-Platzierung fehlgeschlagen: {e}")
+        return 0, float("inf"), 0
+
     except Exception as e:
         print(f"[Fehler] Marker-Platzierung fehlgeschlagen: {e}")
         return 0, float("inf"), 0
