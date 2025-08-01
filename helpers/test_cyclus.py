@@ -37,12 +37,16 @@ def evaluate_tracking(context: bpy.types.Context):
 
 def find_optimal_pattern(context: bpy.types.Context):
     """Ermittelt die beste Pattern-Größe durch iteratives Vergrößern."""
+    clip = context.space_data.clip or context.scene.active_clip
+    if not clip:
+        return None
+
     pattern = 1.0
     pattern_final = None
     bester_score = 0
 
     for i in range(5):
-        context.scene.tracking_settings.pattern_size = int(15 * pattern)
+        clip.tracking.settings.pattern_size = int(15 * pattern)
         _, _, score = evaluate_tracking(context)
         if score > bester_score:
             bester_score = score
@@ -50,44 +54,52 @@ def find_optimal_pattern(context: bpy.types.Context):
         pattern += 0.25
 
     if pattern_final:
-        context.scene.tracking_settings.pattern_size = int(15 * pattern_final)
+        clip.tracking.settings.pattern_size = int(15 * pattern_final)
     return pattern_final
 
 
 def find_optimal_motion(context: bpy.types.Context):
     """Durchläuft verschiedene Motion-Modelle und wählt das beste."""
+    clip = context.space_data.clip or context.scene.active_clip
+    if not clip:
+        return None
+
     modelle = ["Loc", "LocRot", "Affine"]
     bester_score = 0
     bestes_modell = None
 
     for modell in modelle:
-        context.scene.tracking_settings.motion_model = modell
+        clip.tracking.settings.motion_model = modell
         _, _, score = evaluate_tracking(context)
         if score > bester_score:
             bester_score = score
             bestes_modell = modell
 
     if bestes_modell:
-        context.scene.tracking_settings.motion_model = bestes_modell
+        clip.tracking.settings.motion_model = bestes_modell
     return bestes_modell
 
 
 def find_best_channel_combination(context: bpy.types.Context):
     """Testet verschiedene Kombinationen von Tracking-Kanälen."""
+    clip = context.space_data.clip or context.scene.active_clip
+    if not clip:
+        return None
+
     kombis = [(True, False), (False, True), (True, True)]
     bester_score = 0
     beste_kombi = None
 
     for red, green in kombis:
-        context.scene.use_red_channel = red
-        context.scene.use_green_channel = green
+        clip.tracking.settings.use_default_red_channel = red
+        clip.tracking.settings.use_default_green_channel = green
         _, _, score = evaluate_tracking(context)
         if score > bester_score:
             bester_score = score
             beste_kombi = (red, green)
 
     if beste_kombi:
-        context.scene.use_red_channel, context.scene.use_green_channel = beste_kombi
+        clip.tracking.settings.use_default_red_channel, clip.tracking.settings.use_default_green_channel = beste_kombi
     return beste_kombi
 
 
