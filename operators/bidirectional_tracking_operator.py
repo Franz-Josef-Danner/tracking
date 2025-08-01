@@ -11,6 +11,7 @@ class TrackingController:
         self.tracking = self.clip.tracking
         self.step = 0  # 0 = forward, 1 = wait, 2 = backward, 3 = wait, 4 = cleanup
         self.prev_frame = context.scene.frame_current
+        self.initial_frame = context.scene.frame_current  # Speichert den Start-Frame für Rücksetzen
         self.frame_stable_counter = 0
         self.marker_counts_prev = [len(t.markers) for t in self.tracking.tracks]
         self.tracking_done_delay = 0
@@ -36,9 +37,9 @@ class TrackingController:
             self.tracking_done_delay = 0
             return False
 
-        if self.frame_stable_counter >= 3:
+        if self.frame_stable_counter >= 2:
             self.tracking_done_delay += 1
-            if self.tracking_done_delay >= 3:
+            if self.tracking_done_delay >= 2:
                 return True
 
         return False
@@ -53,6 +54,8 @@ class TrackingController:
             print("→ Warte auf Abschluss des Vorwärts-Trackings...")
             if self.is_tracking_done_robust():
                 print("✓ Vorwärts-Tracking abgeschlossen.")
+                self.context.scene.frame_current = self.initial_frame  # Frame zurücksetzen
+                print(f"← Frame zurückgesetzt auf {self.initial_frame}")
                 self.step = 2
         elif self.step == 2:
             print("→ Starte Rückwärts-Tracking...")
@@ -136,10 +139,6 @@ class TRACKING_OT_bidirectional_tracking(bpy.types.Operator):
             self.report({'WARNING'}, "Kein Clip geladen")
             print("⚠ Kein Clip geladen.")
             return {'CANCELLED'}
-
-        if not clip.use_proxy:
-            clip.use_proxy = True
-            print("Proxy-Generierung aktiviert.")
 
         print("Tracking wird gestartet...")
         start_bidirectional_tracking(context)

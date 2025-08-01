@@ -1,7 +1,8 @@
 from .tracking_marker_basis_operator import TRACKING_OT_marker_basis_values
 from .place_marker_operator import TRACKING_OT_place_marker
-from .cleanup_operator import CLIP_OT_cleanup_tracks
+from .cleanup_tracks import CLIP_OT_cleanup_tracks
 from .low_marker_frame_operator import CLIP_OT_low_marker_frame
+from ..helpers.delete_tracks import delete_selected_tracks
 from ..helpers.test_marker_base_operator import TRACKING_OT_test_marker_base
 from .error_value_operator import CLIP_OT_error_value
 from .proxy_builder import CLIP_OT_proxy_build
@@ -23,6 +24,8 @@ from .test_panel_operators import (
     TRACKING_OT_test_cycle_motion,
     TRACKING_OT_test_tracking_channels,
 )
+from ..helpers.cycle_motion_model import TRACKING_OT_cycle_motion_model
+from ..helpers.set_tracking_channels import CLIP_OT_set_tracking_channels  # ✅ NEU
 
 operator_classes = (
     TRACKING_OT_marker_basis_values,
@@ -39,6 +42,7 @@ operator_classes = (
     TRACKING_OT_test_tracking_lengths,
     TRACKING_OT_test_cycle_motion,
     TRACKING_OT_test_tracking_channels,
+    TRACKING_OT_cycle_motion_model,
     CLIP_OT_proxy_build,
     CLIP_OT_proxy_enable,
     CLIP_OT_proxy_disable,
@@ -46,4 +50,5 @@ operator_classes = (
     TRACKING_OT_set_default_settings,
     CLIP_OT_marker_valurierung,
     CLIP_OT_marker_status_popup,
+    CLIP_OT_set_tracking_channels,  # ✅ NEU
 )

@@ -1,7 +1,6 @@
 import bpy
 
 from ..helpers.low_marker_frame import low_marker_frame
-from ..helpers.test_cyclus import run_tracking_optimization
 
 
 class CLIP_OT_low_marker_frame(bpy.types.Operator):
