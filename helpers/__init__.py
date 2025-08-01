@@ -3,7 +3,7 @@ from .test_marker_base import test_marker_base
 from .track_markers_until_end import track_markers_until_end
 from .get_tracking_lengths import get_tracking_lengths
 from .cycle_motion_model import cycle_motion_model
-from .set_tracking_channels import set_tracking_channels, CLIP_OT_set_tracking_channels
+from .set_tracking_channels import CLIP_OT_set_tracking_channels
 from .proxy_enable import enable_proxy
 from .proxy_disable import disable_proxy
 from .test_cyclus import (
