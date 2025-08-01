@@ -13,16 +13,21 @@ def cycle_motion_model() -> None:
         return
 
     tracking = clip.tracking
+    tracking_object = tracking.objects.active
+    if tracking_object is None:
+        print("⚠️ Kein aktives Tracking-Objekt")
+        return
+
     models = ["Perspective", "Affine", "LocRotScale", "Loc"]
-    current = tracking.settings.motion_model
+    current = tracking_object.motion_model
 
     try:
         next_index = (models.index(current) + 1) % len(models)
     except ValueError:
         next_index = 0
 
-    tracking.settings.motion_model = models[next_index]
-    print("Motion Model gewechselt zu:", models[next_index])
+    tracking_object.motion_model = models[next_index]
+    print("✅ Motion Model gewechselt zu:", models[next_index])
 
 
 class TRACKING_OT_cycle_motion_model(bpy.types.Operator):
