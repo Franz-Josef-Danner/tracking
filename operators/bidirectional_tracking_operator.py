@@ -37,9 +37,9 @@ class TrackingController:
             self.tracking_done_delay = 0
             return False
 
-        if self.frame_stable_counter >= 3:
+        if self.frame_stable_counter >= 2:
             self.tracking_done_delay += 1
-            if self.tracking_done_delay >= 3:
+            if self.tracking_done_delay >= 2:
                 return True
 
         return False
