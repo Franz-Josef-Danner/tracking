@@ -117,7 +117,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
 
             self.wait_start = time.time()
             self.state = "WAIT"
-            self.report({'INFO'}, f"Versuch {self.attempt + 1}: Marker gesetzt, warte...")
+            print(f"[Info] Versuch {self.attempt + 1}: Marker gesetzt, warte...")
             return {'PASS_THROUGH'}
 
         if self.state == "WAIT":
@@ -154,14 +154,15 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
 
             anzahl_neu = len(cleaned_tracks)
 
-            meldung = f"Versuch {self.attempt + 1}:\nGesetzte Marker (nach Filterung): {anzahl_neu}"
+            meldung = f"Versuch {self.attempt + 1}: gesetzte Marker (nach Filterung): {anzahl_neu}"
             if anzahl_neu < self.min_marker:
-                meldung += "\nMarkeranzahl zu niedrig. Marker werden gelöscht."
+                meldung += " → zu wenig, Marker werden gelöscht."
             elif anzahl_neu > self.max_marker:
-                meldung += "\nMarkeranzahl zu hoch. Marker werden gelöscht."
+                meldung += " → zu viele, Marker werden gelöscht."
             else:
-                meldung += "\nMarkeranzahl im Zielbereich. Vorgang abgeschlossen."
-            bpy.ops.clip.marker_status_popup('INVOKE_DEFAULT', message=meldung)
+                meldung += " → Zielbereich erreicht."
+
+            print("[Status]", meldung)
 
             if anzahl_neu < self.min_marker or anzahl_neu > self.max_marker:
                 for t in self.tracking.tracks:
