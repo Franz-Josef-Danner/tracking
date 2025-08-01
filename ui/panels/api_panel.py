@@ -14,7 +14,7 @@ class TRACKING_PT_api_functions(bpy.types.Panel):
         layout.prop(context.scene, "frames_per_track", text="Frames/Track")
         layout.prop(context.scene, "error_per_track", text="Error/Track")
         layout.operator("clip.proxy_build", text="Proxy")
-        layout.operator("tracking.set_default_settings", text="Track Default")
+        layout.operator("clip.track_default_settings", text="Track Defaults setzen")
         layout.operator("tracking.marker_basis_values")
         layout.operator("clip.proxy_disable", text="Proxy off")
         layout.operator("tracking.place_marker")

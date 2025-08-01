@@ -12,7 +12,7 @@ class TRACK_OT_test_default(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            bpy.ops.tracking.set_default_settings()
+            bpy.ops.clip.track_default_settings()
         except Exception as e:
             self.report({'ERROR'}, f"Fehler beim Ausführen von track_default_settings: {e}")
             return {'CANCELLED'}
