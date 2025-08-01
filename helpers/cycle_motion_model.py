@@ -1,7 +1,7 @@
 import bpy
 
 def cycle_motion_model():
-    """Cycle the default motion model used for newly added tracks."""
+    """Cycle the default motion model used for newly added tracks (global setting)."""
     area = next((a for a in bpy.context.screen.areas if a.type == "CLIP_EDITOR"), None)
     if area is None:
         print("⚠️ Kein Clip-Editor gefunden.")
@@ -13,12 +13,8 @@ def cycle_motion_model():
         return
 
     tracking = clip.tracking
-    tracking_object = tracking.objects.active
-    if tracking_object is None:
-        print("⚠️ Kein aktives Tracking-Objekt.")
-        return
+    settings = tracking.settings
 
-    settings = tracking_object.settings
     models = ["Perspective", "Affine", "LocRotScale", "Loc"]
     current = settings.motion_model
 
@@ -28,7 +24,7 @@ def cycle_motion_model():
         next_index = 0
 
     settings.motion_model = models[next_index]
-    print(f"✅ Standard-Motion-Model geändert zu: {models[next_index]}")
+    print(f"✅ Globales Motion Model (Tracking Settings) geändert zu: {models[next_index]}")
 
 
 class TRACKING_OT_cycle_motion_model(bpy.types.Operator):
