@@ -1,17 +1,32 @@
-"""Operator to set default Blender tracking settings."""
+"""Operator to set default tracking settings for the active movie clip."""
 
 import bpy
 
 
 class CLIP_OT_track_default_settings(bpy.types.Operator):
-    """Set default tracking settings"""
+    """Set default pattern and search size for tracking"""
+
     bl_idname = "clip.track_default_settings"
     bl_label = "Set Default Tracking Settings"
+    bl_description = "Set default pattern and search size for movie clip tracking"
+
+    @classmethod
+    def poll(cls, context):
+        return (
+            context.space_data is not None
+            and context.space_data.type == 'CLIP_EDITOR'
+            and context.edit_movieclip is not None
+        )
 
     def execute(self, context):
-        # Tracking-Defaultwerte setzen
-        context.scene.tracking_settings.default_pattern_size = 12
-        context.scene.tracking_settings.default_search_size = 24
+        clip = context.edit_movieclip
+        settings = clip.tracking.settings
+
+        # Beispielhafte feste Werte – können später dynamisiert werden
+        settings.default_pattern_size = 12
+        settings.default_search_size = 24
+
+        self.report({'INFO'}, "Default tracking settings applied")
         return {'FINISHED'}
 
 
