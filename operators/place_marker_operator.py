@@ -99,6 +99,8 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
                 if marker and not marker.mute:
                     self.existing_positions.append((marker.co[0] * self.width, marker.co[1] * self.height))
 
+            self.initial_track_names = {t.name for t in self.tracking.tracks}
+
             perform_marker_detection(
                 self.clip,
                 self.tracking,
@@ -107,7 +109,6 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
                 self.min_distance_base,
             )
 
-            self.initial_track_names = {t.name for t in self.tracking.tracks}
             self.wait_start = time.time()
             self.state = "WAIT"
             self.report({'INFO'}, f"Versuch {self.attempt + 1}: Marker gesetzt, warte...")
@@ -120,7 +121,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
             return {'PASS_THROUGH'}
 
         if self.state == "PROCESS":
-            new_tracks = [t for t in self.tracking.tracks if t.select]
+            new_tracks = [t for t in self.tracking.tracks if t.name not in self.initial_track_names]
             close_tracks = []
             for track in new_tracks:
                 marker = track.markers.find_frame(self.frame, exact=True)
