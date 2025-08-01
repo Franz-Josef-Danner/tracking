@@ -12,11 +12,10 @@ def cleanup_tracks(context):
     ee_initial = 10.0
     threshold_factor = 0.9
 
-    # Bereichsdefinitionen
     passes = [
-        {"label": "ganzer Bereich", "x_min": 0.0, "x_max": 1.0, "y_min": 0.0, "y_max": 1.0, "ee_factor": 1.0},
-        {"label": "zentral (½)",     "x_min": 0.25, "x_max": 0.75, "y_min": 0.25, "y_max": 0.75, "ee_factor": 0.5},
-        {"label": "zentral (¼)",     "x_min": 0.375, "x_max": 0.625, "y_min": 0.375, "y_max": 0.625, "ee_factor": 0.25},
+        {"x_min": 0.0, "x_max": 1.0, "y_min": 0.0, "y_max": 1.0, "ee_factor": 1.0},
+        {"x_min": 0.25, "x_max": 0.75, "y_min": 0.25, "y_max": 0.75, "ee_factor": 0.5},
+        {"x_min": 0.375, "x_max": 0.625, "y_min": 0.375, "y_max": 0.625, "ee_factor": 0.25},
     ]
 
     def get_marker_position(track, frame):
@@ -30,17 +29,11 @@ def cleanup_tracks(context):
         vy = (p2[1] - p1[1]) + (p3[1] - p2[1])
         return vx, vy, (vx + vy) / 2
 
-    # Hauptdurchläufe pro Bildausschnitt
     total_deleted = 0
     overall_max_error = 0.0
 
     for p in passes:
         ee = ee_initial * p["ee_factor"]
-        region_deleted = 0
-        region_max_error = 0.0
-
-        print(f"\n--- Durchgang: {p['label']} (ee = {ee:.2f}) ---")
-
         for frame in range(frame_range[0] + 1, frame_range[1] - 1):
             valid_tracks = []
             vm_values = []
@@ -52,11 +45,11 @@ def cleanup_tracks(context):
                 p3 = get_marker_position(track, frame + 1)
                 if not (p1 and p2 and p3):
                     continue
-                # Nur Marker im Bildbereich behalten
                 if not (p["x_min"] <= p2[0] <= p["x_max"] and p["y_min"] <= p2[1] <= p["y_max"]):
                     continue
 
                 vx, vy, vm = compute_velocity(p1, p2, p3)
+                print(f"vm_i: {vm:.6f}")  # 👉 Nur diese Ausgabe bleibt
                 vm_values.append(vm)
                 velocities.append((vx, vy))
                 valid_tracks.append((track, vx, vy, vm))
@@ -69,10 +62,7 @@ def cleanup_tracks(context):
             vya = sum(v[1] for v in velocities) / maa
             va = (vxa + vya) / 2
             eb = max(abs(vm - va) for (_, _, _, vm) in valid_tracks)
-            region_max_error = max(region_max_error, eb)
             overall_max_error = max(overall_max_error, eb)
-
-            print(f"[Frame {frame}] {maa} Marker, Max. Fehler: {eb:.4f}")
 
             while eb > ee:
                 deleted_this_round = 0
@@ -80,18 +70,10 @@ def cleanup_tracks(context):
                     if abs(vm - va) >= eb:
                         track.select = True
                         deleted_this_round += 1
-
                 if deleted_this_round > 0:
                     bpy.ops.clip.delete_track()
-                    print(f"  → {deleted_this_round} Marker gelöscht bei Fehlergrenze {eb:.4f}")
                     total_deleted += deleted_this_round
-                    region_deleted += deleted_this_round
                 eb *= threshold_factor
-
-        print(f"🧹 Bereich abgeschlossen: {region_deleted} Marker gelöscht. Max. Fehler hier: {region_max_error:.4f}")
-
-    print(f"\n✅ Gesamt gelöscht: {total_deleted} Marker")
-    print(f"📈 Höchster Fehler in allen Durchgängen: {overall_max_error:.4f}")
 
     return total_deleted, overall_max_error
 
