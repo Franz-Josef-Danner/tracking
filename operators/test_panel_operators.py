@@ -1,7 +1,7 @@
 import bpy
 
 from ..helpers import (
-    run_tracking_optimization,
+    run_default_tracking_settings,
     track_markers_until_end,
     get_tracking_lengths,
     cycle_motion_model,
@@ -15,11 +15,8 @@ class TRACKING_OT_test_cycle(bpy.types.Operator):
     bl_label = "Test Cycle"
 
     def execute(self, context):
-        result = run_tracking_optimization(context)
-        self.report(
-            {'INFO'},
-            f"pattern={result.get('pattern')} motion={result.get('motion')} channels={result.get('channels')}"
-        )
+        run_default_tracking_settings(context)
+        self.report({'INFO'}, "Default tracking settings applied")
         return {'FINISHED'}
 
 

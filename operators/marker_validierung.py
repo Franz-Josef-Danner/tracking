@@ -6,7 +6,7 @@ from .error_value_operator import CLIP_OT_error_value
 from ..helpers.get_tracking_lengths import get_tracking_lengths
 from ..helpers.cycle_motion_model import cycle_motion_model
 from ..helpers.set_tracking_channels import set_tracking_channels
-from ..helpers.test_cyclus import run_tracking_optimization
+from ..helpers.test_cyclus import run_default_tracking_settings
 
 
 class CLIP_OT_marker_valurierung(bpy.types.Operator):
@@ -53,7 +53,7 @@ class CLIP_OT_marker_valurierung(bpy.types.Operator):
 
             if repeat >= 10:
                 self.report({"INFO"}, "Starte Tracking-Zyklus")
-                run_tracking_optimization(context)
+                run_default_tracking_settings(context)
                 repeat = 0
 
         self.report({"INFO"}, "Marker Valuierung abgeschlossen")
