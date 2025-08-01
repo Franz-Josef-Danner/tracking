@@ -16,7 +16,7 @@ __all__ = [
 
 
 def evaluate_tracking(context: bpy.types.Context):
-    \"\"\"Durchführen von Detection, Tracking und Fehlerbewertung.\"\"\"
+    """Durchführen von Detection, Tracking und Fehlerbewertung."""
     try:
         bpy.ops.tracking.place_marker('EXEC_DEFAULT')
     except Exception as e:
@@ -37,7 +37,7 @@ def evaluate_tracking(context: bpy.types.Context):
 
 
 def find_optimal_pattern(context: bpy.types.Context):
-    \"\"\"Ermittelt die beste Pattern-Größe durch iteratives Vergrößern.\"\"\"
+    """Ermittelt die beste Pattern-Größe durch iteratives Vergrößern."""
     pattern = 1.0
     pattern_final = None
     bester_score = 0
@@ -56,7 +56,7 @@ def find_optimal_pattern(context: bpy.types.Context):
 
 
 def find_optimal_motion(context: bpy.types.Context):
-    \"\"\"Durchläuft verschiedene Motion-Modelle und wählt das beste.\"\"\"
+    """Durchläuft verschiedene Motion-Modelle und wählt das beste."""
     modelle = ["Loc", "LocRot", "Affine"]
     bester_score = 0
     bestes_modell = None
@@ -74,7 +74,7 @@ def find_optimal_motion(context: bpy.types.Context):
 
 
 def find_best_channel_combination(context: bpy.types.Context):
-    \"\"\"Testet verschiedene Kombinationen von Tracking-Kanälen.\"\"\"
+    """Testet verschiedene Kombinationen von Tracking-Kanälen."""
     kombis = [(True, False), (False, True), (True, True)]
     bester_score = 0
     beste_kombi = None
@@ -93,7 +93,7 @@ def find_best_channel_combination(context: bpy.types.Context):
 
 
 def run_tracking_optimization(context: bpy.types.Context):
-    \"\"\"Führt alle Optimierungen in sinnvoller Reihenfolge durch.\"\"\"
+    """Führt alle Optimierungen in sinnvoller Reihenfolge durch."""
     pattern = find_optimal_pattern(context)
     motion = find_optimal_motion(context)
     channels = find_best_channel_combination(context)
