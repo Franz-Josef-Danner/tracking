@@ -22,8 +22,3 @@ class TRACKING_PT_api_functions(bpy.types.Panel):
         layout.operator("tracking.bidirectional_tracking")
         layout.operator("clip.cleanup_tracks", text="Cleanup Tracks")
         layout.operator("clip.low_marker_frame", text="Low Marker Frame")
-        layout.operator(
-            "clip.marker_valurierung",
-            text="Marker Valuierung",
-            icon="VIEWZOOM",
-        )
