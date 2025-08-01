@@ -1,8 +1,6 @@
 from .track_markers_until_end import track_markers_until_end
 from .get_tracking_lengths import get_tracking_lengths
-
 import bpy
-
 
 __all__ = [
     "evaluate_tracking",
@@ -37,8 +35,9 @@ def evaluate_tracking(context: bpy.types.Context):
 
 def find_optimal_pattern(context: bpy.types.Context):
     """Ermittelt die beste Pattern-Größe durch iteratives Vergrößern."""
-    clip = context.space_data.clip or context.scene.active_clip
+    clip = getattr(context.space_data, "clip", None) or getattr(context.scene, "active_clip", None)
     if not clip:
+        print("[Fehler] Kein aktiver Clip gefunden.")
         return None
 
     pattern = 1.0
@@ -46,7 +45,8 @@ def find_optimal_pattern(context: bpy.types.Context):
     bester_score = 0
 
     for i in range(5):
-        clip.tracking.settings.pattern_size = int(15 * pattern)
+        clip.tracking.settings.default_pattern_size = int(15 * pattern)
+        clip.tracking.settings.default_search_size = int(15 * pattern * 2)
         _, _, score = evaluate_tracking(context)
         if score > bester_score:
             bester_score = score
@@ -54,14 +54,16 @@ def find_optimal_pattern(context: bpy.types.Context):
         pattern += 0.25
 
     if pattern_final:
-        clip.tracking.settings.pattern_size = int(15 * pattern_final)
+        clip.tracking.settings.default_pattern_size = int(15 * pattern_final)
+        clip.tracking.settings.default_search_size = int(15 * pattern_final * 2)
     return pattern_final
 
 
 def find_optimal_motion(context: bpy.types.Context):
     """Durchläuft verschiedene Motion-Modelle und wählt das beste."""
-    clip = context.space_data.clip or context.scene.active_clip
+    clip = getattr(context.space_data, "clip", None) or getattr(context.scene, "active_clip", None)
     if not clip:
+        print("[Fehler] Kein aktiver Clip gefunden.")
         return None
 
     modelle = ["Loc", "LocRot", "Affine"]
@@ -82,8 +84,9 @@ def find_optimal_motion(context: bpy.types.Context):
 
 def find_best_channel_combination(context: bpy.types.Context):
     """Testet verschiedene Kombinationen von Tracking-Kanälen."""
-    clip = context.space_data.clip or context.scene.active_clip
+    clip = getattr(context.space_data, "clip", None) or getattr(context.scene, "active_clip", None)
     if not clip:
+        print("[Fehler] Kein aktiver Clip gefunden.")
         return None
 
     kombis = [(True, False), (False, True), (True, True)]
@@ -117,7 +120,7 @@ def run_tracking_optimization(context: bpy.types.Context):
 
 def error_value(context):
     """Berechnet den Gesamtfehler als Summe der Standardabweichung der Marker-Koordinaten."""
-    clip = getattr(context.space_data, "clip", None)
+    clip = getattr(context.space_data, "clip", None) or getattr(context.scene, "active_clip", None)
     if clip is None:
         return float("inf")
 
