@@ -1,10 +1,10 @@
 import bpy
 
 def set_tracking_channels(red=True, green=True, blue=True):
-    """Hilfsfunktion zum direkten Setzen der RGB-Kanäle (ohne UI)."""
+    """Setzt die RGB-Tracking-Kanäle direkt (programmatisch, ohne UI)."""
     clip = bpy.context.edit_movieclip or bpy.context.scene.active_clip
     if not clip:
-        print("❌ Kein Movie Clip aktiv oder geladen")
+        print("❌ Kein Movie Clip verfügbar")
         return {'CANCELLED'}
 
     tracking = clip.tracking.settings
