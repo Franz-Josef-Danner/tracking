@@ -1,13 +1,12 @@
 import bpy
 
 from ..helpers import (
-    run_tracking_optimization,
+    run_default_tracking_settings,
     track_markers_until_end,
     get_tracking_lengths,
     cycle_motion_model,
     set_tracking_channels,
 )
-from ..helpers.test_cyclus import error_value
 
 
 class TRACKING_OT_test_cycle(bpy.types.Operator):
@@ -15,11 +14,8 @@ class TRACKING_OT_test_cycle(bpy.types.Operator):
     bl_label = "Test Cycle"
 
     def execute(self, context):
-        result = run_tracking_optimization(context)
-        self.report(
-            {'INFO'},
-            f"pattern={result.get('pattern')} motion={result.get('motion')} channels={result.get('channels')}"
-        )
+        run_default_tracking_settings(context)
+        self.report({'INFO'}, "Default tracking settings applied")
         return {'FINISHED'}
 
 
@@ -54,8 +50,8 @@ class TRACKING_OT_test_error_value(bpy.types.Operator):
     bl_label = "Error Value"
 
     def execute(self, context):
-        value = error_value(context)
-        self.report({'INFO'}, f"Error: {value:.4f}")
+        bpy.ops.clip.error_value('INVOKE_DEFAULT')
+        self.report({'INFO'}, "Error value calculated")
         return {'FINISHED'}
 
 
