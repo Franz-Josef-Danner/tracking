@@ -140,10 +140,6 @@ class TRACKING_OT_bidirectional_tracking(bpy.types.Operator):
             print("⚠ Kein Clip geladen.")
             return {'CANCELLED'}
 
-        if not clip.use_proxy:
-            clip.use_proxy = True
-            print("Proxy-Generierung aktiviert.")
-
         print("Tracking wird gestartet...")
         start_bidirectional_tracking(context)
         return {'FINISHED'}
