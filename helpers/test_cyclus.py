@@ -14,37 +14,39 @@ __all__ = [
 
 
 def wait_for_marker_change(context, timeout=0.5):
-    """Überwacht, ob sich die Markeranzahl innerhalb von `timeout` Sekunden verändert."""
+    """Warte bis sich die Markeranzahl verändert oder Timeout erreicht ist."""
     clip = getattr(context.space_data, "clip", None) or getattr(context.scene, "active_clip", None)
     if not clip:
-        print("[Fehler] Kein Clip vorhanden.")
+        print("[Fehler] Kein Clip aktiv.")
         return False
 
     def marker_count():
         return sum(len(track.markers) for track in clip.tracking.tracks)
 
-    initial_count = marker_count()
-    start_time = time.time()
+    initial = marker_count()
+    start = time.time()
 
-    while time.time() - start_time < timeout:
+    while time.time() - start < timeout:
         bpy.context.window_manager.update()
-        if marker_count() != initial_count:
+        if marker_count() != initial:
             return True
         time.sleep(0.05)
+
     return False
 
 
 def evaluate_tracking(context: bpy.types.Context):
-    """Durchführen von Detection, Tracking und Fehlerbewertung."""
+    """Marker platzieren, dann Tracking & Fehlerberechnung."""
     try:
         bpy.ops.tracking.place_marker()
         if not wait_for_marker_change(context):
-            print("[Warnung] Markeranzahl hat sich nicht verändert.")
+            print("[Abbruch] Markeranzahl hat sich nicht verändert.")
             return 0, float("inf"), 0
     except Exception as e:
         print(f"[Fehler] Marker-Platzierung fehlgeschlagen: {e}")
         return 0, float("inf"), 0
 
+    # Fortsetzung NUR wenn Marker erfolgreich platziert wurden
     track_markers_until_end()
     error = error_value(context)
 
@@ -59,17 +61,17 @@ def evaluate_tracking(context: bpy.types.Context):
 
 
 def find_optimal_pattern(context: bpy.types.Context):
-    """Ermittelt die beste Pattern-Größe durch iteratives Vergrößern."""
+    """Finde bestes Pattern-Size Verhältnis."""
     clip = getattr(context.space_data, "clip", None) or getattr(context.scene, "active_clip", None)
     if not clip:
-        print("[Fehler] Kein aktiver Clip gefunden.")
+        print("[Fehler] Kein aktiver Clip.")
         return None
 
     pattern = 1.0
     pattern_final = None
     bester_score = 0
 
-    for i in range(5):
+    for _ in range(5):
         clip.tracking.settings.default_pattern_size = int(15 * pattern)
         clip.tracking.settings.default_search_size = int(15 * pattern * 2)
         _, _, score = evaluate_tracking(context)
@@ -85,10 +87,10 @@ def find_optimal_pattern(context: bpy.types.Context):
 
 
 def find_optimal_motion(context: bpy.types.Context):
-    """Durchläuft verschiedene Motion-Modelle und wählt das beste."""
+    """Finde bestes Motion Model."""
     clip = getattr(context.space_data, "clip", None) or getattr(context.scene, "active_clip", None)
     if not clip:
-        print("[Fehler] Kein aktiver Clip gefunden.")
+        print("[Fehler] Kein aktiver Clip.")
         return None
 
     modelle = ["Loc", "LocRot", "Affine"]
@@ -108,10 +110,10 @@ def find_optimal_motion(context: bpy.types.Context):
 
 
 def find_best_channel_combination(context: bpy.types.Context):
-    """Testet verschiedene Kombinationen von Tracking-Kanälen."""
+    """Testet Red-/Green-Kombinationen."""
     clip = getattr(context.space_data, "clip", None) or getattr(context.scene, "active_clip", None)
     if not clip:
-        print("[Fehler] Kein aktiver Clip gefunden.")
+        print("[Fehler] Kein aktiver Clip.")
         return None
 
     kombis = [(True, False), (False, True), (True, True)]
@@ -132,19 +134,16 @@ def find_best_channel_combination(context: bpy.types.Context):
 
 
 def run_tracking_optimization(context: bpy.types.Context):
-    """Führt alle Optimierungen in sinnvoller Reihenfolge durch."""
-    pattern = find_optimal_pattern(context)
-    motion = find_optimal_motion(context)
-    channels = find_best_channel_combination(context)
+    """Optimiert Pattern, Motion und Farbkanäle."""
     return {
-        "pattern": pattern,
-        "motion": motion,
-        "channels": channels,
+        "pattern": find_optimal_pattern(context),
+        "motion": find_optimal_motion(context),
+        "channels": find_best_channel_combination(context),
     }
 
 
 def error_value(context):
-    """Berechnet den Gesamtfehler als Summe der Standardabweichung der Marker-Koordinaten."""
+    """Berechne Gesamtfehler aller Marker (Standardabweichung)."""
     clip = getattr(context.space_data, "clip", None) or getattr(context.scene, "active_clip", None)
     if clip is None:
         return float("inf")
@@ -168,6 +167,4 @@ def error_value(context):
         mean_val = sum(values) / len(values)
         return (sum((v - mean_val) ** 2 for v in values) / len(values)) ** 0.5
 
-    error_x = std_dev(x_positions)
-    error_y = std_dev(y_positions)
-    return error_x + error_y
+    return std_dev(x_positions) + std_dev(y_positions)
