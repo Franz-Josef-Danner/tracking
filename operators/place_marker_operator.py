@@ -30,8 +30,6 @@ def perform_marker_detection(
 
 
 class TRACKING_OT_place_marker(bpy.types.Operator):
-    """Führt den Marker-Platzierungs-Zyklus als modalen Operator aus."""
-
     bl_idname = "tracking.place_marker"
     bl_label = "Place Marker"
     bl_description = (
@@ -149,8 +147,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
 
             anzahl_neu = len(cleaned_tracks)
 
-            meldung = f"Versuch {self.attempt + 1}:
-Gesetzte Marker (nach Filterung): {anzahl_neu}"
+            meldung = f"Versuch {self.attempt + 1}:\nGesetzte Marker (nach Filterung): {anzahl_neu}"
             if anzahl_neu < self.min_marker:
                 meldung += "\nMarkeranzahl zu niedrig. Marker werden gelöscht."
             elif anzahl_neu > self.max_marker:
@@ -173,7 +170,7 @@ Gesetzte Marker (nach Filterung): {anzahl_neu}"
                 scene["last_detection_threshold"] = self.detection_threshold
 
                 print(
-                    f"\U0001f4cc Versuch {self.attempt + 1}: Marker={anzahl_neu}, "
+                    f"📌 Versuch {self.attempt + 1}: Marker={anzahl_neu}, "
                     f"Threshold={self.detection_threshold:.4f}"
                 )
 
