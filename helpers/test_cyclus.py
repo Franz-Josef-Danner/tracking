@@ -1,6 +1,7 @@
+import bpy
+import time
 from .track_markers_until_end import track_markers_until_end
 from .get_tracking_lengths import get_tracking_lengths
-import bpy
 
 __all__ = [
     "evaluate_tracking",
@@ -12,19 +13,38 @@ __all__ = [
 ]
 
 
+def wait_for_marker_change(context, timeout=0.5):
+    """Überwacht, ob sich die Markeranzahl innerhalb von `timeout` Sekunden verändert."""
+    clip = getattr(context.space_data, "clip", None) or getattr(context.scene, "active_clip", None)
+    if not clip:
+        print("[Fehler] Kein Clip vorhanden.")
+        return False
+
+    def marker_count():
+        return sum(len(track.markers) for track in clip.tracking.tracks)
+
+    initial_count = marker_count()
+    start_time = time.time()
+
+    while time.time() - start_time < timeout:
+        bpy.context.window_manager.update()
+        if marker_count() != initial_count:
+            return True
+        time.sleep(0.05)
+    return False
+
+
 def evaluate_tracking(context: bpy.types.Context):
     """Durchführen von Detection, Tracking und Fehlerbewertung."""
     try:
         bpy.ops.tracking.place_marker()
-        wait_for_marker_change(context)
+        if not wait_for_marker_change(context):
+            print("[Warnung] Markeranzahl hat sich nicht verändert.")
+            return 0, float("inf"), 0
     except Exception as e:
         print(f"[Fehler] Marker-Platzierung fehlgeschlagen: {e}")
         return 0, float("inf"), 0
-
-    except Exception as e:
-        print(f"[Fehler] Marker-Platzierung fehlgeschlagen: {e}")
-        return 0, float("inf"), 0
-    return 0, float("inf"), 0  # <-- Alles danach wird übersprungen
+return 0, float("inf"), 0
 
     track_markers_until_end()
     error = error_value(context)
@@ -84,7 +104,7 @@ def find_optimal_motion(context: bpy.types.Context):
             bestes_modell = modell
 
     if bestes_modell:
-        clip.tracking.settings.default_motion_model = modell
+        clip.tracking.settings.default_motion_model = bestes_modell
     return bestes_modell
 
 
@@ -152,4 +172,3 @@ def error_value(context):
     error_x = std_dev(x_positions)
     error_y = std_dev(y_positions)
     return error_x + error_y
-
