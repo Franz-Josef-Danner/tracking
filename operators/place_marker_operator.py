@@ -1,6 +1,7 @@
 import bpy
 import math
 import time
+from bpy.props import BoolProperty
 
 def perform_marker_detection(
     clip: bpy.types.MovieClip,
@@ -50,7 +51,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
         )
 
     def execute(self, context):
-        if getattr(context.window_manager, "is_marker_operator_running", False):
+        if context.window_manager.is_marker_operator_running:
             self.report({'WARNING'}, "Marker-Platzierung läuft bereits")
             return {'CANCELLED'}
 
@@ -212,13 +213,18 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
             context.window_manager.event_timer_remove(self._timer)
         context.window_manager.is_marker_operator_running = False
 
-
+# --- Registrierung ---
 def register():
     bpy.utils.register_class(TRACKING_OT_place_marker)
+    bpy.types.WindowManager.is_marker_operator_running = BoolProperty(
+        name="Is Marker Operator Running",
+        description="Verhindert Mehrfachausführung des Marker-Operators",
+        default=False
+    )
 
 def unregister():
     bpy.utils.unregister_class(TRACKING_OT_place_marker)
-
+    del bpy.types.WindowManager.is_marker_operator_running
 
 if __name__ == "__main__":
     register()
