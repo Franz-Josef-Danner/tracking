@@ -7,6 +7,7 @@ from ..helpers import (
     cycle_motion_model,
     set_tracking_channels,
 )
+from ..helpers.test_cyclus import error_value
 
 
 class TRACKING_OT_test_cycle(bpy.types.Operator):
