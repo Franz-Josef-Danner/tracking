@@ -6,6 +6,10 @@ def cleanup_tracks(context):
     tracking = clip.tracking
     tracks = tracking.tracks
 
+    # Alle Marker deselektieren
+for track in tracks:
+    track.select = False
+
     ee_initial = (context.scene.error_per_track + 0.1) / 100
     threshold_factor = 0.9
     frame_range = (scene.frame_start, scene.frame_end)
