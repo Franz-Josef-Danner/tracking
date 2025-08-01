@@ -6,8 +6,7 @@ def cleanup_tracks(context):
     tracking = clip.tracking
     tracks = tracking.tracks
 
-    width, height = clip.size
-    ee_initial = width / 300.0
+    ee_initial = (context.scene.tracking_props.error_per_track + 0.1) / 1000
     threshold_factor = 0.9
     frame_range = (scene.frame_start, scene.frame_end)
 
@@ -42,13 +41,13 @@ def cleanup_tracks(context):
                     if not (p["x_min"] <= p2[0] <= p["x_max"] and p["y_min"] <= p2[1] <= p["y_max"]):
                         continue
 
-                    # Koordinaten in Pixel umrechnen
-                    pxi_f1 = p1[0] * width
-                    pyi_f1 = p1[1] * height
-                    pxi_fi = p2[0] * width
-                    pyi_fi = p2[1] * height
-                    pxi_f2 = p3[0] * width
-                    pyi_f2 = p3[1] * height
+                    # Kein Umrechnen in Pixel – direkt mit normierten Koordinaten
+                    pxi_f1 = p1[0]
+                    pyi_f1 = p1[1]
+                    pxi_fi = p2[0]
+                    pyi_fi = p2[1]
+                    pxi_f2 = p3[0]
+                    pyi_f2 = p3[1]
 
                     vxm = (pxi_fi - pxi_f1) + (pxi_f2 - pxi_fi)
                     vym = (pyi_fi - pyi_f1) + (pyi_f2 - pyi_fi)
@@ -100,7 +99,7 @@ class CLIP_OT_cleanup_tracks(bpy.types.Operator):
     def execute(self, context):
         deleted, max_error = cleanup_tracks(context)
         if deleted:
-            self.report({'INFO'}, f"Insgesamt {deleted} Marker gelöscht. Max. Fehler: {max_error:.2f}")
+            self.report({'INFO'}, f"Insgesamt {deleted} Marker gelöscht. Max. Fehler: {max_error:.6f}")
         else:
             self.report({'INFO'}, "Keine Marker gelöscht.")
         return {'FINISHED'}
