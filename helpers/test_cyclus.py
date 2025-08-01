@@ -1,5 +1,4 @@
 from .track_markers_until_end import track_markers_until_end
-from .test_marker_base import error_value
 from .get_tracking_lengths import get_tracking_lengths
 
 import bpy
@@ -102,3 +101,33 @@ def run_tracking_optimization(context: bpy.types.Context):
         "motion": motion,
         "channels": channels,
     }
+
+
+def error_value(context):
+    """Berechnet den Gesamtfehler als Summe der Standardabweichung der Marker-Koordinaten."""
+    clip = getattr(context.space_data, "clip", None)
+    if clip is None:
+        return float("inf")
+
+    x_positions = []
+    y_positions = []
+
+    for track in clip.tracking.tracks:
+        if not track.select:
+            continue
+        for marker in track.markers:
+            if marker.mute:
+                continue
+            x_positions.append(marker.co[0])
+            y_positions.append(marker.co[1])
+
+    if not x_positions:
+        return float("inf")
+
+    def std_dev(values):
+        mean_val = sum(values) / len(values)
+        return (sum((v - mean_val) ** 2 for v in values) / len(values)) ** 0.5
+
+    error_x = std_dev(x_positions)
+    error_y = std_dev(y_positions)
+    return error_x + error_y
