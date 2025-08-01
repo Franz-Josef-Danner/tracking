@@ -3,6 +3,6 @@
 import bpy
 
 
-def run_default_tracking_settings(context):
+def run_test_track_default_operator.py(context):
     """Execute the operator that sets default tracking values."""
     bpy.ops.tracking.set_default_settings()
