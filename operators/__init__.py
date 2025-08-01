@@ -24,6 +24,8 @@ from .test_panel_operators import (
     TRACKING_OT_test_cycle_motion,
     TRACKING_OT_test_tracking_channels,
 )
+from ..helpers.cycle_motion_model import TRACKING_OT_cycle_motion_model
+from ..helpers.set_tracking_channels import CLIP_OT_set_tracking_channels  # ✅ NEU
 
 operator_classes = (
     TRACKING_OT_marker_basis_values,
@@ -40,6 +42,7 @@ operator_classes = (
     TRACKING_OT_test_tracking_lengths,
     TRACKING_OT_test_cycle_motion,
     TRACKING_OT_test_tracking_channels,
+    TRACKING_OT_cycle_motion_model,
     CLIP_OT_proxy_build,
     CLIP_OT_proxy_enable,
     CLIP_OT_proxy_disable,
@@ -47,4 +50,5 @@ operator_classes = (
     TRACKING_OT_set_default_settings,
     CLIP_OT_marker_valurierung,
     CLIP_OT_marker_status_popup,
+    CLIP_OT_set_tracking_channels,  # ✅ NEU
 )

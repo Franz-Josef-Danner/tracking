@@ -18,7 +18,9 @@ if bpy is not None and not os.environ.get("BLENDER_TEST"):
     from .operators import operator_classes
     from .ui.panels import panel_classes
     from .properties import register_properties, unregister_properties
-    classes = operator_classes + panel_classes
+    from .helpers.cycle_motion_model import TRACKING_OT_cycle_motion_model
+
+    classes = operator_classes + (TRACKING_OT_cycle_motion_model,) + panel_classes
 else:
     classes = ()
 
@@ -34,14 +36,20 @@ def register():
         min=0.0,
     )
     for cls in classes:
-        bpy.utils.register_class(cls)
+        try:
+            bpy.utils.register_class(cls)
+        except ValueError:
+            pass
 
 
 def unregister():
     if bpy is None:
         return
     for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
+        try:
+            bpy.utils.unregister_class(cls)
+        except ValueError:
+            pass
     if hasattr(bpy.types.Scene, "error_threshold"):
         del bpy.types.Scene.error_threshold
     unregister_properties()
