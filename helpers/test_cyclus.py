@@ -47,11 +47,13 @@ except Exception:  # pragma: no cover - optional import
 
 def evaluate_tracking(context: bpy.types.Context):
     """Durchführen von Detection, Tracking und Fehlerbewertung."""
-    if hasattr(place_marker_operator, "detect"):
-        place_marker_operator.detect(context)
-    else:
-        operator = place_marker_operator.TRACKING_OT_place_marker()
-        operator.execute(context)
+    # Standardausführung über Blender Operator-Aufruf
+    try:
+        bpy.ops.tracking.place_marker('EXEC_DEFAULT')
+    except Exception as e:
+        print(f"[Fehler] Marker-Platzierung fehlgeschlagen: {e}")
+        return 0, float("inf"), 0
+
 
     track_markers_until_end()
     error = error_value(context)
