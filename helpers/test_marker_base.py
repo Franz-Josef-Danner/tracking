@@ -9,8 +9,8 @@ def test_marker_base(context):
 
     marker_plus = marker_basis / 3
     marker_adapt = marker_plus
-    max_marker = marker_adapt * 1.1
-    min_marker = marker_adapt * 0.9
+    max_marker = marker_adapt + 1
+    min_marker = marker_adapt - 1
 
     return {
         "marker_basis": marker_basis,
