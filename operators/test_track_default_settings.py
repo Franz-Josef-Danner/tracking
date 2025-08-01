@@ -19,7 +19,7 @@ def main(context=None):
     width = clip.size[0]
 
     # Neue Berechnungen für Pattern- und Suchgröße
-    pattern_size = int(width / 100)
+    pattern_size = int(width / 500)
     search_size = pattern_size * 2
 
     settings.default_pattern_size = pattern_size
