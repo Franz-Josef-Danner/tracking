@@ -28,6 +28,11 @@ def perform_marker_detection(
     selected_tracks = [t for t in tracking.tracks if t.select]
     return len(selected_tracks)
 
+def delete_all_markers(tracking):
+    for t in tracking.tracks:
+        t.select = True
+    bpy.ops.clip.delete_track()
+
 
 class TRACKING_OT_place_marker(bpy.types.Operator):
     bl_idname = "tracking.place_marker"
@@ -68,6 +73,9 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
         self.attempt = 0
         self.success = False
         self.state = "DETECT"
+
+        print("[Info] Sicherheitslöschung aller Marker vor Start.")
+        delete_all_markers(self.tracking)
 
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.25, window=context.window)
