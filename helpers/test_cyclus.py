@@ -13,23 +13,36 @@ __all__ = [
 ]
 
 
-def wait_for_marker_change(context, timeout=0.5):
-    """Warte bis sich die Markeranzahl verändert oder Timeout erreicht ist."""
+def wait_for_marker_change(context, timeout: float = 0.5) -> bool:
+    """
+    Warte bis sich die Markeranzahl verändert oder ein Timeout erreicht ist.
+
+    Die ursprüngliche Implementierung hat die nicht mehr existierende Methode
+    ``WindowManager.update()`` verwendet und dadurch in Blender 4.4 einen
+    ``AttributeError`` verursacht. Diese Version beobachtet lediglich die
+    Markeranzahl über ein Zeitintervall und gibt ``True`` zurück, sobald sich
+    etwas geändert hat, ansonsten ``False`` nach Ablauf des Timeouts.
+
+    :param context: Aktueller Blender‑Kontext.
+    :param timeout: Maximale Wartezeit in Sekunden.
+    :return: ``True`` wenn sich die Anzahl der Marker geändert hat, sonst ``False``.
+    """
     clip = getattr(context.space_data, "clip", None) or getattr(context.scene, "active_clip", None)
     if not clip:
         print("[Fehler] Kein Clip aktiv.")
         return False
 
-    def marker_count():
+    def marker_count() -> int:
         return sum(len(track.markers) for track in clip.tracking.tracks)
 
     initial = marker_count()
-    start = time.time()
+    start_time = time.time()
 
-    while time.time() - start < timeout:
-        bpy.context.window_manager.update()
+    # Warte‑Schleife: prüft regelmäßig, ob sich die Markeranzahl geändert hat.
+    while time.time() - start_time < timeout:
         if marker_count() != initial:
             return True
+        # Kurze Pause, damit Blender Zeit zum Aktualisieren hat
         time.sleep(0.05)
 
     return False
@@ -134,12 +147,92 @@ def find_best_channel_combination(context: bpy.types.Context):
 
 
 def run_tracking_optimization(context: bpy.types.Context):
-    """Optimiert Pattern, Motion und Farbkanäle."""
-    return {
-        "pattern": find_optimal_pattern(context),
-        "motion": find_optimal_motion(context),
-        "channels": find_best_channel_combination(context),
+    """
+    Optimiert Pattern‑Größe, Motion‑Modelle und Farbkanäle nacheinander.
+
+    Im ursprünglichen Ansatz wurden alle Varianten in schnellen Schleifen
+    hintereinander getestet, während der Marker‑Platzierungsoperator
+    asynchron (modal) ablief. Dadurch wurden mehrere Zyklen quasi parallel
+    gestartet, was zu den mehrfachen "Deselektiere alle Marker"‑Meldungen
+    führte. Diese Implementierung führt jeden Test sequenziell aus: Ein
+    Versuch wird erst vollständig abgeschlossen, bevor der nächste beginnt.
+
+    :param context: Der aktuelle Blender‑Kontext.
+    :return: Ein Dictionary mit den bestbewerteten Parametern.
+    """
+    # Mögliche Werte für Pattern‑Skalierungen. Ausgangspunkt ist 1.0, die
+    # Schritte entsprechen der früheren Schleife in find_optimal_pattern.
+    pattern_sizes = [1.0 + 0.25 * i for i in range(5)]
+    motion_models = ["Loc", "LocRot", "Affine"]
+    channel_combinations = [(True, False), (False, True), (True, True)]
+
+    results: dict[str, object] = {
+        "pattern": None,
+        "motion": None,
+        "channels": None,
     }
+
+    # Mustergrößen sequenziell testen
+    best_pattern_score = -float("inf")
+    best_pattern = None
+    for p in pattern_sizes:
+        clip = getattr(context.space_data, "clip", None) or getattr(context.scene, "active_clip", None)
+        if not clip:
+            break
+        clip.tracking.settings.default_pattern_size = int(15 * p)
+        clip.tracking.settings.default_search_size = int(15 * p * 2)
+        _length, _error, score = evaluate_tracking(context)
+        if score > best_pattern_score:
+            best_pattern_score = score
+            best_pattern = p
+    # Zurücksetzen auf bestes Pattern
+    if best_pattern is not None:
+        clip = getattr(context.space_data, "clip", None) or getattr(context.scene, "active_clip", None)
+        if clip:
+            clip.tracking.settings.default_pattern_size = int(15 * best_pattern)
+            clip.tracking.settings.default_search_size = int(15 * best_pattern * 2)
+    results["pattern"] = best_pattern
+
+    # Motion‑Modelle sequenziell testen
+    best_motion_score = -float("inf")
+    best_motion = None
+    for model in motion_models:
+        clip = getattr(context.space_data, "clip", None) or getattr(context.scene, "active_clip", None)
+        if not clip:
+            break
+        clip.tracking.settings.default_motion_model = model
+        _length, _error, score = evaluate_tracking(context)
+        if score > best_motion_score:
+            best_motion_score = score
+            best_motion = model
+    # Zurücksetzen auf bestes Modell
+    if best_motion is not None:
+        clip = getattr(context.space_data, "clip", None) or getattr(context.scene, "active_clip", None)
+        if clip:
+            clip.tracking.settings.default_motion_model = best_motion
+    results["motion"] = best_motion
+
+    # Kanal‑Kombinationen sequenziell testen
+    best_channel_score = -float("inf")
+    best_channel_combo = None
+    for red, green in channel_combinations:
+        clip = getattr(context.space_data, "clip", None) or getattr(context.scene, "active_clip", None)
+        if not clip:
+            break
+        clip.tracking.settings.use_default_red_channel = red
+        clip.tracking.settings.use_default_green_channel = green
+        _length, _error, score = evaluate_tracking(context)
+        if score > best_channel_score:
+            best_channel_score = score
+            best_channel_combo = (red, green)
+    # Zurücksetzen auf beste Kanäle
+    if best_channel_combo is not None:
+        clip = getattr(context.space_data, "clip", None) or getattr(context.scene, "active_clip", None)
+        if clip:
+            clip.tracking.settings.use_default_red_channel, clip.tracking.settings.use_default_green_channel = best_channel_combo
+    results["channels"] = best_channel_combo
+
+    return results
 
 
 def error_value(context):
