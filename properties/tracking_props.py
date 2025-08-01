@@ -17,9 +17,9 @@ tracking_properties = {
     "error_per_track": FloatProperty(
         name="Error/Track",
         description="Maximaler Fehler pro Track",
-        default=1.00000,
-        min=0.00001,
-        max=1.00000
+        default=0.5,
+        min=0.1,
+        max=1.0
     ),
     "marker_plus": IntProperty(
         name="Marker Plus",
