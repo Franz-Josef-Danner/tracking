@@ -19,7 +19,7 @@ def evaluate_tracking(context: bpy.types.Context):
     except Exception as e:
         print(f"[Fehler] Marker-Platzierung fehlgeschlagen: {e}")
         return 0, float("inf"), 0
-
+"""
     track_markers_until_end()
     error = error_value(context)
 
@@ -146,3 +146,4 @@ def error_value(context):
     error_x = std_dev(x_positions)
     error_y = std_dev(y_positions)
     return error_x + error_y
+"""
