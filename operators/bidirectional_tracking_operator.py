@@ -11,6 +11,7 @@ class TrackingController:
         self.tracking = self.clip.tracking
         self.step = 0  # 0 = forward, 1 = wait, 2 = backward, 3 = wait, 4 = cleanup
         self.prev_frame = context.scene.frame_current
+        self.initial_frame = context.scene.frame_current  # Speichert den Start-Frame für Rücksetzen
         self.frame_stable_counter = 0
         self.marker_counts_prev = [len(t.markers) for t in self.tracking.tracks]
         self.tracking_done_delay = 0
@@ -53,6 +54,8 @@ class TrackingController:
             print("→ Warte auf Abschluss des Vorwärts-Trackings...")
             if self.is_tracking_done_robust():
                 print("✓ Vorwärts-Tracking abgeschlossen.")
+                self.context.scene.frame_current = self.initial_frame  # Frame zurücksetzen
+                print(f"← Frame zurückgesetzt auf {self.initial_frame}")
                 self.step = 2
         elif self.step == 2:
             print("→ Starte Rückwärts-Tracking...")
