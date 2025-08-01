@@ -58,7 +58,8 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
         self.tracking = self.clip.tracking
         settings = self.tracking.settings
 
-        self.detection_threshold = getattr(settings, "default_correlation_min", 0.75)
+        # Threshold aus Szene lesen oder default setzen
+        self.detection_threshold = scene.get("last_detection_threshold", getattr(settings, "default_correlation_min", 0.75))
         self.marker_adapt = scene.get("marker_adapt", 80)
         self.max_marker = scene.get("max_marker", self.marker_adapt * 1.1)
         self.min_marker = scene.get("min_marker", self.marker_adapt * 0.9)
@@ -166,10 +167,13 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
                         t.select = True
                     bpy.ops.clip.delete_track()
 
+                # Threshold anpassen
                 self.detection_threshold = max(
                     self.detection_threshold * ((anzahl_neu + 0.1) / self.marker_adapt),
                     0.0001,
                 )
+                # In Szene speichern
+                scene["last_detection_threshold"] = self.detection_threshold
 
                 print(
                     f"\U0001f4cc Versuch {self.attempt + 1}: Marker={anzahl_neu}, "
@@ -190,7 +194,6 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
     def cancel(self, context):
         if self._timer is not None:
             context.window_manager.event_timer_remove(self._timer)
-
 
 
 # Registrierung
