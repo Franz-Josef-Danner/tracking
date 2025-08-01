@@ -1,5 +1,4 @@
 import bpy
-import math
 
 def cleanup_tracks(context):
     scene = context.scene
@@ -8,8 +7,17 @@ def cleanup_tracks(context):
     tracks = tracking.tracks
     width = clip.size[0]
     height = clip.size[1]
-    ee = 10.0
+
+    frame_range = (scene.frame_start, scene.frame_end)
+    ee_initial = 10.0
     threshold_factor = 0.9
+
+    # Bereichsdefinitionen
+    passes = [
+        {"label": "ganzer Bereich", "x_min": 0.0, "x_max": 1.0, "y_min": 0.0, "y_max": 1.0, "ee_factor": 1.0},
+        {"label": "zentral (½)",     "x_min": 0.25, "x_max": 0.75, "y_min": 0.25, "y_max": 0.75, "ee_factor": 0.5},
+        {"label": "zentral (¼)",     "x_min": 0.375, "x_max": 0.625, "y_min": 0.375, "y_max": 0.625, "ee_factor": 0.25},
+    ]
 
     def get_marker_position(track, frame):
         for marker in track.markers:
@@ -22,26 +30,36 @@ def cleanup_tracks(context):
         vy = (p2[1] - p1[1]) + (p3[1] - p2[1])
         return vx, vy, (vx + vy) / 2
 
-    total_deleted = 0  # Zähler für gelöschte Marker insgesamt
-    max_error_global = 0.0  # Höchster Fehlerwert im Durchlauf
+    # Hauptdurchläufe pro Bildausschnitt
+    total_deleted = 0
+    overall_max_error = 0.0
 
-    def filter_tracks(frame_range, threshold):
-        nonlocal total_deleted, max_error_global
-        removed = False
+    for p in passes:
+        ee = ee_initial * p["ee_factor"]
+        region_deleted = 0
+        region_max_error = 0.0
+
+        print(f"\n--- Durchgang: {p['label']} (ee = {ee:.2f}) ---")
 
         for frame in range(frame_range[0] + 1, frame_range[1] - 1):
+            valid_tracks = []
             vm_values = []
             velocities = []
-            valid_tracks = []
+
             for track in tracks:
                 p1 = get_marker_position(track, frame - 1)
                 p2 = get_marker_position(track, frame)
                 p3 = get_marker_position(track, frame + 1)
-                if p1 and p2 and p3:
-                    vx, vy, vm = compute_velocity(p1, p2, p3)
-                    vm_values.append(vm)
-                    velocities.append((vx, vy))
-                    valid_tracks.append((track, vx, vy, vm, p2))
+                if not (p1 and p2 and p3):
+                    continue
+                # Nur Marker im Bildbereich behalten
+                if not (p["x_min"] <= p2[0] <= p["x_max"] and p["y_min"] <= p2[1] <= p["y_max"]):
+                    continue
+
+                vx, vy, vm = compute_velocity(p1, p2, p3)
+                vm_values.append(vm)
+                velocities.append((vx, vy))
+                valid_tracks.append((track, vx, vy, vm))
 
             maa = len(valid_tracks)
             if maa == 0:
@@ -50,40 +68,33 @@ def cleanup_tracks(context):
             vxa = sum(v[0] for v in velocities) / maa
             vya = sum(v[1] for v in velocities) / maa
             va = (vxa + vya) / 2
-            eb = max(abs(vm - va) for (_, _, _, vm, _) in valid_tracks)
-            max_error_global = max(max_error_global, eb)
+            eb = max(abs(vm - va) for (_, _, _, vm) in valid_tracks)
+            region_max_error = max(region_max_error, eb)
+            overall_max_error = max(overall_max_error, eb)
 
-            print(f"[Frame {frame}] {maa} gültige Marker gefunden. Max. Fehler: {eb:.4f}")
+            print(f"[Frame {frame}] {maa} Marker, Max. Fehler: {eb:.4f}")
 
-            while eb > threshold:
-                deleted_this_loop = 0
-                for track, vx, vy, vm, co in valid_tracks:
+            while eb > ee:
+                deleted_this_round = 0
+                for track, vx, vy, vm in valid_tracks:
                     if abs(vm - va) >= eb:
                         track.select = True
-                        deleted_this_loop += 1
-                        removed = True
-                if deleted_this_loop > 0:
-                    print(f"  → {deleted_this_loop} Marker zum Löschen selektiert.")
-                    total_deleted += deleted_this_loop
+                        deleted_this_round += 1
+
+                if deleted_this_round > 0:
                     bpy.ops.clip.delete_track()
+                    print(f"  → {deleted_this_round} Marker gelöscht bei Fehlergrenze {eb:.4f}")
+                    total_deleted += deleted_this_round
+                    region_deleted += deleted_this_round
                 eb *= threshold_factor
 
-        return removed
+        print(f"🧹 Bereich abgeschlossen: {region_deleted} Marker gelöscht. Max. Fehler hier: {region_max_error:.4f}")
 
-    frame_range = (scene.frame_start, scene.frame_end)
-    bpy.context.scene.frame_set(scene.frame_start)
-    if filter_tracks(frame_range, ee):
-        print(f"✅ Gesamt gelöschte Marker: {total_deleted}")
-        print(f"📈 Maximal festgestellter Fehler: {max_error_global:.4f}")
-    else:
-        print("ℹ️ Keine Marker gelöscht.")
+    print(f"\n✅ Gesamt gelöscht: {total_deleted} Marker")
+    print(f"📈 Höchster Fehler in allen Durchgängen: {overall_max_error:.4f}")
 
-    return total_deleted, max_error_global
+    return total_deleted, overall_max_error
 
-
-# ---------------------------------------------------------------------
-# Operator für den Clip Editor
-# ---------------------------------------------------------------------
 
 class CLIP_OT_cleanup_tracks(bpy.types.Operator):
     bl_idname = "clip.cleanup_tracks"
@@ -101,10 +112,6 @@ class CLIP_OT_cleanup_tracks(bpy.types.Operator):
             self.report({'INFO'}, "Keine Marker gelöscht.")
         return {'FINISHED'}
 
-
-# ---------------------------------------------------------------------
-# Registrierung (für Standalone-Test)
-# ---------------------------------------------------------------------
 
 def register():
     bpy.utils.register_class(CLIP_OT_cleanup_tracks)
