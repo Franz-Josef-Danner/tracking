@@ -13,9 +13,18 @@ class TRACKING_OT_set_default_settings(bpy.types.Operator):
         if clip is None:
             self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden")
             return {'CANCELLED'}
+
         settings = clip.tracking.settings
-        settings.default_pattern_size = 10
-        settings.default_search_size = 20
+
+        # Auflösung des Movie Clips auslesen
+        width = clip.size[0]
+
+        # Neue Berechnungen für Pattern- und Suchgröße
+        pattern_size = int(width / 100)
+        search_size = pattern_size * 2
+
+        settings.default_pattern_size = pattern_size
+        settings.default_search_size = search_size
         settings.default_motion_model = 'Loc'
         settings.default_pattern_match = 'KEYFRAME'
         settings.use_default_brute = True
@@ -26,7 +35,8 @@ class TRACKING_OT_set_default_settings(bpy.types.Operator):
         settings.default_weight = 1.0
         settings.default_correlation_min = 0.9
         settings.default_margin = 10
-        self.report({'INFO'}, "Tracking-Defaults gesetzt")
+
+        self.report({'INFO'}, f"Tracking-Defaults gesetzt (Pattern: {pattern_size}, Search: {search_size})")
         return {'FINISHED'}
 
 
