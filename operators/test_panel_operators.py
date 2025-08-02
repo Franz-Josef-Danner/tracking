@@ -31,6 +31,12 @@ def calculate_ega(tracking_data):
     return ega
 
 
+def clear_tracks(tracking_data):
+    """Remove all tracks from the given tracking data."""
+    for track in list(tracking_data.tracks):
+        tracking_data.tracks.remove(track)
+
+
 class TRACKING_OT_test_cycle(bpy.types.Operator):
     """Optimize tracking settings in three stages."""
 
@@ -82,7 +88,7 @@ class TRACKING_OT_test_cycle(bpy.types.Operator):
         best_pt = pt
         best_ega = -1.0
         for iteration in range(self.max_iterations + 1):
-            tracking_data.tracks.clear()
+            clear_tracks(tracking_data)
             settings.default_pattern_size = int(pt)
             settings.default_search_size = int(sus)
 
@@ -120,7 +126,7 @@ class TRACKING_OT_test_cycle(bpy.types.Operator):
         for model in motion_models:
             if self.verbose:
                 print(f"\n[Stage 2] Testing motion model = {model}")
-            tracking_data.tracks.clear()
+            clear_tracks(tracking_data)
             settings.default_pattern_size = pt
             settings.default_search_size = sus
             settings.default_motion_model = model
@@ -148,7 +154,7 @@ class TRACKING_OT_test_cycle(bpy.types.Operator):
         for idx, (use_r, use_g, use_b) in channel_combinations.items():
             if self.verbose:
                 print(f"\n[Stage 3] Testing channels: R={use_r}, G={use_g}, B={use_b}")
-            tracking_data.tracks.clear()
+            clear_tracks(tracking_data)
             settings.default_pattern_size = pt
             settings.default_search_size = sus
             settings.default_motion_model = best_motion_model
