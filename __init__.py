@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Tracking Tools",
     "author": "Addon Author",
-    "version": (1, 0, 0),
+    "version": (1, 97, 0),
     "blender": (4, 4, 0),
     "location": "Clip Editor",
     "description": "Beispiel Addon mit Marker Basis Value",
@@ -29,12 +29,6 @@ def register():
     if bpy is None:
         return
     register_properties()
-    bpy.types.Scene.error_threshold = bpy.props.FloatProperty(
-        name="Fehlertoleranz",
-        description="Maximal erlaubter Trackingfehler",
-        default=0.1,
-        min=0.0,
-    )
     for cls in classes:
         try:
             bpy.utils.register_class(cls)
@@ -50,8 +44,6 @@ def unregister():
             bpy.utils.unregister_class(cls)
         except ValueError:
             pass
-    if hasattr(bpy.types.Scene, "error_threshold"):
-        del bpy.types.Scene.error_threshold
     unregister_properties()
 
 
