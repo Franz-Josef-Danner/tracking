@@ -33,8 +33,22 @@ def calculate_ega(tracking_data):
 
 def clear_tracks(tracking_data):
     """Remove all tracks from the given tracking data."""
-    for track in list(tracking_data.tracks):
-        tracking_data.tracks.remove(track)
+    for track in tracking_data.tracks:
+        track.select = True
+
+    override = bpy.context.copy()
+    for area in bpy.context.window.screen.areas:
+        if area.type == "CLIP_EDITOR":
+            override["area"] = area
+            override["region"] = area.regions[-1]
+            override["space_data"] = area.spaces.active
+            break
+    else:
+        raise RuntimeError(
+            "Movie Clip Editor not found. Open a Movie Clip Editor and try again."
+        )
+
+    bpy.ops.clip.delete_track(override, confirm=False)
 
 
 class TRACKING_OT_test_cycle(bpy.types.Operator):
