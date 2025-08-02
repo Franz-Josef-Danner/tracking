@@ -9,12 +9,12 @@ from ..helpers.set_tracking_channels import set_tracking_channels
 from ..helpers.test_cyclus import run_default_tracking_settings
 
 
-class CLIP_OT_marker_valurierung(bpy.types.Operator):
+class CLIP_OT_marker_validierung(bpy.types.Operator):
     """Validiert die Markeranzahl pro Frame."""
 
-    bl_idname = "clip.marker_valurierung"
-    bl_label = "Marker Valurierung"
-    bl_description = "\u00dcberpr\u00fcft die Markeranzahl pro Frame und startet bei Bedarf den Tracking-Zyklus"
+    bl_idname = "clip.marker_validierung"
+    bl_label = "Marker Validierung"
+    bl_description = "Überprüft die Markeranzahl pro Frame und startet bei Bedarf den Tracking-Zyklus"
 
     @classmethod
     def poll(cls, context):
@@ -56,5 +56,9 @@ class CLIP_OT_marker_valurierung(bpy.types.Operator):
                 run_default_tracking_settings(context)
                 repeat = 0
 
-        self.report({"INFO"}, "Marker Valuierung abgeschlossen")
+        self.report({"INFO"}, "Marker Validierung abgeschlossen")
         return {"FINISHED"}
+
+
+# Alias für Rückwärtskompatibilität (alte Schreibweise)
+CLIP_OT_marker_valurierung = CLIP_OT_marker_validierung
