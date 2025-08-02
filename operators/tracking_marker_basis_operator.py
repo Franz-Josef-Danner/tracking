@@ -17,10 +17,10 @@ class TRACKING_OT_marker_basis_values(bpy.types.Operator):
 
         marker_basis = scene.get("marker_basis", 20)
 
-        marker_plus = marker_basis * 4
+        marker_plus = marker_basis / 3
         marker_adapt = marker_plus
-        max_marker = marker_adapt * 1.1
-        min_marker = marker_adapt * 0.9
+        max_marker = marker_adapt + 1
+        min_marker = marker_adapt - 1
 
         scene["marker_plus"] = marker_plus
         scene["marker_adapt"] = marker_adapt

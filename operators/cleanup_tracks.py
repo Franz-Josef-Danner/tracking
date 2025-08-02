@@ -16,7 +16,7 @@ def cleanup_tracks(context):
     for track in tracks:
         track.select = False
 
-    ee_initial = (context.scene.error_per_track + 0.1) / 100
+    ee_initial = context.scene.error_per_track
     threshold_factor = 0.9
     frame_range = (scene.frame_start, scene.frame_end)
 
