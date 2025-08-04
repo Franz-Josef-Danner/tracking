@@ -1,6 +1,7 @@
 import bpy
 import statistics
 from .cleanup import clean_tracks
+from .error_value import compute_marker_error_std
 
 
 def delete_selected_tracks(tracking):
@@ -209,6 +210,13 @@ def run_tracking(
         clean_tracks(tracking.objects.active, min_track_length, 2.0)
         if report_func:
             report_func({'INFO'}, "clean_tracks() aufgerufen")
+        error_value = compute_marker_error_std(tracking)
+        context.scene["kaiserlich_error_std"] = error_value
+        if report_func:
+            report_func(
+                {'INFO'},
+                f"Fehlerwert (STD-Summe): {error_value:.4f}",
+            )
 
         counts = _marker_counts(tracking, start, end)
         if counts and min(counts.values()) >= markers_per_frame:

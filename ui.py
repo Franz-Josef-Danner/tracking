@@ -28,6 +28,11 @@ class KaiserlichPanel(Panel):
         layout.prop(settings, "bidirectional")
         layout.prop(settings, "enable_debug_overlay")
         layout.operator("clip.kaiserlich_tracking", text="Track")
+        error_std = context.scene.get("kaiserlich_error_std")
+        if error_std is not None:
+            layout.label(
+                text=f"Fehlerwert (STD-Summe): {error_std:.4f}"
+            )
         layout.separator()
         layout.label(text="Diagnose")
         layout.operator("clip.error_value", text="Error Value")
