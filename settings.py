@@ -20,11 +20,17 @@ class KaiserlichSettings(PropertyGroup):
         min=1,
     )
 
-    error_threshold: FloatProperty(
+    error_limit: FloatProperty(
         name="Error/Track",
         description="Tolerierter Fehler pro Track",
         default=1.0,
         min=0.0,
+    )
+
+    enable_debug_overlay: BoolProperty(
+        name="Debug Overlay",
+        description="Markerabdeckung im UI anzeigen",
+        default=False,
     )
 
     auto_keyframes: BoolProperty(
