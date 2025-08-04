@@ -87,6 +87,11 @@ class KAISERLICH_OT_Tracking(Operator):
 
         tracking = clip.tracking
         settings = tracking.settings
+
+        tracking_obj = tracking.objects.active
+        if tracking_obj is None:
+            self.report({"WARNING"}, "Kein aktives Tracking-Objekt vorhanden.")
+            return {"CANCELLED"}
         clip.use_proxy = False
         clip.proxy.build_25 = False
         clip.proxy.build_50 = False
@@ -111,7 +116,7 @@ class KAISERLICH_OT_Tracking(Operator):
             min_distance=min_distance,
         )
 
-        tracks = tracking.objects.active.tracks
+        tracks = tracking_obj.tracks
         new_tracks = [t for t in tracks if t.select]
         count_new = len(new_tracks)
         if count_new < markers_per_frame:
@@ -146,10 +151,21 @@ class KAISERLICH_OT_Tracking(Operator):
 
         bpy.ops.clip.clean_tracks(frames=0, error=error_limit, action="DELETE_TRACK")
 
-        settings.keyframe_a = scene.frame_start
-        settings.keyframe_b = scene.frame_end
+        frame_start = int(scene.frame_start)
+        frame_end = int(scene.frame_end)
+        clip_start = getattr(clip, "frame_start", 0)
+        clip_end = clip_start + getattr(clip, "frame_duration", 0) - 1
+
+        if frame_start < clip_start or frame_end > clip_end:
+            self.report(
+                {"WARNING"}, "Scene-Frames liegen außerhalb des Clip-Zeitraums."
+            )
+            return {"CANCELLED"}
+
+        tracking_obj.keyframe_a = frame_start
+        tracking_obj.keyframe_b = frame_end
         bpy.ops.clip.solve_camera()
-        solve_error = tracking.objects.active.reconstruction_error
+        solve_error = tracking_obj.reconstruction_error
         self.report(
             {"INFO"},
             f"Kamera gelöst. Durchschnittlicher Solve-Fehler: {solve_error:.3f}",
