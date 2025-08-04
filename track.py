@@ -166,7 +166,8 @@ def run_tracking(
     max_marker = markers_per_frame * 4
     for attempt in range(max_attempts):
         clip.use_proxy = False
-        tracking.reset()
+        while tracking.tracks:
+            tracking.tracks.remove(tracking.tracks[0])
 
         # Step 1: Adaptive Marker Detection
         new_tracks, last_threshold, status = _adaptive_detect(
