@@ -6,19 +6,29 @@ from .error_value import compute_marker_error_std
 
 
 def delete_selected_tracks(tracking):
-    """Remove tracks that are currently selected."""
-    for t in [t for t in tracking.tracks if t.select]:
-        idx = tracking.tracks.find(t.name)
-        if idx != -1 and idx < len(tracking.tracks):
-            track = tracking.tracks[idx]
-            tracking.tracks.remove(track)
+    """Remove tracks that are currently selected using index-based deletion."""
+    i = 0
+    while i < len(tracking.tracks):
+        track = tracking.tracks[i]
+        if track.select:
+            print(f"[DEBUG] Entferne Track '{track.name}' an Index {i}")
+            try:
+                tracking.tracks.remove(i)
+            except Exception as e:
+                print(
+                    f"[ERROR] Fehler beim Entfernen von Track '{track.name}' (Index {i}): {e}"
+                )
+        else:
+            print(f"[DEBUG] Überspringe Track '{track.name}' an Index {i}")
+            i += 1
 
 
 def delete_track_by_name(tracking, name):
-    """Remove a track from ``tracking`` by its ``name`` if present."""
+    """Remove a track from ``tracking`` by its ``name`` if present using index-based removal."""
     idx = tracking.tracks.find(name)
     if idx != -1 and idx < len(tracking.tracks):
-        tracking.tracks.remove(tracking.tracks[idx])
+        print(f"[DEBUG] Entferne Track '{name}' an Index {idx}")
+        tracking.tracks.remove(idx)
 
 
 def _marker_counts(tracking_obj, start, end):
@@ -202,17 +212,9 @@ def run_tracking(
     max_marker = markers_per_frame * 4
     for attempt in range(max_attempts):
         clip.use_proxy = False
-        while tracking.tracks:
-            track = tracking.tracks[0]
-            idx = tracking.tracks.find(track.name)
-            if idx == -1:
-                print(f"[DEBUG] Track '{track.name}' nicht gefunden – kann nicht entfernt werden.")
-            else:
-                try:
-                    print(f"[DEBUG] Entferne Track '{track.name}' an Index {idx}.")
-                    tracking.tracks.remove(tracking.tracks[idx])
-                except Exception as e:
-                    print(f"[ERROR] Fehler beim Entfernen von Track '{track.name}' (Index {idx}): {e}")
+        for t in tracking.tracks:
+            t.select = True
+        delete_selected_tracks(tracking)
 
         # Step 1: Adaptive Marker Detection
         new_tracks, last_threshold, status = _adaptive_detect(
@@ -247,16 +249,11 @@ def run_tracking(
             for t in tracking.tracks
             if len([m for m in t.markers if not m.mute]) < min_track_length
         ]
+        for t in tracking.tracks:
+            t.select = False
         for t in short_tracks:
-            idx = tracking.tracks.find(t.name)
-            if idx == -1:
-                print(f"[DEBUG] Track '{t.name}' nicht gefunden – kann nicht entfernt werden.")
-            else:
-                try:
-                    print(f"[DEBUG] Entferne Track '{t.name}' an Index {idx}.")
-                    tracking.tracks.remove(tracking.tracks[idx])
-                except Exception as e:
-                    print(f"[ERROR] Fehler beim Entfernen von Track '{t.name}' (Index {idx}): {e}")
+            t.select = True
+        delete_selected_tracks(tracking)
         print(f"{len(short_tracks)} kurze Tracks entfernt.")
 
         # Step 4: Cleanup basierend auf Bewegung
