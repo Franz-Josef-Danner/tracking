@@ -27,6 +27,18 @@ class KaiserlichSettings(PropertyGroup):
         min=0.0,
     )
 
+    start_frame: IntProperty(
+        name="Start Frame",
+        default=1,
+        min=1,
+    )
+
+    end_frame: IntProperty(
+        name="End Frame",
+        default=250,
+        min=1,
+    )
+
     enable_debug_overlay: BoolProperty(
         name="Debug Overlay",
         description="Markerabdeckung im UI anzeigen",
