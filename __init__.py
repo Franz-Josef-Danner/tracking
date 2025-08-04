@@ -30,7 +30,7 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
         layout.prop(scene, "frames_track")
         layout.prop(scene, "error_track")
         layout.separator()
-        layout.operator(text="Track")
+        layout.operator("clip.proxy_build", text="Track")
 
 # -----------------------------
 # Registration
