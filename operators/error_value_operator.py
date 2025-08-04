@@ -24,7 +24,10 @@ class CLIP_OT_error_value(Operator):
         x_positions = []
         y_positions = []
 
-        for track in clip.tracking.tracks:
+        tracking = clip.tracking
+        tracks = tracking.objects.active.tracks
+
+        for track in tracks:
             if not track.select:
                 continue
             for marker in track.markers:
