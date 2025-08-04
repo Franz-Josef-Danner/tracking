@@ -25,9 +25,9 @@ class CLIP_PT_mein_panel(bpy.types.Panel):
         layout = self.layout
         scene = context.scene
         layout.label(text="Kaiserlich Tracker")
-        layout.prop(scene, "eingabe_1")
-        layout.prop(scene, "eingabe_2")
-        layout.prop(scene, "eingabe_3")
+        layout.prop(scene, "Marker/Frame")
+        layout.prop(scene, "Frames/Track")
+        layout.prop(scene, "Error/Track")
         layout.operator("clip.open", text="Track")
 
 # -----------------------------
@@ -41,16 +41,16 @@ classes = (
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
-    bpy.types.Scene.eingabe_1 = StringProperty(name="Eingabe 1")
-    bpy.types.Scene.eingabe_2 = StringProperty(name="Eingabe 2")
-    bpy.types.Scene.eingabe_3 = StringProperty(name="Eingabe 3")
+    bpy.types.Scene.eingabe_1 = StringProperty(name="Marker_Frame")
+    bpy.types.Scene.eingabe_2 = StringProperty(name="Frames_Track")
+    bpy.types.Scene.eingabe_3 = StringProperty(name="Error_Track3")
 
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
-    del bpy.types.Scene.eingabe_1
-    del bpy.types.Scene.eingabe_2
-    del bpy.types.Scene.eingabe_3
+    del bpy.types.Scene.Marker_Frame
+    del bpy.types.Scene.Frames_Track
+    del bpy.types.Scene.Error_Track3
 
 if __name__ == "__main__":
     register()
