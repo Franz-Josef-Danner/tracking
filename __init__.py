@@ -44,7 +44,7 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
-    bpy.types.Scene.marker_frame = StringProperty(
+    bpy.types.Scene.marker_frame = IntProperty(
         name="Marker per Frame",
         default=20,
         min=10,
@@ -58,9 +58,9 @@ def register():
     )
     bpy.types.Scene.error_track = FloatProperty(
         name="Tracking Error",
-        default=0.5,
-        min=0.1,
-        max=1.0,
+        default=0.50,
+        min=0.01,
+        max=1.00,
     )
 
 def unregister():
