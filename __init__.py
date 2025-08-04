@@ -41,9 +41,9 @@ classes = (
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
-    bpy.types.Scene.eingabe_1 = StringProperty(name="Marker_Frame")
-    bpy.types.Scene.eingabe_2 = StringProperty(name="Frames_Track")
-    bpy.types.Scene.eingabe_3 = StringProperty(name="Error_Track3")
+    bpy.types.Scene.Marker_Frame = StringProperty(name="Marker_Frame")
+    bpy.types.Scene.Frames_Track = StringProperty(name="Frames_Track")
+    bpy.types.Scene.Error_Track3 = StringProperty(name="Error_Track3")
 
 def unregister():
     for cls in reversed(classes):
