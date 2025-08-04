@@ -23,6 +23,7 @@ class KaiserlichPanel(Panel):
         layout.prop(settings, "min_track_length")
         layout.prop(settings, "error_limit")
         layout.prop(settings, "auto_keyframes")
+        layout.prop(settings, "bidirectional")
         layout.prop(settings, "enable_debug_overlay")
         layout.operator("clip.kaiserlich_tracking", text="Track")
         layout.separator()
@@ -61,7 +62,14 @@ class KaiserlichTrackingOperator(Operator):
         print(
             f"Starting run_tracking with markers={markers}, min_frames={min_frames}"
         )
-        run_tracking(context, markers, min_frames, report_func=self.report)
+        bidirectional = wm.kaiserlich_settings.bidirectional
+        run_tracking(
+            context,
+            markers,
+            min_frames,
+            bidirectional=bidirectional,
+            report_func=self.report,
+        )
 
         tracking_obj = tracking.objects.active
         valid_tracks = [
