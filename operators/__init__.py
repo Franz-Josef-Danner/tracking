@@ -14,6 +14,7 @@ from .proxy_toggle_operators import (
 from .marker_validierung import CLIP_OT_marker_valurierung
 from ..ui.ui_helpers import CLIP_OT_marker_status_popup
 from .bidirectional_tracking_operator import TRACKING_OT_bidirectional_tracking
+from .kaiserlich_track_operator import CLIP_OT_kaiserlich_track
 from .test_panel_operators import (
     TRACKING_OT_test_cycle,
     TRACKING_OT_test_base,
@@ -50,5 +51,6 @@ operator_classes = (
     TRACK_OT_test_combined,
     CLIP_OT_marker_valurierung,
     CLIP_OT_marker_status_popup,
+    CLIP_OT_kaiserlich_track,
     CLIP_OT_set_tracking_channels,
 )
