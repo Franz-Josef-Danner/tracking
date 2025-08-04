@@ -48,11 +48,11 @@ def _adaptive_detect(clip, markers_per_frame, base_threshold):
         )
         detection_threshold = max(
             min(
-                detection_threshold * ((count_new + 0.1) / marker_adapt),
-                1.0,
+                detection_threshold * ((count_new + 0.1) / marker_adapt), 1.0
             ),
-            0.0001,
+            0.0001
         )
+        # Formel gemäß Vorgabe aus "Kaiserlich Tracking Blender Operator.xlsx" – detect features_Formatiert_api_
         step += 1
         if step > 10:
             break
