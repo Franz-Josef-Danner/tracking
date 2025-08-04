@@ -33,6 +33,9 @@ class KaiserlichPanel(Panel):
             counts = getattr(context.scene, "kaiserlich_marker_counts", {})
             frame = context.scene.frame_current
             layout.label(text=f"Frame {frame}: {counts.get(frame, 0)} marker")
+            layout.label(
+                text=f"Letzter Threshold: {context.scene.get('kaiserlich_last_threshold', '-') }"
+            )
 
 
 class KaiserlichTrackingOperator(Operator):
@@ -50,6 +53,9 @@ class KaiserlichTrackingOperator(Operator):
         if clip is None:
             self.report({"ERROR"}, "Kein aktiver Clip gefunden.")
             return {"CANCELLED"}
+        tracking = clip.tracking
+        tracking.settings.keyframe_a = int(scene.frame_start)
+        tracking.settings.keyframe_b = int(scene.frame_end)
         markers = wm.kaiserlich_settings.markers_per_frame
         min_frames = wm.kaiserlich_settings.min_track_length
         print(
@@ -57,7 +63,6 @@ class KaiserlichTrackingOperator(Operator):
         )
         run_tracking(context, markers, min_frames)
 
-        tracking = clip.tracking
         tracking_obj = tracking.objects.active
         valid_tracks = [
             t for t in tracking_obj.tracks if len([m for m in t.markers if not m.mute]) >= 5
@@ -73,10 +78,6 @@ class KaiserlichTrackingOperator(Operator):
             print("Setting keyframes automatically")
             bpy.ops.clip.set_keyframe_a()
             bpy.ops.clip.set_keyframe_b()
-        else:
-            print("Using manual keyframes")
-            tracking_obj.keyframe_a = int(scene.frame_start)
-            tracking_obj.keyframe_b = int(scene.frame_end)
 
         try:
             print("Solving camera")
