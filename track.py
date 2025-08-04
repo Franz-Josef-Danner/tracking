@@ -1,5 +1,4 @@
 import bpy
-import math
 import statistics
 from .cleanup import clean_tracks
 
@@ -25,6 +24,7 @@ def _adaptive_detect(clip, markers_per_frame, base_threshold):
         f"Adaptive detect: markers_per_frame={markers_per_frame}, "
         f"base_threshold={base_threshold}"
     )
+    clip.use_proxy = False
     tracking = clip.tracking
     image_width = float(clip.size[0])
     min_distance = int(image_width * 0.05)
@@ -56,6 +56,14 @@ def _adaptive_detect(clip, markers_per_frame, base_threshold):
         step += 1
         if step > 10:
             break
+    if count_new < markers_per_frame:
+        print(
+            "Warnung: Markerzahl unter Zielwert – versuche aggressivere Detektion mit niedrigem Threshold."
+        )
+        bpy.ops.clip.select_all(action="SELECT")
+        bpy.ops.clip.delete_track()
+        detection_threshold = 0.1  # Minimalwert erzwingen
+        return _adaptive_detect(clip, markers_per_frame, detection_threshold)
     return count_new
 
 
@@ -67,6 +75,7 @@ def _frame_coverage_analysis(context, markers_per_frame, threshold, csv_path=Non
     )
     scene = context.scene
     clip = context.space_data.clip
+    clip.use_proxy = False
     tracking_obj = clip.tracking.objects.active
     start = clip.frame_start
     end = start + clip.frame_duration
@@ -106,63 +115,55 @@ def _frame_coverage_analysis(context, markers_per_frame, threshold, csv_path=Non
     return counts, needed
 
 
-def run_tracking(context, markers_per_frame, min_frames, error_limit, max_attempts=3):
-    """Führt adaptives Tracking mit Wiederholungen durch."""
-    print(
-        "Run tracking: markers_per_frame="
-        f"{markers_per_frame}, min_frames={min_frames}, "
-        f"error_limit={error_limit}, max_attempts={max_attempts}"
-    )
+def run_tracking(
+    context, markers_per_frame=10, min_track_length=10, base_threshold=0.5
+):
+    """Führt den kompletten Tracking-Workflow aus."""
     clip = context.space_data.clip
     tracking = clip.tracking
-    settings = tracking.settings
-    image_width = float(clip.size[0])
-    settings.default_pattern_size = max(int(image_width / 100), 5)
-    settings.default_search_size = settings.default_pattern_size
-    settings.default_motion_model = "Loc"
-    settings.default_pattern_match = "KEYFRAME"
-    settings.default_correlation_min = 0.9
-
+    attempts = 0
     start = clip.frame_start
     end = start + clip.frame_duration
 
-    threshold = 0.5
-    for attempt in range(max_attempts):
-        print(f"[Tracking Pass {attempt + 1}] Threshold={threshold}")
-        bpy.ops.clip.select_all(action="DESELECT")
-        _adaptive_detect(clip, markers_per_frame, threshold)
+    while True:
+        clip.use_proxy = False
+        tracking.reset()
 
-        detected = len(tracking.objects.active.tracks)
-        error_limits = [error_limit, error_limit * 1.5, error_limit * 2.0, error_limit * 3.0]
-        for limit in error_limits:
-            clean_tracks(tracking.objects.active, min_frames, limit)
-            counts = _marker_counts(tracking.objects.active, start, end)
-            if counts and min(counts.values()) >= markers_per_frame:
-                break
+        # Step 1: Adaptive Marker Detection
+        new_tracks = _adaptive_detect(clip, markers_per_frame, base_threshold)
+        print(f"{new_tracks} neue Marker gesetzt.")
 
-        valid_after = len(tracking.objects.active.tracks)
-        avg_len = _average_track_length(tracking.objects.active)
-        needed_frames = [f for f, c in counts.items() if c < markers_per_frame]
+        # Step 2: Bidirektional Tracken
+        bpy.ops.clip.track_markers(backwards=True)
+        bpy.ops.clip.track_markers(forwards=True)
 
-        print(f"→ Detected {detected} tracks")
-        print(
-            f"→ Valid after cleanup: {valid_after} "
-            f"(min_frames={min_frames}, error_limit={limit})"
-        )
-        print(f"→ Avg. marker length: {avg_len:.1f} frames")
-        if needed_frames:
-            print(f"→ Frames with <{markers_per_frame} markers: {needed_frames}")
+        # Step 3: Zu kurze Tracks löschen
+        short_tracks = [
+            t
+            for t in tracking.tracks
+            if len([m for m in t.markers if not m.mute]) < min_track_length
+        ]
+        for t in short_tracks:
+            tracking.tracks.remove(t)
+        print(f"{len(short_tracks)} kurze Tracks entfernt.")
 
-        if not needed_frames:
-            print("Sufficient tracks detected")
+        # Step 4: Cleanup basierend auf Bewegung
+        clean_tracks(tracking.objects.active, min_track_length, 2.0)
+
+        counts = _marker_counts(tracking, start, end)
+        if counts and min(counts.values()) >= markers_per_frame:
             break
 
-        threshold *= 1.5
-        print(f"Not enough tracks, increasing threshold to {threshold}")
+        attempts += 1
+        if attempts >= 3:
+            print("Maximale Wiederholungen erreicht, Abbruch.")
+            break
+        print(
+            "Warnung: Zu wenige Marker pro Frame – wiederhole Tracking mit gleicher Konfiguration."
+        )
 
-    counts, needed = _frame_coverage_analysis(context, markers_per_frame, threshold)
     context.scene.kaiserlich_marker_counts = counts
-    print("Tracking run completed")
+    return counts
 
 
 __all__ = ["run_tracking"]

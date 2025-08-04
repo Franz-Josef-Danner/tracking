@@ -52,13 +52,10 @@ class KaiserlichTrackingOperator(Operator):
             return {"CANCELLED"}
         markers = wm.kaiserlich_settings.markers_per_frame
         min_frames = wm.kaiserlich_settings.min_track_length
-        error_limit = wm.kaiserlich_settings.error_limit
-
         print(
-            f"Starting run_tracking with markers={markers}, min_frames={min_frames}, "
-            f"error_limit={error_limit}"
+            f"Starting run_tracking with markers={markers}, min_frames={min_frames}"
         )
-        run_tracking(context, markers, min_frames, error_limit)
+        run_tracking(context, markers, min_frames)
 
         tracking = clip.tracking
         tracking_obj = tracking.objects.active
