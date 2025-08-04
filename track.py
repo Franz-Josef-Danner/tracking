@@ -1,4 +1,5 @@
 import bpy
+import json
 import statistics
 from .cleanup import clean_tracks
 from .error_value import compute_marker_error_std
@@ -8,15 +9,16 @@ def delete_selected_tracks(tracking):
     """Remove tracks that are currently selected."""
     for t in [t for t in tracking.tracks if t.select]:
         idx = tracking.tracks.find(t.name)
-        if idx != -1:
-            tracking.tracks.remove(idx)
+        if idx != -1 and idx < len(tracking.tracks):
+            track = tracking.tracks[idx]
+            tracking.tracks.remove(track)
 
 
 def delete_track_by_name(tracking, name):
     """Remove a track from ``tracking`` by its ``name`` if present."""
     idx = tracking.tracks.find(name)
-    if idx != -1:
-        tracking.tracks.remove(idx)
+    if idx != -1 and idx < len(tracking.tracks):
+        tracking.tracks.remove(tracking.tracks[idx])
 
 
 def _marker_counts(tracking_obj, start, end):
@@ -55,6 +57,10 @@ def _adaptive_detect(clip, markers_per_frame, base_threshold, report=None):
     max_iterations = 10
 
     for step in range(1, max_iterations + 1):
+        print(
+            f"[DEBUG] Iteration {step}: threshold={detection_threshold:.4f}, "
+            f"detected_markers={len(tracking.tracks)}"
+        )
         bpy.ops.clip.detect_features(
             placement="FRAME",
             margin=16,
@@ -63,6 +69,10 @@ def _adaptive_detect(clip, markers_per_frame, base_threshold, report=None):
         )
         new_tracks = [t for t in tracking.tracks if t.select]
         count_new = len(new_tracks)
+        print(
+            f"[DEBUG] {len(new_tracks)} neue Marker gesetzt bei "
+            f"threshold={detection_threshold:.4f}"
+        )
         if report:
             report(
                 {'INFO'},
@@ -237,6 +247,13 @@ def run_tracking(
         print(f"{len(short_tracks)} kurze Tracks entfernt.")
 
         # Step 4: Cleanup basierend auf Bewegung
+        print(
+            f"[DEBUG] Cleaning tracks: min_frames={min_track_length}, "
+            f"error_limit={2.0}"
+        )
+        print(
+            f"[DEBUG] Verbleibende Marker vor Cleanup: {len(tracking.tracks)}"
+        )
         clean_tracks(tracking.objects.active, min_track_length, 2.0)
         if report_func:
             report_func({'INFO'}, "clean_tracks() aufgerufen")
@@ -258,7 +275,8 @@ def run_tracking(
     else:
         print("Trackingziel nicht erreicht")
 
-    context.scene.kaiserlich_marker_counts = counts
+    context.scene.kaiserlich_marker_counts = json.dumps(counts)
+    print(f"[DEBUG] Markerverteilung gespeichert: {counts}")
     final_tracks = list(tracking.tracks)
     print(f"[INFO] Tracking-Zyklus abgeschlossen mit {len(final_tracks)} finalen Tracks")
     return counts

@@ -11,16 +11,25 @@ bl_info = {
     "category": "Tracking",
 }
 
+import bpy
+from bpy.props import StringProperty
+
 from . import ui
 
 
 def register():
     print("Registering Kaiserlich Tracking Optimizer")
+    bpy.types.Scene.kaiserlich_marker_counts = StringProperty(
+        name="Kaiserlich Marker Counts",
+        description="JSON-kodierte Markerzählung für Debugging-Zwecke",
+        default="",
+    )
     ui.register()
 
 
 def unregister():
     print("Unregistering Kaiserlich Tracking Optimizer")
+    del bpy.types.Scene.kaiserlich_marker_counts
     ui.unregister()
 
 

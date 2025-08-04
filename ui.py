@@ -1,4 +1,5 @@
 import bpy
+import json
 from bpy.types import Operator, Panel
 from bpy.props import PointerProperty
 from .settings import KaiserlichSettings
@@ -38,12 +39,21 @@ class KaiserlichPanel(Panel):
         layout.operator("clip.error_value", text="Error Value")
 
         if settings.enable_debug_overlay:
-            counts = getattr(context.scene, "kaiserlich_marker_counts", {})
+            counts_raw = getattr(context.scene, "kaiserlich_marker_counts", "")
+            try:
+                counts = json.loads(counts_raw) if counts_raw else {}
+            except Exception:
+                counts = {}
             frame = context.scene.frame_current
-            layout.label(text=f"Frame {frame}: {counts.get(frame, 0)} marker")
+            layout.label(
+                text=f"Frame {frame}: {counts.get(str(frame), 0)} marker"
+            )
             layout.label(
                 text=f"Letzter Threshold: {context.scene.get('kaiserlich_last_threshold', '-') }"
             )
+            clip = getattr(context.space_data, "clip", None)
+            if clip is not None:
+                layout.label(text=f"Gesamtmarker: {len(clip.tracking.tracks)}")
 
 
 class KaiserlichTrackingOperator(Operator):

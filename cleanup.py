@@ -4,9 +4,10 @@ import bpy
 def clean_tracks(tracking_obj, min_frames, error_limit):
     """Entfernt zu kurze oder fehlerhafte Tracks."""
     print(
-        f"Cleaning tracks: min_frames={min_frames}, error_limit={error_limit}"
+        f"[DEBUG] Cleaning tracks: min_frames={min_frames}, error_limit={error_limit}"
     )
     tracks = tracking_obj.tracks
+    print(f"[DEBUG] Verbleibende Marker vor Cleanup: {len(tracks)}")
     for track in tracks:
         valid_markers = [m for m in track.markers if not m.mute]
         track.select = len(valid_markers) < min_frames
