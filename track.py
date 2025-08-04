@@ -13,6 +13,7 @@ def delete_selected_tracks(tracking):
     while i < len(tracking.tracks):
         track = tracking.tracks[i]
         if track.select:
+            print(f"[DEBUG] Entferne selektierten Track '{track.name}' an Index {i}")
             try:
                 tracking.tracks.remove(i)
                 print(
@@ -20,14 +21,14 @@ def delete_selected_tracks(tracking):
                 )
             except Exception as e:
                 print(
-                    f"[DEBUG] Track '{track.name}' | Index {i} | Ergebnis: Fehler ({e})"
+                    f"[ERROR] Track '{track.name}' | Index {i} | Ergebnis: Fehler ({e})"
                 )
-                i += 1
+                i += 1  # Fehlerfall: Index erhöhen, um Endlosschleife zu vermeiden
         else:
             print(
                 f"[DEBUG] Track '{track.name}' | Index {i} | Ergebnis: übersprungen"
             )
-            i += 1
+            i += 1  # Nicht selektierte Tracks überspringen
 
     print("[DEBUG] Track-Bereinigung abgeschlossen.")
 
