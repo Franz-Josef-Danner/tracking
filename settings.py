@@ -75,5 +75,17 @@ class KaiserlichSettings(PropertyGroup):
         default=True,
     )
 
+    use_default_normalization: BoolProperty(
+        name="Default Normalization",
+        description="Pattern-Tracking normalisieren",
+        default=True,
+    )
+
+    use_default_mask: BoolProperty(
+        name="Default Mask",
+        description="Standardmaske für Tracks verwenden",
+        default=False,
+    )
+
 
 __all__ = ["KaiserlichSettings", "TrackingConfig"]

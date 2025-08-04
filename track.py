@@ -3,7 +3,6 @@ import json
 import statistics
 from typing import Optional
 
-from .cleanup import clean_tracks
 from .error_value import compute_marker_error_std
 from .settings import TrackingConfig
 
@@ -252,7 +251,7 @@ def run_tracking(
         settings.use_default_normalization = config.use_default_normalization
         settings.use_default_mask = config.use_default_mask
 
-        print("[KaiserlichTracker] Tracking-Konfiguration angewendet:")
+        print("[KaiserlichTracker] Tracking-Konfiguration übernommen:")
         print(
             f"  use_default_normalization: {settings.use_default_normalization}"
         )
@@ -316,18 +315,6 @@ def run_tracking(
         delete_selected_tracks(tracking)
         print(f"{len(short_tracks)} kurze Tracks entfernt.")
 
-        # Step 4: Cleanup basierend auf Bewegung
-        error_limit = 2.0
-        print(
-            f"[DEBUG] Starte Cleanup: min_frames={min_track_length}, "
-            f"error_limit={error_limit}"
-        )
-        print(
-            f"[DEBUG] Verbleibende Marker vor Cleanup: {len(tracking.tracks)}"
-        )
-        clean_tracks(tracking.objects.active, min_track_length, error_limit)
-        if report_func:
-            report_func({'INFO'}, "clean_tracks() aufgerufen")
         error_value = compute_marker_error_std(tracking)
         context.scene["kaiserlich_error_std"] = error_value
         if report_func:
