@@ -20,14 +20,17 @@ class KaiserlichPanel(Panel):
         print("Drawing Kaiserlich panel")
         layout = self.layout
         settings = context.window_manager.kaiserlich_settings
-        layout.prop(settings, "markers_per_frame")
-        layout.prop(settings, "min_track_length")
-        layout.prop(settings, "error_limit")
-        layout.prop(settings, "start_frame")
-        layout.prop(settings, "end_frame")
-        layout.prop(settings, "auto_keyframes")
-        layout.prop(settings, "bidirectional")
-        layout.prop(settings, "enable_debug_overlay")
+        config = settings
+        layout.prop(config, "markers_per_frame")
+        layout.prop(config, "min_track_length")
+        layout.prop(config, "error_limit")
+        layout.prop(config, "start_frame")
+        layout.prop(config, "end_frame")
+        layout.prop(config, "auto_keyframes")
+        layout.prop(config, "bidirectional")
+        layout.prop(config, "use_default_normalization")
+        layout.prop(config, "use_default_mask")
+        layout.prop(config, "enable_debug_overlay")
         layout.operator("clip.kaiserlich_tracking", text="Track")
         error_std = context.scene.get("kaiserlich_error_std")
         if error_std is not None:
@@ -83,6 +86,8 @@ class KaiserlichTrackingOperator(Operator):
         config = TrackingConfig(
             markers_per_frame=markers,
             min_frames=min_frames,
+            use_default_normalization=wm.kaiserlich_settings.use_default_normalization,
+            use_default_mask=wm.kaiserlich_settings.use_default_mask,
         )
         run_tracking(
             context,
@@ -121,7 +126,6 @@ class KaiserlichTrackingOperator(Operator):
                 for constr in obj.constraints:
                     if constr.type == "CAMERA_SOLVER":
                         bpy.context.view_layer.objects.active = obj
-                        bpy.ops.clip.constraint_to_fcurve()
                         constr.mute = True
                         break
 
