@@ -74,6 +74,7 @@ def _adaptive_detect(clip, markers_per_frame, base_threshold, report=None):
             if count_new < max_marker:
                 break
             else:
+                print(f"[DEBUG] Aktueller Threshold: {detection_threshold}, erkannte Marker: {count_new}")
                 detection_threshold = max(
                     min(
                         detection_threshold * ((count_new + 0.1) / marker_adapt),
@@ -87,6 +88,7 @@ def _adaptive_detect(clip, markers_per_frame, base_threshold, report=None):
                         f"Threshold angepasst auf: {detection_threshold:.4f}",
                     )
         else:
+            print(f"[DEBUG] Aktueller Threshold: {detection_threshold}, erkannte Marker: {count_new}")
             detection_threshold = max(
                 min(
                     detection_threshold * ((count_new + 0.1) / marker_adapt),
@@ -180,8 +182,14 @@ def run_tracking(
         while tracking.tracks:
             track = tracking.tracks[0]
             idx = tracking.tracks.find(track.name)
-            if idx != -1:
-                tracking.tracks.remove(idx)
+            if idx == -1:
+                print(f"[DEBUG] Track '{track.name}' nicht gefunden – kann nicht entfernt werden.")
+            else:
+                try:
+                    print(f"[DEBUG] Entferne Track '{track.name}' an Index {idx}.")
+                    tracking.tracks.remove(tracking.tracks[idx])
+                except Exception as e:
+                    print(f"[ERROR] Fehler beim Entfernen von Track '{track.name}' (Index {idx}): {e}")
 
         # Step 1: Adaptive Marker Detection
         new_tracks, last_threshold, status = _adaptive_detect(
@@ -204,6 +212,7 @@ def run_tracking(
         # Step 2: Tracken
         bpy.ops.clip.track_markers(backwards=False, sequence=False)
         if bidirectional:
+            print("[DEBUG] Starte bidirektionales Tracking")
             bpy.ops.clip.track_markers(backwards=True, sequence=False)
         if report_func:
             mode = "bidirektional" if bidirectional else "vorwärts"
@@ -217,8 +226,14 @@ def run_tracking(
         ]
         for t in short_tracks:
             idx = tracking.tracks.find(t.name)
-            if idx != -1:
-                tracking.tracks.remove(idx)
+            if idx == -1:
+                print(f"[DEBUG] Track '{t.name}' nicht gefunden – kann nicht entfernt werden.")
+            else:
+                try:
+                    print(f"[DEBUG] Entferne Track '{t.name}' an Index {idx}.")
+                    tracking.tracks.remove(tracking.tracks[idx])
+                except Exception as e:
+                    print(f"[ERROR] Fehler beim Entfernen von Track '{t.name}' (Index {idx}): {e}")
         print(f"{len(short_tracks)} kurze Tracks entfernt.")
 
         # Step 4: Cleanup basierend auf Bewegung
@@ -244,6 +259,8 @@ def run_tracking(
         print("Trackingziel nicht erreicht")
 
     context.scene.kaiserlich_marker_counts = counts
+    final_tracks = list(tracking.tracks)
+    print(f"[INFO] Tracking-Zyklus abgeschlossen mit {len(final_tracks)} finalen Tracks")
     return counts
 
 
