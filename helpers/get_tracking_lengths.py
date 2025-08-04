@@ -11,7 +11,7 @@ def get_tracking_lengths():
         return {}
 
     results = {}
-    for track in clip.tracking.tracks:
+    for track in clip.tracking.objects.active.tracks:
         if not track.select:
             continue
 

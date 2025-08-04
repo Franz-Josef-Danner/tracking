@@ -16,7 +16,7 @@ def low_marker_frame(
 
     for frame in range(scene.frame_start, scene.frame_end + 1):
         count = 0
-        for track in clip.tracking.tracks:
+        for track in clip.tracking.objects.active.tracks:
             marker = track.markers.find_frame(frame, exact=True)
             if marker and not marker.mute:
                 count += 1

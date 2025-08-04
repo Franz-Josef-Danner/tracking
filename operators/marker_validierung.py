@@ -41,7 +41,7 @@ class CLIP_OT_marker_validierung(bpy.types.Operator):
         for frame in range(start, end + 1):
             scene.frame_set(frame)
             count = 0
-            for track in clip.tracking.tracks:
+            for track in clip.tracking.objects.active.tracks:
                 marker = track.markers.find_frame(frame, exact=True)
                 if marker and not marker.mute:
                     count += 1

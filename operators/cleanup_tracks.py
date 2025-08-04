@@ -10,7 +10,7 @@ def cleanup_tracks(context):
     scene = context.scene
     clip = context.space_data.clip
     tracking = clip.tracking
-    tracks = tracking.tracks
+    tracks = tracking.objects.active.tracks
 
     # Alle Marker deselektieren
     for track in tracks:
