@@ -6,21 +6,30 @@ from .error_value import compute_marker_error_std
 
 
 def delete_selected_tracks(tracking):
-    """Remove tracks that are currently selected using index-based deletion."""
+    """Remove selected tracks using index-based deletion with detailed debug output."""
+    print("[DEBUG] Starte Bereinigung selektierter Tracks...")
+
     i = 0
     while i < len(tracking.tracks):
         track = tracking.tracks[i]
         if track.select:
-            print(f"[DEBUG] Entferne Track '{track.name}' an Index {i}")
             try:
                 tracking.tracks.remove(i)
+                print(
+                    f"[DEBUG] Track '{track.name}' | Index {i} | Ergebnis: entfernt"
+                )
             except Exception as e:
                 print(
-                    f"[ERROR] Fehler beim Entfernen von Track '{track.name}' (Index {i}): {e}"
+                    f"[DEBUG] Track '{track.name}' | Index {i} | Ergebnis: Fehler ({e})"
                 )
+                i += 1
         else:
-            print(f"[DEBUG] Überspringe Track '{track.name}' an Index {i}")
+            print(
+                f"[DEBUG] Track '{track.name}' | Index {i} | Ergebnis: übersprungen"
+            )
             i += 1
+
+    print("[DEBUG] Track-Bereinigung abgeschlossen.")
 
 
 def delete_track_by_name(tracking, name):
