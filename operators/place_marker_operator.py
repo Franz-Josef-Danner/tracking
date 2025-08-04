@@ -25,11 +25,12 @@ def perform_marker_detection(
     if result != {"FINISHED"}:
         print(f"[Warnung] Feature Detection nicht erfolgreich: {result}")
 
-    selected_tracks = [t for t in tracking.tracks if t.select]
+    tracks = tracking.objects.active.tracks
+    selected_tracks = [t for t in tracks if t.select]
     return len(selected_tracks)
 
 def deselect_all_markers(tracking):
-    for t in tracking.tracks:
+    for t in tracking.objects.active.tracks:
         t.select = False
 
 
@@ -58,6 +59,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
             return {'CANCELLED'}
 
         self.tracking = self.clip.tracking
+        self.tracks = self.tracking.objects.active.tracks
         settings = self.tracking.settings
 
         self.detection_threshold = scene.get("last_detection_threshold", getattr(settings, "default_correlation_min", 0.75))
@@ -92,7 +94,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
                 print("[Info] Starte mit vorhandenen Marker – keine Löschung, nur neue setzen.")
                 deselect_all_markers(self.tracking)
 
-            for t in self.tracking.tracks:
+            for t in self.tracks:
                 t.select = False
 
             self.frame = scene.frame_current
@@ -100,12 +102,12 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
             self.distance_px = int(self.width * 0.04)
 
             self.existing_positions = []
-            for track in self.tracking.tracks:
+            for track in self.tracks:
                 marker = track.markers.find_frame(self.frame, exact=True)
                 if marker and not marker.mute:
                     self.existing_positions.append((marker.co[0] * self.width, marker.co[1] * self.height))
 
-            self.initial_track_names = {t.name for t in self.tracking.tracks}
+            self.initial_track_names = {t.name for t in self.tracks}
 
             perform_marker_detection(
                 self.clip,
@@ -121,13 +123,13 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
             return {'PASS_THROUGH'}
 
         if self.state == "WAIT":
-            current_names = {t.name for t in self.tracking.tracks}
+            current_names = {t.name for t in self.tracks}
             if current_names != self.initial_track_names or time.time() - self.wait_start >= 3.0:
                 self.state = "PROCESS"
             return {'PASS_THROUGH'}
 
         if self.state == "PROCESS":
-            new_tracks = [t for t in self.tracking.tracks if t.name not in self.initial_track_names]
+            new_tracks = [t for t in self.tracks if t.name not in self.initial_track_names]
             close_tracks = []
             for track in new_tracks:
                 marker = track.markers.find_frame(self.frame, exact=True)
@@ -139,7 +141,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
                             close_tracks.append(track)
                             break
 
-            for t in self.tracking.tracks:
+            for t in self.tracks:
                 t.select = False
             for t in close_tracks:
                 t.select = True
@@ -147,7 +149,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
                 bpy.ops.clip.delete_track()
 
             cleaned_tracks = [t for t in new_tracks if t not in close_tracks]
-            for t in self.tracking.tracks:
+            for t in self.tracks:
                 t.select = False
             for t in cleaned_tracks:
                 t.select = True
@@ -165,7 +167,7 @@ class TRACKING_OT_place_marker(bpy.types.Operator):
             print("[Status]", meldung)
 
             if anzahl_neu < self.min_marker or anzahl_neu > self.max_marker:
-                for t in self.tracking.tracks:
+                for t in self.tracks:
                     t.select = False
                 for t in cleaned_tracks:
                     t.select = True
