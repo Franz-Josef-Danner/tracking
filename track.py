@@ -203,7 +203,15 @@ def run_tracking(
             if len([m for m in t.markers if not m.mute]) < min_track_length
         ]
         for t in short_tracks:
-            tracking.tracks.remove(t)
+            idx = tracking.tracks.find(t.name)
+            if idx != -1:
+                tracking.tracks.remove(idx)
+            else:
+                if report_func:
+                    report_func(
+                        {'WARNING'},
+                        f"Track '{t.name}' konnte nicht gefunden und daher nicht entfernt werden.",
+                    )
         print(f"{len(short_tracks)} kurze Tracks entfernt.")
 
         # Step 4: Cleanup basierend auf Bewegung
