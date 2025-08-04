@@ -20,7 +20,7 @@ def _average_track_length(tracking_obj):
 
 
 def _adaptive_detect(clip, markers_per_frame, base_threshold):
-    """Suche Marker mit logarithmisch steigendem Threshold."""
+    """Suche Marker mit adaptivem Threshold."""
     print(
         f"Adaptive detect: markers_per_frame={markers_per_frame}, "
         f"base_threshold={base_threshold}"
@@ -28,21 +28,30 @@ def _adaptive_detect(clip, markers_per_frame, base_threshold):
     tracking = clip.tracking
     image_width = float(clip.size[0])
     min_distance = int(image_width * 0.05)
+
+    marker_adapt = markers_per_frame * 4
+    detection_threshold = base_threshold
     count_new = 0
     step = 0
     while count_new < markers_per_frame:
-        threshold = base_threshold * (1 + math.log(step + 1, 2))
         bpy.ops.clip.detect_features(
             placement="FRAME",
             margin=16,
-            threshold=threshold,
+            threshold=detection_threshold,
             min_distance=min_distance,
         )
         new_tracks = [t for t in tracking.tracks if t.select]
         count_new = len(new_tracks)
         print(
-            f"Detection step {step + 1}: threshold={threshold}, "
+            f"Detection step {step + 1}: threshold={detection_threshold}, "
             f"new_tracks={count_new}"
+        )
+        detection_threshold = max(
+            min(
+                detection_threshold * ((count_new + 0.1) / marker_adapt),
+                1.0,
+            ),
+            0.0001,
         )
         step += 1
         if step > 10:
