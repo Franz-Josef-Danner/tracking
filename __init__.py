@@ -13,7 +13,7 @@ bl_info = {
 
 import bpy
 from bpy.types import Operator, Panel, PropertyGroup
-from bpy.props import FloatProperty, IntProperty, PointerProperty
+from bpy.props import BoolProperty, FloatProperty, IntProperty, PointerProperty
 
 
 class KAISERLICHSettings(PropertyGroup):
@@ -40,6 +40,12 @@ class KAISERLICHSettings(PropertyGroup):
         min=0.0,
     )
 
+    auto_keyframes: BoolProperty(
+        name="Auto Keyframes",
+        description="Keyframes A und B automatisch bestimmen",
+        default=True,
+    )
+
 
 class KAISERLICH_PT_Panel(Panel):
     """Panel für die Kaiserlich-Tracking Einstellungen."""
@@ -58,7 +64,11 @@ class KAISERLICH_PT_Panel(Panel):
         layout.prop(settings, "markers_per_frame")
         layout.prop(settings, "min_track_length")
         layout.prop(settings, "error_threshold")
+        layout.prop(settings, "auto_keyframes")
         layout.operator("clip.kaiserlich_tracking", text="Track")
+        layout.separator()
+        layout.label(text="Diagnose")
+        layout.operator("clip.error_value", text="Error Value")
 
 
 class KAISERLICH_OT_Tracking(Operator):
@@ -162,9 +172,30 @@ class KAISERLICH_OT_Tracking(Operator):
             )
             return {"CANCELLED"}
 
-        tracking_obj.keyframe_a = frame_start
-        tracking_obj.keyframe_b = frame_end
-        bpy.ops.clip.solve_camera()
+        valid_tracks = [
+            t for t in tracking_obj.tracks if len([m for m in t.markers if not m.mute]) >= 5
+        ]
+        if len(valid_tracks) < 8:
+            self.report(
+                {"ERROR"},
+                "Zu wenige gültige Tracks für Kameralösung (mind. 8 benötigt)",
+            )
+            return {"CANCELLED"}
+
+        auto_keyframes = wm.kaiserlich_settings.auto_keyframes
+        if auto_keyframes:
+            bpy.ops.clip.set_keyframe_a()
+            bpy.ops.clip.set_keyframe_b()
+        else:
+            tracking_obj.keyframe_a = frame_start
+            tracking_obj.keyframe_b = frame_end
+
+        try:
+            bpy.ops.clip.solve_camera()
+        except RuntimeError as e:
+            self.report({"ERROR"}, f"Lösung fehlgeschlagen: {str(e)}")
+            return {"CANCELLED"}
+
         solve_error = tracking_obj.reconstruction_error
         self.report(
             {"INFO"},
@@ -186,9 +217,50 @@ class KAISERLICH_OT_Tracking(Operator):
         return {"FINISHED"}
 
 
+class CLIP_OT_error_value(Operator):
+    """Berechnet die durchschnittliche Standardabweichung der Marker-Positionen."""
+
+    bl_idname = "clip.error_value"
+    bl_label = "Compute Error Value"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None:
+            self.report({"ERROR"}, "Kein aktiver Clip gefunden.")
+            return {"CANCELLED"}
+
+        tracking = clip.tracking
+        tracking_obj = tracking.objects.active
+        if tracking_obj is None:
+            self.report({"ERROR"}, "Kein aktives Tracking-Objekt vorhanden.")
+            return {"CANCELLED"}
+
+        total_std = 0.0
+        count = 0
+        for t in tracking_obj.tracks:
+            positions = [m.co for m in t.markers if not m.mute]
+            if len(positions) < 2:
+                continue
+            mean_x = sum(p[0] for p in positions) / len(positions)
+            mean_y = sum(p[1] for p in positions) / len(positions)
+            variance = sum((p[0] - mean_x) ** 2 + (p[1] - mean_y) ** 2 for p in positions) / len(positions)
+            total_std += variance ** 0.5
+            count += 1
+
+        if count == 0:
+            self.report({"INFO"}, "Keine gültigen Tracks zur Berechnung.")
+            return {"CANCELLED"}
+
+        avg_std = total_std / count
+        self.report({"INFO"}, f"Durchschnittliche Std-Abweichung: {avg_std:.4f}")
+        return {"FINISHED"}
+
+
 def register():
     bpy.utils.register_class(KAISERLICHSettings)
     bpy.utils.register_class(KAISERLICH_OT_Tracking)
+    bpy.utils.register_class(CLIP_OT_error_value)
     bpy.utils.register_class(KAISERLICH_PT_Panel)
     bpy.types.WindowManager.kaiserlich_settings = PointerProperty(
         type=KAISERLICHSettings
@@ -198,6 +270,7 @@ def register():
 def unregister():
     del bpy.types.WindowManager.kaiserlich_settings
     bpy.utils.unregister_class(KAISERLICH_PT_Panel)
+    bpy.utils.unregister_class(CLIP_OT_error_value)
     bpy.utils.unregister_class(KAISERLICH_OT_Tracking)
     bpy.utils.unregister_class(KAISERLICHSettings)
 
