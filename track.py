@@ -70,15 +70,24 @@ def _adaptive_detect(clip, markers_per_frame, base_threshold, report=None):
                     ),
                     0.0001,
                 )
+                if report:
+                    report(
+                        {'INFO'},
+                        f"Threshold angepasst auf: {detection_threshold:.4f}",
+                    )
         else:
             detection_threshold = max(
                 min(
-                    detection_threshold
-                    * ((marker_adapt + 0.1) / (count_new + 0.1)),
+                    detection_threshold * ((count_new + 0.1) / marker_adapt),
                     1.0,
                 ),
                 0.0001,
             )
+            if report:
+                report(
+                    {'INFO'},
+                    f"Threshold angepasst auf: {detection_threshold:.4f}",
+                )
     else:
         if report:
             report(
