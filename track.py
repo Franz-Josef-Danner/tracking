@@ -9,6 +9,15 @@ def delete_selected_tracks(tracking):
     for t in [t for t in tracking.tracks if t.select]:
         tracking.tracks.remove(t)
 
+
+def delete_track_by_name(tracking, name):
+    """Remove a track from ``tracking`` by its ``name`` if present."""
+    idx = tracking.tracks.find(name)
+    if idx != -1:
+        track = tracking.tracks[idx]
+        tracking.tracks.remove(track)
+
+
 def _marker_counts(tracking_obj, start, end):
     """Zählt aktive Marker pro Frame."""
     counts = {f: 0 for f in range(start, end)}
@@ -168,7 +177,8 @@ def run_tracking(
     for attempt in range(max_attempts):
         clip.use_proxy = False
         while tracking.tracks:
-            tracking.tracks.remove(tracking.tracks[0])
+            track = tracking.tracks[0]
+            tracking.tracks.remove(track)
 
         # Step 1: Adaptive Marker Detection
         new_tracks, last_threshold, status = _adaptive_detect(
@@ -203,15 +213,7 @@ def run_tracking(
             if len([m for m in t.markers if not m.mute]) < min_track_length
         ]
         for t in short_tracks:
-            idx = tracking.tracks.find(t.name)
-            if idx != -1:
-                tracking.tracks.remove(idx)
-            else:
-                if report_func:
-                    report_func(
-                        {'WARNING'},
-                        f"Track '{t.name}' konnte nicht gefunden und daher nicht entfernt werden.",
-                    )
+            tracking.tracks.remove(t)
         print(f"{len(short_tracks)} kurze Tracks entfernt.")
 
         # Step 4: Cleanup basierend auf Bewegung
