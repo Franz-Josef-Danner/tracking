@@ -55,11 +55,11 @@ def _adaptive_detect(clip, markers_per_frame, base_threshold, report=None):
     last_used_threshold = base_threshold
     count_new = 0
     max_iterations = 10
-
-    for step in range(1, max_iterations + 1):
+    for iteration in range(max_iterations):
         print(
-            f"[DEBUG] Iteration {step}: threshold={detection_threshold:.4f}, "
-            f"detected_markers={len(tracking.tracks)}"
+            f"[DEBUG] Detection-Versuch {iteration+1}: "
+            f"Threshold={detection_threshold:.4f}, "
+            f"Markerziel={markers_per_frame}, Basiswert={marker_adapt}"
         )
         bpy.ops.clip.detect_features(
             placement="FRAME",
@@ -69,14 +69,11 @@ def _adaptive_detect(clip, markers_per_frame, base_threshold, report=None):
         )
         new_tracks = [t for t in tracking.tracks if t.select]
         count_new = len(new_tracks)
-        print(
-            f"[DEBUG] {len(new_tracks)} neue Marker gesetzt bei "
-            f"threshold={detection_threshold:.4f}"
-        )
+        print(f"[DEBUG] Anzahl neu detektierter Marker: {count_new}")
         if report:
             report(
                 {'INFO'},
-                f"Iteration {step}: threshold={detection_threshold:.4f}, marker={count_new}",
+                f"Iteration {iteration+1}: threshold={detection_threshold:.4f}, marker={count_new}",
             )
         last_used_threshold = detection_threshold
 
@@ -84,7 +81,6 @@ def _adaptive_detect(clip, markers_per_frame, base_threshold, report=None):
             if count_new < max_marker:
                 break
             else:
-                print(f"[DEBUG] Aktueller Threshold: {detection_threshold}, erkannte Marker: {count_new}")
                 detection_threshold = max(
                     min(
                         detection_threshold * ((count_new + 0.1) / marker_adapt),
@@ -92,19 +88,26 @@ def _adaptive_detect(clip, markers_per_frame, base_threshold, report=None):
                     ),
                     0.0001,
                 )
+                print(
+                    f"[DEBUG] Angepasster Threshold: {detection_threshold:.4f} "
+                    f"auf Basis von count_new={count_new}"
+                )
                 if report:
                     report(
                         {'INFO'},
                         f"Threshold angepasst auf: {detection_threshold:.4f}",
                     )
         else:
-            print(f"[DEBUG] Aktueller Threshold: {detection_threshold}, erkannte Marker: {count_new}")
             detection_threshold = max(
                 min(
                     detection_threshold * ((count_new + 0.1) / marker_adapt),
                     1.0,
                 ),
                 0.0001,
+            )
+            print(
+                f"[DEBUG] Angepasster Threshold: {detection_threshold:.4f} "
+                f"auf Basis von count_new={count_new}"
             )
             if report:
                 report(
@@ -134,6 +137,8 @@ def _frame_coverage_analysis(context, markers_per_frame, threshold, csv_path=Non
     start = clip.frame_start
     end = start + clip.frame_duration
     counts = _marker_counts(tracking_obj, start, end)
+    scene["kaiserlich_marker_counts"] = json.dumps(counts)
+    print(f"[DEBUG] Markerzählung gespeichert: {counts}")
     print(f"Marker count per frame: {counts}")
     if counts:
         min_count = min(counts.values())
@@ -158,14 +163,22 @@ def _frame_coverage_analysis(context, markers_per_frame, threshold, csv_path=Non
     print(f"Frames needing markers: {needed}")
     image_width = float(clip.size[0])
     min_distance = int(image_width * 0.05)
-    for f in needed:
+    marker_adapt = markers_per_frame * 4
+    for idx, f in enumerate(needed):
         scene.frame_current = f
+        print(
+            f"[DEBUG] Detection-Versuch {idx+1}: Threshold={threshold:.4f}, "
+            f"Markerziel={markers_per_frame}, Basiswert={marker_adapt}"
+        )
         bpy.ops.clip.detect_features(
             placement="FRAME",
             margin=16,
             threshold=threshold,
             min_distance=min_distance,
         )
+        new_tracks = [t for t in tracking_obj.tracks if t.select]
+        count_new = len(new_tracks)
+        print(f"[DEBUG] Anzahl neu detektierter Marker: {count_new}")
     return counts, needed
 
 
@@ -247,14 +260,12 @@ def run_tracking(
         print(f"{len(short_tracks)} kurze Tracks entfernt.")
 
         # Step 4: Cleanup basierend auf Bewegung
-        print(
-            f"[DEBUG] Cleaning tracks: min_frames={min_track_length}, "
-            f"error_limit={2.0}"
-        )
+        error_limit = 2.0
+        print(f"[DEBUG] Starte Cleanup: min_frames={min_track_length}, error_limit={error_limit}")
         print(
             f"[DEBUG] Verbleibende Marker vor Cleanup: {len(tracking.tracks)}"
         )
-        clean_tracks(tracking.objects.active, min_track_length, 2.0)
+        clean_tracks(tracking.objects.active, min_track_length, error_limit)
         if report_func:
             report_func({'INFO'}, "clean_tracks() aufgerufen")
         error_value = compute_marker_error_std(tracking)
@@ -266,17 +277,22 @@ def run_tracking(
             )
 
         counts = _marker_counts(tracking, start, end)
-        if counts and min(counts.values()) >= markers_per_frame:
+        context.scene["kaiserlich_marker_counts"] = json.dumps(counts)
+        print(f"[DEBUG] Markerzählung gespeichert: {counts}")
+        if counts is None or min(counts.values()) == 0:
+            print("[WARN] Kein verwertbares Marker-Set gefunden – erneuter Versuch")
+            continue
+        if min(counts.values()) >= markers_per_frame:
             break
 
         print(
-            f"Zu wenige Marker ({min(counts.values()) if counts else 0}) – Wiederhole Versuch {attempt + 1}"
+            f"Zu wenige Marker ({min(counts.values())}) – Wiederhole Versuch {attempt + 1}"
         )
     else:
         print("Trackingziel nicht erreicht")
 
-    context.scene.kaiserlich_marker_counts = json.dumps(counts)
-    print(f"[DEBUG] Markerverteilung gespeichert: {counts}")
+    context.scene["kaiserlich_marker_counts"] = json.dumps(counts)
+    print(f"[DEBUG] Markerzählung gespeichert: {counts}")
     final_tracks = list(tracking.tracks)
     print(f"[INFO] Tracking-Zyklus abgeschlossen mit {len(final_tracks)} finalen Tracks")
     return counts
