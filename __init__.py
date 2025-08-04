@@ -1,11 +1,11 @@
 bl_info = {
-    "name": "Mein Clip Editor Addon",
-    "author": "Dein Name",
+    "name": "Kaiserlich Tracker",
+    "author": "Franz Josef Danner",
     "version": (1, 0),
     "blender": (3, 0, 0),
     "location": "Clip Editor > Sidebar (N) > Mein Tab",
     "description": "Einfaches Panel im Clip Editor",
-    "category": "Compositing",
+    "category": "Tracking",
 }
 
 import bpy
