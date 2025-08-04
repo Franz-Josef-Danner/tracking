@@ -17,7 +17,7 @@ def delete_selected_tracks(tracking):
         if track.select:
             print(f"[DEBUG] Entferne selektierten Track '{track.name}' an Index {i}")
             try:
-                tracking.tracks.delete_track(i)
+                tracking.tracks.clear_track_path(i)
                 print(
                     f"[DEBUG] Track '{track.name}' | Index {i} | Ergebnis: entfernt"
                 )
@@ -35,12 +35,12 @@ def delete_selected_tracks(tracking):
     print("[DEBUG] Track-Bereinigung abgeschlossen.")
 
 
-def delete_track_by_name(tracking, name):
+def clear_track_path_by_name(tracking, name):
     """delete a track from ``tracking`` by its ``name`` if present using index-based removal."""
     idx = tracking.tracks.find(name)
     if idx != -1 and idx < len(tracking.tracks):
         print(f"[DEBUG] Entferne Track '{name}' an Index {idx}")
-        tracking.tracks.delete_track(idx)
+        tracking.tracks.clear_track_path(idx)
 
 
 def _marker_counts(tracking_obj, start, end):
@@ -239,7 +239,7 @@ def run_tracking(
     for attempt in range(max_attempts):
         clip.use_proxy = False
         while tracking.tracks:
-            tracking.tracks.delete_track(tracking.tracks[0])
+            tracking.tracks.clear_track_path(tracking.tracks[0])
         print("[KaiserlichTracker] Bestehende Tracks vollständig entfernt.")
 
         settings = clip.tracking.settings
