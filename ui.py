@@ -61,7 +61,7 @@ class KaiserlichTrackingOperator(Operator):
         print(
             f"Starting run_tracking with markers={markers}, min_frames={min_frames}"
         )
-        run_tracking(context, markers, min_frames)
+        run_tracking(context, markers, min_frames, report_func=self.report)
 
         tracking_obj = tracking.objects.active
         valid_tracks = [
