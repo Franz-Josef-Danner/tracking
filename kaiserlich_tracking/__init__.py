@@ -1,6 +1,6 @@
 bl_info = {
-    "name": "Kaiserlich Tracking Operator",
-    "author": "OpenAI",
+    "name": "Kaiserlich Tracking Optimizer",
+    "author": "Franz (converted by ChatGPT)",
     "version": (1, 0, 0),
     "blender": (4, 4, 3),
     "location": "Movie Clip Editor > Sidebar > Kaiserlich",
@@ -8,7 +8,7 @@ bl_info = {
         "Automatisches Motion-Tracking mit adaptiver Marker-"
         "Platzierung und Kamera-Lösung"
     ),
-    "category": "Movie Clip",
+    "category": "Tracking",
 }
 
 import bpy
