@@ -22,8 +22,8 @@ class CLIP_PT_mein_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.label(text="Tracker")
-        layout.operator("clip.open", text="Clip öffnen")
+        layout.label(text="Kaiserlich Tracker")
+        layout.operator("clip.open", text="Track")
 
 # -----------------------------
 # Registration
