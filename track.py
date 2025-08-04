@@ -236,28 +236,6 @@ def run_tracking(
     scene = context.scene
     clip = context.space_data.clip
     tracking = clip.tracking
-    settings = tracking.settings
-
-    # Vorgabewerte setzen
-    settings.default_pattern_size = config.pattern_size
-    settings.default_search_size = config.search_size
-    settings.use_default_red_channel = config.use_red
-    settings.use_default_green_channel = config.use_green
-    settings.use_default_blue_channel = config.use_blue
-    settings.use_normalization = config.use_normalization
-    settings.use_mask = config.use_mask
-
-    print(f"[KaiserlichTracker] Tracking-Konfiguration:")
-    print(f"  Pattern Size: {settings.default_pattern_size}")
-    print(f"  Search Size: {settings.default_search_size}")
-    print(
-        f"  Channels: R={settings.use_default_red_channel}, "
-        f"G={settings.use_default_green_channel}, "
-        f"B={settings.use_default_blue_channel}"
-    )
-    print(f"  Normalization: {settings.use_normalization}")
-    print(f"  Use Mask: {settings.use_mask}")
-    print(f"  Motion Model (pro Track): {config.motion_model}")
 
     markers_per_frame = config.markers_per_frame
     min_track_length = config.min_frames
@@ -282,6 +260,29 @@ def run_tracking(
             tracking.tracks.remove(tracking.tracks[0])
         print("[KaiserlichTracker] Bestehende Tracks vollständig entfernt.")
 
+        settings = clip.tracking.settings
+        settings.default_pattern_size = config.pattern_size
+        settings.default_search_size = config.search_size
+        settings.use_default_red_channel = config.use_red
+        settings.use_default_green_channel = config.use_green
+        settings.use_default_blue_channel = config.use_blue
+        settings.use_normalization = config.use_normalization
+        settings.use_mask = config.use_mask
+
+        print("[KaiserlichTracker] Tracking-Einstellungen angewendet:")
+        print(f"  Pattern Size:       {settings.default_pattern_size}")
+        print(f"  Search Size:        {settings.default_search_size}")
+        print(
+            f"  Channels:           R={settings.use_default_red_channel}, "
+            f"G={settings.use_default_green_channel}, "
+            f"B={settings.use_default_blue_channel}"
+        )
+        print(f"  Normalization:      {settings.use_normalization}")
+        print(f"  Maskenverwendung:   {settings.use_mask}")
+        print(
+            f"  Motion Model:       {config.motion_model} (wird pro Track gesetzt)"
+        )
+
         # Step 1: Adaptive Marker Detection
         new_tracks, last_threshold, status = _adaptive_detect(
             clip, markers_per_frame, base_threshold, report=report_func
@@ -290,7 +291,9 @@ def run_tracking(
         for track in tracking.tracks:
             track.motion_model = config.motion_model
         total_tracks = len(tracking.tracks)
-        print(f"[KaiserlichTracker] Marker gesetzt: {total_tracks}")
+        print(
+            f"[KaiserlichTracker] Anzahl neu gesetzter Marker: {total_tracks}"
+        )
         if total_tracks == 0:
             print(
                 "[KaiserlichTracker] ⚠️ Warnung: Keine Marker erkannt. Prüfe Threshold oder Bildmaterial."
