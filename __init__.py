@@ -38,6 +38,7 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
 
 classes = (
     CLIP_PT_kaiserlich_panel,
+    CLIP_OT_proxy_build,
 )
 
 def register():
