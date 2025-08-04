@@ -21,12 +21,18 @@ class KaiserlichPanel(Panel):
         settings = context.window_manager.kaiserlich_settings
         layout.prop(settings, "markers_per_frame")
         layout.prop(settings, "min_track_length")
-        layout.prop(settings, "error_threshold")
+        layout.prop(settings, "error_limit")
         layout.prop(settings, "auto_keyframes")
+        layout.prop(settings, "enable_debug_overlay")
         layout.operator("clip.kaiserlich_tracking", text="Track")
         layout.separator()
         layout.label(text="Diagnose")
         layout.operator("clip.error_value", text="Error Value")
+
+        if settings.enable_debug_overlay:
+            counts = getattr(context.scene, "kaiserlich_marker_counts", {})
+            frame = context.scene.frame_current
+            layout.label(text=f"Frame {frame}: {counts.get(frame, 0)} marker")
 
 
 class KaiserlichTrackingOperator(Operator):
@@ -46,7 +52,7 @@ class KaiserlichTrackingOperator(Operator):
             return {"CANCELLED"}
         markers = wm.kaiserlich_settings.markers_per_frame
         min_frames = wm.kaiserlich_settings.min_track_length
-        error_limit = wm.kaiserlich_settings.error_threshold
+        error_limit = wm.kaiserlich_settings.error_limit
 
         print(
             f"Starting run_tracking with markers={markers}, min_frames={min_frames}, "
