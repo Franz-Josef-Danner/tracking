@@ -1,28 +1,11 @@
 import bpy
 import json
 import statistics
-from dataclasses import dataclass
 from typing import Optional
 
 from .cleanup import clean_tracks
 from .error_value import compute_marker_error_std
-
-
-@dataclass
-class TrackingConfig:
-    """Bündelt alle konfigurierbaren Tracking-Parameter."""
-
-    markers_per_frame: int = 10
-    min_frames: int = 10
-    base_threshold: float = 0.5
-    pattern_size: int = 21
-    search_size: int = 96
-    motion_model: str = "Loc"
-    use_normalization: bool = True
-    use_red: bool = True
-    use_green: bool = False
-    use_blue: bool = False
-    use_mask: bool = False
+from .settings import TrackingConfig
 
 
 def delete_selected_tracks(tracking):
@@ -266,10 +249,14 @@ def run_tracking(
         settings.use_default_red_channel = config.use_red
         settings.use_default_green_channel = config.use_green
         settings.use_default_blue_channel = config.use_blue
-        settings.use_normalization = config.use_normalization
-        settings.use_mask = config.use_mask
+        settings.use_default_normalization = config.use_default_normalization
+        settings.use_default_mask = config.use_default_mask
 
-        print("[KaiserlichTracker] Tracking-Einstellungen angewendet:")
+        print("[KaiserlichTracker] Tracking-Konfiguration angewendet:")
+        print(
+            f"  use_default_normalization: {settings.use_default_normalization}"
+        )
+        print(f"  use_default_mask: {settings.use_default_mask}")
         print(f"  Pattern Size:       {settings.default_pattern_size}")
         print(f"  Search Size:        {settings.default_search_size}")
         print(
@@ -277,8 +264,6 @@ def run_tracking(
             f"G={settings.use_default_green_channel}, "
             f"B={settings.use_default_blue_channel}"
         )
-        print(f"  Normalization:      {settings.use_normalization}")
-        print(f"  Maskenverwendung:   {settings.use_mask}")
         print(
             f"  Motion Model:       {config.motion_model} (wird pro Track gesetzt)"
         )

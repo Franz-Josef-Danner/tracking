@@ -1,6 +1,24 @@
 import bpy
+from dataclasses import dataclass
 from bpy.types import PropertyGroup
 from bpy.props import BoolProperty, FloatProperty, IntProperty
+
+
+@dataclass
+class TrackingConfig:
+    """Bündelt alle konfigurierbaren Tracking-Parameter."""
+
+    markers_per_frame: int = 10
+    min_frames: int = 10
+    base_threshold: float = 0.5
+    pattern_size: int = 21
+    search_size: int = 96
+    motion_model: str = "Loc"
+    use_default_normalization: bool = True
+    use_red: bool = True
+    use_green: bool = False
+    use_blue: bool = False
+    use_default_mask: bool = False
 
 
 class KaiserlichSettings(PropertyGroup):
@@ -58,4 +76,4 @@ class KaiserlichSettings(PropertyGroup):
     )
 
 
-__all__ = ["KaiserlichSettings"]
+__all__ = ["KaiserlichSettings", "TrackingConfig"]
