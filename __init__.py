@@ -15,10 +15,12 @@ from . import ui
 
 
 def register():
+    print("Registering Kaiserlich Tracking Optimizer")
     ui.register()
 
 
 def unregister():
+    print("Unregistering Kaiserlich Tracking Optimizer")
     ui.unregister()
 
 
