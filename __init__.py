@@ -17,12 +17,12 @@ import bpy
 class CLIP_PT_mein_panel(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
-    bl_category = "Mein Tab"
-    bl_label = "Mein Panel"
+    bl_category = "Kaiserlich"
+    bl_label = "Kaiserlich"
 
     def draw(self, context):
         layout = self.layout
-        layout.label(text="Hallo Clip Editor!")
+        layout.label(text="Tracker")
         layout.operator("clip.open", text="Clip öffnen")
 
 # -----------------------------
