@@ -2,8 +2,8 @@ import bpy
 import json
 from bpy.types import Operator, Panel
 from bpy.props import PointerProperty
-from .settings import KaiserlichSettings
-from .track import TrackingConfig, run_tracking
+from .settings import KaiserlichSettings, TrackingConfig
+from .track import run_tracking
 from .cleanup import compute_error_value
 
 
