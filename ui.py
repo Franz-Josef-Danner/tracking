@@ -16,6 +16,7 @@ class KaiserlichPanel(Panel):
     bl_context = "tracking"
 
     def draw(self, context):
+        print("Drawing Kaiserlich panel")
         layout = self.layout
         settings = context.window_manager.kaiserlich_settings
         layout.prop(settings, "markers_per_frame")
@@ -36,6 +37,7 @@ class KaiserlichTrackingOperator(Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
+        print("Executing KaiserlichTrackingOperator")
         wm = context.window_manager
         scene = context.scene
         clip = getattr(context.space_data, "clip", None)
@@ -46,6 +48,10 @@ class KaiserlichTrackingOperator(Operator):
         min_frames = wm.kaiserlich_settings.min_track_length
         error_limit = wm.kaiserlich_settings.error_threshold
 
+        print(
+            f"Starting run_tracking with markers={markers}, min_frames={min_frames}, "
+            f"error_limit={error_limit}"
+        )
         run_tracking(context, markers, min_frames, error_limit)
 
         tracking = clip.tracking
@@ -54,19 +60,23 @@ class KaiserlichTrackingOperator(Operator):
             t for t in tracking_obj.tracks if len([m for m in t.markers if not m.mute]) >= 5
         ]
         if len(valid_tracks) < 8:
+            print("Not enough valid tracks for camera solving")
             self.report(
                 {"ERROR"}, "Zu wenige gültige Tracks für Kameralösung (mind. 8 benötigt)",
             )
             return {"CANCELLED"}
 
         if wm.kaiserlich_settings.auto_keyframes:
+            print("Setting keyframes automatically")
             bpy.ops.clip.set_keyframe_a()
             bpy.ops.clip.set_keyframe_b()
         else:
+            print("Using manual keyframes")
             tracking_obj.keyframe_a = int(scene.frame_start)
             tracking_obj.keyframe_b = int(scene.frame_end)
 
         try:
+            print("Solving camera")
             bpy.ops.clip.solve_camera()
         except RuntimeError as e:
             self.report({"ERROR"}, f"Lösung fehlgeschlagen: {str(e)}")
@@ -83,6 +93,7 @@ class KaiserlichTrackingOperator(Operator):
                         constr.mute = True
                         break
 
+        print("KaiserlichTrackingOperator finished")
         return {"FINISHED"}
 
 
@@ -94,6 +105,7 @@ class ClipErrorValueOperator(Operator):
     bl_options = {"REGISTER"}
 
     def execute(self, context):
+        print("Executing ClipErrorValueOperator")
         clip = getattr(context.space_data, "clip", None)
         if clip is None:
             self.report({"ERROR"}, "Kein aktiver Clip gefunden.")
@@ -103,6 +115,7 @@ class ClipErrorValueOperator(Operator):
             self.report({"ERROR"}, "Kein aktives Tracking-Objekt vorhanden.")
             return {"CANCELLED"}
         avg_std = compute_error_value(tracking_obj)
+        print(f"Computed average std dev: {avg_std}")
         if avg_std is None:
             self.report({"INFO"}, "Keine gültigen Tracks zur Berechnung.")
             return {"CANCELLED"}
@@ -119,12 +132,16 @@ classes = [
 
 
 def register():
+    print("Registering Kaiserlich UI classes")
     for cls in classes:
         bpy.utils.register_class(cls)
-    bpy.types.WindowManager.kaiserlich_settings = PointerProperty(type=KaiserlichSettings)
+    bpy.types.WindowManager.kaiserlich_settings = PointerProperty(
+        type=KaiserlichSettings
+    )
 
 
 def unregister():
+    print("Unregistering Kaiserlich UI classes")
     del bpy.types.WindowManager.kaiserlich_settings
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
