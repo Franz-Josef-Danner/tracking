@@ -2,6 +2,12 @@ import bpy
 import statistics
 from .cleanup import clean_tracks
 
+
+def delete_selected_tracks(tracking):
+    """Remove tracks that are currently selected."""
+    for t in [t for t in tracking.tracks if t.select]:
+        tracking.tracks.remove(t)
+
 def _marker_counts(tracking_obj, start, end):
     """Zählt aktive Marker pro Frame."""
     counts = {f: 0 for f in range(start, end)}
@@ -18,7 +24,7 @@ def _average_track_length(tracking_obj):
     return sum(lengths) / len(lengths) if lengths else 0.0
 
 
-def _adaptive_detect(clip, markers_per_frame, base_threshold):
+def _adaptive_detect(clip, markers_per_frame, base_threshold, report=None):
     """Suche Marker mit adaptivem Threshold."""
     print(
         f"Adaptive detect: markers_per_frame={markers_per_frame}, "
@@ -59,16 +65,20 @@ def _adaptive_detect(clip, markers_per_frame, base_threshold):
         if step > 10:
             break
     if count_new < markers_per_frame:
+        if report:
+            report({'WARNING'}, "Markeranzahl dauerhaft zu niedrig – Tracking abgebrochen.")
         print(
             "Warnung: Markerzahl unter Zielwert – versuche aggressivere Detektion mit niedrigem Threshold."
         )
         bpy.ops.clip.select_all(action="SELECT")
-        bpy.ops.clip.delete_track()
+        # teil_cyclus_1_neu_starten wegen Markeranzahl < markers_per_frame
+        delete_selected_tracks(tracking)
         detection_threshold = 0.1  # Minimalwert erzwingen
-        count_new, last_used_threshold = _adaptive_detect(
-            clip, markers_per_frame, detection_threshold
+        count_new, last_used_threshold, status = _adaptive_detect(
+            clip, markers_per_frame, detection_threshold, report=report
         )
-    return count_new, last_used_threshold
+        return count_new, last_used_threshold, status
+    return count_new, last_used_threshold, "zyklus_1_fertig"  # teil_cyclus_1_fertig
 
 
 def _frame_coverage_analysis(context, markers_per_frame, threshold, csv_path=None):
@@ -125,6 +135,7 @@ def run_tracking(
     min_track_length=10,
     base_threshold=0.5,
     max_attempts=3,
+    report_func=None,
 ):
     """Führt den kompletten Tracking-Workflow aus."""
     clip = context.space_data.clip
@@ -138,9 +149,10 @@ def run_tracking(
         tracking.reset()
 
         # Step 1: Adaptive Marker Detection
-        new_tracks, last_threshold = _adaptive_detect(
-            clip, markers_per_frame, base_threshold
+        new_tracks, last_threshold, status = _adaptive_detect(
+            clip, markers_per_frame, base_threshold, report=report_func
         )
+        # teil_cyclus_1_fertig
         context.scene["kaiserlich_last_threshold"] = last_threshold
         print(f"{new_tracks} neue Marker gesetzt.")
 
