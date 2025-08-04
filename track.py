@@ -1,8 +1,28 @@
 import bpy
 import json
 import statistics
+from dataclasses import dataclass
+from typing import Optional
+
 from .cleanup import clean_tracks
 from .error_value import compute_marker_error_std
+
+
+@dataclass
+class TrackingConfig:
+    """Bündelt alle konfigurierbaren Tracking-Parameter."""
+
+    markers_per_frame: int = 10
+    min_frames: int = 10
+    base_threshold: float = 0.5
+    pattern_size: int = 21
+    search_size: int = 96
+    motion_model: str = "Loc"
+    use_norm: bool = True
+    channel_r: bool = True
+    channel_g: bool = False
+    channel_b: bool = False
+    use_mask: bool = False
 
 
 def delete_selected_tracks(tracking):
@@ -204,16 +224,56 @@ def _frame_coverage_analysis(context, markers_per_frame, threshold, csv_path=Non
 
 def run_tracking(
     context,
-    markers_per_frame=10,
-    min_track_length=10,
-    base_threshold=0.5,
+    config: Optional[TrackingConfig] = None,
     max_attempts=3,
     bidirectional=True,
     report_func=None,
 ):
     """Führt den kompletten Tracking-Workflow aus."""
+    if config is None:
+        config = TrackingConfig()
+
+    scene = context.scene
     clip = context.space_data.clip
     tracking = clip.tracking
+    settings = tracking.settings
+
+    # Vorgabewerte setzen
+    settings.default_pattern_size = config.pattern_size
+    settings.default_search_size = config.search_size
+    settings.use_default_red_channel = config.channel_r
+    settings.use_default_green_channel = config.channel_g
+    settings.use_default_blue_channel = config.channel_b
+    settings.motion_model = config.motion_model
+    settings.use_normalization = config.use_norm
+    settings.use_mask = config.use_mask
+
+    markers_per_frame = config.markers_per_frame
+    min_track_length = config.min_frames
+    base_threshold = config.base_threshold
+
+    print("[KaiserlichTracker] START Tracking Operator")
+    print(f"  frame_start: {scene.frame_start}, frame_end: {scene.frame_end}")
+    print(
+        f"  markers_per_frame: {markers_per_frame}, min_frames: {min_track_length}"
+    )
+    print(f"  threshold_base: {base_threshold}")
+    print(
+        f"  pattern_size: {settings.default_pattern_size}, "
+        f"search_size: {settings.default_search_size}"
+    )
+    print(
+        "  channel usage: "
+        f"R={settings.use_default_red_channel}, "
+        f"G={settings.use_default_green_channel}, "
+        f"B={settings.use_default_blue_channel}"
+    )
+    print(
+        f"  motion_model: {settings.motion_model}, "
+        f"use_normalization: {settings.use_normalization}"
+    )
+    print(f"  use_mask: {settings.use_mask}")
+
     start = clip.frame_start
     end = start + clip.frame_duration
 
@@ -222,19 +282,22 @@ def run_tracking(
     max_marker = markers_per_frame * 4
     for attempt in range(max_attempts):
         clip.use_proxy = False
-        for t in tracking.tracks:
-            t.select = True
-        delete_selected_tracks(tracking)
+        while tracking.tracks:
+            tracking.tracks.remove(tracking.tracks[0])
+        print("[KaiserlichTracker] All existing tracks removed before detection.")
 
         # Step 1: Adaptive Marker Detection
         new_tracks, last_threshold, status = _adaptive_detect(
             clip, markers_per_frame, base_threshold, report=report_func
         )
-        # teil_cyclus_1_fertig
         context.scene["kaiserlich_last_threshold"] = last_threshold
+        print(f"[KaiserlichTracker] {new_tracks} Marker erfolgreich gesetzt.")
+        if new_tracks == 0:
+            print(
+                "[KaiserlichTracker] WARNUNG: Keine Marker erkannt – prüfen Sie Threshold oder Quellmaterial."
+            )
         if report_func:
             report_func({'INFO'}, f"{new_tracks} neue Marker gesetzt")
-        print(f"{new_tracks} neue Marker gesetzt.")
 
         if not (new_tracks > min_marker and new_tracks < max_marker):
             if report_func:
@@ -268,7 +331,10 @@ def run_tracking(
 
         # Step 4: Cleanup basierend auf Bewegung
         error_limit = 2.0
-        print(f"[DEBUG] Starte Cleanup: min_frames={min_track_length}, error_limit={error_limit}")
+        print(
+            f"[DEBUG] Starte Cleanup: min_frames={min_track_length}, "
+            f"error_limit={error_limit}"
+        )
         print(
             f"[DEBUG] Verbleibende Marker vor Cleanup: {len(tracking.tracks)}"
         )
@@ -301,8 +367,10 @@ def run_tracking(
     context.scene["kaiserlich_marker_counts"] = json.dumps(counts)
     print(f"[DEBUG] Markerzählung gespeichert: {counts}")
     final_tracks = list(tracking.tracks)
-    print(f"[INFO] Tracking-Zyklus abgeschlossen mit {len(final_tracks)} finalen Tracks")
+    print(
+        f"[INFO] Tracking-Zyklus abgeschlossen mit {len(final_tracks)} finalen Tracks"
+    )
     return counts
 
 
-__all__ = ["run_tracking"]
+__all__ = ["run_tracking", "TrackingConfig"]
