@@ -22,6 +22,8 @@ class KaiserlichPanel(Panel):
         layout.prop(settings, "markers_per_frame")
         layout.prop(settings, "min_track_length")
         layout.prop(settings, "error_limit")
+        layout.prop(settings, "start_frame")
+        layout.prop(settings, "end_frame")
         layout.prop(settings, "auto_keyframes")
         layout.prop(settings, "bidirectional")
         layout.prop(settings, "enable_debug_overlay")
@@ -55,8 +57,8 @@ class KaiserlichTrackingOperator(Operator):
             self.report({"ERROR"}, "Kein aktiver Clip gefunden.")
             return {"CANCELLED"}
         tracking = clip.tracking
-        tracking.settings.keyframe_a = int(scene.frame_start)
-        tracking.settings.keyframe_b = int(scene.frame_end)
+        key_a = wm.kaiserlich_settings.start_frame
+        key_b = wm.kaiserlich_settings.end_frame
         markers = wm.kaiserlich_settings.markers_per_frame
         min_frames = wm.kaiserlich_settings.min_track_length
         print(
