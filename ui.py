@@ -3,7 +3,7 @@ import json
 from bpy.types import Operator, Panel
 from bpy.props import PointerProperty
 from .settings import KaiserlichSettings
-from .track import run_tracking
+from .track import TrackingConfig, run_tracking
 from .cleanup import compute_error_value
 
 
@@ -80,10 +80,13 @@ class KaiserlichTrackingOperator(Operator):
             f"Starting run_tracking with markers={markers}, min_frames={min_frames}"
         )
         bidirectional = wm.kaiserlich_settings.bidirectional
+        config = TrackingConfig(
+            markers_per_frame=markers,
+            min_frames=min_frames,
+        )
         run_tracking(
             context,
-            markers,
-            min_frames,
+            config,
             bidirectional=bidirectional,
             report_func=self.report,
         )
