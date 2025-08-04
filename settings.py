@@ -39,5 +39,11 @@ class KaiserlichSettings(PropertyGroup):
         default=True,
     )
 
+    bidirectional: BoolProperty(
+        name="Bidirektional",
+        description="Tracking vorwärts und rückwärts ausführen",
+        default=True,
+    )
+
 
 __all__ = ["KaiserlichSettings"]

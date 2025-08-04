@@ -36,11 +36,14 @@ def _adaptive_detect(clip, markers_per_frame, base_threshold, report=None):
     min_distance = int(image_width * 0.05)
 
     marker_adapt = markers_per_frame * 4
+    min_marker = markers_per_frame
+    max_marker = marker_adapt
     detection_threshold = base_threshold
-    count_new = 0
-    step = 0
     last_used_threshold = base_threshold
-    while count_new < markers_per_frame:
+    count_new = 0
+    max_iterations = 10
+
+    for step in range(1, max_iterations + 1):
         bpy.ops.clip.detect_features(
             placement="FRAME",
             margin=16,
@@ -49,36 +52,41 @@ def _adaptive_detect(clip, markers_per_frame, base_threshold, report=None):
         )
         new_tracks = [t for t in tracking.tracks if t.select]
         count_new = len(new_tracks)
-        print(
-            f"Detection step {step + 1}: threshold={detection_threshold}, "
-            f"new_tracks={count_new}"
-        )
-        last_used_threshold = detection_threshold
-        detection_threshold = max(
-            min(
-                detection_threshold * ((count_new + 0.1) / marker_adapt), 1.0
-            ),
-            0.0001
-        )
-        # Formel gemäß Vorgabe aus "Kaiserlich Tracking Blender Operator.xlsx" – detect features_Formatiert_api_
-        step += 1
-        if step > 10:
-            break
-    if count_new < markers_per_frame:
         if report:
-            report({'WARNING'}, "Markeranzahl dauerhaft zu niedrig – Tracking abgebrochen.")
-        print(
-            "Warnung: Markerzahl unter Zielwert – versuche aggressivere Detektion mit niedrigem Threshold."
-        )
-        bpy.ops.clip.select_all(action="SELECT")
-        # teil_cyclus_1_neu_starten wegen Markeranzahl < markers_per_frame
-        delete_selected_tracks(tracking)
-        detection_threshold = 0.1  # Minimalwert erzwingen
-        count_new, last_used_threshold, status = _adaptive_detect(
-            clip, markers_per_frame, detection_threshold, report=report
-        )
-        return count_new, last_used_threshold, status
-    return count_new, last_used_threshold, "zyklus_1_fertig"  # teil_cyclus_1_fertig
+            report(
+                {'INFO'},
+                f"Iteration {step}: threshold={detection_threshold:.4f}, marker={count_new}",
+            )
+        last_used_threshold = detection_threshold
+
+        if count_new > min_marker:
+            if count_new < max_marker:
+                break
+            else:
+                detection_threshold = max(
+                    min(
+                        detection_threshold * ((count_new + 0.1) / marker_adapt),
+                        1.0,
+                    ),
+                    0.0001,
+                )
+        else:
+            detection_threshold = max(
+                min(
+                    detection_threshold
+                    * ((marker_adapt + 0.1) / (count_new + 0.1)),
+                    1.0,
+                ),
+                0.0001,
+            )
+    else:
+        if report:
+            report(
+                {'WARNING'},
+                f"Abbruch nach {max_iterations} Versuchen – Markeranzahl unzureichend ({count_new})",
+            )
+
+    return count_new, last_used_threshold, "zyklus_1_fertig"
 
 
 def _frame_coverage_analysis(context, markers_per_frame, threshold, csv_path=None):
@@ -135,6 +143,7 @@ def run_tracking(
     min_track_length=10,
     base_threshold=0.5,
     max_attempts=3,
+    bidirectional=True,
     report_func=None,
 ):
     """Führt den kompletten Tracking-Workflow aus."""
@@ -144,6 +153,8 @@ def run_tracking(
     end = start + clip.frame_duration
 
     counts = {}
+    min_marker = markers_per_frame
+    max_marker = markers_per_frame * 4
     for attempt in range(max_attempts):
         clip.use_proxy = False
         tracking.reset()
@@ -154,11 +165,25 @@ def run_tracking(
         )
         # teil_cyclus_1_fertig
         context.scene["kaiserlich_last_threshold"] = last_threshold
+        if report_func:
+            report_func({'INFO'}, f"{new_tracks} neue Marker gesetzt")
         print(f"{new_tracks} neue Marker gesetzt.")
 
-        # Step 2: Bidirektional Tracken
+        if not (new_tracks > min_marker and new_tracks < max_marker):
+            if report_func:
+                report_func(
+                    {'WARNING'},
+                    f"Markeranzahl außerhalb des gültigen Bereichs ({new_tracks})",
+                )
+            continue
+
+        # Step 2: Tracken
         bpy.ops.clip.track_markers(backwards=False, sequence=False)
-        bpy.ops.clip.track_markers(backwards=True, sequence=False)
+        if bidirectional:
+            bpy.ops.clip.track_markers(backwards=True, sequence=False)
+        if report_func:
+            mode = "bidirektional" if bidirectional else "vorwärts"
+            report_func({'INFO'}, f"Tracking {mode} ausgeführt")
 
         # Step 3: Zu kurze Tracks löschen
         short_tracks = [
@@ -172,6 +197,8 @@ def run_tracking(
 
         # Step 4: Cleanup basierend auf Bewegung
         clean_tracks(tracking.objects.active, min_track_length, 2.0)
+        if report_func:
+            report_func({'INFO'}, "clean_tracks() aufgerufen")
 
         counts = _marker_counts(tracking, start, end)
         if counts and min(counts.values()) >= markers_per_frame:
