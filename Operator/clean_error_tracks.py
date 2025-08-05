@@ -92,7 +92,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         return context.space_data and context.space_data.clip is not None
 
     def execute(self, context):
-        deleted, max_error = cleanup_tracks(context)
+        deleted, max_error = clean_error_tracks(context)
         if deleted:
             self.report({'INFO'}, f"Insgesamt {deleted} Tracks gelöscht. Max. Fehler: {max_error:.6f}")
         else:
@@ -112,7 +112,7 @@ class CLIP_PT_cleanup_panel(bpy.types.Panel):
         scene = context.scene
 
         layout.prop(scene, "error_per_track")
-        layout.operator("clip.cleanup_tracks", icon="TRACKING_CLEANUP")
+        layout.operator("clip.clean_error_tracks", icon="TRACKING_CLEANUP")
 
 # ---------- Registration ----------
 
