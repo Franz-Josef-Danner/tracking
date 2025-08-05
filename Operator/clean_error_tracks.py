@@ -72,7 +72,8 @@ def clean_error_tracks(context):
     height = clip.size[1]
     frame_range = (scene.frame_start, scene.frame_end)
 
-    fehlergrenzen = [10, 5, 2.5]
+    ee_base = (getattr(scene, "error_track", 1.0) + 0.1) / 100
+    fehlergrenzen = [ee_base, ee_base / 2, ee_base / 4]
     teilfaktoren = [1, 2, 4]
     total_deleted_all = 0
 
