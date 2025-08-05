@@ -14,12 +14,8 @@ from bpy.props import IntProperty, FloatProperty
 # Operator-Importe
 from .Operator.proxy_builder import CLIP_OT_proxy_builder
 from .Operator.tracker_settings import CLIP_OT_tracker_settings
-from .Helper.marker_helper_main import CLIP_OT_marker_helper_main
-from .Operator.detect import CLIP_OT_detect
-from .Helper.disable_proxy import CLIP_OT_disable_proxy
-from .Helper.enable_proxy import CLIP_OT_enable_proxy
-from .Operator.bidirectional_track import CLIP_OT_bidirectional_track
-from .Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
+from .Operator.tracking_pipeline import CLIP_OT_tracking_pipeline
+
 # -------------------------------------
 # Panel für das UI im Clip Editor
 # -------------------------------------
@@ -39,7 +35,7 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
         layout.prop(scene, "frames_track")
         layout.prop(scene, "error_track")
         layout.separator()
-        layout.operator("clip.clean_short_tracks", text="Track")
+        layout.operator("clip.tracking_pipeline", text="Track")
 
 # -------------------------------------
 # Registrierung der Klassen
@@ -49,12 +45,7 @@ classes = (
     CLIP_PT_kaiserlich_panel,
     CLIP_OT_proxy_builder,
     CLIP_OT_tracker_settings,
-    CLIP_OT_marker_helper_main,
-    CLIP_OT_detect,
-    CLIP_OT_disable_proxy,
-    CLIP_OT_enable_proxy,
-    CLIP_OT_bidirectional_track,
-    CLIP_OT_clean_short_tracks,
+    CLIP_OT_tracking_pipeline,
 )
 
 def register():
