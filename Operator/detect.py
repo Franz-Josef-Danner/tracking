@@ -2,8 +2,8 @@ import bpy
 import math
 
 class CLIP_OT_teilcyclus1(bpy.types.Operator):
-    bl_idname = "clip.teilcyclus1"
-    bl_label = "Teilcyclus 1"
+    bl_idname = "detect"
+    bl_label = "detect_features"
     bl_description = "Automatischer Suchzyklus für Markerplatzierung"
 
     def execute(self, context):
