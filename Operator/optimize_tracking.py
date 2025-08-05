@@ -39,9 +39,9 @@ class CLIP_OT_optimize_tracking(bpy.types.Operator):
             settings.default_search_size = search
 
         def set_flag2(index):
-            motion_models = ['Perspective', 'Affine', 'LocRotScale', 'LocScale', 'LocRot']
+            motion_models = ['Perspective', 'Affine', 'LocRotScale', 'LocScale', 'LocRot', 'Loc']
             if 0 <= index < len(motion_models):
-                clip.tracking.settings.motion_model = motion_models[index]
+                clip.tracking.settings.default_motion_model = motion_models[index]
             else:
                 print(f"[WARNUNG] Ungültiger motion_model-Index: {index}")
 
