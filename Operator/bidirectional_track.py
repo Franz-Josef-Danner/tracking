@@ -1,9 +1,9 @@
 import bpy
 import time
 
-class CLIP_OT_smart_bidirectional_track(bpy.types.Operator):
-    bl_idname = "clip.smart_bidirectional_track"
-    bl_label = "Smart Bidirectional Track"
+class CLIP_OT_bidirectional_track(bpy.types.Operator):
+    bl_idname = "clip.bidirectional_track"
+    bl_label = "Bidirectional Track"
     bl_description = "Trackt vorwärts, prüft Stillstand und trackt rückwärts"
 
     _last_marker_count = 0
