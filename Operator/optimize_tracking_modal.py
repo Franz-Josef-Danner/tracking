@@ -30,7 +30,11 @@ class CLIP_OT_optimize_tracking_modal(Operator):
     _frame_stable_counter = 0
 
     _frame_restore = None
-    _waiting_for_frame_restore = False
+
+    # NEU: Playhead-Warte-Mechanismus
+    _frame_wait_target = None
+    _frame_wait_counter = 0
+    MAX_FRAME_WAIT_TICKS = 4  # 4 Ticks = ca. 2 Sekunden bei 0.5s Timer
 
     def modal(self, context, event):
         if event.type == 'TIMER':
@@ -40,6 +44,21 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                 self.report({'ERROR'}, f"Fehler: {str(e)}")
                 return {'CANCELLED'}
         return {'PASS_THROUGH'}
+
+    def wait_for_frame(self, context):
+        if context.scene.frame_current == self._frame_wait_target:
+            self._frame_wait_counter += 1
+        else:
+            self._frame_wait_counter = 0  # Reset, wenn er springt
+
+        if self._frame_wait_counter >= self.MAX_FRAME_WAIT_TICKS:
+            print(f"[Frame-Wartephase] Ziel-Frame erreicht: {self._frame_wait_target}")
+            self._frame_wait_target = None
+            self._frame_wait_counter = 0
+            return True
+
+        print(f"[Frame-Wartephase] Warten... Aktuell: {context.scene.frame_current}, Ziel: {self._frame_wait_target}")
+        return False
 
     def is_tracking_done(self, context):
         current_frame = context.scene.frame_current
@@ -59,18 +78,12 @@ class CLIP_OT_optimize_tracking_modal(Operator):
 
         return self._frame_stable_counter >= 2 and self._same_marker_count_counter >= 2
 
-    def is_frame_restored(self, context):
-        return context.scene.frame_current == self._frame_restore
-
     def run_step(self, context):
-        clip = self._clip
-
-        if self._waiting_for_frame_restore:
-            if not self.is_frame_restored(context):
-                print("[Wartephase] Playhead springt noch zurück ...")
+        if self._frame_wait_target is not None:
+            if not self.wait_for_frame(context):
                 return {'PASS_THROUGH'}
-            print("[INFO] Frame wiederhergestellt → Weiter")
-            self._waiting_for_frame_restore = False
+
+        clip = self._clip
 
         def set_flag1(pattern, search):
             settings = clip.tracking.settings
@@ -127,7 +140,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                 return {'PASS_THROUGH'}
 
             elif not self.is_tracking_done(context):
-                print("[Wartephase] Tracking noch nicht abgeschlossen (Zyklus 1).")
+                print("[Wartephase] Tracking Zyklus 1 noch aktiv …")
                 return {'PASS_THROUGH'}
 
             self._waiting_for_tracking = False
@@ -156,7 +169,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                     self._pt = self._ptv
                     self._sus = self._pt * 2
                     context.scene.frame_current = self._frame_restore
-                    self._waiting_for_frame_restore = True
+                    self._frame_wait_target = self._frame_restore
                     self._step = 0
                     self._phase = 1
                     return {'PASS_THROUGH'}
@@ -174,7 +187,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                     return {'PASS_THROUGH'}
 
                 elif not self.is_tracking_done(context):
-                    print("[Wartephase] Tracking noch nicht abgeschlossen (Zyklus 2).")
+                    print("[Wartephase] Tracking Zyklus 2 noch aktiv …")
                     return {'PASS_THROUGH'}
 
                 self._waiting_for_tracking = False
@@ -189,7 +202,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                 self._step += 1
             else:
                 context.scene.frame_current = self._frame_restore
-                self._waiting_for_frame_restore = True
+                self._frame_wait_target = self._frame_restore
                 self._step = 0
                 self._phase = 2
                 return {'PASS_THROUGH'}
@@ -207,7 +220,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                     return {'PASS_THROUGH'}
 
                 elif not self.is_tracking_done(context):
-                    print("[Wartephase] Tracking noch nicht abgeschlossen (Zyklus 3).")
+                    print("[Wartephase] Tracking Zyklus 3 noch aktiv …")
                     return {'PASS_THROUGH'}
 
                 self._waiting_for_tracking = False
@@ -224,7 +237,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                 set_flag2(self._mov)
                 set_flag3(self._vf)
                 context.scene.frame_current = self._frame_restore
-                self._waiting_for_frame_restore = True
+                self._frame_wait_target = self._frame_restore
                 self.report({'INFO'}, f"Fertig: ev={self._ev:.2f}, Motion={self._mov}, RGB={self._vf}")
                 self.cancel(context)
                 return {'FINISHED'}
