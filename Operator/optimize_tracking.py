@@ -1,4 +1,6 @@
 import bpy
+from bpy.types import Operator
+from bpy.types import Helper
 from .set_test_value import set_test_value
 from .error_value import calculate_clip_error
 from .detect import perform_marker_detection
