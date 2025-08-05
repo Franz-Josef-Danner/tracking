@@ -16,7 +16,7 @@ class CLIP_OT_tracker_settings(bpy.types.Operator):
         # Tracking Settings
         ts = clip.tracking.settings
         ts.default_motion_model = 'Loc'
-        ts.default_match = 'KEYFRAME'
+        ts.default_pattern_match = 'KEYFRAME'
         ts.use_normalization = True
         ts.default_weight = 1.0
         ts.default_correlation_min = 0.9
