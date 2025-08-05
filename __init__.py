@@ -48,8 +48,8 @@ classes = (
     CLIP_OT_tracker_settings,
     CLIP_OT_marker_helper_main,
     CLIP_OT_detect,
-    CLIP_OT_enable_proxy,
     CLIP_OT_disable_proxy,
+    CLIP_OT_enable_proxy,
 )
 
 def register():
