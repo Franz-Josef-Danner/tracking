@@ -1,7 +1,7 @@
 import bpy
 
-class CLIP_OT_proxy_enable(bpy.types.Operator):
-    bl_idname = "clip.proxy_enable"
+class CLIP_OT_enable_proxy(bpy.types.Operator):
+    bl_idname = "clip.enable_proxy"
     bl_label = "Proxy aktivieren"
 
     def execute(self, context):
