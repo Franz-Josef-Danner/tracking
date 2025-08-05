@@ -3,7 +3,7 @@ import os
 import shutil
 
 
-class CLIP_OT_proxy_build(bpy.types.Operator):
+class CLIP_OT_proxy_builder(bpy.types.Operator):
     bl_idname = "clip.proxy_build"
     bl_label = "Proxy erstellen (50%)"
     bl_description = "Erstellt Proxy-Dateien mit 50% Größe"
