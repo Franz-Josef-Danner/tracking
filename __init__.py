@@ -13,7 +13,7 @@ from bpy.props import IntProperty, FloatProperty
 from .Operator.proxy_builder import CLIP_OT_proxy_builder
 from .Operator.tracker_settings import CLIP_OT_tracker_settings
 from .Helper.marker_helper_main import CLIP_OT_marker_helper_main
-
+from .Operator.detect import CLIP_OT_detect
 
 # -----------------------------
 # Panel-Klasse
@@ -34,7 +34,7 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
         layout.prop(scene, "frames_track")
         layout.prop(scene, "error_track")
         layout.separator()
-        layout.operator("clip.marker_helper_main", text="Track")
+        layout.operator("detect", text="Track")
 
 # -----------------------------
 # Registration
@@ -45,6 +45,7 @@ classes = (
     CLIP_OT_proxy_builder,
     CLIP_OT_tracker_settings,
     CLIP_OT_marker_helper_main,
+    CLIP_OT_detect,
 )
 
 def register():
