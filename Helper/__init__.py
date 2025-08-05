@@ -9,7 +9,7 @@ operator_classes = (
     enable_proxy,
     disable_proxy,
     error_value,
-    set_test_value;
+    set_test_value,
 )
 
 def register():
