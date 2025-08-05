@@ -10,7 +10,7 @@ bl_info = {
 
 import bpy
 from bpy.props import IntProperty, FloatProperty
-from .Operator.proxy_build import CLIP_OT_proxy_build
+from .Operator.proxy_builder import CLIP_OT_proxy_builder
 
 
 # -----------------------------
@@ -40,7 +40,7 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
 
 classes = (
     CLIP_PT_kaiserlich_panel,
-    CLIP_OT_proxy_build,
+    CLIP_OT_proxy_builder,
 )
 
 def register():
