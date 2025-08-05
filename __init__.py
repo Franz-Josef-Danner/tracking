@@ -62,7 +62,6 @@ classes = (
     CLIP_OT_clean_short_tracks,
     CLIP_OT_clean_error_tracks,
     CLIP_OT_optimize_tracking,
-    CLIP_OT_error_value,
 )
 
 def register():
