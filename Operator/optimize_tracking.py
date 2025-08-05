@@ -36,14 +36,32 @@ class TRACK_OT_optimize_tracking(bpy.types.Operator):
                     print(f"[Tracking] Track '{track.name}' vorwärts von Frame {frame_start} bis {frame_end}")
 
         # Dummy-Funktionen (kannst du mit echter Logik füllen)
-        def frames_per_track():
-            return 20
+        def frames_per_track_all(context):
+            clip = context.space_data.clip
+            tracks = clip.tracking.tracks
+            total = 0
+            for track in tracks:
+                if track.select:
+                    total += len(track.markers)
+            return total
 
-        def measure_error():
-            return 0.5
 
-        def sum_all(val):
-            return val
+        def measure_error_all(context):
+            clip = context.space_data.clip
+            tracks = clip.tracking.tracks
+            total_error = 0.0
+            count = 0
+            for track in tracks:
+                if track.select and hasattr(track, "average_error"):
+                    total_error += track.average_error
+                    count += 1
+            return total_error / count if count > 0 else 1.0
+        
+        def eg_value(frames, error):
+            return frames / error if error != 0 else 0
+        
+        def sum_all_eg(eg_list):
+            return sum(eg_list)
 
         def set_flag1():
             pass
