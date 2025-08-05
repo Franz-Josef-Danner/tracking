@@ -1,6 +1,6 @@
 import bpy
 
-class TRACK_OT_OptimizeTracking(bpy.types.Operator):
+class TRACK_OT_optimize_tracking(bpy.types.Operator):
     bl_idname = "tracking.optimize_tracking"
     bl_label = "Optimiertes Tracking durchführen"
     bl_options = {'REGISTER', 'UNDO'}
