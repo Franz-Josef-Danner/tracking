@@ -11,6 +11,7 @@ bl_info = {
 import bpy
 from bpy.props import IntProperty, FloatProperty
 from .Operator.proxy_builder import CLIP_OT_proxy_builder
+from .Operator.tracker_settings import CLIP_OT_tracker_settings
 
 
 # -----------------------------
@@ -32,7 +33,7 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
         layout.prop(scene, "frames_track")
         layout.prop(scene, "error_track")
         layout.separator()
-        layout.operator("clip.proxy_build", text="Track")
+        layout.operator("clip.tracker_settings", text="Track")
 
 # -----------------------------
 # Registration
@@ -41,6 +42,7 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
 classes = (
     CLIP_PT_kaiserlich_panel,
     CLIP_OT_proxy_builder,
+    CLIP_OT_tracker_settings,
 )
 
 def register():
