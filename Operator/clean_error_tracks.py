@@ -47,7 +47,7 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width
         print(f"[Cleanup] Frame {fi} → max Error: {eb:.6f}")
 
         while eb > ee:
-            eb *= 0.9
+            eb *= 0.95
             print(f"[Cleanup] Error-Schwellwert reduziert auf: {eb:.6f}")
 
             for track, vx, vy in marker_data:
