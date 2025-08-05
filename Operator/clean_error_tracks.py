@@ -82,9 +82,9 @@ def cleanup_tracks(context):
 
 # ---------- Operator ----------
 
-class CLIP_OT_cleanup_tracks(bpy.types.Operator):
-    bl_idname = "clip.cleanup_tracks"
-    bl_label = "Cleanup Tracks"
+class CLIP_OT_clean_error_tracks(bpy.types.Operator):
+    bl_idname = "clip.clean_error_tracks"
+    bl_label = "Clean Error Tracks"
     bl_description = "Löscht fehlerhafte Tracks anhand eines adaptiven Fehlerschwellwerts"
 
     @classmethod
