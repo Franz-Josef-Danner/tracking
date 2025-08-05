@@ -28,11 +28,10 @@ class CLIP_OT_optimize_tracking(bpy.types.Operator):
         set_test_value(context)
         self.report({'INFO'}, "Pattern/Search-Size gesetzt.")
 
-        def set_flag1(pattern, search):
-            for track in clip.tracking.tracks:
-                if track.select:
-                    track.pattern_size = (pattern, pattern)
-                    track.search_size = (search, search)
+        def set_flag1(track, pattern, search):
+            track.settings.pattern_size = pattern
+            track.settings.search_size = search
+
 
         def set_flag2(index):
             motion_models = ['Perspective', 'Affine', 'LocRotScale', 'LocScale', 'LocRot']
