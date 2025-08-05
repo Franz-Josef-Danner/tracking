@@ -10,6 +10,8 @@ bl_info = {
 
 import bpy
 from bpy.props import IntProperty, FloatProperty
+
+# Operator-Importe
 from .Operator.proxy_builder import CLIP_OT_proxy_builder
 from .Operator.tracker_settings import CLIP_OT_tracker_settings
 from .Helper.marker_helper_main import CLIP_OT_marker_helper_main
@@ -18,9 +20,9 @@ from .Helper.disable_proxy import CLIP_OT_disable_proxy
 from .Helper.enable_proxy import CLIP_OT_enable_proxy
 from .Operator.bidirectional_track import CLIP_OT_bidirectional_track
 
-# -----------------------------
-# Panel-Klasse
-# -----------------------------
+# -------------------------------------
+# Panel für das UI im Clip Editor
+# -------------------------------------
 
 class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
     bl_space_type = 'CLIP_EDITOR'
@@ -39,9 +41,9 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
         layout.separator()
         layout.operator("clip.bidirectional_track", text="Track")
 
-# -----------------------------
-# Registration
-# -----------------------------
+# -------------------------------------
+# Registrierung der Klassen
+# -------------------------------------
 
 classes = (
     CLIP_PT_kaiserlich_panel,
@@ -58,6 +60,7 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
+    # Eigenschaften für das Panel
     bpy.types.Scene.marker_frame = IntProperty(
         name="Marker per Frame",
         default=20,
@@ -81,9 +84,11 @@ def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
 
+    # Eigenschaften entfernen
     del bpy.types.Scene.marker_frame
     del bpy.types.Scene.frames_track
     del bpy.types.Scene.error_track
 
+# Nur für Direktstart
 if __name__ == "__main__":
     register()
