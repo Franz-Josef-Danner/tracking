@@ -1,5 +1,10 @@
 import bpy
 
+clip = bpy.context.space_data.clip
+if clip:
+    width = clip.size[0]
+    print("Horizontale Auflösung:", width)
+
 def get_marker_position(track, frame):
     marker = track.markers.find_frame(frame)
     if marker:
@@ -17,7 +22,7 @@ def clean_error_tracks(context):
         track.select = False
 
     ee_prop = getattr(scene, "error_track", 1.0)
-    ee_initial = (ee_prop + 0.1) / 100
+    ee_initial = (ee_prop + 0.1) / width
     threshold_factor = 0.9
     frame_range = (scene.frame_start, scene.frame_end)
 
