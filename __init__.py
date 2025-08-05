@@ -9,7 +9,9 @@ bl_info = {
 }
 
 import bpy
-from bpy.props import StringProperty, IntProperty, FloatProperty
+from bpy.props import IntProperty, FloatProperty
+from .Operator.proxy_build import CLIP_OT_proxy_build
+
 
 # -----------------------------
 # Panel-Klasse
