@@ -12,18 +12,18 @@ import bpy
 from bpy.props import IntProperty, FloatProperty
 
 # Operator-Importe
-from Operator.proxy_builder import CLIP_OT_proxy_builder
-from Operator.tracker_settings import CLIP_OT_tracker_settings
-from Operator.tracking_pipeline import CLIP_OT_tracking_pipeline
-from Helper.marker_helper_main import CLIP_OT_marker_helper_main
-from Helper.disable_proxy import CLIP_OT_disable_proxy
-from Helper.enable_proxy import CLIP_OT_enable_proxy
-from Operator.detect import TRACKING_OT_detect
-from Operator.bidirectional_track import CLIP_OT_bidirectional_track
-from Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
-from Operator.clean_error_tracks import CLIP_OT_clean_error_tracks
-from Operator.optimize_tracking import CLIP_OT_optimize_tracking
-from Helper.error_value import CLIP_OT_error_value
+from .Operator.proxy_builder import CLIP_OT_proxy_builder
+from .Operator.tracker_settings import CLIP_OT_tracker_settings
+from .Operator.tracking_pipeline import CLIP_OT_tracking_pipeline
+from .Helper.marker_helper_main import CLIP_OT_marker_helper_main
+from .Helper.disable_proxy import CLIP_OT_disable_proxy
+from .Helper.enable_proxy import CLIP_OT_enable_proxy
+from .Operator.detect import TRACKING_OT_detect
+from .Operator.bidirectional_track import CLIP_OT_bidirectional_track
+from .Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
+from .Operator.clean_error_tracks import CLIP_OT_clean_error_tracks
+from .Operator.optimize_tracking import CLIP_OT_optimize_tracking
+from .Helper.error_value import CLIP_OT_error_value
 # -------------------------------------
 # Panel für das UI im Clip Editor
 # -------------------------------------
