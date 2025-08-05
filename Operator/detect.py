@@ -17,12 +17,15 @@ class CLIP_OT_detect(bpy.types.Operator):
             return {'CANCELLED'}
 
         # Basiswerte
+        margin = 50
+        min_distance = 100
         marker_adapt = getattr(scene, "marker_frame", 20) * 4
         max_marker = int(marker_adapt * 1.1)
         min_marker = int(marker_adapt * 0.9)
         detection_threshold = 0.5
-        margin_base = 20
-        min_distance_base = 40
+        factor = math.log10(detection_threshold * 100000000) / 8
+        margin = int(margin_base * factor)
+        min_distance = int(min_distance_base * factor)
 
         attempt = 0
         while attempt < 20:
