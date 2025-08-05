@@ -1,51 +1,50 @@
 import bpy
 from bpy.types import Operator
+from bpy.props import IntProperty
 from ..Helper.set_test_value import set_test_value
 from ..Helper.error_value import error_value
 from ..Helper.disable_proxy import CLIP_OT_disable_proxy
 from ..Helper.enable_proxy import CLIP_OT_enable_proxy
 from .detect import perform_marker_detection
 
-class CLIP_OT_optimize_tracking(bpy.types.Operator):
-    bl_idname = "clip.optimize_tracking"
-    bl_label = "Optimiertes Tracking durchführen"
+class CLIP_OT_optimize_tracking_modal(Operator):
+    bl_idname = "clip.optimize_tracking_modal"
+    bl_label = "Optimiertes Tracking (Modal)"
     bl_options = {'REGISTER', 'UNDO'}
 
-    def execute(self, context):
-        print("[START] Optimierung gestartet")
+    _timer = None
+    _step = 0
+    _phase = 0
+    _ev = -1
+    _dg = 0
+    _pt = 21
+    _ptv = 21
+    _sus = 42
+    _mov = 0
+    _vf = 0
+    _clip = None
 
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'ERROR'}, "Kein Movie Clip aktiv.")
-            return {'CANCELLED'}
+    def modal(self, context, event):
+        if event.type == 'TIMER':
+            try:
+                return self.run_step(context)
+            except Exception as e:
+                self.report({'ERROR'}, f"Fehler: {str(e)}")
+                return {'CANCELLED'}
 
-        # Basiswerte
-        pt = 21
-        sus = pt * 2
-        ev = -1
-        dg = 0
-        ptv = pt
-        mov = 0
-        vf = 0
+        return {'PASS_THROUGH'}
 
-        # Zielwerte setzen
-        set_test_value(context)
-        self.report({'INFO'}, "Pattern/Search-Size gesetzt.")
-
-        # ----- Helper-Funktionen -----
-        def set_flag1_for_all(pattern, search):
+    def run_step(self, context):
+        clip = self._clip
+        def set_flag1(pattern, search):
             settings = clip.tracking.settings
-            pattern = max(5, min(1000, int(pattern)))
-            search = max(5, min(1000, int(search)))
-            settings.default_pattern_size = pattern
-            settings.default_search_size = search
+            settings.default_pattern_size = max(5, min(1000, int(pattern)))
+            settings.default_search_size = max(5, min(1000, int(search)))
 
         def set_flag2(index):
             motion_models = ['Perspective', 'Affine', 'LocRotScale', 'LocScale', 'LocRot', 'Loc']
             if 0 <= index < len(motion_models):
                 clip.tracking.settings.default_motion_model = motion_models[index]
-            else:
-                print(f"[WARNUNG] Ungültiger motion_model-Index: {index}")
 
         def set_flag3(index):
             s = clip.tracking.settings
@@ -57,16 +56,15 @@ class CLIP_OT_optimize_tracking(bpy.types.Operator):
             bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
 
         def set_marker():
-            bpy.ops.clip.disable_proxy('EXEC_DEFAULT')  # Proxy deaktivieren
+            bpy.ops.clip.disable_proxy('EXEC_DEFAULT')
             call_marker_helper()
             w = clip.size[0]
             margin = int(w * 0.025)
             min_dist = int(w * 0.05)
-            count = perform_marker_detection(clip, clip.tracking, 0.75, margin, min_dist)
-            print(f"[set_marker] {count} Marker gesetzt.")
+            return perform_marker_detection(clip, clip.tracking, 0.75, margin, min_dist)
 
         def track():
-            bpy.ops.clip.enable_proxy('EXEC_DEFAULT')  # Proxy aktivieren
+            bpy.ops.clip.enable_proxy('EXEC_DEFAULT')
             for t in clip.tracking.tracks:
                 if t.select:
                     clip.tracking.tracks.active = t
@@ -81,73 +79,92 @@ class CLIP_OT_optimize_tracking(bpy.types.Operator):
         def eg(frames, error):
             return frames / error if error else 0
 
-        # ----- Zyklus 1: Pattern / Search Size -----
-
-        for _ in range(10):
-            set_flag1_for_all(pt, sus)
+        if self._phase == 0:
+            set_flag1(self._pt, self._sus)
             set_marker()
             track()
             f = frames_per_track_all()
             e = measure_error_all()
             g = eg(f, e)
-            e = e or 0.0
-            g = g or 0.0
             print(f"[Zyklus 1] f={f}, e={e:.4f}, g={g:.4f}")
+            bpy.ops.clip.delete_track(confirm=False)
 
-            if ev < 0:
-                ev = g
-                pt *= 1.1
-                sus = pt * 2
-            elif g > ev:
-                ev = g
-                dg = 4
-                ptv = pt
-                pt *= 1.1
-                sus = pt * 2
+            if self._ev < 0:
+                self._ev = g
+                self._pt *= 1.1
+                self._sus = self._pt * 2
+            elif g > self._ev:
+                self._ev = g
+                self._dg = 4
+                self._ptv = self._pt
+                self._pt *= 1.1
+                self._sus = self._pt * 2
             else:
-                dg -= 1
-                if dg >= 0:
-                    pt *= 1.1
-                    sus = pt * 2
+                self._dg -= 1
+                if self._dg >= 0:
+                    self._pt *= 1.1
+                    self._sus = self._pt * 2
                 else:
-                    pt = ptv
-                    sus = pt * 2
-                    break
-        bpy.ops.clip.delete_track(confirm=False)  # löschen ohne Bestätigungsdialog
+                    self._pt = self._ptv
+                    self._sus = self._pt * 2
+                    self._phase = 1
 
-        # ----- Zyklus 2: Motion Model -----
+        elif self._phase == 1:
+            if self._step < 5:
+                set_flag2(self._step)
+                set_marker()
+                track()
+                f = frames_per_track_all()
+                e = measure_error_all()
+                g = eg(f, e)
+                print(f"[Zyklus 2] Motion {self._step} → g={g:.4f}")
+                if g > self._ev:
+                    self._ev = g
+                    self._mov = self._step
+                bpy.ops.clip.delete_track(confirm=False)
+                self._step += 1
+            else:
+                self._step = 0
+                self._phase = 2
 
-        for mo in range(5):
-            set_flag2(mo)
-            set_marker()
-            track()
-            f = frames_per_track_all()
-            e = measure_error_all()
-            g = eg(f, e)
-            print(f"[Zyklus 2] Motion {mo} → g={g:.4f}")
-            if g > ev:
-                ev = g
-                mov = mo
-        bpy.ops.clip.delete_track(confirm=False)  # löschen ohne Bestätigungsdialog
+        elif self._phase == 2:
+            if self._step < 5:
+                set_flag3(self._step)
+                set_marker()
+                track()
+                f = frames_per_track_all()
+                e = measure_error_all()
+                g = eg(f, e)
+                print(f"[Zyklus 3] RGB {self._step} → g={g:.4f}")
+                if g > self._ev:
+                    self._ev = g
+                    self._vf = self._step
+                bpy.ops.clip.delete_track(confirm=False)
+                self._step += 1
+            else:
+                set_flag2(self._mov)
+                set_flag3(self._vf)
+                self.report({'INFO'}, f"Fertig: ev={self._ev:.2f}, Motion={self._mov}, RGB={self._vf}")
+                self.cancel(context)
+                return {'FINISHED'}
 
-        # ----- Zyklus 3: Farbkanäle -----
+        return {'PASS_THROUGH'}
 
-        for i in range(5):
-            set_flag3(i)
-            set_marker()
-            track()
-            f = frames_per_track_all()
-            e = measure_error_all()
-            g = eg(f, e)
-            print(f"[Zyklus 3] RGB {i} → g={g:.4f}")
-            if g > ev:
-                ev = g
-                vf = i
-        bpy.ops.clip.delete_track(confirm=False)  # löschen ohne Bestätigungsdialog
-        # Final setzen
-        set_flag2(mov)
-        set_flag3(vf)
+    def execute(self, context):
+        return {'FINISHED'}  # Not used
 
-        print(f"[FINAL] ev={ev:.4f}, Motion={mov}, RGB={vf}")
-        self.report({'INFO'}, f"Fertig: ev={ev:.2f}, Motion={mov}, RGB={vf}")
-        return {'FINISHED'}
+    def invoke(self, context, event):
+        self._clip = context.space_data.clip
+        if not self._clip:
+            self.report({'ERROR'}, "Kein Movie Clip aktiv.")
+            return {'CANCELLED'}
+
+        set_test_value(context)
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.5, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def cancel(self, context):
+        wm = context.window_manager
+        wm.event_timer_remove(self._timer)
