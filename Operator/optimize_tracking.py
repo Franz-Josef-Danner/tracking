@@ -1,13 +1,6 @@
-import bpy
-
-class TRACK_OT_optimize_tracking(bpy.types.Operator):
-    bl_idname = "tracking.optimize_tracking"
-    bl_label = "Optimiertes Tracking durchführen"
-    bl_options = {'REGISTER', 'UNDO'}
-
     def execute(self, context):
         # --- Initialwerte ---
-        pt = 21  # Beispielstartwert für pattern size
+        pt = 21
         sus = pt * 2
         threshold = 0.5
         ev = -1
@@ -16,37 +9,50 @@ class TRACK_OT_optimize_tracking(bpy.types.Operator):
         mov = 0
         vf = 0
 
+        # ⬅️ Helper-Operator ausführen
+        def call_marker_helper():
+            bpy.ops.clip.marker_helper_main('INVOKE_DEFAULT')
+
+        # ⬅️ Marker setzen durch eigenen Operator
         def set_marker():
-            # Marker setzen oder vorbereiten (Platzhalter)
-            pass
+            call_marker_helper()
+            bpy.ops.tracking.detect('INVOKE_DEFAULT')  # <- Dein "TRACKING_OT_detect"
 
+        # ⬅️ Tracking über ganze Sequenz
         def track():
-            # Tracking-Funktion (Platzhalter)
-            pass
+            clip = context.space_data.clip
+            tracking = clip.tracking
+            tracks = tracking.tracks
+            fr_start = context.scene.frame_start
+            fr_end = context.scene.frame_end
 
+            for track in tracks:
+                if track.select:
+                    context.space_data.tracking.tracks.active = track
+                    bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
+                    print(f"[Tracking] '{track.name}' tracked from frame {fr_start} to {fr_end}")
+
+        # Dummy-Funktionen
         def frames_per_track():
-            return 20  # Dummy
+            return 20  # Ersetze mit echter Auswertung, z. B. Markeranzahl
 
         def measure_error():
-            return 0.5  # Dummy
+            return 0.5  # Ersetze mit echter Fehlerauswertung, z. B. Track.average_error
 
         def sum_all(val):
-            return val  # Dummy (hier müsstest du über mehrere Marker iterieren)
+            return val  # Erweitern: Summe über alle Marker-Werte
 
         def set_flag1():
-            # z. B. Pattern-/Search-Size setzen
             pass
 
         def set_flag2():
-            # z. B. Motion-Model setzen
             pass
 
         def set_flag3():
-            # z. B. RGB-Kanal setzen
             pass
 
-        # --- Zyklus 1: Pattern-/Search Size Optimierung ---
-        for _ in range(10):  # Max 10 Durchläufe
+        # --- Zyklus 1 ---
+        for _ in range(10):
             set_flag1()
             set_marker()
             track()
@@ -75,7 +81,7 @@ class TRACK_OT_optimize_tracking(bpy.types.Operator):
                     sus = pt * 2
                     break
 
-        # --- Zyklus 2: Motion-Model-Optimierung ---
+        # --- Zyklus 2 ---
         mo_index = 0
         while mo_index < 5:
             set_flag2()
@@ -89,10 +95,9 @@ class TRACK_OT_optimize_tracking(bpy.types.Operator):
             if ega > ev:
                 ev = ega
                 mov = mo_index
-
             mo_index += 1
 
-        # Motion-Model Mapping zu RGB
+        # Motion-Model zu RGB
         if mov == 0:
             R, G, B = True, False, False
         elif mov == 1:
@@ -104,7 +109,7 @@ class TRACK_OT_optimize_tracking(bpy.types.Operator):
         elif mov == 4:
             R, G, B = False, False, True
 
-        # --- Zyklus 3: RGB-Kanal-Optimierung ---
+        # --- Zyklus 3 ---
         vv = 0
         while vv < 4:
             set_flag3()
@@ -118,24 +123,11 @@ class TRACK_OT_optimize_tracking(bpy.types.Operator):
             if ega > ev:
                 ev = ega
                 vf = vv
-
             vv += 1
 
-        # Finales RGB-Setting
         R = (vf == 0 or vf == 1)
         G = (vf == 1 or vf == 2 or vf == 3)
         B = (vf == 3 or vf == 4)
 
         self.report({'INFO'}, f"Optimierung abgeschlossen: ev={ev:.2f}, Motion={mov}, RGB=({R},{G},{B})")
         return {'FINISHED'}
-
-
-def register():
-    bpy.utils.register_class(TRACK_OT_OptimizeTracking)
-
-def unregister():
-    bpy.utils.unregister_class(TRACK_OT_OptimizeTracking)
-
-if __name__ == "__main__":
-    register()
-    bpy.ops.tracking.optimize_tracking()
