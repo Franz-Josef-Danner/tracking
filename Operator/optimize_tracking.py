@@ -65,7 +65,7 @@ class CLIP_OT_optimize_tracking(bpy.types.Operator):
             return sum(len(t.markers) for t in clip.tracking.tracks if t.select)
 
         def measure_error_all():
-            return calculate_clip_error(clip)
+            error = error_value(context.scene)
 
         def eg(frames, error):
             return frames / error if error else 0
