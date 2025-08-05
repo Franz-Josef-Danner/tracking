@@ -19,7 +19,7 @@ from .Helper.marker_helper_main import CLIP_OT_marker_helper_main
 from .Helper.disable_proxy import CLIP_OT_disable_proxy
 from .Helper.enable_proxy import CLIP_OT_enable_proxy
 from .Operator.detect import CLIP_OT_detect
-
+from .Operator.bidirectional_track import CLIP_OT_bidirectional_track
 # -------------------------------------
 # Panel für das UI im Clip Editor
 # -------------------------------------
@@ -54,6 +54,7 @@ classes = (
     CLIP_OT_disable_proxy,
     CLIP_OT_enable_proxy,
     CLIP_OT_detect,
+    CLIP_OT_bidirectional_track,
 )
 
 def register():
