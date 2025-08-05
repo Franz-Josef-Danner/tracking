@@ -78,6 +78,8 @@ class CLIP_OT_optimize_tracking(bpy.types.Operator):
             f = frames_per_track_all()
             e = measure_error_all()
             g = eg(f, e)
+            e = e if e is not None else 0.0
+            g = g if g is not None else 0.0 
             print(f"[Zyklus 1] f={f}, e={e:.4f}, g={g:.4f}")
             if ev < 0:
                 ev = g
