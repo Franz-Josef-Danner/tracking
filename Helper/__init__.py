@@ -8,8 +8,6 @@ operator_classes = (
     marker_helper_main,
     enable_proxy,
     disable_proxy,
-    error_value,
-    set_test_value,
 )
 
 def register():
