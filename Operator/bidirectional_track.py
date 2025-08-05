@@ -42,16 +42,14 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
 
         if self._step == 0:
             print("→ Starte Vorwärts-Tracking...")
-            bpy.ops.clip.track_markers(override, backwards=False, sequence=True)
+            bpy.ops.clip.track_markers(override, 'INVOKE_DEFAULT', backwards=False, sequence=True)
             self._step = 1
             return {'PASS_THROUGH'}
-
-        elif self._step == 1:
-            if self.is_tracking_done(clip):
-                print("✓ Vorwärts-Tracking abgeschlossen.")
-                context.scene.frame_current = self._start_frame
-                print(f"← Frame zurückgesetzt auf {self._start_frame}")
-                self._step = 2
+        
+        elif self._step == 2:
+            print("→ Starte Rückwärts-Tracking...")
+            bpy.ops.clip.track_markers(override, 'INVOKE_DEFAULT', backwards=True, sequence=True)
+            self._step = 3
             return {'PASS_THROUGH'}
 
         elif self._step == 2:
