@@ -17,7 +17,7 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
             return {'CANCELLED'}
 
         # 1. Marker Helper
-        run_marker_helper(clip)
+        marker_helper(clip)
 
         # 2. Proxy deaktivieren
         disable_proxy(clip)
