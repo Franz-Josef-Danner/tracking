@@ -35,8 +35,8 @@ class CLIP_OT_optimize_tracking(bpy.types.Operator):
         def set_flag1_for_all(pattern, search):
             for track in clip.tracking.tracks:
                 if track.select:
-                    track.settings.pattern_size = pattern
-                    track.settings.search_size = search
+                    track.pattern_size = pattern
+                    track.search_size = search
 
         def set_flag2(index):
             motion_models = ['Perspective', 'Affine', 'LocRotScale', 'LocScale', 'LocRot']
