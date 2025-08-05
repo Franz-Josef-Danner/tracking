@@ -1,6 +1,5 @@
 import bpy
 from bpy.types import Operator
-from bpy.props import IntProperty
 from ..Helper.set_test_value import set_test_value
 from ..Helper.error_value import error_value
 from ..Helper.disable_proxy import CLIP_OT_disable_proxy
@@ -24,6 +23,13 @@ class CLIP_OT_optimize_tracking_modal(Operator):
     _vf = 0
     _clip = None
 
+    # Status für Tracking-Wartephase
+    _waiting_for_tracking = False
+    _last_marker_count = 0
+    _same_marker_count_counter = 0
+    _last_frame = -1
+    _frame_stable_counter = 0
+
     def modal(self, context, event):
         if event.type == 'TIMER':
             try:
@@ -34,8 +40,30 @@ class CLIP_OT_optimize_tracking_modal(Operator):
 
         return {'PASS_THROUGH'}
 
+    def is_tracking_done(self, context):
+        current_frame = context.scene.frame_current
+        current_marker_count = sum(len(t.markers) for t in self._clip.tracking.tracks if t.select)
+
+        # Frame prüfen
+        if current_frame == self._last_frame:
+            self._frame_stable_counter += 1
+        else:
+            self._frame_stable_counter = 0
+            self._last_frame = current_frame
+
+        # Marker prüfen
+        if current_marker_count == self._last_marker_count:
+            self._same_marker_count_counter += 1
+        else:
+            self._same_marker_count_counter = 0
+            self._last_marker_count = current_marker_count
+
+        # Beide stabil?
+        return self._frame_stable_counter >= 2 and self._same_marker_count_counter >= 2
+
     def run_step(self, context):
         clip = self._clip
+
         def set_flag1(pattern, search):
             settings = clip.tracking.settings
             settings.default_pattern_size = max(5, min(1000, int(pattern)))
@@ -79,10 +107,20 @@ class CLIP_OT_optimize_tracking_modal(Operator):
         def eg(frames, error):
             return frames / error if error else 0
 
+        # -------- PHASE 0: Pattern/Search Size optimieren --------
         if self._phase == 0:
-            set_flag1(self._pt, self._sus)
-            set_marker()
-            track()
+            if not self._waiting_for_tracking:
+                set_flag1(self._pt, self._sus)
+                set_marker()
+                track()
+                self._waiting_for_tracking = True
+                return {'PASS_THROUGH'}
+
+            elif not self.is_tracking_done(context):
+                print("[Wartephase] Tracking noch nicht abgeschlossen.")
+                return {'PASS_THROUGH'}
+
+            self._waiting_for_tracking = False
             f = frames_per_track_all()
             e = measure_error_all()
             g = eg(f, e)
@@ -107,13 +145,24 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                 else:
                     self._pt = self._ptv
                     self._sus = self._pt * 2
+                    self._step = 0
                     self._phase = 1
 
+        # -------- PHASE 1: Motion Model optimieren --------
         elif self._phase == 1:
             if self._step < 5:
-                set_flag2(self._step)
-                set_marker()
-                track()
+                if not self._waiting_for_tracking:
+                    set_flag2(self._step)
+                    set_marker()
+                    track()
+                    self._waiting_for_tracking = True
+                    return {'PASS_THROUGH'}
+
+                elif not self.is_tracking_done(context):
+                    print("[Wartephase] Tracking noch nicht abgeschlossen.")
+                    return {'PASS_THROUGH'}
+
+                self._waiting_for_tracking = False
                 f = frames_per_track_all()
                 e = measure_error_all()
                 g = eg(f, e)
@@ -127,11 +176,21 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                 self._step = 0
                 self._phase = 2
 
+        # -------- PHASE 2: Farbkanäle optimieren --------
         elif self._phase == 2:
             if self._step < 5:
-                set_flag3(self._step)
-                set_marker()
-                track()
+                if not self._waiting_for_tracking:
+                    set_flag3(self._step)
+                    set_marker()
+                    track()
+                    self._waiting_for_tracking = True
+                    return {'PASS_THROUGH'}
+
+                elif not self.is_tracking_done(context):
+                    print("[Wartephase] Tracking noch nicht abgeschlossen.")
+                    return {'PASS_THROUGH'}
+
+                self._waiting_for_tracking = False
                 f = frames_per_track_all()
                 e = measure_error_all()
                 g = eg(f, e)
@@ -151,7 +210,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
         return {'PASS_THROUGH'}
 
     def execute(self, context):
-        return {'FINISHED'}  # Not used
+        return {'FINISHED'}  # nicht verwendet
 
     def invoke(self, context, event):
         self._clip = context.space_data.clip
@@ -161,7 +220,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
 
         set_test_value(context)
         wm = context.window_manager
-        self._timer = wm.event_timer_add(1.0, window=context.window)
+        self._timer = wm.event_timer_add(0.5, window=context.window)
         wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
