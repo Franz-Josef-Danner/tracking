@@ -81,9 +81,9 @@ def register():
     )
     bpy.types.Scene.error_track = bpy.props.FloatProperty(
         name="Tracking Error",
-        default=0.50,
-        min=0.01,
-        max=1.00,
+        default=0.500,
+        min=0.010,
+        max=1.000,
     )
     
 
