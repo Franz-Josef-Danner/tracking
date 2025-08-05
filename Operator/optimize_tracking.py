@@ -1,140 +1,83 @@
 import bpy
-from bpy.types import Operator
-from ..Helper.set_test_value import set_test_value
-from ..Helper.error_value import error_value
-from .detect import perform_marker_detection
 
-class CLIP_OT_optimize_tracking(bpy.types.Operator):
-    bl_idname = "clip.optimize_tracking"
-    bl_label = "Optimiertes Tracking durchführen"
-    bl_options = {'REGISTER', 'UNDO'}
+# Operator zur Anzeige des Errors im UI
+class CLIP_OT_error_value(bpy.types.Operator):
+    bl_idname = "clip.error_value"
+    bl_label = "Error Value"
+    bl_description = "Berechnet die Standardabweichung der Markerpositionen der Selektion"
 
     def execute(self, context):
-        print("[START] Optimierung gestartet")
-
         clip = context.space_data.clip
         if not clip:
-            self.report({'ERROR'}, "Kein Movie Clip aktiv.")
+            self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        pt = 21
-        sus = pt * 2
-        ev = -1
-        dg = 0
-        ptv = pt
-        mov = 0
-        vf = 0
+        x_positions = []
+        y_positions = []
 
-        set_test_value(context)
-        self.report({'INFO'}, "Pattern/Search-Size gesetzt.")
+        for track in clip.tracking.tracks:
+            if not track.select:
+                continue
+            for marker in track.markers:
+                if marker.mute:
+                    continue
+                x_positions.append(marker.co[0])
+                y_positions.append(marker.co[1])
 
-        def set_flag1(track, pattern, search):
-            track.settings.pattern_size = pattern
-            track.settings.search_size = search
+        if not x_positions:
+            self.report({'WARNING'}, "Keine Marker ausgewählt")
+            return {'CANCELLED'}
 
+        error_x = std_dev(x_positions)
+        error_y = std_dev(y_positions)
+        total_error = error_x + error_y
 
-        def set_flag2(context, index):
-            motion_models = ['Perspective', 'Affine', 'LocRotScale', 'LocScale', 'LocRot']
-            clip = context.space_data.clip
-        
-            if not clip:
-                return
-        
-            if 0 <= index < len(motion_models):
-                clip.tracking.settings.motion_model = motion_models[index]
-            else:
-                print(f"[WARNUNG] Ungültiger motion_model-Index: {index}")
+        self.report({'INFO'}, f"Error X: {error_x:.4f}, Error Y: {error_y:.4f}, Total: {total_error:.4f}")
+        print(f"[Error Value] error_x={error_x:.6f}, error_y={error_y:.6f}, total={total_error:.6f}")
 
-        def set_flag3(vf_index):
-            s = clip.tracking.settings
-            s.use_red_channel = (vf_index == 0 or vf_index == 1)
-            s.use_green_channel = (vf_index == 1 or vf_index == 2 or vf_index == 3)
-            s.use_blue_channel = (vf_index == 3 or vf_index == 4)
-
-        def call_marker_helper():
-            bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
-
-        def set_marker():
-            call_marker_helper()
-            w = clip.size[0]
-            margin = int(w * 0.025)
-            min_dist = int(w * 0.05)
-            count = perform_marker_detection(clip, clip.tracking, 0.75, margin, min_dist)
-            print(f"[set_marker] {count} Marker gesetzt.")
-
-        def track():
-            for t in clip.tracking.tracks:
-                if t.select:
-                    context.space_data.clip.tracking.tracks.active = t
-                    bpy.ops.clip.track_markers('EXEC_DEFAULT', backwards=False, sequence=True)
-
-        def frames_per_track_all():
-            return sum(len(t.markers) for t in clip.tracking.tracks if t.select)
-
-        def measure_error_all():
-            error = error_value(context.scene)
-
-        def eg(frames, error):
-            return frames / error if error else 0
-
-        # Zyklus 1
-        for _ in range(10):
-            set_flag1(pt, sus)
-            set_marker()
-            track()
-            f = frames_per_track_all()
-            e = measure_error_all()
-            g = eg(f, e)
-            e = e if e is not None else 0.0
-            g = g if g is not None else 0.0 
-            print(f"[Zyklus 1] f={f}, e={e:.4f}, g={g:.4f}")
-            if ev < 0:
-                ev = g
-                pt *= 1.1
-                sus = pt * 2
-            elif g > ev:
-                ev = g
-                dg = 4
-                ptv = pt
-                pt *= 1.1
-                sus = pt * 2
-            else:
-                dg -= 1
-                if dg >= 0:
-                    pt *= 1.1
-                    sus = pt * 2
-                else:
-                    pt = ptv
-                    sus = pt * 2
-                    break
-
-        # Zyklus 2
-        for mo in range(5):
-            set_flag2(mo)
-            set_marker()
-            track()
-            f = frames_per_track_all()
-            e = measure_error_all()
-            g = eg(f, e)
-            print(f"[Zyklus 2] Motion {mo} → g={g:.4f}")
-            if g > ev:
-                ev = g
-                mov = mo
-
-        # Zyklus 3
-        for i in range(5):
-            set_flag3(i)
-            set_marker()
-            track()
-            f = frames_per_track_all()
-            e = measure_error_all()
-            g = eg(f, e)
-            print(f"[Zyklus 3] RGB {i} → g={g:.4f}")
-            if g > ev:
-                ev = g
-                vf = i
-
-        set_flag3(vf)
-        print(f"[FINAL] ev={ev:.4f}, Motion={mov}, RGB={vf}")
-        self.report({'INFO'}, f"Fertig: ev={ev:.2f}, Motion={mov}, RGB={vf}")
         return {'FINISHED'}
+
+
+# Hilfsfunktion für Standardabweichung
+def std_dev(values):
+    mean_val = sum(values) / len(values)
+    return (sum((v - mean_val) ** 2 for v in values) / len(values)) ** 0.5
+
+
+# Funktion für internes Scoring (z. B. in optimize_tracking.py)
+def error_value(scene):
+    area = next((a for a in bpy.context.window.screen.areas if a.type == 'CLIP_EDITOR'), None)
+    if not area:
+        return 0.0
+    space = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
+    clip = space.clip if space else None
+    if not clip:
+        return 0.0
+
+    x_positions = []
+    y_positions = []
+
+    for track in clip.tracking.tracks:
+        if not track.select:
+            continue
+        for marker in track.markers:
+            if marker.mute:
+                continue
+            x_positions.append(marker.co[0])
+            y_positions.append(marker.co[1])
+
+    if not x_positions:
+        return 0.0
+
+    return std_dev(x_positions) + std_dev(y_positions)
+
+
+# Registrierung (optional, falls einzeln getestet wird)
+def register():
+    bpy.utils.register_class(CLIP_OT_error_value)
+
+def unregister():
+    bpy.utils.unregister_class(CLIP_OT_error_value)
+
+if __name__ == "__main__":
+    register()
