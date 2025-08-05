@@ -54,7 +54,6 @@ class CLIP_OT_bidirectional_track(Operator):
             print("✓ Bidirektionales Tracking beendet.")
             wm = context.window_manager
             wm.event_timer_remove(self._timer)
-            context.scene.should_clean_short_tracks = True  # z. B. in bidirectional_track
             return {'FINISHED'}
 
         return {'PASS_THROUGH'}
