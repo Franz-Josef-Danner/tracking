@@ -1,9 +1,11 @@
 import bpy
 
-clip = bpy.context.space_data.clip
-if clip:
-    width = clip.size[0]
-    print("Horizontale Auflösung:", width)
+def draw(self, context):
+    layout = self.layout
+    clip = context.space_data.clip
+    if clip:
+        width = clip.size[0]
+        print("Horizontale Auflösung:", width)
 
 def get_marker_position(track, frame):
     marker = track.markers.find_frame(frame)
