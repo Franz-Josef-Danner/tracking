@@ -1,71 +1,69 @@
 import bpy
 from bpy.types import Operator
 
-# Globale Variablen für Timer-Zustand
-previous_frame = -1
-previous_track_count = -1
-no_change_counter = 0
-
-
-def wait_for_tracking_stability():
-    """Timer-Funktion prüft, ob sich Frame & Track-Zahl nicht mehr ändern"""
-    global previous_frame, previous_track_count, no_change_counter
-
-    context = bpy.context
-    scene = context.scene
-    clip = context.space_data.clip
-
-    if not clip:
-        print("❌ Kein aktiver Clip gefunden.")
-        return None
-
-    current_frame = scene.frame_current
-    current_track_count = len(clip.tracking.tracks)
-
-    if current_frame == previous_frame and current_track_count == previous_track_count:
-        no_change_counter += 1
-    else:
-        no_change_counter = 0
-
-    previous_frame = current_frame
-    previous_track_count = current_track_count
-
-    print(f"[⏱️] Warte auf Stabilität… Frame: {current_frame}, Tracks: {current_track_count}, Still: {no_change_counter}/2")
-
-    if no_change_counter >= 2:
-        print("✅ Stabil – führe clean_short_tracks aus.")
-        bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
-        return None  # Timer stoppen
-
-    return 0.5  
-
-
 class CLIP_OT_tracking_pipeline(Operator):
-    """Führt die vollständige Tracking-Pipeline aus"""
+    """Modulare Tracking Pipeline mit Abschlussüberwachung"""
     bl_idname = "clip.tracking_pipeline"
     bl_label = "Tracking Pipeline"
     bl_options = {'REGISTER', 'UNDO'}
 
+    _timer = None
+    _step = 0
+    _is_tracking = False
+
     def execute(self, context):
-        print("🚀 Starte Tracking Pipeline")
+        print("🚀 Starte Tracking-Pipeline...")
+        self._step = 0
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.5, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
 
-        # 1. Marker Helper
-        bpy.ops.clip.marker_helper_main()
+    def modal(self, context, event):
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+        return self.run_step(context)
 
-        # 2. Proxy deaktivieren
-        bpy.ops.clip.disable_proxy()
+    def run_step(self, context):
+        wm = context.window_manager
 
-        # 3. Detect
-        bpy.ops.clip.detect()
+        if self._step == 0:
+            print("→ Marker Helper")
+            bpy.ops.clip.marker_helper_main()
+            self._step += 1
 
-        # 4. Proxy aktivieren
-        bpy.ops.clip.enable_proxy()
+        elif self._step == 1:
+            print("→ Proxy deaktivieren")
+            bpy.ops.clip.disable_proxy()
+            self._step += 1
 
-        # 5. Bidirektionales Tracking
-        bpy.ops.clip.bidirectional_track()
+        elif self._step == 2:
+            print("→ Detect")
+            bpy.ops.clip.detect()
+            self._step += 1
 
-        # 6. Clean Short Tracks (verzögert über Timer)
-        bpy.app.timers.register(wait_for_tracking_stability, first_interval=1.0)
+        elif self._step == 3:
+            print("→ Proxy aktivieren")
+            bpy.ops.clip.enable_proxy()
+            self._step += 1
 
-        self.report({'INFO'}, "Tracking gestartet. Clean läuft automatisch nach Abschluss.")
-        return {'FINISHED'}
+        elif self._step == 4:
+            print("→ Starte bidirektionales Tracking")
+            bpy.ops.clip.bidirectional_track()
+            self._is_tracking = True
+            self._step += 1
+
+        elif self._step == 5:
+            # Warten bis bidirectional_track abgeschlossen ist
+            if not self._is_tracking:
+                print("→ Starte Clean Short Tracks")
+                bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
+                wm.event_timer_remove(self._timer)
+                print("✓ Pipeline abgeschlossen.")
+                return {'FINISHED'}
+
+        return {'PASS_THROUGH'}
+
+    def cancel(self, context):
+        wm = context.window_manager
+        wm.event_timer_remove(self._timer)
