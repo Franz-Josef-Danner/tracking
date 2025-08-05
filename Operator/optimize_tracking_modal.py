@@ -68,7 +68,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
             for t in clip.tracking.tracks:
                 if t.select:
                     clip.tracking.tracks.active = t
-                    bpy.ops.clip.track_markers('EXEC_DEFAULT', backwards=False, sequence=True)
+                    bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
 
         def frames_per_track_all():
             return sum(len(t.markers) for t in clip.tracking.tracks if t.select)
