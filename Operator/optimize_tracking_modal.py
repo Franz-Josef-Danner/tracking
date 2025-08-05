@@ -144,12 +144,14 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                     else:
                         self._pt = self._ptv
                         self._sus = self._pt * 2
+                        context.scene.frame_current = self._start_frame
                         self._phase = 1
                         self._step = 0
                         return {'PASS_THROUGH'}
+                context.scene.frame_current = self._start_frame
                 self._step = 0
                 return {'PASS_THROUGH'}
-            context.scene.frame_current = self._start_frame
+
         # Phase 1: Motion Model
         elif self._phase == 1:
             if self._step < 5:
@@ -160,10 +162,10 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                 return {'PASS_THROUGH'}
 
             else:
+                context.scene.frame_current = self._start_frame
                 self._phase = 2
                 self._step = 0
                 return {'PASS_THROUGH'}
-        context.scene.frame_current = self._start_frame
 
         elif self._phase == 1.5:
             if not is_tracking_stable():
@@ -178,8 +180,8 @@ class CLIP_OT_optimize_tracking_modal(Operator):
             bpy.ops.clip.delete_track(confirm=False)
             self._step += 1
             self._phase = 1
+            context.scene.frame_current = self._start_frame
             return {'PASS_THROUGH'}
-        context.scene.frame_current = self._start_frame
 
         # Phase 2: Farbkanal
         elif self._phase == 2:
@@ -193,10 +195,10 @@ class CLIP_OT_optimize_tracking_modal(Operator):
             else:
                 set_flag2(self._mov)
                 set_flag3(self._vf)
+                context.scene.frame_current = self._start_frame
                 self.report({'INFO'}, f"Fertig: ev={self._ev:.2f}, Motion={self._mov}, RGB={self._vf}")
                 self.cancel(context)
                 return {'FINISHED'}
-        context.scene.frame_current = self._start_frame
 
         elif self._phase == 2.5:
             if not is_tracking_stable():
@@ -211,8 +213,9 @@ class CLIP_OT_optimize_tracking_modal(Operator):
             bpy.ops.clip.delete_track(confirm=False)
             self._step += 1
             self._phase = 2
+            context.scene.frame_current = self._start_frame
             return {'PASS_THROUGH'}
-        context.scene.frame_current = self._start_frame
+
         return {'PASS_THROUGH'}
 
     def cancel(self, context):
