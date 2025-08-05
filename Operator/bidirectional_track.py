@@ -4,7 +4,7 @@ def start_tracking(direction='FORWARDS'):
     """Starte das Tracking in eine Richtung."""
     bpy.ops.clip.track_markers(
         backwards=(direction == 'BACKWARDS'),
-        sequence=False
+        sequence=True
     )
 
 class TrackingMonitor:
