@@ -4,7 +4,7 @@ from ..Helper.error_value import calculate_clip_error
 from .detect import perform_marker_detection
 
 class CLIP_OT_optimize_tracking(bpy.types.Operator):
-    bl_idname = "tracking.optimize_tracking"
+    bl_idname = "clip.optimize_tracking"
     bl_label = "Optimiertes Tracking durchführen"
     bl_options = {'REGISTER', 'UNDO'}
 
