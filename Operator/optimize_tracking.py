@@ -1,46 +1,49 @@
-    def execute(self, context):
-        # --- Initialwerte ---
-        pt = 21
-        sus = pt * 2
-        threshold = 0.5
-        ev = -1
-        dg = 0
-        ptv = pt
-        mov = 0
-        vf = 0
+import bpy
+from set_test_value import set_test_value  # <- WICHTIG: Python-Datei muss im Add-on-Pfad liegen
 
-        # ⬅️ Helper-Operator ausführen
+class TRACK_OT_optimize_tracking(bpy.types.Operator):
+    bl_idname = "tracking.optimize_tracking"
+    bl_label = "Optimiertes Tracking durchführen"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        # 1️⃣ Setze Pattern/Search-Werte
+        set_test_value(context)
+        self.report({'INFO'}, "Pattern/Search-Size gesetzt.")
+
+        # 2️⃣ Helper zur Zielwert-Berechnung ausführen
         def call_marker_helper():
             bpy.ops.clip.marker_helper_main('INVOKE_DEFAULT')
 
-        # ⬅️ Marker setzen durch eigenen Operator
+        # 3️⃣ Marker setzen durch eigenen Operator
         def set_marker():
             call_marker_helper()
-            bpy.ops.tracking.detect('INVOKE_DEFAULT')  # <- Dein "TRACKING_OT_detect"
+            bpy.ops.tracking.detect('INVOKE_DEFAULT')  # Dein eigener Marker-Erzeugungs-Operator
 
-        # ⬅️ Tracking über ganze Sequenz
+        # 4️⃣ Tracking über ganze Sequenz
         def track():
             clip = context.space_data.clip
             tracking = clip.tracking
             tracks = tracking.tracks
-            fr_start = context.scene.frame_start
-            fr_end = context.scene.frame_end
+            context_area = context.area
+            frame_start = context.scene.frame_start
+            frame_end = context.scene.frame_end
 
             for track in tracks:
                 if track.select:
                     context.space_data.tracking.tracks.active = track
                     bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
-                    print(f"[Tracking] '{track.name}' tracked from frame {fr_start} to {fr_end}")
+                    print(f"[Tracking] Track '{track.name}' vorwärts von Frame {frame_start} bis {frame_end}")
 
-        # Dummy-Funktionen
+        # Dummy-Funktionen (kannst du mit echter Logik füllen)
         def frames_per_track():
-            return 20  # Ersetze mit echter Auswertung, z. B. Markeranzahl
+            return 20
 
         def measure_error():
-            return 0.5  # Ersetze mit echter Fehlerauswertung, z. B. Track.average_error
+            return 0.5
 
         def sum_all(val):
-            return val  # Erweitern: Summe über alle Marker-Werte
+            return val
 
         def set_flag1():
             pass
@@ -52,6 +55,15 @@
             pass
 
         # --- Zyklus 1 ---
+        pt = 21
+        sus = pt * 2
+        threshold = 0.5
+        ev = -1
+        dg = 0
+        ptv = pt
+        mov = 0
+        vf = 0
+
         for _ in range(10):
             set_flag1()
             set_marker()
@@ -95,9 +107,10 @@
             if ega > ev:
                 ev = ega
                 mov = mo_index
+
             mo_index += 1
 
-        # Motion-Model zu RGB
+        # RGB-Mapping
         if mov == 0:
             R, G, B = True, False, False
         elif mov == 1:
@@ -123,8 +136,10 @@
             if ega > ev:
                 ev = ega
                 vf = vv
+
             vv += 1
 
+        # Final RGB
         R = (vf == 0 or vf == 1)
         G = (vf == 1 or vf == 2 or vf == 3)
         B = (vf == 3 or vf == 4)
