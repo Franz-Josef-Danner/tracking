@@ -1,12 +1,5 @@
 import bpy
 
-def draw(self, context):
-    layout = self.layout
-    clip = context.space_data.clip
-    if clip:
-        width = clip.size[0]
-        print("Horizontale Auflösung:", width)
-
 def get_marker_position(track, frame):
     marker = track.markers.find_frame(frame)
     if marker:
@@ -18,6 +11,23 @@ def clean_error_tracks(context):
     clip = context.space_data.clip
     tracking = clip.tracking
     tracks = tracking.tracks
+
+def clean_error_tracks(context):
+    scene = context.scene
+    clip = context.space_data.clip
+    width = clip.size[0]  # ← Horizontale Auflösung holen
+    tracking = clip.tracking
+    tracks = tracking.tracks
+
+    # Alle Marker deselektieren
+    for track in tracks:
+        track.select = False
+
+    ee_prop = getattr(scene, "error_track", 1.0)
+    print(f"[Cleanup] error_track (Scene Property): {ee_prop}")
+    
+    ee_initial = (ee_prop + 0.1) / width
+    print(f"[Cleanup] ee_initial (berechnet): {ee_initial:.6f}")
 
     # Alle Marker deselektieren
     for track in tracks:
