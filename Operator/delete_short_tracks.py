@@ -3,7 +3,7 @@ from ..Helper.select_short_tracks import select_short_tracks
 from ..Helper.delete_selected_markers import delete_selected_markers
 
 class CLIP_OT_delete_short_tracks(bpy.types.Operator):
-    bl_idname = "clip.select_and_delete_short_tracks"
+    bl_idname = "clip.delete_short_tracks"
     bl_label = "Kurze Tracks selektieren & löschen"
     bl_description = "Selektiert zu kurze Tracks und löscht deren Marker"
 
