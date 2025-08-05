@@ -17,8 +17,9 @@ class CLIP_OT_detect(bpy.types.Operator):
             return {'CANCELLED'}
 
         # Basiswerte
-        margin = 50
-        min_distance = 100
+        ha = clip.size[0]
+        margin = ha / 100
+        min_distance = ha / 50
         marker_adapt = getattr(scene, "marker_frame", 20) * 4
         max_marker = int(marker_adapt * 1.1)
         min_marker = int(marker_adapt * 0.9)
