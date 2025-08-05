@@ -113,6 +113,7 @@ class CLIP_OT_optimize_tracking(bpy.types.Operator):
                     pt = ptv
                     sus = pt * 2
                     break
+        bpy.ops.clip.delete_track(confirm=False)  # löschen ohne Bestätigungsdialog
 
         # ----- Zyklus 2: Motion Model -----
 
@@ -127,6 +128,7 @@ class CLIP_OT_optimize_tracking(bpy.types.Operator):
             if g > ev:
                 ev = g
                 mov = mo
+        bpy.ops.clip.delete_track(confirm=False)  # löschen ohne Bestätigungsdialog
 
         # ----- Zyklus 3: Farbkanäle -----
 
@@ -141,7 +143,7 @@ class CLIP_OT_optimize_tracking(bpy.types.Operator):
             if g > ev:
                 ev = g
                 vf = i
-
+        bpy.ops.clip.delete_track(confirm=False)  # löschen ohne Bestätigungsdialog
         # Final setzen
         set_flag2(mov)
         set_flag3(vf)
