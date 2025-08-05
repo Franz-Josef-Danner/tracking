@@ -1,30 +1,35 @@
 import bpy
 import time
 
-# Globaler Status (statt self)
+# Globaler Zustand
 bidirectional_track_state = {
     "direction": 'FORWARD',
     "last_marker_count": 0,
     "last_frame": 0,
     "no_change_count": 0,
-    "start_time": time.time(),
+    "clip": None,
 }
 
-def count_selected_markers(context):
+def count_selected_markers(clip):
     count = 0
-    for track in context.space_data.clip.tracking.tracks:
+    for track in clip.tracking.tracks:
         if track.select:
             count += len([m for m in track.markers if not m.mute])
     return count
 
 def monitor_tracking():
-    context = bpy.context
     state = bidirectional_track_state
+    clip = state.get("clip")
 
-    current_marker_count = count_selected_markers(context)
-    current_frame = context.scene.frame_current
+    if clip is None:
+        print("❌ Kein Clip verfügbar für Tracking-Monitor.")
+        return None
 
-    if current_marker_count == state["last_marker_count"] and current_frame == state["last_frame"]:
+    current_marker_count = count_selected_markers(clip)
+    current_frame = bpy.context.scene.frame_current
+
+    if (current_marker_count == state["last_marker_count"] and
+        current_frame == state["last_frame"]):
         state["no_change_count"] += 1
     else:
         state["no_change_count"] = 0
@@ -34,12 +39,15 @@ def monitor_tracking():
 
     if state["no_change_count"] >= 2:
         if state["direction"] == 'FORWARD':
+            print("➡️ Wechsel zu Rückwärts-Tracking")
             state["direction"] = 'BACKWARD'
             state["no_change_count"] = 0
             bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
             return 0.5
         else:
-            return None  # Ende
+            print("✅ Bidirektionales Tracking abgeschlossen.")
+            return None
+
     return 0.5
 
 class CLIP_OT_bidirectional_track(bpy.types.Operator):
@@ -52,9 +60,11 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
 
     def execute(self, context):
         state = bidirectional_track_state
+        clip = context.space_data.clip
+
         state["direction"] = 'FORWARD'
-        state["start_time"] = time.time()
-        state["last_marker_count"] = count_selected_markers(context)
+        state["clip"] = clip
+        state["last_marker_count"] = count_selected_markers(clip)
         state["last_frame"] = context.scene.frame_current
         state["no_change_count"] = 0
 
