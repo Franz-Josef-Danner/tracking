@@ -21,9 +21,9 @@ from .Helper.enable_proxy import CLIP_OT_enable_proxy
 from .Operator.detect import TRACKING_OT_detect
 from .Operator.bidirectional_track import CLIP_OT_bidirectional_track
 from .Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
-from .Operator.clean_error_tracks import CLIP_OT_clean_error_tracks
+from .Operator.clean_error_tracks import clean_error_tracks
+from .Helper.error_value import error_value
 from .Operator.optimize_tracking import CLIP_OT_optimize_tracking
-from .Helper.error_value import CLIP_OT_error_value
 # -------------------------------------
 # Panel für das UI im Clip Editor
 # -------------------------------------
