@@ -37,7 +37,7 @@ def wait_for_tracking_stability():
         bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
         return None  # Timer stoppen
 
-    return 1.0  # Wiederhole nach 1 Sekunde
+    return 0.5  
 
 
 class CLIP_OT_tracking_pipeline(Operator):
