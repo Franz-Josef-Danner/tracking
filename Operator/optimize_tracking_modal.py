@@ -14,6 +14,8 @@ class CLIP_OT_optimize_tracking_modal(Operator):
     _timer = None
     _step = 0
     _phase = 0
+    _clip = None
+
     _ev = -1
     _dg = 0
     _pt = 21
@@ -21,74 +23,38 @@ class CLIP_OT_optimize_tracking_modal(Operator):
     _sus = 42
     _mov = 0
     _vf = 0
-    _clip = None
 
-    _waiting_for_tracking = False
-    _last_marker_count = 0
-    _same_marker_count_counter = 0
-    _last_frame = -1
-    _frame_stable_counter = 0
+    _start_frame = 0
+    _stable_count = 0
+    _prev_marker_count = -1
+    _prev_frame = -1
 
-    _frame_restore = None
+    def execute(self, context):
+        self._clip = context.space_data.clip
+        if not self._clip:
+            self.report({'ERROR'}, "Kein Movie Clip aktiv.")
+            return {'CANCELLED'}
 
-    # NEU: Playhead-Warte-Mechanismus
-    _frame_wait_target = None
-    _frame_wait_counter = 0
-    MAX_FRAME_WAIT_TICKS = 4  # 4 Ticks = ca. 2 Sekunden bei 0.5s Timer
+        set_test_value(context)
+        self._start_frame = context.scene.frame_current
+
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.5, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
         if event.type == 'TIMER':
-            try:
-                return self.run_step(context)
-            except Exception as e:
-                self.report({'ERROR'}, f"Fehler: {str(e)}")
-                return {'CANCELLED'}
+            return self.run_step(context)
         return {'PASS_THROUGH'}
 
-    def wait_for_frame(self, context):
-        if context.scene.frame_current == self._frame_wait_target:
-            self._frame_wait_counter += 1
-        else:
-            self._frame_wait_counter = 0  # Reset, wenn er springt
-
-        if self._frame_wait_counter >= self.MAX_FRAME_WAIT_TICKS:
-            print(f"[Frame-Wartephase] Ziel-Frame erreicht: {self._frame_wait_target}")
-            self._frame_wait_target = None
-            self._frame_wait_counter = 0
-            return True
-
-        print(f"[Frame-Wartephase] Warten... Aktuell: {context.scene.frame_current}, Ziel: {self._frame_wait_target}")
-        return False
-
-    def is_tracking_done(self, context):
-        current_frame = context.scene.frame_current
-        current_marker_count = sum(len(t.markers) for t in self._clip.tracking.tracks if t.select)
-
-        if current_frame == self._last_frame:
-            self._frame_stable_counter += 1
-        else:
-            self._frame_stable_counter = 0
-            self._last_frame = current_frame
-
-        if current_marker_count == self._last_marker_count:
-            self._same_marker_count_counter += 1
-        else:
-            self._same_marker_count_counter = 0
-            self._last_marker_count = current_marker_count
-
-        return self._frame_stable_counter >= 2 and self._same_marker_count_counter >= 2
-
     def run_step(self, context):
-        if self._frame_wait_target is not None:
-            if not self.wait_for_frame(context):
-                return {'PASS_THROUGH'}
-
         clip = self._clip
 
         def set_flag1(pattern, search):
             settings = clip.tracking.settings
-            settings.default_pattern_size = max(5, min(1000, int(pattern)))
-            settings.default_search_size = max(5, min(1000, int(search)))
+            settings.default_pattern_size = int(pattern)
+            settings.default_search_size = int(search)
 
         def set_flag2(index):
             motion_models = ['Perspective', 'Affine', 'LocRotScale', 'LocScale', 'LocRot', 'Loc']
@@ -112,12 +78,12 @@ class CLIP_OT_optimize_tracking_modal(Operator):
             min_dist = int(w * 0.05)
             return perform_marker_detection(clip, clip.tracking, 0.75, margin, min_dist)
 
-        def track():
+        def track(backwards=False):
             bpy.ops.clip.enable_proxy('EXEC_DEFAULT')
             for t in clip.tracking.tracks:
                 if t.select:
                     clip.tracking.tracks.active = t
-                    bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
+                    bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=backwards, sequence=True)
 
         def frames_per_track_all():
             return sum(len(t.markers) for t in clip.tracking.tracks if t.select)
@@ -128,136 +94,123 @@ class CLIP_OT_optimize_tracking_modal(Operator):
         def eg(frames, error):
             return frames / error if error else 0
 
-        # -------- PHASE 0 --------
+        def is_tracking_stable():
+            frame = context.scene.frame_current
+            marker_count = sum(len(t.markers) for t in clip.tracking.tracks)
+
+            if self._prev_marker_count == marker_count and self._prev_frame == frame:
+                self._stable_count += 1
+            else:
+                self._stable_count = 0
+
+            self._prev_marker_count = marker_count
+            self._prev_frame = frame
+
+            return self._stable_count >= 2
+
+        # Phase 0: Pattern / Search Size Optimierung
         if self._phase == 0:
-            if not self._waiting_for_tracking:
-                if self._frame_restore is None:
-                    self._frame_restore = context.scene.frame_current
+            if self._step == 0:
                 set_flag1(self._pt, self._sus)
                 set_marker()
                 track()
-                self._waiting_for_tracking = True
+                self._step += 1
                 return {'PASS_THROUGH'}
 
-            elif not self.is_tracking_done(context):
-                print("[Wartephase] Tracking Zyklus 1 noch aktiv …")
-                return {'PASS_THROUGH'}
+            elif self._step == 1:
+                if not is_tracking_stable():
+                    return {'PASS_THROUGH'}
+                f = frames_per_track_all()
+                e = measure_error_all()
+                g = eg(f, e)
+                print(f"[Zyklus 1] f={f}, e={e:.4f}, g={g:.4f}")
+                bpy.ops.clip.delete_track(confirm=False)
 
-            self._waiting_for_tracking = False
-            f = frames_per_track_all()
-            e = measure_error_all()
-            g = eg(f, e)
-            print(f"[Zyklus 1] f={f}, e={e:.4f}, g={g:.4f}")
-            bpy.ops.clip.delete_track(confirm=False)
-
-            if self._ev < 0:
-                self._ev = g
-                self._pt *= 1.1
-                self._sus = self._pt * 2
-            elif g > self._ev:
-                self._ev = g
-                self._dg = 4
-                self._ptv = self._pt
-                self._pt *= 1.1
-                self._sus = self._pt * 2
-            else:
-                self._dg -= 1
-                if self._dg >= 0:
+                if self._ev < 0:
+                    self._ev = g
+                    self._pt *= 1.1
+                    self._sus = self._pt * 2
+                elif g > self._ev:
+                    self._ev = g
+                    self._dg = 4
+                    self._ptv = self._pt
                     self._pt *= 1.1
                     self._sus = self._pt * 2
                 else:
-                    self._pt = self._ptv
-                    self._sus = self._pt * 2
-                    context.scene.frame_current = self._frame_restore
-                    self._frame_wait_target = self._frame_restore
-                    self._step = 0
-                    self._phase = 1
-                    return {'PASS_THROUGH'}
-
-        # -------- PHASE 1 --------
-        elif self._phase == 1:
-            if self._step < 5:
-                if not self._waiting_for_tracking:
-                    if self._frame_restore is None:
-                        self._frame_restore = context.scene.frame_current
-                    set_flag2(self._step)
-                    set_marker()
-                    track()
-                    self._waiting_for_tracking = True
-                    return {'PASS_THROUGH'}
-
-                elif not self.is_tracking_done(context):
-                    print("[Wartephase] Tracking Zyklus 2 noch aktiv …")
-                    return {'PASS_THROUGH'}
-
-                self._waiting_for_tracking = False
-                f = frames_per_track_all()
-                e = measure_error_all()
-                g = eg(f, e)
-                print(f"[Zyklus 2] Motion {self._step} → g={g:.4f}")
-                if g > self._ev:
-                    self._ev = g
-                    self._mov = self._step
-                bpy.ops.clip.delete_track(confirm=False)
-                self._step += 1
-            else:
-                context.scene.frame_current = self._frame_restore
-                self._frame_wait_target = self._frame_restore
+                    self._dg -= 1
+                    if self._dg >= 0:
+                        self._pt *= 1.1
+                        self._sus = self._pt * 2
+                    else:
+                        self._pt = self._ptv
+                        self._sus = self._pt * 2
+                        self._phase = 1
+                        self._step = 0
+                        return {'PASS_THROUGH'}
                 self._step = 0
-                self._phase = 2
                 return {'PASS_THROUGH'}
 
-        # -------- PHASE 2 --------
+        # Phase 1: Motion Model
+        elif self._phase == 1:
+            if self._step < 5:
+                set_flag2(self._step)
+                set_marker()
+                track()
+                self._phase = 1.5
+                return {'PASS_THROUGH'}
+
+            else:
+                self._phase = 2
+                self._step = 0
+                return {'PASS_THROUGH'}
+
+        elif self._phase == 1.5:
+            if not is_tracking_stable():
+                return {'PASS_THROUGH'}
+            f = frames_per_track_all()
+            e = measure_error_all()
+            g = eg(f, e)
+            print(f"[Zyklus 2] Motion {self._step} → g={g:.4f}")
+            if g > self._ev:
+                self._ev = g
+                self._mov = self._step
+            bpy.ops.clip.delete_track(confirm=False)
+            self._step += 1
+            self._phase = 1
+            return {'PASS_THROUGH'}
+
+        # Phase 2: Farbkanal
         elif self._phase == 2:
             if self._step < 5:
-                if not self._waiting_for_tracking:
-                    if self._frame_restore is None:
-                        self._frame_restore = context.scene.frame_current
-                    set_flag3(self._step)
-                    set_marker()
-                    track()
-                    self._waiting_for_tracking = True
-                    return {'PASS_THROUGH'}
+                set_flag3(self._step)
+                set_marker()
+                track()
+                self._phase = 2.5
+                return {'PASS_THROUGH'}
 
-                elif not self.is_tracking_done(context):
-                    print("[Wartephase] Tracking Zyklus 3 noch aktiv …")
-                    return {'PASS_THROUGH'}
-
-                self._waiting_for_tracking = False
-                f = frames_per_track_all()
-                e = measure_error_all()
-                g = eg(f, e)
-                print(f"[Zyklus 3] RGB {self._step} → g={g:.4f}")
-                if g > self._ev:
-                    self._ev = g
-                    self._vf = self._step
-                bpy.ops.clip.delete_track(confirm=False)
-                self._step += 1
             else:
                 set_flag2(self._mov)
                 set_flag3(self._vf)
-                context.scene.frame_current = self._frame_restore
-                self._frame_wait_target = self._frame_restore
                 self.report({'INFO'}, f"Fertig: ev={self._ev:.2f}, Motion={self._mov}, RGB={self._vf}")
                 self.cancel(context)
                 return {'FINISHED'}
 
+        elif self._phase == 2.5:
+            if not is_tracking_stable():
+                return {'PASS_THROUGH'}
+            f = frames_per_track_all()
+            e = measure_error_all()
+            g = eg(f, e)
+            print(f"[Zyklus 3] RGB {self._step} → g={g:.4f}")
+            if g > self._ev:
+                self._ev = g
+                self._vf = self._step
+            bpy.ops.clip.delete_track(confirm=False)
+            self._step += 1
+            self._phase = 2
+            return {'PASS_THROUGH'}
+
         return {'PASS_THROUGH'}
-
-    def execute(self, context):
-        return {'FINISHED'}
-
-    def invoke(self, context, event):
-        self._clip = context.space_data.clip
-        if not self._clip:
-            self.report({'ERROR'}, "Kein Movie Clip aktiv.")
-            return {'CANCELLED'}
-
-        set_test_value(context)
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(0.5, window=context.window)
-        wm.modal_handler_add(self)
-        return {'RUNNING_MODAL'}
 
     def cancel(self, context):
         wm = context.window_manager
