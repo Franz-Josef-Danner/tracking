@@ -76,7 +76,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         return context.space_data and context.space_data.clip is not None
 
     def execute(self, context):
-        deleted, max_error = cleanup_tracks(context)
+        deleted, max_error = clean_error_tracks(context)
         if deleted:
             self.report({'INFO'}, f"Insgesamt {deleted} Marker gelöscht. Max. Fehler: {max_error:.6f}")
         else:
@@ -85,7 +85,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
 
 
 def register():
-    bpy.utils.register_class(CLIP_OT_cleanup_tracks)
+    bpy.utils.register_class(CLIP_OT_clean_error_tracks)
 
 def unregister():
-    bpy.utils.unregister_class(CLIP_OT_cleanup_tracks)
+    bpy.utils.unregister_class(CLIP_OT_clean_error_tracks)
