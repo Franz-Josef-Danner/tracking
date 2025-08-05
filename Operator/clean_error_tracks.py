@@ -1,24 +1,10 @@
-bl_info = {
-    "name": "Kaiserlich Cleanup Tracks",
-    "description": "Entfernt fehlerhafte Tracks über rekursiven Glättungsfehler",
-    "author": "Du (mit Blender Lehrer 😄)",
-    "version": (1, 0),
-    "blender": (2, 80, 0),
-    "location": "Movie Clip Editor > Sidebar > Cleanup",
-    "category": "Tracking"
-}
-
 import bpy
-
-# ---------- Hilfsfunktion ----------
 
 def get_marker_position(track, frame):
     marker = track.markers.find_frame(frame)
     if marker:
         return marker.co
     return None
-
-# ---------- Cleanup-Logik ----------
 
 def clean_error_tracks(context):
     scene = context.scene
@@ -80,8 +66,6 @@ def clean_error_tracks(context):
 
     return total_deleted_all, overall_max_error
 
-# ---------- Operator ----------
-
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
     bl_label = "Clean Error Tracks"
@@ -92,52 +76,16 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         return context.space_data and context.space_data.clip is not None
 
     def execute(self, context):
-        deleted, max_error = clean_error_tracks(context)
+        deleted, max_error = cleanup_tracks(context)
         if deleted:
-            self.report({'INFO'}, f"Insgesamt {deleted} Tracks gelöscht. Max. Fehler: {max_error:.6f}")
+            self.report({'INFO'}, f"Insgesamt {deleted} Marker gelöscht. Max. Fehler: {max_error:.6f}")
         else:
-            self.report({'INFO'}, "Keine Tracks gelöscht.")
+            self.report({'INFO'}, "Keine Marker gelöscht.")
         return {'FINISHED'}
 
-# ---------- Panel im Clip Editor ----------
-
-class CLIP_PT_cleanup_panel(bpy.types.Panel):
-    bl_label = "Kaiserlich Cleanup"
-    bl_space_type = 'CLIP_EDITOR'
-    bl_region_type = 'UI'
-    bl_category = "Cleanup"
-
-    def draw(self, context):
-        layout = self.layout
-        scene = context.scene
-
-        layout.prop(scene, "error_per_track")
-        layout.operator("clip.clean_error_tracks", icon="TRACKING_CLEANUP")
-
-# ---------- Registration ----------
-
-classes = (
-    CLIP_OT_clean_error_tracks,
-    CLIP_PT_cleanup_panel,
-)
 
 def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
-
-    bpy.types.Scene.error_per_track = bpy.props.FloatProperty(
-        name="Fehlerschwelle (%)",
-        description="Fehlertoleranz zum Löschen von Tracks",
-        default=1.0,
-        min=0.01,
-        max=10.0
-    )
+    bpy.utils.register_class(CLIP_OT_cleanup_tracks)
 
 def unregister():
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
-
-    del bpy.types.Scene.error_per_track
-
-if __name__ == "__main__":
-    register()
+    bpy.utils.unregister_class(CLIP_OT_cleanup_tracks)
