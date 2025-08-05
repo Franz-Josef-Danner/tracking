@@ -5,6 +5,7 @@ from .proxy_builder import CLIP_OT_proxy_builder
 from .tracker_settings import CLIP_OT_tracker_settings
 from .detect import CLIP_OT_detect
 from .bidirectional_track import CLIP_OT_bidirectional_track
+from .delete_short_tracks import CLIP_OT_delete_short_tracks
 
 # Liste aller Operator-Klassen zur Registrierung
 classes = (
@@ -12,6 +13,7 @@ classes = (
     CLIP_OT_tracker_settings,
     CLIP_OT_detect,
     CLIP_OT_bidirectional_track,
+    CLIP_OT_delete_short_tracks,
 )
 
 # Registrierungsfunktion
