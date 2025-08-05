@@ -4,23 +4,14 @@ import time
 class CLIP_OT_bidirectional_track(bpy.types.Operator):
     bl_idname = "clip.bidirectional_track"
     bl_label = "Bidirectional Track"
+    bl_description = "Track selektierte Marker vorwärts und rückwärts"
+    bl_options = {'REGISTER', 'UNDO'}
 
     _timer = None
     _step = 0
-    _marker_counts = []
+    _last_marker_count = 0
+    _no_change_counter = 0
     _start_frame = 0
-    _area_backup = None
-
-    def execute(self, context):
-        self._step = 0
-        self._start_frame = context.scene.frame_current
-
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(0.5, window=context.window)
-        wm.modal_handler_add(self)
-
-        print("[Tracking] Schritt: 0")
-        return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
         if event.type == 'TIMER':
@@ -28,73 +19,114 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
         return {'PASS_THROUGH'}
 
     def run_tracking_step(self, context):
-        clip = context.space_data.clip
-        if not clip:
-            self.report({'ERROR'}, "Kein aktiver Movie Clip")
-            return {'CANCELLED'}
-
         area = next((a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None)
         if not area:
-            self.report({'ERROR'}, "Kein Clip Editor aktiv")
+            self.report({'ERROR'}, "Kein Clip-Editor gefunden")
             return {'CANCELLED'}
 
-        override = {'window': context.window, 'screen': context.screen, 'area': area, 'region': area.regions[-1]}
+        region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+        if not region:
+            self.report({'ERROR'}, "Keine Region im Clip-Editor gefunden")
+            return {'CANCELLED'}
+
+        space = area.spaces.active
+        override = {
+            'window': context.window,
+            'screen': context.screen,
+            'area': area,
+            'region': region,
+            'space_data': space,
+        }
+
+        def count_selected_markers():
+            try:
+                return sum(1 for track in space.clip.tracking.tracks if track.select)
+            except:
+                return 0
 
         if self._step == 0:
-            print("→ Starte Vorwärts-Tracking...")
-            bpy.ops.clip.track_markers(override, 'INVOKE_DEFAULT', backwards=False, sequence=True)
+            print("[Tracking] Schritt: 0\n→ Starte Vorwärts-Tracking...")
+            self._start_frame = context.scene.frame_current
+            bpy.ops.clip.track_markers(
+                override,
+                **{
+                    'backwards': False,
+                    'sequence': True
+                }
+            )
             self._step = 1
             return {'PASS_THROUGH'}
-        
-        elif self._step == 2:
-            print("→ Starte Rückwärts-Tracking...")
-            bpy.ops.clip.track_markers(override, 'INVOKE_DEFAULT', backwards=True, sequence=True)
-            self._step = 3
+
+        elif self._step == 1:
+            print("[Tracking] Schritt: 1\n→ Warte auf Abschluss des Vorwärts-Trackings...")
+            current_count = count_selected_markers()
+            if current_count == self._last_marker_count:
+                self._no_change_counter += 1
+            else:
+                self._no_change_counter = 0
+            self._last_marker_count = current_count
+
+            if self._no_change_counter >= 2:
+                print("✓ Vorwärts-Tracking abgeschlossen.")
+                context.scene.frame_current = self._start_frame
+                print(f"← Frame zurückgesetzt auf {self._start_frame}")
+                self._no_change_counter = 0
+                self._step = 2
             return {'PASS_THROUGH'}
 
         elif self._step == 2:
-            print("→ Starte Rückwärts-Tracking...")
-            bpy.ops.clip.track_markers(override, backwards=True, sequence=True)
+            print("[Tracking] Schritt: 2\n→ Starte Rückwärts-Tracking...")
+            bpy.ops.clip.track_markers(
+                override,
+                **{
+                    'backwards': True,
+                    'sequence': True
+                }
+            )
             self._step = 3
             return {'PASS_THROUGH'}
 
         elif self._step == 3:
-            if self.is_tracking_done(clip):
+            print("[Tracking] Schritt: 3\n→ Warte auf Abschluss des Rückwärts-Trackings...")
+            current_count = count_selected_markers()
+            if current_count == self._last_marker_count:
+                self._no_change_counter += 1
+            else:
+                self._no_change_counter = 0
+            self._last_marker_count = current_count
+
+            if self._no_change_counter >= 2:
                 print("✓ Rückwärts-Tracking abgeschlossen.")
                 self._step = 4
             return {'PASS_THROUGH'}
 
         elif self._step == 4:
-            print("→ Starte Bereinigung kurzer Tracks...")
-            self.cleanup_short_tracks(clip)
-            wm = context.window_manager
-            wm.event_timer_remove(self._timer)
+            print("[Tracking] Schritt: 4\n→ Starte Bereinigung kurzer Tracks...")
+
+            clip = space.clip
+            min_track_length = 4  # Beispielwert
+
+            for track in clip.tracking.tracks:
+                frames = [marker.frame for marker in track.markers if marker.frame != -1]
+                if len(frames) < min_track_length:
+                    track.select = True
+                else:
+                    track.select = False
+
+            bpy.ops.clip.delete_track(override)
             print("✓ Tracking und Cleanup abgeschlossen.")
+            self.cancel(context)
             return {'FINISHED'}
 
         return {'PASS_THROUGH'}
 
-    def is_tracking_done(self, clip):
-        current_count = sum(1 for track in clip.tracking.tracks if track.select)
-        self._marker_counts.append(current_count)
-        if len(self._marker_counts) >= 3 and len(set(self._marker_counts[-3:])) == 1:
-            return True
-        return False
+    def execute(self, context):
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.5, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
 
-    def cleanup_short_tracks(self, clip):
-        min_length = bpy.context.scene.min_track_length if 'min_track_length' in bpy.context.scene else 5
-        for track in list(clip.tracking.tracks):
-            if track.select:
-                segments = track.markers
-                if len(segments) < min_length:
-                    track.select = True
-        bpy.ops.clip.delete_track()
+    def cancel(self, context):
+        wm = context.window_manager
+        wm.event_timer_remove(self._timer)
 
-def register():
-    bpy.utils.register_class(CLIP_OT_bidirectional_track)
-
-def unregister():
-    bpy.utils.unregister_class(CLIP_OT_bidirectional_track)
-
-if __name__ == "__main__":
-    register()
