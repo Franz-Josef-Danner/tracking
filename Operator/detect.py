@@ -1,59 +1,131 @@
 import bpy
 import math
+import time
 
-class CLIP_OT_detect(bpy.types.Operator):
-    bl_idname = "clip.detect"
-    bl_label = "detect"
-    bl_description = "Automatischer Suchzyklus für Markerplatzierung mit Distanzprüfung"
+def perform_marker_detection(
+    clip: bpy.types.MovieClip,
+    tracking: bpy.types.MovieTracking,
+    threshold: float,
+    margin_base: int,
+    min_distance_base: int,
+) -> int:
+    factor = math.log10(threshold * 1e8) / 8
+    margin = max(1, int(margin_base * factor))
+    min_distance = max(1, int(min_distance_base * factor))
+
+    if clip.use_proxy:
+        clip.use_proxy = False
+
+    result = bpy.ops.clip.detect_features(
+        margin=margin,
+        min_distance=min_distance,
+        threshold=threshold,
+    )
+
+    if result != {"FINISHED"}:
+        print(f"[Warnung] Feature Detection nicht erfolgreich: {result}")
+
+    selected_tracks = [t for t in tracking.tracks if t.select]
+    return len(selected_tracks)
+
+def deselect_all_markers(tracking):
+    for t in tracking.tracks:
+        t.select = False
+
+
+class TRACKING_OT_detect(bpy.types.Operator):
+    bl_idname = "tracking.detect"
+    bl_label = "Place Marker"
+    bl_description = (
+        "Führt Marker-Platzierungs-Zyklus aus (Teil-Zyklus 1, max. 20 Versuche inkl. Proxy-Deaktivierung)"
+    )
+
+    _timer = None
+
+    @classmethod
+    def poll(cls, context):
+        return (
+            context.area
+            and context.area.type == "CLIP_EDITOR"
+            and getattr(context.space_data, "clip", None)
+        )
 
     def execute(self, context):
         scene = context.scene
-        clip = getattr(context.space_data, "clip", None)
-        tracking = clip.tracking if clip else None
-        settings = tracking.settings if tracking else None
-
-        if not clip or not tracking or not settings:
-            self.report({'ERROR'}, "Kein gültiger Movie Clip gefunden.")
+        self.clip = getattr(context.space_data, "clip", None)
+        if self.clip is None:
+            self.report({'WARNING'}, "Kein Clip geladen")
             return {'CANCELLED'}
 
-        width, height = clip.size
-        frame_current = scene.frame_current
+        self.tracking = self.clip.tracking
+        settings = self.tracking.settings
 
-        # Bestehende Markerpositionen (Pixelkoordinaten)
-        existing_positions = []
-        for track in tracking.tracks:
-            marker = track.markers.find_frame(frame_current, exact=True)
-            if marker and not marker.mute:
-                x = marker.co[0] * width
-                y = marker.co[1] * height
-                existing_positions.append((x, y))
+        self.detection_threshold = scene.get("last_detection_threshold", getattr(settings, "default_correlation_min", 0.75))
+        self.marker_adapt = scene.get("marker_adapt", 80)
+        self.max_marker = scene.get("max_marker", self.marker_adapt * 1.1)
+        self.min_marker = scene.get("min_marker", self.marker_adapt * 0.9)
 
-        # Basiswerte
-        ha = width
-        margin_base = ha / 100
-        min_distance_base = ha / 50
-        marker_adapt = getattr(scene, "marker_frame", 20) * 4
-        max_marker = int(marker_adapt * 1.1)
-        min_marker = int(marker_adapt * 0.9)
-        detection_threshold = 0.5
+        image_width = self.clip.size[0]
+        self.margin_base = int(image_width * 0.025)
+        self.min_distance_base = int(image_width * 0.05)
 
-        attempt = 0
-        while attempt < 20:
-            factor = math.log10(detection_threshold * 100000000) / 8
-            margin = int(margin_base * factor)
-            min_distance = int(min_distance_base * factor)
+        self.attempt = 0
+        self.success = False
+        self.state = "DETECT"
 
-            # Proxy deaktivieren
-            clip.use_proxy = False
+        print("[Info] Deselektiere alle Marker vor Start.")
+        deselect_all_markers(self.tracking)
 
-            # Feature Detection
-            bpy.ops.clip.detect_features(
-                margin=margin,
-                min_distance=min_distance,
-                threshold=detection_threshold
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.25, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+
+        scene = context.scene
+
+        if self.state == "DETECT":
+            if self.attempt == 0:
+                print("[Info] Starte mit vorhandenen Marker – keine Löschung, nur neue setzen.")
+                deselect_all_markers(self.tracking)
+
+            for t in self.tracking.tracks:
+                t.select = False
+
+            self.frame = scene.frame_current
+            self.width, self.height = self.clip.size
+            self.distance_px = int(self.width * 0.04)
+
+            self.existing_positions = []
+            for track in self.tracking.tracks:
+                marker = track.markers.find_frame(self.frame, exact=True)
+                if marker and not marker.mute:
+                    self.existing_positions.append((marker.co[0] * self.width, marker.co[1] * self.height))
+
+            self.initial_track_names = {t.name for t in self.tracking.tracks}
+
+            perform_marker_detection(
+                self.clip,
+                self.tracking,
+                self.detection_threshold,
+                self.margin_base,
+                self.min_distance_base,
             )
 
-            # Entferne zu nahe Marker (Distanzprüfung)
+            self.wait_start = time.time()
+            self.state = "WAIT"
+            print(f"[Info] Versuch {self.attempt + 1}: Marker gesetzt, warte...")
+            return {'PASS_THROUGH'}
+
+        if self.state == "WAIT":
+            current_names = {t.name for t in self.tracking.tracks}
+            if current_names != self.initial_track_names or time.time() - self.wait_start >= 3.0:
+                self.state = "PROCESS"
+            return {'PASS_THROUGH'}
+
         if self.state == "PROCESS":
             new_tracks = [t for t in self.tracking.tracks if t.name not in self.initial_track_names]
             close_tracks = []
@@ -80,30 +152,64 @@ class CLIP_OT_detect(bpy.types.Operator):
             for t in cleaned_tracks:
                 t.select = True
 
-            # Anzahl neuer Marker nach Filterung
-            anzahl_neu = sum(1 for t in new_tracks if t not in close_tracks)
+            anzahl_neu = len(cleaned_tracks)
 
-            if anzahl_neu > min_marker:
-                if anzahl_neu < max_marker:
-                    self.report({'INFO'}, f"Ziel erreicht mit {anzahl_neu} Markern.")
-                    return {'FINISHED'}
-                else:
-                    detection_threshold = max(min(detection_threshold * ((anzahl_neu + 0.1) / marker_adapt), 1.0), 0.0001)
-                    bpy.ops.clip.delete_track()
+            meldung = f"Versuch {self.attempt + 1}: gesetzte Marker (nach Filterung): {anzahl_neu}"
+            if anzahl_neu < self.min_marker:
+                meldung += " → zu wenig, Marker werden gelöscht."
+            elif anzahl_neu > self.max_marker:
+                meldung += " → zu viele, Marker werden gelöscht."
             else:
-                detection_threshold = max(detection_threshold * ((anzahl_neu + 0.1) / marker_adapt), 0.0001)
+                meldung += " → Zielbereich erreicht."
+
+            print("[Status]", meldung)
+
+            if anzahl_neu < self.min_marker or anzahl_neu > self.max_marker:
+                for t in self.tracking.tracks:
+                    t.select = False
+                for t in cleaned_tracks:
+                    t.select = True
                 bpy.ops.clip.delete_track()
 
-            attempt += 1
+                self.detection_threshold = max(
+                    self.detection_threshold * ((anzahl_neu + 0.1) / self.marker_adapt),
+                    0.0001,
+                )
+                scene["last_detection_threshold"] = self.detection_threshold
 
-        self.report({'WARNING'}, "Maximale Versuche erreicht. Teilzyklus abgebrochen.")
-        return {'CANCELLED'}
+                print(
+                    f"📌 Versuch {self.attempt + 1}: Marker={anzahl_neu}, "
+                    f"Threshold={self.detection_threshold:.4f}"
+                )
+
+                self.attempt += 1
+                if self.attempt >= 20:
+                    self.report({'WARNING'}, "Maximale Versuche erreicht, Markeranzahl unzureichend.")
+                    context.window_manager.event_timer_remove(self._timer)
+                    return {'FINISHED'}
+
+                self.state = "DETECT"
+                return {'PASS_THROUGH'}
+
+            else:
+                self.report({'INFO'}, f"Markeranzahl im Zielbereich: {anzahl_neu}")
+                self.success = True
+                context.window_manager.event_timer_remove(self._timer)
+                return {'FINISHED'}
+
+        return {'PASS_THROUGH'}
+
+    def cancel(self, context):
+        if self._timer is not None:
+            context.window_manager.event_timer_remove(self._timer)
+
 
 def register():
-    bpy.utils.register_class(CLIP_OT_detect)
+    bpy.utils.register_class(TRACKING_OT_detect)
 
 def unregister():
-    bpy.utils.unregister_class(CLIP_OT_detect)
+    bpy.utils.unregister_class(TRACKING_OT_detect)
+
 
 if __name__ == "__main__":
     register()
