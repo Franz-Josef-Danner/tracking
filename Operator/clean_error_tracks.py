@@ -7,11 +7,9 @@ def get_marker_position(track, frame):
         return marker.co
     return None
 
-def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee):
+def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width, height):
     total_deleted = 0
-    eb = 1.0
     frame_start, frame_end = frame_range
-    scene = bpy.context.scene
 
     for fi in range(frame_start + 1, frame_end - 1):
         f1 = fi - 1
@@ -26,29 +24,32 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee):
             if not (p1 and p2 and p3):
                 continue
 
-            # Check ob der Marker in die Region fällt (p2 = aktuelle Position)
-            x, y = p2
+            # Filtere Marker innerhalb der Region (Pixelbasiert)
+            x, y = p2[0] * width, p2[1] * height
             if not (xmin <= x < xmax and ymin <= y < ymax):
                 continue
 
             vxm = (p2[0] - p1[0]) + (p3[0] - p2[0])
             vym = (p2[1] - p1[1]) + (p3[1] - p2[1])
-            vm = (vxm + vym) / 2
-            marker_data.append((track, vm))
+            marker_data.append((track, vxm, vym))
 
         maa = len(marker_data)
         if maa == 0:
             continue
 
-        va = sum(vm for _, vm in marker_data) / maa
-        eb = max(abs(vm - va) for _, vm in marker_data)
+        vxa = sum(vx for _, vx, _ in marker_data) / maa
+        vya = sum(vy for _, _, vy in marker_data) / maa
+        va = (vxa + vya) / 2
+
+        vm_diffs = [abs((vx + vy) / 2 - va) for _, vx, vy in marker_data]
+        eb = max(vm_diffs) if vm_diffs else 0.0
         if eb < 0.0001:
             eb = 0.0001
 
-        # Fehlerband iterativ verkleinern
         while eb > ee:
             eb *= 0.9
-            for track, vm in marker_data:
+            for idx, (track, vx, vy) in enumerate(marker_data):
+                vm = (vx + vy) / 2
                 if abs(vm - va) >= eb:
                     track.select = True
                     total_deleted += 1
@@ -75,25 +76,24 @@ def clean_error_tracks(context):
     total_deleted_all = 0
 
     for stufe in range(len(fehlergrenzen)):
-        ee = fehlergrenzen[stufe] / width  # normalisieren
+        ee = fehlergrenzen[stufe]
         division = teilfaktoren[stufe]
 
         for xIndex in range(division):
             for yIndex in range(division):
-                xmin = xIndex * (1.0 / division)
-                xmax = (xIndex + 1) * (1.0 / division)
-                ymin = yIndex * (1.0 / division)
-                ymax = (yIndex + 1) * (1.0 / division)
+                xmin = xIndex * (width / division)
+                xmax = (xIndex + 1) * (width / division)
+                ymin = yIndex * (height / division)
+                ymax = (yIndex + 1) * (height / division)
 
-                deleted = run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee)
+                deleted = run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width, height)
                 total_deleted_all += deleted
 
     return total_deleted_all, 0.0
 
-
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
-    bl_label = "Clean Error Tracks"
+    bl_label = "Clean Error Tracks (Grid)"
 
     @classmethod
     def poll(cls, context):
