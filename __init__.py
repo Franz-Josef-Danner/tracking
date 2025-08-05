@@ -36,7 +36,7 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
         layout.prop(scene, "frames_track")
         layout.prop(scene, "error_track")
         layout.separator()
-        layout.operator("CLIP_OT_disable_proxy", text="Track")
+        layout.operator("CLIP.disable_proxy", text="Track")
 
 # -----------------------------
 # Registration
