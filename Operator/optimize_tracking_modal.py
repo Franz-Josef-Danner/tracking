@@ -39,7 +39,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
         self._start_frame = context.scene.frame_current
 
         wm = context.window_manager
-        self._timer = wm.event_timer_add(0.5, window=context.window)
+        self._timer = wm.event_timer_add(0.2, window=context.window)
         wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
