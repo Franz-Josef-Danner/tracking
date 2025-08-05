@@ -16,7 +16,7 @@ from .Helper.marker_helper_main import CLIP_OT_marker_helper_main
 from .Operator.detect import CLIP_OT_detect
 from .Helper.disable_proxy import CLIP_OT_disable_proxy
 from .Helper.enable_proxy import CLIP_OT_enable_proxy
-from .Helper.bidirectional_track import CLIP_OT_bidirectional_track
+from .Operator.bidirectional_track import CLIP_OT_bidirectional_track
 
 # -----------------------------
 # Panel-Klasse
