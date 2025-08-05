@@ -14,6 +14,8 @@ from .Operator.proxy_builder import CLIP_OT_proxy_builder
 from .Operator.tracker_settings import CLIP_OT_tracker_settings
 from .Helper.marker_helper_main import CLIP_OT_marker_helper_main
 from .Operator.detect import CLIP_OT_detect
+from .Helper.disable_proxy import CLIP_OT_disable_proxy
+from .Helper.enable_proxy import CLIP_OT_enable_proxy
 
 # -----------------------------
 # Panel-Klasse
@@ -34,7 +36,7 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
         layout.prop(scene, "frames_track")
         layout.prop(scene, "error_track")
         layout.separator()
-        layout.operator("clip.detect", text="Track")
+        layout.operator("enable_proxy", text="Track")
 
 # -----------------------------
 # Registration
@@ -46,6 +48,8 @@ classes = (
     CLIP_OT_tracker_settings,
     CLIP_OT_marker_helper_main,
     CLIP_OT_detect,
+    CLIP_OT_enable_proxy,
+    CLIP_OT_disable_proxy
 )
 
 def register():
