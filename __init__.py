@@ -23,8 +23,7 @@ from .Operator.bidirectional_track import CLIP_OT_bidirectional_track
 from .Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
 from .Operator.clean_error_tracks import CLIP_OT_clean_error_tracks
 from .Operator.optimize_tracking import CLIP_OT_optimize_tracking
-from .Operator.optimize_tracking import CLIP_OT_optimize_tracking
-error_value
+from .Operator.error_value import CLIP_OT_error_value
 # -------------------------------------
 # Panel für das UI im Clip Editor
 # -------------------------------------
@@ -63,7 +62,7 @@ classes = (
     CLIP_OT_clean_short_tracks,
     CLIP_OT_clean_error_tracks,
     TRACKING_OT_optimize_trackings,
-    TRACKING_OT_optimize_trackings
+    CLIP_OT_error_value,
 )
 
 def register():
