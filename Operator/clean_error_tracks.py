@@ -20,7 +20,7 @@ def get_marker_position(track, frame):
 
 # ---------- Cleanup-Logik ----------
 
-def cleanup_tracks(context):
+def clean_error_tracks(context):
     scene = context.scene
     clip = context.space_data.clip
     tracking = clip.tracking
