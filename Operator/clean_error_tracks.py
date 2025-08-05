@@ -58,7 +58,9 @@ def clean_error_tracks(context):
                 px = p2[0]
                 py = p2[1]
 
-                error = abs(px - (p1[0] + vm / 2)) + abs(py - (p1[1] + vm / 2))
+                ex = px - (p1[0] + vm / 2)
+                ey = py - (p1[1] + vm / 2)
+                error = ex + ey 
                 errors.append(error)
 
             if not errors:
