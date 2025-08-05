@@ -149,7 +149,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                         return {'PASS_THROUGH'}
                 self._step = 0
                 return {'PASS_THROUGH'}
-
+            context.scene.frame_current = self._start_frame
         # Phase 1: Motion Model
         elif self._phase == 1:
             if self._step < 5:
@@ -163,6 +163,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                 self._phase = 2
                 self._step = 0
                 return {'PASS_THROUGH'}
+        context.scene.frame_current = self._start_frame
 
         elif self._phase == 1.5:
             if not is_tracking_stable():
@@ -178,6 +179,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
             self._step += 1
             self._phase = 1
             return {'PASS_THROUGH'}
+        context.scene.frame_current = self._start_frame
 
         # Phase 2: Farbkanal
         elif self._phase == 2:
@@ -194,6 +196,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                 self.report({'INFO'}, f"Fertig: ev={self._ev:.2f}, Motion={self._mov}, RGB={self._vf}")
                 self.cancel(context)
                 return {'FINISHED'}
+        context.scene.frame_current = self._start_frame
 
         elif self._phase == 2.5:
             if not is_tracking_stable():
@@ -209,7 +212,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
             self._step += 1
             self._phase = 2
             return {'PASS_THROUGH'}
-
+        context.scene.frame_current = self._start_frame
         return {'PASS_THROUGH'}
 
     def cancel(self, context):
