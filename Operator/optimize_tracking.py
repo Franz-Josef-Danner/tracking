@@ -24,7 +24,7 @@ class CLIP_OT_optimize_tracking(bpy.types.Operator):
         mov = 0
         vf = 0
 
-        bpy.ops.clip.set_test_value('EXEC_DEFAULT')
+        set_test_value(context)
         self.report({'INFO'}, "Pattern/Search-Size gesetzt.")
 
         def set_flag1(pattern, search):
