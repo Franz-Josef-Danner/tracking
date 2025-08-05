@@ -17,7 +17,7 @@ def clean_error_tracks(context):
         track.select = False
 
     ee_prop = getattr(scene, "error_per_track", 1.0)
-    ee_initial = (ee_prop + 0.1) / 400
+    ee_initial = (ee_prop + 0.1) / 500
     threshold_factor = 0.9
     frame_range = (scene.frame_start, scene.frame_end)
 
