@@ -33,9 +33,10 @@ class CLIP_OT_optimize_tracking(bpy.types.Operator):
         # ----- Helper-Funktionen -----
         def set_flag1_for_all(pattern, search):
             settings = clip.tracking.settings
+            pattern = max(5, min(1000, int(pattern)))
+            search = max(5, min(1000, int(search)))
             settings.default_pattern_size = pattern
             settings.default_search_size = search
-
 
         def set_flag2(index):
             motion_models = ['Perspective', 'Affine', 'LocRotScale', 'LocScale', 'LocRot']
