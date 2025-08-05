@@ -1,64 +1,68 @@
 import bpy
-import time
 
-# Globaler Status (statt self)
-bidirectional_track_state = {
-    "direction": 'FORWARD',
-    "last_marker_count": 0,
-    "last_frame": 0,
-    "no_change_count": 0,
-    "start_time": time.time(),
-}
+def start_tracking(direction='FORWARDS'):
+    """Starte das Tracking in eine Richtung."""
+    bpy.ops.clip.track_markers(
+        backwards=(direction == 'BACKWARDS'),
+        sequence=False
+    )
 
-def count_selected_markers(context):
-    count = 0
-    for track in context.space_data.clip.tracking.tracks:
-        if track.select:
-            count += len([m for m in track.markers if not m.mute])
-    return count
+class TrackingMonitor:
+    """Überwacht die Anzahl Marker nach dem Vorwärts-Tracking."""
+    def __init__(self, clip):
+        self.clip = clip
+        self.prev_marker_count = self.get_marker_count()
+        self.idle_checks = 0
+        self.max_idle_checks = 2  # zwei aufeinanderfolgende "Ruhe"-Checks
 
-def monitor_tracking():
-    context = bpy.context
-    state = bidirectional_track_state
+    def get_marker_count(self):
+        return sum(
+            len(track.markers)
+            for track in self.clip.tracking.tracks
+            if track.select
+        )
 
-    current_marker_count = count_selected_markers(context)
-    current_frame = context.scene.frame_current
-
-    if current_marker_count == state["last_marker_count"] and current_frame == state["last_frame"]:
-        state["no_change_count"] += 1
-    else:
-        state["no_change_count"] = 0
-
-    state["last_marker_count"] = current_marker_count
-    state["last_frame"] = current_frame
-
-    if state["no_change_count"] >= 2:
-        if state["direction"] == 'FORWARD':
-            state["direction"] = 'BACKWARD'
-            state["no_change_count"] = 0
-            bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
-            return 0.5
+    def monitor(self):
+        current_count = self.get_marker_count()
+        if current_count == self.prev_marker_count:
+            self.idle_checks += 1
         else:
-            return None  # Ende
-    return 0.5
+            self.idle_checks = 0
+
+        self.prev_marker_count = current_count
+
+        if self.idle_checks >= self.max_idle_checks:
+            start_tracking(direction='BACKWARDS')
+            return None  # Stoppt den Timer
+        return 0.5  # Wiederhole in 0.5 Sekunden
+
+def start_bidirectional_tracking(context):
+    """Startet vorwärts und wartet auf Inaktivität, bevor rückwärts getrackt wird."""
+    clip = context.space_data.clip
+    if not clip:
+        self.report({'WARNING'}, "Kein Movie Clip aktiv")
+        return {'CANCELLED'}
+
+    start_tracking(direction='FORWARDS')
+    monitor = TrackingMonitor(clip)
+    bpy.app.timers.register(monitor.monitor)
 
 class CLIP_OT_bidirectional_track(bpy.types.Operator):
+    """Selektierte Marker vorwärts und dann rückwärts tracken"""
     bl_idname = "clip.bidirectional_track"
-    bl_label = "Bidirectional Track"
-
-    @classmethod
-    def poll(cls, context):
-        return context.space_data.clip is not None
+    bl_label = "Bidirektionales Tracking"
+    bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        state = bidirectional_track_state
-        state["direction"] = 'FORWARD'
-        state["start_time"] = time.time()
-        state["last_marker_count"] = count_selected_markers(context)
-        state["last_frame"] = context.scene.frame_current
-        state["no_change_count"] = 0
-
-        bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
-        bpy.app.timers.register(monitor_tracking, first_interval=0.5)
-
+        start_bidirectional_tracking(context)
         return {'FINISHED'}
+
+# Optional für direkten Test in Blender:
+def register():
+    bpy.utils.register_class(CLIP_OT_bidirectional_track)
+
+def unregister():
+    bpy.utils.unregister_class(CLIP_OT_bidirectional_track)
+
+if __name__ == "__main__":
+    register()
