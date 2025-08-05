@@ -23,15 +23,14 @@ class CLIP_OT_optimize_tracking_modal(Operator):
     _vf = 0
     _clip = None
 
-    # Status für Tracking-Wartephase
     _waiting_for_tracking = False
     _last_marker_count = 0
     _same_marker_count_counter = 0
     _last_frame = -1
     _frame_stable_counter = 0
 
-    # Frame-Merkung für Playhead
     _frame_restore = None
+    _waiting_for_frame_restore = False
 
     def modal(self, context, event):
         if event.type == 'TIMER':
@@ -40,7 +39,6 @@ class CLIP_OT_optimize_tracking_modal(Operator):
             except Exception as e:
                 self.report({'ERROR'}, f"Fehler: {str(e)}")
                 return {'CANCELLED'}
-
         return {'PASS_THROUGH'}
 
     def is_tracking_done(self, context):
@@ -61,8 +59,18 @@ class CLIP_OT_optimize_tracking_modal(Operator):
 
         return self._frame_stable_counter >= 2 and self._same_marker_count_counter >= 2
 
+    def is_frame_restored(self, context):
+        return context.scene.frame_current == self._frame_restore
+
     def run_step(self, context):
         clip = self._clip
+
+        if self._waiting_for_frame_restore:
+            if not self.is_frame_restored(context):
+                print("[Wartephase] Playhead springt noch zurück ...")
+                return {'PASS_THROUGH'}
+            print("[INFO] Frame wiederhergestellt → Weiter")
+            self._waiting_for_frame_restore = False
 
         def set_flag1(pattern, search):
             settings = clip.tracking.settings
@@ -107,7 +115,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
         def eg(frames, error):
             return frames / error if error else 0
 
-        # -------- PHASE 0: Pattern/Search Size optimieren --------
+        # -------- PHASE 0 --------
         if self._phase == 0:
             if not self._waiting_for_tracking:
                 if self._frame_restore is None:
@@ -148,11 +156,12 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                     self._pt = self._ptv
                     self._sus = self._pt * 2
                     context.scene.frame_current = self._frame_restore
-                    self._frame_restore = None
+                    self._waiting_for_frame_restore = True
                     self._step = 0
                     self._phase = 1
+                    return {'PASS_THROUGH'}
 
-        # -------- PHASE 1: Motion Model optimieren --------
+        # -------- PHASE 1 --------
         elif self._phase == 1:
             if self._step < 5:
                 if not self._waiting_for_tracking:
@@ -180,11 +189,12 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                 self._step += 1
             else:
                 context.scene.frame_current = self._frame_restore
-                self._frame_restore = None
+                self._waiting_for_frame_restore = True
                 self._step = 0
                 self._phase = 2
+                return {'PASS_THROUGH'}
 
-        # -------- PHASE 2: Farbkanäle optimieren --------
+        # -------- PHASE 2 --------
         elif self._phase == 2:
             if self._step < 5:
                 if not self._waiting_for_tracking:
@@ -214,7 +224,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                 set_flag2(self._mov)
                 set_flag3(self._vf)
                 context.scene.frame_current = self._frame_restore
-                self._frame_restore = None
+                self._waiting_for_frame_restore = True
                 self.report({'INFO'}, f"Fertig: ev={self._ev:.2f}, Motion={self._mov}, RGB={self._vf}")
                 self.cancel(context)
                 return {'FINISHED'}
