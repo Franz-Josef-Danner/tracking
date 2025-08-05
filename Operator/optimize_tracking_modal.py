@@ -161,7 +161,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
 
         set_test_value(context)
         wm = context.window_manager
-        self._timer = wm.event_timer_add(0.5, window=context.window)
+        self._timer = wm.event_timer_add(1.0, window=context.window)
         wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
