@@ -18,6 +18,7 @@ from .Operator.tracking_pipeline import CLIP_OT_tracking_pipeline
 from .Helper.marker_helper_main import CLIP_OT_marker_helper_main
 from .Helper.disable_proxy import CLIP_OT_disable_proxy
 from .Helper.enable_proxy import CLIP_OT_enable_proxy
+from .Operator.detect import CLIP_OT_detect
 
 # -------------------------------------
 # Panel für das UI im Clip Editor
@@ -52,6 +53,7 @@ classes = (
     CLIP_OT_marker_helper_main,
     CLIP_OT_disable_proxy,
     CLIP_OT_enable_proxy,
+    CLIP_OT_detect,
 )
 
 def register():
