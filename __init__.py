@@ -21,6 +21,7 @@ from .Helper.enable_proxy import CLIP_OT_enable_proxy
 from .Operator.detect import CLIP_OT_detect
 from .Operator.bidirectional_track import CLIP_OT_bidirectional_track
 from .Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
+from .Operator.clean_error_tracks import CLIP_OT_clean_error_tracks
 
 # -------------------------------------
 # Panel für das UI im Clip Editor
@@ -41,7 +42,7 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
         layout.prop(scene, "frames_track")
         layout.prop(scene, "error_track")
         layout.separator()
-        layout.operator("clip.tracking_pipeline", text="Track")
+        layout.operator("clip.clean_error_tracks", text="Track")
 
 # -------------------------------------
 # Registrierung der Klassen
@@ -58,6 +59,7 @@ classes = (
     CLIP_OT_detect,
     CLIP_OT_bidirectional_track,
     CLIP_OT_clean_short_tracks,
+    CLIP_OT_clean_error_tracks,
 )
 
 def register():
