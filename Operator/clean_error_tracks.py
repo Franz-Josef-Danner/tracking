@@ -22,9 +22,17 @@ def clean_error_tracks(context):
         track.select = False
 
     ee_prop = getattr(scene, "error_track", 1.0)
+    print(f"[Cleanup] error_track (Scene Property): {ee_prop}")
+    
     ee_initial = (ee_prop + 0.1) / width
+    print(f"[Cleanup] ee_initial (berechnet): {ee_initial:.6f}")
+    
     threshold_factor = 0.9
+    print(f"[Cleanup] threshold_factor: {threshold_factor}")
+    
     frame_range = (scene.frame_start, scene.frame_end)
+    print(f"[Cleanup] Frame Range: {frame_range[0]} → {frame_range[1]}")
+
 
     total_deleted_all = 0
     overall_max_error = 0.0
