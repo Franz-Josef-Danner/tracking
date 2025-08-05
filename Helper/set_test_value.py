@@ -1,4 +1,4 @@
-def calculate_marker_values(scene):
+def set_test_value(scene):
     marker_basis = getattr(scene, "marker_frame", None)
     if marker_basis is None:
         return None
