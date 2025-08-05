@@ -1,7 +1,7 @@
 import bpy
 from .Helper.set_test_value import set_test_value
 from .Helper.error_value import calculate_clip_error
-from .Operator.detect import perform_marker_detection
+from .detect import perform_marker_detection
 
 class CLIP_OT_optimize_tracking(bpy.types.Operator):
     bl_idname = "tracking.optimize_tracking"
