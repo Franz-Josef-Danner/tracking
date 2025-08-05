@@ -8,7 +8,7 @@ from .bidirectional_track import CLIP_OT_bidirectional_track
 from .clean_short_tracks import CLIP_OT_clean_short_tracks
 from .tracking_pipeline import CLIP_OT_tracking_pipeline
 from .clean_error_tracks import CLIP_OT_clean_error_tracks
-from .optimize_tracking import TRACK_OT_optimize_tracking
+from .optimize_tracking import CLIP_OT_optimize_tracking
 
 
 # Liste aller Operator-Klassen zur Registrierung
