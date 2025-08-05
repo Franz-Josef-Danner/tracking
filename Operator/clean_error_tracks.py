@@ -117,7 +117,7 @@ class CLIP_PT_cleanup_panel(bpy.types.Panel):
 # ---------- Registration ----------
 
 classes = (
-    CLIP_OT_cleanup_tracks,
+    CLIP_OT_clean_error_tracks,
     CLIP_PT_cleanup_panel,
 )
 
