@@ -19,7 +19,7 @@ from .Operator.detect import CLIP_OT_detect
 from .Helper.disable_proxy import CLIP_OT_disable_proxy
 from .Helper.enable_proxy import CLIP_OT_enable_proxy
 from .Operator.bidirectional_track import CLIP_OT_bidirectional_track
-from .Operator.select_short_tracks import CLIP_OT_select_short_tracks
+from .Helper.select_short_tracks import CLIP_OT_select_short_tracks
 # -------------------------------------
 # Panel für das UI im Clip Editor
 # -------------------------------------
