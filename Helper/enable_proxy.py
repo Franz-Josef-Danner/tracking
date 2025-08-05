@@ -1,8 +1,8 @@
 import bpy
 
 class CLIP_OT_proxy_disable(bpy.types.Operator):
-    bl_idname = "clip.proxy_disable"
-    bl_label = "Proxy Deaktivieren"
+    bl_idname = "clip.enable_proxy"
+    bl_label = "Proxy Aktivieren"
 
 def enable_proxy(context):
     clip = getattr(context.space_data, "clip", None)
@@ -11,9 +11,4 @@ def enable_proxy(context):
         return
 
     clip.use_proxy = True
-    for proxy in clip.proxy.proxy_storage:
-        proxy.build_25 = True
-        proxy.build_50 = True
-        proxy.build_75 = True
-        proxy.build_100 = True
-    print("Proxy aktiviert.")
+    print("Proxy aktivieren.")
