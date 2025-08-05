@@ -1,5 +1,5 @@
 import bpy
-from ..Helper.marker_helper_main import run_marker_helper
+from ..Helper.marker_helper_main import marker_helper_main
 from ..Helper.disable_proxy import disable_proxy
 from ..Helper.enable_proxy import enable_proxy
 
@@ -17,7 +17,7 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
             return {'CANCELLED'}
 
         # 1. Marker Helper
-        marker_helper(clip)
+        marker_helper_main(clip)
 
         # 2. Proxy deaktivieren
         disable_proxy(clip)
