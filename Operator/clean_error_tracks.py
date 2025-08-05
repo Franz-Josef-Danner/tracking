@@ -32,12 +32,6 @@ def clean_error_tracks(context):
     # Alle Marker deselektieren
     for track in tracks:
         track.select = False
-
-    ee_prop = getattr(scene, "error_track", 1.0)
-    print(f"[Cleanup] error_track (Scene Property): {ee_prop}")
-    
-    ee_initial = (ee_prop + 0.1) / width
-    print(f"[Cleanup] ee_initial (berechnet): {ee_initial:.6f}")
     
     threshold_factor = 0.9
     print(f"[Cleanup] threshold_factor: {threshold_factor}")
