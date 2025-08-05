@@ -58,7 +58,7 @@ class CLIP_OT_optimize_tracking(bpy.types.Operator):
         def track():
             for t in clip.tracking.tracks:
                 if t.select:
-                    context.space_data.tracking.tracks.active = t
+                    context.space_data.clip.tracking.tracks.active = t
                     bpy.ops.clip.track_markers('EXEC_DEFAULT', backwards=False, sequence=True)
 
         def frames_per_track_all():
