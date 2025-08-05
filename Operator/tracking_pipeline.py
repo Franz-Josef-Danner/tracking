@@ -23,7 +23,7 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
         bpy.ops.clip.detect()
 
         # 4. Proxy aktivieren
-        bpy.ops.clipenable_proxy()
+        bpy.ops.clip.enable_proxy()
 
         # 5. Bidirektionales Tracking
         bpy.ops.clip.bidirectional_track()
