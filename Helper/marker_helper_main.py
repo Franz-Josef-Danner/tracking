@@ -1,9 +1,9 @@
 import bpy
 
-class CLIP_OT_marker_helper(bpy.types.Operator):
-    bl_idname = "clip.marker_helper"
-    bl_label = "Marker-Helfer berechnen"
-    bl_description = "Berechnet Marker-Zielwerte anhand von 'marker/Frame'"
+class CLIP_OT_marker_helper_main(bpy.types.Operator):
+    bl_idname = "clip.marker_helper_main"
+    bl_label = "Marker-Helfer-Haupt berechnen"
+    bl_description = "Berechnet Marker-haupt-Zielwerte anhand von 'marker/Frame'"
 
     def execute(self, context):
         scene = context.scene
