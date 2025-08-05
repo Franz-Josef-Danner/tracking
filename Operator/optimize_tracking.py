@@ -47,9 +47,9 @@ class CLIP_OT_optimize_tracking(bpy.types.Operator):
 
         def set_flag3(index):
             s = clip.tracking.settings
-            s.use_red_channel = (index in [0, 1])
-            s.use_green_channel = (index in [1, 2, 3])
-            s.use_blue_channel = (index in [3, 4])
+            s.use_default_red_channel = (index in [0, 1])
+            s.use_default_green_channel = (index in [1, 2, 3])
+            s.use_default_blue_channel = (index in [3, 4])
 
         def call_marker_helper():
             bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
