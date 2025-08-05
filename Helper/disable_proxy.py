@@ -1,7 +1,7 @@
 import bpy
 
-class CLIP_OT_proxy_disable(bpy.types.Operator):
-    bl_idname = "clip.proxy_disable"
+class CLIP_OT_disable_proxy(bpy.types.Operator):
+    bl_idname = "clip.disable_proxy"
     bl_label = "Proxy Deaktivieren"
 
 def disable_proxy(context):
