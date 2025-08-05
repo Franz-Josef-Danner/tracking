@@ -30,13 +30,13 @@ def clean_error_tracks(context):
     print(f"[Cleanup] Frame Range: {frame_range[0]} → {frame_range[1]}")
 
     total_deleted_all = 0
-    overall_max_error = 0.0
+    overall_max_error = 0.0000
     iteration = 0
     max_iterations = 20  # Sicherheitsgrenze gegen Endlosschleifen
 
     while iteration < max_iterations:
         total_deleted = 0
-        max_error = 0.0
+        max_error = 0.0000
         threshold = ee_initial * (threshold_factor ** iteration)
 
         print(f"[Cleanup] Iteration {iteration + 1}, Threshold: {threshold:.6f}")
