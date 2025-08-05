@@ -1,6 +1,5 @@
 import bpy
 from bpy.types import Operator
-import time
 
 
 class CLIP_OT_bidirectional_track(Operator):
@@ -11,8 +10,7 @@ class CLIP_OT_bidirectional_track(Operator):
     _timer = None
     _step = 0
     _start_frame = 0
-    _marker_counts = []
-    _cleanup_threshold = 5  # z.B. Mindestanzahl an Frames pro Track
+    _cleanup_threshold = 5  # Mindestanzahl an Frames pro Track
 
     def execute(self, context):
         self._step = 0
@@ -28,7 +26,6 @@ class CLIP_OT_bidirectional_track(Operator):
     def modal(self, context, event):
         if event.type == 'TIMER':
             return self.run_tracking_step(context)
-
         return {'PASS_THROUGH'}
 
     def run_tracking_step(self, context):
@@ -36,31 +33,33 @@ class CLIP_OT_bidirectional_track(Operator):
         tracking = clip.tracking
         tracks = tracking.tracks
 
-        override = context.copy()
-
         if self._step == 0:
             print("→ Starte Vorwärts-Tracking...")
             bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
             self._step += 1
-            print("✓ Vorwärts-Tracking abgeschlossen.")
-            context.scene.frame_current = self._start_frame  # zurücksetzen
             return {'PASS_THROUGH'}
 
         elif self._step == 1:
-            print("→ Starte Rückwärts-Tracking...")
-            bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
+            print("✓ Vorwärts-Tracking abgeschlossen.")
+            context.scene.frame_current = self._start_frame  # Zurück zum Start-Frame
+            print(f"← Frame zurückgesetzt auf {self._start_frame}")
             self._step += 1
-            print("✓ Rückwärts-Tracking abgeschlossen.")
             return {'PASS_THROUGH'}
 
         elif self._step == 2:
+            print("→ Starte Rückwärts-Tracking...")
+            bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
+            self._step += 1
+            return {'PASS_THROUGH'}
+
+        elif self._step == 3:
+            print("✓ Rückwärts-Tracking abgeschlossen.")
             print("→ Starte Bereinigung kurzer Tracks...")
 
-            short_tracks = []
-            for track in tracks:
-                frame_count = len([p for p in track.markers if not p.mute])
-                if frame_count < self._cleanup_threshold:
-                    short_tracks.append(track)
+            short_tracks = [
+                track for track in tracks
+                if len([p for p in track.markers if not p.mute]) < self._cleanup_threshold
+            ]
 
             if short_tracks:
                 for t in short_tracks:
@@ -73,7 +72,7 @@ class CLIP_OT_bidirectional_track(Operator):
             self._step += 1
             return {'PASS_THROUGH'}
 
-        elif self._step == 3:
+        elif self._step == 4:
             print("✓ Tracking und Cleanup abgeschlossen.")
             wm = context.window_manager
             wm.event_timer_remove(self._timer)
