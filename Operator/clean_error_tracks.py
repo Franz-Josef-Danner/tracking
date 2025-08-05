@@ -12,6 +12,7 @@ def clean_error_tracks(context):
     tracking = clip.tracking
     tracks = tracking.tracks
 
+    # Alle Marker deselektieren
     for track in tracks:
         track.select = False
 
@@ -66,10 +67,10 @@ def clean_error_tracks(context):
 
     return total_deleted_all, overall_max_error
 
+
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
-    bl_label = "Clean Error Tracks"
-    bl_description = "Löscht fehlerhafte Tracks anhand eines adaptiven Fehlerschwellwerts"
+    bl_label = "Cleanup Tracks"
 
     @classmethod
     def poll(cls, context):
