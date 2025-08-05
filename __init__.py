@@ -22,6 +22,7 @@ from .Operator.detect import TRACKING_OT_detect
 from .Operator.bidirectional_track import CLIP_OT_bidirectional_track
 from .Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
 from .Operator.clean_error_tracks import CLIP_OT_clean_error_tracks
+from .Operator.optimize_tracking import CLIP_OT_optimize_tracking
 
 # -------------------------------------
 # Panel für das UI im Clip Editor
@@ -42,7 +43,7 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
         layout.prop(scene, "frames_track")
         layout.prop(scene, "error_track")
         layout.separator()
-        layout.operator("CLIP.clean_error_tracks", text="Track")
+        layout.operator("TRACKING.optimize_trackings", text="Track")
 
 # -------------------------------------
 # Registrierung der Klassen
@@ -60,6 +61,7 @@ classes = (
     CLIP_OT_bidirectional_track,
     CLIP_OT_clean_short_tracks,
     CLIP_OT_clean_error_tracks,
+    TRACKING_OT_optimize_trackings,
 )
 
 def register():
