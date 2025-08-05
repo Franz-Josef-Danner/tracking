@@ -80,11 +80,7 @@ def register():
         min=0.01,
         max=1.00,
     )
-    bpy.types.Scene.should_clean_short_tracks = bpy.props.BoolProperty(
-        name="Clean Short Tracks ausführen?",
-        description="Wird durch bidirectional_track gesetzt",
-        default=False
-    )
+    
 
 
 def unregister():
@@ -95,7 +91,6 @@ def unregister():
     del bpy.types.Scene.marker_frame
     del bpy.types.Scene.frames_track
     del bpy.types.Scene.error_track
-    del bpy.types.Scene.should_clean_short_tracks
 # Nur für Direktstart
 if __name__ == "__main__":
     register()
