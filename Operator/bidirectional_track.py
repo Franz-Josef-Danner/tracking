@@ -48,14 +48,13 @@ class CLIP_OT_bidirectional_track(Operator):
             return {'PASS_THROUGH'}
 
         elif self._step == 2:
-            print("→ Starte Rückwärts-Tracking...")
-            bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
+            print("→ Frame wurde gesetzt. Warte eine Schleife ab, bevor Tracking startet...")
             self._step += 1
             return {'PASS_THROUGH'}
 
         elif self._step == 3:
-            print("✓ Rückwärts-Tracking abgeschlossen.")
-            print("→ Starte Stabilitätsprüfung...")
+            print("→ Starte Rückwärts-Tracking...")
+            bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
             self._step += 1
             return {'PASS_THROUGH'}
 
