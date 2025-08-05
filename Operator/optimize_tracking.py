@@ -1,7 +1,8 @@
 import bpy
-from set_test_value import set_test_value  # muss im Add-on-Ordner liegen
-from error_value import calculate_clip_error  # muss in Helper/error_value.py liegen
+from Helper.set_test_value import set_test_value
+from Helper.error_value import calculate_clip_error
 from Operator.detect import perform_marker_detection
+
 
 class TRACK_OT_optimize_tracking(bpy.types.Operator):
     bl_idname = "tracking.optimize_tracking"
@@ -9,117 +10,15 @@ class TRACK_OT_optimize_tracking(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        # 1️⃣ Pattern/Search-Size setzen
-        set_test_value(context)
-        self.report({'INFO'}, "Pattern/Search-Size gesetzt.")
+        print("[START] Optimierung gestartet")
 
-        # 2️⃣ Marker-Helfer starten
-        def call_marker_helper():
-            bpy.ops.clip.marker_helper_main('INVOKE_DEFAULT')
+        # Vorbedingung prüfen
+        clip = context.space_data.clip
+        if not clip:
+            self.report({'ERROR'}, "Kein Movie Clip aktiv.")
+            return {'CANCELLED'}
 
-        # 3️⃣ Marker setzen durch externen Detect-Operator
-        def set_marker():
-            call_marker_helper()
-            bpy.ops.tracking.detect('INVOKE_DEFAULT')
-
-        # 4️⃣ Tracking ausführen
-        def set_marker():
-            call_marker_helper()
-            
-            clip = bpy.context.space_data.clip
-            tracking = clip.tracking
-            threshold = 0.75
-            image_width = clip.size[0]
-            margin_base = int(image_width * 0.025)
-            min_distance_base = int(image_width * 0.05)
-        
-            count = perform_marker_detection(
-                clip=clip,
-                tracking=tracking,
-                threshold=threshold,
-                margin=margin_base,
-                min_distance=min_distance_base
-            )
-        
-            print(f"[set_marker] Marker gesetzt: {count}")
-
-        # 🔢 Anzahl Marker über Frames
-        def frames_per_track_all(context):
-            clip = context.space_data.clip
-            return sum(len(track.markers) for track in clip.tracking.tracks if track.select)
-
-        # 📏 Fehler über Standardabweichung
-        def measure_error_all(context):
-            clip = context.space_data.clip
-            if not clip:
-                return 1.0
-            return calculate_clip_error(clip)
-
-        # 📊 Effizienz berechnen
-        def eg_value(frames, error):
-            return frames / error if error != 0 else 0
-
-        # --- Flags als Platzhalter ---
-        def set_flag1():
-            def set_flag1():
-                clip = bpy.context.space_data.clip
-                tracks = clip.tracking.tracks
-            
-                pattern_size = pt  # globaler Wert aus deinem Optimierungsloop
-                search_size = sus
-            
-                for track in tracks:
-                    if track.select:
-                        track.pattern_size = (pattern_size, pattern_size)
-                        track.search_size = (search_size, search_size)
-                        print(f"[set_flag1] {track.name} pattern={pattern_size}, search={search_size}")
-
-
-        def set_flag2():
-            def set_flag2():
-                clip_editor = bpy.context.space_data
-                tracking_settings = clip_editor.clip.tracking.settings
-            
-                motion_models = [
-                    'Perspective',
-                    'Affine',
-                    'LocRotScale',
-                    'LocScale',
-                    'LocRot'
-                ]
-
-                index = mo_index  # dein aktueller Motion-Index aus der Optimierung
-                print(f"[DEBUG] set_flag2 → Motion Model Index: {index}")  # <-- HIER
-                tracking_settings.motion_model = motion_models[index]
-                print(f"[set_flag2] motion_model set to {motion_models[index]}")
-
-
-        def set_flag3():
-            def set_flag3():
-            clip_editor = bpy.context.space_data
-            tracking_settings = clip_editor.clip.tracking.settings
-        
-            vf_index = vf  # dein RGB-Auswahl-Index aus der Optimierung
-        
-            if vf_index == 0:
-                R, G, B = True, False, False
-            elif vf_index == 1:
-                R, G, B = True, True, False
-            elif vf_index == 2:
-                R, G, B = False, True, False
-            elif vf_index == 3:
-                R, G, B = False, True, True
-            elif vf_index == 4:
-                R, G, B = False, False, True
-        
-            tracking_settings.use_red_channel = R
-            tracking_settings.use_green_channel = G
-            tracking_settings.use_blue_channel = B
-        
-            print(f"[set_flag3] RGB set to R={R}, G={G}, B={B}")
-
-
-        # 🔁 Zyklus 1: Pattern-/Search-Size Optimierung
+        # 1. Initialwerte
         pt = 21
         sus = pt * 2
         threshold = 0.5
@@ -129,14 +28,88 @@ class TRACK_OT_optimize_tracking(bpy.types.Operator):
         mov = 0
         vf = 0
 
+        set_test_value(context)
+        self.report({'INFO'}, "Pattern/Search-Size gesetzt.")
+
+        # --- Helper-Funktionen ---
+
+        def set_flag1(pattern, search):
+            print(f"[set_flag1] Setting pattern={pattern}, search={search}")
+            for track in clip.tracking.tracks:
+                if track.select:
+                    track.pattern_size = (pattern, pattern)
+                    track.search_size = (search, search)
+
+        def set_flag2(index):
+            motion_models = [
+                'Perspective',
+                'Affine',
+                'LocRotScale',
+                'LocScale',
+                'LocRot'
+            ]
+            tracking_settings = clip.tracking.settings
+            tracking_settings.motion_model = motion_models[index]
+            print(f"[set_flag2] Motion Model = {motion_models[index]}")
+
+        def set_flag3(vf_index):
+            settings = clip.tracking.settings
+            R = (vf_index == 0 or vf_index == 1)
+            G = (vf_index == 1 or vf_index == 2 or vf_index == 3)
+            B = (vf_index == 3 or vf_index == 4)
+            settings.use_red_channel = R
+            settings.use_green_channel = G
+            settings.use_blue_channel = B
+            print(f"[set_flag3] RGB: R={R}, G={G}, B={B}")
+
+        def call_marker_helper():
+            bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
+
+        def set_marker():
+            call_marker_helper()
+            threshold = 0.75
+            image_width = clip.size[0]
+            margin_base = int(image_width * 0.025)
+            min_distance_base = int(image_width * 0.05)
+            count = perform_marker_detection(
+                clip=clip,
+                tracking=clip.tracking,
+                threshold=threshold,
+                margin=margin_base,
+                min_distance=min_distance_base
+            )
+            print(f"[set_marker] {count} Marker gesetzt.")
+
+        def track():
+            frame_start = context.scene.frame_start
+            frame_end = context.scene.frame_end
+            for track in clip.tracking.tracks:
+                if track.select:
+                    context.space_data.tracking.tracks.active = track
+                    bpy.ops.clip.track_markers('EXEC_DEFAULT', backwards=False, sequence=True)
+                    print(f"[track] '{track.name}' getrackt von Frame {frame_start} bis {frame_end}")
+
+        def frames_per_track_all():
+            return sum(len(track.markers) for track in clip.tracking.tracks if track.select)
+
+        def measure_error_all():
+            return calculate_clip_error(clip)
+
+        def eg_value(frames, error):
+            return frames / error if error != 0 else 0
+
+        # --- Zyklus 1: Pattern-/Search-Size Optimierung ---
         for _ in range(10):
-            set_flag1(pt, sus)()
+            set_flag1(pt, sus)
             set_marker()
             track()
-            f_i = frames_per_track_all(context)
-            e_i = measure_error_all(context)
+
+            f_i = frames_per_track_all()
+            e_i = measure_error_all()
             eg_i = eg_value(f_i, e_i)
             ega = eg_i
+
+            print(f"[Zyklus 1] f_i={f_i}, e_i={e_i:.6f}, eg_i={eg_i:.4f}")
 
             if ev < 0:
                 ev = ega
@@ -158,16 +131,19 @@ class TRACK_OT_optimize_tracking(bpy.types.Operator):
                     sus = pt * 2
                     break
 
-        # 🔁 Zyklus 2: Motion-Model Optimierung
+        # --- Zyklus 2: Motion-Model Optimierung ---
         mo_index = 0
         while mo_index < 5:
-            set_flag2()
+            set_flag2(mo_index)
             set_marker()
             track()
-            f_i = frames_per_track_all(context)
-            e_i = measure_error_all(context)
+
+            f_i = frames_per_track_all()
+            e_i = measure_error_all()
             eg_i = eg_value(f_i, e_i)
             ega = eg_i
+
+            print(f"[Zyklus 2] Motion {mo_index} → eg_i={eg_i:.4f}")
 
             if ega > ev:
                 ev = ega
@@ -175,28 +151,19 @@ class TRACK_OT_optimize_tracking(bpy.types.Operator):
 
             mo_index += 1
 
-        # 🎨 RGB-Zuordnung nach Motion-Model
-        if mov == 0:
-            R, G, B = True, False, False
-        elif mov == 1:
-            R, G, B = True, True, False
-        elif mov == 2:
-            R, G, B = False, True, False
-        elif mov == 3:
-            R, G, B = False, True, True
-        elif mov == 4:
-            R, G, B = False, False, True
-
-        # 🔁 Zyklus 3: RGB-Kanal-Optimierung
+        # --- Zyklus 3: RGB-Kanal Optimierung ---
         vv = 0
-        while vv < 4:
-            set_flag3()
+        while vv < 5:
+            set_flag3(vv)
             set_marker()
             track()
-            f_i = frames_per_track_all(context)
-            e_i = measure_error_all(context)
+
+            f_i = frames_per_track_all()
+            e_i = measure_error_all()
             eg_i = eg_value(f_i, e_i)
             ega = eg_i
+
+            print(f"[Zyklus 3] Kanal {vv} → eg_i={eg_i:.4f}")
 
             if ega > ev:
                 ev = ega
@@ -204,16 +171,15 @@ class TRACK_OT_optimize_tracking(bpy.types.Operator):
 
             vv += 1
 
-        # 🎯 Finales RGB-Ergebnis
-        R = (vf == 0 or vf == 1)
-        G = (vf == 1 or vf == 2 or vf == 3)
-        B = (vf == 3 or vf == 4)
+        # Finales RGB-Set
+        set_flag3(vf)
 
-        self.report({'INFO'}, f"Optimierung abgeschlossen: ev={ev:.2f}, Motion={mov}, RGB=({R},{G},{B})")
+        print(f"[FINAL] ev={ev:.4f}, Motion={mov}, RGB-Auswahl={vf}")
+        self.report({'INFO'}, f"Optimierung abgeschlossen: ev={ev:.2f}, Motion={mov}, RGB={vf}")
         return {'FINISHED'}
 
 
-# 📦 Registrierung
+# Registrierung
 def register():
     bpy.utils.register_class(TRACK_OT_optimize_tracking)
 
