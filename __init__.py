@@ -12,7 +12,7 @@ import bpy
 from bpy.props import IntProperty, FloatProperty
 from .Operator.proxy_builder import CLIP_OT_proxy_builder
 from .Operator.tracker_settings import CLIP_OT_tracker_settings
-from .Operator.marker_helper import CLIP_OT_marker_helper_main
+from .Helper.marker_helper_main import CLIP_OT_marker_helper_main
 
 
 # -----------------------------
