@@ -23,7 +23,7 @@ def clean_error_tracks(context):
     ee_initial = (ee_prop + 0.1) / 100
     print(f"[Cleanup] ee_initial (berechnet): {ee_initial:.6f}")
 
-    threshold_factor = 0.95
+    threshold_factor = 0.99
     print(f"[Cleanup] threshold_factor: {threshold_factor}")
 
     frame_range = (scene.frame_start, scene.frame_end)
@@ -32,7 +32,7 @@ def clean_error_tracks(context):
     total_deleted_all = 0
     overall_max_error = 0.0000
     iteration = 0
-    max_iterations = 20  # Sicherheitsgrenze gegen Endlosschleifen
+    max_iterations = 100  # Sicherheitsgrenze gegen Endlosschleifen
 
     while iteration < max_iterations:
         total_deleted = 0
