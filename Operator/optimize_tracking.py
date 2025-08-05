@@ -1,7 +1,7 @@
 import bpy
 from set_test_value import set_test_value  # muss im Add-on-Ordner liegen
 from error_value import calculate_clip_error  # muss in Helper/error_value.py liegen
-
+from Operator.detect import perform_marker_detection
 
 class TRACK_OT_optimize_tracking(bpy.types.Operator):
     bl_idname = "tracking.optimize_tracking"
@@ -23,17 +23,25 @@ class TRACK_OT_optimize_tracking(bpy.types.Operator):
             bpy.ops.tracking.detect('INVOKE_DEFAULT')
 
         # 4️⃣ Tracking ausführen
-        def track():
-            clip = context.space_data.clip
-            tracks = clip.tracking.tracks
-            frame_start = context.scene.frame_start
-            frame_end = context.scene.frame_end
-
-            for track in tracks:
-                if track.select:
-                    context.space_data.tracking.tracks.active = track
-                    bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
-                    print(f"[Tracking] Track '{track.name}' von Frame {frame_start} bis {frame_end}")
+        def set_marker():
+            call_marker_helper()
+            
+            clip = bpy.context.space_data.clip
+            tracking = clip.tracking
+            threshold = 0.75
+            image_width = clip.size[0]
+            margin_base = int(image_width * 0.025)
+            min_distance_base = int(image_width * 0.05)
+        
+            count = perform_marker_detection(
+                clip=clip,
+                tracking=tracking,
+                threshold=threshold,
+                margin=margin_base,
+                min_distance=min_distance_base
+            )
+        
+            print(f"[set_marker] Marker gesetzt: {count}")
 
         # 🔢 Anzahl Marker über Frames
         def frames_per_track_all(context):
