@@ -2,6 +2,8 @@ import bpy
 from bpy.types import Operator
 from ..Helper.set_test_value import set_test_value
 from ..Helper.error_value import error_value
+from ..Helper.disable_proxy import CLIP_OT_disable_proxy
+from ..Helper.enable_proxy import CLIP_OT_enable_proxy
 from .detect import perform_marker_detection
 
 class CLIP_OT_optimize_tracking(bpy.types.Operator):
@@ -55,6 +57,7 @@ class CLIP_OT_optimize_tracking(bpy.types.Operator):
             bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
 
         def set_marker():
+            bpy.ops.clip.disable_proxy('EXEC_DEFAULT')  # Proxy deaktivieren
             call_marker_helper()
             w = clip.size[0]
             margin = int(w * 0.025)
@@ -63,6 +66,7 @@ class CLIP_OT_optimize_tracking(bpy.types.Operator):
             print(f"[set_marker] {count} Marker gesetzt.")
 
         def track():
+            bpy.ops.clip.enable_proxy('EXEC_DEFAULT')  # Proxy aktivieren
             for t in clip.tracking.tracks:
                 if t.select:
                     clip.tracking.tracks.active = t
