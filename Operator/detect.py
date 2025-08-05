@@ -1,7 +1,7 @@
 import bpy
 import math
 
-class detect(bpy.types.Operator):
+class CLIP_OT_detect(bpy.types.Operator):
     bl_idname = "detect"
     bl_label = "detect_features"
     bl_description = "Automatischer Suchzyklus für Markerplatzierung"
