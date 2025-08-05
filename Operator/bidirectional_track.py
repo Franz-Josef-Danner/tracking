@@ -15,8 +15,34 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
             return {'CANCELLED'}
 
         # Track bidirectional
-        bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
-        bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
+        def run(self):
+        print(f"[Tracking] Schritt: {self.step}")
+        if self.step == 0:
+            print("→ Starte Vorwärts-Tracking...")
+            invoke_clip_operator_safely("track_markers", backwards=False, sequence=True)
+            self.step = 1
+        elif self.step == 1:
+            print("→ Warte auf Abschluss des Vorwärts-Trackings...")
+            if self.is_tracking_done_robust():
+                print("✓ Vorwärts-Tracking abgeschlossen.")
+                self.context.scene.frame_current = self.initial_frame  # Frame zurücksetzen
+                print(f"← Frame zurückgesetzt auf {self.initial_frame}")
+                self.step = 2
+        elif self.step == 2:
+            print("→ Starte Rückwärts-Tracking...")
+            invoke_clip_operator_safely("track_markers", backwards=True, sequence=True)
+            self.step = 3
+        elif self.step == 3:
+            print("→ Warte auf Abschluss des Rückwärts-Trackings...")
+            if self.is_tracking_done_robust():
+                print("✓ Rückwärts-Tracking abgeschlossen.")
+                self.step = 4
+        elif self.step == 4:
+            print("→ Starte Bereinigung kurzer Tracks...")
+            self.cleanup_short_tracks()
+            print("✓ Tracking und Cleanup abgeschlossen.")
+            return None
+        return 0.5
 
         # Track-Längen prüfen
         deleted_any = False
