@@ -1,8 +1,8 @@
 import bpy
 
-class CLIP_OT_marker_helper_main(bpy.types.Operator):
-    bl_idname = "clip.marker_helper_main"
-    bl_label = "Marker-Helfer-Haupt berechnen"
+class CLIP_OT_set_test_value(bpy.types.Operator):
+    bl_idname = "clip.set_test_value"
+    bl_label = "Test value"
     bl_description = "Berechnet Marker-Zielwerte anhand von 'marker_frame'"
 
     def execute(self, context):
