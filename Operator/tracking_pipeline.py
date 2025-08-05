@@ -17,7 +17,7 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
         bpy.ops.clip.marker_helper_main()
 
         # 2. Proxy deaktivieren
-        bpy.ops.clipdisable_proxy()
+        bpy.ops.clip.disable_proxy()
 
         # 3. Detect
         bpy.ops.clip.detect()
