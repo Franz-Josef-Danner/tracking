@@ -3,7 +3,7 @@ import math
 
 class CLIP_OT_detect(bpy.types.Operator):
     bl_idname = "clip.detect"
-    bl_label = "detect_features"
+    bl_label = "detect"
     bl_description = "Automatischer Suchzyklus für Markerplatzierung"
 
     def execute(self, context):
