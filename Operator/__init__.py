@@ -7,5 +7,5 @@ operator_classes = (
     CLIP_OT_proxy_builder,
     CLIP_OT_tracker_settings,
     CLIP_OT_detect,
-    bidirectional_track,
+    CLIP_OT_bidirectional_track,
 )
