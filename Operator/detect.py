@@ -61,7 +61,7 @@ class TRACKING_OT_detect(bpy.types.Operator):
         settings = self.tracking.settings
 
         self.detection_threshold = scene.get("last_detection_threshold", getattr(settings, "default_correlation_min", 0.75))
-        self.marker_adapt = scene.get("marker_adapt", 80)
+        self.marker_adapt = scene.get("marker_adapt", self.marker_adapt * 4)
         self.max_marker = scene.get("max_marker", self.marker_adapt * 1.1)
         self.min_marker = scene.get("min_marker", self.marker_adapt * 0.9)
 
