@@ -54,7 +54,6 @@ classes = (
     CLIP_OT_disable_proxy,
     CLIP_OT_enable_proxy,
     CLIP_OT_bidirectional_track,
-    select_short_tracks,
 )
 
 def register():
