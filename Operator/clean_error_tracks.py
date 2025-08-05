@@ -1,3 +1,4 @@
+
 import bpy
 
 def get_marker_position(track, frame):
@@ -9,8 +10,6 @@ def get_marker_position(track, frame):
 def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width, height):
     total_deleted = 0
     frame_start, frame_end = frame_range
-
-    print(f"\n[Cleanup] Region: xmin={xmin:.2f}, xmax={xmax:.2f}, ymin={ymin:.2f}, ymax={ymax:.2f}, ee={ee}")
 
     for fi in range(frame_start + 1, frame_end - 1):
         f1 = fi - 1
@@ -40,24 +39,20 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width
         vxa = sum(vx for _, vx, _ in marker_data) / maa
         vya = sum(vy for _, _, vy in marker_data) / maa
         va = (vxa + vya) / 2
-        print(f"[Cleanup] Frame {fi} → marker count: {maa}, vxa: {vxa:.6f}, vya: {vya:.6f}, va: {va:.6f}")
-
         vm_diffs = [abs((vx + vy) / 2 - va) for _, vx, vy in marker_data]
         eb = max(vm_diffs) if vm_diffs else 0.0
         if eb < 0.0001:
             eb = 0.0001
 
-        print(f"[Cleanup] Initial eb: {eb:.6f} (max |vm - va|)")
+        print(f"[Cleanup] Frame {fi} → max Error: {eb:.6f}")
 
         while eb > ee:
             eb *= 0.9
-            print(f"[Cleanup] eb reduced to: {eb:.6f}")
+            print(f"[Cleanup] Error-Schwellwert reduziert auf: {eb:.6f}")
 
-            for idx, (track, vx, vy) in enumerate(marker_data):
+            for track, vx, vy in marker_data:
                 vm = (vx + vy) / 2
-                deviation = abs(vm - va)
-                if deviation >= eb:
-                    print(f"[Cleanup]    Deleting marker (track={track.name}) vm={vm:.6f}, deviation={deviation:.6f}, threshold={eb:.6f}")
+                if abs(vm - va) >= eb:
                     track.select = True
                     total_deleted += 1
             bpy.ops.clip.delete_track()
@@ -77,9 +72,6 @@ def clean_error_tracks(context):
     height = clip.size[1]
     frame_range = (scene.frame_start, scene.frame_end)
 
-    print(f"[Cleanup] Start clean_error_tracks()")
-    print(f"[Cleanup] Clip size: {width}x{height}, Frame range: {frame_range}")
-
     fehlergrenzen = [10, 5, 2.5]
     teilfaktoren = [1, 2, 4]
     total_deleted_all = 0
@@ -87,8 +79,6 @@ def clean_error_tracks(context):
     for stufe in range(len(fehlergrenzen)):
         ee = fehlergrenzen[stufe]
         division = teilfaktoren[stufe]
-
-        print(f"\n[Cleanup] === Stufe {stufe} → Fehlergrenze={ee}, Division={division}x{division} ===")
 
         for xIndex in range(division):
             for yIndex in range(division):
@@ -100,7 +90,6 @@ def clean_error_tracks(context):
                 deleted = run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width, height)
                 total_deleted_all += deleted
 
-    print(f"[Cleanup] Gesamtzahl gelöschter Marker: {total_deleted_all}")
     return total_deleted_all, 0.0
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
