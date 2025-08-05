@@ -1,3 +1,4 @@
+
 import bpy
 
 def get_marker_position(track, frame):
@@ -6,112 +7,99 @@ def get_marker_position(track, frame):
         return marker.co
     return None
 
+def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee):
+    total_deleted = 0
+    eb = 1.0
+    frame_start, frame_end = frame_range
+    scene = bpy.context.scene
+
+    for fi in range(frame_start + 1, frame_end - 1):
+        f1 = fi - 1
+        f2 = fi + 1
+        marker_data = []
+
+        for track in tracks:
+            p1 = get_marker_position(track, f1)
+            p2 = get_marker_position(track, fi)
+            p3 = get_marker_position(track, f2)
+
+            if not (p1 and p2 and p3):
+                continue
+
+            # Check ob der Marker in die Region fällt (p2 = aktuelle Position)
+            x, y = p2
+            if not (xmin <= x < xmax and ymin <= y < ymax):
+                continue
+
+            vxm = (p2[0] - p1[0]) + (p3[0] - p2[0])
+            vym = (p2[1] - p1[1]) + (p3[1] - p2[1])
+            vm = (vxm + vym) / 2
+            marker_data.append((track, vm))
+
+        maa = len(marker_data)
+        if maa == 0:
+            continue
+
+        va = sum(vm for _, vm in marker_data) / maa
+        eb = max(abs(vm - va) for _, vm in marker_data)
+        if eb < 0.0001:
+            eb = 0.0001
+
+        # Fehlerband iterativ verkleinern
+        while eb > ee:
+            eb *= 0.9
+            for track, vm in marker_data:
+                if abs(vm - va) >= eb:
+                    track.select = True
+                    total_deleted += 1
+            bpy.ops.clip.delete_track()
+
+    return total_deleted
+
 def clean_error_tracks(context):
     scene = context.scene
     clip = context.space_data.clip
-    width = clip.size[0]
     tracking = clip.tracking
     tracks = tracking.tracks
 
-    # Alle Marker deselektieren
     for track in tracks:
         track.select = False
 
-    ee_prop = getattr(scene, "error_track", 1.0)
-    print(f"[Cleanup] error_track (Scene Property): {ee_prop}")
-
-    ee_initial = (ee_prop + 0.1) / 100
-    print(f"[Cleanup] ee_initial (berechnet): {ee_initial:.6f}")
-
-    threshold_factor = 0.99
-    print(f"[Cleanup] threshold_factor: {threshold_factor}")
-
+    width = clip.size[0]
+    height = clip.size[1]
     frame_range = (scene.frame_start, scene.frame_end)
-    print(f"[Cleanup] Frame Range: {frame_range[0]} → {frame_range[1]}")
+
+    fehlergrenzen = [10, 5, 2.5]
+    teilfaktoren = [1, 2, 4]
 
     total_deleted_all = 0
-    overall_max_error = 0.0000
-    iteration = 0
-    max_iterations = 100  # Sicherheitsgrenze gegen Endlosschleifen
 
-    while iteration < max_iterations:
-        total_deleted = 0
-        max_error = 0.0000
-        threshold = ee_initial * (threshold_factor ** iteration)
+    for stufe in range(len(fehlergrenzen)):
+        ee = fehlergrenzen[stufe] / width  # normalisieren
+        division = teilfaktoren[stufe]
 
-        print(f"[Cleanup] Iteration {iteration + 1}, Threshold: {threshold:.6f}")
+        for xIndex in range(division):
+            for yIndex in range(division):
+                xmin = xIndex * (1.0 / division)
+                xmax = (xIndex + 1) * (1.0 / division)
+                ymin = yIndex * (1.0 / division)
+                ymax = (yIndex + 1) * (1.0 / division)
 
-        for track in tracks:
-            errors = []
-            for frame in range(frame_range[0] + 1, frame_range[1] - 1):
-                p1 = get_marker_position(track, frame - 1)
-                p2 = get_marker_position(track, frame)
-                p3 = get_marker_position(track, frame + 1)
+                deleted = run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee)
+                total_deleted_all += deleted
 
-                if not (p1 and p2 and p3):
-                    continue
-
-                vxm = (p3[0] - p1[0]) / 2
-                vym = (p3[1] - p1[1]) / 2
-                vm = (vxm + vym) / 2
-
-                px = p2[0]
-                py = p2[1]
-
-                ex = px - (p1[0] + vm / 2)
-                ey = py - (p1[1] + vm / 2)
-                error = (ex ** 2 + ey ** 2) ** 0.5
-                errors.append(error)
-
-            if not errors:
-                continue
-
-            mean_error = sum(errors) / len(errors)
-            max_error = max(max_error, mean_error)
-
-            if mean_error > threshold:
-                track.select = True
-                total_deleted += 1
-
-        if total_deleted > 0:
-            bpy.ops.clip.delete_track()
-            total_deleted_all += total_deleted
-            overall_max_error = max(overall_max_error, max_error)
-            print(f"[Cleanup] {total_deleted} Marker gelöscht in Iteration {iteration + 1}")
-        else:
-            print(f"[Cleanup] Keine Marker gelöscht in Iteration {iteration + 1}")
-
-        if total_deleted == 0 and max_error <= ee_initial:
-            print(f"[Cleanup] Abbruchbedingung erfüllt. max_error: {max_error:.6f} <= ee_initial: {ee_initial:.6f}")
-            break
-
-        iteration += 1
-
-    return total_deleted_all, overall_max_error
+    return total_deleted_all, 0.0
 
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
-    bl_label = "Fehlerhafte Marker bereinigen"
+    bl_label = "Clean Error Tracks"
 
     @classmethod
     def poll(cls, context):
-        return context.space_data and context.space_data.clip is not None
+        return context.space_data and context.space_data.clip
 
     def execute(self, context):
-        deleted, max_error = clean_error_tracks(context)
-        if deleted:
-            self.report({'INFO'}, f"Insgesamt {deleted} Marker gelöscht. Max. Fehler: {max_error:.6f}")
-        else:
-            self.report({'INFO'}, "Keine Marker gelöscht.")
+        deleted, _ = clean_error_tracks(context)
+        self.report({'INFO'}, f"Insgesamt {deleted} Marker gelöscht.")
         return {'FINISHED'}
-
-
-def register():
-    bpy.utils.register_class(CLIP_OT_clean_error_tracks)
-
-def unregister():
-    bpy.utils.unregister_class(CLIP_OT_clean_error_tracks)
-
-if __name__ == "__main__":
-    register()
