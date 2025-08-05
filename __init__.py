@@ -67,7 +67,7 @@ def register():
         bpy.utils.register_class(cls)
 
     # Eigenschaften für das Panel
-    bpy.types.Scene.marker_frame = IntProperty(
+    bpy.types.Scene.marker_frame = bpy.props.IntProperty(
         name="Marker per Frame",
         default=20,
         min=10,
@@ -79,7 +79,7 @@ def register():
         min=5,
         max=100
     )
-    bpy.types.Scene.error_track = FloatProperty(
+    bpy.types.Scene.error_track = = bpy.props.FloatProperty(
         name="Tracking Error",
         default=0.50,
         min=0.01,
