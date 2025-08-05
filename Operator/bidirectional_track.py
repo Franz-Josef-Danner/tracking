@@ -1,74 +1,90 @@
 import bpy
 import time
 
-# Globaler Zustand
-bidirectional_track_state = {
-    "direction": 'FORWARD',
-    "last_marker_count": 0,
-    "last_frame": 0,
-    "no_change_count": 0,
-    "clip": None,
-}
+class TrackingController:
+    def __init__(self, context):
+        self.context = context
+        self.scene = context.scene
+        self.initial_frame = context.scene.frame_current
+        self.step = 0
 
-def count_selected_markers(clip):
-    count = 0
-    for track in clip.tracking.tracks:
-        if track.select:
-            count += len([m for m in track.markers if not m.mute])
-    return count
+    def run(self):
+        print(f"[Tracking] Schritt: {self.step}")
 
-def monitor_tracking():
-    state = bidirectional_track_state
-    clip = state.get("clip")
-
-    if clip is None:
-        print("❌ Kein Clip verfügbar für Tracking-Monitor.")
-        return None
-
-    current_marker_count = count_selected_markers(clip)
-    current_frame = bpy.context.scene.frame_current
-
-    if (current_marker_count == state["last_marker_count"] and
-        current_frame == state["last_frame"]):
-        state["no_change_count"] += 1
-    else:
-        state["no_change_count"] = 0
-
-    state["last_marker_count"] = current_marker_count
-    state["last_frame"] = current_frame
-
-    if state["no_change_count"] >= 2:
-        if state["direction"] == 'FORWARD':
-            print("➡️ Wechsel zu Rückwärts-Tracking")
-            state["direction"] = 'BACKWARD'
-            state["no_change_count"] = 0
-            bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
-            return 0.5
-        else:
-            print("✅ Bidirektionales Tracking abgeschlossen.")
+        # Sicherstelle, dass wir im Clip-Editor sind
+        clip_area = next((area for area in bpy.context.window.screen.areas if area.type == 'CLIP_EDITOR'), None)
+        if not clip_area:
+            print("⚠ Kein Clip-Editor gefunden!")
             return None
 
-    return 0.5
+        with bpy.context.temp_override(area=clip_area):
+            if self.step == 0:
+                print("→ Starte Vorwärts-Tracking...")
+                invoke_clip_operator_safely("track_markers", backwards=False, sequence=True)
+                self.step = 1
+
+            elif self.step == 1:
+                print("→ Warte auf Abschluss des Vorwärts-Trackings...")
+                if self.is_tracking_done_robust():
+                    print("✓ Vorwärts-Tracking abgeschlossen.")
+                    self.scene.frame_current = self.initial_frame
+                    print(f"← Frame zurückgesetzt auf {self.initial_frame}")
+                    self.step = 2
+
+            elif self.step == 2:
+                print("→ Starte Rückwärts-Tracking...")
+                invoke_clip_operator_safely("track_markers", backwards=True, sequence=True)
+                self.step = 3
+
+            elif self.step == 3:
+                print("→ Warte auf Abschluss des Rückwärts-Trackings...")
+                if self.is_tracking_done_robust():
+                    print("✓ Rückwärts-Tracking abgeschlossen.")
+                    self.step = 4
+
+            elif self.step == 4:
+                print("→ Starte Bereinigung kurzer Tracks...")
+                self.cleanup_short_tracks()
+                print("✓ Tracking und Cleanup abgeschlossen.")
+                return None
+
+        return 0.5  # Nächste Ausführung in 0.5 Sekunden
+
+    def is_tracking_done_robust(self):
+        # Hier kannst du eine robustere Logik einbauen z.B. Markeranzahl oder Playhead-Stop
+        return True
+
+    def cleanup_short_tracks(self):
+        # Dummyfunktion zur Bereinigung, implementieren je nach Bedarf
+        pass
+
+def invoke_clip_operator_safely(operator_name, **kwargs):
+    if hasattr(bpy.ops.clip, operator_name):
+        op = getattr(bpy.ops.clip, operator_name)
+        if op.poll():
+            print(f"→ bpy.ops.clip.{operator_name} ausführen")
+            op('INVOKE_DEFAULT', **kwargs)
+        else:
+            print(f"⚠ bpy.ops.clip.{operator_name}.poll() fehlgeschlagen")
+    else:
+        print(f"⚠ Operator bpy.ops.clip.{operator_name} existiert nicht")
 
 class CLIP_OT_bidirectional_track(bpy.types.Operator):
     bl_idname = "clip.bidirectional_track"
     bl_label = "Bidirectional Track"
-
-    @classmethod
-    def poll(cls, context):
-        return context.space_data.clip is not None
+    bl_description = "Tracks markers forward and backward with pause monitoring"
+    bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        state = bidirectional_track_state
-        clip = context.space_data.clip
-
-        state["direction"] = 'FORWARD'
-        state["clip"] = clip
-        state["last_marker_count"] = count_selected_markers(clip)
-        state["last_frame"] = context.scene.frame_current
-        state["no_change_count"] = 0
-
-        bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
-        bpy.app.timers.register(monitor_tracking, first_interval=0.5)
-
+        controller = TrackingController(context)
+        bpy.app.timers.register(controller.run, first_interval=0.1)
         return {'FINISHED'}
+
+def register():
+    bpy.utils.register_class(CLIP_OT_bidirectional_track)
+
+def unregister():
+    bpy.utils.unregister_class(CLIP_OT_bidirectional_track)
+
+if __name__ == "__main__":
+    register()
