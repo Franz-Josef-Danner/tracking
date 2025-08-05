@@ -1,93 +1,42 @@
 import bpy
 
-bl_info = {
-    "name": "Bidirectional Tracker",
-    "blender": (4, 4, 0),
-    "category": "Clip",
-}
-
-
-def start_tracking(direction='FORWARDS'):
-    """Starte Tracking im Clip Editor über Context Override."""
-    for area in bpy.context.screen.areas:
-        if area.type == 'CLIP_EDITOR':
-            for region in area.regions:
-                if region.type == 'WINDOW':
-                    override = {
-                        'area': area,
-                        'region': region,
-                        'scene': bpy.context.scene,
-                        'space_data': area.spaces.active
-                    }
-                    bpy.ops.clip.track_markers(
-                        override,
-                        backwards=(direction == 'BACKWARDS'),
-                        sequence=True
-                    )
-                    return True
-    print("❌ Kein CLIP_EDITOR gefunden.")
-    return False
-
-
-class CLIP_OT_bidirectional_track(bpy.types.Operator):
-    """Selektierte Marker vorwärts und rückwärts tracken, wenn keine Bewegung mehr erkannt wird"""
-    bl_idname = "clip.bidirectional_track"
-    bl_label = "Bidirektional Tracken"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    _last_marker_count = 0
-    _no_change_count = 0
-    _phase = 'FORWARDS'
+class CLIP_OT_track_bidirectional_and_filter(bpy.types.Operator):
+    bl_idname = "clip.track_bidirectional_and_filter"
+    bl_label = "Track Bidirectional and Filter Short Tracks"
+    bl_description = "Track selektierte Marker bidirektional und lösche kurze Tracks"
 
     def execute(self, context):
-        self._last_marker_count = self.count_selected_markers()
-        self._no_change_count = 0
-        self._phase = 'FORWARDS'
-        start_tracking(direction='FORWARDS')
-        bpy.app.timers.register(self.monitor_tracking, first_interval=0.5)
-        return {'FINISHED'}
+        scene = context.scene
+        min_length = scene.frames_track if hasattr(scene, "frames_track") else 5
 
-    def count_selected_markers(self):
-        """Zähle alle selektierten Marker in der aktiven Clip"""
-        count = 0
-        clip = bpy.context.space_data.clip
-        for track in clip.tracking.tracks:
+        area = next((a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None)
+        if not area:
+            self.report({'ERROR'}, "Clip Editor nicht gefunden.")
+            return {'CANCELLED'}
+
+        # Track bidirectional
+        bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
+        bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
+
+        # Track-Längen prüfen
+        deleted_any = False
+        for track in context.space_data.clip.tracking.tracks:
             if track.select:
-                for marker in track.markers:
-                    if marker.select:
-                        count += 1
-        return count
+                # Längen zählen
+                frame_numbers = [p.co[0] for p in track.markers if not p.mute]
+                if frame_numbers:
+                    track_length = len(set(frame_numbers))
+                    if track_length < min_length:
+                        track.select = True
+                        deleted_any = True
+                    else:
+                        track.select = False
 
-    def monitor_tracking(self):
-        """Überwache Tracking-Fortschritt und starte ggf. Rückwärts-Tracking"""
-        current_count = self.count_selected_markers()
-        if current_count == self._last_marker_count:
-            self._no_change_count += 1
+        # Kurze löschen
+        if deleted_any:
+            bpy.ops.clip.delete_track()
+            self.report({'INFO'}, "Kurze Tracks wurden gelöscht.")
         else:
-            self._no_change_count = 0
-            self._last_marker_count = current_count
+            self.report({'INFO'}, "Keine zu kurzen Tracks gefunden.")
 
-        if self._no_change_count >= 2:
-            if self._phase == 'FORWARDS':
-                print("➡️ Vorwärts beendet – Rückwärts starten...")
-                self._phase = 'BACKWARDS'
-                start_tracking(direction='BACKWARDS')
-                self._no_change_count = 0
-                return 0.5  # weiter beobachten
-            else:
-                print("✅ Rückwärts beendet – Tracking abgeschlossen.")
-                return None  # Timer stoppen
-
-        return 0.5  # weiter beobachten
-
-
-def register():
-    bpy.utils.register_class(CLIP_OT_bidirectional_track)
-
-
-def unregister():
-    bpy.utils.unregister_class(CLIP_OT_bidirectional_track)
-
-
-if __name__ == "__main__":
-    register()
+        return {'FINISHED'}
