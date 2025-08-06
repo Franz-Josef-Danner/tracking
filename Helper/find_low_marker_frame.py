@@ -7,7 +7,7 @@ def find_low_marker_frame(clip, marker_basis=20, frame_start=None, frame_end=Non
     if frame_start is None:
         frame_start = clip.frame_start
     if frame_end is None:
-        frame_end = clip.frame_duration
+        frame_end = bpy.context.scene.frame_end
 
     print(f"[MarkerCheck] Erwartete Mindestmarker pro Frame: {marker_basis}")
 
