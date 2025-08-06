@@ -42,10 +42,14 @@ class CLIP_OT_main(bpy.types.Operator):
                 prev_frame = current_frame
 
         # Erweiterung: Suche nach Frame mit zu wenigen Markern
+        print("🧪 Starte Markerprüfung…")
         frame = find_low_marker_frame(clip)
         if frame is not None:
+            print(f"🟡 Zu wenige Marker im Frame {frame}")
             scene["goto_frame"] = frame
             jump_to_frame(context)
+        else:
+            print("✅ Alle Frames haben ausreichend Marker.")
 
         self.report({'INFO'}, "Tracking abgeschlossen – keine fehlerhaften Frames mehr gefunden.")
         return {'FINISHED'}
