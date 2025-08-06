@@ -138,6 +138,8 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                                 log_msg = f"{len(copied_names)} Tracks mit Lücken wurden dupliziert:\n"
                                 log_msg += "\n".join(f"\u2022 {name}" for name in copied_names)
 
+                                self.report({'INFO'}, log_msg)
+                                print("[CopyPaste] Duplizierte Tracks:\n" + log_msg)
                                 return {'FINISHED'}
 
                         except Exception as e:
