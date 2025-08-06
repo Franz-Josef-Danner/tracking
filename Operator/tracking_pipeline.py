@@ -106,6 +106,13 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
     def cancel(self, context):
         wm = context.window_manager
         wm.event_timer_remove(self._timer)
-
-        context.scene["pipeline_status"] = "cancelled"
-        print("❌ Tracking-Pipeline abgebrochen. Status auf 'cancelled' gesetzt.")
+    
+        scene = context.scene
+        scene["pipeline_status"] = ""
+        scene["detect_status"] = ""
+        scene["bidirectional_status"] = ""
+        scene["goto_frame"] = -1
+        if "repeat_frame" in scene:
+            scene["repeat_frame"].clear()
+    
+        print("❌ Tracking Pipeline abgebrochen. Status zurückgesetzt.")
