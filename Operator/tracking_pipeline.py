@@ -41,7 +41,7 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
 
         elif self._step == 1:
             print("→ Proxy deaktivieren")
-            bpy.ops.clip.proxy_disable()
+            bpy.ops.clip.disable_proxy()
             self._step += 1
 
         elif self._step == 2:
@@ -57,7 +57,7 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
 
         elif self._step == 4:
             print("→ Proxy aktivieren")
-            bpy.ops.clip.proxy_enable()
+            bpy.ops.clip.enable_proxy()
             self._step += 1
 
         elif self._step == 5:
