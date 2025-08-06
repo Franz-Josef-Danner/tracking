@@ -128,7 +128,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
 
     if selected_count == 0:
         self.report({'INFO'}, "Keine Tracks mit Lücken gefunden.")
-        return {'FINISHED'}
+    return {'FINISHED'}
 
     # 4. Sicherer Kontext für Copy/Paste (nur im Movie Clip Editor gültig)
     area_found = False
