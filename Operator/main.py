@@ -1,5 +1,4 @@
 import bpy
-from ..Helper.find_low_marker_frame import get_first_low_marker_frame
 import time
 
 class CLIP_OT_main(bpy.types.Operator):
@@ -42,16 +41,9 @@ class CLIP_OT_main(bpy.types.Operator):
                     prev_marker_count = current_marker_count
                     prev_frame = current_frame
 
-            # Prüfe nach Abschluss der Pipeline auf schwache Markerframes
-            frame = get_first_low_marker_frame(clip)
-
-            if frame is not None:
-                self.report({'INFO'}, f"Neustart Zyklus – schlechter Frame gefunden: {frame}")
-                context.scene.frame_current = frame
-                continue  # Starte den Zyklus erneut
-            else:
-                self.report({'INFO'}, "Tracking abgeschlossen – keine fehlerhaften Frames mehr gefunden.")
-                break
+            # Wenn Tracking abgeschlossen, beende Schleife
+            self.report({'INFO'}, "Tracking abgeschlossen – keine fehlerhaften Frames mehr gefunden.")
+            break
 
         return {'FINISHED'}
 
