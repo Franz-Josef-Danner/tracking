@@ -1,4 +1,17 @@
 
+def duplicate_track(track, tracking):
+    new_track = tracking.tracks.new(name=f"{track.name}_split", frame=track.markers[0].frame)
+    for marker in track.markers:
+        new_marker = new_track.markers.insert(frame=marker.frame, co=marker.co)
+        new_marker.pattern_corners = marker.pattern_corners[:]
+        new_marker.search_min = marker.search_min[:]
+        new_marker.search_max = marker.search_max[:]
+        new_marker.mute = marker.mute
+        new_marker.disabled = marker.disabled
+    return new_track
+
+
+
 import bpy
 
 def get_marker_position(track, frame):
@@ -95,24 +108,8 @@ def split_tracks_at_gaps(context, tracks):
             t.select = False
         track.select = True
 
-        with context.temp_override(**override):
-            print(f"[Split] → Kopiere Track: '{track.name}'")
-            bpy.ops.clip.copy_tracks()
-
-            print(f"[Split] → Füge Track ein")
-            bpy.ops.clip.paste_tracks()
-
-            if len(tracks) < 1:
-                print("[Split] ⚠️ Keine Tracks mehr vorhanden nach Paste.")
-                continue
-
-            new_track = tracks[-1]
-            print(f"[Split] Neuer Track erkannt: '{new_track.name}'")
-
-            if len(new_track.markers) == 0:
-                print(f"[Split] ⚠️ Neuer Track '{new_track.name}' hat keine Marker!")
-
-            new_track.name = f"{track.name}_split"
+        new_track = duplicate_track(track, context.space_data.clip.tracking)
+        print(f"[Split] → Neuer Track erstellt: '{new_track.name}' mit {len(new_track.markers)} Markern")
             context.scene.frame_current = gap_end
 
             print(f"[Split] → Lösche Marker NACH {gap_end} im Original '{track.name}'")
