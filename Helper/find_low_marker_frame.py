@@ -21,6 +21,7 @@ def find_low_marker_frame(clip, min_marker=5, frame_start=None, frame_end=None):
                 count += 1
 
         print(f"[MarkerCheck] Frame {frame}: {count} aktive Marker")
+
         if count < min_marker:
             print(f"[MarkerCheck] → Zu wenige Marker in Frame {frame}")
             return frame
