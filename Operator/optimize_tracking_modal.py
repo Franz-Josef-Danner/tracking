@@ -44,9 +44,16 @@ class CLIP_OT_optimize_tracking_modal(Operator):
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
+        if event.type == 'ESC':
+            self.report({'WARNING'}, "Tracking-Optimierung manuell abgebrochen.")
+            self.cancel(context)
+            return {'CANCELLED'}
+    
         if event.type == 'TIMER':
             return self.run_step(context)
+    
         return {'PASS_THROUGH'}
+
 
     def run_step(self, context):
         clip = self._clip
