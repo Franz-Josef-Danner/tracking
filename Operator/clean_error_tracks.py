@@ -95,6 +95,37 @@ def clean_error_tracks(context):
                 total_deleted_all += deleted
 
     return total_deleted_all, 0.0
+def split_tracks_at_gaps(tracks):
+    for track in list(tracks):
+        marker_frames = sorted(m.frame for m in track.markers)
+        if len(marker_frames) < 3:
+            continue
+
+        gaps = [(marker_frames[i-1], marker_frames[i])
+                for i in range(1, len(marker_frames))
+                if marker_frames[i] - marker_frames[i-1] > 1]
+        if not gaps:
+            continue
+
+        gap_start, gap_end = gaps[0]
+        print(f"[Split] Track '{track.name}' → Lücke: {gap_start}–{gap_end}")
+
+        new_track = tracks.new(name=f"{track.name}_split", frame=gap_end)
+        for m in track.markers:
+            if m.frame < gap_end:
+                nm = new_track.markers.insert_frame(m.frame, co=m.co)
+                nm.pattern_corners = m.pattern_corners[:]
+                nm.search_min = m.search_min[:]
+                nm.search_max = m.search_max[:]
+
+        for m in list(track.markers):
+            if m.frame >= gap_end:
+                track.markers.delete_frame(m.frame)
+        for m in list(new_track.markers):
+            if m.frame <= gap_start:
+                new_track.markers.delete_frame(m.frame)
+
+        print(f"[Split] '{track.name}' in '{new_track.name}' gesplittet")
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
