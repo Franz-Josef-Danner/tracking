@@ -110,19 +110,19 @@ def split_tracks_at_gaps(context, tracks):
 
         new_track = duplicate_track(track, context.space_data.clip.tracking)
         print(f"[Split] → Neuer Track erstellt: '{new_track.name}' mit {len(new_track.markers)} Markern")
-            context.scene.frame_current = gap_end
+        context.scene.frame_current = gap_end
 
-            print(f"[Split] → Lösche Marker NACH {gap_end} im Original '{track.name}'")
-            track.select = True
-            new_track.select = False
-            bpy.ops.clip.clear_track_path(action='REMAINED', clear_active=True)
+        print(f"[Split] → Lösche Marker NACH {gap_end} im Original '{track.name}'")
+        track.select = True
+        new_track.select = False
+        bpy.ops.clip.clear_track_path(action='REMAINED', clear_active=True)
 
-            print(f"[Split] → Lösche Marker VOR {gap_start} im Duplikat '{new_track.name}'")
-            track.select = False
-            new_track.select = True
-            bpy.ops.clip.clear_track_path(action='UPTO', clear_active=True)
+        print(f"[Split] → Lösche Marker VOR {gap_start} im Duplikat '{new_track.name}'")
+        track.select = False
+        new_track.select = True
+        bpy.ops.clip.clear_track_path(action='UPTO', clear_active=True)
 
-            print(f"[Split] ✅ Track '{track.name}' endet vor Gap, Track '{new_track.name}' beginnt nach Gap.")
+        print(f"[Split] ✅ Track '{track.name}' endet vor Gap, Track '{new_track.name}' beginnt nach Gap.")
 
 def clean_error_tracks(context):
     scene = context.scene
