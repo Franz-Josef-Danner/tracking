@@ -142,23 +142,25 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
 
                                 # Umbenennung der kopierten Tracks zur besseren Differenzierung
                                 existing_names = {t.name for t in tracks}
+                                renamed = []
                                 for track in tracks:
                                     if track.select and track.name not in original_names:
-                                        base_name = track.name
-                                        suffix = 1
-                                        new_name = f"pre_{base_name}"
-                                        while new_name in existing_names:
-                                            new_name = f"pre_{base_name}_{suffix}"
-                                            suffix += 1
-                                        track.name = new_name
-                                        existing_names.add(new_name)
+                                        for orig_name in original_names:
+                                            if track.name.startswith(orig_name):
+                                                new_name = f"pre_{orig_name}"
+                                                suffix = 1
+                                                while new_name in existing_names:
+                                                    new_name = f"pre_{orig_name}_{suffix}"
+                                                    suffix += 1
+                                                track.name = new_name
+                                                renamed.append(new_name)
+                                                existing_names.add(new_name)
+                                                break
 
-                                copied_names = [track.name for track in tracks if track.select and track.name.startswith("pre_")]
-                                log_msg = f"{len(copied_names)} Tracks mit Lücken wurden dupliziert:\n"
-                                log_msg += "\n".join(f"\u2022 {name}" for name in copied_names)
+                                log_msg = f"{len(renamed)} Tracks mit Lücken wurden dupliziert:\n"
+                                log_msg += "\n".join(f"\u2022 {name}" for name in renamed)
 
                                 self.report({'INFO'}, log_msg)
-                                print("[CopyPaste] Duplizierte Tracks:\n" + log_msg)
                                 return {'FINISHED'}
 
                         except Exception as e:
