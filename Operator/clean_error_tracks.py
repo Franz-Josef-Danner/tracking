@@ -111,13 +111,14 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         return context.space_data and context.space_data.clip
 
     def execute(self, context):
+        scene = context.scene
+        frame_start = scene.frame_start
+        frame_end = scene.frame_end
+
         clean_error_tracks(context)
 
         clip = context.space_data.clip
-        scene = context.scene
         tracks = clip.tracking.tracks
-        frame_start = scene.frame_start
-        frame_end = scene.frame_end
 
         for track in tracks:
             track.select = False
@@ -166,7 +167,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                                         existing_names.add(new_name)
 
                                 log_msg = f"{len(renamed)} Tracks mit Lücken wurden dupliziert:\n"
-                                log_msg += "\n".join(f"\u2022 {name}" for name in renamed)
+                                log_msg += "\n".join(f"• {name}" for name in renamed)
 
                                 self.report({'INFO'}, log_msg)
                                 return {'FINISHED'}
