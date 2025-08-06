@@ -67,8 +67,8 @@ class CLIP_OT_detect(bpy.types.Operator):
 
         self.detection_threshold = scene.get("last_detection_threshold", getattr(settings, "default_correlation_min", 0.75))
         self.marker_adapt = scene.get("marker_adapt", 20)
-        self.max_marker = scene.get("max_marker", self.marker_adapt * 1.1)
-        self.min_marker = scene.get("min_marker", self.marker_adapt * 0.9)
+        self.max_marker = scene.get("max_marker", (self.marker_adapt * 1.1) + 1)
+        self.min_marker = scene.get("min_marker", (self.marker_adapt * 0.9) - 1)
 
         image_width = self.clip.size[0]
         self.margin_base = int(image_width * 0.025)
