@@ -116,16 +116,16 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             frames = sorted([m.frame for m in track.markers])
             return any(b - a > 1 for a, b in zip(frames, frames[1:]))
 
-        selected_tracks = []
-        for track in tracks:
-            if has_gaps(track):
-                track.select = True
-                selected_tracks.append(track)
+        original_tracks = [track for track in tracks if has_gaps(track)]
+        original_names = {track.name for track in original_tracks}
 
-        if not selected_tracks:
+        for track in original_tracks:
+            track.select = True
+
+        if not original_tracks:
             return {'FINISHED'}
 
-        original_names = [track.name for track in selected_tracks]
+        before_tracks = set(t.name for t in tracks)
 
         for area in context.screen.areas:
             if area.type == 'CLIP_EDITOR':
@@ -140,20 +140,22 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                                 bpy.ops.clip.copy_tracks()
                                 bpy.ops.clip.paste_tracks()
 
-                                renamed = []
-                                existing_names = {t.name for t in tracks}
+                                after_tracks = set(t.name for t in tracks)
+                                new_tracks = [t for t in tracks if t.name in (after_tracks - before_tracks)]
 
-                                for track in tracks:
-                                    if track.select and track.name not in original_names:
-                                        orig_base = track.name.rsplit(".", 1)[0]
-                                        new_name = f"pre_{orig_base}"
-                                        count = 1
-                                        while new_name in existing_names:
-                                            new_name = f"pre_{orig_base}_{count}"
-                                            count += 1
-                                        track.name = new_name
-                                        renamed.append(new_name)
-                                        existing_names.add(new_name)
+                                renamed = []
+                                existing_names = set(t.name for t in tracks)
+
+                                for track in new_tracks:
+                                    orig_base = track.name.rsplit(".", 1)[0]
+                                    new_name = f"pre_{orig_base}"
+                                    count = 1
+                                    while new_name in existing_names:
+                                        new_name = f"pre_{orig_base}_{count}"
+                                        count += 1
+                                    track.name = new_name
+                                    renamed.append(new_name)
+                                    existing_names.add(new_name)
 
                                 log_msg = f"{len(renamed)} Tracks mit Lücken wurden dupliziert:\n"
                                 log_msg += "\n".join(f"\u2022 {name}" for name in renamed)
