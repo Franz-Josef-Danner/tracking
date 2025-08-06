@@ -1,3 +1,4 @@
+
 import bpy
 import time
 from ..Helper.find_low_marker_frame import find_low_marker_frame
@@ -23,6 +24,9 @@ class CLIP_OT_main(bpy.types.Operator):
         bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
         print("⏳ Warte auf Abschluss der Pipeline...")
 
+        if "repeat_frame" not in scene:
+            scene["repeat_frame"] = {}
+
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.5, window=context.window)
         wm.modal_handler_add(self)
@@ -35,6 +39,7 @@ class CLIP_OT_main(bpy.types.Operator):
             return {'PASS_THROUGH'}
 
         scene = context.scene
+        repeat_dict = scene.get("repeat_frame", {})
 
         if self._step == 0:
             if scene.get("pipeline_status", "") == "done":
@@ -51,10 +56,29 @@ class CLIP_OT_main(bpy.types.Operator):
                 print(f"🟡 Zu wenige Marker im Frame {frame}")
                 scene["goto_frame"] = frame
                 jump_to_frame(context)
-            else:
-                print("✅ Alle Frames haben ausreichend Marker.")
 
-            self._step = 2
+                if str(frame) in repeat_dict:
+                    repeat_dict[str(frame)] += 1
+                else:
+                    repeat_dict[str(frame)] = 1
+
+                print(f"🔁 Frame {frame} wurde bereits {repeat_dict[str(frame)]}x erkannt.")
+
+                if repeat_dict[str(frame)] >= 10:
+                    print(f"🚨 Optimiere Tracking für Frame {frame}")
+                    bpy.ops.clip.optimize_tracking_modal('INVOKE_DEFAULT')
+                else:
+                    scene["marker_min"] = max(int(marker_basis * 0.9), 10)
+                    scene["marker_max"] = min(int(marker_basis * 1.1), 100)
+                    print(f"🔄 Neuer Tracking-Zyklus mit Marker-Zielwerten {scene['marker_min']}–{scene['marker_max']}")
+                    bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
+
+                scene["repeat_frame"] = repeat_dict
+                self._step = 0
+            else:
+                print("✅ Alle Frames haben ausreichend Marker. Cleanup wird ausgeführt.")
+                bpy.ops.clip.clean_error_tracks('INVOKE_DEFAULT')
+                self._step = 2
             return {'PASS_THROUGH'}
 
         elif self._step == 2:
