@@ -42,7 +42,8 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width
         vm_diffs = [abs((vx + vy) / 2 - va) for _, vx, vy in marker_data]
         eb = max(vm_diffs) if vm_diffs else 0.0
         if eb < 0.0001:
-            eb = 0.0001while eb > ee:
+            eb = 0.0001
+            while eb > ee:
             eb *= 0.95for track, vx, vy in marker_data:
                 vm = (vx + vy) / 2
                 if abs(vm - va) >= eb:
