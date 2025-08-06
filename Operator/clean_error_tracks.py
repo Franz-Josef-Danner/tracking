@@ -134,11 +134,30 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         area_found = False
         for area in context.screen.areas:
             if area.type == 'CLIP_EDITOR':
-                with context.temp_override(area=area, region=area.regions[-1]):
-                    bpy.ops.clip.copy_tracks()
-                    bpy.ops.clip.paste_tracks()
-                    area_found = True
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        override = {
+                            "area": area,
+                            "region": region,
+                            "space_data": area.spaces.active,
+                            "scene": context.scene,
+                            "clip": context.space_data.clip,
+                            "edit_movieclip": context.space_data,
+                        }
+
+                        bpy.ops.clip.copy_tracks(override)
+                        bpy.ops.clip.paste_tracks(override)
+
+                        area_found = True
+                        break
+            if area_found:
                 break
+
+        if area_found:
+            self.report({'INFO'}, f"{selected_count} Tracks mit Lücken wurden dupliziert.")
+        else:
+            self.report({'ERROR'}, "Copy/Paste konnte nicht ausgeführt werden – kein aktiver Clip Editor gefunden.")
+
 
         if area_found:
             self.report({'INFO'}, f"{selected_count} Tracks mit Lücken wurden dupliziert.")
