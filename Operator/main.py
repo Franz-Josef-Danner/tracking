@@ -15,22 +15,33 @@ class CLIP_OT_main(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
+    
+        # Reset aller relevanten Szene-Variablen
+        scene["pipeline_status"] = ""
+        scene["marker_min"] = 0
+        scene["marker_max"] = 0
+        scene["goto_frame"] = -1
+    
+        if hasattr(scene, "repeat_frame"):
+            scene.repeat_frame.clear()
+    
+        # Optional: Clip-Zustand prüfen
         clip = context.space_data.clip
-
         if clip is None or not clip.tracking:
             self.report({'WARNING'}, "Kein gültiger Clip oder Tracking-Daten vorhanden.")
             return {'CANCELLED'}
-
+    
         print("🚀 Starte Tracking-Pipeline...")
         bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
         print("⏳ Warte auf Abschluss der Pipeline...")
-
+    
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.5, window=context.window)
         wm.modal_handler_add(self)
         self._step = 0
-
+    
         return {'RUNNING_MODAL'}
+
 
     def modal(self, context, event):
         if event.type != 'TIMER':
