@@ -7,6 +7,19 @@ def get_marker_position(track, frame):
         return marker.co
     return None
 
+def get_clip_editor_override(context):
+    for area in context.window.screen.areas:
+        if area.type == 'CLIP_EDITOR':
+            for region in area.regions:
+                if region.type == 'WINDOW':
+                    return {
+                        "window": context.window,
+                        "screen": context.screen,
+                        "area": area,
+                        "region": region,
+                    }
+    return None
+
 def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width, height):
     total_deleted = 0
     frame_start, frame_end = frame_range
@@ -58,9 +71,48 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width
                             track.markers.delete_frame(f)
                             total_deleted += 1
                             print(f"[Cleanup] Marker gelöscht → Track: '{track.name}' | Frame: {f}")
-
-
     return total_deleted
+
+def split_tracks_at_gaps(context, tracks):
+    override = get_clip_editor_override(context)
+    if not override:
+        print("[Split] Kein gültiger Clip-Editor-Kontext gefunden.")
+        return
+
+    for track in list(tracks):
+        marker_frames = sorted(m.frame for m in track.markers)
+        if len(marker_frames) < 3:
+            continue
+
+        gaps = [(marker_frames[i - 1], marker_frames[i])
+                for i in range(1, len(marker_frames))
+                if marker_frames[i] - marker_frames[i - 1] > 1]
+        if not gaps:
+            continue
+
+        gap_start, gap_end = gaps[0]
+        print(f"[Split] Track '{track.name}' → Lücke: {gap_start}–{gap_end}")
+
+        for t in tracks:
+            t.select = False
+        track.select = True
+
+        bpy.ops.clip.copy_tracks(**override)
+        bpy.ops.clip.paste_tracks(**override)
+
+        new_track = tracks[-1]
+        new_track.name = f"{track.name}_split"
+        context.scene.frame_current = gap_end
+
+        track.select = True
+        new_track.select = False
+        bpy.ops.clip.clear_track_path(**override, action='REMAINED', clear_active=True)
+
+        track.select = False
+        new_track.select = True
+        bpy.ops.clip.clear_track_path(**override, action='UPTO', clear_active=True)
+
+        print(f"[Split] → Track '{track.name}' enthält nur Frames <= {gap_start}, Track '{new_track.name}' nur >= {gap_end}")
 
 def clean_error_tracks(context):
     scene = context.scene
@@ -95,66 +147,7 @@ def clean_error_tracks(context):
                 total_deleted_all += deleted
 
     split_tracks_at_gaps(context, tracks)
-
     return total_deleted_all, 0.0
-
-def split_tracks_at_gaps(context, tracks):
-    area = next((a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None)
-    if area is None:
-        print("[Split] Kein aktiver CLIP_EDITOR gefunden.")
-        return
-
-    override = context.copy()
-    override["area"] = area
-    override["region"] = area.regions[-1]  # normalerweise WINDOW
-
-    for track in list(tracks):
-        marker_frames = sorted(m.frame for m in track.markers)
-        if len(marker_frames) < 3:
-            continue
-
-        gaps = [(marker_frames[i - 1], marker_frames[i])
-                for i in range(1, len(marker_frames))
-                if marker_frames[i] - marker_frames[i - 1] > 1]
-        if not gaps:
-            continue
-
-        gap_start, gap_end = gaps[0]
-        print(f"[Split] Track '{track.name}' → Lücke: {gap_start}–{gap_end}")
-
-        # Track selektieren
-        for t in tracks:
-            t.select = False
-        track.select = True
-
-        # Track kopieren
-        bpy.ops.clip.copy_tracks(override)
-
-        # Track einfügen (Duplikat)
-        bpy.ops.clip.paste_tracks(override)
-
-        # Der zuletzt eingefügte Track ist am Ende der Liste
-        new_track = tracks[-1]
-        new_track.name = f"{track.name}_split"
-
-        # Setze Frame auf Lücke (oder Mittelpunkt der Lücke)
-        frame_split = gap_end
-
-        # Aktuelles Frame setzen
-        context.scene.frame_current = frame_split
-
-        # Original: lösche alles nach der Lücke
-        track.select = True
-        new_track.select = False
-        bpy.ops.clip.clear_track_path(override, action='REMAINED', clear_active=True)
-
-        # Duplikat: lösche alles vor der Lücke
-        track.select = False
-        new_track.select = True
-        bpy.ops.clip.clear_track_path(override, action='UPTO', clear_active=True)
-
-        print(f"[Split] → Track '{track.name}' enthält nur Frames <= {gap_start}, Track '{new_track.name}' nur >= {gap_end}")
-
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
