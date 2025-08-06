@@ -61,7 +61,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
             settings = clip.tracking.settings
             settings.default_pattern_size = int(pattern)
             settings.default_search_size = int(search)
-            settings.default_margin = int(search)  # <--- automatische Margin-Anpassung
+            settings.default_margin = settings.default_search_size  # ← exakt hier
 
         def set_flag2(index):
             motion_models = ['Perspective', 'Affine', 'LocRotScale', 'LocScale', 'LocRot', 'Loc']
