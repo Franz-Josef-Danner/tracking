@@ -95,38 +95,42 @@ def clean_error_tracks(context):
 
     return total_deleted_all, 0.0
 
-class CLIP_OT_clean_error_tracks(bpy.types.Operator):
-    bl_idname = "clip.clean_error_tracks"
-    bl_label = "Clean Error Tracks (Grid)"
-
-    @classmethod
-    def poll(cls, context):
-        return context.space_data and context.space_data.clip
-
-    def execute(self, context):
+    class CLIP_OT_clean_error_tracks(bpy.types.Operator):
+        bl_idname = "clip.clean_error_tracks"
+        bl_label = "Clean Error Tracks (Grid)"
+    
+        @classmethod
+        def poll(cls, context):
+            return context.space_data and context.space_data.clip
+    
+        def execute(self, context):
         deleted, _ = clean_error_tracks(context)
         self.report({'INFO'}, f"Insgesamt {deleted} Marker gelöscht.")
-
+    
         clip = context.space_data.clip
         tracks = clip.tracking.tracks
-
+    
+        # 1. Deselektiere alle Tracks
         for track in tracks:
             track.select = False
-
+    
+        # 2. Lückenprüfung
         def has_gaps(track):
             frames = sorted([m.frame for m in track.markers])
             return any(b - a > 1 for a, b in zip(frames, frames[1:]))
-
+    
+        # 3. Tracks mit Lücken selektieren
         selected_count = 0
         for track in tracks:
             if has_gaps(track):
                 track.select = True
                 selected_count += 1
-
+    
         if selected_count == 0:
             self.report({'INFO'}, "Keine Tracks mit Lücken gefunden.")
             return {'FINISHED'}
-
+    
+        # 4. Sicherer Kontext für Copy/Paste (nur im Movie Clip Editor gültig)
         area_found = False
         for area in context.screen.areas:
             if area.type == 'CLIP_EDITOR':
@@ -135,10 +139,10 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                     bpy.ops.clip.paste_tracks()
                     area_found = True
                 break
-
+    
         if area_found:
             self.report({'INFO'}, f"{selected_count} Tracks mit Lücken wurden dupliziert.")
         else:
             self.report({'ERROR'}, "Copy/Paste konnte nicht ausgeführt werden – kein aktiver Clip Editor gefunden.")
-
+    
         return {'FINISHED'}
