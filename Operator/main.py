@@ -8,14 +8,12 @@ class CLIP_OT_main(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        # Proxy deaktivieren
-        bpy.ops.clip.disable_proxy()
+        scene = context.scene
 
-        # Tracker Settings setzen
-        bpy.ops.clip.tracker_settings()
-
-        # Marker Setup ausführen
-        bpy.ops.clip.marker_helper_main()
+        # Falls Tracking-Pipeline bereits läuft, warte auf Freigabe
+        if scene.get("tracking_pipeline_active", False):
+            self.report({'WARNING'}, "Tracking-Pipeline läuft bereits.")
+            return {'CANCELLED'}
 
         # Starte den Tracking-Zyklus
         while True:
@@ -25,6 +23,7 @@ class CLIP_OT_main(bpy.types.Operator):
                 self.report({'WARNING'}, "Tracking Pipeline konnte nicht abgeschlossen werden.")
                 break
 
+            # Prüfe nach Abschluss der Pipeline auf schwache Markerframes
             frame = get_first_low_marker_frame(context)
 
             if frame is not None:
@@ -36,3 +35,10 @@ class CLIP_OT_main(bpy.types.Operator):
                 break
 
         return {'FINISHED'}
+
+
+def register():
+    bpy.utils.register_class(CLIP_OT_main)
+
+def unregister():
+    bpy.utils.unregister_class(CLIP_OT_main)
