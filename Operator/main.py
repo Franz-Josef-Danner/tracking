@@ -45,14 +45,12 @@ class CLIP_OT_main(bpy.types.Operator):
 
     def modal(self, context, event):
         if event.type == 'ESC':
-            self.report({'WARNING'}, "Operator manuell abgebrochen.")
-            self.cancel(context)
+            self.report({'WARNING'}, "Tracking-Setup manuell abgebrochen.")
+            context.window_manager.event_timer_remove(self._timer)
             return {'CANCELLED'}
     
-        if event.type == 'TIMER':
-            return self.run_step(context)
-    
-        return {'PASS_THROUGH'}
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
 
         scene = context.scene
         repeat_collection = scene.repeat_frame
