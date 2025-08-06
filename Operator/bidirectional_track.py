@@ -85,12 +85,6 @@ class CLIP_OT_bidirectional_track(Operator):
             print("✓ Tracking stabil erkannt – bereinige kurze Tracks.")
             bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
 
-            low_frame = find_low_marker_frame(clip, min_marker=min_marker)
-            if low_frame is not None:
-                jump_to_frame(context, frame_number=low_frame)
-            else:
-                print("→ Kein Frame mit zu wenigen Markern gefunden. Kein Sprung notwendig.")
-
             context.window_manager.event_timer_remove(self._timer)
             return {'FINISHED'}
 
