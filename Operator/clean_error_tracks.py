@@ -106,39 +106,50 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     def execute(self, context):
         deleted, _ = clean_error_tracks(context)
         self.report({'INFO'}, f"Insgesamt {deleted} Marker gelöscht.")
-
+    
         clip = context.space_data.clip
         tracks = clip.tracking.tracks
-
+    
+        # Deselektiere alle Tracks
         for track in tracks:
             track.select = False
-
+    
+        # Funktion zur Lückenprüfung
         def has_gaps(track):
             frames = sorted([m.frame for m in track.markers])
             return any(b - a > 1 for a, b in zip(frames, frames[1:]))
-
+    
+        # Tracks mit Lücken selektieren
         selected_count = 0
         for track in tracks:
             if has_gaps(track):
                 track.select = True
                 selected_count += 1
-
+    
+        print(f"[DEBUG] Selektierte Tracks mit Lücken: {selected_count}")
+    
         if selected_count == 0:
             self.report({'INFO'}, "Keine Tracks mit Lücken gefunden.")
             return {'FINISHED'}
-
+    
+        # Sicheren Editor-Kontext suchen
         area_found = False
         for area in context.screen.areas:
             if area.type == 'CLIP_EDITOR':
+                print("[DEBUG] Clip Editor gefunden – versuche Copy/Paste im Override-Kontext")
+    
                 with context.temp_override(area=area, region=area.regions[-1]):
-                    bpy.ops.clip.copy_tracks()
-                    bpy.ops.clip.paste_tracks()
+                    copied = bpy.ops.clip.copy_tracks()
+                    print(f"[DEBUG] copy_tracks() Rückgabe: {copied}")
+                    pasted = bpy.ops.clip.paste_tracks()
+                    print(f"[DEBUG] paste_tracks() Rückgabe: {pasted}")
                     area_found = True
                 break
-
+    
         if area_found:
             self.report({'INFO'}, f"{selected_count} Tracks mit Lücken wurden dupliziert.")
         else:
             self.report({'ERROR'}, "Copy/Paste konnte nicht ausgeführt werden – kein aktiver Clip Editor gefunden.")
-
+    
         return {'FINISHED'}
+    
