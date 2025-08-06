@@ -52,6 +52,11 @@ class CLIP_OT_detect(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
+
+        if scene.get("tracking_pipeline_active", False):
+            self.report({'WARNING'}, "Tracking-Vorgang aktiv – bitte warten.")
+            return {'CANCELLED'}
+
         self.clip = getattr(context.space_data, "clip", None)
         if self.clip is None:
             self.report({'WARNING'}, "Kein Clip geladen")
@@ -205,10 +210,10 @@ class CLIP_OT_detect(bpy.types.Operator):
 
 
 def register():
-    bpy.utils.register_class(TRACKING_OT_detect)
+    bpy.utils.register_class(CLIP_OT_detect)
 
 def unregister():
-    bpy.utils.unregister_class(TRACKING_OT_detect)
+    bpy.utils.unregister_class(CLIP_OT_detect)
 
 
 if __name__ == "__main__":
