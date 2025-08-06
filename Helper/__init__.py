@@ -8,7 +8,6 @@ from .set_test_value import set_test_value
 from .find_low_marker_frame import find_low_marker_frame
 from .jump_to_frame import jump_to_frame
 from .properties import RepeatEntry
-from .main import CLIP_OT_main  # Wichtig für Registrierung
 
 # Alle Klassen in eine Liste
 classes = (
@@ -16,7 +15,6 @@ classes = (
     CLIP_OT_marker_helper_main,
     CLIP_OT_enable_proxy,
     CLIP_OT_disable_proxy,
-    CLIP_OT_main,
 )
 
 def register():
