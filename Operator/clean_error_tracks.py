@@ -89,55 +89,6 @@ def clean_error_tracks(context):
                 total_deleted_all += deleted
 
     return total_deleted_all, 0.0
-  
-  def execute(self, context):
-      clean_error_tracks(context)
-
-      clip = context.space_data.clip
-      tracks = clip.tracking.tracks
-
-      for track in tracks:
-          track.select = False
-
-      def has_gaps(track):
-          frames = sorted([m.frame for m in track.markers])
-          return any(b - a > 1 for a, b in zip(frames, frames[1:]))
-
-      selected_tracks = []
-      for track in tracks:
-          if has_gaps(track):
-              track.select = True
-              selected_tracks.append(track)
-
-      if not selected_tracks:
-          return {'FINISHED'}
-
-      for area in context.screen.areas:
-          if area.type == 'CLIP_EDITOR':
-              for region in area.regions:
-                  if region.type == 'WINDOW':
-                      space = area.spaces.active
-                      if not space or not space.clip:
-                          continue
-
-                      try:
-                          with context.temp_override(area=area, region=region, space_data=space):
-                              bpy.ops.clip.copy_tracks()
-                              bpy.ops.clip.paste_tracks()
-
-                              copied_names = [track.name for track in selected_tracks]
-                              log_msg = f"{len(copied_names)} Tracks mit Lücken wurden dupliziert:\n"
-                              log_msg += "\n".join(f"\u2022 {name}" for name in copied_names)
-
-                              self.report({'INFO'}, log_msg)
-                              print("[CopyPaste] Duplizierte Tracks:\n" + log_msg)
-                              return {'FINISHED'}
-
-                      except Exception as e:
-                          self.report({'ERROR'}, f"Copy/Paste Fehler: {str(e)}")
-                          return {'CANCELLED'}
-
-      self.report({'ERROR'}, "Kein gültiger Clip Editor für Copy/Paste gefunden.")
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
@@ -148,4 +99,50 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     def poll(cls, context):
         return context.space_data and context.space_data.clip
 
+    def execute(self, context):
+        clean_error_tracks(context)
+
+        clip = context.space_data.clip
+        tracks = clip.tracking.tracks
+
+        for track in tracks:
+            track.select = False
+
+        def has_gaps(track):
+            frames = sorted([m.frame for m in track.markers])
+            return any(b - a > 1 for a, b in zip(frames, frames[1:]))
+
+        selected_tracks = []
+        for track in tracks:
+            if has_gaps(track):
+                track.select = True
+                selected_tracks.append(track)
+
+        if not selected_tracks:
+            return {'FINISHED'}
+
+        for area in context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        space = area.spaces.active
+                        if not space or not space.clip:
+                            continue
+
+                        try:
+                            with context.temp_override(area=area, region=region, space_data=space):
+                                bpy.ops.clip.copy_tracks()
+                                bpy.ops.clip.paste_tracks()
+
+                                copied_names = [track.name for track in selected_tracks]
+                                log_msg = f"{len(copied_names)} Tracks mit Lücken wurden dupliziert:\n"
+                                log_msg += "\n".join(f"\u2022 {name}" for name in copied_names)
+
+                                return {'FINISHED'}
+
+                        except Exception as e:
+                            self.report({'ERROR'}, f"Copy/Paste Fehler: {str(e)}")
+                            return {'CANCELLED'}
+
+        self.report({'ERROR'}, "Kein gültiger Clip Editor für Copy/Paste gefunden.")
         return {'CANCELLED'}
