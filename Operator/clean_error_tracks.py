@@ -104,15 +104,15 @@ def clean_error_tracks(context):
             return context.space_data and context.space_data.clip
     
         def execute(self, context):
-        deleted, _ = clean_error_tracks(context)
-        self.report({'INFO'}, f"Insgesamt {deleted} Marker gelöscht.")
-    
-        clip = context.space_data.clip
-        tracks = clip.tracking.tracks
-    
-        # 1. Deselektiere alle Tracks
-        for track in tracks:
-            track.select = False
+            deleted, _ = clean_error_tracks(context)
+            self.report({'INFO'}, f"Insgesamt {deleted} Marker gelöscht.")
+        
+            clip = context.space_data.clip
+            tracks = clip.tracking.tracks
+        
+            # 1. Deselektiere alle Tracks
+            for track in tracks:
+                track.select = False
     
         # 2. Lückenprüfung
         def has_gaps(track):
