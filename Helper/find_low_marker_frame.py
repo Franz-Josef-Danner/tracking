@@ -1,8 +1,12 @@
 import bpy
 
-def find_low_marker_frame(clip, min_marker=5, frame_start=None, frame_end=None):
+def find_low_marker_frame(clip, min_marker=None, frame_start=None, frame_end=None):
     tracking = clip.tracking
     tracks = tracking.tracks
+    scene = bpy.context.scene
+
+    if min_marker is None:
+        min_marker = scene.get("min_marker", 5)  # Fallback auf 5, falls nicht gesetzt
 
     if frame_start is None:
         frame_start = clip.frame_start
