@@ -31,6 +31,12 @@ class CLIP_OT_main(bpy.types.Operator):
             self.report({'WARNING'}, "Kein gültiger Clip oder Tracking-Daten vorhanden.")
             return {'CANCELLED'}
     
+        print("🚀 Starte Tracking-Vorbereitung...")
+    
+        # 🔧 EINMALIGE Vorbereitung vor Zyklusstart
+        bpy.ops.clip.tracker_settings('EXEC_DEFAULT')
+        bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
+    
         print("🚀 Starte Tracking-Pipeline...")
         bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
         print("⏳ Warte auf Abschluss der Pipeline...")
@@ -42,16 +48,26 @@ class CLIP_OT_main(bpy.types.Operator):
     
         return {'RUNNING_MODAL'}
 
-
     def modal(self, context, event):
         if event.type == 'ESC':
             self.report({'WARNING'}, "Tracking-Setup manuell abgebrochen.")
             context.window_manager.event_timer_remove(self._timer)
+    
+            # 🔁 Kompletter Reset der Szenevariablen
+            scene = context.scene
+            scene["pipeline_status"] = ""
+            scene["marker_min"] = 0
+            scene["marker_max"] = 0
+            scene["goto_frame"] = -1
+            if hasattr(scene, "repeat_frame"):
+                scene.repeat_frame.clear()
+    
+            print("❌ Abbruch durch Benutzer – Setup zurückgesetzt.")
             return {'CANCELLED'}
     
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
-
+    
         scene = context.scene
         repeat_collection = scene.repeat_frame
 
