@@ -44,8 +44,11 @@ class CLIP_OT_main(bpy.types.Operator):
             return {'PASS_THROUGH'}
 
         elif self._step == 1:
+            scene = context.scene
             clip = context.space_data.clip
-            frame = find_low_marker_frame(clip)
+            min_marker = scene.get("min_marker", 5)
+            
+            frame = find_low_marker_frame(clip, min_marker=min_marker)
             if frame is not None:
                 print(f"🟡 Zu wenige Marker im Frame {frame}")
                 scene["goto_frame"] = frame
