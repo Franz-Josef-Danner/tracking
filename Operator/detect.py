@@ -136,7 +136,7 @@ class CLIP_OT_detect(bpy.types.Operator):
                 t.select = False
             for t in close_tracks:
                 t.select = True
-            if close_tracks:
+            if close_tracks and any(t.select for t in self.tracking.tracks):
                 bpy.ops.clip.delete_track()
 
             cleaned_tracks = [t for t in new_tracks if t not in close_tracks]
@@ -161,7 +161,8 @@ class CLIP_OT_detect(bpy.types.Operator):
                     t.select = False
                 for t in cleaned_tracks:
                     t.select = True
-                bpy.ops.clip.delete_track()
+                if any(t.select for t in self.tracking.tracks):
+                    bpy.ops.clip.delete_track()
 
                 self.detection_threshold = max(
                     self.detection_threshold * ((anzahl_neu + 0.1) / self.marker_adapt),
@@ -183,6 +184,7 @@ class CLIP_OT_detect(bpy.types.Operator):
 
             else:
                 self.report({'INFO'}, f"Markeranzahl im Zielbereich: {anzahl_neu}")
+                print("🟢 Detect abgeschlossen – Status wurde gesetzt auf SUCCESS")
                 scene["detect_status"] = "success"
                 self.success = True
                 context.window_manager.event_timer_remove(self._timer)
