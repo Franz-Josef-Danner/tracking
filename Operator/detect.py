@@ -77,7 +77,7 @@ class CLIP_OT_detect(bpy.types.Operator):
         deselect_all_markers(self.tracking)
 
         wm = context.window_manager
-        self._timer = wm.event_timer_add(0.25, window=context.window)
+        self._timer = wm.event_timer_add(0.5, window=context.window)
         wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
