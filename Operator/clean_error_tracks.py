@@ -97,37 +97,64 @@ def clean_error_tracks(context):
     split_tracks_at_gaps(tracks)
 
     return total_deleted_all, 0.0
-def split_tracks_at_gaps(tracks):
+
+def split_tracks_at_gaps(context, tracks):
+    area = next((a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None)
+    if area is None:
+        print("[Split] Kein aktiver CLIP_EDITOR gefunden.")
+        return
+
+    override = context.copy()
+    override["area"] = area
+    override["region"] = area.regions[-1]  # normalerweise WINDOW
+
     for track in list(tracks):
         marker_frames = sorted(m.frame for m in track.markers)
         if len(marker_frames) < 3:
             continue
 
-        gaps = [(marker_frames[i-1], marker_frames[i])
+        gaps = [(marker_frames[i - 1], marker_frames[i])
                 for i in range(1, len(marker_frames))
-                if marker_frames[i] - marker_frames[i-1] > 1]
+                if marker_frames[i] - marker_frames[i - 1] > 1]
         if not gaps:
             continue
 
         gap_start, gap_end = gaps[0]
         print(f"[Split] Track '{track.name}' → Lücke: {gap_start}–{gap_end}")
 
-        new_track = tracks.new(name=f"{track.name}_split", frame=gap_end)
-        for m in track.markers:
-            if m.frame < gap_end:
-                nm = new_track.markers.insert_frame(m.frame, co=m.co)
-                nm.pattern_corners = m.pattern_corners[:]
-                nm.search_min = m.search_min[:]
-                nm.search_max = m.search_max[:]
+        # Track selektieren
+        for t in tracks:
+            t.select = False
+        track.select = True
 
-        for m in list(track.markers):
-            if m.frame >= gap_end:
-                track.markers.delete_frame(m.frame)
-        for m in list(new_track.markers):
-            if m.frame <= gap_start:
-                new_track.markers.delete_frame(m.frame)
+        # Track kopieren
+        bpy.ops.clip.copy_tracks(override)
 
-        print(f"[Split] '{track.name}' in '{new_track.name}' gesplittet")
+        # Track einfügen (Duplikat)
+        bpy.ops.clip.paste_tracks(override)
+
+        # Der zuletzt eingefügte Track ist am Ende der Liste
+        new_track = tracks[-1]
+        new_track.name = f"{track.name}_split"
+
+        # Setze Frame auf Lücke (oder Mittelpunkt der Lücke)
+        frame_split = gap_end
+
+        # Aktuelles Frame setzen
+        context.scene.frame_current = frame_split
+
+        # Original: lösche alles nach der Lücke
+        track.select = True
+        new_track.select = False
+        bpy.ops.clip.clear_track_path(override, action='REMAINED', clear_active=True)
+
+        # Duplikat: lösche alles vor der Lücke
+        track.select = False
+        new_track.select = True
+        bpy.ops.clip.clear_track_path(override, action='UPTO', clear_active=True)
+
+        print(f"[Split] → Track '{track.name}' enthält nur Frames <= {gap_start}, Track '{new_track.name}' nur >= {gap_end}")
+
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
