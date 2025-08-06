@@ -48,7 +48,16 @@ class CLIP_OT_tracking_pipeline(Operator):
 
         elif self._step == 2:
             print("→ Detect")
-            bpy.ops.clip.detect()
+            scene["tracking_pipeline_active"] = False  # Temporär deaktivieren
+            result = bpy.ops.clip.detect()
+            scene["tracking_pipeline_active"] = True   # Wieder aktivieren
+
+            if result != {'FINISHED'}:
+                print("✖ Detect wurde abgebrochen oder schlug fehl.")
+                wm.event_timer_remove(self._timer)
+                scene["tracking_pipeline_active"] = False
+                return {'CANCELLED'}
+
             self._step += 1
 
         elif self._step == 3:
@@ -63,7 +72,6 @@ class CLIP_OT_tracking_pipeline(Operator):
             self._step += 1
 
         elif self._step == 5:
-            # Warten bis bidirectional_track abgeschlossen ist
             if not self._is_tracking:
                 print("→ Starte Clean Short Tracks")
                 bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
