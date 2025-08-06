@@ -70,15 +70,19 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
         elif self._step == 5:
             print("→ Starte bidirektionales Tracking")
             bpy.ops.clip.bidirectional_track()
-            self._step += 1
+            self._step += 1  # Weiter zu Schritt 6 (Warten auf Tracking-Ende)
 
         elif self._step == 6:
+            if scene.get("bidirectional_status", "") == "done":
+                print("✅ Bidirectional Tracking abgeschlossen.")
+                scene["bidirectional_status"] = ""
+                self._is_tracking = False
+        
             if not self._is_tracking:
                 print("⏳ Warte auf Abschluss der Pipeline...")
                 scene["pipeline_status"] = "done"
                 print(f"🧩 [DEBUG] pipeline_status gesetzt auf: {scene['pipeline_status']}")
-                print(f"🧩 [DEBUG] Abschluss-Kontext: {context.area.type if context.area else 'Unbekannt'}")
+                wm = context.window_manager
                 wm.event_timer_remove(self._timer)
                 return {'FINISHED'}
 
-        return {'PASS_THROUGH'}
