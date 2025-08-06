@@ -7,6 +7,15 @@ def get_marker_position(track, frame):
         return marker.co
     return None
 
+def track_has_internal_gaps(track):
+    frames = sorted([marker.frame for marker in track.markers])
+    if len(frames) < 3:
+        return False  # Nicht genug Marker für sinnvolle Lückenanalyse
+
+    for i in range(1, len(frames)):
+        if frames[i] - frames[i - 1] > 1:
+            return True  # Markerabstand >1 → Lücke erkannt
+    return False
 
 def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width, height):
     total_deleted = 0
@@ -121,7 +130,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         tracks = clip.tracking.tracks
     
         # 2. Check tracks with gaps
-        original_tracks = [track for track in tracks if track_has_gaps(track, frame_start, frame_end)]
+        original_tracks = [track for track in tracks if track_has_internal_gaps(track)]
         if not original_tracks:
             self.report({'INFO'}, "Keine Tracks mit Lücken gefunden.")
             return {'FINISHED'}
