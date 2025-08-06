@@ -21,7 +21,7 @@ class CLIP_OT_main(bpy.types.Operator):
             return {'CANCELLED'}
 
         print("🚀 Starte Tracking-Pipeline...")
-        bpy.ops.clip.tracking_pipeline()
+        bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
         print("⏳ Warte auf Abschluss der Pipeline...")
 
         wm = context.window_manager
