@@ -42,24 +42,14 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width
         vm_diffs = [abs((vx + vy) / 2 - va) for _, vx, vy in marker_data]
         eb = max(vm_diffs) if vm_diffs else 0.0
         if eb < 0.0001:
-            eb = 0.0001
-
-        print(f"[Cleanup] Frame {fi} → max Error: {eb:.6f}")
-
-        while eb > ee:
-            eb *= 0.95
-            print(f"[Cleanup] Error-Schwellwert reduziert auf: {eb:.6f}")
-
-            for track, vx, vy in marker_data:
+            eb = 0.0001while eb > ee:
+            eb *= 0.95for track, vx, vy in marker_data:
                 vm = (vx + vy) / 2
                 if abs(vm - va) >= eb:
                     for f in (f1, fi, f2):
                         if track.markers.find_frame(f):
                             track.markers.delete_frame(f)
-                            total_deleted += 1
-                            print(f"[Cleanup] Marker gelöscht → Track: '{track.name}' | Frame: {f}")
-
-    return total_deleted
+                            total_deleted += 1return total_deleted
 
 def clean_error_tracks(context):
     scene = context.scene
@@ -104,31 +94,57 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         return context.space_data and context.space_data.clip
 
     def execute(self, context):
-        deleted, _ = clean_error_tracks(context)
-        self.report({'INFO'}, f"Insgesamt {deleted} Marker gelöscht.")
-    
+        clean_error_tracks(context)
+
         clip = context.space_data.clip
         tracks = clip.tracking.tracks
-    
-        # 1. Deselektiere alle Tracks
+
         for track in tracks:
             track.select = False
-    
-        # 2. Lückenprüfung
+
         def has_gaps(track):
             frames = sorted([m.frame for m in track.markers])
             return any(b - a > 1 for a, b in zip(frames, frames[1:]))
-    
-        # 3. Tracks mit Lücken selektieren
-        selected_count = 0
+
+        selected_tracks = []
         for track in tracks:
             if has_gaps(track):
                 track.select = True
-                selected_count += 1
-    
-        if selected_count == 0:
-            self.report({'INFO'}, "Keine Tracks mit Lücken gefunden.")
+                selected_tracks.append(track)
+
+        if not selected_tracks:
             return {'FINISHED'}
+
+        for area in context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        space = area.spaces.active
+                        if not space or not space.clip:
+                            continue
+
+                        try:
+                            with context.temp_override(area=area, region=region, space_data=space):
+                                bpy.ops.clip.copy_tracks()
+                                bpy.ops.clip.paste_tracks()
+
+                                copied_names = [track.name for track in selected_tracks]
+                                log_msg = f"{len(copied_names)} Tracks mit Lücken wurden dupliziert:
+"
+                                log_msg += "
+".join(f"• {name}" for name in copied_names)
+
+                                self.report({'INFO'}, log_msg)
+                                print("[CopyPaste] Duplizierte Tracks:
+" + log_msg)
+                                return {'FINISHED'}
+
+                        except Exception as e:
+                            self.report({'ERROR'}, f"Copy/Paste Fehler: {str(e)}")
+                            return {'CANCELLED'}
+
+        self.report({'ERROR'}, "Kein gültiger Clip Editor für Copy/Paste gefunden.")
+        return {'CANCELLED'}
     
         # 4. Sicherer Clip Editor mit temp_override
         area_found = False
