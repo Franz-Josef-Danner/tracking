@@ -143,17 +143,17 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                                 renamed = []
                                 existing_names = {t.name for t in tracks}
 
-                                for orig_name in original_names:
-                                    count = 1
-                                    for track in tracks:
-                                        if track.select and track.name != orig_name and orig_name in track.name:
-                                            new_name = f"pre_{orig_name}"
-                                            while new_name in existing_names:
-                                                new_name = f"pre_{orig_name}_{count}"
-                                                count += 1
-                                            track.name = new_name
-                                            renamed.append(new_name)
-                                            existing_names.add(new_name)
+                                for track in tracks:
+                                    if track.select and track.name not in original_names:
+                                        orig_base = track.name.rsplit(".", 1)[0]
+                                        new_name = f"pre_{orig_base}"
+                                        count = 1
+                                        while new_name in existing_names:
+                                            new_name = f"pre_{orig_base}_{count}"
+                                            count += 1
+                                        track.name = new_name
+                                        renamed.append(new_name)
+                                        existing_names.add(new_name)
 
                                 log_msg = f"{len(renamed)} Tracks mit Lücken wurden dupliziert:\n"
                                 log_msg += "\n".join(f"\u2022 {name}" for name in renamed)
