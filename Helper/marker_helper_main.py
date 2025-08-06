@@ -17,6 +17,10 @@ class CLIP_OT_marker_helper_main(bpy.types.Operator):
         max_marker = int(marker_adapt * 1.1)
         min_marker = int(marker_adapt * 0.9)
 
+        scene["marker_adapt"] = marker_adapt
+        scene["max_marker"] = max_marker
+        scene["min_marker"] = min_marker
+        
         self.report({'INFO'}, 
             f"Marker Zielwert: {marker_adapt}, Max: {max_marker}, Min: {min_marker}"
         )
