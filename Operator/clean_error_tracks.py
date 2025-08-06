@@ -153,19 +153,32 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                                 renamed = []
                                 existing_names = set(t.name for t in tracks)
 
+                                after_tracks = set(t.name for t in tracks)
+                                new_tracks = [t for t in tracks if t.name in (after_tracks - before_tracks)]
+
+                                renamed = []
+                                existing_names = set(t.name for t in tracks)
+
+                                # Map original names to new tracks
                                 for orig in original_tracks:
                                     orig_name = orig.name
-                                    match_candidates = [t for t in new_tracks if t.name.startswith(orig_name) and t.name not in existing_names]
+                                    # Finde duplizierte Versionen des Originaltracks
+                                    match_candidates = [
+                                        t for t in new_tracks
+                                        if orig_name in t.name and t.name != orig_name
+                                    ]
                                     for i, track in enumerate(match_candidates):
                                         new_name = f"pre_{orig_name}"
                                         if i > 0:
                                             new_name += f"_{i}"
+                                        # sichere Umbenennung, falls Name schon existiert
                                         while new_name in existing_names:
                                             i += 1
                                             new_name = f"pre_{orig_name}_{i}"
                                         track.name = new_name
                                         renamed.append(new_name)
                                         existing_names.add(new_name)
+
 
                                 log_msg = f"{len(renamed)} Tracks mit Lücken wurden dupliziert:\n"
                                 log_msg += "\n".join(f"• {name}" for name in renamed)
