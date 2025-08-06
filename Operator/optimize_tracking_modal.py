@@ -243,6 +243,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
         return {'PASS_THROUGH'}
 
     def cancel(self, context):
-        context.scene["pipeline_status"] = "done"
+        context.scene["pipeline_status"] = ""
         wm = context.window_manager
         wm.event_timer_remove(self._timer)
+
