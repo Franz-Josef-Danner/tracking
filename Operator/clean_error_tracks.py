@@ -140,7 +140,6 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                                 bpy.ops.clip.copy_tracks()
                                 bpy.ops.clip.paste_tracks()
 
-                                # Umbenennung der kopierten Tracks zur besseren Differenzierung
                                 existing_names = {t.name for t in tracks}
                                 renamed = []
                                 for track in tracks:
