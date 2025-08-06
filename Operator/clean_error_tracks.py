@@ -115,27 +115,29 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         frame_start = scene.frame_start
         frame_end = scene.frame_end
     
+        clean_error_tracks(context)
+
         clip = context.space_data.clip
         tracks = clip.tracking.tracks
     
-        # 1. Lückenhafte Tracks feststellen (einmalig)
+        # 2. Check tracks with gaps
         original_tracks = [track for track in tracks if track_has_gaps(track, frame_start, frame_end)]
         if not original_tracks:
             self.report({'INFO'}, "Keine Tracks mit Lücken gefunden.")
             return {'FINISHED'}
     
-        # 2. Ursprüngliche Namen merken
+        # 3. Store original names
         original_names = {t.name for t in original_tracks}
         existing_names = {t.name for t in tracks}
         renamed = []
     
-        # 3. Nur einmal alle Tracks selektieren und in Liste halten
+        # 4. Select only original_tracks
         for track in tracks:
             track.select = False
         for track in original_tracks:
             track.select = True
     
-        # 4. Clip-Editor-Override
+        # 5. Perform duplication and rename
         for area in context.screen.areas:
             if area.type == 'CLIP_EDITOR':
                 for region in area.regions:
@@ -145,12 +147,12 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                             bpy.ops.clip.copy_tracks()
                             bpy.ops.clip.paste_tracks()
     
-                            # Neue Tracks identifizieren
+                            # Identify new tracks
                             all_names_after = {t.name for t in tracks}
                             new_names = all_names_after - existing_names
                             new_tracks = [t for t in tracks if t.name in new_names]
     
-                            # 5. Umbenennung: 1:1 Mapping zur Originalnamenliste
+                            # Rename new tracks with prefix
                             for orig, new_track in zip(original_tracks, new_tracks):
                                 base_name = f"pre_{orig.name}"
                                 name = base_name
@@ -167,6 +169,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     
         self.report({'ERROR'}, "Kein Clip-Editor-Fenster gefunden.")
         return {'CANCELLED'}
+
 
 
         self.report({'ERROR'}, "Kein gültiger Clip Editor für Copy/Paste gefunden.")
