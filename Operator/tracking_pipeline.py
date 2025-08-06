@@ -34,9 +34,16 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
+        if event.type == 'ESC':
+            self.report({'WARNING'}, "Tracking-Pipeline manuell abgebrochen.")
+            self.cancel(context)
+            return {'CANCELLED'}
+    
         if event.type == 'TIMER':
             return self.run_step(context)
+    
         return {'PASS_THROUGH'}
+    
 
     def run_step(self, context):
         scene = context.scene
