@@ -4,6 +4,7 @@ from .enable_proxy import CLIP_OT_enable_proxy
 from .error_value import error_value
 from .set_test_value import set_test_value
 from .find_low_marker_frame import find_low_marker_frame
+from .jump_to_frame import jump_to_frame
 
 operator_classes = (
     marker_helper_main,
