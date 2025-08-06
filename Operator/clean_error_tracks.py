@@ -50,7 +50,8 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width
                     for f in (f1, fi, f2):
                         if track.markers.find_frame(f):
                             track.markers.delete_frame(f)
-                            total_deleted += 1return total_deleted
+                            total_deleted += 1
+                            return total_deleted
 
 def clean_error_tracks(context):
     scene = context.scene
