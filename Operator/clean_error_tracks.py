@@ -1,10 +1,12 @@
 import bpy
 
+
 def get_marker_position(track, frame):
     marker = track.markers.find_frame(frame)
     if marker:
         return marker.co
     return None
+
 
 def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width, height):
     total_deleted = 0
@@ -56,6 +58,7 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width
 
     return total_deleted
 
+
 def clean_error_tracks(context):
     scene = context.scene
     clip = context.space_data.clip
@@ -89,6 +92,7 @@ def clean_error_tracks(context):
                 total_deleted_all += deleted
 
     return total_deleted_all, 0.0
+
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
@@ -134,9 +138,22 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                                 bpy.ops.clip.copy_tracks()
                                 bpy.ops.clip.paste_tracks()
 
-                                copied_names = [track.name for track in selected_tracks]
+                                # Umbenennung der kopierten Tracks zur besseren Differenzierung
+                                existing_names = {t.name for t in tracks}
+                                for track in tracks:
+                                    if track.select and any(track.name.startswith(orig.name) for orig in selected_tracks):
+                                        base = track.name.split(".")[0]
+                                        new_name = f"{base}_COPY"
+                                        suffix = 1
+                                        while new_name in existing_names:
+                                            new_name = f"{base}_COPY{suffix}"
+                                            suffix += 1
+                                        track.name = new_name
+                                        existing_names.add(new_name)
+
+                                copied_names = [track.name for track in tracks if track.select]
                                 log_msg = f"{len(copied_names)} Tracks mit Lücken wurden dupliziert:\n"
-                                log_msg += "\n".join(f"\u2022 {name}" for name in copied_names)
+                                log_msg += "\n".join(f"• {name}" for name in copied_names)
 
                                 self.report({'INFO'}, log_msg)
                                 print("[CopyPaste] Duplizierte Tracks:\n" + log_msg)
