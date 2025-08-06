@@ -155,13 +155,14 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
 
                                 for orig in original_tracks:
                                     orig_name = orig.name
-                                    match_candidates = [t for t in new_tracks if t.name.startswith(orig_name)]
+                                    match_candidates = [t for t in new_tracks if t.name.startswith(orig_name) and t.name not in existing_names]
                                     for i, track in enumerate(match_candidates):
                                         new_name = f"pre_{orig_name}"
                                         if i > 0:
                                             new_name += f"_{i}"
-                                        if new_name in existing_names:
-                                            continue
+                                        while new_name in existing_names:
+                                            i += 1
+                                            new_name = f"pre_{orig_name}_{i}"
                                         track.name = new_name
                                         renamed.append(new_name)
                                         existing_names.add(new_name)
