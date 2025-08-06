@@ -14,6 +14,7 @@ class CLIP_OT_tracking_pipeline(Operator):
     def execute(self, context):
         print("🚀 Starte Tracking-Pipeline...")
         context.scene["detect_status"] = ""
+        context.scene["pipeline_status"] = ""
         self._step = 0
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.1, window=context.window)
@@ -42,7 +43,7 @@ class CLIP_OT_tracking_pipeline(Operator):
             print("→ Detect starten")
             context.scene["detect_status"] = "pending"
             bpy.ops.clip.detect()
-            self._step += 1  # Springt in Wartezustand
+            self._step += 1
 
         elif self._step == 3:
             status = context.scene.get("detect_status", "pending")
@@ -74,6 +75,8 @@ class CLIP_OT_tracking_pipeline(Operator):
                 context.scene["detect_status"] = ""
                 wm.event_timer_remove(self._timer)
                 print("✓ Pipeline abgeschlossen.")
+                context.scene["pipeline_status"] = "done"
+                print("🟢 Status gesetzt: pipeline_status = 'done'")
                 return {'FINISHED'}
 
         return {'PASS_THROUGH'}
@@ -87,3 +90,6 @@ def register():
 
 def unregister():
     bpy.utils.unregister_class(CLIP_OT_tracking_pipeline)
+
+if __name__ == "__main__":
+    register()
