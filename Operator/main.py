@@ -28,7 +28,7 @@ class CLIP_OT_main(bpy.types.Operator):
 
             while stable_count < 2:
                 bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-                time.sleep(0.2)
+                time.sleep(0.1)
 
                 current_marker_count = len(clip.tracking.tracks)
                 current_frame = scene.frame_current
