@@ -250,7 +250,15 @@ class CLIP_OT_optimize_tracking_modal(Operator):
         return {'PASS_THROUGH'}
 
     def cancel(self, context):
-        context.scene["pipeline_status"] = ""
         wm = context.window_manager
         wm.event_timer_remove(self._timer)
-
+    
+        scene = context.scene
+        scene["pipeline_status"] = ""
+        scene["detect_status"] = ""
+        scene["bidirectional_status"] = ""
+        scene["goto_frame"] = -1
+        if "repeat_frame" in scene:
+            scene["repeat_frame"].clear()
+    
+        print("❌ Optimize Tracking abgebrochen. Status vollständig zurückgesetzt.")
