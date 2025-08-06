@@ -1,6 +1,6 @@
 import bpy
 
-def find_low_marker_frame(clip, marker_basis=5, frame_start=None, frame_end=None):
+def find_low_marker_frame(clip, marker_basis=20, frame_start=None, frame_end=None):
     tracking = clip.tracking
     tracks = tracking.tracks
 
