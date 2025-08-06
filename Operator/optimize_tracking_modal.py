@@ -80,10 +80,14 @@ class CLIP_OT_optimize_tracking_modal(Operator):
 
         def track(backwards=False):
             bpy.ops.clip.enable_proxy('EXEC_DEFAULT')
-            for t in clip.tracking.tracks:
-                if t.select:
-                    clip.tracking.tracks.active = t
-                    bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=backwards, sequence=True)
+            selected = [t for t in clip.tracking.tracks if t.select]
+            if not selected:
+                self.report({'ERROR'}, "Keine Marker zum Tracken.")
+                self.cancel(context)
+                return {'CANCELLED'}
+            for t in selected:
+                clip.tracking.tracks.active = t
+                bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=backwards, sequence=True)
 
         def frames_per_track_all():
             return sum(len(t.markers) for t in clip.tracking.tracks if t.select)
@@ -113,7 +117,8 @@ class CLIP_OT_optimize_tracking_modal(Operator):
             if self._step == 0:
                 set_flag1(self._pt, self._sus)
                 set_marker()
-                track()
+                if track() == {'CANCELLED'}:
+                    return {'CANCELLED'}
                 self._step += 1
                 return {'PASS_THROUGH'}
 
@@ -122,6 +127,10 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                     return {'PASS_THROUGH'}
                 f = frames_per_track_all()
                 e = measure_error_all()
+                if e is None:
+                    self.report({'ERROR'}, "Fehlerwert konnte nicht berechnet werden.")
+                    self.cancel(context)
+                    return {'CANCELLED'}
                 g = eg(f, e)
                 print(f"[Zyklus 1] f={f}, e={e:.4f}, g={g:.4f}")
                 bpy.ops.clip.delete_track(confirm=False)
@@ -157,7 +166,8 @@ class CLIP_OT_optimize_tracking_modal(Operator):
             if self._step < 5:
                 set_flag2(self._step)
                 set_marker()
-                track()
+                if track() == {'CANCELLED'}:
+                    return {'CANCELLED'}
                 self._phase = 1.5
                 return {'PASS_THROUGH'}
 
@@ -172,6 +182,10 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                 return {'PASS_THROUGH'}
             f = frames_per_track_all()
             e = measure_error_all()
+            if e is None:
+                self.report({'ERROR'}, "Fehlerwert konnte nicht berechnet werden.")
+                self.cancel(context)
+                return {'CANCELLED'}
             g = eg(f, e)
             print(f"[Zyklus 2] Motion {self._step} → g={g:.4f}")
             if g > self._ev:
@@ -188,7 +202,8 @@ class CLIP_OT_optimize_tracking_modal(Operator):
             if self._step < 5:
                 set_flag3(self._step)
                 set_marker()
-                track()
+                if track() == {'CANCELLED'}:
+                    return {'CANCELLED'}
                 self._phase = 2.5
                 return {'PASS_THROUGH'}
 
@@ -205,6 +220,10 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                 return {'PASS_THROUGH'}
             f = frames_per_track_all()
             e = measure_error_all()
+            if e is None:
+                self.report({'ERROR'}, "Fehlerwert konnte nicht berechnet werden.")
+                self.cancel(context)
+                return {'CANCELLED'}
             g = eg(f, e)
             print(f"[Zyklus 3] RGB {self._step} → g={g:.4f}")
             if g > self._ev:
