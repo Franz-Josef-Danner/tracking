@@ -36,7 +36,7 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
 
         if self._step == 0:
             print("→ Marker Helper")
-            bpy.ops.clip.marker_helper()
+            bpy.ops.clip.marker_helper_main()
             self._step += 1
 
         elif self._step == 1:
