@@ -1,11 +1,21 @@
-
 import bpy
+
 
 def get_marker_position(track, frame):
     marker = track.markers.find_frame(frame)
     if marker:
         return marker.co
     return None
+
+def track_has_internal_gaps(track):
+    frames = sorted([marker.frame for marker in track.markers])
+    if len(frames) < 3:
+        return False  # Nicht genug Marker für sinnvolle Lückenanalyse
+
+    for i in range(1, len(frames)):
+        if frames[i] - frames[i - 1] > 1:
+            return True  # Markerabstand >1 → Lücke erkannt
+    return False
 
 def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width, height):
     total_deleted = 0
@@ -44,11 +54,8 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width
         if eb < 0.0001:
             eb = 0.0001
 
-        print(f"[Cleanup] Frame {fi} → max Error: {eb:.6f}")
-
         while eb > ee:
             eb *= 0.95
-            print(f"[Cleanup] Error-Schwellwert reduziert auf: {eb:.6f}")
 
             for track, vx, vy in marker_data:
                 vm = (vx + vy) / 2
@@ -57,9 +64,16 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width
                         if track.markers.find_frame(f):
                             track.markers.delete_frame(f)
                             total_deleted += 1
-                            print(f"[Cleanup] Marker gelöscht → Track: '{track.name}' | Frame: {f}")
 
     return total_deleted
+
+
+def track_has_gaps(track, frame_start, frame_end):
+    for f in range(frame_start, frame_end + 1):
+        if not track.markers.find_frame(f):
+            return True
+    return False
+
 
 def clean_error_tracks(context):
     scene = context.scene
@@ -95,15 +109,77 @@ def clean_error_tracks(context):
 
     return total_deleted_all, 0.0
 
+
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
     bl_label = "Clean Error Tracks (Grid)"
+    bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
         return context.space_data and context.space_data.clip
 
     def execute(self, context):
-        deleted, _ = clean_error_tracks(context)
-        self.report({'INFO'}, f"Insgesamt {deleted} Marker gelöscht.")
-        return {'FINISHED'}
+        scene = context.scene
+        frame_start = scene.frame_start
+        frame_end = scene.frame_end
+    
+        clean_error_tracks(context)
+
+        clip = context.space_data.clip
+        tracks = clip.tracking.tracks
+    
+        # 2. Check tracks with gaps
+        original_tracks = [track for track in tracks if track_has_internal_gaps(track)]
+        if not original_tracks:
+            self.report({'INFO'}, "Keine Tracks mit Lücken gefunden.")
+            return {'FINISHED'}
+    
+        # 3. Store original names
+        original_names = {t.name for t in original_tracks}
+        existing_names = {t.name for t in tracks}
+        renamed = []
+    
+        # 4. Select only original_tracks
+        for track in tracks:
+            track.select = False
+        for track in original_tracks:
+            track.select = True
+    
+        # 5. Perform duplication and rename
+        for area in context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        space = area.spaces.active
+                        with context.temp_override(area=area, region=region, space_data=space):
+                            bpy.ops.clip.copy_tracks()
+                            bpy.ops.clip.paste_tracks()
+    
+                            # Identify new tracks
+                            all_names_after = {t.name for t in tracks}
+                            new_names = all_names_after - existing_names
+                            new_tracks = [t for t in tracks if t.name in new_names]
+    
+                            # Rename new tracks with prefix
+                            for orig, new_track in zip(original_tracks, new_tracks):
+                                base_name = f"pre_{orig.name}"
+                                name = base_name
+                                suffix = 1
+                                while name in existing_names:
+                                    name = f"{base_name}_{suffix}"
+                                    suffix += 1
+                                new_track.name = name
+                                renamed.append(name)
+                                existing_names.add(name)
+    
+                            self.report({'INFO'}, f"{len(renamed)} duplizierte Tracks:\n" + "\n".join(f"• {r}" for r in renamed))
+                            return {'FINISHED'}
+    
+        self.report({'ERROR'}, "Kein Clip-Editor-Fenster gefunden.")
+        return {'CANCELLED'}
+
+
+
+        self.report({'ERROR'}, "Kein gültiger Clip Editor für Copy/Paste gefunden.")
+        return {'CANCELLED'}
