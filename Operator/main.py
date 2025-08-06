@@ -1,6 +1,6 @@
 import bpy
 import time
-from .find_low_marker_frame import get_first_low_marker_frame
+from .find_low_marker_frame import find_low_marker_frame
 from .jump_to_frame import jump_to_frame
 
 class CLIP_OT_main(bpy.types.Operator):
@@ -49,7 +49,7 @@ class CLIP_OT_main(bpy.types.Operator):
                     prev_frame = current_frame
 
             # Suche Frame mit zu wenigen Markern
-            frame = get_first_low_marker_frame(clip)
+            frame = find_low_marker_frame(clip)
             if frame is not None:
                 scene["goto_frame"] = frame
                 jump_to_frame(context)
