@@ -106,4 +106,27 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     def execute(self, context):
         deleted, _ = clean_error_tracks(context)
         self.report({'INFO'}, f"Insgesamt {deleted} Marker gelöscht.")
+    
+        clip = context.space_data.clip
+        tracks = clip.tracking.tracks
+    
+        # Deselektiere alle zuerst
+        for track in tracks:
+            track.select = False
+    
+        # Selektiere nur Tracks mit Lücken
+        def has_gaps(track):
+            frames = sorted([m.frame for m in track.markers])
+            return any(b - a > 1 for a, b in zip(frames, frames[1:]))
+    
+        for track in tracks:
+            if has_gaps(track):
+                track.select = True
+    
+        # Kopieren und Einfügen
+        bpy.ops.clip.copy_tracks()
+        bpy.ops.clip.paste_tracks()
+        self.report({'INFO'}, "Tracks mit Lücken kopiert und eingefügt.")
+    
         return {'FINISHED'}
+    
