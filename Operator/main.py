@@ -1,4 +1,3 @@
-
 import bpy
 import time
 from ..Helper.find_low_marker_frame import find_low_marker_frame
@@ -40,15 +39,14 @@ class CLIP_OT_main(bpy.types.Operator):
         if self._step == 0:
             if scene.get("pipeline_status", "") == "done":
                 print("🧪 Starte Markerprüfung…")
-                self._step = 1  # Weiter zu Markerprüfung
+                self._step = 1
             return {'PASS_THROUGH'}
 
         elif self._step == 1:
-            scene = context.scene
             clip = context.space_data.clip
-            min_marker = scene.get("min_marker", 5)
-            
-            frame = find_low_marker_frame(clip, min_marker=min_marker)
+            marker_basis = scene.get("marker_basis", 20)
+
+            frame = find_low_marker_frame(clip, marker_basis=marker_basis)
             if frame is not None:
                 print(f"🟡 Zu wenige Marker im Frame {frame}")
                 scene["goto_frame"] = frame
@@ -56,22 +54,12 @@ class CLIP_OT_main(bpy.types.Operator):
             else:
                 print("✅ Alle Frames haben ausreichend Marker.")
 
-            self._step = 2  # Abschluss
+            self._step = 2
             return {'PASS_THROUGH'}
 
         elif self._step == 2:
-            wm = context.window_manager
-            wm.event_timer_remove(self._timer)
+            context.window_manager.event_timer_remove(self._timer)
             self.report({'INFO'}, "Tracking + Markerprüfung abgeschlossen.")
             return {'FINISHED'}
 
         return {'RUNNING_MODAL'}
-
-def register():
-    bpy.utils.register_class(CLIP_OT_main)
-
-def unregister():
-    bpy.utils.unregister_class(CLIP_OT_main)
-
-if __name__ == "__main__":
-    register()
