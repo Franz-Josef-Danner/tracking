@@ -1,7 +1,7 @@
 import bpy
 import time
-from .find_low_marker_frame import find_low_marker_frame
-from .jump_to_frame import jump_to_frame
+from ..Helper.find_low_marker_frame import find_low_marker_frame
+from ..Helper.jump_to_frame import jump_to_frame
 
 class CLIP_OT_main(bpy.types.Operator):
     """Main Tracking Setup inklusive automatischem Tracking-Zyklus"""
