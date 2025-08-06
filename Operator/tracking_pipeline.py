@@ -22,17 +22,23 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
         self._is_tracking = True
         self._timer = wm.event_timer_add(0.2, window=context.window)
         wm.modal_handler_add(self)
+
         print("🚀 Starte Tracking-Pipeline...")
         context.scene["pipeline_status"] = "running"
+        print(f"🧩 [DEBUG] pipeline_status gesetzt auf: {context.scene['pipeline_status']}")
+        print(f"🧩 [DEBUG] Starte Modal Handler mit Kontext: {context.area.type if context.area else 'Unbekannt'}")
+
         return {'RUNNING_MODAL'}
 
     def run_step(self, context):
         scene = context.scene
+        wm = context.window_manager
 
         # Rückmeldung vom Bidirectional Tracking
-        if context.scene.get("bidirectional_status", "") == "done":
+        if scene.get("bidirectional_status", "") == "done":
             self._is_tracking = False
-            context.scene["bidirectional_status"] = ""  # Reset
+            scene["bidirectional_status"] = ""  # Reset
+            print("✅ Bidirectional Tracking abgeschlossen.")
 
         if self._step == 0:
             print("→ Marker Helper")
@@ -54,6 +60,7 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
             if scene.get("detect_status", "") == "success":
                 self._step += 1
                 scene["detect_status"] = ""
+                print("✅ Detect abgeschlossen.")
 
         elif self._step == 4:
             print("→ Proxy aktivieren")
@@ -69,7 +76,8 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
             if not self._is_tracking:
                 print("⏳ Warte auf Abschluss der Pipeline...")
                 scene["pipeline_status"] = "done"
-                wm = context.window_manager
+                print(f"🧩 [DEBUG] pipeline_status gesetzt auf: {scene['pipeline_status']}")
+                print(f"🧩 [DEBUG] Abschluss-Kontext: {context.area.type if context.area else 'Unbekannt'}")
                 wm.event_timer_remove(self._timer)
                 return {'FINISHED'}
 
