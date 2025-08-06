@@ -114,79 +114,60 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         scene = context.scene
         frame_start = scene.frame_start
         frame_end = scene.frame_end
-
-        clean_error_tracks(context)
-
+    
         clip = context.space_data.clip
         tracks = clip.tracking.tracks
-
+    
+        # 1. Lückenhafte Tracks feststellen (einmalig)
+        original_tracks = [track for track in tracks if track_has_gaps(track, frame_start, frame_end)]
+        if not original_tracks:
+            self.report({'INFO'}, "Keine Tracks mit Lücken gefunden.")
+            return {'FINISHED'}
+    
+        # 2. Ursprüngliche Namen merken
+        original_names = {t.name for t in original_tracks}
+        existing_names = {t.name for t in tracks}
+        renamed = []
+    
+        # 3. Nur einmal alle Tracks selektieren und in Liste halten
         for track in tracks:
             track.select = False
-
-        original_tracks = [track for track in tracks if track_has_gaps(track, frame_start, frame_end)]
-        original_names = {track.name for track in original_tracks}
-
         for track in original_tracks:
             track.select = True
-
-        if not original_tracks:
-            return {'FINISHED'}
-
-        before_tracks = set(t.name for t in tracks)
-
+    
+        # 4. Clip-Editor-Override
         for area in context.screen.areas:
             if area.type == 'CLIP_EDITOR':
                 for region in area.regions:
                     if region.type == 'WINDOW':
                         space = area.spaces.active
-                        if not space or not space.clip:
-                            continue
+                        with context.temp_override(area=area, region=region, space_data=space):
+                            bpy.ops.clip.copy_tracks()
+                            bpy.ops.clip.paste_tracks()
+    
+                            # Neue Tracks identifizieren
+                            all_names_after = {t.name for t in tracks}
+                            new_names = all_names_after - existing_names
+                            new_tracks = [t for t in tracks if t.name in new_names]
+    
+                            # 5. Umbenennung: 1:1 Mapping zur Originalnamenliste
+                            for orig, new_track in zip(original_tracks, new_tracks):
+                                base_name = f"pre_{orig.name}"
+                                name = base_name
+                                suffix = 1
+                                while name in existing_names:
+                                    name = f"{base_name}_{suffix}"
+                                    suffix += 1
+                                new_track.name = name
+                                renamed.append(name)
+                                existing_names.add(name)
+    
+                            self.report({'INFO'}, f"{len(renamed)} duplizierte Tracks:\n" + "\n".join(f"• {r}" for r in renamed))
+                            return {'FINISHED'}
+    
+        self.report({'ERROR'}, "Kein Clip-Editor-Fenster gefunden.")
+        return {'CANCELLED'}
 
-                        try:
-                            with context.temp_override(area=area, region=region, space_data=space):
-                                renamed = []
-                                existing_names = {t.name for t in tracks}
-                        
-                                for orig_track in original_tracks:
-                                    orig_name = orig_track.name
-                                    orig_track.select = True
-                        
-                                    # Vorher: alle Namen merken
-                                    before_names = {t.name for t in tracks}
-                        
-                                    # Nur den selektierten Track duplizieren
-                                    bpy.ops.clip.copy_tracks()
-                                    bpy.ops.clip.paste_tracks()
-                        
-                                    # Danach: neuen Track finden
-                                    after_names = {t.name for t in tracks}
-                                    new_names = after_names - before_names
-                                    new_track = next((t for t in tracks if t.name in new_names), None)
-                        
-                                    if new_track:
-                                        new_name = f"pre_{orig_name}"
-                                        suffix = 1
-                                        while new_name in existing_names:
-                                            new_name = f"pre_{orig_name}_{suffix}"
-                                            suffix += 1
-                        
-                                        new_track.name = new_name
-                                        renamed.append(new_name)
-                                        existing_names.add(new_name)
-                        
-                                    # Deselect for next iteration
-                                    orig_track.select = False
-                        
-                                log_msg = f"{len(renamed)} Tracks mit Lücken wurden dupliziert:\n"
-                                log_msg += "\n".join(f"• {name}" for name in renamed)
-                        
-                                self.report({'INFO'}, log_msg)
-                                return {'FINISHED'}
-
-
-                        except Exception as e:
-                            self.report({'ERROR'}, f"Copy/Paste Fehler: {str(e)}")
-                            return {'CANCELLED'}
 
         self.report({'ERROR'}, "Kein gültiger Clip Editor für Copy/Paste gefunden.")
         return {'CANCELLED'}
