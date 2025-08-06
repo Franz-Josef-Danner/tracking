@@ -1,33 +1,10 @@
 
-def duplicate_track(track, tracking):
-    new_track = tracking.tracks.new(name=f"{track.name}_split", frame=track.markers[0].frame)
-    for marker in track.markers:
-        new_marker = new_track.markers.insert_frame(marker.frame, co=marker.co)
-        new_marker.pattern_corners = marker.pattern_corners[:]
-        new_marker.search_min = marker.search_min[:]
-        new_marker.search_max = marker.search_max[:]
-        new_marker.mute = marker.mute
-    return new_track
-
-
-
 import bpy
 
 def get_marker_position(track, frame):
     marker = track.markers.find_frame(frame)
     if marker:
         return marker.co
-    return None
-
-def get_clip_editor_override(context):
-    for area in context.window.screen.areas:
-        if area.type == 'CLIP_EDITOR':
-            for region in area.regions:
-                if region.type == 'WINDOW':
-                    return {
-                        "area": area,
-                        "region": region,
-                    }
     return None
 
 def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width, height):
@@ -76,52 +53,11 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width
             for track, vx, vy in marker_data:
                 vm = (vx + vy) / 2
                 if abs(vm - va) >= eb:
-                    for f in (f1, fi, f2):
-                        if track.markers.find_frame(f):
-                            track.markers.delete_frame(f)
-                            total_deleted += 1
-                            print(f"[Cleanup] Marker gelöscht → Track: '{track.name}' | Frame: {f}")
+                    track.select = True
+                    total_deleted += 1
+            bpy.ops.clip.delete_track()
+
     return total_deleted
-
-def split_tracks_at_gaps(context, tracks):
-    override = get_clip_editor_override(context)
-    if not override:
-        print("[Split] Kein gültiger Clip-Editor-Kontext gefunden.")
-        return
-
-    for track in list(tracks):
-        marker_frames = sorted(m.frame for m in track.markers)
-        if len(marker_frames) < 3:
-            continue
-
-        gaps = [(marker_frames[i - 1], marker_frames[i])
-                for i in range(1, len(marker_frames))
-                if marker_frames[i] - marker_frames[i - 1] > 1]
-        if not gaps:
-            continue
-
-        gap_start, gap_end = gaps[0]
-        print(f"[Split] Track '{track.name}' → Lücke: {gap_start}–{gap_end}")
-
-        for t in tracks:
-            t.select = False
-        track.select = True
-
-        new_track = duplicate_track(track, context.space_data.clip.tracking)
-        print(f"[Split] → Neuer Track erstellt: '{new_track.name}' mit {len(new_track.markers)} Markern")
-        context.scene.frame_current = gap_end
-
-        print(f"[Split] → Lösche Marker NACH {gap_end} im Original '{track.name}'")
-        track.select = True
-        new_track.select = False
-        bpy.ops.clip.clear_track_path(action='REMAINED', clear_active=True)
-
-        print(f"[Split] → Lösche Marker VOR {gap_start} im Duplikat '{new_track.name}'")
-        track.select = False
-        new_track.select = True
-        bpy.ops.clip.clear_track_path(action='UPTO', clear_active=True)
-
-        print(f"[Split] ✅ Track '{track.name}' endet vor Gap, Track '{new_track.name}' beginnt nach Gap.")
 
 def clean_error_tracks(context):
     scene = context.scene
@@ -155,7 +91,6 @@ def clean_error_tracks(context):
                 deleted = run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width, height)
                 total_deleted_all += deleted
 
-    split_tracks_at_gaps(context, tracks)
     return total_deleted_all, 0.0
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
