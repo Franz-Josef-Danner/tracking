@@ -53,9 +53,11 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width
             for track, vx, vy in marker_data:
                 vm = (vx + vy) / 2
                 if abs(vm - va) >= eb:
-                    track.select = True
-                    total_deleted += 1
-            bpy.ops.clip.delete_track()
+                    for f in (f1, fi, f2):
+                        if track.markers.find_frame(f):
+                            track.markers.delete_frame(f)
+                            total_deleted += 1
+                            print(f"[Cleanup] Marker gelöscht → Track: '{track.name}' | Frame: {f}")
 
     return total_deleted
 
