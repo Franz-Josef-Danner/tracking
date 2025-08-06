@@ -96,22 +96,36 @@ def split_tracks_at_gaps(context, tracks):
         track.select = True
 
         with context.temp_override(**override):
+            print(f"[Split] → Kopiere Track: '{track.name}'")
             bpy.ops.clip.copy_tracks()
+
+            print(f"[Split] → Füge Track ein")
             bpy.ops.clip.paste_tracks()
 
+            if len(tracks) < 1:
+                print("[Split] ⚠️ Keine Tracks mehr vorhanden nach Paste.")
+                continue
+
             new_track = tracks[-1]
+            print(f"[Split] Neuer Track erkannt: '{new_track.name}'")
+
+            if len(new_track.markers) == 0:
+                print(f"[Split] ⚠️ Neuer Track '{new_track.name}' hat keine Marker!")
+
             new_track.name = f"{track.name}_split"
             context.scene.frame_current = gap_end
 
+            print(f"[Split] → Lösche Marker NACH {gap_end} im Original '{track.name}'")
             track.select = True
             new_track.select = False
             bpy.ops.clip.clear_track_path(action='REMAINED', clear_active=True)
 
+            print(f"[Split] → Lösche Marker VOR {gap_start} im Duplikat '{new_track.name}'")
             track.select = False
             new_track.select = True
             bpy.ops.clip.clear_track_path(action='UPTO', clear_active=True)
 
-        print(f"[Split] → Track '{track.name}' enthält nur Frames <= {gap_start}, Track '{new_track.name}' nur >= {gap_end}")
+            print(f"[Split] ✅ Track '{track.name}' endet vor Gap, Track '{new_track.name}' beginnt nach Gap.")
 
 def clean_error_tracks(context):
     scene = context.scene
