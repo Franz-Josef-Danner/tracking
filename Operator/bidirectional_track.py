@@ -82,6 +82,11 @@ class CLIP_OT_bidirectional_track(Operator):
         if self._stable_count >= 2:
             print("✓ Tracking stabil erkannt – bereinige kurze Tracks.")
             bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
+
+            # Rückmeldung an Pipeline
+            context.scene["bidirectional_status"] = "done"
+            print("🧩 [DEBUG] bidirectional_status gesetzt auf: done")
+
             context.window_manager.event_timer_remove(self._timer)
             return {'FINISHED'}
 
