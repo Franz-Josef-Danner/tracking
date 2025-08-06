@@ -12,14 +12,7 @@ class CLIP_OT_tracking_pipeline(Operator):
     _is_tracking = False
 
     def execute(self, context):
-        scene = context.scene
-
-        if scene.get("tracking_pipeline_active", False):
-            self.report({'WARNING'}, "Tracking-Pipeline läuft bereits.")
-            return {'CANCELLED'}
-
         print("🚀 Starte Tracking-Pipeline...")
-        scene["tracking_pipeline_active"] = True
 
         self._step = 0
         wm = context.window_manager
@@ -34,7 +27,6 @@ class CLIP_OT_tracking_pipeline(Operator):
 
     def run_step(self, context):
         wm = context.window_manager
-        scene = context.scene
 
         if self._step == 0:
             print("→ Marker Helper")
@@ -48,14 +40,11 @@ class CLIP_OT_tracking_pipeline(Operator):
 
         elif self._step == 2:
             print("→ Detect")
-            scene["tracking_pipeline_active"] = False  # Temporär deaktivieren
             result = bpy.ops.clip.detect()
-            scene["tracking_pipeline_active"] = True   # Wieder aktivieren
 
             if result != {'FINISHED'}:
                 print("✖ Detect wurde abgebrochen oder schlug fehl.")
                 wm.event_timer_remove(self._timer)
-                scene["tracking_pipeline_active"] = False
                 return {'CANCELLED'}
 
             self._step += 1
@@ -76,7 +65,6 @@ class CLIP_OT_tracking_pipeline(Operator):
                 print("→ Starte Clean Short Tracks")
                 bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
                 wm.event_timer_remove(self._timer)
-                scene["tracking_pipeline_active"] = False
                 print("✓ Pipeline abgeschlossen.")
                 return {'FINISHED'}
 
@@ -85,7 +73,6 @@ class CLIP_OT_tracking_pipeline(Operator):
     def cancel(self, context):
         wm = context.window_manager
         wm.event_timer_remove(self._timer)
-        context.scene["tracking_pipeline_active"] = False
 
 
 def register():
