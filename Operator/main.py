@@ -1,5 +1,6 @@
 import bpy
 from ..Helper.find_low_marker_frame import get_first_low_marker_frame
+import time
 
 class CLIP_OT_main(bpy.types.Operator):
     """Main Tracking Setup inklusive automatischem Tracking-Zyklus"""
@@ -9,19 +10,24 @@ class CLIP_OT_main(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
+        clip = context.space_data.clip
 
-        # Falls Tracking-Pipeline bereits läuft, warte auf Freigabe
-        if scene.get("tracking_pipeline_active", False):
-            self.report({'WARNING'}, "Tracking-Pipeline läuft bereits.")
+        if clip is None or not clip.tracking:
+            self.report({'WARNING'}, "Kein gültiger Clip oder Tracking-Daten vorhanden.")
             return {'CANCELLED'}
 
-        # Starte den Tracking-Zyklus
+        # Tracking-Zyklus
         while True:
+            start_frame = scene.frame_current
             result = bpy.ops.clip.tracking_pipeline()
 
-            if result != {'FINISHED'}:
-                self.report({'WARNING'}, "Tracking Pipeline konnte nicht abgeschlossen werden.")
-                break
+            # Warte bis Pipeline fertig ist
+            print("⏳ Warte auf Abschluss der Pipeline...")
+            while True:
+                bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                time.sleep(0.2)
+                if scene.frame_current == start_frame:
+                    break
 
             # Prüfe nach Abschluss der Pipeline auf schwache Markerframes
             frame = get_first_low_marker_frame(context)
