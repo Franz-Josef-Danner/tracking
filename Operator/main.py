@@ -5,7 +5,6 @@ from ..Helper.find_low_marker_frame import find_low_marker_frame
 from ..Helper.jump_to_frame import jump_to_frame
 
 class CLIP_OT_main(bpy.types.Operator):
-    """Main Tracking Setup inklusive automatischem Tracking-Zyklus"""
     bl_idname = "clip.main"
     bl_label = "Main Setup"
     bl_options = {'REGISTER', 'UNDO'}
@@ -22,26 +21,16 @@ class CLIP_OT_main(bpy.types.Operator):
         bpy.ops.clip.tracking_pipeline()
 
         print("⏳ Warte auf Abschluss der Pipeline (Tracking Stabilität)...")
-
-        stable_count = 0
-        prev_marker_count = len(clip.tracking.tracks)
-        prev_frame = scene.frame_current
-
-        while stable_count < 2:
+        timeout = 300  # max 60 Sekunden (0.2s * 300)
+        counter = 0
+        while scene.get("pipeline_status", "") != "done":
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
             time.sleep(0.2)
+            counter += 1
+            if counter > timeout:
+                self.report({'ERROR'}, "Tracking-Pipeline hat sich aufgehängt oder ist unvollständig.")
+                return {'CANCELLED'}
 
-            current_marker_count = len(clip.tracking.tracks)
-            current_frame = scene.frame_current
-
-            if current_marker_count == prev_marker_count and current_frame == prev_frame:
-                stable_count += 1
-            else:
-                stable_count = 0
-                prev_marker_count = current_marker_count
-                prev_frame = current_frame
-
-        # Erweiterung: Suche nach Frame mit zu wenigen Markern
         print("🧪 Starte Markerprüfung…")
         frame = find_low_marker_frame(clip)
         if frame is not None:
@@ -51,7 +40,7 @@ class CLIP_OT_main(bpy.types.Operator):
         else:
             print("✅ Alle Frames haben ausreichend Marker.")
 
-        self.report({'INFO'}, "Tracking abgeschlossen – keine fehlerhaften Frames mehr gefunden.")
+        self.report({'INFO'}, "Tracking vollständig abgeschlossen – inklusive Markerprüfung.")
         return {'FINISHED'}
 
 def register():
