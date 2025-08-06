@@ -1,7 +1,5 @@
 import bpy
 import time
-from .find_low_marker_frame import get_first_low_marker_frame
-from .jump_to_frame import jump_to_frame
 
 class CLIP_OT_main(bpy.types.Operator):
     """Main Tracking Setup inklusive automatischem Tracking-Zyklus"""
@@ -24,11 +22,6 @@ class CLIP_OT_main(bpy.types.Operator):
 
             print("⏳ Warte auf Abschluss der Pipeline (Tracking Stabilität)...")
 
-            # Warte auf pipeline_status von tracking_pipeline
-            while scene.get("pipeline_status", "") != "done":
-                bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-                time.sleep(0.2)
-
             stable_count = 0
             prev_marker_count = len(clip.tracking.tracks)
             prev_frame = scene.frame_current
@@ -48,12 +41,6 @@ class CLIP_OT_main(bpy.types.Operator):
                     prev_marker_count = current_marker_count
                     prev_frame = current_frame
 
-            # Suche Frame mit zu wenigen Markern
-            frame = get_first_low_marker_frame(clip)
-            if frame is not None:
-                scene["goto_frame"] = frame
-                jump_to_frame(context)
-
             # Wenn Tracking abgeschlossen, beende Schleife
             self.report({'INFO'}, "Tracking abgeschlossen – keine fehlerhaften Frames mehr gefunden.")
             break
@@ -66,6 +53,3 @@ def register():
 
 def unregister():
     bpy.utils.unregister_class(CLIP_OT_main)
-
-if __name__ == "__main__":
-    register()
