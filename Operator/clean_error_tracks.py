@@ -106,63 +106,63 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     def execute(self, context):
         deleted, _ = clean_error_tracks(context)
         self.report({'INFO'}, f"Insgesamt {deleted} Marker gelöscht.")
-
+    
         clip = context.space_data.clip
         tracks = clip.tracking.tracks
-
+    
         # 1. Deselektiere alle Tracks
         for track in tracks:
             track.select = False
-
+    
         # 2. Lückenprüfung
         def has_gaps(track):
             frames = sorted([m.frame for m in track.markers])
             return any(b - a > 1 for a, b in zip(frames, frames[1:]))
-
+    
         # 3. Tracks mit Lücken selektieren
         selected_count = 0
         for track in tracks:
             if has_gaps(track):
                 track.select = True
                 selected_count += 1
-
+    
         if selected_count == 0:
             self.report({'INFO'}, "Keine Tracks mit Lücken gefunden.")
             return {'FINISHED'}
-
-        # 4. Sicherer Kontext für Copy/Paste (nur im Movie Clip Editor gültig)
+    
+        # 4. Sicheren Clip Editor finden
         area_found = False
         for area in context.screen.areas:
             if area.type == 'CLIP_EDITOR':
                 for region in area.regions:
                     if region.type == 'WINDOW':
-                        override = {
-                            "area": area,
-                            "region": region,
-                            "space_data": area.spaces.active,
-                            "scene": context.scene,
-                            "clip": context.space_data.clip,
-                            "edit_movieclip": context.space_data,
-                        }
-
-                        bpy.ops.clip.copy_tracks(override)
-                        bpy.ops.clip.paste_tracks(override)
-
-                        area_found = True
-                        break
+                        space = area.spaces.active
+                        if not space or not space.clip:
+                            continue
+    
+                        # Korrektes context override laut Blender API
+                        ctx = context.copy()
+                        ctx["area"] = area
+                        ctx["region"] = region
+                        ctx["space_data"] = space
+                        ctx["clip"] = space.clip
+                        ctx["edit_movieclip"] = space
+    
+                        try:
+                            bpy.ops.clip.copy_tracks(ctx)
+                            bpy.ops.clip.paste_tracks(ctx)
+                            area_found = True
+                            break
+                        except Exception as e:
+                            self.report({'ERROR'}, f"Copy/Paste Fehler: {str(e)}")
+                            return {'CANCELLED'}
             if area_found:
                 break
-
+    
         if area_found:
             self.report({'INFO'}, f"{selected_count} Tracks mit Lücken wurden dupliziert.")
         else:
-            self.report({'ERROR'}, "Copy/Paste konnte nicht ausgeführt werden – kein aktiver Clip Editor gefunden.")
-
-
-        if area_found:
-            self.report({'INFO'}, f"{selected_count} Tracks mit Lücken wurden dupliziert.")
-        else:
-            self.report({'ERROR'}, "Copy/Paste konnte nicht ausgeführt werden – kein aktiver Clip Editor gefunden.")
-
+            self.report({'ERROR'}, "Kein gültiger Clip Editor für Copy/Paste gefunden.")
+    
         return {'FINISHED'}
 
