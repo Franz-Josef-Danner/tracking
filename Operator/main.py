@@ -21,13 +21,26 @@ class CLIP_OT_main(bpy.types.Operator):
             start_frame = scene.frame_current
             result = bpy.ops.clip.tracking_pipeline()
 
-            # Warte bis Pipeline fertig ist
-            print("⏳ Warte auf Abschluss der Pipeline...")
-            while True:
+            print("⏳ Warte auf Abschluss der Pipeline (Tracking Stabilität)...")
+
+            stable_count = 0
+            prev_marker_count = len(clip.tracking.tracks)
+            prev_frame = scene.frame_current
+
+            while stable_count < 2:
                 bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
                 time.sleep(0.2)
-                if scene.frame_current == start_frame:
-                    break
+
+                current_marker_count = len(clip.tracking.tracks)
+                current_frame = scene.frame_current
+
+                if (current_marker_count == prev_marker_count and
+                    current_frame == prev_frame):
+                    stable_count += 1
+                else:
+                    stable_count = 0
+                    prev_marker_count = current_marker_count
+                    prev_frame = current_frame
 
             # Prüfe nach Abschluss der Pipeline auf schwache Markerframes
             frame = get_first_low_marker_frame(context)
