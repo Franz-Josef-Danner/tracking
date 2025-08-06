@@ -2,12 +2,11 @@
 def duplicate_track(track, tracking):
     new_track = tracking.tracks.new(name=f"{track.name}_split", frame=track.markers[0].frame)
     for marker in track.markers:
-        new_marker = new_track.markers.insert(frame=marker.frame, co=marker.co)
+        new_marker = new_track.markers.insert_frame(marker.frame, co=marker.co)
         new_marker.pattern_corners = marker.pattern_corners[:]
         new_marker.search_min = marker.search_min[:]
         new_marker.search_max = marker.search_max[:]
         new_marker.mute = marker.mute
-        new_marker.disabled = marker.disabled
     return new_track
 
 
