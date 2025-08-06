@@ -89,14 +89,7 @@ def clean_error_tracks(context):
                 total_deleted_all += deleted
 
     return total_deleted_all, 0.0
-
-class CLIP_OT_clean_error_tracks(bpy.types.Operator):
-    bl_idname = "clip.clean_error_tracks"
-    bl_label = "Clean Error Tracks (Grid)"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    @classmethod
-    def poll(cls, context):
+def poll(cls, context):
         return context.space_data and context.space_data.clip
 
     def execute(self, context):
@@ -147,4 +140,11 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                             return {'CANCELLED'}
 
         self.report({'ERROR'}, "Kein gültiger Clip Editor für Copy/Paste gefunden.")
-        return {'CANCELLED'}
+
+class CLIP_OT_clean_error_tracks(bpy.types.Operator):
+    bl_idname = "clip.clean_error_tracks"
+    bl_label = "Clean Error Tracks (Grid)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+            return {'CANCELLED'}
