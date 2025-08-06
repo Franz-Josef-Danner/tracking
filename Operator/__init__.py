@@ -3,7 +3,7 @@ import bpy
 # Importiere die Operator-Klassen aus den Modulen
 from .proxy_builder import CLIP_OT_proxy_builder
 from .tracker_settings import CLIP_OT_tracker_settings
-from .detect import TRACKING_OT_detect
+from .detect import CLIP_OT_detect
 from .bidirectional_track import CLIP_OT_bidirectional_track
 from .clean_short_tracks import CLIP_OT_clean_short_tracks
 from .tracking_pipeline import CLIP_OT_tracking_pipeline
@@ -16,7 +16,7 @@ from .main import CLIP_OT_main
 classes = (
     CLIP_OT_proxy_builder,
     CLIP_OT_tracker_settings,
-    TRACKING_OT_detect,
+    CLIP_OT_detect,
     CLIP_OT_bidirectional_track,
     CLIP_OT_clean_short_tracks,
     CLIP_OT_tracking_pipeline,
