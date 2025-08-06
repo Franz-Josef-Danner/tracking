@@ -48,6 +48,9 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
     def run_step(self, context):
         scene = context.scene
         wm = context.window_manager
+        clip = context.space_data.clip
+        ts = clip.tracking.settings
+        ts.default_margin = ts.default_search_size
 
         if self._step == 0:
             print("→ Marker Helper")
@@ -77,8 +80,11 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
         elif self._step == 4:
             print("→ Proxy aktivieren")
             bpy.ops.clip.enable_proxy()
+            ts = context.space_data.clip.tracking.settings
+            ts.default_margin = ts.default_search_size  # <--- automatischer Reset
             self._step += 1
             return {'PASS_THROUGH'}
+
 
         elif self._step == 5:
             print("→ Starte bidirektionales Tracking")
