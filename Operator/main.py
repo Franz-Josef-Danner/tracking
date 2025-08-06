@@ -43,7 +43,7 @@ class CLIP_OT_main(bpy.types.Operator):
                     prev_frame = current_frame
 
             # Prüfe nach Abschluss der Pipeline auf schwache Markerframes
-            frame = get_first_low_marker_frame(context)
+            frame = get_first_low_marker_frame(clip)
 
             if frame is not None:
                 self.report({'INFO'}, f"Neustart Zyklus – schlechter Frame gefunden: {frame}")
