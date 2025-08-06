@@ -1,4 +1,4 @@
-# main.py
+# main.py (überarbeitet)
 import bpy
 import time
 from ..Helper.find_low_marker_frame import find_low_marker_frame
@@ -56,7 +56,6 @@ class CLIP_OT_main(bpy.types.Operator):
                 jump_to_frame(context)
 
                 key = str(frame)
-                # Eintrag suchen oder erstellen
                 entry = next((e for e in repeat_collection if e.frame == key), None)
 
                 if entry:
@@ -77,7 +76,7 @@ class CLIP_OT_main(bpy.types.Operator):
                     print(f"🔄 Neuer Tracking-Zyklus mit Marker-Zielwerten {scene['marker_min']}–{scene['marker_max']}")
                     bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
 
-                self._step = 0
+                self._step = 0  # Wiederhole Zyklus
             else:
                 print("✅ Alle Frames haben ausreichend Marker. Cleanup wird ausgeführt.")
                 bpy.ops.clip.clean_error_tracks('INVOKE_DEFAULT')
@@ -85,8 +84,19 @@ class CLIP_OT_main(bpy.types.Operator):
             return {'PASS_THROUGH'}
 
         elif self._step == 2:
-            context.window_manager.event_timer_remove(self._timer)
-            self.report({'INFO'}, "Tracking + Markerprüfung abgeschlossen.")
-            return {'FINISHED'}
+            clip = context.space_data.clip
+            marker_basis = scene.get("marker_basis", 20)
+
+            frame = find_low_marker_frame(clip, marker_basis=marker_basis)
+            if frame is not None:
+                print(f"🔁 Neuer Low-Marker-Frame gefunden: {frame} → Starte neuen Zyklus.")
+                self._step = 1
+            else:
+                print("🏁 Keine Low-Marker-Frames mehr gefunden. Beende Prozess.")
+                context.window_manager.event_timer_remove(self._timer)
+                self.report({'INFO'}, "Tracking + Markerprüfung abgeschlossen.")
+                return {'FINISHED'}
+
+            return {'PASS_THROUGH'}
 
         return {'RUNNING_MODAL'}
