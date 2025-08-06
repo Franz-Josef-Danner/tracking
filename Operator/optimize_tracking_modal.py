@@ -83,6 +83,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
             selected = [t for t in clip.tracking.tracks if t.select]
             if not selected:
                 self.report({'ERROR'}, "Keine Marker zum Tracken.")
+                context.scene["pipeline_status"] = "done"
                 self.cancel(context)
                 return {'CANCELLED'}
             for t in selected:
@@ -129,6 +130,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                 e = measure_error_all()
                 if e is None:
                     self.report({'ERROR'}, "Fehlerwert konnte nicht berechnet werden.")
+                    context.scene["pipeline_status"] = "done"
                     self.cancel(context)
                     return {'CANCELLED'}
                 g = eg(f, e)
@@ -184,6 +186,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
             e = measure_error_all()
             if e is None:
                 self.report({'ERROR'}, "Fehlerwert konnte nicht berechnet werden.")
+                context.scene["pipeline_status"] = "done"
                 self.cancel(context)
                 return {'CANCELLED'}
             g = eg(f, e)
@@ -211,6 +214,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
                 set_flag2(self._mov)
                 set_flag3(self._vf)
                 context.scene.frame_current = self._start_frame
+                context.scene["pipeline_status"] = "done"
                 self.report({'INFO'}, f"Fertig: ev={self._ev:.2f}, Motion={self._mov}, RGB={self._vf}")
                 self.cancel(context)
                 return {'FINISHED'}
@@ -222,6 +226,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
             e = measure_error_all()
             if e is None:
                 self.report({'ERROR'}, "Fehlerwert konnte nicht berechnet werden.")
+                context.scene["pipeline_status"] = "done"
                 self.cancel(context)
                 return {'CANCELLED'}
             g = eg(f, e)
@@ -238,5 +243,6 @@ class CLIP_OT_optimize_tracking_modal(Operator):
         return {'PASS_THROUGH'}
 
     def cancel(self, context):
+        context.scene["pipeline_status"] = "done"
         wm = context.window_manager
         wm.event_timer_remove(self._timer)
