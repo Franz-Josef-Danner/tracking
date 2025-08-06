@@ -34,55 +34,57 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
         scene = context.scene
         wm = context.window_manager
 
-        # Rückmeldung vom Bidirectional Tracking
-        if scene.get("bidirectional_status", "") == "done":
-            self._is_tracking = False
-            scene["bidirectional_status"] = ""  # Reset
-            print("✅ Bidirectional Tracking abgeschlossen.")
-
         if self._step == 0:
             print("→ Marker Helper")
             bpy.ops.clip.marker_helper_main()
             self._step += 1
-
+            return {'PASS_THROUGH'}
+    
         elif self._step == 1:
             print("→ Proxy deaktivieren")
             bpy.ops.clip.disable_proxy()
             self._step += 1
-
+            return {'PASS_THROUGH'}
+    
         elif self._step == 2:
             print("→ Detect starten")
             bpy.ops.clip.detect()
             self._step += 1
-
+            return {'PASS_THROUGH'}
+    
         elif self._step == 3:
             print("⏳ Warte auf Detect-Abschluss...")
             if scene.get("detect_status", "") == "success":
                 self._step += 1
                 scene["detect_status"] = ""
-                print("✅ Detect abgeschlossen.")
-
+            return {'PASS_THROUGH'}
+    
         elif self._step == 4:
             print("→ Proxy aktivieren")
             bpy.ops.clip.enable_proxy()
             self._step += 1
-
+            return {'PASS_THROUGH'}
+    
         elif self._step == 5:
             print("→ Starte bidirektionales Tracking")
             bpy.ops.clip.bidirectional_track()
-            self._step += 1  # Weiter zu Schritt 6 (Warten auf Tracking-Ende)
-
+            self._step += 1
+            return {'PASS_THROUGH'}
+    
         elif self._step == 6:
             if scene.get("bidirectional_status", "") == "done":
                 print("✅ Bidirectional Tracking abgeschlossen.")
                 scene["bidirectional_status"] = ""
                 self._is_tracking = False
-        
+    
             if not self._is_tracking:
                 print("⏳ Warte auf Abschluss der Pipeline...")
                 scene["pipeline_status"] = "done"
                 print(f"🧩 [DEBUG] pipeline_status gesetzt auf: {scene['pipeline_status']}")
-                wm = context.window_manager
                 wm.event_timer_remove(self._timer)
                 return {'FINISHED'}
-
+    
+            return {'PASS_THROUGH'}
+    
+        # Fallback – falls kein if-Zweig zutrifft
+        return {'PASS_THROUGH'}
