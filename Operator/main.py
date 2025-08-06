@@ -1,7 +1,9 @@
+# main.py
 import bpy
 import time
 from ..Helper.find_low_marker_frame import find_low_marker_frame
 from ..Helper.jump_to_frame import jump_to_frame
+from ..Helper.properties import RepeatEntry  # <- wichtig!
 
 class CLIP_OT_main(bpy.types.Operator):
     bl_idname = "clip.main"
@@ -23,11 +25,6 @@ class CLIP_OT_main(bpy.types.Operator):
         bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
         print("⏳ Warte auf Abschluss der Pipeline...")
 
-        # Property-Absicherung
-        if not isinstance(scene.get("repeat_frame"), dict):
-            print("⚠️ [DEBUG] Ungültiger repeat_frame-Wert erkannt – wird zurückgesetzt.")
-            scene["repeat_frame"] = {}
-
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.5, window=context.window)
         wm.modal_handler_add(self)
@@ -40,7 +37,7 @@ class CLIP_OT_main(bpy.types.Operator):
             return {'PASS_THROUGH'}
 
         scene = context.scene
-        repeat_dict = scene.get("repeat_frame", {})
+        repeat_collection = scene.repeat_frame
 
         if self._step == 0:
             if scene.get("pipeline_status", "") == "done":
@@ -59,14 +56,19 @@ class CLIP_OT_main(bpy.types.Operator):
                 jump_to_frame(context)
 
                 key = str(frame)
-                if key in repeat_dict:
-                    repeat_dict[key] += 1
+                # Eintrag suchen oder erstellen
+                entry = next((e for e in repeat_collection if e.frame == key), None)
+
+                if entry:
+                    entry.count += 1
                 else:
-                    repeat_dict[key] = 1
+                    entry = repeat_collection.add()
+                    entry.frame = key
+                    entry.count = 1
 
-                print(f"🔁 Frame {frame} wurde bereits {repeat_dict[key]}x erkannt.")
+                print(f"🔁 Frame {frame} wurde bereits {entry.count}x erkannt.")
 
-                if repeat_dict[key] >= 10:
+                if entry.count >= 10:
                     print(f"🚨 Optimiere Tracking für Frame {frame}")
                     bpy.ops.clip.optimize_tracking_modal('INVOKE_DEFAULT')
                 else:
@@ -75,7 +77,6 @@ class CLIP_OT_main(bpy.types.Operator):
                     print(f"🔄 Neuer Tracking-Zyklus mit Marker-Zielwerten {scene['marker_min']}–{scene['marker_max']}")
                     bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
 
-                scene["repeat_frame"] = repeat_dict
                 self._step = 0
             else:
                 print("✅ Alle Frames haben ausreichend Marker. Cleanup wird ausgeführt.")
