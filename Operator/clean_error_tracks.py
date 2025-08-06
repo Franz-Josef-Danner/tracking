@@ -1,3 +1,4 @@
+
 import bpy
 
 def get_marker_position(track, frame):
@@ -94,84 +95,54 @@ def clean_error_tracks(context):
 
     return total_deleted_all, 0.0
 
-
-class CLIP_OT_clean_error_tracks(bpy.types.Operator):
-    bl_idname = "clip.clean_error_tracks"
-    bl_label = "Clean Error Tracks (Grid)"
-
-    @classmethod
-    def poll(cls, context):
-        return context.space_data and context.space_data.clip
-
-    def execute(self, context):
+    class CLIP_OT_clean_error_tracks(bpy.types.Operator):
+        bl_idname = "clip.clean_error_tracks"
+        bl_label = "Clean Error Tracks (Grid)"
+    
+        @classmethod
+        def poll(cls, context):
+            return context.space_data and context.space_data.clip
+    
+        def execute(self, context):
         deleted, _ = clean_error_tracks(context)
         self.report({'INFO'}, f"Insgesamt {deleted} Marker gelöscht.")
     
         clip = context.space_data.clip
         tracks = clip.tracking.tracks
     
-        # Deselektiere alle Tracks
+        # 1. Deselektiere alle Tracks
         for track in tracks:
             track.select = False
     
-        # Funktion zur Lückenprüfung
+        # 2. Lückenprüfung
         def has_gaps(track):
             frames = sorted([m.frame for m in track.markers])
             return any(b - a > 1 for a, b in zip(frames, frames[1:]))
     
-        # Tracks mit Lücken selektieren
+        # 3. Tracks mit Lücken selektieren
         selected_count = 0
         for track in tracks:
             if has_gaps(track):
                 track.select = True
                 selected_count += 1
     
-        print(f"[DEBUG] Selektierte Tracks mit Lücken: {selected_count}")
-    
         if selected_count == 0:
             self.report({'INFO'}, "Keine Tracks mit Lücken gefunden.")
             return {'FINISHED'}
     
-        # Sicheren Editor-Kontext suchen
-        # 4. Sicherer Kontext für Copy/Paste (mit override + validierung)
+        # 4. Sicherer Kontext für Copy/Paste (nur im Movie Clip Editor gültig)
+        area_found = False
         for area in context.screen.areas:
             if area.type == 'CLIP_EDITOR':
-                for region in area.regions:
-                    if region.type == 'WINDOW':
-                        override = context.copy()
-                        override["area"] = area
-                        override["region"] = region
-                        override["space_data"] = area.spaces.active
-                        override["clip"] = clip
-        
-                        # Sicherstellen, dass Tracks selektiert sind
-                        selected = [t for t in tracks if t.select]
-                        print(f"[DEBUG] Anzahl selektierter Tracks vor Copy: {len(selected)}")
-                        if len(selected) == 0:
-                            self.report({'WARNING'}, "Keine Tracks ausgewählt.")
-                            return {'CANCELLED'}
-        
-                        # Copy
-                        result_copy = bpy.ops.clip.copy_tracks(override)
-                        print(f"[DEBUG] Ergebnis copy_tracks: {result_copy}")
-                        if 'CANCELLED' in result_copy:
-                            self.report({'ERROR'}, "Copy fehlgeschlagen.")
-                            return {'CANCELLED'}
-        
-                        # Paste
-                        result_paste = bpy.ops.clip.paste_tracks(override)
-                        print(f"[DEBUG] Ergebnis paste_tracks: {result_paste}")
-                        if 'CANCELLED' in result_paste:
-                            self.report({'ERROR'}, "Paste fehlgeschlagen.")
-                            return {'CANCELLED'}
-        
-                        self.report({'INFO'}, f"{selected_count} Tracks dupliziert.")
-                        return {'FINISHED'}
-        
-        # Kein Clip Editor gefunden
-        self.report({'ERROR'}, "Copy/Paste konnte nicht ausgeführt werden – kein aktiver Clip Editor im UI.")
-        return {'CANCELLED'}
-
+                with context.temp_override(area=area, region=area.regions[-1]):
+                    bpy.ops.clip.copy_tracks()
+                    bpy.ops.clip.paste_tracks()
+                    area_found = True
+                break
+    
+        if area_found:
+            self.report({'INFO'}, f"{selected_count} Tracks mit Lücken wurden dupliziert.")
+        else:
+            self.report({'ERROR'}, "Copy/Paste konnte nicht ausgeführt werden – kein aktiver Clip Editor gefunden.")
     
         return {'FINISHED'}
-    
