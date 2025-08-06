@@ -94,6 +94,8 @@ def clean_error_tracks(context):
                 deleted = run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width, height)
                 total_deleted_all += deleted
 
+    split_tracks_at_gaps(tracks)
+
     return total_deleted_all, 0.0
 def split_tracks_at_gaps(tracks):
     for track in list(tracks):
