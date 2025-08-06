@@ -144,47 +144,45 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
 
                         try:
                             with context.temp_override(area=area, region=region, space_data=space):
-                                bpy.ops.clip.copy_tracks()
-                                bpy.ops.clip.paste_tracks()
-
-                                after_tracks = set(t.name for t in tracks)
-                                new_tracks = [t for t in tracks if t.name in (after_tracks - before_tracks)]
-
                                 renamed = []
-                                existing_names = set(t.name for t in tracks)
-
-                                after_tracks = set(t.name for t in tracks)
-                                new_tracks = [t for t in tracks if t.name in (after_tracks - before_tracks)]
-
-                                renamed = []
-                                existing_names = set(t.name for t in tracks)
-
-                                # Map original names to new tracks
-                                for orig in original_tracks:
-                                    orig_name = orig.name
-                                    # Finde duplizierte Versionen des Originaltracks
-                                    match_candidates = [
-                                        t for t in new_tracks
-                                        if orig_name in t.name and t.name != orig_name
-                                    ]
-                                    for i, track in enumerate(match_candidates):
+                                existing_names = {t.name for t in tracks}
+                        
+                                for orig_track in original_tracks:
+                                    orig_name = orig_track.name
+                                    orig_track.select = True
+                        
+                                    # Vorher: alle Namen merken
+                                    before_names = {t.name for t in tracks}
+                        
+                                    # Nur den selektierten Track duplizieren
+                                    bpy.ops.clip.copy_tracks()
+                                    bpy.ops.clip.paste_tracks()
+                        
+                                    # Danach: neuen Track finden
+                                    after_names = {t.name for t in tracks}
+                                    new_names = after_names - before_names
+                                    new_track = next((t for t in tracks if t.name in new_names), None)
+                        
+                                    if new_track:
                                         new_name = f"pre_{orig_name}"
-                                        if i > 0:
-                                            new_name += f"_{i}"
-                                        # sichere Umbenennung, falls Name schon existiert
+                                        suffix = 1
                                         while new_name in existing_names:
-                                            i += 1
-                                            new_name = f"pre_{orig_name}_{i}"
-                                        track.name = new_name
+                                            new_name = f"pre_{orig_name}_{suffix}"
+                                            suffix += 1
+                        
+                                        new_track.name = new_name
                                         renamed.append(new_name)
                                         existing_names.add(new_name)
-
-
+                        
+                                    # Deselect for next iteration
+                                    orig_track.select = False
+                        
                                 log_msg = f"{len(renamed)} Tracks mit Lücken wurden dupliziert:\n"
                                 log_msg += "\n".join(f"• {name}" for name in renamed)
-
+                        
                                 self.report({'INFO'}, log_msg)
                                 return {'FINISHED'}
+
 
                         except Exception as e:
                             self.report({'ERROR'}, f"Copy/Paste Fehler: {str(e)}")
