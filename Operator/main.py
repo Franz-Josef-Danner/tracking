@@ -44,8 +44,15 @@ class CLIP_OT_main(bpy.types.Operator):
 
 
     def modal(self, context, event):
-        if event.type != 'TIMER':
-            return {'PASS_THROUGH'}
+        if event.type == 'ESC':
+            self.report({'WARNING'}, "Operator manuell abgebrochen.")
+            self.cancel(context)
+            return {'CANCELLED'}
+    
+        if event.type == 'TIMER':
+            return self.run_step(context)
+    
+        return {'PASS_THROUGH'}
 
         scene = context.scene
         repeat_collection = scene.repeat_frame
