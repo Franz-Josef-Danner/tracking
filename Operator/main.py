@@ -92,10 +92,14 @@ class CLIP_OT_main(bpy.types.Operator):
 
                 if entry:
                     entry.count += 1
+                    marker_basis = min(int(marker_basis * 1.1), 100)
+                    print(f"🔺 Selber Frame erneut – erhöhe marker_basis auf {marker_basis}")
                 else:
                     entry = repeat_collection.add()
                     entry.frame = key
                     entry.count = 1
+                    marker_basis = max(int(marker_basis * 0.9), initial_basis)
+                    print(f"🔻 Neuer Frame – senke marker_basis auf {marker_basis}")
 
                 print(f"🔁 Frame {frame} wurde bereits {entry.count}x erkannt.")
 
@@ -103,8 +107,8 @@ class CLIP_OT_main(bpy.types.Operator):
                     print(f"🚨 Optimiere Tracking für Frame {frame}")
                     bpy.ops.clip.optimize_tracking_modal('INVOKE_DEFAULT')
                 else:
-                    scene["marker_min"] = max(int(marker_basis * 0.9), 10)
-                    scene["marker_max"] = min(int(marker_basis * 1.1), 100)
+                    scene["marker_min"] = int(marker_basis * 0.9)
+                    scene["marker_max"] = int(marker_basis * 1.1)
                     print(f"🔄 Neuer Tracking-Zyklus mit Marker-Zielwerten {scene['marker_min']}–{scene['marker_max']}")
                     bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
 
