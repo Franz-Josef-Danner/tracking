@@ -110,16 +110,13 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         clip = context.space_data.clip
         tracks = clip.tracking.tracks
 
-        # 1. Deselektiere alle Tracks
         for track in tracks:
             track.select = False
 
-        # 2. Lückenprüfung
         def has_gaps(track):
             frames = sorted([m.frame for m in track.markers])
             return any(b - a > 1 for a, b in zip(frames, frames[1:]))
 
-        # 3. Tracks mit Lücken selektieren
         selected_count = 0
         for track in tracks:
             if has_gaps(track):
@@ -130,7 +127,6 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             self.report({'INFO'}, "Keine Tracks mit Lücken gefunden.")
             return {'FINISHED'}
 
-        # 4. Sicherer Kontext für Copy/Paste (nur im Movie Clip Editor gültig)
         area_found = False
         for area in context.screen.areas:
             if area.type == 'CLIP_EDITOR':
