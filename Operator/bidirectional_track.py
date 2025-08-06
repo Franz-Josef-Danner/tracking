@@ -1,5 +1,7 @@
 import bpy
 from bpy.types import Operator
+from ..Helper.find_low_marker_frame import find_low_marker_frame
+from ..Helper.jump_to_frame import jump_to_frame
 
 class CLIP_OT_bidirectional_track(Operator):
     bl_idname = "clip.bidirectional_track"
@@ -82,6 +84,17 @@ class CLIP_OT_bidirectional_track(Operator):
         if self._stable_count >= 2:
             print("✓ Tracking stabil erkannt – bereinige kurze Tracks.")
             bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
+
+            # ➕ Zusätzlicher Ablauf nach Abschluss:
+            scene = context.scene
+            min_marker = scene.get("min_marker", 5)
+
+            low_frame = find_low_marker_frame(clip, min_marker=min_marker)
+            if low_frame is not None:
+                jump_to_frame(context, frame_number=low_frame)
+            else:
+                print("→ Kein Frame mit zu wenigen Markern gefunden. Kein Sprung notwendig.")
+
             context.window_manager.event_timer_remove(self._timer)
             return {'FINISHED'}
 
