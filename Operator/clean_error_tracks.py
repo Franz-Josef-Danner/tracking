@@ -13,8 +13,6 @@ def get_clip_editor_override(context):
             for region in area.regions:
                 if region.type == 'WINDOW':
                     return {
-                        "window": context.window,
-                        "screen": context.screen,
                         "area": area,
                         "region": region,
                     }
@@ -97,20 +95,21 @@ def split_tracks_at_gaps(context, tracks):
             t.select = False
         track.select = True
 
-        bpy.ops.clip.copy_tracks(**override)
-        bpy.ops.clip.paste_tracks(**override)
+        with context.temp_override(**override):
+            bpy.ops.clip.copy_tracks()
+            bpy.ops.clip.paste_tracks()
 
-        new_track = tracks[-1]
-        new_track.name = f"{track.name}_split"
-        context.scene.frame_current = gap_end
+            new_track = tracks[-1]
+            new_track.name = f"{track.name}_split"
+            context.scene.frame_current = gap_end
 
-        track.select = True
-        new_track.select = False
-        bpy.ops.clip.clear_track_path(**override, action='REMAINED', clear_active=True)
+            track.select = True
+            new_track.select = False
+            bpy.ops.clip.clear_track_path(action='REMAINED', clear_active=True)
 
-        track.select = False
-        new_track.select = True
-        bpy.ops.clip.clear_track_path(**override, action='UPTO', clear_active=True)
+            track.select = False
+            new_track.select = True
+            bpy.ops.clip.clear_track_path(action='UPTO', clear_active=True)
 
         print(f"[Split] → Track '{track.name}' enthält nur Frames <= {gap_start}, Track '{new_track.name}' nur >= {gap_end}")
 
