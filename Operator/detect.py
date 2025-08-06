@@ -33,8 +33,8 @@ def deselect_all_markers(tracking):
         t.select = False
 
 
-class TRACKING_OT_detect(bpy.types.Operator):
-    bl_idname = "tracking.detect"
+class CLIP_OT_detect(bpy.types.Operator):
+    bl_idname = "clip.detect"
     bl_label = "Place Marker"
     bl_description = (
         "Führt Marker-Platzierungs-Zyklus aus (Teil-Zyklus 1, max. 20 Versuche inkl. Proxy-Deaktivierung)"
