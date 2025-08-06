@@ -1,7 +1,5 @@
 import bpy
 from bpy.types import Operator
-from ..Helper.find_low_marker_frame import find_low_marker_frame
-from ..Helper.jump_to_frame import jump_to_frame
 
 class CLIP_OT_bidirectional_track(Operator):
     bl_idname = "clip.bidirectional_track"
