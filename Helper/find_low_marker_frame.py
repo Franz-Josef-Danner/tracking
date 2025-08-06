@@ -1,17 +1,15 @@
 import bpy
 
-def get_first_low_marker_frame(context):
-    scene = context.scene
-    clip = context.space_data.clip
+def get_first_low_marker_frame(clip, min_marker=5, frame_start=None, frame_end=None):
     tracking = clip.tracking
     tracks = tracking.tracks
 
-    frame_start = scene.frame_start
-    frame_end = scene.frame_end
+    if frame_start is None:
+        frame_start = clip.frame_start
+    if frame_end is None:
+        frame_end = clip.frame_duration
 
-    # Hole Wert aus Szene, fallback = 5
-    marker_per_frame = scene.get("marker_per_frame", 5)
-    print(f"[MarkerCheck] Erwartete Marker pro Frame: {marker_per_frame}")
+    print(f"[MarkerCheck] Erwartete Marker pro Frame: {min_marker}")
 
     for frame in range(frame_start, frame_end + 1):
         count = 0
@@ -23,7 +21,7 @@ def get_first_low_marker_frame(context):
                 count += 1
 
         print(f"[MarkerCheck] Frame {frame}: {count} aktive Marker")
-        if count < marker_per_frame:
+        if count < min_marker:
             print(f"[MarkerCheck] → Zu wenige Marker in Frame {frame}")
             return frame
 
