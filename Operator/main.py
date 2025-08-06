@@ -1,9 +1,9 @@
 import bpy
 
-class CLIP_OT_proxy_builder(bpy.types.Operator):
-    """Proxy Builder für Clip Tracking Setup"""
-    bl_idname = "clip.proxy_builder"
-    bl_label = "Build Proxy Setup"
+class CLIP_OT_main(bpy.types.Operator):
+    """main Tracking Setup"""
+    bl_idname = "clip.main"
+    bl_label = "main Setup"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
