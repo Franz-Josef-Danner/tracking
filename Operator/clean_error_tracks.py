@@ -133,23 +133,45 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             return {'FINISHED'}
     
         # Sicheren Editor-Kontext suchen
-        area_found = False
+        # 4. Sicherer Kontext für Copy/Paste (mit override + validierung)
         for area in context.screen.areas:
             if area.type == 'CLIP_EDITOR':
-                print("[DEBUG] Clip Editor gefunden – versuche Copy/Paste im Override-Kontext")
-    
-                with context.temp_override(area=area, region=area.regions[-1]):
-                    copied = bpy.ops.clip.copy_tracks()
-                    print(f"[DEBUG] copy_tracks() Rückgabe: {copied}")
-                    pasted = bpy.ops.clip.paste_tracks()
-                    print(f"[DEBUG] paste_tracks() Rückgabe: {pasted}")
-                    area_found = True
-                break
-    
-        if area_found:
-            self.report({'INFO'}, f"{selected_count} Tracks mit Lücken wurden dupliziert.")
-        else:
-            self.report({'ERROR'}, "Copy/Paste konnte nicht ausgeführt werden – kein aktiver Clip Editor gefunden.")
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        override = context.copy()
+                        override["area"] = area
+                        override["region"] = region
+                        override["space_data"] = area.spaces.active
+                        override["clip"] = clip
+        
+                        # Sicherstellen, dass Tracks selektiert sind
+                        selected = [t for t in tracks if t.select]
+                        print(f"[DEBUG] Anzahl selektierter Tracks vor Copy: {len(selected)}")
+                        if len(selected) == 0:
+                            self.report({'WARNING'}, "Keine Tracks ausgewählt.")
+                            return {'CANCELLED'}
+        
+                        # Copy
+                        result_copy = bpy.ops.clip.copy_tracks(override)
+                        print(f"[DEBUG] Ergebnis copy_tracks: {result_copy}")
+                        if 'CANCELLED' in result_copy:
+                            self.report({'ERROR'}, "Copy fehlgeschlagen.")
+                            return {'CANCELLED'}
+        
+                        # Paste
+                        result_paste = bpy.ops.clip.paste_tracks(override)
+                        print(f"[DEBUG] Ergebnis paste_tracks: {result_paste}")
+                        if 'CANCELLED' in result_paste:
+                            self.report({'ERROR'}, "Paste fehlgeschlagen.")
+                            return {'CANCELLED'}
+        
+                        self.report({'INFO'}, f"{selected_count} Tracks dupliziert.")
+                        return {'FINISHED'}
+        
+        # Kein Clip Editor gefunden
+        self.report({'ERROR'}, "Copy/Paste konnte nicht ausgeführt werden – kein aktiver Clip Editor im UI.")
+        return {'CANCELLED'}
+
     
         return {'FINISHED'}
     
