@@ -1,4 +1,3 @@
-
 import bpy
 
 def get_marker_position(track, frame):
@@ -43,15 +42,19 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width
         eb = max(vm_diffs) if vm_diffs else 0.0
         if eb < 0.0001:
             eb = 0.0001
-            while eb > ee:
-            eb *= 0.95for track, vx, vy in marker_data:
+
+        while eb > ee:
+            eb *= 0.95
+
+            for track, vx, vy in marker_data:
                 vm = (vx + vy) / 2
                 if abs(vm - va) >= eb:
                     for f in (f1, fi, f2):
                         if track.markers.find_frame(f):
                             track.markers.delete_frame(f)
                             total_deleted += 1
-                            return total_deleted
+
+    return total_deleted
 
 def clean_error_tracks(context):
     scene = context.scene
@@ -90,6 +93,7 @@ def clean_error_tracks(context):
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
     bl_label = "Clean Error Tracks (Grid)"
+    bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
@@ -131,14 +135,11 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                                 bpy.ops.clip.paste_tracks()
 
                                 copied_names = [track.name for track in selected_tracks]
-                                log_msg = f"{len(copied_names)} Tracks mit Lücken wurden dupliziert:
-"
-                                log_msg += "
-".join(f"• {name}" for name in copied_names)
+                                log_msg = f"{len(copied_names)} Tracks mit Lücken wurden dupliziert:\n"
+                                log_msg += "\n".join(f"\u2022 {name}" for name in copied_names)
 
                                 self.report({'INFO'}, log_msg)
-                                print("[CopyPaste] Duplizierte Tracks:
-" + log_msg)
+                                print("[CopyPaste] Duplizierte Tracks:\n" + log_msg)
                                 return {'FINISHED'}
 
                         except Exception as e:
@@ -147,34 +148,3 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
 
         self.report({'ERROR'}, "Kein gültiger Clip Editor für Copy/Paste gefunden.")
         return {'CANCELLED'}
-    
-        # 4. Sicherer Clip Editor mit temp_override
-        area_found = False
-        for area in context.screen.areas:
-            if area.type == 'CLIP_EDITOR':
-                for region in area.regions:
-                    if region.type == 'WINDOW':
-                        space = area.spaces.active
-                        if not space or not space.clip:
-                            continue
-    
-                        try:
-                            with context.temp_override(area=area, region=region, space_data=space):
-                                bpy.ops.clip.copy_tracks()
-                                bpy.ops.clip.paste_tracks()
-                            area_found = True
-                            break
-                        except Exception as e:
-                            self.report({'ERROR'}, f"Copy/Paste Fehler: {str(e)}")
-                            return {'CANCELLED'}
-                if area_found:
-                    break
-    
-        if area_found:
-            self.report({'INFO'}, f"{selected_count} Tracks mit Lücken wurden dupliziert.")
-        else:
-            self.report({'ERROR'}, "Kein Clip Editor für Copy/Paste gefunden.")
-    
-        return {'FINISHED'}
-
-
