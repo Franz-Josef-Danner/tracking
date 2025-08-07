@@ -206,22 +206,29 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         scene = context.scene
         frame_start = scene.frame_start
         frame_end = scene.frame_end
-    
+
+        # 1. Cleanup der fehlerhaften Marker durchführen
         clean_error_tracks(context)
 
         clip = context.space_data.clip
         tracks = clip.tracking.tracks
-    
-        # 2. Namen aller existierenden Tracks vor Copy/Paste merken
+
+        # 2. Tracks mit internen Lücken identifizieren
+        original_tracks = [t for t in tracks if track_has_internal_gaps(t)]
+        if not original_tracks:
+            self.report({'INFO'}, "Keine Tracks mit Lücken gefunden.")
+            return {'FINISHED'}
+
+        # 3. Namen aller existierenden Tracks merken
         existing_names = {t.name for t in tracks}
-    
-        # 3. Selektion vorbereiten
-        for track in tracks:
-            track.select = False
-        for track in original_tracks:
-            track.select = True
-    
-        # 4. Copy + Paste mit Kontext
+
+        # 4. Nur originale Tracks selektieren
+        for t in tracks:
+            t.select = False
+        for t in original_tracks:
+            t.select = True
+
+        # 5. Copy & Paste mit Kontext ausführen
         for area in context.screen.areas:
             if area.type == 'CLIP_EDITOR':
                 for region in area.regions:
@@ -230,22 +237,17 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                         with context.temp_override(area=area, region=region, space_data=space):
                             bpy.ops.clip.copy_tracks()
                             bpy.ops.clip.paste_tracks()
-    
-                            # 5. Neue Tracks anhand des Namensvergleichs identifizieren
+
+                            # 6. Neue Tracks durch Differenz ermitteln
                             all_names_after = {t.name for t in tracks}
                             new_names = all_names_after - existing_names
                             new_tracks = [t for t in tracks if t.name in new_names]
-    
-                            # 6. Clear Logic auf Originale und Duplikate anwenden
+
+                            # 7. ClearLogik auf Segmentebene anwenden
                             clear_path_on_split_tracks_segmented(context, original_tracks, new_tracks)
-    
+
                             self.report({'INFO'}, f"{len(new_tracks)} duplizierte Tracks erkannt und bereinigt.")
                             return {'FINISHED'}
-    
+
         self.report({'ERROR'}, "Kein Clip-Editor-Fenster gefunden.")
-        return {'CANCELLED'}
-
-
-
-        self.report({'ERROR'}, "Kein gültiger Clip Editor für Copy/Paste gefunden.")
         return {'CANCELLED'}
