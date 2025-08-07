@@ -128,9 +128,9 @@ def is_marker_valid(track, frame):
 
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
     with context.temp_override(area=area, region=region, space_data=space):
-        # 🔧 Sicherstellen, dass wir im Graph-View sind
-        space.clip.use_view_graph = True
-        print("📌 Aktiver Clip-View-Modus:", space.clip.use_view_graph)
+        # ✅ Korrekt auf SpaceClipEditor zugreifen
+        space.use_view_graph = True
+        print("📌 Aktiver Clip-View-Modus:", space.use_view_graph)
 
         for track in original_tracks:
             segments = get_track_segments(track)
