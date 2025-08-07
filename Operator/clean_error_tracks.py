@@ -199,7 +199,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             bpy.context.view_layer.update()
             time.sleep(0.2)
             for t in tracks:
-            print(f"[DEBUG] Track {t.name} hat Marker auf Frames: {[m.frame for m in t.markers]}")
+                print(f"[DEBUG] Track {t.name} hat Marker auf Frames: {[m.frame for m in t.markers]}")
 
 
 
