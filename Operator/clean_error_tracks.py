@@ -264,9 +264,10 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         )
 
         clear_path_on_split_tracks_segmented(
-            context, area, region, space,
+            context, clip_editor_area, clip_editor_region, clip_editor_space,
             original_tracks, new_tracks
         )
+
 
         # 🔒 Safety Pass: Einzelne Marker muten
         mute_unassigned_markers(tracks)
