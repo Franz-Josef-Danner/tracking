@@ -190,12 +190,10 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         with context.temp_override(area=clip_editor_area, region=clip_editor_region, space_data=clip_editor_space):
             bpy.ops.clip.copy_tracks()
             bpy.ops.clip.paste_tracks()
-            for t in tracks:
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=5)
             scene.frame_set(scene.frame_current)
             bpy.context.view_layer.update()
             time.sleep(0.2)
-            for t in tracks:
 
 
 
