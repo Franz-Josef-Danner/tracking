@@ -51,7 +51,7 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
                         bpy.ops.clip.reload()
                     except Exception as e:
 
-            return self.run_step(context)
+                return self.run_step(context)
 
         return {'PASS_THROUGH'}
 
