@@ -237,6 +237,9 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                         with context.temp_override(area=area, region=region, space_data=space):
                             bpy.ops.clip.copy_tracks()
                             bpy.ops.clip.paste_tracks()
+                            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                            time.sleep(0.2)
+
 
                             # 6. Neue Tracks durch Differenz ermitteln
                             all_names_after = {t.name for t in tracks}
