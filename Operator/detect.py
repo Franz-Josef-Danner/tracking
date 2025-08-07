@@ -3,7 +3,7 @@ import math
 import time
 
 def perform_marker_detection(clip, tracking, threshold, margin_base, min_distance_base):
-    factor = math.log10(threshold * 1e10) / 10
+    factor = math.log10(threshold * 1e7) / 7
     margin = max(1, int(margin_base * factor))
     min_distance = max(1, int(min_distance_base * factor))
 
