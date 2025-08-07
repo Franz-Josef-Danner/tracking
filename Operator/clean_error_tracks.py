@@ -126,40 +126,43 @@ def is_marker_valid(track, frame):
     except Exception as e:
         return False
 
+def mute_marker_path(track, from_frame, direction, mute=True):
+    for m in track.markers:
+        if (direction == 'forward' and m.frame >= from_frame) or \
+           (direction == 'backward' and m.frame <= from_frame):
+            m.mute = mute
+
+
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
     with context.temp_override(area=area, region=region, space_data=space):
-        # ✅ Sichere Umschaltung in den GRAPH-Modus
-        if space.view != 'GRAPH':
-            space.view = 'GRAPH'
-            print("📌 Ansicht auf GRAPH-Modus gesetzt.")
-        else:
-            print("📌 Ansicht war bereits im GRAPH-Modus.")
-
+        
+        # 🔴 ORIGINAL-TRACKS: Vorderes Segment behalten → alles danach muten
         for track in original_tracks:
             segments = get_track_segments(track)
-            track.select = True
 
-            # ⬆️ Alle Marker aktivieren
-            bpy.ops.clip.graph_disable_markers(action='ENABLE')
+            # Optional: alle Marker vorher ent-muten (wie ENABLE)
+            for m in track.markers:
+                m.mute = False
 
-            # ⬇️ Danach ab Szeneende deaktivieren
-            context.scene.frame_set(context.scene.frame_end)
-            bpy.ops.clip.graph_disable_markers(action='DISABLE')
-            track.select = False
+            for seg in segments:
+                mute_marker_path(track, seg[-1] + 1, 'forward', mute=True)
 
+        # 🔵 NEW-TRACKS: Hinteres Segment behalten → alles davor muten
         for track in new_tracks:
-            # 💡 Force-Update durch Frame-Jump + Redraw je Track
+            # 💡 Force-Update (wie bisher)
             context.scene.frame_set(context.scene.frame_current)
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=3)
             bpy.context.view_layer.update()
             time.sleep(0.05)
 
             segments = get_track_segments(track)
-            track.select = True
 
-            # ⬇️ Neue Tracks: alles sofort deaktivieren
-            bpy.ops.clip.graph_disable_markers(action='DISABLE')
-            track.select = False
+            # Optional: alle Marker vorher ent-muten (wie ENABLE)
+            for m in track.markers:
+                m.mute = False
+
+            for seg in segments:
+                mute_marker_path(track, seg[0] - 1, 'backward', mute=True)
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
