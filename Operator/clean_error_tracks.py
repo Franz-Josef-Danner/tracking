@@ -1,9 +1,6 @@
 import bpy
 import time
 
-from ..Helper.log_helper import write_log_entry
-
-
 def get_marker_position(track, frame):
     marker = track.markers.find_frame(frame)
     if marker:
@@ -71,7 +68,6 @@ def clean_error_tracks(context, space):
     clip = space.clip
     tracks = clip.tracking.tracks
     
-    write_log_entry("cleanup_start", "Starte Grid-Cleanup", clip_name=clip.name, track_count=len(tracks))
 
     for track in tracks:
         track.select = False
@@ -94,7 +90,6 @@ def clean_error_tracks(context, space):
                 total_deleted_all += run_cleanup_in_region(
                     tracks, frame_range, xmin, xmax, ymin, ymax, ee, width, height
                 )
-    write_log_entry("cleanup_done", "Cleanup abgeschlossen", deleted=total_deleted_all)
     return total_deleted_all, 0.0
     
 def delete_marker_path(track, from_frame, direction):
@@ -150,7 +145,6 @@ def mute_after_last_marker(track, scene_end):
     for m in track.markers:
         if m.frame >= last_valid_frame and m.frame <= scene_end:
             m.mute = True
-            write_log_entry("mute_after_end", "Marker gemutet nach Track-Ende", track=track.name, frame=m.frame)
 
 def mute_outside_segment_markers(track):
     """
@@ -165,7 +159,6 @@ def mute_outside_segment_markers(track):
     # Alle Marker prüfen
     for marker in track.markers:
         if marker.frame not in valid_frames:
-            print(f"[Mute] Track '{track.name}': Marker @ Frame {marker.frame} außerhalb aller Segmente → mute")
             marker.mute = True
 
 def mute_all_outside_segment_markers(tracks):
@@ -305,8 +298,6 @@ def mute_unassigned_markers(tracks):
             f = marker.frame
             if f not in valid_frames or f == first_frame:
                 marker.mute = True
-                print(f"[Mute] Track '{track.name}': Marker bei Frame {f} gemutet (ungültig oder Track-Beginn)")
-                write_log_entry("mute_invalid", "Marker ungültig oder am Anfang", track=track.name, frame=f)
                 
 def recursive_split_cleanup(context, area, region, space, tracks):
     scene = context.scene
@@ -329,14 +320,11 @@ def recursive_split_cleanup(context, area, region, space, tracks):
             t for t in tracks
             if track_has_internal_gaps(t) and t.name not in processed
         ]
-        print(f"🔁 Iteration {iteration}: {len(original_tracks)} unverarbeitete Tracks mit Gaps")
 
         if not original_tracks:
-            print("✅ Keine weiteren verarbeitbaren Gaps gefunden – fertig.")
             break
 
         if previous_gap_count == len(original_tracks):
-            print("🛑 Kein Fortschritt – breche Rekursion ab.")
             break
 
         previous_gap_count = len(original_tracks)
