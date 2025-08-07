@@ -18,7 +18,7 @@ def perform_marker_detection(clip, tracking, threshold, margin_base, min_distanc
 
     if result != {"FINISHED"}:
     
-    selected_tracks = [t for t in tracking.tracks if t.select]
+        selected_tracks = [t for t in tracking.tracks if t.select]
     return len(selected_tracks)
 
 def deselect_all_markers(tracking):
