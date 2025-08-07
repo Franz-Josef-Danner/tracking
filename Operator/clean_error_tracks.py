@@ -114,7 +114,8 @@ def clear_segment_path(context, space, track, frame, action):
     for t in clip.tracking.tracks:
         t.select = False
     track.select = True
-    scene.frame_current = frame
+
+    scene.frame_set(frame)  # ← Korrekte Methode, um Viewport und Dependency Graph zu aktualisieren
 
     try:
         bpy.ops.clip.clear_track_path(action=action)
