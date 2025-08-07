@@ -1,4 +1,11 @@
-# Operator/clean_error_tracks.py  — nur execute() anpassen
+# Operator/clean_error_tracks.py
+import bpy
+import time
+
+from ..Helper.process_marker_path import get_track_segments, process_marker_path
+from ..Helper.mute_invalid_segments import mute_invalid_segments  # + remove_segment_boundary_keys falls du es benutzt
+from ..Helper.clear_path_on_split_tracks_segmented import clear_path_on_split_tracks_segmented
+
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
