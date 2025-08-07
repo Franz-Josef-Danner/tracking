@@ -1,6 +1,6 @@
 import bpy
 import time
-from .ram_helper import RamGuard  # dein Helper im Helper-Ordner
+from ..Helper.ram_helper import RamGuard  # dein Helper im Helper-Ordner
 
 class CLIP_OT_tracking_pipeline(bpy.types.Operator):
     """Tracking-Pipeline: Detect, Track, Cleanup"""
