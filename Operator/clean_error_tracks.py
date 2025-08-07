@@ -124,47 +124,74 @@ def get_first_gap_frame(track):
     return None
 
 
-def clear_path_on_split_tracks(context, original_tracks, new_tracks):
+def get_track_segments(track):
+    frames = sorted([m.frame for m in track.markers])
+    if not frames:
+        return []
+
+    segments = []
+    current_segment = [frames[0]]
+
+    for i in range(1, len(frames)):
+        if frames[i] - frames[i - 1] == 1:
+            current_segment.append(frames[i])
+        else:
+            segments.append(current_segment)
+            current_segment = [frames[i]]
+
+    segments.append(current_segment)
+    return segments
+
+def clear_segment_path(context, track, frame, action):
+    clip = context.space_data.clip
+    scene = context.scene
+
+    for t in clip.tracking.tracks:
+        t.select = False
+    track.select = True
+
+    scene.frame_current = frame
+
+    try:
+        bpy.ops.clip.clear_track_path(action=action)
+        print(f"[DEBUG] ✔ clear_track_path für '{track.name}' bei Frame {frame} mit action='{action}'")
+    except RuntimeError as e:
+        print(f"[WARNUNG] ✖ Fehler bei clear_track_path für '{track.name}': {e}")
+
+def clear_path_on_split_tracks_segmented(context, original_tracks, new_tracks):
     scene = context.scene
     clip = context.space_data.clip
 
-    print("[DEBUG] Starte ClearPath-Prozess für Original- und Duplikat-Tracks...")
+    print("[DEBUG] Starte segmentierten ClearPath-Prozess...")
 
     clip_editor_area = next((a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None)
     if not clip_editor_area:
         print("[DEBUG] Kein CLIP_EDITOR gefunden.")
         return
-    
+
     clip_editor_region = next((r for r in clip_editor_area.regions if r.type == 'WINDOW'), None)
     if not clip_editor_region:
         print("[DEBUG] Keine gültige Region im CLIP_EDITOR gefunden.")
         return
-    
+
     space = clip_editor_area.spaces.active
 
-    # ✅ Nur EIN context override
     with context.temp_override(area=clip_editor_area, region=clip_editor_region, space_data=space):
-        all_targets = [(original_tracks, 'REMAINED'), (new_tracks, 'UPTO')]
-        for track_list, clear_type in all_targets:
-            print(f"[DEBUG] Verarbeite {len(track_list)} Tracks mit clear_type='{clear_type}'")
-            for track in track_list:
-                cut_frame = get_first_gap_frame(track) if clear_type == 'REMAINED' else get_first_frame(track)
-                if cut_frame is None:
-                    print(f"[DEBUG] → Track '{track.name}' übersprungen (kein Cut-Frame gefunden)")
-                    continue
 
-                scene.frame_current = cut_frame
-                print(f"[DEBUG] Setze Playhead auf Frame {cut_frame} für Track '{track.name}'")
+        # ORIGINAL: alles NACH dem Segmentende löschen
+        for track in original_tracks:
+            segments = get_track_segments(track)
+            for seg in segments:
+                last = seg[-1]
+                clear_segment_path(context, track, last + 1, 'REMAINED')
 
-                for t in clip.tracking.tracks:
-                    t.select = False
-                track.select = True
+        # DUPLIKAT: alles VOR dem Segmentbeginn löschen
+        for track in new_tracks:
+            segments = get_track_segments(track)
+            for seg in segments:
+                first = seg[0]
+                clear_segment_path(context, track, first - 1, 'UPTO')
 
-                try:
-                    bpy.ops.clip.clear_track_path(action=clear_type)
-                    print(f"[DEBUG] ✔ clear_track_path ausgeführt für Track '{track.name}' mit action='{clear_type}'")
-                except RuntimeError as e:
-                    print(f"[WARNUNG] ✖ Fehler bei clear_track_path für '{track.name}': {e}")
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
@@ -231,7 +258,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     
                             self.report({'INFO'}, f"{len(renamed)} duplizierte Tracks:\n" + "\n".join(f"• {r}" for r in renamed))
                             
-                            clear_path_on_split_tracks(context, original_tracks, new_tracks)
+                            clear_path_on_split_tracks_segmented(context, original_tracks, new_tracks)
 
                             return {'FINISHED'}
     
