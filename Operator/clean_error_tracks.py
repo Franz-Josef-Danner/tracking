@@ -115,17 +115,19 @@ def clear_segment_path(context, space, track, frame, action):
         t.select = False
     track.select = True
 
-    scene.frame_set(frame)  # ← Korrekte Methode, um Viewport und Dependency Graph zu aktualisieren
+    scene.frame_set(frame)  # sorgt für Viewport-Update
 
+    has_marker = track.markers.find_frame(frame) is not None
     if not has_marker:
         print(f"[SKIP] Kein Marker in '{track.name}' bei Frame {frame}, Aktion '{action}' übersprungen.")
-    return
+        return
 
     try:
         bpy.ops.clip.clear_track_path(action=action)
         print(f"[DEBUG] ✔ clear_track_path für '{track.name}' bei Frame {frame} mit action='{action}'")
     except RuntimeError as e:
         print(f"[WARNUNG] ✖ Fehler bei clear_track_path für '{track.name}': {e}")
+
 
 
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
