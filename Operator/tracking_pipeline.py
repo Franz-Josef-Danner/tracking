@@ -53,6 +53,18 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
         ts.default_margin = ts.default_search_size
 
         if self._step == 0:
+            # NEU: Init-Flip – Proxy kurz AN, dann sofort AUS
+            print("→ Proxy aktivieren (Init)")
+            try:
+                bpy.ops.clip.enable_proxy()
+            except Exception as e:
+                print(f"⚠️ Proxy-Aktivierung (Init) übersprungen/fehlgeschlagen: {e}")
+            print("→ Proxy deaktivieren (Init)")
+            try:
+                bpy.ops.clip.disable_proxy()
+            except Exception as e:
+                print(f"⚠️ Proxy-Deaktivierung (Init) übersprungen/fehlgeschlagen: {e}")
+
             print("→ Marker Helper")
             bpy.ops.clip.marker_helper_main()
             self._step += 1
@@ -111,13 +123,12 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
                 print("⏳ Warte auf Abschluss der Pipeline...")
                 scene["pipeline_status"] = "done"
                 print(f"🧩 [DEBUG] pipeline_status gesetzt auf: {scene['pipeline_status']}")
-                # >>> EINZIGE Platzierungsänderung: Proxy AKTIVIEREN am Ende des Zyklus <<<
+                # Proxy am Ende aktivieren
                 print("→ Proxy aktivieren (Ende)")
                 try:
                     bpy.ops.clip.enable_proxy()
                 except Exception as e:
                     print(f"⚠️ Proxy-Aktivierung am Ende übersprungen/fehlgeschlagen: {e}")
-                # ---------------------------------------------------------
                 wm.event_timer_remove(self._timer)
                 return {'FINISHED'}
 
