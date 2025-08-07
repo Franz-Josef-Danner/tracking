@@ -1,3 +1,5 @@
+from .process_marker_path import get_track_segments
+
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
     with context.temp_override(area=area, region=region, space_data=space):
         for track in original_tracks:
