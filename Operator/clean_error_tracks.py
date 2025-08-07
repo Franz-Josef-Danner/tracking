@@ -40,7 +40,6 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width
             vym = (p2[1] - p1[1]) + (p3[1] - p2[1])
             marker_data.append((track, vxm, vym))
 
-
         if not marker_data:
             continue
 
@@ -92,15 +91,6 @@ def clean_error_tracks(context, space):
                 )
     return total_deleted_all, 0.0
 
-def delete_marker_path(track, from_frame, direction):
-    to_delete = []
-    for m in track.markers:
-        if (direction == 'forward' and m.frame >= from_frame) or \
-           (direction == 'backward' and m.frame <= from_frame):
-            to_delete.append(m.frame)
-
-    for f in to_delete:
-        track.markers.delete_frame(f)
 
 def get_track_segments(track):
     frames = sorted([m.frame for m in track.markers])
@@ -118,13 +108,6 @@ def get_track_segments(track):
     segments.append(current_segment)
     return segments
 
-# 🆕 Neue Hilfsfunktion hier einfügen:
-def is_marker_valid(track, frame):
-    try:
-        marker = track.markers.find_frame(frame)
-        return marker is not None and hasattr(marker, "co")
-    except Exception as e:
-        return False
 
 def mute_marker_path(track, from_frame, direction, mute=True):
     for m in track.markers:
@@ -135,34 +118,26 @@ def mute_marker_path(track, from_frame, direction, mute=True):
 
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
     with context.temp_override(area=area, region=region, space_data=space):
-        
-        # 🔴 ORIGINAL-TRACKS: Vorderes Segment behalten → alles danach muten
+
         for track in original_tracks:
             segments = get_track_segments(track)
-
-            # Optional: alle Marker vorher ent-muten (wie ENABLE)
             for m in track.markers:
                 m.mute = False
-
             for seg in segments:
                 mute_marker_path(track, seg[-1] + 1, 'forward', mute=True)
 
-        # 🔵 NEW-TRACKS: Hinteres Segment behalten → alles davor muten
         for track in new_tracks:
-            # 💡 Force-Update (wie bisher)
             context.scene.frame_set(context.scene.frame_current)
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=3)
             bpy.context.view_layer.update()
             time.sleep(0.05)
 
             segments = get_track_segments(track)
-
-            # Optional: alle Marker vorher ent-muten (wie ENABLE)
             for m in track.markers:
                 m.mute = False
-
             for seg in segments:
                 mute_marker_path(track, seg[0] - 1, 'backward', mute=True)
+
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
@@ -189,9 +164,15 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             self.report({'ERROR'}, "Kein gültiger CLIP_EDITOR-Kontext gefunden.")
             return {'CANCELLED'}
 
-        clean_error_tracks(context, clip_editor_space)
         clip = clip_editor_space.clip
         tracks = clip.tracking.tracks
+
+        # 🧼 Reset vorheriger Verarbeitung
+        for t in tracks:
+            if "is_processed" in t:
+                del t["is_processed"]
+
+        clean_error_tracks(context, clip_editor_space)
 
         original_tracks = [t for t in tracks if track_has_internal_gaps(t)]
         if not original_tracks:
@@ -212,17 +193,18 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             bpy.context.view_layer.update()
             time.sleep(0.2)
 
-
-
         all_names_after = {t.name for t in tracks}
         new_names = all_names_after - existing_names
         new_tracks = [t for t in tracks if t.name in new_names]
+
+        for t in original_tracks + new_tracks:
+            t["is_processed"] = True
+
         clear_path_on_split_tracks_segmented(
             context, clip_editor_area, clip_editor_region, clip_editor_space,
             original_tracks, new_tracks
         )
 
-        # 🧩 Jetzt rekursiv weiter, bis keine Gaps mehr bestehen
         recursive_split_cleanup(
             context, clip_editor_area, clip_editor_region, clip_editor_space,
             tracks
@@ -230,24 +212,29 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
 
         return {'FINISHED'}
 
+
 def recursive_split_cleanup(context, area, region, space, tracks):
     iteration = 0
-    processed_names = set()  # Tracks, die bereits segmentiert wurden
+    previous_gap_count = -1
+    MAX_ITERATIONS = 10
 
-    while True:
+    while iteration < MAX_ITERATIONS:
         iteration += 1
-
-        # Nur noch jene Tracks, die noch nicht verarbeitet wurden
         original_tracks = [
             t for t in tracks
-            if track_has_internal_gaps(t) and t.name not in processed_names
+            if track_has_internal_gaps(t) and not t.get("is_processed")
         ]
-
-        print(f"🔁 Iteration {iteration}: {len(original_tracks)} neue Gaps")
+        print(f"🔁 Iteration {iteration}: {len(original_tracks)} unverarbeitete Tracks mit Gaps")
 
         if not original_tracks:
-            print("✅ Alle Original-Tracks wurden verarbeitet – fertig.")
+            print("✅ Keine weiteren verarbeitbaren Gaps gefunden – fertig.")
             break
+
+        if previous_gap_count == len(original_tracks):
+            print("🛑 Kein Fortschritt – breche Rekursion ab.")
+            break
+
+        previous_gap_count = len(original_tracks)
 
         existing_names = {t.name for t in tracks}
         for t in tracks:
@@ -267,16 +254,13 @@ def recursive_split_cleanup(context, area, region, space, tracks):
         new_names = all_names_after - existing_names
         new_tracks = [t for t in tracks if t.name in new_names]
 
+        for t in original_tracks + new_tracks:
+            t["is_processed"] = True
+
         clear_path_on_split_tracks_segmented(
             context, area, region, space,
             original_tracks, new_tracks
         )
 
-        # Wichtig: Markiere die originalen Tracks als verarbeitet
-        for t in original_tracks:
-            processed_names.add(t.name)
-
     bpy.ops.clip.clean_short_tracks('INVOKE_DEFAULT')
     return {'FINISHED'}
-
-
