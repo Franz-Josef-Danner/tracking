@@ -28,3 +28,27 @@ def process_marker_path(track, from_frame, direction, action="mute", mute=True):
         frames_to_delete = [m.frame for m in relevant_markers]
         for frame in frames_to_delete:
             track.markers.delete_frame(frame)
+
+
+def get_track_segments(track):
+    """
+    Gibt alle zusammenhängenden Tracking-Segmente als (start, end)-Tupel zurück.
+
+    Ein Segment ist eine Folge von Frames ohne Lücke (>1 Frame Abstand).
+    """
+    frames = sorted([m.frame for m in track.markers])
+    if not frames:
+        return []
+
+    segments = []
+    start = frames[0]
+    prev = frames[0]
+
+    for f in frames[1:]:
+        if f - prev > 1:
+            segments.append((start, prev))
+            start = f
+        prev = f
+
+    segments.append((start, prev))
+    return segments
