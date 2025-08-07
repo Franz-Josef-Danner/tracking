@@ -151,6 +151,6 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             original_tracks, new_tracks
         )
 
-        mute_invalid_segments(tracks, scene.frame_end)
+        mute_invalid_segments(list(tracks), scene.frame_end)
 
         return {'FINISHED'}
