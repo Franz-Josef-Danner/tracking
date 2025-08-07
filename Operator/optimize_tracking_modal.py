@@ -137,4 +137,3 @@ class CLIP_OT_optimize_tracking_modal(Operator):
         if "repeat_frame" in scene:
             scene["repeat_frame"].clear()
 
-        print("❌ Optimize Tracking abgebrochen. Status vollständig zurückgesetzt.")
