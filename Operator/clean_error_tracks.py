@@ -96,6 +96,16 @@ def clean_error_tracks(context, space):
                 )
     return total_deleted_all, 0.0
 
+def delete_marker_path(track, from_frame, direction):
+    to_delete = []
+    for m in track.markers:
+        if (direction == 'forward' and m.frame >= from_frame) or \
+           (direction == 'backward' and m.frame <= from_frame):
+            to_delete.append(m.frame)
+
+    for f in to_delete:
+        track.markers.delete_frame(f)
+        print(f"[DELETE] Marker in '{track.name}' bei Frame {f} gelöscht (Richtung: {direction})")
 
 def get_track_segments(track):
     frames = sorted([m.frame for m in track.markers])
