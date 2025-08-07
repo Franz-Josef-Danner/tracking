@@ -1,7 +1,6 @@
 import bpy
 
-from . import proxy_helper, clip_helper, ram_helper
-
+from . import proxy_helper, clip_helper  # <-- .ram_helper entfernt (liegt nicht in Operator)
 from .marker_helper_main import CLIP_OT_marker_helper_main
 from .disable_proxy import CLIP_OT_disable_proxy
 from .enable_proxy import CLIP_OT_enable_proxy
@@ -11,11 +10,9 @@ from .find_low_marker_frame import find_low_marker_frame
 from .jump_to_frame import jump_to_frame
 from .properties import RepeatEntry
 from .log_helper import write_log_entry
-from ..Helper.process_marker_path import process_marker_path
-from ..Helper.mute_invalid_segments import mute_invalid_segments
-from ..Helper.clear_path_on_split_tracks_segmented import clear_path_on_split_tracks_segmented
-from ..Helper.ram_helper import RamGuard, register_bpy_timer
 
+from ..Helper import ram_helper                       # Modul aus Helper (für Reload/Utilities)
+from ..Helper.ram_helper import RamGuard, register_bpy_timer  # Symbole exportieren
 
 __all__ = [
     "RamGuard",
@@ -24,7 +21,7 @@ __all__ = [
     "clip_helper",
     "ram_helper",
 ]
-# Alle Klassen in eine Liste
+
 classes = (
     RepeatEntry,
     CLIP_OT_marker_helper_main,
