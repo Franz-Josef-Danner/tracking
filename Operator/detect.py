@@ -175,9 +175,11 @@ class CLIP_OT_detect(bpy.types.Operator):
 
                 if self.attempt >= 20:
                     self.report({'WARNING'}, "Maximale Versuche erreicht, Markeranzahl unzureichend.")
-                    scene["detect_status"] = "failed"
+                    if scene.get("detect_status") != "failed":
+                        scene["detect_status"] = "failed"
                     context.window_manager.event_timer_remove(self._timer)
                     return {'FINISHED'}
+
 
                 self.state = "DETECT"
                 return {'PASS_THROUGH'}
