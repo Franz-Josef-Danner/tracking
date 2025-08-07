@@ -106,14 +106,39 @@ def get_track_segments(track):
     segments.append(current_segment)
     return segments
 
+def get_track_segments(track):
+    frames = sorted([m.frame for m in track.markers])
+    if not frames:
+        return []
 
-def clear_segment_path(context, space, track, frame, action):
-    clip = space.clip
-    scene = context.scene
+    segments = []
+    current_segment = [frames[0]]
+    for i in range(1, len(frames)):
+        if frames[i] - frames[i - 1] == 1:
+            current_segment.append(frames[i])
+        else:
+            segments.append(current_segment)
+            current_segment = [frames[i]]
+    segments.append(current_segment)
+    return segments
 
-    for t in clip.tracking.tracks:
-        t.select = False
-    track.select = True
+
+# 🆕 Neue Hilfsfunktion hier einfügen:
+def is_marker_valid(track, frame):
+    try:
+        marker = track.markers.find_frame(frame)
+        return marker is not None and hasattr(marker, "co")
+    except Exception as e:
+        print(f"[ERROR] Marker-Zugriff auf '{track.name}' bei Frame {frame} fehlgeschlagen: {e}")
+        return False
+
+def is_marker_valid(track, frame):
+    try:
+        marker = track.markers.find_frame(frame)
+        return marker is not None and hasattr(marker, "co")
+    except Exception as e:
+        print(f"[ERROR] Marker-Zugriff auf '{track.name}' bei Frame {frame} fehlgeschlagen: {e}")
+        return False
 
     scene.frame_set(frame)  # sorgt für Viewport-Update
 
@@ -142,12 +167,19 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
                 clear_segment_path(context, space, track, seg[-1] + 1, 'REMAINED')
 
         for track in new_tracks:
+            # 💡 WICHTIG: Force-Update durch Frame-Jump + Redraw je Track
+            context.scene.frame_set(context.scene.frame_current)
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=3)
+            bpy.context.view_layer.update()
+            time.sleep(0.05)
+
             segments = get_track_segments(track)
             frames = [m.frame for m in track.markers]
             print(f"[LOG] [NEU] Track '{track.name}' Marker auf Frames: {frames}")
             print(f"[LOG] [NEU] Track '{track.name}' hat {len(segments)} Segment(e): {segments}")
             for seg in segments:
                 clear_segment_path(context, space, track, seg[0] - 1, 'UPTO')
+
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
