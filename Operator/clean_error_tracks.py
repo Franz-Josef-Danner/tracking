@@ -132,18 +132,22 @@ def clear_segment_path(context, space, track, frame, action):
 
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
     with context.temp_override(area=area, region=region, space_data=space):
+
         for track in original_tracks:
-            for seg in get_track_segments(track):
-                clear_segment_path(context, space, track, seg[0] - 1, 'UPTO')
-    
+            segments = get_track_segments(track)
+            frames = [m.frame for m in track.markers]
+            print(f"[LOG] [ORIGINAL] Track '{track.name}' Marker auf Frames: {frames}")
+            print(f"[LOG] [ORIGINAL] Track '{track.name}' hat {len(segments)} Segment(e): {segments}")
+            for seg in segments:
+                clear_segment_path(context, space, track, seg[-1] + 1, 'REMAINED')
 
         for track in new_tracks:
-            for seg in get_track_segments(track):       
-                print(f"[LOG] Track '{track.name}' Marker auf Frames: {frames}")
+            segments = get_track_segments(track)
+            frames = [m.frame for m in track.markers]
+            print(f"[LOG] [NEU] Track '{track.name}' Marker auf Frames: {frames}")
+            print(f"[LOG] [NEU] Track '{track.name}' hat {len(segments)} Segment(e): {segments}")
+            for seg in segments:
                 clear_segment_path(context, space, track, seg[0] - 1, 'UPTO')
-                print(f"[LOG] Track '{track.name}' hat {len(segments)} Segment(e): {segments}")
-
-
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
