@@ -1,6 +1,8 @@
+# Helper/clear_path_on_split_tracks_segmented.py
 import bpy
 import time
 from .process_marker_path import get_track_segments, process_marker_path
+
 
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
     """
