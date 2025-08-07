@@ -1,5 +1,4 @@
-import bpy
-import time
+import bpy, time
 from ..Helper.psutil_bootstrap import ensure_psutil
 from ..Helper import ram_helper  # für Reload
 
