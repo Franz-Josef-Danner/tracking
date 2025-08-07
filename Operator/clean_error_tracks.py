@@ -236,14 +236,20 @@ def recursive_split_cleanup(context, area, region, space, tracks):
     previous_gap_count = -1
     MAX_ITERATIONS = 10
 
+    # Initialisieren (falls nicht vorhanden)
     if "processed_tracks" not in scene:
         scene["processed_tracks"] = []
 
     while iteration < MAX_ITERATIONS:
         iteration += 1
+
+        # Hole verarbeitete Track-Namen als reguläre Python-Liste
+        processed = list(scene.get("processed_tracks", []))
+
+        # Finde nur Tracks mit Gaps, die noch nicht verarbeitet wurden
         original_tracks = [
             t for t in tracks
-            if track_has_internal_gaps(t) and t.name not in scene["processed_tracks"]
+            if track_has_internal_gaps(t) and t.name not in processed
         ]
         print(f"🔁 Iteration {iteration}: {len(original_tracks)} unverarbeitete Tracks mit Gaps")
 
@@ -275,9 +281,13 @@ def recursive_split_cleanup(context, area, region, space, tracks):
         new_names = all_names_after - existing_names
         new_tracks = [t for t in tracks if t.name in new_names]
 
+        # Tracks (original und neu) als verarbeitet markieren
         for t in original_tracks + new_tracks:
-            if t.name not in scene["processed_tracks"]:
-                scene["processed_tracks"].append(t.name)
+            if t.name not in processed:
+                processed.append(t.name)
+
+        # Rückspeichern
+        scene["processed_tracks"] = processed
 
         clear_path_on_split_tracks_segmented(
             context, area, region, space,
@@ -286,3 +296,4 @@ def recursive_split_cleanup(context, area, region, space, tracks):
 
     bpy.ops.clip.clean_short_tracks('INVOKE_DEFAULT')
     return {'FINISHED'}
+
