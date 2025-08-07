@@ -129,6 +129,11 @@ def is_marker_valid(track, frame):
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
     with context.temp_override(area=area, region=region, space_data=space):
         # ✅ Sichere Umschaltung in den GRAPH-Modus
+        if space.view != 'GRAPH':
+            space.view = 'GRAPH'
+            print("📌 Ansicht auf GRAPH-Modus gesetzt.")
+        else:
+            print("📌 Ansicht war bereits im GRAPH-Modus.")
 
         for track in original_tracks:
             segments = get_track_segments(track)
