@@ -132,6 +132,13 @@ def mute_marker_path(track, from_frame, direction, mute=True):
            (direction == 'backward' and m.frame <= from_frame):
             m.mute = mute
 
+def mute_unassigned_markers(tracks):
+    for track in tracks:
+        segments = get_track_segments(track)
+        segment_frames = {frame for seg in segments for frame in seg}
+        for marker in track.markers:
+            if marker.frame not in segment_frames:
+                marker.mute = True
 
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
     with context.temp_override(area=area, region=region, space_data=space):
@@ -298,6 +305,7 @@ def recursive_split_cleanup(context, area, region, space, tracks):
     with context.temp_override(area=area, region=region, space_data=space):
         bpy.ops.clip.clean_short_tracks('INVOKE_DEFAULT')
 
+    # 🧩 Danach: Vereinzelte Marker, die außerhalb von Segmenten liegen, muten
+    mute_unassigned_markers(tracks)
+
     return {'FINISHED'}
-
-
