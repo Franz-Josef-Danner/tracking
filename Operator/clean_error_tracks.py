@@ -200,10 +200,46 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         all_names_after = {t.name for t in tracks}
         new_names = all_names_after - existing_names
         new_tracks = [t for t in tracks if t.name in new_names]
-
         clear_path_on_split_tracks_segmented(
-            context, clip_editor_area, clip_editor_region, clip_editor_space, original_tracks, new_tracks
+            context, clip_editor_area, clip_editor_region, clip_editor_space,
+            original_tracks, new_tracks
         )
 
-        self.report({'INFO'}, f"{len(new_tracks)} duplizierte Tracks erkannt und bereinigt.")
+        # 🧩 Jetzt rekursiv weiter, bis keine Gaps mehr bestehen
+        recursive_split_cleanup(
+            context, clip_editor_area, clip_editor_region, clip_editor_space,
+            tracks
+        )
         return {'FINISHED'}
+
+def recursive_split_cleanup(context, area, region, space, tracks):
+    iteration = 0
+
+    while True:
+        iteration += 1
+        original_tracks = [t for t in tracks if track_has_internal_gaps(t)]
+        if not original_tracks:
+            break
+
+        existing_names = {t.name for t in tracks}
+        for t in tracks:
+            t.select = False
+        for t in original_tracks:
+            t.select = True
+
+        with context.temp_override(area=area, region=region, space_data=space):
+            bpy.ops.clip.copy_tracks()
+            bpy.ops.clip.paste_tracks()
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=5)
+            context.scene.frame_set(context.scene.frame_current)
+            bpy.context.view_layer.update()
+            time.sleep(0.2)
+
+        all_names_after = {t.name for t in tracks}
+        new_names = all_names_after - existing_names
+        new_tracks = [t for t in tracks if t.name in new_names]
+
+        clear_path_on_split_tracks_segmented(
+            context, area, region, space,
+            original_tracks, new_tracks
+        )
