@@ -66,36 +66,25 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
         clip = context.space_data.clip
         ts = clip.tracking.settings
         ts.default_margin = ts.default_search_size
-
+    
         if self._step == 0:
-            print("→ Proxy aktivieren (Init)")
-            try:
-                bpy.ops.clip.enable_proxy()
-            except Exception as e:
-                print(f"⚠️ Proxy-Aktivierung (Init) übersprungen/fehlgeschlagen: {e}")
-            print("→ Proxy deaktivieren (Init)")
-            try:
-                bpy.ops.clip.disable_proxy()
-            except Exception as e:
-                print(f"⚠️ Proxy-Deaktivierung (Init) übersprungen/fehlgeschlagen: {e}")
-
+            # Proxy-Init entfernt
             print("→ Marker Helper")
             bpy.ops.clip.marker_helper_main()
             self._step += 1
             return {'PASS_THROUGH'}
-
+    
         elif self._step == 1:
-            print("→ Proxy deaktivieren")
-            bpy.ops.clip.disable_proxy()
+            # Schritt bleibt erhalten, macht aber nichts mehr (Proxy entfernt)
             self._step += 1
             return {'PASS_THROUGH'}
-
+    
         elif self._step == 2:
             print("→ Detect starten")
             bpy.ops.clip.detect()
             self._step += 1
             return {'PASS_THROUGH'}
-
+    
         elif self._step == 3:
             print("⏳ Warte auf Detect-Abschluss...")
             detect_status = scene.get("detect_status", "")
@@ -108,42 +97,38 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
                 self.cancel(context)
                 return {'CANCELLED'}
             return {'PASS_THROUGH'}
-
+    
         elif self._step == 4:
-            print("→ Proxy-Parameter reset (kein Aktivieren an dieser Stelle)")
+            print("→ Parameter-Reset")
             ts = context.space_data.clip.tracking.settings
             ts.default_margin = ts.default_search_size
             self._step += 1
             return {'PASS_THROUGH'}
-
+    
         elif self._step == 5:
             print("→ Starte bidirektionales Tracking")
             bpy.ops.clip.bidirectional_track()
             self._step += 1
             return {'PASS_THROUGH'}
-
+    
         elif self._step == 6:
             if scene.get("bidirectional_status", "") == "done":
                 print("✅ Bidirectional Tracking abgeschlossen.")
                 scene["bidirectional_status"] = ""
                 self._is_tracking = False
-
+    
             if not self._is_tracking:
                 print("⏳ Warte auf Abschluss der Pipeline...")
                 scene["pipeline_status"] = "done"
                 print(f"🧩 [DEBUG] pipeline_status gesetzt auf: {scene['pipeline_status']}")
-                print("→ Proxy aktivieren (Ende)")
-                try:
-                    bpy.ops.clip.enable_proxy()
-                except Exception as e:
-                    print(f"⚠️ Proxy-Aktivierung am Ende übersprungen/fehlgeschlagen: {e}")
+                # Proxy-Aktivierung (Ende) entfernt
                 wm.event_timer_remove(self._timer)
                 return {'FINISHED'}
-
+    
             return {'PASS_THROUGH'}
-
+    
         return {'PASS_THROUGH'}
-
+    
     def cancel(self, context):
         wm = context.window_manager
         wm.event_timer_remove(self._timer)
@@ -155,3 +140,4 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
         if "repeat_frame" in scene:
             scene["repeat_frame"].clear()
         print("❌ Tracking Pipeline abgebrochen. Status zurückgesetzt.")
+        
