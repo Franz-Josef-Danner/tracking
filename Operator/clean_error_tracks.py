@@ -114,11 +114,10 @@ def clear_segment_path(context, space, track, frame, action):
         t.select = False
     track.select = True
 
-    scene.frame_set(frame)
-    bpy.context.view_layer.update()
+    scene.frame_set(frame)  # sorgt für Viewport-Update
 
     if not is_marker_valid(track, frame):
-        print(f"[SKIP] Kein gültiger Marker in '{track.name}' bei Frame {frame}, Aktion '{action}' übersprungen.")
+        print(f"[SKIP] Ungültiger Marker in '{track.name}' bei Frame {frame}, Aktion '{action}' wird übersprungen.")
         return
 
     try:
@@ -135,21 +134,6 @@ def is_marker_valid(track, frame):
     except Exception as e:
         print(f"[ERROR] Marker-Zugriff auf '{track.name}' bei Frame {frame} fehlgeschlagen: {e}")
         return False
-
-    scene.frame_set(frame)  # sorgt für Viewport-Update
-
-    has_marker = track.markers.find_frame(frame) is not None
-    if not has_marker:
-        print(f"[SKIP] Kein Marker in '{track.name}' bei Frame {frame}, Aktion '{action}' übersprungen.")
-        return
-
-    try:
-        bpy.ops.clip.clear_track_path(action=action)
-        print(f"[DEBUG] ✔ clear_track_path für '{track.name}' bei Frame {frame} mit action='{action}'")
-    except RuntimeError as e:
-        print(f"[WARNUNG] ✖ Fehler bei clear_track_path für '{track.name}': {e}")
-
-
 
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
     with context.temp_override(area=area, region=region, space_data=space):
