@@ -212,24 +212,16 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         clip = context.space_data.clip
         tracks = clip.tracking.tracks
     
-        # 2. Check tracks with gaps
-        original_tracks = [track for track in tracks if track_has_internal_gaps(track)]
-        if not original_tracks:
-            self.report({'INFO'}, "Keine Tracks mit Lücken gefunden.")
-            return {'FINISHED'}
-    
-        # 3. Store original names
-        original_names = {t.name for t in original_tracks}
+        # 2. Namen aller existierenden Tracks vor Copy/Paste merken
         existing_names = {t.name for t in tracks}
-        renamed = []
     
-        # 4. Select only original_tracks
+        # 3. Selektion vorbereiten
         for track in tracks:
             track.select = False
         for track in original_tracks:
             track.select = True
     
-        # 5. Perform duplication and rename
+        # 4. Copy + Paste mit Kontext
         for area in context.screen.areas:
             if area.type == 'CLIP_EDITOR':
                 for region in area.regions:
@@ -239,27 +231,15 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                             bpy.ops.clip.copy_tracks()
                             bpy.ops.clip.paste_tracks()
     
-                            # Identify new tracks
+                            # 5. Neue Tracks anhand des Namensvergleichs identifizieren
                             all_names_after = {t.name for t in tracks}
                             new_names = all_names_after - existing_names
                             new_tracks = [t for t in tracks if t.name in new_names]
     
-                            # Rename new tracks with prefix
-                            for orig, new_track in zip(original_tracks, new_tracks):
-                                base_name = f"pre_{orig.name}"
-                                name = base_name
-                                suffix = 1
-                                while name in existing_names:
-                                    name = f"{base_name}_{suffix}"
-                                    suffix += 1
-                                new_track.name = name
-                                renamed.append(name)
-                                existing_names.add(name)
-    
-                            self.report({'INFO'}, f"{len(renamed)} duplizierte Tracks:\n" + "\n".join(f"• {r}" for r in renamed))
-                            
+                            # 6. Clear Logic auf Originale und Duplikate anwenden
                             clear_path_on_split_tracks_segmented(context, original_tracks, new_tracks)
-
+    
+                            self.report({'INFO'}, f"{len(new_tracks)} duplizierte Tracks erkannt und bereinigt.")
                             return {'FINISHED'}
     
         self.report({'ERROR'}, "Kein Clip-Editor-Fenster gefunden.")
