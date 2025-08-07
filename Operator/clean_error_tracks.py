@@ -214,15 +214,19 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
 
 
 def recursive_split_cleanup(context, area, region, space, tracks):
+    scene = context.scene
     iteration = 0
     previous_gap_count = -1
     MAX_ITERATIONS = 10
+
+    if "processed_tracks" not in scene:
+        scene["processed_tracks"] = []
 
     while iteration < MAX_ITERATIONS:
         iteration += 1
         original_tracks = [
             t for t in tracks
-            if track_has_internal_gaps(t) and not t.get("is_processed")
+            if track_has_internal_gaps(t) and t.name not in scene["processed_tracks"]
         ]
         print(f"🔁 Iteration {iteration}: {len(original_tracks)} unverarbeitete Tracks mit Gaps")
 
@@ -246,7 +250,7 @@ def recursive_split_cleanup(context, area, region, space, tracks):
             bpy.ops.clip.copy_tracks()
             bpy.ops.clip.paste_tracks()
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=5)
-            context.scene.frame_set(context.scene.frame_current)
+            scene.frame_set(scene.frame_current)
             bpy.context.view_layer.update()
             time.sleep(0.2)
 
@@ -255,7 +259,8 @@ def recursive_split_cleanup(context, area, region, space, tracks):
         new_tracks = [t for t in tracks if t.name in new_names]
 
         for t in original_tracks + new_tracks:
-            t["is_processed"] = True
+            if t.name not in scene["processed_tracks"]:
+                scene["processed_tracks"].append(t.name)
 
         clear_path_on_split_tracks_segmented(
             context, area, region, space,
@@ -264,3 +269,4 @@ def recursive_split_cleanup(context, area, region, space, tracks):
 
     bpy.ops.clip.clean_short_tracks('INVOKE_DEFAULT')
     return {'FINISHED'}
+
