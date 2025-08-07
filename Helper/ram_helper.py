@@ -1,55 +1,111 @@
-# ram_helper.py
-# Kleiner RAM-Guard für Blender-Add-ons.
-# Abhängigkeit: psutil (in Blender-Python installieren, s.u.)
+# Helper/ram_helper.py
+# RamGuard mit Self-Bootstrap für psutil (lokal in Helper/vendor)
+import os, sys, subprocess, importlib, time
 
-import time
+psutil = None  # wird beim Bootstrap gesetzt
 
-try:
-    import psutil
-except Exception:
-    psutil = None
+def ensure_psutil(auto_install=True, target_dir=None, logger=print):
+    """
+    Stellt sicher, dass psutil importierbar ist.
+    - Installiert optional via pip in ein lokales 'vendor'-Verzeichnis neben dieser Datei.
+    - Fügt target_dir zu sys.path hinzu und importiert psutil.
+    Rückgabe: (ok: bool, psutil_or_none, msg: str)
+    """
+    global psutil
+    # Schon geladen?
+    if psutil is not None:
+        return True, psutil, "psutil bereits initialisiert"
+    # Schon importierbar?
+    try:
+        import psutil as _ps
+        psutil = _ps
+        return True, psutil, "psutil bereits vorhanden"
+    except Exception:
+        if not auto_install:
+            return False, None, "psutil nicht vorhanden und auto_install=False"
+
+    # --- Installation vorbereiten ---
+    try:
+        import ensurepip
+        ensurepip.bootstrap()
+    except Exception as e:
+        return False, None, f"ensurepip fehlgeschlagen: {e}"
+
+    if target_dir is None:
+        target_dir = os.path.join(os.path.dirname(__file__), "vendor")
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+    except Exception as e:
+        return False, None, f"vendor-Verzeichnis fehlgeschlagen: {e}"
+
+    cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "psutil", "--target", target_dir]
+    try:
+        logger(f"🔧 psutil-Installation in: {target_dir}")
+        rc = subprocess.call(cmd)
+        if rc != 0:
+            return False, None, f"pip rc={rc}"
+    except Exception as e:
+        return False, None, f"pip-Call fehlgeschlagen: {e}"
+
+    if target_dir not in sys.path:
+        sys.path.insert(0, target_dir)
+    importlib.invalidate_caches()
+
+    try:
+        import psutil as _ps
+        psutil = _ps
+        return True, psutil, "psutil installiert"
+    except Exception as e:
+        return False, None, f"Import nach Installation fehlgeschlagen: {e}"
 
 
 class RamGuard:
     """
-    Simple Schwellenwächter mit Hysterese + Cooldown.
-    Verwendung:
-        guard = RamGuard(threshold_up=90, threshold_down=80, cooldown=5)
-        event, pct = guard.poll()
-        if event == 'enter_hot':
-            # hier dein Proxy-Pulse aufrufen
-    Events: 'enter_hot', 'exit_hot', None
+    Schwellenwächter mit Hysterese + Cooldown.
+      guard = RamGuard(threshold_up=90, threshold_down=80, cooldown=5)
+      event, pct = guard.poll()
+      if event == 'enter_hot':  # hier Proxy-Flush triggern
+
+    Events: 'enter_hot', 'exit_hot', 'no_psutil', None
     """
 
     def __init__(self,
                  threshold_up: float = 90.0,
                  threshold_down: float = 80.0,
                  cooldown: float = 5.0,
-                 smooth_samples: int = 1):
+                 smooth_samples: int = 1,
+                 auto_install_psutil: bool = True,
+                 vendor_dir: str | None = None,
+                 logger=print):
         assert threshold_down <= threshold_up, "threshold_down <= threshold_up erwartet"
         self.threshold_up = float(threshold_up)
         self.threshold_down = float(threshold_down)
         self.cooldown = float(cooldown)
         self.smooth_samples = max(1, int(smooth_samples))
-
         self._state_hot = False
         self._last_action = 0.0
         self._buf = []
 
+        # psutil sicherstellen (Self-Bootstrap)
+        ok, _mod, _msg = ensure_psutil(auto_install=auto_install_psutil, target_dir=vendor_dir, logger=logger)
+        # ok kann False sein (offline etc.) -> poll() liefert dann 'no_psutil'
+
     # --- Messung ---
-    @staticmethod
-    def percent() -> float | None:
-        """System-RAM in %, None wenn psutil fehlt."""
+    def percent(self) -> float | None:
+        """System-RAM in %, None wenn psutil weiterhin fehlt."""
         if psutil is None:
             return None
-        return float(psutil.virtual_memory().percent)
+        try:
+            return float(psutil.virtual_memory().percent)
+        except Exception:
+            return None
 
     # --- Logik ---
     def poll(self) -> tuple[str | None, float | None]:
         """
         Einmal aufrufen (z.B. pro TIMER-Tick). Gibt (event, percent) zurück.
-        event: 'enter_hot' | 'exit_hot' | None
-        percent: letzter gemessener RAM-% (oder None ohne psutil)
+        event: 'enter_hot' | 'exit_hot' | 'no_psutil' | None
+        percent: letzter RAM-% (oder None ohne psutil)
         """
         p = self.percent()
         if p is None:
@@ -77,6 +133,33 @@ class RamGuard:
 
         return event, p
 
+    def should_pulse(self) -> tuple[bool, float | None]:
+        """True genau beim Übergang in HOT (inkl. Cooldown/Hysterese)."""
+        event, p = self.poll()
+        return (event == 'enter_hot'), p
+
+
+# Optional: Timer-Integration ohne eigenen Modal-Op
+def register_bpy_timer(guard: RamGuard, on_enter_hot, on_exit_hot=None,
+                       interval: float = 1.0, stop_flag=lambda: False):
+    """
+    Registriert einen bpy.app.timers-Loop, der Events an Callbacks feuert.
+    Callbacks laufen im Main-Thread -> dort erst deine Proxy-Helper aufrufen!
+    Rückgabewert: die von bpy.app.timers.register zurückgegebene Funktion (zum Deregistrieren None zurückgeben).
+    """
+    import bpy  # import hier, damit Modul auch außerhalb Blender testbar ist
+
+    def _tick():
+        if stop_flag():
+            return None
+        event, _pct = guard.poll()
+        if event == 'enter_hot' and on_enter_hot:
+            on_enter_hot(_pct)
+        elif event == 'exit_hot' and on_exit_hot:
+            on_exit_hot(_pct)
+        return interval
+
+    return bpy.app.timers.register(_tick, first_interval=interval)
     # Bequemlichkeit: direkt fragen, ob man „pulsen“ soll
     def should_pulse(self) -> tuple[bool, float | None]:
         """True genau beim Übergang in HOT (inkl. Cooldown/Hysterese)."""
