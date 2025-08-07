@@ -210,6 +210,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             context, clip_editor_area, clip_editor_region, clip_editor_space,
             tracks
         )
+        return {'FINISHED'}
 
 def recursive_split_cleanup(context, area, region, space, tracks):
     iteration = 0
