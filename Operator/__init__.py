@@ -1,6 +1,6 @@
 import bpy
 
-# Importiere die Operator-Klassen aus den Modulen
+from . import proxy_helper, clip_helper
 from .proxy_builder import CLIP_OT_proxy_builder
 from .tracker_settings import CLIP_OT_tracker_settings
 from .detect import CLIP_OT_detect
@@ -10,6 +10,13 @@ from .tracking_pipeline import CLIP_OT_tracking_pipeline
 from .clean_error_tracks import CLIP_OT_clean_error_tracks
 from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 from .main import CLIP_OT_main
+
+__all__ = [
+    "RamGuard",
+    "register_bpy_timer",  # nur drin lassen, wenn du’s wirklich brauchst
+    "proxy_helper",
+    "clip_helper",
+]
 
 
 # Liste aller Operator-Klassen zur Registrierung
