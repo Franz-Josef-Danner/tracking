@@ -1,4 +1,7 @@
+# Helper/mute_invalid_segments.py
 from .process_marker_path import get_track_segments
+
+__all__ = ["mute_invalid_segments", "remove_segment_boundary_keys"]
 
 def _iter_tracks(x):
     try:
@@ -6,47 +9,72 @@ def _iter_tracks(x):
     except TypeError:
         return [x]
 
-def _delete_marker_if_exists(track, frame):
-    m = track.markers.find_frame(frame)
-    if m:
-        track.markers.delete_frame(frame)
-
-def remove_segment_boundary_keys(track_or_tracks, only_if_keyed=True):
+def remove_segment_boundary_keys(track):
     """
-    Entfernt Keyframes direkt am Start/Ende jedes zusammenhängenden Segments.
-    Standard: nur löschen, wenn der Marker wirklich 'is_keyed' ist.
+    Löscht Keyframes genau am Segment-Start/-Ende sowie am globalen Track-Start/-Ende.
     """
-    for track in _iter_tracks(track_or_tracks):
-        if not hasattr(track, "markers") or not track.markers:
-            continue
+    segments = get_track_segments(track)
+    if not segments or not getattr(track, "markers", None):
+        return
 
-        for start, end in get_track_segments(track):
-            # Start
-            m = track.markers.find_frame(start)
-            if m and (not only_if_keyed or getattr(m, "is_keyed", False)):
-                track.markers.delete_frame(start)
+    # Kandidaten sammeln: Segment-Grenzen + globaler Track-Anfang/-Ende
+    frames_to_check = set()
+    for start, end in segments:
+        frames_to_check.update((start, end))
 
-            # Ende
-            m = track.markers.find_frame(end)
-            if m and (not only_if_keyed or getattr(m, "is_keyed", False)):
-                track.markers.delete_frame(end)
+    all_frames = [m.frame for m in track.markers]
+    if all_frames:
+        frames_to_check.add(min(all_frames))
+        frames_to_check.add(max(all_frames))
 
-def remove_keyed_outside_segments(track_or_tracks):
+    # Nur harte Keyframes an genau diesen Frames löschen
+    for f in sorted(frames_to_check):
+        m = track.markers.find_frame(f)
+        if m and getattr(m, "is_keyed", False):
+            track.markers.delete_frame(f)
+
+def mute_invalid_segments(track_or_tracks, scene_end=None, action="mute"):
     """
-    Falls Blender irgendwo noch vereinzelt KEYs hat, die GAR NICHT in Segmenten liegen,
-    werden die entfernt (siehe Screenshot-Fälle).
+    - Keyframes an Segmentgrenzen zuerst *löschen* (Hard stop)
+    - Danach: nur Segmente >=2 Frames gelten als gültig
+    - Alles außerhalb → mute oder delete
+    - Nach letztem *Keyframe* wird ebenfalls gemutet/gelöscht
     """
     for track in _iter_tracks(track_or_tracks):
         if not getattr(track, "markers", None):
             continue
 
-        # Alle Segment-Frames einsammeln
-        seg_frames = set()
-        for s, e in get_track_segments(track):
-            seg_frames.update(range(s, e + 1))
+        # 1) Grenz-Keyframes immer entfernen
+        remove_segment_boundary_keys(track)
 
-        # Keyed-Marker außerhalb der Segmente löschen
-        to_delete = [m.frame for m in track.markers
-                     if getattr(m, "is_keyed", False) and m.frame not in seg_frames]
-        for f in to_delete:
-            track.markers.delete_frame(f)
+        # 2) Segmente nach dem Entfernen neu bilden
+        segments = get_track_segments(track)
+        if not segments:
+            continue
+
+        valid_frames = set()
+        for start, end in segments:
+            if end - start + 1 >= 2:
+                valid_frames.update(range(start, end + 1))
+
+        # Harte Obergrenze: letztes Keyframe (falls vorhanden)
+        keyed = [m.frame for m in track.markers if getattr(m, "is_keyed", False)]
+        last_keyed = max(keyed) if keyed else None
+
+        def is_invalid(m):
+            f = m.frame
+            if f not in valid_frames:
+                return True
+            if last_keyed is not None and f > last_keyed:
+                return True
+            return False
+
+        if action == "delete":
+            # vorsichtig: erst sammeln, dann löschen
+            to_delete = [m.frame for m in list(track.markers) if is_invalid(m)]
+            for f in sorted(set(to_delete)):
+                track.markers.delete_frame(f)
+        else:
+            for m in track.markers:
+                if is_invalid(m):
+                    m.mute = True
