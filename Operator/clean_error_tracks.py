@@ -257,12 +257,12 @@ def recursive_split_cleanup(context, area, region, space, tracks):
         new_names = all_names_after - existing_names
         new_tracks = [t for t in tracks if t.name in new_names]
 
+        # ❗️Korrektur hier:
         clear_path_on_split_tracks_segmented(
-            context, clip_editor_area, clip_editor_region, clip_editor_space,
+            context, area, region, space,
             original_tracks, new_tracks
         )
 
-    # 🔚 Letzter Schritt: kurze Tracks bereinigen
     bpy.ops.clip.clean_short_tracks('INVOKE_DEFAULT')
-
     return {'FINISHED'}
+
