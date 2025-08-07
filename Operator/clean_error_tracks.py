@@ -224,7 +224,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
 
         # 🧩 Jetzt rekursiv weiter, bis keine Gaps mehr bestehen
         recursive_split_cleanup(
-            context, area, region, space,
+            context, clip_editor_area, clip_editor_region, clip_editor_space,
             tracks
         )
 
