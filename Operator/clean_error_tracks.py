@@ -144,7 +144,7 @@ def clear_path_on_split_tracks(context, original_tracks, new_tracks):
                         track.select = True
 
                         try:
-                            bpy.ops.clip.clear_track_path(type=clear_type)
+                            bpy.ops.clip.clear_track_path(action=clear_type)
                         except RuntimeError:
                             print(f"[Warnung] Konnte Track {track.name} nicht bereinigen (clear_type={clear_type})")
 
