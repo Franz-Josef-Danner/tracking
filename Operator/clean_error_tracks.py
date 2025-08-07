@@ -124,27 +124,6 @@ def get_track_segments(track):
     print(f"[SEGMENT] '{track.name}' enthält {len(segments)} Segment(e): {segments}")
     return segments
 
-def clear_segment_path(context, space, track, frame, action):
-    clip = space.clip
-    scene = context.scene
-
-    for t in clip.tracking.tracks:
-        t.select = False
-    track.select = True
-
-    scene.frame_set(frame)  # sorgt für Viewport-Update
-
-    if not is_marker_valid(track, frame):
-        print(f"[SKIP] Ungültiger Marker in '{track.name}' bei Frame {frame}, Aktion '{action}' wird übersprungen.")
-        return
-
-    try:
-        print(f"[ACTION] '{track.name}' → clear_track_path(action='{action}') bei Frame {frame}")
-        bpy.ops.clip.clear_track_path(action=action)
-        print(f"[DEBUG] ✔ clear_track_path für '{track.name}' bei Frame {frame} mit action='{action}'")
-    except RuntimeError as e:
-        print(f"[WARNUNG] ✖ Fehler bei clear_track_path für '{track.name}': {e}")
-
 # 🆕 Neue Hilfsfunktion hier einfügen:
 def is_marker_valid(track, frame):
     try:
@@ -163,8 +142,8 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
             print(f"[LOG] [ORIGINAL] Track '{track.name}' Marker auf Frames: {frames}")
             print(f"[LOG] [ORIGINAL] Track '{track.name}' hat {len(segments)} Segment(e): {segments}")
             for seg in segments:
-                clear_segment_path(context, space, track, seg[-1] + 1, 'REMAINED')
-
+                delete_marker_path(track, seg[-1] + 1, 'forward')
+                
         for track in new_tracks:
             # 💡 WICHTIG: Force-Update durch Frame-Jump + Redraw je Track
             context.scene.frame_set(context.scene.frame_current)
@@ -177,8 +156,7 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
             print(f"[LOG] [NEU] Track '{track.name}' Marker auf Frames: {frames}")
             print(f"[LOG] [NEU] Track '{track.name}' hat {len(segments)} Segment(e): {segments}")
             for seg in segments:
-                clear_segment_path(context, space, track, seg[0] - 1, 'UPTO')
-
+                delete_marker_path(track, seg[0] - 1, 'backward')
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
