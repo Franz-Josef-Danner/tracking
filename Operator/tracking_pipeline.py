@@ -47,9 +47,15 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
                     try:
                         bpy.ops.clip.enable_proxy()
                         bpy.ops.clip.reload()
+                    except Exception as e:
+                        pass
+                elif event_name == 'leave_hot':
+                    try:
                         bpy.ops.clip.disable_proxy()
                         bpy.ops.clip.reload()
                     except Exception as e:
+                        pass
+
 
                 return self.run_step(context)
 
