@@ -132,13 +132,25 @@ def mute_marker_path(track, from_frame, direction, mute=True):
            (direction == 'backward' and m.frame <= from_frame):
             m.mute = mute
 
-def mute_unassigned_markers(tracks):
+def mute_outside_segment_markers(track):
+    """
+    Mutes all markers in the given track that are not part of a continuous segment.
+    """
+    # Segment-Frames als Set erfassen
+    segments = get_track_segments(track)
+    valid_frames = set()
+    for segment in segments:
+        valid_frames.update(segment)
+
+    # Alle Marker prüfen
+    for marker in track.markers:
+        if marker.frame not in valid_frames:
+            print(f"[Mute] Track '{track.name}': Marker @ Frame {marker.frame} außerhalb aller Segmente → mute")
+            marker.mute = True
+
+def mute_all_outside_segment_markers(tracks):
     for track in tracks:
-        segments = get_track_segments(track)
-        segment_frames = {frame for seg in segments for frame in seg}
-        for marker in track.markers:
-            if marker.frame not in segment_frames:
-                marker.mute = True
+        mute_outside_segment_markers(track)
 
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
     with context.temp_override(area=area, region=region, space_data=space):
