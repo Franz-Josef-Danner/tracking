@@ -32,14 +32,10 @@ def process_marker_path(track, from_frame, direction, action="mute", mute=True):
 
 def get_track_segments(track):
     """
-    Liefert Segmente (start, end) anhand *echter* Keyframes, nicht der geschätzten Frames.
-    Fallback: wenn 'is_keyed' nicht existiert oder keine Keyframes gefunden werden,
-    benutzen wir alle Frames wie bisher.
+    Liefert Segmente (start, end) anhand ALLER Markerframes.
+    Keyframes werden NICHT zur Segmentbildung benutzt.
     """
-    # 1) nur echte Keyframes einsammeln (falls verfügbar)
-    keyed = [m.frame for m in track.markers if getattr(m, "is_keyed", False)]
-    frames = sorted(set(keyed)) if keyed else sorted({m.frame for m in track.markers})
-
+    frames = sorted({m.frame for m in track.markers})
     if not frames:
         return []
 
@@ -52,4 +48,3 @@ def get_track_segments(track):
         prev = f
     segments.append((start, prev))
     return segments
-
