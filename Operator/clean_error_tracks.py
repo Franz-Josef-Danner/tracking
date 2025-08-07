@@ -263,8 +263,10 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             tracks
         )
 
-        for t in tracks:
-            mute_after_last_marker(t, scene.frame_end)
+        clear_path_on_split_tracks_segmented(
+            context, area, region, space,
+            original_tracks, new_tracks
+        )
 
         # 🔒 Safety Pass: Einzelne Marker muten
         mute_unassigned_markers(tracks)
