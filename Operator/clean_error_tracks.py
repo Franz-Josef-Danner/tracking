@@ -303,7 +303,7 @@ def recursive_split_cleanup(context, area, region, space, tracks):
     scene = context.scene
     iteration = 0
     previous_gap_count = -1
-    MAX_ITERATIONS = 10
+    MAX_ITERATIONS = 5
 
     # Initialisieren (falls nicht vorhanden)
     if "processed_tracks" not in scene:
