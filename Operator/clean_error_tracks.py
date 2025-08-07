@@ -111,14 +111,24 @@ def clean_error_tracks(context):
 
 def get_first_gap_frame(track):
     frames = sorted([m.frame for m in track.markers])
+    print(f"[DEBUG] Analysiere Track: {track.name}, Marker auf Frames: {frames}")
     for i in range(1, len(frames)):
         if frames[i] - frames[i - 1] > 1:
-            return frames[i - 1] + 1  # erster Frame nach letzter gültiger Markerkette
-    return frames[-1] if frames else None
+            cut = frames[i - 1] + 1
+            print(f"[DEBUG] → Lücke erkannt in Track '{track.name}' bei Frame {cut}")
+            return cut
+    if frames:
+        print(f"[DEBUG] → Keine Lücke in Track '{track.name}', Rückgabe letzter Frame: {frames[-1]}")
+        return frames[-1]
+    print(f"[DEBUG] → Track '{track.name}' hat keine Marker.")
+    return None
+
 
 def clear_path_on_split_tracks(context, original_tracks, new_tracks):
     scene = context.scene
     clip = context.space_data.clip
+
+    print("[DEBUG] Starte ClearPath-Prozess für Original- und Duplikat-Tracks...")
 
     for area in context.screen.areas:
         if area.type != 'CLIP_EDITOR':
@@ -131,12 +141,15 @@ def clear_path_on_split_tracks(context, original_tracks, new_tracks):
             with context.temp_override(area=area, region=region, space_data=space):
                 all_targets = [(original_tracks, 'REMAINED'), (new_tracks, 'UPTO')]
                 for track_list, clear_type in all_targets:
+                    print(f"[DEBUG] Verarbeite {len(track_list)} Tracks mit clear_type='{clear_type}'")
                     for track in track_list:
                         cut_frame = get_first_gap_frame(track)
                         if cut_frame is None:
-                            continue  # Keine Marker → überspringen
+                            print(f"[DEBUG] → Track '{track.name}' übersprungen (kein Cut-Frame gefunden)")
+                            continue
 
                         scene.frame_current = cut_frame
+                        print(f"[DEBUG] Setze Playhead auf Frame {cut_frame} für Track '{track.name}'")
 
                         # Selektion zurücksetzen
                         for t in clip.tracking.tracks:
@@ -145,8 +158,10 @@ def clear_path_on_split_tracks(context, original_tracks, new_tracks):
 
                         try:
                             bpy.ops.clip.clear_track_path(action=clear_type)
-                        except RuntimeError:
-                            print(f"[Warnung] Konnte Track {track.name} nicht bereinigen (clear_type={clear_type})")
+                            print(f"[DEBUG] ✔ clear_track_path ausgeführt für Track '{track.name}' mit action='{clear_type}'")
+                        except RuntimeError as e:
+                            print(f"[WARNUNG] ✖ Fehler bei clear_track_path für '{track.name}': {e}")
+
 
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
