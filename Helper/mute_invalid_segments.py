@@ -1,85 +1,53 @@
 from .process_marker_path import get_track_segments
 
-__all__ = ["mute_invalid_segments", "remove_segment_boundary_keys"]
-
 def _iter_tracks(x):
     try:
         return list(x)
     except TypeError:
         return [x]
 
-def remove_segment_boundary_keys(track_or_tracks, only_if_keyed=True, also_track_bounds=True):
+def remove_segment_boundary_keys(track_or_tracks, only_if_keyed=True):
     """
-    Löscht Keyframes genau an Segmentgrenzen und optional am Track-Start/-Ende.
-    Entfernt nur echte Keys, wenn only_if_keyed=True.
-    """
-    for track in _iter_tracks(track_or_tracks):
-        markers = getattr(track, "markers", None)
-        if not markers:
-            continue
-
-        segs = get_track_segments(track)
-        if not segs:
-            continue
-
-        frames_to_check = set()
-        for s, e in segs:
-            frames_to_check.add(s)
-            frames_to_check.add(e)
-
-        if also_track_bounds:
-            all_frames = [m.frame for m in markers]
-            if all_frames:
-                frames_to_check.add(min(all_frames))
-                frames_to_check.add(max(all_frames))
-
-        for f in sorted(frames_to_check):
-            m = markers.find_frame(f)
-            if not m:
-                continue
-            # nur löschen, wenn keyed verlangt oder egal
-            if only_if_keyed and not getattr(m, "is_keyed", False):
-                continue
-            markers.delete_frame(f)
-
-def mute_invalid_segments(track_or_tracks, scene_end=None, action="mute"):
-    """
-    Gültig sind nur Segmente mit Länge >=2. Alles außerhalb wird gemutet/gelöscht.
-    Außerdem wird nach dem letzten Keyframe (falls vorhanden) ebenfalls gemutet/gelöscht.
+    Löscht NUR die Marker direkt auf Segment-Start und -Ende.
+    Kein forward/backward-Sweep.
     """
     for track in _iter_tracks(track_or_tracks):
-        markers = getattr(track, "markers", None)
-        if not markers:
+        if not getattr(track, "markers", None):
+            continue
+        segments = get_track_segments(track)
+        for start, end in segments:
+            for f in (start, end):
+                m = track.markers.find_frame(f)
+                if not m:
+                    continue
+                if (not only_if_keyed) or getattr(m, "is_keyed", False):
+                    track.markers.delete_frame(f)
+
+def prune_outside_segments(track_or_tracks, action="mute"):
+    """
+    Hält nur zusammenhängende Segmente >=2 Frames.
+    Alles andere (Einzelmarker, Lückenreste, 'estimated' nach dem Ende) wird
+    je nach action gemutet oder gelöscht.
+    """
+    for track in _iter_tracks(track_or_tracks):
+        if not getattr(track, "markers", None):
             continue
 
-        # Safety: an Segment- & Trackgrenzen KEINE Keys stehen lassen
-        remove_segment_boundary_keys(track, only_if_keyed=True, also_track_bounds=True)
-
-        segs = get_track_segments(track)
-        if not segs:
+        segments = get_track_segments(track)
+        if not segments:
             continue
 
         valid_frames = set()
-        for s, e in segs:
-            if e - s + 1 >= 2:
-                valid_frames.update(range(s, e + 1))
-
-        keyed_frames = [m.frame for m in markers if getattr(m, "is_keyed", False)]
-        last_keyed = max(keyed_frames) if keyed_frames else None
-
-        def is_invalid_marker(m):
-            f = m.frame
-            if f not in valid_frames:
-                return True
-            if last_keyed is not None and f > last_keyed:
-                return True
-            return False
+        for start, end in segments:
+            if end - start + 1 >= 2:
+                valid_frames.update(range(start, end + 1))
 
         if action == "delete":
-            to_delete = [m.frame for m in list(markers) if is_invalid_marker(m)]
-            for f in sorted(set(to_delete)):
-                markers.delete_frame(f)
+            # vorsicht: in Liste casten, damit wir während der Iteration löschen können
+            for m in list(track.markers):
+                if m.frame not in valid_frames:
+                    track.markers.delete_frame(m.frame)
         else:
-            for m in markers:
-                if is_invalid_marker(m):
+            for m in track.markers:
+                if m.frame not in valid_frames:
                     m.mute = True
