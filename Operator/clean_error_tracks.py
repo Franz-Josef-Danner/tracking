@@ -109,6 +109,45 @@ def clean_error_tracks(context):
 
     return total_deleted_all, 0.0
 
+def get_first_gap_frame(track):
+    frames = sorted([m.frame for m in track.markers])
+    for i in range(1, len(frames)):
+        if frames[i] - frames[i - 1] > 1:
+            return frames[i - 1] + 1  # erster Frame nach letzter gültiger Markerkette
+    return frames[-1] if frames else None
+
+def clear_path_on_split_tracks(context, original_tracks, new_tracks):
+    scene = context.scene
+    clip = context.space_data.clip
+
+    for area in context.screen.areas:
+        if area.type != 'CLIP_EDITOR':
+            continue
+        for region in area.regions:
+            if region.type != 'WINDOW':
+                continue
+
+            space = area.spaces.active
+            with context.temp_override(area=area, region=region, space_data=space):
+                all_targets = [(original_tracks, 'REMAINED'), (new_tracks, 'UPTO')]
+                for track_list, clear_type in all_targets:
+                    for track in track_list:
+                        cut_frame = get_first_gap_frame(track)
+                        if cut_frame is None:
+                            continue  # Keine Marker → überspringen
+
+                        scene.frame_current = cut_frame
+
+                        # Selektion zurücksetzen
+                        for t in clip.tracking.tracks:
+                            t.select = False
+                        track.select = True
+
+                        try:
+                            bpy.ops.clip.clear_track_path(type=clear_type)
+                        except RuntimeError:
+                            print(f"[Warnung] Konnte Track {track.name} nicht bereinigen (clear_type={clear_type})")
+
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
@@ -174,6 +213,9 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                                 existing_names.add(name)
     
                             self.report({'INFO'}, f"{len(renamed)} duplizierte Tracks:\n" + "\n".join(f"• {r}" for r in renamed))
+                            
+                            clear_path_on_split_tracks(context, original_tracks, new_tracks)
+
                             return {'FINISHED'}
     
         self.report({'ERROR'}, "Kein Clip-Editor-Fenster gefunden.")
