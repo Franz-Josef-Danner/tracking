@@ -152,5 +152,8 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         )
 
         mute_invalid_segments(list(tracks), scene.frame_end)
+        remove_segment_boundary_keys(tracks, only_if_keyed=True)
+        remove_keyed_outside_segments(tracks)
+
 
         return {'FINISHED'}
