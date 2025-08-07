@@ -76,16 +76,44 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
             detect_status = scene.get("detect_status", "")
         
             if detect_status == "success":
-                # ---- EINZIGE Anpassung laut deiner Vorgabe: Zyklus endet mit Proxy aktivieren ----
-                print("→ Proxy aktivieren (Ende)")
-                try:
-                    bpy.ops.clip.enable_proxy()
-                except Exception as e:
-                    print(f"⚠️ Proxy-Aktivierung am Ende übersprungen/fehlgeschlagen: {e}")
-                # -------------------------------------------------------------------------------
-                print("✅ Detect fertig. Pipeline wird beendet.")
-                scene["pipeline_status"] = "done"
+                self._step += 1
+                scene["detect_status"] = ""
+                return {'PASS_THROUGH'}
+        
+            elif detect_status == "failed":
+                self.report({'ERROR'}, "❌ Detect fehlgeschlagen – Pipeline wird abgebrochen.")
                 self.cancel(context)
+                return {'CANCELLED'}
+        
+            return {'PASS_THROUGH'}
+
+
+        elif self._step == 4:
+            print("→ Proxy aktivieren")
+            bpy.ops.clip.enable_proxy()
+            ts = context.space_data.clip.tracking.settings
+            ts.default_margin = ts.default_search_size  # <--- automatischer Reset
+            self._step += 1
+            return {'PASS_THROUGH'}
+
+
+        elif self._step == 5:
+            print("→ Starte bidirektionales Tracking")
+            bpy.ops.clip.bidirectional_track()
+            self._step += 1
+            return {'PASS_THROUGH'}
+
+        elif self._step == 6:
+            if scene.get("bidirectional_status", "") == "done":
+                print("✅ Bidirectional Tracking abgeschlossen.")
+                scene["bidirectional_status"] = ""
+                self._is_tracking = False
+
+            if not self._is_tracking:
+                print("⏳ Warte auf Abschluss der Pipeline...")
+                scene["pipeline_status"] = "done"
+                print(f"🧩 [DEBUG] pipeline_status gesetzt auf: {scene['pipeline_status']}")
+                wm.event_timer_remove(self._timer)
                 return {'FINISHED'}
 
             return {'PASS_THROUGH'}
@@ -94,18 +122,14 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
 
     def cancel(self, context):
         wm = context.window_manager
-        if self._timer:
-            wm.event_timer_remove(self._timer)
-            self._timer = None
-        self._is_tracking = False
-        print("⛔ Pipeline abgebrochen und Timer entfernt.")
-
-# (Optional) Registrierung, falls du die Klasse standalone testest
-def register():
-    bpy.utils.register_class(CLIP_OT_tracking_pipeline)
-
-def unregister():
-    bpy.utils.unregister_class(CLIP_OT_tracking_pipeline)
-
-if __name__ == "__main__":
-    register()
+        wm.event_timer_remove(self._timer)
+    
+        scene = context.scene
+        scene["pipeline_status"] = ""
+        scene["detect_status"] = ""
+        scene["bidirectional_status"] = ""
+        scene["goto_frame"] = -1
+        if "repeat_frame" in scene:
+            scene["repeat_frame"].clear()
+    
+        print("❌ Tracking Pipeline abgebrochen. Status zurückgesetzt.")
