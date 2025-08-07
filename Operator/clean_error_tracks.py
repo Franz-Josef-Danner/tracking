@@ -251,26 +251,27 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
 
 def mute_unassigned_markers(tracks):
     """
-    Mute alle Marker, die entweder:
-    - außerhalb von Segmenten mit Länge ≥ 2 liegen
-    - oder am Beginn/Ende eines Tracks als einzelner Marker stehen
+    Mute alle Marker, die:
+    - nicht Teil eines ≥2-Frames langen Segments sind
+    - oder exakt am Track-Anfang liegen (auch wenn im Segment enthalten)
     """
     for track in tracks:
         segments = get_track_segments(track)
         valid_frames = set()
-        
         for segment in segments:
             if len(segment) >= 2:
                 valid_frames.update(segment)
 
-        all_frames = set(m.frame for m in track.markers)
+        # Track-Anfangsframe bestimmen (kleinster Marker-Frame im Track)
+        if not track.markers:
+            continue
+        first_frame = min(m.frame for m in track.markers)
 
         for marker in track.markers:
             f = marker.frame
-            # Mute, wenn nicht Teil eines ≥2-Segments oder am Track-Beginn/-Ende mit nur 1 Marker
-            if f not in valid_frames:
+            if f not in valid_frames or f == first_frame:
                 marker.mute = True
-                print(f"[Mute] Einzelner Marker in Track '{track.name}' bei Frame {f} → mute")
+                print(f"[Mute] Track '{track.name}': Marker bei Frame {f} gemutet (ungültig oder Track-Beginn)")
 
 def recursive_split_cleanup(context, area, region, space, tracks):
     scene = context.scene
