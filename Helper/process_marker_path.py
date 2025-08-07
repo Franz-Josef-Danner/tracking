@@ -32,23 +32,24 @@ def process_marker_path(track, from_frame, direction, action="mute", mute=True):
 
 def get_track_segments(track):
     """
-    Gibt alle zusammenhängenden Tracking-Segmente als (start, end)-Tupel zurück.
-
-    Ein Segment ist eine Folge von Frames ohne Lücke (>1 Frame Abstand).
+    Liefert Segmente (start, end) anhand *echter* Keyframes, nicht der geschätzten Frames.
+    Fallback: wenn 'is_keyed' nicht existiert oder keine Keyframes gefunden werden,
+    benutzen wir alle Frames wie bisher.
     """
-    frames = sorted([m.frame for m in track.markers])
+    # 1) nur echte Keyframes einsammeln (falls verfügbar)
+    keyed = [m.frame for m in track.markers if getattr(m, "is_keyed", False)]
+    frames = sorted(set(keyed)) if keyed else sorted({m.frame for m in track.markers})
+
     if not frames:
         return []
 
     segments = []
-    start = frames[0]
-    prev = frames[0]
-
+    start = prev = frames[0]
     for f in frames[1:]:
         if f - prev > 1:
             segments.append((start, prev))
             start = f
         prev = f
-
     segments.append((start, prev))
     return segments
+
