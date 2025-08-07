@@ -130,6 +130,23 @@ def clear_path_on_split_tracks(context, original_tracks, new_tracks):
 
     print("[DEBUG] Starte ClearPath-Prozess für Original- und Duplikat-Tracks...")
 
+    clip_editor_area = next(
+        (a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None
+    )
+    if not clip_editor_area:
+        print("[DEBUG] Kein CLIP_EDITOR gefunden.")
+        return
+    
+    clip_editor_region = next(
+        (r for r in clip_editor_area.regions if r.type == 'WINDOW'), None
+    )
+    if not clip_editor_region:
+        print("[DEBUG] Keine gültige Region im CLIP_EDITOR gefunden.")
+        return
+    
+    space = clip_editor_area.spaces.active
+    with context.temp_override(area=clip_editor_area, region=clip_editor_region, space_data=space):
+    
     for area in context.screen.areas:
         if area.type != 'CLIP_EDITOR':
             continue
