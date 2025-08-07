@@ -146,40 +146,28 @@ def clear_path_on_split_tracks(context, original_tracks, new_tracks):
     
     space = clip_editor_area.spaces.active
     with context.temp_override(area=clip_editor_area, region=clip_editor_region, space_data=space):
-    
-    for area in context.screen.areas:
-        if area.type != 'CLIP_EDITOR':
-            continue
-        for region in area.regions:
-            if region.type != 'WINDOW':
-                continue
+        all_targets = [(original_tracks, 'REMAINED'), (new_tracks, 'UPTO')]
+        for track_list, clear_type in all_targets:
+            print(f"[DEBUG] Verarbeite {len(track_list)} Tracks mit clear_type='{clear_type}'")
+            for track in track_list:
+                cut_frame = get_first_gap_frame(track)
+                if cut_frame is None:
+                    print(f"[DEBUG] → Track '{track.name}' übersprungen (kein Cut-Frame gefunden)")
+                    continue
 
-            space = area.spaces.active
-            with context.temp_override(area=area, region=region, space_data=space):
-                all_targets = [(original_tracks, 'REMAINED'), (new_tracks, 'UPTO')]
-                for track_list, clear_type in all_targets:
-                    print(f"[DEBUG] Verarbeite {len(track_list)} Tracks mit clear_type='{clear_type}'")
-                    for track in track_list:
-                        cut_frame = get_first_gap_frame(track)
-                        if cut_frame is None:
-                            print(f"[DEBUG] → Track '{track.name}' übersprungen (kein Cut-Frame gefunden)")
-                            continue
+                scene.frame_current = cut_frame
+                print(f"[DEBUG] Setze Playhead auf Frame {cut_frame} für Track '{track.name}'")
 
-                        scene.frame_current = cut_frame
-                        print(f"[DEBUG] Setze Playhead auf Frame {cut_frame} für Track '{track.name}'")
+                # Selektion zurücksetzen
+                for t in clip.tracking.tracks:
+                    t.select = False
+                track.select = True
 
-                        # Selektion zurücksetzen
-                        for t in clip.tracking.tracks:
-                            t.select = False
-                        track.select = True
-
-                        try:
-                            bpy.ops.clip.clear_track_path(action=clear_type)
-                            print(f"[DEBUG] ✔ clear_track_path ausgeführt für Track '{track.name}' mit action='{clear_type}'")
-                        except RuntimeError as e:
-                            print(f"[WARNUNG] ✖ Fehler bei clear_track_path für '{track.name}': {e}")
-
-
+                try:
+                    bpy.ops.clip.clear_track_path(action=clear_type)
+                    print(f"[DEBUG] ✔ clear_track_path ausgeführt für Track '{track.name}' mit action='{clear_type}'")
+                except RuntimeError as e:
+                    print(f"[WARNUNG] ✖ Fehler bei clear_track_path für '{track.name}': {e}")
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
