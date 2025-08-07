@@ -131,10 +131,14 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
 
         for track in original_tracks:
             segments = get_track_segments(track)
-            frames = [m.frame for m in track.markers]
-            for seg in segments:
-                delete_marker_path(track, seg[-1] + 1, 'forward')
-                
+
+            # Neue Logik:
+            track.select = True  # Nur diesen Track aktivieren
+            bpy.ops.clip.graph_disable_markers(action='ENABLE')  # Marker aktivieren
+            context.scene.frame_set(context.scene.frame_end)
+            bpy.ops.clip.graph_disable_markers(action='DISABLE')  # Marker ab Szeneende deaktivieren
+            track.select = False
+
         for track in new_tracks:
             # 💡 WICHTIG: Force-Update durch Frame-Jump + Redraw je Track
             context.scene.frame_set(context.scene.frame_current)
@@ -143,9 +147,11 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
             time.sleep(0.05)
 
             segments = get_track_segments(track)
-            frames = [m.frame for m in track.markers]
-            for seg in segments:
-                delete_marker_path(track, seg[0] - 1, 'backward')
+
+            # Neue Logik:
+            track.select = True
+            bpy.ops.clip.graph_disable_markers(action='DISABLE')  # Marker sofort deaktivieren
+            track.select = False
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
