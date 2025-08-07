@@ -2,7 +2,6 @@ import bpy
 import time
 
 from ..Helper.process_marker_path import process_marker_path
-from ..Helper.mute_invalid_segments import mute_invalid_segments
 from ..Helper.clear_path_on_split_tracks_segmented import clear_path_on_split_tracks_segmented
 
 
@@ -150,9 +149,9 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             context, clip_editor_area, clip_editor_region, clip_editor_space,
             original_tracks, new_tracks
         )
-
+        
+        remove_segment_boundary_keys(list(tracks), only_if_keyed=True, also_track_bounds=True)
         mute_invalid_segments(list(tracks), scene.frame_end)
-        remove_segment_boundary_keys(tracks, only_if_keyed=True)
         remove_keyed_outside_segments(tracks)
 
 
