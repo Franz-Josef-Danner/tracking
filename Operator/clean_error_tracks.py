@@ -128,19 +128,22 @@ def is_marker_valid(track, frame):
 
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
     with context.temp_override(area=area, region=region, space_data=space):
-        # ✅ Setze den View-Modus korrekt auf GRAPH
-        space.view = 'GRAPH'
-        print("📌 Aktiver Clip-View-Modus:", space.view)
+        # ✅ Sichere Umschaltung in den GRAPH-Modus
 
         for track in original_tracks:
             segments = get_track_segments(track)
             track.select = True
+
+            # ⬆️ Alle Marker aktivieren
             bpy.ops.clip.graph_disable_markers(action='ENABLE')
+
+            # ⬇️ Danach ab Szeneende deaktivieren
             context.scene.frame_set(context.scene.frame_end)
             bpy.ops.clip.graph_disable_markers(action='DISABLE')
             track.select = False
 
         for track in new_tracks:
+            # 💡 Force-Update durch Frame-Jump + Redraw je Track
             context.scene.frame_set(context.scene.frame_current)
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=3)
             bpy.context.view_layer.update()
@@ -148,6 +151,8 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
 
             segments = get_track_segments(track)
             track.select = True
+
+            # ⬇️ Neue Tracks: alles sofort deaktivieren
             bpy.ops.clip.graph_disable_markers(action='DISABLE')
             track.select = False
 
