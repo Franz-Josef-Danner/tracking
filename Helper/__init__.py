@@ -10,9 +10,8 @@ from .find_low_marker_frame import find_low_marker_frame
 from .jump_to_frame import jump_to_frame
 from .properties import RepeatEntry
 from .log_helper import write_log_entry
-
-from ..Helper import ram_helper                       # Modul aus Helper (für Reload/Utilities)
-from ..Helper.ram_helper import RamGuard, register_bpy_timer  # Symbole exportieren
+from ..Helper import ram_helper
+from ..Helper.ram_helper import RamGuard, register_bpy_timer
 
 __all__ = []
 
