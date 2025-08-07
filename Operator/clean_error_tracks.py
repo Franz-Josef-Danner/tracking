@@ -294,6 +294,10 @@ def recursive_split_cleanup(context, area, region, space, tracks):
             original_tracks, new_tracks
         )
 
-    bpy.ops.clip.clean_short_tracks('INVOKE_DEFAULT')
+    # 🔚 Letzter Schritt: kurze Tracks bereinigen – im gültigen UI-Kontext
+    with context.temp_override(area=area, region=region, space_data=space):
+        bpy.ops.clip.clean_short_tracks('INVOKE_DEFAULT')
+
     return {'FINISHED'}
+
 
