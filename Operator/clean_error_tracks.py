@@ -5,9 +5,7 @@ import time
 def get_marker_position(track, frame):
     marker = track.markers.find_frame(frame)
     if marker:
-        print(f"[DEBUG] Marker gefunden in '{track.name}' bei Frame {frame}")
         return marker.co
-    print(f"[DEBUG] Kein Marker in '{track.name}' bei Frame {frame}")
     return None
 
 
@@ -42,7 +40,6 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width
             vym = (p2[1] - p1[1]) + (p3[1] - p2[1])
             marker_data.append((track, vxm, vym))
 
-            print(f"[DEBUG] Frame {fi}: Grid X=({xmin:.1f}-{xmax:.1f}) Y=({ymin:.1f}-{ymax:.1f}), Markeranzahl: {len(marker_data)}")
 
         if not marker_data:
             continue
@@ -62,7 +59,6 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width
                     for f in (f1, fi, f2):
                         if track.markers.find_frame(f):
                             track.markers.delete_frame(f)
-                            print(f"[REMOVE] '{track.name}' Marker bei Frame {f} entfernt (Δv={abs(vm - va):.6f} ≥ eb={eb:.6f})")
                             total_deleted += 1
 
     return total_deleted
@@ -105,7 +101,6 @@ def delete_marker_path(track, from_frame, direction):
 
     for f in to_delete:
         track.markers.delete_frame(f)
-        print(f"[DELETE] Marker in '{track.name}' bei Frame {f} gelöscht (Richtung: {direction})")
 
 def get_track_segments(track):
     frames = sorted([m.frame for m in track.markers])
@@ -121,7 +116,6 @@ def get_track_segments(track):
             segments.append(current_segment)
             current_segment = [frames[i]]
     segments.append(current_segment)
-    print(f"[SEGMENT] '{track.name}' enthält {len(segments)} Segment(e): {segments}")
     return segments
 
 # 🆕 Neue Hilfsfunktion hier einfügen:
@@ -130,7 +124,6 @@ def is_marker_valid(track, frame):
         marker = track.markers.find_frame(frame)
         return marker is not None and hasattr(marker, "co")
     except Exception as e:
-        print(f"[ERROR] Marker-Zugriff auf '{track.name}' bei Frame {frame} fehlgeschlagen: {e}")
         return False
 
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
@@ -139,8 +132,6 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
         for track in original_tracks:
             segments = get_track_segments(track)
             frames = [m.frame for m in track.markers]
-            print(f"[LOG] [ORIGINAL] Track '{track.name}' Marker auf Frames: {frames}")
-            print(f"[LOG] [ORIGINAL] Track '{track.name}' hat {len(segments)} Segment(e): {segments}")
             for seg in segments:
                 delete_marker_path(track, seg[-1] + 1, 'forward')
                 
@@ -153,8 +144,6 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
 
             segments = get_track_segments(track)
             frames = [m.frame for m in track.markers]
-            print(f"[LOG] [NEU] Track '{track.name}' Marker auf Frames: {frames}")
-            print(f"[LOG] [NEU] Track '{track.name}' hat {len(segments)} Segment(e): {segments}")
             for seg in segments:
                 delete_marker_path(track, seg[0] - 1, 'backward')
 
@@ -202,13 +191,11 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             bpy.ops.clip.copy_tracks()
             bpy.ops.clip.paste_tracks()
             for t in tracks:
-                print(f"[DEBUG] Track {t.name} hat Marker auf Frames: {[m.frame for m in t.markers]}")
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=5)
             scene.frame_set(scene.frame_current)
             bpy.context.view_layer.update()
             time.sleep(0.2)
             for t in tracks:
-                print(f"[DEBUG] Track {t.name} hat Marker auf Frames: {[m.frame for m in t.markers]}")
 
 
 
