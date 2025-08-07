@@ -130,27 +130,25 @@ def clear_path_on_split_tracks(context, original_tracks, new_tracks):
 
     print("[DEBUG] Starte ClearPath-Prozess für Original- und Duplikat-Tracks...")
 
-    clip_editor_area = next(
-        (a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None
-    )
+    clip_editor_area = next((a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None)
     if not clip_editor_area:
         print("[DEBUG] Kein CLIP_EDITOR gefunden.")
         return
     
-    clip_editor_region = next(
-        (r for r in clip_editor_area.regions if r.type == 'WINDOW'), None
-    )
+    clip_editor_region = next((r for r in clip_editor_area.regions if r.type == 'WINDOW'), None)
     if not clip_editor_region:
         print("[DEBUG] Keine gültige Region im CLIP_EDITOR gefunden.")
         return
     
     space = clip_editor_area.spaces.active
+
+    # ✅ Nur EIN context override
     with context.temp_override(area=clip_editor_area, region=clip_editor_region, space_data=space):
         all_targets = [(original_tracks, 'REMAINED'), (new_tracks, 'UPTO')]
         for track_list, clear_type in all_targets:
             print(f"[DEBUG] Verarbeite {len(track_list)} Tracks mit clear_type='{clear_type}'")
             for track in track_list:
-                cut_frame = get_first_gap_frame(track)
+                cut_frame = get_first_gap_frame(track) if clear_type == 'REMAINED' else get_first_frame(track)
                 if cut_frame is None:
                     print(f"[DEBUG] → Track '{track.name}' übersprungen (kein Cut-Frame gefunden)")
                     continue
@@ -158,7 +156,6 @@ def clear_path_on_split_tracks(context, original_tracks, new_tracks):
                 scene.frame_current = cut_frame
                 print(f"[DEBUG] Setze Playhead auf Frame {cut_frame} für Track '{track.name}'")
 
-                # Selektion zurücksetzen
                 for t in clip.tracking.tracks:
                     t.select = False
                 track.select = True
