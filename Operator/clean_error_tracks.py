@@ -259,6 +259,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         all_names_after = {t.name for t in tracks}
         new_names = all_names_after - existing_names
         new_tracks = [t for t in tracks if t.name in new_names]
+
         clear_path_on_split_tracks_segmented(
             context, clip_editor_area, clip_editor_region, clip_editor_space,
             original_tracks, new_tracks
@@ -269,6 +270,16 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             context, clip_editor_area, clip_editor_region, clip_editor_space,
             tracks
         )
+
+        for t in tracks:
+            mute_after_last_marker(t, scene.frame_end)
+
+        # 🔒 Safety Pass: Einzelne Marker muten
+        mute_unassigned_markers(tracks)
+
+        # ✅ Ganz am Ende: Track-Ende muten (nach Abschluss aller Rekursionen)
+        for t in tracks:
+            mute_after_last_marker(t, scene.frame_end)
 
         return {'FINISHED'}
 
