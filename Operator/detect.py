@@ -17,7 +17,6 @@ def perform_marker_detection(clip, tracking, threshold, margin_base, min_distanc
     )
 
     if result != {"FINISHED"}:
-        print(f"[Warnung] Feature Detection nicht erfolgreich: {result}")
 
     selected_tracks = [t for t in tracking.tracks if t.select]
     return len(selected_tracks)
@@ -72,7 +71,6 @@ class CLIP_OT_detect(bpy.types.Operator):
         self.success = False
         self.state = "DETECT"
 
-        print("[Info] Deselektiere alle Marker vor Start.")
         deselect_all_markers(self.tracking)
 
         wm = context.window_manager
@@ -88,7 +86,6 @@ class CLIP_OT_detect(bpy.types.Operator):
 
         if self.state == "DETECT":
             if self.attempt == 0:
-                print("[Info] Starte mit vorhandenen Marker – keine Löschung, nur neue setzen.")
                 deselect_all_markers(self.tracking)
 
             self.frame = scene.frame_current
@@ -112,7 +109,6 @@ class CLIP_OT_detect(bpy.types.Operator):
 
             self.wait_start = time.time()
             self.state = "WAIT"
-            print(f"[Info] Versuch {self.attempt + 1}: Marker gesetzt, warte...")
             return {'PASS_THROUGH'}
 
         if self.state == "WAIT":
@@ -154,7 +150,6 @@ class CLIP_OT_detect(bpy.types.Operator):
             else:
                 meldung += " → Zielbereich erreicht."
 
-            print("[Status]", meldung)
 
             if anzahl_neu < self.min_marker or anzahl_neu > self.max_marker:
                 for t in self.tracking.tracks:
@@ -170,7 +165,6 @@ class CLIP_OT_detect(bpy.types.Operator):
                 )
                 scene["last_detection_threshold"] = self.detection_threshold
 
-                print(f"📌 Versuch {self.attempt + 1}: Marker={anzahl_neu}, Threshold={self.detection_threshold:.4f}")
                 self.attempt += 1
 
                 if self.attempt >= 20:
@@ -186,7 +180,6 @@ class CLIP_OT_detect(bpy.types.Operator):
 
             else:
                 self.report({'INFO'}, f"Markeranzahl im Zielbereich: {anzahl_neu}")
-                print("🟢 Detect abgeschlossen – Status wurde gesetzt auf SUCCESS")
                 scene["detect_status"] = "success"
                 self.success = True
                 context.window_manager.event_timer_remove(self._timer)
