@@ -1,5 +1,12 @@
 from .process_marker_path import get_track_segments
 
+def _to_iter(x):
+    # macht aus Einzelobjekt oder bpy_prop_collection eine Liste
+    try:
+        return list(x)  # klappt für bpy_prop_collection
+    except TypeError:
+        return [x]
+
 def mute_invalid_segments(track_or_tracks, scene_end):
     """
     Mute:
@@ -7,14 +14,14 @@ def mute_invalid_segments(track_or_tracks, scene_end):
     - Marker am Track-Anfang
     - Marker nach dem letzten gültigen Frame
     """
-    tracks = track_or_tracks if isinstance(track_or_tracks, (list, tuple)) else [track_or_tracks]
+    tracks = _to_iter(track_or_tracks)
 
     for track in tracks:
         segments = get_track_segments(track)
         if not segments:
             continue
 
-        # gültige Frames aus Segmenten mit Länge >=2
+        # gültige Frames aus Segmenten mit Länge >= 2
         valid_frames = set()
         for (start, end) in segments:
             if end - start + 1 >= 2:
