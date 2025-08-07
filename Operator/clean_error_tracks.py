@@ -134,18 +134,18 @@ def mute_marker_path(track, from_frame, direction, mute=True):
 
 def mute_after_last_marker(track, scene_end):
     """
-    Mutet alle Marker nach dem letzten Frame.
-    Kein explizites 'Entmuten' des letzten Markers.
+    Mutet alle Marker nach dem letzten gültigen Segment-Ende.
     """
-    if not track.markers:
+    segments = get_track_segments(track)
+    if not segments:
         return
 
-    last_frame = max(m.frame for m in track.markers)
+    last_valid_frame = segments[-1][-1]  # Letzter Frame des letzten gültigen Segments
 
     for m in track.markers:
-        if m.frame > last_frame and m.frame <= scene_end:
+        if m.frame >= last_valid_frame and m.frame <= scene_end:
             m.mute = True
-            print(f"[Mute-After-End] Track '{track.name}': Marker @ {m.frame} → mute")
+            print(f"[Mute-End] Track '{track.name}': Marker @ Frame {m.frame} → mute")
 
 def mute_outside_segment_markers(track):
     """
