@@ -2,85 +2,107 @@
 import bpy
 import time
 
-from ..Helper.process_marker_path import get_track_segments, process_marker_path
-from ..Helper.mute_invalid_segments import mute_invalid_segments  # + remove_segment_boundary_keys falls du es benutzt
+from ..Helper.process_marker_path import get_track_segments
 from ..Helper.clear_path_on_split_tracks_segmented import clear_path_on_split_tracks_segmented
+from ..Helper.mute_invalid_segments import (
+    mute_invalid_segments,
+    remove_segment_boundary_keys,
+)
+
+
+def _tracks_with_gaps(tracks):
+    """Tracks finden, die innere Lücken haben (mehr als ein Segment)."""
+    out = []
+    for t in tracks:
+        try:
+            segs = get_track_segments(t)
+        except Exception:
+            segs = []
+        if len(segs) >= 2:  # mehrere Segmente => interne Lücken
+            out.append(t)
+    return out
+
+
+def _duplicate_selected_tracks(context, area, region, space):
+    """Aktuell selektierte Tracks kopieren & einfügen; neue Namen zurückgeben."""
+    with context.temp_override(area=area, region=region, space_data=space):
+        bpy.ops.clip.copy_tracks()
+        bpy.ops.clip.paste_tracks()
+        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=5)
+        context.scene.frame_set(context.scene.frame_current)
+        bpy.context.view_layer.update()
+        time.sleep(0.15)
 
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
-    bl_label = "Clean Error Tracks (Grid)"
+    bl_label = "Clean Error Tracks (4-pass alt mute/delete)"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
     def poll(cls, context):
         return context.space_data and context.space_data.clip
 
-    def _one_pass(self, context, area, region, space, action: str):
-        """Ein Cleanup-Pass mit bestimmter Aktion ('mute' | 'delete')."""
+    def _one_pass(self, context, area, region, space, action="mute"):
         scene = context.scene
         clip = space.clip
         tracks = clip.tracking.tracks
 
-        # 1) Fehlerbereinigung (Grid)
-        clean_error_tracks(context, space)
+        # 1) Tracks mit Lücken duplizieren und „splitten“
+        original_tracks = _tracks_with_gaps(tracks)
 
-        # 2) Tracks mit internen Gaps duplizieren & Splitting-Mute
-        original_tracks = [t for t in tracks if track_has_internal_gaps(t)]
         if original_tracks:
-            existing = {t.name for t in tracks}
-            for t in tracks: t.select = False
-            for t in original_tracks: t.select = True
+            existing_names = {t.name for t in tracks}
+            # Auswahl setzen
+            for t in tracks:
+                t.select = False
+            for t in original_tracks:
+                t.select = True
 
-            with context.temp_override(area=area, region=region, space_data=space):
-                bpy.ops.clip.copy_tracks()
-                bpy.ops.clip.paste_tracks()
-                bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=5)
-                scene.frame_set(scene.frame_current)
-                bpy.context.view_layer.update()
-                time.sleep(0.2)
+            _duplicate_selected_tracks(context, area, region, space)
 
-            all_after = {t.name for t in tracks}
-            new_names = all_after - existing
+            # neue Tracks ermitteln
+            all_names = {t.name for t in tracks}
+            new_names = all_names - existing_names
             new_tracks = [t for t in tracks if t.name in new_names]
 
+            # pro Segment: vorne behalten / hinten behalten → Rest stummschalten
             clear_path_on_split_tracks_segmented(
-                context, area, region, space, original_tracks, new_tracks
-            )  # mutet vor/nach Segmenten. :contentReference[oaicite:2]{index=2}
+                context, area, region, space,
+                original_tracks, new_tracks
+            )
 
-        # 3) harte Kanten säubern (Segment- und Trackgrenzen; nur echte Keys)
-        remove_segment_boundary_keys(list(tracks), only_if_keyed=True, also_track_bounds=True)  # :contentReference[oaicite:3]{index=3}
+        # 2) Keys GENAU auf Segment- & Trackgrenzen entfernen (harte Regel)
+        remove_segment_boundary_keys(list(tracks), only_if_keyed=True, also_track_bounds=True)
 
-        # 4) ungültige Marker behandeln (außerhalb gültiger Segmente / nach letztem Key)
-        mute_invalid_segments(list(tracks), scene.frame_end, action=action)  # 'mute' oder 'delete' :contentReference[oaicite:4]{index=4}
+        # 3) Ungültige Marker muten oder löschen
+        mute_invalid_segments(list(tracks), scene_end=scene.frame_end, action=action)
 
-        # Optional: superkurze Tracks wegputzen
-        with context.temp_override(area=area, region=region, space_data=space):
-            try:
-                bpy.ops.clip.clean_short_tracks('INVOKE_DEFAULT')
-            except Exception:
-                pass
-
-        # leichte UI-Refresh-Pause
+        # leichte UI-Aktualisierung
         bpy.context.view_layer.update()
-        time.sleep(0.05)
+        return
 
     def execute(self, context):
-        # CLIP_EDITOR-Context besorgen
-        area = region = space = None
-        for a in context.screen.areas:
-            if a.type == 'CLIP_EDITOR':
-                for r in a.regions:
-                    if r.type == 'WINDOW':
-                        area, region, space = a, r, a.spaces.active
-        if not space:
+        # Clip-Editor-Kontext einsammeln
+        clip_area = clip_region = clip_space = None
+        for area in context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        clip_area = area
+                        clip_region = region
+                        clip_space = area.spaces.active
+                        break
+
+        if not clip_space:
             self.report({'ERROR'}, "Kein gültiger CLIP_EDITOR-Kontext gefunden.")
             return {'CANCELLED'}
 
-        # Vier Durchläufe: mute → delete → mute → delete
-        pass_plan = ["mute", "delete", "mute", "delete"]
-        for i, action in enumerate(pass_plan, 1):
+        # 4 Durchläufe: mute → delete → mute → delete
+        actions = ("mute", "delete", "mute", "delete")
+        for i, action in enumerate(actions, start=1):
             print(f"[Cleanup] Pass {i}/4 – action={action}")
-            self._one_pass(context, area, region, space, action=action)
+            self._one_pass(context, clip_area, clip_region, clip_space, action=action)
 
+        self.report({'INFO'}, "Cleanup fertig (4 Pässe, mute/delete im Wechsel).")
         return {'FINISHED'}
