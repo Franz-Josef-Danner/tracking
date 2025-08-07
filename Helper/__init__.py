@@ -9,6 +9,10 @@ from .find_low_marker_frame import find_low_marker_frame
 from .jump_to_frame import jump_to_frame
 from .properties import RepeatEntry
 from .log_helper import write_log_entry
+from ..Helper.process_marker_path import process_marker_path
+from ..Helper.mute_invalid_segments import mute_invalid_segments
+from ..Helper.clear_path_on_split_tracks_segmented import clear_path_on_split_tracks_segmented
+
 # Alle Klassen in eine Liste
 classes = (
     RepeatEntry,
