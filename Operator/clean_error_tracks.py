@@ -151,10 +151,6 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             original_tracks, new_tracks
         )
 
-        process_marker_path(
-            context, clip_editor_area, clip_editor_region, clip_editor_space, tracks
-        )
-
         mute_invalid_segments(tracks, scene.frame_end)
 
         return {'FINISHED'}
