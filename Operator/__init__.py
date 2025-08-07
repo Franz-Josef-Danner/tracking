@@ -1,6 +1,6 @@
+# tracking-efficent/Operator/__init__.py
 import bpy
 
-from . import proxy_helper, clip_helper
 from .proxy_builder import CLIP_OT_proxy_builder
 from .tracker_settings import CLIP_OT_tracker_settings
 from .detect import CLIP_OT_detect
@@ -11,15 +11,6 @@ from .clean_error_tracks import CLIP_OT_clean_error_tracks
 from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 from .main import CLIP_OT_main
 
-__all__ = [
-    "RamGuard",
-    "register_bpy_timer",  # nur drin lassen, wenn du’s wirklich brauchst
-    "proxy_helper",
-    "clip_helper",
-]
-
-
-# Liste aller Operator-Klassen zur Registrierung
 classes = (
     CLIP_OT_proxy_builder,
     CLIP_OT_tracker_settings,
@@ -32,16 +23,10 @@ classes = (
     CLIP_OT_main,
 )
 
-# Registrierungsfunktion
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
-# Unregistrierungsfunktion
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
-
-# Nur bei direktem Ausführen als Script:
-if __name__ == "__main__":
-    register()
