@@ -70,6 +70,8 @@ def clean_error_tracks(context, space):
     scene = context.scene
     clip = space.clip
     tracks = clip.tracking.tracks
+    
+    write_log_entry("cleanup_start", "Starte Grid-Cleanup", clip_name=clip.name, track_count=len(tracks))
 
     for track in tracks:
         track.select = False
@@ -92,8 +94,9 @@ def clean_error_tracks(context, space):
                 total_deleted_all += run_cleanup_in_region(
                     tracks, frame_range, xmin, xmax, ymin, ymax, ee, width, height
                 )
+    write_log_entry("cleanup_done", "Cleanup abgeschlossen", deleted=total_deleted_all)
     return total_deleted_all, 0.0
-
+    
 def delete_marker_path(track, from_frame, direction):
     to_delete = []
     for m in track.markers:
@@ -147,7 +150,7 @@ def mute_after_last_marker(track, scene_end):
     for m in track.markers:
         if m.frame >= last_valid_frame and m.frame <= scene_end:
             m.mute = True
-            print(f"[Mute-End] Track '{track.name}': Marker @ Frame {m.frame} → mute")
+            write_log_entry("mute_after_end", "Marker gemutet nach Track-Ende", track=track.name, frame=m.frame)
 
 def mute_outside_segment_markers(track):
     """
@@ -303,7 +306,8 @@ def mute_unassigned_markers(tracks):
             if f not in valid_frames or f == first_frame:
                 marker.mute = True
                 print(f"[Mute] Track '{track.name}': Marker bei Frame {f} gemutet (ungültig oder Track-Beginn)")
-
+                write_log_entry("mute_invalid", "Marker ungültig oder am Anfang", track=track.name, frame=f)
+                
 def recursive_split_cleanup(context, area, region, space, tracks):
     scene = context.scene
     iteration = 0
