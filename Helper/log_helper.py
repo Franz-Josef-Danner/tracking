@@ -26,8 +26,15 @@ def write_log_entry(event_type, message, **kwargs):
         else:
             log_data = []
 
-        log_data.append(log_entry)
-
+def execute(self, context):
+    try:
+        # ... dein bestehender Code ...
         with open(log_path, 'w', encoding='utf-8') as f:
             json.dump(log_data, f, indent=2)
+    except Exception as e:
+        # Logging/Reporting statt nacktem Crash
+        self.report({'ERROR'}, f"Log-Schreiben fehlgeschlagen: {e}")
+        return {'CANCELLED'}
+
     return {'FINISHED'}
+
