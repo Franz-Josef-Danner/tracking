@@ -144,6 +144,6 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         remove_segment_boundary_keys(list(tracks), only_if_keyed=True, also_track_bounds=True)
 
         # 4) Weich: alles Ungültige muten (statt löschen). Bei Bedarf action="delete".
-        mute_invalid_segments(list(tracks), scene.frame_end, action="delete")
+        mute_invalid_segments(list(tracks), scene.frame_end, action="mute")
 
         return {'FINISHED'}
