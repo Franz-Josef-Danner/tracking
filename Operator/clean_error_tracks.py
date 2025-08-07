@@ -262,9 +262,10 @@ def recursive_split_cleanup(context, area, region, space, tracks):
         )
 
         recursive_split_cleanup(
-            context, clip_editor_area, clip_editor_region, clip_editor_space,
+            context, area, region, space,
             tracks
         )
+
 
     # 🔚 Letzter Schritt: kurze Tracks bereinigen
     bpy.ops.clip.clean_short_tracks('INVOKE_DEFAULT')
