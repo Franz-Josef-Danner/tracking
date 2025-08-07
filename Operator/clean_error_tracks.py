@@ -132,11 +132,11 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
         for track in original_tracks:
             segments = get_track_segments(track)
 
-            # Neue Logik:
-            track.select = True  # Nur diesen Track aktivieren
-            bpy.ops.clip.graph_disable_markers(action='ENABLE')  # Marker aktivieren
+            # Neue Logik: Original-Tracks – aktivieren, dann ab Szeneende deaktivieren
+            track.select = True
+            bpy.ops.clip.graph_disable_markers(action='ENABLE')
             context.scene.frame_set(context.scene.frame_end)
-            bpy.ops.clip.graph_disable_markers(action='DISABLE')  # Marker ab Szeneende deaktivieren
+            bpy.ops.clip.graph_disable_markers(action='DISABLE')
             track.select = False
 
         for track in new_tracks:
@@ -148,9 +148,9 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
 
             segments = get_track_segments(track)
 
-            # Neue Logik:
+            # Neue Logik: Neue Tracks – sofort deaktivieren
             track.select = True
-            bpy.ops.clip.graph_disable_markers(action='DISABLE')  # Marker sofort deaktivieren
+            bpy.ops.clip.graph_disable_markers(action='DISABLE')
             track.select = False
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
