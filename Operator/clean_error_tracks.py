@@ -4,7 +4,11 @@ import time
 
 def get_marker_position(track, frame):
     marker = track.markers.find_frame(frame)
-    return marker.co if marker else None
+    if marker:
+        print(f"[DEBUG] Marker gefunden in '{track.name}' bei Frame {frame}")
+        return marker.co
+    print(f"[DEBUG] Kein Marker in '{track.name}' bei Frame {frame}")
+    return None
 
 
 def track_has_internal_gaps(track):
@@ -38,6 +42,8 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width
             vym = (p2[1] - p1[1]) + (p3[1] - p2[1])
             marker_data.append((track, vxm, vym))
 
+            print(f"[DEBUG] Frame {fi}: Grid X=({xmin:.1f}-{xmax:.1f}) Y=({ymin:.1f}-{ymax:.1f}), Markeranzahl: {len(marker_data)}")
+
         if not marker_data:
             continue
 
@@ -56,6 +62,7 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width
                     for f in (f1, fi, f2):
                         if track.markers.find_frame(f):
                             track.markers.delete_frame(f)
+                            print(f"[REMOVE] '{track.name}' Marker bei Frame {f} entfernt (Δv={abs(vm - va):.6f} ≥ eb={eb:.6f})")
                             total_deleted += 1
 
     return total_deleted
@@ -104,6 +111,7 @@ def get_track_segments(track):
             segments.append(current_segment)
             current_segment = [frames[i]]
     segments.append(current_segment)
+    print(f"[SEGMENT] '{track.name}' enthält {len(segments)} Segment(e): {segments}")
     return segments
 
 def clear_segment_path(context, space, track, frame, action):
@@ -121,6 +129,7 @@ def clear_segment_path(context, space, track, frame, action):
         return
 
     try:
+        print(f"[ACTION] '{track.name}' → clear_track_path(action='{action}') bei Frame {frame}")
         bpy.ops.clip.clear_track_path(action=action)
         print(f"[DEBUG] ✔ clear_track_path für '{track.name}' bei Frame {frame} mit action='{action}'")
     except RuntimeError as e:
