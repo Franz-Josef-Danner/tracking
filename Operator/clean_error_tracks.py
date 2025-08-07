@@ -106,32 +106,28 @@ def get_track_segments(track):
     segments.append(current_segment)
     return segments
 
-def get_track_segments(track):
-    frames = sorted([m.frame for m in track.markers])
-    if not frames:
-        return []
+def clear_segment_path(context, space, track, frame, action):
+    clip = space.clip
+    scene = context.scene
 
-    segments = []
-    current_segment = [frames[0]]
-    for i in range(1, len(frames)):
-        if frames[i] - frames[i - 1] == 1:
-            current_segment.append(frames[i])
-        else:
-            segments.append(current_segment)
-            current_segment = [frames[i]]
-    segments.append(current_segment)
-    return segments
+    for t in clip.tracking.tracks:
+        t.select = False
+    track.select = True
 
+    scene.frame_set(frame)
+    bpy.context.view_layer.update()
+
+    if not is_marker_valid(track, frame):
+        print(f"[SKIP] Kein gültiger Marker in '{track.name}' bei Frame {frame}, Aktion '{action}' übersprungen.")
+        return
+
+    try:
+        bpy.ops.clip.clear_track_path(action=action)
+        print(f"[DEBUG] ✔ clear_track_path für '{track.name}' bei Frame {frame} mit action='{action}'")
+    except RuntimeError as e:
+        print(f"[WARNUNG] ✖ Fehler bei clear_track_path für '{track.name}': {e}")
 
 # 🆕 Neue Hilfsfunktion hier einfügen:
-def is_marker_valid(track, frame):
-    try:
-        marker = track.markers.find_frame(frame)
-        return marker is not None and hasattr(marker, "co")
-    except Exception as e:
-        print(f"[ERROR] Marker-Zugriff auf '{track.name}' bei Frame {frame} fehlgeschlagen: {e}")
-        return False
-
 def is_marker_valid(track, frame):
     try:
         marker = track.markers.find_frame(frame)
