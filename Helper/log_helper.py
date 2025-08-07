@@ -30,4 +30,4 @@ def write_log_entry(event_type, message, **kwargs):
 
         with open(log_path, 'w', encoding='utf-8') as f:
             json.dump(log_data, f, indent=2)
-        return {'FINISHED'}
+    return {'FINISHED'}
