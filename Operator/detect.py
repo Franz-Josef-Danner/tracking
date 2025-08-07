@@ -10,7 +10,7 @@ def perform_marker_detection(clip, tracking, threshold, margin_base, min_distanc
     if clip.use_proxy:
         clip.use_proxy = False
 
-    result = bpy.ops.clip.detect_features(
+        result = bpy.ops.clip.detect_features(
         margin=margin,
         min_distance=min_distance,
         threshold=threshold,
