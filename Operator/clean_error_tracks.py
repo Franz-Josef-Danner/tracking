@@ -78,7 +78,7 @@ def track_has_gaps(track, frame_start, frame_end):
 
 def clean_error_tracks(context):
     scene = context.scene
-    clip = context.space_data.clip
+    clip = space.clip
     tracking = clip.tracking
     tracks = tracking.tracks
 
@@ -144,7 +144,7 @@ def get_track_segments(track):
     return segments
 
 def clear_segment_path(context, track, frame, action):
-    clip = context.space_data.clip
+    clip = space.clip
     scene = context.scene
 
     for t in clip.tracking.tracks:
@@ -159,9 +159,9 @@ def clear_segment_path(context, track, frame, action):
     except RuntimeError as e:
         print(f"[WARNUNG] ✖ Fehler bei clear_track_path für '{track.name}': {e}")
 
-def clear_path_on_split_tracks_segmented(context, original_tracks, new_tracks):
+def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
     scene = context.scene
-    clip = context.space_data.clip
+    clip = space.clip
 
     print("[DEBUG] Starte segmentierten ClearPath-Prozess...")
 
@@ -211,7 +211,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         # 1. Cleanup der fehlerhaften Marker durchführen
         clean_error_tracks(context)
 
-        clip = context.space_data.clip
+        clip = space.clip
         tracks = clip.tracking.tracks
 
         # 2. Tracks mit internen Lücken identifizieren
@@ -249,6 +249,9 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
 
                             # 7. ClearLogik auf Segmentebene anwenden
                             clear_path_on_split_tracks_segmented(context, original_tracks, new_tracks)
+                            clip_editor_area = area
+                            clip_editor_region = region
+                            clip_editor_space = space
 
                             self.report({'INFO'}, f"{len(new_tracks)} duplizierte Tracks erkannt und bereinigt.")
                             return {'FINISHED'}
