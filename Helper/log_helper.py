@@ -32,4 +32,3 @@ def write_log_entry(event_type, message, **kwargs):
             json.dump(log_data, f, indent=2)
 
     except Exception as e:
-        print(f"⚠️ Fehler beim Schreiben des Logs: {e}")
