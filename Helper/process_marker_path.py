@@ -9,14 +9,22 @@ def process_marker_path(track, from_frame, direction, action="mute", mute=True):
         action: 'mute' oder 'delete'.
         mute: Nur relevant bei action='mute'. Gibt an, ob gemutet oder entmutet werden soll.
     """
-    to_process = []
-    for marker in track.markers:
-        if (direction == 'forward' and marker.frame >= from_frame) or \
-           (direction == 'backward' and marker.frame <= from_frame):
-            to_process.append(marker)
+    if not track or not track.markers:
+        return
 
-    for marker in to_process:
-        if action == "mute":
+    if direction == "forward":
+        relevant_markers = [m for m in track.markers if m.frame >= from_frame]
+    elif direction == "backward":
+        relevant_markers = [m for m in track.markers if m.frame <= from_frame]
+    else:
+        return
+
+    if action == "mute":
+        for marker in relevant_markers:
             marker.mute = mute
-        elif action == "delete":
-            track.markers.delete_frame(marker.frame)
+
+    elif action == "delete":
+        # Wichtig: Nicht direkt iterieren und löschen – sonst Absturzgefahr
+        frames_to_delete = [m.frame for m in relevant_markers]
+        for frame in frames_to_delete:
+            track.markers.delete_frame(frame)
