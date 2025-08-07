@@ -72,10 +72,21 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
 
         elif self._step == 3:
             print("⏳ Warte auf Detect-Abschluss...")
-            if scene.get("detect_status", "") == "success":
+        
+            detect_status = scene.get("detect_status", "")
+        
+            if detect_status == "success":
                 self._step += 1
                 scene["detect_status"] = ""
+                return {'PASS_THROUGH'}
+        
+            elif detect_status == "failed":
+                self.report({'ERROR'}, "❌ Detect fehlgeschlagen – Pipeline wird abgebrochen.")
+                self.cancel(context)
+                return {'CANCELLED'}
+        
             return {'PASS_THROUGH'}
+
 
         elif self._step == 4:
             print("→ Proxy aktivieren")
