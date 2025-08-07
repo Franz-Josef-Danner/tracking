@@ -1,6 +1,8 @@
 import bpy
 import time
 
+from ..Helper.log_helper import write_log_entry
+
 
 def get_marker_position(track, frame):
     marker = track.markers.find_frame(frame)
