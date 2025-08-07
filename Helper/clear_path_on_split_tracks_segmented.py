@@ -1,14 +1,18 @@
+import bpy
+import time
 from .process_marker_path import get_track_segments, process_marker_path
 
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
     with context.temp_override(area=area, region=region, space_data=space):
+        # ORIGINAL-TRACKS: vorderes Segment behalten -> alles danach muten
         for track in original_tracks:
             segments = get_track_segments(track)
             for m in track.markers:
                 m.mute = False
-            for seg in segments:
-                process_marker_path(track, seg[-1] + 1, 'forward', action="mute", mute=True)
+            for (start, end) in segments:
+                process_marker_path(track, end + 1, 'forward', action='mute', mute=True)
 
+        # NEW-TRACKS: hinteres Segment behalten -> alles davor muten
         for track in new_tracks:
             context.scene.frame_set(context.scene.frame_current)
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=3)
@@ -18,5 +22,5 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
             segments = get_track_segments(track)
             for m in track.markers:
                 m.mute = False
-            for seg in segments:
-                process_marker_path(track, seg[0] - 1, 'backward', action="mute", mute=True)
+            for (start, end) in segments:
+                process_marker_path(track, start - 1, 'backward', action='mute', mute=True)
