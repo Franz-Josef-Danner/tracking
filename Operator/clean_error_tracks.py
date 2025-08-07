@@ -193,7 +193,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             bpy.ops.clip.copy_tracks()
             bpy.ops.clip.paste_tracks()
             for t in tracks:
-            print(f"[DEBUG] Track {t.name} hat Marker auf Frames: {[m.frame for m in t.markers]}")
+                print(f"[DEBUG] Track {t.name} hat Marker auf Frames: {[m.frame for m in t.markers]}")
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=5)
             scene.frame_set(scene.frame_current)
             bpy.context.view_layer.update()
