@@ -8,7 +8,7 @@ from .set_test_value import set_test_value
 from .find_low_marker_frame import find_low_marker_frame
 from .jump_to_frame import jump_to_frame
 from .properties import RepeatEntry
-
+from .log_helper import write_log_entry
 # Alle Klassen in eine Liste
 classes = (
     RepeatEntry,
