@@ -87,15 +87,13 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
         
             return {'PASS_THROUGH'}
 
-
         elif self._step == 4:
-            print("→ Proxy aktivieren")
-            bpy.ops.clip.enable_proxy()
+            # Früher: Proxy aktivieren. Jetzt NUR Parameter-Reset, Proxy wird am Ende aktiviert.
+            print("→ Proxy-Parameter reset (kein Aktivieren an dieser Stelle)")
             ts = context.space_data.clip.tracking.settings
             ts.default_margin = ts.default_search_size  # <--- automatischer Reset
             self._step += 1
             return {'PASS_THROUGH'}
-
 
         elif self._step == 5:
             print("→ Starte bidirektionales Tracking")
@@ -113,6 +111,13 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
                 print("⏳ Warte auf Abschluss der Pipeline...")
                 scene["pipeline_status"] = "done"
                 print(f"🧩 [DEBUG] pipeline_status gesetzt auf: {scene['pipeline_status']}")
+                # >>> EINZIGE Platzierungsänderung: Proxy AKTIVIEREN am Ende des Zyklus <<<
+                print("→ Proxy aktivieren (Ende)")
+                try:
+                    bpy.ops.clip.enable_proxy()
+                except Exception as e:
+                    print(f"⚠️ Proxy-Aktivierung am Ende übersprungen/fehlgeschlagen: {e}")
+                # ---------------------------------------------------------
                 wm.event_timer_remove(self._timer)
                 return {'FINISHED'}
 
