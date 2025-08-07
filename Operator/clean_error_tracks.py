@@ -76,7 +76,7 @@ def track_has_gaps(track, frame_start, frame_end):
     return False
 
 
-def clean_error_tracks(context):
+def clean_error_tracks(context, space):
     scene = context.scene
     clip = space.clip
     tracking = clip.tracking
@@ -143,7 +143,7 @@ def get_track_segments(track):
     segments.append(current_segment)
     return segments
 
-def clear_segment_path(context, track, frame, action):
+def clear_segment_path(context, space, track, frame, action):
     clip = space.clip
     scene = context.scene
 
@@ -209,9 +209,28 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         frame_end = scene.frame_end
 
         # 1. Cleanup der fehlerhaften Marker durchführen
-        clean_error_tracks(context)
+        # Kontext suchen
+        clip_editor_area = None
+        clip_editor_region = None
+        clip_editor_space = None
 
-        clip = space.clip
+        for area in context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        clip_editor_area = area
+                        clip_editor_region = region
+                        clip_editor_space = area.spaces.active
+
+        if not clip_editor_space:
+            self.report({'ERROR'}, "Kein gültiger CLIP_EDITOR-Kontext gefunden.")
+            return {'CANCELLED'}
+
+        # 1. Cleanup der fehlerhaften Marker durchführen
+        clean_error_tracks(context, clip_editor_space)
+
+        clip = clip_editor_space.clip
+
         tracks = clip.tracking.tracks
 
         # 2. Tracks mit internen Lücken identifizieren
