@@ -118,7 +118,7 @@ def clear_segment_path(context, space, track, frame, action):
     scene.frame_set(frame)  # ← Korrekte Methode, um Viewport und Dependency Graph zu aktualisieren
 
     if not has_marker:
-    print(f"[SKIP] Kein Marker in '{track.name}' bei Frame {frame}, Aktion '{action}' übersprungen.")
+        print(f"[SKIP] Kein Marker in '{track.name}' bei Frame {frame}, Aktion '{action}' übersprungen.")
     return
 
     try:
