@@ -211,16 +211,13 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             tracks
         )
 
-        self.report({'INFO'}, f"{len(new_tracks)} duplizierte Tracks erkannt und bereinigt.")
-        return {'FINISHED'}
-
 def recursive_split_cleanup(context, area, region, space, tracks):
     iteration = 0
+
     while True:
         iteration += 1
         original_tracks = [t for t in tracks if track_has_internal_gaps(t)]
         if not original_tracks:
-            print(f"[INFO] 🔄 Segmentierung abgeschlossen nach {iteration} Durchläufen.")
             break
 
         existing_names = {t.name for t in tracks}
@@ -240,3 +237,8 @@ def recursive_split_cleanup(context, area, region, space, tracks):
         all_names_after = {t.name for t in tracks}
         new_names = all_names_after - existing_names
         new_tracks = [t for t in tracks if t.name in new_names]
+
+        clear_path_on_split_tracks_segmented(
+            context, area, region, space,
+            original_tracks, new_tracks
+        )
