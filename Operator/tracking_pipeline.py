@@ -1,6 +1,5 @@
 import bpy, time
-from ..Helper.psutil_bootstrap import ensure_psutil
-from ..Helper import ram_helper  # für Reload
+from ..Helper.ram_helper import RamGuard
 
 class CLIP_OT_tracking_pipeline(bpy.types.Operator):
     """Tracking-Pipeline: Detect, Track, Cleanup"""
@@ -14,16 +13,7 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
     _ram_guard = None
 
     def execute(self, context):
-        # psutil sicherstellen
-        ok, _psutil, msg = ensure_psutil(auto_install=True)
-        if not ok:
-            self.report({'WARNING'}, f"psutil fehlt: {msg}")
-        else:
-            import importlib
-            importlib.reload(ram_helper)
-
-        # RamGuard jetzt importieren und initialisieren
-        from ..Helper.ram_helper import RamGuard
+        # RamGuard initialisieren (Self-Bootstrap kümmert sich um psutil)
         self._ram_guard = RamGuard(threshold_up=90.0, threshold_down=80.0, cooldown=5.0)
 
         scene = context.scene
