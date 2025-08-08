@@ -62,11 +62,12 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             )
 
         # 1) Keys exakt auf Segment-/Trackgrenzen löschen (nur wenn keyed)
-        remove_segment_boundary_keys(list(tracks), only_if_keyed=True, also_track_bounds=True)
+        removed_keys = remove_segment_boundary_keys(list(tracks), delete_start=False, delete_end=True)
 
-        muted, deleted = mute_invalid_segments(list(tracks), scene_end=scene.frame_end, action=action)
-        if (muted + deleted) > 0:
-            print(f"[Cleanup] pass action={action}: muted={muted}, deleted={deleted}")
+        muted, deleted = prune_outside_segments(list(tracks),
+                                                guard_before=1,   # 1 Frame vor dem ersten Segment stehen lassen
+                                                guard_after=1,    # 1 Frame nach dem letzten Segment stehen lassen
+                                                action=action)
 
         # 2) alles außerhalb gültiger Segmente muten/löschen
         mute_invalid_segments(list(tracks), scene_end=scene.frame_end, action=action)
