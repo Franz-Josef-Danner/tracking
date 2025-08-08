@@ -1,8 +1,11 @@
 # Operator/clean_error_tracks.py
-import bpy, time
+import bpy
+import time
+
 from ..Helper.grid_error_cleanup import grid_error_cleanup
 from ..Helper.process_marker_path import get_track_segments
 from ..Helper.clear_path_on_split_tracks_segmented import clear_path_on_split_tracks_segmented
+
 
 # --- kleine Helfer -----------------------------------------------------------
 
@@ -31,6 +34,7 @@ def _duplicate_selected_tracks(context, area, region, space):
         bpy.context.view_layer.update()
         time.sleep(0.05)
 
+
 # --- eigentlicher Operator ---------------------------------------------------
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
@@ -40,7 +44,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
 
     verbose: bpy.props.BoolProperty(
         name="Verbose log",
-        default=True
+        default=False
     )
 
     @classmethod
@@ -61,7 +65,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         # 1) Grid-Error-Cleanup
         grid_deleted = 0
         try:
-            grid_deleted = grid_error_cleanup(context, space, verbose=False)
+            grid_deleted = grid_error_cleanup(context, space, verbose=self.verbose)
         except Exception as e:
             if self.verbose:
                 print(f"[GridError] übersprungen: {e}")
@@ -90,7 +94,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         bpy.context.view_layer.update()
         after_total = _count_all_markers(tracks)
 
-        changed = grid_deleted
+        changed = int(grid_deleted)  # Anzahl gelöschter Marker (kann 0 sein)
         if self.verbose:
             print(f"[Cleanup] grid_deleted={grid_deleted}, "
                   f"markers_before={before_total}, markers_after={after_total}, changed={changed}")
