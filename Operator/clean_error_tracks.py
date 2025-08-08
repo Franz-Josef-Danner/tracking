@@ -30,10 +30,9 @@ def _duplicate_selected_tracks(context, area, region, space):
     with context.temp_override(area=area, region=region, space_data=space):
         bpy.ops.clip.copy_tracks()
         bpy.ops.clip.paste_tracks()
-        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=2)
+        bpy.ops.wm.redraw_timer(type='DRAW', iterations=1)
         context.scene.frame_set(context.scene.frame_current)
         bpy.context.view_layer.update()
-        time.sleep(0.03)
 
 def _ui_ping(context, text=None, redraw_iters=1):
     """Kleine UI-Aktualisierung + optional Statuszeile."""
@@ -44,7 +43,7 @@ def _ui_ping(context, text=None, redraw_iters=1):
         except Exception:
             pass
     try:
-        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=redraw_iters)
+        bpy.ops.wm.redraw_timer(type='DRAW', iterations=1)
     except Exception:
         pass
     bpy.context.view_layer.update()
