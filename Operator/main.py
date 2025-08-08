@@ -114,26 +114,6 @@ class CLIP_OT_main(bpy.types.Operator):
                     entry.count = 1
                     marker_basis = max(int(marker_basis * 0.9), initial_basis)
 
-                # *** HIER Kontext setzen: nach Pipeline, vor Cleanup ***
-                clip_area, clip_region, clip_space = _get_clip_editor_ctx(context)
-                if not clip_space or not getattr(clip_space, "clip", None):
-                    print("[Main] Kein CLIP_EDITOR-Kontext/Clip gefunden – skippe clean_error_tracks.")
-                else:
-                    # >>> CHANGE START: Cleanup nur wenn Pipeline nicht läuft
-                    if scene.get("pipeline_status", "") == "running":
-                        print("[Main] Pipeline läuft – skippe clean_error_tracks in diesem Tick.")
-                    else:
-                        with context.temp_override(area=clip_area, region=clip_region, space_data=clip_space):
-                            bpy.context.view_layer.update()
-                            context.scene.frame_set(context.scene.frame_current)
-                            try:
-                                print("[Main] Starte clean_error_tracks …")
-                                ret = bpy.ops.clip.clean_error_tracks('EXEC_DEFAULT', verbose=True)
-                                print(f"[Main] clean_error_tracks result: {ret}")
-                            except Exception as e:
-                                print(f"[Main] clean_error_tracks Exception: {e}")
-                    # >>> CHANGE END
-                
                 # Nächste Aktion: entweder optimieren oder erneut tracken
                 if entry.count >= 10:
                     bpy.ops.clip.optimize_tracking_modal('INVOKE_DEFAULT')
