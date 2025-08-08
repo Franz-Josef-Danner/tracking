@@ -4,6 +4,7 @@ import time
 from ..Helper.process_marker_path import get_track_segments
 from ..Helper.clear_path_on_split_tracks_segmented import clear_path_on_split_tracks_segmented
 from ..Helper.mute_invalid_segments import remove_segment_boundary_keys, prune_outside_segments
+from ..Helper.grid_error_cleanup import grid_error_cleanup
 
 
 def _tracks_with_gaps(tracks):
