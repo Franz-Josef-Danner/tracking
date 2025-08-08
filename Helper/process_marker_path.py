@@ -30,13 +30,10 @@ def process_marker_path(track, from_frame, direction, action="mute", mute=True):
         for m in relevant:
             m.mute = bool(mute)
 
-def get_track_segments(track):
-    """
-    Liefert eine Liste zusammenhängender Segmente [(start, end), ...].
-    """
+def get_unmuted_segments(track):
     if not hasattr(track, "markers") or not track.markers:
         return []
-    frames = sorted(m.frame for m in track.markers)
+    frames = sorted(m.frame for m in track.markers if not getattr(m, "mute", False))
     if not frames:
         return []
     segs = []
@@ -48,3 +45,4 @@ def get_track_segments(track):
         p = f
     segs.append((s, p))
     return segs
+
