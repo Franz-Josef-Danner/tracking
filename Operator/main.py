@@ -142,7 +142,12 @@ class CLIP_OT_main(bpy.types.Operator):
                 self._step = 1
             else:
                 context.window_manager.event_timer_remove(self._timer)
-                bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
+                # >>> CHANGE START: erst Segmente löschen, dann leere Tracks entfernen
+                # 1) kurze Segmente entfernen (Schwelle: scene.frames_track)
+                bpy.ops.clip.clean_short_tracks('EXEC_DEFAULT', action='DELETE_SEGMENTS')
+                # 2) Tracks ohne verbleibende Marker entsorgen (0-Frames)
+                bpy.ops.clip.clean_tracks('EXEC_DEFAULT', frames=1, error=0.0, action='DELETE_TRACK')
+                # >>> CHANGE END
                 self.report({'INFO'}, "Tracking + Markerprüfung abgeschlossen.")
                 return {'FINISHED'}
 
