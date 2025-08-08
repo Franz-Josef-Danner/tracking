@@ -1,15 +1,10 @@
 from .process_marker_path import get_track_segments, _iter_tracks
 
-def _last_keyed_or_last_marker_frame(track):
+def _last_keyed_frame(track):
     keyed = [m.frame for m in track.markers if getattr(m, "is_keyed", False)]
-    return max(keyed) if keyed else max((m.frame for m in track.markers), default=None)
+    return max(keyed) if keyed else None
 
 def remove_segment_boundary_keys(track_or_tracks, only_if_keyed=True, also_track_bounds=True):
-    """
-    Entfernt (oder mutet nicht – hier immer *entfernen*) Marker genau auf Segmentgrenzen.
-    - only_if_keyed=True: nur wenn Marker 'keyed' ist
-    - also_track_bounds=True: zusätzlich min/max-Frame des Tracks als Grenze behandeln
-    """
     for track in _iter_tracks(track_or_tracks):
         if not hasattr(track, "markers") or not track.markers:
             continue
@@ -42,10 +37,9 @@ def remove_segment_boundary_keys(track_or_tracks, only_if_keyed=True, also_track
             track.markers.delete_frame(f)
 
 def prune_outside_segments(track_or_tracks, scene_end=None, action="mute"):
-    """
-    Marker entfernen/muten, die NICHT in Segmenten mit Länge >= 2 liegen
-    oder hinter dem letzten gültigen Segment liegen.
-    """
+    """Alles außerhalb gültiger Segmente ODER hinter letztem Keyframe muten/löschen."""
+    total_muted = total_deleted = 0
+
     for track in _iter_tracks(track_or_tracks):
         if not hasattr(track, "markers") or not track.markers:
             continue
@@ -54,32 +48,31 @@ def prune_outside_segments(track_or_tracks, scene_end=None, action="mute"):
         if not segs:
             continue
 
-        # gültig: nur Segmente mit >=2 Frames
+        # gültig = nur Segmente mit >=2 Frames
         valid_frames = set()
         for s, e in segs:
             if (e - s + 1) >= 2:
                 valid_frames.update(range(s, e + 1))
 
         last_valid_end = max((e for s, e in segs if (e - s + 1) >= 2), default=None)
+        last_keyed = _last_keyed_frame(track)
+        hard_stop = last_keyed if last_keyed is not None else last_valid_end
 
-        def invalid(f):
-            if f not in valid_frames:
-                return True
-            if last_valid_end is not None and f > last_valid_end:
-                return True
-            return False
-
+        # Marker auswählen, die raus sollen
         if action == "delete":
-            frames = [m.frame for m in track.markers if invalid(m.frame)]
+            frames = [m.frame for m in track.markers
+                      if (m.frame not in valid_frames) or (hard_stop is not None and m.frame > hard_stop)]
             for f in frames:
                 track.markers.delete_frame(f)
+            total_deleted += len(frames)
         else:
             for m in track.markers:
-                if invalid(m.frame):
+                f = m.frame
+                if (f not in valid_frames) or (hard_stop is not None and f > hard_stop):
                     m.mute = True
+                    total_muted += 1
+
+    return total_muted, total_deleted
 
 def mute_invalid_segments(track_or_tracks, scene_end=None, action="mute"):
-    """
-    Komfortfunktion: 'außerhalb' der gültigen Segmente muten/entfernen.
-    """
-    prune_outside_segments(track_or_tracks, scene_end=scene_end, action=action)
+    return prune_outside_segments(track_or_tracks, scene_end=scene_end, action=action)
