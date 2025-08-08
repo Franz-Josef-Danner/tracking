@@ -13,6 +13,14 @@ class CLIP_OT_main(bpy.types.Operator):
     _timer = None
     _step = 0
 
+def _find_clip_context(context):
+    for a in context.screen.areas:
+        if a.type == 'CLIP_EDITOR':
+            for r in a.regions:
+                if r.type == 'WINDOW':
+                    return a, r, a.spaces.active
+    return None, None, None
+
     def execute(self, context):
         scene = context.scene
     
