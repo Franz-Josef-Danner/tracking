@@ -24,6 +24,7 @@ from .Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
 from .Operator.clean_error_tracks import CLIP_OT_clean_error_tracks
 from .Operator.optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 from .Operator.main import CLIP_OT_main
+from .Helper.deps import ensure_dependencies
 
 # Importiere PropertyGroup
 from .Helper.properties import RepeatEntry  # ✅ NEU
