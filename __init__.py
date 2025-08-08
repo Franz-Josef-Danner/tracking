@@ -12,6 +12,7 @@ import bpy
 from bpy.props import IntProperty, FloatProperty
 
 # Importiere Operatoren
+from .Helper.deps import ensure_dependencies
 from .Operator.proxy_builder import CLIP_OT_proxy_builder
 from .Operator.tracker_settings import CLIP_OT_tracker_settings
 from .Operator.tracking_pipeline import CLIP_OT_tracking_pipeline
@@ -24,7 +25,6 @@ from .Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
 from .Operator.clean_error_tracks import CLIP_OT_clean_error_tracks
 from .Operator.optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 from .Operator.main import CLIP_OT_main
-from .Helper.deps import ensure_dependencies
 
 # Importiere PropertyGroup
 from .Helper.properties import RepeatEntry  # ✅ NEU
@@ -92,7 +92,7 @@ def register():
         max=1.000,
     )
     try:
-        ensure_dependencies(upgrade_pip=False, upgrade_psutil=True)
+        ensure_dependencies(upgrade_pip=True, upgrade_psutil=True)
     except Exception as e:
         print(f"[Deps] Fehler: {e}")
 
