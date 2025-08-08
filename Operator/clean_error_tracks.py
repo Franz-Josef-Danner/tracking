@@ -100,11 +100,12 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                     original_tracks, new_tracks
                 )
 
-        # 3) alle kayframes löschen
+        # 3) alle Keyframes löschen (nur im ersten Pass, direkt nach dem Split)
         deleted_keys_all = 0
-        if self.wipe_all_keys:
-            deleted_keys_all = delete_all_keyframes(tracks)
-            print(f"[Keyframes] deleted_all_keyframes={deleted_keys_all}")
+        if do_split and self.wipe_all_keys:
+            deleted_keys_all = delete_all_keyframes(tracks)  # Helper/keyframe_ops.py
+            if self.verbose:
+                print(f"[Keyframes] deleted_all_keyframes={deleted_keys_all}")
 
         # 4) Outside-Segments aufräumen (Guard je 1 Frame)
         muted = deleted = 0
@@ -131,6 +132,14 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             f"markers_before={before_total}, markers_after={after_total}, changed={changed}"
         )
 
+        changed = (grid_deleted + deleted_keys_all + muted + deleted)
+
+        print(
+            f"[Cleanup] pass action={action}: "
+            f"grid_deleted={grid_deleted}, deleted_all_keys={deleted_keys_all}, "
+            f"muted={muted}, deleted={deleted}, "
+            f"markers_before={before_total}, markers_after={after_total}, changed={changed}"
+        )
         return changed
 
     def execute(self, context):
