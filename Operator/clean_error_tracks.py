@@ -33,7 +33,21 @@ def _duplicate_selected_tracks(context, area, region, space):
         bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=2)
         context.scene.frame_set(context.scene.frame_current)
         bpy.context.view_layer.update()
-        time.sleep(0.05)
+        time.sleep(0.03)
+
+def _ui_ping(context, text=None, redraw_iters=1):
+    """Kleine UI-Aktualisierung + optional Statuszeile."""
+    wm = context.window_manager
+    if text is not None:
+        try:
+            wm.status_text_set(text)
+        except Exception:
+            pass
+    try:
+        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=redraw_iters)
+    except Exception:
+        pass
+    bpy.context.view_layer.update()
 
 
 # --- eigentlicher Operator ---------------------------------------------------
@@ -58,47 +72,74 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
           1) Grid-Error-Cleanup (einmal)
           2) Optional (nur in diesem Pass): Lücken-Tracks duplizieren & splitten
         """
+        wm     = context.window_manager
         clip   = space.clip
         tracks = clip.tracking.tracks
 
+        # Progress-Setup (1 Schritt Grid + ggf. 1 Schritt Split)
+        original_tracks = _tracks_with_gaps(tracks) if do_split else []
+        steps_total = 1 + (1 if (do_split and original_tracks) else 0)
+        step_idx = 0
+        try:
+            wm.progress_begin(0, steps_total)
+        except Exception:
+            pass
+
         before_total = _count_all_markers(tracks)
 
-        # 1) Grid-Error-Cleanup (einmal)
+        # 1) Grid-Error-Cleanup
+        _ui_ping(context, "Grid-Error-Cleanup läuft …")
         grid_deleted = 0
         try:
             grid_deleted = grid_error_cleanup(context, space, verbose=self.verbose)
         except Exception as e:
             if self.verbose:
                 print(f"[GridError] übersprungen: {e}")
+        step_idx += 1
+        try:
+            wm.progress_update(step_idx)
+        except Exception:
+            pass
+        _ui_ping(context, f"Grid-Error-Cleanup fertig (gelöscht: {grid_deleted})")
 
         # 2) Optional Split der Gaps
-        if do_split:
-            original_tracks = _tracks_with_gaps(tracks)
-            if original_tracks:
-                existing_names = {t.name for t in tracks}
-                for t in tracks:
-                    t.select = False
-                for t in original_tracks:
-                    t.select = True
+        if do_split and original_tracks:
+            _ui_ping(context, "Split von Tracks mit Lücken …")
+            existing_names = {t.name for t in tracks}
+            for t in tracks:
+                t.select = False
+            for t in original_tracks:
+                t.select = True
 
-                _duplicate_selected_tracks(context, area, region, space)
+            _duplicate_selected_tracks(context, area, region, space)
 
-                all_names = {t.name for t in tracks}
-                new_names = all_names - existing_names
-                new_tracks = [t for t in tracks if t.name in new_names]
+            all_names = {t.name for t in tracks}
+            new_names = all_names - existing_names
+            new_tracks = [t for t in tracks if t.name in new_names]
 
-                clear_path_on_split_tracks_segmented(
-                    context, area, region, space,
-                    original_tracks, new_tracks
-                )
+            clear_path_on_split_tracks_segmented(
+                context, area, region, space,
+                original_tracks, new_tracks
+            )
+            step_idx += 1
+            try:
+                wm.progress_update(step_idx)
+            except Exception:
+                pass
+            _ui_ping(context, "Split abgeschlossen.")
 
-        bpy.context.view_layer.update()
         after_total = _count_all_markers(tracks)
-
         changed = int(grid_deleted)
+
         if self.verbose:
             print(f"[Cleanup] grid_deleted={grid_deleted}, "
                   f"markers_before={before_total}, markers_after={after_total}, changed={changed}")
+
+        try:
+            wm.progress_end()
+        except Exception:
+            pass
+
         return changed
 
     def execute(self, context):
@@ -117,12 +158,30 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             self.report({'ERROR'}, "Kein gültiger CLIP_EDITOR-Kontext gefunden.")
             return {'CANCELLED'}
 
-        # 👉 genau 1 Pass: Grid-Cleanup + optional Split
-        changed = self._one_pass(
-            context,
-            clip_area, clip_region, clip_space,
-            do_split=True
-        )
+        wm = context.window_manager
+        # Busy-Cursor + Status während der Laufzeit
+        try:
+            context.window.cursor_modal_set('WAIT')
+        except Exception:
+            pass
+        wm.status_text_set("Error-Cleanup gestartet …")
+
+        try:
+            changed = self._one_pass(
+                context,
+                clip_area, clip_region, clip_space,
+                do_split=True
+            )
+        finally:
+            # UI aufräumen
+            try:
+                wm.status_text_set(None)
+            except Exception:
+                pass
+            try:
+                context.window.cursor_modal_restore()
+            except Exception:
+                pass
 
         if self.verbose:
             print(f"[Cleanup] single pass finished, changed={changed}")
