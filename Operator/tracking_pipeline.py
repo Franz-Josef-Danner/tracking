@@ -64,9 +64,25 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
     def run_step(self, context):
         scene = context.scene
         wm = context.window_manager
-        clip = context.space_data.clip
+    
+        # Sicheren Clip-Editor suchen
+        clip_area = clip_region = clip_space = None
+        for a in context.screen.areas:
+            if a.type == 'CLIP_EDITOR':
+                for r in a.regions:
+                    if r.type == 'WINDOW':
+                        clip_area = a
+                        clip_region = r
+                        clip_space = a.spaces.active
+                        break
+        if not clip_space or not getattr(clip_space, "clip", None):
+            self.report({'ERROR'}, "Kein Clip-Editor mit aktivem Clip gefunden.")
+            self.cancel(context)
+            return {'CANCELLED'}
+    
+        clip = clip_space.clip
         ts = clip.tracking.settings
-        ts.default_margin = ts.default_search_size
+    ts.default_margin = ts.default_search_size
     
         if self._step == 0:
             # Proxy-Init entfernt
@@ -111,16 +127,30 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
             if scene.get("bidirectional_status", "") == "done":
                 scene["bidirectional_status"] = ""
                 self._is_tracking = False
-    
+        
+            # Wenn Tracking fertig -> JETZT CleanError laufen lassen, dann sauber beenden
             if not self._is_tracking:
+                # Clip-Editor kontext suchen (damit poll() true ist)
+                clip_area = clip_region = clip_space = None
+                for a in context.screen.areas:
+                    if a.type == 'CLIP_EDITOR':
+                        for r in a.regions:
+                            if r.type == 'WINDOW':
+                                clip_area = a
+                                clip_region = r
+                                clip_space = a.spaces.active
+                                break
+        
+                if clip_space:
+                    with context.temp_override(area=clip_area, region=clip_region, space_data=clip_space):
+                        bpy.ops.clip.clean_error_tracks('EXEC_DEFAULT')
+        
                 scene["pipeline_status"] = "done"
-                # Proxy-Aktivierung (Ende) entfernt
                 wm.event_timer_remove(self._timer)
                 return {'FINISHED'}
-    
+        
             return {'PASS_THROUGH'}
-    
-        return {'PASS_THROUGH'}
+
     
     def cancel(self, context):
         wm = context.window_manager
