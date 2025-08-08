@@ -112,16 +112,16 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                 print(f"[Keyframes] deleted_all_keyframes={deleted_keys_all}")
     
         # 4) Outside-Segments aufräumen (Guard je 1 Frame)
-        muted = deleted = 0
-        try:
-            muted, deleted = prune_outside_segments(
-                list(tracks),
-                guard_before=1, guard_after=1,
-                action=action
-            )
-        except Exception as e:
-            if self.verbose:
-                print(f"[PruneOutside] übersprungen: {e}")
+        #muted = deleted = 0
+        #try:
+        #    muted, deleted = prune_outside_segments(
+        #        list(tracks),
+        #        guard_before=1, guard_after=1,
+        #        action=action
+        #    )
+        #except Exception as e:
+        #    if self.verbose:
+        #        print(f"[PruneOutside] übersprungen: {e}")
     
         bpy.context.view_layer.update()
         after_total = _count_all_markers(tracks)
