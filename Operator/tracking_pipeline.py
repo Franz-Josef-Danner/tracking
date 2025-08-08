@@ -1,5 +1,6 @@
-import bpy
-import time
+# Operator/tracking_pipeline.py
+import bpy, time
+from ..Helper.ram_helper import RamGuard
 
 class CLIP_OT_tracking_pipeline(bpy.types.Operator):
     """Tracking-Pipeline: Detect, Track, Cleanup"""
@@ -10,11 +11,13 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
     _timer = None
     _step = 0
     _is_tracking = False
+    _ram_guard = None
 
     def execute(self, context):
-        scene = context.scene
+        # RAM-Guard initialisieren
+        self._ram_guard = RamGuard(threshold_up=90.0, threshold_down=80.0, cooldown=5.0)
 
-        # Statuswerte zurücksetzen
+        scene = context.scene
         scene["pipeline_status"] = ""
         scene["detect_status"] = ""
         scene["bidirectional_status"] = ""
@@ -26,11 +29,7 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
         self._timer = wm.event_timer_add(0.2, window=context.window)
         wm.modal_handler_add(self)
 
-        print("🚀 Starte Tracking-Pipeline...")
         scene["pipeline_status"] = "running"
-        print(f"🧩 [DEBUG] pipeline_status gesetzt auf: {scene['pipeline_status']}")
-        print(f"🧩 [DEBUG] Starte Modal Handler mit Kontext: {context.area.type if context.area else 'Unbekannt'}")
-
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
@@ -38,81 +37,105 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
             self.report({'WARNING'}, "Tracking-Pipeline manuell abgebrochen.")
             self.cancel(context)
             return {'CANCELLED'}
-    
+
         if event.type == 'TIMER':
+            # RAM prüfen
+            if self._ram_guard:
+                event_name, _pct = self._ram_guard.poll()
+                if event_name == 'enter_hot':
+                    try:
+                        bpy.ops.clip.enable_proxy(); bpy.ops.clip.reload()
+                    except Exception:
+                        pass
+                elif event_name == 'leave_hot':
+                    try:
+                        bpy.ops.clip.disable_proxy(); bpy.ops.clip.reload()
+                    except Exception:
+                        pass
+
+            # immer hier weiter
             return self.run_step(context)
-    
+
         return {'PASS_THROUGH'}
-    
+
+    # --- helper: Clip-Editor-Kontext suchen
+    def _find_clip_context(self, context):
+        clip_area = clip_region = clip_space = None
+        for a in context.screen.areas:
+            if a.type == 'CLIP_EDITOR':
+                for r in a.regions:
+                    if r.type == 'WINDOW':
+                        clip_area = a
+                        clip_region = r
+                        clip_space = a.spaces.active
+                        return clip_area, clip_region, clip_space
+        return None, None, None
 
     def run_step(self, context):
         scene = context.scene
         wm = context.window_manager
-        clip = context.space_data.clip
+
+        # gültigen CLIP_EDITOR-Kontext beschaffen
+        clip_area, clip_region, clip_space = self._find_clip_context(context)
+        if not clip_space or not getattr(clip_space, "clip", None):
+            self.report({'ERROR'}, "Kein Clip-Editor mit aktivem Clip gefunden.")
+            self.cancel(context)
+            return {'CANCELLED'}
+
+        clip = clip_space.clip
         ts = clip.tracking.settings
         ts.default_margin = ts.default_search_size
 
         if self._step == 0:
-            print("→ Marker Helper")
             bpy.ops.clip.marker_helper_main()
             self._step += 1
             return {'PASS_THROUGH'}
 
         elif self._step == 1:
-            print("→ Proxy deaktivieren")
-            bpy.ops.clip.disable_proxy()
+            # (früher Proxy-Step) – bewusst leer
             self._step += 1
             return {'PASS_THROUGH'}
 
         elif self._step == 2:
-            print("→ Detect starten")
             bpy.ops.clip.detect()
             self._step += 1
             return {'PASS_THROUGH'}
 
         elif self._step == 3:
-            print("⏳ Warte auf Detect-Abschluss...")
-        
             detect_status = scene.get("detect_status", "")
-        
             if detect_status == "success":
                 self._step += 1
                 scene["detect_status"] = ""
                 return {'PASS_THROUGH'}
-        
             elif detect_status == "failed":
                 self.report({'ERROR'}, "❌ Detect fehlgeschlagen – Pipeline wird abgebrochen.")
                 self.cancel(context)
                 return {'CANCELLED'}
-        
             return {'PASS_THROUGH'}
 
-
         elif self._step == 4:
-            print("→ Proxy aktivieren")
-            bpy.ops.clip.enable_proxy()
-            ts = context.space_data.clip.tracking.settings
-            ts.default_margin = ts.default_search_size  # <--- automatischer Reset
+            ts = clip.tracking.settings
+            ts.default_margin = ts.default_search_size
             self._step += 1
             return {'PASS_THROUGH'}
 
-
         elif self._step == 5:
-            print("→ Starte bidirektionales Tracking")
             bpy.ops.clip.bidirectional_track()
             self._step += 1
             return {'PASS_THROUGH'}
 
         elif self._step == 6:
             if scene.get("bidirectional_status", "") == "done":
-                print("✅ Bidirectional Tracking abgeschlossen.")
                 scene["bidirectional_status"] = ""
                 self._is_tracking = False
 
             if not self._is_tracking:
-                print("⏳ Warte auf Abschluss der Pipeline...")
+                # 👉 genau hier EINMAL den Error-Cleanup im gültigen Clip-Kontext aufrufen
+                with context.temp_override(area=clip_area, region=clip_region, space_data=clip_space):
+                    # verbose=True nur wenn du Konsolen-Ausgaben willst
+                    bpy.ops.clip.clean_error_tracks('EXEC_DEFAULT', verbose=True)
+
                 scene["pipeline_status"] = "done"
-                print(f"🧩 [DEBUG] pipeline_status gesetzt auf: {scene['pipeline_status']}")
                 wm.event_timer_remove(self._timer)
                 return {'FINISHED'}
 
@@ -122,8 +145,8 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
 
     def cancel(self, context):
         wm = context.window_manager
-        wm.event_timer_remove(self._timer)
-    
+        if self._timer:
+            wm.event_timer_remove(self._timer)
         scene = context.scene
         scene["pipeline_status"] = ""
         scene["detect_status"] = ""
@@ -131,5 +154,3 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
         scene["goto_frame"] = -1
         if "repeat_frame" in scene:
             scene["repeat_frame"].clear()
-    
-        print("❌ Tracking Pipeline abgebrochen. Status zurückgesetzt.")
