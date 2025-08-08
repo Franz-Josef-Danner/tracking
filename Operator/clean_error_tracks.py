@@ -113,16 +113,13 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             return {'CANCELLED'}
 
         total_changes = 0
-        # 4 Durchläufe wie von dir gewünscht – Split nur im ersten
+        # 4 Durchläufe – Split nur im ersten
         for i in range(1, 5):
-            if self.verbose:
-                print(f"[Cleanup] Pass {i}/4")
             changed = self._one_pass(
                 context, clip_area, clip_region, clip_space,
                 do_split=(i == 1)
             )
             total_changes += changed
-            # Wenn der 1. Pass nichts tut, macht Weiterlaufen wenig Sinn
             if i == 1 and changed == 0:
                 if self.verbose:
                     print("[Cleanup] Keine Änderungen im 1. Pass – breche ab.")
