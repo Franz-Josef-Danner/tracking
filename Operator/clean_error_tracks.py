@@ -2,9 +2,7 @@
 import bpy, time
 from ..Helper.grid_error_cleanup import grid_error_cleanup
 from ..Helper.process_marker_path import get_track_segments
-from ..Helper.keyframe_ops import delete_all_keyframes
 from ..Helper.clear_path_on_split_tracks_segmented import clear_path_on_split_tracks_segmented
-# HINWEIS: Step #4 entfernt -> prune_outside_segments nicht mehr importieren
 
 # --- kleine Helfer -----------------------------------------------------------
 
@@ -37,16 +35,11 @@ def _duplicate_selected_tracks(context, area, region, space):
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
-    bl_label = "Clean Error Tracks (4-pass alt mute/delete)"
+    bl_label = "Clean Error Tracks (Grid + optional Split)"
     bl_options = {'REGISTER', 'UNDO'}
 
-    # Schalter für Logs
-    verbose: bpy.props.BoolProperty(default=True)
-
-    # Optional: einmaliges komplettes Keyframe-Wipen nach dem ersten Split-Pass
-    wipe_all_keys: bpy.props.BoolProperty(
-        name="Wipe all keyframes after split (once)",
-        description="Nach dem ersten Split-Pass alle Keyframes in allen Tracks löschen",
+    verbose: bpy.props.BoolProperty(
+        name="Verbose log",
         default=True
     )
 
@@ -54,15 +47,12 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     def poll(cls, context):
         return context.space_data and context.space_data.clip
 
-    def _one_pass(self, context, area, region, space, *, action="mute", do_split=False):
+    def _one_pass(self, context, area, region, space, *, do_split=False):
         """
         Ein Cleanup-Pass:
           1) Grid-Error-Cleanup (3-Frame-Ausreißer → Tripel löschen)
-          2) Optional: Lücken-Tracks duplizieren & splitten (nur im 1. Pass)
-          3) Optional (nur im 1. Pass): ALLE Keyframes löschen
-          -- Step #4 (Outside-Segments prune) ist deaktiviert --
+          2) Optional (nur im 1. Pass): Lücken-Tracks duplizieren & splitten
         """
-        scene  = context.scene
         clip   = space.clip
         tracks = clip.tracking.tracks
 
@@ -97,31 +87,13 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                     original_tracks, new_tracks
                 )
 
-        # 3) ALLE Keyframes löschen (nur im ersten Pass, direkt nach dem Split)
-        deleted_keys_all = 0
-        if do_split and getattr(self, "wipe_all_keys", False):
-            try:
-                deleted_keys_all = delete_all_keyframes(tracks)  # Helper/keyframe_ops.py
-            except Exception as e:
-                if self.verbose:
-                    print(f"[Keyframes] delete_all_keyframes Fehler: {e}")
-            if self.verbose:
-                print(f"[Keyframes] deleted_all_keyframes={deleted_keys_all}")
-
-        # -- Step #4 entfernt: kein prune_outside_segments-Aufruf mehr --
-
         bpy.context.view_layer.update()
         after_total = _count_all_markers(tracks)
 
-        # Änderungssumme ohne 'muted/deleted' aus Step #4
-        changed = (grid_deleted + deleted_keys_all)
-
-        # Log
-        print(
-            f"[Cleanup] pass action={action}: "
-            f"grid_deleted={grid_deleted}, deleted_all_keys={deleted_keys_all}, "
-            f"markers_before={before_total}, markers_after={after_total}, changed={changed}"
-        )
+        changed = grid_deleted
+        if self.verbose:
+            print(f"[Cleanup] grid_deleted={grid_deleted}, "
+                  f"markers_before={before_total}, markers_after={after_total}, changed={changed}")
         return changed
 
     def execute(self, context):
@@ -140,21 +112,20 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             self.report({'ERROR'}, "Kein gültiger CLIP_EDITOR-Kontext gefunden.")
             return {'CANCELLED'}
 
-        actions = ("mute", "delete", "mute", "delete")
         total_changes = 0
-
-        for i, act in enumerate(actions, start=1):
-            print(f"[Cleanup] Pass {i}/4 – {act}")
+        # 4 Durchläufe wie von dir gewünscht – Split nur im ersten
+        for i in range(1, 5):
+            if self.verbose:
+                print(f"[Cleanup] Pass {i}/4")
             changed = self._one_pass(
                 context, clip_area, clip_region, clip_space,
-                action=act,
-                do_split=(i == 1)  # Split nur im ersten Pass
+                do_split=(i == 1)
             )
             total_changes += changed
-
-            # Fail-safe: Wenn im ersten Pass nichts geändert wurde → abbrechen
+            # Wenn der 1. Pass nichts tut, macht Weiterlaufen wenig Sinn
             if i == 1 and changed == 0:
-                print("[Cleanup] Keine Änderungen im 1. Pass – breche weiteren Cleanup ab.")
+                if self.verbose:
+                    print("[Cleanup] Keine Änderungen im 1. Pass – breche ab.")
                 break
 
         self.report({'INFO'}, f"Cleanup beendet. Total changes: {total_changes}")
