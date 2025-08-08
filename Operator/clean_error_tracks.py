@@ -7,7 +7,7 @@ from ..Helper.mute_invalid_segments import remove_segment_boundary_keys, prune_o
 from ..Helper.grid_error_cleanup import grid_error_cleanup
 
 def execute(self, context):
-    # Clip-Editor-Kontext finden …
+    # Clip-Editor-Kontext einsammeln
     clip_area = clip_region = clip_space = None
     for area in context.screen.areas:
         if area.type == 'CLIP_EDITOR':
@@ -17,16 +17,16 @@ def execute(self, context):
                     clip_region = region
                     clip_space = area.spaces.active
                     break
+
     if not clip_space:
         self.report({'ERROR'}, "Kein gültiger CLIP_EDITOR-Kontext gefunden.")
         return {'CANCELLED'}
 
-    # >>> HIER: 3-Frame-Grid-Error-Cleanup (einmalig vor allen weiteren Schritten)
+    # >>> 3-Frame Grid-Error-Cleanup VOR den vier Pässen
     deleted = grid_error_cleanup(context, clip_space, verbose=False)
-    # (Optional) kurzes, nicht-spammiges Log:
     print(f"[Cleanup] Grid-Error pass: deleted_markers={deleted}")
 
-    # danach wie gehabt: deine 4 Pässe mute/delete im Wechsel …
+    # Vier Pässe: mute → delete → mute → delete
     actions = ("mute", "delete", "mute", "delete")
     for i, action in enumerate(actions, start=1):
         print(f"[Cleanup] Pass {i}/4 – {action}")
@@ -87,14 +87,6 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                 context, area, region, space,
                 original_tracks, new_tracks
             )
-
-        # 1) Keys exakt auf Segment-/Trackgrenzen löschen (nur wenn keyed)
-        removed_keys = remove_segment_boundary_keys(list(tracks), delete_start=False, delete_end=True)
-
-        muted, deleted = prune_outside_segments(list(tracks),
-                                                guard_before=1,   # 1 Frame vor dem ersten Segment stehen lassen
-                                                guard_after=1,    # 1 Frame nach dem letzten Segment stehen lassen
-                                                action=action)
 
         # 1) Keyframes exakt auf Segment-Enden löschen (gegen "estimated" nach Sequenzende)
         remove_segment_boundary_keys(tracks, delete_start=False, delete_end=True)
