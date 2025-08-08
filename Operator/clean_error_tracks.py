@@ -3,10 +3,8 @@ import time
 
 from ..Helper.process_marker_path import get_track_segments
 from ..Helper.clear_path_on_split_tracks_segmented import clear_path_on_split_tracks_segmented
-from ..Helper.mute_invalid_segments import (
-    remove_segment_boundary_keys,
-    mute_invalid_segments,
-)
+from ..Helper.mute_invalid_segments import remove_segment_boundary_keys, prune_outside_segments
+
 
 def _tracks_with_gaps(tracks):
     out = []
@@ -69,8 +67,11 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                                                 guard_after=1,    # 1 Frame nach dem letzten Segment stehen lassen
                                                 action=action)
 
-        # 2) alles außerhalb gültiger Segmente muten/löschen
-        mute_invalid_segments(list(tracks), scene_end=scene.frame_end, action=action)
+        # 1) Keyframes exakt auf Segment-Enden löschen (gegen "estimated" nach Sequenzende)
+        remove_segment_boundary_keys(tracks, delete_start=False, delete_end=True)
+        
+        # 2) Alles außerhalb der Segmente muten/entfernen, mit 1-Frame Puffer
+        prune_outside_segments(tracks, guard_before=1, guard_after=1, action=action)  # action = "mute" oder "delete"
 
         bpy.context.view_layer.update()
 
