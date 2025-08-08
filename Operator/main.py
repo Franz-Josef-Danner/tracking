@@ -218,7 +218,7 @@ class CLIP_OT_main(Operator):
                 scene["marker_max"] = int(marker_basis * 1.1)
                 bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
 
-            self._step = 0  # Wiederhole Zyklus
+                self._step = 0  # Wiederhole Zyklus
             else:
                 bpy.ops.clip.clean_error_tracks('INVOKE_DEFAULT', verbose=True)
                 self._step = 2
