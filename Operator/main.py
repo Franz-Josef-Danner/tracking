@@ -193,32 +193,32 @@ class CLIP_OT_main(Operator):
             return {'CANCELLED'}
         return {'FINISHED'}
 
-            frame = find_low_marker_frame(clip, marker_basis=marker_basis)
-            if frame is not None:
-                scene["goto_frame"] = frame
-                jump_to_frame(context)
+        frame = find_low_marker_frame(clip, marker_basis=marker_basis)
+        if frame is not None:
+            scene["goto_frame"] = frame
+            jump_to_frame(context)
 
-                key = str(frame)
-                entry = next((e for e in repeat_collection if e.frame == key), None)
+            key = str(frame)
+            entry = next((e for e in repeat_collection if e.frame == key), None)
 
-                if entry:
-                    entry.count += 1
-                    marker_basis = min(int(marker_basis * 1.1), 100)
-                else:
-                    entry = repeat_collection.add()
-                    entry.frame = key
-                    entry.count = 1
-                    marker_basis = max(int(marker_basis * 0.9), initial_basis)
+            if entry:
+                entry.count += 1
+                marker_basis = min(int(marker_basis * 1.1), 100)
+            else:
+                entry = repeat_collection.add()
+                entry.frame = key
+                entry.count = 1
+                marker_basis = max(int(marker_basis * 0.9), initial_basis)
 
 
-                if entry.count >= 10:
-                    bpy.ops.clip.optimize_tracking_modal('INVOKE_DEFAULT')
-                else:
-                    scene["marker_min"] = int(marker_basis * 0.9)
-                    scene["marker_max"] = int(marker_basis * 1.1)
-                    bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
+            if entry.count >= 10:
+                bpy.ops.clip.optimize_tracking_modal('INVOKE_DEFAULT')
+            else:
+                scene["marker_min"] = int(marker_basis * 0.9)
+                scene["marker_max"] = int(marker_basis * 1.1)
+                bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
 
-                self._step = 0  # Wiederhole Zyklus
+            self._step = 0  # Wiederhole Zyklus
             else:
                 bpy.ops.clip.clean_error_tracks('INVOKE_DEFAULT', verbose=True)
                 self._step = 2
