@@ -91,6 +91,10 @@ def register():
         min=0.001,
         max=1.000,
     )
+    try:
+        ensure_dependencies(upgrade_pip=False, upgrade_psutil=True)
+    except Exception as e:
+        print(f"[Deps] Fehler: {e}")
 
 def unregister():
     # Properties entfernen
