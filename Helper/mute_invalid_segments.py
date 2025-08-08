@@ -1,4 +1,4 @@
-from .process_marker_path import get_track_segments
+from .process_marker_path import get_unmuted_segments
 
 def _iter_tracks(x):
     try:
@@ -16,7 +16,7 @@ def remove_segment_boundary_keys(track_or_tracks, delete_start=False, delete_end
     for track in _iter_tracks(track_or_tracks):
         if not hasattr(track, "markers") or not track.markers:
             continue
-        segs = get_track_segments(track)
+        segs = get_unmuted_segments(track)
         for (start, end) in segs:
             frames = []
             if delete_start:
@@ -48,7 +48,7 @@ def prune_outside_segments(track_or_tracks, guard_before=1, guard_after=1, actio
         if not hasattr(track, "markers") or not track.markers:
             continue
 
-        segs = get_track_segments(track)
+        segs = get_unmuted_segments(track)
         if not segs:
             continue
 
