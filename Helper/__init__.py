@@ -11,7 +11,6 @@ from .properties import RepeatEntry
 from ..Helper import ram_helper
 from ..Helper.ram_helper import RamGuard, register_bpy_timer
 from .grid_error_cleanup import grid_error_cleanup
-from .keyframe_ops import delete_all_keyframes
 
 __all__ = []
 
