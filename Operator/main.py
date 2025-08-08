@@ -105,7 +105,7 @@ class CLIP_OT_main(bpy.types.Operator):
 
                 self._step = 0  # Wiederhole Zyklus
             else:
-                bpy.ops.clip.clean_error_tracks('INVOKE_DEFAULT')
+                bpy.ops.clip.clean_error_tracks('INVOKE_DEFAULT', verbose=True)
                 self._step = 2
             return {'PASS_THROUGH'}
 
