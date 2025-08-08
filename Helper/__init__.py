@@ -24,7 +24,6 @@ classes = (
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
-    bpy.types.Scene.repeat_frame = bpy.props.CollectionProperty(type=RepeatEntry)
 
 def unregister():
     del bpy.types.Scene.repeat_frame
