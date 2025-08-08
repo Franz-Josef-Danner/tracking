@@ -3,22 +3,28 @@ import math
 import time
 
 def perform_marker_detection(clip, tracking, threshold, margin_base, min_distance_base):
+    # Parameter an Threshold anpassen
     factor = math.log10(threshold * 1e7) / 7
     margin = max(1, int(margin_base * factor))
     min_distance = max(1, int(min_distance_base * factor))
 
-    if clip.use_proxy:
-        clip.use_proxy = False
+    # Falls du Proxy hier NICHT anfassen willst, lass die nächste Zeile einfach weg.
+    # if clip.use_proxy:
+    #     clip.use_proxy = False
 
-    result = bpy.ops.clip.detect_features(
-        margin=margin,
-        min_distance=min_distance,
-        threshold=threshold,
-    )
+    # Detection ausführen – Return-Value ist hier egal
+    try:
+        bpy.ops.clip.detect_features(
+            margin=margin,
+            min_distance=min_distance,
+            threshold=threshold,
+        )
+    except Exception:
+        # Wir wollen hier nicht hart abbrechen – die Auswahl unten wird dann 0 sein
+        pass
 
-    if result != {"FINISHED"}:
-    
-        selected_tracks = [t for t in tracking.tracks if t.select]
+    # Immer nach dem Operator die Auswahl zählen, damit UnboundLocalError unmöglich ist
+    selected_tracks = [t for t in tracking.tracks if getattr(t, "select", False)]
     return len(selected_tracks)
 
 def deselect_all_markers(tracking):
