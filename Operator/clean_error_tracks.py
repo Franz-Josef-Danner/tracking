@@ -46,6 +46,13 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     # Schalter für Logs
     verbose: bpy.props.BoolProperty(default=True)
 
+    # ⚠️ Neu: einmaliges komplettes Keyframe-Wipen nach dem ersten Split-Pass
+    wipe_all_keys: bpy.props.BoolProperty(
+        name="Wipe all keyframes after split (once)",
+        description="Nach dem ersten Split-Pass alle Keyframes in allen Tracks löschen",
+        default=True
+    )
+
     @classmethod
     def poll(cls, context):
         return context.space_data and context.space_data.clip
