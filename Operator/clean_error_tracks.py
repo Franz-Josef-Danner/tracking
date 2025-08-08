@@ -6,7 +6,37 @@ from ..Helper.grid_error_cleanup import grid_error_cleanup
 from ..Helper.process_marker_path import get_track_segments
 from ..Helper.clear_path_on_split_tracks_segmented import clear_path_on_split_tracks_segmented
 
-# … (_count_all_markers, _tracks_with_gaps, _duplicate_selected_tracks) bleiben wie bei dir …
+
+# --- kleine Helfer -----------------------------------------------------------
+
+def _count_all_markers(tracks):
+    """Zählt alle Marker über alle Tracks hinweg."""
+    return sum(len(getattr(t, "markers", [])) for t in tracks)
+
+def _tracks_with_gaps(tracks):
+    """Tracks mit >= 2 Segmenten (interne Lücken) finden."""
+    out = []
+    for t in tracks:
+        try:
+            segs = get_track_segments(t)
+        except Exception:
+            segs = []
+        if len(segs) >= 2:
+            out.append(t)
+    return out
+
+def _duplicate_selected_tracks(context, area, region, space):
+    """Selektierte Tracks duplizieren, UI kurz aktualisieren."""
+    with context.temp_override(area=area, region=region, space_data=space):
+        bpy.ops.clip.copy_tracks()
+        bpy.ops.clip.paste_tracks()
+        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=2)
+        context.scene.frame_set(context.scene.frame_current)
+        bpy.context.view_layer.update()
+        time.sleep(0.05)
+
+
+# --- eigentlicher Operator ---------------------------------------------------
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
@@ -23,10 +53,15 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         return context.space_data and context.space_data.clip
 
     def _one_pass(self, context, area, region, space, *, do_split=False):
+        """
+        Ein Cleanup-Pass:
+          1) Grid-Error-Cleanup (einmal)
+          2) Optional (nur in diesem Pass): Lücken-Tracks duplizieren & splitten
+        """
         clip   = space.clip
         tracks = clip.tracking.tracks
 
-        before_total = sum(len(getattr(t, "markers", [])) for t in tracks)
+        before_total = _count_all_markers(tracks)
 
         # 1) Grid-Error-Cleanup (einmal)
         grid_deleted = 0
@@ -36,7 +71,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             if self.verbose:
                 print(f"[GridError] übersprungen: {e}")
 
-        # 2) Optional (nur im 1. Pass) Split der Gaps
+        # 2) Optional Split der Gaps
         if do_split:
             original_tracks = _tracks_with_gaps(tracks)
             if original_tracks:
@@ -58,7 +93,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                 )
 
         bpy.context.view_layer.update()
-        after_total = sum(len(getattr(t, "markers", [])) for t in tracks)
+        after_total = _count_all_markers(tracks)
 
         changed = int(grid_deleted)
         if self.verbose:
