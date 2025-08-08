@@ -1,10 +1,18 @@
+import bpy
+
+def _iter_tracks(x):
+    try:
+        return list(x)
+    except TypeError:
+        return [x]
+
 def process_marker_path(track, from_frame, direction, action="mute", mute=True):
     """
-    Führt eine Aktion auf Markern eines Tracks ab einem bestimmten Frame aus.
-    direction: 'forward' (>= from_frame) oder 'backward' (<= from_frame)
-    action: 'mute' oder 'delete'
+    Aktion auf Markern eines Tracks ab from_frame in 'forward'/'backward':
+    - action='mute' -> Marker.mute setzen
+    - action='delete' -> Marker-Frames löschen
     """
-    if not track or not getattr(track, "markers", None):
+    if not track or not hasattr(track, "markers") or not track.markers:
         return
 
     if direction == "forward":
@@ -14,34 +22,29 @@ def process_marker_path(track, from_frame, direction, action="mute", mute=True):
     else:
         return
 
-    if action == "mute":
-        for m in relevant:
-            m.mute = mute
-    elif action == "delete":
-        # nicht über die Sammlung iterieren, während wir löschen
-        for f in [m.frame for m in relevant]:
+    if action == "delete":
+        frames_to_delete = [m.frame for m in relevant]
+        for f in frames_to_delete:
             track.markers.delete_frame(f)
-
+    else:
+        for m in relevant:
+            m.mute = bool(mute)
 
 def get_track_segments(track):
     """
-    Gibt zusammenhängende Segmente als (start, end)-Tupel zurück.
-    Ein Segment hat keine Frame-Lücken (>1 Frame Abstand).
+    Liefert eine Liste zusammenhängender Segmente [(start, end), ...].
     """
-    markers = getattr(track, "markers", None)
-    if not markers:
+    if not hasattr(track, "markers") or not track.markers:
         return []
-
-    frames = sorted(m.frame for m in markers)
+    frames = sorted(m.frame for m in track.markers)
     if not frames:
         return []
-
     segs = []
-    start = prev = frames[0]
+    s = p = frames[0]
     for f in frames[1:]:
-        if f - prev > 1:
-            segs.append((start, prev))
-            start = f
-        prev = f
-    segs.append((start, prev))
+        if f - p > 1:
+            segs.append((s, p))
+            s = f
+        p = f
+    segs.append((s, p))
     return segs
