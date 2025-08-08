@@ -6,36 +6,7 @@ from ..Helper.grid_error_cleanup import grid_error_cleanup
 from ..Helper.process_marker_path import get_track_segments
 from ..Helper.clear_path_on_split_tracks_segmented import clear_path_on_split_tracks_segmented
 
-
-# --- kleine Helfer -----------------------------------------------------------
-
-def _count_all_markers(tracks):
-    return sum(len(getattr(t, "markers", [])) for t in tracks)
-
-def _tracks_with_gaps(tracks):
-    """Tracks mit >= 2 Segmenten (interne Lücken)."""
-    out = []
-    for t in tracks:
-        try:
-            segs = get_track_segments(t)
-        except Exception:
-            segs = []
-        if len(segs) >= 2:
-            out.append(t)
-    return out
-
-def _duplicate_selected_tracks(context, area, region, space):
-    """Selektierte Tracks duplizieren, UI kurz aktualisieren."""
-    with context.temp_override(area=area, region=region, space_data=space):
-        bpy.ops.clip.copy_tracks()
-        bpy.ops.clip.paste_tracks()
-        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=2)
-        context.scene.frame_set(context.scene.frame_current)
-        bpy.context.view_layer.update()
-        time.sleep(0.05)
-
-
-# --- eigentlicher Operator ---------------------------------------------------
+# … (_count_all_markers, _tracks_with_gaps, _duplicate_selected_tracks) bleiben wie bei dir …
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
@@ -52,17 +23,12 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         return context.space_data and context.space_data.clip
 
     def _one_pass(self, context, area, region, space, *, do_split=False):
-        """
-        Ein Cleanup-Pass:
-          1) Grid-Error-Cleanup (3-Frame-Ausreißer → Tripel löschen)
-          2) Optional (nur im 1. Pass): Lücken-Tracks duplizieren & splitten
-        """
         clip   = space.clip
         tracks = clip.tracking.tracks
 
-        before_total = _count_all_markers(tracks)
+        before_total = sum(len(getattr(t, "markers", [])) for t in tracks)
 
-        # 1) Grid-Error-Cleanup
+        # 1) Grid-Error-Cleanup (einmal)
         grid_deleted = 0
         try:
             grid_deleted = grid_error_cleanup(context, space, verbose=self.verbose)
@@ -70,7 +36,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             if self.verbose:
                 print(f"[GridError] übersprungen: {e}")
 
-        # 2) Nur im ersten Pass splitten
+        # 2) Optional (nur im 1. Pass) Split der Gaps
         if do_split:
             original_tracks = _tracks_with_gaps(tracks)
             if original_tracks:
@@ -92,41 +58,39 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                 )
 
         bpy.context.view_layer.update()
-        after_total = _count_all_markers(tracks)
+        after_total = sum(len(getattr(t, "markers", [])) for t in tracks)
 
-        changed = int(grid_deleted)  # Anzahl gelöschter Marker (kann 0 sein)
+        changed = int(grid_deleted)
         if self.verbose:
             print(f"[Cleanup] grid_deleted={grid_deleted}, "
                   f"markers_before={before_total}, markers_after={after_total}, changed={changed}")
         return changed
 
-# Operator/clean_error_tracks.py  – nur die execute() austauschen
-def execute(self, context):
-    # Clip-Editor-Kontext suchen
-    clip_area = clip_region = clip_space = None
-    for area in context.screen.areas:
-        if area.type == 'CLIP_EDITOR':
-            for region in area.regions:
-                if region.type == 'WINDOW':
-                    clip_area = area
-                    clip_region = region
-                    clip_space = area.spaces.active
-                    break
+    def execute(self, context):
+        # Clip-Editor-Kontext suchen (sonst poll fail)
+        clip_area = clip_region = clip_space = None
+        for area in context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        clip_area = area
+                        clip_region = region
+                        clip_space = area.spaces.active
+                        break
 
-    if not clip_space:
-        self.report({'ERROR'}, "Kein gültiger CLIP_EDITOR-Kontext gefunden.")
-        return {'CANCELLED'}
+        if not clip_space:
+            self.report({'ERROR'}, "Kein gültiger CLIP_EDITOR-Kontext gefunden.")
+            return {'CANCELLED'}
 
-    # 👉 nur EIN Pass: Grid-Error-Cleanup (+ Split)
-    changed = self._one_pass(
-        context,
-        clip_area, clip_region, clip_space,
-        do_split=True   # Split weiterhin genau einmal
-    )
+        # 👉 genau 1 Pass: Grid-Cleanup + optional Split
+        changed = self._one_pass(
+            context,
+            clip_area, clip_region, clip_space,
+            do_split=True
+        )
 
-    if self.verbose:
-        print(f"[Cleanup] single pass finished, changed={changed}")
+        if self.verbose:
+            print(f"[Cleanup] single pass finished, changed={changed}")
 
-    self.report({'INFO'}, f"Cleanup beendet. Änderungen: {changed}")
-    return {'FINISHED'}
-
+        self.report({'INFO'}, f"Cleanup beendet. Änderungen: {changed}")
+        return {'FINISHED'}
