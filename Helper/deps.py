@@ -1,35 +1,31 @@
-# Helper/deps.py
+# tracking-efficent/Helper/deps.py
 import sys, subprocess, importlib, os
 from pathlib import Path
 
-def ensure_vendor_path():
-    base = Path(__file__).resolve().parent
-    vendor = base / "vendor"
-    vendor.mkdir(parents=True, exist_ok=True)
-    if str(vendor) not in sys.path:
-        sys.path.insert(0, str(vendor))
-    return vendor
-
 def _pip(args):
-    cmd = [sys.executable, "-m", "pip"] + args
-    return subprocess.call(cmd)
+    # Vermeidet den Versionshinweis und reduziert Rauschen
+    base = [sys.executable, "-m", "pip"]
+    return subprocess.call(base + args + ["--disable-pip-version-check"])
 
-def ensure_dependencies(*, upgrade_pip=False, upgrade_psutil=True):
+def ensure_vendor_path():
+    vendor = Path(__file__).resolve().parent / "vendor"
+    vendor.mkdir(parents=True, exist_ok=True)
+    vp = str(vendor)
+    if vp not in sys.path:
+        sys.path.insert(0, vp)
+    return vp
+
+def ensure_dependencies(*, upgrade_pip=True, upgrade_psutil=True):
     vendor = ensure_vendor_path()
 
     if upgrade_pip:
-        _pip(["install", "--upgrade", "pip"])
+        # pip selbst upgraden (global in der eingebetteten Blender-Python)
+        _pip(["install", "--upgrade", "pip", "-q"])
 
     if upgrade_psutil:
-        try:
-            import psutil  # noqa: F401
-        except Exception:
-            rc = _pip(["install", "--upgrade", "--target", str(vendor), "psutil>=5.9"])
-            importlib.invalidate_caches()
-            if str(vendor) not in sys.path:
-                sys.path.insert(0, str(vendor))
-            if rc != 0:
-                raise RuntimeError("psutil-Installation fehlgeschlagen")
-        else:
-            # Optional: dennoch in vendor spiegeln, wenn Systempaket unerwünscht
-            pass
+        # Immer gegen PyPI prüfen und neueste nehmen
+        rc = _pip(["install", "--upgrade", "--upgrade-strategy", "eager",
+                   "--no-cache-dir", "--target", vendor, "psutil"])
+        importlib.invalidate_caches()
+        # psutil laden (nun aus vendor)
+        import psutil  # noqa: F401
