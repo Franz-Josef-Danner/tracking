@@ -102,6 +102,20 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             pass
         _ui_ping(context, f"Grid-Error-Cleanup fertig (gelöscht: {grid_deleted})")
 
+        try:
+            _ui_ping(context, "Kurze Segmente löschen …")
+            with context.temp_override(area=area, region=region, space_data=space):
+                # 1) Zu kurze Segmente entfernen (Schwelle: scene.frames_track)
+                bpy.ops.clip.clean_short_tracks('EXEC_DEFAULT', action='DELETE_SEGMENTS')
+                # 2) Tracks ohne verbleibende Segmente entfernen (0-Frames)
+                bpy.ops.clip.clean_tracks('EXEC_DEFAULT', frames=1, error=0.0, action='DELETE_TRACK')
+            _ui_ping(context, "Short-Track-Cleanup abgeschlossen.")
+        except Exception as e:
+            if self.verbose:
+                print(f"[CleanShortTracks] übersprungen: {e}")
+
+
+        
         if do_split:
             while True:
                 # Tracks mit Lücken frisch ermitteln
