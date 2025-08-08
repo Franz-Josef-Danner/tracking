@@ -116,59 +116,69 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
 
         # 2) Optional Split der Gaps – wiederholt, bis keine Gaps mehr oder keine Reduktion
         if do_split:
-            # >>> CHANGE START: Split-Loop mit Konvergenz-Check + Failsafe
-            max_loops = 10
-            prev_gap_set = set()
-
-            for _ in range(max_loops):
-                # Tracks mit Lücken frisch ermitteln
-                original_tracks = _tracks_with_gaps(tracks)
-                if not original_tracks:
-                    break
-
-                gap_set = {t.name for t in original_tracks}
-                # Keine Fortschritte seit letztem Durchlauf → abbrechen
-                if gap_set == prev_gap_set:
-                    if self.verbose:
-                        print("[SplitLoop] keine weitere Reduktion der Gaps – breche ab.")
-                    break
-                prev_gap_set = gap_set
-
-                _ui_ping(context, "Split von Tracks mit Lücken …")
-                existing_names = {t.name for t in tracks}
-
-                # Auswahl vorbereiten
-                for t in tracks:
-                    t.select = False
-                for t in original_tracks:
-                    t.select = True
-
-                # Duplizieren der ausgewählten Tracks
-                _duplicate_selected_tracks(context, area, region, space)
-
-                # neue Duplikate bestimmen
-                all_names = {t.name for t in tracks}
-                new_names = all_names - existing_names
-                new_tracks = [t for t in tracks if t.name in new_names]
-
-                if not new_tracks:
-                    # Nichts dupliziert → keine weitere Arbeit
-                    break
-
-                # Pfade entsprechend Segmenten beschneiden
-                clear_path_on_split_tracks_segmented(
-                    context, area, region, space,
-                    original_tracks, new_tracks
-                )
-
-                # Progress & UI
-                step_idx += 1
-                try:
-                    wm.progress_update(min(step_idx, steps_total))
-                except Exception:
-                    pass
-                _ui_ping(context, "Split abgeschlossen.")
+            # >>> CHANGE START: Split-Loop mit 'processed' Guard
+            if do_split:
+                max_loops = 10
+                processed_names = set()
+                prev_gap_set = set()
+            
+                for _ in range(max_loops):
+                    # Nur Tracks mit Gaps, die wir noch NICHT verarbeitet haben
+                    gap_tracks = _tracks_with_gaps(tracks)
+                    original_tracks = [t for t in gap_tracks if t.name not in processed_names]
+            
+                    if not original_tracks:
+                        break
+            
+                    gap_set = {t.name for t in original_tracks}
+            
+                    # Keine sichtbare Reduktion vs. letzter Durchlauf → Abbruch
+                    if gap_set == prev_gap_set:
+                        if self.verbose:
+                            print("[SplitLoop] keine weitere Reduktion – breche ab.")
+                        break
+                    prev_gap_set = gap_set
+            
+                    _ui_ping(context, "Split von Tracks mit Lücken …")
+                    existing_names = {t.name for t in tracks}
+            
+                    # Auswahl
+                    for t in tracks:
+                        t.select = False
+                    for t in original_tracks:
+                        t.select = True
+            
+                    # Duplizieren
+                    _duplicate_selected_tracks(context, area, region, space)
+            
+                    # neue Duplikate bestimmen
+                    all_names = {t.name for t in tracks}
+                    new_names = all_names - existing_names
+                    new_tracks = [t for t in tracks if t.name in new_names]
+            
+                    if not new_tracks:
+                        # Nichts dupliziert → nächste Iteration
+                        processed_names |= gap_set
+                        continue
+            
+                    # Pfade gemäß Segmenten beschneiden
+                    clear_path_on_split_tracks_segmented(
+                        context, area, region, space,
+                        original_tracks, new_tracks
+                    )
+            
+                    # Diese Originale als "bearbeitet" markieren
+                    processed_names |= gap_set
+            
+                    # Progress/UI (unverändert)
+                    step_idx += 1
+                    try:
+                        wm.progress_update(min(step_idx, steps_total))
+                    except Exception:
+                        pass
+                    _ui_ping(context, "Split abgeschlossen.")
             # >>> CHANGE END
+
 
         after_total = _count_all_markers(tracks)
         changed = int(grid_deleted)
