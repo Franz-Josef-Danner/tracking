@@ -102,26 +102,48 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             pass
         _ui_ping(context, f"Grid-Error-Cleanup fertig (gelöscht: {grid_deleted})")
 
-        # 2) Optional Split der Gaps
-        if do_split and original_tracks:
-            _ui_ping(context, "Split von Tracks mit Lücken …")
-            existing_names = {t.name for t in tracks}
-            for t in tracks:
-                t.select = False
-            for t in original_tracks:
-                t.select = True
+        if do_split:
+            while True:
+                # Tracks mit Lücken frisch ermitteln
+                original_tracks = _tracks_with_gaps(tracks)
+                if not original_tracks:
+                    break
+        
+                _ui_ping(context, "Split von Tracks mit Lücken …")
+                existing_names = {t.name for t in tracks}
+        
+                # Auswahl vorbereiten
+                for t in tracks:
+                    t.select = False
+                for t in original_tracks:
+                    t.select = True
+        
+                # Duplizieren der ausgewählten Tracks
+                _duplicate_selected_tracks(context, area, region, space)
+        
+                # neue Duplikate bestimmen
+                all_names = {t.name for t in tracks}
+                new_names = all_names - existing_names
+                new_tracks = [t for t in tracks if t.name in new_names]
+        
+                if not new_tracks:
+                    # Nichts dupliziert → keine weitere Arbeit
+                    break
+        
+                # Pfade entsprechend Segmenten beschneiden
+                clear_path_on_split_tracks_segmented(
+                    context, area, region, space,
+                    original_tracks, new_tracks
+                )
+        
+                # Progress & UI (Steps bleiben wie definiert – kein Refactor)
+                step_idx += 1
+                try:
+                    wm.progress_update(min(step_idx, steps_total))
+                except Exception:
+                    pass
+                _ui_ping(context, "Split abgeschlossen.")
 
-            _duplicate_selected_tracks(context, area, region, space)
-
-            all_names = {t.name for t in tracks}
-            new_names = all_names - existing_names
-            new_tracks = [t for t in tracks if t.name in new_names]
-
-            clear_path_on_split_tracks_segmented(
-                context, area, region, space,
-                original_tracks, new_tracks
-            )
-            step_idx += 1
             try:
                 wm.progress_update(step_idx)
             except Exception:
