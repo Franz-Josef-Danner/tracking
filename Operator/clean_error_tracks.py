@@ -93,15 +93,11 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                     original_tracks, new_tracks
                 )
 
-        # 3) Segment-End-Keyframes killen (nur ENDE, Start bleibt)
-        removed_keys = 0
-        try:
-            removed_keys = remove_segment_boundary_keys(
-                list(tracks), delete_start=False, delete_end=True
-            )
-        except Exception as e:
-            if self.verbose:
-                print(f"[BoundaryKeys] übersprungen: {e}")
+        # 3) alle kayframes löschen
+        deleted_keys_all = 0
+        if self.wipe_all_keys:
+            deleted_keys_all = delete_all_keyframes(tracks)
+            print(f"[Keyframes] deleted_all_keyframes={deleted_keys_all}")
 
         # 4) Outside-Segments aufräumen (Guard je 1 Frame)
         muted = deleted = 0
