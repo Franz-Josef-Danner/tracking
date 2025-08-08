@@ -100,34 +100,33 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                   f"markers_before={before_total}, markers_after={after_total}, changed={changed}")
         return changed
 
-    def execute(self, context):
-        # Clip-Editor-Kontext suchen
-        clip_area = clip_region = clip_space = None
-        for area in context.screen.areas:
-            if area.type == 'CLIP_EDITOR':
-                for region in area.regions:
-                    if region.type == 'WINDOW':
-                        clip_area = area
-                        clip_region = region
-                        clip_space = area.spaces.active
-                        break
+# Operator/clean_error_tracks.py  – nur die execute() austauschen
+def execute(self, context):
+    # Clip-Editor-Kontext suchen
+    clip_area = clip_region = clip_space = None
+    for area in context.screen.areas:
+        if area.type == 'CLIP_EDITOR':
+            for region in area.regions:
+                if region.type == 'WINDOW':
+                    clip_area = area
+                    clip_region = region
+                    clip_space = area.spaces.active
+                    break
 
-        if not clip_space:
-            self.report({'ERROR'}, "Kein gültiger CLIP_EDITOR-Kontext gefunden.")
-            return {'CANCELLED'}
+    if not clip_space:
+        self.report({'ERROR'}, "Kein gültiger CLIP_EDITOR-Kontext gefunden.")
+        return {'CANCELLED'}
 
-        total_changes = 0
-        # 4 Durchläufe – Split nur im ersten
-        for i in range(1, 5):
-            changed = self._one_pass(
-                context, clip_area, clip_region, clip_space,
-                do_split=(i == 1)
-            )
-            total_changes += changed
-            if i == 1 and changed == 0:
-                if self.verbose:
-                    print("[Cleanup] Keine Änderungen im 1. Pass – breche ab.")
-                break
+    # 👉 nur EIN Pass: Grid-Error-Cleanup (+ Split)
+    changed = self._one_pass(
+        context,
+        clip_area, clip_region, clip_space,
+        do_split=True   # Split weiterhin genau einmal
+    )
 
-        self.report({'INFO'}, f"Cleanup beendet. Total changes: {total_changes}")
-        return {'FINISHED'}
+    if self.verbose:
+        print(f"[Cleanup] single pass finished, changed={changed}")
+
+    self.report({'INFO'}, f"Cleanup beendet. Änderungen: {changed}")
+    return {'FINISHED'}
+
