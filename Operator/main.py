@@ -1,7 +1,9 @@
-# Operator/main.py
+# main.py (überarbeitet)
 import bpy
-from bpy.types import Operator
-
+import time
+from ..Helper.find_low_marker_frame import find_low_marker_frame
+from ..Helper.jump_to_frame import jump_to_frame
+from ..Helper.properties import RepeatEntry  # <- wichtig!
 
 # ---------- Helfer -----------------------------------------------------------
 
@@ -48,19 +50,48 @@ def _find_frame_with_too_few_markers(scene, clip, min_markers, log_stride=25):
 
 # ---------- Main-Operator ----------------------------------------------------
 
-class CLIP_OT_main(Operator):
-    """Orchestriert: tracking_pipeline → Markercheck (Loop) → clean_error_tracks"""
+class CLIP_OT_main(bpy.types.Operator):
     bl_idname = "clip.main"
-    bl_label = "Tracking + Cleanup (Main)"
+    bl_label = "Main Setup (Modal)"
     bl_options = {'REGISTER', 'UNDO'}
 
-    min_markers: bpy.props.IntProperty(
-        name="Min. Marker pro Frame",
-        default=20,
-        min=0,
-        soft_max=200
-    )
+    _timer = None
+    _step = 0
 
+    def execute(self, context):
+        scene = context.scene
+    
+        # Reset aller relevanten Szene-Variablen
+        scene["pipeline_status"] = ""
+        scene["marker_min"] = 0
+        scene["marker_max"] = 0
+        scene["goto_frame"] = -1
+    
+        if hasattr(scene, "repeat_frame"):
+            scene.repeat_frame.clear()
+    
+        # Optional: Clip-Zustand prüfen
+        clip = context.space_data.clip
+        if clip is None or not clip.tracking:
+            self.report({'WARNING'}, "Kein gültiger Clip oder Tracking-Daten vorhanden.")
+            return {'CANCELLED'}
+    
+        print("🚀 Starte Tracking-Vorbereitung...")
+    
+        # 🔧 EINMALIGE Vorbereitung vor Zyklusstart
+        bpy.ops.clip.tracker_settings('EXEC_DEFAULT')
+        bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
+    
+        print("🚀 Starte Tracking-Pipeline...")
+        bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
+        print("⏳ Warte auf Abschluss der Pipeline...")
+    
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.5, window=context.window)
+        wm.modal_handler_add(self)
+        self._step = 0
+    
+        return {'RUNNING_MODAL'}
     verbose: bpy.props.BoolProperty(
         name="Verbose",
         default=True
