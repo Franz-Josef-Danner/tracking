@@ -127,7 +127,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         after_total = _count_all_markers(tracks)
     
         #changed = (grid_deleted + deleted_keys_all + muted + deleted)
-        changed = (grid_deleted + deleted_keys_all + deleted)
+        changed = (grid_deleted + deleted_keys_all)
     
         # Immer loggen, damit sichtbar ist, ob etwas passiert ist
         print(
