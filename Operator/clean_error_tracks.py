@@ -40,7 +40,7 @@ def _ui_ping(context, text=None, redraw_iters=1):
     wm = context.window_manager
     if text is not None:
         try:
-            wm.status_text_set(text)
+            context.workspace.status_text_set(text)
         except Exception:
             pass
     try:
@@ -164,7 +164,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             context.window.cursor_modal_set('WAIT')
         except Exception:
             pass
-        wm.status_text_set("Error-Cleanup gestartet …")
+        context.workspace.status_text_set("Error-Cleanup gestartet …")
 
         try:
             changed = self._one_pass(
@@ -175,7 +175,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         finally:
             # UI aufräumen
             try:
-                wm.status_text_set(None)
+                context.workspace.status_text_set(None)
             except Exception:
                 pass
             try:
