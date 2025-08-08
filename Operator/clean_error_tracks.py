@@ -102,6 +102,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             pass
         _ui_ping(context, f"Grid-Error-Cleanup fertig (gelöscht: {grid_deleted})")
 
+        # Kurze Segmente löschen, dann leere Tracks entfernen
         try:
             _ui_ping(context, "Kurze Segmente löschen …")
             with context.temp_override(area=area, region=region, space_data=space):
@@ -114,55 +115,61 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             if self.verbose:
                 print(f"[CleanShortTracks] übersprungen: {e}")
 
-
-        
+        # 2) Optional Split der Gaps – wiederholt, bis keine Gaps mehr oder keine Reduktion
         if do_split:
-            while True:
+            # >>> CHANGE START: Split-Loop mit Konvergenz-Check + Failsafe
+            max_loops = 10
+            prev_gap_set = set()
+
+            for _ in range(max_loops):
                 # Tracks mit Lücken frisch ermitteln
                 original_tracks = _tracks_with_gaps(tracks)
                 if not original_tracks:
                     break
-        
+
+                gap_set = {t.name for t in original_tracks}
+                # Keine Fortschritte seit letztem Durchlauf → abbrechen
+                if gap_set == prev_gap_set:
+                    if self.verbose:
+                        print("[SplitLoop] keine weitere Reduktion der Gaps – breche ab.")
+                    break
+                prev_gap_set = gap_set
+
                 _ui_ping(context, "Split von Tracks mit Lücken …")
                 existing_names = {t.name for t in tracks}
-        
+
                 # Auswahl vorbereiten
                 for t in tracks:
                     t.select = False
                 for t in original_tracks:
                     t.select = True
-        
+
                 # Duplizieren der ausgewählten Tracks
                 _duplicate_selected_tracks(context, area, region, space)
-        
+
                 # neue Duplikate bestimmen
                 all_names = {t.name for t in tracks}
                 new_names = all_names - existing_names
                 new_tracks = [t for t in tracks if t.name in new_names]
-        
+
                 if not new_tracks:
                     # Nichts dupliziert → keine weitere Arbeit
                     break
-        
+
                 # Pfade entsprechend Segmenten beschneiden
                 clear_path_on_split_tracks_segmented(
                     context, area, region, space,
                     original_tracks, new_tracks
                 )
-        
-                # Progress & UI (Steps bleiben wie definiert – kein Refactor)
+
+                # Progress & UI
                 step_idx += 1
                 try:
                     wm.progress_update(min(step_idx, steps_total))
                 except Exception:
                     pass
                 _ui_ping(context, "Split abgeschlossen.")
-
-            try:
-                wm.progress_update(step_idx)
-            except Exception:
-                pass
-            _ui_ping(context, "Split abgeschlossen.")
+            # >>> CHANGE END
 
         after_total = _count_all_markers(tracks)
         changed = int(grid_deleted)
@@ -200,7 +207,10 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             context.window.cursor_modal_set('WAIT')
         except Exception:
             pass
-        context.workspace.status_text_set("Error-Cleanup gestartet …")
+        try:
+            context.workspace.status_text_set("Error-Cleanup gestartet …")
+        except Exception:
+            pass
 
         try:
             changed = self._one_pass(
