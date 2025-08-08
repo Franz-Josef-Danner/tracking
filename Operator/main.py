@@ -5,51 +5,6 @@ from ..Helper.find_low_marker_frame import find_low_marker_frame
 from ..Helper.jump_to_frame import jump_to_frame
 from ..Helper.properties import RepeatEntry  # <- wichtig!
 
-# ---------- Helfer -----------------------------------------------------------
-
-def _find_clip_context(context):
-    """Finde gültigen CLIP_EDITOR-UI-Kontext (area, region, space)."""
-    for area in context.screen.areas:
-        if area.type == 'CLIP_EDITOR':
-            for region in area.regions:
-                if region.type == 'WINDOW':
-                    return area, region, area.spaces.active
-    return None, None, None
-
-
-def _count_active_markers_at_frame(clip, frame):
-    """Zählt Marker, die im Frame existieren und nicht gemutet sind."""
-    if not clip:
-        return 0
-    tracks = clip.tracking.tracks
-    c = 0
-    for t in tracks:
-        m = t.markers.find_frame(frame)
-        if m and not getattr(m, "mute", False):
-            c += 1
-    return c
-
-
-def _find_frame_with_too_few_markers(scene, clip, min_markers, log_stride=25):
-    """Gibt ersten Frame mit weniger als min_markers aktiven Markern zurück (oder None)."""
-    if not clip:
-        return None
-
-    start, end = scene.frame_start, scene.frame_end
-    print(f"[MarkerCheck] Erwartete Mindestmarker pro Frame: {min_markers}")
-
-    for f in range(start, end + 1):
-        cnt = _count_active_markers_at_frame(clip, f)
-        if (f % log_stride == 0) or f in (start, end):
-            print(f"[MarkerCheck] Frame {f}: {cnt} aktive Marker")
-        if cnt < min_markers:
-            print(f"[MarkerCheck] → Zu wenige Marker in Frame {f}")
-            return f
-    return None
-
-
-# ---------- Main-Operator ----------------------------------------------------
-
 class CLIP_OT_main(bpy.types.Operator):
     bl_idname = "clip.main"
     bl_label = "Main Setup (Modal)"
@@ -92,42 +47,12 @@ class CLIP_OT_main(bpy.types.Operator):
         self._step = 0
     
         return {'RUNNING_MODAL'}
-    verbose: bpy.props.BoolProperty(
-        name="Verbose",
-        default=True
-    )
-
-    _timer = None
-    _state = "IDLE"  # IDLE -> RUN_PIPELINE -> WAIT_PIPELINE -> CHECK -> CLEANUP -> DONE
-
-    def execute(self, context):
-        
-
-        # Status-Flags zurücksetzen
-        scene = context.scene
-        scene["pipeline_status"] = ""
-        scene["detect_status"] = ""
-        scene["bidirectional_status"] = ""
-
-        # Modal-Timer starten
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(0.2, window=context.window)
-        wm.modal_handler_add(self)
-
-        # Pipeline anwerfen
-        self._state = "RUN_PIPELINE"
-        if self.verbose:
-            print("[Main] Starte Pipeline…")
-        with context.temp_override(area=area, region=region, space_data=space):
-            bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
-
-        return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
         if event.type == 'ESC':
             self.report({'WARNING'}, "Tracking-Setup manuell abgebrochen.")
             context.window_manager.event_timer_remove(self._timer)
-
+    
             # 🔁 Kompletter Reset der Szenevariablen
             scene = context.scene
             scene["pipeline_status"] = ""
@@ -214,12 +139,3 @@ class CLIP_OT_main(bpy.types.Operator):
             return {'PASS_THROUGH'}
 
         return {'RUNNING_MODAL'}
-
-    # --------- intern --------------------------------------------------------
-
-    def _finish(self, context, cancelled=False):
-        wm = context.window_manager
-        if self._timer:
-            wm.event_timer_remove(self._timer)
-            self._timer = None
-        return {'CANCELLED' if cancelled else 'FINISHED'}
