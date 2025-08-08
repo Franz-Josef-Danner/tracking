@@ -44,6 +44,5 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
             bpy.ops.clip.clear_track_path(action='UPTO', clear_active=True)
 
         # sanfte UI-Aktualisierung
-        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=2)
+        bpy.ops.wm.redraw_timer(type='DRAW', iterations=1)
         bpy.context.view_layer.update()
-        time.sleep(0.03)
