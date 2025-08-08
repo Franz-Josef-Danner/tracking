@@ -73,7 +73,7 @@ class CLIP_OT_bidirectional_track(Operator):
 
 
         if self._stable_count >= 2:
-            bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
+            #bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
 
             # Rückmeldung an Pipeline
             context.scene["bidirectional_status"] = "done"
