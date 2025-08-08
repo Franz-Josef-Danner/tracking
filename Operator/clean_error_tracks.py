@@ -4,10 +4,7 @@ from ..Helper.grid_error_cleanup import grid_error_cleanup
 from ..Helper.process_marker_path import get_track_segments
 from ..Helper.keyframe_ops import delete_all_keyframes
 from ..Helper.clear_path_on_split_tracks_segmented import clear_path_on_split_tracks_segmented
-from ..Helper.mute_invalid_segments import (
-    remove_segment_boundary_keys,
-    prune_outside_segments,
-)
+# HINWEIS: Step #4 entfernt -> prune_outside_segments nicht mehr importieren
 
 # --- kleine Helfer -----------------------------------------------------------
 
@@ -46,7 +43,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     # Schalter für Logs
     verbose: bpy.props.BoolProperty(default=True)
 
-    # ⚠️ Neu: einmaliges komplettes Keyframe-Wipen nach dem ersten Split-Pass
+    # Optional: einmaliges komplettes Keyframe-Wipen nach dem ersten Split-Pass
     wipe_all_keys: bpy.props.BoolProperty(
         name="Wipe all keyframes after split (once)",
         description="Nach dem ersten Split-Pass alle Keyframes in allen Tracks löschen",
@@ -63,14 +60,14 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
           1) Grid-Error-Cleanup (3-Frame-Ausreißer → Tripel löschen)
           2) Optional: Lücken-Tracks duplizieren & splitten (nur im 1. Pass)
           3) Optional (nur im 1. Pass): ALLE Keyframes löschen
-          4) Bereiche außerhalb der Segmente mit Guard muten/löschen
+          -- Step #4 (Outside-Segments prune) ist deaktiviert --
         """
         scene  = context.scene
         clip   = space.clip
         tracks = clip.tracking.tracks
-    
+
         before_total = _count_all_markers(tracks)
-    
+
         # 1) Grid-Error-Cleanup
         grid_deleted = 0
         try:
@@ -78,7 +75,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         except Exception as e:
             if self.verbose:
                 print(f"[GridError] übersprungen: {e}")
-    
+
         # 2) Nur im ersten Pass splitten
         if do_split:
             original_tracks = _tracks_with_gaps(tracks)
@@ -88,18 +85,18 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                     t.select = False
                 for t in original_tracks:
                     t.select = True
-    
+
                 _duplicate_selected_tracks(context, area, region, space)
-    
+
                 all_names = {t.name for t in tracks}
                 new_names = all_names - existing_names
                 new_tracks = [t for t in tracks if t.name in new_names]
-    
+
                 clear_path_on_split_tracks_segmented(
                     context, area, region, space,
                     original_tracks, new_tracks
                 )
-    
+
         # 3) ALLE Keyframes löschen (nur im ersten Pass, direkt nach dem Split)
         deleted_keys_all = 0
         if do_split and getattr(self, "wipe_all_keys", False):
@@ -110,33 +107,22 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                     print(f"[Keyframes] delete_all_keyframes Fehler: {e}")
             if self.verbose:
                 print(f"[Keyframes] deleted_all_keyframes={deleted_keys_all}")
-    
-        #4) Outside-Segments aufräumen (Guard je 1 Frame)
-        muted = deleted = 0
-        try:
-            muted, deleted = prune_outside_segments(
-                list(tracks),
-                guard_before=1, guard_after=1,
-                action=action
-            )
-        except Exception as e:
-            if self.verbose:
-                print(f"[PruneOutside] übersprungen: {e}")
-    
+
+        # -- Step #4 entfernt: kein prune_outside_segments-Aufruf mehr --
+
         bpy.context.view_layer.update()
         after_total = _count_all_markers(tracks)
-    
-        changed = (grid_deleted + deleted_keys_all + muted + deleted)
-    
-        # Immer loggen, damit sichtbar ist, ob etwas passiert ist
+
+        # Änderungssumme ohne 'muted/deleted' aus Step #4
+        changed = (grid_deleted + deleted_keys_all)
+
+        # Log
         print(
             f"[Cleanup] pass action={action}: "
             f"grid_deleted={grid_deleted}, deleted_all_keys={deleted_keys_all}, "
-            f"muted={muted}, deleted={deleted}, "
             f"markers_before={before_total}, markers_after={after_total}, changed={changed}"
         )
         return changed
-
 
     def execute(self, context):
         # Clip-Editor-Kontext suchen
@@ -166,8 +152,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             )
             total_changes += changed
 
-            # Fail-safe: Wenn im ersten Pass *nichts* geändert wurde,
-            # macht Weiterlaufen keinen Sinn → abbrechen.
+            # Fail-safe: Wenn im ersten Pass nichts geändert wurde → abbrechen
             if i == 1 and changed == 0:
                 print("[Cleanup] Keine Änderungen im 1. Pass – breche weiteren Cleanup ab.")
                 break
