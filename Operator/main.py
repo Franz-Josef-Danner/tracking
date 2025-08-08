@@ -44,7 +44,14 @@ def _find_clip_context(context):
         bpy.ops.clip.tracker_settings('EXEC_DEFAULT')
         bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
     
-        bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
+        clip_area, clip_region, clip_space = _find_clip_context(context)
+        if clip_space:
+            with context.temp_override(area=clip_area, region=clip_region, space_data=clip_space):
+                context.scene.frame_set(context.scene.frame_current)  # sicherstellen, dass der aktuelle Frame gilt
+                bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
+        else:
+            bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')  # Fallback
+
     
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.5, window=context.window)
