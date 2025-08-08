@@ -26,9 +26,10 @@ def _ui_blink(context, *, swap=False):
 
 def _duplicate_once_invoke(context, area, region, space, source_track):
     """
-    Dupliziert genau EINEN Track via Copy/Paste mit INVOKE_DEFAULT
-    (sichtbares UI-Verhalten). Gibt die neue Track-Instanz zurück oder None.
-    Erwartung: Wir isolieren die Selektion hier selbst.
+    Dupliziert genau EINEN Track via Copy/Paste mit INVOKE_DEFAULT (sichtbares UI-Verhalten).
+    Robuste Variante: wartet kurz auf das Anlegen der Kopie; einmaliger EXEC-Fallback.
+    Gibt die neue Track-Instanz zurück oder None.
+    Erwartung: Selektion wird hier isoliert.
     """
     tracks = space.clip.tracking.tracks
     with context.temp_override(area=area, region=region, space_data=space):
@@ -38,6 +39,13 @@ def _duplicate_once_invoke(context, area, region, space, source_track):
         source_track.select = True
 
         before = {t.name for t in tracks}
+
+        # Manche Ops adressieren 'active'
+        try:
+            space.clip.tracking.tracks.active = source_track
+        except Exception:
+            pass
+
         # UI-Feedback beim Kopieren/Einfügen
         try:
             bpy.ops.clip.copy_tracks('INVOKE_DEFAULT')
@@ -47,8 +55,26 @@ def _duplicate_once_invoke(context, area, region, space, source_track):
         except Exception:
             return None
 
-        after = {t.name for t in tracks}
-        new_names = list(after - before)
+        # Asynchrones UI: kurz warten, bis die Kopie wirklich existiert
+        import time
+        new_names = []
+        for _ in range(25):  # ~0.5 s max bei 20 ms Steps
+            after = {t.name for t in tracks}
+            new_names = list(after - before)
+            if new_names:
+                break
+            _ui_blink(context)  # kleiner Draw, kein Swap
+            time.sleep(0.02)
+
+        # Fallback: synchrones Paste erzwingen
+        if not new_names:
+            try:
+                bpy.ops.clip.paste_tracks('EXEC_DEFAULT')
+                after = {t.name for t in tracks}
+                new_names = list(after - before)
+            except Exception:
+                return None
+
         if not new_names:
             return None
 
@@ -77,7 +103,7 @@ def _trim_to_segment_invoke(context, area, region, space, track, seg_start, seg_
             t.select = False
         track.select = True
 
-        # 1) Nach Segment-Ende löschen
+        # 1) Alles nach Segment-Ende entfernen
         try:
             context.scene.frame_set(seg_end)
             bpy.ops.clip.clear_track_path('INVOKE_DEFAULT',
@@ -87,7 +113,7 @@ def _trim_to_segment_invoke(context, area, region, space, track, seg_start, seg_
         except Exception:
             pass
 
-        # 2) Vor Segment-Beginn löschen
+        # 2) Alles vor Segment-Beginn entfernen
         try:
             context.scene.frame_set(seg_start)
             bpy.ops.clip.clear_track_path('INVOKE_DEFAULT',
@@ -101,7 +127,7 @@ def _trim_to_segment_invoke(context, area, region, space, track, seg_start, seg_
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
     """
     Segment-basierter Split je Original-Track mit sichtbarem UI-Feedback:
-      - Für k Segmente werden k Ziel-Tracks erzeugt (Original + k-1 Duplikate).
+      - Für k Segmente werden k Ziel-Tracks erzeugt (Original + k−1 Duplikate).
       - Duplikation via INVOKE_DEFAULT (Copy/Paste) → sichtbar.
       - Pro Ziel-Track bleibt genau EIN Segment bestehen (Trim via INVOKE_DEFAULT).
     Hinweis: 'new_tracks' wird aus Kompatibilität akzeptiert, hier aber nicht benötigt.
@@ -123,7 +149,7 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
             if not segs:
                 continue
 
-            # Ziel-Container: Original + Duplikate (k-1)
+            # Ziel-Container: Original + Duplikate (k−1)
             k = len(segs)
             targets = [orig]
 
