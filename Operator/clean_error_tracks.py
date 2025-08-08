@@ -6,6 +6,34 @@ from ..Helper.clear_path_on_split_tracks_segmented import clear_path_on_split_tr
 from ..Helper.mute_invalid_segments import remove_segment_boundary_keys, prune_outside_segments
 from ..Helper.grid_error_cleanup import grid_error_cleanup
 
+def execute(self, context):
+    # Clip-Editor-Kontext finden …
+    clip_area = clip_region = clip_space = None
+    for area in context.screen.areas:
+        if area.type == 'CLIP_EDITOR':
+            for region in area.regions:
+                if region.type == 'WINDOW':
+                    clip_area = area
+                    clip_region = region
+                    clip_space = area.spaces.active
+                    break
+    if not clip_space:
+        self.report({'ERROR'}, "Kein gültiger CLIP_EDITOR-Kontext gefunden.")
+        return {'CANCELLED'}
+
+    # >>> HIER: 3-Frame-Grid-Error-Cleanup (einmalig vor allen weiteren Schritten)
+    deleted = grid_error_cleanup(context, clip_space, verbose=False)
+    # (Optional) kurzes, nicht-spammiges Log:
+    print(f"[Cleanup] Grid-Error pass: deleted_markers={deleted}")
+
+    # danach wie gehabt: deine 4 Pässe mute/delete im Wechsel …
+    actions = ("mute", "delete", "mute", "delete")
+    for i, action in enumerate(actions, start=1):
+        print(f"[Cleanup] Pass {i}/4 – {action}")
+        self._one_pass(context, clip_area, clip_region, clip_space, action=action)
+
+    self.report({'INFO'}, "Cleanup fertig (Grid-Error + 4 Pässe).")
+    return {'FINISHED'}
 
 def _tracks_with_gaps(tracks):
     out = []
