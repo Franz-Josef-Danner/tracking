@@ -1,4 +1,4 @@
-# Operator/split_tracks_segmented.py
+# tracking-efficent/Helper/split_tracks_segmented.py
 import time
 import bpy
 from .process_marker_path import get_track_segments
@@ -99,7 +99,7 @@ class CLIP_OT_split_tracks_segmented(bpy.types.Operator):
                         'dup_names': [],
                         'targets'  : [],   # wird nach Duplizierung gefüllt
                         'stage'    : 'dup',
-                        'idx'      : 0,    # für trim: Segment-/Target-Index
+                        'idx'      : 0,
                     })
 
         if not jobs:
@@ -112,12 +112,11 @@ class CLIP_OT_split_tracks_segmented(bpy.types.Operator):
         wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
+    # -------- Duplizieren (INVOKE + Ack + Fallback) --------
     def _dup_one(self, context, job):
-        """Starte eine Duplikation des Original-Tracks (INVOKE + Ack)."""
         space = self._space
         orig = _track_by_name(space, job['orig_name'])
         if not orig:
-            # Original nicht gefunden → Job überspringen
             job['dup_needed'] = 0
             job['stage'] = 'trim'
             return
@@ -127,37 +126,29 @@ class CLIP_OT_split_tracks_segmented(bpy.types.Operator):
         self._dup_prev_names = before
 
         with context.temp_override(area=self._area, region=self._region, space_data=self._space):
-            # Selektion/Active setzen
             _select_only(space, orig)
             try:
                 tr.active = orig
             except Exception:
                 pass
-
-            # INVOKE → sichtbar
             try:
                 bpy.ops.clip.copy_tracks('INVOKE_DEFAULT')
                 _ui_blink(context, swap=True)
                 bpy.ops.clip.paste_tracks('INVOKE_DEFAULT')
                 _ui_blink(context, swap=True)
             except Exception:
-                # kein harter Abbruch – wir probieren im Ack-Fenster EXEC-Fallback
                 pass
 
-        # Ack-Fenster öffnen
-        self._dup_ack_until = time.time() + 1.0  # 1s max
+        self._dup_ack_until = time.time() + 1.0  # 1s
 
     def _dup_ack(self, context, job):
-        """Duplikations-Ack auswerten; bei Bedarf EXEC-Fallback."""
         space = self._space
         tr = _tracks(space)
 
-        # Prüfen, ob neuer Name da ist
         after = {t.name for t in tr}
         new_names = list(after - (self._dup_prev_names or set()))
 
         if new_names:
-            # neuen Track aufnehmen
             new = None
             for t in tr:
                 if t.name in new_names:
@@ -166,22 +157,18 @@ class CLIP_OT_split_tracks_segmented(bpy.types.Operator):
             if new:
                 job['dup_names'].append(new.name)
                 job['dup_needed'] -= 1
-                return True  # Duplizierung erledigt
+                return True
 
-        # timeout noch nicht erreicht → UI tick + weiter warten
         if time.time() < self._dup_ack_until:
             _ui_blink(context, swap=False)
             return False
 
-        # EXEC-Fallback einmal versuchen
         with context.temp_override(area=self._area, region=self._region, space_data=self._space):
             try:
                 bpy.ops.clip.paste_tracks('EXEC_DEFAULT')
             except Exception:
-                # Fallback fehlgeschlagen – gebe auf (kein weiterer Versuch)
                 job['dup_needed'] = 0
 
-        # Nochmals prüfen
         tr = _tracks(space)
         after = {t.name for t in tr}
         new_names = list(after - (self._dup_prev_names or set()))
@@ -194,29 +181,26 @@ class CLIP_OT_split_tracks_segmented(bpy.types.Operator):
             if new:
                 job['dup_names'].append(new.name)
                 job['dup_needed'] -= 1
-        return True  # Ack-Phase abgeschlossen (egal ob erfolgreich oder nicht)
+        return True
 
     def _build_targets(self, job):
-        """Targets = [Original] + Kopien; Reihenfolge 1:1 zu Segmenten."""
         names = [job['orig_name']] + job['dup_names']
-        job['targets'] = names[:len(job['segments'])]  # trimmen nur für vorhandene Ziele
+        job['targets'] = names[:len(job['segments'])]
         job['stage'] = 'trim'
         job['idx'] = 0
         self._trim_target_idx = 0
         self._trim_phase = 'remain'
 
+    # -------- Trimmen (INVOKE + Ack pro Schritt) --------
     def _trim_step(self, context, job):
-        """Ein Trimm-Teilschritt (remain oder upto) auf Ziel-Track i."""
         i = self._trim_target_idx
         if i >= len(job['targets']):
-            # fertig getrimmt
             return True
 
         space = self._space
         name = job['targets'][i]
         target = _track_by_name(space, name)
         if not target:
-            # Ziel existiert nicht mehr → weiter
             self._trim_target_idx += 1
             self._trim_phase = 'remain'
             return False
@@ -234,7 +218,6 @@ class CLIP_OT_split_tracks_segmented(bpy.types.Operator):
                     _ui_blink(context, swap=True)
                 except Exception:
                     pass
-                # nächste Phase für denselben Target
                 self._trim_phase = 'upto'
                 return False
             else:
@@ -246,16 +229,15 @@ class CLIP_OT_split_tracks_segmented(bpy.types.Operator):
                     _ui_blink(context, swap=True)
                 except Exception:
                     pass
-                # Target fertig → nächster
                 self._trim_target_idx += 1
                 self._trim_phase = 'remain'
                 return False
 
+    # -------- Modal-Tick --------
     def modal(self, context, event):
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
 
-        # keine Jobs mehr → Ende
         if not self._jobs:
             self._finish(context)
             self.report({'INFO'}, "Segment-Splitting abgeschlossen.")
@@ -263,27 +245,21 @@ class CLIP_OT_split_tracks_segmented(bpy.types.Operator):
 
         job = self._jobs[0]
 
-        # Stage: Duplizieren
         if job['stage'] == 'dup':
             if job['dup_needed'] > 0:
-                # Duplizierung läuft/ack
                 if self._dup_ack_until == 0:
                     self._dup_one(context, job)
                 else:
                     if self._dup_ack(context, job):
-                        # Ack-Phase beendet → bereit für nächste Duplizierung
                         self._dup_ack_until = 0.0
                 return {'RUNNING_MODAL'}
             else:
-                # Targets bauen und zur Trim-Phase
                 self._build_targets(job)
                 return {'RUNNING_MODAL'}
 
-        # Stage: Trimmen
         if job['stage'] == 'trim':
             done = self._trim_step(context, job)
             if done:
-                # Job fertig → entfernen
                 self._jobs.pop(0)
             return {'RUNNING_MODAL'}
 
