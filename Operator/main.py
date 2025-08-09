@@ -1,13 +1,25 @@
 # Operator/main.py
-import bpy
-import time
-from ..Helper.find_low_marker_frame import find_low_marker_frame
-from ..Helper.jump_to_frame import jump_to_frame
-from ..Helper.properties import RepeatEntry  # bleibt importiert, falls dein UI das braucht
+# -*- coding: utf-8 -*-
 
-def _get_clip_editor_ctx(context):
-    """Finde CLIP_EDITOR area/region/space für temp_override."""
-    for area in context.screen.areas:
+import bpy
+from bpy.types import Operator
+
+# Bestehende Operatoren / Helper, die es im Add-on bereits gibt
+# (wichtig: wir rufen nur, was schon existiert)
+from .clean_error_tracks import CLIP_OT_clean_error_tracks  # nur für Registrierungssicherheit
+from ..Helper.solve_camera_helper import solve_camera_helper
+
+
+# -----------------------------------------------------------
+# Kontext-Helfer
+# -----------------------------------------------------------
+
+def _find_clip_editor_ctx(context):
+    """Liefert (area, region, space) eines sichtbaren CLIP_EDITOR oder (None, None, None)."""
+    win = context.window
+    if not win or not win.screen:
+        return None, None, None
+    for area in win.screen.areas:
         if area.type == 'CLIP_EDITOR':
             for region in area.regions:
                 if region.type == 'WINDOW':
@@ -15,142 +27,131 @@ def _get_clip_editor_ctx(context):
     return None, None, None
 
 
-class CLIP_OT_main(bpy.types.Operator):
-    bl_idname = "clip.main"
-    bl_label = "Main Setup (Modal)"
+def _override_for_clip(context):
+    """Erstellt ein Override-Dict für Clip-Operatoren oder None."""
+    area, region, space = _find_clip_editor_ctx(context)
+    if not space or not getattr(space, "clip", None):
+        return None
+    ov = context.copy()
+    ov.update({
+        "area": area,
+        "region": region,
+        "space_data": space,
+        "edit_movieclip": space.clip,
+    })
+    return ov
+
+
+# -----------------------------------------------------------
+# Pipeline (synchron)
+# -----------------------------------------------------------
+
+def _run_pipeline(context):
+    """
+    Führt die bestehende Tracking/Cleanup-Pipeline aus.
+    Minimal-invasive Orchestrierung:
+      1) Clean-Error-Tracks (ruft intern Grid/Short-Segment/Split-Trim)
+      2) Kamera-Solve per Helper (am Ende)
+    """
+    override = _override_for_clip(context)
+    if override is None:
+        raise RuntimeError("Kein aktiver CLIP_EDITOR mit Movie Clip gefunden.")
+
+    # 1) Error-/Segment-Cleanup
+    #    Hinweis: wir nutzen denselben Kontext wie die UI, keine Modalität.
+    try:
+        print("[Main] Starte clean_error_tracks …")
+        # Übergibt 'verbose' nur, wenn die Signatur es vorsieht; robust mit **kwargs
+        bpy.ops.clip.clean_error_tracks(override, 'EXEC_DEFAULT', verbose=True)
+        print("[Main] clean_error_tracks abgeschlossen.")
+    except TypeError:
+        # Falls ältere Signatur ohne 'verbose'
+        bpy.ops.clip.clean_error_tracks(override, 'EXEC_DEFAULT')
+        print("[Main] clean_error_tracks abgeschlossen. (ohne verbose)")
+    except Exception as e:
+        print(f"[Main] clean_error_tracks Exception: {e}")
+
+    # 2) Kamera-Solve (neu)
+    try:
+        print("[Main] Starte Solve …")
+        solve_res = solve_camera_helper(bpy.context)
+        print(f"[Main] Solve done: {solve_res}")
+    except Exception as e:
+        print(f"[Main] Solve Exception: {e}")
+
+    return {'FINISHED'}
+
+
+# -----------------------------------------------------------
+# Operatoren (mehrere Namen für maximale Kompatibilität)
+# -----------------------------------------------------------
+
+class CLIP_OT_pipeline_main(Operator):
+    """Tracking-Pipeline (synchron) inkl. Solve am Ende."""
+    bl_idname = "clip.pipeline_main"
+    bl_label = "Pipeline Main"
     bl_options = {'REGISTER', 'UNDO'}
 
-    _timer = None
-    _step = 0
+    def execute(self, context):
+        try:
+            _run_pipeline(context)
+        except Exception as e:
+            self.report({'ERROR'}, str(e))
+            return {'CANCELLED'}
+        return {'FINISHED'}
 
-    @classmethod
-    def poll(cls, context):
-        # Start nur aus dem CLIP_EDITOR mit geladenem Clip
-        return (
-            getattr(context, "space_data", None) and
-            getattr(context.space_data, "type", "") == 'CLIP_EDITOR' and
-            getattr(context.space_data, "clip", None) is not None
-        )
+
+class CLIP_OT_tracking_pipeline(Operator):
+    """Alias-Operator für vorhandene UI/Shortcuts."""
+    bl_idname = "clip.tracking_pipeline"
+    bl_label = "Tracking Pipeline"
+    bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        scene = context.scene
-
-        # Reset aller relevanten Szene-Variablen
-        scene["pipeline_status"] = ""
-        scene["marker_min"] = 0
-        scene["marker_max"] = 0
-        scene["goto_frame"] = -1
-
-        if hasattr(scene, "repeat_frame"):
-            scene.repeat_frame.clear()
-
-        # Clip prüfen
-        clip = context.space_data.clip
-        if clip is None or not clip.tracking:
-            self.report({'WARNING'}, "Kein gültiger Clip oder Tracking-Daten vorhanden.")
+        try:
+            _run_pipeline(context)
+        except Exception as e:
+            self.report({'ERROR'}, str(e))
             return {'CANCELLED'}
+        return {'FINISHED'}
 
-        # Einmalige Vorbereitung vor Zyklusstart
-        bpy.ops.clip.tracker_settings('EXEC_DEFAULT')
-        bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
 
-        # Pipeline starten
-        bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
+class CLIP_OT_main(Operator):
+    """Historischer Name – ruft dieselbe Pipeline auf."""
+    bl_idname = "clip.main"
+    bl_label = "Main"
+    bl_options = {'REGISTER', 'UNDO'}
 
-        # Modal-Loop starten
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(0.5, window=context.window)
-        wm.modal_handler_add(self)
-        self._step = 0
-
-        return {'RUNNING_MODAL'}
-
-    def modal(self, context, event):
-        if event.type == 'ESC':
-            self.report({'WARNING'}, "Tracking-Setup manuell abgebrochen.")
-            context.window_manager.event_timer_remove(self._timer)
-
-            # kompletter Reset
-            scene = context.scene
-            scene["pipeline_status"] = ""
-            scene["marker_min"] = 0
-            scene["marker_max"] = 0
-            scene["goto_frame"] = -1
-            if hasattr(scene, "repeat_frame"):
-                scene.repeat_frame.clear()
+    def execute(self, context):
+        try:
+            _run_pipeline(context)
+        except Exception as e:
+            self.report({'ERROR'}, str(e))
             return {'CANCELLED'}
+        return {'FINISHED'}
 
-        if event.type != 'TIMER':
-            return {'PASS_THROUGH'}
 
-        scene = context.scene
-        repeat_collection = scene.repeat_frame
+# -----------------------------------------------------------
+# Registration
+# -----------------------------------------------------------
 
-        # Warten bis die tracking_pipeline "done" meldet
-        if self._step == 0:
-            if scene.get("pipeline_status", "") == "done":
-                self._step = 1
-            return {'PASS_THROUGH'}
+_CLASSES = (
+    CLIP_OT_pipeline_main,
+    CLIP_OT_tracking_pipeline,
+    CLIP_OT_main,
+)
 
-        # Nach Pipeline → Markercheck → ggf. Frame springen → DANN clean_error_tracks mit gültigem Kontext
-        elif self._step == 1:
-            clip = context.space_data.clip
-            initial_basis = scene.get("marker_basis", 20)
-            marker_basis  = scene.get("marker_basis", 20)
+def register():
+    for cls in _CLASSES:
+        try:
+            bpy.utils.register_class(cls)
+        except ValueError:
+            # Bereits registriert (z. B. beim Hot-Reload)
+            pass
 
-            frame = find_low_marker_frame(clip, marker_basis=marker_basis)
-            if frame is not None:
-                scene["goto_frame"] = frame
-                jump_to_frame(context)
-
-                key = str(frame)
-                entry = next((e for e in repeat_collection if e.frame == key), None)
-                if entry:
-                    entry.count += 1
-                    marker_basis = min(int(marker_basis * 1.1), 100)
-                else:
-                    entry = repeat_collection.add()
-                    entry.frame = key
-                    entry.count = 1
-                    marker_basis = max(int(marker_basis * 0.9), initial_basis)
-
-                # Nächste Aktion: entweder optimieren oder erneut tracken
-                if entry.count >= 10:
-                    bpy.ops.clip.optimize_tracking_modal('INVOKE_DEFAULT')
-                else:
-                    scene["marker_min"] = int(marker_basis * 0.9)
-                    scene["marker_max"] = int(marker_basis * 1.1)
-                    # neue Tracking-Runde starten
-                    bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
-
-                self._step = 0  # zurück, bis wieder "done"
-            else:
-                # Kein Low-Marker-Frame mehr → letzter Cleanup und raus
-                clip_area, clip_region, clip_space = _get_clip_editor_ctx(context)
-                if clip_space and getattr(clip_space, "clip", None):
-                    with context.temp_override(area=clip_area, region=clip_region, space_data=clip_space):
-                        bpy.ops.clip.clean_error_tracks('EXEC_DEFAULT', verbose=True)
-
-                self._step = 2
-            return {'PASS_THROUGH'}
-
-        elif self._step == 2:
-            clip = context.space_data.clip
-            marker_basis = scene.get("marker_basis", 20)
-            frame = find_low_marker_frame(clip, marker_basis=marker_basis)
-            if frame is not None:
-                self._step = 1
-            else:
-                context.window_manager.event_timer_remove(self._timer)
-                # >>> CHANGE START: erst Segmente löschen, dann leere Tracks entfernen
-                # 1) kurze Segmente entfernen (Schwelle: scene.frames_track)
-                bpy.ops.clip.clean_short_tracks('EXEC_DEFAULT', action='DELETE_SEGMENTS')
-                # 2) Tracks ohne verbleibende Marker entsorgen (0-Frames)
-                bpy.ops.clip.clean_tracks('EXEC_DEFAULT', frames=1, error=0.0, action='DELETE_TRACK')
-                # >>> CHANGE END
-                self.report({'INFO'}, "Tracking + Markerprüfung abgeschlossen.")
-                return {'FINISHED'}
-
-            return {'PASS_THROUGH'}
-
-        return {'RUNNING_MODAL'}
+def unregister():
+    for cls in reversed(_CLASSES):
+        try:
+            bpy.utils.unregister_class(cls)
+        except ValueError:
+            pass
