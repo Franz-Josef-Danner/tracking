@@ -90,9 +90,9 @@ def register():
     )
     bpy.types.Scene.error_track = FloatProperty(
         name="Tracking Error",
-        default=0.500,
-        min=0.001,
-        max=1.000,
+        default=2.00,
+        min=1.00,
+        max=4.00,
     )
     try:
         ensure_dependencies(upgrade_pip=True, upgrade_psutil=True)
