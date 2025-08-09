@@ -4,8 +4,7 @@ import time
 
 from ..Helper.grid_error_cleanup import grid_error_cleanup
 from ..Helper.process_marker_path import get_track_segments
-from ..Helper.clear_path_on_split_tracks_segmented import clear_path_on_split_tracks_segmented
-
+from ..Helper.clear_path_on_split_tracks_segmented import split_tracks_segmented_timed
 
 # --- kleine Helfer -----------------------------------------------------------
 
