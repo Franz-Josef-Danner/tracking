@@ -6,6 +6,7 @@ from ..Helper.grid_error_cleanup import grid_error_cleanup
 from ..Helper.process_marker_path import get_track_segments
 from ..Helper.clear_path_on_split_tracks_segmented import split_tracks_segmented_timed
 
+
 # --- kleine Helfer -----------------------------------------------------------
 
 def _count_all_markers(tracks):
@@ -24,35 +25,28 @@ def _tracks_with_gaps(tracks):
             out.append(t)
     return out
 
-def _duplicate_selected_tracks(context, area, region, space):
-    """Selektierte Tracks duplizieren, UI kurz aktualisieren."""
-    with context.temp_override(area=area, region=region, space_data=space):
-        bpy.ops.clip.copy_tracks()
-        bpy.ops.clip.paste_tracks()
-        bpy.ops.wm.redraw_timer(type='DRAW', iterations=1)
-        context.scene.frame_set(context.scene.frame_current)
-        bpy.context.view_layer.update()
-
-def _ui_ping(context, text=None, redraw_iters=1):
-    """Kleine UI-Aktualisierung + optional Statuszeile."""
-    wm = context.window_manager
+def _ui_ping(context, text=None, *, swap=False):
+    """Dezente UI-Aktualisierung + optional Statuszeile, ohne Redraw-Spam."""
     if text is not None:
         try:
             context.workspace.status_text_set(text)
         except Exception:
             pass
     try:
-        bpy.ops.wm.redraw_timer(type='DRAW', iterations=1)
+        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP' if swap else 'DRAW', iterations=1)
     except Exception:
         pass
-    bpy.context.view_layer.update()
+    try:
+        bpy.context.view_layer.update()
+    except Exception:
+        pass
 
 
 # --- eigentlicher Operator ---------------------------------------------------
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
-    bl_label = "Clean Error Tracks (Grid + optional Split)"
+    bl_label = "Clean Error Tracks (Grid + ShortSegments + Timed Split)"
     bl_options = {'REGISTER', 'UNDO'}
 
     verbose: bpy.props.BoolProperty(
@@ -64,19 +58,19 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     def poll(cls, context):
         return context.space_data and context.space_data.clip
 
-    def _one_pass(self, context, area, region, space, *, do_split=False):
+    def _one_pass(self, context, area, region, space, *, do_split=True, split_delay_s=2.0):
         """
         Ein Cleanup-Pass:
           1) Grid-Error-Cleanup (einmal)
-          2) Optional (nur in diesem Pass): Lücken-Tracks duplizieren & splitten
+          2) Kurze Segmente entfernen + leere Tracks löschen
+          3) Optional: segmentiertes Splitten (synchron EXEC_DEFAULT), aber zeitversetzt via Timer
         """
         wm     = context.window_manager
         clip   = space.clip
         tracks = clip.tracking.tracks
 
-        # Progress-Setup (1 Schritt Grid + ggf. 1 Schritt Split)
-        original_tracks = _tracks_with_gaps(tracks) if do_split else []
-        steps_total = 1 + (1 if (do_split and original_tracks) else 0)
+        # Progress (Grid=1, ShortSeg=1, Split=1 (Scheduling))
+        steps_total = 3 if do_split else 2
         step_idx = 0
         try:
             wm.progress_begin(0, steps_total)
@@ -98,84 +92,49 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             wm.progress_update(step_idx)
         except Exception:
             pass
-        _ui_ping(context, f"Grid-Error-Cleanup fertig (gelöscht: {grid_deleted})")
+        _ui_ping(context, f"Grid-Error-Cleanup fertig (gelöscht: {grid_deleted})", swap=True)
 
-        # Kurze Segmente löschen, dann leere Tracks entfernen
+        # 2) Kurze Segmente löschen, dann leere Tracks entfernen
         try:
             _ui_ping(context, "Kurze Segmente löschen …")
             with context.temp_override(area=area, region=region, space_data=space):
-                # 1) Zu kurze Segmente entfernen (Schwelle: scene.frames_track)
+                # a) Zu kurze Segmente entfernen (Schwelle: scene.frames_track)
                 bpy.ops.clip.clean_short_tracks('EXEC_DEFAULT', action='DELETE_SEGMENTS')
-                # 2) Tracks ohne verbleibende Segmente entfernen (0-Frames)
+                # b) Tracks ohne verbleibende Segmente entfernen (0-Frames)
                 bpy.ops.clip.clean_tracks('EXEC_DEFAULT', frames=1, error=0.0, action='DELETE_TRACK')
-            _ui_ping(context, "Short-Track-Cleanup abgeschlossen.")
+            _ui_ping(context, "Short-Track-Cleanup abgeschlossen.", swap=True)
         except Exception as e:
             if self.verbose:
                 print(f"[CleanShortTracks] übersprungen: {e}")
 
-        # 2) Optional Split der Gaps – wiederholt, bis keine Gaps mehr oder keine Reduktion
-        if do_split:
-            # >>> CHANGE START: Split-Loop mit 'processed' Guard
-            if do_split:
-                max_loops = 10
-                processed_names = set()
-                prev_gap_set = set()
-            
-                for _ in range(max_loops):
-                    # Nur Tracks mit Gaps, die wir noch NICHT verarbeitet haben
-                    gap_tracks = _tracks_with_gaps(tracks)
-                    original_tracks = [t for t in gap_tracks if t.name not in processed_names]
-            
-                    if not original_tracks:
-                        break
-            
-                    gap_set = {t.name for t in original_tracks}
-            
-                    # Keine sichtbare Reduktion vs. letzter Durchlauf → Abbruch
-                    if gap_set == prev_gap_set:
-                        if self.verbose:
-                            print("[SplitLoop] keine weitere Reduktion – breche ab.")
-                        break
-                    prev_gap_set = gap_set
-            
-                    _ui_ping(context, "Split von Tracks mit Lücken …")
-                    existing_names = {t.name for t in tracks}
-            
-                    # Auswahl
-                    for t in tracks:
-                        t.select = False
-                    for t in original_tracks:
-                        t.select = True
-            
-                    # Duplizieren
-                    _duplicate_selected_tracks(context, area, region, space)
-            
-                    # neue Duplikate bestimmen
-                    all_names = {t.name for t in tracks}
-                    new_names = all_names - existing_names
-                    new_tracks = [t for t in tracks if t.name in new_names]
-            
-                    if not new_tracks:
-                        # Nichts dupliziert → nächste Iteration
-                        processed_names |= gap_set
-                        continue
-            
-               
-                    with context.temp_override(area=area, region=region, space_data=space):
-                        bpy.ops.clip.split_tracks_segmented('INVOKE_DEFAULT')
-            
-                    # Diese Originale als "bearbeitet" markieren
-                    processed_names |= gap_set
-            
-                    # Progress/UI (unverändert)
-                    step_idx += 1
-                    try:
-                        wm.progress_update(min(step_idx, steps_total))
-                    except Exception:
-                        pass
-                    _ui_ping(context, "Split abgeschlossen.")
-            # >>> CHANGE END
+        step_idx += 1
+        try:
+            wm.progress_update(step_idx)
+        except Exception:
+            pass
 
+        # 3) Optional: Segmentiertes Splitten – zeitversetzt (EXEC_DEFAULT + Timer)
+        if do_split:
+            original_tracks = _tracks_with_gaps(tracks)
+            if original_tracks:
+                try:
+                    _ui_ping(context, "Segmentiertes Splitten wird zeitversetzt ausgeführt …")
+                    with context.temp_override(area=area, region=region, space_data=space):
+                        split_tracks_segmented_timed(
+                            context, area, region, space,
+                            original_tracks,
+                            delay_seconds=split_delay_s
+                        )
+                    _ui_ping(context, f"Split-Schritte eingeplant (+{split_delay_s:.1f}s Takt).", swap=True)
+                except Exception as e:
+                    if self.verbose:
+                        print(f"[TimedSplit] Scheduling fehlgeschlagen: {e}")
+
+            step_idx += 1
+            try:
+                wm.progress_update(step_idx)
+            except Exception:
+                pass
 
         after_total = _count_all_markers(tracks)
         changed = int(grid_deleted)
@@ -192,7 +151,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         return changed
 
     def execute(self, context):
-        # Clip-Editor-Kontext suchen (sonst poll fail)
+        # Clip-Editor-Kontext suchen
         clip_area = clip_region = clip_space = None
         for area in context.screen.areas:
             if area.type == 'CLIP_EDITOR':
@@ -207,7 +166,6 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             self.report({'ERROR'}, "Kein gültiger CLIP_EDITOR-Kontext gefunden.")
             return {'CANCELLED'}
 
-        wm = context.window_manager
         # Busy-Cursor + Status während der Laufzeit
         try:
             context.window.cursor_modal_set('WAIT')
@@ -222,7 +180,8 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             changed = self._one_pass(
                 context,
                 clip_area, clip_region, clip_space,
-                do_split=True
+                do_split=True,
+                split_delay_s=2.0  # hier den Schritt-Takt anpassen (Sekunden)
             )
         finally:
             # UI aufräumen
