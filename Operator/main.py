@@ -4,9 +4,8 @@
 import bpy
 from bpy.types import Operator
 
-# Bestehende Operatoren / Helper, die es im Add-on bereits gibt
-# (wichtig: wir rufen nur, was schon existiert)
-from .clean_error_tracks import CLIP_OT_clean_error_tracks  # nur für Registrierungssicherheit
+# Import für Registrierung/Verfügbarkeit (keine Logikänderung)
+from .clean_error_tracks import CLIP_OT_clean_error_tracks  # noqa: F401
 from ..Helper.solve_camera_helper import solve_camera_helper
 
 
@@ -27,21 +26,6 @@ def _find_clip_editor_ctx(context):
     return None, None, None
 
 
-def _override_for_clip(context):
-    """Erstellt ein Override-Dict für Clip-Operatoren oder None."""
-    area, region, space = _find_clip_editor_ctx(context)
-    if not space or not getattr(space, "clip", None):
-        return None
-    ov = context.copy()
-    ov.update({
-        "area": area,
-        "region": region,
-        "space_data": space,
-        "edit_movieclip": space.clip,
-    })
-    return ov
-
-
 # -----------------------------------------------------------
 # Pipeline (synchron)
 # -----------------------------------------------------------
@@ -49,31 +33,30 @@ def _override_for_clip(context):
 def _run_pipeline(context):
     """
     Führt die bestehende Tracking/Cleanup-Pipeline aus.
-    Minimal-invasive Orchestrierung:
-      1) Clean-Error-Tracks (ruft intern Grid/Short-Segment/Split-Trim)
-      2) Kamera-Solve per Helper (am Ende)
+      1) clean_error_tracks
+      2) solve_camera_helper (neu) am Ende
     """
-    override = _override_for_clip(context)
-    if override is None:
+    area, region, space = _find_clip_editor_ctx(context)
+    if not space or not getattr(space, "clip", None):
         raise RuntimeError("Kein aktiver CLIP_EDITOR mit Movie Clip gefunden.")
+    clip = space.clip
 
     # 1) Error-/Segment-Cleanup
-    #    Hinweis: wir nutzen denselben Kontext wie die UI, keine Modalität.
     try:
         print("[Main] Starte clean_error_tracks …")
-        # Übergibt 'verbose' nur, wenn die Signatur es vorsieht; robust mit **kwargs
-        bpy.ops.clip.clean_error_tracks(override, 'EXEC_DEFAULT', verbose=True)
+        with context.temp_override(area=area, region=region, space_data=space, edit_movieclip=clip):
+            try:
+                bpy.ops.clip.clean_error_tracks('EXEC_DEFAULT', verbose=True)
+            except TypeError:
+                bpy.ops.clip.clean_error_tracks('EXEC_DEFAULT')
         print("[Main] clean_error_tracks abgeschlossen.")
-    except TypeError:
-        # Falls ältere Signatur ohne 'verbose'
-        bpy.ops.clip.clean_error_tracks(override, 'EXEC_DEFAULT')
-        print("[Main] clean_error_tracks abgeschlossen. (ohne verbose)")
     except Exception as e:
         print(f"[Main] clean_error_tracks Exception: {e}")
 
     # 2) Kamera-Solve (neu)
     try:
         print("[Main] Starte Solve …")
+        # Helper kapselt eigene temp_override-Aufrufe
         solve_res = solve_camera_helper(bpy.context)
         print(f"[Main] Solve done: {solve_res}")
     except Exception as e:
@@ -83,7 +66,7 @@ def _run_pipeline(context):
 
 
 # -----------------------------------------------------------
-# Operatoren (mehrere Namen für maximale Kompatibilität)
+# Operatoren
 # -----------------------------------------------------------
 
 class CLIP_OT_pipeline_main(Operator):
@@ -146,8 +129,7 @@ def register():
         try:
             bpy.utils.register_class(cls)
         except ValueError:
-            # Bereits registriert (z. B. beim Hot-Reload)
-            pass
+            pass  # bereits registriert
 
 def unregister():
     for cls in reversed(_CLASSES):
