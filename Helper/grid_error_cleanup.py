@@ -81,7 +81,7 @@ def grid_error_cleanup(context, space, *, verbose=False):
     frame_range = (scene.frame_start, scene.frame_end)
 
     # Basis-Toleranz (kompatibel zur ursprünglichen Logik)
-    ee_base = (getattr(scene, "error_track", 1.0) + 0.1) / 100.0
+    ee_base = 0.005
     tolerances = (ee_base, ee_base / 2.0, ee_base / 4.0)
     divisions  = (1, 2, 4)
 
