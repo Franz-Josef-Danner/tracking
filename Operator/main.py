@@ -4,7 +4,7 @@ import time
 from ..Helper.find_low_marker_frame import find_low_marker_frame
 from ..Helper.jump_to_frame import jump_to_frame
 from ..Helper.properties import RepeatEntry  # bleibt importiert, falls dein UI das braucht
-from ..Helper.solve_camera_helper import solve_camera_helper  # ← NEU: Solver am Ende ausführen
+from ..Helper.solve_camera_helper import solve_camera_helper  # Solver am Ende ausführen
 
 def _get_clip_editor_ctx(context):
     """Finde CLIP_EDITOR area/region/space für temp_override."""
@@ -41,6 +41,7 @@ class CLIP_OT_main(bpy.types.Operator):
         scene["marker_min"] = 0
         scene["marker_max"] = 0
         scene["goto_frame"] = -1
+        scene["solve_retry_count"] = 0  # <<< NEU: Retry-Zähler für Solve-Loop
 
         if hasattr(scene, "repeat_frame"):
             scene.repeat_frame.clear()
@@ -142,22 +143,66 @@ class CLIP_OT_main(bpy.types.Operator):
             if frame is not None:
                 self._step = 1
             else:
-                context.window_manager.event_timer_remove(self._timer)
-                # >>> CHANGE START: erst Segmente löschen, dann leere Tracks entfernen
-                # 1) kurze Segmente entfernen (Schwelle: scene.frames_track)
+                # >>> erst Segmente löschen, dann leere Tracks entfernen
                 bpy.ops.clip.clean_short_tracks('EXEC_DEFAULT', action='DELETE_SEGMENTS')
-                # 2) Tracks ohne verbleibende Marker entsorgen (0-Frames)
                 bpy.ops.clip.clean_tracks('EXEC_DEFAULT', frames=1, error=0.0, action='DELETE_TRACK')
-                # >>> CHANGE END
 
-                # >>> NEU: Kamera-Solve als letzter Schritt
+                # >>> Kamera-Solve als letzter Schritt
+                avg_err = None
                 try:
-                    solve_camera_helper(bpy.context)
+                    res = solve_camera_helper(bpy.context)  # {'result': ..., 'valid': bool, 'average_error': float}
+                    avg_err = res.get("average_error", None)
                 except Exception as e:
                     print(f"[Solve] Exception: {e}")
 
-                self.report({'INFO'}, "Tracking + Markerprüfung abgeschlossen.")
-                return {'FINISHED'}
+                # >>> Threshold-Check & Re-Run-Logik (max. 3 Durchläufe)
+                err_thresh = None
+                try:
+                    # Scene-Property via UI: layout.prop(scene, "error_track")
+                    if hasattr(scene, "error_track"):
+                        err_thresh = float(scene.error_track)
+                except Exception:
+                    err_thresh = None
+
+                do_retry = False
+                if avg_err is not None and err_thresh is not None:
+                    do_retry = bool(avg_err > err_thresh)
+
+                if do_retry and scene.get("solve_retry_count", 0) < 3:
+                    # Marker-Adaptivität +10% – bevorzugt scene.marker_adapt, sonst marker_basis
+                    try:
+                        if hasattr(scene, "marker_adapt"):
+                            scene.marker_adapt = float(scene.marker_adapt) * 1.1
+                            basis = int(scene.marker_adapt)
+                        else:
+                            basis = int(scene.get("marker_basis", 20) * 1.1)
+                            scene["marker_basis"] = basis
+                        # Min/Max-Fenster aktualisieren
+                        scene["marker_min"] = int(basis * 0.9)
+                        scene["marker_max"] = int(basis * 1.1)
+                    except Exception:
+                        # Fallback ohne Crash
+                        basis = int(scene.get("marker_basis", 20) * 1.1)
+                        scene["marker_basis"] = basis
+                        scene["marker_min"] = int(basis * 0.9)
+                        scene["marker_max"] = int(basis * 1.1)
+
+                    # Retry-Zähler erhöhen
+                    scene["solve_retry_count"] = int(scene.get("solve_retry_count", 0)) + 1
+
+                    # Pipeline neu anstoßen und in Step 0 zurück
+                    try:
+                        bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
+                    except Exception as e:
+                        print(f"[Main] Retry start failed: {e}")
+
+                    self._step = 0
+                    return {'PASS_THROUGH'}
+                else:
+                    # Erfolg oder Max-Retries → sauber beenden
+                    context.window_manager.event_timer_remove(self._timer)
+                    self.report({'INFO'}, "Tracking + Markerprüfung abgeschlossen.")
+                    return {'FINISHED'}
 
             return {'PASS_THROUGH'}
 
