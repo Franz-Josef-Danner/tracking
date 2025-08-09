@@ -12,7 +12,7 @@ from ..Helper import ram_helper
 from ..Helper.ram_helper import RamGuard, register_bpy_timer
 from .grid_error_cleanup import grid_error_cleanup
 from .split_tracks_segmented import CLIP_OT_split_tracks_segmented
-
+from .solve_camera_helper import solve_camera_helper
 
 __all__ = []
 
