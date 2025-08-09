@@ -78,13 +78,13 @@ def register():
     # Eigenschaften für das UI
     bpy.types.Scene.marker_frame = IntProperty(
         name="Marker per Frame",
-        default=20,
+        default=25,
         min=10,
         max=50
     )
     bpy.types.Scene.frames_track = IntProperty(
         name="Frames per Track",
-        default=20,
+        default=25,
         min=5,
         max=100
     )
