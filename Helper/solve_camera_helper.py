@@ -16,11 +16,11 @@ def _find_clip_editor_ctx(context):
 def solve_camera_helper(
     context,
     *,
-    refine=True,           # z.B. 'FOCAL_LENGTH_RADIAL_K1_K2' – wird gegen Enum geprüft
+    refine=None,           # z.B. 'FOCAL_LENGTH_RADIAL_K1_K2' – wird gegen Enum geprüft
     keyframe_a=None,       # int oder None
     keyframe_b=None,       # int oder None
     use_tripod=False,      # Stativ-Solver
-    clear_before=True     # vorhandene Lösung vorher löschen
+    clear_before=False     # vorhandene Lösung vorher löschen
 ):
     area, region, space = _find_clip_editor_ctx(context)
     if not space or not getattr(space, "clip", None):
@@ -28,15 +28,6 @@ def solve_camera_helper(
 
     clip = space.clip
     settings = clip.tracking.settings
-
-    # Optional bestehende Lösung löschen
-    if clear_before:
-        override = context.copy()
-        override.update({"area": area, "region": region, "space_data": space, "edit_movieclip": clip})
-        try:
-            bpy.ops.clip.clear_solution(override)
-        except RuntimeError:
-            pass  # z. B. wenn keine Lösung existiert
 
     # Solver-Parameter setzen (Enum robust gegen API-Änderungen prüfen)
     if refine is not None:
@@ -54,11 +45,15 @@ def solve_camera_helper(
     if hasattr(settings, "use_tripod_solver"):
         settings.use_tripod_solver = bool(use_tripod)
 
-    # Operator im korrekten Kontext ausführen
-    override = context.copy()
-    override.update({"area": area, "region": region, "space_data": space, "edit_movieclip": clip})
+    # Operatoren im korrekten Kontext ausführen
+    with context.temp_override(area=area, region=region, space_data=space, edit_movieclip=clip):
+        if clear_before:
+            try:
+                bpy.ops.clip.clear_solution('EXEC_DEFAULT')
+            except RuntimeError:
+                pass  # z. B. wenn keine Lösung existiert
 
-    result = bpy.ops.clip.solve_camera(override)
+        result = bpy.ops.clip.solve_camera('EXEC_DEFAULT')
 
     # Erfolgsmetriken auslesen
     recon = clip.tracking.reconstruction
