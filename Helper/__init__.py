@@ -11,6 +11,8 @@ from .properties import RepeatEntry
 from ..Helper import ram_helper
 from ..Helper.ram_helper import RamGuard, register_bpy_timer
 from .grid_error_cleanup import grid_error_cleanup
+from .split_tracks_segmented import CLIP_OT_split_tracks_segmented
+
 
 __all__ = []
 
@@ -19,6 +21,7 @@ classes = (
     CLIP_OT_marker_helper_main,
     CLIP_OT_enable_proxy,
     CLIP_OT_disable_proxy,
+    CLIP_OT_split_tracks_segmented,
 )
 
 def register():
