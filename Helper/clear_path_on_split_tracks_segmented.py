@@ -1,11 +1,10 @@
 # Helper/clear_path_on_split_tracks_segmented.py
 import bpy
-import time
 from .process_marker_path import get_track_segments
 
 
 def _ui_blink(context, *, swap=False):
-    """Gezielter UI-Refresh (dezent)."""
+    """Dezenter UI-Refresh."""
     try:
         bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP' if swap else 'DRAW', iterations=1)
     except Exception:
@@ -28,7 +27,7 @@ def _select_only(space, track):
 def _duplicate_once_exec(context, area, region, space, source_track):
     """
     Dupliziert genau EINEN Track synchron (EXEC_DEFAULT).
-    Gibt die neue Track-Instanz zurück oder None.
+    Rückgabe: neue Track-Instanz oder None.
     """
     tracks = space.clip.tracking.tracks
     with context.temp_override(area=area, region=region, space_data=space):
@@ -97,12 +96,17 @@ def _trim_to_segment_exec(context, area, region, space, track, seg_start, seg_en
         _ui_blink(context)  # dezentes Update
 
 
-def split_tracks_segmented_timed(context, area, region, space, original_tracks, delay_seconds=2.0):
+def split_tracks_segmented_timed(context, area, region, space, original_tracks,
+                                 delay_seconds=0.1, batch_size=10):
     """
-    'Alte' Methode (synchron, EXEC_DEFAULT), aber strikt sequenziert via bpy.app.timers.
-    – Für k Segmente pro Original werden k-1 Duplikate erzeugt.
-    – Danach wird pro Ziel-Track exakt EIN Segment stehen gelassen.
-    – Jeder einzelne Schritt wird über einen Timer mit 'delay_seconds' Abstand ausgeführt.
+    'Alte' Methode (synchron, EXEC_DEFAULT), aber zeitversetzt via bpy.app.timers
+    mit Batch-Verarbeitung. Pro Tick werden bis zu 'batch_size' Actions abgearbeitet.
+
+    Ablauf pro Original-Track mit k Segmenten:
+      – (k-1) Duplikations-Schritte
+      – k Trim-Schritte (je Ziel-Track ein Segment stehen lassen)
+
+    Rückgabe: Anzahl geplanter Actions.
     """
     if not space or not getattr(space, "clip", None):
         return 0
@@ -148,7 +152,7 @@ def split_tracks_segmented_timed(context, area, region, space, original_tracks, 
 
             actions.append(_make_trim_step())
 
-    # --- Timer-orchestrierter Ablauf -----------------------------------------
+    # --- Timer-orchestrierter Ablauf (Batch) ----------------------------------
     if not actions:
         return 0
 
@@ -158,12 +162,27 @@ def split_tracks_segmented_timed(context, area, region, space, original_tracks, 
         i = idx['i']
         if i >= len(actions):
             return None  # stoppt den Timer
+
+        # Bis zu 'batch_size' Schritte synchron abarbeiten
+        processed = 0
+        while processed < batch_size and i < len(actions):
+            try:
+                actions[i]()  # Schritt i ausführen (synchron)
+            except Exception as ex:
+                print(f"[TimedSplit] Step {i} Exception: {ex}")
+            i += 1
+            processed += 1
+
+        idx['i'] = i
+
+        # Dezenter UI-Beat nach dem Batch
         try:
-            actions[i]()  # Schritt i ausführen (synchron)
-        except Exception as ex:
-            print(f"[TimedSplit] Step {i} Exception: {ex}")
-        idx['i'] = i + 1
-        return delay_seconds  # nächster Aufruf in delay_seconds
+            _ui_blink(context)
+        except Exception:
+            pass
+
+        # Nächster Batch in 'delay_seconds'
+        return delay_seconds
 
     # ersten Call nach kurzer Initialisierung (0.1s), danach alle delay_seconds
     try:
