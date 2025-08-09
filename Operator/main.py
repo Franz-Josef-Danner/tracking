@@ -97,8 +97,8 @@ class CLIP_OT_main(bpy.types.Operator):
         # Nach Pipeline → Markercheck → ggf. Frame springen → DANN clean_error_tracks mit gültigem Kontext
         elif self._step == 1:
             clip = context.space_data.clip
-            initial_basis = scene.get("marker_basis", 20)
-            marker_basis  = scene.get("marker_basis", 20)
+            initial_basis = scene.get("marker_basis", 25)
+            marker_basis  = scene.get("marker_basis", 25)
 
             frame = find_low_marker_frame(clip, marker_basis=marker_basis)
             if frame is not None:
@@ -117,7 +117,7 @@ class CLIP_OT_main(bpy.types.Operator):
                     marker_basis = max(int(marker_basis * 0.9), initial_basis)
 
                 # Nächste Aktion: entweder optimieren oder erneut tracken
-                if entry.count >= 10:
+                if entry.count >= 1:
                     bpy.ops.clip.optimize_tracking_modal('INVOKE_DEFAULT')
                 else:
                     scene["marker_min"] = int(marker_basis * 0.9)
