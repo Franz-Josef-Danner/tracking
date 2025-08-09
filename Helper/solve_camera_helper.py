@@ -53,7 +53,7 @@ def solve_camera_helper(
             except RuntimeError:
                 pass  # z. B. wenn keine Lösung existiert
 
-        result = bpy.ops.clip.solve_camera('EXEC_DEFAULT')
+        result = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
 
     # Erfolgsmetriken auslesen
     recon = clip.tracking.reconstruction
