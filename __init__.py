@@ -14,7 +14,7 @@ from bpy.props import IntProperty, FloatProperty
 # Importiere Operatoren
 from .Helper.deps import ensure_dependencies
 from .Operator.proxy_builder import CLIP_OT_proxy_builder
-from .Operator.tracker_settings import CLIP_OT_tracker_settings
+from .Helper.tracker_settings import CLIP_OT_tracker_settings
 from .Operator.tracking_pipeline import CLIP_OT_tracking_pipeline
 from .Helper.marker_helper_main import CLIP_OT_marker_helper_main
 from .Helper.disable_proxy import CLIP_OT_disable_proxy
