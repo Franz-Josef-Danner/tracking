@@ -4,6 +4,7 @@ import time
 from ..Helper.find_low_marker_frame import find_low_marker_frame
 from ..Helper.jump_to_frame import jump_to_frame
 from ..Helper.properties import RepeatEntry  # bleibt importiert, falls dein UI das braucht
+from ..Helper.solve_camera_helper import solve_camera_helper  # ← NEU: Solver am Ende ausführen
 
 def _get_clip_editor_ctx(context):
     """Finde CLIP_EDITOR area/region/space für temp_override."""
@@ -148,6 +149,13 @@ class CLIP_OT_main(bpy.types.Operator):
                 # 2) Tracks ohne verbleibende Marker entsorgen (0-Frames)
                 bpy.ops.clip.clean_tracks('EXEC_DEFAULT', frames=1, error=0.0, action='DELETE_TRACK')
                 # >>> CHANGE END
+
+                # >>> NEU: Kamera-Solve als letzter Schritt
+                try:
+                    solve_camera_helper(bpy.context)
+                except Exception as e:
+                    print(f"[Solve] Exception: {e}")
+
                 self.report({'INFO'}, "Tracking + Markerprüfung abgeschlossen.")
                 return {'FINISHED'}
 
