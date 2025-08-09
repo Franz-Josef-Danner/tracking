@@ -1,4 +1,5 @@
 # Helper/clear_path_on_split_tracks_segmented.py
+# -*- coding: utf-8 -*-
 import bpy
 from .process_marker_path import get_track_segments
 
@@ -79,24 +80,33 @@ def _trim_to_segment_exec(context, area, region, space, track, seg_start, seg_en
         # nach Ende löschen
         try:
             context.scene.frame_set(seg_end)
-            bpy.ops.clip.clear_track_path('EXEC_DEFAULT',
-                                          action='REMAINED',
-                                          clear_active=False)
+            bpy.ops.clip.clear_track_path(
+                'EXEC_DEFAULT',
+                action='REMAINED',
+                clear_active=False
+            )
         except Exception:
             pass
 
         # vor Beginn löschen
         try:
             context.scene.frame_set(seg_start)
-            bpy.ops.clip.clear_track_path('EXEC_DEFAULT',
-                                          action='UPTO',
-                                          clear_active=False)
+            bpy.ops.clip.clear_track_path(
+                'EXEC_DEFAULT',
+                action='UPTO',
+                clear_active=False
+            )
         except Exception:
             pass
 
-        # NEU: Restbereiche wie im UI-Cleanup muten (keine "estimated" Segmente)
+        # Restbereiche wie im UI-Cleanup muten (keine "estimated" Segmente)
         try:
-            bpy.ops.clip.clean_tracks('EXEC_DEFAULT', frames=1, error=0.0, action='DELETE_SEGMENTS')
+            bpy.ops.clip.clean_tracks(
+                'EXEC_DEFAULT',
+                frames=1,
+                error=0.0,
+                action='DELETE_SEGMENTS'
+            )
         except Exception:
             pass
 
@@ -127,84 +137,7 @@ def split_tracks_segmented_timed(context, area, region, space, original_tracks,
             jobs.append({
                 'orig': orig,
                 'segments': segs,
-                'targets': [orig],                # Original als erstes Target
-            })
-
-    if not jobs:
-        return 0
-
-    steps_done = 0
-
-    # -------- Phase A: Duplizieren (synchron)
-    for job in jobs:
-        segs = job['segments']
-        needed = max(0, len(segs) - 1)
-        for _ in range(needed):
-            new = _duplicate_once_exec(context, area, region, space, job['orig'])
-            if new:
-                job['targets'].append(new)
-                steps_done += 1
-        # kleiner UI-Beat pro Job
-        _ui_blink(context)
-
-    # -------- Phase B: Trimmen (synchron)
-    for job in jobs:
-        segs = job['segments']
-        targets = job['targets']
-        # Safety: nur so viele Ziele wie Segmente existieren
-        limit = min(len(segs), len(targets))
-        for idx in range(limit):
-            s, e = segs[idx]
-            _trim_to_segment_exec(context, area, region, space, targets[idx], s, e)
-            steps_done += 1
-        # UI-Beat pro Job
-        _ui_blink(context, swap=True)
-
-    return steps_done
-            context.scene.frame_set(seg_end)
-            bpy.ops.clip.clear_track_path('EXEC_DEFAULT',
-                                          action='REMAINED',
-                                          clear_active=False)
-        except Exception:
-            pass
-
-        # vor Beginn löschen
-        try:
-            context.scene.frame_set(seg_start)
-            bpy.ops.clip.clear_track_path('EXEC_DEFAULT',
-                                          action='UPTO',
-                                          clear_active=False)
-        except Exception:
-            pass
-
-        _ui_blink(context)  # dezentes Update pro Ziel
-
-
-def split_tracks_segmented_timed(context, area, region, space, original_tracks,
-                                 delay_seconds=None, batch_size=None, settle_ticks=None):
-    """
-    SYNCHRONE Zwei-Phasen-Variante (keine Timer, keine Batches):
-      Phase A: Für alle Original-Tracks mit >=2 Segmenten die benötigten Duplikate erzeugen.
-      Phase B: Für jedes Segment den korrespondierenden Ziel-Track trimmen.
-
-    Die Parameter delay_seconds/batch_size/settle_ticks werden ignoriert (Backward-compat API).
-    Rückgabe: Anzahl ausgeführter Einzelschritte (Duplizieren + Trim).
-    """
-    if not space or not getattr(space, "clip", None):
-        return 0
-
-    # --- Jobs vorbereiten: nur Tracks mit >=2 Segmenten
-    jobs = []  # [{ 'orig': Track, 'segments': [(s,e),...], 'targets': [Track] }]
-    for orig in list(original_tracks):
-        try:
-            segs = get_track_segments(orig) or []
-        except Exception:
-            segs = []
-        if len(segs) >= 2:
-            jobs.append({
-                'orig': orig,
-                'segments': segs,
-                'targets': [orig],                # Original als erstes Target
+                'targets': [orig],  # Original als erstes Target
             })
 
     if not jobs:
