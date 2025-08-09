@@ -16,11 +16,11 @@ def _find_clip_editor_ctx(context):
 def solve_camera_helper(
     context,
     *,
-    refine=None,           # z.B. 'FOCAL_LENGTH_RADIAL_K1_K2' – wird gegen Enum geprüft
+    refine=True,           # z.B. 'FOCAL_LENGTH_RADIAL_K1_K2' – wird gegen Enum geprüft
     keyframe_a=None,       # int oder None
     keyframe_b=None,       # int oder None
     use_tripod=False,      # Stativ-Solver
-    clear_before=False     # vorhandene Lösung vorher löschen
+    clear_before=True     # vorhandene Lösung vorher löschen
 ):
     area, region, space = _find_clip_editor_ctx(context)
     if not space or not getattr(space, "clip", None):
