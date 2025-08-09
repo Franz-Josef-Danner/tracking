@@ -3,6 +3,7 @@ import bpy
 from .marker_helper_main import CLIP_OT_marker_helper_main
 from .disable_proxy import CLIP_OT_disable_proxy
 from .enable_proxy import CLIP_OT_enable_proxy
+from .tracker_settings import CLIP_OT_tracker_settings
 from .error_value import error_value
 from .set_test_value import set_test_value
 from .find_low_marker_frame import find_low_marker_frame
@@ -20,6 +21,7 @@ classes = (
     RepeatEntry,
     CLIP_OT_marker_helper_main,
     CLIP_OT_enable_proxy,
+    CLIP_OT_tracker_settings,
     CLIP_OT_disable_proxy,
     CLIP_OT_split_tracks_segmented,
 )
