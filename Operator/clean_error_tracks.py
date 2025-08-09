@@ -162,10 +162,11 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                         continue
             
                     # Pfade gemäß Segmenten beschneiden
-                    clear_path_on_split_tracks_segmented(
-                        context, area, region, space,
-                        original_tracks, new_tracks
-                    )
+# >>> CHANGE START: modularer, modal getakteter Split mit UI-Acks
+                    with context.temp_override(area=area, region=region, space_data=space):
+                        bpy.ops.clip.split_tracks_segmented('INVOKE_DEFAULT')
+# >>> CHANGE END
+
             
                     # Diese Originale als "bearbeitet" markieren
                     processed_names |= gap_set
