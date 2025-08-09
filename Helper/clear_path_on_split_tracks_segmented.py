@@ -93,102 +93,64 @@ def _trim_to_segment_exec(context, area, region, space, track, seg_start, seg_en
         except Exception:
             pass
 
-        _ui_blink(context)  # dezentes Update
+        _ui_blink(context)  # dezentes Update pro Ziel
 
 
 def split_tracks_segmented_timed(context, area, region, space, original_tracks,
-                                 delay_seconds=0.1, batch_size=10):
+                                 delay_seconds=None, batch_size=None, settle_ticks=None):
     """
-    'Alte' Methode (synchron, EXEC_DEFAULT), aber zeitversetzt via bpy.app.timers
-    mit Batch-Verarbeitung. Pro Tick werden bis zu 'batch_size' Actions abgearbeitet.
+    SYNCHRONE Zwei-Phasen-Variante (keine Timer, keine Batches):
+      Phase A: Für alle Original-Tracks mit >=2 Segmenten die benötigten Duplikate erzeugen.
+      Phase B: Für jedes Segment den korrespondierenden Ziel-Track trimmen.
 
-    Ablauf pro Original-Track mit k Segmenten:
-      – (k-1) Duplikations-Schritte
-      – k Trim-Schritte (je Ziel-Track ein Segment stehen lassen)
-
-    Rückgabe: Anzahl geplanter Actions.
+    Die Parameter delay_seconds/batch_size/settle_ticks werden ignoriert (Backward-compat API).
+    Rückgabe: Anzahl ausgeführter Einzelschritte (Duplizieren + Trim).
     """
     if not space or not getattr(space, "clip", None):
         return 0
 
-    actions = []  # Liste von Callables (ohne Argumente), die nacheinander laufen
-
-    # Pro Original-Track Aktionskette aufbauen
+    # --- Jobs vorbereiten: nur Tracks mit >=2 Segmenten
+    jobs = []  # [{ 'orig': Track, 'segments': [(s,e),...], 'targets': [Track] }]
     for orig in list(original_tracks):
         try:
             segs = get_track_segments(orig) or []
         except Exception:
             segs = []
+        if len(segs) >= 2:
+            jobs.append({
+                'orig': orig,
+                'segments': segs,
+                'targets': [orig],                # Original als erstes Target
+            })
 
-        if len(segs) < 2:
-            continue
+    if not jobs:
+        return 0
 
-        # Container, in den die Duplikate zur Laufzeit appended werden
-        targets = [orig]
+    steps_done = 0
 
-        # (1) Duplikations-Schritte (k-1 Stück), synchron EXEC_DEFAULT
-        dup_count = len(segs) - 1
+    # -------- Phase A: Duplizieren (synchron)
+    for job in jobs:
+        segs = job['segments']
+        needed = max(0, len(segs) - 1)
+        for _ in range(needed):
+            new = _duplicate_once_exec(context, area, region, space, job['orig'])
+            if new:
+                job['targets'].append(new)
+                steps_done += 1
+        # kleiner UI-Beat pro Job
+        _ui_blink(context)
 
-        def _make_dup_step(o=orig, tgt_list=targets):
-            def _step():
-                new = _duplicate_once_exec(context, area, region, space, o)
-                if new:
-                    tgt_list.append(new)
-            return _step
-
-        for _ in range(dup_count):
-            actions.append(_make_dup_step())
-
-        # (2) Trim-Schritte: für jedes Ziel (Original + Duplikate) das korrespondierende Segment stehen lassen
-        for idx in range(len(segs)):
+    # -------- Phase B: Trimmen (synchron)
+    for job in jobs:
+        segs = job['segments']
+        targets = job['targets']
+        # Safety: nur so viele Ziele wie Segmente existieren
+        limit = min(len(segs), len(targets))
+        for idx in range(limit):
             s, e = segs[idx]
+            _trim_to_segment_exec(context, area, region, space, targets[idx], s, e)
+            steps_done += 1
+        # UI-Beat pro Job
+        _ui_blink(context, swap=True)
 
-            def _make_trim_step(i=idx, start=s, end=e, tgt_list=targets):
-                def _step():
-                    if i >= len(tgt_list):  # Safety
-                        return
-                    _trim_to_segment_exec(context, area, region, space, tgt_list[i], start, end)
-                return _step
-
-            actions.append(_make_trim_step())
-
-    # --- Timer-orchestrierter Ablauf (Batch) ----------------------------------
-    if not actions:
-        return 0
-
-    idx = {'i': 0}  # mutable Counter im Closure
-
-    def _runner():
-        i = idx['i']
-        if i >= len(actions):
-            return None  # stoppt den Timer
-
-        # Bis zu 'batch_size' Schritte synchron abarbeiten
-        processed = 0
-        while processed < batch_size and i < len(actions):
-            try:
-                actions[i]()  # Schritt i ausführen (synchron)
-            except Exception as ex:
-                print(f"[TimedSplit] Step {i} Exception: {ex}")
-            i += 1
-            processed += 1
-
-        idx['i'] = i
-
-        # Dezenter UI-Beat nach dem Batch
-        try:
-            _ui_blink(context)
-        except Exception:
-            pass
-
-        # Nächster Batch in 'delay_seconds'
-        return delay_seconds
-
-    # ersten Call nach kurzer Initialisierung (0.1s), danach alle delay_seconds
-    try:
-        bpy.app.timers.register(_runner, first_interval=0.1, persistent=False)
-    except Exception as ex:
-        print(f"[TimedSplit] Timer-Registrierung fehlgeschlagen: {ex}")
-        return 0
-
-    return len(actions)
+    return steps_done
