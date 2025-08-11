@@ -218,15 +218,17 @@ class CLIP_OT_clean_error_tracks_modal(bpy.types.Operator):
         return context.space_data and context.space_data.clip
     
     def execute(self, context):
+        # Crash-Guard: existiert der Modal-Operator überhaupt?
         if hasattr(bpy.ops.clip, "clean_error_tracks_modal"):
             return bpy.ops.clip.clean_error_tracks_modal('INVOKE_DEFAULT')
+    
         self.report({'WARNING'}, "clean_error_tracks_modal nicht registriert – Fallback: short tracks.")
         try:
             return bpy.ops.clip.clean_short_tracks('INVOKE_DEFAULT')
         except Exception as e:
             self.report({'ERROR'}, f"Fallback fehlgeschlagen: {e}")
             return {'CANCELLED'}
-        return bpy.ops.clip.clean_error_tracks_modal('INVOKE_DEFAULT')
+            return bpy.ops.clip.clean_error_tracks_modal('INVOKE_DEFAULT')
 
     _timer = None
     _state = None  # dict mit Phasen- und Fortschrittszustand
