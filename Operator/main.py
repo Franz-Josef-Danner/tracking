@@ -131,8 +131,30 @@ class CLIP_OT_main(bpy.types.Operator):
                 self._step = 1
             else:
                 print("🏁 Keine Low-Marker-Frames mehr gefunden. Beende Prozess.")
-                context.window_manager.event_timer_remove(self._timer)
                 bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
+                # --- Kamera-Solve am Ende auslösen (mit sauberem CLIP-Context) ---
+                try:
+                    # Geeigneten CLIP_EDITOR-Kontext suchen
+                    area = next((a for a in context.screen.areas if a.type == 'CLIP_EDITOR'), None)
+                    region = None
+                    space = None
+                    if area:
+                        region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+                        space = area.spaces.active if hasattr(area, "spaces") else None
+                
+                    if area and region and space:
+                        # Mit Override: INVOKE_DEFAULT, damit UI-responsiv & modal-konform
+                        with bpy.context.temp_override(area=area, region=region, space_data=space):
+                            result = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+                    else:
+                        # Fallback: versuchen ohne Override
+                        result = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+                
+                    print(f"[CameraSolve] Trigger result: {result}")
+                except Exception as e:
+                    print(f"[CameraSolve] Fehler beim Auslösen: {e}")
+                # --- Ende Kamera-Solve ---
+
                 self.report({'INFO'}, "Tracking + Markerprüfung abgeschlossen.")
                 return {'FINISHED'}
 
