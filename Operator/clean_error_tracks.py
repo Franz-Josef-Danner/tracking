@@ -221,10 +221,9 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
             context.scene.frame_set(context.scene.frame_current)
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=3)
             bpy.context.view_layer.update()
-            time.sleep(0.1)
 
             segments = get_track_segments(track)
-
+            time.sleep(1)
             # Optional: alle Marker vorher ent-muten (wie ENABLE)
             for m in track.markers:
                 m.mute = False
