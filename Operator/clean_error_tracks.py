@@ -216,7 +216,7 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
 
             for seg in segments:
                 mute_marker_path(track, seg[0] - 1, 'backward', mute=True)
-            time.sleep(0.02)
+            time.sleep(0.1)
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
