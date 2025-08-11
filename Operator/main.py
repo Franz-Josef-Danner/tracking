@@ -6,6 +6,20 @@ from ..Helper.jump_to_frame import jump_to_frame
 from ..Helper.properties import RepeatEntry
 from ..Helper.solve_camera_helper import CLIP_OT_solve_camera_helper
 
+def _select_all_markers(clip):
+    """Selektiert alle Tracks und – falls verfügbar – alle Marker des Clips."""
+    if clip is None:
+        return
+    tracking = clip.tracking
+    for t in tracking.tracks:
+        t.select = True  # Track-Selektion
+        # Marker-Selektion (falls API-Feld vorhanden)
+        for m in getattr(t, "markers", []):
+            try:
+                m.select = True
+            except Exception:
+                pass
+
 class CLIP_OT_main(bpy.types.Operator):
     bl_idname = "clip.main"
     bl_label = "Main Setup (Modal)"
@@ -118,6 +132,8 @@ class CLIP_OT_main(bpy.types.Operator):
                 self._step = 0  # Wiederhole Zyklus
             else:
                 print("✅ Alle Frames haben ausreichend Marker. Cleanup wird ausgeführt.")
+                clip = context.space_data.clip
+                _select_all_markers(clip)
                 bpy.ops.clip.clean_error_tracks('INVOKE_DEFAULT')
                 self._step = 2
             return {'PASS_THROUGH'}
