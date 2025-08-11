@@ -3,7 +3,8 @@ import bpy
 import time
 from ..Helper.find_low_marker_frame import find_low_marker_frame
 from ..Helper.jump_to_frame import jump_to_frame
-from ..Helper.properties import RepeatEntry  # <- wichtig!
+from ..Helper.properties import RepeatEntry
+from ..Helper.solve_camera_helper import CLIP_OT_solve_camera_helper
 
 class CLIP_OT_main(bpy.types.Operator):
     bl_idname = "clip.main"
@@ -133,8 +134,17 @@ class CLIP_OT_main(bpy.types.Operator):
                 print("🏁 Keine Low-Marker-Frames mehr gefunden. Beende Prozess.")
                 context.window_manager.event_timer_remove(self._timer)
                 bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
+                
+                # NEU: finaler Kamera-Solve (invoke)
+                try:
+                    print("🎯 Final: Starte Kamera-Solver…")
+                    bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+                except Exception as e:
+                    self.report({'WARNING'}, f"Kamera-Solver konnte nicht gestartet werden: {e}")
+                
                 self.report({'INFO'}, "Tracking + Markerprüfung abgeschlossen.")
                 return {'FINISHED'}
+
 
             return {'PASS_THROUGH'}
 

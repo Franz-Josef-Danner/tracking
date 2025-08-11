@@ -9,12 +9,15 @@ from .find_low_marker_frame import find_low_marker_frame
 from .jump_to_frame import jump_to_frame
 from .properties import RepeatEntry
 from .log_helper import write_log_entry
+from .solve_camera_helper import CLIP_OT_solve_camera_helper
+
 # Alle Klassen in eine Liste
 classes = (
     RepeatEntry,
     CLIP_OT_marker_helper_main,
     CLIP_OT_enable_proxy,
     CLIP_OT_disable_proxy,
+    CLIP_OT_solve_camera_helper,
 )
 
 def register():
