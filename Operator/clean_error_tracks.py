@@ -212,6 +212,7 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
                 mute_marker_path(track, seg[-1] + 1, 'forward', mute=True)
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
             bpy.context.view_layer.update()
+            time.sleep(0.1)
 
 
         # 🔵 NEW-TRACKS: Hinteres Segment behalten → alles davor muten
@@ -220,6 +221,7 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
             context.scene.frame_set(context.scene.frame_current)
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=3)
             bpy.context.view_layer.update()
+            time.sleep(0.1)
 
             segments = get_track_segments(track)
 
@@ -231,6 +233,7 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
                 mute_marker_path(track, seg[0] - 1, 'backward', mute=True)
                 bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
                 bpy.context.view_layer.update()
+                time.sleep(0.1)
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
