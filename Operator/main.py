@@ -29,35 +29,35 @@ class CLIP_OT_main(bpy.types.Operator):
     _step = 0
 
     def _solve_watch_register(self, context):
-    """Registriert einen RNA-Listener auf den Solve-Status."""
-    import bpy
-    self._solve_token = object()
-    self._solve_done = False
-    self._solve_failed = False
-    self._solve_started_at = time.time()
-
-    # Callback: prüft, ob Rekonstruktion gültig ist
-    def _on_change():
-        try:
-            space = context.space_data
-            clip = getattr(space, "clip", None)
-            if not clip:
-                return
-            obj = clip.tracking.objects.active
-            if obj and obj.reconstruction and obj.reconstruction.is_valid:
-                self._solve_done = True
-        except Exception:
-            # Im Zweifel als Fehler markieren
-            self._solve_failed = True
-
-    self._on_solve_change = _on_change  # Referenz halten
-    bpy.msgbus.subscribe_rna(
-        key=(bpy.types.MovieTrackingReconstruction, "is_valid"),
-        owner=self._solve_token,
-        args=(),
-        notify=_on_change,
-        options={'PERSISTENT'},
-    )
+        """Registriert einen RNA-Listener auf den Solve-Status."""
+        import bpy
+        self._solve_token = object()
+        self._solve_done = False
+        self._solve_failed = False
+        self._solve_started_at = time.time()
+    
+        # Callback: prüft, ob Rekonstruktion gültig ist
+        def _on_change():
+            try:
+                space = context.space_data
+                clip = getattr(space, "clip", None)
+                if not clip:
+                    return
+                obj = clip.tracking.objects.active
+                if obj and obj.reconstruction and obj.reconstruction.is_valid:
+                    self._solve_done = True
+            except Exception:
+                # Im Zweifel als Fehler markieren
+                self._solve_failed = True
+    
+        self._on_solve_change = _on_change  # Referenz halten
+        bpy.msgbus.subscribe_rna(
+            key=(bpy.types.MovieTrackingReconstruction, "is_valid"),
+            owner=self._solve_token,
+            args=(),
+            notify=_on_change,
+            options={'PERSISTENT'},
+        )
 
 def _solve_watch_unregister(self):
     """Entfernt den RNA-Listener, falls vorhanden."""
