@@ -1,27 +1,28 @@
 import bpy
 
-# Operator-Imports
 from .tracker_settings import CLIP_OT_tracker_settings
 from .detect import CLIP_OT_detect
 from .bidirectional_track import CLIP_OT_bidirectional_track
 from .clean_short_tracks import CLIP_OT_clean_short_tracks
 from .tracking_pipeline import CLIP_OT_tracking_pipeline
+
+# Wichtig: beide aus clean_error_tracks importieren
 from .clean_error_tracks import (
+    CLIP_OT_clean_error_tracks_modal,
     CLIP_OT_clean_error_tracks,
-    CLIP_OT_clean_error_tracks_modal,  # Modal-Variante mit registrieren
 )
+
 from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 from .main import CLIP_OT_main
 
-# Einheitliche Klassenliste – jede Klasse genau einmal
 classes = (
     CLIP_OT_tracker_settings,
     CLIP_OT_detect,
     CLIP_OT_bidirectional_track,
     CLIP_OT_clean_short_tracks,
     CLIP_OT_tracking_pipeline,
-    CLIP_OT_clean_error_tracks_modal,  # zuerst Modal (optional, aber sauber)
-    CLIP_OT_clean_error_tracks,        # ruft Modal via Hand-off
+    CLIP_OT_clean_error_tracks_modal,  # Modal zuerst registrieren (nicht zwingend, aber sauber)
+    CLIP_OT_clean_error_tracks,        # Starter, der das Modal aufruft
     CLIP_OT_optimize_tracking_modal,
     CLIP_OT_main,
 )
