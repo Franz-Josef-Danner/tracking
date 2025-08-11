@@ -6,13 +6,6 @@ from ..Helper.jump_to_frame import jump_to_frame
 from ..Helper.properties import RepeatEntry
 from ..Helper.solve_camera_helper import CLIP_OT_solve_camera_helper
 
-def _deferred_solve():
-    try:
-        bpy.ops.clip.solve_camera_helper('INVOKE_DEFAULT')
-    except Exception:
-        return 0.0
-    return None  # einmalig
-
 class CLIP_OT_main(bpy.types.Operator):
     bl_idname = "clip.main"
     bl_label = "Main Setup (Modal)"
@@ -142,7 +135,15 @@ class CLIP_OT_main(bpy.types.Operator):
                 context.window_manager.event_timer_remove(self._timer)
                 bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
 
-                bpy.app.timers.register(_deferred_solve, first_interval=1.0)
+                try:
+                    bpy.ops.clip.solve_camera_helper('INVOKE_DEFAULT')
+                except Exception as e:
+                    self.report({'WARNING'}, f"Solve (Helper) fehlgeschlagen: {e}")
+                    # Fallback ohne Helper – falls registriert, aber kein CLIP-Kontext:
+                    try:
+                        bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+                    except Exception as e2:
+                        self.report({'ERROR'}, f"Direkter Solve fehlgeschlagen: {e2}")
                 
                 self.report({'INFO'}, "Tracking + Markerprüfung abgeschlossen.")
                 return {'FINISHED'}
