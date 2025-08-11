@@ -29,7 +29,13 @@ classes = (
 
 def register():
     for cls in classes:
-        bpy.utils.register_class(cls)
+        try:
+            bpy.utils.register_class(cls)
+            bn = getattr(cls, "bl_idname", cls.__name__)
+            print(f"[tracking-final] Registered: {bn}")
+        except Exception as e:
+            print(f"[tracking-final] FAILED to register {cls}: {e}")
+
 
 def unregister():
     for cls in reversed(classes):
