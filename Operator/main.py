@@ -14,6 +14,48 @@ class CLIP_OT_main(bpy.types.Operator):
     _timer = None
     _step = 0
 
+    def _solve_watch_register(self, context):
+    """Registriert einen RNA-Listener auf den Solve-Status."""
+    import bpy
+    self._solve_token = object()
+    self._solve_done = False
+    self._solve_failed = False
+    self._solve_started_at = time.time()
+
+    # Callback: prüft, ob Rekonstruktion gültig ist
+    def _on_change():
+        try:
+            space = context.space_data
+            clip = getattr(space, "clip", None)
+            if not clip:
+                return
+            obj = clip.tracking.objects.active
+            if obj and obj.reconstruction and obj.reconstruction.is_valid:
+                self._solve_done = True
+        except Exception:
+            # Im Zweifel als Fehler markieren
+            self._solve_failed = True
+
+    self._on_solve_change = _on_change  # Referenz halten
+    bpy.msgbus.subscribe_rna(
+        key=(bpy.types.MovieTrackingReconstruction, "is_valid"),
+        owner=self._solve_token,
+        args=(),
+        notify=_on_change,
+        options={'PERSISTENT'},
+    )
+
+def _solve_watch_unregister(self):
+    """Entfernt den RNA-Listener, falls vorhanden."""
+    import bpy
+    try:
+        if getattr(self, "_solve_token", None):
+            bpy.msgbus.clear_by_owner(self._solve_token)
+    except Exception:
+        pass
+    self._solve_token = None
+
+
     def execute(self, context):
         scene = context.scene
     
@@ -139,9 +181,48 @@ class CLIP_OT_main(bpy.types.Operator):
                 try:
                     print("🎯 Final: Starte Kamera-Solver…")
                     bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+                    # Beobachtung aktivieren
+                    self._solve_watch_register(context)
+                    
+                    print("🎯 Final: Starte Kamera-Solver…")
+                    bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+                    
+                    # Statt hier zu beenden → in Step 3 auf das Ende warten
+                    self._step = 3
+                    return {'PASS_THROUGH'}
+
                 except Exception as e:
                     self.report({'WARNING'}, f"Kamera-Solver konnte nicht gestartet werden: {e}")
-                
+
+                    elif self._step == 3:
+                        # Fertig?
+                        if getattr(self, "_solve_done", False):
+                            print("✅ Kamera-Solve abgeschlossen.")
+                            self._solve_watch_unregister()
+                            try:
+                                context.window_manager.event_timer_remove(self._timer)
+                            except Exception:
+                                pass
+                            self.report({'INFO'}, "Tracking + Solve abgeschlossen.")
+                            return {'FINISHED'}
+                    
+                        # Fehlersignal vom Callback?
+                        if getattr(self, "_solve_failed", False):
+                            print("❌ Kamera-Solve meldet Fehler.")
+                            self._solve_watch_unregister()
+                            self.report({'WARNING'}, "Kamera-Solve fehlgeschlagen.")
+                            return {'CANCELLED'}
+                    
+                        # Timeout als Fail-Safe (z. B. 120s)
+                        if time.time() - getattr(self, "_solve_started_at", time.time()) > 120:
+                            print("⏱️ Timeout: Keine Bestätigung vom Kamera-Solve.")
+                            self._solve_watch_unregister()
+                            self.report({'WARNING'}, "Kamera-Solve Timeout.")
+                            return {'CANCELLED'}
+                    
+                        return {'PASS_THROUGH'}
+
+
                 self.report({'INFO'}, "Tracking + Markerprüfung abgeschlossen.")
                 return {'FINISHED'}
 
