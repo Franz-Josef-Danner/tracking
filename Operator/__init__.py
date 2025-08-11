@@ -36,10 +36,20 @@ def register():
         except Exception as e:
             print(f"[tracking-final] FAILED to register {cls}: {e}")
 
+    # Sichtprüfung NACH der Registrierung
+    try:
+        print("[tracking-final] exists_modal:", hasattr(bpy.ops.clip, "clean_error_tracks_modal"))
+        print("[tracking-final] exists_starter:", hasattr(bpy.ops.clip, "clean_error_tracks"))
+    except Exception as e:
+        print("[tracking-final] post-register check failed:", e)
+
 
 def unregister():
     for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception as e:
+            print(f"[tracking-final] FAILED to unregister {cls}: {e}")
 
 if __name__ == "__main__":
     register()
