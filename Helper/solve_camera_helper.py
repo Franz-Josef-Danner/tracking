@@ -40,21 +40,15 @@ class CLIP_OT_solve_camera_helper(bpy.types.Operator):
             "space_data": space,
         }
         try:
-            # Kontext sicher über temp_override setzen
-            with bpy.context.temp_override(
-                window=context.window,
-                screen=context.window.screen,
-                area=area,
-                region=region,
-                space_data=space,
-            ):
-                bpy.ops.clip.solve_camera('INVOKE_DEFAULT',
-                                          use_keyframe=self.use_keyframe,
-                                          keyframe1=self.keyframe1,
-                                          keyframe2=self.keyframe2,
-                                          refine=self.refine)
+            bpy.ops.clip.solve_camera(
+                override,
+                "EXEC_DEFAULT",
+                use_keyframe=self.use_keyframe,
+                keyframe1=self.keyframe1,
+                keyframe2=self.keyframe2,
+                refine=self.refine,
+            )
             return {'FINISHED'}
         except Exception as e:
             self.report({'ERROR'}, f"Camera Solve fehlgeschlagen: {e}")
             return {'CANCELLED'}
-
