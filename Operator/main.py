@@ -35,8 +35,7 @@ class CLIP_OT_main(bpy.types.Operator):
         self._solve_done = False
         self._solve_failed = False
         self._solve_started_at = time.time()
-    
-        # Callback: prüft, ob Rekonstruktion gültig ist
+
         def _on_change():
             try:
                 space = context.space_data
@@ -47,10 +46,9 @@ class CLIP_OT_main(bpy.types.Operator):
                 if obj and obj.reconstruction and obj.reconstruction.is_valid:
                     self._solve_done = True
             except Exception:
-                # Im Zweifel als Fehler markieren
                 self._solve_failed = True
-    
-        self._on_solve_change = _on_change  # Referenz halten
+
+        self._on_solve_change = _on_change
         bpy.msgbus.subscribe_rna(
             key=(bpy.types.MovieTrackingReconstruction, "is_valid"),
             owner=self._solve_token,
@@ -68,49 +66,47 @@ class CLIP_OT_main(bpy.types.Operator):
         except Exception:
             pass
         self._solve_token = None
-    
-    
-        def execute(self, context):
-            scene = context.scene
-        
-            # Reset aller relevanten Szene-Variablen
-            scene["pipeline_status"] = ""
-            scene["marker_min"] = 0
-            scene["marker_max"] = 0
-            scene["goto_frame"] = -1
-        
-            if hasattr(scene, "repeat_frame"):
-                scene.repeat_frame.clear()
-        
-            # Optional: Clip-Zustand prüfen
-            clip = context.space_data.clip
-            if clip is None or not clip.tracking:
-                self.report({'WARNING'}, "Kein gültiger Clip oder Tracking-Daten vorhanden.")
-                return {'CANCELLED'}
-        
-            print("🚀 Starte Tracking-Vorbereitung...")
-        
-            # 🔧 EINMALIGE Vorbereitung vor Zyklusstart
-            bpy.ops.clip.tracker_settings('EXEC_DEFAULT')
-            bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
-        
-            print("🚀 Starte Tracking-Pipeline...")
-            bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
-            print("⏳ Warte auf Abschluss der Pipeline...")
-        
-            wm = context.window_manager
-            self._timer = wm.event_timer_add(0.5, window=context.window)
-            wm.modal_handler_add(self)
-            self._step = 0
-        
-            return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        scene = context.scene
+
+        # Reset Szene-Variablen
+        scene["pipeline_status"] = ""
+        scene["marker_min"] = 0
+        scene["marker_max"] = 0
+        scene["goto_frame"] = -1
+
+        if hasattr(scene, "repeat_frame"):
+            scene.repeat_frame.clear()
+
+        # Clip prüfen
+        clip = getattr(context.space_data, "clip", None)
+        if clip is None or not getattr(clip, "tracking", None):
+            self.report({'WARNING'}, "Kein gültiger Clip oder Tracking-Daten vorhanden.")
+            return {'CANCELLED'}
+
+        print("🚀 Starte Tracking-Vorbereitung...")
+        bpy.ops.clip.tracker_settings('EXEC_DEFAULT')
+        bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
+
+        print("🚀 Starte Tracking-Pipeline...")
+        bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
+        print("⏳ Warte auf Abschluss der Pipeline...")
+
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.5, window=context.window)
+        wm.modal_handler_add(self)
+        self._step = 0
+        return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
         if event.type == 'ESC':
             self.report({'WARNING'}, "Tracking-Setup manuell abgebrochen.")
-            context.window_manager.event_timer_remove(self._timer)
-    
-            # 🔁 Kompletter Reset der Szenevariablen
+            try:
+                context.window_manager.event_timer_remove(self._timer)
+            except Exception:
+                pass
+
             scene = context.scene
             scene["pipeline_status"] = ""
             scene["marker_min"] = 0
@@ -118,16 +114,17 @@ class CLIP_OT_main(bpy.types.Operator):
             scene["goto_frame"] = -1
             if hasattr(scene, "repeat_frame"):
                 scene.repeat_frame.clear()
-    
+
             print("❌ Abbruch durch Benutzer – Setup zurückgesetzt.")
             return {'CANCELLED'}
-    
+
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
-    
+
         scene = context.scene
         repeat_collection = scene.repeat_frame
 
+        # Step 0: Warten auf Pipeline-Ende
         if self._step == 0:
             if scene.get("pipeline_status", "") == "done":
                 print("🧪 Starte Markerprüfung…")
