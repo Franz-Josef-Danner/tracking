@@ -2,6 +2,66 @@
 import bpy
 from bpy.types import Operator
 
+class CLIP_OT_watch_solve(bpy.types.Operator):
+    bl_idname = "clip.watch_solve"
+    bl_label = "Watch Camera Solve"
+    bl_options = {"INTERNAL"}
+
+    _owner = object()
+    _sub_valid = None
+    _sub_err = None
+
+    def _notify(self, *args):
+        # In Timer verlagern, um UI-Kontext-Probleme zu vermeiden
+        def _finish():
+            scene = bpy.context.scene
+            clip = bpy.context.space_data.clip if bpy.context.space_data else None
+            rec = clip.tracking.objects.active.reconstruction if (clip and clip.tracking and clip.tracking.objects) else None
+
+            avg = getattr(rec, "average_error", None)
+            scene["solve_status"] = "done"
+            if avg is not None:
+                scene["solve_error"] = float(avg)
+
+            # Abos aufräumen
+            try:
+                bpy.msgbus.clear_by_owner(self._owner)
+            except Exception:
+                pass
+            return None  # Timer einmalig
+
+        bpy.app.timers.register(_finish, first_interval=0.0)
+
+    def invoke(self, context, event):
+        scene = context.scene
+        scene["solve_status"] = "pending"
+        scene["solve_error"] = -1.0
+
+        # Subscriptions: is_valid und average_error
+        try:
+            bpy.msgbus.subscribe_rna(
+                key=(bpy.types.MovieTrackingReconstruction, "is_valid"),
+                owner=self._owner,
+                args=(),
+                notify=self._notify,
+            )
+            bpy.msgbus.subscribe_rna(
+                key=(bpy.types.MovieTrackingReconstruction, "average_error"),
+                owner=self._owner,
+                args=(),
+                notify=self._notify,
+            )
+        except Exception as ex:
+            self.report({'WARNING'}, f"Msgbus-Subscribe fehlgeschlagen: {ex}. Fallback: Polling in main.")
+        
+        # Solve starten – nutzt Deinen vorhandenen Helper
+        res = bpy.ops.clip.solve_camera_helper('INVOKE_DEFAULT')
+        if res not in ({'FINISHED'}, {'RUNNING_MODAL'}):
+            self.report({'ERROR'}, f"Camera Solve Start fehlgeschlagen: {res}")
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
+
 def _find_clip_context(context: bpy.types.Context):
     """Finde (area, region, space) des CLIP_EDITOR, sonst (None, None, None)."""
     area = getattr(context, "area", None)
