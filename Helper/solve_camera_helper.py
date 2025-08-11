@@ -1,79 +1,94 @@
-# tracking-final/Helper/solve_camera_helper.py
+# Helper/solve_camera_helper.py
 import bpy
+from bpy.types import Operator
 
 def _find_clip_context(context: bpy.types.Context):
-    """Suche einen gültigen CLIP_EDITOR-Kontext (area, region, space_data)."""
-    screen = context.screen
+    """Ermittelt (area, region, space) für den CLIP_EDITOR. Gibt (None, None, None) zurück, falls nicht vorhanden."""
+    # 1) Aktive Area bevorzugen
+    area = getattr(context, "area", None)
+    if area and area.type == "CLIP_EDITOR":
+        region = next((r for r in area.regions if r.type == "WINDOW"), None)
+        space = area.spaces.active
+        if region and space:
+            return area, region, space
+
+    # 2) Fallback: Screen scannen
+    screen = getattr(context, "screen", None)
     if not screen:
         return None, None, None
-    for area in screen.areas:
-        if area.type == 'CLIP_EDITOR':
-            for region in area.regions:
-                if region.type == 'WINDOW':
-                    space = area.spaces.active
-                    # safety: nur wenn wirklich ein Clip aktiv ist
-                    if getattr(space, "clip", None):
-                        return area, region, space
+
+    for a in screen.areas:
+        if a.type == "CLIP_EDITOR":
+            r = next((rg for rg in a.regions if rg.type == "WINDOW"), None)
+            if r:
+                return a, r, a.spaces.active
     return None, None, None
 
 
-def solve_camera_helper(context: bpy.types.Context = None):
-    """
-    Programmatischer Helper: löst den Kamera-Solve via INVOKE_DEFAULT aus.
-    Nutzt Context-Override, damit der Operator sicher im CLIP-Kontext läuft.
-    """
-    ctx = context or bpy.context
-    area, region, space = _find_clip_context(ctx)
-
-    try:
-        if area and region and space:
-            with bpy.context.temp_override(area=area, region=region, space_data=space):
-                result = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-        else:
-            # Fallback: versuchen ohne Override (z. B. Headless/Test)
-            result = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-
-        print(f"[CameraSolve] Trigger result: {result}")
-        return result
-    except Exception as e:
-        print(f"[CameraSolve] Fehler beim Auslösen: {e}")
-        return {'CANCELLED'}
+def _build_override(context):
+    """Context-Override für CLIP_EDITOR erstellen. None bei Nichterfolg."""
+    area, region, space = _find_clip_context(context)
+    if not (area and region and space and getattr(space, "clip", None)):
+        return None
+    override = {
+        "window": context.window,
+        "screen": context.screen,
+        "area": area,
+        "region": region,
+        "space_data": space,
+    }
+    return override
 
 
-class CLIP_OT_solve_camera_helper(bpy.types.Operator):
-    """Wrapper-Operator: ruft solve_camera im gültigen CLIP-Kontext auf."""
+class CLIP_OT_solve_camera_helper(Operator):
+    """Löst den internen Kamera-Solver aus (INVOCATION), mit sauberem CLIP_CONTEXT."""
     bl_idname = "clip.solve_camera_helper"
     bl_label = "Solve Camera (Helper)"
-    bl_description = "Startet den Kamera-Solve UI-konform mit Context-Override"
-    bl_options = {'REGISTER', 'INTERNAL'}  # INTERNAL: nicht prominent im UI
-
-    @classmethod
-    def poll(cls, context):
-        # Solve nur erlauben, wenn ein Clip plausibel verfügbar ist
-        try:
-            area, region, space = _find_clip_context(context)
-            return bool(space and getattr(space, "clip", None))
-        except Exception:
-            return False
-
-    def execute(self, context):
-        # Falls direkt EXECUTE gerufen wird, trotzdem Solve durchführen
-        res = solve_camera_helper(context)
-        return {'FINISHED'} if res == {'FINISHED'} else {'CANCELLED'}
+    bl_options = {"INTERNAL", "UNDO"}  # UNDO optional – je nach Pipeline
 
     def invoke(self, context, event):
-        # Präferierter Pfad: INVOKE_DEFAULT für UI-Flow
-        res = solve_camera_helper(context)
-        return {'FINISHED'} if res == {'FINISHED'} else {'CANCELLED'}
+        override = _build_override(context)
+        if not override:
+            self.report(
+                {"ERROR"},
+                "CLIP_EDITOR/Clip-Kontext nicht verfügbar. Öffne den Clip Editor und lade einen Clip."
+            )
+            return {"CANCELLED"}
+
+        # Primär: INVOKE_DEFAULT – öffnet ggf. Operator-UI/Dialoge
+        try:
+            result = bpy.ops.clip.solve_camera("INVOKE_DEFAULT", **override)
+            if result != {"FINISHED"}:
+                # Typischerweise {'CANCELLED'} oder {'PASS_THROUGH'}
+                self.report({"WARNING"}, f"Kamera-Solve (INVOKE_DEFAULT) Ergebnis: {result}")
+        except RuntimeError as ex:
+            # Häufig: "1-2 args execution context is supported" bei falschem Aufruf
+            self.report({"WARNING"}, f"INVOCATION fehlgeschlagen ({ex}). Fallback EXEC_DEFAULT wird versucht.")
+            try:
+                result = bpy.ops.clip.solve_camera("EXEC_DEFAULT", **override)
+                if result != {"FINISHED"}:
+                    self.report({"ERROR"}, f"Kamera-Solve (EXEC_DEFAULT) Ergebnis: {result}")
+                    return {"CANCELLED"}
+            except Exception as ex2:
+                self.report({"ERROR"}, f"Kamera-Solve fehlgeschlagen: {ex2}")
+                return {"CANCELLED"}
+
+        # Leichtes UI-Refresh für sofortiges Feedback
+        try:
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+        except Exception:
+            pass
+
+        return {"FINISHED"}
 
 
-# ---- Registrierungs-API ----
-CLASSES = (CLIP_OT_solve_camera_helper,)
+# Modul-API für __init__.py
+_classes = (CLIP_OT_solve_camera_helper,)
 
 def register():
-    for c in CLASSES:
-        bpy.utils.register_class(c)
+    for cls in _classes:
+        bpy.utils.register_class(cls)
 
 def unregister():
-    for c in reversed(CLASSES):
-        bpy.utils.unregister_class(c)
+    for cls in reversed(_classes):
+        bpy.utils.unregister_class(cls)
