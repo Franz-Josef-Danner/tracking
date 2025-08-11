@@ -147,7 +147,6 @@ class CLIP_OT_main(bpy.types.Operator):
                 scene["solve_status"] = "pending"
                 
                 bpy.ops.clip.watch_solve('INVOKE_DEFAULT')
-                scene["solve_watch_fallback"] = False
                 self._step = 3
                 return {'PASS_THROUGH'}
 
