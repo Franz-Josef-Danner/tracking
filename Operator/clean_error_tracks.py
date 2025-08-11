@@ -59,7 +59,7 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width
                         if track.markers.find_frame(f):
                             track.markers.delete_frame(f)
                             total_deleted += 1
-                            time.sleep(0.05)  # Pause von 50 ms
+                            time.sleep(0.02)  # Pause von 50 ms
 
     return total_deleted
 
@@ -179,7 +179,7 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
 
             for seg in segments:
                 mute_marker_path(track, seg[-1] + 1, 'forward', mute=True)
-            time.sleep(0.05)
+            time.sleep(0.02)
 
 
         # 🔵 NEW-TRACKS: Hinteres Segment behalten → alles davor muten
@@ -188,7 +188,7 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
             context.scene.frame_set(context.scene.frame_current)
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=3)
             bpy.context.view_layer.update()
-            time.sleep(0.05)
+            time.sleep(0.02)
 
             segments = get_track_segments(track)
 
@@ -198,7 +198,7 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
 
             for seg in segments:
                 mute_marker_path(track, seg[0] - 1, 'backward', mute=True)
-            time.sleep(0.05)
+            time.sleep(0.02)
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
