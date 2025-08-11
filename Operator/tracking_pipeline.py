@@ -50,26 +50,33 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
         wm = context.window_manager
         clip = context.space_data.clip
         ts = clip.tracking.settings
-        ts.default_margin = ts.default_search_size  # UI-Konsistenz
+        ts.default_margin = ts.default_search_size
 
         if self._step == 0:
             print("→ Marker Helper")
             bpy.ops.clip.marker_helper_main()
-            self._step = 1
+            self._step += 1
             return {'PASS_THROUGH'}
 
         elif self._step == 1:
-            print("→ Detect starten")
-            bpy.ops.clip.detect()
-            self._step = 2
+            print("→ Proxy deaktivieren")
+            bpy.ops.clip.disable_proxy()
+            self._step += 1
             return {'PASS_THROUGH'}
 
         elif self._step == 2:
+            print("→ Detect starten")
+            bpy.ops.clip.detect()
+            self._step += 1
+            return {'PASS_THROUGH'}
+
+        elif self._step == 3:
             print("⏳ Warte auf Detect-Abschluss...")
+        
             detect_status = scene.get("detect_status", "")
         
             if detect_status == "success":
-                self._step = 3
+                self._step += 1
                 scene["detect_status"] = ""
                 return {'PASS_THROUGH'}
         
@@ -80,13 +87,23 @@ class CLIP_OT_tracking_pipeline(bpy.types.Operator):
         
             return {'PASS_THROUGH'}
 
-        elif self._step == 3:
-            print("→ Starte bidirektionales Tracking")
-            bpy.ops.clip.bidirectional_track()
-            self._step = 4
-            return {'PASS_THROUGH'}
 
         elif self._step == 4:
+            print("→ Proxy aktivieren")
+            bpy.ops.clip.enable_proxy()
+            ts = context.space_data.clip.tracking.settings
+            ts.default_margin = ts.default_search_size  # <--- automatischer Reset
+            self._step += 1
+            return {'PASS_THROUGH'}
+
+
+        elif self._step == 5:
+            print("→ Starte bidirektionales Tracking")
+            bpy.ops.clip.bidirectional_track()
+            self._step += 1
+            return {'PASS_THROUGH'}
+
+        elif self._step == 6:
             if scene.get("bidirectional_status", "") == "done":
                 print("✅ Bidirectional Tracking abgeschlossen.")
                 scene["bidirectional_status"] = ""
