@@ -1,10 +1,9 @@
-# Helper/solve_camera_helper.py
+# Helper/solve_camera_helper.py (Blender 4.4.3)
 import bpy
 from bpy.types import Operator
 
 def _find_clip_context(context: bpy.types.Context):
-    """Ermittelt (area, region, space) für den CLIP_EDITOR. Gibt (None, None, None) zurück, falls nicht vorhanden."""
-    # 1) Aktive Area bevorzugen
+    """Finde (area, region, space) des CLIP_EDITOR, sonst (None, None, None)."""
     area = getattr(context, "area", None)
     if area and area.type == "CLIP_EDITOR":
         region = next((r for r in area.regions if r.type == "WINDOW"), None)
@@ -12,62 +11,66 @@ def _find_clip_context(context: bpy.types.Context):
         if region and space:
             return area, region, space
 
-    # 2) Fallback: Screen scannen
     screen = getattr(context, "screen", None)
     if not screen:
         return None, None, None
 
     for a in screen.areas:
         if a.type == "CLIP_EDITOR":
-            r = next((rg for rg in a.regions if rg.type == "WINDOW"), None)
-            if r:
-                return a, r, a.spaces.active
+            region = next((r for r in a.regions if r.type == "WINDOW"), None)
+            if region:
+                return a, region, a.spaces.active
     return None, None, None
 
 
 def _build_override(context):
-    """Context-Override für CLIP_EDITOR erstellen. None bei Nichterfolg."""
+    """Nur die UI-Schlüssel für temp_override vorbereiten (kein window/screen!)."""
     area, region, space = _find_clip_context(context)
     if not (area and region and space and getattr(space, "clip", None)):
         return None
-    # Wichtig: KEIN window/screen in Operator-Override übergeben.
     return {"area": area, "region": region, "space_data": space}
 
 
 class CLIP_OT_solve_camera_helper(Operator):
-    """Löst den internen Kamera-Solver aus (INVOCATION), mit sauberem CLIP_CONTEXT."""
+    """Startet den internen Kamera-Solver mit INVOKE_DEFAULT im korrekten Kontext."""
     bl_idname = "clip.solve_camera_helper"
     bl_label = "Solve Camera (Helper)"
-    bl_options = {"INTERNAL", "UNDO"}  # UNDO optional – je nach Pipeline
+    bl_options = {"INTERNAL"}  # UNDO optional
 
     def invoke(self, context, event):
         override = _build_override(context)
         if not override:
-            self.report(
-                {"ERROR"},
-                "CLIP_EDITOR/Clip-Kontext nicht verfügbar. Öffne den Clip Editor und lade einen Clip."
-            )
+            self.report({"ERROR"}, "CLIP_EDITOR/Clip-Kontext fehlt. Clip Editor öffnen und Clip laden.")
             return {"CANCELLED"}
 
-        # Primär: INVOKE_DEFAULT – öffnet ggf. Operator-UI/Dialoge
-        def _build_override(context):
-            """Context-Override für CLIP_EDITOR erstellen. None bei Nichterfolg."""
-            area, region, space = _find_clip_context(context)
-            if not (area and region and space and getattr(space, "clip", None)):
-                return None
-            # Wichtig: KEIN window/screen in Operator-Override übergeben.
-            return {"area": area, "region": region, "space_data": space}
-        
-                # Leichtes UI-Refresh für sofortiges Feedback
-                try:
-                    bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-                except Exception:
-                    pass
-        
-                return {"FINISHED"}
+        # 1) Versuche INVOKE_DEFAULT mit gültigem UI-Kontext
+        try:
+            with context.temp_override(**override):
+                result = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+            if result != {"FINISHED"}:
+                self.report({"WARNING"}, f"Kamera-Solve (INVOKE_DEFAULT): {result}")
+        except RuntimeError as ex:
+            # 2) Fallback EXEC_DEFAULT im selben Override
+            self.report({"WARNING"}, f"INVOCATION fehlgeschlagen ({ex}). Fallback EXEC_DEFAULT …")
+            try:
+                with context.temp_override(**override):
+                    result = bpy.ops.clip.solve_camera('EXEC_DEFAULT')
+                if result != {"FINISHED"}:
+                    self.report({"ERROR"}, f"Kamera-Solve (EXEC_DEFAULT): {result}")
+                    return {"CANCELLED"}
+            except Exception as ex2:
+                self.report({"ERROR"}, f"Kamera-Solve fehlgeschlagen: {ex2}")
+                return {"CANCELLED"}
+
+        # UI-Refresh (best effort)
+        try:
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+        except Exception:
+            pass
+        return {"FINISHED"}
 
 
-# Modul-API für __init__.py
+# --- Register Boilerplate ---
 _classes = (CLIP_OT_solve_camera_helper,)
 
 def register():
