@@ -134,19 +134,17 @@ class CLIP_OT_main(bpy.types.Operator):
                 print("🏁 Keine Low-Marker-Frames mehr gefunden. Beende Prozess.")
                 context.window_manager.event_timer_remove(self._timer)
                 bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
-
+                
+                # NEU: finaler Kamera-Solve (invoke)
                 try:
-                    bpy.ops.clip.solve_camera_helper('INVOKE_DEFAULT')
+                    print("🎯 Final: Starte Kamera-Solver…")
+                    bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
                 except Exception as e:
-                    self.report({'WARNING'}, f"Solve (Helper) fehlgeschlagen: {e}")
-                    # Fallback ohne Helper – falls registriert, aber kein CLIP-Kontext:
-                    try:
-                        bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-                    except Exception as e2:
-                        self.report({'ERROR'}, f"Direkter Solve fehlgeschlagen: {e2}")
+                    self.report({'WARNING'}, f"Kamera-Solver konnte nicht gestartet werden: {e}")
                 
                 self.report({'INFO'}, "Tracking + Markerprüfung abgeschlossen.")
                 return {'FINISHED'}
+
 
             return {'PASS_THROUGH'}
 
