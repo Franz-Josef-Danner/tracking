@@ -3,7 +3,9 @@ import bpy
 import time
 from ..Helper.find_low_marker_frame import find_low_marker_frame
 from ..Helper.jump_to_frame import jump_to_frame
-from ..Helper.properties import RepeatEntry  # <- wichtig!
+from ..Helper.properties import RepeatEntry
+from ..Helper.solve_camera_helper import CLIP_OT_solve_camera_helper
+
 
 class CLIP_OT_main(bpy.types.Operator):
     bl_idname = "clip.main"
