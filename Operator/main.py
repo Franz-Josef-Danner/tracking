@@ -152,64 +152,59 @@ class CLIP_OT_main(bpy.types.Operator):
 
         elif self._step == 3:
             scene = context.scene
-            status = scene.get("solve_status", "")
         
-            if status == "done":
-                # --- Rekonstruktion direkt auslesen ---
-                space = getattr(context, "space_data", None)
-                clip = getattr(space, "clip", None)
-                rec = clip.tracking.objects.active.reconstruction if (clip and getattr(clip, "tracking", None) and clip.tracking.objects) else None
-            
-                if not (rec and getattr(rec, "is_valid", False)):
-                    self.report({'ERROR'}, "Solve-Ergebnis ungültig (reconstruction.is_valid == False).")
-                    context.window_manager.event_timer_remove(self._timer)
-                    scene["solve_watch_fallback"] = False
-                    scene["solve_status"] = ""
-                    return {'CANCELLED'}
-            
-                # --- Error-Wert ---
+            # Clip & Reconstruction robust ermitteln (kontexttolerant)
+            space = getattr(context, "space_data", None)
+            clip = getattr(space, "clip", None)
+            rec = None
+            try:
+                if clip and getattr(clip, "tracking", None) and clip.tracking.objects:
+                    rec = clip.tracking.objects.active.reconstruction
+            except Exception:
+                rec = None
+        
+            # Primärer Abschlussweg: aktives Polling statt Event-Abhängigkeit
+            if rec and getattr(rec, "is_valid", False):
                 err_val = float(getattr(rec, "average_error", -1.0))
-            
-                # --- Limit robust holen ---
-                if hasattr(scene, "error_track"):  # RNA-Property bevorzugen
+        
+                # Limit bevorzugt als RNA-Property lesen; Fallback auf ID-Prop
+                if hasattr(scene, "error_track"):
                     limit_val = float(getattr(scene, "error_track"))
-                else:  # Fallback auf ID-Property
+                else:
                     limit_val = float(scene.get("error_track", 0.0))
-            
+        
                 path = "Poll" if scene.get("solve_watch_fallback", False) else "Msgbus"
                 print(f"✅ [{path}] Camera Solve fertig. Average Error: {err_val:.3f} px (Limit: {limit_val:.3f} px)")
-            
-                # --- Vergleich ---
+        
+                # Entscheidung OK/FAILED
                 if err_val > limit_val:
                     print(f"[Solve-Check] FAILED (Error={err_val:.3f} px > Limit={limit_val:.3f} px)")
                     self.report({'ERROR'}, f"Solve-Error {err_val:.3f} px > Limit {limit_val:.3f} px → FAILED")
-                    context.window_manager.event_timer_remove(self._timer)
+                    try:
+                        context.window_manager.event_timer_remove(self._timer)
+                    except Exception:
+                        pass
                     scene["solve_watch_fallback"] = False
                     scene["solve_status"] = ""
                     return {'CANCELLED'}
-            
+        
                 print(f"[Solve-Check] OK (Error={err_val:.3f} px ≤ Limit={limit_val:.3f} px)")
                 self.report({'INFO'}, f"Solve-Error {err_val:.3f} px innerhalb des Limits.")
-                context.window_manager.event_timer_remove(self._timer)
+                try:
+                    context.window_manager.event_timer_remove(self._timer)
+                except Exception:
+                    pass
                 scene["solve_watch_fallback"] = False
                 scene["solve_status"] = ""
                 return {'FINISHED'}
         
-            # --- Poll-Fallback, falls Msgbus nicht feuert ---
-            if scene.get("solve_watch_fallback", False):
-                space = getattr(context, "space_data", None)
-                clip = getattr(space, "clip", None)
-                if clip and getattr(clip, "tracking", None):
-                    try:
-                        rec = clip.tracking.objects.active.reconstruction
-                        if getattr(rec, "is_valid", False):
-                            avg = getattr(rec, "average_error", None)
-                            scene["solve_status"] = "done"
-                            if avg is not None:
-                                scene["solve_error"] = float(avg)  # optionaler Mirror
-                    except Exception:
-                        pass
+            # Sekundär: Wenn der Watcher doch ein Flag setzt, eine Schleife später erneut pollen.
+            if scene.get("solve_status", "") == "done":
+                return {'PASS_THROUGH'}
+        
+            # Solve läuft oder Rekonstruktion noch nicht gültig → weiter pollen
             return {'PASS_THROUGH'}
+
 
 
 
