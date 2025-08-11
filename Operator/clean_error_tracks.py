@@ -15,60 +15,74 @@ def track_has_internal_gaps(track):
     return any(frames[i] - frames[i - 1] > 1 for i in range(1, len(frames)))
 
 
-def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width, height):
+def run_cleanup_in_region(context, area, region, space, tracks, frame_range,
+                          xmin, xmax, ymin, ymax, ee, width, height,
+                          redraw_every=25):
     total_deleted = 0
     frame_start, frame_end = frame_range
+    deletes_since_redraw = 0
 
-    for fi in range(frame_start + 1, frame_end - 1):
-        f1, f2 = fi - 1, fi + 1
-        marker_data = []
+    # Ganzes Cleaning im gültigen UI-Kontext ausführen
+    with context.temp_override(area=area, region=region, space_data=space):
+        for fi in range(frame_start + 1, frame_end - 1):
+            f1, f2 = fi - 1, fi + 1
+            marker_data = []
 
-        for track in tracks:
-            p1 = get_marker_position(track, f1)
-            p2 = get_marker_position(track, fi)
-            p3 = get_marker_position(track, f2)
+            for track in tracks:
+                p1 = get_marker_position(track, f1)
+                p2 = get_marker_position(track, fi)
+                p3 = get_marker_position(track, f2)
 
-            if not (p1 and p2 and p3):
+                if not (p1 and p2 and p3):
+                    continue
+
+                x, y = p2[0] * width, p2[1] * height
+                if not (xmin <= x < xmax and ymin <= y < ymax):
+                    continue
+
+                vxm = (p2[0] - p1[0]) + (p3[0] - p2[0])
+                vym = (p2[1] - p1[1]) + (p3[1] - p2[1])
+                marker_data.append((track, vxm, vym))
+
+            if not marker_data:
                 continue
 
-            x, y = p2[0] * width, p2[1] * height
-            if not (xmin <= x < xmax and ymin <= y < ymax):
-                continue
+            vxa = sum(vx for _, vx, _ in marker_data) / len(marker_data)
+            vya = sum(vy for _, _, vy in marker_data) / len(marker_data)
+            va = (vxa + vya) / 2
 
-            vxm = (p2[0] - p1[0]) + (p3[0] - p2[0])
-            vym = (p2[1] - p1[1]) + (p3[1] - p2[1])
-            marker_data.append((track, vxm, vym))
+            eb = max([abs((vx + vy) / 2 - va) for _, vx, vy in marker_data], default=0.0001)
+            eb = max(eb, 0.0001)
 
+            while eb > ee:
+                eb *= 0.95
+                for track, vx, vy in marker_data:
+                    vm = (vx + vy) / 2
+                    if abs(vm - va) >= eb:
+                        for f in (f1, fi, f2):
+                            if track.markers.find_frame(f):
+                                track.markers.delete_frame(f)
+                                total_deleted += 1
+                                deletes_since_redraw += 1
 
-        if not marker_data:
-            continue
+                                # Throttled Redraw für sichtbare UI-Aktualisierung
+                                if deletes_since_redraw >= redraw_every:
+                                    # leichte Positionsaktualisierung hält den Editor „wach“
+                                    context.scene.frame_set(fi)
+                                    bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                                    bpy.context.view_layer.update()
+                                    deletes_since_redraw = 0
 
-        vxa = sum(vx for _, vx, _ in marker_data) / len(marker_data)
-        vya = sum(vy for _, _, vy in marker_data) / len(marker_data)
-        va = (vxa + vya) / 2
-
-        eb = max([abs((vx + vy) / 2 - va) for _, vx, vy in marker_data], default=0.0001)
-        eb = max(eb, 0.0001)
-
-        while eb > ee:
-            eb *= 0.95
-            for track, vx, vy in marker_data:
-                vm = (vx + vy) / 2
-                if abs(vm - va) >= eb:
-                    for f in (f1, fi, f2):
-                        if track.markers.find_frame(f):
-                            track.markers.delete_frame(f)
-                            total_deleted += 1
-                            time.sleep(0.02)  # Pause von 50 ms
+        # Finaler Redraw am Ende der Region
+        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=2)
+        bpy.context.view_layer.update()
 
     return total_deleted
 
-
-def clean_error_tracks(context, space):
+def clean_error_tracks(context, space, area=None, region=None):
     scene = context.scene
     clip = space.clip
     tracks = clip.tracking.tracks
-    
 
     for track in tracks:
         track.select = False
@@ -88,10 +102,14 @@ def clean_error_tracks(context, space):
                 xmax = (xIndex + 1) * (width / division)
                 ymin = yIndex * (height / division)
                 ymax = (yIndex + 1) * (height / division)
+
                 total_deleted_all += run_cleanup_in_region(
-                    tracks, frame_range, xmin, xmax, ymin, ymax, ee, width, height
+                    context, area, region, space,
+                    tracks, frame_range, xmin, xmax, ymin, ymax, ee, width, height,
+                    redraw_every=2
                 )
     return total_deleted_all, 0.0
+
     
 def delete_marker_path(track, from_frame, direction):
     to_delete = []
@@ -225,7 +243,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             self.report({'ERROR'}, "Kein gültiger CLIP_EDITOR-Kontext gefunden.")
             return {'CANCELLED'}
 
-        clean_error_tracks(context, clip_editor_space)
+        clean_error_tracks(context, clip_editor_space, clip_editor_area, clip_editor_region)
         clip = clip_editor_space.clip
         tracks = clip.tracking.tracks
 
