@@ -272,16 +272,14 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         for t in original_tracks:
             t.select = True
 
-        with context.temp_override(area=area, region=region, space_data=space):
+        # RICHTIG: verwende die zuvor ermittelten Clip-Editor-Handles
+        with context.temp_override(area=clip_editor_area, region=clip_editor_region, space_data=clip_editor_space):
             bpy.ops.clip.copy_tracks()
             bpy.ops.clip.paste_tracks()
             deps = context.evaluated_depsgraph_get()
-            deps.update()                       # robuste Depsgraph-Synchronisation
-            bpy.context.view_layer.update()     # Layer-Update
+            deps.update()
+            bpy.context.view_layer.update()
             scene.frame_set(scene.frame_current)
-
-
-
 
         all_names_after = {t.name for t in tracks}
         new_names = all_names_after - existing_names
