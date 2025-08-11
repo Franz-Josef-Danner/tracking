@@ -149,15 +149,10 @@ class CLIP_OT_main(bpy.types.Operator):
             status = context.scene.get("solve_status", "")
             if status == "done":
                 err = context.scene.get("solve_error", -1.0)
+                
                 print(f"✅ Camera Solve fertig. Average Error: {err:.3f}")
-                # → Hier Deine Folgefunktion ausführen:
-                # bpy.ops.clip.deine_folgefunktion('INVOKE_DEFAULT')
-                context.window_manager.event_timer_remove(self._timer)
+                
                 self.report({'INFO'}, "Solve abgeschlossen, Folgefunktion gestartet.")
                 return {'FINISHED'}
-            return {'PASS_THROUGH'}
-
-
-            return {'PASS_THROUGH'}
 
         return {'RUNNING_MODAL'}
