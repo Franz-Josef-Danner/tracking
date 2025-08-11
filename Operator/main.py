@@ -159,6 +159,8 @@ class CLIP_OT_main(bpy.types.Operator):
                 print(f"✅ [{path}] Camera Solve fertig. Average Error: {err:.3f}")
                 self.report({'INFO'}, "Solve abgeschlossen, Folgefunktion gestartet.")
                 context.window_manager.event_timer_remove(self._timer)
+                scene["solve_watch_fallback"] = False
+                scene["solve_status"] = ""
                 return {'FINISHED'}
 
         
