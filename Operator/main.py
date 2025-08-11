@@ -153,16 +153,42 @@ class CLIP_OT_main(bpy.types.Operator):
         elif self._step == 3:
             scene = context.scene
             status = scene.get("solve_status", "")
+        
             if status == "done":
-                err = scene.get("solve_error", -1.0)  # erst JETZT holen
+                # Rekonstruktion direkt aus der API lesen (stabilste Quelle)
+                space = getattr(context, "space_data", None)
+                clip = getattr(space, "clip", None)
+                rec = clip.tracking.objects.active.reconstruction if (clip and getattr(clip, "tracking", None) and clip.tracking.objects) else None
+        
+                if not (rec and getattr(rec, "is_valid", False)):
+                    self.report({'ERROR'}, "Solve-Ergebnis ungültig (reconstruction.is_valid == False).")
+                    context.window_manager.event_timer_remove(self._timer)
+                    scene["solve_watch_fallback"] = False
+                    scene["solve_status"] = ""
+                    return {'CANCELLED'}
+        
+                # Error-Wert stabil aus Rekonstruktion holen
+                err_val = float(getattr(rec, "average_error", -1.0))
+                # Grenzwert aus Scene (FloatProperty oder Key)
+                limit = float(scene.get("error_track", 0.0))
+        
                 path = "Poll" if scene.get("solve_watch_fallback", False) else "Msgbus"
-                print(f"✅ [{path}] Camera Solve fertig. Average Error: {err:.3f}")
-                self.report({'INFO'}, "Solve abgeschlossen, Folgefunktion gestartet.")
+                print(f"✅ [{path}] Camera Solve fertig. Average Error: {err_val:.3f} px (Limit: {limit:.3f} px)")
+        
+                # Vergleich & Entscheidung
+                if err_val > limit:
+                    self.report({'ERROR'}, f"Solve-Error {err_val:.3f} px > Limit {limit:.3f} px → FAILED")
+                    context.window_manager.event_timer_remove(self._timer)
+                    scene["solve_watch_fallback"] = False
+                    scene["solve_status"] = ""
+                    return {'CANCELLED'}
+        
+                # OK-Pfad
+                self.report({'INFO'}, f"Solve-Error {err_val:.3f} px innerhalb des Limits.")
                 context.window_manager.event_timer_remove(self._timer)
                 scene["solve_watch_fallback"] = False
                 scene["solve_status"] = ""
                 return {'FINISHED'}
-
         
             # --- Poll-Fallback, falls Msgbus nicht feuert ---
             if scene.get("solve_watch_fallback", False):
@@ -175,10 +201,11 @@ class CLIP_OT_main(bpy.types.Operator):
                             avg = getattr(rec, "average_error", None)
                             scene["solve_status"] = "done"
                             if avg is not None:
-                                scene["solve_error"] = float(avg)
+                                scene["solve_error"] = float(avg)  # optionaler Mirror
                     except Exception:
                         pass
             return {'PASS_THROUGH'}
+
 
 
 
