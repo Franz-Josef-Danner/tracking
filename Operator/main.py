@@ -155,35 +155,40 @@ class CLIP_OT_main(bpy.types.Operator):
             status = scene.get("solve_status", "")
         
             if status == "done":
-                # Rekonstruktion direkt aus der API lesen (stabilste Quelle)
+                # --- Rekonstruktion direkt auslesen ---
                 space = getattr(context, "space_data", None)
                 clip = getattr(space, "clip", None)
                 rec = clip.tracking.objects.active.reconstruction if (clip and getattr(clip, "tracking", None) and clip.tracking.objects) else None
-        
+            
                 if not (rec and getattr(rec, "is_valid", False)):
                     self.report({'ERROR'}, "Solve-Ergebnis ungültig (reconstruction.is_valid == False).")
                     context.window_manager.event_timer_remove(self._timer)
                     scene["solve_watch_fallback"] = False
                     scene["solve_status"] = ""
                     return {'CANCELLED'}
-        
-                # Error-Wert stabil aus Rekonstruktion holen
+            
+                # --- Error-Wert ---
                 err_val = float(getattr(rec, "average_error", -1.0))
-                # Grenzwert aus Scene (FloatProperty oder Key)
-                limit = float(scene.get("error_track", 0.0))
-        
+            
+                # --- Limit robust holen ---
+                if hasattr(scene, "error_track"):  # RNA-Property bevorzugen
+                    limit_val = float(getattr(scene, "error_track"))
+                else:  # Fallback auf ID-Property
+                    limit_val = float(scene.get("error_track", 0.0))
+            
                 path = "Poll" if scene.get("solve_watch_fallback", False) else "Msgbus"
-                print(f"✅ [{path}] Camera Solve fertig. Average Error: {err_val:.3f} px (Limit: {limit:.3f} px)")
-        
-                # Vergleich & Entscheidung
-                if err_val > limit:
-                    self.report({'ERROR'}, f"Solve-Error {err_val:.3f} px > Limit {limit:.3f} px → FAILED")
+                print(f"✅ [{path}] Camera Solve fertig. Average Error: {err_val:.3f} px (Limit: {limit_val:.3f} px)")
+            
+                # --- Vergleich ---
+                if err_val > limit_val:
+                    print(f"[Solve-Check] FAILED (Error={err_val:.3f} px > Limit={limit_val:.3f} px)")
+                    self.report({'ERROR'}, f"Solve-Error {err_val:.3f} px > Limit {limit_val:.3f} px → FAILED")
                     context.window_manager.event_timer_remove(self._timer)
                     scene["solve_watch_fallback"] = False
                     scene["solve_status"] = ""
                     return {'CANCELLED'}
-        
-                # OK-Pfad
+            
+                print(f"[Solve-Check] OK (Error={err_val:.3f} px ≤ Limit={limit_val:.3f} px)")
                 self.report({'INFO'}, f"Solve-Error {err_val:.3f} px innerhalb des Limits.")
                 context.window_manager.event_timer_remove(self._timer)
                 scene["solve_watch_fallback"] = False
