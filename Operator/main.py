@@ -192,7 +192,6 @@ class CLIP_OT_main(bpy.types.Operator):
                 
                 # NEU: finaler Kamera-Solve (invoke)
                 try:
-                    print("🎯 Final: Starte Kamera-Solver…")
                     self._solve_watch_register(context)
                     print("🎯 Final: Starte Kamera-Solver…")
                     bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
@@ -201,36 +200,34 @@ class CLIP_OT_main(bpy.types.Operator):
                 except Exception as e:
                     self.report({'WARNING'}, f"Kamera-Solver konnte nicht gestartet werden: {e}")
 
-            elif self._step == 3:
-                # Fertig?
-                if getattr(self, "_solve_done", False):
-                    print("✅ Kamera-Solve abgeschlossen.")
-                    self._solve_watch_unregister()
-                    try:
-                        context.window_manager.event_timer_remove(self._timer)
-                    except Exception:
-                        pass
-                    self.report({'INFO'}, "Tracking + Solve abgeschlossen.")
-                    return {'FINISHED'}
+        elif self._step == 3:
+            # Fertig?
+            if getattr(self, "_solve_done", False):
+                print("✅ Kamera-Solve abgeschlossen.")
+                self._solve_watch_unregister()
+                try:
+                    context.window_manager.event_timer_remove(self._timer)
+                except Exception:
+                    pass
+                self.report({'INFO'}, "Tracking + Solve abgeschlossen.")
+                return {'FINISHED'}
             
-                # Fehlersignal vom Callback?
-                if getattr(self, "_solve_failed", False):
-                    print("❌ Kamera-Solve meldet Fehler.")
-                    self._solve_watch_unregister()
-                    self.report({'WARNING'}, "Kamera-Solve fehlgeschlagen.")
-                    return {'CANCELLED'}
+            # Fehlersignal vom Callback?
+            if getattr(self, "_solve_failed", False):
+                print("❌ Kamera-Solve meldet Fehler.")
+                self._solve_watch_unregister()
+                self.report({'WARNING'}, "Kamera-Solve fehlgeschlagen.")
+                return {'CANCELLED'}
             
-                # Timeout als Fail-Safe (z. B. 120s)
-                if time.time() - getattr(self, "_solve_started_at", time.time()) > 120:
-                    print("⏱️ Timeout: Keine Bestätigung vom Kamera-Solve.")
-                    self._solve_watch_unregister()
-                    self.report({'WARNING'}, "Kamera-Solve Timeout.")
-                    return {'CANCELLED'}
-            
-                return {'PASS_THROUGH'}
+            # Timeout als Fail-Safe (z. B. 120s)
+            if time.time() - getattr(self, "_solve_started_at", time.time()) > 120:
+                print("⏱️ Timeout: Keine Bestätigung vom Kamera-Solve.")
+                self._solve_watch_unregister()
+                self.report({'WARNING'}, "Kamera-Solve Timeout.")
+                return {'CANCELLED'}
+        
 
 
-                self.report({'INFO'}, "Tracking + Markerprüfung abgeschlossen.")
                 return {'FINISHED'}
 
 
