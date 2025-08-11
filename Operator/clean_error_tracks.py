@@ -224,7 +224,7 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
             time.sleep(0.1)
 
             segments = get_track_segments(track)
-            time.sleep(0.1)
+            time.sleep(0.2)
             # Optional: alle Marker vorher ent-muten (wie ENABLE)
             for m in track.markers:
                 m.mute = False
