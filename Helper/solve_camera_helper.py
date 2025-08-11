@@ -131,7 +131,7 @@ class CLIP_OT_solve_camera_helper(Operator):
 
 
 # --- Register Boilerplate ---
-_classes = (CLIP_OT_solve_camera_helper,)
+_classes = (CLIP_OT_solve_camera_helper, CLIP_OT_watch_solve)
 
 def register():
     for cls in _classes:
