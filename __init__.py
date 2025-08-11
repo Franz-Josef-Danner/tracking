@@ -91,12 +91,20 @@ def register():
         min=0.001,
         max=1.000,
     )
+    bpy.types.Scene.error_track = FloatProperty(
+        name="Error-Limit (px)",
+        description="Maximale tolerierte Reprojektion in Pixeln",
+        default=1.0,
+        min=0.0,
+        precision=3
+    )
 
 def unregister():
     # Properties entfernen
     del bpy.types.Scene.repeat_frame  # ✅ NEU
     del bpy.types.Scene.marker_frame
     del bpy.types.Scene.frames_track
+    del bpy.types.Scene.error_track
     del bpy.types.Scene.error_track
     solve_camera_helper.unregister()
 
