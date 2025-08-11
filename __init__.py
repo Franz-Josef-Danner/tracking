@@ -12,7 +12,6 @@ import bpy
 from bpy.props import IntProperty, FloatProperty
 
 # Importiere Operatoren
-from .Operator.proxy_builder import CLIP_OT_proxy_builder
 from .Operator.tracker_settings import CLIP_OT_tracker_settings
 from .Operator.tracking_pipeline import CLIP_OT_tracking_pipeline
 from .Helper.marker_helper_main import CLIP_OT_marker_helper_main
@@ -50,7 +49,6 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
 classes = (
     RepeatEntry,  # ✅ zuerst registrieren
     CLIP_PT_kaiserlich_panel,
-    CLIP_OT_proxy_builder,
     CLIP_OT_tracker_settings,
     CLIP_OT_tracking_pipeline,
     CLIP_OT_marker_helper_main,
