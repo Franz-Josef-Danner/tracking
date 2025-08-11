@@ -139,11 +139,6 @@ class CLIP_OT_main(bpy.types.Operator):
                 bpy.ops.clip.watch_solve('INVOKE_DEFAULT')
                 self._step = 3
                 return {'PASS_THROUGH'}
-                
-                bpy.ops.clip.solve_camera_helper('INVOKE_DEFAULT')
-
-                self.report({'INFO'}, "Tracking + Markerprüfung abgeschlossen.")
-                return {'FINISHED'}
 
         elif self._step == 3:
             status = context.scene.get("solve_status", "")
@@ -153,6 +148,7 @@ class CLIP_OT_main(bpy.types.Operator):
                 print(f"✅ Camera Solve fertig. Average Error: {err:.3f}")
                 
                 self.report({'INFO'}, "Solve abgeschlossen, Folgefunktion gestartet.")
+                context.window_manager.event_timer_remove(self._timer)
                 return {'FINISHED'}
 
         return {'RUNNING_MODAL'}
