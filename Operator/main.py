@@ -59,51 +59,51 @@ class CLIP_OT_main(bpy.types.Operator):
             options={'PERSISTENT'},
         )
 
-def _solve_watch_unregister(self):
-    """Entfernt den RNA-Listener, falls vorhanden."""
-    import bpy
-    try:
-        if getattr(self, "_solve_token", None):
-            bpy.msgbus.clear_by_owner(self._solve_token)
-    except Exception:
-        pass
-    self._solve_token = None
-
-
-    def execute(self, context):
-        scene = context.scene
+    def _solve_watch_unregister(self):
+        """Entfernt den RNA-Listener, falls vorhanden."""
+        import bpy
+        try:
+            if getattr(self, "_solve_token", None):
+                bpy.msgbus.clear_by_owner(self._solve_token)
+        except Exception:
+            pass
+        self._solve_token = None
     
-        # Reset aller relevanten Szene-Variablen
-        scene["pipeline_status"] = ""
-        scene["marker_min"] = 0
-        scene["marker_max"] = 0
-        scene["goto_frame"] = -1
     
-        if hasattr(scene, "repeat_frame"):
-            scene.repeat_frame.clear()
-    
-        # Optional: Clip-Zustand prüfen
-        clip = context.space_data.clip
-        if clip is None or not clip.tracking:
-            self.report({'WARNING'}, "Kein gültiger Clip oder Tracking-Daten vorhanden.")
-            return {'CANCELLED'}
-    
-        print("🚀 Starte Tracking-Vorbereitung...")
-    
-        # 🔧 EINMALIGE Vorbereitung vor Zyklusstart
-        bpy.ops.clip.tracker_settings('EXEC_DEFAULT')
-        bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
-    
-        print("🚀 Starte Tracking-Pipeline...")
-        bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
-        print("⏳ Warte auf Abschluss der Pipeline...")
-    
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(0.5, window=context.window)
-        wm.modal_handler_add(self)
-        self._step = 0
-    
-        return {'RUNNING_MODAL'}
+        def execute(self, context):
+            scene = context.scene
+        
+            # Reset aller relevanten Szene-Variablen
+            scene["pipeline_status"] = ""
+            scene["marker_min"] = 0
+            scene["marker_max"] = 0
+            scene["goto_frame"] = -1
+        
+            if hasattr(scene, "repeat_frame"):
+                scene.repeat_frame.clear()
+        
+            # Optional: Clip-Zustand prüfen
+            clip = context.space_data.clip
+            if clip is None or not clip.tracking:
+                self.report({'WARNING'}, "Kein gültiger Clip oder Tracking-Daten vorhanden.")
+                return {'CANCELLED'}
+        
+            print("🚀 Starte Tracking-Vorbereitung...")
+        
+            # 🔧 EINMALIGE Vorbereitung vor Zyklusstart
+            bpy.ops.clip.tracker_settings('EXEC_DEFAULT')
+            bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
+        
+            print("🚀 Starte Tracking-Pipeline...")
+            bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
+            print("⏳ Warte auf Abschluss der Pipeline...")
+        
+            wm = context.window_manager
+            self._timer = wm.event_timer_add(0.5, window=context.window)
+            wm.modal_handler_add(self)
+            self._step = 0
+        
+            return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
         if event.type == 'ESC':
