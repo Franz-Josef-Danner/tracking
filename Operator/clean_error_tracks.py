@@ -1,6 +1,8 @@
 import bpy
 import time
 
+hasattr(bpy.ops.clip, "clean_error_tracks_modal"), hasattr(bpy.ops.clip, "clean_error_tracks")
+
 def get_marker_position(track, frame):
     marker = track.markers.find_frame(frame)
     if marker:
