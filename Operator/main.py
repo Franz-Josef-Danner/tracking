@@ -94,8 +94,8 @@ class CLIP_OT_main(bpy.types.Operator):
 
         elif self._step == 1:
             clip = context.space_data.clip
-            initial_basis = scene.get("marker_basis", 20)
-            marker_basis = scene.get("marker_basis", 20)
+            initial_basis = scene.get("marker_basis")
+            marker_basis = scene.get("marker_basis")
 
 
             frame = find_low_marker_frame(clip, marker_basis=marker_basis)
