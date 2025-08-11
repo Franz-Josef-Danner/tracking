@@ -146,10 +146,23 @@ def is_marker_valid(track, frame):
         return False
 
 def mute_marker_path(track, from_frame, direction, mute=True):
-    for m in track.markers:
-        if (direction == 'forward' and m.frame >= from_frame) or \
-           (direction == 'backward' and m.frame <= from_frame):
-            m.mute = mute
+    try:
+        markers = list(track.markers)  # Snapshot – verhindert Collection-Invalidation
+    except Exception:
+        return
+    fcmp = (lambda f: f >= from_frame) if direction == 'forward' else (lambda f: f <= from_frame)
+    for m in markers:
+        try:
+            if m and fcmp(m.frame):
+                # Guard: Marker kann durch vorherige Ops invalid sein
+                _ = m.co  # touch to validate RNA
+                m.mute = bool(mute)
+        except ReferenceError:
+            # Marker wurde zwischenzeitlich gelöscht/ersetzt – einfach überspringen
+            continue
+        except Exception:
+            # Keine Eskalation an dieser Stelle: Stabilität > Strenge
+            continue
 
 def mute_after_last_marker(track, scene_end):
     """
@@ -197,7 +210,8 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
 
             for seg in segments:
                 mute_marker_path(track, seg[-1] + 1, 'forward', mute=True)
-            time.sleep(0.1)
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            bpy.context.view_layer.update()
 
 
         # 🔵 NEW-TRACKS: Hinteres Segment behalten → alles davor muten
@@ -206,7 +220,6 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
             context.scene.frame_set(context.scene.frame_current)
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=3)
             bpy.context.view_layer.update()
-            time.sleep(0.1)
 
             segments = get_track_segments(track)
 
@@ -216,7 +229,8 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
 
             for seg in segments:
                 mute_marker_path(track, seg[0] - 1, 'backward', mute=True)
-            time.sleep(0.1)
+                bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                bpy.context.view_layer.update()
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
@@ -258,13 +272,14 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         for t in original_tracks:
             t.select = True
 
-        with context.temp_override(area=clip_editor_area, region=clip_editor_region, space_data=clip_editor_space):
+        with context.temp_override(area=area, region=region, space_data=space):
             bpy.ops.clip.copy_tracks()
             bpy.ops.clip.paste_tracks()
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=5)
+            deps = context.evaluated_depsgraph_get()
+            deps.update()                       # robuste Depsgraph-Synchronisation
+            bpy.context.view_layer.update()     # Layer-Update
             scene.frame_set(scene.frame_current)
-            bpy.context.view_layer.update()
-            time.sleep(0.2)
+
 
 
 
@@ -360,10 +375,11 @@ def recursive_split_cleanup(context, area, region, space, tracks):
         with context.temp_override(area=area, region=region, space_data=space):
             bpy.ops.clip.copy_tracks()
             bpy.ops.clip.paste_tracks()
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=5)
+            deps = context.evaluated_depsgraph_get()
+            deps.update()                       # robuste Depsgraph-Synchronisation
+            bpy.context.view_layer.update()     # Layer-Update
             scene.frame_set(scene.frame_current)
-            bpy.context.view_layer.update()
-            time.sleep(0.2)
+
 
         all_names_after = {t.name for t in tracks}
         new_names = all_names_after - existing_names
