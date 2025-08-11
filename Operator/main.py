@@ -142,7 +142,7 @@ class CLIP_OT_main(bpy.types.Operator):
                 context.window_manager.event_timer_remove(self._timer)
                 bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
 
-                bpy.app.timers.register(_deferred_solve, first_interval=0.01)
+                bpy.app.timers.register(_deferred_solve, first_interval=0.1)
                 
                 self.report({'INFO'}, "Tracking + Markerprüfung abgeschlossen.")
                 return {'FINISHED'}
