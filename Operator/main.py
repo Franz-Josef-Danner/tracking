@@ -6,6 +6,20 @@ from ..Helper.jump_to_frame import jump_to_frame
 from ..Helper.properties import RepeatEntry
 from ..Helper.solve_camera_helper import CLIP_OT_solve_camera_helper
 
+def _select_all_markers(clip):
+    """Selektiert alle Tracks und – falls verfügbar – alle Marker des Clips."""
+    if clip is None:
+        return
+    tracking = clip.tracking
+    for t in tracking.tracks:
+        t.select = True  # Track-Selektion
+        # Marker-Selektion (falls API-Feld vorhanden)
+        for m in getattr(t, "markers", []):
+            try:
+                m.select = True
+            except Exception:
+                pass
+
 class CLIP_OT_main(bpy.types.Operator):
     bl_idname = "clip.main"
     bl_label = "Main Setup (Modal)"
@@ -122,8 +136,8 @@ def _solve_watch_unregister(self):
 
         elif self._step == 1:
             clip = context.space_data.clip
-            initial_basis = scene.get("marker_basis", 20)
-            marker_basis = scene.get("marker_basis", 20)
+            initial_basis = scene.get("marker_basis")
+            marker_basis = scene.get("marker_basis")
 
 
             frame = find_low_marker_frame(clip, marker_basis=marker_basis)
@@ -160,6 +174,8 @@ def _solve_watch_unregister(self):
                 self._step = 0  # Wiederhole Zyklus
             else:
                 print("✅ Alle Frames haben ausreichend Marker. Cleanup wird ausgeführt.")
+                clip = context.space_data.clip
+                _select_all_markers(clip)
                 bpy.ops.clip.clean_error_tracks('INVOKE_DEFAULT')
                 self._step = 2
             return {'PASS_THROUGH'}
@@ -180,47 +196,41 @@ def _solve_watch_unregister(self):
                 # NEU: finaler Kamera-Solve (invoke)
                 try:
                     print("🎯 Final: Starte Kamera-Solver…")
-                    bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-                    # Beobachtung aktivieren
                     self._solve_watch_register(context)
-                    
                     print("🎯 Final: Starte Kamera-Solver…")
                     bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-                    
-                    # Statt hier zu beenden → in Step 3 auf das Ende warten
                     self._step = 3
                     return {'PASS_THROUGH'}
-
                 except Exception as e:
                     self.report({'WARNING'}, f"Kamera-Solver konnte nicht gestartet werden: {e}")
 
-                    elif self._step == 3:
-                        # Fertig?
-                        if getattr(self, "_solve_done", False):
-                            print("✅ Kamera-Solve abgeschlossen.")
-                            self._solve_watch_unregister()
-                            try:
-                                context.window_manager.event_timer_remove(self._timer)
-                            except Exception:
-                                pass
-                            self.report({'INFO'}, "Tracking + Solve abgeschlossen.")
-                            return {'FINISHED'}
-                    
-                        # Fehlersignal vom Callback?
-                        if getattr(self, "_solve_failed", False):
-                            print("❌ Kamera-Solve meldet Fehler.")
-                            self._solve_watch_unregister()
-                            self.report({'WARNING'}, "Kamera-Solve fehlgeschlagen.")
-                            return {'CANCELLED'}
-                    
-                        # Timeout als Fail-Safe (z. B. 120s)
-                        if time.time() - getattr(self, "_solve_started_at", time.time()) > 120:
-                            print("⏱️ Timeout: Keine Bestätigung vom Kamera-Solve.")
-                            self._solve_watch_unregister()
-                            self.report({'WARNING'}, "Kamera-Solve Timeout.")
-                            return {'CANCELLED'}
-                    
-                        return {'PASS_THROUGH'}
+            elif self._step == 3:
+                # Fertig?
+                if getattr(self, "_solve_done", False):
+                    print("✅ Kamera-Solve abgeschlossen.")
+                    self._solve_watch_unregister()
+                    try:
+                        context.window_manager.event_timer_remove(self._timer)
+                    except Exception:
+                        pass
+                    self.report({'INFO'}, "Tracking + Solve abgeschlossen.")
+                    return {'FINISHED'}
+            
+                # Fehlersignal vom Callback?
+                if getattr(self, "_solve_failed", False):
+                    print("❌ Kamera-Solve meldet Fehler.")
+                    self._solve_watch_unregister()
+                    self.report({'WARNING'}, "Kamera-Solve fehlgeschlagen.")
+                    return {'CANCELLED'}
+            
+                # Timeout als Fail-Safe (z. B. 120s)
+                if time.time() - getattr(self, "_solve_started_at", time.time()) > 120:
+                    print("⏱️ Timeout: Keine Bestätigung vom Kamera-Solve.")
+                    self._solve_watch_unregister()
+                    self.report({'WARNING'}, "Kamera-Solve Timeout.")
+                    return {'CANCELLED'}
+            
+                return {'PASS_THROUGH'}
 
 
                 self.report({'INFO'}, "Tracking + Markerprüfung abgeschlossen.")
