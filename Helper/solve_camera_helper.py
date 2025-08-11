@@ -30,14 +30,8 @@ def _build_override(context):
     area, region, space = _find_clip_context(context)
     if not (area and region and space and getattr(space, "clip", None)):
         return None
-    override = {
-        "window": context.window,
-        "screen": context.screen,
-        "area": area,
-        "region": region,
-        "space_data": space,
-    }
-    return override
+    # Wichtig: KEIN window/screen in Operator-Override übergeben.
+    return {"area": area, "region": region, "space_data": space}
 
 
 class CLIP_OT_solve_camera_helper(Operator):
@@ -56,30 +50,21 @@ class CLIP_OT_solve_camera_helper(Operator):
             return {"CANCELLED"}
 
         # Primär: INVOKE_DEFAULT – öffnet ggf. Operator-UI/Dialoge
-        try:
-            result = bpy.ops.clip.solve_camera("INVOKE_DEFAULT", **override)
-            if result != {"FINISHED"}:
-                # Typischerweise {'CANCELLED'} oder {'PASS_THROUGH'}
-                self.report({"WARNING"}, f"Kamera-Solve (INVOKE_DEFAULT) Ergebnis: {result}")
-        except RuntimeError as ex:
-            # Häufig: "1-2 args execution context is supported" bei falschem Aufruf
-            self.report({"WARNING"}, f"INVOCATION fehlgeschlagen ({ex}). Fallback EXEC_DEFAULT wird versucht.")
-            try:
-                result = bpy.ops.clip.solve_camera("EXEC_DEFAULT", **override)
-                if result != {"FINISHED"}:
-                    self.report({"ERROR"}, f"Kamera-Solve (EXEC_DEFAULT) Ergebnis: {result}")
-                    return {"CANCELLED"}
-            except Exception as ex2:
-                self.report({"ERROR"}, f"Kamera-Solve fehlgeschlagen: {ex2}")
-                return {"CANCELLED"}
-
-        # Leichtes UI-Refresh für sofortiges Feedback
-        try:
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-        except Exception:
-            pass
-
-        return {"FINISHED"}
+        def _build_override(context):
+            """Context-Override für CLIP_EDITOR erstellen. None bei Nichterfolg."""
+            area, region, space = _find_clip_context(context)
+            if not (area and region and space and getattr(space, "clip", None)):
+                return None
+            # Wichtig: KEIN window/screen in Operator-Override übergeben.
+            return {"area": area, "region": region, "space_data": space}
+        
+                # Leichtes UI-Refresh für sofortiges Feedback
+                try:
+                    bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                except Exception:
+                    pass
+        
+                return {"FINISHED"}
 
 
 # Modul-API für __init__.py
