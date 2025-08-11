@@ -134,7 +134,8 @@ class CLIP_OT_main(bpy.types.Operator):
                 bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
 
                 context.window_manager.event_timer_remove(self._timer)
-                
+                bpy.ops.clip.solve_camera_helper('INVOKE_DEFAULT')
+
                 self.report({'INFO'}, "Tracking + Markerprüfung abgeschlossen.")
                 return {'FINISHED'}
 
