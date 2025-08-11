@@ -15,17 +15,18 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
         # Owner zur späteren Abmeldung
         owner = object()
         self._owner = owner
-
-        # Freie Funktion (Closure), KEINE gebundene Methode:
+        self._scheduled = False  # Guard gegen Mehrfach-Timer
+        
         def _notify(*_args):
-            # In Timer verlagern, um UI-Kontext-Probleme zu vermeiden
+            if self._scheduled:
+                return
+            self._scheduled = True
+        
             def _finish():
                 # Clip robust holen
-                area = getattr(context, "area", None)
                 space = getattr(context, "space_data", None)
                 clip = getattr(space, "clip", None)
-                if clip is None:
-                    # versuche irgendeinen CLIP_EDITOR im Screen
+                if not clip:
                     scr = getattr(context, "screen", None)
                     if scr:
                         for a in scr.areas:
@@ -34,20 +35,14 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
                                 clip = getattr(sp, "clip", None)
                                 if clip:
                                     break
-
+        
+                # Rekonstruktion prüfen
                 rec = None
                 try:
                     rec = clip.tracking.objects.active.reconstruction if (clip and clip.tracking and clip.tracking.objects) else None
                 except Exception:
                     rec = None
-
-                avg = getattr(rec, "average_error", None) if rec else None
-                rec = None
-                try:
-                    rec = clip.tracking.objects.active.reconstruction if (clip and clip.tracking and clip.tracking.objects) else None
-                except Exception:
-                    rec = None
-                
+        
                 if rec and getattr(rec, "is_valid", False):
                     avg = getattr(rec, "average_error", None)
                     scene["solve_status"] = "done"
@@ -57,19 +52,14 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
                         bpy.msgbus.clear_by_owner(owner)
                     except Exception:
                         pass
+                    self._scheduled = False
                     return None  # fertig
                 else:
                     # noch nicht valide – in 0.2 s erneut prüfen
                     return 0.2
-
-
-                try:
-                    bpy.msgbus.clear_by_owner(owner)
-                except Exception:
-                    pass
-                return None
-
+        
             bpy.app.timers.register(_finish, first_interval=0.0)
+
 
         # Subscriptions
         try:
