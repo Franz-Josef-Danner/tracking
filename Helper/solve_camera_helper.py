@@ -42,9 +42,26 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
                     rec = None
 
                 avg = getattr(rec, "average_error", None) if rec else None
-                scene["solve_status"] = "done"
-                if avg is not None:
-                    scene["solve_error"] = float(avg)
+                rec = None
+                try:
+                    rec = clip.tracking.objects.active.reconstruction if (clip and clip.tracking and clip.tracking.objects) else None
+                except Exception:
+                    rec = None
+                
+                if rec and getattr(rec, "is_valid", False):
+                    avg = getattr(rec, "average_error", None)
+                    scene["solve_status"] = "done"
+                    if avg is not None:
+                        scene["solve_error"] = float(avg)
+                    try:
+                        bpy.msgbus.clear_by_owner(owner)
+                    except Exception:
+                        pass
+                    return None  # fertig
+                else:
+                    # noch nicht valide – in 0.2 s erneut prüfen
+                    return 0.2
+
 
                 try:
                     bpy.msgbus.clear_by_owner(owner)
