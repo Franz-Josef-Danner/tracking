@@ -216,14 +216,15 @@ class CLIP_OT_clean_error_tracks_modal(bpy.types.Operator):
     @classmethod
     def poll(cls, context):
         return context.space_data and context.space_data.clip
-
+    
     def execute(self, context):
-        if not hasattr(bpy.ops.clip, "clean_error_tracks_modal"):
-            self.report(
-                {'ERROR'},
-                "clean_error_tracks_modal nicht registriert. "
-                "Prüfe Operator/__init__.py (Import + classes) und lade das Add-on neu."
-            )
+        if hasattr(bpy.ops.clip, "clean_error_tracks_modal"):
+            return bpy.ops.clip.clean_error_tracks_modal('INVOKE_DEFAULT')
+        self.report({'WARNING'}, "clean_error_tracks_modal nicht registriert – Fallback: short tracks.")
+        try:
+            return bpy.ops.clip.clean_short_tracks('INVOKE_DEFAULT')
+        except Exception as e:
+            self.report({'ERROR'}, f"Fallback fehlgeschlagen: {e}")
             return {'CANCELLED'}
         return bpy.ops.clip.clean_error_tracks_modal('INVOKE_DEFAULT')
 
