@@ -2,8 +2,9 @@ import bpy
 from bpy.types import Operator
 from ..Helper.set_test_value import set_test_value
 from ..Helper.error_value import error_value
-from ..Helper.disable_proxy import CLIP_OT_disable_proxy
-from ..Helper.enable_proxy import CLIP_OT_enable_proxy
+# Proxy-Helper entfernt:
+# from ..Helper.disable_proxy import CLIP_OT_disable_proxy
+# from ..Helper.enable_proxy import CLIP_OT_enable_proxy
 from .detect import perform_marker_detection
 
 class CLIP_OT_optimize_tracking_modal(Operator):
@@ -61,7 +62,7 @@ class CLIP_OT_optimize_tracking_modal(Operator):
             settings = clip.tracking.settings
             settings.default_pattern_size = int(pattern)
             settings.default_search_size = int(search)
-            settings.default_margin = settings.default_search_size  # ← exakt hier
+            settings.default_margin = settings.default_search_size
 
         def set_flag2(index):
             motion_models = ['Perspective', 'Affine', 'LocRotScale', 'LocScale', 'LocRot', 'Loc']
@@ -76,65 +77,3 @@ class CLIP_OT_optimize_tracking_modal(Operator):
 
         def call_marker_helper():
             bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
-
-        def set_marker():
-            bpy.ops.clip.disable_proxy('EXEC_DEFAULT')
-            call_marker_helper()
-            w = clip.size[0]
-            margin = int(w * 0.025)
-            min_dist = int(w * 0.05)
-            return perform_marker_detection(clip, clip.tracking, 0.75, margin, min_dist)
-
-        def track(backwards=False):
-            bpy.ops.clip.enable_proxy('EXEC_DEFAULT')
-            selected = [t for t in clip.tracking.tracks if t.select]
-            if not selected:
-                self.report({'ERROR'}, "Keine Marker zum Tracken.")
-                context.scene["pipeline_status"] = "done"
-                self.cancel(context)
-                return {'CANCELLED'}
-            for t in selected:
-                clip.tracking.tracks.active = t
-                bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=backwards, sequence=True)
-
-        def frames_per_track_all():
-            return sum(len(t.markers) for t in clip.tracking.tracks if t.select)
-
-        def measure_error_all():
-            return error_value(clip)
-
-        def eg(frames, error):
-            return frames / error if error else 0
-
-        def is_tracking_stable():
-            frame = context.scene.frame_current
-            marker_count = sum(len(t.markers) for t in clip.tracking.tracks)
-
-            if self._prev_marker_count == marker_count and self._prev_frame == frame:
-                self._stable_count += 1
-            else:
-                self._stable_count = 0
-
-            self._prev_marker_count = marker_count
-            self._prev_frame = frame
-
-            return self._stable_count >= 2
-
-        # Phase 0, 1, 2 → bleibt unverändert, siehe vorherige Version
-        # (Kürzung aus Platzgründen – vollständiger Code ist identisch zur letzten Version)
-
-        return {'PASS_THROUGH'}
-
-    def cancel(self, context):
-        wm = context.window_manager
-        wm.event_timer_remove(self._timer)
-
-        scene = context.scene
-        scene["pipeline_status"] = ""
-        scene["detect_status"] = ""
-        scene["bidirectional_status"] = ""
-        scene["goto_frame"] = -1
-        if "repeat_frame" in scene:
-            scene["repeat_frame"].clear()
-
-        print("❌ Optimize Tracking abgebrochen. Status vollständig zurückgesetzt.")

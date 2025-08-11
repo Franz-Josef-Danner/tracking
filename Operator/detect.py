@@ -7,9 +7,6 @@ def perform_marker_detection(clip, tracking, threshold, margin_base, min_distanc
     margin = max(1, int(margin_base * factor))
     min_distance = max(1, int(min_distance_base * factor))
 
-    if clip.use_proxy:
-        clip.use_proxy = False
-
     result = bpy.ops.clip.detect_features(
         margin=margin,
         min_distance=min_distance,
@@ -29,7 +26,7 @@ def deselect_all_markers(tracking):
 class CLIP_OT_detect(bpy.types.Operator):
     bl_idname = "clip.detect"
     bl_label = "Place Marker"
-    bl_description = "Führt Marker-Platzierungs-Zyklus aus (Teil-Zyklus 1, max. 20 Versuche inkl. Proxy-Deaktivierung)"
+    bl_description = "Führt Marker-Platzierungs-Zyklus aus (Teil-Zyklus 1, max. 20 Versuche)"
 
     _timer = None
 
@@ -179,7 +176,6 @@ class CLIP_OT_detect(bpy.types.Operator):
                         scene["detect_status"] = "failed"
                     context.window_manager.event_timer_remove(self._timer)
                     return {'FINISHED'}
-
 
                 self.state = "DETECT"
                 return {'PASS_THROUGH'}
