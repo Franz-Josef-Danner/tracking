@@ -133,7 +133,15 @@ class CLIP_OT_main(bpy.types.Operator):
                 print("🏁 Keine Low-Marker-Frames mehr gefunden. Beende Prozess.")
                 bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
 
+                scene = context.scene
+                scene["solve_status"] = "pending"
+                
                 context.window_manager.event_timer_remove(self._timer)
+
+                bpy.ops.clip.watch_solve('INVOKE_DEFAULT')
+                self._step = 3
+                return {'PASS_THROUGH'}
+                
                 bpy.ops.clip.solve_camera_helper('INVOKE_DEFAULT')
 
                 self.report({'INFO'}, "Tracking + Markerprüfung abgeschlossen.")
@@ -142,6 +150,19 @@ class CLIP_OT_main(bpy.types.Operator):
                 
                 self.report({'INFO'}, "Tracking + Markerprüfung abgeschlossen.")
                 return {'FINISHED'}
+
+        elif self._step == 3:
+            status = context.scene.get("solve_status", "")
+            if status == "done":
+                err = context.scene.get("solve_error", -1.0)
+                print(f"✅ Camera Solve fertig. Average Error: {err:.3f}")
+                # → Hier Deine Folgefunktion ausführen:
+                # bpy.ops.clip.deine_folgefunktion('INVOKE_DEFAULT')
+                context.window_manager.event_timer_remove(self._timer)
+                self.report({'INFO'}, "Solve abgeschlossen, Folgefunktion gestartet.")
+                return {'FINISHED'}
+            return {'PASS_THROUGH'}
+
 
             return {'PASS_THROUGH'}
 
