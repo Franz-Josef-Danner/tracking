@@ -199,10 +199,16 @@ def mute_all_outside_segment_markers(tracks):
 
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
     with context.temp_override(area=area, region=region, space_data=space):
+        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=3)
+        bpy.context.view_layer.update()
+        time.sleep(0.1)
         
         # 🔴 ORIGINAL-TRACKS: Vorderes Segment behalten → alles danach muten
         for track in original_tracks:
             segments = get_track_segments(track)
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=3)
+            bpy.context.view_layer.update()
+            time.sleep(0.1)
 
             # Optional: alle Marker vorher ent-muten (wie ENABLE)
             for m in track.markers:
@@ -221,10 +227,10 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
             context.scene.frame_set(context.scene.frame_current)
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=3)
             bpy.context.view_layer.update()
-            time.sleep(0.2)
+            time.sleep(0.1)
 
             segments = get_track_segments(track)
-            time.sleep(0.3)
+            time.sleep(0.2)
             # Optional: alle Marker vorher ent-muten (wie ENABLE)
             for m in track.markers:
                 m.mute = False
@@ -233,7 +239,7 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
                 mute_marker_path(track, seg[0] - 1, 'backward', mute=True)
                 bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
                 bpy.context.view_layer.update()
-                time.sleep(0.2)
+                time.sleep(0.1)
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
