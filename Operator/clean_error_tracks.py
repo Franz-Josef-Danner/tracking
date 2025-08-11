@@ -39,7 +39,6 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width
             vym = (p2[1] - p1[1]) + (p3[1] - p2[1])
             marker_data.append((track, vxm, vym))
 
-
         if not marker_data:
             continue
 
@@ -59,7 +58,7 @@ def run_cleanup_in_region(tracks, frame_range, xmin, xmax, ymin, ymax, ee, width
                         if track.markers.find_frame(f):
                             track.markers.delete_frame(f)
                             total_deleted += 1
-                            time.sleep(0.02)  # Pause von 50 ms
+                            # Entfernt: time.sleep(0.02)
 
     return total_deleted
 
@@ -68,7 +67,6 @@ def clean_error_tracks(context, space):
     scene = context.scene
     clip = space.clip
     tracks = clip.tracking.tracks
-    
 
     for track in tracks:
         track.select = False
@@ -92,7 +90,8 @@ def clean_error_tracks(context, space):
                     tracks, frame_range, xmin, xmax, ymin, ymax, ee, width, height
                 )
     return total_deleted_all, 0.0
-    
+
+
 def delete_marker_path(track, from_frame, direction):
     to_delete = []
     for m in track.markers:
@@ -102,6 +101,7 @@ def delete_marker_path(track, from_frame, direction):
 
     for f in to_delete:
         track.markers.delete_frame(f)
+
 
 def get_track_segments(track):
     frames = sorted([m.frame for m in track.markers])
@@ -119,19 +119,22 @@ def get_track_segments(track):
     segments.append(current_segment)
     return segments
 
+
 # 🆕 Neue Hilfsfunktion hier einfügen:
 def is_marker_valid(track, frame):
     try:
         marker = track.markers.find_frame(frame)
         return marker is not None and hasattr(marker, "co")
-    except Exception as e:
+    except Exception:
         return False
+
 
 def mute_marker_path(track, from_frame, direction, mute=True):
     for m in track.markers:
         if (direction == 'forward' and m.frame >= from_frame) or \
            (direction == 'backward' and m.frame <= from_frame):
             m.mute = mute
+
 
 def mute_after_last_marker(track, scene_end):
     """
@@ -147,28 +150,29 @@ def mute_after_last_marker(track, scene_end):
         if m.frame >= last_valid_frame and m.frame <= scene_end:
             m.mute = True
 
+
 def mute_outside_segment_markers(track):
     """
     Mutes all markers in the given track that are not part of a continuous segment.
     """
-    # Segment-Frames als Set erfassen
     segments = get_track_segments(track)
     valid_frames = set()
     for segment in segments:
         valid_frames.update(segment)
 
-    # Alle Marker prüfen
     for marker in track.markers:
         if marker.frame not in valid_frames:
             marker.mute = True
+
 
 def mute_all_outside_segment_markers(tracks):
     for track in tracks:
         mute_outside_segment_markers(track)
 
+
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
     with context.temp_override(area=area, region=region, space_data=space):
-        
+
         # 🔴 ORIGINAL-TRACKS: Vorderes Segment behalten → alles danach muten
         for track in original_tracks:
             segments = get_track_segments(track)
@@ -179,16 +183,14 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
 
             for seg in segments:
                 mute_marker_path(track, seg[-1] + 1, 'forward', mute=True)
-            time.sleep(0.02)
-
+        # Entfernt: time.sleep()
 
         # 🔵 NEW-TRACKS: Hinteres Segment behalten → alles davor muten
         for track in new_tracks:
-            # 💡 Force-Update (wie bisher)
+            # UI-Update forcieren
             context.scene.frame_set(context.scene.frame_current)
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=3)
             bpy.context.view_layer.update()
-            time.sleep(0.02)
 
             segments = get_track_segments(track)
 
@@ -198,7 +200,196 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
 
             for seg in segments:
                 mute_marker_path(track, seg[0] - 1, 'backward', mute=True)
-            time.sleep(0.02)
+        # Entfernt: time.sleep()
+
+# =========================
+# 🆕 Modal-Operator (UI-responsiv)
+# =========================
+
+class CLIP_OT_clean_error_tracks_modal(bpy.types.Operator):
+    bl_idname = "clip.clean_error_tracks_modal"
+    bl_label = "Clean Error Tracks (Modal)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    _timer = None
+    _state = None  # dict mit Phasen- und Fortschrittszustand
+
+    def _find_clip_context(self, context):
+        area = region = space = None
+        for a in context.screen.areas:
+            if a.type == 'CLIP_EDITOR':
+                for r in a.regions:
+                    if r.type == 'WINDOW':
+                        area, region, space = a, r, a.spaces.active
+                        break
+        return area, region, space
+
+    def _set_header(self, context, text):
+        try:
+            if context.area:
+                context.area.header_text_set(text)
+        except Exception:
+            pass
+        try:
+            if self._state and self._state.get("area"):
+                self._state["area"].header_text_set(text)
+        except Exception:
+            pass
+
+    def invoke(self, context, event):
+        area, region, space = self._find_clip_context(context)
+        if not space or not space.clip:
+            self.report({'ERROR'}, "Kein gültiger CLIP_EDITOR-Kontext.")
+            return {'CANCELLED'}
+
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.05, window=context.window)
+        wm.modal_handler_add(self)
+
+        scene = context.scene
+        clip = space.clip
+        width, height = clip.size
+        frame_range = (scene.frame_start, scene.frame_end)
+
+        ee_base = (getattr(scene, "error_track", 1.0) + 0.1) / 100
+        fehlergrenzen = [ee_base, ee_base / 2, ee_base / 4]
+        teilfaktoren = [1, 2, 4]
+
+        total_cells = sum(d * d for d in teilfaktoren)
+        wm.progress_begin(0, total_cells)
+
+        self._state = {
+            "area": area, "region": region, "space": space,
+            "scene": scene, "clip": clip,
+            "width": width, "height": height, "frame_range": frame_range,
+            "fehlergrenzen": fehlergrenzen, "teilfaktoren": teilfaktoren,
+
+            "phase": 1,
+            "p1_idx": 0,          # Index über fehlergrenzen/teilfaktoren
+            "p1_x": 0, "p1_y": 0, # Zellkoordinaten
+            "p1_done": 0,         # Fortschritt für Progressbar
+
+            "p2_done": False,     # Duplikation+Split durchgeführt
+            "p3_started": False,  # Rekursiv gestartet
+        }
+
+        self._set_header(context, "Phase 1/3: Grid-Cleanup läuft …")
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+
+        s = self._state
+        area, region, space = s["area"], s["region"], s["space"]
+
+        if s["phase"] == 1:
+            idx = s["p1_idx"]
+            if idx >= len(s["fehlergrenzen"]):
+                s["phase"] = 2
+                self._set_header(context, "Phase 2/3: Duplikation & Segment-Split …")
+                return {'RUNNING_MODAL'}
+
+            ee = s["fehlergrenzen"][idx]
+            div = s["teilfaktoren"][idx]
+
+            xIndex, yIndex = s["p1_x"], s["p1_y"]
+            width, height = s["width"], s["height"]
+
+            xmin = xIndex * (width / div)
+            xmax = (xIndex + 1) * (width / div)
+            ymin = yIndex * (height / div)
+            ymax = (yIndex + 1) * (height / div)
+
+            tracks = space.clip.tracking.tracks
+            run_cleanup_in_region(
+                tracks, s["frame_range"], xmin, xmax, ymin, ymax, ee, width, height
+            )
+
+            s["p1_done"] += 1
+            context.window_manager.progress_update(s["p1_done"])
+            area.tag_redraw()
+
+            # Zellzeiger erhöhen
+            if s["p1_x"] + 1 < div:
+                s["p1_x"] += 1
+            else:
+                s["p1_x"] = 0
+                if s["p1_y"] + 1 < div:
+                    s["p1_y"] += 1
+                else:
+                    s["p1_y"] = 0
+                    s["p1_idx"] += 1
+
+            return {'RUNNING_MODAL'}
+
+        if s["phase"] == 2:
+            if not s["p2_done"]:
+                self._phase2_duplicate_and_split(context, s)
+                s["p2_done"] = True
+                area.tag_redraw()
+            s["phase"] = 3
+            self._set_header(context, "Phase 3/3: Rekursiver Split-Cleanup …")
+            return {'RUNNING_MODAL'}
+
+        if s["phase"] == 3:
+            if not s["p3_started"]:
+                self._phase3_recursive_cleanup(context, s)
+                s["p3_started"] = True
+                return self._finish(context)
+            return self._finish(context)
+
+        return {'RUNNING_MODAL'}
+
+    def _phase2_duplicate_and_split(self, context, s):
+        area, region, space = s["area"], s["region"], s["space"]
+        clip = space.clip
+        tracks = clip.tracking.tracks
+
+        original_tracks = [t for t in tracks if track_has_internal_gaps(t)]
+        if not original_tracks:
+            return
+
+        existing_names = {t.name for t in tracks}
+        for t in tracks:
+            t.select = False
+        for t in original_tracks:
+            t.select = True
+
+        with context.temp_override(area=area, region=region, space_data=space):
+            bpy.ops.clip.copy_tracks()
+            bpy.ops.clip.paste_tracks()
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=3)
+            context.scene.frame_set(context.scene.frame_current)
+            bpy.context.view_layer.update()
+
+        all_names_after = {t.name for t in tracks}
+        new_names = all_names_after - existing_names
+        new_tracks = [t for t in tracks if t.name in new_names]
+
+        clear_path_on_split_tracks_segmented(
+            context, area, region, space, original_tracks, new_tracks
+        )
+
+    def _phase3_recursive_cleanup(self, context, s):
+        area, region, space = s["area"], s["region"], s["space"]
+        tracks = space.clip.tracking.tracks
+
+        recursive_split_cleanup(context, area, region, space, tracks)
+
+        # Safety-Pässe nach der Rekursion
+        mute_unassigned_markers(tracks)
+        for t in tracks:
+            mute_after_last_marker(t, context.scene.frame_end)
+
+    def _finish(self, context):
+        wm = context.window_manager
+        wm.progress_end()
+        self._set_header(context, None)
+        if self._timer:
+            wm.event_timer_remove(self._timer)
+        return {'FINISHED'}
+
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
@@ -210,75 +401,9 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         return context.space_data and context.space_data.clip
 
     def execute(self, context):
-        scene = context.scene
-        clip_editor_area = clip_editor_region = clip_editor_space = None
+        # Übergabe an den nicht-blockierenden Modal-Operator
+        return bpy.ops.clip.clean_error_tracks_modal('INVOKE_DEFAULT')
 
-        for area in context.screen.areas:
-            if area.type == 'CLIP_EDITOR':
-                for region in area.regions:
-                    if region.type == 'WINDOW':
-                        clip_editor_area = area
-                        clip_editor_region = region
-                        clip_editor_space = area.spaces.active
-
-        if not clip_editor_space:
-            self.report({'ERROR'}, "Kein gültiger CLIP_EDITOR-Kontext gefunden.")
-            return {'CANCELLED'}
-
-        clean_error_tracks(context, clip_editor_space)
-        clip = clip_editor_space.clip
-        tracks = clip.tracking.tracks
-
-        original_tracks = [t for t in tracks if track_has_internal_gaps(t)]
-        if not original_tracks:
-            self.report({'INFO'}, "Keine Tracks mit Lücken gefunden.")
-            return {'FINISHED'}
-
-        existing_names = {t.name for t in tracks}
-        for t in tracks:
-            t.select = False
-        for t in original_tracks:
-            t.select = True
-
-        with context.temp_override(area=clip_editor_area, region=clip_editor_region, space_data=clip_editor_space):
-            bpy.ops.clip.copy_tracks()
-            bpy.ops.clip.paste_tracks()
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=5)
-            scene.frame_set(scene.frame_current)
-            bpy.context.view_layer.update()
-            time.sleep(0.2)
-
-
-
-        all_names_after = {t.name for t in tracks}
-        new_names = all_names_after - existing_names
-        new_tracks = [t for t in tracks if t.name in new_names]
-
-        clear_path_on_split_tracks_segmented(
-            context, clip_editor_area, clip_editor_region, clip_editor_space,
-            original_tracks, new_tracks
-        )
-
-        # 🧩 Jetzt rekursiv weiter, bis keine Gaps mehr bestehen
-        recursive_split_cleanup(
-            context, clip_editor_area, clip_editor_region, clip_editor_space,
-            tracks
-        )
-
-        clear_path_on_split_tracks_segmented(
-            context, clip_editor_area, clip_editor_region, clip_editor_space,
-            original_tracks, new_tracks
-        )
-
-
-        # 🔒 Safety Pass: Einzelne Marker muten
-        mute_unassigned_markers(tracks)
-
-        # ✅ Ganz am Ende: Track-Ende muten (nach Abschluss aller Rekursionen)
-        for t in tracks:
-            mute_after_last_marker(t, scene.frame_end)
-
-        return {'FINISHED'}
 
 def mute_unassigned_markers(tracks):
     """
@@ -293,7 +418,6 @@ def mute_unassigned_markers(tracks):
             if len(segment) >= 2:
                 valid_frames.update(segment)
 
-        # Track-Anfangsframe bestimmen (kleinster Marker-Frame im Track)
         if not track.markers:
             continue
         first_frame = min(m.frame for m in track.markers)
@@ -302,7 +426,8 @@ def mute_unassigned_markers(tracks):
             f = marker.frame
             if f not in valid_frames or f == first_frame:
                 marker.mute = True
-                
+
+
 def recursive_split_cleanup(context, area, region, space, tracks):
     scene = context.scene
     iteration = 0
@@ -316,10 +441,8 @@ def recursive_split_cleanup(context, area, region, space, tracks):
     while iteration < MAX_ITERATIONS:
         iteration += 1
 
-        # Hole verarbeitete Track-Namen als reguläre Python-Liste
         processed = list(scene.get("processed_tracks", []))
 
-        # Finde nur Tracks mit Gaps, die noch nicht verarbeitet wurden
         original_tracks = [
             t for t in tracks
             if track_has_internal_gaps(t) and t.name not in processed
@@ -345,18 +468,16 @@ def recursive_split_cleanup(context, area, region, space, tracks):
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=5)
             scene.frame_set(scene.frame_current)
             bpy.context.view_layer.update()
-            time.sleep(0.2)
+            # Entfernt: time.sleep(0.2)
 
         all_names_after = {t.name for t in tracks}
         new_names = all_names_after - existing_names
         new_tracks = [t for t in tracks if t.name in new_names]
 
-        # Tracks (original und neu) als verarbeitet markieren
         for t in original_tracks + new_tracks:
             if t.name not in processed:
                 processed.append(t.name)
 
-        # Rückspeichern
         scene["processed_tracks"] = processed
 
         clear_path_on_split_tracks_segmented(
