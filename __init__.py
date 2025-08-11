@@ -44,7 +44,7 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
         layout.prop(scene, "frames_track")
         layout.prop(scene, "error_track")
         layout.separator()
-        layout.operator("CLIP.main", text="Track")
+        layout.operator("Clip.main", text="Track")
 
 # Alle Klassen zur Registrierung
 classes = (
