@@ -7,60 +7,84 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
     bl_label = "Watch Camera Solve"
     bl_options = {"INTERNAL"}
 
-    _owner = object()
-    _sub_valid = None
-    _sub_err = None
-
-    def _notify(self, *args):
-        # In Timer verlagern, um UI-Kontext-Probleme zu vermeiden
-        def _finish():
-            scene = bpy.context.scene
-            clip = bpy.context.space_data.clip if bpy.context.space_data else None
-            rec = clip.tracking.objects.active.reconstruction if (clip and clip.tracking and clip.tracking.objects) else None
-
-            avg = getattr(rec, "average_error", None)
-            scene["solve_status"] = "done"
-            if avg is not None:
-                scene["solve_error"] = float(avg)
-
-            # Abos aufräumen
-            try:
-                bpy.msgbus.clear_by_owner(self._owner)
-            except Exception:
-                pass
-            return None  # Timer einmalig
-
-        bpy.app.timers.register(_finish, first_interval=0.0)
-
     def invoke(self, context, event):
         scene = context.scene
         scene["solve_status"] = "pending"
         scene["solve_error"] = -1.0
 
-        # Subscriptions: is_valid und average_error
+        # Owner zur späteren Abmeldung
+        owner = object()
+        self._owner = owner
+
+        # Freie Funktion (Closure), KEINE gebundene Methode:
+        def _notify(*_args):
+            # In Timer verlagern, um UI-Kontext-Probleme zu vermeiden
+            def _finish():
+                # Clip robust holen
+                area = getattr(context, "area", None)
+                space = getattr(context, "space_data", None)
+                clip = getattr(space, "clip", None)
+                if clip is None:
+                    # versuche irgendeinen CLIP_EDITOR im Screen
+                    scr = getattr(context, "screen", None)
+                    if scr:
+                        for a in scr.areas:
+                            if a.type == "CLIP_EDITOR":
+                                sp = a.spaces.active
+                                clip = getattr(sp, "clip", None)
+                                if clip:
+                                    break
+
+                rec = None
+                try:
+                    rec = clip.tracking.objects.active.reconstruction if (clip and clip.tracking and clip.tracking.objects) else None
+                except Exception:
+                    rec = None
+
+                avg = getattr(rec, "average_error", None) if rec else None
+                scene["solve_status"] = "done"
+                if avg is not None:
+                    scene["solve_error"] = float(avg)
+
+                try:
+                    bpy.msgbus.clear_by_owner(owner)
+                except Exception:
+                    pass
+                return None
+
+            bpy.app.timers.register(_finish, first_interval=0.0)
+
+        # Subscriptions
         try:
             bpy.msgbus.subscribe_rna(
                 key=(bpy.types.MovieTrackingReconstruction, "is_valid"),
-                owner=self._owner,
+                owner=owner,
                 args=(),
-                notify=self._notify,
+                notify=_notify,   # <- freie Funktion
             )
             bpy.msgbus.subscribe_rna(
                 key=(bpy.types.MovieTrackingReconstruction, "average_error"),
-                owner=self._owner,
+                owner=owner,
                 args=(),
-                notify=self._notify,
+                notify=_notify,   # <- freie Funktion
             )
         except Exception as ex:
             self.report({'WARNING'}, f"Msgbus-Subscribe fehlgeschlagen: {ex}. Fallback: Polling in main.")
-        
-        # Solve starten – nutzt Deinen vorhandenen Helper
+            # Markiere Fallback
+            scene["solve_watch_fallback"] = True
+
+        # Solve starten – nutzt deinen Helper (richtiger Kontext/Override)
         res = bpy.ops.clip.solve_camera_helper('INVOKE_DEFAULT')
         if res not in ({'FINISHED'}, {'RUNNING_MODAL'}):
             self.report({'ERROR'}, f"Camera Solve Start fehlgeschlagen: {res}")
+            try:
+                bpy.msgbus.clear_by_owner(owner)
+            except Exception:
+                pass
             return {'CANCELLED'}
 
         return {'FINISHED'}
+
 
 def _find_clip_context(context: bpy.types.Context):
     """Finde (area, region, space) des CLIP_EDITOR, sonst (None, None, None)."""
