@@ -206,9 +206,6 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         return context.space_data and context.space_data.clip
 
     def execute(self, context):
-
-        def execute(self, context):
-        # 🆕 Alle Marker und Tracks selektieren
         clip = context.space_data.clip
         if clip:
             for t in clip.tracking.tracks:
