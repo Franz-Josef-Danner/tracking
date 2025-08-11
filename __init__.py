@@ -23,7 +23,6 @@ from .Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
 from .Operator.clean_error_tracks import CLIP_OT_clean_error_tracks
 from .Operator.optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 from .Operator.main import CLIP_OT_main
-from .Helper.solve_camera_helper import CLIP_OT_solve_camera_helper
 
 # Importiere PropertyGroup
 from .Helper.properties import RepeatEntry  # ✅ NEU
@@ -61,7 +60,6 @@ classes = (
     CLIP_OT_clean_error_tracks,
     CLIP_OT_optimize_tracking_modal,
     CLIP_OT_main,
-    CLIP_OT_solve_camera_helper,
 )
 
 def register():
