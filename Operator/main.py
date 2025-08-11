@@ -15,8 +15,9 @@ class CLIP_OT_main(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-    
-        # Reset aller relevanten Szene-Variablen
+        scene["solve_status"] = ""
+        scene["solve_error"] = -1.0
+        scene["solve_watch_fallback"] = False
         scene["pipeline_status"] = ""
         scene["marker_min"] = 0
         scene["marker_max"] = 0
@@ -30,9 +31,6 @@ class CLIP_OT_main(bpy.types.Operator):
         clip = getattr(space, "clip", None)
         if clip is None or not getattr(clip, "tracking", None):
             self.report({'WARNING'}, "Kein gültiger Clip oder keine Tracking-Daten.")
-            return {'CANCELLED'}
-        if clip is None or not clip.tracking:
-            self.report({'WARNING'}, "Kein gültiger Clip oder Tracking-Daten vorhanden.")
             return {'CANCELLED'}
     
         print("🚀 Starte Tracking-Vorbereitung...")
@@ -149,6 +147,7 @@ class CLIP_OT_main(bpy.types.Operator):
                 scene["solve_status"] = "pending"
                 
                 bpy.ops.clip.watch_solve('INVOKE_DEFAULT')
+                scene["solve_watch_fallback"] = False
                 self._step = 3
                 return {'PASS_THROUGH'}
 
@@ -156,6 +155,8 @@ class CLIP_OT_main(bpy.types.Operator):
             scene = context.scene
             status = scene.get("solve_status", "")
             if status == "done":
+                path = "Poll" if scene.get("solve_watch_fallback", False) else "Msgbus"
+                print(f"✅ [{path}] Camera Solve fertig. Average Error: {err:.3f}")
                 err = scene.get("solve_error", -1.0)
                 print(f"✅ Camera Solve fertig. Average Error: {err:.3f}")
                 self.report({'INFO'}, "Solve abgeschlossen, Folgefunktion gestartet.")
@@ -163,20 +164,21 @@ class CLIP_OT_main(bpy.types.Operator):
                 return {'FINISHED'}
         
             # --- Poll-Fallback, falls Msgbus nicht feuert ---
-            if scene.get("solve_watch_fallback", False):
-                # Clip robust holen
-                space = getattr(context, "space_data", None)
-                clip = getattr(space, "clip", None)
-                if clip and getattr(clip, "tracking", None):
-                    try:
-                        rec = clip.tracking.objects.active.reconstruction
-                        if getattr(rec, "is_valid", False):
-                            avg = float(getattr(rec, "average_error", -1.0))
-                            scene["solve_error"] = avg
-                            scene["solve_status"] = "done"
-                            return {'PASS_THROUGH'}  # Nächster TIMER-Zyklus greift den 'done'-Zweig
-                    except Exception:
-                        pass
+            rec = clip.tracking.objects.active.reconstruction if (clip and clip.tracking and clip.tracking.objects) else None
+            if rec and getattr(rec, "is_valid", False):
+                avg = getattr(rec, "average_error", None)
+                scene["solve_status"] = "done"
+                if avg is not None:
+                    scene["solve_error"] = float(avg)
+                try:
+                    bpy.msgbus.clear_by_owner(owner)
+                except Exception:
+                    pass
+                return None  # fertig – Timer nicht wiederholen
+            else:
+                # noch nicht valide – kurz später erneut prüfen
+                return 0.2
+
         
             return {'PASS_THROUGH'}
 
