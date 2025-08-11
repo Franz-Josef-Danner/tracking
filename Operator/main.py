@@ -141,14 +141,32 @@ class CLIP_OT_main(bpy.types.Operator):
                 return {'PASS_THROUGH'}
 
         elif self._step == 3:
-            status = context.scene.get("solve_status", "")
+            scene = context.scene
+            status = scene.get("solve_status", "")
             if status == "done":
-                err = context.scene.get("solve_error", -1.0)
-                
+                err = scene.get("solve_error", -1.0)
                 print(f"✅ Camera Solve fertig. Average Error: {err:.3f}")
-                
                 self.report({'INFO'}, "Solve abgeschlossen, Folgefunktion gestartet.")
                 context.window_manager.event_timer_remove(self._timer)
                 return {'FINISHED'}
+        
+            # --- Poll-Fallback, falls Msgbus nicht feuert ---
+            if scene.get("solve_watch_fallback", False):
+                # Clip robust holen
+                space = getattr(context, "space_data", None)
+                clip = getattr(space, "clip", None)
+                if clip and getattr(clip, "tracking", None):
+                    try:
+                        rec = clip.tracking.objects.active.reconstruction
+                        if getattr(rec, "is_valid", False):
+                            avg = float(getattr(rec, "average_error", -1.0))
+                            scene["solve_error"] = avg
+                            scene["solve_status"] = "done"
+                            return {'PASS_THROUGH'}  # Nächster TIMER-Zyklus greift den 'done'-Zweig
+                    except Exception:
+                        pass
+        
+            return {'PASS_THROUGH'}
+
 
         return {'RUNNING_MODAL'}
