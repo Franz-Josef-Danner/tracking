@@ -66,7 +66,7 @@ classes = (
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
-
+    _solve_helper.register() 
 
     # Custom Property für Frame-Tracking
     bpy.types.Scene.repeat_frame = bpy.props.CollectionProperty(type=RepeatEntry)  # ✅ NEU
