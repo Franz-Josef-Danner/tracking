@@ -155,32 +155,30 @@ class CLIP_OT_main(bpy.types.Operator):
             scene = context.scene
             status = scene.get("solve_status", "")
             if status == "done":
+                err = scene.get("solve_error", -1.0)  # erst JETZT holen
                 path = "Poll" if scene.get("solve_watch_fallback", False) else "Msgbus"
                 print(f"✅ [{path}] Camera Solve fertig. Average Error: {err:.3f}")
-                err = scene.get("solve_error", -1.0)
-                print(f"✅ Camera Solve fertig. Average Error: {err:.3f}")
                 self.report({'INFO'}, "Solve abgeschlossen, Folgefunktion gestartet.")
                 context.window_manager.event_timer_remove(self._timer)
                 return {'FINISHED'}
-        
-            # --- Poll-Fallback, falls Msgbus nicht feuert ---
-            rec = clip.tracking.objects.active.reconstruction if (clip and clip.tracking and clip.tracking.objects) else None
-            if rec and getattr(rec, "is_valid", False):
-                avg = getattr(rec, "average_error", None)
-                scene["solve_status"] = "done"
-                if avg is not None:
-                    scene["solve_error"] = float(avg)
-                try:
-                    bpy.msgbus.clear_by_owner(owner)
-                except Exception:
-                    pass
-                return None  # fertig – Timer nicht wiederholen
-            else:
-                # noch nicht valide – kurz später erneut prüfen
-                return 0.2
 
         
+            # --- Poll-Fallback, falls Msgbus nicht feuert ---
+            if scene.get("solve_watch_fallback", False):
+                space = getattr(context, "space_data", None)
+                clip = getattr(space, "clip", None)
+                if clip and getattr(clip, "tracking", None):
+                    try:
+                        rec = clip.tracking.objects.active.reconstruction
+                        if getattr(rec, "is_valid", False):
+                            avg = getattr(rec, "average_error", None)
+                            scene["solve_status"] = "done"
+                            if avg is not None:
+                                scene["solve_error"] = float(avg)
+                    except Exception:
+                        pass
             return {'PASS_THROUGH'}
+
 
 
         return {'RUNNING_MODAL'}
