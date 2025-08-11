@@ -6,7 +6,7 @@ from .bidirectional_track import CLIP_OT_bidirectional_track
 from .clean_short_tracks import CLIP_OT_clean_short_tracks
 from .tracking_pipeline import CLIP_OT_tracking_pipeline
 
-# Wichtig: beide aus clean_error_tracks importieren
+# WICHTIG: beide Operatoren importieren
 from .clean_error_tracks import (
     CLIP_OT_clean_error_tracks_modal,
     CLIP_OT_clean_error_tracks,
@@ -21,8 +21,8 @@ classes = (
     CLIP_OT_bidirectional_track,
     CLIP_OT_clean_short_tracks,
     CLIP_OT_tracking_pipeline,
-    CLIP_OT_clean_error_tracks_modal,  # Modal zuerst registrieren (nicht zwingend, aber sauber)
-    CLIP_OT_clean_error_tracks,        # Starter, der das Modal aufruft
+    CLIP_OT_clean_error_tracks_modal,  # Modal zuerst ok
+    CLIP_OT_clean_error_tracks,        # Starter ruft Modal
     CLIP_OT_optimize_tracking_modal,
     CLIP_OT_main,
 )
