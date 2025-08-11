@@ -212,15 +212,8 @@ class CLIP_OT_clean_error_tracks_modal(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks_modal"
     bl_label = "Clean Error Tracks (Modal)"
     bl_options = {'REGISTER', 'UNDO'}
-     
-    @classmethod
-    def poll(cls, context):
-        return context.space_data and context.space_data.clip
 
     def execute(self, context):
-        if not hasattr(bpy.ops.clip, "clean_error_tracks_modal"):
-            self.report({'ERROR'}, "clean_error_tracks_modal nicht registriert. Prüfe Operator/__init__.py (Import + classes) und lade das Add-on neu.")
-            return {'CANCELLED'}
         return bpy.ops.clip.clean_error_tracks_modal('INVOKE_DEFAULT')
 
     _timer = None
