@@ -92,8 +92,8 @@ class CLIP_OT_main(bpy.types.Operator):
             if clip is None or not getattr(clip, "tracking", None):
                 self.report({'WARNING'}, "Kein gültiger Clip oder keine Tracking-Daten.")
                 return {'CANCELLED'}
-            initial_basis = scene.get("marker_basis", 20)
-            marker_basis = scene.get("marker_basis", 20)
+            initial_basis = scene.get("marker_basis", 25)
+            marker_basis = scene.get("marker_basis", 25)
 
             frame = find_low_marker_frame(clip, marker_basis=marker_basis)
             if frame is not None:
