@@ -156,3 +156,15 @@ class CLIP_OT_solve_watch_clean(Operator):
             except Exception:
                 pass
             self._timer = None
+
+# ---- Public API (Export) -----------------------------------------------------
+
+__all__ = ("CLIP_OT_solve_watch_clean", "run_solve_watch_clean")
+
+def run_solve_watch_clean(context, poll_interval=0.2, **_compat):
+    """
+    Startet den Operator programmgesteuert.
+    Hinweis: Zusätzliche/alte Parameter (z. B. cleanup_error) werden ignoriert.
+    """
+    return bpy.ops.clip.solve_watch_clean('INVOKE_DEFAULT', poll_interval=poll_interval)
+
