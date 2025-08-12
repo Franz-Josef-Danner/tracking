@@ -115,8 +115,16 @@ class CLIP_OT_solve_watch_clean(Operator):
                 status = "weniger" if delta < 0 else ("mehr" if delta > 0 else "gleich")
                 avg_err = getattr(self._clip.tracking.objects.active.reconstruction, "average_error", -1.0)
                 self.report({'INFO'}, f"Solve OK (AvgErr={avg_err:.3f}). Marker danach: {post} ({status}, Δ={delta}). Cleanup error>{self.cleanup_error:.2f}.")
+            
+                # ➕ Direkt Main erneut starten
+                try:
+                    bpy.ops.clip.main('INVOKE_DEFAULT')
+                except Exception as e:
+                    self.report({'ERROR'}, f"Main-Start fehlgeschlagen: {e}")
+            
                 self._cleanup_timer(context)
                 return {'FINISHED'}
+
 
         # Abbruch via ESC/RIGHTMOUSE
         if event.type in {'ESC', 'RIGHTMOUSE'}:
