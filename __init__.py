@@ -18,6 +18,7 @@ from .Helper.marker_helper_main import CLIP_OT_marker_helper_main
 from .Helper.disable_proxy import CLIP_OT_disable_proxy
 from .Helper.enable_proxy import CLIP_OT_enable_proxy
 from .Operator.detect import CLIP_OT_detect
+from .Helper.solve_camera_helper import CLIP_OT_solve_watch_clean  # Operator
 from .Operator.bidirectional_track import CLIP_OT_bidirectional_track
 from .Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
 from .Operator.clean_error_tracks import CLIP_OT_clean_error_tracks
@@ -55,6 +56,7 @@ classes = (
     CLIP_OT_disable_proxy,
     CLIP_OT_enable_proxy,
     CLIP_OT_detect,
+    CLIP_OT_solve_watch_clean,
     CLIP_OT_bidirectional_track,
     CLIP_OT_clean_short_tracks,
     CLIP_OT_clean_error_tracks,
