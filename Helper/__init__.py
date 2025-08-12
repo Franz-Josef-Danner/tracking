@@ -18,7 +18,6 @@ from .segments import track_has_internal_gaps, get_track_segments
 from .naming import _safe_name
 from .mute_ops import mute_marker_path, mute_after_last_marker, mute_unassigned_markers
 from .split_cleanup import clear_path_on_split_tracks_segmented, recursive_split_cleanup
-from .solve_camera_helper import CLIP_OT_solve_camera_helper
 
 # Alle Klassen in eine Liste
 classes = (
