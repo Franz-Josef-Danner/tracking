@@ -57,7 +57,7 @@ def perform_marker_detection(clip, tracking, threshold, margin_base, min_distanc
 
 
 # ---------------------------------------------------------------------------
-# Operator (Modal) – komplett eigenständig
+# Operator (Modal) – adaptiver Detect, inter-run Cleanup
 # ---------------------------------------------------------------------------
 
 class CLIP_OT_detect(bpy.types.Operator):
@@ -107,6 +107,16 @@ class CLIP_OT_detect(bpy.types.Operator):
         description="<0 → auto (5% Bildbreite)",
         default=-1
     )
+    close_dist_rel: bpy.props.FloatProperty(
+        name="Close Dist (rel. width, opt.)",
+        description="Relative Abstandsschwelle für Duplikat-Filter (0.0–0.1). 0 → Default 0.01",
+        default=0.0, min=0.0, max=0.1
+    )
+    handoff_to_pipeline: bpy.props.BoolProperty(
+        name="Handoff to Pipeline",
+        description="Bei Erfolg 'success' signalisieren und Main/Pipeline weiterlaufen lassen",
+        default=False
+    )
 
     @classmethod
     def poll(cls, context):
@@ -148,7 +158,7 @@ class CLIP_OT_detect(bpy.types.Operator):
             adapt = int(self.marker_adapt)
         else:
             adapt = int(scene.get("marker_adapt", 20))
-        self.marker_adapt = adapt  # für spätere Nutzung (Threshold-Anpassung)
+        self.marker_adapt = adapt
 
         basis = int(scene.get("marker_basis", max(adapt, 20)))
         basis_for_bounds = int(adapt * 1.1) if adapt > 0 else int(basis)
@@ -246,7 +256,8 @@ class CLIP_OT_detect(bpy.types.Operator):
             new_tracks = [t for t in tracks if t.name not in self.initial_track_names]
 
             # Near-Duplicate-Filter (px, rel. zur Breite)
-            distance_px = max(1, int(self.width * 0.01))
+            rel = self.close_dist_rel if self.close_dist_rel > 0.0 else 0.01
+            distance_px = max(1, int(self.width * rel))
             thr2 = float(distance_px * distance_px)
 
             close_tracks = []
@@ -315,7 +326,14 @@ class CLIP_OT_detect(bpy.types.Operator):
             except Exception:
                 scene["detect_prev_names"] = []
 
-            scene["detect_status"] = "success"
+            # --- Handoff steuern: Default = KEIN Pipeline-Start ---
+            if self.handoff_to_pipeline:
+                scene["detect_status"] = "success"            # altes Verhalten: erlaubt Downstream/Pipeline
+                scene["pipeline_do_not_start"] = False
+            else:
+                scene["detect_status"] = "standalone_success" # bewusst kein Trigger-Keyword
+                scene["pipeline_do_not_start"] = True         # harte Bremse für Main
+
             context.window_manager.event_timer_remove(self._timer)
             return {'FINISHED'}
 
