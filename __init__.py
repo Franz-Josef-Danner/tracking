@@ -23,6 +23,7 @@ from .Operator.bidirectional_track import CLIP_OT_bidirectional_track
 from .Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
 from .Operator.clean_error_tracks import CLIP_OT_clean_error_tracks
 from .Operator.optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
+from .main_to_adapt import CLIP_OT_activate_main_with_adapt
 from .Operator.main import CLIP_OT_main 
 
 # Importiere PropertyGroup
@@ -44,7 +45,7 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
         layout.prop(scene, "frames_track")
         layout.prop(scene, "error_track")
         layout.separator()
-        layout.operator("clip.main", text="Track")
+        layout.operator("clip.activate_main_with_adapt", text="Track")
 
 # Alle Klassen zur Registrierung
 classes = (
@@ -61,6 +62,7 @@ classes = (
     CLIP_OT_clean_short_tracks,
     CLIP_OT_clean_error_tracks,
     CLIP_OT_optimize_tracking_modal,
+    CLIP_OT_activate_main_with_adapt,
     CLIP_OT_main,
 )
 
