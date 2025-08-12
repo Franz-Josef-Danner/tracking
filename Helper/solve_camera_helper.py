@@ -1,7 +1,3 @@
-# Helper/solve_camera_helper.py (Blender 4.4.3)
-import bpy
-from bpy.types import Operator
-
 class CLIP_OT_watch_solve(bpy.types.Operator):
     bl_idname = "clip.watch_solve"
     bl_label = "Watch Camera Solve"
@@ -11,22 +7,27 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
         scene = context.scene
         scene["solve_status"] = "pending"
         scene["solve_error"] = -1.0
-        scene["solve_error_after_clean"] = -1.0  # NEU: Fehler nach Cleanup
-        self._phase = 1                          # NEU: 1 = erster Solve, 2 = Re-Solve
 
+        # --- EXTENSION: State für Zweiphasen-Flow ---
+        self._phase = "solve1"            # solve1 -> cleanup -> solve2 -> done
+        self._second_solve_started = False
+        self._wait_errors_tries = 0
+        scene["preclean_marker_count"] = -1
+        scene["postclean_marker_count"] = -1
+        scene["marker_drop_detected"] = False
+        # --- EXTENSION ENDE ---
 
-        # Owner zur späteren Abmeldung
         owner = object()
         self._owner = owner
-        self._scheduled = False  # Guard gegen Mehrfach-Timer
-        
+        self._scheduled = False
+
         def _notify(*_args):
             if self._scheduled:
                 return
             self._scheduled = True
-        
+
             def _finish():
-                # Clip robust holen
+                # Clip robust holen (unverändert)
                 space = getattr(context, "space_data", None)
                 clip = getattr(space, "clip", None)
                 if not clip:
@@ -38,95 +39,153 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
                                 clip = getattr(sp, "clip", None)
                                 if clip:
                                     break
-        
-                # Rekonstruktion prüfen
+
+                # Rekonstruktion prüfen (unverändert)
                 rec = None
                 try:
                     rec = clip.tracking.objects.active.reconstruction if (clip and clip.tracking and clip.tracking.objects) else None
                 except Exception:
                     rec = None
-        
+
+                # --- EXTENSION: kleine Helfer ---
+                def _count_markers(_clip):
+                    try:
+                        tracks = _clip.tracking.objects.active.tracks
+                    except Exception:
+                        return 0
+                    total = 0
+                    for t in tracks:
+                        total += len(t.markers)
+                    return total
+
+                def _get_error_threshold():
+                    thr = getattr(scene, "error_track", None)
+                    if thr is None:
+                        thr = scene.get("error_track", 1.0)  # Fallback
+                    try:
+                        return float(thr)
+                    except Exception:
+                        return 1.0
+
+                def _override():
+                    return _build_override(context)
+                # --- EXTENSION ENDE ---
+
                 if rec and getattr(rec, "is_valid", False):
                     avg = getattr(rec, "average_error", None)
-                
-                    # PHASE 1: ersten Solve verbuchen, dann optional Clean & Re-Solve
-                    if self._phase == 1:
+
+                    # --- EXTENSION: Phasensteuerung ---
+                    if self._phase == "solve1":
+                        # Phase 1 abgeschlossen -> vor Cleanup Errors abwarten
+                        scene["solve_status"] = "done"  # beibehaltener Status
+                        if avg is not None:
+                            scene["solve_error"] = float(avg)
+
+                        def _wait_errors_then_clean():
+                            # Warte, bis Track-Errors sinnvoll befüllt sind
+                            self._wait_errors_tries += 1
+                            try:
+                                tracks = clip.tracking.objects.active.tracks
+                            except Exception:
+                                return 0.2
+
+                            has_errors = any((getattr(t, "average_error", 0.0) or 0.0) > 0.0 for t in tracks)
+                            # Timeout, falls nichts kommt (z.B. exotischer Clip-Zustand)
+                            if not has_errors and self._wait_errors_tries < 100:
+                                return 0.2
+
+                            # Cleanup fahren
+                            scene["preclean_marker_count"] = _count_markers(clip)
+                            thr = _get_error_threshold()
+                            ov = _override()
+                            if not ov:
+                                self.report({'ERROR'}, "Clip-Override fehlt für Clean Tracks.")
+                                return None
+                            try:
+                                with context.temp_override(**ov):
+                                    # Löscht Marker-Segmente mit zu hohem Fehler (offizieller Operator)
+                                    bpy.ops.clip.clean_tracks('EXEC_DEFAULT', frames=0, error=thr, action='DELETE_SEGMENTS')
+                            except Exception as ex:
+                                self.report({'ERROR'}, f"Clean Tracks fehlgeschlagen: {ex}")
+                                return None
+
+                            # Nach Cleanup: Marker-Reduktion beobachten; wenn geringer -> zweites Solve starten
+                            def _monitor_drop_and_resolve():
+                                cur = _count_markers(clip)
+                                scene["postclean_marker_count"] = cur
+                                if (cur < scene["preclean_marker_count"]) and not self._second_solve_started:
+                                    scene["marker_drop_detected"] = True
+                                    self._second_solve_started = True
+                                    try:
+                                        with context.temp_override(**ov):
+                                            res2 = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+                                        if res2 not in ({'FINISHED'}, {'RUNNING_MODAL'}):
+                                            self.report({'ERROR'}, f"Zweiter Solve-Start fehlgeschlagen: {res2}")
+                                            return None
+                                        self._phase = "solve2"
+                                    except Exception as ex2:
+                                        self.report({'ERROR'}, f"Zweiter Solve fehlgeschlagen: {ex2}")
+                                        return None
+
+                                # Weiter poll’en, bis solve2 final durch ist
+                                if self._phase == "solve2_done":
+                                    return None
+                                return 0.2
+
+                            bpy.app.timers.register(_monitor_drop_and_resolve, first_interval=0.0)
+                            return None  # _wait_errors_then_clean beendet
+
+                        bpy.app.timers.register(_wait_errors_then_clean, first_interval=0.2)
+                        # WICHTIG: Msgbus NICHT räumen – wir brauchen ihn für solve2
+                        self._scheduled = False
+                        return 0.2
+
+                    elif self._phase == "solve2":
+                        # Zweites Solve jetzt gültig -> final abschließen
                         scene["solve_status"] = "done"
                         if avg is not None:
                             scene["solve_error"] = float(avg)
-                
-                        thr = float(scene.get("error_track", 0.0))
-                        if thr > 0.0:
-                            # Cleanup + Re-Solve im gültigen CLIP_EDITOR-Kontext
-                            ovr = _build_override(context)
-                            if ovr:
-                                try:
-                                    with context.temp_override(**ovr):
-                                        bpy.ops.clip.clean_tracks(frames=0, error=thr, action='DELETE_SEGMENTS')
-                                        # zweiter Solve: per Helper starten (INVOKE_DEFAULT ist okay; wir warten via Msgbus)
-                                        bpy.ops.clip.solve_camera_helper('INVOKE_DEFAULT')
-                                except Exception as ex:
-                                    self.report({'ERROR'}, f"Cleanup/Re-Solve fehlgeschlagen: {ex}")
-                                    # Kein Abbruch der Msgbus-Phase – wir finalisieren normal:
-                                    try:
-                                        bpy.msgbus.clear_by_owner(owner)
-                                    except Exception:
-                                        pass
-                                    self._scheduled = False
-                                    return None
-                
-                                # Jetzt auf den zweiten Solve warten:
-                                self._phase = 2
-                                self._scheduled = False
-                                return 0.2
-                            # Falls kein gültiger Override: finalisiere wie bisher
-                        # Kein Threshold gesetzt → Finalisierung wie bisher
+                        self._phase = "solve2_done"
                         try:
                             bpy.msgbus.clear_by_owner(owner)
                         except Exception:
                             pass
                         self._scheduled = False
                         return None
-                
-                    # PHASE 2: zweiter Solve ist fertig → finalisieren
-                    else:
-                        if avg is not None:
-                            scene["solve_error_after_clean"] = float(avg)
-                        scene["solve_status"] = "done_after_clean"
-                        try:
-                            bpy.msgbus.clear_by_owner(owner)
-                        except Exception:
-                            pass
-                        self._scheduled = False
-                        return None
+                    # --- EXTENSION ENDE ---
 
+                    # (Fallback: sollte eigentlich nicht erreicht werden)
+                    try:
+                        bpy.msgbus.clear_by_owner(owner)
+                    except Exception:
+                        pass
+                    self._scheduled = False
+                    return None
                 else:
                     # noch nicht valide – in 0.2 s erneut prüfen
                     return 0.2
-        
+
             bpy.app.timers.register(_finish, first_interval=0.0)
 
-
-        # Subscriptions
+        # Subscriptions (unverändert)
         try:
             bpy.msgbus.subscribe_rna(
                 key=(bpy.types.MovieTrackingReconstruction, "is_valid"),
                 owner=owner,
                 args=(),
-                notify=_notify,   # <- freie Funktion
+                notify=_notify,
             )
             bpy.msgbus.subscribe_rna(
                 key=(bpy.types.MovieTrackingReconstruction, "average_error"),
                 owner=owner,
                 args=(),
-                notify=_notify,   # <- freie Funktion
+                notify=_notify,
             )
         except Exception as ex:
             self.report({'WARNING'}, f"Msgbus-Subscribe fehlgeschlagen: {ex}. Fallback: Polling in main.")
-            # Markiere Fallback
             scene["solve_watch_fallback"] = True
 
-        # Solve starten – nutzt deinen Helper (richtiger Kontext/Override)
+        # Solve starten (unverändert)
         res = bpy.ops.clip.solve_camera_helper('INVOKE_DEFAULT')
         if res not in ({'FINISHED'}, {'RUNNING_MODAL'}):
             self.report({'ERROR'}, f"Camera Solve Start fehlgeschlagen: {res}")
@@ -137,83 +196,3 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
             return {'CANCELLED'}
 
         return {'FINISHED'}
-
-
-def _find_clip_context(context: bpy.types.Context):
-    """Finde (area, region, space) des CLIP_EDITOR, sonst (None, None, None)."""
-    area = getattr(context, "area", None)
-    if area and area.type == "CLIP_EDITOR":
-        region = next((r for r in area.regions if r.type == "WINDOW"), None)
-        space = area.spaces.active
-        if region and space:
-            return area, region, space
-
-    screen = getattr(context, "screen", None)
-    if not screen:
-        return None, None, None
-
-    for a in screen.areas:
-        if a.type == "CLIP_EDITOR":
-            region = next((r for r in a.regions if r.type == "WINDOW"), None)
-            if region:
-                return a, region, a.spaces.active
-    return None, None, None
-
-
-def _build_override(context):
-    """Nur die UI-Schlüssel für temp_override vorbereiten (kein window/screen!)."""
-    area, region, space = _find_clip_context(context)
-    if not (area and region and space and getattr(space, "clip", None)):
-        return None
-    return {"area": area, "region": region, "space_data": space}
-
-
-class CLIP_OT_solve_camera_helper(Operator):
-    """Startet den internen Kamera-Solver mit INVOKE_DEFAULT im korrekten Kontext."""
-    bl_idname = "clip.solve_camera_helper"
-    bl_label = "Solve Camera (Helper)"
-    bl_options = {"INTERNAL"}  # UNDO optional
-
-    def invoke(self, context, event):
-        override = _build_override(context)
-        if not override:
-            self.report({"ERROR"}, "CLIP_EDITOR/Clip-Kontext fehlt. Clip Editor öffnen und Clip laden.")
-            return {"CANCELLED"}
-
-        # 1) Versuche INVOKE_DEFAULT mit gültigem UI-Kontext
-        try:
-            with context.temp_override(**override):
-                result = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-            if result != {"FINISHED"}:
-                self.report({"WARNING"}, f"Kamera-Solve (INVOKE_DEFAULT): {result}")
-        except RuntimeError as ex:
-            # 2) Fallback EXEC_DEFAULT im selben Override
-            self.report({"WARNING"}, f"INVOCATION fehlgeschlagen ({ex}). Fallback EXEC_DEFAULT …")
-            try:
-                with context.temp_override(**override):
-                    result = bpy.ops.clip.solve_camera('EXEC_DEFAULT')
-                if result != {"FINISHED"}:
-                    self.report({"ERROR"}, f"Kamera-Solve (EXEC_DEFAULT): {result}")
-                    return {"CANCELLED"}
-            except Exception as ex2:
-                self.report({"ERROR"}, f"Kamera-Solve fehlgeschlagen: {ex2}")
-                return {"CANCELLED"}
-
-        # UI-Refresh (best effort)
-        try:
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-        except Exception:
-            pass
-        return {"FINISHED"}
-
-
-# --- Register Boilerplate ---
-_classes = (CLIP_OT_solve_camera_helper, CLIP_OT_watch_solve)
-
-def register():
-    for cls in _classes:
-        bpy.utils.register_class(cls)
-
-def unregister():
-    for cls in reversed(_classes):
-        bpy.utils.unregister_class(cls)
