@@ -130,7 +130,7 @@ class CLIP_OT_detect(bpy.types.Operator):
         if self.state == "PROCESS":
             tracks = self.tracking.tracks
             w, h = self.width, self.height
-            self.distance_px = int(self.width * 0.04)
+            self.distance_px = int(self.width * 0.01)
             thr2 = float(self.distance_px) * float(self.distance_px)
 
             new_tracks = [t for t in tracks if t.name not in self.initial_track_names]
