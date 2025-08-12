@@ -281,3 +281,88 @@ def unregister():
 
 if __name__ == "__main__":
     register()
+
+# --- Backward-compatibility shim --------------------------------------------
+# Export beibehalten, damit: from .detect import perform_marker_detection funktioniert
+__all__ = [
+    "CLIP_OT_detect_once",
+    "perform_marker_detection",
+]
+
+def perform_marker_detection(
+    context,
+    *,
+    frame: int,
+    marker_adapt: int,
+    marker_min: int,
+    marker_max: int,
+    detection_threshold: float | None = None,
+    thr_min: float = 1e-6,
+    thr_max: float = 1.0,
+    max_iters: int = 8,
+    use_binary_search: bool = True,
+    margin_base: int = -1,
+    min_distance_base: int = -1,
+    close_dist_rel: float = 0.01,
+):
+    """
+    Kompatibilitäts-Wrapper für ältere Call-Sites.
+    Startet CLIP_OT_detect_once und liefert scene['detect_result'] zurück.
+    """
+    # Sinnvolle Defaults aus alter Pipeline ableiten
+    if detection_threshold is None:
+        detection_threshold = 0.75
+
+    # Sicherstellen, dass wir im CLIP_EDITOR laufen
+    area = region = space = None
+    win = context.window
+    if win and win.screen:
+        for a in win.screen.areas:
+            if a.type == 'CLIP_EDITOR':
+                for r in a.regions:
+                    if r.type == 'WINDOW':
+                        area, region, space = a, r, a.spaces.active
+                        break
+                if area:
+                    break
+
+    # Operator im gültigen Override ausführen
+    if area and region and space:
+        with context.temp_override(area=area, region=region, space_data=space):
+            res = bpy.ops.clip.detect_once(
+                frame=frame,
+                marker_adapt=marker_adapt,
+                min_marker=marker_min,
+                max_marker=marker_max,
+                detection_threshold=float(detection_threshold),
+                thr_min=float(thr_min),
+                thr_max=float(thr_max),
+                max_iters=int(max_iters),
+                use_binary_search=bool(use_binary_search),
+                margin_base=int(margin_base),
+                min_distance_base=int(min_distance_base),
+                close_dist_rel=float(close_dist_rel),
+            )
+    else:
+        # Fallback: ohne Override (falls poll() greift)
+        res = bpy.ops.clip.detect_once(
+            frame=frame,
+            marker_adapt=marker_adapt,
+            min_marker=marker_min,
+            max_marker=marker_max,
+            detection_threshold=float(detection_threshold),
+            thr_min=float(thr_min),
+            thr_max=float(thr_max),
+            max_iters=int(max_iters),
+            use_binary_search=bool(use_binary_search),
+            margin_base=int(margin_base),
+            min_distance_base=int(min_distance_base),
+            close_dist_rel=float(close_dist_rel),
+        )
+
+    # Einheitliche Rückgabe wie früher: Dict aus scene["detect_result"]
+    # (bei Fehlern None/KeyError robust handhaben)
+    try:
+        return context.scene.get("detect_result", None)
+    except Exception:
+        return None
