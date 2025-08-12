@@ -23,8 +23,8 @@ from .Operator.bidirectional_track import CLIP_OT_bidirectional_track
 from .Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
 from .Operator.clean_error_tracks import CLIP_OT_clean_error_tracks
 from .Operator.optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
+from .Operator.main import CLIP_OT_main
 from .Operator.main_to_adapt import CLIP_OT_launch_main_with_adapt
-from .Operator.main import CLIP_OT_main 
 from .Helper.properties import RepeatEntry  # ✅ NEU
 
 # Panel
@@ -43,12 +43,11 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
         layout.prop(scene, "frames_track")
         layout.prop(scene, "error_track")
         layout.separator()
-        layout.operator("clip.main", text="Track")
+        layout.operator("clip.launch_main_with_adapt", text="Track")
 
 # Alle Klassen zur Registrierung
 classes = (
     RepeatEntry,  # ✅ zuerst registrieren
-    CLIP_PT_kaiserlich_panel,
     CLIP_OT_tracker_settings,
     CLIP_OT_tracking_pipeline,
     CLIP_OT_marker_helper_main,
@@ -60,8 +59,10 @@ classes = (
     CLIP_OT_clean_short_tracks,
     CLIP_OT_clean_error_tracks,
     CLIP_OT_optimize_tracking_modal,
-    CLIP_OT_launch_main_with_adapt,
     CLIP_OT_main,
+    CLIP_OT_launch_main_with_adapt,
+    CLIP_PT_kaiserlich_panel,
+
 )
 
 def register():
