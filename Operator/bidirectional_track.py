@@ -16,7 +16,11 @@ class CLIP_OT_bidirectional_track(Operator):
 
     def execute(self, context):
         self._step = 0
+        self._stable_count = 0
+        self._prev_marker_count = -1
+        self._prev_frame = -1
         self._start_frame = context.scene.frame_current
+
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.5, window=context.window)
         wm.modal_handler_add(self)
@@ -29,33 +33,35 @@ class CLIP_OT_bidirectional_track(Operator):
         return {'PASS_THROUGH'}
 
     def run_tracking_step(self, context):
-        clip = context.space_data.clip
+        space = getattr(context, "space_data", None)
+        clip = getattr(space, "clip", None) if space else None
         if clip is None:
             self.report({'ERROR'}, "Kein aktiver Clip im Tracking-Editor gefunden.")
+            self._cleanup_timer(context)
             return {'CANCELLED'}
 
         if self._step == 0:
             print("→ Starte Vorwärts-Tracking...")
             bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
-            self._step += 1
+            self._step = 1
             return {'PASS_THROUGH'}
 
         elif self._step == 1:
             print("→ Warte auf Abschluss des Vorwärts-Trackings...")
             context.scene.frame_current = self._start_frame
-            self._step += 1
+            self._step = 2
             print(f"← Frame zurückgesetzt auf {self._start_frame}")
             return {'PASS_THROUGH'}
 
         elif self._step == 2:
             print("→ Frame wurde gesetzt. Warte eine Schleife ab, bevor Tracking startet...")
-            self._step += 1
+            self._step = 3
             return {'PASS_THROUGH'}
 
         elif self._step == 3:
             print("→ Starte Rückwärts-Tracking...")
             bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
-            self._step += 1
+            self._step = 4
             return {'PASS_THROUGH'}
 
         elif self._step == 4:
@@ -64,7 +70,12 @@ class CLIP_OT_bidirectional_track(Operator):
         return {'PASS_THROUGH'}
 
     def run_tracking_stability_check(self, context):
-        clip = context.space_data.clip
+        space = getattr(context, "space_data", None)
+        clip = getattr(space, "clip", None) if space else None
+        if clip is None:
+            self._cleanup_timer(context)
+            return {'CANCELLED'}
+
         current_frame = context.scene.frame_current
         current_marker_count = sum(len(track.markers) for track in clip.tracking.tracks)
 
@@ -83,11 +94,17 @@ class CLIP_OT_bidirectional_track(Operator):
             print("✓ Tracking stabil erkannt – bereinige kurze Tracks.")
             bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
 
-            # Rückmeldung an Pipeline
-            context.scene["bidirectional_status"] = "done"
-            print("🧩 [DEBUG] bidirectional_status gesetzt auf: done")
-
-            context.window_manager.event_timer_remove(self._timer)
+            # Timer entfernen und Operator sauber beenden
+            self._cleanup_timer(context)
             return {'FINISHED'}
 
         return {'PASS_THROUGH'}
+
+    def _cleanup_timer(self, context):
+        wm = context.window_manager
+        if self._timer is not None:
+            try:
+                wm.event_timer_remove(self._timer)
+            except Exception:
+                pass
+            self._timer = None
