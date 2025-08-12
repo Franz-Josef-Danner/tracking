@@ -8,6 +8,7 @@ from .clean_error_tracks import CLIP_OT_clean_error_tracks
 from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 from ..Helper.solve_camera_helper import CLIP_OT_solve_watch_clean
 from .main_to_adapt import CLIP_OT_launch_main_with_adapt
+from .find_low_marker_frame import CLIP_OT_find_low_marker, find_low_marker_frame_core
 from .main import CLIP_OT_main
 
 try:
@@ -26,6 +27,7 @@ classes = (
     CLIP_OT_solve_watch_clean,
     CLIP_OT_launch_main_with_adapt,
     CLIP_OT_main,
+    CLIP_OT_find_low_marker,
 )
 
 def register():
