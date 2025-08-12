@@ -207,6 +207,14 @@ class CLIP_OT_main(bpy.types.Operator):
                     scene["marker_max"] = int(marker_basis * 1.1)
                     print(f"🔺 Erhöhe marker_basis auf {marker_basis} und starte Zyklus neu "
                           f"({scene['marker_min']}–{scene['marker_max']})")
+                    
+                    space = getattr(context, "space_data", None)
+                    clip = getattr(space, "clip", None)
+                    frame = find_low_marker_frame(clip, marker_basis=marker_basis)
+                    if frame is not None:
+                        scene["goto_frame"] = frame
+                        jump_to_frame(context)
+
                     bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
                     self._step = 0
                     return {'PASS_THROUGH'}
