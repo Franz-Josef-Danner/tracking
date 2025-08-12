@@ -23,7 +23,7 @@ from .Operator.bidirectional_track import CLIP_OT_bidirectional_track
 from .Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
 from .Operator.clean_error_tracks import CLIP_OT_clean_error_tracks
 from .Operator.optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
-from .Operator.main_to_adapt import CLIP_OT_activate_main_with_adapt
+from .Operator.main_to_adapt import CLIP_OT_launch_main_with_adapt
 from .Operator.main import CLIP_OT_main 
 
 # Importiere PropertyGroup
