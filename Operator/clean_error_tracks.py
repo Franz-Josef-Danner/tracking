@@ -4,7 +4,7 @@ import bpy
 import time
 
 # 👉 Dichte-Pruning als erster Schritt verfügbar machen
-from .prune_tracks_density import prune_tracks_density
+from ..Helper.prune_tracks_density import prune_tracks_density
 
 
 def get_marker_position(track, frame):
