@@ -21,7 +21,11 @@ class CLIP_OT_launch_main_with_adapt(bpy.types.Operator):
         description="Multiplikator für marker_basis → marker_adapt",
         default=4, min=1, max=999
     )
-
+    pre: bpy.props.IntProperty(
+        name="Faktor",
+        description="Multiplikator für marker_basis → marker_adapt",
+        default=0.9, min=0.1, max=999
+    )
     use_override: bpy.props.BoolProperty(
         name="CLIP-Override",
         description="Operator im CLIP_EDITOR-Kontext ausführen",
@@ -31,7 +35,7 @@ class CLIP_OT_launch_main_with_adapt(bpy.types.Operator):
     def execute(self, context):
         scene = context.scene
         marker_basis = int(scene.get("marker_basis", 25))
-        marker_adapt = int(marker_basis * self.factor * 0,9)
+        marker_adapt = int(marker_basis * self.factor * self.pre)
 
         if self.use_override:
             ovr = _clip_override(context)
