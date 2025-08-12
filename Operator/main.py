@@ -1,29 +1,59 @@
-# main.py (überarbeitet – nur die geforderten Änderungen)
+# main.py — "Main bis Übergabe an detect" (alle Pre-Detect-Schritte + Bounds-Formel, kein Modal)
+
 import bpy
-import time
+from bpy.types import Operator
+
+# Helper, die VOR detect benötigt werden:
 from ..Helper.find_low_marker_frame import find_low_marker_frame
 from ..Helper.jump_to_frame import jump_to_frame
-from ..Helper.properties import RepeatEntry  # <- wichtig!
-from ..Helper.solve_camera_helper import CLIP_OT_solve_watch_clean, run_solve_watch_clean
 
-class CLIP_OT_main(bpy.types.Operator):
+
+def _clip_override(context):
+    """Sicheren CLIP_EDITOR-Override (area/region/space_data) liefern."""
+    win = context.window
+    if not win:
+        return None
+    scr = getattr(win, "screen", None)
+    if not scr:
+        return None
+    for area in scr.areas:
+        if area.type == 'CLIP_EDITOR':
+            for region in area.regions:
+                if region.type == 'WINDOW':
+                    return {'area': area, 'region': region, 'space_data': area.spaces.active}
+    return None
+
+
+def _get_clip(context):
+    """Aktiven MovieClip ermitteln, Fallback auf erstes MovieClip."""
+    space = getattr(context, "space_data", None)
+    if space and getattr(space, "clip", None):
+        return space.clip
+    return bpy.data.movieclips[0] if bpy.data.movieclips else None
+
+
+class CLIP_OT_main(Operator):
+    """Führt alle Pre-Detect-Schritte aus und übergibt dann direkt an detect.
+    Kein Modal, keine Rückkehr, keine Solve-/Cleanup-Logik."""
     bl_idname = "clip.main"
-    bl_label = "Main Setup (Modal)"
+    bl_label = "Main (Pre-Detect → Detect, ohne Rückkehr)"
     bl_options = {'REGISTER', 'UNDO'}
 
-    # ← NEU: Übergabe-Property
+    use_override: bpy.props.BoolProperty(
+        name="CLIP-Override",
+        description="Im Kontext des CLIP_EDITOR ausführen (empfohlen)",
+        default=True
+    )
+
+    # Optionaler externer Einfluss auf Marker-Bounds
     marker_adapt: bpy.props.IntProperty(
         name="Marker Adapt",
-        description="Extern übergebener Ableitungswert für Marker-Bounds",
+        description="Optionaler Ableitungswert für Marker-Bounds (nur Pre-Phase)",
         default=0, min=0
     )
 
-
-    _timer = None
-    _step = 0
-
-    def execute(self, context):
-        scene = context.scene
+    def _reset_scene_flags(self, scene):
+        """Initiale Scene-Keys wie im bisherigen Pre-Flow zurücksetzen."""
         scene["solve_status"] = ""
         scene["solve_error"] = -1.0
         scene["solve_watch_fallback"] = False
@@ -32,184 +62,104 @@ class CLIP_OT_main(bpy.types.Operator):
         scene["marker_max"] = 0
         scene["goto_frame"] = -1
 
-        # Error-Limit Snapshot (unverändert)
+        # Error-Limit Snapshot wie gehabt
         try:
             scene["error_limit_run"] = float(getattr(scene, "error_track"))
         except Exception:
             scene["error_limit_run"] = float(scene.get("error_track", 0.0))
 
+        # Optional vorhandene Repeat-Collection leeren (keine Modal-Zyklen mehr)
         if hasattr(scene, "repeat_frame"):
-            scene.repeat_frame.clear()
-
-        # Clip-Zustand prüfen (unverändert)
-        space = getattr(context, "space_data", None)
-        clip = getattr(space, "clip", None)
-        if clip is None or not getattr(clip, "tracking", None):
-            self.report({'WARNING'}, "Kein gültiger Clip oder keine Tracking-Daten.")
-            return {'CANCELLED'}
-
-            # --- NEU: Gatekeeper vor dem ersten Zyklus ---
-        marker_basis = scene.get("marker_basis", 25)
-        pre_frame = find_low_marker_frame(clip, marker_basis=marker_basis)
-        if pre_frame is None:
-            print("✅ Vorprüfung: Keine Low-Marker-Frames. Prozess wird beendet.")
-            self.report({'INFO'}, "Keine Low-Marker-Frames – nichts zu tun.")
-            return {'FINISHED'}
-        else:
-            scene["goto_frame"] = int(pre_frame)
-            jump_to_frame(context)
-            print(f"🎯 Vorprüfung: Low-Marker-Frame {pre_frame} – starte Pipeline ab diesem Frame.")
-    
-        print("🚀 Starte Tracking-Vorbereitung...")
-        bpy.ops.clip.tracker_settings('EXEC_DEFAULT')
-        bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
-    
-        print("🚀 Starte Tracking-Pipeline...")
-        bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
-        print("⏳ Warte auf Abschluss der Pipeline...")
-    
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(0.5, window=context.window)
-        wm.modal_handler_add(self)
-        self._step = 0
-        return {'RUNNING_MODAL'}
-
-        print("🚀 Starte Tracking-Vorbereitung...")
-
-        # Vorbereitungen (unverändert)
-        bpy.ops.clip.tracker_settings('EXEC_DEFAULT')
-        bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
-
-        # ❌ Entfernt: KEINE Playhead-Setzung vor Pipeline-Start mehr
-
-        print("🚀 Starte Tracking-Pipeline...")
-        bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
-        print("⏳ Warte auf Abschluss der Pipeline...")
-
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(0.5, window=context.window)
-        wm.modal_handler_add(self)
-        self._step = 0
-        return {'RUNNING_MODAL'}
-
-    def modal(self, context, event):
-        if event.type == 'ESC':
-            self.report({'WARNING'}, "Tracking-Setup manuell abgebrochen.")
-            context.window_manager.event_timer_remove(self._timer)
-
-            scene = context.scene
-            scene["pipeline_status"] = ""
-            scene["marker_min"] = 0
-            scene["marker_max"] = 0
-            scene["goto_frame"] = -1
-            if hasattr(scene, "repeat_frame"):
-                scene.repeat_frame.clear()
-
-            print("❌ Abbruch durch Benutzer – Setup zurückgesetzt.")
-            return {'CANCELLED'}
-
-        if event.type != 'TIMER':
-            return {'PASS_THROUGH'}
-
-        scene = context.scene
-        repeat_collection = scene.repeat_frame
-
-        if self._step == 0:
-            if scene.get("pipeline_status", "") == "done":
-                print("🧪 Starte Markerprüfung…")
-                self._step = 1
-            return {'PASS_THROUGH'}
-
-        elif self._step == 1:
-            space = getattr(context, "space_data", None)
-            clip = getattr(space, "clip", None)
-            if clip is None or not getattr(clip, "tracking", None):
-                self.report({'WARNING'}, "Kein gültiger Clip oder keine Tracking-Daten.")
-                return {'CANCELLED'}
-            initial_basis = scene.get("marker_basis", 25)
-            marker_basis = scene.get("marker_basis", 25)
-
-            frame = find_low_marker_frame(clip, marker_basis=marker_basis)
-            if frame is not None:
-                print(f"🟡 Zu wenige Marker im Frame {frame}")
-                scene["goto_frame"] = frame
-                jump_to_frame(context)
-
-                key = str(frame)
-                entry = next((e for e in repeat_collection if e.frame == key), None)
-
-                if entry:
-                    entry.count += 1
-                    marker_basis = min(int(marker_basis * 1.1), 100)
-                    scene["marker_basis"] = marker_basis
-                    print(f"🔺 Selber Frame erneut – erhöhe marker_basis auf {marker_basis}")
-                else:
-                    entry = repeat_collection.add()
-                    entry.frame = key
-                    entry.count = 1
-                    marker_basis = max(int(marker_basis * 0.9), initial_basis)
-                    scene["marker_basis"] = marker_basis
-                    print(f"🔻 Neuer Frame – senke marker_basis auf {marker_basis}")
-
-                print(f"🔁 Frame {frame} wurde bereits {entry.count}x erkannt.")
-
-                if entry.count >= 10:
-                    print(f"🚨 Optimiere Tracking für Frame {frame}")
-                    bpy.ops.clip.optimize_tracking_modal('INVOKE_DEFAULT')
-                else:
-                    basis_for_bounds = int(self.marker_adapt * 1.1) if int(getattr(self, "marker_adapt", 0)) > 0 else int(marker_basis)
-                    scene["marker_min"] = int(basis_for_bounds * 0.9)
-                    scene["marker_max"] = int(basis_for_bounds * 1.1)
-                    print(f"🔄 Neuer Tracking-Zyklus mit Marker-Zielwerten {scene['marker_min']}–{scene['marker_max']}")
-                    bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
-
-                self._step = 0
-            else:
-                print("✅ Alle Frames haben ausreichend Marker. Cleanup wird ausgeführt.")
-                bpy.ops.clip.clean_error_tracks('INVOKE_DEFAULT')
-                self._step = 2
-            return {'PASS_THROUGH'}
-
-        elif self._step == 2:
-            space = getattr(context, "space_data", None)
-            clip = getattr(space, "clip", None)
-            if clip is None or not getattr(clip, "tracking", None):
-                self.report({'WARNING'}, "Kein gültiger Clip oder keine Tracking-Daten.")
-                return {'CANCELLED'}
-            marker_basis = scene.get("marker_basis", 20)
-
-            frame = find_low_marker_frame(clip, marker_basis=marker_basis)
-            if frame is not None:
-                print(f"🔁 Neuer Low-Marker-Frame gefunden: {frame} → Starte neuen Zyklus.")
-                self._step = 1
-                return {'PASS_THROUGH'}
-
-            # ✨ Neues Ende: Solve starten und beenden
-            print("🏁 Keine Low-Marker-Frames mehr gefunden. Starte Kamera-Solve und beende.")
-            # CLIP_EDITOR-Kontext sichern
-            area_ce = region_ce = space_ce = None
-            for a in context.screen.areas:
-                if a.type == 'CLIP_EDITOR':
-                    for r in a.regions:
-                        if r.type == 'WINDOW':
-                            area_ce = a
-                            region_ce = r
-                            space_ce = a.spaces.active
-            if area_ce and region_ce and space_ce:
-                with context.temp_override(area=area_ce, region=region_ce, space_data=space_ce):
-                    # Verwende deinen Helper, da er bereits im Projekt genutzt wird
-                    bpy.ops.clip.solve_watch_clean('INVOKE_DEFAULT')
-            else:
-                # Fallback – versucht Solve im aktuellen Kontext
-                bpy.ops.clip.solve_watch_clean('INVOKE_DEFAULT')
-
-            # Timer entfernen und sauber beenden
             try:
-                context.window_manager.event_timer_remove(self._timer)
+                scene.repeat_frame.clear()
             except Exception:
                 pass
+
+    def _precheck_and_jump(self, context, clip):
+        """Vorprüfung: Low-Marker-Frame suchen und ggf. Playhead setzen."""
+        scene = context.scene
+        marker_basis = scene.get("marker_basis", 25)
+
+        pre_frame = find_low_marker_frame(clip, marker_basis=marker_basis)
+        if pre_frame is None:
+            print("✅ Vorprüfung: Keine Low-Marker-Frames. (Fortsetzung trotzdem bis detect)")
+            return
+
+        # Low-Marker gefunden → Playhead setzen (wie bisher)
+        scene["goto_frame"] = int(pre_frame)
+        jump_to_frame(context)
+        print(f"🎯 Vorprüfung: Low-Marker-Frame {pre_frame} – starte Setup ab diesem Frame.")
+
+    def execute(self, context):
+        # --- Sanity ---
+        clip = _get_clip(context)
+        if clip is None or not getattr(clip, "tracking", None):
+            self.report({'ERROR'}, "Kein gültiger MovieClip oder keine Tracking-Daten.")
+            return {'CANCELLED'}
+
+        scene = context.scene
+        self._reset_scene_flags(scene)
+
+        # --- Optionaler CLIP_EDITOR-Override ---
+        override = _clip_override(context) if self.use_override else None
+        cx = context if not override else context.temp_override(**override)
+
+        try:
+            mgr = cx if override else None
+            if mgr:
+                mgr.__enter__()
+
+            # --- Pre-Detect: Vorprüfung und Playhead-Positionierung ---
+            self._precheck_and_jump(context, clip)
+
+            # --- Pre-Detect: Tracker-/Marker-Setup ---
+            print("🚀 Vorbereitung: tracker_settings …")
+            bpy.ops.clip.tracker_settings('EXEC_DEFAULT')
+
+            print("🧰 Vorbereitung: marker_helper_main …")
+            bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
+
+            # --- Bounds-Formel VOR Pipeline & detect anwenden ---
+            marker_basis = int(scene.get("marker_basis", 25))
+            marker_adapt_val = int(getattr(self, "marker_adapt", 0))
+            basis_for_bounds = int(marker_adapt_val * 1.1) if marker_adapt_val > 0 else int(marker_basis)
+            scene["marker_min"] = int(basis_for_bounds * 0.9)
+            scene["marker_max"] = int(basis_for_bounds * 1.1)
+            print(f"📏 Marker-Bounds gesetzt: min={scene['marker_min']} max={scene['marker_max']} (Basis {basis_for_bounds})")
+
+            # --- Pre-Detect: Tracking-Pipeline starten ---
+            print("🎬 Starte Tracking-Pipeline …")
+            bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
+
+            # --- HARTE SCHNITTSTELLE: Direkt an detect übergeben ---
+            print("📡 Übergabe an detect …")
+            bpy.ops.clip.detect('INVOKE_DEFAULT')
+
+            print("✅ Main beendet nach Übergabe an detect (ohne Rückkehr).")
             return {'FINISHED'}
 
-        # ❌ Step 3 entfällt komplett (Error-Validator & Restart entfernt)
+        except Exception as ex:
+            self.report({'ERROR'}, f"Main-Abbruch: {ex}")
+            return {'CANCELLED'}
 
-        return {'RUNNING_MODAL'}
+        finally:
+            if override and 'mgr' in locals() and mgr:
+                try:
+                    mgr.__exit__(None, None, None)
+                except Exception:
+                    pass
+
+
+# Lokale Registrierung (falls nicht zentral in __init__ gehandhabt)
+def register():
+    try:
+        bpy.utils.register_class(CLIP_OT_main)
+    except ValueError:
+        pass  # bereits registriert
+
+
+def unregister():
+    try:
+        bpy.utils.unregister_class(CLIP_OT_main)
+    except ValueError:
+        pass
