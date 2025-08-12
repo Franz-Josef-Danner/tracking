@@ -1,4 +1,4 @@
-# main.py — "Main bis Übergabe an detect" (alle Pre-Detect-Schritte + Bounds-Formel, kein Modal)
+# main.py — "Main bis Übergabe an detect_once" (alle Pre-Detect-Schritte + Bounds-Formel, kein Modal)
 
 import bpy
 from bpy.types import Operator
@@ -33,10 +33,10 @@ def _get_clip(context):
 
 
 class CLIP_OT_main(Operator):
-    """Führt alle Pre-Detect-Schritte aus und übergibt dann direkt an detect.
+    """Führt alle Pre-Detect-Schritte aus und übergibt dann direkt an detect_once.
     Kein Modal, keine Rückkehr, keine Solve-/Cleanup-Logik."""
     bl_idname = "clip.main"
-    bl_label = "Main (Pre-Detect → Detect, ohne Rückkehr)"
+    bl_label = "Main (Pre-Detect → DetectOnce, ohne Rückkehr)"
     bl_options = {'REGISTER', 'UNDO'}
 
     use_override: bpy.props.BoolProperty(
@@ -119,7 +119,7 @@ class CLIP_OT_main(Operator):
             print("🧰 Vorbereitung: marker_helper_main …")
             bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
 
-            # --- Bounds-Formel VOR Pipeline & detect anwenden ---
+            # --- Bounds-Formel VOR Übergabe an detect_once ---
             marker_basis = int(scene.get("marker_basis", 25))
             marker_adapt_val = int(getattr(self, "marker_adapt", 0))
             basis_for_bounds = int(marker_adapt_val * 1.1) if marker_adapt_val > 0 else int(marker_basis)
@@ -127,15 +127,28 @@ class CLIP_OT_main(Operator):
             scene["marker_max"] = int(basis_for_bounds * 1.1)
             print(f"📏 Marker-Bounds gesetzt: min={scene['marker_min']} max={scene['marker_max']} (Basis {basis_for_bounds})")
 
-            # --- Pre-Detect: Tracking-Pipeline starten ---
+            # --- Threshold bestimmen (Fallback auf Tracker-Default) ---
+            settings = clip.tracking.settings
+            detection_threshold = float(scene.get("last_detection_threshold", getattr(settings, "default_correlation_min", 0.75)))
+
+            # --- (Optional) Pipeline-Prep, wie gehabt ---
             print("🎬 Starte Tracking-Pipeline …")
             bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
 
-            # --- HARTE SCHNITTSTELLE: Direkt an detect übergeben ---
-            print("📡 Übergabe an detect …")
-            bpy.ops.clip.detect('INVOKE_DEFAULT')
+            # --- HARTE SCHNITTSTELLE: Direkt an detect_once übergeben ---
+            print("📡 Übergabe an detect_once …")
+            bpy.ops.clip.detect_once('INVOKE_DEFAULT',
+                detection_threshold=detection_threshold,
+                marker_adapt=int(basis_for_bounds),
+                min_marker=int(scene["marker_min"]),
+                max_marker=int(scene["marker_max"]),
+                frame=int(scene.frame_current),
+                margin_base=-1,          # auto aus Bildbreite
+                min_distance_base=-1,    # auto aus Bildbreite
+                close_dist_rel=0.01,
+            )
 
-            print("✅ Main beendet nach Übergabe an detect (ohne Rückkehr).")
+            print("✅ Main beendet nach Übergabe an detect_once (ohne Rückkehr).")
             return {'FINISHED'}
 
         except Exception as ex:
