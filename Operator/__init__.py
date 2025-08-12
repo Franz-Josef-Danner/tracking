@@ -1,15 +1,15 @@
 import bpy
 
 from .tracker_settings import CLIP_OT_tracker_settings
-from .detect import CLIP_OT_detect_once            # <— war: CLIP_OT_detect
+from .detect import CLIP_OT_detect_once
 from .bidirectional_track import CLIP_OT_bidirectional_track
 from .tracking_pipeline import CLIP_OT_tracking_pipeline
 from .clean_error_tracks import CLIP_OT_clean_error_tracks
 from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 from ..Helper.solve_camera_helper import CLIP_OT_solve_watch_clean
 from .main_to_adapt import CLIP_OT_launch_main_with_adapt
-from .find_low_marker_frame import CLIP_OT_find_low_marker, find_low_marker_frame_core
 from .main import CLIP_OT_main
+from .find_low_marker_frame import CLIP_OT_find_low_marker   # <— NEU
 
 try:
     from .clean_short_tracks import CLIP_OT_clean_short_tracks
@@ -18,7 +18,7 @@ except Exception as e:
 
 classes = (
     CLIP_OT_tracker_settings,
-    CLIP_OT_detect_once,                         # <— war: CLIP_OT_detect
+    CLIP_OT_detect_once,
     CLIP_OT_bidirectional_track,
     CLIP_OT_clean_short_tracks,
     CLIP_OT_tracking_pipeline,
@@ -27,7 +27,7 @@ classes = (
     CLIP_OT_solve_watch_clean,
     CLIP_OT_launch_main_with_adapt,
     CLIP_OT_main,
-    CLIP_OT_find_low_marker,
+    CLIP_OT_find_low_marker,   # <— NEU
 )
 
 def register():
