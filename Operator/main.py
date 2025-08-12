@@ -200,7 +200,6 @@ class CLIP_OT_main(bpy.types.Operator):
                     space_ce = None
                     area_ce = None
                     region_ce = None
-                    # CLIP_EDITOR-Handles einsammeln
                     for a in context.screen.areas:
                         if a.type == 'CLIP_EDITOR':
                             for r in a.regions:
@@ -209,7 +208,6 @@ class CLIP_OT_main(bpy.types.Operator):
                                     region_ce = r
                                     space_ce = a.spaces.active
                     
-                    # Low-Marker-Frame für den Restart bestimmen
                     space = getattr(context, "space_data", None)
                     clip  = getattr(space, "clip", None)
                     frame = None
@@ -221,19 +219,31 @@ class CLIP_OT_main(bpy.types.Operator):
                         if area_ce and region_ce and space_ce:
                             # WICHTIG: Playhead setzen UND Pipeline-Start im selben Override
                             with context.temp_override(area=area_ce, region=region_ce, space_data=space_ce):
-                                # sicherstellen, dass die Szene wirklich springt
                                 context.scene.frame_set(frame)
+                                # zusätzlich: Clip-User-Frame setzen (Editor-eigener Framezähler)
+                                try:
+                                    cu = getattr(space_ce, "clip_user", None)
+                                    if cu is not None:
+                                        cu.frame_number = frame
+                                except Exception:
+                                    pass
                                 jump_to_frame(context)
                                 bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-                        else:
-                            # Fallback: ohne gültigen Editor-Kontext zumindest die Szene setzen
-                            context.scene.frame_set(frame)
-                    # --- Ende Playhead-Setzung ---
-
                     
-                    bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
+                                # >>> Pipeline hier im selben Kontext starten <<<
+                                bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
+                        else:
+                            # Fallback: ohne gültigen Editor-Kontext zumindest Szene setzen
+                            context.scene.frame_set(frame)
+                            bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
+                    else:
+                        # kein spezieller Frame → normal starten
+                        bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
+                    # --- Ende Playhead-Setzung & Start ---
+                    
                     self._step = 0
                     return {'PASS_THROUGH'}
+
 
                 print(f"[Solve-Check] OK (Error={err_val:.3f} px ≤ Limit={limit_val:.3f} px)")
                 self.report({'INFO'}, f"Solve-Error {err_val:.3f} px innerhalb des Limits.")
