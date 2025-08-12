@@ -62,7 +62,7 @@ classes = (
     CLIP_OT_clean_short_tracks,
     CLIP_OT_clean_error_tracks,
     CLIP_OT_optimize_tracking_modal,
-    CLIP_OT_activate_main_with_adapt,
+    CLIP_OT_launch_main_with_adapt,
     CLIP_OT_main,
 )
 
