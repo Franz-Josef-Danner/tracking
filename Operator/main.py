@@ -157,7 +157,7 @@ class CLIP_OT_main(bpy.types.Operator):
                     print(f"🚨 Optimiere Tracking für Frame {frame}")
                     bpy.ops.clip.optimize_tracking_modal('INVOKE_DEFAULT')
                 else:
-                    basis_for_bounds = int(self.marker_adapt) if int(getattr(self, "marker_adapt", 0)) > 0 else int(marker_basis)
+                    basis_for_bounds = int(self.marker_adapt * 1.1) if int(getattr(self, "marker_adapt", 0)) > 0 else int(marker_basis)
                     scene["marker_min"] = int(basis_for_bounds * 0.9)
                     scene["marker_max"] = int(basis_for_bounds * 1.1)
                     print(f"🔄 Neuer Tracking-Zyklus mit Marker-Zielwerten {scene['marker_min']}–{scene['marker_max']}")
