@@ -25,8 +25,6 @@ from .Operator.clean_error_tracks import CLIP_OT_clean_error_tracks
 from .Operator.optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 from .Operator.main_to_adapt import CLIP_OT_launch_main_with_adapt
 from .Operator.main import CLIP_OT_main 
-
-# Importiere PropertyGroup
 from .Helper.properties import RepeatEntry  # ✅ NEU
 
 # Panel
@@ -45,7 +43,7 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
         layout.prop(scene, "frames_track")
         layout.prop(scene, "error_track")
         layout.separator()
-        layout.operator("clip.launch_main_with_adapt", text="Track")
+        layout.operator("clip.main", text="Track")
 
 # Alle Klassen zur Registrierung
 classes = (
