@@ -1,6 +1,7 @@
-# Helper/solve_camera_helper.py (Blender 4.4.3)
 import bpy
 from bpy.types import Operator
+__all__ = ("CLIP_OT_solve_camera_helper", "CLIP_OT_watch_solve")
+
 
 class CLIP_OT_watch_solve(bpy.types.Operator):
     bl_idname = "clip.watch_solve"
