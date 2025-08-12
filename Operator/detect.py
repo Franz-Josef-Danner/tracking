@@ -111,6 +111,9 @@ class CLIP_OT_detect(bpy.types.Operator):
                 self.min_distance_base,
             )
 
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+
+
             self.wait_start = time.time()
             self.state = "WAIT"
             return {'PASS_THROUGH'}
@@ -127,12 +130,21 @@ class CLIP_OT_detect(bpy.types.Operator):
         if self.state == "PROCESS":
             tracks = self.tracking.tracks
             w, h = self.width, self.height
-            # Schwellenwert quadriert → kein sqrt nötig
             self.distance_px = int(self.width * 0.04)
             thr2 = float(self.distance_px) * float(self.distance_px)
 
             new_tracks = [t for t in tracks if t.name not in self.initial_track_names]
 
+            # --- ENTFERNEN: Vorab-Selektion/Löschung von close_tracks (Liste existiert noch nicht) ---
+            # for t in tracks:
+            #     t.select = False
+            # for t in close_tracks:
+            #     t.select = True
+            # if close_tracks:
+            #     bpy.ops.clip.delete_track()
+            # ------------------------------------------------------
+
+            # close_tracks korrekt berechnen
             close_tracks = []
             existing = self.existing_positions
             for track in new_tracks:
@@ -140,7 +152,7 @@ class CLIP_OT_detect(bpy.types.Operator):
                 if marker and not marker.mute:
                     x = marker.co[0] * w
                     y = marker.co[1] * h
-                    # Quadratsummenvergleich statt hypot()
+                    # Quadratsummenvergleich (keine sqrt)
                     for ex, ey in existing:
                         dx = x - ex
                         dy = y - ey
@@ -148,24 +160,25 @@ class CLIP_OT_detect(bpy.types.Operator):
                             close_tracks.append(track)
                             break
 
-            # Selektion beibehalten (gleiches Operator-Verhalten)
-            for t in tracks:
-                t.select = False
-            for t in close_tracks:
-                t.select = True
+            # Selektion/Löschung erst jetzt – und nur wenn nötig
             if close_tracks:
+                for t in tracks:
+                    t.select = False
+                for t in close_tracks:
+                    t.select = True
                 bpy.ops.clip.delete_track()
 
-            # O(1)-Membership über Set
             close_set = set(close_tracks)
             cleaned_tracks = [t for t in new_tracks if t not in close_set]
 
-            for t in tracks:
-                t.select = False
-            for t in cleaned_tracks:
-                t.select = True
+            if cleaned_tracks:
+                for t in tracks:
+                    t.select = False
+                for t in cleaned_tracks:
+                    t.select = True
 
             anzahl_neu = len(cleaned_tracks)
+            # ... Rest unverändert ...
 
             if anzahl_neu < self.min_marker or anzahl_neu > self.max_marker:
                 for t in tracks:
