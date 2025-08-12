@@ -1,151 +1,15 @@
 # Operator/clean_error_tracks.py
 
 import bpy
-import time
 
 # 👉 Dichte-Pruning als erster Schritt verfügbar machen
 from ..Helper.prune_tracks_density import prune_tracks_density
-
-
-def get_marker_position(track, frame):
-    marker = track.markers.find_frame(frame)
-    if marker:
-        return marker.co
-    return None
-
 
 def track_has_internal_gaps(track):
     frames = sorted([m.frame for m in track.markers])
     if len(frames) < 3:
         return False
     return any(frames[i] - frames[i - 1] > 1 for i in range(1, len(frames)))
-
-
-def run_cleanup_in_region(context, area, region, space, tracks, frame_range,
-                          xmin, xmax, ymin, ymax, ee, width, height,
-                          redraw_every=25):
-    total_deleted = 0
-    frame_start, frame_end = frame_range
-    deletes_since_redraw = 0
-
-    # Ganzes Cleaning im gültigen UI-Kontext ausführen – optimiert
-    with context.temp_override(area=area, region=region, space_data=space):
-        wm = context.window_manager
-        wm.progress_begin(0, max(1, (frame_end - frame_start)))
-        redraw_every_frames = 20  # UI-Update nur gelegentlich
-        to_delete = []            # (track, frame)-Paare sammeln
-
-        for fi in range(frame_start + 1, frame_end - 1):
-            f1, f2 = fi - 1, fi + 1
-            marker_data = []
-
-            # Datenaufnahme (Positions- und Geschwindigkeitsableitung)
-            for track in tracks:
-                p1 = get_marker_position(track, f1)
-                p2 = get_marker_position(track, fi)
-                p3 = get_marker_position(track, f2)
-                if not (p1 and p2 and p3):
-                    continue
-
-                x, y = p2[0] * width, p2[1] * height
-                if not (xmin <= x < xmax and ymin <= y < ymax):
-                    continue
-
-                vxm = (p2[0] - p1[0]) + (p3[0] - p2[0])
-                vym = (p2[1] - p1[1]) + (p3[1] - p2[1])
-                marker_data.append((track, vxm, vym))
-
-            if not marker_data:
-                # leichtes Fortschritts- und Header-Update gedrosselt
-                if (fi - frame_start) % redraw_every_frames == 0:
-                    wm.progress_update(fi - frame_start)
-                    area.header_text_set(f"Cleanup {fi}/{frame_end-1} | deleted {total_deleted}")
-                    region.tag_redraw()
-                continue
-
-            # Durchschnitt und Abweichungen
-            vxa = sum(vx for _, vx, _ in marker_data) / len(marker_data)
-            vya = sum(vy for _, _, vy in marker_data) / len(marker_data)
-            va = (vxa + vya) / 2
-
-            # Direktes Schwellenkriterium – kein iteratives eb-Shrinking
-            for track, vx, vy in marker_data:
-                vm = (vx + vy) / 2
-                if abs(vm - va) >= ee:
-                    to_delete.append((track, f1))
-                    to_delete.append((track, fi))
-                    to_delete.append((track, f2))
-
-            # Batch-Delete am Ende jedes fi
-            if to_delete:
-                # Duplikate vermeiden (selber Track/Frame mehrfach gesammelt)
-                seen = set()
-                for trk, frm in to_delete:
-                    key = (id(trk), frm)
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    if trk.markers.find_frame(frm):
-                        trk.markers.delete_frame(frm)
-                        total_deleted += 1
-                to_delete.clear()
-
-            # Gedrosselte, leichte UI-Signale
-            if (fi - frame_start) % redraw_every_frames == 0:
-                wm.progress_update(fi - frame_start)
-                area.header_text_set(f"Cleanup {fi}/{frame_end-1} | deleted {total_deleted}")
-                region.tag_redraw()
-
-        # Blockende: Fortschritt/Header zurücksetzen, letzter Redraw-Hint
-        wm.progress_end()
-        area.header_text_set(None)
-        region.tag_redraw()
-
-    return total_deleted
-
-
-def clean_error_tracks(context, space, area=None, region=None):
-    scene = context.scene
-    clip = space.clip
-    tracks = clip.tracking.tracks
-
-    for track in tracks:
-        track.select = False
-
-    width, height = clip.size
-    frame_range = (scene.frame_start, scene.frame_end)
-
-    ee_base = (getattr(scene, "error_track", 1.0) + 0.1) / 100
-    fehlergrenzen = [ee_base, ee_base / 2, ee_base / 4]
-    teilfaktoren = [1, 2, 4]
-
-    total_deleted_all = 0
-    for ee, division in zip(fehlergrenzen, teilfaktoren):
-        for xIndex in range(division):
-            for yIndex in range(division):
-                xmin = xIndex * (width / division)
-                xmax = (xIndex + 1) * (width / division)
-                ymin = yIndex * (height / division)
-                ymax = (yIndex + 1) * (height / division)
-
-                total_deleted_all += run_cleanup_in_region(
-                    context, area, region, space,
-                    tracks, frame_range, xmin, xmax, ymin, ymax, ee, width, height,
-                    redraw_every=2
-                )
-    return total_deleted_all, 0.0
-
-
-def delete_marker_path(track, from_frame, direction):
-    to_delete = []
-    for m in track.markers:
-        if (direction == 'forward' and m.frame >= from_frame) or \
-           (direction == 'backward' and m.frame <= from_frame):
-            to_delete.append(m.frame)
-
-    for f in to_delete:
-        track.markers.delete_frame(f)
-
 
 def get_track_segments(track):
     frames = sorted([m.frame for m in track.markers])
@@ -162,16 +26,6 @@ def get_track_segments(track):
             current_segment = [frames[i]]
     segments.append(current_segment)
     return segments
-
-
-# 🆕 Neue Hilfsfunktion hier einfügen:
-def is_marker_valid(track, frame):
-    try:
-        marker = track.markers.find_frame(frame)
-        return marker is not None and hasattr(marker, "co")
-    except Exception:
-        return False
-
 
 # 🆕 Zusatz: robuster Name-Zugriff (UTF-8 tolerant)
 def _safe_name(obj):
@@ -223,27 +77,6 @@ def mute_after_last_marker(track, scene_end):
     for m in track.markers:
         if m.frame >= last_valid_frame and m.frame <= scene_end:
             m.mute = True
-
-
-def mute_outside_segment_markers(track):
-    """
-    Mutes all markers in the given track that are not part of a continuous segment.
-    """
-    # Segment-Frames als Set erfassen
-    segments = get_track_segments(track)
-    valid_frames = set()
-    for segment in segments:
-        valid_frames.update(segment)
-
-    # Alle Marker prüfen
-    for marker in track.markers:
-        if marker.frame not in valid_frames:
-            marker.mute = True
-
-
-def mute_all_outside_segment_markers(tracks):
-    for track in tracks:
-        mute_outside_segment_markers(track)
 
 
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
