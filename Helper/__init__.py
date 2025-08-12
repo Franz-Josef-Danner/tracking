@@ -27,6 +27,7 @@ classes = (
     CLIP_OT_marker_helper_main,
     CLIP_OT_enable_proxy,
     CLIP_OT_disable_proxy,
+    CLIP_OT_solve_watch_clean,
 )
 
 def register():
