@@ -17,7 +17,6 @@ def _remove_tracks_by_name(tracking, names_to_remove):
     if not names_to_remove:
         return 0
     removed = 0
-    # copy() vermeidet Iterator-Probleme beim Entfernen
     for t in list(tracking.tracks):
         if t.name in names_to_remove:
             try:
@@ -42,10 +41,9 @@ def _collect_existing_positions(tracking, frame, w, h):
 
 def perform_marker_detection(clip, tracking, threshold, margin_base, min_distance_base):
     """
-    Legacy-Signatur beibehalten. Führt detect_features mit skalierten Parametern aus
-    und liefert (wie früher) die Anzahl der selektierten Tracks zurück.
+    Führt detect_features mit skalierten Parametern aus
+    und liefert die Anzahl selektierter Tracks zurück (Legacy-Kontrakt).
     """
-    # Skalierung wie in deiner älteren Version
     factor = math.log10(max(threshold, 1e-6) * 1e6) / 6.0
     margin = max(1, int(margin_base * factor))
     min_distance = max(1, int(min_distance_base * factor))
@@ -55,8 +53,6 @@ def perform_marker_detection(clip, tracking, threshold, margin_base, min_distanc
         min_distance=min_distance,
         threshold=float(threshold),
     )
-
-    # gleicher Rückgabewert wie früher: gezählt werden selektierte Tracks
     return sum(1 for t in tracking.tracks if getattr(t, "select", False))
 
 
@@ -74,6 +70,43 @@ class CLIP_OT_detect(bpy.types.Operator):
     _STATE_DETECT = "DETECT"
     _STATE_WAIT   = "WAIT"
     _STATE_PROC   = "PROCESS"
+
+    # --- optionale Aufruf-Argumente (kompatibel zu älteren Call-Sites) ---
+    detection_threshold: bpy.props.FloatProperty(
+        name="Detection Threshold (opt.)",
+        description="Optionaler Start-Threshold. <0 nutzt Scene/Settings",
+        default=-1.0, min=-1.0, max=1.0
+    )
+    marker_adapt: bpy.props.IntProperty(
+        name="Marker Adapt (opt.)",
+        description="Optionales Zielzentrum. <0 nutzt Scene.marker_adapt",
+        default=-1, min=-1
+    )
+    min_marker: bpy.props.IntProperty(
+        name="Min Marker (opt.)",
+        description="Optionales Unterlimit. <0 wird aus marker_adapt/basis berechnet",
+        default=-1, min=-1
+    )
+    max_marker: bpy.props.IntProperty(
+        name="Max Marker (opt.)",
+        description="Optionales Oberlimit. <0 wird aus marker_adapt/basis berechnet",
+        default=-1, min=-1
+    )
+    frame: bpy.props.IntProperty(
+        name="Frame (opt.)",
+        description="Optionaler Ziel-Frame. 0 nutzt aktuellen Scene-Frame",
+        default=0, min=0
+    )
+    margin_base: bpy.props.IntProperty(
+        name="Margin Base (px, opt.)",
+        description="<0 → auto (2.5% Bildbreite)",
+        default=-1
+    )
+    min_distance_base: bpy.props.IntProperty(
+        name="Min Distance Base (px, opt.)",
+        description="<0 → auto (5% Bildbreite)",
+        default=-1
+    )
 
     @classmethod
     def poll(cls, context):
@@ -99,29 +132,52 @@ class CLIP_OT_detect(bpy.types.Operator):
 
         self.tracking = self.clip.tracking
         settings = self.tracking.settings
-
-        # Params aus Scene/Defaults
-        self.detection_threshold = scene.get(
-            "last_detection_threshold",
-            float(getattr(settings, "default_correlation_min", 0.75)),
-        )
-        self.marker_adapt = int(scene.get("marker_adapt", 20))
-        # Bounds aus adapt oder marker_basis
-        basis = int(scene.get("marker_basis", max(self.marker_adapt, 20)))
-        basis_for_bounds = int(self.marker_adapt * 1.1) if self.marker_adapt > 0 else int(basis)
-        self.min_marker = int(basis_for_bounds * 0.9)
-        self.max_marker = int(basis_for_bounds * 1.1)
-
-        # Geometrie-basierte Default-Skalen
         image_width = int(self.clip.size[0])
-        self.margin_base = max(1, int(image_width * 0.025))
-        self.min_distance_base = max(1, int(image_width * 0.05))
+
+        # --- Threshold-Start ---
+        if self.detection_threshold >= 0.0:
+            self.detection_threshold = float(self.detection_threshold)
+        else:
+            self.detection_threshold = float(
+                scene.get("last_detection_threshold",
+                          float(getattr(settings, "default_correlation_min", 0.75)))
+            )
+
+        # --- marker_adapt / Bounds ---
+        if self.marker_adapt >= 0:
+            adapt = int(self.marker_adapt)
+        else:
+            adapt = int(scene.get("marker_adapt", 20))
+        self.marker_adapt = adapt  # für spätere Nutzung (Threshold-Anpassung)
+
+        basis = int(scene.get("marker_basis", max(adapt, 20)))
+        basis_for_bounds = int(adapt * 1.1) if adapt > 0 else int(basis)
+
+        if self.min_marker >= 0:
+            self.min_marker = int(self.min_marker)
+        else:
+            self.min_marker = int(basis_for_bounds * 0.9)
+
+        if self.max_marker >= 0:
+            self.max_marker = int(self.max_marker)
+        else:
+            self.max_marker = int(basis_for_bounds * 1.1)
+
+        # --- Bases ---
+        self.margin_base = self.margin_base if self.margin_base >= 0 else max(1, int(image_width * 0.025))
+        self.min_distance_base = self.min_distance_base if self.min_distance_base >= 0 else max(1, int(image_width * 0.05))
+
+        # --- Frame optional setzen ---
+        if self.frame > 0:
+            try:
+                scene.frame_set(self.frame)
+            except Exception:
+                pass
 
         # --- Cleanup der Tracks aus dem VORHERIGEN Run ---
         prev_names = set(scene.get("detect_prev_names", []) or [])
         if prev_names:
             _remove_tracks_by_name(self.tracking, prev_names)
-            # Reset, damit kein Doppel-Löschen im selben Run passiert
             scene["detect_prev_names"] = []
 
         # Iterationsverwaltung
@@ -208,7 +264,6 @@ class CLIP_OT_detect(bpy.types.Operator):
 
             # Zu nahe neue Tracks löschen
             if close_tracks:
-                # Selektion minimal halten: nur close_tracks
                 for t in tracks:
                     t.select = False
                 for t in close_tracks:
@@ -216,7 +271,6 @@ class CLIP_OT_detect(bpy.types.Operator):
                 try:
                     bpy.ops.clip.delete_track()
                 except Exception:
-                    # Fallback: harte Entfernung
                     _remove_tracks_by_name(self.tracking, {t.name for t in close_tracks})
 
             # Bereinigte neue Tracks
@@ -237,8 +291,7 @@ class CLIP_OT_detect(bpy.types.Operator):
                     except Exception:
                         _remove_tracks_by_name(self.tracking, {t.name for t in cleaned_tracks})
 
-                # Threshold adaptieren (bewährte Formel aus deiner älteren Version)
-                # -> proportional zur Abweichung vom Ziel (marker_adapt)
+                # Threshold adaptieren (proportional zur Abweichung vom Ziel)
                 safe_adapt = max(self.marker_adapt, 1)
                 self.detection_threshold = max(
                     float(self.detection_threshold) * ((anzahl_neu + 0.1) / float(safe_adapt)),
