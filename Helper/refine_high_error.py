@@ -82,13 +82,22 @@ def run_refine_on_high_error(context, error_threshold: float = 2.0, limit_frames
         # Tracks je Richtung selektieren (nur Tracks mit Keyframe-Anker vor/nach f)
         tracks_forward, tracks_backward = [], []
         for tr in clip.tracking.tracks:
-            if tr.mute:
+            # Track-Ebene: ausblenden/gesperrt überspringen
+            if getattr(tr, "hide", False) or getattr(tr, "lock", False):
                 continue
+        
             prev_k, next_k = _prev_next_keyframes(tr, f)
+        
+            # Optional: Marker-Ebene am Ziel-Frame prüfen (nur wenn ein exakter Marker existiert)
+            mk = tr.markers.find_frame(f, exact=True)
+            if mk and getattr(mk, "mute", False):  # Marker-mute (nicht Track!)
+                continue
+        
             if prev_k is not None:
                 tracks_forward.append(tr)
             if next_k is not None:
                 tracks_backward.append(tr)
+
 
         # Vorwärts-Refine (prev_key -> f)
         if tracks_forward:
