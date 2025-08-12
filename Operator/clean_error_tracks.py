@@ -4,6 +4,7 @@ import bpy
 
 # 👉 Dichte-Pruning als erster Schritt verfügbar machen
 from ..Helper.multiscale_temporal_grid_clean import multiscale_temporal_grid_clean
+from ..Helper.prune_tracks_density import prune_tracks_density
 
 def track_has_internal_gaps(track):
     frames = sorted([m.frame for m in track.markers])
