@@ -46,6 +46,18 @@ class CLIP_OT_main(bpy.types.Operator):
         bpy.ops.clip.tracker_settings('EXEC_DEFAULT')
         bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
 
+        # --- NEU: Vor Detect/Tracking zuerst Low-Marker-Frame suchen & Playhead setzen ---
+        try:
+            marker_basis = scene.get("marker_basis", 25)
+        except Exception:
+            marker_basis = 25
+        frame = find_low_marker_frame(clip, marker_basis=marker_basis)
+        if frame is not None:
+            scene["goto_frame"] = frame
+            print(f"🎯 Zyklus-Start: Springe auf Low-Marker-Frame {frame} (Basis={marker_basis})")
+            jump_to_frame(context)
+        # ---------------------------------------------------------------------------------
+
         print("🚀 Starte Tracking-Pipeline...")
         bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
         print("⏳ Warte auf Abschluss der Pipeline...")
@@ -107,14 +119,14 @@ class CLIP_OT_main(bpy.types.Operator):
                 if entry:
                     entry.count += 1
                     marker_basis = min(int(marker_basis * 1.1), 100)
-                    scene["marker_basis"] = marker_basis  # <-- NEU: persistieren
+                    scene["marker_basis"] = marker_basis  # <-- persistieren
                     print(f"🔺 Selber Frame erneut – erhöhe marker_basis auf {marker_basis}")
                 else:
                     entry = repeat_collection.add()
                     entry.frame = key
                     entry.count = 1
                     marker_basis = max(int(marker_basis * 0.9), initial_basis)
-                    scene["marker_basis"] = marker_basis  # <-- NEU: persistieren
+                    scene["marker_basis"] = marker_basis  # <-- persistieren
                     print(f"🔻 Neuer Frame – senke marker_basis auf {marker_basis}")
 
                 print(f"🔁 Frame {frame} wurde bereits {entry.count}x erkannt.")
@@ -187,7 +199,7 @@ class CLIP_OT_main(bpy.types.Operator):
                     print(f"[Solve-Check] FAILED (Error={err_val:.3f} px > Limit={limit_val:.3f} px)")
                     self.report({'ERROR'}, f"Solve-Error {err_val:.3f} px > Limit {limit_val:.3f} px → FAILED")
 
-                    # --- NEU: marker_basis erhöhen, Zielbereich setzen, Pipeline neu starten, Modal fortsetzen ---
+                    # --- marker_basis erhöhen, Zielbereich setzen, Pipeline neu starten, Modal fortsetzen ---
                     marker_basis = scene.get("marker_basis", 20)
                     marker_basis = min(int(marker_basis * 1.1), 100)
                     scene["marker_basis"] = marker_basis
@@ -198,7 +210,6 @@ class CLIP_OT_main(bpy.types.Operator):
                     bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
                     self._step = 0
                     return {'PASS_THROUGH'}
-                    # -------------------------------------------------------------------------------------------
 
                 print(f"[Solve-Check] OK (Error={err_val:.3f} px ≤ Limit={limit_val:.3f} px)")
                 self.report({'INFO'}, f"Solve-Error {err_val:.3f} px innerhalb des Limits.")
