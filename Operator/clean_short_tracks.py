@@ -1,42 +1,29 @@
-def execute(self, context):
-    scene = context.scene
-    if not hasattr(scene, "frames_track"):
-        self.report({'ERROR'}, "Scene.frames_track nicht definiert")
-        return {'CANCELLED'}
+import bpy
 
-    clip = context.space_data.clip
-    tracks = clip.tracking.tracks
+class CLIP_OT_clean_short_tracks(bpy.types.Operator):
+    bl_idname = "clip.clean_short_tracks"
+    bl_label = "Kurze Tracks bereinigen"
+    bl_description = "Löscht oder selektiert Tracks mit weniger Frames als 'frames_track'"
 
-    # PRE-PASS: Nur wenn wirklich Tracks gelöscht werden sollen
-    if self.action == 'DELETE_TRACK':
-        # leere oder vollständig gemutete Tracks sammeln
-        empty_or_all_muted = [t for t in tracks
-                              if (len(t.markers) == 0) or all(getattr(m, "mute", False) for m in t.markers)]
-        if empty_or_all_muted:
-            # Selektionsbasiertes Löschen per Operator (API-sicher)
-            for t in tracks:
-                t.select = False
-            for t in empty_or_all_muted:
-                t.select = True
-            bpy.ops.clip.delete_track()
+    action: bpy.props.EnumProperty(
+        name="Aktion",
+        items=[
+            ('SELECT', "Markieren", "Tracks nur selektieren"),
+            ('DELETE_TRACK', "Track löschen", "Tracks mit wenig Frames werden gelöscht"),
+            ('DELETE_SEGMENTS', "Segmente löschen", "Nur ungenaue Tracking-Segmente löschen")
+        ],
+        default='DELETE_TRACK'
+    )
 
-    # frames defensiv auf >= 1 setzen (sonst erwischt der Operator keine leeren Hüllen)
-    frames = max(int(scene.frames_track), 1)
+    def execute(self, context):
+        scene = context.scene
+        if not hasattr(scene, "frames_track"):
+            self.report({'ERROR'}, "Scene.frames_track nicht definiert")
+            return {'CANCELLED'}
 
-    # dein bestehender Aufruf – unverändert
-    bpy.ops.clip.clean_tracks(frames=frames, error=0.0, action=self.action)
+        frames = scene.frames_track
 
-    # POST-PASS: wieder nur bei echter Track-Löschaktion
-    if self.action == 'DELETE_TRACK':
-        tracks = clip.tracking.tracks  # Refresh nach Operator
-        empty_or_all_muted = [t for t in tracks
-                              if (len(t.markers) == 0) or all(getattr(m, "mute", False) for m in t.markers)]
-        if empty_or_all_muted:
-            for t in tracks:
-                t.select = False
-            for t in empty_or_all_muted:
-                t.select = True
-            bpy.ops.clip.delete_track()
+        bpy.ops.clip.clean_tracks(frames=frames, error=0.0, action=self.action)
 
-    self.report({'INFO'}, f"Tracks < {frames} Frames bearbeitet. Aktion: {self.action}")
-    return {'FINISHED'}
+        self.report({'INFO'}, f"Tracks < {frames} Frames wurden bearbeitet. Aktion: {self.action}")
+        return {'FINISHED'}
