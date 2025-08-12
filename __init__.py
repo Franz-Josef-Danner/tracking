@@ -22,6 +22,7 @@ from .Operator.bidirectional_track import CLIP_OT_bidirectional_track
 from .Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
 from .Operator.clean_error_tracks import CLIP_OT_clean_error_tracks
 from .Operator.optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
+from .Helper.solve_camera_helper import CLIP_OT_solve_camera_helper, CLIP_OT_watch_solve
 from .Operator.main import CLIP_OT_main
 from .Helper import solve_camera_helper 
 
@@ -44,7 +45,7 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
         layout.prop(scene, "frames_track")
         layout.prop(scene, "error_track")
         layout.separator()
-        layout.operator("Clip.main", text="Track")
+        layout.operator("clip.main", text="Track")
 
 # Alle Klassen zur Registrierung
 classes = (
@@ -90,12 +91,20 @@ def register():
         min=0.001,
         max=1.000,
     )
+    bpy.types.Scene.error_track = FloatProperty(
+        name="Error-Limit (px)",
+        description="Maximale tolerierte Reprojektion in Pixeln",
+        default=1.0,
+        min=0.0,
+        precision=3
+    )
 
 def unregister():
     # Properties entfernen
     del bpy.types.Scene.repeat_frame  # ✅ NEU
     del bpy.types.Scene.marker_frame
     del bpy.types.Scene.frames_track
+    del bpy.types.Scene.error_track
     del bpy.types.Scene.error_track
     solve_camera_helper.unregister()
 
