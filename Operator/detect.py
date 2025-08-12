@@ -13,9 +13,9 @@ def perform_marker_detection(clip, tracking, threshold, margin_base, min_distanc
         threshold=threshold,
     )
 
-    # Interface unverändert belassen
-    selected_tracks = [t for t in tracking.tracks if t.select]
-    return len(selected_tracks)
+    # kein Listenmaterialisieren → gleicher Rückgabewert (int), weniger Overhead
+    selected_count = sum(1 for t in tracking.tracks if t.select)
+    return selected_count
 
 def deselect_all_markers(tracking):
     for t in tracking.tracks:
@@ -85,10 +85,127 @@ class CLIP_OT_detect(bpy.types.Operator):
                 deselect_all_markers(self.tracking)
 
             self.frame = scene.frame_current
+
             # Lookups cachen
             tracks = self.tracking.tracks
             self.width, self.height = self.clip.size
             w, h = self.width, self.height
-            find_frame_exact = bpy.types.MovieTrackingMarkers.find_frame
 
-            # existierende Marker-Posit
+            # existierende Marker-Positionen sammeln (korrekte API: Instanz-Methode)
+            existing_positions = []
+            for t in tracks:
+                m = t.markers.find_frame(self.frame, exact=True)
+                if m and not m.mute:
+                    existing_positions.append((m.co[0] * w, m.co[1] * h))
+            self.existing_positions = existing_positions
+
+            # Basis für spätere Vergleiche
+            self.initial_track_names = {t.name for t in tracks}
+            self._len_before = len(tracks)
+
+            perform_marker_detection(
+                self.clip,
+                self.tracking,
+                self.detection_threshold,
+                self.margin_base,
+                self.min_distance_base,
+            )
+
+            self.wait_start = time.time()
+            self.state = "WAIT"
+            return {'PASS_THROUGH'}
+
+        if self.state == "WAIT":
+            tracks = self.tracking.tracks
+            # billiger Längencheck zuerst; falls keine Änderung, Set-Bildung sparen
+            if len(tracks) != getattr(self, "_len_before", len(tracks)) or (time.time() - self.wait_start) >= 3.0:
+                current_names = {t.name for t in tracks}
+                if current_names != self.initial_track_names or (time.time() - self.wait_start) >= 3.0:
+                    self.state = "PROCESS"
+            return {'PASS_THROUGH'}
+
+        if self.state == "PROCESS":
+            tracks = self.tracking.tracks
+            w, h = self.width, self.height
+            # Schwellenwert quadriert → kein sqrt nötig
+            self.distance_px = int(self.width * 0.04)
+            thr2 = float(self.distance_px) * float(self.distance_px)
+
+            new_tracks = [t for t in tracks if t.name not in self.initial_track_names]
+
+            close_tracks = []
+            existing = self.existing_positions
+            for track in new_tracks:
+                marker = track.markers.find_frame(self.frame, exact=True)
+                if marker and not marker.mute:
+                    x = marker.co[0] * w
+                    y = marker.co[1] * h
+                    # Quadratsummenvergleich statt hypot()
+                    for ex, ey in existing:
+                        dx = x - ex
+                        dy = y - ey
+                        if (dx * dx + dy * dy) < thr2:
+                            close_tracks.append(track)
+                            break
+
+            # Selektion beibehalten (gleiches Operator-Verhalten)
+            for t in tracks:
+                t.select = False
+            for t in close_tracks:
+                t.select = True
+            if close_tracks:
+                bpy.ops.clip.delete_track()
+
+            # O(1)-Membership über Set
+            close_set = set(close_tracks)
+            cleaned_tracks = [t for t in new_tracks if t not in close_set]
+
+            for t in tracks:
+                t.select = False
+            for t in cleaned_tracks:
+                t.select = True
+
+            anzahl_neu = len(cleaned_tracks)
+
+            if anzahl_neu < self.min_marker or anzahl_neu > self.max_marker:
+                for t in tracks:
+                    t.select = False
+                for t in cleaned_tracks:
+                    t.select = True
+                if cleaned_tracks:
+                    bpy.ops.clip.delete_track()
+
+                self.detection_threshold = max(
+                    self.detection_threshold * ((anzahl_neu + 0.1) / self.marker_adapt),
+                    0.0001,
+                )
+                scene["last_detection_threshold"] = self.detection_threshold
+
+                self.attempt += 1
+                if self.attempt >= 20:
+                    scene["detect_status"] = "failed"
+                    context.window_manager.event_timer_remove(self._timer)
+                    return {'FINISHED'}
+
+                self.state = "DETECT"
+                return {'PASS_THROUGH'}
+
+            else:
+                scene["detect_status"] = "success"
+                context.window_manager.event_timer_remove(self._timer)
+                return {'FINISHED'}
+
+        return {'PASS_THROUGH'}
+
+    def cancel(self, context):
+        if self._timer is not None:
+            context.window_manager.event_timer_remove(self._timer)
+
+def register():
+    bpy.utils.register_class(CLIP_OT_detect)
+
+def unregister():
+    bpy.utils.unregister_class(CLIP_OT_detect)
+
+if __name__ == "__main__":
+    register()
