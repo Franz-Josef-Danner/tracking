@@ -145,6 +145,22 @@ def is_marker_valid(track, frame):
     except Exception as e:
         return False
 
+# 🆕 Zusatz: robuster Name-Zugriff (UTF-8 tolerant)
+def _safe_name(obj):
+    """Gibt einen robusten Track-Namen zurück oder None bei Problemen."""
+    try:
+        n = getattr(obj, "name", None)
+        if n is None:
+            return None
+        if isinstance(n, bytes):
+            n = n.decode("utf-8", errors="ignore")
+        else:
+            n = str(n)
+        n = n.strip()
+        return n or None
+    except Exception:
+        return None
+
 def mute_marker_path(track, from_frame, direction, mute=True):
     try:
         markers = list(track.markers)  # Snapshot – verhindert Collection-Invalidation
@@ -201,9 +217,26 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
     clip = space.clip
 
     # 1) Rebinding: frische RNA-Objekte holen (verhindert stale Refs nach Copy/Paste)
-    tracks_by_name = {t.name: t for t in clip.tracking.tracks}
-    original_tracks = [tracks_by_name[n.name] for n in original_tracks if n and n.name in tracks_by_name]
-    new_tracks      = [tracks_by_name[n.name] for n in new_tracks      if n and n.name in tracks_by_name]
+    # (robust gegen nicht-UTF-8-Namen)
+    tracks_by_name = {}
+    for t in clip.tracking.tracks:
+        tn = _safe_name(t)
+        if tn:
+            tracks_by_name[tn] = t
+
+    ot = []
+    for n in original_tracks:
+        nn = _safe_name(n)
+        if nn and nn in tracks_by_name:
+            ot.append(tracks_by_name[nn])
+    original_tracks = ot
+
+    nt = []
+    for n in new_tracks:
+        nn = _safe_name(n)
+        if nn and nn in tracks_by_name:
+            nt.append(tracks_by_name[nn])
+    new_tracks = nt
 
     redraw_budget = 0
 
