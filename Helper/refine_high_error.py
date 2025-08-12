@@ -41,15 +41,6 @@ def _prev_next_keyframes(track, frame):
 # --- Core Routine (funktionsbasiert) -----------------------------------------
 
 def run_refine_on_high_error(context, error_threshold: float = 2.0, limit_frames: int = 0, resolve_after: bool = False) -> int:
-    """
-    Kernlogik ohne zusätzlichen Operator-Stack:
-    - Liest Solve-Frames mit durchschnittlichem Frame-Error >= 'error_threshold'.
-    - Führt beidseitiges Refine (vorwärts & rückwärts) pro Problem-Frame aus.
-    - Optional: erneutes Kamera-Solve.
-
-    Rückgabe: Anzahl bearbeiteter Frames.
-    Raise: RuntimeError bei fehlendem Clip/Reconstruction/Kontext.
-    """
     clip = _get_active_clip(context)
     if not clip:
         raise RuntimeError("Kein MovieClip geladen.")
@@ -59,13 +50,16 @@ def run_refine_on_high_error(context, error_threshold: float = 2.0, limit_frames
     if not recon.is_valid:
         raise RuntimeError("Keine gültige Rekonstruktion gefunden (Solve fehlt oder wurde gelöscht).")
 
-    # Spike-Frames (per-frame average_error)
+    # Spike-Frames ermitteln
     bad_frames = [cam.frame for cam in recon.cameras if float(cam.average_error) >= float(error_threshold)]
     bad_frames = sorted(set(bad_frames))
     if limit_frames > 0:
         bad_frames = bad_frames[:int(limit_frames)]
 
+    print(f"[INFO] Gefundene Problem-Frames (≥ {error_threshold:.3f}px): {bad_frames}")
+
     if not bad_frames:
+        print("[INFO] Keine Frames mit zu hohem Error gefunden.")
         return 0
 
     area, region, space_ce = _find_clip_window(context)
@@ -74,33 +68,29 @@ def run_refine_on_high_error(context, error_threshold: float = 2.0, limit_frames
 
     scene = context.scene
     original_frame = scene.frame_current
-
     processed = 0
+
     for f in bad_frames:
+        print(f"\n[FRAME] Starte Refine für Frame {f}")
         scene.frame_set(f)
 
-        # Tracks je Richtung selektieren (nur Tracks mit Keyframe-Anker vor/nach f)
         tracks_forward, tracks_backward = [], []
         for tr in clip.tracking.tracks:
-            # Track-Ebene: ausblenden/gesperrt überspringen
             if getattr(tr, "hide", False) or getattr(tr, "lock", False):
                 continue
-        
             prev_k, next_k = _prev_next_keyframes(tr, f)
-        
-            # Optional: Marker-Ebene am Ziel-Frame prüfen (nur wenn ein exakter Marker existiert)
             mk = tr.markers.find_frame(f, exact=True)
-            if mk and getattr(mk, "mute", False):  # Marker-mute (nicht Track!)
+            if mk and getattr(mk, "mute", False):
                 continue
-        
             if prev_k is not None:
                 tracks_forward.append(tr)
             if next_k is not None:
                 tracks_backward.append(tr)
 
+        print(f"  → Vorwärts-Refine Tracks: {len(tracks_forward)} | Rückwärts-Refine Tracks: {len(tracks_backward)}")
 
-        # Vorwärts-Refine (prev_key -> f)
         if tracks_forward:
+            print(f"  [ACTION] Vorwärts-Refine ({len(tracks_forward)} Tracks)")
             with context.temp_override(area=area, region=region, space_data=space_ce):
                 for tr in clip.tracking.tracks:
                     tr.select = False
@@ -108,8 +98,8 @@ def run_refine_on_high_error(context, error_threshold: float = 2.0, limit_frames
                     tr.select = True
                 bpy.ops.clip.refine_markers(backwards=False)
 
-        # Rückwärts-Refine (next_key -> f)
         if tracks_backward:
+            print(f"  [ACTION] Rückwärts-Refine ({len(tracks_backward)} Tracks)")
             with context.temp_override(area=area, region=region, space_data=space_ce):
                 for tr in clip.tracking.tracks:
                     tr.select = False
@@ -118,14 +108,18 @@ def run_refine_on_high_error(context, error_threshold: float = 2.0, limit_frames
                 bpy.ops.clip.refine_markers(backwards=True)
 
         processed += 1
+        print(f"  [DONE] Frame {f} abgeschlossen.")
 
-    # Optional erneut lösen – im gleichen sicheren Kontext
     if resolve_after:
+        print("[ACTION] Starte erneutes Kamera-Solve...")
         with context.temp_override(area=area, region=region, space_data=space_ce):
             bpy.ops.clip.solve_camera()
+        print("[DONE] Kamera-Solve abgeschlossen.")
 
     scene.frame_set(original_frame)
+    print(f"\n[SUMMARY] Insgesamt bearbeitet: {processed} Frame(s)")
     return processed
+
 
 
 # --- Operator-Wrapper (optional) ---------------------------------------------
