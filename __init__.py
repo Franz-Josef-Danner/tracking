@@ -22,7 +22,6 @@ from .Operator.bidirectional_track import CLIP_OT_bidirectional_track
 from .Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
 from .Operator.clean_error_tracks import CLIP_OT_clean_error_tracks
 from .Operator.optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
-from .Helper.solve_camera_helper import CLIP_OT_solve_camera_helper, CLIP_OT_watch_solve
 from .Operator.main import CLIP_OT_main
 from .Helper import solve_camera_helper 
 
