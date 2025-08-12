@@ -202,20 +202,23 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
         bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=3)
         bpy.context.view_layer.update()
         time.sleep(0.1)
-        
+
+        tracking = clip.tracking
+        if tracking.tracks:
+            tracking.tracks.active = tracking.tracks[0]
+
         # 🔴 ORIGINAL-TRACKS: Vorderes Segment behalten → alles danach muten
         for track in original_tracks:
             segments = get_track_segments(track)
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=3)
-            bpy.context.view_layer.update()
-            time.sleep(0.1)
-
-            for seg in segments:
-                mute_marker_path(track, seg[-1] + 1, 'forward', mute=True)
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
             bpy.context.view_layer.update()
             time.sleep(0.1)
-
+            
+            for seg in segments:
+                mute_marker_path(track, seg[-1] + 1, 'forward', mute=True)
+                bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                bpy.context.view_layer.update()
+                time.sleep(0.1)
 
         # 🔵 NEW-TRACKS: Hinteres Segment behalten → alles davor muten
         for track in new_tracks:
@@ -226,7 +229,9 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
             time.sleep(0.1)
 
             segments = get_track_segments(track)
-            time.sleep(0.2)
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            bpy.context.view_layer.update()
+            time.sleep(0.1)
 
             for seg in segments:
                 mute_marker_path(track, seg[0] - 1, 'backward', mute=True)
