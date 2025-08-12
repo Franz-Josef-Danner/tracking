@@ -121,11 +121,11 @@ class CLIP_OT_detect(bpy.types.Operator):
 
         if self.state == "WAIT":
             tracks = self.tracking.tracks
-            elapsed = time.time() - self.wait_start  # nur 1x messen
-            # schneller Längencheck; Set-Bildung nur falls nötig oder Timeout erreicht
-            if len(tracks) != getattr(self, "_len_before", len(tracks)) or elapsed >= 0.3:
+        
+            # Direkt weiter, wenn Markeranzahl sich geändert hat
+            if len(tracks) != self._len_before:
                 current_names = {t.name for t in tracks}
-                if current_names != self.initial_track_names or elapsed >= 0.3:
+                if current_names != self.initial_track_names:
                     self.state = "PROCESS"
             return {'PASS_THROUGH'}
 
