@@ -2,6 +2,8 @@ import bpy
 import math
 import time
 
+__all__ = ["perform_marker_detection", "CLIP_OT_detect", "CLIP_OT_detect_once"]
+
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
@@ -115,7 +117,7 @@ class CLIP_OT_detect(bpy.types.Operator):
         self.margin_base = max(1, int(image_width * 0.025))
         self.min_distance_base = max(1, int(image_width * 0.05))
 
-        # --- NEU: cleanup der Tracks aus dem VORHERIGEN Run ---
+        # --- Cleanup der Tracks aus dem VORHERIGEN Run ---
         prev_names = set(scene.get("detect_prev_names", []) or [])
         if prev_names:
             _remove_tracks_by_name(self.tracking, prev_names)
@@ -168,7 +170,6 @@ class CLIP_OT_detect(bpy.types.Operator):
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
 
             # Weiter in WAIT
-            self.wait_start = time.time()
             self.state = self._STATE_WAIT
             return {'PASS_THROUGH'}
 
@@ -273,13 +274,25 @@ class CLIP_OT_detect(bpy.types.Operator):
 
 
 # ---------------------------------------------------------------------------
+# Alias für Abwärtskompatibilität: erwarteter Name + erwarteter bl_idname
+# ---------------------------------------------------------------------------
+
+class CLIP_OT_detect_once(CLIP_OT_detect):
+    """Alias von CLIP_OT_detect – identische Implementierung, anderer Name/ID."""
+    bl_idname = "clip.detect_once"
+    bl_label  = "Detect Once (Adaptive)"
+
+
+# ---------------------------------------------------------------------------
 # Register
 # ---------------------------------------------------------------------------
 
 def register():
     bpy.utils.register_class(CLIP_OT_detect)
+    bpy.utils.register_class(CLIP_OT_detect_once)
 
 def unregister():
+    bpy.utils.unregister_class(CLIP_OT_detect_once)
     bpy.utils.unregister_class(CLIP_OT_detect)
 
 if __name__ == "__main__":
