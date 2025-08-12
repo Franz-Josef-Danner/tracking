@@ -22,39 +22,46 @@ class CLIP_OT_main(bpy.types.Operator):
         scene["marker_min"] = 0
         scene["marker_max"] = 0
         scene["goto_frame"] = -1
-    
+
+        # --- NEU: Error-Limit Snapshot einmalig zum Run-Beginn sichern ---
+        try:
+            scene["error_limit_run"] = float(getattr(scene, "error_track"))
+        except Exception:
+            scene["error_limit_run"] = float(scene.get("error_track", 0.0))
+        # ------------------------------------------------------------------
+
         if hasattr(scene, "repeat_frame"):
             scene.repeat_frame.clear()
-    
+
         # Optional: Clip-Zustand prüfen
         space = getattr(context, "space_data", None)
         clip = getattr(space, "clip", None)
         if clip is None or not getattr(clip, "tracking", None):
             self.report({'WARNING'}, "Kein gültiger Clip oder keine Tracking-Daten.")
             return {'CANCELLED'}
-    
+
         print("🚀 Starte Tracking-Vorbereitung...")
-    
+
         # 🔧 EINMALIGE Vorbereitung vor Zyklusstart
         bpy.ops.clip.tracker_settings('EXEC_DEFAULT')
         bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
-    
+
         print("🚀 Starte Tracking-Pipeline...")
         bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
         print("⏳ Warte auf Abschluss der Pipeline...")
-    
+
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.5, window=context.window)
         wm.modal_handler_add(self)
         self._step = 0
-    
+
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
         if event.type == 'ESC':
             self.report({'WARNING'}, "Tracking-Setup manuell abgebrochen.")
             context.window_manager.event_timer_remove(self._timer)
-    
+
             # 🔁 Kompletter Reset der Szenevariablen
             scene = context.scene
             scene["pipeline_status"] = ""
@@ -63,13 +70,13 @@ class CLIP_OT_main(bpy.types.Operator):
             scene["goto_frame"] = -1
             if hasattr(scene, "repeat_frame"):
                 scene.repeat_frame.clear()
-    
+
             print("❌ Abbruch durch Benutzer – Setup zurückgesetzt.")
             return {'CANCELLED'}
-    
+
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
-    
+
         scene = context.scene
         repeat_collection = scene.repeat_frame
 
@@ -85,9 +92,8 @@ class CLIP_OT_main(bpy.types.Operator):
             if clip is None or not getattr(clip, "tracking", None):
                 self.report({'WARNING'}, "Kein gültiger Clip oder keine Tracking-Daten.")
                 return {'CANCELLED'}
-            initial_basis = scene.get("marker_basis", 25)
-            marker_basis = scene.get("marker_basis", 25)
-
+            initial_basis = scene.get("marker_basis", 20)
+            marker_basis = scene.get("marker_basis", 20)
 
             frame = find_low_marker_frame(clip, marker_basis=marker_basis)
             if frame is not None:
@@ -101,12 +107,14 @@ class CLIP_OT_main(bpy.types.Operator):
                 if entry:
                     entry.count += 1
                     marker_basis = min(int(marker_basis * 1.1), 100)
+                    scene["marker_basis"] = marker_basis  # <-- NEU: persistieren
                     print(f"🔺 Selber Frame erneut – erhöhe marker_basis auf {marker_basis}")
                 else:
                     entry = repeat_collection.add()
                     entry.frame = key
                     entry.count = 1
                     marker_basis = max(int(marker_basis * 0.9), initial_basis)
+                    scene["marker_basis"] = marker_basis  # <-- NEU: persistieren
                     print(f"🔻 Neuer Frame – senke marker_basis auf {marker_basis}")
 
                 print(f"🔁 Frame {frame} wurde bereits {entry.count}x erkannt.")
@@ -152,7 +160,7 @@ class CLIP_OT_main(bpy.types.Operator):
 
         elif self._step == 3:
             scene = context.scene
-        
+
             # Clip & Reconstruction robust ermitteln (kontexttolerant)
             space = getattr(context, "space_data", None)
             clip = getattr(space, "clip", None)
@@ -162,30 +170,36 @@ class CLIP_OT_main(bpy.types.Operator):
                     rec = clip.tracking.objects.active.reconstruction
             except Exception:
                 rec = None
-        
+
             # Primärer Abschlussweg: aktives Polling statt Event-Abhängigkeit
             if rec and getattr(rec, "is_valid", False):
                 err_val = float(getattr(rec, "average_error", -1.0))
-        
-                # Limit bevorzugt als RNA-Property lesen; Fallback auf ID-Prop
-                if hasattr(scene, "error_track"):
-                    limit_val = float(getattr(scene, "error_track"))
-                else:
-                    limit_val = float(scene.get("error_track", 0.0))
-        
+
+                # Limit bevorzugt aus Run-Snapshot lesen; Fallback auf aktuelle UI/IDProp
+                limit_val = float(scene.get("error_limit_run",
+                                            getattr(scene, "error_track", scene.get("error_track", 0.0))))
+
                 path = "Poll" if scene.get("solve_watch_fallback", False) else "Msgbus"
                 print(f"✅ [{path}] Camera Solve fertig. Average Error: {err_val:.3f} px (Limit: {limit_val:.3f} px)")
-        
+
                 # Entscheidung OK/FAILED
                 if err_val > limit_val:
                     print(f"[Solve-Check] FAILED (Error={err_val:.3f} px > Limit={limit_val:.3f} px)")
+                    self.report({'ERROR'}, f"Solve-Error {err_val:.3f} px > Limit {limit_val:.3f} px → FAILED")
+
+                    # --- NEU: marker_basis erhöhen, Zielbereich setzen, Pipeline neu starten, Modal fortsetzen ---
                     marker_basis = scene.get("marker_basis", 20)
                     marker_basis = min(int(marker_basis * 1.1), 100)
                     scene["marker_basis"] = marker_basis
-                    print(f"🔺 Erhöhe marker_basis auf {marker_basis} und starte Zyklus neu")
+                    scene["marker_min"] = int(marker_basis * 0.9)
+                    scene["marker_max"] = int(marker_basis * 1.1)
+                    print(f"🔺 Erhöhe marker_basis auf {marker_basis} und starte Zyklus neu "
+                          f"({scene['marker_min']}–{scene['marker_max']})")
+                    bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
                     self._step = 0
                     return {'PASS_THROUGH'}
-                        
+                    # -------------------------------------------------------------------------------------------
+
                 print(f"[Solve-Check] OK (Error={err_val:.3f} px ≤ Limit={limit_val:.3f} px)")
                 self.report({'INFO'}, f"Solve-Error {err_val:.3f} px innerhalb des Limits.")
                 try:
@@ -195,16 +209,12 @@ class CLIP_OT_main(bpy.types.Operator):
                 scene["solve_watch_fallback"] = False
                 scene["solve_status"] = ""
                 return {'FINISHED'}
-        
+
             # Sekundär: Wenn der Watcher doch ein Flag setzt, eine Schleife später erneut pollen.
             if scene.get("solve_status", "") == "done":
                 return {'PASS_THROUGH'}
-        
+
             # Solve läuft oder Rekonstruktion noch nicht gültig → weiter pollen
             return {'PASS_THROUGH'}
-
-
-
-
 
         return {'RUNNING_MODAL'}
