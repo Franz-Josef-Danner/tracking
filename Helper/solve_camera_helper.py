@@ -11,6 +11,9 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
         scene = context.scene
         scene["solve_status"] = "pending"
         scene["solve_error"] = -1.0
+        scene["solve_error_after_clean"] = -1.0  # NEU: Fehler nach Cleanup
+        self._phase = 1                          # NEU: 1 = erster Solve, 2 = Re-Solve
+
 
         # Owner zur späteren Abmeldung
         owner = object()
@@ -45,15 +48,58 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
         
                 if rec and getattr(rec, "is_valid", False):
                     avg = getattr(rec, "average_error", None)
-                    scene["solve_status"] = "done"
-                    if avg is not None:
-                        scene["solve_error"] = float(avg)
-                    try:
-                        bpy.msgbus.clear_by_owner(owner)
-                    except Exception:
-                        pass
-                    self._scheduled = False
-                    return None  # fertig
+                
+                    # PHASE 1: ersten Solve verbuchen, dann optional Clean & Re-Solve
+                    if self._phase == 1:
+                        scene["solve_status"] = "done"
+                        if avg is not None:
+                            scene["solve_error"] = float(avg)
+                
+                        thr = float(scene.get("error_track", 0.0))
+                        if thr > 0.0:
+                            # Cleanup + Re-Solve im gültigen CLIP_EDITOR-Kontext
+                            ovr = _build_override(context)
+                            if ovr:
+                                try:
+                                    with context.temp_override(**ovr):
+                                        bpy.ops.clip.clean_tracks(frames=0, error=thr, action='DELETE_SEGMENTS')
+                                        # zweiter Solve: per Helper starten (INVOKE_DEFAULT ist okay; wir warten via Msgbus)
+                                        bpy.ops.clip.solve_camera_helper('INVOKE_DEFAULT')
+                                except Exception as ex:
+                                    self.report({'ERROR'}, f"Cleanup/Re-Solve fehlgeschlagen: {ex}")
+                                    # Kein Abbruch der Msgbus-Phase – wir finalisieren normal:
+                                    try:
+                                        bpy.msgbus.clear_by_owner(owner)
+                                    except Exception:
+                                        pass
+                                    self._scheduled = False
+                                    return None
+                
+                                # Jetzt auf den zweiten Solve warten:
+                                self._phase = 2
+                                self._scheduled = False
+                                return 0.2
+                            # Falls kein gültiger Override: finalisiere wie bisher
+                        # Kein Threshold gesetzt → Finalisierung wie bisher
+                        try:
+                            bpy.msgbus.clear_by_owner(owner)
+                        except Exception:
+                            pass
+                        self._scheduled = False
+                        return None
+                
+                    # PHASE 2: zweiter Solve ist fertig → finalisieren
+                    else:
+                        if avg is not None:
+                            scene["solve_error_after_clean"] = float(avg)
+                        scene["solve_status"] = "done_after_clean"
+                        try:
+                            bpy.msgbus.clear_by_owner(owner)
+                        except Exception:
+                            pass
+                        self._scheduled = False
+                        return None
+
                 else:
                     # noch nicht valide – in 0.2 s erneut prüfen
                     return 0.2
