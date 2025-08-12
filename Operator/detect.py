@@ -1,8 +1,6 @@
 import bpy
 import math
 
-# --- Utilities ---------------------------------------------------------------
-
 def _deselect_all(tracking):
     for t in tracking.tracks:
         t.select = False
@@ -46,19 +44,16 @@ def _detect_once_core(clip, frame, threshold, margin_base, min_distance_base,
     initial_names = {t.name for t in tracking.tracks}
     _deselect_all(tracking)
 
-    # Detect ausführen
     bpy.ops.clip.detect_features(
         margin=margin,
         min_distance=min_distance,
         threshold=float(threshold)
     )
 
-    # Neue Tracks identifizieren
     tracks = tracking.tracks
     current_names = {t.name for t in tracks}
     new_names = list(current_names - initial_names)
 
-    # Zu nahe an bestehenden liegende neue Marker herausfiltern und löschen
     wpx = w  # für Lesbarkeit
     close_px = max(0, int(close_dist_rel * wpx))
     thr2 = float(close_px * close_px)
@@ -83,16 +78,12 @@ def _detect_once_core(clip, frame, threshold, margin_base, min_distance_base,
         # Refresh Name-Liste nach Löschung
         new_names = [n for n in new_names if n not in close_names]
 
-    # Optional: verbleibende neue selektieren (UI-Hilfe)
     _deselect_all(tracking)
     for t in tracks:
         if t.name in new_names:
             t.select = True
 
     return new_names, deleted_close
-
-
-# --- Operator ----------------------------------------------------------------
 
 class CLIP_OT_detect_once(bpy.types.Operator):
     """Einmalige Marker-Platzierung mit adaptiver Threshold-Steuerung bis Zielanzahl erreicht ist."""
@@ -117,7 +108,6 @@ class CLIP_OT_detect_once(bpy.types.Operator):
         name="Frame", default=1, min=0
     )
 
-    # Basiswerte; wenn < 0 → auto aus Bildbreite
     margin_base: bpy.props.IntProperty(
         name="Margin Base (px)", default=-1
     )
@@ -129,7 +119,6 @@ class CLIP_OT_detect_once(bpy.types.Operator):
         name="Close Dist (rel. width)", default=0.01, min=0.0, soft_max=0.1
     )
 
-    # Adaptions-Strategie
     max_iters: bpy.props.IntProperty(
         name="Max Iterationen", default=8, min=1, max=32
     )
@@ -160,11 +149,17 @@ class CLIP_OT_detect_once(bpy.types.Operator):
         tracking = clip.tracking
         w, h = clip.size
 
-        # Auto-Basiswerte aus Bildbreite, falls nicht gesetzt
+        prev_names = set(context.scene.get("detect_prev_names", []) or [])
+        if prev_names:
+            try:
+                _remove_tracks_by_name(tracking, prev_names)
+            except Exception:
+                pass
+            context.scene["detect_prev_names"] = []
+            
         margin_base = self.margin_base if self.margin_base >= 0 else int(w * 0.025)
         min_distance_base = self.min_distance_base if self.min_distance_base >= 0 else int(w * 0.05)
 
-        # Bestehende Marker-Positionen im Ziel-Frame sammeln (bleibt über Iterationen konstant)
         existing_positions = []
         for t in tracking.tracks:
             xy = _get_marker_xy_at_frame(t, self.frame, w, h)
@@ -174,7 +169,6 @@ class CLIP_OT_detect_once(bpy.types.Operator):
         initial_names = {t.name for t in tracking.tracks}
         initial_count = len(tracking.tracks)
 
-        # Search-Parameter
         lo = float(self.thr_min)
         hi = float(self.thr_max)
         cur = float(min(max(self.detection_threshold, lo), hi))
@@ -183,9 +177,7 @@ class CLIP_OT_detect_once(bpy.types.Operator):
         total_deleted_close = 0
         status = "out_of_bounds"
 
-        # Iterativer Anpassungszyklus
         for it in range(self.max_iters):
-            # Cleanup evtl. zuvor erzeugter Tracks vor neuem Versuch
             if last_new_names:
                 _remove_tracks_by_name(tracking, set(last_new_names))
                 last_new_names = []
@@ -216,34 +208,24 @@ class CLIP_OT_detect_once(bpy.types.Operator):
             new_total = len(new_names)
             total_deleted_close += deleted_close
 
-            # Zielprüfung
             if self.min_marker <= new_total <= self.max_marker:
                 status = "success"
                 break
 
-            # Threshold adaptieren
             if self.use_binary_search:
                 if new_total < self.min_marker:
-                    # Zu wenige → Threshold runter (liberaler)
                     hi = cur
-                    # Damit hi > lo bleibt, sonst clampen
                     cur = max(lo, (lo + cur) * 0.5)
                 elif new_total > self.max_marker:
-                    # Zu viele → Threshold rauf (strenger)
                     lo = cur
                     cur = min(hi, (cur + hi) * 0.5)
             else:
-                # Multiplikative Fallback-Strategie
                 if new_total < self.min_marker:
                     cur *= 0.7  # mehr Features
                 else:
                     cur *= 1.3  # weniger Features
                 cur = min(max(cur, lo), hi)
 
-        # Nach Abschluss: Falls letzter Versuch nicht im Ziel war, trotzdem die letzte Runde stehen lassen
-        # (d.h. last_new_names bleiben im Clip; kein erneutes Entfernen)
-
-        # Ergebnisdaten aufbereiten
         within = self.min_marker <= len(last_new_names) <= self.max_marker
         scene["detect_result"] = {
             "frame": int(self.frame),
@@ -261,13 +243,15 @@ class CLIP_OT_detect_once(bpy.types.Operator):
         }
         scene["detect_status"] = "success" if within else "out_of_bounds"
 
-        # UI-Refresh (nicht invasiv)
+        try:
+            context.scene["detect_prev_names"] = list(last_new_names)
+        except Exception:
+            pass
+
         try:
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
         except Exception:
             pass
-
-        # Operator-Return
         return {'FINISHED'}
 
 
