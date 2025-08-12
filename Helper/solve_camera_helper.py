@@ -1,9 +1,6 @@
 
 import bpy
 from bpy.types import Operator
-from .find_low_marker_frame import find_low_marker_frame
-from .jump_to_frame import jump_to_frame
-
 
 def _clip_override(context):
     """Sichere CLIP_EDITOR-Overrides ermitteln."""
@@ -99,38 +96,27 @@ class CLIP_OT_solve_watch_clean(Operator):
             # Best Practice: Fertig = gültige Rekonstruktion ODER durchschnittlicher Fehler aktualisiert (>0)
             is_done = bool(getattr(recon, "is_valid", False)) or (getattr(recon, "average_error", 0.0) > 0.0)
 
+            if is_done and not self._post_cleanup:
+                # 3) Cleanup mit Error-Schwelle ausführen
+                try:
+                    with context.temp_override(**self._ovr):
+                        bpy.ops.clip.clean_tracks(frames=0, error=self.cleanup_error, action='DELETE_TRACK')
+                    self._post_cleanup = True
+                    return {'RUNNING_MODAL'}
+                except Exception as ex:
+                    self._cleanup_timer(context)
+                    self.report({'ERROR'}, f"Cleanup fehlgeschlagen: {ex}")
+                    return {'CANCELLED'}
+
             if is_done and self._post_cleanup:
-                # 4) Marker-Differenz prüfen
+                # 4) Marker-Differenz prüfen und abschließen
                 post = _count_markers(self._clip)
                 delta = post - self._pre_marker_ct
                 status = "weniger" if delta < 0 else ("mehr" if delta > 0 else "gleich")
                 avg_err = getattr(self._clip.tracking.objects.active.reconstruction, "average_error", -1.0)
-            
-                # --- NEU: Low-Marker-Recheck + Re-Trigger ---
-                scene = context.scene
-                marker_basis = scene.get("marker_basis", 25)
-                frame = find_low_marker_frame(self._clip, marker_basis=marker_basis)  # nutzt deine Helper-Implementierung
-            
-                if frame is not None:
-                    scene["goto_frame"] = int(frame)
-                    # Im gültigen CLIP_EDITOR-Kontext: Playhead setzen + Pipeline erneut starten
-                    try:
-                        with context.temp_override(**self._ovr):
-                            # Wichtig: Im Override-Kontext arbeiten, damit UI/Operatoren sicher laufen
-                            jump_to_frame(bpy.context)  # nutzt die override-Context-Scene
-                            bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
-                        self.report({'INFO'}, f"Solve OK (AvgErr={avg_err:.3f}). Low-Marker-Frame {frame} gefunden → Playhead gesetzt, Pipeline neu gestartet.")
-                    except Exception as ex:
-                        self.report({'WARNING'}, f"Solve OK (AvgErr={avg_err:.3f}). Low-Marker-Frame {frame} gefunden, aber Re-Trigger scheiterte: {ex}")
-                    finally:
-                        self._cleanup_timer(context)
-                    return {'FINISHED'}
-            
-                # Kein Low-Marker-Frame → wie bisher sauber beenden
                 self.report({'INFO'}, f"Solve OK (AvgErr={avg_err:.3f}). Marker danach: {post} ({status}, Δ={delta}). Cleanup error>{self.cleanup_error:.2f}.")
                 self._cleanup_timer(context)
                 return {'FINISHED'}
-
 
         # Abbruch via ESC/RIGHTMOUSE
         if event.type in {'ESC', 'RIGHTMOUSE'}:
