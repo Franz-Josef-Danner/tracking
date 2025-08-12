@@ -1,6 +1,5 @@
 import bpy
 from ..Helper.multiscale_temporal_grid_clean import multiscale_temporal_grid_clean
-from ..Helper.prune_tracks_density import prune_tracks_density
 from ..Helper.segments import track_has_internal_gaps
 from ..Helper.mute_ops import mute_after_last_marker, mute_unassigned_markers
 from ..Helper.split_cleanup import clear_path_on_split_tracks_segmented, recursive_split_cleanup
@@ -32,7 +31,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             self.report({'ERROR'}, "Kein gültiger CLIP_EDITOR-Kontext gefunden.")
             return {'CANCELLED'}
 
-        # Depsgraph/Layers sync im gültigen Kontext
+        #         # Finaler Depsgraph/Layers Sync
         with context.temp_override(area=clip_editor_area, region=clip_editor_region, space_data=clip_editor_space):
             deps = context.evaluated_depsgraph_get()
             deps.update()
@@ -56,7 +55,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         # 4) Gap-Erkennung & Aufteilung
         original_tracks = [t for t in tracks if track_has_internal_gaps(t)]
         if not original_tracks:
-            self.report({'INFO'}, "Keine Tracks mit Lücken gefunden – fahre mit Safety & Prune fort.")
+            self.report({'INFO'}, "Keine Tracks mit Lücken gefunden – fahre mit Safety fort.")
         else:
             # (nur wenn Gaps existieren) Duplizieren + Split/Cleanup:
             existing_names = {t.name for t in tracks}
@@ -89,17 +88,6 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         for t in tracks:
             mute_after_last_marker(t, scene.frame_end)
 
-        # 7) Dichte-Pruning (am Ende, finaler Zustand)
-        prune_res = prune_tracks_density(context, threshold_key="marker_frame", dry_run=False)
-        if prune_res.get("status") != "ok":
-            print(f"[PruneDensity] status={prune_res.get('status')}")
-        else:
-            print(
-                f"[PruneDensity] frames_processed={prune_res.get('frames_processed')} "
-                f"deleted_tracks={prune_res.get('deleted_tracks')} "
-                f"threshold={prune_res.get('threshold')}"
-            )
-        
         # Depsgraph/Layers sync nach Pruning
         with context.temp_override(area=clip_editor_area, region=clip_editor_region, space_data=clip_editor_space):
             deps = context.evaluated_depsgraph_get()
