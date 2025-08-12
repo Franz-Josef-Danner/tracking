@@ -198,48 +198,40 @@ def mute_all_outside_segment_markers(tracks):
         mute_outside_segment_markers(track)
 
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
-
     clip = space.clip
 
+    # 1) Rebinding: frische RNA-Objekte holen (verhindert stale Refs nach Copy/Paste)
+    tracks_by_name = {t.name: t for t in clip.tracking.tracks}
+    original_tracks = [tracks_by_name[n.name] for n in original_tracks if n and n.name in tracks_by_name]
+    new_tracks      = [tracks_by_name[n.name] for n in new_tracks      if n and n.name in tracks_by_name]
+
+    redraw_budget = 0
+
     with context.temp_override(area=area, region=region, space_data=space):
-        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=3)
-        bpy.context.view_layer.update()
-        time.sleep(0.1)
-
-        for track in clip.tracking.tracks:
-            track.select = True
-
-        # 🔴 ORIGINAL-TRACKS: Vorderes Segment behalten → alles danach muten
+        # 🔴 ORIGINAL-TRACKS: vorderes Segment behalten → danach muten
         for track in original_tracks:
-            segments = get_track_segments(track)
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-            bpy.context.view_layer.update()
-            time.sleep(0.1)
-            
+            # Snapshot der Segmente, um Collection-Änderungen während des Loops zu entkoppeln
+            segments = list(get_track_segments(track))
             for seg in segments:
                 mute_marker_path(track, seg[-1] + 1, 'forward', mute=True)
-                bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-                bpy.context.view_layer.update()
-                time.sleep(0.1)
+                redraw_budget += 1
+                if redraw_budget % 25 == 0:
+                    region.tag_redraw()
 
-        # 🔵 NEW-TRACKS: Hinteres Segment behalten → alles davor muten
+        # 🔵 NEW-TRACKS: hinteres Segment behalten → davor muten
         for track in new_tracks:
-            # 💡 Force-Update (wie bisher)
-            context.scene.frame_set(context.scene.frame_current)
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=3)
-            bpy.context.view_layer.update()
-            time.sleep(0.1)
-
-            segments = get_track_segments(track)
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-            bpy.context.view_layer.update()
-            time.sleep(0.1)
-
+            segments = list(get_track_segments(track))
             for seg in segments:
                 mute_marker_path(track, seg[0] - 1, 'backward', mute=True)
-                bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-                bpy.context.view_layer.update()
-                time.sleep(0.1)
+                redraw_budget += 1
+                if redraw_budget % 25 == 0:
+                    region.tag_redraw()
+
+        # 2) Einmalige harte Synchronisation am Blockende
+        deps = context.evaluated_depsgraph_get()
+        deps.update()
+        bpy.context.view_layer.update()
+        region.tag_redraw()
 
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
