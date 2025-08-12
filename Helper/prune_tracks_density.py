@@ -73,7 +73,7 @@ def _remove_track(clip: bpy.types.MovieClip, track: bpy.types.MovieTrackingTrack
         # Wird bewusst nicht „smart“ gemacht, um UI-Bindungen zu vermeiden.
 
 
-def prune_tracks_hierarchically_by_marker_density(
+def prune_tracks_density(
     context: bpy.types.Context,
     *,
     threshold_key: str = "marker_frame",    # Ziel: auf jedem Frame auf <= scene[threshold_key] * 2 Marker eindampfen
