@@ -150,28 +150,21 @@ class CLIP_OT_solve_watch_clean(Operator):
                     self.report({'ERROR'}, f"Cleanup fehlgeschlagen: {ex}")
                     return {'CANCELLED'}
 
-            # PHASE: cleaned -> Marker-Differenz loggen, Timer schließen, Main starten (EXEC)
-            if self._phase == "cleaned":
+            # --- PHASE: solved -> Direkt Abschluss ohne Cleanup ---
+            if self._phase == "solved":
                 recon = _get_reconstruction_safe(self._clip)
                 avg_err = getattr(recon, "average_error", -1.0) if recon else -1.0
-
+            
                 post = _count_markers(self._clip)
                 delta = post - self._pre_marker_ct
                 status = "weniger" if delta < 0 else ("mehr" if delta > 0 else "gleich")
-
-                self.report({'INFO'}, f"Solve OK (AvgErr={avg_err:.3f}). Marker danach: {post} ({status}, Δ={delta}). Cleanup error>{self.cleanup_error:.2f}.")
-
-                # Timer zuerst sauber entfernen, dann Main ohne weiteren Modal-Stack starten
+            
+                self.report({'INFO'}, f"Solve OK (AvgErr={avg_err:.3f}). Marker danach: {post} ({status}, Δ={delta}).")
+            
+                # Timer sauber entfernen
                 self._cleanup_timer(context)
-
-                ovr = _clip_override(context)
-                if not ovr:
-                    # Ohne gültigen Kontext kein fataler Fehler – Operator ist fertig
-                    return {'FINISHED'}
-                # Timer zuerst sauber entfernen
-                self._cleanup_timer(context)
-
-                # --- STATT MAIN: Refine-on-High-Error triggern (NEU) ---
+            
+                # Optional: Refine-on-High-Error ausführen
                 try:
                     processed = run_refine_on_high_error(
                         context,
@@ -181,11 +174,11 @@ class CLIP_OT_solve_watch_clean(Operator):
                     )
                     self.report({'INFO'}, f"Refine abgeschlossen: {processed} Frame(s) ≥ {self.refine_error_threshold:.3f}px.")
                 except Exception as e:
-                    # Nicht fatal – Solve/ Cleanup waren erfolgreich; wir loggen nur.
                     self.report({'WARNING'}, f"Refine übersprungen: {e}")
-
+            
                 self._phase = "done"
                 return {'FINISHED'}
+
         # Abbruch via ESC/RIGHTMOUSE
         if event.type in {'ESC', 'RIGHTMOUSE'}:
             self._cleanup_timer(context)
