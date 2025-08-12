@@ -105,7 +105,6 @@ def unregister():
     del bpy.types.Scene.marker_frame
     del bpy.types.Scene.frames_track
     del bpy.types.Scene.error_track
-    del bpy.types.Scene.error_track
     solve_camera_helper.unregister()
 
     for cls in reversed(classes):
