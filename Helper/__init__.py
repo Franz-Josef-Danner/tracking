@@ -11,8 +11,7 @@ from .properties import RepeatEntry
 from .log_helper import write_log_entry
 from .find_max_marker_frame import get_active_marker_counts_sorted
 from .prune_tracks_density import prune_tracks_density
-
-
+from .multiscale_temporal_grid_clean import multiscale_temporal_grid_clean
 
 # Alle Klassen in eine Liste
 classes = (
