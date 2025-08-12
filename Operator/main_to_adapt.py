@@ -1,6 +1,6 @@
 import bpy
 
-__all__ = ("CLIP_OT_activate_main_with_adapt",)
+__all__ = ("CLIP_OT_launch_main_with_adapt",)
 
 def _clip_override(context):
     for area in context.window.screen.areas:
@@ -10,9 +10,9 @@ def _clip_override(context):
                     return {'area': area, 'region': region, 'space_data': area.spaces.active}
     return None
 
-class CLIP_OT_activate_main_with_adapt(bpy.types.Operator):
-    """Setzt marker_adapt = marker_basis * 4 und startet anschließend clip.main"""
-    bl_idname = "clip.activate_main_with_adapt"
+class CLIP_OT_launch_main_with_adapt(bpy.types.Operator):
+    """Berechnet marker_adapt aus marker_basis und startet anschließend clip.main mit Übergabe."""
+    bl_idname = "clip.launch_main_with_adapt"
     bl_label  = "Start Main (Adapt x4)"
     bl_options = {'REGISTER'}
 
@@ -30,22 +30,14 @@ class CLIP_OT_activate_main_with_adapt(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-
-        # Basis lesen (Default wie in deiner Pipeline)
         marker_basis = int(scene.get("marker_basis", 25))
         marker_adapt = int(marker_basis * self.factor)
-        scene["marker_adapt"] = marker_adapt
 
-        # Main sicher starten
         if self.use_override:
             ovr = _clip_override(context)
             if ovr:
                 with context.temp_override(**ovr):
-                    res = bpy.ops.clip.main('INVOKE_DEFAULT')
-                    self.report({'INFO'}, f"marker_adapt={marker_adapt}; clip.main gestartet.")
-                    return res if isinstance(res, set) else {'FINISHED'}
+                    return bpy.ops.clip.main('INVOKE_DEFAULT', marker_adapt=marker_adapt)
 
         # Fallback ohne Override
-        res = bpy.ops.clip.main('INVOKE_DEFAULT')
-        self.report({'INFO'}, f"marker_adapt={marker_adapt}; clip.main gestartet (kein Override).")
-        return res if isinstance(res, set) else {'FINISHED'}
+        return bpy.ops.clip.main('INVOKE_DEFAULT', marker_adapt=marker_adapt)
