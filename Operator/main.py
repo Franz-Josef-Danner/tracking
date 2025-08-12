@@ -4,7 +4,7 @@ import time
 from ..Helper.find_low_marker_frame import find_low_marker_frame
 from ..Helper.jump_to_frame import jump_to_frame
 from ..Helper.properties import RepeatEntry  # <- wichtig!
-from ..Helper.solve_camera_helper import CLIP_OT_solve_camera_helper
+from ..Helper.solve_camera_helper import CLIP_OT_solve_watch_clean
 
 class CLIP_OT_main(bpy.types.Operator):
     bl_idname = "clip.main"
@@ -164,10 +164,10 @@ class CLIP_OT_main(bpy.types.Operator):
                 with context.temp_override(area=area_ce, region=region_ce, space_data=space_ce):
                     # Verwende deinen Helper, da er bereits im Projekt genutzt wird
                     ..Helper
-                    bpy.ops.clip.solve_camera_helper('INVOKE_DEFAULT')
+                    bpy.ops.clip.solve_watch_clean('INVOKE_DEFAULT')
             else:
                 # Fallback – versucht Solve im aktuellen Kontext
-                bpy.ops.clip.solve_camera_helper('INVOKE_DEFAULT')
+                bpy.ops.clip.solve_watch_clean('INVOKE_DEFAULT')
 
             # Timer entfernen und sauber beenden
             try:
