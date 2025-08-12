@@ -342,7 +342,17 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             scene.frame_set(scene.frame_current)
 
         # --- 2) Grid-basierter Error-Clean (bestehende Pipeline) ---
-        clean_error_tracks(context, clip_editor_space, clip_editor_area, clip_editor_region)
+# --- 2) Multiscale Grid-Error-Clean (inkl. Drift & Micro-Pass) ---
+        clip = clip_editor_space.clip
+        w, h = clip.size
+        fr = (scene.frame_start, scene.frame_end)
+        deleted = multiscale_temporal_grid_clean(
+            context, clip_editor_area, clip_editor_region, clip_editor_space,
+            list(clip.tracking.tracks), fr, w, h,
+            grid=(6, 6), start_delta=None, min_delta=3,
+            outlier_q=0.90, hysteresis_hits=2, min_cell_items=4
+        )
+        print(f"[MultiScale] total deleted: {deleted}")
 
         clip = clip_editor_space.clip
         tracks = clip.tracking.tracks
