@@ -46,6 +46,18 @@ class CLIP_OT_main(bpy.types.Operator):
         bpy.ops.clip.tracker_settings('EXEC_DEFAULT')
         bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
 
+        # --- Vor Detect/Tracking zuerst Low-Marker-Frame suchen & Playhead setzen ---
+        try:
+            marker_basis = scene.get("marker_basis", 25)
+        except Exception:
+            marker_basis = 25
+        frame = find_low_marker_frame(clip, marker_basis=marker_basis)
+        if frame is not None:
+            scene["goto_frame"] = frame
+            print(f"🎯 Zyklus-Start: Springe auf Low-Marker-Frame {frame} (Basis={marker_basis})")
+            jump_to_frame(context)
+        # ---------------------------------------------------------------------------
+
         print("🚀 Starte Tracking-Pipeline...")
         bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
         print("⏳ Warte auf Abschluss der Pipeline...")
@@ -107,14 +119,14 @@ class CLIP_OT_main(bpy.types.Operator):
                 if entry:
                     entry.count += 1
                     marker_basis = min(int(marker_basis * 1.1), 100)
-                    scene["marker_basis"] = marker_basis  # <-- persistieren
+                    scene["marker_basis"] = marker_basis  # persistieren
                     print(f"🔺 Selber Frame erneut – erhöhe marker_basis auf {marker_basis}")
                 else:
                     entry = repeat_collection.add()
                     entry.frame = key
                     entry.count = 1
                     marker_basis = max(int(marker_basis * 0.9), initial_basis)
-                    scene["marker_basis"] = marker_basis  # <-- persistieren
+                    scene["marker_basis"] = marker_basis  # persistieren
                     print(f"🔻 Neuer Frame – senke marker_basis auf {marker_basis}")
 
                 print(f"🔁 Frame {frame} wurde bereits {entry.count}x erkannt.")
@@ -187,7 +199,7 @@ class CLIP_OT_main(bpy.types.Operator):
                     print(f"[Solve-Check] FAILED (Error={err_val:.3f} px > Limit={limit_val:.3f} px)")
                     self.report({'ERROR'}, f"Solve-Error {err_val:.3f} px > Limit {limit_val:.3f} px → FAILED")
 
-                    # --- marker_basis erhöhen, Zielbereich setzen, Pipeline neu starten, Modal fortsetzen ---
+                    # --- marker_basis erhöhen, Zielbereich setzen ---
                     marker_basis = scene.get("marker_basis", 20)
                     marker_basis = min(int(marker_basis * 1.1), 100)
                     scene["marker_basis"] = marker_basis
@@ -207,13 +219,13 @@ class CLIP_OT_main(bpy.types.Operator):
                                     area_ce = a
                                     region_ce = r
                                     space_ce = a.spaces.active
-                    
+
                     space = getattr(context, "space_data", None)
                     clip  = getattr(space, "clip", None)
                     frame = None
                     if clip is not None:
                         frame = find_low_marker_frame(clip, marker_basis=marker_basis)
-                    
+
                     if frame is not None:
                         scene["goto_frame"] = frame
                         if area_ce and region_ce and space_ce:
@@ -229,7 +241,7 @@ class CLIP_OT_main(bpy.types.Operator):
                                     pass
                                 jump_to_frame(context)
                                 bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-                    
+
                                 # >>> Pipeline hier im selben Kontext starten <<<
                                 bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
                         else:
@@ -240,10 +252,9 @@ class CLIP_OT_main(bpy.types.Operator):
                         # kein spezieller Frame → normal starten
                         bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
                     # --- Ende Playhead-Setzung & Start ---
-                    
+
                     self._step = 0
                     return {'PASS_THROUGH'}
-
 
                 print(f"[Solve-Check] OK (Error={err_val:.3f} px ≤ Limit={limit_val:.3f} px)")
                 self.report({'INFO'}, f"Solve-Error {err_val:.3f} px innerhalb des Limits.")
