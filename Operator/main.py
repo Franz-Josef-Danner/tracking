@@ -163,7 +163,6 @@ class CLIP_OT_main(bpy.types.Operator):
             if area_ce and region_ce and space_ce:
                 with context.temp_override(area=area_ce, region=region_ce, space_data=space_ce):
                     # Verwende deinen Helper, da er bereits im Projekt genutzt wird
-                    ..Helper
                     bpy.ops.clip.solve_watch_clean('INVOKE_DEFAULT')
             else:
                 # Fallback – versucht Solve im aktuellen Kontext
