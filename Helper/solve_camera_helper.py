@@ -1,5 +1,6 @@
 import bpy
 from bpy.types import Operator
+from .refine_on_high_error import run_refine_on_high_error  # NEU
 
 def _clip_override(context):
     """Sichere CLIP_EDITOR-Overrides ermitteln (immer frisch abrufen)."""
@@ -62,6 +63,21 @@ class CLIP_OT_solve_watch_clean(Operator):
         name="Cleanup Error",
         default=2.0, min=0.0,
         description="Schwellwert für bpy.ops.clip.clean_tracks(error=...)"
+    )
+    refine_error_threshold: bpy.props.FloatProperty(
+        name="Refine Frame Error ≥",
+        default=2.0, min=0.0,
+        description="Per-Frame Solve-Error (px), ab dem beidseitig Refine läuft"
+    )
+    refine_limit_frames: bpy.props.IntProperty(
+        name="Refine Max Frames",
+        default=0, min=0,
+        description="0 = alle Spike-Frames; sonst Obergrenze"
+    )
+    refine_resolve_after: bpy.props.BoolProperty(
+        name="Nach Refine erneut lösen",
+        default=False,
+        description="Nach dem Refine automatisch erneut Kamera lösen"
     )
 
     # interne Zustände
@@ -152,17 +168,24 @@ class CLIP_OT_solve_watch_clean(Operator):
                 if not ovr:
                     # Ohne gültigen Kontext kein fataler Fehler – Operator ist fertig
                     return {'FINISHED'}
+                # Timer zuerst sauber entfernen
+                self._cleanup_timer(context)
+
+                # --- STATT MAIN: Refine-on-High-Error triggern (NEU) ---
                 try:
-                    with context.temp_override(**ovr):
-                        # Kein INVOKE_DEFAULT → keine weitere Modal-Verschachtelung
-                        bpy.ops.clip.main('EXEC_DEFAULT')
+                    processed = run_refine_on_high_error(
+                        context,
+                        error_threshold=self.refine_error_threshold,
+                        limit_frames=self.refine_limit_frames,
+                        resolve_after=self.refine_resolve_after
+                    )
+                    self.report({'INFO'}, f"Refine abgeschlossen: {processed} Frame(s) ≥ {self.refine_error_threshold:.3f}px.")
                 except Exception as e:
-                    # Nicht abbrechen – wir sind ohnehin fertig
-                    self.report({'ERROR'}, f"Main-Start fehlgeschlagen: {e}")
+                    # Nicht fatal – Solve/ Cleanup waren erfolgreich; wir loggen nur.
+                    self.report({'WARNING'}, f"Refine übersprungen: {e}")
 
                 self._phase = "done"
                 return {'FINISHED'}
-
         # Abbruch via ESC/RIGHTMOUSE
         if event.type in {'ESC', 'RIGHTMOUSE'}:
             self._cleanup_timer(context)
