@@ -1,10 +1,15 @@
-
 import bpy
 from bpy.types import Operator
 
 def _clip_override(context):
-    """Sichere CLIP_EDITOR-Overrides ermitteln."""
-    for area in context.window.screen.areas:
+    """Sichere CLIP_EDITOR-Overrides ermitteln (immer frisch abrufen)."""
+    win = context.window
+    if not win:
+        return None
+    scr = win.screen if hasattr(win, "screen") else None
+    if not scr:
+        return None
+    for area in scr.areas:
         if area.type == 'CLIP_EDITOR':
             for region in area.regions:
                 if region.type == 'WINDOW':
@@ -27,10 +32,25 @@ def _count_markers(clip) -> int:
         total += len(tr.markers)
     return total
 
+def _get_reconstruction_safe(clip):
+    """Reconstruction sicher holen (None-safe)."""
+    if not clip:
+        return None
+    tracking = getattr(clip, "tracking", None)
+    if not tracking:
+        return None
+    objects = getattr(tracking, "objects", None)
+    if not objects:
+        return None
+    active = getattr(objects, "active", None)
+    if not active:
+        return None
+    return getattr(active, "reconstruction", None)
+
 class CLIP_OT_solve_watch_clean(Operator):
-    """Startet Camera Solve, pollt Fertigstellung, führt Cleanup bei Error>2.0 aus und prüft Marker-Differenz."""
+    """Startet Camera Solve, prüft Fertigstellung robust, führt Cleanup bei Error-Schwelle aus und vergleicht Marker-Differenz."""
     bl_idname = "clip.solve_watch_clean"
-    bl_label = "Solve → Watch → Clean (Error>2)"
+    bl_label = "Solve → Watch → Clean (Error>Schwellwert)"
     bl_options = {"INTERNAL", "REGISTER"}
 
     poll_interval: bpy.props.FloatProperty(
@@ -46,85 +66,102 @@ class CLIP_OT_solve_watch_clean(Operator):
 
     # interne Zustände
     _timer = None
-    _started = False
+    _phase = "init"           # init -> solved -> cleaned -> done
     _pre_marker_ct = 0
-    _post_cleanup = False
-    _ovr = None
     _clip = None
 
     def invoke(self, context, event):
-        self._ovr = _clip_override(context)
-        if not self._ovr:
+        # Clip ermitteln & Vorher-Zustand erfassen (im gültigen Override)
+        ovr = _clip_override(context)
+        if not ovr:
             self.report({'ERROR'}, "Kein CLIP_EDITOR-Kontext gefunden.")
             return {'CANCELLED'}
 
-        # Clip ermitteln & Vorher-Zustand erfassen
-        with context.temp_override(**self._ovr):
+        with context.temp_override(**ovr):
             self._clip = _get_clip(context)
+
         if not self._clip:
             self.report({'ERROR'}, "Kein MovieClip verfügbar.")
             return {'CANCELLED'}
 
         self._pre_marker_ct = _count_markers(self._clip)
-        self._post_cleanup = False
-        self._started = False
+        self._phase = "init"
 
         # Timer anlegen
         wm = context.window_manager
         self._timer = wm.event_timer_add(self.poll_interval, window=context.window)
         wm.modal_handler_add(self)
-
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
         if event.type == 'TIMER':
-            # 1) Solve einmalig starten (im gültigen Override)
-            if not self._started:
+            # PHASE: init -> Solve synchron per EXEC_DEFAULT ausführen
+            if self._phase == "init":
+                ovr = _clip_override(context)
+                if not ovr:
+                    self._cleanup_timer(context)
+                    self.report({'ERROR'}, "CLIP_EDITOR-Kontext nicht verfügbar (Solve-Start).")
+                    return {'CANCELLED'}
                 try:
-                    with context.temp_override(**self._ovr):
-                        # Startet den Standard-Solve (Blockiert bis Abschluss, UI bleibt konsistent)
-                        bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-                    self._started = True
+                    with context.temp_override(**ovr):
+                        # WICHTIG: Kein weiterer Modal-Stack
+                        bpy.ops.clip.solve_camera('EXEC_DEFAULT')
+                    self._phase = "solved"
                     return {'RUNNING_MODAL'}
                 except Exception as ex:
                     self._cleanup_timer(context)
-                    self.report({'ERROR'}, f"Kamera-Solve konnte nicht gestartet werden: {ex}")
+                    self.report({'ERROR'}, f"Kamera-Solve fehlgeschlagen: {ex}")
                     return {'CANCELLED'}
 
-            # 2) Solve-Fertig prüfen (robust über Reconstruction)
-            recon = self._clip.tracking.objects.active.reconstruction
-            # Best Practice: Fertig = gültige Rekonstruktion ODER durchschnittlicher Fehler aktualisiert (>0)
-            is_done = bool(getattr(recon, "is_valid", False)) or (getattr(recon, "average_error", 0.0) > 0.0)
+            # PHASE: solved -> Error prüfen und ggf. Cleanup ausführen
+            if self._phase == "solved":
+                recon = _get_reconstruction_safe(self._clip)
+                avg_err = getattr(recon, "average_error", 0.0) if recon else 0.0
 
-            if is_done and not self._post_cleanup:
-                # 3) Cleanup mit Error-Schwelle ausführen
+                # Cleanup läuft immer mit deiner Schwellwert-Logik
+                ovr = _clip_override(context)
+                if not ovr:
+                    self._cleanup_timer(context)
+                    self.report({'ERROR'}, "CLIP_EDITOR-Kontext nicht verfügbar (Cleanup).")
+                    return {'CANCELLED'}
                 try:
-                    with context.temp_override(**self._ovr):
+                    with context.temp_override(**ovr):
                         bpy.ops.clip.clean_tracks(frames=0, error=self.cleanup_error, action='DELETE_TRACK')
-                    self._post_cleanup = True
+                    self._phase = "cleaned"
                     return {'RUNNING_MODAL'}
                 except Exception as ex:
                     self._cleanup_timer(context)
                     self.report({'ERROR'}, f"Cleanup fehlgeschlagen: {ex}")
                     return {'CANCELLED'}
 
-            if is_done and self._post_cleanup:
-                # 4) Marker-Differenz prüfen und abschließen
+            # PHASE: cleaned -> Marker-Differenz loggen, Timer schließen, Main starten (EXEC)
+            if self._phase == "cleaned":
+                recon = _get_reconstruction_safe(self._clip)
+                avg_err = getattr(recon, "average_error", -1.0) if recon else -1.0
+
                 post = _count_markers(self._clip)
                 delta = post - self._pre_marker_ct
                 status = "weniger" if delta < 0 else ("mehr" if delta > 0 else "gleich")
-                avg_err = getattr(self._clip.tracking.objects.active.reconstruction, "average_error", -1.0)
-                self.report({'INFO'}, f"Solve OK (AvgErr={avg_err:.3f}). Marker danach: {post} ({status}, Δ={delta}). Cleanup error>{self.cleanup_error:.2f}.")
-            
-                # ➕ Direkt Main erneut starten
-                try:
-                    bpy.ops.clip.main('INVOKE_DEFAULT')
-                except Exception as e:
-                    self.report({'ERROR'}, f"Main-Start fehlgeschlagen: {e}")
-            
-                self._cleanup_timer(context)
-                return {'FINISHED'}
 
+                self.report({'INFO'}, f"Solve OK (AvgErr={avg_err:.3f}). Marker danach: {post} ({status}, Δ={delta}). Cleanup error>{self.cleanup_error:.2f}.")
+
+                # Timer zuerst sauber entfernen, dann Main ohne weiteren Modal-Stack starten
+                self._cleanup_timer(context)
+
+                ovr = _clip_override(context)
+                if not ovr:
+                    # Ohne gültigen Kontext kein fataler Fehler – Operator ist fertig
+                    return {'FINISHED'}
+                try:
+                    with context.temp_override(**ovr):
+                        # Kein INVOKE_DEFAULT → keine weitere Modal-Verschachtelung
+                        bpy.ops.clip.main('EXEC_DEFAULT')
+                except Exception as e:
+                    # Nicht abbrechen – wir sind ohnehin fertig
+                    self.report({'ERROR'}, f"Main-Start fehlgeschlagen: {e}")
+
+                self._phase = "done"
+                return {'FINISHED'}
 
         # Abbruch via ESC/RIGHTMOUSE
         if event.type in {'ESC', 'RIGHTMOUSE'}:
