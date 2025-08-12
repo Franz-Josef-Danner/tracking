@@ -5,7 +5,6 @@ from ..Helper.find_low_marker_frame import find_low_marker_frame
 from ..Helper.jump_to_frame import jump_to_frame
 from ..Helper.properties import RepeatEntry  # <- wichtig!
 from ..Helper.solve_camera_helper import CLIP_OT_solve_watch_clean, run_solve_watch_clean
-from ..Helper.activate_main_with_adapt import CLIP_OT_activate_main_with_adapt
 
 class CLIP_OT_main(bpy.types.Operator):
     bl_idname = "clip.main"
