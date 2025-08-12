@@ -46,18 +46,6 @@ class CLIP_OT_main(bpy.types.Operator):
         bpy.ops.clip.tracker_settings('EXEC_DEFAULT')
         bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
 
-        # --- NEU: Vor Detect/Tracking zuerst Low-Marker-Frame suchen & Playhead setzen ---
-        try:
-            marker_basis = scene.get("marker_basis", 25)
-        except Exception:
-            marker_basis = 25
-        frame = find_low_marker_frame(clip, marker_basis=marker_basis)
-        if frame is not None:
-            scene["goto_frame"] = frame
-            print(f"🎯 Zyklus-Start: Springe auf Low-Marker-Frame {frame} (Basis={marker_basis})")
-            jump_to_frame(context)
-        # ---------------------------------------------------------------------------------
-
         print("🚀 Starte Tracking-Pipeline...")
         bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
         print("⏳ Warte auf Abschluss der Pipeline...")
