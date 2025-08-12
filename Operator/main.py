@@ -85,8 +85,8 @@ class CLIP_OT_main(bpy.types.Operator):
             if clip is None or not getattr(clip, "tracking", None):
                 self.report({'WARNING'}, "Kein gültiger Clip oder keine Tracking-Daten.")
                 return {'CANCELLED'}
-            initial_basis = scene.get("marker_basis", 20)
-            marker_basis = scene.get("marker_basis", 20)
+            initial_basis = scene.get("marker_basis", 25)
+            marker_basis = scene.get("marker_basis", 25)
 
 
             frame = find_low_marker_frame(clip, marker_basis=marker_basis)
@@ -179,15 +179,13 @@ class CLIP_OT_main(bpy.types.Operator):
                 # Entscheidung OK/FAILED
                 if err_val > limit_val:
                     print(f"[Solve-Check] FAILED (Error={err_val:.3f} px > Limit={limit_val:.3f} px)")
-                    self.report({'ERROR'}, f"Solve-Error {err_val:.3f} px > Limit {limit_val:.3f} px → FAILED")
-                    try:
-                        context.window_manager.event_timer_remove(self._timer)
-                    except Exception:
-                        pass
-                    scene["solve_watch_fallback"] = False
-                    scene["solve_status"] = ""
-                    return {'CANCELLED'}
-        
+                    marker_basis = scene.get("marker_basis", 20)
+                    marker_basis = min(int(marker_basis * 1.1), 100)
+                    scene["marker_basis"] = marker_basis
+                    print(f"🔺 Erhöhe marker_basis auf {marker_basis} und starte Zyklus neu")
+                    self._step = 0
+                    return {'PASS_THROUGH'}
+                        
                 print(f"[Solve-Check] OK (Error={err_val:.3f} px ≤ Limit={limit_val:.3f} px)")
                 self.report({'INFO'}, f"Solve-Error {err_val:.3f} px innerhalb des Limits.")
                 try:
