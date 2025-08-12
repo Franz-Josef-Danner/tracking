@@ -1,17 +1,18 @@
 import bpy
 
-# Importiere die Operator-Klassen aus den Modulen
 from .tracker_settings import CLIP_OT_tracker_settings
 from .detect import CLIP_OT_detect
 from .bidirectional_track import CLIP_OT_bidirectional_track
-from .clean_short_tracks import CLIP_OT_clean_short_tracks
 from .tracking_pipeline import CLIP_OT_tracking_pipeline
 from .clean_error_tracks import CLIP_OT_clean_error_tracks
 from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 from .main import CLIP_OT_main
 
+try:
+    from .clean_short_tracks import CLIP_OT_clean_short_tracks
+except Exception as e:
+    raise ImportError(f"CLIP_OT_clean_short_tracks Import fehlgeschlagen: {e}")
 
-# Liste aller Operator-Klassen zur Registrierung
 classes = (
     CLIP_OT_tracker_settings,
     CLIP_OT_detect,
