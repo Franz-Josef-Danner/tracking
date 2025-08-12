@@ -22,60 +22,79 @@ def run_cleanup_in_region(context, area, region, space, tracks, frame_range,
     frame_start, frame_end = frame_range
     deletes_since_redraw = 0
 
-    # Ganzes Cleaning im gültigen UI-Kontext ausführen
+    # Ganzes Cleaning im gültigen UI-Kontext ausführen – optimiert
     with context.temp_override(area=area, region=region, space_data=space):
+        wm = context.window_manager
+        wm.progress_begin(0, max(1, (frame_end - frame_start)))
+        redraw_every_frames = 20  # UI-Update nur gelegentlich
+        to_delete = []            # (track, frame)-Paare sammeln
+    
         for fi in range(frame_start + 1, frame_end - 1):
             f1, f2 = fi - 1, fi + 1
             marker_data = []
-
+    
+            # Datenaufnahme (Positions- und Geschwindigkeitsableitung)
             for track in tracks:
                 p1 = get_marker_position(track, f1)
                 p2 = get_marker_position(track, fi)
                 p3 = get_marker_position(track, f2)
-
                 if not (p1 and p2 and p3):
                     continue
-
+    
                 x, y = p2[0] * width, p2[1] * height
                 if not (xmin <= x < xmax and ymin <= y < ymax):
                     continue
-
+    
                 vxm = (p2[0] - p1[0]) + (p3[0] - p2[0])
                 vym = (p2[1] - p1[1]) + (p3[1] - p2[1])
                 marker_data.append((track, vxm, vym))
-
+    
             if not marker_data:
+                # leichtes Fortschritts- und Header-Update gedrosselt
+                if (fi - frame_start) % redraw_every_frames == 0:
+                    wm.progress_update(fi - frame_start)
+                    area.header_text_set(f"Cleanup {fi}/{frame_end-1} | deleted {total_deleted}")
+                    region.tag_redraw()
                 continue
-
+    
+            # Durchschnitt und Abweichungen
             vxa = sum(vx for _, vx, _ in marker_data) / len(marker_data)
             vya = sum(vy for _, _, vy in marker_data) / len(marker_data)
             va = (vxa + vya) / 2
+    
+            # Direktes Schwellenkriterium – kein iteratives eb-Shrinking
+            for track, vx, vy in marker_data:
+                vm = (vx + vy) / 2
+                if abs(vm - va) >= ee:
+                    to_delete.append((track, f1))
+                    to_delete.append((track, fi))
+                    to_delete.append((track, f2))
+    
+            # Batch-Delete am Ende jedes fi
+            if to_delete:
+                # Duplikate vermeiden (selber Track/Frame mehrfach gesammelt)
+                seen = set()
+                for trk, frm in to_delete:
+                    key = (id(trk), frm)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    if trk.markers.find_frame(frm):
+                        trk.markers.delete_frame(frm)
+                        total_deleted += 1
+                to_delete.clear()
+    
+            # Gedrosselte, leichte UI-Signale
+            if (fi - frame_start) % redraw_every_frames == 0:
+                wm.progress_update(fi - frame_start)
+                area.header_text_set(f"Cleanup {fi}/{frame_end-1} | deleted {total_deleted}")
+                region.tag_redraw()
+    
+        # Blockende: Fortschritt/Header zurücksetzen, letzter Redraw-Hint
+        wm.progress_end()
+        area.header_text_set(None)
+        region.tag_redraw()
 
-            eb = max([abs((vx + vy) / 2 - va) for _, vx, vy in marker_data], default=0.0001)
-            eb = max(eb, 0.0001)
-
-            while eb > ee:
-                eb *= 0.95
-                for track, vx, vy in marker_data:
-                    vm = (vx + vy) / 2
-                    if abs(vm - va) >= eb:
-                        for f in (f1, fi, f2):
-                            if track.markers.find_frame(f):
-                                track.markers.delete_frame(f)
-                                total_deleted += 1
-                                deletes_since_redraw += 1
-
-                                # Throttled Redraw für sichtbare UI-Aktualisierung
-                                if deletes_since_redraw >= redraw_every:
-                                    # leichte Positionsaktualisierung hält den Editor „wach“
-                                    context.scene.frame_set(fi)
-                                    bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-                                    bpy.context.view_layer.update()
-                                    deletes_since_redraw = 0
-
-        # Finaler Redraw am Ende der Region
-        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=2)
-        bpy.context.view_layer.update()
 
     return total_deleted
 
@@ -145,6 +164,22 @@ def is_marker_valid(track, frame):
     except Exception as e:
         return False
 
+# 🆕 Zusatz: robuster Name-Zugriff (UTF-8 tolerant)
+def _safe_name(obj):
+    """Gibt einen robusten Track-Namen zurück oder None bei Problemen."""
+    try:
+        n = getattr(obj, "name", None)
+        if n is None:
+            return None
+        if isinstance(n, bytes):
+            n = n.decode("utf-8", errors="ignore")
+        else:
+            n = str(n)
+        n = n.strip()
+        return n or None
+    except Exception:
+        return None
+
 def mute_marker_path(track, from_frame, direction, mute=True):
     try:
         markers = list(track.markers)  # Snapshot – verhindert Collection-Invalidation
@@ -201,9 +236,26 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
     clip = space.clip
 
     # 1) Rebinding: frische RNA-Objekte holen (verhindert stale Refs nach Copy/Paste)
-    tracks_by_name = {t.name: t for t in clip.tracking.tracks}
-    original_tracks = [tracks_by_name[n.name] for n in original_tracks if n and n.name in tracks_by_name]
-    new_tracks      = [tracks_by_name[n.name] for n in new_tracks      if n and n.name in tracks_by_name]
+    # (robust gegen nicht-UTF-8-Namen)
+    tracks_by_name = {}
+    for t in clip.tracking.tracks:
+        tn = _safe_name(t)
+        if tn:
+            tracks_by_name[tn] = t
+
+    ot = []
+    for n in original_tracks:
+        nn = _safe_name(n)
+        if nn and nn in tracks_by_name:
+            ot.append(tracks_by_name[nn])
+    original_tracks = ot
+
+    nt = []
+    for n in new_tracks:
+        nn = _safe_name(n)
+        if nn and nn in tracks_by_name:
+            nt.append(tracks_by_name[nn])
+    new_tracks = nt
 
     redraw_budget = 0
 
