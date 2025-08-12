@@ -1,33 +1,35 @@
-# Helper/multiscale_temporal_grid_clean.py
 import bpy
+import statistics
 
 def multiscale_temporal_grid_clean(context, area, region, space, tracks, frame_range,
                                    width, height, grid=(6, 6),
                                    start_delta=None, min_delta=3,
                                    outlier_q=0.9, hysteresis_hits=2, min_cell_items=4):
-    """
-    Multiscale-Grid-Clean:
-    Phase A/B: erkennt glatte Drift über große Zeitfenster via Zell-Median-Flow (coarse→fine).
-    Phase C:  3-Frame-Micro-Pass (deckt kurze, sprunghafte Ausreißer ab).
-    Entfernt konservativ Markerframes; Kern-API: find_frame/delete_frame.
-    """
     scene = context.scene
     clip = getattr(space, "clip", None)
     if not clip or not tracks:
         return 0
 
-    # ---------- Δ-Pyramide (coarse → fine) ----------
-    ft = int(scene.get("frames_track", 12))
-    Δ0 = int(max((start_delta or ft // 2), 6))
-    # Obergrenze, damit Laufzeit im Rahmen bleibt
-    if Δ0 > 24:
-        Δ0 = 24
+    # Fallback, falls Operator keinen Wert setzt
+    if start_delta is None:
+        frames_track = getattr(scene, "frames_track", None)
+        range_len = int(frame_range[1] - frame_range[0] + 1)
+        if frames_track:
+            start_delta = max(min_delta * 2, frames_track // 2)
+        else:
+            start_delta = max(min_delta * 2, range_len // 6)
+        start_delta = min(start_delta, max(min_delta * 4, range_len // 2))
+
+    # Δ-Pyramide (ASCII)
+    D0 = int(max((start_delta), min_delta * 2))
+    if D0 > max(24, min_delta * 4):
+        D0 = max(24, min_delta * 4)
 
     deltas = []
-    Δ = Δ0
-    while Δ >= int(min_delta):
-        deltas.append(Δ)
-        Δ //= 2
+    D = D0
+    while D >= int(min_delta):
+        deltas.append(D)
+        D //= 2
 
     frame_start, frame_end = int(frame_range[0]), int(frame_range[1])
 
