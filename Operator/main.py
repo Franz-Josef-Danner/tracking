@@ -195,14 +195,42 @@ class CLIP_OT_main(bpy.types.Operator):
                     scene["marker_max"] = int(marker_basis * 1.1)
                     print(f"🔺 Erhöhe marker_basis auf {marker_basis} und starte Zyklus neu "
                           f"({scene['marker_min']}–{scene['marker_max']})")
+
+                    # --- Playhead vor Neustart im CLIP_EDITOR-Kontext setzen ---
+                    space_ce = None
+                    area_ce = None
+                    region_ce = None
+                    # CLIP_EDITOR-Handles einsammeln
+                    for a in context.screen.areas:
+                        if a.type == 'CLIP_EDITOR':
+                            for r in a.regions:
+                                if r.type == 'WINDOW':
+                                    area_ce = a
+                                    region_ce = r
+                                    space_ce = a.spaces.active
                     
+                    # Low-Marker-Frame für den Restart bestimmen
                     space = getattr(context, "space_data", None)
-                    clip = getattr(space, "clip", None)
-                    frame = find_low_marker_frame(clip, marker_basis=marker_basis)
+                    clip  = getattr(space, "clip", None)
+                    frame = None
+                    if clip is not None:
+                        frame = find_low_marker_frame(clip, marker_basis=marker_basis)
+                    
                     if frame is not None:
                         scene["goto_frame"] = frame
-                        jump_to_frame(context)
+                        if area_ce and region_ce and space_ce:
+                            # WICHTIG: Playhead setzen UND Pipeline-Start im selben Override
+                            with context.temp_override(area=area_ce, region=region_ce, space_data=space_ce):
+                                # sicherstellen, dass die Szene wirklich springt
+                                context.scene.frame_set(frame)
+                                jump_to_frame(context)
+                                bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                        else:
+                            # Fallback: ohne gültigen Editor-Kontext zumindest die Szene setzen
+                            context.scene.frame_set(frame)
+                    # --- Ende Playhead-Setzung ---
 
+                    
                     bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
                     self._step = 0
                     return {'PASS_THROUGH'}
