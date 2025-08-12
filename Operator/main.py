@@ -126,16 +126,8 @@ class CLIP_OT_main(Operator):
             scene["marker_min"] = int(basis_for_bounds * 0.9)
             scene["marker_max"] = int(basis_for_bounds * 1.1)
             print(f"📏 Marker-Bounds gesetzt: min={scene['marker_min']} max={scene['marker_max']} (Basis {basis_for_bounds})")
-
-            # --- Threshold bestimmen (Fallback auf Tracker-Default) ---
-            settings = clip.tracking.settings
-            detection_threshold = float(scene.get("last_detection_threshold", getattr(settings, "default_correlation_min", 0.75)))
-
-            # --- (Optional) Pipeline-Prep, wie gehabt ---
-            print("🎬 Starte Tracking-Pipeline …")
-            bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
-
-            # --- HARTE SCHNITTSTELLE: Direkt an detect_once übergeben ---
+            
+            # --- Direkt an detect_once übergeben (kein Pipeline-/Solve-Aufruf mehr) ---
             print("📡 Übergabe an detect_once …")
             bpy.ops.clip.detect_once('INVOKE_DEFAULT',
                 detection_threshold=detection_threshold,
@@ -147,9 +139,10 @@ class CLIP_OT_main(Operator):
                 min_distance_base=-1,    # auto aus Bildbreite
                 close_dist_rel=0.01,
             )
-
-            print("✅ Main beendet nach Übergabe an detect_once (ohne Rückkehr).")
+            
+            print("✅ Main beendet nach detect_once (ohne Pipeline/Solve).")
             return {'FINISHED'}
+
 
         except Exception as ex:
             self.report({'ERROR'}, f"Main-Abbruch: {ex}")
