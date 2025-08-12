@@ -1,5 +1,25 @@
 import bpy
-import statistics
+import statistics, math
+
+for cell, items in buckets.items():
+    if not items:
+        continue
+
+    # Bewegungsbeträge
+    v_mags = [math.hypot(vx, vy) for _, _, vx, vy in items]
+    median_mag = statistics.median(v_mags)
+    abs_dev = [abs(v - median_mag) for v in v_mags]
+    mad = statistics.median(abs_dev) or 1e-6  # Division durch Null vermeiden
+
+    # Schwelle setzen (z. B. 3 * MAD)
+    thr = median_mag + 3.0 * mad
+
+    for (tr, f, vx, vy), mag in zip(items, v_mags):
+        if mag > thr:
+            for ff in (f - 1, f, f + 1):
+                if tr.markers.find_frame(ff):
+                    tr.markers.delete_frame(ff)
+                    deleted += 1
 
 def multiscale_temporal_grid_clean(context, area, region, space, tracks, frame_range,
                                    width, height, grid=(6, 6),
@@ -125,10 +145,11 @@ def multiscale_temporal_grid_clean(context, area, region, space, tracks, frame_r
 
     # ---------- Phase C: Micro-Pass (3-Frame-Ausreißer) ----------
     def _micro_outlier_pass():
-        ee_base = max((getattr(scene, "error_track", 1.0) + 0.1) / 100.0, 1e-6)
+        import math, statistics
         deleted = 0
         with context.temp_override(area=area, region=region, space_data=space):
             cell_w, cell_h = width / gx, height / gy
+    
             for fi in range(frame_start + 1, frame_end - 1):
                 buckets = {}
                 for tr in tracks:
@@ -137,22 +158,30 @@ def multiscale_temporal_grid_clean(context, area, region, space, tracks, frame_r
                     m3 = tr.markers.find_frame(fi + 1)
                     if not (m1 and m2 and m3):
                         continue
-                    x, y = m2.co[0] * width, m2.co[1] * height
+    
+                    x = m2.co[0] * width
+                    y = m2.co[1] * height
                     cx = min(gx - 1, max(0, int(x // cell_w)))
                     cy = min(gy - 1, max(0, int(y // cell_h)))
+    
                     vx = (m2.co[0] - m1.co[0]) + (m3.co[0] - m2.co[0])
                     vy = (m2.co[1] - m1.co[1]) + (m3.co[1] - m2.co[1])
+    
                     buckets.setdefault((cx, cy), []).append((tr, fi, vx, vy))
-
+    
                 for _, items in buckets.items():
-                    if not items:
+                    # Zellen mit zu wenig Stichproben überspringen
+                    if len(items) < max(3, min_cell_items):
                         continue
-                    vxa = sum(vx for _, _, vx, _ in items) / len(items)
-                    vya = sum(vy for _, _, _, vy in items) / len(items)
-                    va = 0.5 * (vxa + vya)
-                    for tr, f, vx, vy in items:
-                        vm = 0.5 * (vx + vy)
-                        if abs(vm - va) >= ee_base:
+    
+                    # Bewegungsbeträge (euklidisch)
+                    v_mags = [math.hypot(vx, vy) for _, _, vx, vy in items]
+                    med = statistics.median(v_mags)
+                    mad = statistics.median([abs(v - med) for v in v_mags]) or 1e-6
+                    thr = med + 3.0 * mad  # robustere Schwelle
+    
+                    for (tr, f, vx, vy), mag in zip(items, v_mags):
+                        if mag > thr:
                             for ff in (f - 1, f, f + 1):
                                 if tr.markers.find_frame(ff):
                                     tr.markers.delete_frame(ff)
@@ -162,6 +191,7 @@ def multiscale_temporal_grid_clean(context, area, region, space, tracks, frame_r
             except Exception:
                 pass
         return deleted
+
 
     deleted_micro = _micro_outlier_pass()
     return int(deleted_coarse) + int(deleted_micro)
