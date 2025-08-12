@@ -119,29 +119,34 @@ class CLIP_OT_main(Operator):
             print("🧰 Vorbereitung: marker_helper_main …")
             bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
 
-            # --- Bounds-Formel VOR Übergabe an detect_once ---
+            # --- Bounds-Formel VOR Übergabe an detect_once (nur aus übergebenem marker_adapt) ---
             marker_basis = int(scene.get("marker_basis", 25))
-            marker_adapt_val = int(getattr(self, "marker_adapt", 0))
-            basis_for_bounds = int(marker_adapt_val * 1.1) if marker_adapt_val > 0 else int(marker_basis)
+            marker_adapt_in = int(getattr(self, "marker_adapt", 0))
+            
+            basis_for_bounds = int(marker_adapt_in * 1.1) if marker_adapt_in > 0 else int(marker_basis)
             scene["marker_min"] = int(basis_for_bounds * 0.9)
             scene["marker_max"] = int(basis_for_bounds * 1.1)
-            print(f"📏 Marker-Bounds gesetzt: min={scene['marker_min']} max={scene['marker_max']} (Basis {basis_for_bounds})")
+            print(f"📏 Marker-Bounds gesetzt: min={scene['marker_min']} max={scene['marker_max']} (Basis {basis_for_bounds}, adapt_in={marker_adapt_in})")
+            
+            # --- Threshold bestimmen (Fallback auf Tracker-Default) ---
+            settings = clip.tracking.settings
+            detection_threshold = float(scene.get("last_detection_threshold", getattr(settings, "default_correlation_min", 0.75)))
             
             # --- Direkt an detect_once übergeben (kein Pipeline-/Solve-Aufruf mehr) ---
             print("📡 Übergabe an detect_once …")
-            bpy.ops.clip.detect_once('INVOKE_DEFAULT',
+            bpy.ops.clip.detect_once('EXEC_DEFAULT',                # ← statt 'INVOKE_DEFAULT'
                 detection_threshold=detection_threshold,
                 marker_adapt=int(basis_for_bounds),
                 min_marker=int(scene["marker_min"]),
                 max_marker=int(scene["marker_max"]),
                 frame=int(scene.frame_current),
-                margin_base=-1,          # auto aus Bildbreite
-                min_distance_base=-1,    # auto aus Bildbreite
+                margin_base=-1,
+                min_distance_base=-1,
                 close_dist_rel=0.01,
             )
-            
             print("✅ Main beendet nach detect_once (ohne Pipeline/Solve).")
             return {'FINISHED'}
+
 
 
         except Exception as ex:
