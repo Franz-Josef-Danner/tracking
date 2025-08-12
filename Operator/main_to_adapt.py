@@ -31,7 +31,7 @@ class CLIP_OT_launch_main_with_adapt(bpy.types.Operator):
     def execute(self, context):
         scene = context.scene
         marker_basis = int(scene.get("marker_basis", 25))
-        marker_adapt = int(marker_basis * self.factor)
+        marker_adapt = int(marker_basis * self.factor * 0,9)
 
         if self.use_override:
             ovr = _clip_override(context)
