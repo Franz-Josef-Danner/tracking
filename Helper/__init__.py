@@ -13,7 +13,6 @@ from .solve_camera_helper import CLIP_OT_solve_watch_clean, run_solve_watch_clea
 from .find_max_marker_frame import get_active_marker_counts_sorted
 from .prune_tracks_density import prune_tracks_density
 from .multiscale_temporal_grid_clean import multiscale_temporal_grid_clean
-from .multiscale_temporal_grid_clean import multiscale_temporal_grid_clean
 from .prune_tracks_density import prune_tracks_density
 from .segments import track_has_internal_gaps, get_track_segments
 from .naming import _safe_name
