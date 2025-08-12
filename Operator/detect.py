@@ -13,7 +13,7 @@ def perform_marker_detection(clip, tracking, threshold, margin_base, min_distanc
         threshold=threshold,
     )
 
-    # kein Listenmaterialisieren → gleicher Rückgabewert (int), weniger Overhead
+    # gleicher Rückgabewert, weniger Overhead
     selected_count = sum(1 for t in tracking.tracks if t.select)
     return selected_count
 
@@ -91,7 +91,7 @@ class CLIP_OT_detect(bpy.types.Operator):
             self.width, self.height = self.clip.size
             w, h = self.width, self.height
 
-            # existierende Marker-Positionen sammeln (korrekte API: Instanz-Methode)
+            # existierende Marker-Positionen sammeln
             existing_positions = []
             for t in tracks:
                 m = t.markers.find_frame(self.frame, exact=True)
@@ -111,19 +111,21 @@ class CLIP_OT_detect(bpy.types.Operator):
                 self.min_distance_base,
             )
 
+            # UI-Redraw, um neue Tracks schnell in RNA/Depsgraph sichtbar zu machen
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
 
-
+            # EINZIGER Zeitstempel für WAIT
             self.wait_start = time.time()
             self.state = "WAIT"
             return {'PASS_THROUGH'}
 
         if self.state == "WAIT":
             tracks = self.tracking.tracks
-            # billiger Längencheck zuerst; falls keine Änderung, Set-Bildung sparen
-            if len(tracks) != getattr(self, "_len_before", len(tracks)) or (time.time() - self.wait_start) >= 3.0:
+            elapsed = time.time() - self.wait_start  # nur 1x messen
+            # schneller Längencheck; Set-Bildung nur falls nötig oder Timeout erreicht
+            if len(tracks) != getattr(self, "_len_before", len(tracks)) or elapsed >= 0.3:
                 current_names = {t.name for t in tracks}
-                if current_names != self.initial_track_names or (time.time() - self.wait_start) >= 3.0:
+                if current_names != self.initial_track_names or elapsed >= 0.3:
                     self.state = "PROCESS"
             return {'PASS_THROUGH'}
 
@@ -134,15 +136,6 @@ class CLIP_OT_detect(bpy.types.Operator):
             thr2 = float(self.distance_px) * float(self.distance_px)
 
             new_tracks = [t for t in tracks if t.name not in self.initial_track_names]
-
-            # --- ENTFERNEN: Vorab-Selektion/Löschung von close_tracks (Liste existiert noch nicht) ---
-            # for t in tracks:
-            #     t.select = False
-            # for t in close_tracks:
-            #     t.select = True
-            # if close_tracks:
-            #     bpy.ops.clip.delete_track()
-            # ------------------------------------------------------
 
             # close_tracks korrekt berechnen
             close_tracks = []
@@ -160,7 +153,7 @@ class CLIP_OT_detect(bpy.types.Operator):
                             close_tracks.append(track)
                             break
 
-            # Selektion/Löschung erst jetzt – und nur wenn nötig
+            # Selektion/Löschung nur wenn nötig
             if close_tracks:
                 for t in tracks:
                     t.select = False
@@ -178,7 +171,6 @@ class CLIP_OT_detect(bpy.types.Operator):
                     t.select = True
 
             anzahl_neu = len(cleaned_tracks)
-            # ... Rest unverändert ...
 
             if anzahl_neu < self.min_marker or anzahl_neu > self.max_marker:
                 for t in tracks:
