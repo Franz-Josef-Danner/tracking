@@ -1,26 +1,41 @@
-# Datei-Vorschlag: Helper/prune_tracks_by_marker_density.py
+# Helper/prune_tracks_density.py
 
 import bpy
 from typing import List, Tuple, Optional
 
-# Erwartet: Du hast in Helper/find_max_marker_frame.py eine Zählfunktion.
-# Falls dein Modul anders heißt, bitte den Import entsprechend anpassen.
 from .find_max_marker_frame import get_active_marker_counts_sorted  # (context) -> List[(frame, count)]
-from .error_value import error_value  # nutzt selektierte Tracks, berechnet StdAbw X+Y
+from .error_value import error_value  # berechnet StdAbw X+Y für selektierte Marker im aktiven Clip
+
+# -- Kontext-Helfer -----------------------------------------------------------
+
+def _get_clip_editor_handles(context: bpy.types.Context):
+    """Liefert (area, region_window, space_clip) des aktiven Clip-Editors, sonst (None, None, None)."""
+    screen = getattr(context, "screen", None)
+    if not screen:
+        return None, None, None
+    for area in screen.areas:
+        if area.type == 'CLIP_EDITOR':
+            # Hole WINDOW-Region
+            region_window = None
+            for r in area.regions:
+                if r.type == 'WINDOW':
+                    region_window = r
+                    break
+            space = area.spaces.active
+            if region_window and getattr(space, "clip", None):
+                return area, region_window, space
+    # Fallback: aktueller space_data (sofern Clip vorhanden)
+    space = getattr(context, "space_data", None)
+    if space and getattr(space, "clip", None):
+        # region/window fehlt → Operator-Aufrufe könnten scheitern; nur für reine Lesezugriffe geeignet
+        return None, None, space
+    return None, None, None
 
 def _get_clip_from_context(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
-    # robust: erst aktiven CLIP_EDITOR durchsuchen, dann space_data Fallback
-    screen = getattr(context, "screen", None)
-    if screen:
-        for a in screen.areas:
-            if a.type == 'CLIP_EDITOR':
-                sp = a.spaces.active
-                clip = getattr(sp, "clip", None)
-                if clip:
-                    return clip
-    space = getattr(context, "space_data", None)
+    _, _, space = _get_clip_editor_handles(context)
     return getattr(space, "clip", None) if space else None
 
+# -- Frame/Marker Utilities ---------------------------------------------------
 
 def _frame_active_markers(clip: bpy.types.MovieClip, frame: int):
     """
@@ -37,48 +52,73 @@ def _frame_active_markers(clip: bpy.types.MovieClip, frame: int):
         out.append((tr, mk))
     return out
 
+# -- Error je Track (isoliert, mit sicherem Override) -------------------------
 
-def _compute_track_error_isolated(scene: bpy.types.Scene, track: bpy.types.MovieTrackingTrack) -> Optional[float]:
+def _compute_track_error_isolated(context: bpy.types.Context,
+                                  scene: bpy.types.Scene,
+                                  track: bpy.types.MovieTrackingTrack) -> Optional[float]:
     """
-    Nutzt dein bestehendes error_value(scene), das über *selektierte* Marker rechnet.
-    Wir selektieren transient GENAU diesen Track, rufen error_value() auf und restoren Selektion.
+    Selektiert transient GENAU diesen Track, ruft error_value(scene) im gültigen Clip-Editor-Kontext auf
+    und stellt die Selektion wieder her.
     """
-    clip = bpy.context.space_data.clip if bpy.context.space_data else None
-    if clip is None:
+    area, region, space = _get_clip_editor_handles(context)
+    clip = getattr(space, "clip", None) if space else None
+    if not clip:
         return None
 
     # Selektion sichern
     prev_selection = {t.name: bool(t.select) for t in clip.tracking.tracks}
     try:
-        # Nur den Ziel-Track selektieren
+        # Nur Zieltrack selektieren
         for t in clip.tracking.tracks:
             t.select = (t == track)
-        # Fehlermaß berechnen (StdAbw X + StdAbw Y über Marker des Tracks)
-        val = error_value(scene)
+
+        # error_value liest bpy.context.space_data.clip → daher mit Override ausführen
+        with context.temp_override(area=area, region=region, space_data=space):
+            val = error_value(scene)
         return float(val) if val is not None else None
     finally:
-        # Selektion wiederherstellen
+        # Selektion restaurieren
         for t in clip.tracking.tracks:
             t.select = prev_selection.get(t.name, False)
 
+# -- Track löschen (Operator, kontextkonform) --------------------------------
 
-def _remove_track(clip: bpy.types.MovieClip, track: bpy.types.MovieTrackingTrack) -> None:
+def _delete_track(context: bpy.types.Context,
+                  track: bpy.types.MovieTrackingTrack) -> bool:
     """
-    Löscht den Track stabil via RNA, ohne Operator-Kontextabhängigkeit.
+    Löscht den gegebenen Track per bpy.ops.clip.delete_track(confirm=False).
+    Voraussetzung: gültiger Clip-Editor-Kontext.
+    Rückgabe True bei Erfolg.
     """
+    area, region, space = _get_clip_editor_handles(context)
+    clip = getattr(space, "clip", None) if space else None
+    if not clip or not area or not region:
+        return False
+
+    # Selektion: nur den Zieltrack selektieren
+    prev_selection = {t.name: bool(t.select) for t in clip.tracking.tracks}
     try:
-        clip.tracking.tracks.remove(track)
-    except RuntimeError:
-        # Fallback: falls remove fehlschlägt, versuche über Operator (benötigt gültigen Override)
-        bpy.ops.clip.delete_track()  # nur wenn Track selektiert; hier bewusst *nicht* automatisch selektieren
-        # Wird bewusst nicht „smart“ gemacht, um UI-Bindungen zu vermeiden.
+        for t in clip.tracking.tracks:
+            t.select = (t == track)
 
+        with context.temp_override(area=area, region=region, space_data=space):
+            res = bpy.ops.clip.delete_track(confirm=False)  # Delete selected tracks
+            ok = (res == {'FINISHED'})
+    finally:
+        # Restorative Selektion – minimiert Seiteneffekte
+        for t in clip.tracking.tracks:
+            t.select = prev_selection.get(t.name, False)
+
+    return ok
+
+# -- Hauptlogik ---------------------------------------------------------------
 
 def prune_tracks_density(
     context: bpy.types.Context,
     *,
     threshold_key: str = "marker_frame",    # Ziel: auf jedem Frame auf <= scene[threshold_key] * 2 Marker eindampfen
-    prefer_earliest_on_tie: bool = True,    # nur relevant, falls deine Sortierung Gleichstände auflöst
+    prefer_earliest_on_tie: bool = True,    # (Reserviert, falls du später Tie-Break ändern willst)
     dry_run: bool = False,                  # nur analysieren, nicht löschen
 ) -> dict:
     """
@@ -88,11 +128,10 @@ def prune_tracks_density(
       3) Für jeden Frame mit count > Threshold:
            - Ermittele aktive Marker/Tracks am Frame
            - Solange aktuelle Markermenge > Threshold:
-               a) Bestimme pro Track ein Error-Maß über error_value(scene) (isoliert selektiert)
-               b) Lösche den Track mit maximalem Error
+               a) Bestimme pro Track ein Error-Maß über error_value(scene) (isoliert selektiert, im Clip-Override)
+               b) Lösche den Track mit maximalem Error (Operator delete_track im gültigen Override)
                c) Re-evaluiere aktuelle Markerzahl am Frame
       4) Weiter mit dem nächsten Frame der Rangliste.
-    Rückgabe: Summary-Dict mit Statistik.
     """
     scene = context.scene
     clip = _get_clip_from_context(context)
@@ -102,7 +141,6 @@ def prune_tracks_density(
     base = int(scene.get(threshold_key, 20))
     threshold = max(0, base * 2)
 
-    # Absteigende Liste (frame,count); bei Gleichstand frühester Frame zuerst
     frames_sorted: List[Tuple[int, int]] = get_active_marker_counts_sorted(context)
     deleted_total = 0
     frames_processed = 0
@@ -110,13 +148,12 @@ def prune_tracks_density(
 
     for frame, count in frames_sorted:
         if count <= threshold:
-            # ab hier sind alle folgenden Frames <= threshold (weil absteigend sortiert)
+            # ab hier sind alle folgenden Frames <= threshold (absteigend sortiert)
             break
 
-        # Re-Check live (Liste könnte nach Löschungen veralten)
+        # Live-Recheck für aktuellen Frame
         active_pairs = _frame_active_markers(clip, frame)
         current_count = len(active_pairs)
-
         if current_count <= threshold:
             continue
 
@@ -126,15 +163,13 @@ def prune_tracks_density(
         while current_count > threshold:
             iteration += 1
 
-            # Kandidaten-Tracks am aktuellen Frame (aktiv)
-            candidate_tracks = [tr for (tr, mk) in active_pairs]
+            candidate_tracks = [tr for (tr, _mk) in active_pairs]
 
-            # Error pro Track ermitteln (isoliert via selection → error_value(scene))
+            # Max-Error-Track bestimmen
             best_track = None
             best_error = None
-
             for tr in candidate_tracks:
-                err = _compute_track_error_isolated(scene, tr)
+                err = _compute_track_error_isolated(context, scene, tr)
                 if err is None:
                     continue
                 if (best_error is None) or (err > best_error):
@@ -142,22 +177,22 @@ def prune_tracks_density(
                     best_track = tr
 
             if best_track is None:
-                # keine valide Fehlermessung → zur Sicherheit abbrechen, sonst Endlosschleife
-                log.append(f"[Frame {frame}] Abbruch: kein track error messbar.")
+                log.append(f"[Frame {frame}] Abbruch: kein Track-Error messbar.")
                 break
 
-            # Delete-Kandidat steht fest
-            log.append(f"[Frame {frame}] Iter {iteration}: remove track '{best_track.name}' (error={best_error:.6f})")
+            log.append(f"[Frame {frame}] Iter {iteration}: delete '{best_track.name}' (error={best_error:.6f})")
 
             if not dry_run:
-                _remove_track(clip, best_track)
+                ok = _delete_track(context, best_track)
+                if not ok:
+                    log.append(f"[Frame {frame}] Löschen via Operator fehlgeschlagen.")
+                    break
                 deleted_total += 1
 
-            # Re-Evaluierung: aktuelle Marker am Frame neu bestimmen
+            # Re-Eval der aktiven Marker am selben Frame
             active_pairs = _frame_active_markers(clip, frame)
             current_count = len(active_pairs)
 
-        # Ende pro Frame
         log.append(f"[Frame {frame}] final_count={current_count}, threshold={threshold}")
 
     return {
