@@ -40,6 +40,32 @@ class CLIP_OT_main(bpy.types.Operator):
             self.report({'WARNING'}, "Kein gültiger Clip oder keine Tracking-Daten.")
             return {'CANCELLED'}
 
+            # --- NEU: Gatekeeper vor dem ersten Zyklus ---
+        marker_basis = scene.get("marker_basis", 25)
+        pre_frame = find_low_marker_frame(clip, marker_basis=marker_basis)
+        if pre_frame is None:
+            print("✅ Vorprüfung: Keine Low-Marker-Frames. Prozess wird beendet.")
+            self.report({'INFO'}, "Keine Low-Marker-Frames – nichts zu tun.")
+            return {'FINISHED'}
+        else:
+            scene["goto_frame"] = int(pre_frame)
+            jump_to_frame(context)
+            print(f"🎯 Vorprüfung: Low-Marker-Frame {pre_frame} – starte Pipeline ab diesem Frame.")
+    
+        print("🚀 Starte Tracking-Vorbereitung...")
+        bpy.ops.clip.tracker_settings('EXEC_DEFAULT')
+        bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
+    
+        print("🚀 Starte Tracking-Pipeline...")
+        bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
+        print("⏳ Warte auf Abschluss der Pipeline...")
+    
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.5, window=context.window)
+        wm.modal_handler_add(self)
+        self._step = 0
+        return {'RUNNING_MODAL'}
+
         print("🚀 Starte Tracking-Vorbereitung...")
 
         # Vorbereitungen (unverändert)
