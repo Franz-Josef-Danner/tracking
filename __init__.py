@@ -17,15 +17,15 @@ from .Operator.tracking_pipeline import CLIP_OT_tracking_pipeline
 from .Helper.marker_helper_main import CLIP_OT_marker_helper_main
 from .Helper.disable_proxy import CLIP_OT_disable_proxy
 from .Helper.enable_proxy import CLIP_OT_enable_proxy
-from .Operator.detect import CLIP_OT_detect
-from .Helper.solve_camera_helper import CLIP_OT_solve_watch_clean  # Operator
+from .Operator.detect import CLIP_OT_detect_once            # ← WAR: CLIP_OT_detect
+from .Helper.solve_camera_helper import CLIP_OT_solve_watch_clean
 from .Operator.bidirectional_track import CLIP_OT_bidirectional_track
 from .Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
 from .Operator.clean_error_tracks import CLIP_OT_clean_error_tracks
 from .Operator.optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 from .Operator.main import CLIP_OT_main
 from .Operator.main_to_adapt import CLIP_OT_launch_main_with_adapt
-from .Helper.properties import RepeatEntry  # ✅ NEU
+from .Helper.properties import RepeatEntry
 
 # Panel
 class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
@@ -47,13 +47,13 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
 
 # Alle Klassen zur Registrierung
 classes = (
-    RepeatEntry,  # ✅ zuerst registrieren
+    RepeatEntry,
     CLIP_OT_tracker_settings,
     CLIP_OT_tracking_pipeline,
     CLIP_OT_marker_helper_main,
     CLIP_OT_disable_proxy,
     CLIP_OT_enable_proxy,
-    CLIP_OT_detect,
+    CLIP_OT_detect_once,                           # ← WAR: CLIP_OT_detect
     CLIP_OT_solve_watch_clean,
     CLIP_OT_bidirectional_track,
     CLIP_OT_clean_short_tracks,
@@ -62,7 +62,6 @@ classes = (
     CLIP_OT_main,
     CLIP_OT_launch_main_with_adapt,
     CLIP_PT_kaiserlich_panel,
-
 )
 
 def register():
@@ -70,32 +69,26 @@ def register():
         bpy.utils.register_class(cls)
 
     # Custom Property für Frame-Tracking
-    bpy.types.Scene.repeat_frame = bpy.props.CollectionProperty(type=RepeatEntry)  # ✅ NEU
+    bpy.types.Scene.repeat_frame = bpy.props.CollectionProperty(type=RepeatEntry)
 
     # Eigenschaften für das UI
     bpy.types.Scene.marker_frame = IntProperty(
         name="Marker per Frame",
-        default=20,
-        min=10,
-        max=50
+        default=20, min=10, max=50
     )
     bpy.types.Scene.frames_track = IntProperty(
         name="Frames per Track",
-        default=20,
-        min=5,
-        max=100
+        default=20, min=5, max=100
     )
     bpy.types.Scene.error_track = FloatProperty(
         name="Error-Limit (px)",
         description="Maximale tolerierte Reprojektion in Pixeln",
-        default=2.0,
-        min=1.0,
-        max=4.0,
+        default=2.0, min=1.0, max=4.0,
     )
 
 def unregister():
     # Properties entfernen
-    del bpy.types.Scene.repeat_frame  # ✅ NEU
+    del bpy.types.Scene.repeat_frame
     del bpy.types.Scene.marker_frame
     del bpy.types.Scene.frames_track
     del bpy.types.Scene.error_track
