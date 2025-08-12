@@ -198,6 +198,9 @@ def mute_all_outside_segment_markers(tracks):
         mute_outside_segment_markers(track)
 
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
+
+    clip = space.clip
+
     with context.temp_override(area=area, region=region, space_data=space):
         bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=3)
         bpy.context.view_layer.update()
