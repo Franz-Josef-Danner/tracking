@@ -206,9 +206,8 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
         bpy.context.view_layer.update()
         time.sleep(0.1)
 
-        tracking = clip.tracking
-        if tracking.tracks:
-            tracking.tracks.active = tracking.tracks[0]
+        for track in clip.tracking.tracks:
+            track.select = True
 
         # 🔴 ORIGINAL-TRACKS: Vorderes Segment behalten → alles danach muten
         for track in original_tracks:
