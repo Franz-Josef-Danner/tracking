@@ -94,20 +94,18 @@ class CLIP_OT_bidirectional_track(Operator):
         if self._stable_count >= 2:
             print("✓ Tracking stabil erkannt – bereinige kurze Tracks.")
             bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
-
+        
             # Timer entfernen
             self._cleanup_timer(context)
-
-            # ➡ Am Ende Low-Marker-Frame suchen
-            marker_basis = int(context.scene.get("marker_basis", 20))
-            low_frame = find_low_marker_frame(clip, marker_basis=marker_basis)
-            if low_frame is not None:
-                print(f"[Tracking] Nächster Low-Marker-Frame: {low_frame}")
-                context.scene.frame_current = low_frame
-            else:
-                print("[Tracking] Kein Low-Marker-Frame gefunden.")
-
+        
+            # ➡ Neuer Operator-Aufruf ohne Flags, ohne Rückgabeverarbeitung
+            try:
+                bpy.ops.clip.find_low_marker('INVOKE_DEFAULT')
+            except Exception as e:
+                print(f"[Tracking] Low-Marker-Operator konnte nicht gestartet werden: {e}")
+        
             return {'FINISHED'}
+
 
         return {'PASS_THROUGH'}
 
