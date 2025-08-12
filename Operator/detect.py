@@ -1,6 +1,38 @@
 import bpy
 import math
 
+# --- Backward-Compat: Shim für alte Importe (z.B. optimize_tracking_modal) ---
+def perform_marker_detection(clip, tracking, threshold, margin_base, min_distance_base):
+    """
+    Beibehaltener Legacy-Contract:
+    - Skaliert margin/min_distance anhand threshold,
+      ident zu früher: factor = log10(threshold * 1e6) / 6
+    - Ruft detect_features EINMAL auf
+    - Gibt (historisch) die Anzahl selektierter Tracks zurück
+    """
+    # Schutz gegen ungültige Thresholds
+    thr = max(float(threshold), 1e-6)
+
+    factor = math.log10(thr * 1e6) / 6.0
+    margin = max(1, int(margin_base * factor))
+    min_distance = max(1, int(min_distance_base * factor))
+
+    # Selektion neutralisieren (robuster, falls Call-Sequenzen darauf bauen)
+    for t in tracking.tracks:
+        t.select = False
+
+    bpy.ops.clip.detect_features(
+        margin=margin,
+        min_distance=min_distance,
+        threshold=thr,
+    )
+
+    # Historische Rückgabe: Anzahl selektierter Tracks nach detect
+    # (gleiches Verhalten wie vorherige Implementierung)
+    selected_count = sum(1 for t in tracking.tracks if t.select)
+    return selected_count
+
+
 def _deselect_all(tracking):
     for t in tracking.tracks:
         t.select = False
