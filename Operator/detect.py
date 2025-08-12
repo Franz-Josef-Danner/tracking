@@ -1,6 +1,7 @@
 import bpy
 import math
 import time
+from mathutils.kdtree import KDTree  # für O(log N) Nachbarsuche
 
 def perform_marker_detection(clip, tracking, threshold, margin_base, min_distance_base):
     factor = math.log10(threshold * 1e7) / 7
@@ -13,6 +14,7 @@ def perform_marker_detection(clip, tracking, threshold, margin_base, min_distanc
         threshold=threshold,
     )
 
+    # Interface unverändert belassen
     selected_tracks = [t for t in tracking.tracks if t.select]
     return len(selected_tracks)
 
@@ -69,7 +71,8 @@ class CLIP_OT_detect(bpy.types.Operator):
         deselect_all_markers(self.tracking)
 
         wm = context.window_manager
-        self._timer = wm.event_timer_add(0.01, window=context.window)
+        # Tick seltener → weniger Overhead
+        self._timer = wm.event_timer_add(0.03, window=context.window)
         wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
@@ -87,13 +90,22 @@ class CLIP_OT_detect(bpy.types.Operator):
             self.width, self.height = self.clip.size
             self.distance_px = int(self.width * 0.04)
 
-            self.existing_positions = [
-                (m.co[0] * self.width, m.co[1] * self.height)
-                for t in self.tracking.tracks
-                if (m := t.markers.find_frame(self.frame, exact=True)) and not m.mute
-            ]
-            self.initial_track_names = {t.name for t in self.tracking.tracks}
+            tracks = self.tracking.tracks
+            w, h = self.width, self.height
 
+            # existierende Marker-Positionen (Frame-exakt) sammeln
+            self.existing_positions = []
+            for t in tracks:
+                m = t.markers.find_frame(self.frame, exact=True)
+                if m and not m.mute:
+                    self.existing_positions.append((m.co[0] * w, m.co[1] * h))
+
+            # robuste „Vorher“-Signatur: IDs statt Namen
+            self._len_before = len(tracks)
+            self._ids_before = {id(t) for t in tracks}
+            self.initial_track_names = {t.name for t in tracks}  # Oberfläche unverändert lassen
+
+            # Detection ausführen
             perform_marker_detection(
                 self.clip,
                 self.tracking,
@@ -107,34 +119,60 @@ class CLIP_OT_detect(bpy.types.Operator):
             return {'PASS_THROUGH'}
 
         if self.state == "WAIT":
-            current_names = {t.name for t in self.tracking.tracks}
-            if current_names != self.initial_track_names or time.time() - self.wait_start >= 3.0:
+            # Schnellpfad: Längenänderung als Signal; Fallback: Namen
+            if (
+                len(self.tracking.tracks) != self._len_before
+                or time.time() - self.wait_start >= 1.5  # kürzeres Timeout
+                or {t.name for t in self.tracking.tracks} != self.initial_track_names
+            ):
                 self.state = "PROCESS"
             return {'PASS_THROUGH'}
 
         if self.state == "PROCESS":
-            new_tracks = [t for t in self.tracking.tracks if t.name not in self.initial_track_names]
+            tracks = self.tracking.tracks
+            w, h = self.width, self.height
 
-            close_tracks = []
-            for track in new_tracks:
-                marker = track.markers.find_frame(self.frame, exact=True)
-                if marker and not marker.mute:
-                    x = marker.co[0] * self.width
-                    y = marker.co[1] * self.height
-                    for ex, ey in self.existing_positions:
-                        if math.hypot(x - ex, y - ey) < self.distance_px:
-                            close_tracks.append(track)
-                            break
+            # neue Tracks via ID-Differenz (robust, O(n))
+            new_tracks = [t for t in tracks if id(t) not in self._ids_before]
 
-            for t in self.tracking.tracks:
-                t.select = False
-            for t in close_tracks:
-                t.select = True
-            if close_tracks and any(t.select for t in self.tracking.tracks):
-                bpy.ops.clip.delete_track()
+            # KDTree über bestehende Positionen
+            thr = float(self.distance_px)
+            kd = None
+            if self.existing_positions:
+                kd = KDTree(len(self.existing_positions))
+                for i, (ex, ey) in enumerate(self.existing_positions):
+                    kd.insert((ex, ey, 0.0), i)
+                kd.balance()
 
-            cleaned_tracks = [t for t in new_tracks if t not in close_tracks]
-            for t in self.tracking.tracks:
+            # Nähe-Test über KDTree (oder Fallback auf nix)
+            to_delete = []
+            if kd is not None:
+                find = kd.find
+                for tr in new_tracks:
+                    m = tr.markers.find_frame(self.frame, exact=True)
+                    if not (m and not m.mute):
+                        continue
+                    x = m.co[0] * w
+                    y = m.co[1] * h
+                    _, _, dist = find((x, y, 0.0))
+                    if dist < thr:
+                        to_delete.append(tr)
+            else:
+                # keine bestehenden Marker → nichts filtern
+                pass
+
+            # direkte Removals statt bpy.ops (massiv billiger)
+            if to_delete:
+                for tr in to_delete:
+                    tracks.remove(tr)
+
+            # bereinigt = neu minus nahe
+            # (Set-Vergleich auf IDs verhindert Name-Kollisionen)
+            del_ids = {id(t) for t in to_delete}
+            cleaned_tracks = [t for t in new_tracks if id(t) not in del_ids]
+
+            # finale Selektion wie zuvor (Oberflächenverhalten beibehalten)
+            for t in tracks:
                 t.select = False
             for t in cleaned_tracks:
                 t.select = True
@@ -142,17 +180,20 @@ class CLIP_OT_detect(bpy.types.Operator):
             anzahl_neu = len(cleaned_tracks)
 
             if anzahl_neu < self.min_marker or anzahl_neu > self.max_marker:
-                for t in self.tracking.tracks:
-                    t.select = False
-                for t in cleaned_tracks:
-                    t.select = True
-                if any(t.select for t in self.tracking.tracks):
-                    bpy.ops.clip.delete_track()
+                # statt Selektion+Operator: direkte Löschung der bereinigten neuen Marker
+                if cleaned_tracks:
+                    for tr in cleaned_tracks:
+                        if tr in tracks:
+                            tracks.remove(tr)
 
-                self.detection_threshold = max(
-                    self.detection_threshold * ((anzahl_neu + 0.1) / self.marker_adapt),
-                    0.0001,
-                )
+                ratio = (anzahl_neu + 0.1) / self.marker_adapt
+                # Clamping vermeidet Oszillation → weniger Re-Tries
+                if ratio < 0.5:
+                    ratio = 0.5
+                elif ratio > 1.5:
+                    ratio = 1.5
+
+                self.detection_threshold = max(self.detection_threshold * ratio, 0.0001)
                 scene["last_detection_threshold"] = self.detection_threshold
 
                 self.attempt += 1
