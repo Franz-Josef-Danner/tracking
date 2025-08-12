@@ -325,17 +325,22 @@ class CLIP_OT_detect(bpy.types.Operator):
                 scene["detect_prev_names"] = [t.name for t in cleaned_tracks]
             except Exception:
                 scene["detect_prev_names"] = []
-
-            # --- Handoff steuern: Default = KEIN Pipeline-Start ---
-            if self.handoff_to_pipeline:
-                scene["detect_status"] = "success"            # altes Verhalten: erlaubt Downstream/Pipeline
-                scene["pipeline_do_not_start"] = False
-            else:
-                scene["detect_status"] = "standalone_success" # bewusst kein Trigger-Keyword
-                scene["pipeline_do_not_start"] = True         # harte Bremse für Main
-
+            
+            # --- Handoff: Detect → Tracking ---
+            scene["detect_status"] = "success"
+            scene["pipeline_do_not_start"] = False
+            
+            # Timer entfernen, bevor wir an Tracking übergeben
             context.window_manager.event_timer_remove(self._timer)
+            
+            # Tracking direkt starten
+            try:
+                bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
+            except Exception as e:
+                self.report({'ERROR'}, f"Tracking-Start fehlgeschlagen: {e}")
+            
             return {'FINISHED'}
+
 
         return {'PASS_THROUGH'}
 
