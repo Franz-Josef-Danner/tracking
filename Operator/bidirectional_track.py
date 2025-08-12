@@ -1,6 +1,9 @@
 import bpy
 from bpy.types import Operator
-from ..find_low_marker_frame import find_low_marker_frame  # <— Import
+try:
+    bpy.ops.clip.find_low_marker('INVOKE_DEFAULT')
+except Exception as e:
+    print(f"[Tracking] Low-Marker-Operator konnte nicht gestartet werden: {e}")
 
 class CLIP_OT_bidirectional_track(Operator):
     bl_idname = "clip.bidirectional_track"
