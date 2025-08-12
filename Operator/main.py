@@ -5,6 +5,7 @@ from ..Helper.find_low_marker_frame import find_low_marker_frame
 from ..Helper.jump_to_frame import jump_to_frame
 from ..Helper.properties import RepeatEntry  # <- wichtig!
 from ..Helper.solve_camera_helper import CLIP_OT_solve_watch_clean, run_solve_watch_clean
+from ..Helper.activate_main_with_adapt import CLIP_OT_activate_main_with_adapt
 
 class CLIP_OT_main(bpy.types.Operator):
     bl_idname = "clip.main"
@@ -149,8 +150,9 @@ class CLIP_OT_main(bpy.types.Operator):
                     print(f"🚨 Optimiere Tracking für Frame {frame}")
                     bpy.ops.clip.optimize_tracking_modal('INVOKE_DEFAULT')
                 else:
-                    scene["marker_min"] = int(marker_basis * 0.9)
-                    scene["marker_max"] = int(marker_basis * 1.1)
+                    basis_for_bounds = int(scene.get("marker_adapt", marker_basis))
+                    scene["marker_min"] = int(basis_for_bounds * 0.9)
+                    scene["marker_max"] = int(basis_for_bounds * 1.1)
                     print(f"🔄 Neuer Tracking-Zyklus mit Marker-Zielwerten {scene['marker_min']}–{scene['marker_max']}")
                     bpy.ops.clip.tracking_pipeline('INVOKE_DEFAULT')
 
