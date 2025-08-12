@@ -1,8 +1,81 @@
+# tracking-sauber/Helper/solve_camera_helper.py
 import bpy
 from bpy.types import Operator
+
 __all__ = ("CLIP_OT_solve_camera_helper", "CLIP_OT_watch_solve")
 
 
+# --------- UI-Kontext-Helfer (unverändert zur ursprünglichen Logik) ---------
+def _find_clip_context(context: bpy.types.Context):
+    """Finde (area, region, space) des CLIP_EDITOR, sonst (None, None, None)."""
+    area = getattr(context, "area", None)
+    if area and area.type == "CLIP_EDITOR":
+        region = next((r for r in area.regions if r.type == "WINDOW"), None)
+        space = area.spaces.active
+        if region and space:
+            return area, region, space
+
+    screen = getattr(context, "screen", None)
+    if not screen:
+        return None, None, None
+
+    for a in screen.areas:
+        if a.type == "CLIP_EDITOR":
+            region = next((r for r in a.regions if r.type == "WINDOW"), None)
+            if region:
+                return a, region, a.spaces.active
+    return None, None, None
+
+
+def _build_override(context):
+    """Nur die UI-Schlüssel für temp_override vorbereiten (kein window/screen!)."""
+    area, region, space = _find_clip_context(context)
+    if not (area and region and space and getattr(space, "clip", None)):
+        return None
+    return {"area": area, "region": region, "space_data": space}
+
+
+# ---------------------- Solve-Helper (Original beibehalten) ------------------
+class CLIP_OT_solve_camera_helper(Operator):
+    """Startet den internen Kamera-Solver mit INVOKE_DEFAULT im korrekten Kontext."""
+    bl_idname = "clip.solve_camera_helper"
+    bl_label = "Solve Camera (Helper)"
+    bl_options = {"INTERNAL"}  # UNDO optional
+
+    def invoke(self, context, event):
+        override = _build_override(context)
+        if not override:
+            self.report({"ERROR"}, "CLIP_EDITOR/Clip-Kontext fehlt. Clip Editor öffnen und Clip laden.")
+            return {"CANCELLED"}
+
+        # 1) Versuche INVOKE_DEFAULT mit gültigem UI-Kontext
+        try:
+            with context.temp_override(**override):
+                result = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+            if result != {"FINISHED"}:
+                self.report({"WARNING"}, f"Kamera-Solve (INVOKE_DEFAULT): {result}")
+        except RuntimeError as ex:
+            # 2) Fallback EXEC_DEFAULT im selben Override
+            self.report({"WARNING"}, f"INVOCATION fehlgeschlagen ({ex}). Fallback EXEC_DEFAULT …")
+            try:
+                with context.temp_override(**override):
+                    result = bpy.ops.clip.solve_camera('EXEC_DEFAULT')
+                if result != {"FINISHED"}:
+                    self.report({"ERROR"}, f"Kamera-Solve (EXEC_DEFAULT): {result}")
+                    return {"CANCELLED"}
+            except Exception as ex2:
+                self.report({"ERROR"}, f"Kamera-Solve fehlgeschlagen: {ex2}")
+                return {"CANCELLED"}
+
+        # UI-Refresh (best effort)
+        try:
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+        except Exception:
+            pass
+        return {"FINISHED"}
+
+
+# -------------------- Solve beobachten + Clean (Erweiterung) -----------------
 class CLIP_OT_watch_solve(bpy.types.Operator):
     bl_idname = "clip.watch_solve"
     bl_label = "Watch Camera Solve"
@@ -14,7 +87,7 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
         scene["solve_error"] = -1.0
 
         # --- Erweiterungs-Status (NEU, nicht invasiv) ---
-        self._phase = 1                  # 1=nach erstem Solve, 2=nach Clean/zweitem Solve
+        self._phase = 1                  # 1 = nach erstem Solve, 2 = nach Clean/zweitem Solve
         self._preclean_started = False
         scene["solve_error_after_clean"] = -1.0
         scene["preclean_marker_count"] = -1
@@ -26,12 +99,27 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
         owner = object()
         self._owner = owner
         self._scheduled = False  # Guard gegen Mehrfach-Timer
-        
+
+        # -------- kleine Helfer ----------
+        def _count_markers(clip):
+            try:
+                tracks = clip.tracking.objects.active.tracks
+            except Exception:
+                return 0
+            total = 0
+            for t in tracks:
+                try:
+                    total += len(t.markers)
+                except Exception:
+                    pass
+            return total
+        # ---------------------------------
+
         def _notify(*_args):
             if self._scheduled:
                 return
             self._scheduled = True
-        
+
             def _finish():
                 # Clip robust holen
                 space = getattr(context, "space_data", None)
@@ -46,32 +134,17 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
                                 if clip:
                                     break
 
-                # --- Helper: Marker zählen (NEU) ---
-                def _count_markers(c):
-                    try:
-                        tracks = c.tracking.objects.active.tracks
-                    except Exception:
-                        return 0
-                    total = 0
-                    for t in tracks:
-                        try:
-                            total += len(t.markers)
-                        except Exception:
-                            pass
-                    return total
-                # -----------------------------------
-
                 # Rekonstruktion prüfen
                 rec = None
                 try:
                     rec = clip.tracking.objects.active.reconstruction if (clip and clip.tracking and clip.tracking.objects) else None
                 except Exception:
                     rec = None
-        
+
                 if rec and getattr(rec, "is_valid", False):
                     avg = getattr(rec, "average_error", None)
 
-                    # PHASE 1: erstes gültiges Solve -> Clean + zweites Solve vorbereiten
+                    # ---------------- PHASE 1 ----------------
                     if self._phase == 1:
                         scene["solve_status"] = "done"
                         if avg is not None:
@@ -80,14 +153,14 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
                         if not self._preclean_started:
                             self._preclean_started = True
 
-                            # Warten bis Track-Fehlerwerte verfügbar sind (0,2 s Poll)
+                            # Warten bis Track-Fehlerwerte verfügbar sind (alle 0,2s)
                             def _wait_errors_then_clean():
                                 try:
                                     tracks = clip.tracking.objects.active.tracks
                                 except Exception:
                                     return 0.2
 
-                                # Track-average_error ist die stabilste öffentlich zugängliche Fehlergröße
+                                # Stabiler öffentlich zugänglicher Wert: Track.average_error
                                 has_errors = False
                                 for t in tracks:
                                     try:
@@ -100,10 +173,9 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
                                 # Timeout/Retry-Zähler
                                 _wait_errors_then_clean._tries = getattr(_wait_errors_then_clean, "_tries", 0) + 1
                                 if not has_errors and _wait_errors_then_clean._tries < 100:
-                                    return 0.2  # weiter warten
+                                    return 0.2  # weiter warten (max ~20s)
 
                                 # Schwelle aus Scene.error_track (robust lesen)
-                                thr = 0.0
                                 try:
                                     thr = float(getattr(scene, "error_track", scene.get("error_track", 0.0)))
                                 except Exception:
@@ -122,7 +194,7 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
                                         except Exception as ex:
                                             self.report({'ERROR'}, f"Clean Tracks fehlgeschlagen: {ex}")
 
-                                    # Watcher: Marker-Drop beobachten (0,2 s Poll)
+                                    # Watcher: Marker-Drop beobachten (0,2s)
                                     def _watch_marker_drop():
                                         cur = _count_markers(clip)
                                         scene["postclean_marker_count"] = cur
@@ -133,7 +205,7 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
 
                                     bpy.app.timers.register(_watch_marker_drop, first_interval=0.0)
 
-                                # Zweiten Solve immer anstoßen (gemäß Anforderung)
+                                # Zweiten Solve anstoßen (wie gefordert)
                                 try:
                                     ov2 = _build_override(context)
                                     if ov2:
@@ -152,11 +224,11 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
 
                             bpy.app.timers.register(_wait_errors_then_clean, first_interval=0.2)
 
-                        # Wir bleiben weiter subscribed; _finish pollt bis Solve 2 fertig
+                        # Wir bleiben subscribed; _finish pollt bis Solve 2 fertig
                         self._scheduled = False
                         return 0.2
 
-                    # PHASE 2: zweites Solve abgeschlossen
+                    # ---------------- PHASE 2 ----------------
                     else:
                         if avg is not None:
                             scene["solve_error_after_clean"] = float(avg)
@@ -171,10 +243,10 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
                 else:
                     # noch nicht valide – in 0.2 s erneut prüfen
                     return 0.2
-        
+
             bpy.app.timers.register(_finish, first_interval=0.0)
 
-        # Subscriptions
+        # Subscriptions (reagieren auf Rekonstruktions-Updates)
         try:
             bpy.msgbus.subscribe_rna(
                 key=(bpy.types.MovieTrackingReconstruction, "is_valid"),
@@ -192,7 +264,7 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
             self.report({'WARNING'}, f"Msgbus-Subscribe fehlgeschlagen: {ex}. Fallback: Polling in main.")
             scene["solve_watch_fallback"] = True
 
-        # Solve starten – nutzt deinen Helper (richtiger Kontext/Override)
+        # Ersten Solve starten – über den Helper (richtiger Kontext/Override)
         res = bpy.ops.clip.solve_camera_helper('INVOKE_DEFAULT')
         if res not in ({'FINISHED'}, {'RUNNING_MODAL'}):
             self.report({'ERROR'}, f"Camera Solve Start fehlgeschlagen: {res}")
@@ -203,3 +275,15 @@ class CLIP_OT_watch_solve(bpy.types.Operator):
             return {'CANCELLED'}
 
         return {'FINISHED'}
+
+
+# --- Register Boilerplate ---
+_classes = (CLIP_OT_solve_camera_helper, CLIP_OT_watch_solve)
+
+def register():
+    for cls in _classes:
+        bpy.utils.register_class(cls)
+
+def unregister():
+    for cls in reversed(_classes):
+        bpy.utils.unregister_class(cls)
