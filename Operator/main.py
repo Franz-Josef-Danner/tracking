@@ -12,6 +12,14 @@ class CLIP_OT_main(bpy.types.Operator):
     bl_label = "Main Setup (Modal)"
     bl_options = {'REGISTER', 'UNDO'}
 
+    # ← NEU: Übergabe-Property
+    marker_adapt: bpy.props.IntProperty(
+        name="Marker Adapt",
+        description="Extern übergebener Ableitungswert für Marker-Bounds",
+        default=0, min=0
+    )
+
+
     _timer = None
     _step = 0
 
@@ -150,7 +158,7 @@ class CLIP_OT_main(bpy.types.Operator):
                     print(f"🚨 Optimiere Tracking für Frame {frame}")
                     bpy.ops.clip.optimize_tracking_modal('INVOKE_DEFAULT')
                 else:
-                    basis_for_bounds = int(scene.get("marker_adapt", marker_basis))
+                    basis_for_bounds = int(self.marker_adapt) if int(getattr(self, "marker_adapt", 0)) > 0 else int(marker_basis)
                     scene["marker_min"] = int(basis_for_bounds * 0.9)
                     scene["marker_max"] = int(basis_for_bounds * 1.1)
                     print(f"🔄 Neuer Tracking-Zyklus mit Marker-Zielwerten {scene['marker_min']}–{scene['marker_max']}")
