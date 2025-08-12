@@ -19,7 +19,12 @@ from .naming import _safe_name
 from .mute_ops import mute_marker_path, mute_after_last_marker, mute_unassigned_markers
 from .split_cleanup import clear_path_on_split_tracks_segmented, recursive_split_cleanup
 from .refine_high_error import run_refine_on_high_error
-
+__all__ = [
+    "CLIP_OT_solve_watch_clean",
+    "run_solve_watch_clean",
+    "run_refine_on_high_error",
+    "CLIP_OT_refine_on_high_error",
+]
 # Alle Klassen in eine Liste
 classes = (
     RepeatEntry,
