@@ -1,5 +1,11 @@
+# Operator/clean_error_tracks.py
+
 import bpy
 import time
+
+# 👉 Dichte-Pruning als erster Schritt verfügbar machen
+from .prune_tracks_density import prune_tracks_density
+
 
 def get_marker_position(track, frame):
     marker = track.markers.find_frame(frame)
@@ -28,11 +34,11 @@ def run_cleanup_in_region(context, area, region, space, tracks, frame_range,
         wm.progress_begin(0, max(1, (frame_end - frame_start)))
         redraw_every_frames = 20  # UI-Update nur gelegentlich
         to_delete = []            # (track, frame)-Paare sammeln
-    
+
         for fi in range(frame_start + 1, frame_end - 1):
             f1, f2 = fi - 1, fi + 1
             marker_data = []
-    
+
             # Datenaufnahme (Positions- und Geschwindigkeitsableitung)
             for track in tracks:
                 p1 = get_marker_position(track, f1)
@@ -40,15 +46,15 @@ def run_cleanup_in_region(context, area, region, space, tracks, frame_range,
                 p3 = get_marker_position(track, f2)
                 if not (p1 and p2 and p3):
                     continue
-    
+
                 x, y = p2[0] * width, p2[1] * height
                 if not (xmin <= x < xmax and ymin <= y < ymax):
                     continue
-    
+
                 vxm = (p2[0] - p1[0]) + (p3[0] - p2[0])
                 vym = (p2[1] - p1[1]) + (p3[1] - p2[1])
                 marker_data.append((track, vxm, vym))
-    
+
             if not marker_data:
                 # leichtes Fortschritts- und Header-Update gedrosselt
                 if (fi - frame_start) % redraw_every_frames == 0:
@@ -56,12 +62,12 @@ def run_cleanup_in_region(context, area, region, space, tracks, frame_range,
                     area.header_text_set(f"Cleanup {fi}/{frame_end-1} | deleted {total_deleted}")
                     region.tag_redraw()
                 continue
-    
+
             # Durchschnitt und Abweichungen
             vxa = sum(vx for _, vx, _ in marker_data) / len(marker_data)
             vya = sum(vy for _, _, vy in marker_data) / len(marker_data)
             va = (vxa + vya) / 2
-    
+
             # Direktes Schwellenkriterium – kein iteratives eb-Shrinking
             for track, vx, vy in marker_data:
                 vm = (vx + vy) / 2
@@ -69,7 +75,7 @@ def run_cleanup_in_region(context, area, region, space, tracks, frame_range,
                     to_delete.append((track, f1))
                     to_delete.append((track, fi))
                     to_delete.append((track, f2))
-    
+
             # Batch-Delete am Ende jedes fi
             if to_delete:
                 # Duplikate vermeiden (selber Track/Frame mehrfach gesammelt)
@@ -83,20 +89,20 @@ def run_cleanup_in_region(context, area, region, space, tracks, frame_range,
                         trk.markers.delete_frame(frm)
                         total_deleted += 1
                 to_delete.clear()
-    
+
             # Gedrosselte, leichte UI-Signale
             if (fi - frame_start) % redraw_every_frames == 0:
                 wm.progress_update(fi - frame_start)
                 area.header_text_set(f"Cleanup {fi}/{frame_end-1} | deleted {total_deleted}")
                 region.tag_redraw()
-    
+
         # Blockende: Fortschritt/Header zurücksetzen, letzter Redraw-Hint
         wm.progress_end()
         area.header_text_set(None)
         region.tag_redraw()
 
-
     return total_deleted
+
 
 def clean_error_tracks(context, space, area=None, region=None):
     scene = context.scene
@@ -129,7 +135,7 @@ def clean_error_tracks(context, space, area=None, region=None):
                 )
     return total_deleted_all, 0.0
 
-    
+
 def delete_marker_path(track, from_frame, direction):
     to_delete = []
     for m in track.markers:
@@ -139,6 +145,7 @@ def delete_marker_path(track, from_frame, direction):
 
     for f in to_delete:
         track.markers.delete_frame(f)
+
 
 def get_track_segments(track):
     frames = sorted([m.frame for m in track.markers])
@@ -156,13 +163,15 @@ def get_track_segments(track):
     segments.append(current_segment)
     return segments
 
+
 # 🆕 Neue Hilfsfunktion hier einfügen:
 def is_marker_valid(track, frame):
     try:
         marker = track.markers.find_frame(frame)
         return marker is not None and hasattr(marker, "co")
-    except Exception as e:
+    except Exception:
         return False
+
 
 # 🆕 Zusatz: robuster Name-Zugriff (UTF-8 tolerant)
 def _safe_name(obj):
@@ -179,6 +188,7 @@ def _safe_name(obj):
         return n or None
     except Exception:
         return None
+
 
 def mute_marker_path(track, from_frame, direction, mute=True):
     try:
@@ -199,6 +209,7 @@ def mute_marker_path(track, from_frame, direction, mute=True):
             # Keine Eskalation an dieser Stelle: Stabilität > Strenge
             continue
 
+
 def mute_after_last_marker(track, scene_end):
     """
     Mutet alle Marker nach dem letzten gültigen Segment-Ende.
@@ -212,6 +223,7 @@ def mute_after_last_marker(track, scene_end):
     for m in track.markers:
         if m.frame >= last_valid_frame and m.frame <= scene_end:
             m.mute = True
+
 
 def mute_outside_segment_markers(track):
     """
@@ -228,9 +240,11 @@ def mute_outside_segment_markers(track):
         if marker.frame not in valid_frames:
             marker.mute = True
 
+
 def mute_all_outside_segment_markers(tracks):
     for track in tracks:
         mute_outside_segment_markers(track)
+
 
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
     clip = space.clip
@@ -285,6 +299,7 @@ def clear_path_on_split_tracks_segmented(context, area, region, space, original_
         bpy.context.view_layer.update()
         region.tag_redraw()
 
+
 class CLIP_OT_clean_error_tracks(bpy.types.Operator):
     bl_idname = "clip.clean_error_tracks"
     bl_label = "Clean Error Tracks (Grid)"
@@ -298,6 +313,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
         scene = context.scene
         clip_editor_area = clip_editor_region = clip_editor_space = None
 
+        # Gültigen CLIP_EDITOR-Kontext finden
         for area in context.screen.areas:
             if area.type == 'CLIP_EDITOR':
                 for region in area.regions:
@@ -310,10 +326,28 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             self.report({'ERROR'}, "Kein gültiger CLIP_EDITOR-Kontext gefunden.")
             return {'CANCELLED'}
 
+        # --- 1) Dichte-Pruning als erster Schritt ---
+        prune_res = prune_tracks_density(context, threshold_key="marker_frame", dry_run=False)
+        if prune_res.get("status") != "ok":
+            print(f"[PruneDensity] status={prune_res.get('status')}")
+        else:
+            print(f"[PruneDensity] frames_processed={prune_res.get('frames_processed')} "
+                  f"deleted_tracks={prune_res.get('deleted_tracks')} "
+                  f"threshold={prune_res.get('threshold')}")
+        # Depsgraph/Layer synchronisieren und Clip/Tracks neu binden
+        with context.temp_override(area=clip_editor_area, region=clip_editor_region, space_data=clip_editor_space):
+            deps = context.evaluated_depsgraph_get()
+            deps.update()
+            bpy.context.view_layer.update()
+            scene.frame_set(scene.frame_current)
+
+        # --- 2) Grid-basierter Error-Clean (bestehende Pipeline) ---
         clean_error_tracks(context, clip_editor_space, clip_editor_area, clip_editor_region)
+
         clip = clip_editor_space.clip
         tracks = clip.tracking.tracks
 
+        # --- 3) Gap-Erkennung & Aufteilung ---
         original_tracks = [t for t in tracks if track_has_internal_gaps(t)]
         if not original_tracks:
             self.report({'INFO'}, "Keine Tracks mit Lücken gefunden.")
@@ -354,7 +388,6 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             original_tracks, new_tracks
         )
 
-
         # 🔒 Safety Pass: Einzelne Marker muten
         mute_unassigned_markers(tracks)
 
@@ -363,6 +396,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             mute_after_last_marker(t, scene.frame_end)
 
         return {'FINISHED'}
+
 
 def mute_unassigned_markers(tracks):
     """
@@ -386,7 +420,8 @@ def mute_unassigned_markers(tracks):
             f = marker.frame
             if f not in valid_frames or f == first_frame:
                 marker.mute = True
-                
+
+
 def recursive_split_cleanup(context, area, region, space, tracks):
     scene = context.scene
     iteration = 0
@@ -430,7 +465,6 @@ def recursive_split_cleanup(context, area, region, space, tracks):
             deps.update()                       # robuste Depsgraph-Synchronisation
             bpy.context.view_layer.update()     # Layer-Update
             scene.frame_set(scene.frame_current)
-
 
         all_names_after = {t.name for t in tracks}
         new_names = all_names_after - existing_names
