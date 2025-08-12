@@ -22,12 +22,13 @@ def _get_clip_from_context(context: bpy.types.Context) -> Optional[bpy.types.Mov
     return getattr(space, "clip", None) if space else None
 
 
-def _frame_active_markers(clip: bpy.types.MovieClip, frame: int) -> List[Tuple[bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingMarker]]:
-    """Liefert Liste (Track, Marker) aller *aktiven* Marker auf genau diesem Frame."""
+def _frame_active_markers(clip: bpy.types.MovieClip, frame: int):
+    """
+    Liefert Liste (Track, Marker) aller *aktiven* Marker auf genau diesem Frame.
+    Aktiv = marker.mute == False.
+    """
     out = []
     for tr in clip.tracking.tracks:
-        if getattr(tr, "mute", False):
-            continue
         mk = tr.markers.find_frame(frame)
         if not mk:
             continue
