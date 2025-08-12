@@ -7,6 +7,7 @@ from .tracking_pipeline import CLIP_OT_tracking_pipeline
 from .clean_error_tracks import CLIP_OT_clean_error_tracks
 from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 from ..Helper.solve_camera_helper import CLIP_OT_solve_watch_clean
+CLIP_OT_activate_main_with_adapt
 from .main import CLIP_OT_main
 
 try:
