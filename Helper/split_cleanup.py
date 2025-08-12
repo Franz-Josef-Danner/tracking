@@ -6,7 +6,7 @@ from .mute_ops import mute_marker_path, mute_unassigned_markers, mute_after_last
 
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
     clip = space.clip
-    # Rebinding per Name (robust ggü. Copy/Paste)
+    # Rebinding per Name (robust gegenüber Copy/Paste)
     tracks_by_name = {}
     for t in clip.tracking.tracks:
         tn = _safe_name(t)
@@ -82,4 +82,19 @@ def recursive_split_cleanup(context, area, region, space, tracks):
 
         all_names_after = {t.name for t in tracks}
         new_names = all_names_after - existing_names
-        new_tracks = [t for t in tracks if t.name]()_
+        new_tracks = [t for t in tracks if t.name in new_names]
+
+        for t in original_tracks + new_tracks:
+            if t.name not in processed:
+                processed.append(t.name)
+        scene["processed_tracks"] = processed
+
+        clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks)
+
+    # Abschluss im gültigen UI-Kontext
+    with context.temp_override(area=area, region=region, space_data=space):
+        bpy.ops.clip.clean_short_tracks('INVOKE_DEFAULT')
+
+    # Safety-Pass
+    mute_unassigned_markers(tracks)
+    return {'FINISHED'}
