@@ -173,7 +173,7 @@ class CLIP_OT_solve_watch_clean(Operator):
                 try:
                     processed2 = run_refine_on_high_error(
                         context,
-                        error_threshold=thr,
+                        error_threshold=None,          # <- Auto: nimmt scene["solve_error"]
                         limit_frames=int(self.refine_limit_frames),
                         resolve_after=bool(self.refine_resolve_after)
                     )
