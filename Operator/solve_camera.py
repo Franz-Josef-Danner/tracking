@@ -5,7 +5,7 @@ from bpy.props import IntProperty, FloatProperty, BoolProperty
 
 # Sicherstellen, dass der Refine-Operator-Klasse geladen ist (liegt in Helper/)
 # (Registrierung erfolgt zentral in deinem Addon-__init__ bzw. Operator/__init__)
-from ..Helper.refine_high_error import run_refine_on_high_error  # noqa: F401
+from ..Helper.refine_high_error import run_refine_on_high_error
 from ..Helper.clean_projection_error import CLIP_OT_clean_tracks_projection_error  # noqa: F401
 
 
@@ -118,18 +118,16 @@ class CLIP_OT_solve_watch_clean(Operator):
             self.report({'ERROR'}, "Kein CLIP_EDITOR-Fenster für Refine.")
             return {'CANCELLED'}
 
-        # Operator/solve_camera.py  — innerhalb execute() von CLIP_OT_solve_watch_clean
-        with context.temp_override(area=area, region=region, space_data=space):
-            res_ref = bpy.ops.clip.refine_on_high_error(  # ← korrekt: clip.refine_on_high_error
-                'EXEC_DEFAULT',
+        # Direkter Call der Kernfunktion – kein UI-Operator, kein bpy.ops
+        try:
+            n = run_solve_watch_clean.__globals__['run_refine_on_high_error'](  # sichert denselben Modulkontext
+                context,
                 limit_frames=int(self.refine_limit_frames),
                 resolve_after=False,
             )
-
-
-        if res_ref != {'FINISHED'}:
-            self.report({'WARNING'}, "Refine nicht ausgeführt.")
-            # trotzdem weiterlösen, um robust zu bleiben
+            print(f"[Refine] abgeschlossen, bearbeitete Frames: {n}")
+        except Exception as e:
+            print(f"[Refine] übersprungen/fehlgeschlagen: {e}")
 
         # 3) Zweites Solve
         avg2 = _solve_once(context, label="(2)")
