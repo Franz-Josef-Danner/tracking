@@ -1,7 +1,8 @@
 import bpy
 
-__all__ = ("CLIP_OT_launch_ tracker_settings",)
-
+__all__ = (
+    "CLIP_OT_launch_find_low_marker_frame_with_adapt",  # Alias für Alt-Imports
+)
 def _clip_override(context):
     win = context.window
     if not win or not win.screen:
@@ -14,7 +15,7 @@ def _clip_override(context):
     return None
 
 
-class CLIP_OT_launch_tracker_settings_frame_with_adapt(bpy.types.Operator):
+class CLIP_OT_launch_find_low_marker_frame_with_adapt
     """Berechnet marker_adapt aus marker_basis und startet anschließend clip. tracker_settings."""
     bl_idname = "clip.launch_tracker_settings_frame_with_adapt"
     bl_label  = "Start tracker_settings_frame (Adapt x4)"
