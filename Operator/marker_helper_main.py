@@ -62,14 +62,14 @@ class CLIP_OT_marker_helper_main(bpy.types.Operator):
         self.report({'INFO'}, msg)
 
         # --- 6) Nächster Schritt der Kette (Main-to-Adapt) ---
-        try:
-            res = bpy.ops.clip.main_to_adapt('INVOKE_DEFAULT', factor=int(self.factor))
-            print(f"[MarkerHelper] → main_to_adapt: {res}")
-        except Exception as e:
-            self.report({'ERROR'}, f"main_to_adapt konnte nicht gestartet werden: {e}")
-            return {'CANCELLED'}
-
-        return {'FINISHED'}
+#        try:
+#            res = bpy.ops.clip.main_to_adapt('INVOKE_DEFAULT', factor=int(self.factor))
+#            print(f"[MarkerHelper] → main_to_adapt: {res}")
+#        except Exception as e:
+#            self.report({'ERROR'}, f"main_to_adapt konnte nicht gestartet werden: {e}")
+#            return {'CANCELLED'}
+#
+#        return {'FINISHED'}
 
 
 # Registration (falls lokal registriert wird)
