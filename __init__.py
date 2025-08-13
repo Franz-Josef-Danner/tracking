@@ -14,7 +14,6 @@ from bpy.props import IntProperty, FloatProperty
 from .Operator.tracking_pipeline import CLIP_OT_tracking_pipeline
 from .Helper.disable_proxy import CLIP_OT_disable_proxy
 from .Helper.enable_proxy import CLIP_OT_enable_proxy
-from .Operator.detect import CLIP_OT_detect_once
 from .Operator.solve_camera import CLIP_OT_solve_watch_clean, run_solve_watch_clean
 from .Operator.bidirectional_track import CLIP_OT_bidirectional_track
 from .Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
@@ -48,7 +47,6 @@ classes = (
     CLIP_OT_tracking_pipeline,
     CLIP_OT_disable_proxy,
     CLIP_OT_enable_proxy,
-    CLIP_OT_detect_once,                           # ← WAR: CLIP_OT_detect
     CLIP_OT_solve_watch_clean,
     CLIP_OT_bidirectional_track,
     CLIP_OT_clean_short_tracks,
