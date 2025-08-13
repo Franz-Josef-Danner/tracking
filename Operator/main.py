@@ -85,17 +85,6 @@ class CLIP_OT_main(Operator):
                 mgr = context.temp_override(**override)
                 mgr.__enter__()
 
-            # --- Bounds-Formel (bevorzugt Scene["marker_adapt"], dann Operator-Prop, sonst marker_basis) ---
-            marker_basis   = int(scene.get("marker_basis", 25))
-            op_adapt       = int(getattr(self, "marker_adapt", 0))
-            scene_adapt    = int(scene.get("marker_adapt", 0))
-            marker_adapt_in = op_adapt if op_adapt > 0 else scene_adapt
-            
-            basis_for_bounds = int(marker_adapt_in) if marker_adapt_in > 0 else marker_basis
-            scene["marker_min"] = int(basis_for_bounds * 0.9)
-            scene["marker_max"] = int(basis_for_bounds * 1.1)
-            
-            src = "op.marker_adapt" if op_adapt > 0 else ("scene['marker_adapt']" if scene_adapt > 0 else "marker_basis")
             print(f"📏 Marker-Bounds gesetzt: min={scene['marker_min']} max={scene['marker_max']} "
                   f"(Basis {basis_for_bounds}, Quelle: {src}, adapt_in={marker_adapt_in})")
 
