@@ -2,6 +2,7 @@
 import bpy
 
 from .solve_camera import solve_watch_clean
+from .clean_short_tracks import clean_short_tracks
 
 __all__ = ("run_bidirectional_track",)
 
@@ -128,16 +129,17 @@ def run_bidirectional_track(context):
         state["prev_frame"] = current_frame
 
         print(f"[Tracking-Stabilität] Frame: {current_frame}, Marker: {current_marker_count}, Stabil: {state['stable_count']}/2")
-
+        
         if state["stable_count"] >= 2:
             print("✓ Tracking stabil erkannt – bereinige kurze Tracks.")
             try:
-                _clean_short_tracks(ctx)
+                clean_short_tracks(ctx, action='DELETE_TRACK')  # action optional anpassen
             except Exception as e:
                 print(f"[Tracking] clean_short_tracks fehlgeschlagen: {e}")
             _stop()
             return 'FINISHED'
         return 'PASS'
+
 
     def _tick():
         if not state["active"]:
