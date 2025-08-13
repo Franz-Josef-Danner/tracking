@@ -40,7 +40,12 @@ def _prev_next_keyframes(track, frame):
 
 # --- Core Routine (funktionsbasiert) -----------------------------------------
 
-def run_refine_on_high_error(context, error_threshold: float = 2.0, limit_frames: int = 0, resolve_after: bool = False) -> int:
+def run_refine_on_high_error(context, error_threshold: float | None = 2.0, limit_frames: int = 0, resolve_after: bool = False) -> int:
+    """
+    Refine beidseitig an Frames mit Solve-Frame-Error >= Threshold.
+    Auto-Threshold:
+      - Wenn error_threshold None oder <0: zuerst scene['solve_error'], dann Reconstruction.average_error, sonst 2.0.
+    """
     clip = _get_active_clip(context)
     if not clip:
         raise RuntimeError("Kein MovieClip geladen.")
@@ -50,13 +55,33 @@ def run_refine_on_high_error(context, error_threshold: float = 2.0, limit_frames
     if not recon.is_valid:
         raise RuntimeError("Keine gültige Rekonstruktion gefunden (Solve fehlt oder wurde gelöscht).")
 
+    # --- NEU: Threshold-Autoload aus Szene / Reconstruction -------------------
+    if error_threshold is None or (isinstance(error_threshold, (int, float)) and float(error_threshold) < 0.0):
+        thr = None
+        # 1) Szenevariable
+        try:
+            thr = float(context.scene.get("solve_error"))
+        except Exception:
+            thr = None
+        # 2) Reconstruction Average Error
+        if thr is None and getattr(recon, "is_valid", False):
+            try:
+                thr = float(getattr(recon, "average_error", 2.0))
+            except Exception:
+                thr = None
+        # 3) Fallback
+        if thr is None:
+            thr = 2.0
+        error_threshold = thr
+        print(f"[Refine] Threshold auto gesetzt: {error_threshold:.3f} (Szene/Reconstruction/Fallback)")
+
     # Spike-Frames ermitteln
     bad_frames = [cam.frame for cam in recon.cameras if float(cam.average_error) >= float(error_threshold)]
     bad_frames = sorted(set(bad_frames))
     if limit_frames > 0:
         bad_frames = bad_frames[:int(limit_frames)]
 
-    print(f"[INFO] Gefundene Problem-Frames (≥ {error_threshold:.3f}px): {bad_frames}")
+    print(f"[INFO] Gefundene Problem-Frames (≥ {float(error_threshold):.3f}px): {bad_frames}")
 
     if not bad_frames:
         print("[INFO] Keine Frames mit zu hohem Error gefunden.")
@@ -149,7 +174,7 @@ class CLIP_OT_refine_on_high_error(Operator):
         try:
             n = run_refine_on_high_error(
                 context,
-                error_threshold=self.error_threshold,
+                error_threshold=self.error_threshold,  # Operator übergibt explizit; Auto-Load greift bei Funktionsaufruf mit None
                 limit_frames=self.limit_frames,
                 resolve_after=self.resolve_after
             )
