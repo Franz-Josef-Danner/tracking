@@ -11,7 +11,6 @@ bl_info = {
 import bpy
 from bpy.props import IntProperty, FloatProperty
 
-from .Operator.tracking_pipeline import CLIP_OT_tracking_pipeline
 from .Helper.disable_proxy import CLIP_OT_disable_proxy
 from .Helper.enable_proxy import CLIP_OT_enable_proxy
 from .Operator.solve_camera import CLIP_OT_solve_watch_clean, run_solve_watch_clean
@@ -42,7 +41,6 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
 # Alle Klassen zur Registrierung
 classes = (
     RepeatEntry,
-    CLIP_OT_tracking_pipeline,
     CLIP_OT_disable_proxy,
     CLIP_OT_enable_proxy,
     CLIP_OT_solve_watch_clean,
