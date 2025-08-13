@@ -1,6 +1,6 @@
 # Helper/find_low_marker_frame.py
 import bpy
-from .jump_to_frame import jump_to_frame_helper
+from .jump_to_frame import run_jump_to_frame           # bereits zu Helper migriert
 
 __all__ = ("find_low_marker_frame_core", "run_find_low_marker_frame")
 
@@ -59,18 +59,27 @@ def run_find_low_marker_frame(
 
     if low_frame is not None:
         scene["goto_frame"] = int(low_frame)
-        print(f"[MarkerCheck] Treffer: Low-Marker-Frame {low_frame}. Übergabe an jump_to_frame_helper …")
+        print(f"[MarkerCheck] Treffer: Low-Marker-Frame {low_frame}. Übergabe an jump_to_frame (Helper) …")
+        ok = False
         try:
-            bpy.ops.clip.jump_to_frame_helper('EXEC_DEFAULT', target_frame=int(low_frame))
+            ok = run_jump_to_frame(context, explicit_target=int(low_frame))
         except Exception as ex:
-            print(f"Error: jump_to_frame_helper fehlgeschlagen: {ex}")
+            print(f"Error: jump_to_frame (Helper) Exception: {ex}")
+            return None
+        if not ok:
+            print("Error: jump_to_frame (Helper) meldete False")
             return None
         return low_frame
-
-    print("[MarkerCheck] Keine Low-Marker-Frames gefunden. Starte Kamera-Solve.")
+    
+    print("[MarkerCheck] Keine Low-Marker-Frames gefunden. Starte Kamera-Solve (Helper).")
+    ok = False
     try:
-        bpy.ops.clip.solve_watch_clean('INVOKE_DEFAULT')
+        ok = run_solve_watch_clean(context)
     except Exception as ex:
-        print(f"Error: Solve-Start fehlgeschlagen: {ex}")
+        print(f"Error: Solve-Start (Helper) Exception: {ex}")
+        return None
+    if not ok:
+        print("Error: Solve-Start (Helper) meldete False")
         return None
     return None
+
