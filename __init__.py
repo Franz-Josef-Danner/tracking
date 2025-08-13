@@ -33,6 +33,7 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
 
 # Alle Klassen zur Registrierung
 classes = (
+    RepeatEntry,
     CLIP_OT_marker_helper_main,
 )
 
