@@ -7,7 +7,7 @@ from .set_test_value import set_test_value
 from .properties import RepeatEntry
 from .log_helper import write_log_entry
 from .find_max_marker_frame import get_active_marker_counts_sorted
-from .projection_cleanup_builtin.py import builtin_projection_cleanup
+from .projection_cleanup_builtin import builtin_projection_cleanup, find_clip_window
 from .multiscale_temporal_grid_clean import multiscale_temporal_grid_clean
 from .segments import track_has_internal_gaps, get_track_segments
 from .naming import _safe_name
