@@ -1,5 +1,7 @@
+# Helper/bidirectional_track.py
 import bpy
-from bpy.types import Operator
+
+__all__ = ("run_bidirectional_track",)
 
 def _clip_override(context):
     win = context.window
@@ -13,122 +15,143 @@ def _clip_override(context):
     return None
 
 
-class CLIP_OT_bidirectional_track(Operator):
-    bl_idname = "clip.bidirectional_track"
-    bl_label = "Bidirectional Track"
-    bl_description = "Trackt Marker vorwärts und rückwärts"
+def run_bidirectional_track(context):
+    """
+    Reiner Helper, der die frühere modal-Operator-Logik 1:1 via bpy.app.timers ausführt.
+    Steps:
+      0) Vorwärts-Tracking starten
+      1) Frame auf Start zurücksetzen
+      2) eine Schleife warten
+      3) Rückwärts-Tracking starten
+      4) Stabilitätsprüfung; bei Stabilität: kurze Tracks bereinigen und Low-Marker starten
+    Rückgabe: {'RUNNING_MODAL'} (Timer aktiv) oder {'FINISHED'}/{'CANCELLED'} synchron,
+    je nach sofortigem Zustand. In der Regel startet der Timer und gibt {'RUNNING_MODAL'} zurück.
+    """
+    state = {
+        "step": 0,
+        "stable_count": 0,
+        "prev_marker_count": -1,
+        "prev_frame": -1,
+        "start_frame": int(getattr(context.scene, "frame_current", 1)),
+        "active": True,
+    }
 
-    _timer = None
-    _step = 0
-    _start_frame = 0
+    print("[Tracking] Schritt: 0")
 
-    _prev_marker_count = -1
-    _prev_frame = -1
-    _stable_count = 0
+    def _cleanup():
+        state["active"] = False  # Timer beenden, indem Callback None zurückgibt
 
-    def execute(self, context):
-        self._step = 0
-        self._stable_count = 0
-        self._prev_marker_count = -1
-        self._prev_frame = -1
-        self._start_frame = context.scene.frame_current
+    def _get_clip(ctx):
+        space = getattr(ctx, "space_data", None)
+        return getattr(space, "clip", None) if space else None
 
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(0.5, window=context.window)
-        wm.modal_handler_add(self)
-        print("[Tracking] Schritt: 0")
-        return {'RUNNING_MODAL'}
+    def _run_forward_track():
+        print("→ Starte Vorwärts-Tracking...")
+        bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
 
-    def modal(self, context, event):
-        if event.type == 'TIMER':
-            return self.run_tracking_step(context)
-        return {'PASS_THROUGH'}
+    def _reset_to_start_frame(ctx):
+        print("→ Warte auf Abschluss des Vorwärts-Trackings...")
+        ctx.scene.frame_current = state["start_frame"]
+        print(f"← Frame zurückgesetzt auf {state['start_frame']}")
 
-    def run_tracking_step(self, context):
-        space = getattr(context, "space_data", None)
-        clip = getattr(space, "clip", None) if space else None
+    def _run_backward_track():
+        print("→ Starte Rückwärts-Tracking...")
+        bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
+
+    def _stability_tick(ctx):
+        clip = _get_clip(ctx)
         if clip is None:
-            self.report({'ERROR'}, "Kein aktiver Clip im Tracking-Editor gefunden.")
-            self._cleanup_timer(context)
+            _cleanup()
             return {'CANCELLED'}
 
-        if self._step == 0:
-            print("→ Starte Vorwärts-Tracking...")
-            bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
-            self._step = 1
-            return {'PASS_THROUGH'}
+        current_frame = ctx.scene.frame_current
+        try:
+            current_marker_count = sum(len(t.markers) for t in clip.tracking.tracks)
+        except Exception:
+            current_marker_count = 0
 
-        elif self._step == 1:
-            print("→ Warte auf Abschluss des Vorwärts-Trackings...")
-            context.scene.frame_current = self._start_frame
-            self._step = 2
-            print(f"← Frame zurückgesetzt auf {self._start_frame}")
-            return {'PASS_THROUGH'}
-
-        elif self._step == 2:
-            print("→ Frame wurde gesetzt. Warte eine Schleife ab, bevor Tracking startet...")
-            self._step = 3
-            return {'PASS_THROUGH'}
-
-        elif self._step == 3:
-            print("→ Starte Rückwärts-Tracking...")
-            bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
-            self._step = 4
-            return {'PASS_THROUGH'}
-
-        elif self._step == 4:
-            return self.run_tracking_stability_check(context)
-
-        return {'PASS_THROUGH'}
-
-    def run_tracking_stability_check(self, context):
-        space = getattr(context, "space_data", None)
-        clip = getattr(space, "clip", None) if space else None
-        if clip is None:
-            self._cleanup_timer(context)
-            return {'CANCELLED'}
-
-        current_frame = context.scene.frame_current
-        current_marker_count = sum(len(track.markers) for track in clip.tracking.tracks)
-
-        if (self._prev_marker_count == current_marker_count and
-            self._prev_frame == current_frame):
-            self._stable_count += 1
+        if (state["prev_marker_count"] == current_marker_count and
+                state["prev_frame"] == current_frame):
+            state["stable_count"] += 1
         else:
-            self._stable_count = 0
+            state["stable_count"] = 0
 
-        self._prev_marker_count = current_marker_count
-        self._prev_frame = current_frame
+        state["prev_marker_count"] = current_marker_count
+        state["prev_frame"] = current_frame
 
-        print(f"[Tracking-Stabilität] Frame: {current_frame}, Marker: {current_marker_count}, Stabil: {self._stable_count}/2")
+        print(f"[Tracking-Stabilität] Frame: {current_frame}, Marker: {current_marker_count}, Stabil: {state['stable_count']}/2")
 
-        if self._stable_count >= 2:
+        if state["stable_count"] >= 2:
             print("✓ Tracking stabil erkannt – bereinige kurze Tracks.")
-            bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
-
-            # Timer entfernen
-            self._cleanup_timer(context)
+            try:
+                bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
+            except Exception as e:
+                print(f"[Tracking] clean_short_tracks fehlgeschlagen: {e}")
 
             # Low-Marker-Operator sauber starten (kein Feedback, kein Flag)
-            ov = _clip_override(context)
+            ov = _clip_override(ctx)
             try:
                 if ov:
-                    with context.temp_override(**ov):
+                    with ctx.temp_override(**ov):
                         bpy.ops.clip.find_low_marker_frame('INVOKE_DEFAULT', use_scene_basis=True)
                 else:
                     bpy.ops.clip.find_low_marker_frame('INVOKE_DEFAULT', use_scene_basis=True)
             except Exception as e:
                 print(f"[Tracking] Low-Marker-Operator konnte nicht gestartet werden: {e}")
 
+            _cleanup()
             return {'FINISHED'}
 
         return {'PASS_THROUGH'}
 
-    def _cleanup_timer(self, context):
-        wm = context.window_manager
-        if self._timer is not None:
-            try:
-                wm.event_timer_remove(self._timer)
-            except Exception:
-                pass
-            self._timer = None
+    # Timer-Callback: bildet die frühere modal()-State-Maschine ab
+    def _tick():
+        if not state["active"]:
+            return None  # Timer stoppen
+
+        ctx = bpy.context
+        clip = _get_clip(ctx)
+        if clip is None:
+            print("Kein aktiver Clip im Tracking-Editor gefunden.")
+            _cleanup()
+            return None  # -> beendet
+
+        step = state["step"]
+
+        if step == 0:
+            _run_forward_track()
+            state["step"] = 1
+            return 0.5
+
+        elif step == 1:
+            _reset_to_start_frame(ctx)
+            state["step"] = 2
+            return 0.5
+
+        elif step == 2:
+            print("→ Frame wurde gesetzt. Warte eine Schleife ab, bevor Tracking startet...")
+            state["step"] = 3
+            return 0.5
+
+        elif step == 3:
+            _run_backward_track()
+            state["step"] = 4
+            return 0.5
+
+        elif step == 4:
+            res = _stability_tick(ctx)
+            if isinstance(res, dict) and 'FINISHED' in res:
+                return None  # fertig -> Timer stoppen
+            # bei PASS_THROUGH/CANCELLED: wenn cancelled, stoppen
+            if isinstance(res, dict) and 'CANCELLED' in res:
+                return None
+            return 0.5
+
+        # Fallback
+        return 0.5
+
+    # Timer starten
+    bpy.app.timers.register(_tick, first_interval=0.5)
+
+    # Verhalten analog zum ursprünglichen Operator-Start: läuft modal
+    return {'RUNNING_MODAL'}
