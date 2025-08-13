@@ -1,6 +1,5 @@
 import bpy
 
-from .bidirectional_track import CLIP_OT_bidirectional_track
 from .tracking_pipeline import CLIP_OT_tracking_pipeline
 from .clean_error_tracks import CLIP_OT_clean_error_tracks
 from .marker_helper_main import CLIP_OT_marker_helper_main
@@ -17,7 +16,6 @@ except Exception as e:
 
 
 classes = (
-    CLIP_OT_bidirectional_track,
     CLIP_OT_clean_short_tracks,
     CLIP_OT_tracking_pipeline,
     CLIP_OT_clean_error_tracks,
