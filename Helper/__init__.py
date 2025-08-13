@@ -33,6 +33,7 @@ classes = (
     RepeatEntry,
     CLIP_OT_enable_proxy,
     CLIP_OT_disable_proxy,
+    CLIP_OT_optimize_tracking_modal,
 )
 
 def register():
