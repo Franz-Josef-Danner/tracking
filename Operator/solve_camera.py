@@ -5,7 +5,7 @@ from bpy.props import IntProperty, FloatProperty, BoolProperty
 
 # Sicherstellen, dass der Refine-Operator-Klasse geladen ist (liegt in Helper/)
 # (Registrierung erfolgt zentral in deinem Addon-__init__ bzw. Operator/__init__)
-from ..Helper.refine_high_error import CLIP_OT_refine_on_high_error  # noqa: F401
+from ..Helper.refine_high_error import run_refine_on_high_error  # noqa: F401
 from ..Helper.clean_projection_error import CLIP_OT_clean_tracks_projection_error  # noqa: F401
 
 
@@ -119,7 +119,7 @@ class CLIP_OT_solve_watch_clean(Operator):
             return {'CANCELLED'}
 
         with context.temp_override(area=area, region=region, space_data=space):
-            res_ref = bpy.ops.clip.refine_on_high_error(
+            res_ref = bpy.ops.clip.run_refine_on_high_error(
                 'EXEC_DEFAULT',
                 limit_frames=int(self.refine_limit_frames),
                 resolve_after=False,  # hier kein Auto-ReSolve
