@@ -69,7 +69,7 @@ class CLIP_OT_marker_helper_main(bpy.types.Operator):
 #            self.report({'ERROR'}, f"main_to_adapt konnte nicht gestartet werden: {e}")
 #            return {'CANCELLED'}
 #
-#        return {'FINISHED'}
+        return {'FINISHED'}
 
 
 # Registration (falls lokal registriert wird)
