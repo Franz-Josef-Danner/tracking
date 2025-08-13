@@ -3,8 +3,8 @@
 import bpy
 
 # Sicherstellen, dass der Refine-Helper geladen ist (liegt in Helper/)
-from ..Helper.refine_high_error import run_refine_on_high_error  # noqa: F401 (import beibehalten, keine Funktionsänderung)
-from ..Helper.projection_cleanup_builtin import builtin_projection_cleanup, find_clip_window
+from .refine_high_error import run_refine_on_high_error  # noqa: F401 (import beibehalten, keine Funktionsänderung)
+from .projection_cleanup_builtin import builtin_projection_cleanup, find_clip_window
 
 __all__ = (
     "solve_watch_clean",
