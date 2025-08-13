@@ -1,6 +1,8 @@
 # Helper/bidirectional_track.py
 import bpy
 
+from .solve_camera import solve_watch_clean
+
 __all__ = ("run_bidirectional_track",)
 
 def _clip_override(context):
