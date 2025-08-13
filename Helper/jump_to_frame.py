@@ -2,7 +2,7 @@
 
 import bpy
 import json
-from .detect import run_detect_adaptive
+from .detect import perform_marker_detection, run_detect_adaptive, run_detect_once
 
 __all__ = ("jump_to_frame_helper", "run_jump_to_frame")
 
