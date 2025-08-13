@@ -15,7 +15,7 @@ def _clip_override(context):
     return None
 
 
-class CLIP_OT_tracker_settings
+class CLIP_OT_tracker_settings:
     """Berechnet marker_adapt aus marker_basis und startet anschließend clip. tracker_settings."""
     bl_idname = "clip.launch_tracker_settings_frame_with_adapt"
     bl_label  = "Start tracker_settings_frame (Adapt x4)"
