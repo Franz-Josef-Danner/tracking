@@ -2,6 +2,7 @@
 
 import bpy
 import json
+from .detect import run_detect_adaptive
 
 __all__ = ("jump_to_frame_helper", "run_jump_to_frame")
 
