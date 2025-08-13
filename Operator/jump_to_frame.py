@@ -19,16 +19,16 @@ def _resolve_target_frame(context, explicit_target: int) -> int | None:
         return int(explicit_target)
     scene = context.scene
     tf = scene.get("goto_frame")
-    return int(tf) if tf is not None and int(tf) >= 0 else None
+    return int(tf) if tf is not None else None
 
 
 class CLIP_OT_jump_to_frame(Operator):
-    """Setzt den Playhead auf den Ziel-Frame und übergibt anschließend an main."""
+    """Setzt den Playhead und löst am Ende clip.main aus."""
     bl_idname = "clip.jump_to_frame"
     bl_label = "Jump to Frame"
     bl_options = {"INTERNAL", "REGISTER"}
 
-    # Optional direkte Übergabe; -1 = verwende Scene['goto_frame']
+    # -1 = aus Scene['goto_frame'] lesen
     target_frame: bpy.props.IntProperty(
         name="Ziel-Frame",
         default=-1, min=-1,
@@ -47,33 +47,28 @@ class CLIP_OT_jump_to_frame(Operator):
                 with context.temp_override(**ovr):
                     context.scene.frame_current = int(target)
                     print(f"[GotoFrame] Playhead auf Frame {target} gesetzt (mit Override).")
-                    # --- Übergabe an main im selben gültigen Kontext ---
-                    res = bpy.ops.clip.main('EXEC_DEFAULT')
-                    print(f"[GotoFrame] Übergabe an main → {res}")
+                    # --- nur am Schluss: main auslösen ---
+                    res = bpy.ops.clip.main('INVOKE_DEFAULT')
             else:
-                # Fallback ohne Override – funktioniert, UI-Refresh ggf. verzögert
                 context.scene.frame_current = int(target)
                 print(f"[GotoFrame] Playhead auf Frame {target} gesetzt (ohne Override).")
-                res = bpy.ops.clip.main('EXEC_DEFAULT')
-                print(f"[GotoFrame] Übergabe an main → {res}")
+                res = bpy.ops.clip.main('INVOKE_DEFAULT')
+
+            print(f"[GotoFrame] Übergabe an main → {res}")
+            return {'FINISHED'}
 
         except Exception as ex:
-            self.report({'ERROR'}, f"Übergabe an main fehlgeschlagen: {ex}")
+            # Klare, gebündelte Fehlermeldung für Upstream-Logs
+            msg = f"Übergabe an main fehlgeschlagen: {ex}"
+            self.report({'ERROR'}, msg)
+            print(f"Error: {msg}")
             return {'CANCELLED'}
 
-        return {'FINISHED'}
-
-
-# ---- Public API (komfortabler Aufruf aus Code) -------------------------------
 
 __all__ = ("CLIP_OT_jump_to_frame", "run_jump_to_frame")
 
 def run_jump_to_frame(context, frame: int | None = None):
-    """
-    Programmatischer Aufruf:
-      - frame ist optional; wenn None, wird Scene['goto_frame'] genutzt.
-      - Übergibt nach dem Sprung automatisch an clip.main.
-    """
+    """Komfort-Aufruf; löst am Ende immer main aus."""
     if frame is not None and frame >= 0:
         return bpy.ops.clip.jump_to_frame('EXEC_DEFAULT', target_frame=int(frame))
     else:
