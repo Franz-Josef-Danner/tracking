@@ -96,18 +96,6 @@ class CLIP_OT_find_low_marker(Operator):
         # Kernlogik (keine Seiteneffekte):
         low_frame = find_low_marker_frame_core(clip, marker_basis=basis, frame_start=fs, frame_end=fe)
 
-        # Optionales Setzen des Playheads – ohne Flags, sauber im CLIP-Override:
-        if self.set_playhead and low_frame is not None:
-            ov = self._clip_override(context)
-            if ov:
-                with context.temp_override(**ov):
-                    context.scene.frame_current = low_frame
-                    print(f"[MarkerCheck] Playhead auf Frame {low_frame} gesetzt.")
-            else:
-                # Fallback: ohne Override
-                context.scene.frame_current = low_frame
-                print(f"[MarkerCheck] Playhead auf Frame {low_frame} gesetzt (ohne Override).")
-
         # Keine Szene-Flags, keine Status-Kommunikation – Ende.
         return {'FINISHED'}
 
