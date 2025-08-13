@@ -1,10 +1,10 @@
+# Helper/main_to_adapt_helper.py
 import bpy
 
-__all__ = (
-    "CLIP_OT_main_to_adapt",
-)
+__all__ = ("main_to_adapt_helper", "clip_override")
 
-def _clip_override(context):
+def clip_override(context):
+    """Sicheren CLIP_EDITOR-Override bereitstellen (oder None)."""
     win = context.window
     if not win or not win.screen:
         return None
@@ -12,65 +12,53 @@ def _clip_override(context):
         if area.type == 'CLIP_EDITOR':
             for region in area.regions:
                 if region.type == 'WINDOW':
-                    return {'area': area, 'region': region, 'space_data': area.spaces.active}
+                    return {
+                        'area': area,
+                        'region': region,
+                        'space_data': area.spaces.active
+                    }
     return None
 
 
-class CLIP_OT_main_to_adapt(bpy.types.Operator):
+def main_to_adapt_helper(
+    context: bpy.types.Context,
+    *,
+    factor: int = 4,
+    use_override: bool = True,
+    call_next: bool = True,
+    invoke_next: bool = True,
+):
     """
-    1) Leitet marker_adapt aus scene['marker_basis'] * factor * 0.9 ab und speichert ihn in scene['marker_adapt'].
-    2) Startet anschließend die Kette mit clip.tracker_settings (die danach clip.find_low_marker triggert).
+    Setzt scene['marker_adapt'] aus scene['marker_basis'] * factor * 0.9.
+    Optional: triggert im Anschluss 'bpy.ops.clip.tracker_settings'.
+
+    Returns:
+        (ok: bool, marker_adapt: int, op_result: str|None)
     """
-    bl_idname = "clip.main_to_adapt"
-    bl_label  = "main_to_adapt (Adapt xF)"
-    bl_options = {'REGISTER'}
+    scene = context.scene
 
-    factor: bpy.props.IntProperty(
-        name="Faktor",
-        description="Multiplikator für marker_basis → marker_adapt",
-        default=4, min=1, max=999
-    )
-    use_override: bpy.props.BoolProperty(
-        name="CLIP-Override",
-        description="Operator im CLIP_EDITOR-Kontext ausführen",
-        default=True
-    )
+    marker_basis = int(scene.get("marker_basis", 25))
+    marker_adapt = int(marker_basis * factor * 0.9)
 
-    def invoke(self, context, event):
-        return self.execute(context)
+    # Persistieren für Downstream-Consumer
+    scene["marker_adapt"] = marker_adapt
+    print(f"[MainToAdapt] marker_adapt gesetzt: {marker_adapt} (basis={marker_basis}, factor={factor})")
 
-    def execute(self, context):
-        scene = context.scene
-        marker_basis = int(scene.get("marker_basis", 25))
-        marker_adapt = int(marker_basis * self.factor * 0.9)
-
-        # Szenenvariable persistieren → wird downstream konsumiert
-        scene["marker_adapt"] = marker_adapt
-        print(f"[MainToAdapt] marker_adapt gesetzt: {marker_adapt} (basis={marker_basis}, factor={self.factor})")
-
-        # Nächster Schritt der Kette: tracker_settings (ruft danach find_low_marker)
+    op_result = None
+    if call_next:
         try:
-            ovr = _clip_override(context) if self.use_override else None
-            if ovr:
-                with context.temp_override(**ovr):
-                    res = bpy.ops.clip.tracker_settings('INVOKE_DEFAULT')
+            override = clip_override(context) if use_override else None
+            op_call_mode = 'INVOKE_DEFAULT' if invoke_next else 'EXEC_DEFAULT'
+
+            if override:
+                with context.temp_override(**override):
+                    op_result = bpy.ops.clip.tracker_settings(op_call_mode)
             else:
-                res = bpy.ops.clip.tracker_settings('INVOKE_DEFAULT')
+                op_result = bpy.ops.clip.tracker_settings(op_call_mode)
 
-                print(f"[MainToAdapt] Übergabe an tracker_settings → {res}")
-                return {'FINISHED'}
+            print(f"[MainToAdapt] Übergabe an tracker_settings → {op_result}")
         except Exception as e:
-            self.report({'ERROR'}, f"tracker_settings konnte nicht gestartet werden: {e}")
-            return {'CANCELLED'}
+            print(f"[MainToAdapt][ERROR] tracker_settings konnte nicht gestartet werden: {e}")
+            return False, marker_adapt, None
 
-
-# Registration
-classes = (CLIP_OT_main_to_adapt,)
-
-def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
-
-def unregister():
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
+    return True, marker_adapt, op_result
