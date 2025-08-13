@@ -1,4 +1,3 @@
-# solve_camera.py
 import bpy
 from bpy.types import Operator
 from bpy.props import IntProperty, FloatProperty, BoolProperty
@@ -102,36 +101,62 @@ class CLIP_OT_solve_watch_clean(Operator):
         return _get_active_clip(context) is not None
 
     def execute(self, context):
-        # Vorbedingungen
-        clip, recon = _get_reconstruction(context)
-        if not clip:
-            self.report({'ERROR'}, "Kein aktiver Movie Clip.")
-            return {'CANCELLED'}
-
-        # 1) Solve-Error persistieren (wie gehabt)
+        from ..Helper.projection_cleanup_builtin import builtin_projection_cleanup, find_clip_window
+    
         scene = context.scene
+    
+        # --- 0) Clip-Kontext sicherstellen ---
+        area, region, space = find_clip_window(context)
+        if not area or not space or not getattr(space, "clip", None):
+            self.report({'ERROR'}, "Kein aktiver Movie Clip im CLIP_EDITOR gefunden.")
+            return {'CANCELLED'}
+        clip = space.clip
+    
+        # --- 1) Kamera-Solve ausführen ---
+        print("[SolveWatch] Starte Kamera-Solve …")
+        with context.temp_override(area=area, region=region, space_data=space):
+            try:
+                res = bpy.ops.clip.solve_camera()
+            except Exception as e:
+                self.report({'ERROR'}, f"Solve-Aufruf fehlgeschlagen: {e}")
+                return {'CANCELLED'}
+        print(f"[SolveWatch] Solve-Operator Rückgabe: {res}")
+    
+        # --- 2) Solve-Error sicher auslesen ---
+        avg2 = None
+        try:
+            # Aktives Tracking-Objekt → Reconstruction
+            tracking = clip.tracking
+            obj = tracking.objects.active if tracking.objects else None
+            recon = obj.reconstruction if obj else None
+            if recon and getattr(recon, "is_valid", False):
+                avg2 = float(getattr(recon, "average_error", 0.0))
+        except Exception as e:
+            print(f"[SolveWatch] WARN: Konnte Solve-Error nicht lesen: {e}")
+    
+        if avg2 is None:
+            self.report({'ERROR'}, "Solve-Error konnte nicht ermittelt werden (Reconstruction ungültig).")
+            return {'CANCELLED'}
+    
+        print(f"[SolveWatch] Solve OK (AvgErr={avg2:.6f}).")
+    
+        # --- 3) Persistieren + Schwellen steuern ---
         scene["solve_error"] = float(avg2)
         print(f"[SolveWatch] Persistiert: scene['solve_error'] = {avg2:.6f}")
-        
-        # 2) Projection-Cleanup konfigurieren
-        #    Option A: Szene-Threshold (empfohlen)
-        threshold_key = "error_track"  # typ. 2.0 px
-        
-        #    Option B (optional): Solve-Error nutzen, aber auf sinnvolle Größenordnung clampen
-        # cleanup_use_solve_error = False
-        # if cleanup_use_solve_error:
-        #     scene["solve_error_clamped"] = min(float(scene.get("solve_error", 3.0)), 5.0)
-        #     threshold_key = "solve_error_clamped"
-        
-        cleanup_factor = float(getattr(self, "cleanup_factor", 1.0))           # 1.0–1.5 üblich
-        cleanup_frames = int(getattr(self, "cleanup_frames", 0))               # 0 = keine Mindestlänge
-        cleanup_action = 'DELETE_TRACK' if not getattr(self, "cleanup_mute_only", False) else 'SELECT'
+    
+        # Standard: szenischer Track-Threshold (Pixel) verwenden
+        error_track = float(scene.get("error_track", 2.0))
+        threshold_key = "error_track"
+        cleanup_factor = float(getattr(self, "cleanup_factor", 1.0))
+        cleanup_frames = int(getattr(self, "cleanup_frames", 0))
         cleanup_dryrun = bool(getattr(self, "cleanup_dry_run", False))
-        
-        print(f"[SolveWatch] Starte Projection-Cleanup (builtin clip.clean_tracks): key={threshold_key}, factor={cleanup_factor}, frames={cleanup_frames}, action={cleanup_action}, dry_run={cleanup_dryrun}")
-        
+        cleanup_action = 'SELECT' if bool(getattr(self, "cleanup_mute_only", False)) else 'DELETE_TRACK'
+    
+        print(f"[SolveWatch] Starte Projection-Cleanup (builtin): key={threshold_key}, "
+              f"factor={cleanup_factor}, frames={cleanup_frames}, action={cleanup_action}, dry_run={cleanup_dryrun}")
+    
+        # --- 4) Built-in Cleanup ausführen ---
         try:
-            # 3) Built-in Cleanup ausführen
             report = builtin_projection_cleanup(
                 context,
                 error_key=threshold_key,
@@ -143,13 +168,18 @@ class CLIP_OT_solve_watch_clean(Operator):
         except Exception as e:
             self.report({'ERROR'}, f"Projection-Cleanup fehlgeschlagen: {e}")
             return {'CANCELLED'}
-        
+    
         for line in report.get("log", []):
             print(line)
-        
-        print(f"[SolveWatch] Projection-Cleanup abgeschlossen: affected={int(report['affected'])}, threshold={report['threshold']:.6f}, mode={report['action']}")
+    
+        print(f"[SolveWatch] Projection-Cleanup abgeschlossen: "
+              f"affected={int(report.get('affected', 0))}, "
+              f"threshold={float(report.get('threshold', error_track)):.6f}, "
+              f"mode={report.get('action', cleanup_action)}")
+    
         self.report({'INFO'}, f"Cleanup getriggert (AvgErr={avg2:.6f} ≥ error_track={error_track:.6f}).")
         return {'FINISHED'}
+
 
 
 
