@@ -27,3 +27,14 @@ class CLIP_OT_marker_adapt_boost(Operator):
 
 
 __all__ = ("CLIP_OT_marker_adapt_boost",)
+
+classes = (CLIP_OT_marker_adapt_boost,)
+
+def register():
+    for cls in classes:
+        bpy.utils.register_class(cls)
+
+def unregister():
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
+
