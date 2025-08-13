@@ -1,6 +1,7 @@
+# refine_high_error.py
 import bpy
 from bpy.types import Operator
-from bpy.props import FloatProperty, BoolProperty, IntProperty
+from bpy.props import BoolProperty, IntProperty
 
 __all__ = ("CLIP_OT_refine_on_high_error", "run_refine_on_high_error")
 
@@ -8,8 +9,10 @@ __all__ = ("CLIP_OT_refine_on_high_error", "run_refine_on_high_error")
 # --- Context Utilities --------------------------------------------------------
 
 def _find_clip_window(context):
-    """Sucht ein aktives CLIP_EDITOR-Fenster. Rückgabe: (area, region, space) oder (None, None, None)."""
-    for area in context.window.screen.areas:
+    win = context.window
+    if not win or not getattr(win, "screen", None):
+        return None, None, None
+    for area in win.screen.areas:
         if area.type == 'CLIP_EDITOR':
             for region in area.regions:
                 if region.type == 'WINDOW':
@@ -18,7 +21,6 @@ def _find_clip_window(context):
 
 
 def _get_active_clip(context):
-    """Aktiven MovieClip ermitteln: bevorzugt aus space_data, sonst erstes bpy.data.movieclips."""
     space = getattr(context, "space_data", None)
     if space and getattr(space, "clip", None):
         return space.clip
@@ -26,7 +28,6 @@ def _get_active_clip(context):
 
 
 def _prev_next_keyframes(track, frame):
-    """Vorherigen und nächsten Keyframe (m.is_keyed) relativ zu 'frame' finden."""
     prev_k, next_k = None, None
     for m in track.markers:
         if not m.is_keyed:
@@ -38,13 +39,63 @@ def _prev_next_keyframes(track, frame):
     return prev_k, next_k
 
 
-# --- Core Routine (funktionsbasiert) -----------------------------------------
+# --- Error-Serie --------------------------------------------------------------
 
-def run_refine_on_high_error(context, error_threshold: float | None = 2.0, limit_frames: int = 0, resolve_after: bool = False) -> int:
+def _build_error_series(recon):
+    """frame -> average_error (float) aus Reconstruction Cameras."""
+    series = {}
+    for cam in recon.cameras:
+        series[int(cam.frame)] = float(cam.average_error)
+    # sortiert zurückgeben
+    return dict(sorted(series.items()))
+
+
+# --- Neue Selektion: Top-N nach Szene/marker_basis ----------------------------
+
+def _select_top_n_frames_by_scene_basis(context, recon):
     """
-    Refine beidseitig an Frames mit Solve-Frame-Error >= Threshold.
-    Auto-Threshold:
-      - Wenn error_threshold None oder <0: zuerst scene['solve_error'], dann Reconstruction.average_error, sonst 2.0.
+    N = (scene.frame_end - scene.frame_start + 1) // scene['marker_basis']
+    mind. 1. Wählt die N höchsten Error-Frames (innerhalb des Szenenbereichs).
+    """
+    scene = context.scene
+    frame_start = int(scene.frame_start)
+    frame_end = int(scene.frame_end)
+    total_frames = max(0, frame_end - frame_start + 1)
+
+    marker_basis = int(scene.get("marker_basis", 25))
+    if marker_basis <= 0:
+        marker_basis = 25
+
+    # Ganzzahlige Division; mindestens 1
+    n = max(1, total_frames // marker_basis)
+
+    series = _build_error_series(recon)
+
+    # Auf Szenenbereich filtern
+    series = {f: e for f, e in series.items() if frame_start <= f <= frame_end}
+
+    if not series:
+        return []
+
+    # Top-N Frames nach Error (desc), stabil nach Frame (asc) für Reproduzierbarkeit
+    sorted_by_error = sorted(series.items(), key=lambda kv: (-kv[1], kv[0]))
+    selected = [f for f, _ in sorted_by_error[:n]]
+
+    print(f"[Select] Szene-Frames: {total_frames}, marker_basis: {marker_basis} → N={n}")
+    print(f"[Select] Top-{n} Frames (höchste Errors): {selected}")
+    return sorted(selected)
+
+
+# --- Core Routine -------------------------------------------------------------
+
+def run_refine_on_high_error(
+    context,
+    limit_frames: int = 0,
+    resolve_after: bool = False,
+) -> int:
+    """
+    Refine an genau N Frames mit den höchsten Solve-Frame-Errors.
+    N = (Szenen-Frameanzahl) // scene['marker_basis'], N >= 1.
     """
     clip = _get_active_clip(context)
     if not clip:
@@ -55,36 +106,15 @@ def run_refine_on_high_error(context, error_threshold: float | None = 2.0, limit
     if not recon.is_valid:
         raise RuntimeError("Keine gültige Rekonstruktion gefunden (Solve fehlt oder wurde gelöscht).")
 
-    # --- NEU: Threshold-Autoload aus Szene / Reconstruction -------------------
-    if error_threshold is None or (isinstance(error_threshold, (int, float)) and float(error_threshold) < 0.0):
-        thr = None
-        # 1) Szenevariable
-        try:
-            thr = float(context.scene.get("solve_error"))
-        except Exception:
-            thr = None
-        # 2) Reconstruction Average Error
-        if thr is None and getattr(recon, "is_valid", False):
-            try:
-                thr = float(getattr(recon, "average_error", 2.0))
-            except Exception:
-                thr = None
-        # 3) Fallback
-        if thr is None:
-            thr = 2.0
-        error_threshold = thr
-        print(f"[Refine] Threshold auto gesetzt: {error_threshold:.3f} (Szene/Reconstruction/Fallback)")
+    # --- Frame-Selektion (neu) ---
+    bad_frames = _select_top_n_frames_by_scene_basis(context, recon)
 
-    # Spike-Frames ermitteln
-    bad_frames = [cam.frame for cam in recon.cameras if float(cam.average_error) >= float(error_threshold)]
-    bad_frames = sorted(set(bad_frames))
-    if limit_frames > 0:
+    # Optional zusätzlich begrenzen
+    if limit_frames > 0 and bad_frames:
         bad_frames = bad_frames[:int(limit_frames)]
 
-    print(f"[INFO] Gefundene Problem-Frames (≥ {float(error_threshold):.3f}px): {bad_frames}")
-
     if not bad_frames:
-        print("[INFO] Keine Frames mit zu hohem Error gefunden.")
+        print("[INFO] Keine Frames für Refine gefunden.")
         return 0
 
     area, region, space_ce = _find_clip_window(context)
@@ -115,7 +145,6 @@ def run_refine_on_high_error(context, error_threshold: float | None = 2.0, limit
         print(f"  → Vorwärts-Refine Tracks: {len(tracks_forward)} | Rückwärts-Refine Tracks: {len(tracks_backward)}")
 
         if tracks_forward:
-            print(f"  [ACTION] Vorwärts-Refine ({len(tracks_forward)} Tracks)")
             with context.temp_override(area=area, region=region, space_data=space_ce):
                 for tr in clip.tracking.tracks:
                     tr.select = False
@@ -124,7 +153,6 @@ def run_refine_on_high_error(context, error_threshold: float | None = 2.0, limit
                 bpy.ops.clip.refine_markers(backwards=False)
 
         if tracks_backward:
-            print(f"  [ACTION] Rückwärts-Refine ({len(tracks_backward)} Tracks)")
             with context.temp_override(area=area, region=region, space_data=space_ce):
                 for tr in clip.tracking.tracks:
                     tr.select = False
@@ -136,7 +164,7 @@ def run_refine_on_high_error(context, error_threshold: float | None = 2.0, limit
         print(f"  [DONE] Frame {f} abgeschlossen.")
 
     if resolve_after:
-        print("[ACTION] Starte erneutes Kamera-Solve...")
+        print("[ACTION] Starte erneutes Kamera-Solve…")
         with context.temp_override(area=area, region=region, space_data=space_ce):
             bpy.ops.clip.solve_camera()
         print("[DONE] Kamera-Solve abgeschlossen.")
@@ -146,23 +174,17 @@ def run_refine_on_high_error(context, error_threshold: float | None = 2.0, limit
     return processed
 
 
-
-# --- Operator-Wrapper (optional) ---------------------------------------------
+# --- Operator-Wrapper ---------------------------------------------------------
 
 class CLIP_OT_refine_on_high_error(Operator):
-    """Refine Markers an Frames mit hohem Solve-Frame-Error (beidseitig), optional mit Re-Solve."""
+    """Refine an den N Frames mit höchsten Solve-Frame-Errors (N = Szene/marker_basis)."""
     bl_idname = "clip.refine_on_high_error"
-    bl_label = "Refine on High Solve Error"
+    bl_label = "Refine: Top-N Solve-Error Frames"
     bl_options = {"REGISTER", "UNDO"}
 
-    error_threshold: FloatProperty(
-        name="Frame Error ≥ (px)",
-        description="Kamera-Frame-Durchschnittsfehler, ab dem Refine ausgelöst wird",
-        default=2.0, min=0.0
-    )
     limit_frames: IntProperty(
         name="Max Frames",
-        description="Obergrenze der zu verarbeitenden Frames (0 = alle)",
+        description="Zusätzliche Obergrenze (0 = keine Begrenzung)",
         default=0, min=0
     )
     resolve_after: BoolProperty(
@@ -174,23 +196,20 @@ class CLIP_OT_refine_on_high_error(Operator):
         try:
             n = run_refine_on_high_error(
                 context,
-                error_threshold=self.error_threshold,  # Operator übergibt explizit; Auto-Load greift bei Funktionsaufruf mit None
                 limit_frames=self.limit_frames,
-                resolve_after=self.resolve_after
+                resolve_after=self.resolve_after,
             )
         except RuntimeError as e:
             self.report({'ERROR'}, str(e))
             return {'CANCELLED'}
 
         if n == 0:
-            self.report({'INFO'}, f"Keine Frames ≥ {self.error_threshold:.3f} px.")
+            self.report({'INFO'}, "Keine Frames ausgewählt.")
             return {'CANCELLED'}
 
-        self.report({'INFO'}, f"Refine abgeschlossen an {n} Frame(s) (≥ {self.error_threshold:.3f}px).")
+        self.report({'INFO'}, f"Refine abgeschlossen an {n} Frame(s).")
         return {'FINISHED'}
 
-
-# --- Register Helpers ---------------------------------------------------------
 
 def register():
     bpy.utils.register_class(CLIP_OT_refine_on_high_error)
