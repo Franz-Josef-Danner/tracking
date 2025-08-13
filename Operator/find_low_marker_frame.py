@@ -69,7 +69,7 @@ class CLIP_OT_find_low_marker_frame(Operator):
 
         print("[MarkerCheck] Keine Low-Marker-Frames gefunden. Starte Kamera-Solve.")
         try:
-            bpy.ops.clip.clean_error_tracks('INVOKE_DEFAULT')
+            bpy.ops.clip.solve_watch_clean('INVOKE_DEFAULT')
         except Exception as ex:
             self.report({'ERROR'}, f"Solve-Start fehlgeschlagen: {ex}")
             return {'CANCELLED'}
