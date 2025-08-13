@@ -11,12 +11,7 @@ bl_info = {
 import bpy
 from bpy.props import IntProperty, FloatProperty
 
-from .Helper.disable_proxy import CLIP_OT_disable_proxy
-from .Helper.enable_proxy import CLIP_OT_enable_proxy
-from .Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
-from .Operator.main import CLIP_OT_main
 from .Operator.marker_helper_main import CLIP_OT_marker_helper_main
-from .Helper.properties import RepeatEntry
 
 # Panel
 class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
@@ -38,13 +33,7 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
 
 # Alle Klassen zur Registrierung
 classes = (
-    RepeatEntry,
-    CLIP_OT_disable_proxy,
-    CLIP_OT_enable_proxy,
-    CLIP_OT_clean_short_tracks,
-    CLIP_OT_main,
     CLIP_OT_marker_helper_main,
-    CLIP_PT_kaiserlich_panel,
 )
 
 def register():
