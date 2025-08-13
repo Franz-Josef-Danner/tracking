@@ -59,7 +59,7 @@ class CLIP_OT_tracker_settings(bpy.types.Operator):
 
         # --- Nächster Schritt in der Kette: Find Low Marker ---
         try:
-            res = bpy.ops.clip.find_low_marker_frame('INVOKE_DEFAULT', use_scene_basis=True)
+            #res = bpy.ops.clip.find_low_marker_frame('INVOKE_DEFAULT', use_scene_basis=True)
             print(f"[TrackerSettings] Übergabe an find_low_marker_frame → {res}")
         except Exception as e:
             self.report({'ERROR'}, f"find_low_marker_frame konnte nicht gestartet werden: {e}")
