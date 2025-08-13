@@ -11,7 +11,7 @@ from .solve_camera import CLIP_OT_solve_watch_clean, run_solve_watch_clean  # âœ
 from .main_to_adapt import CLIP_OT_main_to_adapt
 from .main import CLIP_OT_main
 from .jump_to_frame import CLIP_OT_jump_to_frame
-from .find_low_marker_frame import CLIP_OT_find_low_marker
+from .find_low_marker_frame import CLIP_OT_find_low_marker_frame
 
 try:
     from .clean_short_tracks import CLIP_OT_clean_short_tracks
@@ -34,7 +34,7 @@ classes = (
     CLIP_OT_main_to_adapt,
     CLIP_OT_main,
     CLIP_OT_jump_to_frame,
-    CLIP_OT_find_low_marker,
+    CLIP_OT_find_low_marker_frame,
 )
 
 def register():
