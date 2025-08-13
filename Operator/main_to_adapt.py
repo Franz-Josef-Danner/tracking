@@ -65,7 +65,7 @@ class CLIP_OT_main_to_adapt(bpy.types.Operator):
 
 
 # Registration
-classes = (CLIP_OT_launch_find_low_marker_frame_with_adapt,)
+classes = (CLIP_OT_main_to_adapt,)
 
 def register():
     for cls in classes:
