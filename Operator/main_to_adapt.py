@@ -1,8 +1,9 @@
 import bpy
 
 __all__ = (
-    "CLIP_OT_tracker_settings",  # Alias für Alt-Imports
+    "CLIP_OT_launch_find_low_marker_frame_with_adapt",
 )
+
 def _clip_override(context):
     win = context.window
     if not win or not win.screen:
@@ -15,10 +16,13 @@ def _clip_override(context):
     return None
 
 
-class CLIP_OT_tracker_settings:
-    """Berechnet marker_adapt aus marker_basis und startet anschließend clip. tracker_settings."""
-    bl_idname = "clip.launch_tracker_settings_frame_with_adapt"
-    bl_label  = "Start tracker_settings_frame (Adapt x4)"
+class CLIP_OT_launch_find_low_marker_frame_with_adapt(bpy.types.Operator):
+    """
+    1) Leitet marker_adapt aus scene['marker_basis'] * factor * 0.9 ab und speichert ihn in scene['marker_adapt'].
+    2) Startet anschließend die Kette mit clip.tracker_settings (die danach clip.find_low_marker triggert).
+    """
+    bl_idname = "clip.launch_find_low_marker_frame_with_adapt"
+    bl_label  = "Launch Low-Marker-Chain (Adapt xF)"
     bl_options = {'REGISTER'}
 
     factor: bpy.props.IntProperty(
@@ -33,7 +37,6 @@ class CLIP_OT_tracker_settings:
     )
 
     def invoke(self, context, event):
-        # Delegiere sauber auf execute(), damit INVOKE_DEFAULT valide ist
         return self.execute(context)
 
     def execute(self, context):
@@ -41,23 +44,33 @@ class CLIP_OT_tracker_settings:
         marker_basis = int(scene.get("marker_basis", 25))
         marker_adapt = int(marker_basis * self.factor * 0.9)
 
-        # Szenenvariable persistieren → wird downstream (main/detect) konsumiert
+        # Szenenvariable persistieren → wird downstream konsumiert
         scene["marker_adapt"] = marker_adapt
-        print(f"[MainToAdapt] marker_adapt in Scene gespeichert: {marker_adapt}")
+        print(f"[MainToAdapt] marker_adapt gesetzt: {marker_adapt} (basis={marker_basis}, factor={self.factor})")
 
-        if self.use_override:
-            ovr = _clip_override(context)
+        # Nächster Schritt der Kette: tracker_settings (ruft danach find_low_marker)
+        try:
+            ovr = _clip_override(context) if self.use_override else None
             if ovr:
                 with context.temp_override(**ovr):
-                    return bpy.ops.clip.tracker_settings('INVOKE_DEFAULT', use_scene_basis=True)
+                    res = bpy.ops.clip.tracker_settings('INVOKE_DEFAULT')
+            else:
+                res = bpy.ops.clip.tracker_settings('INVOKE_DEFAULT')
 
-        # Fallback ohne Override – KORREKTER Operator-Name
-        return bpy.ops.clip. tracker_settings('INVOKE_DEFAULT', use_scene_basis=True)
+            print(f"[MainToAdapt] Übergabe an tracker_settings → {res}")
+            return {'FINISHED'}
+        except Exception as e:
+            self.report({'ERROR'}, f"tracker_settings konnte nicht gestartet werden: {e}")
+            return {'CANCELLED'}
 
 
-# Registrierung lokal möglich, Haupt-Register passiert in __init__.py
+# Registration
+classes = (CLIP_OT_launch_find_low_marker_frame_with_adapt,)
+
 def register():
-    bpy.utils.register_class(CLIP_OT_launch_tracker_settings_frame_with_adapt)
+    for cls in classes:
+        bpy.utils.register_class(cls)
 
 def unregister():
-    bpy.utils.unregister_class(CLIP_OT_launch_tracker_settings_frame_with_adapt)
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
