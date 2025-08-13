@@ -1,7 +1,7 @@
 import bpy
 
 __all__ = (
-    "CLIP_OT_launch_find_low_marker_frame_with_adapt",
+    "CLIP_OT_main_to_adapt",
 )
 
 def _clip_override(context):
@@ -21,8 +21,8 @@ class CLIP_OT_main_to_adapt(bpy.types.Operator):
     1) Leitet marker_adapt aus scene['marker_basis'] * factor * 0.9 ab und speichert ihn in scene['marker_adapt'].
     2) Startet anschließend die Kette mit clip.tracker_settings (die danach clip.find_low_marker triggert).
     """
-    bl_idname = "clip.launch_find_low_marker_frame_with_adapt"
-    bl_label  = "Launch Low-Marker-Chain (Adapt xF)"
+    bl_idname = "clip.main_to_adapt"
+    bl_label  = "main_to_adapt (Adapt xF)"
     bl_options = {'REGISTER'}
 
     factor: bpy.props.IntProperty(
