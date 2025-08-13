@@ -85,9 +85,6 @@ class CLIP_OT_main(Operator):
                 mgr = context.temp_override(**override)
                 mgr.__enter__()
 
-            # --- Pre-Detect: Vorprüfung (Low-Marker) + Playhead ---
-            self._precheck_and_jump(context, clip)
-
             # --- Pre-Detect: Tracker-Setup ---
             print("🚀 Vorbereitung: tracker_settings …")
             bpy.ops.clip.tracker_settings('EXEC_DEFAULT')
