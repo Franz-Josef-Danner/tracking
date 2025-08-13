@@ -68,15 +68,15 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             # --- 4) Gap-Erkennung & Aufteilung
             tracks = clip.tracking.tracks
             original_tracks = [t for t in tracks if track_has_internal_gaps(t)]
-
+            
             # Baselines vor mutierenden Schritten
-            tracks_before = len(clip.tracking.tracks)
-            markers_before = sum(len(t.markers) for t in clip.tracking.tracks)
-
-            made_changes = deleted > 0
+            tracks_before = len(tracks)
+            markers_before = sum(len(t.markers) for t in tracks)
+            
+            deleted_any = deleted > 0
             new_tracks = []
             recursive_changed = False
-
+            
             if not original_tracks:
                 print("[CleanError] Keine Tracks mit internen Lücken – überspringe Split.")
             else:
@@ -86,51 +86,52 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                     t.select = False
                 for t in original_tracks:
                     t.select = True
-
+            
                 bpy.ops.clip.copy_tracks()
                 bpy.ops.clip.paste_tracks()
-
+            
                 deps = context.evaluated_depsgraph_get(); deps.update()
                 bpy.context.view_layer.update(); scene.frame_set(scene.frame_current)
-
+            
                 all_names_after = {t.name for t in tracks}
                 new_names = all_names_after - existing_names
                 new_tracks = [t for t in tracks if t.name in new_names]
-
-                if not new_tracks:
-                    print("[CleanError] Hinweis: Keine eindeutig neuen Tracks erkannt (Namensgleichheit?). clear_path_on_split_tracks_segmented läuft dennoch weiter.")
-
+            
                 clear_path_on_split_tracks_segmented(
                     context, ovr["area"], ovr["region"], ovr["space_data"],
                     original_tracks, new_tracks
                 )
-
-                try:
-                    changed_in_recursive = recursive_split_cleanup(
-                        context, ovr["area"], ovr["region"], ovr["space_data"],
-                        tracks
-                    )
-                except Exception as ex:
-                    self.report({'ERROR'}, f"Segment-Cleanup fehlgeschlagen: {ex}")
-                    return {'CANCELLED'}
-
-                # Rückgabewert konservativ auswerten
-                if isinstance(changed_in_recursive, bool) and changed_in_recursive:
+            
+                changed_in_recursive = recursive_split_cleanup(
+                    context, ovr["area"], ovr["region"], ovr["space_data"],
+                    tracks
+                )
+                if (isinstance(changed_in_recursive, bool) and changed_in_recursive) or \
+                   (isinstance(changed_in_recursive, int) and changed_in_recursive > 0):
                     recursive_changed = True
-                elif isinstance(changed_in_recursive, int) and changed_in_recursive > 0:
-                    recursive_changed = True
-
+            
+                # **NEU**: leere Duplikate entfernen, damit sie nicht als Änderung zählen
+                empty_dupes = [t for t in new_tracks if len(t.markers) == 0]
+                if empty_dupes:
+                    for t in tracks:
+                        t.select = False
+                    for t in empty_dupes:
+                        t.select = True
+                    bpy.ops.clip.delete_track()
+                    deps = context.evaluated_depsgraph_get(); deps.update()
+                    bpy.context.view_layer.update(); scene.frame_set(scene.frame_current)
+            
             # Struktur-Deltas nach allen Schritten ermitteln
-            tracks_after = len(clip.tracking.tracks)
-            markers_after = sum(len(t.markers) for t in clip.tracking.tracks)
-
+            tracks_after = len(tracks)
+            markers_after = sum(len(t.markers) for t in tracks)
+            
             made_changes = bool(
-                (deleted > 0) or
+                deleted_any or
                 (tracks_after != tracks_before) or
                 (markers_after != markers_before) or
-                (len(new_tracks) > 0) or
                 recursive_changed
             )
+
 
             # --- 5) Safety Passes
             mute_unassigned_markers(tracks)
