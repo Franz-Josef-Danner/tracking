@@ -91,7 +91,7 @@ class CLIP_OT_main(Operator):
             scene_adapt    = int(scene.get("marker_adapt", 0))
             marker_adapt_in = op_adapt if op_adapt > 0 else scene_adapt
             
-            basis_for_bounds = int(marker_adapt_in * 1.1) if marker_adapt_in > 0 else marker_basis
+            basis_for_bounds = int(marker_adapt_in) if marker_adapt_in > 0 else marker_basis
             scene["marker_min"] = int(basis_for_bounds * 0.9)
             scene["marker_max"] = int(basis_for_bounds * 1.1)
             
