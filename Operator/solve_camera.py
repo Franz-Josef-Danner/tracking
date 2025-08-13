@@ -108,73 +108,46 @@ class CLIP_OT_solve_watch_clean(Operator):
             self.report({'ERROR'}, "Kein aktiver Movie Clip.")
             return {'CANCELLED'}
 
-        # 1) Erstes Solve
-        avg1 = _solve_once(context, label="(1)")
-        print(f"[SolveWatch] AvgErr(1) = {avg1:.6f}")
-
-        # 2) Refine (Top-N) via Operator
-        area, region, space = _find_clip_window(context)
-        if not area:
-            self.report({'ERROR'}, "Kein CLIP_EDITOR-Fenster für Refine.")
-            return {'CANCELLED'}
-
-        # Direkter Call der Kernfunktion – kein UI-Operator, kein bpy.ops
-        try:
-            n = run_solve_watch_clean.__globals__['run_refine_on_high_error'](  # sichert denselben Modulkontext
-                context,
-                limit_frames=int(self.refine_limit_frames),
-                resolve_after=False,
-            )
-            print(f"[Refine] abgeschlossen, bearbeitete Frames: {n}")
-        except Exception as e:
-            print(f"[Refine] übersprungen/fehlgeschlagen: {e}")
-
-        # 3) Zweites Solve
-        avg2 = _solve_once(context, label="(2)")
-        print(f"[SolveWatch] AvgErr(2) = {avg2:.6f}")
-
-        # 4) Entscheidung vs. Szene-Threshold
+        # 1) Solve-Error persistieren (wie gehabt)
         scene = context.scene
-        error_track = float(scene.get("error_track", 0.0))  # 0.0 → Cleanup wird sicher angestoßen
-        print(f"[SolveWatch] Szene-Threshold error_track = {error_track:.6f}")
-
-        if avg2 < error_track:
-            self.report({'INFO'}, f"Solve stabil: {avg2:.6f} < error_track({error_track:.6f}).")
-            return {'FINISHED'}
-
-        # Persist Solve-Error und Projection-Cleanup (Helper! kein bpy.ops) auslösen
         scene["solve_error"] = float(avg2)
         print(f"[SolveWatch] Persistiert: scene['solve_error'] = {avg2:.6f}")
-        print("[SolveWatch] Starte Projection-Cleanup (Helper.clean_tracks_by_projection_error)…")
         
-        # Wir sorgen für gültigen CLIP_EDITOR-Kontext, damit error_value() und delete_track funktionieren
-        area, region, space = _find_clip_window(context)
-        if not area:
-            self.report({'ERROR'}, "Kein CLIP_EDITOR-Fenster für Projection-Cleanup.")
+        # 2) Projection-Cleanup konfigurieren
+        #    Option A: Szene-Threshold (empfohlen)
+        threshold_key = "error_track"  # typ. 2.0 px
+        
+        #    Option B (optional): Solve-Error nutzen, aber auf sinnvolle Größenordnung clampen
+        # cleanup_use_solve_error = False
+        # if cleanup_use_solve_error:
+        #     scene["solve_error_clamped"] = min(float(scene.get("solve_error", 3.0)), 5.0)
+        #     threshold_key = "solve_error_clamped"
+        
+        cleanup_factor = float(getattr(self, "cleanup_factor", 1.0))           # 1.0–1.5 üblich
+        cleanup_frames = int(getattr(self, "cleanup_frames", 0))               # 0 = keine Mindestlänge
+        cleanup_action = 'DELETE_TRACK' if not getattr(self, "cleanup_mute_only", False) else 'SELECT'
+        cleanup_dryrun = bool(getattr(self, "cleanup_dry_run", False))
+        
+        print(f"[SolveWatch] Starte Projection-Cleanup (builtin clip.clean_tracks): key={threshold_key}, factor={cleanup_factor}, frames={cleanup_frames}, action={cleanup_action}, dry_run={cleanup_dryrun}")
+        
+        try:
+            # 3) Built-in Cleanup ausführen
+            report = builtin_projection_cleanup(
+                context,
+                error_key=threshold_key,
+                factor=cleanup_factor,
+                frames=cleanup_frames,
+                action=cleanup_action,
+                dry_run=cleanup_dryrun,
+            )
+        except Exception as e:
+            self.report({'ERROR'}, f"Projection-Cleanup fehlgeschlagen: {e}")
             return {'CANCELLED'}
         
-        with context.temp_override(area=area, region=region, space_data=space):
-            try:
-                report = clean_tracks_by_projection_error(
-                    context,
-                    threshold_key="solve_error",              # liest scene['solve_error']
-                    factor=float(self.cleanup_factor),
-                    mute_only=bool(self.cleanup_mute_only),
-                    dry_run=bool(self.cleanup_dry_run),
-                )
-            except Exception as e:
-                self.report({'ERROR'}, f"Projection-Cleanup fehlgeschlagen: {e}")
-                return {'CANCELLED'}
-        
-        # Konsolenlog ausgeben
         for line in report.get("log", []):
             print(line)
         
-        affected  = int(report.get("affected", 0))
-        threshold = report.get("threshold", None)
-        mode = "MUTE" if self.cleanup_mute_only else "DELETE"
-        print(f"[SolveWatch] Projection-Cleanup abgeschlossen: affected={affected}, threshold={threshold}, mode={mode}")
-        
+        print(f"[SolveWatch] Projection-Cleanup abgeschlossen: affected={int(report['affected'])}, threshold={report['threshold']:.6f}, mode={report['action']}")
         self.report({'INFO'}, f"Cleanup getriggert (AvgErr={avg2:.6f} ≥ error_track={error_track:.6f}).")
         return {'FINISHED'}
 
