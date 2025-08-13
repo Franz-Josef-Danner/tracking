@@ -118,13 +118,14 @@ class CLIP_OT_solve_watch_clean(Operator):
             self.report({'ERROR'}, "Kein CLIP_EDITOR-Fenster für Refine.")
             return {'CANCELLED'}
 
+        # Operator/solve_camera.py (im execute() von CLIP_OT_solve_watch_clean)
         with context.temp_override(area=area, region=region, space_data=space):
-            res_ref = bpy.ops.clip.run_refine_on_high_error(
+            res_ref = bpy.ops.clip.refine_on_high_error(   # ← korrigiert
                 'EXEC_DEFAULT',
                 limit_frames=int(self.refine_limit_frames),
-                resolve_after=False,  # hier kein Auto-ReSolve
-                # error_threshold kann alt-seitig mitkommen, wird im Operator ignoriert (Compat)
+                resolve_after=False,
             )
+
         if res_ref != {'FINISHED'}:
             self.report({'WARNING'}, "Refine nicht ausgeführt.")
             # trotzdem weiterlösen, um robust zu bleiben
