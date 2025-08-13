@@ -55,14 +55,14 @@ class CLIP_OT_tracker_settings(bpy.types.Operator):
 
         self.report({'INFO'}, "Tracking-Voreinstellungen gesetzt.")
         print(f"[TrackerSettings] Defaults angewendet. last_detection_threshold={scene['last_detection_threshold']:.6f}")
-        print("[TrackerSettings] Übergabe an find_low_marker …")
+        print("[TrackerSettings] Übergabe an find_low_marker_frame …")
 
         # --- Nächster Schritt in der Kette: Find Low Marker ---
         try:
-            res = bpy.ops.clip.find_low_marker('INVOKE_DEFAULT', use_scene_basis=True)
-            print(f"[TrackerSettings] Übergabe an find_low_marker → {res}")
+            res = bpy.ops.clip.find_low_marker_frame('INVOKE_DEFAULT', use_scene_basis=True)
+            print(f"[TrackerSettings] Übergabe an find_low_marker_frame → {res}")
         except Exception as e:
-            self.report({'ERROR'}, f"find_low_marker konnte nicht gestartet werden: {e}")
+            self.report({'ERROR'}, f"find_low_marker_frame konnte nicht gestartet werden: {e}")
             return {'CANCELLED'}
 
         return {'FINISHED'}
