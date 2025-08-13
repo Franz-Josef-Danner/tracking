@@ -12,7 +12,6 @@ except Exception as e:
 
 
 classes = (
-    CLIP_OT_clean_short_tracks,
     CLIP_OT_marker_helper_main,
     CLIP_OT_main,
 )
