@@ -5,7 +5,6 @@ from .disable_proxy import CLIP_OT_disable_proxy
 from .enable_proxy import CLIP_OT_enable_proxy
 from .error_value import error_value
 from .set_test_value import set_test_value
-from .jump_to_frame import jump_to_frame
 from .properties import RepeatEntry
 from .log_helper import write_log_entry
 from .solve_camera_helper import CLIP_OT_solve_watch_clean, run_solve_watch_clean
