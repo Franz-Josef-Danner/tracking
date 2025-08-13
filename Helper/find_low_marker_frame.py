@@ -1,5 +1,10 @@
+# Helper/find_low_marker_frame_helper.py
 import bpy
-from bpy.types import Operator
+
+__all__ = (
+    "find_low_marker_frame_core",
+    "run_find_low_marker_frame",
+)
 
 def find_low_marker_frame_core(clip, marker_basis=20, frame_start=None, frame_end=None):
     tracking = clip.tracking
@@ -21,64 +26,55 @@ def find_low_marker_frame_core(clip, marker_basis=20, frame_start=None, frame_en
     print("[MarkerCheck] Kein Frame mit zu wenigen Markern gefunden.")
     return None
 
-class CLIP_OT_find_low_marker_frame(Operator):
-    """Sucht den ersten Frame unter 'marker_basis'.
-       If/Else: Treffer → jump_to_frame; kein Treffer → clean_error_tracks."""
-    bl_idname = "clip.find_low_marker_frame"  # ✅ vereinheitlicht
-    bl_label = "Find Low Marker Frame"
-    bl_options = {"INTERNAL"}
 
-    use_scene_basis: bpy.props.BoolProperty(
-        name="Scene-Basis verwenden", default=True,
-        description="marker_basis aus Scene['marker_basis'] lesen (Fallback: Default)"
-    )
-    marker_basis: bpy.props.IntProperty(
-        name="Mindestmarker pro Frame", default=20, min=1, max=100000
-    )
-    frame_start: bpy.props.IntProperty(name="Frame Start (optional)", default=-1, min=-1)
-    frame_end: bpy.props.IntProperty(name="Frame End (optional)", default=-1, min=-1)
+def _get_clip(context):
+    space = getattr(context, "space_data", None)
+    if space and getattr(space, "clip", None):
+        return space.clip
+    return bpy.data.movieclips[0] if bpy.data.movieclips else None
 
-    def _get_clip(self, context):
-        space = getattr(context, "space_data", None)
-        if space and getattr(space, "clip", None):
-            return space.clip
-        return bpy.data.movieclips[0] if bpy.data.movieclips else None
 
-    def execute(self, context):
-        clip = self._get_clip(context)
-        if clip is None:
-            self.report({'ERROR'}, "Kein aktiver MovieClip gefunden.")
-            return {'CANCELLED'}
+def run_find_low_marker_frame(
+    context,
+    *,
+    use_scene_basis: bool = True,
+    marker_basis: int = 20,
+    frame_start: int = -1,
+    frame_end: int = -1,
+):
+    """
+    Ehem. Operator-Execute als Helper:
+    - Sucht ersten Frame mit weniger als 'marker_basis' Markern (ggf. aus Scene['marker_basis']).
+    - Bei Treffer: setzt scene['goto_frame'] und ruft jump_to_frame.
+    - Bei keinem Treffer: startet solve_watch_clean.
+    Rückgabe: gefundener Frame (int) oder None.
+    """
+    clip = _get_clip(context)
+    if clip is None:
+        print("Error: Kein aktiver MovieClip gefunden.")
+        return None
 
-        scene = context.scene
-        basis = int(scene.get("marker_basis", self.marker_basis)) if self.use_scene_basis else int(self.marker_basis)
-        fs = None if self.frame_start < 0 else self.frame_start
-        fe = None if self.frame_end < 0 else self.frame_end
+    scene = context.scene
+    basis = int(scene.get("marker_basis", marker_basis)) if use_scene_basis else int(marker_basis)
+    fs = None if frame_start < 0 else frame_start
+    fe = None if frame_end < 0 else frame_end
 
-        low_frame = find_low_marker_frame_core(clip, marker_basis=basis, frame_start=fs, frame_end=fe)
+    low_frame = find_low_marker_frame_core(clip, marker_basis=basis, frame_start=fs, frame_end=fe)
 
-        if low_frame is not None:
-            scene["goto_frame"] = int(low_frame)
-            print(f"[MarkerCheck] Treffer: Low-Marker-Frame {low_frame}. Übergabe an jump_to_frame …")
-            try:
-                bpy.ops.clip.jump_to_frame('EXEC_DEFAULT', target_frame=int(low_frame))
-            except Exception as ex:
-                self.report({'ERROR'}, f"jump_to_frame fehlgeschlagen: {ex}")
-                return {'CANCELLED'}
-            return {'FINISHED'}
-
-        print("[MarkerCheck] Keine Low-Marker-Frames gefunden. Starte Kamera-Solve.")
+    if low_frame is not None:
+        scene["goto_frame"] = int(low_frame)
+        print(f"[MarkerCheck] Treffer: Low-Marker-Frame {low_frame}. Übergabe an jump_to_frame …")
         try:
-            bpy.ops.clip.solve_watch_clean('INVOKE_DEFAULT')
+            bpy.ops.clip.jump_to_frame('EXEC_DEFAULT', target_frame=int(low_frame))
         except Exception as ex:
-            self.report({'ERROR'}, f"Solve-Start fehlgeschlagen: {ex}")
-            return {'CANCELLED'}
-        return {'FINISHED'}
+            print(f"Error: jump_to_frame fehlgeschlagen: {ex}")
+            return None
+        return low_frame
 
-classes = (CLIP_OT_find_low_marker_frame,)
-def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
-def unregister():
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
+    print("[MarkerCheck] Keine Low-Marker-Frames gefunden. Starte Kamera-Solve.")
+    try:
+        bpy.ops.clip.solve_watch_clean('INVOKE_DEFAULT')
+    except Exception as ex:
+        print(f"Error: Solve-Start fehlgeschlagen: {ex}")
+        return None
+    return None
