@@ -3,8 +3,10 @@ import bpy
 from bpy.types import Operator
 from bpy.props import IntProperty, FloatProperty, BoolProperty
 
-# Import: Top-N Refine (akzeptiert alte Args, ignoriert sie intern)
-from .refine_high_error import run_refine_on_high_error
+# Sicherstellen, dass der Refine-Operator-Klasse geladen ist (liegt in Helper/)
+# (Registrierung erfolgt zentral in deinem Addon-__init__ bzw. Operator/__init__)
+from ..Helper.refine_high_error import CLIP_OT_refine_on_high_error  # noqa: F401
+from ..Helper.clean_projection_error import CLIP_OT_clean_tracks_projection_error  # noqa: F401
 
 
 # -------------------------- Kontext-/Helper-Funktionen ------------------------
@@ -48,7 +50,7 @@ def _solve_once(context, *, label: str = "") -> float:
         raise RuntimeError("Kein CLIP_EDITOR-Fenster gefunden (Kontext erforderlich).")
 
     with context.temp_override(area=area, region=region, space_data=space):
-        res = bpy.ops.clip.solve_camera()
+        res = bpy.ops.clip.solve_camera('EXEC_DEFAULT')
         if res != {'FINISHED'}:
             raise RuntimeError("Solve fehlgeschlagen oder abgebrochen.")
 
@@ -56,18 +58,6 @@ def _solve_once(context, *, label: str = "") -> float:
     avg = float(getattr(recon, "average_error", 0.0)) if (recon and recon.is_valid) else 0.0
     print(f"[SolveWatch] Solve {label or ''} OK (AvgErr={avg:.6f}).")
     return avg
-
-
-def _run_refine_topn(context, *, limit_frames: int = 0) -> int:
-    """Refine Top-N Frames (aus scene['marker_basis']), returns processed count."""
-    n = run_refine_on_high_error(
-        context,
-        limit_frames=int(limit_frames),
-        resolve_after=False,          # hier kein Auto-ReSolve
-        # Alt-Args werden intern ignoriert, falls noch vorhanden
-    )
-    print(f"[SolveWatch] Refine Top-N abgeschlossen: {n} Frame(s).")
-    return int(n)
 
 
 # ------------------------------- Orchestrator --------------------------------
@@ -92,7 +82,7 @@ class CLIP_OT_solve_watch_clean(Operator):
         default=0, min=0
     )
 
-    # Optional: Faktor für den nachgelagerten Projection-Cleanup
+    # Parameter für Projection-Cleanup
     cleanup_factor: FloatProperty(
         name="Cleanup-Faktor",
         description="Multiplikator auf scene['solve_error'] für den Projection-Cleanup",
@@ -120,13 +110,24 @@ class CLIP_OT_solve_watch_clean(Operator):
 
         # 1) Erstes Solve
         avg1 = _solve_once(context, label="(1)")
-        # (Optionales Logging – kein Persist bis zur finalen Entscheidung)
         print(f"[SolveWatch] AvgErr(1) = {avg1:.6f}")
 
-        # 2) Refine (Top-N)
-        processed = _run_refine_topn(context, limit_frames=self.refine_limit_frames)
-        if processed == 0:
-            print("[SolveWatch] Refine übersprungen (keine Kandidaten).")
+        # 2) Refine (Top-N) via Operator
+        area, region, space = _find_clip_window(context)
+        if not area:
+            self.report({'ERROR'}, "Kein CLIP_EDITOR-Fenster für Refine.")
+            return {'CANCELLED'}
+
+        with context.temp_override(area=area, region=region, space_data=space):
+            res_ref = bpy.ops.clip.refine_on_high_error(
+                'EXEC_DEFAULT',
+                limit_frames=int(self.refine_limit_frames),
+                resolve_after=False,  # hier kein Auto-ReSolve
+                # error_threshold kann alt-seitig mitkommen, wird im Operator ignoriert (Compat)
+            )
+        if res_ref != {'FINISHED'}:
+            self.report({'WARNING'}, "Refine nicht ausgeführt.")
+            # trotzdem weiterlösen, um robust zu bleiben
 
         # 3) Zweites Solve
         avg2 = _solve_once(context, label="(2)")
@@ -146,11 +147,6 @@ class CLIP_OT_solve_watch_clean(Operator):
         print(f"[SolveWatch] Persistiert: scene['solve_error'] = {avg2:.6f}")
         print("[SolveWatch] Starte Projection-Cleanup (CLIP_OT_clean_tracks_projection_error)…")
 
-        area, region, space = _find_clip_window(context)
-        if not area:
-            self.report({'ERROR'}, "Kein CLIP_EDITOR-Fenster für Cleanup.")
-            return {'CANCELLED'}
-
         with context.temp_override(area=area, region=region, space_data=space):
             res = bpy.ops.clip.clean_tracks_projection_error(
                 'EXEC_DEFAULT',
@@ -166,6 +162,28 @@ class CLIP_OT_solve_watch_clean(Operator):
 
         self.report({'INFO'}, f"Cleanup getriggert (AvgErr={avg2:.6f} ≥ error_track={error_track:.6f}).")
         return {'FINISHED'}
+
+
+# -------------- Convenience-Wrapper (für Aufrufe aus __init__.py etc.) -------
+
+def run_solve_watch_clean(
+    context,
+    refine_limit_frames: int = 0,
+    cleanup_factor: float = 1.0,
+    cleanup_mute_only: bool = False,
+    cleanup_dry_run: bool = False,
+):
+    area, region, space = _find_clip_window(context)
+    if not area:
+        raise RuntimeError("Kein CLIP_EDITOR-Fenster gefunden (Kontext erforderlich).")
+    with context.temp_override(area=area, region=region, space_data=space):
+        return bpy.ops.clip.solve_watch_clean(
+            'EXEC_DEFAULT',
+            refine_limit_frames=int(refine_limit_frames),
+            cleanup_factor=float(cleanup_factor),
+            cleanup_mute_only=bool(cleanup_mute_only),
+            cleanup_dry_run=bool(cleanup_dry_run),
+        )
 
 
 # -------------------------------- Register -----------------------------------
