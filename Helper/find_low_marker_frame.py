@@ -62,7 +62,7 @@ def run_find_low_marker_frame(
         print(f"[MarkerCheck] Treffer: Low-Marker-Frame {low_frame}. Übergabe an jump_to_frame (Helper) …")
         ok = False
         try:
-            ok = run_jump_to_frame(context, explicit_target=int(low_frame))
+            res = run_jump_to_frame(context, frame=int(low_frame))
         except Exception as ex:
             print(f"Error: jump_to_frame (Helper) Exception: {ex}")
             return None
