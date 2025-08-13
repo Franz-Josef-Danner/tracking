@@ -1,6 +1,9 @@
+# Helper/jump_to_frame.py
+
 import bpy
 import json
-from bpy.types import Operator
+
+__all__ = ("jump_to_frame_helper", "run_jump_to_frame")
 
 def _clip_override(context):
     win = context.window
@@ -14,7 +17,7 @@ def _clip_override(context):
     return None
 
 
-def _resolve_target_frame(context, explicit_target: int) -> int | None:
+def _resolve_target_frame(context, explicit_target: int | None) -> int | None:
     if explicit_target is not None and explicit_target >= 0:
         return int(explicit_target)
     scene = context.scene
@@ -43,72 +46,54 @@ def _store_visited_frame(scene, frame: int) -> bool:
     return is_duplicate
 
 
-class CLIP_OT_jump_to_frame(Operator):
-    bl_idname = "clip.jump_to_frame"
-    bl_label = "Jump to Frame"
-    bl_options = {"INTERNAL", "REGISTER"}
+def jump_to_frame_helper(context, target_frame: int | None = None):
+    """
+    Reiner Helper. Setzt den Playhead, triggert bei Duplikat den Marker-Adapt-Helper
+    und ruft anschließend detect_once auf dem Ziel-Frame auf.
+    Rückgabe: {'FINISHED'} oder {'CANCELLED'}
+    """
+    # Ziel-Frame auflösen
+    target = _resolve_target_frame(context, target_frame if (target_frame is not None and target_frame >= 0) else None)
+    if target is None:
+        print("[GotoFrame] Kein Ziel-Frame gefunden.")
+        return {'CANCELLED'}
 
-    target_frame: bpy.props.IntProperty(
-        name="Ziel-Frame",
-        default=-1, min=-1,
-        description="-1 = aus Scene['goto_frame'] lesen"
-    )
-
-    def execute(self, context):
-        target = _resolve_target_frame(context, self.target_frame if self.target_frame >= 0 else None)
-        if target is None:
-            self.report({'WARNING'}, "[GotoFrame] Kein Ziel-Frame gefunden.")
-            return {'CANCELLED'}
-
-        # Frame speichern + Duplikat-Check
-        is_dup = _store_visited_frame(context.scene, int(target))
-        if is_dup:
-            try:
-                bpy.ops.clip.marker_adapt_boost('EXEC_DEFAULT')
-            except Exception as ex:
-                self.report({'ERROR'}, f"Marker-Adapt-Helper fehlgeschlagen: {ex}")
-                print(f"Error: Marker-Adapt-Helper fehlgeschlagen: {ex}")
-
-        # Playhead setzen + DETECT auslösen
-        ovr = _clip_override(context)
+    # Frame speichern + Duplikat-Check
+    is_dup = _store_visited_frame(context.scene, int(target))
+    if is_dup:
         try:
-            if ovr:
-                with context.temp_override(**ovr):
-                    context.scene.frame_current = int(target)
-                    print(f"[GotoFrame] Playhead auf Frame {target} gesetzt (mit Override).")
-                    # Detect direkt starten; Frame explizit übergeben (robust ggü. UI-Latenz)
-                    res = bpy.ops.clip.detect_once('INVOKE_DEFAULT', frame=int(target))
-            else:
-                context.scene.frame_current = int(target)
-                print(f"[GotoFrame] Playhead auf Frame {target} gesetzt (ohne Override).")
-                res = bpy.ops.clip.detect_once('INVOKE_DEFAULT', frame=int(target))
-
-            print(f"[GotoFrame] Übergabe an detect → {res}")
-            return {'FINISHED'}
-
+            bpy.ops.clip.marker_adapt_boost('EXEC_DEFAULT')
         except Exception as ex:
-            msg = f"Übergabe an detect fehlgeschlagen: {ex}"
-            self.report({'ERROR'}, msg)
-            print(f"Error: {msg}")
-            return {'CANCELLED'}
+            # identisches Verhalten: Fehler loggen, aber nicht crashen
+            print(f"Error: Marker-Adapt-Helper fehlgeschlagen: {ex}")
 
+    # Playhead setzen + DETECT auslösen
+    ovr = _clip_override(context)
+    try:
+        if ovr:
+            with context.temp_override(**ovr):
+                context.scene.frame_current = int(target)
+                print(f"[GotoFrame] Playhead auf Frame {target} gesetzt (mit Override).")
+                # Detect direkt starten; Frame explizit übergeben (robust ggü. UI-Latenz)
+                res = bpy.ops.clip.detect_once('INVOKE_DEFAULT', frame=int(target))
+        else:
+            context.scene.frame_current = int(target)
+            print(f"[GotoFrame] Playhead auf Frame {target} gesetzt (ohne Override).")
+            res = bpy.ops.clip.detect_once('INVOKE_DEFAULT', frame=int(target))
 
-__all__ = ("CLIP_OT_jump_to_frame", "run_jump_to_frame")
+        print(f"[GotoFrame] Übergabe an detect → {res}")
+        return {'FINISHED'}
+
+    except Exception as ex:
+        msg = f"Übergabe an detect fehlgeschlagen: {ex}"
+        print(f"Error: {msg}")
+        return {'CANCELLED'}
+
 
 def run_jump_to_frame(context, frame: int | None = None):
-    if frame is not None and frame >= 0:
-        return bpy.ops.clip.jump_to_frame('EXEC_DEFAULT', target_frame=int(frame))
-    else:
-        return bpy.ops.clip.jump_to_frame('EXEC_DEFAULT')
-
-
-# Registration
-classes = (CLIP_OT_jump_to_frame,)
-
-def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
-
-def unregister():
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
+    """
+    Thin-Wrapper für Kompatibilität mit bestehender Aufrufstelle.
+    Vorher: bpy.ops.clip.jump_to_frame('EXEC_DEFAULT', target_frame=…)
+    Jetzt:  run_jump_to_frame(context, frame=…)
+    """
+    return jump_to_frame_helper(context, target_frame=frame)
