@@ -1,82 +1,112 @@
+# Helper/tracker_settings_helper.py
+
 import bpy
 
-class CLIP_OT_tracker_settings(bpy.types.Operator):
-    bl_idname = "clip.tracker_settings"
-    bl_label = "Tracker Settings anwenden"
-    bl_description = "Setzt vordefinierte Tracking-Werte basierend auf Clip-Auflösung"
-
-    def execute(self, context):
-        # --- Preconditions ---
-        space = getattr(context, "space_data", None)
-        clip = getattr(space, "clip", None) if space else None
-        if clip is None:
-            self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
-            return {'CANCELLED'}
-
-        scene = context.scene
-        width = int(clip.size[0])  # horizontale Auflösung
-
-        # --- Tracking Settings ---
-        ts = clip.tracking.settings
-        ts.default_motion_model = 'Loc'
-        ts.default_pattern_match = 'KEYFRAME'
-        ts.use_default_normalization = True
-        ts.default_weight = 1.0
-        ts.default_correlation_min = 0.9
-        ts.default_margin = 100
-        ts.use_default_mask = False
-        ts.use_default_red_channel = True
-        ts.use_default_green_channel = True
-        ts.use_default_blue_channel = True
-        ts.use_default_brute = True
-        ts.default_pattern_size = max(1, int(width / 100))
-        ts.default_search_size = ts.default_pattern_size * 2
-        ts.clean_frames = getattr(scene, "frames_track", 20)
-        ts.clean_error  = getattr(scene, "error_track", 0.5)
-
-        # --- Detection-Threshold initialisieren (Szenenvariable) ---
-        # Business-Logik: Wenn bereits ein Wert aus einem früheren Detect-Lauf existiert, respektieren wir ihn.
-        # Sonst initialisieren wir mit dem aktuellen Default des Trackers (Fallback 0.75).
-        try:
-            default_min = float(getattr(ts, "default_correlation_min", 0.75))
-        except Exception:
-            default_min = 0.75
-
-        try:
-            det_thr = float(scene.get("last_detection_threshold", default_min))
-        except Exception:
-            det_thr = default_min
-
-        # Sanity Clamp
-        if not (0.0 < det_thr <= 1.0):
-            det_thr = max(min(det_thr, 1.0), 1e-4)
-
-        scene["last_detection_threshold"] = float(det_thr)
-
-        self.report({'INFO'}, "Tracking-Voreinstellungen gesetzt.")
-        print(f"[TrackerSettings] Defaults angewendet. last_detection_threshold={scene['last_detection_threshold']:.6f}")
-        print("[TrackerSettings] Übergabe an find_low_marker_frame …")
-
-        # --- Nächster Schritt in der Kette: Find Low Marker ---
-        try:
-            #res = bpy.ops.clip.find_low_marker_frame('INVOKE_DEFAULT', use_scene_basis=True)
-            print(f"[TrackerSettings] Übergabe an find_low_marker_frame → {res}")
-        except Exception as e:
-            self.report({'ERROR'}, f"find_low_marker_frame konnte nicht gestartet werden: {e}")
-            return {'CANCELLED'}
-
-        return {'FINISHED'}
+__all__ = ("apply_tracker_settings",)
 
 
-# Optional: Register/Unregister (falls nicht zentral gebündelt)
-def register():
+def _resolve_clip_and_scene(context, clip=None, scene=None):
+    """Robuste Auflösung von clip/scene aus Context – ohne UI-Seiteneffekte."""
+    scn = scene or getattr(context, "scene", None)
+    if clip:
+        return clip, scn
+
+    # Primär: aktiver CLIP_EDITOR
+    space = getattr(context, "space_data", None)
+    c = getattr(space, "clip", None) if space else None
+    if c:
+        return c, scn
+
+    # Fallback: erster Clip der Datei (wenn vorhanden)
     try:
-        bpy.utils.register_class(CLIP_OT_tracker_settings)
-    except ValueError:
+        for c in bpy.data.movieclips:
+            return c, scn
+    except Exception:
         pass
 
-def unregister():
+    return None, scn
+
+
+def _clamp01(x: float) -> float:
+    if not isinstance(x, (int, float)):
+        return 0.75
+    if x <= 0.0:
+        return 1e-4
+    if x > 1.0:
+        return 1.0
+    return float(x)
+
+
+def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) -> dict:
+    """
+    Setzt vordefinierte Tracking-Defaults abhängig von der Clip-Auflösung
+    und initialisiert/aktualisiert scene['last_detection_threshold'].
+
+    Rückgabe: dict mit gesetzten Kernwerten (für Tests/Logging).
+    """
+    clip, scene = _resolve_clip_and_scene(context, clip=clip, scene=scene)
+    if clip is None or scene is None:
+        if log:
+            print("[TrackerSettings] Abbruch: Kein Clip oder Scene im Kontext.")
+        return {"status": "cancelled", "reason": "no_clip_or_scene"}
+
+    width = int(clip.size[0]) if clip.size else 0
+    ts = clip.tracking.settings
+
+    # --- Defaults setzen ---
+    ts.default_motion_model = 'Loc'
+    ts.default_pattern_match = 'KEYFRAME'
+    ts.use_default_normalization = True
+    ts.default_weight = 1.0
+    ts.default_correlation_min = 0.9
+    ts.default_margin = 100
+    ts.use_default_mask = False
+    ts.use_default_red_channel = True
+    ts.use_default_green_channel = True
+    ts.use_default_blue_channel = True
+    ts.use_default_brute = True
+
+    # Auflösungsbasiert
+    pattern_size = max(1, width // 100) if width > 0 else 8
+    search_size = pattern_size * 2
+    ts.default_pattern_size = pattern_size
+    ts.default_search_size = search_size
+
+    # Cleanup-Parameter aus Szene (mit Fallbacks)
+    clean_frames = int(scene.get("frames_track", 20))
+    clean_error = float(scene.get("error_track", 0.5))
+    ts.clean_frames = clean_frames
+    ts.clean_error = clean_error
+
+    # Detection-Threshold aus Szene, sonst aus aktuellen Defaults
     try:
-        bpy.utils.unregister_class(CLIP_OT_tracker_settings)
-    except ValueError:
-        pass
+        default_min = float(getattr(ts, "default_correlation_min", 0.75))
+    except Exception:
+        default_min = 0.75
+
+    try:
+        det_thr = float(scene.get("last_detection_threshold", default_min))
+    except Exception:
+        det_thr = default_min
+
+    det_thr = _clamp01(det_thr)
+    scene["last_detection_threshold"] = float(det_thr)
+
+    if log:
+        print(
+            "[TrackerSettings] Defaults angewendet | "
+            f"clip={clip.name!r}, width={width}, pattern={pattern_size}, search={search_size}, "
+            f"clean_frames={clean_frames}, clean_error={clean_error}, "
+            f"last_detection_threshold={scene['last_detection_threshold']:.6f}"
+        )
+
+    return {
+        "status": "ok",
+        "clip": getattr(clip, "name", None),
+        "width": width,
+        "pattern_size": pattern_size,
+        "search_size": search_size,
+        "clean_frames": clean_frames,
+        "clean_error": clean_error,
+        "last_detection_threshold": float(scene["last_detection_threshold"]),
+    }
