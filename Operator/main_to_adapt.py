@@ -16,7 +16,7 @@ def _clip_override(context):
 
 class CLIP_OT_launch_tracker_settings_frame_with_adapt(bpy.types.Operator):
     """Berechnet marker_adapt aus marker_basis und startet anschließend clip. tracker_settings."""
-    bl_idname = "clip.launch_ tracker_settings_frame_with_adapt"
+    bl_idname = "clip.launch_tracker_settings_frame_with_adapt"
     bl_label  = "Start tracker_settings_frame (Adapt x4)"
     bl_options = {'REGISTER'}
 
@@ -56,7 +56,7 @@ class CLIP_OT_launch_tracker_settings_frame_with_adapt(bpy.types.Operator):
 
 # Registrierung lokal möglich, Haupt-Register passiert in __init__.py
 def register():
-    bpy.utils.register_class(CLIP_OT_launch_ tracker_settings_frame_with_adapt)
+    bpy.utils.register_class(CLIP_OT_launch_tracker_settings_frame_with_adapt)
 
 def unregister():
-    bpy.utils.unregister_class(CLIP_OT_launch_ tracker_settings_frame_with_adapt)
+    bpy.utils.unregister_class(CLIP_OT_launch_tracker_settings_frame_with_adapt)
