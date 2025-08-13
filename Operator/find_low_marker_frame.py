@@ -30,15 +30,14 @@ def find_low_marker_frame_core(clip, marker_basis=20, frame_start=None, frame_en
     return None
 
 
-# --- UI/Operator: eigenständig, keine Flags/Scene-Props setzen ---
 class CLIP_OT_find_low_marker(Operator):
-    """Sucht den ersten Frame, dessen Marker-Anzahl unter 'marker_basis' liegt;
-       setzt optional den Playhead. Keine Status-Flags, keine modalen Rückmeldungen."""
+    """Sucht den ersten Frame unter 'marker_basis'.
+       If/Else: Treffer → jump_to_frame; kein Treffer → solve_watch_clean."""
     bl_idname = "clip.find_low_marker"
     bl_label = "Find Low Marker Frame"
     bl_options = {"INTERNAL"}  # nicht im Undo-Stack relevant
 
-    # Params: bewusst lokal (kein Schreiben in scene[])
+    # Params: bewusst lokal (kein Schreiben in scene[] außer goto_frame bei Treffer)
     use_scene_basis: bpy.props.BoolProperty(
         name="Scene-Basis verwenden",
         description="marker_basis aus Scene['marker_basis'] lesen (Fallback: Default)",
@@ -49,11 +48,6 @@ class CLIP_OT_find_low_marker(Operator):
         description="Schwellwert für aktive Marker",
         default=20, min=1, max=100000
     )
-    set_playhead: bpy.props.BoolProperty(
-        name="Playhead setzen",
-        description="Bei Treffer den Playhead auf den gefundenen Frame setzen",
-        default=True
-    )
     frame_start: bpy.props.IntProperty(
         name="Frame Start (optional)",
         default=-1, min=-1, description="-1 = automatisch (clip.frame_start)"
@@ -62,18 +56,6 @@ class CLIP_OT_find_low_marker(Operator):
         name="Frame End (optional)",
         default=-1, min=-1, description="-1 = automatisch (scene.frame_end)"
     )
-
-    def _clip_override(self, context):
-        """Sicherer CLIP_EDITOR-Kontext für UI-seitige Operationen (Playhead)."""
-        win = context.window
-        if not win or not win.screen:
-            return None
-        for area in win.screen.areas:
-            if area.type == 'CLIP_EDITOR':
-                for region in area.regions:
-                    if region.type == 'WINDOW':
-                        return {'area': area, 'region': region, 'space_data': area.spaces.active}
-        return None
 
     def _get_clip(self, context):
         space = getattr(context, "space_data", None)
@@ -96,20 +78,44 @@ class CLIP_OT_find_low_marker(Operator):
         # Kernlogik (keine Seiteneffekte):
         low_frame = find_low_marker_frame_core(clip, marker_basis=basis, frame_start=fs, frame_end=fe)
 
-        # Keine Szene-Flags, keine Status-Kommunikation – Ende.
+        # --- Neuer If/Else-Flow ---
+        if low_frame is not None:
+            # 1) Ziel-Frame in Scene-Prop ablegen
+            scene["goto_frame"] = int(low_frame)
+            print(f"[MarkerCheck] Treffer: Low-Marker-Frame {low_frame}. Übergabe an jump_to_frame …")
+
+            # 2) Eigenständigen Jump-Operator starten (nutzt eigenen CLIP-Override)
+            try:
+                # target_frame optional direkt mitgeben (robuster als nur Scene-Prop)
+                bpy.ops.clip.jump_to_frame('EXEC_DEFAULT', target_frame=int(low_frame))
+            except Exception as ex:
+                self.report({'ERROR'}, f"jump_to_frame fehlgeschlagen: {ex}")
+                return {'CANCELLED'}
+
+            return {'FINISHED'}
+
+        # Kein Treffer → Solve-Pipeline starten
+        print("[MarkerCheck] Keine Low-Marker-Frames gefunden. Starte Kamera-Solve.")
+        try:
+            # Modal-Operator, kümmert sich intern um Override/Timer/Status
+            bpy.ops.clip.solve_watch_clean('INVOKE_DEFAULT')
+        except Exception as ex:
+            self.report({'ERROR'}, f"Solve-Start fehlgeschlagen: {ex}")
+            return {'CANCELLED'}
+
         return {'FINISHED'}
 
 
-# Optional: lokale Registration, falls Modul einzeln geladen wird
+# Optional: lokale Registration
 classes = (CLIP_OT_find_low_marker,)
 
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
+
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
 
-# Hinweis: Die alte Funktions-Signatur `find_low_marker_frame(...)` aus dem Projekt
-# bleibt weiterhin verfügbar, falls anderweitig importiert – jetzt als:
+# Hinweis: Bestehende Imports können weiterhin die Kernfunktion verwenden:
 #   find_low_marker_frame_core(...)
