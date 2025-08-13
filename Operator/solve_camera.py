@@ -142,26 +142,42 @@ class CLIP_OT_solve_watch_clean(Operator):
             self.report({'INFO'}, f"Solve stabil: {avg2:.6f} < error_track({error_track:.6f}).")
             return {'FINISHED'}
 
-        # Persist Solve-Error und Projection-Cleanup auslösen
+        # Persist Solve-Error und Projection-Cleanup (Helper! kein bpy.ops) auslösen
         scene["solve_error"] = float(avg2)
         print(f"[SolveWatch] Persistiert: scene['solve_error'] = {avg2:.6f}")
-        print("[SolveWatch] Starte Projection-Cleanup (CLIP_OT_clean_tracks_by_projection_error)…")
-
-        with context.temp_override(area=area, region=region, space_data=space):
-            res = bpy.ops.clip.clean_tracks_by_projection_error(
-                'EXEC_DEFAULT',
-                factor=float(self.cleanup_factor),
-                mute_only=bool(self.cleanup_mute_only),
-                dry_run=bool(self.cleanup_dry_run),
-                threshold_key="solve_error",  # liest scene['solve_error']
-            )
-
-        if res != {'FINISHED'}:
-            self.report({'WARNING'}, "Projection-Cleanup nicht ausgeführt.")
+        print("[SolveWatch] Starte Projection-Cleanup (Helper.clean_tracks_by_projection_error)…")
+        
+        # Wir sorgen für gültigen CLIP_EDITOR-Kontext, damit error_value() und delete_track funktionieren
+        area, region, space = _find_clip_window(context)
+        if not area:
+            self.report({'ERROR'}, "Kein CLIP_EDITOR-Fenster für Projection-Cleanup.")
             return {'CANCELLED'}
-
+        
+        with context.temp_override(area=area, region=region, space_data=space):
+            try:
+                report = clean_tracks_by_projection_error(
+                    context,
+                    threshold_key="solve_error",              # liest scene['solve_error']
+                    factor=float(self.cleanup_factor),
+                    mute_only=bool(self.cleanup_mute_only),
+                    dry_run=bool(self.cleanup_dry_run),
+                )
+            except Exception as e:
+                self.report({'ERROR'}, f"Projection-Cleanup fehlgeschlagen: {e}")
+                return {'CANCELLED'}
+        
+        # Konsolenlog ausgeben
+        for line in report.get("log", []):
+            print(line)
+        
+        affected  = int(report.get("affected", 0))
+        threshold = report.get("threshold", None)
+        mode = "MUTE" if self.cleanup_mute_only else "DELETE"
+        print(f"[SolveWatch] Projection-Cleanup abgeschlossen: affected={affected}, threshold={threshold}, mode={mode}")
+        
         self.report({'INFO'}, f"Cleanup getriggert (AvgErr={avg2:.6f} ≥ error_track={error_track:.6f}).")
         return {'FINISHED'}
+
 
 
 # -------------- Convenience-Wrapper (für Aufrufe aus __init__.py etc.) -------
