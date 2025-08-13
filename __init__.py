@@ -13,7 +13,6 @@ from bpy.props import IntProperty, FloatProperty
 
 from .Helper.disable_proxy import CLIP_OT_disable_proxy
 from .Helper.enable_proxy import CLIP_OT_enable_proxy
-from .Operator.solve_camera import CLIP_OT_solve_watch_clean, run_solve_watch_clean
 from .Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
 from .Operator.main import CLIP_OT_main
 from .Operator.marker_helper_main import CLIP_OT_marker_helper_main
@@ -42,7 +41,6 @@ classes = (
     RepeatEntry,
     CLIP_OT_disable_proxy,
     CLIP_OT_enable_proxy,
-    CLIP_OT_solve_watch_clean,
     CLIP_OT_clean_short_tracks,
     CLIP_OT_main,
     CLIP_OT_marker_helper_main,
