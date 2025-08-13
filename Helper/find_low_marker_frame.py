@@ -42,7 +42,7 @@ def run_find_low_marker_frame(
 ):
     """
     Sucht ersten Frame mit weniger als 'marker_basis' Markern (ggf. aus Scene['marker_basis']).
-    Bei Treffer: setzt scene['goto_frame'] und ruft jump_to_frame.
+    Bei Treffer: setzt scene['goto_frame'] und ruft jump_to_frame_helper.
     Bei keinem Treffer: startet solve_watch_clean.
     """
     clip = _get_clip(context)
@@ -59,11 +59,11 @@ def run_find_low_marker_frame(
 
     if low_frame is not None:
         scene["goto_frame"] = int(low_frame)
-        print(f"[MarkerCheck] Treffer: Low-Marker-Frame {low_frame}. Übergabe an jump_to_frame …")
+        print(f"[MarkerCheck] Treffer: Low-Marker-Frame {low_frame}. Übergabe an jump_to_frame_helper …")
         try:
-            bpy.ops.clip.jump_to_frame('EXEC_DEFAULT', target_frame=int(low_frame))
+            bpy.ops.clip.jump_to_frame_helper('EXEC_DEFAULT', target_frame=int(low_frame))
         except Exception as ex:
-            print(f"Error: jump_to_frame fehlgeschlagen: {ex}")
+            print(f"Error: jump_to_frame_helper fehlgeschlagen: {ex}")
             return None
         return low_frame
 
