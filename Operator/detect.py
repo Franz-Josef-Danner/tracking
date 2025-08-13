@@ -70,6 +70,8 @@ class CLIP_OT_detect(bpy.types.Operator):
     _STATE_DETECT = "DETECT"
     _STATE_WAIT   = "WAIT"
     _STATE_PROC   = "PROCESS"
+    selected_before = {t.name for t in self.tracking.tracks if getattr(t, "select", False)}
+
 
     # --- optionale Aufruf-Argumente (kompatibel zu älteren Call-Sites) ---
     detection_threshold: bpy.props.FloatProperty(
@@ -278,14 +280,7 @@ class CLIP_OT_detect(bpy.types.Operator):
 
             # Zu nahe neue Tracks löschen
             if close_tracks:
-                for t in tracks:
-                    t.select = False
-                for t in close_tracks:
-                    t.select = True
-                try:
-                    bpy.ops.clip.delete_track()
-                except Exception:
-                    _remove_tracks_by_name(self.tracking, {t.name for t in close_tracks})
+                _remove_tracks_by_name(self.tracking, {t.name for t in close_tracks})
 
             # Bereinigte neue Tracks
             close_set = set(close_tracks)
@@ -296,14 +291,14 @@ class CLIP_OT_detect(bpy.types.Operator):
             if anzahl_neu < self.min_marker or anzahl_neu > self.max_marker:
                 # Alle neu-erzeugten (bereinigten) Tracks dieses Versuchs wieder entfernen
                 if cleaned_tracks:
-                    for t in tracks:
-                        t.select = False
-                    for t in cleaned_tracks:
-                        t.select = True
-                    try:
-                        bpy.ops.clip.delete_track()
-                    except Exception:
-                        _remove_tracks_by_name(self.tracking, {t.name for t in cleaned_tracks})
+                    _remove_tracks_by_name(self.tracking, {t.name for t in cleaned_tracks})
+
+                # Finale, bereinigte neue Tracks für das nachfolgende Tracking selektieren
+                for t in self.tracking.tracks:
+                    t.select = False
+                for t in cleaned_tracks:
+                    t.select = True
+                print(f"[Detect] Selektiere {len(cleaned_tracks)} Tracks für Tracking.")
 
                 # Threshold adaptieren (proportional zur Abweichung vom Ziel)
                 safe_adapt = max(self.marker_adapt, 1)
@@ -317,6 +312,8 @@ class CLIP_OT_detect(bpy.types.Operator):
                 if self.attempt >= self.max_attempts:
                     scene["detect_status"] = "failed"
                     context.window_manager.event_timer_remove(self._timer)
+                    for t in self.tracking.tracks:
+                        t.select = (t.name in selected_before)
                     return {'FINISHED'}
 
                 # Nächster Versuch
