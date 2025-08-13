@@ -5,6 +5,11 @@ from ..Helper.segments import track_has_internal_gaps
 from ..Helper.mute_ops import mute_after_last_marker, mute_unassigned_markers
 from ..Helper.split_cleanup import clear_path_on_split_tracks_segmented, recursive_split_cleanup
 
+def _track_ptr(t):
+    try:
+        return int(t.as_pointer())
+    except Exception:
+        return id(t)
 
 def _clip_override(context):
     """Sicher in den CLIP_EDITOR kontexten."""
@@ -60,47 +65,53 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             )
             print(f"[MultiScale] total deleted: {deleted}")
 
-            tracks = clip.tracking.tracks
-
             # --- 4) Gap-Erkennung & Aufteilung
+            tracks = clip.tracking.tracks
             original_tracks = [t for t in tracks if track_has_internal_gaps(t)]
             made_changes = deleted > 0
-
+            
             if not original_tracks:
-                self.report({'INFO'}, "Keine Tracks mit Lücken gefunden – fahre mit Safety fort.")
+                print("[CleanError] Keine Tracks mit internen Lücken – überspringe Split.")
             else:
-                # (nur wenn Gaps existieren) Duplizieren + Split/Cleanup:
+                # Duplizieren nur der gap-tracks
                 existing_names = {t.name for t in tracks}
                 for t in tracks:
                     t.select = False
                 for t in original_tracks:
                     t.select = True
-
+            
                 bpy.ops.clip.copy_tracks()
                 bpy.ops.clip.paste_tracks()
-
-                deps = context.evaluated_depsgraph_get()
-                deps.update()
-                bpy.context.view_layer.update()
-                scene.frame_set(scene.frame_current)
-
+            
+                deps = context.evaluated_depsgraph_get(); deps.update()
+                bpy.context.view_layer.update(); scene.frame_set(scene.frame_current)
+            
                 all_names_after = {t.name for t in tracks}
                 new_names = all_names_after - existing_names
                 new_tracks = [t for t in tracks if t.name in new_names]
 
+                if not new_tracks:
+                    print("[CleanError] Hinweis: Keine eindeutig neuen Tracks erkannt (Namensgleichheit?). clear_path_on_split_tracks_segmented läuft dennoch weiter.")
+
+            
                 clear_path_on_split_tracks_segmented(
                     context, ovr["area"], ovr["region"], ovr["space_data"],
                     original_tracks, new_tracks
                 )
-
-                # Rekursives Segment-Cleanup
-                recursive_split_cleanup(
-                    context, ovr["area"], ovr["region"], ovr["space_data"],
-                    tracks
-                )
-
-                made_changes = True  # Wir haben Segmentierungen/Löschungen durchgeführt
-
+            
+                try:
+                    changed_in_recursive = recursive_split_cleanup(
+                        context, ovr["area"], ovr["region"], ovr["space_data"],
+                        tracks
+                    )
+                    if isinstance(changed_in_recursive, bool):
+                        made_changes = made_changes or changed_in_recursive
+                    else:
+                        made_changes = True
+                except Exception as ex:
+                    self.report({'ERROR'}, f"Segment-Cleanup fehlgeschlagen: {ex}")
+                    return {'CANCELLED'}
+                    
             # --- 5) Safety Passes
             mute_unassigned_markers(tracks)
             for t in tracks:
@@ -112,32 +123,26 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             bpy.context.view_layer.update()
             scene.frame_set(scene.frame_current)
 
-            # --- 7) Routing
+            # --- 7) Routing (strict gating)
             try:
                 if made_changes:
-                    print("[Router] Änderungen erkannt → Marker-Boost + Low-Marker-Check …")
-
-                    # 7a) Marker-Adapt-Boost (aus Helper/marker_adapt_helper.py)
+                    print("[Router] Änderungen erkannt → marker_adapt_boost + find_low_marker_frame")
                     try:
-                        # Erwarteter idname: "clip.marker_adapt_boost"
                         bpy.ops.clip.marker_adapt_boost('EXEC_DEFAULT')
-                        print("[Router] marker_adapt_boost ausgeführt.")
+                        print("[Router] marker_adapt_boost ok.")
                     except Exception as ex:
                         self.report({'WARNING'}, f"marker_adapt_boost fehlgeschlagen: {ex}")
-
-                    # 7b) Low-Marker-Frame suchen (Operator/find_low_marker_frame.py)
+            
                     try:
-                        # Korrekte Benennung sicherstellen: find_low_marker_frame
                         bpy.ops.clip.find_low_marker_frame('INVOKE_DEFAULT')
                         print("[Router] find_low_marker_frame gestartet.")
                     except Exception as ex:
                         self.report({'WARNING'}, f"find_low_marker_frame fehlgeschlagen: {ex}")
-
                 else:
-                    print("[Router] Keine Löschungen mehr → Übergabe an solve_watch_clean …")
+                    print("[Router] Keine Änderungen mehr → solve_watch_clean")
                     bpy.ops.clip.solve_watch_clean('INVOKE_DEFAULT')
-
             except Exception as ex:
                 self.report({'WARNING'}, f"Routing fehlgeschlagen: {ex}")
+
 
         return {'FINISHED'}
