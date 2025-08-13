@@ -85,13 +85,6 @@ class CLIP_OT_main(Operator):
                 mgr = context.temp_override(**override)
                 mgr.__enter__()
 
-            # --- Pre-Detect: Tracker-Setup ---
-            print("🚀 Vorbereitung: tracker_settings …")
-            bpy.ops.clip.tracker_settings('EXEC_DEFAULT')
-
-            print("🧰 Vorbereitung: marker_helper_main …")
-            bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
-
             # --- Bounds-Formel (bevorzugt Scene["marker_adapt"], dann Operator-Prop, sonst marker_basis) ---
             marker_basis   = int(scene.get("marker_basis", 25))
             op_adapt       = int(getattr(self, "marker_adapt", 0))
