@@ -1,7 +1,7 @@
 import bpy
 
 __all__ = (
-    "CLIP_OT_launch_find_low_marker_frame_with_adapt",  # Alias für Alt-Imports
+    "CLIP_OT_tracker_settings",  # Alias für Alt-Imports
 )
 def _clip_override(context):
     win = context.window
@@ -15,7 +15,7 @@ def _clip_override(context):
     return None
 
 
-class CLIP_OT_launch_find_low_marker_frame_with_adapt
+class CLIP_OT_tracker_settings
     """Berechnet marker_adapt aus marker_basis und startet anschließend clip. tracker_settings."""
     bl_idname = "clip.launch_tracker_settings_frame_with_adapt"
     bl_label  = "Start tracker_settings_frame (Adapt x4)"
@@ -49,7 +49,7 @@ class CLIP_OT_launch_find_low_marker_frame_with_adapt
             ovr = _clip_override(context)
             if ovr:
                 with context.temp_override(**ovr):
-                    return bpy.ops.clip. tracker_settings('INVOKE_DEFAULT', use_scene_basis=True)
+                    return bpy.ops.clip.tracker_settings('INVOKE_DEFAULT', use_scene_basis=True)
 
         # Fallback ohne Override – KORREKTER Operator-Name
         return bpy.ops.clip. tracker_settings('INVOKE_DEFAULT', use_scene_basis=True)
