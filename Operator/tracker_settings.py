@@ -11,7 +11,7 @@ class CLIP_OT_tracker_settings(bpy.types.Operator):
             self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
             return {'CANCELLED'}
 
-        width = clip.size[0]  # HA = horizontale Auflösung
+        width = clip.size[0]  # horizontale Auflösung
 
         # Tracking Settings
         ts = clip.tracking.settings
@@ -32,4 +32,8 @@ class CLIP_OT_tracker_settings(bpy.types.Operator):
         ts.clean_error = context.scene.error_track if hasattr(context.scene, "error_track") else 0.5
 
         self.report({'INFO'}, "Tracking-Voreinstellungen gesetzt.")
+
+        # --- Direkt danach Jump to Frame ausführen ---
+        bpy.ops.clip.jump_to_frame('EXEC_DEFAULT')
+
         return {'FINISHED'}
