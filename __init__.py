@@ -22,7 +22,6 @@ from .Operator.clean_error_tracks import CLIP_OT_clean_error_tracks
 from .Operator.optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 from .Operator.main import CLIP_OT_main
 from .Operator.marker_helper_main import CLIP_OT_marker_helper_main
-from .Operator.find_low_marker_frame import CLIP_OT_find_low_marker_frame
 from .Operator.jump_to_frame import CLIP_OT_jump_to_frame
 from .Helper.properties import RepeatEntry
 
@@ -56,7 +55,6 @@ classes = (
     CLIP_OT_clean_short_tracks,
     CLIP_OT_clean_error_tracks,
     CLIP_OT_optimize_tracking_modal,
-    CLIP_OT_find_low_marker_frame,
     CLIP_OT_main,
     CLIP_OT_jump_to_frame,
     CLIP_OT_marker_helper_main,
