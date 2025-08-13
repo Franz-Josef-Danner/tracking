@@ -7,11 +7,13 @@ class CLIP_OT_tracker_settings(bpy.types.Operator):
 
     def execute(self, context):
         # --- Preconditions ---
-        clip = getattr(context.space_data, "clip", None)
+        space = getattr(context, "space_data", None)
+        clip = getattr(space, "clip", None) if space else None
         if clip is None:
             self.report({'WARNING'}, "Kein aktiver Movie Clip gefunden.")
             return {'CANCELLED'}
 
+        scene = context.scene
         width = int(clip.size[0])  # horizontale Auflösung
 
         # --- Tracking Settings ---
@@ -29,11 +31,31 @@ class CLIP_OT_tracker_settings(bpy.types.Operator):
         ts.use_default_brute = True
         ts.default_pattern_size = max(1, int(width / 100))
         ts.default_search_size = ts.default_pattern_size * 2
-        ts.clean_frames = getattr(context.scene, "frames_track", 20)
-        ts.clean_error  = getattr(context.scene, "error_track", 0.5)
+        ts.clean_frames = getattr(scene, "frames_track", 20)
+        ts.clean_error  = getattr(scene, "error_track", 0.5)
+
+        # --- Detection-Threshold initialisieren (Szenenvariable) ---
+        # Business-Logik: Wenn bereits ein Wert aus einem früheren Detect-Lauf existiert, respektieren wir ihn.
+        # Sonst initialisieren wir mit dem aktuellen Default des Trackers (Fallback 0.75).
+        try:
+            default_min = float(getattr(ts, "default_correlation_min", 0.75))
+        except Exception:
+            default_min = 0.75
+
+        try:
+            det_thr = float(scene.get("last_detection_threshold", default_min))
+        except Exception:
+            det_thr = default_min
+
+        # Sanity Clamp
+        if not (0.0 < det_thr <= 1.0):
+            det_thr = max(min(det_thr, 1.0), 1e-4)
+
+        scene["last_detection_threshold"] = float(det_thr)
 
         self.report({'INFO'}, "Tracking-Voreinstellungen gesetzt.")
-        print("[TrackerSettings] Defaults angewendet. Übergabe an find_low_marker …")
+        print(f"[TrackerSettings] Defaults angewendet. last_detection_threshold={scene['last_detection_threshold']:.6f}")
+        print("[TrackerSettings] Übergabe an find_low_marker …")
 
         # --- Nächster Schritt in der Kette: Find Low Marker ---
         try:
@@ -44,3 +66,17 @@ class CLIP_OT_tracker_settings(bpy.types.Operator):
             return {'CANCELLED'}
 
         return {'FINISHED'}
+
+
+# Optional: Register/Unregister (falls nicht zentral gebündelt)
+def register():
+    try:
+        bpy.utils.register_class(CLIP_OT_tracker_settings)
+    except ValueError:
+        pass
+
+def unregister():
+    try:
+        bpy.utils.unregister_class(CLIP_OT_tracker_settings)
+    except ValueError:
+        pass
