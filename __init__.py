@@ -11,7 +11,11 @@ bl_info = {
 import bpy
 from bpy.props import IntProperty, FloatProperty
 
-# Importiere Operatoren
+from . import Helper as _helper
+from . import Operator as _operator
+import importlib
+importlib.reload(_helper)
+importlib.reload(_operator)
 from .Operator.tracker_settings import CLIP_OT_tracker_settings
 from .Operator.tracking_pipeline import CLIP_OT_tracking_pipeline
 from .Helper.disable_proxy import CLIP_OT_disable_proxy
@@ -72,6 +76,8 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
+    _helper.register()
+
     # Custom Property für Frame-Tracking
     bpy.types.Scene.repeat_frame = bpy.props.CollectionProperty(type=RepeatEntry)
 
@@ -96,7 +102,7 @@ def unregister():
     del bpy.types.Scene.marker_frame
     del bpy.types.Scene.frames_track
     del bpy.types.Scene.error_track
-
+    _helper.unregister()
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
 
