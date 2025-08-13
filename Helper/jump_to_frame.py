@@ -1,7 +1,7 @@
 # Helper/jump_to_frame.py
 
 import json
-from .detect import run_detect_once  # oben sicherstellen
+from .detect import run_detect_adaptive  # oben sicherstellen
 
 __all__ = ("jump_to_frame_helper", "run_jump_to_frame")
 
@@ -75,13 +75,13 @@ def jump_to_frame_helper(context, target_frame: int | None = None):
                 context.scene.frame_current = int(target)
                 print(f"[GotoFrame] Playhead auf Frame {target} gesetzt (mit Override).")
                 # Detect direkt starten; Frame explizit übergeben (robust ggü. UI-Latenz)
-                res = run_detect_once(context, frame=int(target))
+                res = run_detect_adaptive(context, frame=int(target))
                 print(f"[GotoFrame] Übergabe an detect → {res}")
                 return {'FINISHED'}
         else:
             context.scene.frame_current = int(target)
             print(f"[GotoFrame] Playhead auf Frame {target} gesetzt (ohne Override).")
-            res = run_detect_once(context, frame=int(target))
+            res = run_detect_adaptive(context, frame=int(target))
             print(f"[GotoFrame] Übergabe an detect → {res}")
             return {'FINISHED'}
         print(f"[GotoFrame] Übergabe an detect → {res}")
