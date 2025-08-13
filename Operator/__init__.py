@@ -9,7 +9,7 @@ from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 from ..Helper.solve_camera_helper import CLIP_OT_solve_watch_clean
 from .main_to_adapt import CLIP_OT_launch_main_with_adapt
 from .main import CLIP_OT_main
-from .find_low_marker_frame import CLIP_OT_find_low_marker   # <— NEU
+from .find_low_marker_frame import CLIP_OT_find_low_marker  # NEU
 
 try:
     from .clean_short_tracks import CLIP_OT_clean_short_tracks
