@@ -120,7 +120,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                 if made_changes:
                     print("[Router] Änderungen erkannt → Übergabe an find_low_marker_frame …")
                     # Erwartet: Operator existiert als bpy.ops.clip.find_low_marker_frame
-                    bpy.ops.clip.find_low_marker_frame('INVOKE_DEFAULT')
+                    bpy.ops.clip.find_low_marker('INVOKE_DEFAULT')
                 else:
                     print("[Router] Keine Löschungen mehr → Übergabe an solve_watch_clean …")
                     # Solve-Watcher übernimmt modal die Steuerung
