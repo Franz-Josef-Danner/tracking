@@ -2,6 +2,8 @@
 import bpy
 import math
 import time
+from .bidirectional_track import run_bidirectional_track  # oben sicherstellen
+
 
 __all__ = [
     "perform_marker_detection",
@@ -272,7 +274,7 @@ def run_detect_adaptive(
 
         # Tracking direkt starten
         try:
-            bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
+            run_bidirectional_track(context)
         except Exception as e:
             print(f"[Detect] Tracking-Start fehlgeschlagen: {e}")
 
