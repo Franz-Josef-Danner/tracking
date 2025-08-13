@@ -3,10 +3,7 @@ from bpy.types import Operator
 
 # Falls du die Helper als Module hast, bitte diese Imports beibehalten.
 # (Sie entsprechen deinem bisherigen Projekt-Layout.)
-try:
-    bpy.ops.clip.find_low_marker('INVOKE_DEFAULT')
-except Exception as e:
-    print(f"[Tracking] Low-Marker-Operator konnte nicht gestartet werden: {e}")
+from .find_low_marker_frame import find_low_marker_frame_core
 from ..Helper.jump_to_frame import jump_to_frame
 
 
@@ -82,17 +79,19 @@ class CLIP_OT_main(Operator):
             except Exception:
                 pass
 
-    def _precheck_and_jump(self, context, clip):
-        """Low-Marker-Frame suchen und ggf. Playhead setzen (nicht-blockierend)."""
-        scene = context.scene
-        marker_basis = int(scene.get("marker_basis", 25))
-        pre_frame = find_low_marker_frame(clip, marker_basis=marker_basis)
-        if pre_frame is None:
-            print("✅ Vorprüfung: Keine Low-Marker-Frames. Fortsetzung bis detect_once.")
-            return
-        scene["goto_frame"] = int(pre_frame)
-        jump_to_frame(context)
-        print(f"🎯 Vorprüfung: Low-Marker-Frame {pre_frame} – starte Setup ab diesem Frame.")
+def _precheck_and_jump(self, context, clip):
+    scene = context.scene
+    marker_basis = int(scene.get("marker_basis", 25))
+
+    # reine Zähllogik (keine Seiteneffekte)
+    pre_frame = find_low_marker_frame_core(clip, marker_basis=marker_basis)
+    if pre_frame is None:
+        print("✅ Vorprüfung: Keine Low-Marker-Frames. Fortsetzung bis detect_once.")
+        return
+
+    scene["goto_frame"] = int(pre_frame)
+    jump_to_frame(context)
+    print(f"🎯 Vorprüfung: Low-Marker-Frame {pre_frame} – starte Setup ab diesem Frame.")
 
     # ---------- Operator-Lifecycle ----------
 
