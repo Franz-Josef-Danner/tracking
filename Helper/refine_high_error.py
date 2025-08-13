@@ -1,7 +1,7 @@
 # refine_high_error.py
 import bpy
 from bpy.types import Operator
-from bpy.props import BoolProperty, IntProperty
+from bpy.props import BoolProperty, IntProperty, FloatProperty
 
 __all__ = ("CLIP_OT_refine_on_high_error", "run_refine_on_high_error")
 
@@ -92,11 +92,22 @@ def run_refine_on_high_error(
     context,
     limit_frames: int = 0,
     resolve_after: bool = False,
+    # --- Backward-Compat (ignoriert, aber akzeptiert) ---
+    error_threshold: float | None = None,
+    **_compat_ignored,
 ) -> int:
     """
     Refine an genau N Frames mit den höchsten Solve-Frame-Errors.
     N = (Szenen-Frameanzahl) // scene['marker_basis'], N >= 1.
+
+    Hinweis: 'error_threshold' und weitere Alt-Argumente werden im Top-N-Modus ignoriert
+    (Kompatibilität für ältere Aufrufer/Operatoren).
     """
+    if error_threshold is not None:
+        print("[Refine][Compat] 'error_threshold' übergeben, wird im Top-N-Modus ignoriert.")
+    if _compat_ignored:
+        print(f"[Refine][Compat] Ignoriere zusätzliche Alt-Argumente: {list(_compat_ignored.keys())}")
+
     clip = _get_active_clip(context)
     if not clip:
         raise RuntimeError("Kein MovieClip geladen.")
@@ -182,6 +193,13 @@ class CLIP_OT_refine_on_high_error(Operator):
     bl_label = "Refine: Top-N Solve-Error Frames"
     bl_options = {"REGISTER", "UNDO"}
 
+    # Deprecated, rein für Abwärtskompatibilität (wird ignoriert)
+    error_threshold: FloatProperty(
+        name="(Deprecated) Frame Error ≥",
+        description="Wird im Top-N-Modus ignoriert; nur für alte Aufrufe vorhanden.",
+        default=2.0, min=0.0
+    )
+
     limit_frames: IntProperty(
         name="Max Frames",
         description="Zusätzliche Obergrenze (0 = keine Begrenzung)",
@@ -198,6 +216,8 @@ class CLIP_OT_refine_on_high_error(Operator):
                 context,
                 limit_frames=self.limit_frames,
                 resolve_after=self.resolve_after,
+                # Kompatibilität: wird intern ignoriert
+                error_threshold=self.error_threshold
             )
         except RuntimeError as e:
             self.report({'ERROR'}, str(e))
