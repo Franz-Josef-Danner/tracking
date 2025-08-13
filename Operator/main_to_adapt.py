@@ -53,15 +53,15 @@ class CLIP_OT_main_to_adapt(bpy.types.Operator):
             ovr = _clip_override(context) if self.use_override else None
             if ovr:
                 with context.temp_override(**ovr):
-                    res = bpy.ops.clip.tracker_settings('INVOKE_DEFAULT')
-            else:
-                res = bpy.ops.clip.tracker_settings('INVOKE_DEFAULT')
+#                    res = bpy.ops.clip.tracker_settings('INVOKE_DEFAULT')
+#            else:
+#                res = bpy.ops.clip.tracker_settings('INVOKE_DEFAULT')
 
             print(f"[MainToAdapt] Übergabe an tracker_settings → {res}")
             return {'FINISHED'}
-        except Exception as e:
-            self.report({'ERROR'}, f"tracker_settings konnte nicht gestartet werden: {e}")
-            return {'CANCELLED'}
+#        except Exception as e:
+#            self.report({'ERROR'}, f"tracker_settings konnte nicht gestartet werden: {e}")
+#            return {'CANCELLED'}
 
 
 # Registration
