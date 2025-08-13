@@ -1,8 +1,7 @@
 # Helper/jump_to_frame.py
 
-import bpy
 import json
-from .detect import perform_marker_detection, run_detect_adaptive, run_detect_once
+from .detect import run_detect_once  # oben sicherstellen
 
 __all__ = ("jump_to_frame_helper", "run_jump_to_frame")
 
@@ -76,12 +75,15 @@ def jump_to_frame_helper(context, target_frame: int | None = None):
                 context.scene.frame_current = int(target)
                 print(f"[GotoFrame] Playhead auf Frame {target} gesetzt (mit Override).")
                 # Detect direkt starten; Frame explizit übergeben (robust ggü. UI-Latenz)
-                res = bpy.ops.clip.detect_once('INVOKE_DEFAULT', frame=int(target))
+                res = run_detect_once(context, frame=int(target))
+                print(f"[GotoFrame] Übergabe an detect → {res}")
+                return {'FINISHED'}
         else:
             context.scene.frame_current = int(target)
             print(f"[GotoFrame] Playhead auf Frame {target} gesetzt (ohne Override).")
-            res = bpy.ops.clip.detect_once('INVOKE_DEFAULT', frame=int(target))
-
+            res = run_detect_once(context, frame=int(target))
+            print(f"[GotoFrame] Übergabe an detect → {res}")
+            return {'FINISHED'}
         print(f"[GotoFrame] Übergabe an detect → {res}")
         return {'FINISHED'}
 
