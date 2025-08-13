@@ -6,7 +6,7 @@ from .solve_camera import solve_watch_clean
 __all__ = ("run_bidirectional_track",)
 
 def _clip_override(context):
-    win = context.window
+    win = getattr(context, "window", None)
     if not win or not getattr(win, "screen", None):
         return None
     for area in win.screen.areas:
@@ -16,86 +16,102 @@ def _clip_override(context):
                     return {'area': area, 'region': region, 'space_data': area.spaces.active}
     return None
 
+def _get_space_clip(ctx):
+    space = getattr(ctx, "space_data", None)
+    return getattr(space, "clip", None) if space else None
+
+def _ensure_active_clip(ctx):
+    """
+    Liefert einen nutzbaren MovieClip und setzt – falls möglich – den CLIP_EDITOR
+    in den TRACKING-Mode mit gesetztem Clip. Identisches Verhalten wie dein
+    funktionierender Operator-Kontext, nur robuster.
+    """
+    clip = _get_space_clip(ctx)
+    if clip:
+        return clip
+
+    # Fallback: ersten verfügbaren MovieClip verwenden
+    try:
+        fallback_clip = next(iter(bpy.data.movieclips))
+    except StopIteration:
+        print("Kein MovieClip im Blendfile vorhanden.")
+        return None
+
+    ov = _clip_override(ctx)
+    if ov:
+        try:
+            with ctx.temp_override(**ov):
+                ov['space_data'].clip = fallback_clip
+                try:
+                    ov['space_data'].mode = 'TRACKING'
+                except Exception:
+                    pass
+            print(f"[Tracking] Fallback-Clip gesetzt: {fallback_clip.name}")
+        except Exception as e:
+            print(f"[Tracking] Konnte Fallback-Clip nicht im UI setzen: {e}")
+
+    return fallback_clip
+
+def _run_forward_track(ctx):
+    print("→ Starte Vorwärts-Tracking...")
+    ov = _clip_override(ctx)
+    if ov:
+        with ctx.temp_override(**ov):
+            try:
+                ov['space_data'].mode = 'TRACKING'
+            except Exception:
+                pass
+            return bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
+    return bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
+
+def _run_backward_track(ctx):
+    print("→ Starte Rückwärts-Tracking...")
+    ov = _clip_override(ctx)
+    if ov:
+        with ctx.temp_override(**ov):
+            try:
+                ov['space_data'].mode = 'TRACKING'
+            except Exception:
+                pass
+            return bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
+    return bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
+
+def _clean_short_tracks(ctx):
+    ov = _clip_override(ctx)
+    if ov:
+        with ctx.temp_override(**ov):
+            try:
+                ov['space_data'].mode = 'TRACKING'
+            except Exception:
+                pass
+            return bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
+    return bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
 
 def run_bidirectional_track(context):
     """
-    Reiner Helper, der die frühere modal-Operator-Logik 1:1 via bpy.app.timers ausführt.
-    Steps:
-      0) Vorwärts-Tracking starten
-      1) Frame auf Start zurücksetzen
-      2) eine Schleife warten
-      3) Rückwärts-Tracking starten
-      4) Stabilitätsprüfung; bei Stabilität: kurze Tracks bereinigen und Low-Marker starten
-    Rückgabe: {'RUNNING_MODAL'} (Timer aktiv) oder {'FINISHED'}/{'CANCELLED'} synchron,
-    je nach sofortigem Zustand. In der Regel startet der Timer und gibt {'RUNNING_MODAL'} zurück.
+    1:1 Port der bewährten Operator-Logik auf einen Helper mit Timer:
+      Step 0: Vorwärts-Tracking
+      Step 1: Reset auf Start-Frame
+      Step 2: eine Schleife warten
+      Step 3: Rückwärts-Tracking
+      Step 4: Stabilitätsprüfung; bei Stabilität -> clean_short_tracks, Ende
+    Rückgabe: {'RUNNING_MODAL'} solange der Timer läuft; beendet sich selbst.
     """
     state = {
         "step": 0,
-        "stable_count": 0,
+        "start_frame": int(getattr(context.scene, "frame_current", 1)),
         "prev_marker_count": -1,
         "prev_frame": -1,
-        "start_frame": int(getattr(context.scene, "frame_current", 1)),
+        "stable_count": 0,
         "active": True,
     }
 
     print("[Tracking] Schritt: 0")
 
-    def _cleanup():
-        state["active"] = False  # Timer beenden, indem Callback None zurückgibt
+    def _stop():
+        state["active"] = False
 
-    def _get_clip_from_space(ctx):
-        space = getattr(ctx, "space_data", None)
-        return getattr(space, "clip", None) if space else None
-
-    def _ensure_active_clip(ctx):
-        """
-        Sichert, dass im aktiven CLIP_EDITOR ein Clip gesetzt ist.
-        Fallback: erster MovieClip aus bpy.data.movieclips.
-        Gibt den Clip zurück oder None, wenn keiner existiert.
-        """
-        clip = _get_clip_from_space(ctx)
-        if clip:
-            return clip
-
-        # Fallback: irgendeinen verfügbaren Clip nehmen
-        try:
-            fallback_clip = next(iter(bpy.data.movieclips))
-        except StopIteration:
-            print("Kein MovieClip in der Datei vorhanden.")
-            return None
-
-        # Falls wir einen CLIP_EDITOR-Kontext übersteuern können, Clip dort setzen
-        ov = _clip_override(ctx)
-        if ov:
-            try:
-                with ctx.temp_override(**ov):
-                    ov['space_data'].clip = fallback_clip
-                print(f"[Tracking] Fallback-Clip gesetzt: {fallback_clip.name}")
-            except Exception as e:
-                print(f"[Tracking] Konnte Fallback-Clip nicht im UI setzen: {e}")
-
-        # Auch ohne gesetzten UI-Clip können wir mit dem Datablock weiterarbeiten
-        return fallback_clip
-
-    def _run_forward_track():
-        print("→ Starte Vorwärts-Tracking...")
-        bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
-
-    def _reset_to_start_frame(ctx):
-        print("→ Warte auf Abschluss des Vorwärts-Trackings...")
-        ctx.scene.frame_current = state["start_frame"]
-        print(f"← Frame zurückgesetzt auf {state['start_frame']}")
-
-    def _run_backward_track():
-        print("→ Starte Rückwärts-Tracking...")
-        bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
-
-    def _stability_tick(ctx):
-        clip = _ensure_active_clip(ctx)
-        if clip is None:
-            _cleanup()
-            return {'CANCELLED'}
-
+    def _stability_tick(ctx, clip):
         current_frame = ctx.scene.frame_current
         try:
             current_marker_count = sum(len(t.markers) for t in clip.tracking.tracks)
@@ -116,47 +132,35 @@ def run_bidirectional_track(context):
         if state["stable_count"] >= 2:
             print("✓ Tracking stabil erkannt – bereinige kurze Tracks.")
             try:
-                bpy.ops.clip.clean_short_tracks(action='DELETE_TRACK')
+                _clean_short_tracks(ctx)
             except Exception as e:
                 print(f"[Tracking] clean_short_tracks fehlgeschlagen: {e}")
+            _stop()
+            return 'FINISHED'
+        return 'PASS'
 
-            # Low-Marker-Operator sauber starten (kein Feedback, kein Flag)
-            ov = _clip_override(ctx)
-            try:
-                if ov:
-                    with ctx.temp_override(**ov):
-                        bpy.ops.clip.find_low_marker_frame('INVOKE_DEFAULT', use_scene_basis=True)
-                else:
-                    bpy.ops.clip.find_low_marker_frame('INVOKE_DEFAULT', use_scene_basis=True)
-            except Exception as e:
-                print(f"[Tracking] Low-Marker-Operator konnte nicht gestartet werden: {e}")
-
-            _cleanup()
-            return {'FINISHED'}
-
-        return {'PASS_THROUGH'}
-
-    # Timer-Callback: bildet die frühere modal()-State-Maschine ab
     def _tick():
         if not state["active"]:
-            return None  # Timer stoppen
+            return None  # Timer beenden
 
         ctx = bpy.context
         clip = _ensure_active_clip(ctx)
         if clip is None:
-            print("Kein aktiver Clip im Tracking-Editor gefunden (und kein Fallback verfügbar).")
-            _cleanup()
-            return None  # -> beendet
+            print("Kein aktiver Clip im Tracking-Editor gefunden.")
+            _stop()
+            return None
 
         step = state["step"]
 
         if step == 0:
-            _run_forward_track()
+            _run_forward_track(ctx)
             state["step"] = 1
             return 0.5
 
         elif step == 1:
-            _reset_to_start_frame(ctx)
+            print("→ Warte auf Abschluss des Vorwärts-Trackings...")
+            ctx.scene.frame_current = state["start_frame"]
+            print(f"← Frame zurückgesetzt auf {state['start_frame']}")
             state["step"] = 2
             return 0.5
 
@@ -166,23 +170,18 @@ def run_bidirectional_track(context):
             return 0.5
 
         elif step == 3:
-            _run_backward_track()
+            _run_backward_track(ctx)
             state["step"] = 4
             return 0.5
 
         elif step == 4:
-            res = _stability_tick(ctx)
-            if isinstance(res, dict) and 'FINISHED' in res:
-                return None  # fertig -> Timer stoppen
-            if isinstance(res, dict) and 'CANCELLED' in res:
+            res = _stability_tick(ctx, clip)
+            if res == 'FINISHED':
                 return None
             return 0.5
 
-        # Fallback
         return 0.5
 
-    # Timer starten
     bpy.app.timers.register(_tick, first_interval=0.5)
-
-    # Verhalten analog zum ursprünglichen Operator-Start: läuft modal
     return {'RUNNING_MODAL'}
+
