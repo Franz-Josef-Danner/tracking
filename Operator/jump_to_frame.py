@@ -1,4 +1,5 @@
 import bpy
+import json
 from bpy.types import Operator
 
 def _clip_override(context):
@@ -21,9 +22,35 @@ def _resolve_target_frame(context, explicit_target: int) -> int | None:
     tf = scene.get("goto_frame")
     return int(tf) if tf is not None else None
 
+def _get_visited_frames(scene) -> list[int]:
+    """Frames-Liste aus Szene lesen (JSON)."""
+    raw = scene.get("visited_frames_json", "[]")
+    try:
+        data = json.loads(raw)
+        # Absicherung auf int-Liste
+        return [int(x) for x in data if isinstance(x, (int, float, str)) and str(x).lstrip("-").isdigit()]
+    except Exception:
+        return []
+
+def _store_visited_frame(scene, frame: int) -> bool:
+    """
+    Speichert Frame in Szene, liefert True wenn es ein Duplikat war.
+    Persistiert als JSON in scene['visited_frames_json'].
+    """
+    frames = _get_visited_frames(scene)
+    is_duplicate = int(frame) in frames
+    if not is_duplicate:
+        frames.append(int(frame))
+        scene["visited_frames_json"] = json.dumps(frames)
+        print(f"[GotoFrame] Persistiert: visited_frames_json → {scene['visited_frames_json']}")
+    else:
+        print(f"[GotoFrame] Duplikat erkannt (Frame {frame}) – Helper wird ausgelöst.")
+    return is_duplicate
+
 
 class CLIP_OT_jump_to_frame(Operator):
-    """Setzt den Playhead und löst am Ende clip.main aus."""
+    """Setzt den Playhead, protokolliert den Frame in der Szene und löst am Ende clip.main aus.
+       Bei Duplikat triggert ein Helper die Erhöhung von scene['marker_adapt'] um +10%."""
     bl_idname = "clip.jump_to_frame"
     bl_label = "Jump to Frame"
     bl_options = {"INTERNAL", "REGISTER"}
@@ -40,6 +67,16 @@ class CLIP_OT_jump_to_frame(Operator):
         if target is None:
             self.report({'WARNING'}, "[GotoFrame] Kein Ziel-Frame (weder Property noch Scene['goto_frame']).")
             return {'CANCELLED'}
+
+        # Persistenz + Duplikat-Check
+        is_dup = _store_visited_frame(context.scene, int(target))
+        if is_dup:
+            try:
+                # Helper zur Anpassung von marker_adapt auslösen
+                bpy.ops.clip.marker_adapt_boost('EXEC_DEFAULT')
+            except Exception as ex:
+                self.report({'ERROR'}, f"Marker-Adapt-Helper fehlgeschlagen: {ex}")
+                print(f"Error: Marker-Adapt-Helper fehlgeschlagen: {ex}")
 
         ovr = _clip_override(context)
         try:
@@ -58,7 +95,6 @@ class CLIP_OT_jump_to_frame(Operator):
             return {'FINISHED'}
 
         except Exception as ex:
-            # Klare, gebündelte Fehlermeldung für Upstream-Logs
             msg = f"Übergabe an main fehlgeschlagen: {ex}"
             self.report({'ERROR'}, msg)
             print(f"Error: {msg}")
