@@ -14,8 +14,11 @@ from .find_low_marker_frame import CLIP_OT_find_low_marker
 
 try:
     from .clean_short_tracks import CLIP_OT_clean_short_tracks
+    _HAS_CLEAN_SHORT = True
 except Exception as e:
-    raise ImportError(f"CLIP_OT_clean_short_tracks Import fehlgeschlagen: {e}")
+    print(f"[WARN] clean_short_tracks nicht geladen: {e}")
+    _HAS_CLEAN_SHORT = False
+
 
 classes = (
     CLIP_OT_tracker_settings,
