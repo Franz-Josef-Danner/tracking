@@ -69,24 +69,25 @@ class CLIP_OT_jump_to_frame(Operator):
                 self.report({'ERROR'}, f"Marker-Adapt-Helper fehlgeschlagen: {ex}")
                 print(f"Error: Marker-Adapt-Helper fehlgeschlagen: {ex}")
 
-        # Playhead setzen + main auslösen
+        # Playhead setzen + DETECT auslösen
         ovr = _clip_override(context)
         try:
             if ovr:
                 with context.temp_override(**ovr):
                     context.scene.frame_current = int(target)
                     print(f"[GotoFrame] Playhead auf Frame {target} gesetzt (mit Override).")
-                    res = bpy.ops.clip.main('INVOKE_DEFAULT')
+                    # Detect direkt starten; Frame explizit übergeben (robust ggü. UI-Latenz)
+                    res = bpy.ops.clip.detect('INVOKE_DEFAULT', frame=int(target))
             else:
                 context.scene.frame_current = int(target)
                 print(f"[GotoFrame] Playhead auf Frame {target} gesetzt (ohne Override).")
-                res = bpy.ops.clip.main('INVOKE_DEFAULT')
+                res = bpy.ops.clip.detect('INVOKE_DEFAULT', frame=int(target))
 
-            print(f"[GotoFrame] Übergabe an main → {res}")
+            print(f"[GotoFrame] Übergabe an detect → {res}")
             return {'FINISHED'}
 
         except Exception as ex:
-            msg = f"Übergabe an main fehlgeschlagen: {ex}"
+            msg = f"Übergabe an detect fehlgeschlagen: {ex}"
             self.report({'ERROR'}, msg)
             print(f"Error: {msg}")
             return {'CANCELLED'}
