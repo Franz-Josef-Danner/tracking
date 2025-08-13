@@ -1,6 +1,5 @@
 import bpy
 
-from .marker_helper_main import CLIP_OT_marker_helper_main
 from .disable_proxy import CLIP_OT_disable_proxy
 from .enable_proxy import CLIP_OT_enable_proxy
 from .error_value import error_value
@@ -23,7 +22,6 @@ __all__ = [
 
 classes = (
     RepeatEntry,
-    CLIP_OT_marker_helper_main,
     CLIP_OT_enable_proxy,
     CLIP_OT_disable_proxy,
 )
