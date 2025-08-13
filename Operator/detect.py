@@ -166,12 +166,15 @@ class CLIP_OT_detect(bpy.types.Operator):
         if self.min_marker >= 0:
             self.min_marker = int(self.min_marker)
         else:
-            self.min_marker = int(basis_for_bounds * 0.9)
-
+            self.min_marker = int(scene.get("marker_min", basis_for_bounds * 0.9))
+        
         if self.max_marker >= 0:
             self.max_marker = int(self.max_marker)
         else:
-            self.max_marker = int(basis_for_bounds * 1.1)
+            self.max_marker = int(scene.get("marker_max", basis_for_bounds * 1.1))
+        
+        print(f"[Detect] Verwende min_marker={self.min_marker}, max_marker={self.max_marker} "
+              f"(Scene: min={scene.get('marker_min')}, max={scene.get('marker_max')})")
 
         # --- Bases ---
         self.margin_base = self.margin_base if self.margin_base >= 0 else max(1, int(image_width * 0.025))
