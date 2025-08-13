@@ -4,6 +4,8 @@ from ..Helper.multiscale_temporal_grid_clean import multiscale_temporal_grid_cle
 from ..Helper.segments import track_has_internal_gaps
 from ..Helper.mute_ops import mute_after_last_marker, mute_unassigned_markers
 from ..Helper.split_cleanup import clear_path_on_split_tracks_segmented, recursive_split_cleanup
+from ..Helper.marker_adapt_helper import register as reg_adapt, unregister as unreg_adapt
+
 
 def _track_ptr(t):
     try:
