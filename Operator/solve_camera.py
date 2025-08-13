@@ -6,7 +6,7 @@ from bpy.props import IntProperty, FloatProperty, BoolProperty
 # Sicherstellen, dass der Refine-Operator-Klasse geladen ist (liegt in Helper/)
 # (Registrierung erfolgt zentral in deinem Addon-__init__ bzw. Operator/__init__)
 from ..Helper.refine_high_error import run_refine_on_high_error
-from ..Helper.clean_projection_error import clean_tracks_by_projection_error  # noqa: F401
+from ..Helper.projection_cleanup_builtin import builtin_projection_cleanup, find_clip_window
 
 
 # -------------------------- Kontext-/Helper-Funktionen ------------------------
