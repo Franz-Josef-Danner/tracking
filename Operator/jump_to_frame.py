@@ -73,7 +73,7 @@ class CLIP_OT_jump_to_frame(Operator):
         if is_dup:
             try:
                 # Helper zur Anpassung von marker_adapt auslösen
-                bpy.ops.clip.marker_adapt_boost('EXEC_DEFAULT')
+                bpy.ops.clip.Helper.marker_adapt_boost('EXEC_DEFAULT')
             except Exception as ex:
                 self.report({'ERROR'}, f"Marker-Adapt-Helper fehlgeschlagen: {ex}")
                 print(f"Error: Marker-Adapt-Helper fehlgeschlagen: {ex}")
