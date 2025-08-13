@@ -3,6 +3,7 @@ import bpy
 
 from .solve_camera import solve_watch_clean
 from .clean_short_tracks import clean_short_tracks
+from .find_low_marker_frame import run_find_low_marker_frame  # ← NEU: Handoff-Ziel importieren
 
 __all__ = ("run_bidirectional_track",)
 
@@ -24,8 +25,7 @@ def _get_space_clip(ctx):
 def _ensure_active_clip(ctx):
     """
     Liefert einen nutzbaren MovieClip und setzt – falls möglich – den CLIP_EDITOR
-    in den TRACKING-Mode mit gesetztem Clip. Identisches Verhalten wie dein
-    funktionierender Operator-Kontext, nur robuster.
+    in den TRACKING-Mode mit gesetztem Clip.
     """
     clip = _get_space_clip(ctx)
     if clip:
@@ -90,13 +90,11 @@ def _clean_short_tracks(ctx):
 
 def run_bidirectional_track(context):
     """
-    1:1 Port der bewährten Operator-Logik auf einen Helper mit Timer:
-      Step 0: Vorwärts-Tracking
-      Step 1: Reset auf Start-Frame
-      Step 2: eine Schleife warten
-      Step 3: Rückwärts-Tracking
-      Step 4: Stabilitätsprüfung; bei Stabilität -> clean_short_tracks, Ende
-    Rückgabe: {'RUNNING_MODAL'} solange der Timer läuft; beendet sich selbst.
+    Step 0: Vorwärts-Tracking
+    Step 1: Reset auf Start-Frame
+    Step 2: eine Schleife warten
+    Step 3: Rückwärts-Tracking
+    Step 4: Stabilitätsprüfung; bei Stabilität -> clean_short_tracks → Handoff an run_find_low_marker_frame
     """
     state = {
         "step": 0,
@@ -133,13 +131,21 @@ def run_bidirectional_track(context):
         if state["stable_count"] >= 2:
             print("✓ Tracking stabil erkannt – bereinige kurze Tracks.")
             try:
-                clean_short_tracks(ctx, action='DELETE_TRACK')  # action optional anpassen
+                # Helper-Variante (keine Operator-Abhängigkeit)
+                clean_short_tracks(ctx, action='DELETE_TRACK')
             except Exception as e:
                 print(f"[Tracking] clean_short_tracks fehlgeschlagen: {e}")
+
+            # ← NEU: Handoff an die nächste Stufe
+            try:
+                print("[Tracking] Übergabe an run_find_low_marker_frame …")
+                run_find_low_marker_frame(ctx)
+            except Exception as e:
+                print(f"[Tracking] run_find_low_marker_frame fehlgeschlagen: {e}")
+
             _stop()
             return 'FINISHED'
         return 'PASS'
-
 
     def _tick():
         if not state["active"]:
@@ -186,4 +192,3 @@ def run_bidirectional_track(context):
 
     bpy.app.timers.register(_tick, first_interval=0.5)
     return {'RUNNING_MODAL'}
-
