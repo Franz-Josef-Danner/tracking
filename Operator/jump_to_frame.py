@@ -2,10 +2,6 @@ import bpy
 import json
 from bpy.types import Operator
 
-# Helper-Operator importieren (aus deinem Helper-Ordner)
-from ..Helper.marker_adapt_helper import CLIP_OT_marker_adapt_boost
-
-
 def _clip_override(context):
     win = context.window
     if not win or not win.screen:
@@ -106,7 +102,7 @@ def run_jump_to_frame(context, frame: int | None = None):
 
 
 # Registration
-classes = (CLIP_OT_jump_to_frame, CLIP_OT_marker_adapt_boost)
+classes = (CLIP_OT_jump_to_frame,)
 
 def register():
     for cls in classes:
