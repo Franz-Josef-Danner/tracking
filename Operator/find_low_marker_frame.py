@@ -32,7 +32,7 @@ def find_low_marker_frame_core(clip, marker_basis=20, frame_start=None, frame_en
 
 class CLIP_OT_find_low_marker(Operator):
     """Sucht den ersten Frame unter 'marker_basis'.
-       If/Else: Treffer → jump_to_frame; kein Treffer → solve_watch_clean."""
+       If/Else: Treffer → jump_to_frame; kein Treffer → clean_error_tracks."""
     bl_idname = "clip.find_low_marker"
     bl_label = "Find Low Marker Frame"
     bl_options = {"INTERNAL"}  # nicht im Undo-Stack relevant
@@ -98,7 +98,7 @@ class CLIP_OT_find_low_marker(Operator):
         print("[MarkerCheck] Keine Low-Marker-Frames gefunden. Starte Kamera-Solve.")
         try:
             # Modal-Operator, kümmert sich intern um Override/Timer/Status
-            bpy.ops.clip.solve_watch_clean('INVOKE_DEFAULT')
+            bpy.ops.clip.clean_error_tracks('INVOKE_DEFAULT')
         except Exception as ex:
             self.report({'ERROR'}, f"Solve-Start fehlgeschlagen: {ex}")
             return {'CANCELLED'}
