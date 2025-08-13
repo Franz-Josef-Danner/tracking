@@ -183,6 +183,7 @@ class CLIP_OT_solve_watch_clean(Operator):
 
 
 
+
 # -------------- Convenience-Wrapper (für Aufrufe aus __init__.py etc.) -------
 
 def run_solve_watch_clean(
