@@ -198,8 +198,6 @@ class CLIP_OT_detect(bpy.types.Operator):
         self.max_attempts = 20
         self.state = self._STATE_DETECT
 
-        _deselect_all(self.tracking)
-
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.01, window=context.window)
         wm.modal_handler_add(self)
@@ -274,16 +272,16 @@ class CLIP_OT_detect(bpy.types.Operator):
                                 close_tracks.append(tr)
                                 break
 
-            # Zu nahe neue Tracks löschen
+            # Zu nahe neue Tracks löschen – Auswahl danach wiederherstellen
             if close_tracks:
-                for t in tracks:
-                    t.select = False
-                for t in close_tracks:
-                    t.select = True
-                try:
-                    bpy.ops.clip.delete_track()
-                except Exception:
-                    _remove_tracks_by_name(self.tracking, {t.name for t in close_tracks})
+                # 1) Soll-Auswahl (die NICHT-nahen „cleaned“) vorab per Namen sichern
+                cleaned_names = {t.name for t in new_tracks if t not in close_tracks}
+                # 2) Löschen per Datablock-API (ohne Selektions-Operatoren)
+                _remove_tracks_by_name(self.tracking, {t.name for t in close_tracks})
+                # 3) Auswahl deterministisch auf die „cleaned“ Tracks setzen
+                for t in self.tracking.tracks:
+                    t.select = (t.name in cleaned_names)
+
 
             # Bereinigte neue Tracks
             close_set = set(close_tracks)
