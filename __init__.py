@@ -24,7 +24,7 @@ from .Operator.clean_short_tracks import CLIP_OT_clean_short_tracks
 from .Operator.clean_error_tracks import CLIP_OT_clean_error_tracks
 from .Operator.optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 from .Operator.main import CLIP_OT_main
-from .Operator.main_to_adapt import CLIP_OT_launch_main_with_adapt
+from .Operator.main_to_adapt import CLIP_OT_launch_find_low_marker_frame_with_adapt
 from .Operator.find_low_marker_frame import CLIP_OT_find_low_marker  # NEU
 from .Helper.properties import RepeatEntry
 
@@ -44,7 +44,7 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
         layout.prop(scene, "frames_track")
         layout.prop(scene, "error_track")
         layout.separator()
-        layout.operator("clip.launch_main_with_adapt", text="Track")
+        layout.operator("clip.launch_find_low_marker_frame_with_adapt", text="Track")
 
 # Alle Klassen zur Registrierung
 classes = (
@@ -62,7 +62,7 @@ classes = (
     CLIP_OT_optimize_tracking_modal,
     CLIP_OT_find_low_marker,
     CLIP_OT_main,
-    CLIP_OT_launch_main_with_adapt,
+    CLIP_OT_launch_find_low_marker_frame_with_adapt,
     CLIP_PT_kaiserlich_panel,
 )
 
