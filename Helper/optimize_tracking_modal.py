@@ -1,11 +1,11 @@
 import bpy
 from bpy.types import Operator
-from ..Helper.set_test_value import set_test_value
-from ..Helper.error_value import error_value
+from .set_test_value import set_test_value
+from .error_value import error_value
 # Proxy-Helper entfernt:
 # from ..Helper.disable_proxy import CLIP_OT_disable_proxy
 # from ..Helper.enable_proxy import CLIP_OT_enable_proxy
-from .detect import perform_marker_detection
+from .detect import perform_marker_detection, run_detect_adaptive, run_detect_once
 
 class CLIP_OT_optimize_tracking_modal(Operator):
     bl_idname = "clip.optimize_tracking_modal"
