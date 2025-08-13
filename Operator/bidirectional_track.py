@@ -114,9 +114,9 @@ class CLIP_OT_bidirectional_track(Operator):
             try:
                 if ov:
                     with context.temp_override(**ov):
-                        bpy.ops.clip.find_low_marker('INVOKE_DEFAULT', use_scene_basis=True)
+                        bpy.ops.clip.find_low_marker_frame('INVOKE_DEFAULT', use_scene_basis=True)
                 else:
-                    bpy.ops.clip.find_low_marker('INVOKE_DEFAULT', use_scene_basis=True)
+                    bpy.ops.clip.find_low_marker_frame('INVOKE_DEFAULT', use_scene_basis=True)
             except Exception as e:
                 print(f"[Tracking] Low-Marker-Operator konnte nicht gestartet werden: {e}")
 
