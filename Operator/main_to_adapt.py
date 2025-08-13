@@ -28,16 +28,27 @@ class CLIP_OT_launch_find_low_marker_frame_with_adapt(bpy.types.Operator):
         default=True
     )
 
-    def execute(self, context):
-        scene = context.scene
-        marker_basis = int(scene.get("marker_basis", 25))
-        marker_adapt = int(marker_basis * self.factor * 0.9)
+def execute(self, context):
+    scene = context.scene
+    marker_basis = int(scene.get("marker_basis", 25))
+    marker_adapt = int(marker_basis * self.factor * 0.9)
 
-        if self.use_override:
-            ovr = _clip_override(context)
-            if ovr:
-                with context.temp_override(**ovr):
-                    return bpy.ops.clip.find_low_marker('INVOKE_DEFAULT', use_scene_basis=True)
+    # NEU: Wert als Szene-Variable speichern
+    scene["marker_adapt"] = marker_adapt
+    print(f"[MainToAdapt] marker_adapt in Scene gespeichert: {marker_adapt}")
 
-        # Fallback ohne Override
-        return bpy.ops.clip.find_low_marker_frame('INVOKE_DEFAULT', marker_adapt=marker_adapt)
+    if self.use_override:
+        ovr = _clip_override(context)
+        if ovr:
+            with context.temp_override(**ovr):
+                return bpy.ops.clip.find_low_marker(
+                    'INVOKE_DEFAULT',
+                    use_scene_basis=True
+                )
+
+    # Fallback ohne Override
+    return bpy.ops.clip.find_low_marker_frame(
+        'INVOKE_DEFAULT',
+        marker_adapt=marker_adapt
+    )
+
