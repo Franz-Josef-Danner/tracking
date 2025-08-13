@@ -31,7 +31,6 @@ classes = (
     CLIP_OT_marker_helper_main,
     CLIP_OT_optimize_tracking_modal,
     CLIP_OT_solve_watch_clean,          # ✅ genau einmal
-    CLIP_OT_main_to_adapt,
     CLIP_OT_main,
     CLIP_OT_jump_to_frame,
     CLIP_OT_find_low_marker_frame,
