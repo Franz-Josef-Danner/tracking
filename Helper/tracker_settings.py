@@ -1,5 +1,3 @@
-# Helper/tracker_settings_helper.py
-
 import bpy
 
 __all__ = ("apply_tracker_settings",)
@@ -99,6 +97,18 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
             f"clean_frames={clean_frames}, clean_error={clean_error}, "
             f"last_detection_threshold={scene['last_detection_threshold']:.6f}"
         )
+
+    # --- NEU: am Ende run_find_low_marker_frame importieren und aufrufen ---
+    try:
+        from .find_low_marker_frame import run_find_low_marker_frame
+        try:
+            run_find_low_marker_frame(context, use_scene_basis=True)
+        except Exception as ex:
+            if log:
+                print(f"[TrackerSettings] Übergabe an find_low_marker_frame fehlgeschlagen: {ex}")
+    except Exception as ex:
+        if log:
+            print(f"[TrackerSettings] Import von run_find_low_marker_frame fehlgeschlagen: {ex}")
 
     return {
         "status": "ok",
