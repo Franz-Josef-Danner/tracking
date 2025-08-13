@@ -1,10 +1,6 @@
 import bpy
 from bpy.types import Operator
 
-from .find_low_marker_frame import find_low_marker_frame_core
-from ..Helper.jump_to_frame import jump_to_frame
-
-
 def _clip_override(context):
     """Sicherer CLIP_EDITOR-Override."""
     win = context.window
@@ -65,17 +61,6 @@ class CLIP_OT_main(Operator):
                 scene.repeat_frame.clear()
             except Exception:
                 pass
-
-    def _precheck_and_jump(self, context, clip):
-        scene = context.scene
-        marker_basis = int(scene.get("marker_basis", 25))
-        pre_frame = find_low_marker_frame_core(clip, marker_basis=marker_basis)
-        if pre_frame is None:
-            print("✅ Vorprüfung: Keine Low-Marker-Frames. Fortsetzung bis detect_once.")
-            return
-        scene["goto_frame"] = int(pre_frame)
-        jump_to_frame(context)
-        print(f"🎯 Vorprüfung: Low-Marker-Frame {pre_frame} – starte Setup ab diesem Frame.")
 
     # ---------- Operator-Lifecycle ----------
 
