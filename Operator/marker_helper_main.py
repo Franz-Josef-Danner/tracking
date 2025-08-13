@@ -21,6 +21,7 @@ class CLIP_OT_marker_helper_main(bpy.types.Operator):
         marker_max   = int(marker_adapt * 1.1)
 
         # Konsistente Keys setzen (beide Varianten, damit Downstream sicher liest)
+        scene["marker_basis"] = marker_basis
         scene["marker_adapt"] = marker_adapt
         scene["marker_min"]   = marker_min
         scene["marker_max"]   = marker_max
