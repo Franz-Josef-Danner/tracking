@@ -34,8 +34,8 @@ class CLIP_OT_marker_helper_main(bpy.types.Operator):
 
         # Nächster Schritt der Kette
         try:
-            res = bpy.ops.clip.launch_find_low_marker_frame_with_adapt('INVOKE_DEFAULT', factor=int(self.factor))
-            print(f"[MarkerHelper] → launch_find_low_marker_frame_with_adapt: {res}")
+            res = bpy.ops.clip.main_to_adapt('INVOKE_DEFAULT', factor=int(self.factor))
+            print(f"[MarkerHelper] → main_to_adapt: {res}")
         except Exception as e:
             self.report({'ERROR'}, f"main_to_adapt konnte nicht gestartet werden: {e}")
             return {'CANCELLED'}
