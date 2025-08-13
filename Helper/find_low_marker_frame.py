@@ -1,6 +1,8 @@
 # Helper/find_low_marker_frame.py
 import bpy
 from .jump_to_frame import run_jump_to_frame           # bereits zu Helper migriert
+from .solve_watch_clean import run_solve_watch_clean  # am Dateianfang
+
 
 __all__ = ("find_low_marker_frame_core", "run_find_low_marker_frame")
 
@@ -60,26 +62,21 @@ def run_find_low_marker_frame(
     if low_frame is not None:
         scene["goto_frame"] = int(low_frame)
         print(f"[MarkerCheck] Treffer: Low-Marker-Frame {low_frame}. Übergabe an jump_to_frame (Helper) …")
-        ok = False
         try:
-            res = run_jump_to_frame(context, frame=int(low_frame))
+            res = run_jump_to_frame(context, frame=int(low_frame))   # ← explicit_target → frame
         except Exception as ex:
             print(f"Error: jump_to_frame (Helper) Exception: {ex}")
             return None
-        if not ok:
-            print("Error: jump_to_frame (Helper) meldete False")
-            return None
         return low_frame
-    
-    print("[MarkerCheck] Keine Low-Marker-Frames gefunden. Starte Kamera-Solve (Helper).")
-    ok = False
-    try:
-        ok = run_solve_watch_clean(context)
-    except Exception as ex:
-        print(f"Error: Solve-Start (Helper) Exception: {ex}")
+        
+        # im Fallback (nur wenn Helper existiert):
+        print("[MarkerCheck] Keine Low-Marker-Frames gefunden. Starte Kamera-Solve (Helper).")
+        try:
+            ok = run_solve_watch_clean(context)
+        except Exception as ex:
+            print(f"Error: Solve-Start (Helper) Exception: {ex}")
+            return None
+        if not ok:
+            print("Error: Solve-Start (Helper) meldete False")
         return None
-    if not ok:
-        print("Error: Solve-Start (Helper) meldete False")
-        return None
-    return None
 
