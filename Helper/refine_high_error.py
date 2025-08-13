@@ -1,10 +1,7 @@
 # refine_high_error.py
 import bpy
-from bpy.types import Operator
-from bpy.props import BoolProperty, IntProperty, FloatProperty
 
-__all__ = ("CLIP_OT_refine_on_high_error", "run_refine_on_high_error")
-
+__all__ = ("run_refine_on_high_error",)
 
 # --- Context Utilities --------------------------------------------------------
 
@@ -183,56 +180,3 @@ def run_refine_on_high_error(
     scene.frame_set(original_frame)
     print(f"\n[SUMMARY] Insgesamt bearbeitet: {processed} Frame(s)")
     return processed
-
-
-# --- Operator-Wrapper ---------------------------------------------------------
-
-class CLIP_OT_refine_on_high_error(Operator):
-    """Refine an den N Frames mit höchsten Solve-Frame-Errors (N = Szene/marker_basis)."""
-    bl_idname = "clip.refine_on_high_error"
-    bl_label = "Refine: Top-N Solve-Error Frames"
-    bl_options = {"REGISTER", "UNDO"}
-
-    # Deprecated, rein für Abwärtskompatibilität (wird ignoriert)
-    error_threshold: FloatProperty(
-        name="(Deprecated) Frame Error ≥",
-        description="Wird im Top-N-Modus ignoriert; nur für alte Aufrufe vorhanden.",
-        default=2.0, min=0.0
-    )
-
-    limit_frames: IntProperty(
-        name="Max Frames",
-        description="Zusätzliche Obergrenze (0 = keine Begrenzung)",
-        default=0, min=0
-    )
-    resolve_after: BoolProperty(
-        name="Nach Refine erneut lösen",
-        default=False
-    )
-
-    def execute(self, context):
-        try:
-            n = run_refine_on_high_error(
-                context,
-                limit_frames=self.limit_frames,
-                resolve_after=self.resolve_after,
-                # Kompatibilität: wird intern ignoriert
-                error_threshold=self.error_threshold
-            )
-        except RuntimeError as e:
-            self.report({'ERROR'}, str(e))
-            return {'CANCELLED'}
-
-        if n == 0:
-            self.report({'INFO'}, "Keine Frames ausgewählt.")
-            return {'CANCELLED'}
-
-        self.report({'INFO'}, f"Refine abgeschlossen an {n} Frame(s).")
-        return {'FINISHED'}
-
-
-def register():
-    bpy.utils.register_class(CLIP_OT_refine_on_high_error)
-
-def unregister():
-    bpy.utils.unregister_class(CLIP_OT_refine_on_high_error)
