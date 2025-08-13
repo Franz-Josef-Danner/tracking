@@ -8,7 +8,7 @@ from .clean_error_tracks import CLIP_OT_clean_error_tracks
 from .marker_helper_main import CLIP_OT_marker_helper_main
 from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 from .solve_camera import CLIP_OT_solve_watch_clean, run_solve_watch_clean  # ✅ KORREKT
-from .main_to_adapt import CLIP_OT_launch_find_low_marker_frame_with_adapt
+from .main_to_adapt import CLIP_OT_main_to_adapt
 from .main import CLIP_OT_main
 from .jump_to_frame import CLIP_OT_jump_to_frame
 from .find_low_marker_frame import CLIP_OT_find_low_marker
@@ -31,7 +31,7 @@ classes = (
     CLIP_OT_marker_helper_main,
     CLIP_OT_optimize_tracking_modal,
     CLIP_OT_solve_watch_clean,          # ✅ genau einmal
-    CLIP_OT_launch_find_low_marker_frame_with_adapt,
+    CLIP_OT_main_to_adapt,
     CLIP_OT_main,
     CLIP_OT_jump_to_frame,
     CLIP_OT_find_low_marker,
