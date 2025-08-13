@@ -92,14 +92,20 @@ class CLIP_OT_main(Operator):
             print("🧰 Vorbereitung: marker_helper_main …")
             bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
 
-            # --- Bounds-Formel (nur aus übergebenem marker_adapt) ---
-            marker_basis = int(scene.get("marker_basis", 25))
-            marker_adapt_in = int(getattr(self, "marker_adapt", 0))
-            basis_for_bounds = int(marker_adapt_in * 1.1) if marker_adapt_in > 0 else int(marker_basis)
+            # --- Bounds-Formel (bevorzugt Scene["marker_adapt"], dann Operator-Prop, sonst marker_basis) ---
+            marker_basis   = int(scene.get("marker_basis", 25))
+            op_adapt       = int(getattr(self, "marker_adapt", 0))
+            scene_adapt    = int(scene.get("marker_adapt", 0))
+            marker_adapt_in = op_adapt if op_adapt > 0 else scene_adapt
+            
+            basis_for_bounds = int(marker_adapt_in * 1.1) if marker_adapt_in > 0 else marker_basis
             scene["marker_min"] = int(basis_for_bounds * 0.9)
             scene["marker_max"] = int(basis_for_bounds * 1.1)
+            
+            src = "op.marker_adapt" if op_adapt > 0 else ("scene['marker_adapt']" if scene_adapt > 0 else "marker_basis")
             print(f"📏 Marker-Bounds gesetzt: min={scene['marker_min']} max={scene['marker_max']} "
-                  f"(Basis {basis_for_bounds}, adapt_in={marker_adapt_in})")
+                  f"(Basis {basis_for_bounds}, Quelle: {src}, adapt_in={marker_adapt_in})")
+
 
             # --- Threshold bestimmen (Fallback: Tracker-Default) ---
             settings = clip.tracking.settings
