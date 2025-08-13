@@ -1,6 +1,6 @@
 # Helper/find_low_marker_frame.py
 import bpy
-from .jump_to_frame_helper import jump_to_frame
+from .jump_to_frame import jump_to_frame_helper
 
 __all__ = ("find_low_marker_frame_core", "run_find_low_marker_frame")
 
