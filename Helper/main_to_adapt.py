@@ -27,10 +27,6 @@ def main_to_adapt(
 ) -> Tuple[bool, int, Optional[Set[str]]]:
     """
     Setzt scene['marker_adapt'] aus scene['marker_basis'] * factor * 0.9.
-    Optional: triggert im Anschluss 'bpy.ops.clip.tracker_settings'.
-
-    Returns:
-        ok (bool), marker_adapt (int), op_result (set[str] | None)
     """
     scene = getattr(context, "scene", None)
     if scene is None:
@@ -47,19 +43,7 @@ def main_to_adapt(
     scene["marker_adapt"] = marker_adapt
     print(f"[MainToAdapt] marker_adapt gesetzt: {marker_adapt} (basis={marker_basis}, factor={factor})")
 
+    # Operator-Aufruf entfernt → reiner Helper
     op_result: Optional[Set[str]] = None
-    if call_next:
-        try:
-            override = clip_override(context) if use_override else None
-            op_call_mode = 'INVOKE_DEFAULT' if invoke_next else 'EXEC_DEFAULT'
-            if override:
-                with context.temp_override(**override):
-                    op_result = bpy.ops.clip.tracker_settings(op_call_mode)
-            else:
-                op_result = bpy.ops.clip.tracker_settings(op_call_mode)
-            print(f"[MainToAdapt] Übergabe an tracker_settings → {op_result}")
-        except Exception as e:
-            print(f"[MainToAdapt][ERROR] tracker_settings konnte nicht gestartet werden: {e}")
-            return False, marker_adapt, {'CANCELLED'}
 
     return True, marker_adapt, op_result
