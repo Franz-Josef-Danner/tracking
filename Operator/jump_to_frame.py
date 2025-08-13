@@ -77,11 +77,11 @@ class CLIP_OT_jump_to_frame(Operator):
                     context.scene.frame_current = int(target)
                     print(f"[GotoFrame] Playhead auf Frame {target} gesetzt (mit Override).")
                     # Detect direkt starten; Frame explizit übergeben (robust ggü. UI-Latenz)
-                    res = bpy.ops.clip.detect('INVOKE_DEFAULT', frame=int(target))
+                    res = bpy.ops.clip.detect_once('INVOKE_DEFAULT', frame=int(target))
             else:
                 context.scene.frame_current = int(target)
                 print(f"[GotoFrame] Playhead auf Frame {target} gesetzt (ohne Override).")
-                res = bpy.ops.clip.detect('INVOKE_DEFAULT', frame=int(target))
+                res = bpy.ops.clip.detect_once('INVOKE_DEFAULT', frame=int(target))
 
             print(f"[GotoFrame] Übergabe an detect → {res}")
             return {'FINISHED'}
