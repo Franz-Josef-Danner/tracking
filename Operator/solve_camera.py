@@ -120,7 +120,7 @@ class CLIP_OT_solve_watch_clean(Operator):
 
         # Operator/solve_camera.py (im execute() von CLIP_OT_solve_watch_clean)
         with context.temp_override(area=area, region=region, space_data=space):
-            res_ref = bpy.ops.clip.refine_on_high_error(   # ← korrigiert
+            res_ref = bpy.ops.clip.run_refine_on_high_error(   # ← korrigiert
                 'EXEC_DEFAULT',
                 limit_frames=int(self.refine_limit_frames),
                 resolve_after=False,
