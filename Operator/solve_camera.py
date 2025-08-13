@@ -1,6 +1,6 @@
 import bpy
 from bpy.types import Operator
-from .refine_high_error import run_refine_on_high_error
+from ..Helper.refine_high_error import run_refine_on_high_error
 
 def _clip_override(context):
     win = context.window
