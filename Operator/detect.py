@@ -1,6 +1,5 @@
 import bpy
 import math
-import time
 
 __all__ = ["perform_marker_detection", "CLIP_OT_detect", "CLIP_OT_detect_once"]
 
@@ -70,8 +69,6 @@ class CLIP_OT_detect(bpy.types.Operator):
     _STATE_DETECT = "DETECT"
     _STATE_WAIT   = "WAIT"
     _STATE_PROC   = "PROCESS"
-    selected_before = {t.name for t in self.tracking.tracks if getattr(t, "select", False)}
-
 
     # --- optionale Aufruf-Argumente (kompatibel zu älteren Call-Sites) ---
     detection_threshold: bpy.props.FloatProperty(
@@ -86,12 +83,12 @@ class CLIP_OT_detect(bpy.types.Operator):
     )
     min_marker: bpy.props.IntProperty(
         name="Min Marker (opt.)",
-        description="Optionales Unterlimit. <0 wird aus marker_adapt/basis berechnet",
+        description="Optionales Unterlimit. <0 → Scene['marker_min'] (Fallback aus Basis)",
         default=-1, min=-1
     )
     max_marker: bpy.props.IntProperty(
         name="Max Marker (opt.)",
-        description="Optionales Oberlimit. <0 wird aus marker_adapt/basis berechnet",
+        description="Optionales Oberlimit. <0 → Scene['marker_max'] (Fallback aus Basis)",
         default=-1, min=-1
     )
     frame: bpy.props.IntProperty(
@@ -168,13 +165,13 @@ class CLIP_OT_detect(bpy.types.Operator):
         if self.min_marker >= 0:
             self.min_marker = int(self.min_marker)
         else:
-            self.min_marker = int(scene.get("marker_min", basis_for_bounds * 0.9))
-        
+            self.min_marker = int(scene.get("marker_min", int(basis_for_bounds * 0.9)))
+
         if self.max_marker >= 0:
             self.max_marker = int(self.max_marker)
         else:
-            self.max_marker = int(scene.get("marker_max", basis_for_bounds * 1.1))
-        
+            self.max_marker = int(scene.get("marker_max", int(basis_for_bounds * 1.1)))
+
         print(f"[Detect] Verwende min_marker={self.min_marker}, max_marker={self.max_marker} "
               f"(Scene: min={scene.get('marker_min')}, max={scene.get('marker_max')})")
 
@@ -200,6 +197,8 @@ class CLIP_OT_detect(bpy.types.Operator):
         self.max_attempts = 20
         self.state = self._STATE_DETECT
 
+        # Ursprüngliche Auswahl sichern + EINMALIG deselektieren
+        self._selected_before = {t.name for t in self.tracking.tracks if getattr(t, "select", False)}
         _deselect_all(self.tracking)
 
         wm = context.window_manager
@@ -214,9 +213,7 @@ class CLIP_OT_detect(bpy.types.Operator):
         scene = context.scene
 
         if self.state == self._STATE_DETECT:
-            if self.attempt == 0:
-                _deselect_all(self.tracking)
-
+            # KEIN weiteres globales Deselect hier
             self.frame = int(scene.frame_current)
 
             # Snapshots vor Detect
@@ -278,7 +275,7 @@ class CLIP_OT_detect(bpy.types.Operator):
                                 close_tracks.append(tr)
                                 break
 
-            # Zu nahe neue Tracks löschen
+            # Zu nahe neue Tracks entfernen (ohne UI-Operator)
             if close_tracks:
                 _remove_tracks_by_name(self.tracking, {t.name for t in close_tracks})
 
@@ -293,13 +290,6 @@ class CLIP_OT_detect(bpy.types.Operator):
                 if cleaned_tracks:
                     _remove_tracks_by_name(self.tracking, {t.name for t in cleaned_tracks})
 
-                # Finale, bereinigte neue Tracks für das nachfolgende Tracking selektieren
-                for t in self.tracking.tracks:
-                    t.select = False
-                for t in cleaned_tracks:
-                    t.select = True
-                print(f"[Detect] Selektiere {len(cleaned_tracks)} Tracks für Tracking.")
-
                 # Threshold adaptieren (proportional zur Abweichung vom Ziel)
                 safe_adapt = max(self.marker_adapt, 1)
                 self.detection_threshold = max(
@@ -312,8 +302,9 @@ class CLIP_OT_detect(bpy.types.Operator):
                 if self.attempt >= self.max_attempts:
                     scene["detect_status"] = "failed"
                     context.window_manager.event_timer_remove(self._timer)
+                    # Ursprüngliche Auswahl wiederherstellen
                     for t in self.tracking.tracks:
-                        t.select = (t.name in selected_before)
+                        t.select = (t.name in self._selected_before)
                     return {'FINISHED'}
 
                 # Nächster Versuch
@@ -325,22 +316,28 @@ class CLIP_OT_detect(bpy.types.Operator):
                 scene["detect_prev_names"] = [t.name for t in cleaned_tracks]
             except Exception:
                 scene["detect_prev_names"] = []
-            
+
+            # Finale, bereinigte neue Tracks für das nachfolgende Tracking selektieren
+            for t in self.tracking.tracks:
+                t.select = False
+            for t in cleaned_tracks:
+                t.select = True
+            print(f"[Detect] Selektiere {len(cleaned_tracks)} Tracks für Tracking.")
+
             # --- Handoff: Detect → Tracking ---
             scene["detect_status"] = "success"
             scene["pipeline_do_not_start"] = False
-            
+
             # Timer entfernen, bevor wir an Tracking übergeben
             context.window_manager.event_timer_remove(self._timer)
-            
+
             # Tracking direkt starten
             try:
                 bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
             except Exception as e:
                 self.report({'ERROR'}, f"Tracking-Start fehlgeschlagen: {e}")
-            
-            return {'FINISHED'}
 
+            return {'FINISHED'}
 
         return {'PASS_THROUGH'}
 
