@@ -19,12 +19,11 @@ def _resolve_target_frame(context, explicit_target: int) -> int | None:
         return int(explicit_target)
     scene = context.scene
     tf = scene.get("goto_frame")
-    return int(tf) if tf is not None else None
+    return int(tf) if tf is not None and int(tf) >= 0 else None
 
 
 class CLIP_OT_jump_to_frame(Operator):
-    """Setzt den Playhead auf den Ziel-Frame.
-       Quelle: Operator-Property `target_frame` oder Scene['goto_frame']."""
+    """Setzt den Playhead auf den Ziel-Frame und übergibt anschließend an main."""
     bl_idname = "clip.jump_to_frame"
     bl_label = "Jump to Frame"
     bl_options = {"INTERNAL", "REGISTER"}
@@ -43,14 +42,25 @@ class CLIP_OT_jump_to_frame(Operator):
             return {'CANCELLED'}
 
         ovr = _clip_override(context)
-        if ovr:
-            with context.temp_override(**ovr):
+        try:
+            if ovr:
+                with context.temp_override(**ovr):
+                    context.scene.frame_current = int(target)
+                    print(f"[GotoFrame] Playhead auf Frame {target} gesetzt (mit Override).")
+                    # --- Übergabe an main im selben gültigen Kontext ---
+                    res = bpy.ops.clip.main('EXEC_DEFAULT')
+                    print(f"[GotoFrame] Übergabe an main → {res}")
+            else:
+                # Fallback ohne Override – funktioniert, UI-Refresh ggf. verzögert
                 context.scene.frame_current = int(target)
-        else:
-            # Fallback ohne Override – funktioniert, aber UI-Refresh ggf. verzögert
-            context.scene.frame_current = int(target)
+                print(f"[GotoFrame] Playhead auf Frame {target} gesetzt (ohne Override).")
+                res = bpy.ops.clip.main('EXEC_DEFAULT')
+                print(f"[GotoFrame] Übergabe an main → {res}")
 
-        print(f"[GotoFrame] Playhead auf Frame {target} gesetzt.")
+        except Exception as ex:
+            self.report({'ERROR'}, f"Übergabe an main fehlgeschlagen: {ex}")
+            return {'CANCELLED'}
+
         return {'FINISHED'}
 
 
@@ -62,6 +72,7 @@ def run_jump_to_frame(context, frame: int | None = None):
     """
     Programmatischer Aufruf:
       - frame ist optional; wenn None, wird Scene['goto_frame'] genutzt.
+      - Übergibt nach dem Sprung automatisch an clip.main.
     """
     if frame is not None and frame >= 0:
         return bpy.ops.clip.jump_to_frame('EXEC_DEFAULT', target_frame=int(frame))
