@@ -144,14 +144,28 @@ class CLIP_OT_detect(bpy.types.Operator):
         settings = self.tracking.settings
         image_width = int(self.clip.size[0])
 
-        # --- Threshold-Start ---
+        # --- Threshold-Start (aus Szene, ggf. überschrieben durch Argument) ---
         if self.detection_threshold >= 0.0:
             self.detection_threshold = float(self.detection_threshold)
         else:
-            self.detection_threshold = float(
-                scene.get("last_detection_threshold",
-                          float(getattr(settings, "default_correlation_min", 0.75)))
-            )
+            settings = self.tracking.settings
+            try:
+                default_min = float(getattr(settings, "default_correlation_min", 0.75))
+            except Exception:
+                default_min = 0.75
+
+            try:
+                self.detection_threshold = float(scene.get("last_detection_threshold", default_min))
+            except Exception:
+                self.detection_threshold = default_min
+
+        # Sanity Clamp + Persist
+        if not (0.0 < float(self.detection_threshold) <= 1.0):
+            self.detection_threshold = max(min(float(self.detection_threshold), 1.0), 1e-4)
+
+        scene["last_detection_threshold"] = float(self.detection_threshold)
+        print(f"[Detect] Start-Threshold={self.detection_threshold:.6f}")
+
 
         # --- marker_adapt / Bounds ---
         if self.marker_adapt >= 0:
