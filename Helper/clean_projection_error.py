@@ -109,7 +109,7 @@ def _delete_or_mute_track(
 
 # -- Hauptlogik: Cleanup über gesamte Timeline --------------------------------
 
-def clean_projection_error(
+def clean_tracks_by_projection_error(
     context: bpy.types.Context,
     *,
     threshold_key: str = "solve_error",
