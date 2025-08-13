@@ -1,6 +1,6 @@
 import bpy
 
-__all__ = ("CLIP_OT_launch_main_with_adapt",)
+__all__ = ("CLIP_OT_launch_find_low_marker_frame_with_adapt",)
 
 def _clip_override(context):
     for area in context.window.screen.areas:
@@ -10,10 +10,10 @@ def _clip_override(context):
                     return {'area': area, 'region': region, 'space_data': area.spaces.active}
     return None
 
-class CLIP_OT_launch_main_with_adapt(bpy.types.Operator):
-    """Berechnet marker_adapt aus marker_basis und startet anschließend clip.main mit Übergabe."""
-    bl_idname = "clip.launch_main_with_adapt"
-    bl_label  = "Start Main (Adapt x4)"
+class CLIP_OT_launch_find_low_marker_frame_with_adapt(bpy.types.Operator):
+    """Berechnet marker_adapt aus marker_basis und startet anschließend clip.find_low_marker_frame mit Übergabe."""
+    bl_idname = "clip.launch_find_low_marker_frame_with_adapt"
+    bl_label  = "Start find_low_marker_frame (Adapt x4)"
     bl_options = {'REGISTER'}
 
     factor: bpy.props.IntProperty(
@@ -37,7 +37,7 @@ class CLIP_OT_launch_main_with_adapt(bpy.types.Operator):
             ovr = _clip_override(context)
             if ovr:
                 with context.temp_override(**ovr):
-                    return bpy.ops.clip.main('INVOKE_DEFAULT', marker_adapt=marker_adapt)
+                    return bpy.ops.clip.find_low_marker_frame('INVOKE_DEFAULT', marker_adapt=marker_adapt)
 
         # Fallback ohne Override
-        return bpy.ops.clip.main('INVOKE_DEFAULT', marker_adapt=marker_adapt)
+        return bpy.ops.clip.find_low_marker_frame('INVOKE_DEFAULT', marker_adapt=marker_adapt)
