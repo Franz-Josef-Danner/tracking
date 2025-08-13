@@ -5,6 +5,18 @@ try:
 except Exception as e:
     print(f"[Tracking] Low-Marker-Operator konnte nicht gestartet werden: {e}")
 
+def _clip_override(context):
+    win = context.window
+    if not win or not getattr(win, "screen", None):
+        return None
+    for area in win.screen.areas:
+        if area.type == 'CLIP_EDITOR':
+            for region in area.regions:
+                if region.type == 'WINDOW':
+                    return {'area': area, 'region': region, 'space_data': area.spaces.active}
+    return None
+
+
 class CLIP_OT_bidirectional_track(Operator):
     bl_idname = "clip.bidirectional_track"
     bl_label = "Bidirectional Track"
@@ -101,13 +113,19 @@ class CLIP_OT_bidirectional_track(Operator):
             # Timer entfernen
             self._cleanup_timer(context)
         
-            # ➡ Neuer Operator-Aufruf ohne Flags, ohne Rückgabeverarbeitung
+            # Low-Marker-Operator sauber starten (kein Feedback, kein Flag)
+            ov = _clip_override(context)
             try:
-                bpy.ops.clip.find_low_marker('INVOKE_DEFAULT')
+                if ov:
+                    with context.temp_override(**ov):
+                        bpy.ops.clip.find_low_marker('INVOKE_DEFAULT', use_scene_basis=True, set_playhead=True)
+                else:
+                    bpy.ops.clip.find_low_marker('INVOKE_DEFAULT', use_scene_basis=True, set_playhead=True)
             except Exception as e:
                 print(f"[Tracking] Low-Marker-Operator konnte nicht gestartet werden: {e}")
         
             return {'FINISHED'}
+
 
 
         return {'PASS_THROUGH'}
