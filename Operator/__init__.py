@@ -1,7 +1,6 @@
 import bpy
 
 from .marker_helper_main import CLIP_OT_marker_helper_main
-from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 from .solve_camera import CLIP_OT_solve_watch_clean, run_solve_watch_clean  # ✅ KORREKT
 from .main import CLIP_OT_main
 
@@ -16,7 +15,6 @@ except Exception as e:
 classes = (
     CLIP_OT_clean_short_tracks,
     CLIP_OT_marker_helper_main,
-    CLIP_OT_optimize_tracking_modal,
     CLIP_OT_solve_watch_clean,          # ✅ genau einmal
     CLIP_OT_main,
 )
