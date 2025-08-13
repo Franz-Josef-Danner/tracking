@@ -14,10 +14,10 @@ def _clip_override(context):
     return None
 
 
-class CLIP_OT_launch_ tracker_settings_frame_with_adapt(bpy.types.Operator):
+class CLIP_OT_launch_tracker_settings_frame_with_adapt(bpy.types.Operator):
     """Berechnet marker_adapt aus marker_basis und startet anschließend clip. tracker_settings."""
     bl_idname = "clip.launch_ tracker_settings_frame_with_adapt"
-    bl_label  = "Start  tracker_settings_frame (Adapt x4)"
+    bl_label  = "Start tracker_settings_frame (Adapt x4)"
     bl_options = {'REGISTER'}
 
     factor: bpy.props.IntProperty(
