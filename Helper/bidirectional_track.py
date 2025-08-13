@@ -43,9 +43,39 @@ def run_bidirectional_track(context):
     def _cleanup():
         state["active"] = False  # Timer beenden, indem Callback None zurückgibt
 
-    def _get_clip(ctx):
+    def _get_clip_from_space(ctx):
         space = getattr(ctx, "space_data", None)
         return getattr(space, "clip", None) if space else None
+
+    def _ensure_active_clip(ctx):
+        """
+        Sichert, dass im aktiven CLIP_EDITOR ein Clip gesetzt ist.
+        Fallback: erster MovieClip aus bpy.data.movieclips.
+        Gibt den Clip zurück oder None, wenn keiner existiert.
+        """
+        clip = _get_clip_from_space(ctx)
+        if clip:
+            return clip
+
+        # Fallback: irgendeinen verfügbaren Clip nehmen
+        try:
+            fallback_clip = next(iter(bpy.data.movieclips))
+        except StopIteration:
+            print("Kein MovieClip in der Datei vorhanden.")
+            return None
+
+        # Falls wir einen CLIP_EDITOR-Kontext übersteuern können, Clip dort setzen
+        ov = _clip_override(ctx)
+        if ov:
+            try:
+                with ctx.temp_override(**ov):
+                    ov['space_data'].clip = fallback_clip
+                print(f"[Tracking] Fallback-Clip gesetzt: {fallback_clip.name}")
+            except Exception as e:
+                print(f"[Tracking] Konnte Fallback-Clip nicht im UI setzen: {e}")
+
+        # Auch ohne gesetzten UI-Clip können wir mit dem Datablock weiterarbeiten
+        return fallback_clip
 
     def _run_forward_track():
         print("→ Starte Vorwärts-Tracking...")
@@ -61,7 +91,7 @@ def run_bidirectional_track(context):
         bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
 
     def _stability_tick(ctx):
-        clip = _get_clip(ctx)
+        clip = _ensure_active_clip(ctx)
         if clip is None:
             _cleanup()
             return {'CANCELLED'}
@@ -112,9 +142,9 @@ def run_bidirectional_track(context):
             return None  # Timer stoppen
 
         ctx = bpy.context
-        clip = _get_clip(ctx)
+        clip = _ensure_active_clip(ctx)
         if clip is None:
-            print("Kein aktiver Clip im Tracking-Editor gefunden.")
+            print("Kein aktiver Clip im Tracking-Editor gefunden (und kein Fallback verfügbar).")
             _cleanup()
             return None  # -> beendet
 
@@ -144,7 +174,6 @@ def run_bidirectional_track(context):
             res = _stability_tick(ctx)
             if isinstance(res, dict) and 'FINISHED' in res:
                 return None  # fertig -> Timer stoppen
-            # bei PASS_THROUGH/CANCELLED: wenn cancelled, stoppen
             if isinstance(res, dict) and 'CANCELLED' in res:
                 return None
             return 0.5
