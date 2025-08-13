@@ -1,9 +1,9 @@
 # Operator/clean_error_tracks.py
 import bpy
-from ..Helper.multiscale_temporal_grid_clean import multiscale_temporal_grid_clean
-from ..Helper.segments import track_has_internal_gaps
-from ..Helper.mute_ops import mute_after_last_marker, mute_unassigned_markers
-from ..Helper.split_cleanup import clear_path_on_split_tracks_segmented, recursive_split_cleanup
+from .multiscale_temporal_grid_clean import multiscale_temporal_grid_clean
+from .segments import track_has_internal_gaps
+from .mute_ops import mute_after_last_marker, mute_unassigned_markers
+from .split_cleanup import clear_path_on_split_tracks_segmented, recursive_split_cleanup
 
 def _track_ptr(t):
     try:
