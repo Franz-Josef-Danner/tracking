@@ -37,7 +37,7 @@ class CLIP_OT_launch_find_low_marker_frame_with_adapt(bpy.types.Operator):
             ovr = _clip_override(context)
             if ovr:
                 with context.temp_override(**ovr):
-                    return bpy.ops.clip.find_low_marker_frame('INVOKE_DEFAULT', marker_adapt=marker_adapt)
+                    return bpy.ops.clip.find_low_marker('INVOKE_DEFAULT', use_scene_basis=True)
 
         # Fallback ohne Override
         return bpy.ops.clip.find_low_marker_frame('INVOKE_DEFAULT', marker_adapt=marker_adapt)
