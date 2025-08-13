@@ -42,28 +42,6 @@ class CLIP_OT_main(Operator):
         default=0, min=0
     )
 
-    # ---------- interne Hilfen ----------
-
-    def _reset_scene_flags(self, scene):
-        scene["solve_status"] = ""
-        scene["solve_error"] = -1.0
-        scene["solve_watch_fallback"] = False
-        scene["pipeline_status"] = ""
-        scene["marker_min"] = 0
-        scene["marker_max"] = 0
-        scene["goto_frame"] = -1
-        try:
-            scene["error_limit_run"] = float(getattr(scene, "error_track"))
-        except Exception:
-            scene["error_limit_run"] = float(scene.get("error_track", 0.0))
-        if hasattr(scene, "repeat_frame"):
-            try:
-                scene.repeat_frame.clear()
-            except Exception:
-                pass
-
-    # ---------- Operator-Lifecycle ----------
-
     @classmethod
     def poll(cls, context):
         return True
