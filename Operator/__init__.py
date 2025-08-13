@@ -4,6 +4,7 @@ from .tracker_settings import CLIP_OT_tracker_settings
 from .detect import CLIP_OT_detect_once
 from .bidirectional_track import CLIP_OT_bidirectional_track
 from .tracking_pipeline import CLIP_OT_tracking_pipeline
+from .solve_camera_helper import CLIP_OT_solve_watch_clean, run_solve_watch_clean
 from .clean_error_tracks import CLIP_OT_clean_error_tracks
 from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 from ..Helper.solve_camera_helper import CLIP_OT_solve_watch_clean
