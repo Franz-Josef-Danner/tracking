@@ -42,35 +42,38 @@ def _get_reconstruction_safe(clip):
     return getattr(active, "reconstruction", None)
 
 class CLIP_OT_solve_watch_clean(Operator):
-    """Startet Camera Solve und überwacht die Fertigstellung. Keine Löschaktionen."""
-    bl_idname = "clip.solve_watch_clean"  # Kompatibilität beibehalten
-    bl_label = "Solve → Watch (kein Delete)"
+    """Solve → Refine(1) → Re-Solve → Szene['solve_error'] setzen → Refine(2) mit diesem Threshold."""
+    bl_idname = "clip.solve_watch_clean"
+    bl_label = "Solve → Refine → Re-Solve → Persist & Refine"
     bl_options = {"INTERNAL", "REGISTER"}
 
+    # Steuergrößen
     poll_interval: bpy.props.FloatProperty(
         name="Poll-Intervall (s)",
         default=0.2, min=0.05, max=2.0,
-        description="Abfrageintervall für Solve-Status"
+        description="Abfrageintervall"
     )
+    # Threshold für den ERSTEN Refine-Durchlauf (vor dem Re-Solve)
     refine_error_threshold: bpy.props.FloatProperty(
-        name="Refine Frame Error ≥",
+        name="Refine(1) Frame Error ≥",
         default=2.0, min=0.0,
-        description="Per-Frame Solve-Error (px), ab dem beidseitig Refine läuft"
+        description="Threshold für Refine(1) vor Re-Solve"
     )
     refine_limit_frames: bpy.props.IntProperty(
         name="Refine Max Frames",
         default=0, min=0,
         description="0 = alle Spike-Frames; sonst Obergrenze"
     )
+    # Ob NACH dem zweiten Refine erneut gelöst werden soll
     refine_resolve_after: bpy.props.BoolProperty(
-        name="Nach Refine erneut lösen",
+        name="Nach Refine(2) erneut lösen",
         default=False,
-        description="Nach dem Refine automatisch erneut Kamera lösen"
+        description="Nach dem finalen Refine automatisch erneut Kamera lösen"
     )
 
     # interne Zustände
     _timer = None
-    _phase = "init"           # init -> solved -> done
+    _phase = "init"             # init -> solved1 -> refined1 -> solved2 -> final_refine -> done
     _pre_marker_ct = 0
     _clip = None
 
@@ -97,7 +100,7 @@ class CLIP_OT_solve_watch_clean(Operator):
 
     def modal(self, context, event):
         if event.type == 'TIMER':
-            # PHASE: init -> Solve synchron per EXEC_DEFAULT ausführen
+            # 1) Start Solve (1)
             if self._phase == "init":
                 ovr = _clip_override(context)
                 if not ovr:
@@ -107,38 +110,78 @@ class CLIP_OT_solve_watch_clean(Operator):
                 try:
                     with context.temp_override(**ovr):
                         bpy.ops.clip.solve_camera('EXEC_DEFAULT')
-                    self._phase = "solved"
+                    self._phase = "solved1"
                     return {'RUNNING_MODAL'}
                 except Exception as ex:
                     self._cleanup_timer(context)
-                    self.report({'ERROR'}, f"Kamera-Solve fehlgeschlagen: {ex}")
+                    self.report({'ERROR'}, f"Kamera-Solve (1) fehlgeschlagen: {ex}")
                     return {'CANCELLED'}
 
-            # PHASE: solved -> Direkt Abschluss ohne Cleanup
-            if self._phase == "solved":
+            # 2) Refine (1) mit vorgegebenem Threshold
+            if self._phase == "solved1":
+                try:
+                    processed = run_refine_on_high_error(
+                        context,
+                        error_threshold=float(self.refine_error_threshold),
+                        limit_frames=int(self.refine_limit_frames),
+                        resolve_after=False  # Re-Solve folgt separat explizit
+                    )
+                    self.report({'INFO'}, f"Refine(1) abgeschlossen: {processed} Frame(s) ≥ {self.refine_error_threshold:.3f}px.")
+                except Exception as e:
+                    self.report({'WARNING'}, f"Refine(1) übersprungen: {e}")
+                self._phase = "refined1"
+                return {'RUNNING_MODAL'}
+
+            # 3) Solve (2) nach Refine(1)
+            if self._phase == "refined1":
+                ovr = _clip_override(context)
+                if not ovr:
+                    self._cleanup_timer(context)
+                    self.report({'ERROR'}, "CLIP_EDITOR-Kontext nicht verfügbar (Re-Solve).")
+                    return {'CANCELLED'}
+                try:
+                    with context.temp_override(**ovr):
+                        bpy.ops.clip.solve_camera('EXEC_DEFAULT')
+                    self._phase = "solved2"
+                    return {'RUNNING_MODAL'}
+                except Exception as ex:
+                    self._cleanup_timer(context)
+                    self.report({'ERROR'}, f"Kamera-Solve (2) fehlgeschlagen: {ex}")
+                    return {'CANCELLED'}
+
+            # 4) Solve-Error lesen, in Szene persistieren, dann Refine (2) mit diesem Wert
+            if self._phase == "solved2":
                 recon = _get_reconstruction_safe(self._clip)
-                avg_err = getattr(recon, "average_error", -1.0) if recon else -1.0
+                avg_err = -1.0
+                if recon and getattr(recon, "is_valid", False):
+                    avg_err = float(getattr(recon, "average_error", -1.0))
+
+                # Persistenz der Solve-KPI
+                try:
+                    context.scene["solve_error"] = float(avg_err)
+                    print(f"[SolveWatch] Persistiert: scene['solve_error'] = {avg_err:.3f}")
+                except Exception:
+                    self.report({'WARNING'}, f"Solve Error konnte nicht gespeichert werden: {avg_err:.3f}")
 
                 post = _count_markers(self._clip)
                 delta = post - self._pre_marker_ct
                 status = "weniger" if delta < 0 else ("mehr" if delta > 0 else "gleich")
+                self.report({'INFO'}, f"Solve(2) OK (AvgErr={avg_err:.3f}). Marker: {post} ({status}, Δ={delta}).")
 
-                self.report({'INFO'}, f"Solve OK (AvgErr={avg_err:.3f}). Marker danach: {post} ({status}, Δ={delta}).")
+                # Refine (2) mit dem gespeicherten Wert als Threshold
+                thr = float(context.scene.get("solve_error", avg_err))
+                try:
+                    processed2 = run_refine_on_high_error(
+                        context,
+                        error_threshold=thr,
+                        limit_frames=int(self.refine_limit_frames),
+                        resolve_after=bool(self.refine_resolve_after)
+                    )
+                    self.report({'INFO'}, f"Refine(2) abgeschlossen: {processed2} Frame(s) ≥ {thr:.3f}px.")
+                except Exception as e:
+                    self.report({'WARNING'}, f"Refine(2) übersprungen: {e}")
 
                 self._cleanup_timer(context)
-
-                # Optional: Refine-on-High-Error
-                try:
-                    processed = run_refine_on_high_error(
-                        context,
-                        error_threshold=self.refine_error_threshold,
-                        limit_frames=self.refine_limit_frames,
-                        resolve_after=self.refine_resolve_after
-                    )
-                    self.report({'INFO'}, f"Refine abgeschlossen: {processed} Frame(s) ≥ {self.refine_error_threshold:.3f}px.")
-                except Exception as e:
-                    self.report({'WARNING'}, f"Refine übersprungen: {e}")
-
                 self._phase = "done"
                 return {'FINISHED'}
 
@@ -167,4 +210,3 @@ def run_solve_watch_clean(context, poll_interval=0.2, **_compat):
     Hinweis: Zusätzliche/alte Parameter (z. B. cleanup_error) werden ignoriert.
     """
     return bpy.ops.clip.solve_watch_clean('INVOKE_DEFAULT', poll_interval=poll_interval)
-
