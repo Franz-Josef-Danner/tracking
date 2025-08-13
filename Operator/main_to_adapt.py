@@ -58,7 +58,7 @@ class CLIP_OT_main_to_adapt(bpy.types.Operator):
 #                res = bpy.ops.clip.tracker_settings('INVOKE_DEFAULT')
 
                 print(f"[MainToAdapt] Übergabe an tracker_settings → {res}")
-                return {'FINISHED'}
+            return {'FINISHED'}
 #        except Exception as e:
 #            self.report({'ERROR'}, f"tracker_settings konnte nicht gestartet werden: {e}")
 #            return {'CANCELLED'}
