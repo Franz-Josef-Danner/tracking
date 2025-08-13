@@ -52,9 +52,9 @@ class CLIP_OT_main_to_adapt(bpy.types.Operator):
         try:
             ovr = _clip_override(context) if self.use_override else None
             if ovr:
-                with context.temp_override(**ovr):
+#                with context.temp_override(**ovr):
 #                    res = bpy.ops.clip.tracker_settings('INVOKE_DEFAULT')
-#            else:
+            else:
 #                res = bpy.ops.clip.tracker_settings('INVOKE_DEFAULT')
 
                 print(f"[MainToAdapt] Übergabe an tracker_settings → {res}")
