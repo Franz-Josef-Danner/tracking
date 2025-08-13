@@ -10,6 +10,7 @@ from .find_low_marker_frame import run_find_low_marker_frame
 from .jump_to_frame import jump_to_frame_helper
 from .detect import run_detect_adaptive
 from .bidirectional_track import run_bidirectional_track
+from .clean_error_tracks import run_clean_error_tracks
 from .find_max_marker_frame import get_active_marker_counts_sorted
 from .projection_cleanup_builtin import builtin_projection_cleanup, find_clip_window
 from .multiscale_temporal_grid_clean import multiscale_temporal_grid_clean
