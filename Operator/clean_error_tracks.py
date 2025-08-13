@@ -64,9 +64,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
 
             # --- 4) Gap-Erkennung & Aufteilung
             original_tracks = [t for t in tracks if track_has_internal_gaps(t)]
-            made_changes = False
-            if deleted > 0:
-                made_changes = True
+            made_changes = deleted > 0
 
             if not original_tracks:
                 self.report({'INFO'}, "Keine Tracks mit Lücken gefunden – fahre mit Safety fort.")
@@ -101,8 +99,7 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
                     tracks
                 )
 
-                # Wenn wir hier waren, haben wir de facto Inhalte segmentiert/gelöscht
-                made_changes = True
+                made_changes = True  # Wir haben Segmentierungen/Löschungen durchgeführt
 
             # --- 5) Safety Passes
             mute_unassigned_markers(tracks)
@@ -115,16 +112,31 @@ class CLIP_OT_clean_error_tracks(bpy.types.Operator):
             bpy.context.view_layer.update()
             scene.frame_set(scene.frame_current)
 
-            # --- 7) Routing: Änderungen => Low-Marker-Check; sonst => Solve
+            # --- 7) Routing
             try:
                 if made_changes:
-                    print("[Router] Änderungen erkannt → Übergabe an find_low_marker_frame …")
-                    # Erwartet: Operator existiert als bpy.ops.clip.find_low_marker_frame
-                    bpy.ops.clip.find_low_marker('INVOKE_DEFAULT')
+                    print("[Router] Änderungen erkannt → Marker-Boost + Low-Marker-Check …")
+
+                    # 7a) Marker-Adapt-Boost (aus Helper/marker_adapt_helper.py)
+                    try:
+                        # Erwarteter idname: "clip.marker_adapt_boost"
+                        bpy.ops.clip.marker_adapt_boost('EXEC_DEFAULT')
+                        print("[Router] marker_adapt_boost ausgeführt.")
+                    except Exception as ex:
+                        self.report({'WARNING'}, f"marker_adapt_boost fehlgeschlagen: {ex}")
+
+                    # 7b) Low-Marker-Frame suchen (Operator/find_low_marker_frame.py)
+                    try:
+                        # Korrekte Benennung sicherstellen: find_low_marker_frame
+                        bpy.ops.clip.find_low_marker_frame('INVOKE_DEFAULT')
+                        print("[Router] find_low_marker_frame gestartet.")
+                    except Exception as ex:
+                        self.report({'WARNING'}, f"find_low_marker_frame fehlgeschlagen: {ex}")
+
                 else:
                     print("[Router] Keine Löschungen mehr → Übergabe an solve_watch_clean …")
-                    # Solve-Watcher übernimmt modal die Steuerung
                     bpy.ops.clip.solve_watch_clean('INVOKE_DEFAULT')
+
             except Exception as ex:
                 self.report({'WARNING'}, f"Routing fehlgeschlagen: {ex}")
 
