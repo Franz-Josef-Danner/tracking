@@ -1,7 +1,7 @@
-# Helper/main_to_adapt_helper.py
+# Helper/main_to_adapt.py
 import bpy
 
-__all__ = ("main_to_adapt_helper", "clip_override")
+__all__ = ("main_to_adapt", "clip_override")
 
 def clip_override(context):
     """Sicheren CLIP_EDITOR-Override bereitstellen (oder None)."""
@@ -20,7 +20,7 @@ def clip_override(context):
     return None
 
 
-def main_to_adapt_helper(
+def main_to_adapt(
     context: bpy.types.Context,
     *,
     factor: int = 4,
