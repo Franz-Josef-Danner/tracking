@@ -6,7 +6,7 @@ from bpy.props import IntProperty, FloatProperty, BoolProperty
 # Sicherstellen, dass der Refine-Operator-Klasse geladen ist (liegt in Helper/)
 # (Registrierung erfolgt zentral in deinem Addon-__init__ bzw. Operator/__init__)
 from ..Helper.refine_high_error import run_refine_on_high_error
-from ..Helper.clean_projection_error import CLIP_OT_clean_tracks_projection_error  # noqa: F401
+from ..Helper.clean_projection_error import clean_tracks_by_projection_error  # noqa: F401
 
 
 # -------------------------- Kontext-/Helper-Funktionen ------------------------
@@ -69,7 +69,7 @@ class CLIP_OT_solve_watch_clean(Operator):
       2) Refine (Top-N per scene['marker_basis'])
       3) Solve
       4) Wenn AvgErr >= scene['error_track']: scene['solve_error']=AvgErr setzen und
-         CLIP_OT_clean_tracks_projection_error ausführen.
+         CLIP_OT_clean_tracks_by_projection_error ausführen.
     """
     bl_idname = "clip.solve_watch_clean"
     bl_label  = "Solve → Refine (Top-N) → Solve → Clean (Projection Error)"
@@ -145,10 +145,10 @@ class CLIP_OT_solve_watch_clean(Operator):
         # Persist Solve-Error und Projection-Cleanup auslösen
         scene["solve_error"] = float(avg2)
         print(f"[SolveWatch] Persistiert: scene['solve_error'] = {avg2:.6f}")
-        print("[SolveWatch] Starte Projection-Cleanup (CLIP_OT_clean_tracks_projection_error)…")
+        print("[SolveWatch] Starte Projection-Cleanup (CLIP_OT_clean_tracks_by_projection_error)…")
 
         with context.temp_override(area=area, region=region, space_data=space):
-            res = bpy.ops.clip.clean_tracks_projection_error(
+            res = bpy.ops.clip.clean_tracks_by_projection_error(
                 'EXEC_DEFAULT',
                 factor=float(self.cleanup_factor),
                 mute_only=bool(self.cleanup_mute_only),
