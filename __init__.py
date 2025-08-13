@@ -46,7 +46,7 @@ class CLIP_PT_kaiserlich_panel(bpy.types.Panel):
         layout.prop(scene, "frames_track")
         layout.prop(scene, "error_track")
         layout.separator()
-        layout.operator("clip.launch_find_low_marker_frame_with_adapt", text="Track")
+        layout.operator("clip.marker_helper_main", text="Track")
 
 # Alle Klassen zur Registrierung
 classes = (
