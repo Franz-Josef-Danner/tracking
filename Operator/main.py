@@ -3,7 +3,10 @@ from bpy.types import Operator
 
 # Falls du die Helper als Module hast, bitte diese Imports beibehalten.
 # (Sie entsprechen deinem bisherigen Projekt-Layout.)
-from ..Helper.find_low_marker_frame import find_low_marker_frame
+try:
+    bpy.ops.clip.find_low_marker('INVOKE_DEFAULT')
+except Exception as e:
+    print(f"[Tracking] Low-Marker-Operator konnte nicht gestartet werden: {e}")
 from ..Helper.jump_to_frame import jump_to_frame
 
 
