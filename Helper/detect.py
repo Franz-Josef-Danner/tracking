@@ -108,16 +108,13 @@ def _resolve_clip_from_context(context):
     space = getattr(context, "space_data", None)
     return getattr(space, "clip", None) if space else None
 
-def _sync_viewer_frame_in_override(ctx, frame:int):
-    """
-    Kritisch: Szene-Frame setzen UND sofort redrawen – innerhalb des UI-Overrides.
-    Dadurch zeigt der Viewer sicher den Ziel-Frame, bevor detect_features läuft.
-    """
+# NEU: Sichere Viewer-Synchronisation im Override
+def _sync_viewer_frame_in_override(ctx, frame: int):
     try:
         ctx.scene.frame_set(int(frame))
     except Exception:
         pass
-    # Sicherer Soft-Redraw (keine Styles setzen, nur ein Swap)
+    # Softer Redraw, damit der CLIP_EDITOR den gesetzten Frame sicher anzeigt
     try:
         bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
     except Exception:
@@ -138,18 +135,18 @@ def perform_marker_detection(clip, tracking, threshold, margin_base, min_distanc
     min_distance = max(1, int(min_distance_base * factor))
 
     # Kontext-sicherer Operator-Call inkl. Frame-Sync
-    with _ensure_clip_context(bpy.context, clip=clip, allow_area_switch=True) as ovr:
-        if ovr is None:
-            raise RuntimeError("CLIP_EDITOR-Kontext nicht verfügbar (perform_marker_detection).")
+with _ensure_clip_context(bpy.context, clip=clip, allow_area_switch=True) as ovr:
+    if ovr is None:
+        raise RuntimeError("CLIP_EDITOR-Kontext nicht verfügbar (perform_marker_detection).")
 
-        # Frame des Viewers mit der Szene synchronisieren
-        _sync_viewer_frame_in_override(bpy.context, bpy.context.scene.frame_current)
+    # NEU: Viewer-Frame im selben Override synchronisieren
+    _sync_viewer_frame_in_override(bpy.context, bpy.context.scene.frame_current)
 
-        bpy.ops.clip.detect_features(
-            margin=margin,
-            min_distance=min_distance,
-            threshold=float(threshold),
-        )
+    bpy.ops.clip.detect_features(
+        margin=margin,
+        min_distance=min_distance,
+        threshold=float(threshold),
+    )
 
     return sum(1 for t in tracking.tracks if getattr(t, "select", False))
 
