@@ -1,88 +1,165 @@
-# Helper/jump_to_frame.py
 import bpy
-import json
+from typing import Optional, Dict, Any, Tuple
 
-__all__ = ("run_jump_to_frame", "jump_to_frame_helper")
+__all__ = ("run_jump_to_frame", "jump_to_frame")  # jump_to_frame = Legacy-Wrapper
 
 
-def _resolve_target_frame(context, explicit=None):
-    if explicit is not None:
-        try:
-            f = int(explicit)
-            if f >= 0:
-                return f
-        except Exception:
-            pass
+# -----------------------------------------------------------------------------
+# Utilities
+# -----------------------------------------------------------------------------
+
+def _resolve_clip_and_scene(context, clip=None, scene=None) -> Tuple[Optional[bpy.types.MovieClip], bpy.types.Scene]:
+    scn = scene or context.scene
+    if clip is not None:
+        return clip, scn
+
+    # 1) Aktiver CLIP_EDITOR
+    space = getattr(context, "space_data", None)
+    if space and getattr(space, "type", None) == 'CLIP_EDITOR':
+        c = getattr(space, "clip", None)
+        if c:
+            return c, scn
+
+    # 2) Fallback: irgendein vorhandener Clip
+    for c in bpy.data.movieclips:
+        return c, scn
+
+    return None, scn
+
+
+def _clip_end(clip: bpy.types.MovieClip, scn: bpy.types.Scene) -> int:
     try:
-        f = int(context.scene.get("goto_frame", -1))
-        return f if f >= 0 else None
+        start = int(clip.frame_start)
+        dur = int(getattr(clip, "frame_duration", 0))
+        end = start + max(0, dur - 1)
     except Exception:
-        return None
+        start = int(clip.frame_start) if hasattr(clip, "frame_start") else int(scn.frame_start)
+        end = start
+    # Szene darf enger sein als Clip
+    return min(int(scn.frame_end), end)
 
 
-def _load_visited(scene):
-    key = "visited_frames_json"
+def _find_clip_area(win) -> Tuple[Optional[bpy.types.Area], Optional[bpy.types.Region]]:
+    if not win or not getattr(win, "screen", None):
+        return None, None
+    for area in win.screen.areas:
+        if area.type == 'CLIP_EDITOR':
+            reg = next((r for r in area.regions if r.type == 'WINDOW'), None)
+            return area, reg
+    return None, None
+
+
+# -----------------------------------------------------------------------------
+# Core
+# -----------------------------------------------------------------------------
+
+def run_jump_to_frame(
+    context,
+    *,
+    frame: Optional[int] = None,
+    ensure_clip: bool = True,
+    ensure_tracking_mode: bool = True,
+    use_ui_override: bool = True,
+    repeat_map: Optional[Dict[int, int]] = None,  # Operator-interne Wiederholungszählung
+) -> Dict[str, Any]:
+    """
+    Setzt den Playhead deterministisch auf 'frame' (oder scene['goto_frame']).
+    - Clamped auf Clipgrenzen
+    - Optionaler CLIP_EDITOR-Override & Modus-Setzung
+    - Zählt Wiederholungen NUR für per Jump gesetzte Frames via repeat_map
+
+    Returns:
+      {"status": "OK"|"FAILED",
+       "frame": int,
+       "repeat_count": int,
+       "clamped": bool,
+       "area_switched": bool}
+    """
+    scn = context.scene
+    clip, scn = _resolve_clip_and_scene(context)
+    if ensure_clip and not clip:
+        print("[GotoFrame] Kein MovieClip im Kontext.")
+        return {"status": "FAILED", "reason": "no_clip", "frame": None, "repeat_count": 0, "clamped": False, "area_switched": False}
+
+    # Ziel-Frame bestimmen
+    target = frame
+    if target is None:
+        target = scn.get("goto_frame", None)
+    if target is None:
+        print("[GotoFrame] Scene-Variable 'goto_frame' nicht gesetzt.")
+        return {"status": "FAILED", "reason": "no_target", "frame": None, "repeat_count": 0, "clamped": False, "area_switched": False}
+
+    target = int(target)
+
+    # Clamp an Clipgrenzen
+    clamped = False
+    if clip:
+        start = int(clip.frame_start)
+        end = _clip_end(clip, scn)
+        if target < start:
+            target = start
+            clamped = True
+        elif target > end:
+            target = end
+            clamped = True
+
+    # Optional: UI-Override (Area/Region) & Tracking-Mode
+    area_switched = False
+    if use_ui_override:
+        area, region = _find_clip_area(getattr(context, "window", None))
+        if area and region:
+            try:
+                with context.temp_override(area=area, region=region, space_data=area.spaces.active):
+                    if ensure_tracking_mode:
+                        try:
+                            sd = area.spaces.active
+                            if hasattr(sd, "mode") and sd.mode != 'TRACKING':
+                                sd.mode = 'TRACKING'
+                                area_switched = True
+                        except Exception:
+                            pass
+                    scn.frame_current = target
+            except Exception:
+                # Fallback: ohne Override setzen
+                scn.frame_current = target
+        else:
+            # Kein CLIP_EDITOR sichtbar → trotzdem setzen
+            scn.frame_current = target
+    else:
+        scn.frame_current = target
+
+    # Repeat-Zählung NUR für Jump-Frames
+    repeat_count = 0
+    if repeat_map is not None:
+        repeat_count = repeat_map.get(target, 0) + 1 if scn.frame_current == target else 0
+        if scn.frame_current == target:
+            repeat_map[target] = repeat_count
+
+    # Debugging & Transparenz
     try:
-        arr = json.loads(scene.get(key, "[]"))
-        if not isinstance(arr, list):
-            arr = []
+        scn["last_jump_frame"] = int(target)  # rein informativ; orchestrator nutzt repeat_map intern
     except Exception:
-        arr = []
-    return arr
+        pass
+
+    print(f"[GotoFrame] Playhead auf Frame {target} gesetzt. (clamped={clamped}, repeat={repeat_count})")
+    return {"status": "OK", "frame": int(target), "repeat_count": int(repeat_count), "clamped": bool(clamped), "area_switched": bool(area_switched)}
 
 
-def _store_visited(scene, arr):
-    scene["visited_frames_json"] = json.dumps(arr)
-    print(f"[GotoFrame] persisted visited_frames: {arr}")
+# -----------------------------------------------------------------------------
+# Legacy-Wrapper (Kompatibilität)
+# -----------------------------------------------------------------------------
 
-
-def _is_duplicate_and_update(scene, frame) -> bool:
+def jump_to_frame(context):
     """
-    Duplikatprüfung/Update NUR nach erfolgreichem Jump.
+    Kompatibel zur alten Signatur:
+      - liest 'scene[\"goto_frame\"]'
+      - ruft run_jump_to_frame()
+      - gibt bool zurück (True bei OK)
     """
-    arr = _load_visited(scene)
-    if frame in arr:
-        return True
-    arr.append(frame)
-    _store_visited(scene, arr)
-    return False
-
-
-def jump_to_frame_helper(context, *, target_frame=None):
-    """
-    Policy-konform:
-    1) Frame setzen und VALIDIEREN.
-    2) Erst danach Duplikat prüfen/speichern.
-    3) Bei Duplikat optional Marker-Adapt-Boost triggern.
-    """
-    f = _resolve_target_frame(context, explicit=target_frame)
-    if f is None:
-        print("[GotoFrame] Kein Ziel-Frame gefunden.")
-        return {'CANCELLED'}
-
-    # 1) Setzen & validieren
-    try:
-        context.scene.frame_set(int(f))
-    except Exception as ex:
-        print(f"[GotoFrame] frame_set({f}) Exception: {ex}")
-        return {'CANCELLED'}
-
-    if context.scene.frame_current != int(f):
-        print(f"[GotoFrame] Validierung fehlgeschlagen: current={context.scene.frame_current}, expected={int(f)}")
-        return {'CANCELLED'}
-
-    # 2) Jetzt erst speichern/prüfen
-    is_dup = _is_duplicate_and_update(context.scene, int(f))
-    if is_dup:
-        print(f"[GotoFrame] Duplikat erkannt (Frame {f}) – Helper wird ausgelöst.")
-        try:
-            from .marker_adapt_helper import run_marker_adapt_boost
-            run_marker_adapt_boost(context)
-        except Exception as ex:
-            print(f"[MarkerAdapt] Boost fehlgeschlagen: {ex}")
-
-    return {'FINISHED'}
-
-
-def run_jump_to_frame(context, *, frame=None):
-    return jump_to_frame_helper(context, target_frame=frame)
+    res = run_jump_to_frame(context, frame=None, repeat_map=None)
+    ok = (res.get("status") == "OK")
+    if ok:
+        print(f"[GotoFrame] Legacy OK → Frame {res.get('frame')}")
+    else:
+        print(f"[GotoFrame] Legacy FAILED → {res.get('reason','')}")
+    return ok
