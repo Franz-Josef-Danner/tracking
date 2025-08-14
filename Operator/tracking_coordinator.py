@@ -32,7 +32,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         description="Modal poll period",
     )
 
-    # --- interner State ---
     _state: str = "INIT"
     _started_op: bool = False
     _fwd_done: bool = False
@@ -55,7 +54,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             pass
 
     def _cancel(self, context, reason="Cancelled"):
-        """Zentraler Abbruchpfad – immer verwenden."""
         self._log(f"Abbruch: {reason}")
         self._remove_timer(context)
         try:
@@ -71,25 +69,21 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._fwd_done = False
         self._bwd_done = False
 
-        # Detect attempt counters (NEU)
         self._detect_attempts = 0
         self._detect_attempts_max = 8
 
-        # 1) marker-helper (berechnet marker_basis, marker_min/max, adapt etc.)
         try:
             ok, adapt_val, op_result = marker_helper_main(context)
             self._log(f"[MarkerHelper] → main_to_adapt: ok={ok}, adapt={adapt_val}, op_result={op_result}")
         except Exception as ex:
             self._log(f"[MarkerHelper] Fehler: {ex}")
 
-        # 2) adapt anwenden
         try:
             res = main_to_adapt(context, use_override=True)
             self._log(f"[MainToAdapt] Übergabe an tracker_settings (Helper) → {res}")
         except Exception as ex:
             self._log(f"[MainToAdapt] Fehler: {ex}")
 
-        # 3) Tracker Defaults
         if self.use_apply_settings:
             try:
                 apply_tracker_settings(context)
@@ -115,19 +109,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return self.invoke(context, None)
 
     def modal(self, context, event):
-        # --- 1) Sofortiger ESC-Abbruch, egal in welchem Status ---
         if event.type == 'ESC':
             return self._cancel(context, "ESC gedrückt")
 
-        # --- 2) Nur TIMER-Events treiben die State-Maschine weiter ---
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
 
-        # Safety: Abbruch bei fehlendem CLIP_EDITOR-Kontext
         if not context.area or context.area.type != "CLIP_EDITOR":
             return self._cancel(context, "CLIP_EDITOR-Kontext verloren")
 
-        # --- State Machine ---
         if self._state == "INIT":
             self._state = "FIND_LOW"
             return {'RUNNING_MODAL'}
@@ -153,14 +143,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         elif self._state == "JUMP_DETECT":
             goto = int(context.scene.get("goto_frame", context.scene.frame_current))
-            # zum Ziel-Frame springen
             try:
                 from ..Helper.jump_to_frame import run_jump_to_frame
                 run_jump_to_frame(context, frame=goto)
             except Exception:
                 pass
 
-            # eine Detect-Runde ausführen (Handshake)
             try:
                 from ..Helper.detect import run_detect_once
                 res = run_detect_once(context, start_frame=goto)
@@ -185,7 +173,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     self._state = "TRACK_FWD"
                 return {'RUNNING_MODAL'}
 
-            # FAILED-Fallback
             self._log(f"[Detect] FAILED – {res.get('reason','')} → Fallback TRACK_FWD")
             self._detect_attempts = 0
             self._state = "TRACK_FWD"
@@ -235,7 +222,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._deactivate_flag(context)
             return {'FINISHED'}
 
-        # Fallback
         return {'RUNNING_MODAL'}
 
 
