@@ -1,9 +1,11 @@
 import bpy
 
 from .marker_helper_main import CLIP_OT_marker_helper_main
+from .tracking_coordinator import CLIP_OT_tracking_coordinator
 
 classes = (
     CLIP_OT_marker_helper_main,
+    CLIP_OT_tracking_coordinator,
 )
 
 def register():
