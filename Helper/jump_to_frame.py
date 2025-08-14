@@ -36,10 +36,6 @@ def _resolve_target_frame(context, explicit=None):
     return None
 
 def _store_visited_frame(scene, frame):
-    """
-    Führt eine JSON-Liste scene["visited_frames_json"].
-    Gibt True zurück, wenn der Frame bereits vorhanden war (Duplikat).
-    """
     key = "visited_frames_json"
     try:
         arr = json.loads(scene.get(key, "[]"))
@@ -56,7 +52,6 @@ def _store_visited_frame(scene, frame):
     return False
 
 def jump_to_frame_helper(context, *, target_frame=None):
-    # Ziel ermitteln
     f = _resolve_target_frame(context, explicit=target_frame)
     if f is None:
         print("[GotoFrame] Kein Ziel-Frame gefunden.")
@@ -66,17 +61,13 @@ def jump_to_frame_helper(context, *, target_frame=None):
     is_dup = _store_visited_frame(scene, int(f))
     if is_dup:
         print(f"[GotoFrame] Duplikat erkannt (Frame {f}) – Helper wird ausgelöst.")
-        # +10% adapt
         try:
             from .marker_adapt_helper import run_marker_adapt_boost
             run_marker_adapt_boost(context)
         except Exception as ex:
             print(f"[MarkerAdapt] Boost fehlgeschlagen: {ex}")
 
-    # Clip und Override organisieren
-    ovr = _clip_override(context)
-
-    # Clip aus Kontext oder Fallback
+    # Versuche Clip aus aktuellem Space, kein Area-Switch
     space = getattr(context, "space_data", None)
     clip = getattr(space, "clip", None) if space else None
     if clip is None:
@@ -91,22 +82,7 @@ def jump_to_frame_helper(context, *, target_frame=None):
         print("[GotoFrame] Kein Clip verfügbar.")
         return {'CANCELLED'}
 
-    # Im Override Clip + Mode setzen
-    if ovr:
-        try:
-            with context.temp_override(**ovr):
-                try:
-                    ovr['space_data'].clip = clip
-                except Exception:
-                    pass
-                try:
-                    ovr['space_data'].mode = 'TRACKING'
-                except Exception:
-                    pass
-        except Exception as ex:
-            print(f"[GotoFrame] Override-Setzen fehlgeschlagen: {ex}")
-
-    # Detect im GLEICHEN Kontext starten (run_detect_once kümmert sich um eigenen Override)
+    # Detect (setzt Frame selbst im gültigen Override)
     try:
         res = run_detect_once(context, start_frame=int(f))
         print(f"[Jump] detect_once Result: {res}")
@@ -116,5 +92,4 @@ def jump_to_frame_helper(context, *, target_frame=None):
         return {'CANCELLED'}
 
 def run_jump_to_frame(context, *, frame=None):
-    """Wrapper für Abwärtskompatibilität."""
     return jump_to_frame_helper(context, target_frame=frame)
