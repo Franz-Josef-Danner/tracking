@@ -126,15 +126,33 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {'RUNNING_MODAL'}
 
             if self._state == "FIND_LOW":
+                # State: FIND_LOW
                 low = run_find_low_marker_frame(context)
                 low_frame = low.get("frame") if isinstance(low, dict) else low
+                
+                # Schutz: gibt es überhaupt irgendeinen Track?
+                clip = getattr(getattr(context, "space_data", None), "clip", None)
+                has_any_tracks = bool(clip and clip.tracking and clip.tracking.tracks and len(clip.tracking.tracks) > 0)
+                
                 if low_frame is None:
-                    self._state = "SOLVE"
-                    return {'RUNNING_MODAL'}
+                    if has_any_tracks:
+                        # Keine Low-Frames mehr, aber es existieren Tracks -> jetzt darf SOLVE kommen
+                        self._state = "SOLVE"
+                        return {'RUNNING_MODAL'}
+                    else:
+                        # Es existieren noch keine Tracks -> ZWINGEND erst eine Detection fahren
+                        start_f = getattr(context.scene, "frame_start", 1) or 1
+                        context.scene["goto_frame"] = int(start_f)
+                        self.report({'INFO'}, f"[FIND_LOW] keine Marker vorhanden → initiale Detection auf Frame {start_f}")
+                        self._state = "JUMP_DETECT"
+                        return {'RUNNING_MODAL'}
+                
+                # Normalfall: Low-Frame vorhanden → Detektion dort
                 context.scene["goto_frame"] = int(low_frame)
                 self.report({'INFO'}, f"[FIND_LOW] next low-marker frame: {low_frame}")
                 self._state = "JUMP_DETECT"
                 return {'RUNNING_MODAL'}
+
 
             if self._state == "JUMP_DETECT":
                 run_jump_to_frame(context, frame=context.scene.get("goto_frame", None))
