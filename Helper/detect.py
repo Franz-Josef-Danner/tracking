@@ -57,10 +57,10 @@ def perform_marker_detection(clip, tracking, threshold, margin_base, min_distanc
 
 
 # ---------------------------------------------------------------------------
-# Operator (Modal) – adaptiver Detect, inter-run Cleanup
+# adaptiver Detect, inter-run Cleanup
 # ---------------------------------------------------------------------------
 
-def detect(bpy.types.Operator):
+def detect():
     bl_idname = "clip.detect"
     bl_label = "Place Marker (Adaptive)"
     bl_description = "Modaler Detect-Zyklus mit interner Threshold-Anpassung und inter-run Cleanup"
