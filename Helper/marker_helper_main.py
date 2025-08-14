@@ -78,12 +78,3 @@ class marker_helper_main():
                f"frames_track={frames_track}, error_track={error_track}")
         print(msg)
         self.report({'INFO'}, msg)
-
-# Registration
-classes = (CLIP_OT_marker_helper_main,)
-def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
-def unregister():
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
