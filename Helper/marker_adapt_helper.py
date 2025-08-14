@@ -1,5 +1,3 @@
-# Helper/marker_adapt_helper.py (refactored to pure helper)
-
 import bpy
 
 __all__ = ("run_marker_adapt_boost",)
