@@ -1,7 +1,5 @@
 import bpy
 
-from .disable_proxy import CLIP_OT_disable_proxy
-from .enable_proxy import CLIP_OT_enable_proxy
 from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 from .error_value import error_value
 from .set_test_value import set_test_value
@@ -32,8 +30,6 @@ __all__ = [
 
 classes = (
     RepeatEntry,
-    CLIP_OT_enable_proxy,
-    CLIP_OT_disable_proxy,
     CLIP_OT_optimize_tracking_modal,
 )
 
