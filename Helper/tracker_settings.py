@@ -1,3 +1,4 @@
+# tracker_settings.py
 import bpy
 from .find_low_marker_frame import run_find_low_marker_frame
 
@@ -40,8 +41,7 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
     """
     Setzt vordefinierte Tracking-Defaults abhängig von der Clip-Auflösung
     und initialisiert/aktualisiert scene['last_detection_threshold'].
-
-    Rückgabe: dict mit gesetzten Kernwerten (für Tests/Logging).
+    Triggert anschließend die Low-Marker-Logik via run_find_low_marker_frame.
     """
     clip, scene = _resolve_clip_and_scene(context, clip=clip, scene=scene)
     if clip is None or scene is None:
@@ -49,10 +49,12 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
             print("[TrackerSettings] Abbruch: Kein Clip oder Scene im Kontext.")
         return {"status": "cancelled", "reason": "no_clip_or_scene"}
 
-    width = int(clip.size[0]) if clip.size else 0
+    # Breite robust lesen
+    width = int(clip.size[0]) if getattr(clip, "size", None) else 0
+
     ts = clip.tracking.settings
 
-    # --- Defaults setzen ---
+    # --- Defaults setzen (Altverhalten) ---
     ts.default_motion_model = 'Loc'
     ts.default_pattern_match = 'KEYFRAME'
     ts.use_default_normalization = True
@@ -65,17 +67,15 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
     ts.use_default_blue_channel = True
     ts.use_default_brute = True
 
-    # Auflösungsbasiert
-    pattern_size = max(1, width // 100) if width > 0 else 8
+    # Auflösungsbasiert – Altformel: int(width / 100), min. 1
+    pattern_size = max(1, int(width / 100)) if width > 0 else 8
     search_size = pattern_size * 2
     ts.default_pattern_size = pattern_size
     ts.default_search_size = search_size
 
     # Cleanup-Parameter aus Szene (mit Fallbacks)
-    clean_frames = int(scene.get("frames_track", 20))
-    clean_error = float(scene.get("error_track", 0.5))
-    ts.clean_frames = clean_frames
-    ts.clean_error = clean_error
+    ts.clean_frames = getattr(scene, "frames_track", 20)
+    ts.clean_error = getattr(scene, "error_track", 0.5)
 
     # Detection-Threshold aus Szene, sonst aus aktuellen Defaults
     try:
@@ -95,19 +95,27 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
         print(
             "[TrackerSettings] Defaults angewendet | "
             f"clip={clip.name!r}, width={width}, pattern={pattern_size}, search={search_size}, "
-            f"clean_frames={clean_frames}, clean_error={clean_error}, "
+            f"clean_frames={ts.clean_frames}, clean_error={ts.clean_error}, "
             f"last_detection_threshold={scene['last_detection_threshold']:.6f}"
         )
 
+    # ZWINGEND: Low-Marker-Pipeline anstoßen
     try:
+        # use_scene_basis=True => nutzt scene['marker_basis']/ähnliche Keys, falls vorhanden
+        run_find_low_marker_frame(context, use_scene_basis=True)
+    except TypeError as ex:
+        # Fallback für ältere Signatur ohne Keyword
+        if log:
+            print(f"[TrackerSettings] run_find_low_marker_frame(use_scene_basis=…) nicht unterstützt ({ex}), "
+                  "starte ohne Keyword.")
         try:
-            run_find_low_marker_frame(context, use_scene_basis=True)
-        except Exception as ex:
+            run_find_low_marker_frame(context)
+        except Exception as ex2:
             if log:
-                print(f"[TrackerSettings] Übergabe an find_low_marker_frame fehlgeschlagen: {ex}")
+                print(f"[TrackerSettings] Übergabe an find_low_marker_frame fehlgeschlagen: {ex2}")
     except Exception as ex:
         if log:
-            print(f"[TrackerSettings] Import von run_find_low_marker_frame fehlgeschlagen: {ex}")
+            print(f"[TrackerSettings] Übergabe an find_low_marker_frame fehlgeschlagen: {ex}")
 
     return {
         "status": "ok",
@@ -115,7 +123,7 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
         "width": width,
         "pattern_size": pattern_size,
         "search_size": search_size,
-        "clean_frames": clean_frames,
-        "clean_error": clean_error,
+        "clean_frames": int(ts.clean_frames),
+        "clean_error": float(ts.clean_error),
         "last_detection_threshold": float(scene["last_detection_threshold"]),
     }
