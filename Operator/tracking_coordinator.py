@@ -1,4 +1,4 @@
-# Operator/tracking_coordinator.py — vollständiger Operator mit JUMP/DETECT-Trennung
+# Operator/tracking_coordinator.py — Orchestrator mit Solve/Refine/Cleanup-Sequenz & Early-Optimize
 import bpy
 import time
 
@@ -7,6 +7,7 @@ from ..Helper.main_to_adapt import main_to_adapt
 from ..Helper.tracker_settings import apply_tracker_settings
 
 LOCK_KEY = "__detect_lock"  # exklusiver Detect-Lock in scene
+
 
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     """Orchestriert Low-Marker-Find, Jump, Detect, Tracking, Cleanup und Solve."""
@@ -39,6 +40,27 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         description="Modal poll period",
     )
 
+    # Solve/Refine/Cleanup-Optionen
+    enable_refine: bpy.props.BoolProperty(
+        name="Refine High Error",
+        default=True,
+        description="Nach erstem Solve die Top-Fehlerframes gezielt verfeinern und danach erneut lösen",
+    )
+    refine_limit_frames: bpy.props.IntProperty(
+        name="Refine Limit Frames",
+        default=10, min=0,
+        description="Anzahl Frames mit höchstem Fehler, die im Refine adressiert werden",
+    )
+    projection_cleanup_action: bpy.props.EnumProperty(
+        name="Projection Cleanup Action",
+        items=[
+            ('DELETE_TRACK', "Delete Tracks", "Fehlerhafte Tracks löschen"),
+            ('MUTE', "Mute Tracks", "Fehlerhafte Tracks stummschalten"),
+        ],
+        default='DELETE_TRACK',
+        description="Aktion für builtin_projection_cleanup nach zweitem Solve",
+    )
+
     # ------------------------------------------------------------
     # Runtime State
     # ------------------------------------------------------------
@@ -47,6 +69,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     _detect_attempts: int = 0
     _detect_attempts_max: int = 8
     _jump_done: bool = False
+    _repeat_map: dict = None  # Frame→Count (nur via Jump gepflegt)
 
     def _log(self, msg: str):
         print(f"[Coordinator] {msg}")
@@ -89,6 +112,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._detect_attempts = 0
         self._detect_attempts_max = 8
         self._jump_done = False
+        self._repeat_map = {}
 
         # Lock sauber initialisieren
         try:
@@ -99,7 +123,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # Preflight-Helper
         try:
             ok, adapt_val, op_result = marker_helper_main(context)
-            self._log(f"[MarkerHelper] → main_to_adapt: ok={ok}, adapt={adapt_val}, op_result={op_result}")
+            self._log(f"[MarkerHelper] ok={ok}, adapt={adapt_val}, op_result={op_result}")
         except Exception as ex:
             self._log(f"[MarkerHelper] Fehler: {ex}")
 
@@ -174,7 +198,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 context.scene["goto_frame"] = int(res.get("frame", context.scene.frame_current))
                 self._jump_done = False
                 self._detect_attempts = 0
-                self._state = "JUMP"  # neu: separater Sprung
+                self._state = "JUMP"
             elif st == "NONE":
                 self._state = "SOLVE"
             else:
@@ -186,13 +210,31 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         elif self._state == "JUMP":
             goto = int(context.scene.get("goto_frame", context.scene.frame_current))
-            if not self._jump_done or goto != context.scene.frame_current:
+
+            # — Repeat-Erkennung nur bei Jumps —
+            cur = context.scene.frame_current
+            cnt = self._repeat_map.get(goto, 0)
+            if goto == cur:
+                # gleicher Frame erneut angefahren → Wiederholung zählen
+                cnt += 1
+                self._repeat_map[goto] = cnt
+                if cnt >= 1:  # ab ERSTER Wiederholung optimieren
+                    try:
+                        from ..Helper.optimize_tracking_modal import optimize_tracking_modal
+                        self._log(f"[Optimize] Wiederholung Frame {goto} (cnt={cnt}) → optimize_tracking_modal()")
+                        optimize_tracking_modal(context)
+                    except Exception as ex:
+                        # optional: nicht fatal, Helper kann fehlen
+                        self._log(f"[Optimize] Hinweis: {ex}")
+
+            if not self._jump_done or goto != cur:
                 try:
                     from ..Helper.jump_to_frame import run_jump_to_frame
                     run_jump_to_frame(context, frame=goto)
                 except Exception as ex:
                     self._log(f"[Jump] Fehler: {ex}")
                 self._jump_done = True
+
             # weiter ohne erneuten Sprung
             self._state = "DETECT"
             return {'RUNNING_MODAL'}
@@ -256,11 +298,109 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return {'RUNNING_MODAL'}
 
         elif self._state == "SOLVE":
+            # —— Sequenz: Solve → (Refine) → Solve → Projection-Cleanup (resolve_error) ——
             try:
-                from ..Helper.solve_camera import run_solve_watch_clean
-                run_solve_watch_clean(context)
+                # dynamisch auflösen, um robust ggü. Modulständen zu sein
+                from ..Helper import solve_camera as _solve_mod
             except Exception as ex:
-                self._log(f"[Solve] Fehler: {ex}")
+                _solve_mod = None
+                self._log(f"[Solve] Modul-Import solve_camera fehlgeschlagen: {ex}")
+
+            def _call(fn_name, *args, **kwargs):
+                if _solve_mod and hasattr(_solve_mod, fn_name):
+                    fn = getattr(_solve_mod, fn_name)
+                    return fn(context, *args, **kwargs)
+                raise RuntimeError(f"Helper '{fn_name}' nicht verfügbar")
+
+            # 1) erster Solve
+            try:
+                self._log("[Solve] Solve #1")
+                if _solve_mod and hasattr(_solve_mod, "run_solve"):
+                    _call("run_solve")
+                else:
+                    # Fallback: direkter Operator
+                    bpy.ops.clip.solve_camera('EXEC_DEFAULT')
+            except Exception as ex:
+                self._log(f"[Solve] Fehler bei Solve #1: {ex}")
+
+            # 2) optional Refine High Error
+            if self.enable_refine:
+                try:
+                    if _solve_mod and hasattr(_solve_mod, "refine_high_error"):
+                        self._log(f"[Solve] Refine High Error (limit_frames={self.refine_limit_frames})")
+                        _call("refine_high_error", limit_frames=int(self.refine_limit_frames))
+                    elif _solve_mod and hasattr(_solve_mod, "run_refine_on_high_error"):
+                        # ältere Namensvariante
+                        self._log(f"[Solve] Refine High Error (legacy, limit_frames={self.refine_limit_frames})")
+                        _call("run_refine_on_high_error", limit_frames=int(self.refine_limit_frames))
+                    else:
+                        self._log("[Solve] Refine-Helper nicht gefunden – überspringe Refine")
+                except Exception as ex:
+                    self._log(f"[Solve] Fehler im Refine: {ex}")
+
+                # 3) zweiter Solve nach Refine
+                try:
+                    self._log("[Solve] Solve #2 (nach Refine)")
+                    if _solve_mod and hasattr(_solve_mod, "run_solve"):
+                        _call("run_solve")
+                    else:
+                        bpy.ops.clip.solve_camera('EXEC_DEFAULT')
+                except Exception as ex:
+                    self._log(f"[Solve] Fehler bei Solve #2: {ex}")
+
+            # 4) Projection-Cleanup falls Fehler > resolve_error
+            try:
+                thr = float(context.scene.get("resolve_error", 2.0))
+            except Exception:
+                thr = 2.0
+
+            need_cleanup = False
+            try:
+                # Versuche, aktuellen Solve-Fehler zu lesen
+                if _solve_mod and hasattr(_solve_mod, "get_current_solve_error"):
+                    cur_err = _call("get_current_solve_error")
+                else:
+                    # Fallback: aus Tracking-Settings (falls verfügbar) oder None
+                    cur_err = None
+                if cur_err is not None:
+                    self._log(f"[Solve] aktueller Solve-Error={cur_err:.4f}, Schwellwert resolve_error={thr:.4f}")
+                    need_cleanup = (cur_err > thr)
+                else:
+                    # konservativ: wenn unbekannt, nicht automatisch löschen
+                    self._log("[Solve] Solve-Error nicht lesbar – überspringe automatische Prüfung")
+            except Exception as ex:
+                self._log(f"[Solve] Fehler beim Lesen des Solve-Errors: {ex}")
+
+            if need_cleanup:
+                try:
+                    self._log(f"[Solve] Projection Cleanup (builtin) mit threshold={thr}, action={self.projection_cleanup_action}")
+                    if _solve_mod and hasattr(_solve_mod, "builtin_projection_cleanup"):
+                        _call("builtin_projection_cleanup",
+                              threshold=thr,
+                              action=self.projection_cleanup_action)
+                    else:
+                        # Fallback: Clean-Tracks per Fehlergrenze
+                        bpy.ops.clip.clean_tracks(
+                            frames=0,
+                            error=thr,
+                            action=self.projection_cleanup_action
+                        )
+                except Exception as ex:
+                    self._log(f"[Solve] Fehler beim Projection Cleanup: {ex}")
+
+            # Fallback-Route, falls dedizierte Helfer fehlen:
+            if not _solve_mod or (
+                not hasattr(_solve_mod, "run_solve") and
+                not hasattr(_solve_mod, "builtin_projection_cleanup")
+            ):
+                # Im Zweifel alles-in-einem Helper probieren
+                try:
+                    from ..Helper.solve_camera import run_solve_watch_clean
+                    self._log("[Solve] Fallback run_solve_watch_clean()")
+                    run_solve_watch_clean(context)
+                except Exception:
+                    pass
+
             self._deactivate_flag(context)
             self._state = "DONE"
             return {'FINISHED'}
