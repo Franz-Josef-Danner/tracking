@@ -2,8 +2,6 @@
 import bpy
 import json
 
-from .detect import run_detect_once
-
 __all__ = ("run_jump_to_frame", "jump_to_frame_helper")
 
 
