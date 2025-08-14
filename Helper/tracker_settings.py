@@ -99,9 +99,7 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
             f"last_detection_threshold={scene['last_detection_threshold']:.6f}"
         )
 
-    # --- NEU: am Ende run_find_low_marker_frame importieren und aufrufen ---
     try:
-        from .find_low_marker_frame import run_find_low_marker_frame
         try:
             run_find_low_marker_frame(context, use_scene_basis=True)
         except Exception as ex:
