@@ -24,8 +24,7 @@ from .main_to_adapt import main_to_adapt
 from .mute_ops import mute_marker_path, mute_after_last_marker, mute_unassigned_markers
 from .split_cleanup import clear_path_on_split_tracks_segmented, recursive_split_cleanup
 from .refine_high_error import run_refine_on_high_error
-from .marker_adapt_helper import register as reg_adapt, unregister as unreg_adapt
-
+from .marker_adapt_helper import run_marker_adapt_boost
 
 __all__ = [
     "run_refine_on_high_error",
