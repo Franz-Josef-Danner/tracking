@@ -42,6 +42,7 @@ def _ensure_clip_context(ctx, clip=None, *, allow_area_switch=True):
         switched = True
 
     if not area or not region:
+        # Kein gültiger Kontext vorhanden
         yield None
         if switched and old_type is not None:
             area.type = old_type
@@ -54,7 +55,7 @@ def _ensure_clip_context(ctx, clip=None, *, allow_area_switch=True):
         if clip is not None:
             space.clip = clip
         elif getattr(space, "clip", None) is None:
-            # kein harter Fallback – still lassen
+            # still lassen
             pass
     except Exception:
         pass
@@ -108,7 +109,7 @@ def _resolve_clip_from_context(context):
     space = getattr(context, "space_data", None)
     return getattr(space, "clip", None) if space else None
 
-# NEU: Sichere Viewer-Synchronisation im Override
+# Sichere Viewer-Synchronisation im Override
 def _sync_viewer_frame_in_override(ctx, frame: int):
     try:
         ctx.scene.frame_set(int(frame))
@@ -134,20 +135,18 @@ def perform_marker_detection(clip, tracking, threshold, margin_base, min_distanc
     margin = max(1, int(margin_base * factor))
     min_distance = max(1, int(min_distance_base * factor))
 
-        # Kontext-sicherer Operator-Call inkl. Frame-Sync
+    # Kontext-sicherer Operator-Call inkl. Frame-Sync
     with _ensure_clip_context(bpy.context, clip=clip, allow_area_switch=True) as ovr:
         if ovr is None:
             raise RuntimeError("CLIP_EDITOR-Kontext nicht verfügbar (perform_marker_detection).")
-    
-        # NEU: Viewer-Frame im selben Override synchronisieren
+        # Viewer-Frame im selben Override synchronisieren
         _sync_viewer_frame_in_override(bpy.context, bpy.context.scene.frame_current)
-    
         bpy.ops.clip.detect_features(
             margin=margin,
             min_distance=min_distance,
             threshold=float(threshold),
         )
-    
+
     return sum(1 for t in tracking.tracks if getattr(t, "select", False))
 
 # ---------------------------------------------------------------------------
@@ -170,6 +169,8 @@ def run_detect_adaptive(
 ) -> dict:
     scn = context.scene
     scn["detect_status"] = "pending"
+    # Standardmäßig Downstream-Pipeline blockieren; wird bei Handoff aufgehoben
+    scn["pipeline_do_not_start"] = True
 
     if scn.get("tracking_pipeline_active", False):
         scn["detect_status"] = "failed"
@@ -224,7 +225,7 @@ def run_detect_adaptive(
     margin_base = margin_base if margin_base >= 0 else max(1, int(image_width * 0.025))
     min_distance_base = min_distance_base if min_distance_base >= 0 else max(1, int(image_width * 0.05))
 
-    # --- WICHTIG: Frame vor dem ersten Detect IM OVERRIDE synchronisieren ---
+    # Frame vor dem ersten Detect IM OVERRIDE synchronisieren
     if frame and frame > 0:
         with _ensure_clip_context(context, clip=clip, allow_area_switch=True):
             _sync_viewer_frame_in_override(context, int(frame))
@@ -263,12 +264,10 @@ def run_detect_adaptive(
             pass
 
         # Materialisierung abwarten
-        materialized = False
         for _ in range(50):
             if len(tracking.tracks) != len_before:
                 names_now = {t.name for t in tracking.tracks}
                 if names_now != initial_track_names:
-                    materialized = True
                     break
             time.sleep(0.01)
 
@@ -294,6 +293,7 @@ def run_detect_adaptive(
                             close_tracks.append(tr)
                             break
 
+        # Zu nahe neue Tracks löschen
         if close_tracks:
             cleaned_names = {t.name for t in new_tracks if t not in close_tracks}
             _remove_tracks_by_name(tracking, {t.name for t in close_tracks})
@@ -304,7 +304,9 @@ def run_detect_adaptive(
         cleaned_tracks = [t for t in new_tracks if t not in close_set]
         anzahl_neu = len(cleaned_tracks)
 
+        # Zielkorridor prüfen
         if anzahl_neu < min_marker or anzahl_neu > max_marker:
+            # Alle neu-erzeugten (bereinigten) Tracks dieses Versuchs wieder entfernen
             if cleaned_tracks:
                 for t in tracks:
                     t.select = False
@@ -319,6 +321,7 @@ def run_detect_adaptive(
                     else:
                         _remove_tracks_by_name(tracking, {t.name for t in cleaned_tracks})
 
+            # Threshold adaptieren (proportional zur Abweichung vom Ziel)
             safe_adapt = max(adapt, 1)
             detection_threshold = max(
                 float(detection_threshold) * ((anzahl_neu + 0.1) / float(safe_adapt)),
@@ -328,19 +331,24 @@ def run_detect_adaptive(
             attempt += 1
             continue
 
+        # Erfolg: final erzeugte Tracks für nächsten Run merken (inter-run cleanup)
         try:
             scn["detect_prev_names"] = [t.name for t in cleaned_tracks]
         except Exception:
             scn["detect_prev_names"] = []
 
-        scn["detect_status"] = "success"
-        scn["pipeline_do_not_start"] = False
-
-        try:
-            from .bidirectional_track import run_bidirectional_track
-            run_bidirectional_track(context)
-        except Exception as e:
-            print(f"[Detect] Tracking-Start fehlgeschlagen: {e}")
+        # Status setzen und Handoff steuern
+        if handoff_to_pipeline:
+            scn["detect_status"] = "success"
+            scn["pipeline_do_not_start"] = False
+            try:
+                from .bidirectional_track import run_bidirectional_track
+                run_bidirectional_track(context)
+            except Exception as e:
+                print(f"[Detect] Tracking-Start fehlgeschlagen: {e}")
+        else:
+            scn["detect_status"] = "standalone_success"
+            scn["pipeline_do_not_start"] = True
 
         return {
             "status": "success",
@@ -374,9 +382,6 @@ def run_detect_once(context, start_frame=None, **_):
 
     try:
         return run_detect_adaptive(context)
-    except TypeError:
-        try:
-            return run_detect_adaptive(context)
-        except Exception as ex:
-            print(f"[Detect] run_detect_once failed: {ex}")
-            return {'CANCELLED'}
+    except Exception as ex:
+        print(f"[Detect] run_detect_once failed: {ex}")
+        return {'status': 'failed', 'reason': str(ex)}
