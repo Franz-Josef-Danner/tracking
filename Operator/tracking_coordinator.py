@@ -3,6 +3,9 @@
 import bpy
 import time
 
+from ..Helper.marker_helper_main import marker_helper_main
+from ..Helper.main_to_adapt import main_to_adapt
+from ..Helper.tracker_settings import apply_tracker_settings
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame
 from ..Helper.jump_to_frame import run_jump_to_frame
 from ..Helper.detect import run_detect_once
@@ -77,16 +80,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
     def _bootstrap(self, context):
-        if context.area and context.area.type != 'CLIP_EDITOR':
-            self.report({'INFO'}, "Hinweis: Movie Clip Editor aktivieren für bestes Ergebnis.")
-        self._state = "INIT"
-        self._last_tick = 0.0
-        self._started_op = False
-        self._fwd_done = False
-        self._bwd_done = False
+        """Initialisierungen und Helper-Aufrufe vor dem Pipeline-Start."""
+        # 1. Marker-Helper: Ziel- und Grenzwerte berechnen
+        marker_helper_main(context)
+        # 2. adaptiven Marker-Wert anpassen
+        main_to_adapt(context)
+        # 3. Tracker-Defaults setzen
+        apply_tracker_settings(context)
+        # scene["marker_basis"] & frames_track werden wie gehabt gesetzt
         context.scene["marker_basis"] = int(self.target_min_markers)
         context.scene["frames_track"] = int(self.frames_track)
+        # Flags für orchestrator_active etc. hier setzen
         context.scene["orchestrator_active"] = True
+        # Initialen Zustand festlegen
+        self._state = "FIND_LOW"
 
     def _deactivate_flag(self, context):
         try:
