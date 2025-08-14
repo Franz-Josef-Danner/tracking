@@ -1,40 +1,33 @@
+# Helper/marker_adapt_helper.py (refactored to pure helper)
+
 import bpy
-from bpy.types import Operator
 
-class CLIP_OT_marker_adapt_boost(Operator):
-    """Erhöht scene['marker_adapt'] um +10%."""
-    bl_idname = "clip.marker_adapt_boost"
-    bl_label = "Marker Adapt +10%"
-    bl_options = {"INTERNAL", "REGISTER", "UNDO"}
+__all__ = ("run_marker_adapt_boost",)
 
-    def execute(self, context):
-        scene = context.scene
-        base = scene.get("marker_adapt", None)
-        if base is None:
-            base = scene.get("marker_basis", 25)
+def run_marker_adapt_boost(context: bpy.types.Context):
+    """
+    Erhöht scene['marker_adapt'] um +10%.
+    Verhalten entspricht dem ehemaligen Operator:
+    - Fallback auf scene['marker_basis']=25, falls 'marker_adapt' fehlt
+    - Rundung wie zuvor (round(...))
+    - Rückgabe {'FINISHED'} zur Abwärtskompatibilität
+    """
+    scene = context.scene
 
-        try:
-            base_val = float(base)
-        except Exception:
-            base_val = 25.0
+    base = scene.get("marker_adapt", None)
+    if base is None:
+        base = scene.get("marker_basis", 25)
 
-        new_val = round(base_val * 1.1)
-        scene["marker_adapt"] = int(new_val)
+    try:
+        base_val = float(base)
+    except Exception:
+        base_val = 25.0
 
-        self.report({'INFO'}, f"marker_adapt: {int(base_val)} → {int(new_val)}")
-        print(f"[MarkerAdapt] marker_adapt: {int(base_val)} → {int(new_val)}")
-        return {'FINISHED'}
+    new_val = round(base_val * 1.1)
+    scene["marker_adapt"] = int(new_val)
 
+    msg = f"marker_adapt: {int(base_val)} → {int(new_val)}"
+    print(f"[MarkerAdapt] {msg}")
 
-__all__ = ("CLIP_OT_marker_adapt_boost",)
-
-classes = (CLIP_OT_marker_adapt_boost,)
-
-def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
-
-def unregister():
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
-
+    # Identisches Abschlussverhalten wie ein Operator
+    return {'FINISHED'}
