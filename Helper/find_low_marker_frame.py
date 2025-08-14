@@ -76,16 +76,6 @@ def run_find_low_marker_frame(
 
     low_frame = find_low_marker_frame_core(clip, marker_basis=basis, frame_start=fs, frame_end=fe)
 
-    if low_frame is not None:
-        scene["goto_frame"] = int(low_frame)
-        print(f"[MarkerCheck] Treffer: Low-Marker-Frame {low_frame}. Übergabe an jump_to_frame (Helper) …")
-        try:
-            run_jump_to_frame(context, frame=int(low_frame))
-            return int(low_frame)
-        except Exception as ex:
-            print(f"Error: jump_to_frame (Helper) Exception: {ex}")
-            return None
-
     # Kein Treffer → Solve starten (Helper)
     print("[MarkerCheck] Keine Low-Marker-Frames gefunden. Starte Kamera-Solve (Helper).")
     try:
