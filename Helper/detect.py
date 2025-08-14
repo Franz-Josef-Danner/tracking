@@ -245,69 +245,6 @@ def run_detect_adaptive(context, **kwargs):
                 kwargs["detection_threshold"] = float(lt)
     return last if last else {"status": "failed", "reason": "no_attempt"}
 
-# ---------------------------------------------------------------------------
-# Modaler Operator (kompatibel zu alten Call-Sites) – optional
-# ---------------------------------------------------------------------------
-
-class CLIP_OT_detect(bpy.types.Operator):
-    """Modaler Detect-Zyklus mit interner Threshold-Anpassung und inter-run Cleanup"""
-    bl_idname = "clip.detect"
-    bl_label = "Place Marker (Adaptive)"
-    bl_description = "Modaler Detect-Zyklus mit interner Threshold-Anpassung und inter-run Cleanup"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    detection_threshold: bpy.props.FloatProperty(
-        name="Detection Threshold (opt.)",
-        description="Optionaler Start-Threshold. <0 nutzt Scene/Settings",
-        default=-1.0, min=-1.0, max=1.0
-    )
-    marker_adapt: bpy.props.IntProperty(
-        name="Marker Adapt (opt.)",
-        description="Optionales Zielzentrum. <0 nutzt Scene.marker_adapt",
-        default=-1, min=-1
-    )
-    min_marker: bpy.props.IntProperty(
-        name="Min Marker (opt.)",
-        description="Optionales Unterlimit. <0 wird aus marker_adapt/basis berechnet",
-        default=-1, min=-1
-    )
-    max_marker: bpy.props.IntProperty(
-        name="Max Marker (opt.)",
-        description="Optionales Oberlimit. <0 wird aus marker_adapt/basis berechnet",
-        default=-1, min=-1
-    )
-    frame: bpy.props.IntProperty(
-        name="Frame (opt.)",
-        description="Optionaler Ziel-Frame. 0 nutzt aktuellen Scene-Frame",
-        default=0, min=0
-    )
-    margin_base: bpy.props.IntProperty(
-        name="Margin Base (px, opt.)",
-        description="<0 → auto (2.5% Bildbreite)",
-        default=-1
-    )
-    min_distance_base: bpy.props.IntProperty(
-        name="Min Distance Base (px, opt.)",
-        description="<0 → auto (5% Bildbreite)",
-        default=-1
-    )
-    close_dist_rel: bpy.props.FloatProperty(
-        name="Close Dist (rel. width, opt.)",
-        description="Relative Abstandsschwelle für Duplikat-Filter (0.0–0.1). 0 → Default 0.01",
-        default=0.0, min=0.0, max=0.1
-    )
-    handoff_to_pipeline: bpy.props.BoolProperty(
-        name="Handoff to Pipeline",
-        description="Bei Erfolg 'success' signalisieren und Main/Pipeline weiterlaufen lassen",
-        default=False
-    )
-
-    _timer = None
-    _STATE_DETECT = "DETECT"
-    _STATE_WAIT = "WAIT"
-    _STATE_PROC = "PROCESS"
-
-    @classmethod
     def poll(cls, context):
         return (
             context.area and
@@ -535,8 +472,3 @@ class CLIP_OT_detect(bpy.types.Operator):
     def cancel(self, context):
         if self._timer is not None:
             context.window_manager.event_timer_remove(self._timer)
-
-class CLIP_OT_detect_once(CLIP_OT_detect):
-    """Alias von CLIP_OT_detect – identische Implementierung, anderer Name/ID."""
-    bl_idname = "clip.detect_once"
-    bl_label  = "Detect Once (Adaptive)"
