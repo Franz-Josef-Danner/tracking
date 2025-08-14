@@ -1,3 +1,4 @@
+
 # Operator/tracking_coordinator.py
 import bpy
 import time
@@ -6,7 +7,6 @@ from ..Helper.find_low_marker_frame import run_find_low_marker_frame
 from ..Helper.jump_to_frame import run_jump_to_frame
 from ..Helper.detect import run_detect_once
 
-# optionale Helper – nur verwenden, wenn vorhanden
 try:
     from ..Helper.tracker_settings import apply_tracker_settings
 except Exception:
@@ -29,7 +29,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     bl_label = "Tracking Orchestrator (Pipeline)"
     bl_options = {'REGISTER', 'UNDO'}
 
-    # Operator-Optionen
     use_apply_settings: bpy.props.BoolProperty(
         name="Apply Tracker Defaults",
         default=True,
@@ -61,27 +60,23 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         min=0.05, max=5.0,
     )
 
-    # interner State
     _state = None
     _last_tick = 0.0
     _started_op = False
     _fwd_done = False
     _bwd_done = False
 
-    # EXEC-Unterstützung (direkt aus Python startbar)
     def execute(self, context):
         self._bootstrap(context)
         context.window_manager.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
-    # INVOKE (F3-Search)
     def invoke(self, context, event):
         self._bootstrap(context)
         context.window_manager.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
     def _bootstrap(self, context):
-        # Vorbedingungen + Startwerte
         if context.area and context.area.type != 'CLIP_EDITOR':
             self.report({'INFO'}, "Hinweis: Movie Clip Editor aktivieren für bestes Ergebnis.")
         self._state = "INIT"
@@ -89,14 +84,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._started_op = False
         self._fwd_done = False
         self._bwd_done = False
-        # Defaults in Scene spiegeln (für Helper)
         context.scene["marker_basis"] = int(self.target_min_markers)
         context.scene["frames_track"] = int(self.frames_track)
+        context.scene["orchestrator_active"] = True
+
+    def _deactivate_flag(self, context):
+        try:
+            context.scene["orchestrator_active"] = False
+        except Exception:
+            pass
 
     def modal(self, context, event):
-        # ESC → sauberer Abbruch
         if event.type in {'ESC'}:
             self._state = "DONE"
+            self._deactivate_flag(context)
             self.report({'INFO'}, "Pipeline abgebrochen.")
             return {'CANCELLED'}
 
@@ -129,13 +130,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {'RUNNING_MODAL'}
 
             if self._state == "JUMP_DETECT":
-                # jump + adaptive detection
                 run_jump_to_frame(context, frame=context.scene.get("goto_frame", None))
                 try:
                     run_detect_once(context, start_frame=int(context.scene.get("goto_frame", 1)))
                 except Exception:
                     pass
-                # nach Detect SOFORT Tracking-Burst starten
                 self._started_op = False
                 self._fwd_done = False
                 self._bwd_done = False
@@ -145,7 +144,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if self._state == "TRACK_FWD":
                 if not self._started_op:
                     try:
-                        # nicht-blockierend → UI bleibt responsiv
                         bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
                         self.report({'INFO'}, "[TRACK_FWD] started (INVOKE_DEFAULT)")
                         self._started_op = True
@@ -153,7 +151,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     except Exception as ex:
                         self.report({'WARNING'}, f"[TRACK_FWD] start failed: {ex}")
                         self._fwd_done = True
-                # einfache Heuristik: nach zwei Ticks weiter
                 if self._fwd_done:
                     self._state = "TRACK_BWD" if self.do_backward else "CLEAN_SHORT"
                     self._started_op = False
@@ -185,7 +182,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         self.report({'INFO'}, "[CLEAN_SHORT] short tracks removed")
                     except Exception as ex:
                         self.report({'WARNING'}, f"[CLEAN_SHORT] failed: {ex}")
-                # Loop zurück: nächster Low-Frame?
                 self._state = "FIND_LOW"
                 return {'RUNNING_MODAL'}
 
@@ -200,20 +196,21 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {'RUNNING_MODAL'}
 
             if self._state == "DONE":
+                self._deactivate_flag(context)
                 return {'FINISHED'}
 
-            # Fallback
             self.report({'WARNING'}, f"Unknown state: {self._state}")
+            self._deactivate_flag(context)
             self._state = "DONE"
             return {'CANCELLED'}
 
         except Exception as ex:
             self.report({'ERROR'}, f"Pipeline error in state {self._state}: {ex}")
+            self._deactivate_flag(context)
             self._state = "DONE"
             return {'CANCELLED'}
 
 
-# Registration-Helper
 classes = (CLIP_OT_tracking_coordinator,)
 
 def register():
