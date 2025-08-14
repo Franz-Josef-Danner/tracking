@@ -47,6 +47,24 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     def _deactivate_flag(self, context):
         context.scene["orchestrator_active"] = False
 
+    def _remove_timer(self, context):
+        try:
+            wm = context.window_manager
+            wm.event_timer_remove(self._timer)
+        except Exception:
+            pass
+
+    def _cancel(self, context, reason="Cancelled"):
+        """Zentraler Abbruchpfad – immer verwenden."""
+        self._log(f"Abbruch: {reason}")
+        self._remove_timer(context)
+        try:
+            self._deactivate_flag(context)
+        except Exception:
+            pass
+        self._state = "DONE"
+        return {'CANCELLED'}
+
     def _bootstrap(self, context):
         self._state = "INIT"
         self._started_op = False
@@ -97,14 +115,17 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return self.invoke(context, None)
 
     def modal(self, context, event):
+        # --- 1) Sofortiger ESC-Abbruch, egal in welchem Status ---
+        if event.type == 'ESC':
+            return self._cancel(context, "ESC gedrückt")
+
+        # --- 2) Nur TIMER-Events treiben die State-Maschine weiter ---
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
 
-        # Safety: Abbruch
+        # Safety: Abbruch bei fehlendem CLIP_EDITOR-Kontext
         if not context.area or context.area.type != "CLIP_EDITOR":
-            self._deactivate_flag(context)
-            self._state = "DONE"
-            return {'CANCELLED'}
+            return self._cancel(context, "CLIP_EDITOR-Kontext verloren")
 
         # --- State Machine ---
         if self._state == "INIT":
@@ -210,11 +231,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return {'FINISHED'}
 
         elif self._state == "DONE":
-            try:
-                wm = context.window_manager
-                wm.event_timer_remove(self._timer)
-            except Exception:
-                pass
+            self._remove_timer(context)
             self._deactivate_flag(context)
             return {'FINISHED'}
 
