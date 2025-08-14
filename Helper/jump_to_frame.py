@@ -1,4 +1,3 @@
-
 # Helper/jump_to_frame.py
 import bpy
 import json
@@ -6,6 +5,7 @@ import json
 from .detect import run_detect_once
 
 __all__ = ("run_jump_to_frame", "jump_to_frame_helper")
+
 
 def _resolve_target_frame(context, explicit=None):
     if explicit is not None:
@@ -24,6 +24,7 @@ def _resolve_target_frame(context, explicit=None):
         except Exception:
             pass
     return None
+
 
 def _store_visited_frame(scene, frame):
     """Maintain a JSON list in scene['visited_frames_json'].
@@ -44,8 +45,9 @@ def _store_visited_frame(scene, frame):
     print(f"[GotoFrame] persisted visited_frames: {arr}")
     return False
 
+
 def jump_to_frame_helper(context, *, target_frame=None):
-    # Determine target
+    # Ziel ermitteln
     f = _resolve_target_frame(context, explicit=target_frame)
     if f is None:
         print("[GotoFrame] Kein Ziel-Frame gefunden.")
@@ -55,14 +57,14 @@ def jump_to_frame_helper(context, *, target_frame=None):
     is_dup = _store_visited_frame(scene, int(f))
     if is_dup:
         print(f"[GotoFrame] Duplikat erkannt (Frame {f}) – Helper wird ausgelöst.")
-        # Adaptive boost
+        # adapt um +10% erhöhen (Bestandteil deiner bestehenden Logik)
         try:
             from .marker_adapt_helper import run_marker_adapt_boost
             run_marker_adapt_boost(context)
         except Exception as ex:
             print(f"[MarkerAdapt] Boost fehlgeschlagen: {ex}")
 
-    # Try to fetch clip from current space (no area switching here)
+    # Clip aus aktuellem Space (kein Area-Switch in diesem Helper)
     space = getattr(context, "space_data", None)
     clip = getattr(space, "clip", None) if space else None
     if clip is None:
@@ -77,13 +79,13 @@ def jump_to_frame_helper(context, *, target_frame=None):
         print("[GotoFrame] Kein Clip verfügbar.")
         return {'CANCELLED'}
 
-    # Set current frame (best effort); run detection on that frame
+    # Frame setzen (Best Effort)
     try:
         context.scene.frame_current = int(f)
     except Exception as ex:
         print(f"[GotoFrame] Frame-Setzen fehlgeschlagen: {ex}")
 
-    # Run detection (handles its own UI override internally)
+    # Detection auf dem Ziel-Frame (run_detect_once setzt intern den Override korrekt)
     try:
         res = run_detect_once(context, start_frame=int(f))
         print(f"[Jump] detect_once Result: {res}")
@@ -91,15 +93,15 @@ def jump_to_frame_helper(context, *, target_frame=None):
         print(f"[Jump] Übergabe an detect fehlgeschlagen: {ex}")
         return {'CANCELLED'}
 
-    # Optional: auto-start tracking step (non-blocking). We try INVOKE_DEFAULT to avoid UI freeze.
+    # FWD-Tracking unmittelbar (nicht-blockierend) starten
     try:
-        # Forward tracking first
         bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
         print("[Jump] Vorwärts-Tracking gestartet (INVOKE_DEFAULT).")
     except Exception as ex:
         print(f"[Jump] Vorwärts-Tracking Start fehlgeschlagen: {ex}")
 
     return {'FINISHED'}
+
 
 def run_jump_to_frame(context, *, frame=None):
     """Wrapper for compatibility."""
