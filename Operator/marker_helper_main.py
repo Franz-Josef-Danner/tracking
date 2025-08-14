@@ -1,10 +1,8 @@
 # Operator/marker_helper_main.py
 import bpy
-from bpy.types import Operator
 
 # >>> WICHTIG: Helper direkt importieren (kein bpy.ops!)
 # Pfad ggf. an deine Paketstruktur anpassen:
-from ..Helper.main_to_adapt import main_to_adapt
 
 def _clip_override(ctx):
     win = getattr(ctx, "window", None)
@@ -23,7 +21,7 @@ def _clip_override(ctx):
                 }
     return None
 
-class CLIP_OT_marker_helper_main(Operator):
+class marker_helper_main():
     bl_idname = "clip.marker_helper_main"
     bl_label = "Marker Helper Main"
     bl_description = "Berechnet Marker-/Tracking-Zielwerte aus den Scene-Properties und startet die Kette"
@@ -80,26 +78,6 @@ class CLIP_OT_marker_helper_main(Operator):
                f"frames_track={frames_track}, error_track={error_track}")
         print(msg)
         self.report({'INFO'}, msg)
-
-        # --- 6) Nächster Schritt via HELPER (kein bpy.ops!) ---
-        try:
-            ok, adapt_val, op_result = main_to_adapt(
-                context,
-                factor=int(self.factor),
-                use_override=True,   # sichert CLIP_EDITOR-Kontext via temp_override
-                call_next=True,      # triggert tracker_settings
-                invoke_next=True     # 'INVOKE_DEFAULT' für tracker_settings
-            )
-            print(f"[MarkerHelper] → main_to_adapt: ok={ok}, adapt={adapt_val}, op_result={op_result}")
-            if (not ok) or (op_result and 'CANCELLED' in op_result):
-                self.report({'ERROR'}, "main_to_adapt/tracker_settings fehlgeschlagen.")
-                return {'CANCELLED'}
-        except Exception as e:
-            self.report({'ERROR'}, f"main_to_adapt (Helper) Fehler: {e}")
-            return {'CANCELLED'}
-
-        return {'FINISHED'}
-
 
 # Registration
 classes = (CLIP_OT_marker_helper_main,)
