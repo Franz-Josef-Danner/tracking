@@ -1,9 +1,12 @@
+# Operator/tracking_coordinator.py — Lock-Respekt für detect
 import bpy
 import time
 
 from ..Helper.marker_helper_main import marker_helper_main
 from ..Helper.main_to_adapt import main_to_adapt
 from ..Helper.tracker_settings import apply_tracker_settings
+
+LOCK_KEY = "__detect_lock"  # NEU
 
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     bl_idname = "clip.tracking_coordinator"
@@ -58,6 +61,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._remove_timer(context)
         try:
             self._deactivate_flag(context)
+            context.scene[LOCK_KEY] = False  # NEU: Lock freigeben
         except Exception:
             pass
         self._state = "DONE"
@@ -71,6 +75,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         self._detect_attempts = 0
         self._detect_attempts_max = 8
+
+        # Lock sauber initialisieren (NEU)
+        try:
+            context.scene[LOCK_KEY] = False
+        except Exception:
+            pass
 
         try:
             ok, adapt_val, op_result = marker_helper_main(context)
@@ -109,6 +119,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return self.invoke(context, None)
 
     def modal(self, context, event):
+        # --- NEU: harter Early-Exit, solange detect exklusiv läuft ---
+        try:
+            if context.scene.get(LOCK_KEY, False):
+                return {'RUNNING_MODAL'}
+        except Exception:
+            pass
+
         if event.type == 'ESC':
             return self._cancel(context, "ESC gedrückt")
 
@@ -137,7 +154,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             elif st == "NONE":
                 self._state = "SOLVE"
             else:
-                # Im Fehlerfall trotzdem versuchen weiterzumachen
                 self._state = "JUMP_DETECT"
             return {'RUNNING_MODAL'}
 
@@ -220,17 +236,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         elif self._state == "DONE":
             self._remove_timer(context)
             self._deactivate_flag(context)
+            try:
+                context.scene[LOCK_KEY] = False
+            except Exception:
+                pass
             return {'FINISHED'}
 
         return {'RUNNING_MODAL'}
-
-
-classes = (CLIP_OT_tracking_coordinator,)
-
-def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
-
-def unregister():
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
