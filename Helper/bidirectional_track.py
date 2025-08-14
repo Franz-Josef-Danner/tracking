@@ -128,25 +128,6 @@ def run_bidirectional_track(context):
 
         print(f"[Tracking-Stabilität] Frame: {current_frame}, Marker: {current_marker_count}, Stabil: {state['stable_count']}/2")
         
-        if state["stable_count"] >= 2:
-            print("✓ Tracking stabil erkannt – bereinige kurze Tracks.")
-            try:
-                # Helper-Variante (keine Operator-Abhängigkeit)
-                clean_short_tracks(ctx, action='DELETE_TRACK')
-            except Exception as e:
-                print(f"[Tracking] clean_short_tracks fehlgeschlagen: {e}")
-
-            # ← NEU: Handoff an die nächste Stufe
-            try:
-                print("[Tracking] Übergabe an run_find_low_marker_frame …")
-                run_find_low_marker_frame(ctx)
-            except Exception as e:
-                print(f"[Tracking] run_find_low_marker_frame fehlgeschlagen: {e}")
-
-            _stop()
-            return 'FINISHED'
-        return 'PASS'
-
     def _tick():
         if not state["active"]:
             return None  # Timer beenden
