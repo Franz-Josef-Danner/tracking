@@ -20,7 +20,13 @@ class CLIP_OT_marker_helper_main(Operator):
 
     @classmethod
     def poll(cls, context):
-        return True
+        area = getattr(context, "area", None)
+        space = getattr(context, "space_data", None)
+        return (
+            area and area.type == 'CLIP_EDITOR'
+            and space and getattr(space, "clip", None) is not None
+        )
+
 
     def execute(self, context):
         scene = context.scene
