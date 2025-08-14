@@ -82,7 +82,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     def _bootstrap(self, context):
         """Initialisierungen und Helper-Aufrufe vor dem Pipeline-Start."""
         # 1. Marker-Helper: Ziel- und Grenzwerte berechnen
-        marker_helper_main(context)
+        marker_helper_main()
         # 2. adaptiven Marker-Wert anpassen
         main_to_adapt(context)
         # 3. Tracker-Defaults setzen
