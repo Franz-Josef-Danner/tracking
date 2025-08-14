@@ -6,6 +6,23 @@ from bpy.types import Operator
 # Pfad ggf. an deine Paketstruktur anpassen:
 from ..Helper.main_to_adapt import main_to_adapt
 
+def _clip_override(ctx):
+    win = getattr(ctx, "window", None)
+    if not win or not getattr(win, "screen", None):
+        return None
+    for area in win.screen.areas:
+        if area.type == 'CLIP_EDITOR':
+            region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+            if region:
+                return {
+                    'window': ctx.window,
+                    'screen': ctx.screen,
+                    'area': area,
+                    'region': region,
+                    'space_data': area.spaces.active
+                }
+    return None
+
 class CLIP_OT_marker_helper_main(Operator):
     bl_idname = "clip.marker_helper_main"
     bl_label = "Marker Helper Main"
