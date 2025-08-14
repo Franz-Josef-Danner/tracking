@@ -11,7 +11,7 @@ bl_info = {
 import bpy
 from bpy.props import IntProperty, FloatProperty, CollectionProperty
 from bpy.types import PropertyGroup, Panel
-from .tracking_coordinator import CLIP_OT_tracking_coordinator
+from .Operator.tracking_coordinator import CLIP_OT_tracking_coordinator
 
 # --- PropertyGroup für Wiederhol-Frames ---
 class RepeatEntry(PropertyGroup):
