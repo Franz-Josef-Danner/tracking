@@ -7,8 +7,6 @@ __all__ = [
     "perform_marker_detection",
     "run_detect_adaptive",
     "run_detect_once",
-    "CLIP_OT_detect",
-    "CLIP_OT_detect_once",
 ]
 
 # ---------------------------------------------------------------------------
