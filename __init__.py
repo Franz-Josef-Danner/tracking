@@ -28,10 +28,6 @@ class RepeatEntry(PropertyGroup):
         min=0,
     )
 
-# Operator-Import (muss existieren)
-from .Operator.marker_helper_main import CLIP_OT_marker_helper_main
-
-
 # --- UI-Panel ---
 class CLIP_PT_kaiserlich_panel(Panel):
     bl_space_type = 'CLIP_EDITOR'
@@ -48,14 +44,13 @@ class CLIP_PT_kaiserlich_panel(Panel):
         layout.prop(scene, "frames_track")
         layout.prop(scene, "error_track")
         layout.separator()
-        layout.operator("clip.marker_helper_main", text="Track")
+        layout.operator("clip.tracking_coordinator", text="Track")
 
 
 # --- Registrierung ---
 classes = (
     RepeatEntry,
     CLIP_PT_kaiserlich_panel,
-    CLIP_OT_marker_helper_main,
     CLIP_OT_tracking_coordinator,
 )
 
