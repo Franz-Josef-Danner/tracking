@@ -1,7 +1,7 @@
 import bpy
 import json
 
-__all__ = ("jump_to_frame_helper")
+__all__ = ("jump_to_frame_helper", "run_jump_to_frame")
 
 
 def _clip_override(context):
@@ -66,7 +66,6 @@ def jump_to_frame_helper(context, target_frame: int | None = None):
         except Exception as ex:
             print(f"Error: Marker-Adapt-Helper fehlgeschlagen: {ex}")
 
-
     # Playhead setzen + DETECT auslösen
     ovr = _clip_override(context)
 
@@ -108,3 +107,11 @@ def jump_to_frame_helper(context, target_frame: int | None = None):
         print(f"Error: {msg}")
         return {'CANCELLED'}
 
+
+def run_jump_to_frame(context, frame: int | None = None):
+    """
+    Thin-Wrapper für Kompatibilität mit bestehender Aufrufstelle.
+    Vorher: bpy.ops.clip.jump_to_frame('EXEC_DEFAULT', target_frame=…)
+    Jetzt:  run_jump_to_frame(context, frame=…)
+    """
+    return jump_to_frame_helper(context, target_frame=frame)
