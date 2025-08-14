@@ -16,7 +16,7 @@ try:
 except Exception:
     clean_short_tracks = None
 try:
-    from ..Helper.solve_watch_clean import run_solve_watch_clean
+    from ..Helper.solve_camera import run_solve_watch_clean
 except Exception:
     run_solve_watch_clean = None
 
