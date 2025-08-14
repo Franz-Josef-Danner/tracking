@@ -1,6 +1,5 @@
 import bpy
 import json
-from .marker_adapt_helper import run_marker_adapt_boost
 
 __all__ = ("jump_to_frame_helper", "run_jump_to_frame")
 
@@ -62,10 +61,11 @@ def jump_to_frame_helper(context, target_frame: int | None = None):
     is_dup = _store_visited_frame(context.scene, int(target))
     if is_dup:
         try:
-            run_jump_to_frame('EXEC_DEFAULT')
+            from .marker_adapt_helper import run_marker_adapt_boost
+            run_marker_adapt_boost(context)
         except Exception as ex:
-            # identisches Verhalten: Fehler loggen, aber nicht crashen
             print(f"Error: Marker-Adapt-Helper fehlgeschlagen: {ex}")
+
 
     # Playhead setzen + DETECT auslösen
     ovr = _clip_override(context)
