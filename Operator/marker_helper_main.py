@@ -10,6 +10,7 @@ class CLIP_OT_marker_helper_main(Operator):
     bl_idname = "clip.marker_helper_main"
     bl_label = "Marker Helper Main"
     bl_description = "Berechnet Marker-/Tracking-Zielwerte aus den Scene-Properties und startet die Kette"
+    bl_options = {"REGISTER", "UNDO"}      # WICHTIG: REGISTER rein, INTERNAL raus
 
     factor: bpy.props.IntProperty(
         name="Faktor",
