@@ -23,6 +23,8 @@ from .mute_ops import mute_marker_path, mute_after_last_marker, mute_unassigned_
 from .split_cleanup import clear_path_on_split_tracks_segmented, recursive_split_cleanup
 from .refine_high_error import run_refine_on_high_error
 from .marker_adapt_helper import run_marker_adapt_boost
+from .marker_helper_main import marker_helper_main
+
 
 __all__ = [
     "run_refine_on_high_error",
