@@ -298,6 +298,30 @@ def run_detect_adaptive(
 # Alias für Abwärtskompatibilität
 # ---------------------------------------------------------------------------
 
-def run_detect_once(context: bpy.types.Context, **kwargs) -> dict:
-    """Alias identisch zu run_detect_adaptive – entspricht vormals CLIP_OT_detect_once."""
-    return run_detect_adaptive(context, **kwargs)
+# detect.py
+def run_detect_once(context, start_frame=None, **_):
+    """
+    Shim für alte Aufrufer:
+    - Optional auf start_frame springen
+    - Dann die eigentliche adaptive Detection starten (ohne unbekannte kwargs)
+    Rückgabe: {'FINISHED'}|{'CANCELLED'} analog Operator-Verhalten
+    """
+    import bpy
+    if start_frame is not None:
+        try:
+            context.scene.frame_current = int(start_frame)
+        except Exception:
+            pass
+
+    # Falls du perform_marker_detection/run_detect_adaptive hast, hier aufrufen:
+    try:
+        # Preferierte interne API – passe an deine Datei an:
+        # return perform_marker_detection(context)          # Variante 1
+        return run_detect_adaptive(context)                 # Variante 2
+    except TypeError:
+        # Fallback: manche Signaturen heißen 'frame' statt 'start_frame'
+        try:
+            return run_detect_adaptive(context)
+        except Exception as ex:
+            print(f"[Detect] run_detect_once failed: {ex}")
+            return {'CANCELLED'}
