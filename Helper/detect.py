@@ -134,21 +134,21 @@ def perform_marker_detection(clip, tracking, threshold, margin_base, min_distanc
     margin = max(1, int(margin_base * factor))
     min_distance = max(1, int(min_distance_base * factor))
 
-    # Kontext-sicherer Operator-Call inkl. Frame-Sync
-with _ensure_clip_context(bpy.context, clip=clip, allow_area_switch=True) as ovr:
-    if ovr is None:
-        raise RuntimeError("CLIP_EDITOR-Kontext nicht verfügbar (perform_marker_detection).")
-
-    # NEU: Viewer-Frame im selben Override synchronisieren
-    _sync_viewer_frame_in_override(bpy.context, bpy.context.scene.frame_current)
-
-    bpy.ops.clip.detect_features(
-        margin=margin,
-        min_distance=min_distance,
-        threshold=float(threshold),
-    )
-
-return sum(1 for t in tracking.tracks if getattr(t, "select", False))
+        # Kontext-sicherer Operator-Call inkl. Frame-Sync
+    with _ensure_clip_context(bpy.context, clip=clip, allow_area_switch=True) as ovr:
+        if ovr is None:
+            raise RuntimeError("CLIP_EDITOR-Kontext nicht verfügbar (perform_marker_detection).")
+    
+        # NEU: Viewer-Frame im selben Override synchronisieren
+        _sync_viewer_frame_in_override(bpy.context, bpy.context.scene.frame_current)
+    
+        bpy.ops.clip.detect_features(
+            margin=margin,
+            min_distance=min_distance,
+            threshold=float(threshold),
+        )
+    
+    return sum(1 for t in tracking.tracks if getattr(t, "select", False))
 
 # ---------------------------------------------------------------------------
 # Adaptive Detect
