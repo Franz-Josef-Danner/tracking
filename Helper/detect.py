@@ -2,6 +2,7 @@
 import bpy
 import math
 import time
+from contextlib import contextmanager  # NEU
 
 __all__ = [
     "perform_marker_detection",
@@ -10,7 +11,79 @@ __all__ = [
 ]
 
 # ---------------------------------------------------------------------------
-# Utilities
+# UI-Context Guard (NEU, nur in diesem Modul)
+# ---------------------------------------------------------------------------
+
+def _find_clip_area(win):
+    if not win or not getattr(win, "screen", None):
+        return None, None
+    for area in win.screen.areas:
+        if area.type == 'CLIP_EDITOR':
+            reg = next((r for r in area.regions if r.type == 'WINDOW'), None)
+            if reg:
+                return area, reg
+    return None, None
+
+@contextmanager
+def _ensure_clip_context(ctx, clip=None, *, allow_area_switch=True):
+    """
+    Sichert einen gültigen CLIP_EDITOR-Kontext:
+      - area: CLIP_EDITOR
+      - region: WINDOW
+      - space_data.mode == 'TRACKING'
+      - space_data.clip gesetzt (falls clip übergeben)
+    Wirkt nur innerhalb des with-Blocks. Keine API-/Verhaltensänderung außerhalb.
+    """
+    win = getattr(ctx, "window", None)
+    area, region = _find_clip_area(win)
+    switched = False
+    old_type = None
+
+    if not area and allow_area_switch and win and getattr(win, "screen", None) and win.screen.areas:
+        # Fallback: erste Area temporär zum CLIP_EDITOR machen
+        area = win.screen.areas[0]
+        old_type = area.type
+        area.type = 'CLIP_EDITOR'
+        region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+        switched = True
+
+    if not area or not region:
+        # Kein gültiger UI-Kontext -> Operator-Poll wird sonst failen
+        yield None
+        if switched and old_type is not None:
+            area.type = old_type
+        return
+
+    space = area.spaces.active
+    try:
+        if getattr(space, "mode", None) != 'TRACKING':
+            space.mode = 'TRACKING'
+        if clip is not None:
+            space.clip = clip
+        elif getattr(space, "clip", None) is None:
+            # falls kein Clip gesetzt ist und keiner übergeben wurde, belassen wir es still
+            pass
+    except Exception:
+        pass
+
+    override = {
+        "window": win,
+        "screen": getattr(win, "screen", None),
+        "area": area,
+        "region": region,
+        "space_data": space,
+        "scene": ctx.scene,
+    }
+
+    try:
+        with bpy.context.temp_override(**override):
+            yield override
+    finally:
+        if switched and old_type is not None:
+            area.type = old_type
+
+# ---------------------------------------------------------------------------
+# Utilities (unverändert in Funktionalität)
 # ---------------------------------------------------------------------------
 
 def _deselect_all(tracking):
@@ -44,7 +117,6 @@ def _resolve_clip_from_context(context):
     space = getattr(context, "space_data", None)
     return getattr(space, "clip", None) if space else None
 
-
 # ---------------------------------------------------------------------------
 # Legacy-Helper (API-kompatibel halten)
 # ---------------------------------------------------------------------------
@@ -58,13 +130,18 @@ def perform_marker_detection(clip, tracking, threshold, margin_base, min_distanc
     margin = max(1, int(margin_base * factor))
     min_distance = max(1, int(min_distance_base * factor))
 
-    bpy.ops.clip.detect_features(
-        margin=margin,
-        min_distance=min_distance,
-        threshold=float(threshold),
-    )
-    return sum(1 for t in tracking.tracks if getattr(t, "select", False))
+    # >>> Kontext-sicherer Operator-Call (NEU, Signatur bleibt gleich)
+    # Wir nutzen bpy.context als Basiskontext, da diese Funktion keinen 'context' Parameter hat.
+    with _ensure_clip_context(bpy.context, clip=clip, allow_area_switch=True) as ovr:
+        if ovr is None:
+            raise RuntimeError("CLIP_EDITOR-Kontext nicht verfügbar (perform_marker_detection).")
+        bpy.ops.clip.detect_features(
+            margin=margin,
+            min_distance=min_distance,
+            threshold=float(threshold),
+        )
 
+    return sum(1 for t in tracking.tracks if getattr(t, "select", False))
 
 # ---------------------------------------------------------------------------
 # Helper – adaptiver Detect, inter-run Cleanup (ehem. modal Operator)
@@ -176,7 +253,7 @@ def run_detect_adaptive(
         initial_track_names = {t.name for t in tracks}
         len_before = len(tracks)
 
-        # Detect (Legacy-Helper beibehalten)
+        # Detect (Legacy-Helper beibehalten) — ruft intern schon den Context-Guard
         perform_marker_detection(
             clip,
             tracking,
@@ -245,10 +322,16 @@ def run_detect_adaptive(
                     t.select = False
                 for t in cleaned_tracks:
                     t.select = True
-                try:
-                    bpy.ops.clip.delete_track()
-                except Exception:
-                    _remove_tracks_by_name(tracking, {t.name for t in cleaned_tracks})
+                # >>> Kontext-sicherer Operator-Call (NEU)
+                with _ensure_clip_context(context, clip=clip, allow_area_switch=True) as ovr:
+                    if ovr is not None:
+                        try:
+                            bpy.ops.clip.delete_track()
+                        except Exception:
+                            # Fallback auf Datablock-Remove (bereits vorhanden)
+                            _remove_tracks_by_name(tracking, {t.name for t in cleaned_tracks})
+                    else:
+                        _remove_tracks_by_name(tracking, {t.name for t in cleaned_tracks})
 
             # Threshold adaptieren (proportional zur Abweichung vom Ziel)
             safe_adapt = max(adapt, 1)
@@ -270,7 +353,7 @@ def run_detect_adaptive(
         scn["detect_status"] = "success"
         scn["pipeline_do_not_start"] = False
 
-        # Tracking direkt starten
+        # Tracking direkt starten (Helper; ruft selbst Operatoren kontext-sicher)
         try:
             from .bidirectional_track import run_bidirectional_track
             run_bidirectional_track(context)
@@ -293,12 +376,10 @@ def run_detect_adaptive(
         "threshold": float(detection_threshold),
     }
 
-
 # ---------------------------------------------------------------------------
 # Alias für Abwärtskompatibilität
 # ---------------------------------------------------------------------------
 
-# detect.py
 def run_detect_once(context, start_frame=None, **_):
     """
     Shim für alte Aufrufer:
@@ -306,20 +387,15 @@ def run_detect_once(context, start_frame=None, **_):
     - Dann die eigentliche adaptive Detection starten (ohne unbekannte kwargs)
     Rückgabe: {'FINISHED'}|{'CANCELLED'} analog Operator-Verhalten
     """
-    import bpy
     if start_frame is not None:
         try:
             context.scene.frame_current = int(start_frame)
         except Exception:
             pass
 
-    # Falls du perform_marker_detection/run_detect_adaptive hast, hier aufrufen:
     try:
-        # Preferierte interne API – passe an deine Datei an:
-        # return perform_marker_detection(context)          # Variante 1
-        return run_detect_adaptive(context)                 # Variante 2
+        return run_detect_adaptive(context)
     except TypeError:
-        # Fallback: manche Signaturen heißen 'frame' statt 'start_frame'
         try:
             return run_detect_adaptive(context)
         except Exception as ex:
