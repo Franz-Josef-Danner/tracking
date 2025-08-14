@@ -1,3 +1,4 @@
+import bpy
 import json
 
 __all__ = ("jump_to_frame_helper", "run_jump_to_frame")
