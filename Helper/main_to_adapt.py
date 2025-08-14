@@ -3,7 +3,6 @@ import bpy
 from typing import Optional, Tuple, Set, Dict, Any
 from .tracker_settings import apply_tracker_settings
 
-
 __all__ = ("main_to_adapt", "clip_override")
 
 def clip_override(context: bpy.types.Context) -> Optional[Dict[str, Any]]:
@@ -25,11 +24,11 @@ def main_to_adapt(
     factor: int = 4,
     use_override: bool = True,
     call_next: bool = True,
-    invoke_next: bool = True,
+    invoke_next: bool = True,  # beibehalten für API-Kompatibilität; wird nicht verwendet
 ) -> Tuple[bool, int, Optional[Set[str]]]:
     """
     Setzt scene['marker_adapt'] aus scene['marker_basis'] * factor * 0.9.
-    Optional: triggert im Anschluss 'bpy.ops.clip.tracker_settings'.
+    Optional: triggert im Anschluss den nächsten Schritt (apply_tracker_settings).
 
     Returns:
         ok (bool), marker_adapt (int), op_result (set[str] | None)
@@ -39,12 +38,22 @@ def main_to_adapt(
         print("[MainToAdapt][ERROR] Kein gültiger Scene-Kontext.")
         return False, 0, {'CANCELLED'}
 
+    # Faktor robust halten (entspricht altem Operator: min=1)
+    try:
+        factor = int(factor)
+        if factor < 1:
+            factor = 1
+    except Exception:
+        factor = 4
+
+    # marker_basis robust lesen
     try:
         marker_basis = int(scene.get("marker_basis", 25))
     except Exception as e:
         print(f"[MainToAdapt][ERROR] marker_basis nicht lesbar: {e}")
         return False, 0, {'CANCELLED'}
 
+    print(f"[MarkerHelper] basis={marker_basis}, factor={factor}")
     marker_adapt = int(marker_basis * factor * 0.9)
     scene["marker_adapt"] = marker_adapt
     print(f"[MainToAdapt] marker_adapt gesetzt: {marker_adapt} (basis={marker_basis}, factor={factor})")
@@ -52,6 +61,7 @@ def main_to_adapt(
     op_result: Optional[Set[str]] = None
     if call_next:
         try:
+            # Sicherer Override wie im alten Flow; Fallback ohne Override
             override = clip_override(context) if use_override else None
             if override:
                 with context.temp_override(**override):
@@ -59,8 +69,11 @@ def main_to_adapt(
             else:
                 res = apply_tracker_settings(context, log=True)
 
-            op_result = {'FINISHED'} if res.get("status") == "ok" else {'CANCELLED'}
+            status = (res or {}).get("status")
+            op_result = {'FINISHED'} if status == "ok" else {'CANCELLED'}
             print(f"[MainToAdapt] Übergabe an tracker_settings (Helper) → {op_result}")
+            if op_result == {'CANCELLED'}:
+                return False, marker_adapt, op_result
         except Exception as e:
             print(f"[MainToAdapt][ERROR] tracker_settings (Helper) konnte nicht gestartet werden: {e}")
             return False, marker_adapt, {'CANCELLED'}
