@@ -1,13 +1,15 @@
 # Helper/find_low_marker_frame.py
 import bpy
 from .jump_to_frame import run_jump_to_frame           # bereits zu Helper migriert
-from .solve_camera import run_solve_watch_clean  # am Dateianfang
-
+from .solve_camera import run_solve_watch_clean        # Helper-Variante
 
 __all__ = ("run_find_low_marker_frame", "find_low_marker_frame_core")
 
 def find_low_marker_frame_core(clip, *, marker_basis=20, frame_start=None, frame_end=None):
-    """Gibt den ersten Frame < marker_basis zurück oder None."""
+    """
+    Gibt den ersten Frame < marker_basis zurück oder None.
+    Implementierung entspricht der bewährten Zähllogik der alten Version.
+    """
     tracking = clip.tracking
     tracks = tracking.tracks
 
@@ -20,19 +22,28 @@ def find_low_marker_frame_core(clip, *, marker_basis=20, frame_start=None, frame
     for frame in range(frame_start, frame_end + 1):
         count = 0
         for track in tracks:
+            # identisch zur alten, stabilen Routine: Markerexistenz via find_frame
             if track.markers.find_frame(frame):
                 count += 1
+
         print(f"[MarkerCheck] Frame {frame}: {count} aktive Marker")
         if count < marker_basis:
             print(f"[MarkerCheck] → Zu wenige Marker in Frame {frame}")
             return frame
+
+    print("[MarkerCheck] Kein Frame mit zu wenigen Markern gefunden.")
     return None
 
+
 def _get_clip(context):
+    """
+    Robust: zuerst aktiven Clip aus dem CLIP_EDITOR nehmen, sonst erstes MovieClip-Datablock.
+    """
     space = getattr(context, "space_data", None)
     if space and getattr(space, "clip", None):
         return space.clip
     return bpy.data.movieclips[0] if bpy.data.movieclips else None
+
 
 def run_find_low_marker_frame(
     context,
@@ -44,8 +55,14 @@ def run_find_low_marker_frame(
 ):
     """
     Sucht ersten Frame mit weniger als 'marker_basis' Markern (ggf. aus Scene['marker_basis']).
-    Bei Treffer: setzt scene['goto_frame'] und ruft jump_to_frame_helper.
-    Bei keinem Treffer: startet solve_watch_clean.
+    Bei Treffer:
+      - setzt scene['goto_frame']
+      - ruft run_jump_to_frame(context, frame=…)
+    Bei keinem Treffer:
+      - ruft run_solve_watch_clean(context)
+    Rückgabe:
+      - int (Frame) bei Treffer
+      - None, wenn kein Low-Marker-Frame gefunden wurde oder bei Fehler
     """
     clip = _get_clip(context)
     if clip is None:
@@ -54,30 +71,27 @@ def run_find_low_marker_frame(
 
     scene = context.scene
     basis = int(scene.get("marker_basis", marker_basis)) if use_scene_basis else int(marker_basis)
-    fs = None if frame_start < 0 else frame_start
-    fe = None if frame_end < 0 else frame_end
+    fs = None if frame_start < 0 else int(frame_start)
+    fe = None if frame_end < 0 else int(frame_end)
 
     low_frame = find_low_marker_frame_core(clip, marker_basis=basis, frame_start=fs, frame_end=fe)
-    
+
     if low_frame is not None:
         scene["goto_frame"] = int(low_frame)
         print(f"[MarkerCheck] Treffer: Low-Marker-Frame {low_frame}. Übergabe an jump_to_frame (Helper) …")
         try:
-            res = run_jump_to_frame(context, frame=int(low_frame))
-            return low_frame
+            run_jump_to_frame(context, frame=int(low_frame))
+            return int(low_frame)
         except Exception as ex:
             print(f"Error: jump_to_frame (Helper) Exception: {ex}")
             return None
-    else:
-        print("[MarkerCheck] Keine Low-Marker-Frames gefunden. Starte Kamera-Solve (Helper).")
-        try:
-            # Einheitliche Benennung: nutze die Variante, die es bei dir gibt
-            ok = run_solve_watch_clean(context)   # oder: solve_watch_clean(context)
-        except Exception as ex:
-            print(f"Error: Solve-Start (Helper) Exception: {ex}")
-            return None
+
+    # Kein Treffer → Solve starten (Helper)
+    print("[MarkerCheck] Keine Low-Marker-Frames gefunden. Starte Kamera-Solve (Helper).")
+    try:
+        ok = run_solve_watch_clean(context)  # Helper-API
         if not ok:
             print("Error: Solve-Start (Helper) meldete False")
-        return None
-
-
+    except Exception as ex:
+        print(f"Error: Solve-Start (Helper) Exception: {ex}")
+    return None
