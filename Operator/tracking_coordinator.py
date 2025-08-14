@@ -1,33 +1,11 @@
-
-# Operator/tracking_coordinator.py
 import bpy
 import time
 
 from ..Helper.marker_helper_main import marker_helper_main
 from ..Helper.main_to_adapt import main_to_adapt
 from ..Helper.tracker_settings import apply_tracker_settings
-from ..Helper.find_low_marker_frame import run_find_low_marker_frame
-from ..Helper.jump_to_frame import run_jump_to_frame
-from ..Helper.detect import run_detect_once
-
-try:
-    from ..Helper.tracker_settings import apply_tracker_settings
-except Exception:
-    apply_tracker_settings = None
-try:
-    from ..Helper.clean_short_tracks import clean_short_tracks
-except Exception:
-    clean_short_tracks = None
-try:
-    from ..Helper.solve_camera import run_solve_watch_clean
-except Exception:
-    run_solve_watch_clean = None
-
 
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
-    """Orchestrator: determiniert die Tracking-Pipeline via State Machine.
-    States: INIT -> FIND_LOW -> JUMP_DETECT -> TRACK_FWD -> TRACK_BWD -> CLEAN_SHORT -> FIND_LOW -> ... -> SOLVE -> DONE
-    """
     bl_idname = "clip.tracking_coordinator"
     bl_label = "Tracking Orchestrator (Pipeline)"
     bl_options = {'REGISTER', 'UNDO'}
@@ -43,197 +21,205 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         description="Run backward tracking after forward pass",
     )
     auto_clean_short: bpy.props.BoolProperty(
-        name="Auto Clean Short Tracks",
+        name="Auto Clean Short",
         default=True,
-        description="Delete/disable very short tracks after tracking passes",
-    )
-    target_min_markers: bpy.props.IntProperty(
-        name="Min Markers per Frame",
-        default=25,
-        min=1, max=500,
-    )
-    frames_track: bpy.props.IntProperty(
-        name="Frames per Tracking Burst",
-        default=25,
-        min=1, max=500,
+        description="Delete short tracks after bidirectional tracking",
     )
     poll_every: bpy.props.FloatProperty(
-        name="Poll Interval (sec)",
-        default=0.25,
-        min=0.05, max=5.0,
+        name="Poll Every (s)",
+        default=0.05,
+        min=0.01,
+        description="Modal poll period",
     )
 
-    _state = None
-    _last_tick = 0.0
-    _started_op = False
-    _fwd_done = False
-    _bwd_done = False
+    # --- interner State ---
+    _state: str = "INIT"
+    _started_op: bool = False
+    _fwd_done: bool = False
+    _bwd_done: bool = False
 
-    def execute(self, context):
-        self._bootstrap(context)
-        context.window_manager.modal_handler_add(self)
-        return {'RUNNING_MODAL'}
+    def _log(self, msg):
+        print(f"[Coordinator] {msg}")
+
+    def _activate_flag(self, context):
+        context.scene["orchestrator_active"] = True
+
+    def _deactivate_flag(self, context):
+        context.scene["orchestrator_active"] = False
+
+    def _bootstrap(self, context):
+        self._state = "INIT"
+        self._started_op = False
+        self._fwd_done = False
+        self._bwd_done = False
+
+        # Detect attempt counters (NEU)
+        self._detect_attempts = 0
+        self._detect_attempts_max = 8
+
+        # 1) marker-helper (berechnet marker_basis, marker_min/max, adapt etc.)
+        try:
+            ok, adapt_val, op_result = marker_helper_main(context)
+            self._log(f"[MarkerHelper] → main_to_adapt: ok={ok}, adapt={adapt_val}, op_result={op_result}")
+        except Exception as ex:
+            self._log(f"[MarkerHelper] Fehler: {ex}")
+
+        # 2) adapt anwenden
+        try:
+            res = main_to_adapt(context, use_override=True)
+            self._log(f"[MainToAdapt] Übergabe an tracker_settings (Helper) → {res}")
+        except Exception as ex:
+            self._log(f"[MainToAdapt] Fehler: {ex}")
+
+        # 3) Tracker Defaults
+        if self.use_apply_settings:
+            try:
+                apply_tracker_settings(context)
+            except Exception as ex:
+                self._log(f"[TrackerSettings] Fehler beim Anwenden der Defaults: {ex}")
+
+        self._activate_flag(context)
+        self._state = "FIND_LOW"
+
+    @classmethod
+    def poll(cls, context):
+        return context.area and context.area.type == "CLIP_EDITOR"
 
     def invoke(self, context, event):
         self._bootstrap(context)
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(self.poll_every, window=context.window)
         context.window_manager.modal_handler_add(self)
+        self._log("Start")
         return {'RUNNING_MODAL'}
 
-    def _bootstrap(self, context):
-        """Initialisierungen und Helper-Aufrufe vor dem Pipeline-Start."""
-        # 1. Marker-Helper: Ziel- und Grenzwerte berechnen
-        marker_helper_main()
-        # 2. adaptiven Marker-Wert anpassen
-        main_to_adapt(context)
-        # 3. Tracker-Defaults setzen
-        apply_tracker_settings(context)
-        # scene["marker_basis"] & frames_track werden wie gehabt gesetzt
-        context.scene["marker_basis"] = int(self.target_min_markers)
-        context.scene["frames_track"] = int(self.frames_track)
-        # Flags für orchestrator_active etc. hier setzen
-        context.scene["orchestrator_active"] = True
-        # Initialen Zustand festlegen
-        self._state = "FIND_LOW"
-
-    def _deactivate_flag(self, context):
-        try:
-            context.scene["orchestrator_active"] = False
-        except Exception:
-            pass
+    def execute(self, context):
+        return self.invoke(context, None)
 
     def modal(self, context, event):
-        if event.type in {'ESC'}:
-            self._state = "DONE"
-            self._deactivate_flag(context)
-            self.report({'INFO'}, "Pipeline abgebrochen.")
-            return {'CANCELLED'}
-
-        now = time.time()
-        if self._last_tick == 0.0 or (now - self._last_tick) >= float(self.poll_every):
-            self._last_tick = now
-        else:
+        if event.type != 'TIMER':
             return {'PASS_THROUGH'}
 
-        try:
-            if self._state == "INIT":
-                if self.use_apply_settings and apply_tracker_settings:
-                    try:
-                        apply_tracker_settings(context)
-                        self.report({'INFO'}, "[SETTINGS] tracker defaults applied")
-                    except Exception as ex:
-                        self.report({'WARNING'}, f"[SETTINGS] failed: {ex}")
-                self._state = "FIND_LOW"
-                return {'RUNNING_MODAL'}
+        # Safety: Abbruch
+        if not context.area or context.area.type != "CLIP_EDITOR":
+            self._deactivate_flag(context)
+            self._state = "DONE"
+            return {'CANCELLED'}
 
-            if self._state == "FIND_LOW":
-                # State: FIND_LOW
-                low = run_find_low_marker_frame(context)
-                low_frame = low.get("frame") if isinstance(low, dict) else low
-                
-                # Schutz: gibt es überhaupt irgendeinen Track?
-                clip = getattr(getattr(context, "space_data", None), "clip", None)
-                has_any_tracks = bool(clip and clip.tracking and clip.tracking.tracks and len(clip.tracking.tracks) > 0)
-                
-                if low_frame is None:
-                    if has_any_tracks:
-                        # Keine Low-Frames mehr, aber es existieren Tracks -> jetzt darf SOLVE kommen
-                        self._state = "SOLVE"
-                        return {'RUNNING_MODAL'}
-                    else:
-                        # Es existieren noch keine Tracks -> ZWINGEND erst eine Detection fahren
-                        start_f = getattr(context.scene, "frame_start", 1) or 1
-                        context.scene["goto_frame"] = int(start_f)
-                        self.report({'INFO'}, f"[FIND_LOW] keine Marker vorhanden → initiale Detection auf Frame {start_f}")
-                        self._state = "JUMP_DETECT"
-                        return {'RUNNING_MODAL'}
-                
-                # Normalfall: Low-Frame vorhanden → Detektion dort
-                context.scene["goto_frame"] = int(low_frame)
-                self.report({'INFO'}, f"[FIND_LOW] next low-marker frame: {low_frame}")
+        # --- State Machine ---
+        if self._state == "INIT":
+            self._state = "FIND_LOW"
+            return {'RUNNING_MODAL'}
+
+        elif self._state == "FIND_LOW":
+            try:
+                from ..Helper.find_low_marker_frame import run_find_low_marker_frame
+                res = run_find_low_marker_frame(context)
+            except Exception as ex:
+                self._log(f"[FindLow] Fehler: {ex}")
+                res = {"status": "FAILED"}
+
+            st = (res or {}).get("status", "FAILED")
+            if st == "FOUND":
+                context.scene["goto_frame"] = int(res.get("frame", context.scene.frame_current))
                 self._state = "JUMP_DETECT"
-                return {'RUNNING_MODAL'}
+            elif st == "NONE":
+                self._state = "SOLVE"
+            else:
+                # Im Fehlerfall trotzdem versuchen weiterzumachen
+                self._state = "JUMP_DETECT"
+            return {'RUNNING_MODAL'}
 
+        elif self._state == "JUMP_DETECT":
+            goto = int(context.scene.get("goto_frame", context.scene.frame_current))
+            # zum Ziel-Frame springen
+            try:
+                from ..Helper.jump_to_frame import run_jump_to_frame
+                run_jump_to_frame(context, frame=goto)
+            except Exception:
+                pass
 
-            if self._state == "JUMP_DETECT":
-                run_jump_to_frame(context, frame=context.scene.get("goto_frame", None))
-                try:
-                    run_detect_once(context, start_frame=int(context.scene.get("goto_frame", 1)))
-                except Exception:
-                    pass
+            # eine Detect-Runde ausführen (Handshake)
+            try:
+                from ..Helper.detect import run_detect_once
+                res = run_detect_once(context, start_frame=goto)
+            except Exception as ex:
+                res = {"status": "FAILED", "reason": f"exception:{ex}"}
+
+            st = res.get("status", "FAILED")
+
+            if st == "READY":
                 self._started_op = False
                 self._fwd_done = False
                 self._bwd_done = False
+                self._detect_attempts = 0
                 self._state = "TRACK_FWD"
                 return {'RUNNING_MODAL'}
 
-            if self._state == "TRACK_FWD":
-                if not self._started_op:
-                    try:
-                        bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
-                        self.report({'INFO'}, "[TRACK_FWD] started (INVOKE_DEFAULT)")
-                        self._started_op = True
-                        return {'RUNNING_MODAL'}
-                    except Exception as ex:
-                        self.report({'WARNING'}, f"[TRACK_FWD] start failed: {ex}")
-                        self._fwd_done = True
-                if self._fwd_done:
-                    self._state = "TRACK_BWD" if self.do_backward else "CLEAN_SHORT"
-                    self._started_op = False
-                    return {'RUNNING_MODAL'}
-                self._fwd_done = True
+            if st == "RUNNING":
+                self._detect_attempts += 1
+                if self._detect_attempts >= self._detect_attempts_max:
+                    self._log("[Detect] Timebox erreicht – weiter mit TRACK_FWD.")
+                    self._detect_attempts = 0
+                    self._state = "TRACK_FWD"
                 return {'RUNNING_MODAL'}
 
-            if self._state == "TRACK_BWD":
-                if not self._started_op:
-                    try:
-                        bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
-                        self.report({'INFO'}, "[TRACK_BWD] started (INVOKE_DEFAULT)")
-                        self._started_op = True
-                        return {'RUNNING_MODAL'}
-                    except Exception as ex:
-                        self.report({'WARNING'}, f"[TRACK_BWD] start failed: {ex}")
-                        self._bwd_done = True
-                if self._bwd_done:
-                    self._state = "CLEAN_SHORT"
-                    self._started_op = False
-                    return {'RUNNING_MODAL'}
-                self._bwd_done = True
-                return {'RUNNING_MODAL'}
+            # FAILED-Fallback
+            self._log(f"[Detect] FAILED – {res.get('reason','')} → Fallback TRACK_FWD")
+            self._detect_attempts = 0
+            self._state = "TRACK_FWD"
+            return {'RUNNING_MODAL'}
 
-            if self._state == "CLEAN_SHORT":
-                if self.auto_clean_short and clean_short_tracks:
-                    try:
-                        clean_short_tracks(context, action='DELETE_TRACK')
-                        self.report({'INFO'}, "[CLEAN_SHORT] short tracks removed")
-                    except Exception as ex:
-                        self.report({'WARNING'}, f"[CLEAN_SHORT] failed: {ex}")
-                self._state = "FIND_LOW"
-                return {'RUNNING_MODAL'}
+        elif self._state == "TRACK_FWD":
+            try:
+                bpy.ops.clip.track_markers(backwards=False)
+            except Exception as ex:
+                self._log(f"[TrackFwd] Fehler: {ex}")
+            self._fwd_done = True
+            self._state = "TRACK_BWD" if self.do_backward else "CLEAN_SHORT"
+            return {'RUNNING_MODAL'}
 
-            if self._state == "SOLVE":
-                if run_solve_watch_clean:
-                    try:
-                        ok = run_solve_watch_clean(context)
-                        self.report({'INFO'}, f"[SOLVE] finished (ok={ok})")
-                    except Exception as ex:
-                        self.report({'WARNING'}, f"[SOLVE] failed: {ex}")
-                self._state = "DONE"
-                return {'RUNNING_MODAL'}
+        elif self._state == "TRACK_BWD":
+            if self.do_backward:
+                try:
+                    bpy.ops.clip.track_markers(backwards=True)
+                except Exception as ex:
+                    self._log(f"[TrackBwd] Fehler: {ex}")
+            self._bwd_done = True
+            self._state = "CLEAN_SHORT"
+            return {'RUNNING_MODAL'}
 
-            if self._state == "DONE":
-                self._deactivate_flag(context)
-                return {'FINISHED'}
+        elif self._state == "CLEAN_SHORT":
+            if self.auto_clean_short:
+                try:
+                    from ..Helper.clean_short_tracks import clean_short_tracks
+                    clean_short_tracks(context, action='DELETE_TRACK')
+                except Exception as ex:
+                    self._log(f"[CleanShort] Fehler: {ex}")
+            self._state = "FIND_LOW"
+            return {'RUNNING_MODAL'}
 
-            self.report({'WARNING'}, f"Unknown state: {self._state}")
+        elif self._state == "SOLVE":
+            try:
+                from ..Helper.solve_camera import run_solve_watch_clean
+                run_solve_watch_clean(context)
+            except Exception as ex:
+                self._log(f"[Solve] Fehler: {ex}")
             self._deactivate_flag(context)
             self._state = "DONE"
-            return {'CANCELLED'}
+            return {'FINISHED'}
 
-        except Exception as ex:
-            self.report({'ERROR'}, f"Pipeline error in state {self._state}: {ex}")
+        elif self._state == "DONE":
+            try:
+                wm = context.window_manager
+                wm.event_timer_remove(self._timer)
+            except Exception:
+                pass
             self._deactivate_flag(context)
-            self._state = "DONE"
-            return {'CANCELLED'}
+            return {'FINISHED'}
+
+        # Fallback
+        return {'RUNNING_MODAL'}
 
 
 classes = (CLIP_OT_tracking_coordinator,)
