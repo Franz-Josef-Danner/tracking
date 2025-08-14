@@ -3,14 +3,6 @@ import bpy
 from .marker_helper_main import CLIP_OT_marker_helper_main
 from .main import CLIP_OT_main
 
-try:
-    from .clean_short_tracks import CLIP_OT_clean_short_tracks
-    _HAS_CLEAN_SHORT = True
-except Exception as e:
-    print(f"[WARN] clean_short_tracks nicht geladen: {e}")
-    _HAS_CLEAN_SHORT = False
-
-
 classes = (
     CLIP_OT_marker_helper_main,
     CLIP_OT_main,
