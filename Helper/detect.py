@@ -1,8 +1,15 @@
+
 import bpy
 import math
 import time
 
-__all__ = ["perform_marker_detection", "CLIP_OT_detect", "CLIP_OT_detect_once"]
+__all__ = [
+    "perform_marker_detection",
+    "run_detect_adaptive",
+    "run_detect_once",
+    "CLIP_OT_detect",
+    "CLIP_OT_detect_once",
+]
 
 # ---------------------------------------------------------------------------
 # Utilities
@@ -35,6 +42,19 @@ def _collect_existing_positions(tracking, frame, w, h):
             out.append((m.co[0] * w, m.co[1] * h))
     return out
 
+def _resolve_clip(context):
+    space = getattr(context, "space_data", None)
+    clip = getattr(space, "clip", None) if space else None
+    if clip:
+        return clip
+    # Fallback: first movieclip
+    try:
+        for c in bpy.data.movieclips:
+            return c
+    except Exception:
+        pass
+    return None
+
 # ---------------------------------------------------------------------------
 # Legacy-Helper (API-kompatibel halten)
 # ---------------------------------------------------------------------------
@@ -44,34 +64,198 @@ def perform_marker_detection(clip, tracking, threshold, margin_base, min_distanc
     Führt detect_features mit skalierten Parametern aus
     und liefert die Anzahl selektierter Tracks zurück (Legacy-Kontrakt).
     """
-    factor = math.log10(max(threshold, 1e-6) * 1e6) / 6.0
+    # einfache Skalierung (stabil gegenüber sehr kleinen Thresholds)
+    factor = max(0.25, min(4.0, float(threshold) * 10.0))
     margin = max(1, int(margin_base * factor))
     min_distance = max(1, int(min_distance_base * factor))
 
-    bpy.ops.clip.detect_features(
-        margin=margin,
-        min_distance=min_distance,
-        threshold=float(threshold),
-    )
+    try:
+        bpy.ops.clip.detect_features(
+            margin=int(margin),
+            min_distance=int(min_distance),
+            threshold=float(threshold),
+        )
+    except Exception as ex:
+        # im Fehlerfall keine Selektion
+        print(f"[Detect] detect_features exception: {ex}")
+        return 0
+
     return sum(1 for t in tracking.tracks if getattr(t, "select", False))
 
+# ---------------------------------------------------------------------------
+# Nicht-modale, einmalige Detection – Funktions-API (für Helper-Aufrufer)
+# ---------------------------------------------------------------------------
+
+def _compute_bounds(scene, image_width, detection_threshold, marker_adapt, min_marker, max_marker):
+    # Threshold
+    if detection_threshold is None or detection_threshold < 0.0:
+        detection_threshold = float(
+            scene.get("last_detection_threshold",
+                      float(getattr(getattr(scene, "tracking_settings", None), "default_correlation_min", 0.75)))
+        )
+    detection_threshold = float(max(1e-4, min(1.0, detection_threshold)))
+
+    # adapt / bounds
+    if marker_adapt is None or marker_adapt < 0:
+        marker_adapt = int(scene.get("marker_adapt", int(scene.get("marker_basis", 20))))
+    marker_adapt = int(max(1, marker_adapt))
+    basis_for_bounds = int(max(1, int(marker_adapt * 1.1)))
+
+    if min_marker is None or min_marker < 0:
+        min_marker = int(max(1, int(basis_for_bounds * 0.9)))
+    if max_marker is None or max_marker < 0:
+        max_marker = int(max(2, int(basis_for_bounds * 1.1)))
+
+    # bases
+    margin_base = max(1, int(image_width * 0.025))
+    min_distance_base = max(1, int(image_width * 0.05))
+
+    return detection_threshold, marker_adapt, min_marker, max_marker, margin_base, min_distance_base
+
+def run_detect_once(context, *, start_frame=None, detection_threshold=-1.0,
+                    marker_adapt=-1, min_marker=-1, max_marker=-1,
+                    margin_base=-1, min_distance_base=-1,
+                    close_dist_rel=0.01, handoff_to_pipeline=False):
+    """
+    Führt einen synchronen, einfachen Detect-Pass aus und liefert ein Ergebnis-Dict.
+    KEINE nachgelagerte Pipeline-Steuerung. Side-Effects minimiert.
+    """
+    clip = _resolve_clip(context)
+    if clip is None:
+        return {"status": "failed", "reason": "no_clip"}
+
+    tracking = clip.tracking
+    scene = context.scene
+    image_width = int(clip.size[0])
+
+    # Parameter vorbereiten
+    thr, adapt, mn, mx, mb, mdb = _compute_bounds(scene, image_width, detection_threshold, marker_adapt, min_marker, max_marker)
+    if margin_base is not None and margin_base >= 0:
+        mb = int(margin_base)
+    if min_distance_base is not None and min_distance_base >= 0:
+        mdb = int(min_distance_base)
+
+    # Frame setzen
+    if start_frame is not None:
+        try:
+            scene.frame_set(int(start_frame))
+        except Exception:
+            pass
+
+    frame = int(scene.frame_current)
+    w, h = clip.size
+
+    # Vorherige neue Tracks entfernen (inter-run cleanup)
+    prev_names = set(scene.get("detect_prev_names", []) or [])
+    if prev_names:
+        _remove_tracks_by_name(tracking, prev_names)
+        scene["detect_prev_names"] = []
+
+    # Snapshot vor Detect
+    initial_names = {t.name for t in tracking.tracks}
+    existing_positions = _collect_existing_positions(tracking, frame, w, h)
+
+    # Detect
+    _deselect_all(tracking)
+    count_sel = perform_marker_detection(clip, tracking, thr, mb, mdb)
+
+    # Depsgraph "anticken"
+    try:
+        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+    except Exception:
+        pass
+
+    # Neue Tracks ermitteln
+    tracks = tracking.tracks
+    new_tracks = [t for t in tracks if t.name not in initial_names]
+
+    # Near-Duplicate-Filter
+    rel = float(close_dist_rel) if (close_dist_rel is not None and close_dist_rel > 0.0) else 0.01
+    distance_px = max(1, int(w * rel))
+    thr2 = float(distance_px * distance_px)
+    close_tracks = []
+    if existing_positions and new_tracks:
+        for tr in new_tracks:
+            m = tr.markers.find_frame(frame, exact=True)
+            if m and not m.mute:
+                x = m.co[0] * w; y = m.co[1] * h
+                for ex, ey in existing_positions:
+                    dx = x - ex; dy = y - ey
+                    if (dx*dx + dy*dy) < thr2:
+                        close_tracks.append(tr)
+                        break
+
+    # nahe/doppelte Tracks löschen
+    if close_tracks:
+        for t in tracks:
+            t.select = False
+        for t in close_tracks:
+            t.select = True
+        try:
+            bpy.ops.clip.delete_track()
+        except Exception:
+            _remove_tracks_by_name(tracking, {t.name for t in close_tracks})
+
+    # finale neue Tracks
+    close_set = set(close_tracks)
+    cleaned_tracks = [t for t in new_tracks if t not in close_set]
+    anzahl_neu = len(cleaned_tracks)
+
+    if anzahl_neu < int(mn) or anzahl_neu > int(mx):
+        # neu erzeugte wieder entfernen
+        if cleaned_tracks:
+            for t in tracks:
+                t.select = False
+            for t in cleaned_tracks:
+                t.select = True
+            try:
+                bpy.ops.clip.delete_track()
+            except Exception:
+                _remove_tracks_by_name(tracking, {t.name for t in cleaned_tracks})
+
+        # threshold anpassen und zurückmelden (einmaliger Versuch)
+        safe_adapt = max(int(adapt), 1)
+        new_thr = max(float(thr) * ((anzahl_neu + 0.1) / float(safe_adapt)), 1e-4)
+        scene["last_detection_threshold"] = float(new_thr)
+        return {"status": "retry", "new_tracks": anzahl_neu, "threshold": float(new_thr)}
+
+    # Erfolg – Namen merken für inter-run cleanup
+    try:
+        scene["detect_prev_names"] = [t.name for t in cleaned_tracks]
+    except Exception:
+        scene["detect_prev_names"] = []
+
+    # bewusst keine Pipeline-Flags setzen
+    scene["last_detection_threshold"] = float(thr)
+    return {"status": "success", "new_tracks": anzahl_neu, "threshold": float(thr)}
+
+def run_detect_adaptive(context, **kwargs):
+    """Wiederholt run_detect_once() bis Erfolg oder max. Versuche."""
+    max_attempts = int(kwargs.pop("max_attempts", 10))
+    attempt = 0
+    last = None
+    while attempt < max_attempts:
+        last = run_detect_once(context, **kwargs)
+        if last.get("status") == "success":
+            return last
+        attempt += 1
+        if last.get("status") == "retry":
+            lt = last.get("threshold")
+            if lt is not None:
+                kwargs["detection_threshold"] = float(lt)
+    return last if last else {"status": "failed", "reason": "no_attempt"}
 
 # ---------------------------------------------------------------------------
-# adaptiver Detect, inter-run Cleanup
+# Modaler Operator (kompatibel zu alten Call-Sites) – optional
 # ---------------------------------------------------------------------------
 
-def detect():
+class CLIP_OT_detect(bpy.types.Operator):
+    """Modaler Detect-Zyklus mit interner Threshold-Anpassung und inter-run Cleanup"""
     bl_idname = "clip.detect"
     bl_label = "Place Marker (Adaptive)"
     bl_description = "Modaler Detect-Zyklus mit interner Threshold-Anpassung und inter-run Cleanup"
+    bl_options = {'REGISTER', 'UNDO'}
 
-    _timer = None
-    # Arbeitszustände
-    _STATE_DETECT = "DETECT"
-    _STATE_WAIT   = "WAIT"
-    _STATE_PROC   = "PROCESS"
-
-    # --- optionale Aufruf-Argumente (kompatibel zu älteren Call-Sites) ---
     detection_threshold: bpy.props.FloatProperty(
         name="Detection Threshold (opt.)",
         description="Optionaler Start-Threshold. <0 nutzt Scene/Settings",
@@ -118,6 +302,11 @@ def detect():
         default=False
     )
 
+    _timer = None
+    _STATE_DETECT = "DETECT"
+    _STATE_WAIT = "WAIT"
+    _STATE_PROC = "PROCESS"
+
     @classmethod
     def poll(cls, context):
         return (
@@ -130,7 +319,7 @@ def detect():
         scene = context.scene
         scene["detect_status"] = "pending"
 
-        # Guard: kein paralleler Pipeline-Run
+        # Guard: kein paralleler Pipeline-Run (optional)
         if scene.get("tracking_pipeline_active", False):
             scene["detect_status"] = "failed"
             return {'CANCELLED'}
@@ -161,7 +350,7 @@ def detect():
         self.marker_adapt = adapt
 
         basis = int(scene.get("marker_basis", max(adapt, 20)))
-        basis_for_bounds = int(adapt * 1.1) if adapt > 0 else int(basis)
+        basis_for_bounds = int(self.marker_adapt * 1.1) if self.marker_adapt > 0 else int(basis)
 
         if self.min_marker >= 0:
             self.min_marker = int(self.min_marker)
@@ -178,9 +367,9 @@ def detect():
         self.min_distance_base = self.min_distance_base if self.min_distance_base >= 0 else max(1, int(image_width * 0.05))
 
         # --- Frame optional setzen ---
-        if self.frame > 0:
+        if self.frame and self.frame > 0:
             try:
-                scene.frame_set(self.frame)
+                scene.frame_set(int(self.frame))
             except Exception:
                 pass
 
@@ -199,7 +388,7 @@ def detect():
 
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.01, window=context.window)
-        wm.modal_handler_add(self)
+        context.window_manager.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
@@ -223,7 +412,7 @@ def detect():
             self.initial_track_names = {t.name for t in tracks}
             self._len_before = len(tracks)
 
-            # Detect (Legacy-Helper beibehalten)
+            # Detect
             perform_marker_detection(
                 self.clip,
                 self.tracking,
@@ -232,8 +421,11 @@ def detect():
                 int(self.min_distance_base),
             )
 
-            # Redraw forcieren, damit RNA/Depsgraph neue Tracks liefern
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            # Redraw forcieren
+            try:
+                bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            except Exception:
+                pass
 
             # Weiter in WAIT
             self.state = self._STATE_WAIT
@@ -241,7 +433,6 @@ def detect():
 
         if self.state == self._STATE_WAIT:
             tracks = self.tracking.tracks
-            # Sobald sich die Track-Anzahl ändert, weiter
             if len(tracks) != self._len_before:
                 current_names = {t.name for t in tracks}
                 if current_names != self.initial_track_names:
@@ -313,7 +504,8 @@ def detect():
                 self.attempt += 1
                 if self.attempt >= self.max_attempts:
                     scene["detect_status"] = "failed"
-                    context.window_manager.event_timer_remove(self._timer)
+                    if self._timer is not None:
+                        context.window_manager.event_timer_remove(self._timer)
                     return {'FINISHED'}
 
                 # Nächster Versuch
@@ -328,13 +520,14 @@ def detect():
 
             # --- Handoff steuern: Default = KEIN Pipeline-Start ---
             if self.handoff_to_pipeline:
-                scene["detect_status"] = "success"            # altes Verhalten: erlaubt Downstream/Pipeline
+                scene["detect_status"] = "success"
                 scene["pipeline_do_not_start"] = False
             else:
-                scene["detect_status"] = "standalone_success" # bewusst kein Trigger-Keyword
-                scene["pipeline_do_not_start"] = True         # harte Bremse für Main
+                scene["detect_status"] = "standalone_success"
+                scene["pipeline_do_not_start"] = True
 
-            context.window_manager.event_timer_remove(self._timer)
+            if self._timer is not None:
+                context.window_manager.event_timer_remove(self._timer)
             return {'FINISHED'}
 
         return {'PASS_THROUGH'}
@@ -342,11 +535,6 @@ def detect():
     def cancel(self, context):
         if self._timer is not None:
             context.window_manager.event_timer_remove(self._timer)
-
-
-# ---------------------------------------------------------------------------
-# Alias für Abwärtskompatibilität: erwarteter Name + erwarteter bl_idname
-# ---------------------------------------------------------------------------
 
 class CLIP_OT_detect_once(CLIP_OT_detect):
     """Alias von CLIP_OT_detect – identische Implementierung, anderer Name/ID."""
