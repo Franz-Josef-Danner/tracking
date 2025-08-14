@@ -75,11 +75,12 @@ def _ensure_clip_context(ctx, clip=None, *, allow_area_switch=True):
     """
     win = getattr(ctx, "window", None)
     area, region = _find_clip_area(win)
-    # Fallback: wenn keine CLIP_EDITOR-Area vorhanden und erlaubt, versuche Umschalten
+
     switched = False
+    old_type = None
     if area is None and allow_area_switch and win and getattr(win, "screen", None):
         try:
-            # nehme erste Area und schalte auf CLIP_EDITOR
+            # erste Area temporär auf CLIP_EDITOR schalten
             area = win.screen.areas[0]
             old_type = area.type
             area.type = "CLIP_EDITOR"
@@ -108,10 +109,9 @@ def _ensure_clip_context(ctx, clip=None, *, allow_area_switch=True):
         else:
             yield
     finally:
-        # Zurückschalten, wenn wir die Area temporär umgestellt haben
         if switched:
             try:
-                area.type = old_type  # noqa: F821 (nur gesetzt, wenn switched True)
+                area.type = old_type
             except Exception:
                 pass
 
@@ -142,7 +142,7 @@ def perform_marker_detection(clip, tracking, threshold, margin_base, min_distanc
     return sum(1 for t in tracking.tracks if getattr(t, "select", False))
 
 # ---------------------------------------------------------------------------
-# Parameter-Aufbereitung (spiegelt Operator-Logik)
+# Parameter-Aufbereitung (Parität zum Operator)
 # ---------------------------------------------------------------------------
 
 def _compute_bounds(context, clip, detection_threshold, marker_adapt, min_marker, max_marker):
@@ -172,12 +172,12 @@ def _compute_bounds(context, clip, detection_threshold, marker_adapt, min_marker
     if min_marker is not None and min_marker >= 0:
         mn = int(min_marker)
     else:
-        mn = int(max(1, int(basis_for_bounds * 0.9)))
+        mn = int(basis_for_bounds * 0.9)
 
     if max_marker is not None and max_marker >= 0:
         mx = int(max_marker)
     else:
-        mx = int(max(2, int(basis_for_bounds * 1.1)))
+        mx = int(basis_for_bounds * 1.1)
 
     # Bases für margin/min_distance
     margin_base = max(1, int(image_width * 0.025))
@@ -186,7 +186,7 @@ def _compute_bounds(context, clip, detection_threshold, marker_adapt, min_marker
     return thr, adapt, mn, mx, margin_base, min_distance_base
 
 # ---------------------------------------------------------------------------
-# Nicht-modale Detection – Funktions-API (für Helper-Aufrufer)
+# Nicht-modale Detection – Funktions-API (1:1 Verhalten zum Operator)
 # ---------------------------------------------------------------------------
 
 def run_detect_once(
@@ -200,13 +200,21 @@ def run_detect_once(
     margin_base=-1,
     min_distance_base=-1,
     close_dist_rel=0.01,
-    handoff_to_pipeline=False,   # bewusst ohne Seiteneffekte genutzt
+    handoff_to_pipeline=False,   # analog Operator: optionaler Pipeline-Handoff
     use_override=True,
 ):
     """
-    Führt einen synchronen Detect-Pass aus und liefert ein Ergebnis-Dict:
-      {"status": "READY"/"RUNNING"/"FAILED", "new_tracks": int, "threshold": float, "frame": int}
-    Funktionalitätsparität zu deiner Operator-Variante – ohne Modalität.
+    Führt einen synchronen Detect-Pass aus und liefert:
+      {"status": "READY"/"RUNNING"/"FAILED",
+       "new_tracks": int,
+       "threshold": float,
+       "frame": int}
+
+    Parität zum Operator:
+    - inter-run Cleanup via scene['detect_prev_names']
+    - adaptive Threshold-Anpassung proportional zur Abweichung vom adapt-Ziel
+    - near-duplicate Filter relativ zur Bildbreite
+    - optionaler Pipeline-Handoff (detect_status/pipeline_do_not_start)
     """
     clip = _resolve_clip(context)
     if clip is None:
@@ -231,7 +239,7 @@ def run_detect_once(
 
     frame = int(scene.frame_current)
 
-    # Inter-run Cleanup (vom vorigen Run)
+    # Cleanup der Tracks aus dem vorigen Run
     prev_names = set(scene.get("detect_prev_names", []) or [])
     if prev_names:
         _remove_tracks_by_name(tracking, prev_names)
@@ -246,17 +254,16 @@ def run_detect_once(
     with _ensure_clip_context(context, clip=clip, allow_area_switch=use_override):
         perform_marker_detection(clip, tracking, float(thr), int(mb), int(mdb))
 
-        # Depsgraph/RNA updaten, damit neue Tracks sichtbar sind
+        # RNA/Depsgraph-Update anstoßen
         try:
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
         except Exception:
             pass
 
-        # Neue Tracks ermitteln
         tracks = tracking.tracks
         new_tracks = [t for t in tracks if t.name not in initial_names]
 
-        # Near-Duplicate-Filter (relativer Abstand zur Bildbreite)
+        # Near-Duplicate-Filter (relativer Abstand)
         rel = float(close_dist_rel) if (close_dist_rel is not None and close_dist_rel > 0.0) else 0.01
         distance_px = max(1, int(w * rel))
         thr2 = float(distance_px * distance_px)
@@ -306,6 +313,7 @@ def run_detect_once(
             safe_adapt = max(int(adapt), 1)
             new_thr = max(float(thr) * ((anzahl_neu + 0.1) / float(safe_adapt)), 1e-4)
             scene["last_detection_threshold"] = float(new_thr)
+            # keine Status-Flags setzen – entspricht Operator-Zwischenstand
             return {"status": "RUNNING", "new_tracks": anzahl_neu, "threshold": float(new_thr), "frame": frame}
 
         # Erfolg – Namen für inter-run Cleanup merken
@@ -314,8 +322,17 @@ def run_detect_once(
         except Exception:
             scene["detect_prev_names"] = []
 
-    # bewusst keine Pipeline-Flags setzen
+    # Erfolg: Threshold persistieren wie im Operator
     scene["last_detection_threshold"] = float(thr)
+
+    # Optionaler Handoff (Parität zum Operator)
+    if handoff_to_pipeline:
+        scene["detect_status"] = "success"
+        scene["pipeline_do_not_start"] = False
+    else:
+        scene["detect_status"] = "standalone_success"
+        scene["pipeline_do_not_start"] = True
+
     return {"status": "READY", "new_tracks": anzahl_neu, "threshold": float(thr), "frame": frame}
 
 def run_detect_adaptive(context, **kwargs):
@@ -323,7 +340,7 @@ def run_detect_adaptive(context, **kwargs):
     Wiederholt run_detect_once() bis Erfolg oder max_attempts.
     Rückgabe ist das Ergebnis von run_detect_once().
     """
-    max_attempts = int(kwargs.pop("max_attempts", 10))
+    max_attempts = int(kwargs.pop("max_attempts", 20))
     attempt = 0
     last = None
     while attempt < max_attempts:
