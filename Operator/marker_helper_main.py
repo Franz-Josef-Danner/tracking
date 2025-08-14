@@ -20,8 +20,7 @@ class CLIP_OT_marker_helper_main(Operator):
 
     @classmethod
     def poll(cls, context):
-        sd = getattr(context, "space_data", None)
-        return bool(sd and getattr(sd, "clip", None))
+        return True
 
     def execute(self, context):
         scene = context.scene
