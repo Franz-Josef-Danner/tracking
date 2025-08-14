@@ -5,7 +5,7 @@ from typing import Optional, Tuple, Set, Dict, Any
 __all__ = ("main_to_adapt", "clip_override")
 
 def clip_override(context: bpy.types.Context) -> Optional[Dict[str, Any]]:
-    """Sicheren CLIP_EDITOR-Override bereitstellen (oder None)."""
+    """Sicherer CLIP_EDITOR-Override (oder None)."""
     win = getattr(context, "window", None)
     if not win or not getattr(win, "screen", None):
         return None
@@ -22,15 +22,12 @@ def main_to_adapt(
     *,
     factor: int = 4,
     use_override: bool = True,
-    call_next: bool = True,
-    invoke_next: bool = True,  # beibehalten für API-Kompatibilität; wird nicht verwendet
+    call_next: bool = False,
+    invoke_next: bool = False,  # beibehalten für API-Kompatibilität; wird nicht verwendet
 ) -> Tuple[bool, int, Optional[Set[str]]]:
     """
     Setzt scene['marker_adapt'] aus scene['marker_basis'] * factor * 0.9.
-    Optional: triggert im Anschluss den nächsten Schritt (apply_tracker_settings).
-
-    Returns:
-        ok (bool), marker_adapt (int), op_result (set[str] | None)
+    Rein passiv, keine Folge-Schritte. Gibt (ok, marker_adapt, op_result) zurück.
     """
     scene = getattr(context, "scene", None)
     if scene is None:
@@ -57,4 +54,6 @@ def main_to_adapt(
     scene["marker_adapt"] = marker_adapt
     print(f"[MainToAdapt] marker_adapt gesetzt: {marker_adapt} (basis={marker_basis}, factor={factor})")
 
+    # Passiver Rückgabewert für Aufrufer-Kompatibilität
+    op_result: Set[str] = {'FINISHED'}
     return True, marker_adapt, op_result
