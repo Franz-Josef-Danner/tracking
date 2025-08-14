@@ -1,6 +1,6 @@
 # Helper/find_low_marker_frame.py
 import bpy
-from .jump_to_frame import run_jump_to_frame           # bereits zu Helper migriert
+from .jump_to_frame import jump_to_frame_helper           # bereits zu Helper migriert
 from .solve_camera import run_solve_watch_clean  # am Dateianfang
 
 
