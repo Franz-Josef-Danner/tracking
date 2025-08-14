@@ -69,22 +69,42 @@ def jump_to_frame_helper(context, target_frame: int | None = None):
 
     # Playhead setzen + DETECT auslösen
     ovr = _clip_override(context)
+
+    # Sicherstellen, dass ein Clip im Kontext hängt
+    space = getattr(context, "space_data", None)
+    clip = getattr(space, "clip", None) if space else None
+    if clip is None:
+        try:
+            clip = next(iter(bpy.data.movieclips))
+        except StopIteration:
+            print("[GotoFrame] Kein MovieClip im Blendfile vorhanden – Abbruch.")
+            return {'CANCELLED'}
+
+        # Clip in den CLIP_EDITOR hängen (falls UI-Kontext vorhanden)
+        if ovr:
+            try:
+                with context.temp_override(**ovr):
+                    ovr['space_data'].clip = clip
+                    try:
+                        ovr['space_data'].mode = 'TRACKING'
+                    except Exception:
+                        pass
+                print(f"[GotoFrame] Fallback-Clip gesetzt: {clip.name}")
+            except Exception as ex:
+                print(f"[GotoFrame] Konnte Fallback-Clip nicht im UI setzen: {ex}")
+
+    # Detect im (falls möglich) UI-Override starten, damit detect den Clip sieht
     try:
-        # Lazy-Import bricht den Kreis detect ↔ jump_to_frame
         from .detect import run_detect_once
-        res = run_detect_once(context, start_frame=target)
+        if ovr:
+            with context.temp_override(**ovr):
+                res = run_detect_once(context, start_frame=target)
+        else:
+            res = run_detect_once(context, start_frame=target)
         print(f"[Jump] detect_once Result: {res}")
         return {'FINISHED'}
-
     except Exception as ex:
         msg = f"Übergabe an detect fehlgeschlagen: {ex}"
         print(f"Error: {msg}")
         return {'CANCELLED'}
 
-def run_jump_to_frame(context, frame: int | None = None):
-    """
-    Thin-Wrapper für Kompatibilität mit bestehender Aufrufstelle.
-    Vorher: bpy.ops.clip.jump_to_frame('EXEC_DEFAULT', target_frame=…)
-    Jetzt:  run_jump_to_frame(context, frame=…)
-    """
-    return jump_to_frame_helper(context, target_frame=frame)
