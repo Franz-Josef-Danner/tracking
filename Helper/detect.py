@@ -60,7 +60,7 @@ def perform_marker_detection(clip, tracking, threshold, margin_base, min_distanc
 # Operator (Modal) – adaptiver Detect, inter-run Cleanup
 # ---------------------------------------------------------------------------
 
-class CLIP_OT_detect(bpy.types.Operator):
+def detect(bpy.types.Operator):
     bl_idname = "clip.detect"
     bl_label = "Place Marker (Adaptive)"
     bl_description = "Modaler Detect-Zyklus mit interner Threshold-Anpassung und inter-run Cleanup"
@@ -352,19 +352,3 @@ class CLIP_OT_detect_once(CLIP_OT_detect):
     """Alias von CLIP_OT_detect – identische Implementierung, anderer Name/ID."""
     bl_idname = "clip.detect_once"
     bl_label  = "Detect Once (Adaptive)"
-
-
-# ---------------------------------------------------------------------------
-# Register
-# ---------------------------------------------------------------------------
-
-def register():
-    bpy.utils.register_class(CLIP_OT_detect)
-    bpy.utils.register_class(CLIP_OT_detect_once)
-
-def unregister():
-    bpy.utils.unregister_class(CLIP_OT_detect_once)
-    bpy.utils.unregister_class(CLIP_OT_detect)
-
-if __name__ == "__main__":
-    register()
