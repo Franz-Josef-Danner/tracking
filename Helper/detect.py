@@ -1,4 +1,4 @@
-# Helper/detect.py — Drop-in Replacement
+# Helper/detect.py — End-of-Attempt Cleanup Variante
 import bpy
 import math
 from contextlib import contextmanager
@@ -18,7 +18,7 @@ def _deselect_all(tracking):
         t.select = False
 
 def _remove_tracks_by_name(tracking, names_to_remove):
-    """Robustes Entfernen von Tracks per Datablock-API (ohne UI-Kontext)."""
+    """Robustes Entfernen von Tracks per Datablock-API (ohne UI-Kontext/Selection)."""
     if not names_to_remove:
         return 0
     removed = 0
@@ -80,7 +80,6 @@ def _ensure_clip_context(ctx, clip=None, *, allow_area_switch=True):
     old_type = None
     if area is None and allow_area_switch and win and getattr(win, "screen", None):
         try:
-            # erste Area temporär auf CLIP_EDITOR schalten
             area = win.screen.areas[0]
             old_type = area.type
             area.type = "CLIP_EDITOR"
@@ -95,7 +94,6 @@ def _ensure_clip_context(ctx, clip=None, *, allow_area_switch=True):
         override["area"] = area
         override["region"] = region
         override["space_data"] = area.spaces.active
-        # Clip in Space setzen, falls möglich
         if clip and getattr(area.spaces.active, "clip", None) is None:
             try:
                 area.spaces.active.clip = clip
@@ -116,15 +114,14 @@ def _ensure_clip_context(ctx, clip=None, *, allow_area_switch=True):
                 pass
 
 # ---------------------------------------------------------------------------
-# Legacy-Helper: detect_features ausführen (Skalierung wie im Operator)
+# detect_features Wrapper (Skalierung wie im Operator)
 # ---------------------------------------------------------------------------
 
 def perform_marker_detection(clip, tracking, threshold, margin_base, min_distance_base):
     """
     Führt detect_features mit skalierten Parametern aus und liefert die Anzahl
-    selektierter Tracks zurück (Legacy-Kontrakt). Skala wie in deiner Operator-Version.
+    selektierter Tracks zurück (Legacy-Kontrakt).
     """
-    # log-Skalierung robust gegenüber sehr kleinen Thresholds
     factor = math.log10(max(threshold, 1e-6) * 1e6) / 6.0
     margin = max(1, int(margin_base * factor))
     min_distance = max(1, int(min_distance_base * factor))
@@ -151,7 +148,7 @@ def _compute_bounds(context, clip, detection_threshold, marker_adapt, min_marker
     settings = tracking.settings
     image_width = int(clip.size[0])
 
-    # Threshold-Start (Scene.last_detection_threshold → Settings.default)
+    # Threshold-Start
     if detection_threshold is not None and detection_threshold >= 0.0:
         thr = float(detection_threshold)
     else:
@@ -169,15 +166,8 @@ def _compute_bounds(context, clip, detection_threshold, marker_adapt, min_marker
     basis = int(scene.get("marker_basis", max(adapt, 20)))
     basis_for_bounds = int(adapt * 1.1) if adapt > 0 else int(basis)
 
-    if min_marker is not None and min_marker >= 0:
-        mn = int(min_marker)
-    else:
-        mn = int(basis_for_bounds * 0.9)
-
-    if max_marker is not None and max_marker >= 0:
-        mx = int(max_marker)
-    else:
-        mx = int(basis_for_bounds * 1.1)
+    mn = int(min_marker) if (min_marker is not None and min_marker >= 0) else int(basis_for_bounds * 0.9)
+    mx = int(max_marker) if (max_marker is not None and max_marker >= 0) else int(basis_for_bounds * 1.1)
 
     # Bases für margin/min_distance
     margin_base = max(1, int(image_width * 0.025))
@@ -186,7 +176,7 @@ def _compute_bounds(context, clip, detection_threshold, marker_adapt, min_marker
     return thr, adapt, mn, mx, margin_base, min_distance_base
 
 # ---------------------------------------------------------------------------
-# Nicht-modale Detection – Funktions-API (mit Fail-Cleanup vor nächstem Versuch)
+# Nicht-modale Detection – mit End-of-Attempt Cleanup bei RUNNING
 # ---------------------------------------------------------------------------
 
 def run_detect_once(
@@ -210,9 +200,8 @@ def run_detect_once(
        "threshold": float,
        "frame": int}
 
-    Garantie: Bei jedem Fehlversuch (Status RUNNING) werden alle in diesem Versuch
-    erzeugten Track-Namen in scene['detect_prev_names'] persistiert. Zu Beginn des
-    nächsten Laufs werden diese zuerst gelöscht (Clean-Start).
+    Vertragsziel: Bei **RUNNING** werden **alle in diesem Versuch erzeugten Marker**
+    **am Ende** desselben Laufs gelöscht (Clean-Start für den Folgeversuch).
     """
     clip = _resolve_clip(context)
     if clip is None:
@@ -227,14 +216,6 @@ def run_detect_once(
         mb = int(margin_base)
     if min_distance_base is not None and min_distance_base >= 0:
         mdb = int(min_distance_base)
-
-    # 0) Vorherige Fehlversuchs-Marker entfernen (Clean-Start)
-    prev_names = set(scene.get("detect_prev_names", []) or [])
-    if prev_names:
-        removed = _remove_tracks_by_name(tracking, prev_names)
-        if removed or prev_names:
-            print(f"[DetectCleanup] removed_prev={removed}, planned={len(prev_names)}")
-        scene["detect_prev_names"] = []
 
     # 1) Frame optional setzen
     if start_frame is not None:
@@ -254,7 +235,6 @@ def run_detect_once(
     with _ensure_clip_context(context, clip=clip, allow_area_switch=use_override):
         perform_marker_detection(clip, tracking, float(thr), int(mb), int(mdb))
 
-        # RNA/Depsgraph-Update anstoßen
         try:
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
         except Exception:
@@ -262,9 +242,7 @@ def run_detect_once(
 
         tracks = tracking.tracks
         new_tracks = [t for t in tracks if t.name not in initial_names]
-
-        # Namen ALLER in DIESEM Versuch erzeugten Tracks (vor evtl. Löschungen)
-        prev_names_all = [t.name for t in new_tracks]
+        all_new_names = [t.name for t in new_tracks]  # vollständige Namensliste dieses Versuchs
 
         # Near-Duplicate-Filter (relativer Abstand)
         rel = float(close_dist_rel) if (close_dist_rel is not None and close_dist_rel > 0.0) else 0.01
@@ -283,7 +261,7 @@ def run_detect_once(
                             close_tracks.append(tr)
                             break
 
-        # nahe/doppelte Tracks löschen
+        # nahe/doppelte Tracks löschen (operator + fallback)
         if close_tracks:
             for t in tracks:
                 t.select = False
@@ -301,34 +279,34 @@ def run_detect_once(
 
         # 4) Zielkorridor prüfen
         if anzahl_neu < int(mn) or anzahl_neu > int(mx):
-            # neu erzeugte (bereinigte) sofort entfernen
-            if cleaned_tracks:
+            # End-of-Attempt Cleanup: **alle** in diesem Versuch erzeugten Tracks löschen
+            # (unabhängig davon, ob sie oben bereits gefiltert/selektiert wurden)
+            removed = _remove_tracks_by_name(tracking, set(all_new_names))
+            if removed < len(all_new_names):
+                # safety: falls einzelne noch vorhanden sind und Operator verfügbar ist
                 for t in tracks:
                     t.select = False
-                for t in cleaned_tracks:
-                    t.select = True
+                for t in tracks:
+                    if t.name in all_new_names:
+                        t.select = True
                 try:
                     bpy.ops.clip.delete_track()
                 except Exception:
-                    _remove_tracks_by_name(tracking, {t.name for t in cleaned_tracks})
+                    pass
 
             # Threshold proportional anpassen
             safe_adapt = max(int(adapt), 1)
             new_thr = max(float(thr) * ((anzahl_neu + 0.1) / float(safe_adapt)), 1e-4)
-
-            # >>> Persistiere die in DIESEM Fehlversuch erzeugten Marker-Namen
-            #     damit sie vor dem nächsten Versuch garantiert gelöscht werden.
-            try:
-                scene["detect_prev_names"] = list(prev_names_all)
-            except Exception:
-                scene["detect_prev_names"] = [t.name for t in cleaned_tracks]
-
             scene["last_detection_threshold"] = float(new_thr)
-            print(f"[Detect] RUNNING: new={anzahl_neu}, mn={mn}, mx={mx}, next_thr={new_thr:.6f}, frame={frame}, scheduled_delete={len(scene['detect_prev_names'])}")
+
+            print(f"[Detect] RUNNING: new={anzahl_neu}, mn={mn}, mx={mx}, next_thr={new_thr:.6f}, frame={frame}, cleaned={removed}")
             return {"status": "RUNNING", "new_tracks": anzahl_neu, "threshold": float(new_thr), "frame": frame}
 
-        # 5) Erfolg – KEINE Fail-Deletion für nächsten Lauf planen
-        scene["detect_prev_names"] = []  # wichtig: erfolgreiche Marker nicht für Auto-Löschung vormerken
+        # 5) Erfolg – keine Auto-Löschung, erfolgreiche Namen optional für Review
+        try:
+            scene["detect_prev_names"] = [t.name for t in cleaned_tracks]
+        except Exception:
+            scene["detect_prev_names"] = []
 
     # Erfolg: Threshold persistieren
     scene["last_detection_threshold"] = float(thr)
