@@ -25,26 +25,13 @@ def _find_clip_area(win):
     return None, None
 
 @contextmanager
-def _ensure_clip_context(ctx, clip=None, *, allow_area_switch=True):
+def _ensure_clip_context(ctx, clip=None, *, allow_area_switch=False):
     """
-    Stellt einen gültigen CLIP_EDITOR-Kontext bereit und liefert einen temp_override,
-    der mit DEM GLEICHEN ctx (nicht bpy.context!) verwendet werden kann.
+    Sucht NUR vorhandene CLIP_EDITOR-Area. Kein Umschalten des Area-Typs.
+    Liefert einen Override, der mit DEMSELBEN ctx (nicht bpy.context) aktiv ist.
     """
     win = getattr(ctx, "window", None)
     area, region = _find_clip_area(win)
-    switched = False
-    old_type = None
-
-    if (area is None or region is None) and allow_area_switch and win and getattr(win, "screen", None):
-        # Falls kein CLIP_EDITOR existiert: ersten Area temporär umschalten
-        for a in win.screen.areas:
-            if a.type != 'CLIP_EDITOR':
-                old_type = a.type
-                a.type = 'CLIP_EDITOR'
-                area = a
-                region = next((r for r in a.regions if r.type == 'WINDOW'), None)
-                switched = True
-                break
 
     if area is None or region is None:
         # Kein gültiger Bereich verfügbar
@@ -69,20 +56,11 @@ def _ensure_clip_context(ctx, clip=None, *, allow_area_switch=True):
         with ctx.temp_override(**ovr):
             yield ovr
     finally:
-        # Optional: zurückschalten
-        if switched and allow_area_switch and old_type:
-            try:
-                area.type = old_type
-            except Exception:
-                pass
+        pass
 
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
-
-def _deselect_all(tracking):
-    for t in tracking.tracks:
-        t.select = False
 
 def _remove_tracks_by_name(tracking, names_to_remove):
     """Robustes Entfernen von Tracks per Datablock-API (ohne UI-Kontext)."""
@@ -99,7 +77,6 @@ def _remove_tracks_by_name(tracking, names_to_remove):
     return removed
 
 def _collect_existing_positions(tracking, frame, w, h):
-    """Positionen existierender Marker (x,y in px) im Ziel-Frame sammeln."""
     pos = []
     for t in tracking.tracks:
         mk = t.markers.find_frame(frame)
@@ -140,16 +117,19 @@ def _clamp01(x: float) -> float:
 # ---------------------------------------------------------------------------
 
 def perform_marker_detection(ctx, clip, tracking, threshold, margin_base, min_distance_base):
-    """
-    Führt bpy.ops.clip.detect_features IMMER im Override des übergebenen ctx aus.
-    """
+    """Führt detect_features im aktiven CLIP_EDITOR-Kontext aus. Keine Area-Umschaltung."""
     # Ableitungen
     factor = max(0.25, min(4.0, float(threshold) * 10.0))
     margin = max(1, int(margin_base * factor))
     min_dist = max(1, int(min_distance_base * factor))
 
-    # Sicherer CLIP-Kontext + Clip & Mode setzen
-    with _ensure_clip_context(ctx, clip=clip, allow_area_switch=True) as ovr:
+    # High-Res Throttle: zu niedriger Threshold bei 4K+ führt zu Killer-Detektionen
+    w, h = clip.size
+    if w >= 4000 and threshold <= 0.01:
+        min_dist = max(min_dist, int(w * 0.12))   # ~12% der Breite
+        margin   = max(margin,   int(w * 0.04))   # ~4% der Breite
+
+    with _ensure_clip_context(ctx, clip=clip, allow_area_switch=False) as ovr:
         sd = ovr.get('space_data')
         ar = ovr.get('area')
         rg = ovr.get('region')
@@ -157,35 +137,34 @@ def perform_marker_detection(ctx, clip, tracking, threshold, margin_base, min_di
         if not ar or not rg or not sd or getattr(sd, "clip", None) is None:
             return {"status": "failed", "reason": "no_valid_clip_context"}
 
-        with ctx.temp_override(**ovr):
-            try:
-                res = bpy.ops.clip.detect_features(
-                    threshold=float(threshold),
-                    min_distance=int(min_dist),
-                    margin=int(margin),
-                    placement='FRAME'
-                )
-            except Exception as ex:
-                return {"status": "failed", "reason": f"detect_features exception: {ex}"}
+        print(f"[Detect/DBG] area={getattr(ar,'type',None)} region={getattr(rg,'type',None)} "
+              f"mode={getattr(sd,'mode',None)} has_clip={getattr(sd,'clip',None) is not None} "
+              f"thr={threshold} margin={margin} min_dist={min_dist}")
+
+        try:
+            res = bpy.ops.clip.detect_features(
+                threshold=float(threshold),
+                min_distance=int(min_dist),
+                margin=int(margin),
+                placement='FRAME'
+            )
+        except Exception as ex:
+            return {"status": "failed", "reason": f"detect_features exception: {ex}"}
 
     return {"status": "ok", "op_result": res, "threshold": float(threshold), "margin": margin, "min_distance": min_dist}
 
 def run_detect_once(context, *, start_frame=None):
-    """
-    Setzt optional den Frame im GLEICHEN Override-Kontext und startet dann run_detect_adaptive(context).
-    """
     clip = _resolve_clip_from_context(context)
     if clip is None:
         return {"status": "failed", "reason": "no_clip"}
 
     if start_frame is not None:
-        with _ensure_clip_context(context, clip=clip, allow_area_switch=True) as ovr:
+        with _ensure_clip_context(context, clip=clip, allow_area_switch=False) as ovr:
             if ovr:
-                with context.temp_override(**ovr):
-                    try:
-                        context.scene.frame_current = int(start_frame)
-                    except Exception:
-                        pass
+                try:
+                    context.scene.frame_current = int(start_frame)
+                except Exception:
+                    pass
 
     print("[Detect] Start-Threshold=", context.scene.get("last_detection_threshold", None))
     return run_detect_adaptive(context)
@@ -194,9 +173,6 @@ def run_detect_adaptive(context, *, detection_threshold=-1.0,
                         marker_adapt=-1, min_marker=-1, max_marker=-1,
                         margin_base=-1.0, min_distance_base=-1.0,
                         close_dist_rel=0.01, max_attempts=20, handoff_to_pipeline=False):
-    """
-    Adaptive Marker-Detection bis Zielkorridor erreicht ist.
-    """
     scene = context.scene
     clip = _resolve_clip_from_context(context)
     if clip is None:
@@ -216,7 +192,6 @@ def run_detect_adaptive(context, *, detection_threshold=-1.0,
 
     # Ziele
     adapt = int(marker_adapt if marker_adapt >= 0 else int(scene.get("marker_adapt", scene.get("marker_basis", 20))))
-
     basis_for_bounds = max(1, int(adapt * 1.1))
     if min_marker >= 0 and max_marker >= 0:
         mn, mx = int(min_marker), int(max_marker)
@@ -244,15 +219,13 @@ def run_detect_adaptive(context, *, detection_threshold=-1.0,
     attempt = 0
     while attempt < int(max_attempts):
         current_frame = int(scene.frame_current)
-        # Snapshot alte Tracks
         initial_names = [t.name for t in tracking.tracks]
 
-        # Detect
         det_res = perform_marker_detection(context, clip, tracking, thr, margin_base, min_distance_base)
         if det_res.get("status") != "ok":
             return {"status": "failed", "reason": det_res.get("reason", "detect_failed")}
 
-        # Warten bis Datenbank schreibt
+        # Warten bis Datenbank schreibt (max ~0.5s)
         waited = 0
         while waited < 50:
             if len(tracking.tracks) != len(initial_names):
@@ -260,10 +233,8 @@ def run_detect_adaptive(context, *, detection_threshold=-1.0,
             time.sleep(0.01)
             waited += 1
 
-        # Neue Tracks sammeln
         new_tracks = [t for t in tracking.tracks if t.name not in initial_names]
 
-        # Zu nahe Tracks verwerfen
         existing_positions = _collect_existing_positions(tracking, current_frame, w, h)
         close_thr2 = (max(1.0, w * float(close_dist_rel))) ** 2
         close_names = []
@@ -284,9 +255,7 @@ def run_detect_adaptive(context, *, detection_threshold=-1.0,
         cleaned_tracks = [t for t in tracking.tracks if (t.name not in initial_names) and (t.name not in close_names)]
         anzahl_neu = len(cleaned_tracks)
 
-        # Korridorprüfung
         if anzahl_neu < mn or anzahl_neu > mx:
-            # Alle neuen wieder löschen und Threshold anpassen
             names_to_remove = [t.name for t in cleaned_tracks]
             if names_to_remove:
                 _remove_tracks_by_name(tracking, set(names_to_remove))
@@ -298,7 +267,6 @@ def run_detect_adaptive(context, *, detection_threshold=-1.0,
             attempt += 1
             continue
 
-        # Erfolg
         scene["detect_prev_names"] = [t.name for t in cleaned_tracks]
         if handoff_to_pipeline:
             scene["detect_status"] = "success"
@@ -314,6 +282,5 @@ def run_detect_adaptive(context, *, detection_threshold=-1.0,
             "threshold": thr
         }
 
-    # Kein Erfolg nach max_attempts
     scene["detect_status"] = "failed"
     return {"status": "failed", "attempts": attempt, "threshold": thr}
