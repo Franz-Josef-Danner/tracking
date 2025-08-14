@@ -148,7 +148,7 @@ with _ensure_clip_context(bpy.context, clip=clip, allow_area_switch=True) as ovr
         threshold=float(threshold),
     )
 
-    return sum(1 for t in tracking.tracks if getattr(t, "select", False))
+return sum(1 for t in tracking.tracks if getattr(t, "select", False))
 
 # ---------------------------------------------------------------------------
 # Adaptive Detect
