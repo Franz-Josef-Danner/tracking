@@ -1,7 +1,6 @@
 # Helper/main_to_adapt.py
 import bpy
 from typing import Optional, Tuple, Set, Dict, Any
-from .tracker_settings import apply_tracker_settings
 
 __all__ = ("main_to_adapt", "clip_override")
 
