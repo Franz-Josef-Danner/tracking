@@ -71,7 +71,7 @@ def jump_to_frame_helper(context, target_frame: int | None = None):
     try:
         # Lazy-Import bricht den Kreis detect ↔ jump_to_frame
         from .detect import run_detect_once
-        res = run_detect_once(context, start_frame=frame)
+        res = run_detect_once(context, start_frame=target)
         print(f"[Jump] detect_once Result: {res}")
         return {'FINISHED'}
 
