@@ -1,9 +1,7 @@
-# Helper/jump_to_frame.py
-
 import json
-from .detect import run_detect_adaptive  # oben sicherstellen
 
 __all__ = ("jump_to_frame_helper", "run_jump_to_frame")
+
 
 def _clip_override(context):
     win = context.window
@@ -70,28 +68,16 @@ def jump_to_frame_helper(context, target_frame: int | None = None):
     # Playhead setzen + DETECT auslösen
     ovr = _clip_override(context)
     try:
-        if ovr:
-            with context.temp_override(**ovr):
-                context.scene.frame_current = int(target)
-                print(f"[GotoFrame] Playhead auf Frame {target} gesetzt (mit Override).")
-                # Detect direkt starten; Frame explizit übergeben (robust ggü. UI-Latenz)
-                res = run_detect_adaptive(context, frame=int(target))
-                print(f"[GotoFrame] Übergabe an detect → {res}")
-                return {'FINISHED'}
-        else:
-            context.scene.frame_current = int(target)
-            print(f"[GotoFrame] Playhead auf Frame {target} gesetzt (ohne Override).")
-            res = run_detect_adaptive(context, frame=int(target))
-            print(f"[GotoFrame] Übergabe an detect → {res}")
-            return {'FINISHED'}
-        print(f"[GotoFrame] Übergabe an detect → {res}")
+        # Lazy-Import bricht den Kreis detect ↔ jump_to_frame
+        from .detect import run_detect_once
+        res = run_detect_once(context, start_frame=frame)
+        print(f"[Jump] detect_once Result: {res}")
         return {'FINISHED'}
 
     except Exception as ex:
         msg = f"Übergabe an detect fehlgeschlagen: {ex}"
         print(f"Error: {msg}")
         return {'CANCELLED'}
-
 
 def run_jump_to_frame(context, frame: int | None = None):
     """
