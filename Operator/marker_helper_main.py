@@ -37,12 +37,8 @@ class CLIP_OT_marker_helper_main(Operator):
 
     @classmethod
     def poll(cls, context):
-        area = getattr(context, "area", None)
-        space = getattr(context, "space_data", None)
-        return (
-            area and area.type == 'CLIP_EDITOR'
-            and space and getattr(space, "clip", None) is not None
-        )
+        # F3 überall zulassen – wir sichern den Kontext in execute()
+        return True
 
 
     def execute(self, context):
