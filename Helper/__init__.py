@@ -1,6 +1,5 @@
 import bpy
 
-from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 from .error_value import error_value
 from .set_test_value import set_test_value
 from .properties import RepeatEntry
@@ -32,7 +31,6 @@ __all__ = [
 
 classes = (
     RepeatEntry,
-    CLIP_OT_optimize_tracking_modal,
 )
 
 def register():
