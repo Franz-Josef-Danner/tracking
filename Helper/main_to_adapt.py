@@ -58,24 +58,4 @@ def main_to_adapt(
     scene["marker_adapt"] = marker_adapt
     print(f"[MainToAdapt] marker_adapt gesetzt: {marker_adapt} (basis={marker_basis}, factor={factor})")
 
-    op_result: Optional[Set[str]] = None
-    if call_next:
-        try:
-            # Sicherer Override wie im alten Flow; Fallback ohne Override
-            override = clip_override(context) if use_override else None
-            if override:
-                with context.temp_override(**override):
-                    res = apply_tracker_settings(context, log=True)
-            else:
-                res = apply_tracker_settings(context, log=True)
-
-            status = (res or {}).get("status")
-            op_result = {'FINISHED'} if status == "ok" else {'CANCELLED'}
-            print(f"[MainToAdapt] Übergabe an tracker_settings (Helper) → {op_result}")
-            if op_result == {'CANCELLED'}:
-                return False, marker_adapt, op_result
-        except Exception as e:
-            print(f"[MainToAdapt][ERROR] tracker_settings (Helper) konnte nicht gestartet werden: {e}")
-            return False, marker_adapt, {'CANCELLED'}
-
     return True, marker_adapt, op_result
