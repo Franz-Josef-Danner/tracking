@@ -1,5 +1,6 @@
 import bpy
 import json
+from .marker_adapt_helper import run_marker_adapt_boost
 
 __all__ = ("jump_to_frame_helper", "run_jump_to_frame")
 
@@ -61,7 +62,7 @@ def jump_to_frame_helper(context, target_frame: int | None = None):
     is_dup = _store_visited_frame(context.scene, int(target))
     if is_dup:
         try:
-            bpy.ops.clip.marker_adapt_boost('EXEC_DEFAULT')
+            run_jump_to_frame('EXEC_DEFAULT')
         except Exception as ex:
             # identisches Verhalten: Fehler loggen, aber nicht crashen
             print(f"Error: Marker-Adapt-Helper fehlgeschlagen: {ex}")
