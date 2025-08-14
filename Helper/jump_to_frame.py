@@ -85,21 +85,6 @@ def jump_to_frame_helper(context, *, target_frame=None):
     except Exception as ex:
         print(f"[GotoFrame] Frame-Setzen fehlgeschlagen: {ex}")
 
-    # Detection auf dem Ziel-Frame (run_detect_once setzt intern den Override korrekt)
-    try:
-        res = run_detect_once(context, start_frame=int(f))
-        print(f"[Jump] detect_once Result: {res}")
-    except Exception as ex:
-        print(f"[Jump] Übergabe an detect fehlgeschlagen: {ex}")
-        return {'CANCELLED'}
-
-    # FWD-Tracking unmittelbar (nicht-blockierend) starten
-    try:
-        bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
-        print("[Jump] Vorwärts-Tracking gestartet (INVOKE_DEFAULT).")
-    except Exception as ex:
-        print(f"[Jump] Vorwärts-Tracking Start fehlgeschlagen: {ex}")
-
     return {'FINISHED'}
 
 
