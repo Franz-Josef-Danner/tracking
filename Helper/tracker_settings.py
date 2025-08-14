@@ -1,6 +1,5 @@
 # tracker_settings.py
 import bpy
-from .find_low_marker_frame import run_find_low_marker_frame
 
 __all__ = ("apply_tracker_settings",)
 
@@ -98,24 +97,6 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
             f"clean_frames={ts.clean_frames}, clean_error={ts.clean_error}, "
             f"last_detection_threshold={scene['last_detection_threshold']:.6f}"
         )
-
-    # ZWINGEND: Low-Marker-Pipeline anstoßen
-    try:
-        # use_scene_basis=True => nutzt scene['marker_basis']/ähnliche Keys, falls vorhanden
-        run_find_low_marker_frame(context, use_scene_basis=True)
-    except TypeError as ex:
-        # Fallback für ältere Signatur ohne Keyword
-        if log:
-            print(f"[TrackerSettings] run_find_low_marker_frame(use_scene_basis=…) nicht unterstützt ({ex}), "
-                  "starte ohne Keyword.")
-        try:
-            run_find_low_marker_frame(context)
-        except Exception as ex2:
-            if log:
-                print(f"[TrackerSettings] Übergabe an find_low_marker_frame fehlgeschlagen: {ex2}")
-    except Exception as ex:
-        if log:
-            print(f"[TrackerSettings] Übergabe an find_low_marker_frame fehlgeschlagen: {ex}")
 
     return {
         "status": "ok",
