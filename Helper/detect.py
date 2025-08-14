@@ -1,12 +1,9 @@
-# Helper/detect.py — robuste Helper-Variante mit garantiertem Fail-Cleanup
-# Parität zum funktionierenden Operator:
-# - Start-Cleanup: scene['detect_prev_names'] wird zu Laufbeginn gelöscht
-# - Near-Duplicate-Filter relativ zur Bildbreite
-# - End-Cleanup bei Fehlversuch: bereinigte neue Tracks dieses Versuchs werden gelöscht
-# - Adaptive Threshold-Anpassung proportional zur Abweichung vom Zielkorridor
-# Härtungen:
+# Helper/detect.py — Detect exklusiv + verifizierter Fail-Cleanup
+# - Critical-Section-Lock: blockiert fremde Pipeline-Schritte während detect
 # - Sicherer CLIP_EDITOR-Kontext (space.mode='TRACKING', Clip wird immer gesetzt)
-# - Verifizierte Löschung mit Operator+Fallback auf Datablock-API
+# - Start-Cleanup (scene['detect_prev_names'])
+# - Near-Duplicate-Filter
+# - End-Cleanup bei RUNNING mit verifiziertem Hard-Delete (Operator + API-Fallback)
 
 import bpy
 import math
@@ -18,6 +15,8 @@ __all__ = [
     "run_detect_once",
 ]
 
+LOCK_KEY = "__detect_lock"
+
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
@@ -26,14 +25,12 @@ def _deselect_all(tracking):
     for t in tracking.tracks:
         t.select = False
 
-
 def _remove_tracks_by_name(tracking, names_to_remove):
     """Robustes Entfernen von Tracks per Datablock-API (ohne UI-Selektion)."""
     if not names_to_remove:
         return 0
     removed = 0
-    # Kopie iterieren, da wir aus der Sammlung löschen
-    for t in list(tracking.tracks):
+    for t in list(tracking.tracks):  # Kopie iterieren
         if t.name in names_to_remove:
             try:
                 tracking.tracks.remove(t)
@@ -42,9 +39,7 @@ def _remove_tracks_by_name(tracking, names_to_remove):
                 pass
     return removed
 
-
 def _collect_existing_positions(tracking, frame, w, h):
-    """Positionen existierender Marker (x,y in px) im Ziel-Frame sammeln."""
     out = []
     for t in tracking.tracks:
         m = t.markers.find_frame(frame, exact=True)
@@ -52,13 +47,24 @@ def _collect_existing_positions(tracking, frame, w, h):
             out.append((m.co[0] * w, m.co[1] * h))
     return out
 
-
 def _resolve_clip(context):
     """Aktiven MovieClip ermitteln (Space → Clip, sonst erster Clip im File)."""
     space = getattr(context, "space_data", None)
     clip = getattr(space, "clip", None) if space else None
     if clip:
+        # persistiere den Clip-Namen für Folge-Läufe (stabile Zuordnung)
+        try:
+            context.scene["active_clip_name"] = clip.name
+        except Exception:
+            pass
         return clip
+    # fallback auf zuletzt bekannten Namen
+    scn = context.scene
+    name = (scn.get("active_clip_name") if scn else None) or ""
+    if name:
+        c = bpy.data.movieclips.get(name, None)
+        if c:
+            return c
     try:
         for c in bpy.data.movieclips:
             return c
@@ -66,9 +72,27 @@ def _resolve_clip(context):
         pass
     return None
 
+# ---------------------------------------------------------------------------
+# Critical Section Lock
+# ---------------------------------------------------------------------------
+
+@contextmanager
+def _critical_section(context, key=LOCK_KEY):
+    """Setzt einen exklusiven Lock, damit keine anderen Pipeline-Schritte starten."""
+    try:
+        context.scene[key] = True
+    except Exception:
+        pass
+    try:
+        yield
+    finally:
+        try:
+            context.scene[key] = False
+        except Exception:
+            pass
 
 # ---------------------------------------------------------------------------
-# UI-Context Guard (nur lokal in diesem Modul verwendet)
+# UI-Context Guard
 # ---------------------------------------------------------------------------
 
 def _find_clip_area(win):
@@ -81,12 +105,10 @@ def _find_clip_area(win):
                 return area, reg
     return None, None
 
-
 @contextmanager
 def _ensure_clip_context(ctx, clip=None, *, allow_area_switch=True):
     """
-    Sichert einen gültigen CLIP_EDITOR-Kontext (area/region/space_data, TRACKING-Mode, Clip gesetzt).
-    Greift nur lokal; vermeidet Seiteneffekte außerhalb dieses Calls.
+    Gültiger CLIP_EDITOR-Kontext (TRACKING-Mode, richtiger Clip), nur lokal.
     """
     win = getattr(ctx, "window", None)
     area, region = _find_clip_area(win)
@@ -110,7 +132,7 @@ def _ensure_clip_context(ctx, clip=None, *, allow_area_switch=True):
         override["area"] = area
         override["region"] = region
         override["space_data"] = space
-        # Mode hart auf TRACKING setzen
+        # Mode hart setzen
         try:
             if getattr(space, "mode", None) != 'TRACKING':
                 space.mode = 'TRACKING'
@@ -137,67 +159,76 @@ def _ensure_clip_context(ctx, clip=None, *, allow_area_switch=True):
             except Exception:
                 pass
 
-
 # ---------------------------------------------------------------------------
 # Verifizierte Löschung: Operator + API-Fallback
 # ---------------------------------------------------------------------------
 
+def _relookup_tracks_by_names(tracking, names_set):
+    """Hole aktuelle Track-Objekte per Namen (kein Vertrauen in alte Handles)."""
+    by_name = {t.name: t for t in tracking.tracks}
+    return [by_name[n] for n in names_set if n in by_name]
+
 def _delete_tracks_hard(tracking, tracks_or_names):
     """
-    Löscht Tracks robust: versucht Operator (mit Selektion) und prüft anschließend.
-    Nicht entfernte Ziele werden per Datablock-API gelöscht.
+    Robust löschen: Operator (mit Selektion) + Verifikation + API-Fallback.
     Rückgabe: Anzahl effektiv gelöschter Ziel-Tracks.
     """
     if not tracks_or_names:
         return 0
 
-    # Namensmenge auflösen
+    # Namensmenge bestimmen (immer frisch re-resolven)
     if hasattr(tracks_or_names[0], "name"):
         target_names = {t.name for t in tracks_or_names}
     else:
         target_names = set(tracks_or_names)
 
-    # Operator-Versuch (Selektion herstellen)
+    # Re-Lookup aktueller Objekte (Handles können stale sein)
+    targets = _relookup_tracks_by_names(tracking, target_names)
+    target_names = {t.name for t in targets}
+    if not targets:
+        print("[DeleteHard] nothing_to_delete (targets not found)")
+        return 0
+
+    # Operator-Versuch
     for t in tracking.tracks:
         t.select = False
     for t in tracking.tracks:
         if t.name in target_names:
             t.select = True
 
-    op_ok = False
+    poll_ok = False
     try:
-        res = bpy.ops.clip.delete_track()
-        op_ok = (res == {'FINISHED'})
+        poll_ok = bpy.ops.clip.delete_track.poll()
     except Exception:
-        op_ok = False
+        poll_ok = False
 
-    # Verifizieren – noch vorhandene Ziele bestimmen
+    op_ok = False
+    if poll_ok:
+        try:
+            op_ok = (bpy.ops.clip.delete_track() == {'FINISHED'})
+        except Exception:
+            op_ok = False
+
+    # Verifizieren – noch vorhandene Ziele?
     still = {t.name for t in tracking.tracks if t.name in target_names}
     if not still:
-        print(f"[DeleteHard] op_ok={op_ok}, fallback_removed=0, still_left=0")
+        print(f"[DeleteHard] poll_ok={poll_ok}, op_ok={op_ok}, fallback_removed=0, still_left=0")
         return len(target_names)
 
-    # Fallback über Datablock-API
+    # Fallback per Datablock-API
     removed_fb = _remove_tracks_by_name(tracking, still)
     remain = {t.name for t in tracking.tracks if t.name in target_names}
-    print(f"[DeleteHard] op_ok={op_ok}, fallback_removed={removed_fb}, still_left={len(remain)}")
+    print(f"[DeleteHard] poll_ok={poll_ok}, op_ok={op_ok}, fallback_removed={removed_fb}, still_left={len(remain)}")
     return len(target_names) - len(remain)
-
 
 # ---------------------------------------------------------------------------
 # detect_features Wrapper (Skalierung wie im Operator)
 # ---------------------------------------------------------------------------
 
 def perform_marker_detection(clip, tracking, threshold, margin_base, min_distance_base):
-    """
-    Führt detect_features mit skalierten Parametern aus und liefert die Anzahl
-    selektierter Tracks zurück (Legacy-Kontrakt).
-    """
-    # log-Skalierung robust gegenüber sehr kleinen Thresholds
     factor = math.log10(max(threshold, 1e-6) * 1e6) / 6.0
     margin = max(1, int(margin_base * factor))
     min_distance = max(1, int(min_distance_base * factor))
-
     try:
         bpy.ops.clip.detect_features(
             margin=int(margin),
@@ -207,9 +238,7 @@ def perform_marker_detection(clip, tracking, threshold, margin_base, min_distanc
     except Exception as ex:
         print(f"[Detect] detect_features exception: {ex}")
         return 0
-
     return sum(1 for t in tracking.tracks if getattr(t, "select", False))
-
 
 # ---------------------------------------------------------------------------
 # Parameter-Aufbereitung (Parität zum Operator)
@@ -221,7 +250,6 @@ def _compute_bounds(context, clip, detection_threshold, marker_adapt, min_marker
     settings = tracking.settings
     image_width = int(clip.size[0])
 
-    # Threshold-Start
     if detection_threshold is not None and detection_threshold >= 0.0:
         thr = float(detection_threshold)
     else:
@@ -229,7 +257,6 @@ def _compute_bounds(context, clip, detection_threshold, marker_adapt, min_marker
                               float(getattr(settings, "default_correlation_min", 0.75))))
     thr = float(max(1e-4, min(1.0, thr)))
 
-    # marker_adapt / Bounds
     if marker_adapt is not None and marker_adapt >= 0:
         adapt = int(marker_adapt)
     else:
@@ -242,15 +269,12 @@ def _compute_bounds(context, clip, detection_threshold, marker_adapt, min_marker
     mn = int(min_marker) if (min_marker is not None and min_marker >= 0) else int(basis_for_bounds * 0.9)
     mx = int(max_marker) if (max_marker is not None and max_marker >= 0) else int(basis_for_bounds * 1.1)
 
-    # Bases für margin/min_distance
     margin_base = max(1, int(image_width * 0.025))
     min_distance_base = max(1, int(image_width * 0.05))
-
     return thr, adapt, mn, mx, margin_base, min_distance_base
 
-
 # ---------------------------------------------------------------------------
-# Nicht-modale Detection – Start-Cleanup + End-Cleanup (Fehlversuch)
+# Nicht-modale Detection – exklusiv + verifizierter Fail-Cleanup
 # ---------------------------------------------------------------------------
 
 def run_detect_once(
@@ -268,15 +292,8 @@ def run_detect_once(
     use_override=True,
 ):
     """
-    Rückgabe:
-      {"status": "READY"/"RUNNING"/"FAILED",
-       "new_tracks": int,
-       "threshold": float,
-       "frame": int}
-
-    Verhalten wie der funktionierende Operator:
-    - Am Start werden Namen aus scene['detect_prev_names'] entfernt (inter-run Cleanup).
-    - Bei Fehlversuch (RUNNING) werden am Ende die bereinigten neuen Tracks gelöscht.
+    Returns:
+      {"status": "READY"/"RUNNING"/"FAILED", "new_tracks": int, "threshold": float, "frame": int}
     """
     clip = _resolve_clip(context)
     if clip is None:
@@ -292,91 +309,90 @@ def run_detect_once(
     if min_distance_base is not None and min_distance_base >= 0:
         mdb = int(min_distance_base)
 
-    # --- Start: inter-run Cleanup wie Operator ---
-    prev_names = set(scene.get("detect_prev_names", []) or [])
-    if prev_names:
-        removed_prev = _remove_tracks_by_name(tracking, prev_names)
-        print(f"[DetectCleanup] start_removed_prev={removed_prev}, planned={len(prev_names)}")
-        scene["detect_prev_names"] = []
-
-    # Optional Frame setzen
-    if start_frame is not None:
-        try:
-            scene.frame_set(int(start_frame))
-        except Exception:
-            pass
-
-    frame = int(scene.frame_current)
-
-    # Snapshot vor Detect
-    _deselect_all(tracking)
-    initial_names = {t.name for t in tracking.tracks}
-    existing_positions = _collect_existing_positions(tracking, frame, w, h)
-
-    # Detect im sicheren CLIP_CONTEXT
-    with _ensure_clip_context(context, clip=clip, allow_area_switch=use_override):
-        perform_marker_detection(clip, tracking, float(thr), int(mb), int(mdb))
-
-        # RNA/Depsgraph-Update anstoßen
-        try:
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-        except Exception:
-            pass
-
-        tracks = tracking.tracks
-        new_tracks = [t for t in tracks if t.name not in initial_names]
-
-        # Near-Duplicate-Filter (relativ zur Bildbreite)
-        rel = float(close_dist_rel) if (close_dist_rel is not None and close_dist_rel > 0.0) else 0.01
-        distance_px = max(1, int(w * rel))
-        thr2 = float(distance_px * distance_px)
-
-        close_tracks = []
-        if existing_positions and new_tracks:
-            for tr in new_tracks:
-                m = tr.markers.find_frame(frame, exact=True)
-                if m and not m.mute:
-                    x = m.co[0] * w; y = m.co[1] * h
-                    for ex, ey in existing_positions:
-                        dx = x - ex; dy = y - ey
-                        if (dx * dx + dy * dy) < thr2:
-                            close_tracks.append(tr)
-                            break
-
-        # nahe/doppelte Tracks sicher löschen
-        if close_tracks:
-            deleted_nd = _delete_tracks_hard(tracking, close_tracks)
-            if deleted_nd:
-                try:
-                    bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-                except Exception:
-                    pass
-
-        # finale neue Tracks nach Cleanup
-        close_set = set(close_tracks)
-        cleaned_tracks = [t for t in new_tracks if t not in close_set]
-        anzahl_neu = len(cleaned_tracks)
-
-        # Zielkorridor prüfen → End-of-Attempt Cleanup bei Fehlversuch
-        if anzahl_neu < int(mn) or anzahl_neu > int(mx):
-            # exakt wie Operator: nur die bereinigten neuen Tracks dieses Versuchs löschen
-            deleted_fail = _delete_tracks_hard(tracking, cleaned_tracks)
-            # Threshold proportional zur Abweichung anpassen
-            safe_adapt = max(int(adapt), 1)
-            new_thr = max(float(thr) * ((anzahl_neu + 0.1) / float(safe_adapt)), 1e-4)
-            scene["last_detection_threshold"] = float(new_thr)
-
-            print(
-                f"[Detect] RUNNING: new={anzahl_neu}, mn={mn}, mx={mx}, "
-                f"next_thr={new_thr:.6f}, frame={frame}, fail_deleted={deleted_fail}"
-            )
-            return {"status": "RUNNING", "new_tracks": anzahl_neu, "threshold": float(new_thr), "frame": frame}
-
-        # Erfolg – final erzeugte Tracks für nächsten Run merken (inter-run cleanup)
-        try:
-            scene["detect_prev_names"] = [t.name for t in cleaned_tracks]
-        except Exception:
+    # Exklusiver Abschnitt: kein anderer Pipeline-Schritt darf laufen
+    with _critical_section(context, LOCK_KEY):
+        # --- Start: inter-run Cleanup wie Operator ---
+        prev_names = set(scene.get("detect_prev_names", []) or [])
+        if prev_names:
+            removed_prev = _remove_tracks_by_name(tracking, prev_names)
+            print(f"[DetectCleanup] start_removed_prev={removed_prev}, planned={len(prev_names)}")
             scene["detect_prev_names"] = []
+
+        # Optional Frame setzen
+        if start_frame is not None:
+            try:
+                scene.frame_set(int(start_frame))
+            except Exception:
+                pass
+
+        frame = int(scene.frame_current)
+
+        # Snapshot vor Detect
+        _deselect_all(tracking)
+        initial_names = {t.name for t in tracking.tracks}
+        existing_positions = _collect_existing_positions(tracking, frame, w, h)
+
+        # Detect im sicheren CLIP_CONTEXT
+        with _ensure_clip_context(context, clip=clip, allow_area_switch=use_override):
+            perform_marker_detection(clip, tracking, float(thr), int(mb), int(mdb))
+
+            # RNA/Depsgraph-Update
+            try:
+                bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            except Exception:
+                pass
+
+            tracks = tracking.tracks
+            new_tracks = [t for t in tracks if t.name not in initial_names]
+
+            # Near-Duplicate-Filter (relativ zur Bildbreite)
+            rel = float(close_dist_rel) if (close_dist_rel is not None and close_dist_rel > 0.0) else 0.01
+            distance_px = max(1, int(w * rel))
+            thr2 = float(distance_px * distance_px)
+
+            close_tracks = []
+            if existing_positions and new_tracks:
+                for tr in new_tracks:
+                    m = tr.markers.find_frame(frame, exact=True)
+                    if m and not m.mute:
+                        x = m.co[0] * w; y = m.co[1] * h
+                        for ex, ey in existing_positions:
+                            dx = x - ex; dy = y - ey
+                            if (dx * dx + dy * dy) < thr2:
+                                close_tracks.append(tr)
+                                break
+
+            # nahe/doppelte Tracks sicher löschen
+            if close_tracks:
+                deleted_nd = _delete_tracks_hard(tracking, close_tracks)
+                if deleted_nd:
+                    try:
+                        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                    except Exception:
+                        pass
+
+            # finale neue Tracks nach Cleanup
+            close_set = set(close_tracks)
+            cleaned_tracks = [t for t in new_tracks if t not in close_set]
+            anzahl_neu = len(cleaned_tracks)
+
+            # Zielkorridor prüfen → End-of-Attempt Cleanup bei Fehlversuch
+            if anzahl_neu < int(mn) or anzahl_neu > int(mx):
+                deleted_fail = _delete_tracks_hard(tracking, cleaned_tracks)
+                safe_adapt = max(int(adapt), 1)
+                new_thr = max(float(thr) * ((anzahl_neu + 0.1) / float(safe_adapt)), 1e-4)
+                scene["last_detection_threshold"] = float(new_thr)
+                print(
+                    f"[Detect] RUNNING: new={anzahl_neu}, mn={mn}, mx={mx}, "
+                    f"next_thr={new_thr:.6f}, frame={frame}, fail_deleted={deleted_fail}"
+                )
+                return {"status": "RUNNING", "new_tracks": anzahl_neu, "threshold": float(new_thr), "frame": frame}
+
+            # Erfolg – finale Namen für inter-run Cleanup vormerken
+            try:
+                scene["detect_prev_names"] = [t.name for t in cleaned_tracks]
+            except Exception:
+                scene["detect_prev_names"] = []
 
     # Erfolg: Threshold persistieren
     scene["last_detection_threshold"] = float(thr)
@@ -392,12 +408,7 @@ def run_detect_once(
     print(f"[Detect] READY: new={anzahl_neu}, thr={thr:.6f}, frame={frame}")
     return {"status": "READY", "new_tracks": anzahl_neu, "threshold": float(thr), "frame": frame}
 
-
 def run_detect_adaptive(context, **kwargs):
-    """
-    Wiederholt run_detect_once() bis Erfolg oder max_attempts.
-    Rückgabe ist das Ergebnis von run_detect_once().
-    """
     max_attempts = int(kwargs.pop("max_attempts", 20))
     attempt = 0
     last = None
