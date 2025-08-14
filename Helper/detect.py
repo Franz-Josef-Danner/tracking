@@ -154,11 +154,6 @@ def perform_marker_detection(ctx, clip, tracking, threshold, margin_base, min_di
         ar = ovr.get('area')
         rg = ovr.get('region')
 
-        # Debug (bei Bedarf aktiv lassen)
-        # print(f"[Detect/DBG] area={getattr(ar,'type',None)}, region={getattr(rg,'type',None)}, "
-        #       f"mode={getattr(sd,'mode',None)}, has_clip={getattr(sd,'clip',None) is not None}, "
-        #       f"frame={ctx.scene.frame_current}")
-
         if not ar or not rg or not sd or getattr(sd, "clip", None) is None:
             return {"status": "failed", "reason": "no_valid_clip_context"}
 
@@ -168,7 +163,6 @@ def perform_marker_detection(ctx, clip, tracking, threshold, margin_base, min_di
                     threshold=float(threshold),
                     min_distance=int(min_dist),
                     margin=int(margin),
-                    estimate_error=True,
                     placement='FRAME'
                 )
             except Exception as ex:
@@ -222,6 +216,7 @@ def run_detect_adaptive(context, *, detection_threshold=-1.0,
 
     # Ziele
     adapt = int(marker_adapt if marker_adapt >= 0 else int(scene.get("marker_adapt", scene.get("marker_basis", 20))))
+
     basis_for_bounds = max(1, int(adapt * 1.1))
     if min_marker >= 0 and max_marker >= 0:
         mn, mx = int(min_marker), int(max_marker)
