@@ -5,7 +5,7 @@ from .set_test_value import set_test_value
 from .properties import RepeatEntry
 from .log_helper import write_log_entry
 from .find_low_marker_frame import run_find_low_marker_frame
-from .jump_to_frame import jump_to_frame_helper
+from .jump_to_frame import run_jump_to_frame
 from .detect import perform_marker_detection, run_detect_adaptive, run_detect_once
 from .bidirectional_track import run_bidirectional_track
 from .clean_short_tracks import clean_short_tracks
