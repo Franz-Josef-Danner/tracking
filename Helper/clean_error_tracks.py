@@ -141,25 +141,4 @@ def run_clean_error_tracks(context):
         bpy.context.view_layer.update()
         scene.frame_set(scene.frame_current)
 
-        # --- 7) Routing (strict gating)
-        try:
-            if made_changes:
-                print("[Router] Änderungen erkannt → marker_adapt_boost + find_low_marker_frame")
-                try:
-                    bpy.ops.clip.marker_adapt_boost('EXEC_DEFAULT')
-                    print("[Router] marker_adapt_boost ok.")
-                except Exception as ex:
-                    print(f"[Router][WARN] marker_adapt_boost fehlgeschlagen: {ex}")
-
-                try:
-                    bpy.ops.clip.find_low_marker_frame('INVOKE_DEFAULT')
-                    print("[Router] find_low_marker_frame gestartet.")
-                except Exception as ex:
-                    print(f"[Router][WARN] find_low_marker_frame fehlgeschlagen: {ex}")
-            else:
-                print("[Router] Keine Änderungen mehr → solve_watch_clean")
-                bpy.ops.clip.solve_watch_clean('INVOKE_DEFAULT')
-        except Exception as ex:
-            print(f"[Router][WARN] Routing fehlgeschlagen: {ex}")
-
     return {'FINISHED'}
