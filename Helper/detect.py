@@ -1,11 +1,15 @@
-# detect_neu.py — robuste Version mit Pre‑Pass‑Cleanup & adaptiven, auflösungsbasierten Parametern
-# - Basen aus Auflösung: margin_base = width*0.025, min_distance_base = width*0.05 (alt: CLIP_OT_detect)  [vgl. detect_alt.py]
-# - Skalierung per Threshold-Faktor: factor = log10(threshold*1e6)/6 (alt: perform_marker_detection)       [vgl. detect_alt.py]
-# - RUNNING-Sicherungsanker + Pre-Pass-Cleanup gegen „Marker wachsen an“
+# detect_neu.py — adaptive Merker-Detektion mit auflösungsbasierten Parametern,
+#                 robustem Cleanup und alter Threshold-Backoff-Formel.
 #
-# Referenzen:
-#   * Auflösungs-Basen: detect_alt.py (image_width*0.025, *0.05)       ← alt  :contentReference[oaicite:2]{index=2}
-#   * Faktor-Formel in perform_marker_detection                        ← alt  :contentReference[oaicite:3]{index=3}
+# - Basen aus Auflösung: margin_base = width*0.025, min_distance_base = width*0.05
+# - Skalierung: factor = log10(threshold*1e6)/6 → margin/min_distance
+# - Threshold-Update (RUNNING): new = max(old * ((anzahl_neu + 0.1)/marker_adapt), 1e-4)
+# - Cleanup:
+#     * Pre-Pass: Reste aus scene["detect_prev_names"] datenblock-basiert entfernen
+#     * In-Pass: neue Tracks des aktuellen Versuchs löschen (Operator → Fallback)
+#     * Sicherungsanker: evtl. Restnamen in scene["detect_prev_names"] für nächste Runde
+#
+# Diese Datei ist PEP-8-konform und Coordinator-kompatibel.
 
 import bpy
 import math
@@ -48,7 +52,7 @@ def _remove_tracks_by_name(tracking: bpy.types.MovieTracking, names_to_remove) -
 def _collect_existing_positions(
     tracking: bpy.types.MovieTracking, frame: int, w: int, h: int
 ) -> List[Tuple[float, float]]:
-    """Positionen existierender Marker (x,y in px) im Ziel‑Frame sammeln."""
+    """Positionen existierender Marker (x, y in px) im Ziel‑Frame sammeln."""
     out: List[Tuple[float, float]] = []
     for t in tracking.tracks:
         try:
@@ -192,15 +196,15 @@ def run_detect_once(
 
         # --- Auflösungsbasierte Basen (wie alt: width*0.025, width*0.05) ---
         if margin_base is None:
-            margin_base = max(1, int(width * 0.025))  # alt: image_width*0.025  :contentReference[oaicite:4]{index=4}
+            margin_base = max(1, int(width * 0.025))
         if min_distance_base is None:
-            min_distance_base = max(1, int(width * 0.05))  # alt: image_width*0.05  :contentReference[oaicite:5]{index=5}
+            min_distance_base = max(1, int(width * 0.05))
 
         # Snapshot vor Detect
         initial_names = {t.name for t in tracking.tracks}
         existing_px = _collect_existing_positions(tracking, frame, width, height)
 
-        # Detect mit faktor‑skalierten Parametern (Formel wie alt)  :contentReference[oaicite:6]{index=6}
+        # Detect mit faktor‑skalierten Parametern (Formel wie alt)
         _deselect_all(tracking)
         perform_marker_detection(
             clip,
@@ -266,36 +270,39 @@ def run_detect_once(
             remaining_after_delete: set[str] = set()
 
             if added_names:
+                # 1) Operator‑Versuch (UI‑Kontext, falls vorhanden)
                 _deselect_all(tracking)
                 for t in tracks:
                     if t.name in added_names:
                         t.select = True
                 try:
                     bpy.ops.clip.delete_track()
-                    op_deleted = True
                 except Exception:
-                    op_deleted = False
+                    pass
 
-                # Fallback über Datablock-API
+                # 2) Fallback über Datablock‑API (löscht ggf. verbleibende)
                 still_there = {t.name for t in tracking.tracks if t.name in added_names}
                 if still_there:
                     _remove_tracks_by_name(tracking, still_there)
-                    remaining_after_delete = {n for n in still_there if n in {t.name for t in tracking.tracks}}
+                    # Prüfen, ob noch etwas übrig blieb (extrem selten)
+                    remaining_after_delete = {
+                        n for n in still_there if n in {t.name for t in tracking.tracks}
+                    }
 
-                # Depsgraph/RNA auffrischen
+                # 3) Depsgraph/RNA auffrischen
                 try:
                     bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
                 except Exception:
                     pass
 
-            # Threshold adaptieren (proportional zur Abweichung; wie bisher)
+            # Threshold adaptieren (proportional zur Abweichung; alte Backoff‑Formel)
             new_threshold = max(
                 float(threshold) * ((anzahl_neu + 0.1) / float(safe_adapt)),
                 1e-4,
             )
             scn["last_detection_threshold"] = float(new_threshold)
 
-            # *** SICHERUNGSANKER für den nächsten Pass: evtl. Reste vormerken ***
+            # *** SICHERUNGSANKER: evtl. Reste in nächste Runde tragen ***
             scn["detect_prev_names"] = list(remaining_after_delete) if remaining_after_delete else []
 
             return {
@@ -345,6 +352,6 @@ def run_detect_adaptive(
         last = run_detect_once(context, start_frame=start_frame, **kwargs)
         if last.get("status") in ("READY", "FAILED"):
             return last
-        # RUNNING: nächster Pass (Threshold/Frame werden aus Scene gelesen)
+        # RUNNING: nächster Pass (Threshold/Frame kommen aus Scene)
         start_frame = last.get("frame", start_frame)
     return last or {"status": "FAILED", "reason": "max_attempts_exceeded"}
