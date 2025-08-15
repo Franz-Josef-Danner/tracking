@@ -1,33 +1,77 @@
 # detect_neu.py — adaptive Merker-Detektion mit auflösungsbasierten Parametern,
-#                 robustem Cleanup und alter Threshold-Backoff-Formel.
+#                 robustem Cleanup, UI-Kontext-Override und Schutz vor Endlosschleifen.
 #
-# Neu: Konsolen-Logs für anzahl_neu, marker_min, marker_max (+ Kontext).
-#
+# Kernpunkte:
 # - Basen aus Auflösung: margin_base = width*0.025, min_distance_base = width*0.05
 # - Skalierung: factor = log10(threshold*1e6)/6 → margin/min_distance
-# - Threshold-Update (RUNNING): new = max(old * ((anzahl_neu + 0.1)/marker_adapt), 1e-4)
+# - Threshold-Update (RUNNING): new = max(old * ((anzahl_neu + 0.1)/marker_adapt), 1e-4)  # alte Formel
 # - Cleanup:
 #     * Pre-Pass: Reste aus scene["detect_prev_names"] datenblock-basiert entfernen
 #     * In-Pass: neue Tracks des aktuellen Versuchs löschen (Operator → Fallback)
-#     * Sicherungsanker: evtl. Restnamen in scene["detect_prev_names"] für nächste Runde
+# - Schutz nach erfolgreicher Detektion (READY):
+#     * scene["__skip_clean_short_once"] = True → erster Clean-Short wird übersprungen
+#     * scene["__just_created_names"] = [...] → frische Namen, die Clean-Short ignoriert
 #
-# Diese Datei ist PEP-8-konform und Coordinator-kompatibel.
+# Zusätzlich: Operator-Aufrufe werden mit einem gültigen CLIP_EDITOR-Kontext ausgeführt,
+#             um "poll() failed, context is incorrect" zu vermeiden.
 
 import bpy
 import math
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Iterable
 
 __all__ = [
     "perform_marker_detection",
     "run_detect_once",
     "run_detect_adaptive",
+    "clean_short_tracks",
 ]
 
 _LOCK_KEY = "__detect_lock"
 
 
 # ---------------------------------------------------------------------------
-# Utilities
+# Kontext-Utilities (CLIP_EDITOR-Override)
+# ---------------------------------------------------------------------------
+
+def _find_clip_editor_context():
+    """Suche ein (window, area, region, space) Quartett für den CLIP_EDITOR."""
+    wm = bpy.context.window_manager
+    if not wm:
+        return None, None, None, None
+    for window in wm.windows:
+        screen = window.screen
+        if not screen:
+            continue
+        for area in screen.areas:
+            if area.type == "CLIP_EDITOR":
+                region = next((r for r in area.regions if r.type == "WINDOW"), None)
+                space = area.spaces.active if hasattr(area, "spaces") else None
+                if region and space:
+                    return window, area, region, space
+    return None, None, None, None
+
+
+def _run_in_clip_context(op_callable, **kwargs):
+    """
+    Führe einen CLIP-Operator im gültigen CLIP_EDITOR-Kontext aus.
+    op_callable: z.B. lambda **kw: bpy.ops.clip.detect_features(**kw)
+    """
+    window, area, region, space = _find_clip_editor_context()
+    if not (window and area and region and space):
+        raise RuntimeError("No CLIP_EDITOR context available for operator.")
+    override = {
+        "window": window,
+        "area": area,
+        "region": region,
+        "space_data": space,
+        "scene": bpy.context.scene,
+    }
+    with bpy.context.temp_override(**override):
+        return op_callable(**kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Daten-Utilities
 # ---------------------------------------------------------------------------
 
 def _deselect_all(tracking: bpy.types.MovieTracking) -> None:
@@ -35,7 +79,7 @@ def _deselect_all(tracking: bpy.types.MovieTracking) -> None:
         t.select = False
 
 
-def _remove_tracks_by_name(tracking: bpy.types.MovieTracking, names_to_remove) -> int:
+def _remove_tracks_by_name(tracking: bpy.types.MovieTracking, names_to_remove: Iterable[str]) -> int:
     """Robustes Entfernen von Tracks per Datablock‑API (UI‑Kontext‑frei)."""
     if not names_to_remove:
         return 0
@@ -96,7 +140,7 @@ def _scaled_params(
 
 
 # ---------------------------------------------------------------------------
-# Legacy‑Helper (beibehalten)
+# Feature-Detektion (mit Kontext-Override)
 # ---------------------------------------------------------------------------
 
 def perform_marker_detection(
@@ -117,11 +161,17 @@ def perform_marker_detection(
         int(min_distance_base),
     )
 
-    bpy.ops.clip.detect_features(
-        margin=margin,
-        min_distance=min_distance,
-        threshold=float(threshold),
-    )
+    try:
+        _run_in_clip_context(
+            lambda **kw: bpy.ops.clip.detect_features(**kw),
+            margin=margin,
+            min_distance=min_distance,
+            threshold=float(threshold),
+        )
+    except Exception as ex:
+        print("[DetectDebug] detect_features failed in override:", ex)
+        raise
+
     return sum(1 for t in tracking.tracks if getattr(t, "select", False))
 
 
@@ -143,7 +193,7 @@ def run_detect_once(
 ) -> Dict[str, Any]:
     """
     Führt GENAU EINEN Detect‑Pass aus und bewertet das Ergebnis.
-    Rückgabe: {"status": "READY" | "RUNNING" | "FAILED", "new_tracks": int, "threshold": float, "frame": int}
+    Rückgabe: {"status": "READY" | "RUNNING" | "FAILED", "new_tracks": int, "threshold": float, "frame": int, "created_names": list[str]}
     """
     scn = context.scene
     scn[_LOCK_KEY] = True  # Lock setzen (FSM wartet, solange True)
@@ -190,11 +240,12 @@ def run_detect_once(
             marker_adapt = int(scn.get("marker_adapt", scn.get("marker_basis", 20)))
         safe_adapt = max(1, int(marker_adapt))
 
-        basis_for_bounds = int(marker_adapt * 1.1) if marker_adapt > 0 else int(scn.get("marker_basis", 20))
+        basis_for_bounds = int(marker_adapt * 1.2) if marker_adapt > 0 else int(scn.get("marker_basis", 20))
         if min_marker is None:
-            min_marker = int(max(1, basis_for_bounds * 0.9))
+            # toleranter Korridor, dein Helper setzt i. d. R. ±10 % um adapt → hier ähnlich
+            min_marker = int(max(1, safe_adapt - max(3, int(safe_adapt * 0.1))))
         if max_marker is None:
-            max_marker = int(max(2, basis_for_bounds * 1.1))
+            max_marker = int(max(2, safe_adapt + max(3, int(safe_adapt * 0.2))))
 
         # --- Auflösungsbasierte Basen (wie alt: width*0.025, width*0.05) ---
         if margin_base is None:
@@ -208,13 +259,17 @@ def run_detect_once(
 
         # Detect mit faktor‑skalierten Parametern (Formel wie alt)
         _deselect_all(tracking)
-        perform_marker_detection(
-            clip,
-            tracking,
-            float(threshold),
-            int(margin_base),
-            int(min_distance_base),
-        )
+        try:
+            perform_marker_detection(
+                clip,
+                tracking,
+                float(threshold),
+                int(margin_base),
+                int(min_distance_base),
+            )
+        except Exception as ex:
+            print("[DetectDebug] FAILED: Operator bpy.ops.clip.detect_features failed:", ex)
+            return {"status": "FAILED", "reason": "detect_features_failed"}
 
         # Redraw erzwingen (RNA/Depsgraph)
         try:
@@ -255,7 +310,7 @@ def run_detect_once(
             for t in close_tracks:
                 t.select = True
             try:
-                bpy.ops.clip.delete_track()
+                _run_in_clip_context(lambda **kw: bpy.ops.clip.delete_track(**kw))
             except Exception:
                 _remove_tracks_by_name(tracking, {t.name for t in close_tracks})
 
@@ -263,6 +318,7 @@ def run_detect_once(
         close_set = {t.name for t in close_tracks}
         cleaned_tracks = [t for t in new_tracks_raw if t.name not in close_set]
         anzahl_neu = len(cleaned_tracks)
+        created_names = [t.name for t in cleaned_tracks]
 
         # --- Debug: Werte vor Korridorprüfung ausgeben ---
         print(
@@ -285,7 +341,7 @@ def run_detect_once(
                     if t.name in added_names:
                         t.select = True
                 try:
-                    bpy.ops.clip.delete_track()
+                    _run_in_clip_context(lambda **kw: bpy.ops.clip.delete_track(**kw))
                 except Exception:
                     pass
 
@@ -333,16 +389,21 @@ def run_detect_once(
                 "new_tracks": int(anzahl_neu),
                 "threshold": float(new_threshold),
                 "frame": int(frame),
+                "created_names": created_names,
             }
 
         # Erfolg: READY → Marker behalten, nichts vormerken
         scn["detect_prev_names"] = []
         scn["last_detection_threshold"] = float(threshold)
 
+        # >>> NEU: CleanShort einmal überspringen und frische Tracks merken
+        scn["__skip_clean_short_once"] = True
+        scn["__just_created_names"] = created_names
+
         # --- Debug: READY-Ausgabe ---
         print(
-            "[DetectDebug] READY | anzahl_neu=%d liegt im Korridor [%d..%d] | threshold_keep=%.6f"
-            % (int(anzahl_neu), int(min_marker), int(max_marker), float(threshold))
+            "[DetectDebug] READY | anzahl_neu=%d liegt im Korridor [%d..%d] | threshold_keep=%.6f | created=%d"
+            % (int(anzahl_neu), int(min_marker), int(max_marker), float(threshold), len(created_names))
         )
 
         return {
@@ -350,6 +411,7 @@ def run_detect_once(
             "new_tracks": int(anzahl_neu),
             "threshold": float(threshold),
             "frame": int(frame),
+            "created_names": created_names,
         }
 
     except Exception as ex:
@@ -385,3 +447,70 @@ def run_detect_adaptive(
         # RUNNING: nächster Pass (Threshold/Frame kommen aus Scene)
         start_frame = last.get("frame", start_frame)
     return last or {"status": "FAILED", "reason": "max_attempts_exceeded"}
+
+
+# ---------------------------------------------------------------------------
+# Clean-Short Helper (mit Schutz vor frischen Markern)
+# ---------------------------------------------------------------------------
+
+def clean_short_tracks(
+    context,
+    *,
+    frames: int,
+    action: str = "DELETE_TRACK",
+) -> Dict[str, Any]:
+    """
+    Führt Clean-Short aus, schützt aber frisch erzeugte Markers (READY-Runde).
+    - Überspringt genau einen Durchlauf direkt nach READY (Flag __skip_clean_short_once)
+    - Nimmt frische Tracks (__just_created_names) explizit aus der Selektion aus
+    """
+    scn = context.scene
+
+    # GUARD 1: Einmalig CleanShort überspringen (direkt nach READY)
+    if scn.get("__skip_clean_short_once"):
+        print("[CleanShort] skipped once to protect fresh detects")
+        scn["__skip_clean_short_once"] = False
+        return {"CANCELLED": True}
+
+    # GUARD 2: Frische Namen (falls vorhanden) bei CleanShort ausnehmen
+    fresh = set(scn.get("__just_created_names", []) or [])
+    try:
+        clip = _resolve_clip(context)
+        if not clip:
+            print("[CleanShort] no clip")
+            return {"CANCELLED": True}
+        tracking = clip.tracking
+
+        # Auswahl vorbereiten: alle selektieren, dann 'fresh' ausschließen
+        for t in tracking.tracks:
+            t.select = True
+        if fresh:
+            for t in tracking.tracks:
+                if t.name in fresh:
+                    t.select = False
+
+        # Clean nur auf Auswahl ausführen
+        def _op(**kw):
+            return bpy.ops.clip.clean_tracks(**kw)
+
+        try:
+            _run_in_clip_context(_op, frames=int(frames), error=0.0, action=str(action))
+        except Exception as ex:
+            print("[CleanShort] clean_tracks override failed:", ex)
+            # Fallback: ohne Override versuchen
+            try:
+                bpy.ops.clip.clean_tracks(frames=int(frames), error=0.0, action=str(action))
+            except Exception as ex2:
+                print("[CleanShort] clean_tracks fallback failed:", ex2)
+                return {"CANCELLED": True}
+
+        # Frische Liste leeren (einmaliger Schutz)
+        if fresh:
+            scn["__just_created_names"] = []
+
+        print(f"[CleanShort] Tracks < {int(frames)} Frames wurden bearbeitet. Aktion: {action}")
+        return {"FINISHED": True}
+
+    except Exception as ex:
+        print("[CleanShort] FAILED:", ex)
+        return {"CANCELLED": True}
