@@ -1,19 +1,19 @@
 # detect_neu.py — adaptive Merker-Detektion mit auflösungsbasierten Parametern,
-#                 robustem Cleanup, UI-Kontext-Override und Schutz vor Endlosschleifen.
+#                 robustem Cleanup, UI-Kontext-Override, Handoff-Gate (wie alt)
+#                 und Schutz vor Endlosschleifen.
+#
+# Wichtig (wie alte Operator-Version):
+# - Handoff: handoff_to_pipeline=False  →  scene["detect_status"]="standalone_success",
+#                                         scene["pipeline_do_not_start"]=True
+#           handoff_to_pipeline=True   →  scene["detect_status"]="success",
+#                                         scene["pipeline_do_not_start"]=False
 #
 # Kernpunkte:
 # - Basen aus Auflösung: margin_base = width*0.025, min_distance_base = width*0.05
 # - Skalierung: factor = log10(threshold*1e6)/6 → margin/min_distance
-# - Threshold-Update (RUNNING): new = max(old * ((anzahl_neu + 0.1)/marker_adapt), 1e-4)  # alte Formel
-# - Cleanup:
-#     * Pre-Pass: Reste aus scene["detect_prev_names"] datenblock-basiert entfernen
-#     * In-Pass: neue Tracks des aktuellen Versuchs löschen (Operator → Fallback)
-# - Schutz nach erfolgreicher Detektion (READY):
-#     * scene["__skip_clean_short_once"] = True → erster Clean-Short wird übersprungen
-#     * scene["__just_created_names"] = [...] → frische Namen, die Clean-Short ignoriert
-#
-# Zusätzlich: Operator-Aufrufe werden mit einem gültigen CLIP_EDITOR-Kontext ausgeführt,
-#             um "poll() failed, context is incorrect" zu vermeiden.
+# - Threshold-Update (RUNNING): new = max(old * ((anzahl_neu + 0.1)/marker_adapt), 1e-4)
+# - Cleanup: Pre-Pass + In-Pass (Operator→Fallback)
+# - Zusatz-Airbag: __skip_clean_short_once / __just_created_names
 
 import bpy
 import math
@@ -34,7 +34,6 @@ _LOCK_KEY = "__detect_lock"
 # ---------------------------------------------------------------------------
 
 def _find_clip_editor_context():
-    """Suche ein (window, area, region, space) Quartett für den CLIP_EDITOR."""
     wm = bpy.context.window_manager
     if not wm:
         return None, None, None, None
@@ -52,10 +51,6 @@ def _find_clip_editor_context():
 
 
 def _run_in_clip_context(op_callable, **kwargs):
-    """
-    Führe einen CLIP-Operator im gültigen CLIP_EDITOR-Kontext aus.
-    op_callable: z.B. lambda **kw: bpy.ops.clip.detect_features(**kw)
-    """
     window, area, region, space = _find_clip_editor_context()
     if not (window and area and region and space):
         raise RuntimeError("No CLIP_EDITOR context available for operator.")
@@ -80,7 +75,6 @@ def _deselect_all(tracking: bpy.types.MovieTracking) -> None:
 
 
 def _remove_tracks_by_name(tracking: bpy.types.MovieTracking, names_to_remove: Iterable[str]) -> int:
-    """Robustes Entfernen von Tracks per Datablock‑API (UI‑Kontext‑frei)."""
     if not names_to_remove:
         return 0
     removed = 0
@@ -98,7 +92,6 @@ def _remove_tracks_by_name(tracking: bpy.types.MovieTracking, names_to_remove: I
 def _collect_existing_positions(
     tracking: bpy.types.MovieTracking, frame: int, w: int, h: int
 ) -> List[Tuple[float, float]]:
-    """Positionen existierender Marker (x, y in px) im Ziel‑Frame sammeln."""
     out: List[Tuple[float, float]] = []
     for t in tracking.tracks:
         try:
@@ -111,7 +104,6 @@ def _collect_existing_positions(
 
 
 def _resolve_clip(context) -> Optional[bpy.types.MovieClip]:
-    """Clip aus aktivem CLIP_EDITOR bevorzugen, sonst erstes MovieClip‑Datablock."""
     space = getattr(context, "space_data", None)
     if space and getattr(space, "type", None) == "CLIP_EDITOR":
         c = getattr(space, "clip", None)
@@ -127,12 +119,6 @@ def _scaled_params(
     margin_base: int,
     min_distance_base: int,
 ) -> Tuple[int, int]:
-    """
-    Skaliert margin/min_distance gemäß alter Heuristik:
-      factor = log10(threshold*1e6) / 6
-    → margin = int(margin_base * factor)
-      min_distance = int(min_distance_base * factor)
-    """
     factor = math.log10(max(float(threshold), 1e-6) * 1e6) / 6.0
     margin = max(1, int(int(margin_base) * factor))
     min_distance = max(1, int(int(min_distance_base) * factor))
@@ -150,17 +136,11 @@ def perform_marker_detection(
     margin_base: int,
     min_distance_base: int,
 ) -> int:
-    """
-    Führt detect_features mit skalierten Parametern aus
-    und liefert die Anzahl selektierter Tracks zurück.
-    (Formeln wie in der alten Version.)
-    """
     margin, min_distance = _scaled_params(
         float(threshold),
         int(margin_base),
         int(min_distance_base),
     )
-
     try:
         _run_in_clip_context(
             lambda **kw: bpy.ops.clip.detect_features(**kw),
@@ -171,12 +151,11 @@ def perform_marker_detection(
     except Exception as ex:
         print("[DetectDebug] detect_features failed in override:", ex)
         raise
-
     return sum(1 for t in tracking.tracks if getattr(t, "select", False))
 
 
 # ---------------------------------------------------------------------------
-# EIN einzelner Detect‑Pass (Coordinator‑kompatibel)
+# EIN einzelner Detect‑Pass
 # ---------------------------------------------------------------------------
 
 def run_detect_once(
@@ -190,13 +169,15 @@ def run_detect_once(
     margin_base: Optional[int] = None,        # px; Default = 2.5% Bildbreite
     min_distance_base: Optional[int] = None,  # px; Default = 5% Bildbreite
     close_dist_rel: float = 0.01,             # 1% Bildbreite
+    handoff_to_pipeline: bool = False,        # <<< NEU: wie alte Version (Operator)
 ) -> Dict[str, Any]:
     """
-    Führt GENAU EINEN Detect‑Pass aus und bewertet das Ergebnis.
-    Rückgabe: {"status": "READY" | "RUNNING" | "FAILED", "new_tracks": int, "threshold": float, "frame": int, "created_names": list[str]}
+    Rückgabe: {"status": "READY" | "RUNNING" | "FAILED",
+               "new_tracks": int, "threshold": float, "frame": int,
+               "created_names": list[str]}
     """
     scn = context.scene
-    scn[_LOCK_KEY] = True  # Lock setzen (FSM wartet, solange True)
+    scn[_LOCK_KEY] = True
 
     try:
         clip = _resolve_clip(context)
@@ -207,7 +188,6 @@ def run_detect_once(
         settings = tracking.settings
         width, height = int(clip.size[0]), int(clip.size[1])
 
-        # Optional: Frame setzen
         if start_frame is not None:
             try:
                 scn.frame_set(int(start_frame))
@@ -215,7 +195,7 @@ def run_detect_once(
                 pass
         frame = int(scn.frame_current)
 
-        # --- PRE‑PASS CLEANUP: entferne Reste aus vorherigen fehlgeschlagenen Versuchen ---
+        # PRE‑PASS Cleanup (Reste aus fehlgeschlagenen Runs)
         prev_names = set(scn.get("detect_prev_names", []) or [])
         if prev_names:
             _remove_tracks_by_name(tracking, prev_names)
@@ -225,7 +205,7 @@ def run_detect_once(
             except Exception:
                 pass
 
-        # --- Start‑Threshold (wie alt: scene["last_detection_threshold"] fallback auf settings) ---
+        # Threshold laden
         if threshold is None:
             threshold = float(
                 scn.get(
@@ -235,54 +215,51 @@ def run_detect_once(
             )
         threshold = max(1e-6, float(threshold))
 
-        # --- Ziel / Bounds (wie alt) ---
+        # Zielkorridor
         if marker_adapt is None:
             marker_adapt = int(scn.get("marker_adapt", scn.get("marker_basis", 20)))
         safe_adapt = max(1, int(marker_adapt))
 
-        basis_for_bounds = int(marker_adapt * 1.2) if marker_adapt > 0 else int(scn.get("marker_basis", 20))
+        # Hier eher großzügig – dein Helper setzt min/max ≈ ±10 % um adapt
         if min_marker is None:
-            # toleranter Korridor, dein Helper setzt i. d. R. ±10 % um adapt → hier ähnlich
-            min_marker = int(max(1, safe_adapt - max(3, int(safe_adapt * 0.1))))
+            min_marker = int(max(1, round(safe_adapt * 0.9)))
         if max_marker is None:
-            max_marker = int(max(2, safe_adapt + max(3, int(safe_adapt * 0.2))))
+            max_marker = int(max(2, round(safe_adapt * 1.2)))
 
-        # --- Auflösungsbasierte Basen (wie alt: width*0.025, width*0.05) ---
+        # Auflösungsbasen
         if margin_base is None:
             margin_base = max(1, int(width * 0.025))
         if min_distance_base is None:
             min_distance_base = max(1, int(width * 0.05))
 
-        # Snapshot vor Detect
+        # Snapshot
         initial_names = {t.name for t in tracking.tracks}
         existing_px = _collect_existing_positions(tracking, frame, width, height)
 
-        # Detect mit faktor‑skalierten Parametern (Formel wie alt)
+        # Detect
         _deselect_all(tracking)
         try:
             perform_marker_detection(
-                clip,
-                tracking,
+                clip, tracking,
                 float(threshold),
-                int(margin_base),
-                int(min_distance_base),
+                int(margin_base), int(min_distance_base),
             )
         except Exception as ex:
             print("[DetectDebug] FAILED: Operator bpy.ops.clip.detect_features failed:", ex)
+            scn["detect_status"] = "failed"
             return {"status": "FAILED", "reason": "detect_features_failed"}
 
-        # Redraw erzwingen (RNA/Depsgraph)
         try:
             bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
         except Exception:
             pass
 
-        # Neue Tracks bestimmen (roh)
+        # Neue Tracks
         tracks = tracking.tracks
         new_tracks_raw = [t for t in tracks if t.name not in initial_names]
         added_names = {t.name for t in new_tracks_raw}
 
-        # Near‑Duplicate‑Filter (relative Distanz in px)
+        # Near‑Duplicates entfernen
         rel = close_dist_rel if close_dist_rel > 0.0 else 0.01
         distance_px = max(1, int(width * rel))
         thr2 = float(distance_px * distance_px)
@@ -298,13 +275,11 @@ def run_detect_once(
                     x = m.co[0] * width
                     y = m.co[1] * height
                     for ex, ey in existing_px:
-                        dx = x - ex
-                        dy = y - ey
+                        dx = x - ex; dy = y - ey
                         if (dx * dx + dy * dy) < thr2:
                             close_tracks.append(tr)
                             break
 
-        # Zu nahe neue Tracks löschen (best effort)
         if close_tracks:
             _deselect_all(tracking)
             for t in close_tracks:
@@ -314,28 +289,22 @@ def run_detect_once(
             except Exception:
                 _remove_tracks_by_name(tracking, {t.name for t in close_tracks})
 
-        # Bereinigte neue Tracks
         close_set = {t.name for t in close_tracks}
         cleaned_tracks = [t for t in new_tracks_raw if t.name not in close_set]
         anzahl_neu = len(cleaned_tracks)
         created_names = [t.name for t in cleaned_tracks]
 
-        # --- Debug: Werte vor Korridorprüfung ausgeben ---
         print(
             "[DetectDebug] Frame=%d | anzahl_neu=%d | marker_min=%d | marker_max=%d | "
             "marker_adapt=%d | threshold_old=%.6f"
             % (frame, anzahl_neu, int(min_marker), int(max_marker), int(marker_adapt), float(threshold))
         )
 
-        # ---------------------------
-        # Zielkorridor prüfen
-        # ---------------------------
+        # Korridorprüfung
         if anzahl_neu < int(min_marker) or anzahl_neu > int(max_marker):
-            # *** HARTE GARANTIE: ALLE in diesem Pass erzeugten Tracks entfernen ***
             remaining_after_delete: set[str] = set()
 
             if added_names:
-                # 1) Operator‑Versuch (UI‑Kontext, falls vorhanden)
                 _deselect_all(tracking)
                 for t in tracks:
                     if t.name in added_names:
@@ -345,43 +314,30 @@ def run_detect_once(
                 except Exception:
                     pass
 
-                # 2) Fallback über Datablock‑API (löscht ggf. verbleibende)
                 still_there = {t.name for t in tracking.tracks if t.name in added_names}
                 if still_there:
                     _remove_tracks_by_name(tracking, still_there)
-                    # Prüfen, ob noch etwas übrig blieb (extrem selten)
                     remaining_after_delete = {
                         n for n in still_there if n in {t.name for t in tracking.tracks}
                     }
-
-                # 3) Depsgraph/RNA auffrischen
                 try:
                     bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
                 except Exception:
                     pass
 
-            # Threshold adaptieren (proportional zur Abweichung; alte Backoff‑Formel)
             new_threshold = max(
                 float(threshold) * ((anzahl_neu + 0.1) / float(safe_adapt)),
                 1e-4,
             )
             scn["last_detection_threshold"] = float(new_threshold)
+            scn["detect_status"] = "running"  # <<< Neu gesetzt
 
-            # --- Debug: RUNNING-Update ausgeben ---
             print(
-                "[DetectDebug] RUNNING → new_threshold=%.6f (old=%.6f, adapt=%d) | anzahl_neu=%d | "
-                "corridor=[%d..%d]"
-                % (
-                    float(new_threshold),
-                    float(threshold),
-                    int(marker_adapt),
-                    int(anzahl_neu),
-                    int(min_marker),
-                    int(max_marker),
-                )
+                "[DetectDebug] RUNNING → new_threshold=%.6f (old=%.6f, adapt=%d) | anzahl_neu=%d | corridor=[%d..%d]"
+                % (float(new_threshold), float(threshold), int(marker_adapt),
+                   int(anzahl_neu), int(min_marker), int(max_marker))
             )
 
-            # *** SICHERUNGSANKER: evtl. Reste in nächste Runde tragen ***
             scn["detect_prev_names"] = list(remaining_after_delete) if remaining_after_delete else []
 
             return {
@@ -392,15 +348,23 @@ def run_detect_once(
                 "created_names": created_names,
             }
 
-        # Erfolg: READY → Marker behalten, nichts vormerken
+        # READY: Erfolg
         scn["detect_prev_names"] = []
         scn["last_detection_threshold"] = float(threshold)
 
-        # >>> NEU: CleanShort einmal überspringen und frische Tracks merken
+        # === Handoff-Gate (wie alt) ===
+        if handoff_to_pipeline:
+            scn["detect_status"] = "success"
+            scn["pipeline_do_not_start"] = False
+        else:
+            scn["detect_status"] = "standalone_success"
+            scn["pipeline_do_not_start"] = True  # <<< WICHTIG: Pipeline (z. B. CleanShort) erstmal NICHT starten
+        # ===============================
+
+        # Airbag gegen CleanShort direkt danach (falls Koordinator Flag ignoriert)
         scn["__skip_clean_short_once"] = True
         scn["__just_created_names"] = created_names
 
-        # --- Debug: READY-Ausgabe ---
         print(
             "[DetectDebug] READY | anzahl_neu=%d liegt im Korridor [%d..%d] | threshold_keep=%.6f | created=%d"
             % (int(anzahl_neu), int(min_marker), int(max_marker), float(threshold), len(created_names))
@@ -416,9 +380,9 @@ def run_detect_once(
 
     except Exception as ex:
         print("[DetectDebug] FAILED:", ex)
+        scn["detect_status"] = "failed"  # wie alt
         return {"status": "FAILED", "reason": str(ex)}
     finally:
-        # Lock freigeben
         try:
             scn[_LOCK_KEY] = False
         except Exception:
@@ -426,7 +390,7 @@ def run_detect_once(
 
 
 # ---------------------------------------------------------------------------
-# Optionaler Mehrfach‑Wrapper (praktisch für manuelle Tests)
+# Optionaler Mehrfach‑Wrapper
 # ---------------------------------------------------------------------------
 
 def run_detect_adaptive(
@@ -436,21 +400,17 @@ def run_detect_adaptive(
     max_attempts: int = 8,
     **kwargs,
 ) -> Dict[str, Any]:
-    """
-    Führt run_detect_once mehrfach aus, bis READY/FAILED oder max_attempts erreicht ist.
-    """
     last: Dict[str, Any] = {}
     for _ in range(max_attempts):
         last = run_detect_once(context, start_frame=start_frame, **kwargs)
         if last.get("status") in ("READY", "FAILED"):
             return last
-        # RUNNING: nächster Pass (Threshold/Frame kommen aus Scene)
         start_frame = last.get("frame", start_frame)
     return last or {"status": "FAILED", "reason": "max_attempts_exceeded"}
 
 
 # ---------------------------------------------------------------------------
-# Clean-Short Helper (mit Schutz vor frischen Markern)
+# Clean-Short Helper (Airbag, falls Koordinator nicht auf Gate hört)
 # ---------------------------------------------------------------------------
 
 def clean_short_tracks(
@@ -459,20 +419,19 @@ def clean_short_tracks(
     frames: int,
     action: str = "DELETE_TRACK",
 ) -> Dict[str, Any]:
-    """
-    Führt Clean-Short aus, schützt aber frisch erzeugte Markers (READY-Runde).
-    - Überspringt genau einen Durchlauf direkt nach READY (Flag __skip_clean_short_once)
-    - Nimmt frische Tracks (__just_created_names) explizit aus der Selektion aus
-    """
     scn = context.scene
 
-    # GUARD 1: Einmalig CleanShort überspringen (direkt nach READY)
+    # Falls Gate aktiv ist: CleanShort aussetzen
+    if scn.get("pipeline_do_not_start", False):
+        print("[CleanShort] blocked by pipeline_do_not_start")
+        return {"CANCELLED": True}
+
+    # Einmaliger Skip direkt nach READY
     if scn.get("__skip_clean_short_once"):
         print("[CleanShort] skipped once to protect fresh detects")
         scn["__skip_clean_short_once"] = False
         return {"CANCELLED": True}
 
-    # GUARD 2: Frische Namen (falls vorhanden) bei CleanShort ausnehmen
     fresh = set(scn.get("__just_created_names", []) or [])
     try:
         clip = _resolve_clip(context)
@@ -481,7 +440,7 @@ def clean_short_tracks(
             return {"CANCELLED": True}
         tracking = clip.tracking
 
-        # Auswahl vorbereiten: alle selektieren, dann 'fresh' ausschließen
+        # Auswahl: alle selektieren, dann frische ausschließen
         for t in tracking.tracks:
             t.select = True
         if fresh:
@@ -489,7 +448,6 @@ def clean_short_tracks(
                 if t.name in fresh:
                     t.select = False
 
-        # Clean nur auf Auswahl ausführen
         def _op(**kw):
             return bpy.ops.clip.clean_tracks(**kw)
 
@@ -497,14 +455,12 @@ def clean_short_tracks(
             _run_in_clip_context(_op, frames=int(frames), error=0.0, action=str(action))
         except Exception as ex:
             print("[CleanShort] clean_tracks override failed:", ex)
-            # Fallback: ohne Override versuchen
             try:
                 bpy.ops.clip.clean_tracks(frames=int(frames), error=0.0, action=str(action))
             except Exception as ex2:
                 print("[CleanShort] clean_tracks fallback failed:", ex2)
                 return {"CANCELLED": True}
 
-        # Frische Liste leeren (einmaliger Schutz)
         if fresh:
             scn["__just_created_names"] = []
 
