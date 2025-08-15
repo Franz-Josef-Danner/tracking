@@ -1,6 +1,8 @@
 # detect_neu.py — adaptive Merker-Detektion mit auflösungsbasierten Parametern,
 #                 robustem Cleanup und alter Threshold-Backoff-Formel.
 #
+# Neu: Konsolen-Logs für anzahl_neu, marker_min, marker_max (+ Kontext).
+#
 # - Basen aus Auflösung: margin_base = width*0.025, min_distance_base = width*0.05
 # - Skalierung: factor = log10(threshold*1e6)/6 → margin/min_distance
 # - Threshold-Update (RUNNING): new = max(old * ((anzahl_neu + 0.1)/marker_adapt), 1e-4)
@@ -262,6 +264,13 @@ def run_detect_once(
         cleaned_tracks = [t for t in new_tracks_raw if t.name not in close_set]
         anzahl_neu = len(cleaned_tracks)
 
+        # --- Debug: Werte vor Korridorprüfung ausgeben ---
+        print(
+            "[DetectDebug] Frame=%d | anzahl_neu=%d | marker_min=%d | marker_max=%d | "
+            "marker_adapt=%d | threshold_old=%.6f"
+            % (frame, anzahl_neu, int(min_marker), int(max_marker), int(marker_adapt), float(threshold))
+        )
+
         # ---------------------------
         # Zielkorridor prüfen
         # ---------------------------
@@ -302,6 +311,20 @@ def run_detect_once(
             )
             scn["last_detection_threshold"] = float(new_threshold)
 
+            # --- Debug: RUNNING-Update ausgeben ---
+            print(
+                "[DetectDebug] RUNNING → new_threshold=%.6f (old=%.6f, adapt=%d) | anzahl_neu=%d | "
+                "corridor=[%d..%d]"
+                % (
+                    float(new_threshold),
+                    float(threshold),
+                    int(marker_adapt),
+                    int(anzahl_neu),
+                    int(min_marker),
+                    int(max_marker),
+                )
+            )
+
             # *** SICHERUNGSANKER: evtl. Reste in nächste Runde tragen ***
             scn["detect_prev_names"] = list(remaining_after_delete) if remaining_after_delete else []
 
@@ -316,6 +339,12 @@ def run_detect_once(
         scn["detect_prev_names"] = []
         scn["last_detection_threshold"] = float(threshold)
 
+        # --- Debug: READY-Ausgabe ---
+        print(
+            "[DetectDebug] READY | anzahl_neu=%d liegt im Korridor [%d..%d] | threshold_keep=%.6f"
+            % (int(anzahl_neu), int(min_marker), int(max_marker), float(threshold))
+        )
+
         return {
             "status": "READY",
             "new_tracks": int(anzahl_neu),
@@ -324,6 +353,7 @@ def run_detect_once(
         }
 
     except Exception as ex:
+        print("[DetectDebug] FAILED:", ex)
         return {"status": "FAILED", "reason": str(ex)}
     finally:
         # Lock freigeben
