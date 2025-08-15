@@ -12,7 +12,6 @@ import bpy
 from bpy.props import IntProperty, FloatProperty, CollectionProperty
 from bpy.types import PropertyGroup, Panel
 from .Helper import bidirectional_track
-from .Helper.bidirectional_track import CLIP_OT_bidirectional_track
 from .Operator.tracking_coordinator import CLIP_OT_tracking_coordinator
 
 # --- PropertyGroup für Wiederhol-Frames ---
@@ -53,7 +52,6 @@ class CLIP_PT_kaiserlich_panel(Panel):
 classes = (
     RepeatEntry,
     CLIP_PT_kaiserlich_panel,
-    CLIP_OT_bidirectional_track,
     CLIP_OT_tracking_coordinator,
 )
 
@@ -61,7 +59,7 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
-        bidirectional_track.register()
+    bidirectional_track.register()
 
     # CollectionProperty erst nach Registrierung von RepeatEntry anlegen
     if not hasattr(bpy.types.Scene, "repeat_frame"):
