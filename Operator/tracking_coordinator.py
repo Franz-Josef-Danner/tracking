@@ -1,4 +1,4 @@
-# Operator/tracking_coordinator.py — Orchestrator mit Solve/Refine/Cleanup-Sequenz & Early-Optimize
+# Operator/tracking_coordinator.py — Orchestrator mit Solve/Refine/Cleanup-Sequenz & Handoff an Helper/bidirectional_track
 import bpy
 import time
 
@@ -10,7 +10,7 @@ LOCK_KEY = "__detect_lock"  # exklusiver Detect-Lock in scene
 
 
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
-    """Orchestriert Low-Marker-Find, Jump, Detect, Tracking, Cleanup und Solve."""
+    """Orchestriert Low-Marker-Find, Jump, Detect, Bidirectional-Track (Helper), Cleanup und Solve."""
     bl_idname = "clip.tracking_coordinator"
     bl_label = "Tracking Orchestrator (Pipeline)"
     bl_options = {'REGISTER', 'UNDO'}
@@ -26,7 +26,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     do_backward: bpy.props.BoolProperty(
         name="Bidirectional",
         default=True,
-        description="Run backward tracking after forward pass",
+        description="Run backward tracking after forward pass (in Helper gesteuert)",
     )
     auto_clean_short: bpy.props.BoolProperty(
         name="Auto Clean Short",
@@ -164,7 +164,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # Modal FSM
     # ------------------------------------------------------------
     def modal(self, context, event):
-        # Detect-Lock respektieren: solange Detect/Cleanup läuft, NICHTS anderes tun
+        # Detect-/Cleanup-Lock respektieren: solange Detect/Cleanup läuft, NICHTS anderes tun
         try:
             if context.scene.get(LOCK_KEY, False):
                 return {'RUNNING_MODAL'}
@@ -208,11 +208,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self._state = "JUMP"
             return {'RUNNING_MODAL'}
 
-        # Operator/tracking_coordinator.py (Ausschnitt: State "JUMP")
         elif self._state == "JUMP":
             goto = int(context.scene.get("goto_frame", context.scene.frame_current))
-        
-            # Nur springen – kein optimize_tracking_modal mehr
             cur = context.scene.frame_current
             if not self._jump_done or goto != cur:
                 try:
@@ -221,16 +218,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 except Exception as ex:
                     self._log(f"[Jump] Fehler: {ex}")
                 self._jump_done = True
-        
             self._state = "DETECT"
             return {'RUNNING_MODAL'}
-
 
         elif self._state == "DETECT":
             goto = int(context.scene.get("goto_frame", context.scene.frame_current))
             try:
                 from ..Helper.detect import run_detect_once
-                res = run_detect_once(context, start_frame=goto)
+                # WICHTIG: Handoff zur Pipeline aktivieren + einmaligen Clean-Schutz nutzen
+                res = run_detect_once(context, start_frame=goto, handoff_to_pipeline=True)
             except Exception as ex:
                 self._log(f"[Detect] Ausnahme: {ex}")
                 res = {"status": "FAILED", "reason": f"exception:{ex}"}
@@ -238,40 +234,51 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             st = res.get("status", "FAILED")
             if st == "READY":
                 self._detect_attempts = 0
-                self._state = "TRACK_FWD"
+                # statt TRACK_FWD/BWD → Handoff an Helper
+                self._state = "BIDITRACK"
                 return {'RUNNING_MODAL'}
 
             if st == "RUNNING":
                 self._detect_attempts += 1
                 if self._detect_attempts >= self._detect_attempts_max:
-                    self._log("[Detect] Timebox erreicht – weiter mit TRACK_FWD.")
+                    self._log("[Detect] Timebox erreicht – weiter mit BIDITRACK.")
                     self._detect_attempts = 0
-                    self._state = "TRACK_FWD"
-                # sonst in DETECT bleiben (Backoff-Retry), KEIN erneuter JUMP
+                    self._state = "BIDITRACK"
                 return {'RUNNING_MODAL'}
 
             # FAILED → minimalinvasiver Fallback
             self._log(f"[Detect] FAILED – {res.get('reason','')}")
             self._detect_attempts = 0
-            self._state = "TRACK_FWD"
+            self._state = "BIDITRACK"
             return {'RUNNING_MODAL'}
 
-        elif self._state == "TRACK_FWD":
+        # --------- NEU: Übergabe an Helper/bidirectional_track ----------
+        elif self._state == "BIDITRACK":
             try:
-                bpy.ops.clip.track_markers(backwards=False)
+                scn = context.scene
+                scn["bidi_active"] = True
+                scn["bidi_result"] = ""
+                from ..Helper.bidirectional_track import run_bidirectional_track
+                run_bidirectional_track(context)  # registriert eigenen Timer und läuft selbständig
             except Exception as ex:
-                self._log(f"[TrackFwd] Fehler: {ex}")
-            self._state = "TRACK_BWD" if self.do_backward else "CLEAN_SHORT"
+                self._log(f"[BidiTrack] Fehler beim Start: {ex}")
+                scn["bidi_active"] = False
+                scn["bidi_result"] = "FAILED"
+            self._state = "WAIT_BIDI"
             return {'RUNNING_MODAL'}
 
-        elif self._state == "TRACK_BWD":
-            if self.do_backward:
-                try:
-                    bpy.ops.clip.track_markers(backwards=True)
-                except Exception as ex:
-                    self._log(f"[TrackBwd] Fehler: {ex}")
-            self._state = "CLEAN_SHORT"
+        elif self._state == "WAIT_BIDI":
+            scn = context.scene
+            if scn.get("bidi_active", False):
+                # Helper läuft noch → weiter warten
+                return {'RUNNING_MODAL'}
+            # Helper fertig → optional Clean Short, dann weiter
+            if self.auto_clean_short:
+                self._state = "CLEAN_SHORT"
+            else:
+                self._state = "FIND_LOW"
             return {'RUNNING_MODAL'}
+        # ----------------------------------------------------------------
 
         elif self._state == "CLEAN_SHORT":
             if self.auto_clean_short:
@@ -287,7 +294,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         elif self._state == "SOLVE":
             # —— Sequenz: Solve → (Refine) → Solve → Projection-Cleanup (resolve_error) ——
             try:
-                # dynamisch auflösen, um robust ggü. Modulständen zu sein
                 from ..Helper import solve_camera as _solve_mod
             except Exception as ex:
                 _solve_mod = None
@@ -305,7 +311,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 if _solve_mod and hasattr(_solve_mod, "run_solve"):
                     _call("run_solve")
                 else:
-                    # Fallback: direkter Operator
                     bpy.ops.clip.solve_camera('EXEC_DEFAULT')
             except Exception as ex:
                 self._log(f"[Solve] Fehler bei Solve #1: {ex}")
@@ -317,7 +322,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         self._log(f"[Solve] Refine High Error (limit_frames={self.refine_limit_frames})")
                         _call("refine_high_error", limit_frames=int(self.refine_limit_frames))
                     elif _solve_mod and hasattr(_solve_mod, "run_refine_on_high_error"):
-                        # ältere Namensvariante
                         self._log(f"[Solve] Refine High Error (legacy, limit_frames={self.refine_limit_frames})")
                         _call("run_refine_on_high_error", limit_frames=int(self.refine_limit_frames))
                     else:
@@ -343,17 +347,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
             need_cleanup = False
             try:
-                # Versuche, aktuellen Solve-Fehler zu lesen
                 if _solve_mod and hasattr(_solve_mod, "get_current_solve_error"):
                     cur_err = _call("get_current_solve_error")
                 else:
-                    # Fallback: aus Tracking-Settings (falls verfügbar) oder None
                     cur_err = None
                 if cur_err is not None:
                     self._log(f"[Solve] aktueller Solve-Error={cur_err:.4f}, Schwellwert resolve_error={thr:.4f}")
                     need_cleanup = (cur_err > thr)
                 else:
-                    # konservativ: wenn unbekannt, nicht automatisch löschen
                     self._log("[Solve] Solve-Error nicht lesbar – überspringe automatische Prüfung")
             except Exception as ex:
                 self._log(f"[Solve] Fehler beim Lesen des Solve-Errors: {ex}")
@@ -366,7 +367,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                               threshold=thr,
                               action=self.projection_cleanup_action)
                     else:
-                        # Fallback: Clean-Tracks per Fehlergrenze
                         bpy.ops.clip.clean_tracks(
                             frames=0,
                             error=thr,
@@ -380,7 +380,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 not hasattr(_solve_mod, "run_solve") and
                 not hasattr(_solve_mod, "builtin_projection_cleanup")
             ):
-                # Im Zweifel alles-in-einem Helper probieren
                 try:
                     from ..Helper.solve_camera import run_solve_watch_clean
                     self._log("[Solve] Fallback run_solve_watch_clean()")
