@@ -3,7 +3,6 @@ import bpy
 from .error_value import error_value
 from .set_test_value import set_test_value
 from .properties import RepeatEntry
-from .log_helper import write_log_entry
 from .find_low_marker_frame import run_find_low_marker_frame
 from .jump_to_frame import run_jump_to_frame
 from .detect import perform_marker_detection, run_detect_adaptive, run_detect_once
