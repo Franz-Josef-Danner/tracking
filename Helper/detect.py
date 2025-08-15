@@ -166,6 +166,8 @@ def run_detect_once(
             _remove_tracks_by_name(tracking, prev_names)
             scn["detect_prev_names"] = []
 
+        # Helper/detect.py (Ausschnitt: run_detect_once) – ersetze den Mittelteil nach der Detect-Operation
+
         # Snapshot vor Detect
         initial_names = {t.name for t in tracking.tracks}
         existing_px = _collect_existing_positions(tracking, frame, width, height)
@@ -180,15 +182,16 @@ def run_detect_once(
             int(min_distance_base),
         )
 
-        # Redraw erzwingen, damit RNA/Depsgraph neue Tracks liefert
+        # Redraw erzwingen
         try:
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
         except Exception:
             pass
 
-        # Neue Tracks bestimmen
+        # Neue Tracks bestimmen (roh)
         tracks = tracking.tracks
-        new_tracks = [t for t in tracks if t.name not in initial_names]
+        new_tracks_raw = [t for t in tracks if t.name not in initial_names]
+        added_names = {t.name for t in new_tracks_raw}
 
         # Near-Duplicate-Filter
         rel = close_dist_rel if close_dist_rel > 0.0 else 0.01
@@ -196,8 +199,8 @@ def run_detect_once(
         thr2 = float(distance_px * distance_px)
 
         close_tracks = []
-        if existing_px and new_tracks:
-            for tr in new_tracks:
+        if existing_px and new_tracks_raw:
+            for tr in new_tracks_raw:
                 try:
                     m = tr.markers.find_frame(frame, exact=True)
                 except TypeError:
@@ -212,9 +215,8 @@ def run_detect_once(
                             close_tracks.append(tr)
                             break
 
-        # Zu nahe neue Tracks löschen
+        # Zu nahe neue Tracks löschen (best effort)
         if close_tracks:
-            # bevorzugt Operator (GUI-Kontext), sonst über Datablock
             for t in tracks:
                 t.select = False
             for t in close_tracks:
@@ -225,29 +227,37 @@ def run_detect_once(
                 _remove_tracks_by_name(tracking, {t.name for t in close_tracks})
 
         # Bereinigte neue Tracks
-        close_set = set(close_tracks)
-        cleaned_tracks = [t for t in new_tracks if t not in close_set]
+        close_set = {t.name for t in close_tracks}
+        cleaned_tracks = [t for t in new_tracks_raw if t.name not in close_set]
         anzahl_neu = len(cleaned_tracks)
 
         # Zielkorridor prüfen
         if anzahl_neu < int(min_marker) or anzahl_neu > int(max_marker):
-            # Alle neu erzeugten Tracks dieses Versuchs wieder entfernen
-            if cleaned_tracks:
+            # *** HARTE GARANTIE: ALLE in diesem Pass erzeugten Tracks entfernen ***
+            if added_names:
+                # zuerst über Operator versuchen (falls UI-Kontext verfügbar)
                 for t in tracks:
-                    t.select = False
-                for t in cleaned_tracks:
-                    t.select = True
+                    t.select = (t.name in added_names)
                 try:
                     bpy.ops.clip.delete_track()
                 except Exception:
-                    _remove_tracks_by_name(tracking, {t.name for t in cleaned_tracks})
+                    _remove_tracks_by_name(tracking, added_names)
+
+                # Depsgraph/RNA auffrischen
+                try:
+                    bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                except Exception:
+                    pass
 
             # Threshold adaptieren (proportional zur Abweichung)
             new_threshold = max(
-                float(threshold) * ((anzahl_neu + 0.1) / float(safe_adapt)),
+                float(threshold) * ((anzahl_neu + 0.1) / float(max(1, marker_adapt))),
                 1e-4,
             )
             scn["last_detection_threshold"] = float(new_threshold)
+
+            # WICHTIG: Keine Reste für nächsten Pass vormerken
+            scn["detect_prev_names"] = []
 
             return {
                 "status": "RUNNING",
@@ -255,6 +265,21 @@ def run_detect_once(
                 "threshold": float(new_threshold),
                 "frame": int(frame),
             }
+
+        # Erfolg: final erzeugte Tracks für nächsten Run merken (Cleanup im Folgepass)
+        try:
+            scn["detect_prev_names"] = [t.name for t in cleaned_tracks]
+        except Exception:
+            scn["detect_prev_names"] = []
+
+        scn["last_detection_threshold"] = float(threshold)
+
+        return {
+            "status": "READY",
+            "new_tracks": int(anzahl_neu),
+            "threshold": float(threshold),
+            "frame": int(frame),
+        }
 
         # Erfolg: final erzeugte Tracks für nächsten Run merken (inter-run cleanup)
         try:
