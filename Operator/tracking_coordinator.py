@@ -208,25 +208,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self._state = "JUMP"
             return {'RUNNING_MODAL'}
 
+        # Operator/tracking_coordinator.py (Ausschnitt: State "JUMP")
         elif self._state == "JUMP":
             goto = int(context.scene.get("goto_frame", context.scene.frame_current))
-
-            # — Repeat-Erkennung nur bei Jumps —
+        
+            # Nur springen – kein optimize_tracking_modal mehr
             cur = context.scene.frame_current
-            cnt = self._repeat_map.get(goto, 0)
-            if goto == cur:
-                # gleicher Frame erneut angefahren → Wiederholung zählen
-                cnt += 1
-                self._repeat_map[goto] = cnt
-                if cnt >= 1:  # ab ERSTER Wiederholung optimieren
-                    try:
-                        from ..Helper.optimize_tracking_modal import optimize_tracking_modal
-                        self._log(f"[Optimize] Wiederholung Frame {goto} (cnt={cnt}) → optimize_tracking_modal()")
-                        optimize_tracking_modal(context)
-                    except Exception as ex:
-                        # optional: nicht fatal, Helper kann fehlen
-                        self._log(f"[Optimize] Hinweis: {ex}")
-
             if not self._jump_done or goto != cur:
                 try:
                     from ..Helper.jump_to_frame import run_jump_to_frame
@@ -234,10 +221,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 except Exception as ex:
                     self._log(f"[Jump] Fehler: {ex}")
                 self._jump_done = True
-
-            # weiter ohne erneuten Sprung
+        
             self._state = "DETECT"
             return {'RUNNING_MODAL'}
+
 
         elif self._state == "DETECT":
             goto = int(context.scene.get("goto_frame", context.scene.frame_current))
