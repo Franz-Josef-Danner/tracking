@@ -1,5 +1,5 @@
 # detect_neu.py — adaptive Merker-Detektion mit auflösungsbasierten Parametern,
-#                 robustem Cleanup, UI-Kontext-Override, Handoff-Gate (wie alt)
+#                 robustem Pre-Pass-Cleanup, UI-Kontext-Override, Handoff-Gate
 #                 und Schutz vor Endlosschleifen.
 #
 # Wichtig (wie alte Operator-Version):
@@ -12,7 +12,7 @@
 # - Basen aus Auflösung: margin_base = width*0.025, min_distance_base = width*0.05
 # - Skalierung: factor = log10(threshold*1e6)/6 → margin/min_distance
 # - Threshold-Update (RUNNING): new = max(old * ((anzahl_neu + 0.1)/marker_adapt), 1e-4)
-# - Cleanup: Pre-Pass + In-Pass (Operator→Fallback)
+# - Cleanup: PRE-PASS (Zwischenstände/Persistenz), KEIN Short-Track-Clean
 # - Zusatz-Airbag: __skip_clean_short_once / __just_created_names
 
 import bpy
@@ -24,14 +24,14 @@ __all__ = [
     "perform_marker_detection",
     "run_detect_once",
     "run_detect_adaptive",
-    "clean_short_tracks",
+    "detect_prepass_cleanup",
 ]
 
 _LOCK_KEY = "__detect_lock"
 
 
 # ---------------------------------------------------------------------------
-# Kontext-Utilities (CLIP_EDITOR-Override) & String-Sanitizing/Logging
+# Kontext-Utilities & String-Sanitizing/Logging
 # ---------------------------------------------------------------------------
 
 def _coerce_utf8_str(x):
@@ -41,28 +41,23 @@ def _coerce_utf8_str(x):
     if isinstance(x, (bytes, bytearray)):
         b = bytes(x)
         try:
-            return b.decode("utf-8")
+            return b.decode("utf-8").strip()
         except UnicodeDecodeError:
             try:
-                return b.decode("latin-1")
+                return b.decode("latin-1").strip()
             except Exception:
                 return None
     try:
-        s = str(x)
+        s = str(x).strip()
     except Exception:
         return None
-    # evtl. Surrogates/Whitespace neutralisieren
-    s = s.replace("\udcff", "").strip()
-    return s if s else None
+    # evtl. Surrogates neutralisieren
+    s = s.replace("\udcff", "")
+    return s or None
 
 
 def _coerce_utf8_str_list(seq):
-    out = []
-    for x in (seq or []):
-        s = _coerce_utf8_str(x)
-        if s:
-            out.append(s)
-    return out
+    return [s for s in (_coerce_utf8_str(x) for x in (seq or [])) if s]
 
 
 def _debug_dump_names(label, seq):
@@ -185,6 +180,37 @@ def _scaled_params(
 
 
 # ---------------------------------------------------------------------------
+# PRE-PASS (Zwischenstände/Persistenz bereinigen, KEIN Short-Track-Clean)
+# ---------------------------------------------------------------------------
+
+def detect_prepass_cleanup(context, *, remove_names=None):
+    """Bereinigt nur Persistenz/Zwischenstände für Detect-Retries."""
+    scn = context.scene
+
+    # Vorherige RUNNING-Reste
+    prev_raw = scn.get("detect_prev_names", []) or []
+    prev = set(_coerce_utf8_str_list(prev_raw))
+    if prev_raw and (len(prev) != len(prev_raw)):
+        _debug_dump_names("Prev RAW (pre-sanitize)", prev_raw)
+    try:
+        scn["detect_prev_names"] = []
+    except Exception:
+        pass
+
+    if remove_names:
+        clip = _resolve_clip(context)
+        if clip:
+            _remove_tracks_by_name(clip.tracking, remove_names)
+
+    # Frischliste normalisieren (nicht löschen, Clean-Short schützt sie)
+    fresh_raw = scn.get("__just_created_names", []) or []
+    fresh_norm = _coerce_utf8_str_list(fresh_raw)
+    if fresh_raw and len(fresh_norm) != len(fresh_raw):
+        print("[DetectDebug] normalized __just_created_names")
+    _try_set_scene_list(scn, "__just_created_names", fresh_norm)
+
+
+# ---------------------------------------------------------------------------
 # Feature-Detektion (mit Kontext-Override)
 # ---------------------------------------------------------------------------
 
@@ -228,7 +254,7 @@ def run_detect_once(
     margin_base: Optional[int] = None,        # px; Default = 2.5% Bildbreite
     min_distance_base: Optional[int] = None,  # px; Default = 5% Bildbreite
     close_dist_rel: float = 0.01,             # 1% Bildbreite
-    handoff_to_pipeline: bool = False,        # <<< NEU: wie alte Version (Operator)
+    handoff_to_pipeline: bool = False,        # Gate wie alte Version
 ) -> Dict[str, Any]:
     """
     Rückgabe: {"status": "READY" | "RUNNING" | "FAILED",
@@ -254,22 +280,8 @@ def run_detect_once(
                 pass
         frame = int(scn.frame_current)
 
-        # PRE-PASS Cleanup (Reste aus fehlgeschlagenen Runs)
-        prev_names_raw = scn.get("detect_prev_names", []) or []
-        prev_names = set(_coerce_utf8_str_list(prev_names_raw))
-        if prev_names_raw and (len(prev_names) != len(prev_names_raw)):
-            _debug_dump_names("Prev RAW (pre-sanitize)", prev_names_raw)
-
-        if prev_names:
-            _remove_tracks_by_name(tracking, prev_names)
-            try:
-                scn["detect_prev_names"] = []
-            except Exception:
-                pass
-            try:
-                bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
-            except Exception:
-                pass
+        # PRE-PASS Cleanup (Zwischenstände aus vorherigen RUNNING-Durchläufen)
+        detect_prepass_cleanup(context)
 
         # Threshold laden
         if threshold is None:
@@ -401,7 +413,6 @@ def run_detect_once(
                 still_there = [t.name for t in tracking.tracks if t.name in added_names]
                 if still_there:
                     _remove_tracks_by_name(tracking, still_there)
-                    # Prüfe, ob nach remove noch welche übrig sind (sollte 0 sein)
                     remaining = [t.name for t in tracking.tracks if t.name in added_names]
                     remaining_after_delete = remaining or []
                 try:
@@ -419,7 +430,7 @@ def run_detect_once(
                 1e-4,
             )
             scn["last_detection_threshold"] = float(new_threshold)
-            scn["detect_status"] = "running"  # <<< Neu gesetzt
+            scn["detect_status"] = "running"  # Detect will retry
 
             print(
                 "[DetectDebug] RUNNING → new_threshold=%.6f (old=%.6f, adapt=%d) | anzahl_neu=%d | corridor=[%d..%d]"
@@ -444,16 +455,16 @@ def run_detect_once(
             pass
         scn["last_detection_threshold"] = float(threshold)
 
-        # === Handoff-Gate (wie alt) ===
+        # === Handoff-Gate ===
         if handoff_to_pipeline:
             scn["detect_status"] = "success"
             scn["pipeline_do_not_start"] = False
         else:
             scn["detect_status"] = "standalone_success"
-            scn["pipeline_do_not_start"] = True  # <<< WICHTIG: Pipeline (z. B. CleanShort) erstmal NICHT starten
-        # ===============================
+            scn["pipeline_do_not_start"] = True
+        # ====================
 
-        # Airbag gegen CleanShort direkt danach (falls Koordinator Flag ignoriert)
+        # Airbag gegen CleanShort direkt danach
         scn["__skip_clean_short_once"] = True
         _try_set_scene_list(scn, "__just_created_names", created_names)
 
@@ -472,7 +483,7 @@ def run_detect_once(
 
     except Exception as ex:
         print("[DetectDebug] FAILED:", ex)
-        scn["detect_status"] = "failed"  # wie alt
+        scn["detect_status"] = "failed"
         return {"status": "FAILED", "reason": str(ex)}
     finally:
         try:
@@ -499,73 +510,3 @@ def run_detect_adaptive(
             return last
         start_frame = last.get("frame", start_frame)
     return last or {"status": "FAILED", "reason": "max_attempts_exceeded"}
-
-
-# ---------------------------------------------------------------------------
-# Clean-Short Helper (Airbag, falls Koordinator nicht auf Gate hört)
-# ---------------------------------------------------------------------------
-
-def clean_short_tracks(
-    context,
-    *,
-    frames: int,
-    action: str = "DELETE_TRACK",
-) -> Dict[str, Any]:
-    scn = context.scene
-
-    # Falls Gate aktiv ist: CleanShort aussetzen
-    if scn.get("pipeline_do_not_start", False):
-        print("[CleanShort] blocked by pipeline_do_not_start")
-        return {"CANCELLED": True}
-
-    # Einmaliger Skip direkt nach READY
-    if scn.get("__skip_clean_short_once"):
-        print("[CleanShort] skipped once to protect fresh detects")
-        scn["__skip_clean_short_once"] = False
-        return {"CANCELLED": True}
-
-    fresh_raw = scn.get("__just_created_names", []) or []
-    fresh = set(_coerce_utf8_str_list(fresh_raw))
-    if fresh_raw and (len(fresh) != len(fresh_raw)):
-        _debug_dump_names("Fresh RAW (pre-sanitize)", fresh_raw)
-
-    try:
-        clip = _resolve_clip(context)
-        if not clip:
-            print("[CleanShort] no clip")
-            return {"CANCELLED": True}
-        tracking = clip.tracking
-
-        # Auswahl: alle selektieren, dann frische ausschließen
-        for t in tracking.tracks:
-            t.select = True
-        if fresh:
-            for t in tracking.tracks:
-                if t.name in fresh:
-                    t.select = False
-
-        def _op(**kw):
-            return bpy.ops.clip.clean_tracks(**kw)
-
-        try:
-            _run_in_clip_context(_op, frames=int(frames), error=0.0, action=str(action))
-        except Exception as ex:
-            print("[CleanShort] clean_tracks override failed:", ex)
-            try:
-                bpy.ops.clip.clean_tracks(frames=int(frames), error=0.0, action=str(action))
-            except Exception as ex2:
-                print("[CleanShort] clean_tracks fallback failed:", ex2)
-                return {"CANCELLED": True}
-
-        if fresh:
-            try:
-                scn["__just_created_names"] = []
-            except Exception:
-                pass
-
-        print(f"[CleanShort] Tracks < {int(frames)} Frames wurden bearbeitet. Aktion: {action}")
-        return {"FINISHED": True}
-
-    except Exception as ex:
-        print("[CleanShort] FAILED:", ex)
-        return {"CANCELLED": True}
