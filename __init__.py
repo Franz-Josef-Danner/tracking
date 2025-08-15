@@ -11,6 +11,8 @@ bl_info = {
 import bpy
 from bpy.props import IntProperty, FloatProperty, CollectionProperty
 from bpy.types import PropertyGroup, Panel
+
+# Helper-Module (enthält CLIP_OT_bidirectional_track + register/unregister)
 from .Helper import bidirectional_track
 from .Operator.tracking_coordinator import CLIP_OT_tracking_coordinator
 
@@ -47,7 +49,6 @@ class CLIP_PT_kaiserlich_panel(Panel):
         layout.separator()
         layout.operator("clip.tracking_coordinator", text="Track")
 
-
 # --- Registrierung ---
 classes = (
     RepeatEntry,
@@ -56,53 +57,46 @@ classes = (
 )
 
 def register():
+    # Erst die lokalen Klassen registrieren
     for cls in classes:
         bpy.utils.register_class(cls)
 
+    # Dann Helper-Operator registrieren
     bidirectional_track.register()
 
     # CollectionProperty erst nach Registrierung von RepeatEntry anlegen
-    if not hasattr(bpy.types.Scene, "repeat_frame"):
-        bpy.types.Scene.repeat_frame = CollectionProperty(type=RepeatEntry)
+    bpy.types.Scene.repeat_frame = CollectionProperty(type=RepeatEntry)
 
     # UI-Eigenschaften
-    if not hasattr(bpy.types.Scene, "marker_frame"):
-        bpy.types.Scene.marker_frame = IntProperty(
-            name="Marker per Frame",
-            default=25, min=10, max=50,
-            description="Mindestanzahl Marker pro Frame"
-        )
-    if not hasattr(bpy.types.Scene, "frames_track"):
-        bpy.types.Scene.frames_track = IntProperty(
-            name="Frames per Track",
-            default=25, min=5, max=100,
-            description="Track-Länge in Frames"
-        )
-    if not hasattr(bpy.types.Scene, "error_track"):
-        bpy.types.Scene.error_track = FloatProperty(
-            name="Error-Limit (px)",
-            description="Maximale tolerierte Reprojektion in Pixeln",
-            default=2.0, min=1.0, max=4.0,
-        )
+    bpy.types.Scene.marker_frame = IntProperty(
+        name="Marker per Frame",
+        default=25, min=10, max=50,
+        description="Mindestanzahl Marker pro Frame"
+    )
+    bpy.types.Scene.frames_track = IntProperty(
+        name="Frames per Track",
+        default=25, min=5, max=100,
+        description="Track-Länge in Frames"
+    )
+    bpy.types.Scene.error_track = FloatProperty(
+        name="Error-Limit (px)",
+        description="Maximale tolerierte Reprojektion in Pixeln",
+        default=2.0, min=1.0, max=4.0,
+    )
 
 def unregister():
-    # Properties defensiv entfernen
-    if hasattr(bpy.types.Scene, "repeat_frame"):
-        del bpy.types.Scene.repeat_frame
-    if hasattr(bpy.types.Scene, "marker_frame"):
-        del bpy.types.Scene.marker_frame
-    if hasattr(bpy.types.Scene, "frames_track"):
-        del bpy.types.Scene.frames_track
-    if hasattr(bpy.types.Scene, "error_track"):
-        del bpy.types.Scene.error_track
+    # Properties löschen
+    del bpy.types.Scene.repeat_frame
+    del bpy.types.Scene.marker_frame
+    del bpy.types.Scene.frames_track
+    del bpy.types.Scene.error_track
 
+    # Helper-Operator deregistrieren
     bidirectional_track.unregister()
 
+    # Lokale Klassen deregistrieren
     for cls in reversed(classes):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception:
-            pass
+        bpy.utils.unregister_class(cls)
 
 if __name__ == "__main__":
     register()
