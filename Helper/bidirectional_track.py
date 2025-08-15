@@ -114,3 +114,11 @@ class CLIP_OT_bidirectional_track(Operator):
 def run_bidirectional_track(context):
     """Startet den Operator aus Skript-Kontext."""
     return bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
+
+
+# ---- Registrierung für Haupt-__init__.py ----
+def register():
+    bpy.utils.register_class(CLIP_OT_bidirectional_track)
+
+def unregister():
+    bpy.utils.unregister_class(CLIP_OT_bidirectional_track)
