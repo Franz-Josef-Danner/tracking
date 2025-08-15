@@ -230,41 +230,80 @@ def run_detect_once(
         close_set = {t.name for t in close_tracks}
         cleaned_tracks = [t for t in new_tracks_raw if t.name not in close_set]
         anzahl_neu = len(cleaned_tracks)
-
-        # Zielkorridor prüfen
-        if anzahl_neu < int(min_marker) or anzahl_neu > int(max_marker):
-            # *** HARTE GARANTIE: ALLE in diesem Pass erzeugten Tracks entfernen ***
-            if added_names:
-                # zuerst über Operator versuchen (falls UI-Kontext verfügbar)
+        # --- nach "cleaned_tracks" / anzahl_neu berechnet wurde ---
+        anzahl_exist = len(existing_px)                      # vorhandene Marker am Frame (vor diesem Pass)
+        total_after  = anzahl_exist + len(cleaned_tracks)    # Gesamtstand nach DIESEM Pass
+        
+        # Zielkorridor auf Gesamtstand beziehen
+        min_total = int(max(1, marker_adapt * 0.9))
+        max_total = int(max(2, marker_adapt * 1.1))
+        
+        if total_after < min_total:
+            # ZU WENIG: NEUE behalten (nicht löschen), Threshold senken und weiteren Detect-Pass verlangen
+            new_threshold = max(float(threshold) * ((total_after + 0.1) / float(max(1, marker_adapt))), 1e-4)
+            scn["last_detection_threshold"] = float(new_threshold)
+            scn["detect_prev_names"] = []  # nichts zum Aufräumen vormerken
+        
+            # Signal an Coordinator: In diesem Zyklus KEIN externes CleanShort
+            scn["skip_clean_short_once"] = True
+        
+            return {
+                "status": "RUNNING",
+                "new_tracks": int(len(cleaned_tracks)),
+                "threshold": float(new_threshold),
+                "frame": int(frame),
+            }
+        
+        if total_after > max_total:
+            # ZU VIELE: nur den ÜBERSCHUSS aus DIESEM Pass zurücknehmen
+            overflow = total_after - max_total
+            if overflow > 0:
+                to_remove = {t.name for t in cleaned_tracks[:overflow]}  # deterministisch
+                # erst per Operator versuchen
                 for t in tracks:
-                    t.select = (t.name in added_names)
+                    t.select = (t.name in to_remove)
                 try:
                     bpy.ops.clip.delete_track()
                 except Exception:
-                    _remove_tracks_by_name(tracking, added_names)
-
-                # Depsgraph/RNA auffrischen
+                    _remove_tracks_by_name(tracking, to_remove)
+        
+                # Redraw
                 try:
                     bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
                 except Exception:
                     pass
-
-            # Threshold adaptieren (proportional zur Abweichung)
-            new_threshold = max(
-                float(threshold) * ((anzahl_neu + 0.1) / float(max(1, marker_adapt))),
-                1e-4,
-            )
+        
+            # Detect bleibt im Lauf – kleinen Threshold‑Anstieg, um weniger zu finden
+            new_threshold = float(max(threshold, 1e-6)) * 1.05
             scn["last_detection_threshold"] = float(new_threshold)
-
-            # WICHTIG: Keine Reste für nächsten Pass vormerken
-            scn["detect_prev_names"] = []
-
+            scn["detect_prev_names"] = []  # nichts vormerken
+        
+            scn["skip_clean_short_once"] = True
+        
             return {
                 "status": "RUNNING",
-                "new_tracks": int(anzahl_neu),
+                "new_tracks": int(len(cleaned_tracks)),
                 "threshold": float(new_threshold),
                 "frame": int(frame),
             }
+        
+        # Korridor erreicht → READY: neue Marker bleiben erhalten
+        try:
+            scn["detect_prev_names"] = [t.name for t in cleaned_tracks]
+        except Exception:
+            scn["detect_prev_names"] = []
+        scn["last_detection_threshold"] = float(threshold)
+        
+        # Wichtig: externe CleanShort in dieser Runde unterbinden
+        scn["skip_clean_short_once"] = True
+        
+        return {
+            "status": "READY",
+            "new_tracks": int(len(cleaned_tracks)),
+            "threshold": float(threshold),
+            "frame": int(frame),
+        }
+
 
         # Erfolg: final erzeugte Tracks für nächsten Run merken (Cleanup im Folgepass)
         try:
