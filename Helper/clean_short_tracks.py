@@ -14,231 +14,212 @@ KEY_PREV  = "detect_prev_names"      # Vorläuferliste aus Detect (optional)
 
 # ---------------------------------------------------------------------------
 # UI/Context Utilities (robust, ohne Zwang)
-# ---------------------------------------------------------------------------
 
-def _clip_override(context: bpy.types.Context) -> Optional[Dict[str, Any]]:
-    """Sicheren CLIP_EDITOR-Override bereitstellen (oder None)."""
-    win = getattr(context, "window", None)
-    if not win or not getattr(win, "screen", None):
-        return None
-    for area in win.screen.areas:
-        if area.type == 'CLIP_EDITOR':
-            for region in area.regions:
-                if region.type == 'WINDOW':
-                    return {
-                        "window": win,
-                        "screen": win.screen,
-                        "area": area,
-                        "region": region,
-                        "space_data": area.spaces.active,
-                        "scene": context.scene,
-                    }
-    return None
-
-
-def _resolve_clip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
-    """Clip robust bestimmen: bevorzugt aktiver CLIP_EDITOR, sonst erstes MovieClip."""
-    space = getattr(context, "space_data", None)
-    clip = getattr(space, "clip", None) if space else None
-    if clip:
-        return clip
-    try:
-        # Fallback: erstes MovieClip im File
-        for c in bpy.data.movieclips:
-            return c
-    except Exception:
-        pass
-    return None
-
-# ---------------------------------------------------------------------------
-# UTF-8 Hardening
-# ---------------------------------------------------------------------------
-
-def _coerce_utf8_str(x: Any) -> str:
-    """Konservativ in druckbaren str wandeln: utf-8 → latin-1 Fallback; unprintables -> '_'."""
-    if x is None:
+def _coerce_utf8_str(s: Any) -> str:
+    if s is None:
         return ""
-    if isinstance(x, str):
-        s = x
-    elif isinstance(x, (bytes, bytearray, memoryview)):
-        b = bytes(x)
+    if isinstance(s, bytes):
         try:
-            s = b.decode("utf-8", errors="strict")
-        except UnicodeDecodeError:
-            # Harte Fälle (z. B. 0xF0 ohne gültige Fortsetzung): latin-1-Fallback
-            s = b.decode("latin-1", errors="replace")
-    else:
-        s = str(x)
-    # Nur druckbare Zeichen durchlassen
-    return "".join(ch if ch.isprintable() else "_" for ch in s)
+            return s.decode("utf-8", errors="strict")
+        except Exception:
+            return s.decode("utf-8", errors="ignore")
+    return str(s)
 
-
-def _ensure_text_list(x: Any) -> List[str]:
-    """Liste sauberer Strings zurückgeben; droppt Leereinträge."""
+def _coerce_utf8_str_list(v: Any) -> List[str]:
     out: List[str] = []
-    if not x:
-        return out
-    seq = x if isinstance(x, (list, tuple)) else [x]
-    for v in seq:
-        s = _coerce_utf8_str(v).strip()
-        if s:
-            out.append(s)
+    if isinstance(v, (list, tuple, set)):
+        for x in v:
+            out.append(_coerce_utf8_str(x))
+    elif v is not None:
+        out.append(_coerce_utf8_str(v))
     return out
 
-
-def _try_set_scene_list(scene: bpy.types.Scene, key: str, seq: Iterable[str]) -> None:
-    """Persistenz robust setzen (immer als saubere str-Liste)."""
+def _try_get_scene_list(scn: bpy.types.Scene, key: str) -> List[str]:
     try:
-        scene[key] = _ensure_text_list(list(seq))
+        val = scn.get(key, [])
+        return _coerce_utf8_str_list(val)
     except Exception:
-        # Letzte Verteidigungslinie: wenn Setzen scheitert, nicht crashen
-        try:
-            scene[key] = []
-        except Exception:
-            pass
+        return []
 
-# ---------------------------------------------------------------------------
-# Tracking Utilities
-# ---------------------------------------------------------------------------
-
-def _track_visible_length(tr: bpy.types.MovieTrackingTrack) -> int:
-    """Zählt Marker mit sichtbaren Keys (nicht gemutet). 'Kurz' = wenige aktive Marker."""
-    n = 0
+def _try_set_scene_list(scn: bpy.types.Scene, key: str, value: List[str]) -> None:
     try:
-        for m in tr.markers:
-            if not m.mute:
-                n += 1
-    except Exception:
-        # Defensive: bei API-Ausreißern nicht blockieren
-        pass
-    return n
-
-
-def _mute_entire_track(tr: bpy.types.MovieTrackingTrack) -> None:
-    """Track vollständig muten (Track-Flag, ansonsten Marker)."""
-    try:
-        # Einige Blender-Versionen haben tr.mute
-        if hasattr(tr, "mute"):
-            tr.mute = True
-            return
-    except Exception:
-        pass
-    # Fallback: Marker muten
-    try:
-        for m in tr.markers:
-            m.mute = True
+        # ID-Props lassen nur simple Typen zu → Strings hart auf UTF-8 normieren
+        scn[key] = [ _coerce_utf8_str(x) for x in (value or []) ]
     except Exception:
         pass
 
+def _find_clip_editor_context() -> Tuple[Optional[bpy.types.Window], Optional[bpy.types.Area], Optional[bpy.types.Region], Optional[bpy.types.SpaceClipEditor]]:
+    wm = bpy.context.window_manager
+    if not wm:
+        return None, None, None, None
+    for window in wm.windows:
+        screen = window.screen
+        if not screen:
+            continue
+        for area in screen.areas:
+            if area.type == "CLIP_EDITOR":
+                region = next((r for r in area.regions if r.type == "WINDOW"), None)
+                space = area.spaces.active if hasattr(area, "spaces") else None
+                if region and space:
+                    return window, area, region, space
+    return None, None, None, None
+
+def _run_in_clip_context(op_callable, **kwargs):
+    window, area, region, space = _find_clip_editor_context()
+    if not (window and area and region and space):
+        raise RuntimeError("No CLIP_EDITOR context available for operator.")
+    override = {
+        "window": window,
+        "screen": window.screen,
+        "area": area,
+        "region": region,
+        "space_data": space,
+        "scene": bpy.context.scene,
+    }
+    return op_callable(override, **kwargs)
+
+def _deselect_all(clip: bpy.types.MovieClip):
+    try:
+        for t in clip.tracking.tracks:
+            t.select = False
+    except Exception:
+        pass
+
 # ---------------------------------------------------------------------------
-# Core
-# ---------------------------------------------------------------------------
+# Kernfunktion
 
 def clean_short_tracks(
-    context: bpy.types.Context,
-    *,
+    context: bpy.types.Context = bpy.context,
     min_len: int = 25,
-    action: str = "DELETE_TRACK",  # "DELETE_TRACK" | "MUTE_TRACK"
-    protect_fresh: bool = True,
+    action: str = "DELETE_TRACK",  # oder "MUTE_TRACK"
+    respect_fresh: bool = True,
     verbose: bool = True,
 ) -> Tuple[int, int]:
     """
-    Bereinigt 'kurze' Tracks nach dem Tracking. UTF-8 stabilisiert:
-    - Säubert alle gelesenen/geschriebenen Namen/Listen (insb. __just_created_names).
-    - Keine Umbenennung von Tracks.
-    - Respektiert Gate-Flags aus Detect (Lock) und schützt Frischliste.
-
-    Returns:
-        (processed, affected)
-        processed: Anzahl geprüfter Tracks
-        affected:  Anzahl gelöschter/ gemuteter Tracks
+    Entfernt (oder mutet) alle Tracks mit < min_len Frames.
+    Respektiert __skip_clean_short_once und __just_created_names.
+    Robust gegen UI/Nicht-UI-Kontexte.
     """
     scn = context.scene
-    if scn.get(_LOCK_KEY, False):
-        # Detect läuft noch; lieber nicht eingreifen
+    if scn is None:
         if verbose:
-            print("[CleanShort] Skip: Detect-Lock aktiv.")
+            print("[CleanShort] WARN: Keine aktive Szene.")
         return 0, 0
 
-    clip = _resolve_clip(context)
+    # Einmal-Gate: Detect kann CleanShort für genau einen Tick überspringen lassen
+    if scn.get("__skip_clean_short_once", False):
+        if verbose:
+            print("[CleanShort] Skip (Gate __skip_clean_short_once gesetzt).")
+        try:
+            scn["__skip_clean_short_once"] = False
+        except Exception:
+            pass
+        return 0, 0
+
+    clip: Optional[bpy.types.MovieClip] = None
+    # Versuche Clip sauber zu resolven (Space → Context → Daten)
+    try:
+        _, _, _, space = _find_clip_editor_context()
+        if space and getattr(space, "clip", None):
+            clip = space.clip
+    except Exception:
+        clip = None
+    if not clip:
+        # Fallback: aktueller Context
+        clip = getattr(context, "edit_movieclip", None)
+    if not clip and bpy.data.movieclips:
+        # Letzte Eskalation: erstes MovieClip-Datenobjekt
+        clip = bpy.data.movieclips[0]
+
     if not clip:
         if verbose:
-            print("[CleanShort] Kein aktiver MovieClip gefunden.")
+            print("[CleanShort] WARN: Kein MovieClip gefunden.")
         return 0, 0
 
-    tracking = clip.tracking
-
-    # --- Frisch-/Prev-Listen: LESEN → SÄUBERN → ZURÜCKSCHREIBEN ---
-    fresh_raw = scn.get(KEY_FRESH, []) or []
-    prev_raw  = scn.get(KEY_PREV, []) or []
-
-    fresh_list = _ensure_text_list(fresh_raw)
-    prev_list  = _ensure_text_list(prev_raw)
-
-    # Rückschreiben (stellt sicher, dass Szene nie Bytes enthält)
-    _try_set_scene_list(scn, KEY_FRESH, fresh_list)
-    _try_set_scene_list(scn, KEY_PREV, prev_list)
-
-    fresh = set(fresh_list) if protect_fresh else set()
-
-    # --- Hauptdurchlauf ---
-    processed = 0
-    affected = 0
+    # Frischliste einlesen (optional) und normalisieren
+    fresh: List[str] = _try_get_scene_list(scn, KEY_FRESH) if respect_fresh else []
+    fresh_set = set(fresh)
 
     to_delete: List[bpy.types.MovieTrackingTrack] = []
     to_mute: List[bpy.types.MovieTrackingTrack] = []
+    processed = 0
+    affected = 0
 
-    # Snapshot der Namen (sanitisiert) für sichere Vergleiche
-    def _safe_name(tr: bpy.types.MovieTrackingTrack) -> str:
-        try:
-            return _coerce_utf8_str(tr.name)
-        except Exception:
-            return ""
+    # Kandidaten sammeln
+    try:
+        for t in list(clip.tracking.tracks):
+            processed += 1
+            name = _coerce_utf8_str(getattr(t, "name", ""))
+            # frisch erzeugte Tracks in genau diesem Tick nicht anfassen
+            if respect_fresh and name in fresh_set:
+                continue
 
-    for tr in list(tracking.tracks):
-        processed += 1
-        name = _safe_name(tr)
-
-        # Frisch angelegte Tracks schützen (nie sofort löschen/muten)
-        if name and name in fresh:
-            continue
-
-        length = _track_visible_length(tr)
-        if length >= max(0, int(min_len)):
-            continue
-
-        if action == "DELETE_TRACK":
-            to_delete.append(tr)
-        else:
-            to_mute.append(tr)
-
-    # --- Aktionen ausführen (nur Datenblock-API, keine UI-Operatoren) ---
-    if to_delete:
-        for tr in to_delete:
+            # Minimale Länge bestimmen (Anzahl Marker → sichtbare Frames)
             try:
-                tracking.tracks.remove(tr)
-                affected += 1
-            except Exception as ex:
-                if verbose:
-                    print(f"[CleanShort] WARN: Entfernen von '{_safe_name(tr)}' fehlgeschlagen: {ex}")
+                track_len = sum(1 for _m in t.markers if getattr(_m, "co", None) is not None)
+            except Exception:
+                track_len = len(getattr(t, "markers", []))
 
+            if track_len < min_len:
+                if action == "DELETE_TRACK":
+                    to_delete.append(t)
+                else:
+                    to_mute.append(t)
+    except Exception as ex:
+        if verbose:
+            print(f"[CleanShort] WARN: Auflisten der Tracks fehlgeschlagen: {ex!s}")
+
+    # Ausführung
     if to_mute:
-        for tr in to_mute:
+        for t in to_mute:
             try:
-                _mute_entire_track(tr)
+                t.mute = True
                 affected += 1
             except Exception as ex:
                 if verbose:
-                    print(f"[CleanShort] WARN: Muten von '{_safe_name(tr)}' fehlgeschlagen: {ex}")
+                    print(f"[CleanShort] WARN: Muten von '{_coerce_utf8_str(getattr(t,'name',''))}' fehlgeschlagen: {ex!s}")
 
-    # --- Persistenz nachziehen (Frischliste ggf. um gelöschte Namen bereinigen) ---
-    if to_delete and protect_fresh and fresh:
-        # Falls ein 'frischer' Track theoretisch gelöscht worden wäre (sollte durch Schutz nicht passieren),
-        # bleibt die Frischliste dennoch sauber.
+    if to_delete:
+        # 1) Bevorzugt über Operator (löscht inkl. UI-Konsistenz)
+        deleted_via_op = 0
+        try:
+            _deselect_all(clip)
+            for t in to_delete:
+                try:
+                    t.select = True
+                except Exception:
+                    pass
+            result = _run_in_clip_context(bpy.ops.clip.delete_track)
+            if isinstance(result, set) and "FINISHED" in result:
+                deleted_via_op = len(to_delete)
+        except Exception as ex:
+            if verbose:
+                print(f"[CleanShort] WARN: Operator-Delete fehlgeschlagen: {ex!s}")
+
+        # 2) Fallback auf Daten-API (pro Track)
+        if deleted_via_op == 0:
+            for t in to_delete:
+                name = _coerce_utf8_str(getattr(t, "name", ""))
+                try:
+                    clip.tracking.tracks.remove(t)
+                    affected += 1
+                except Exception as ex:
+                    # 3) Letzter Fallback: stumm schalten, falls Entfernen hart blockiert
+                    try:
+                        t.mute = True
+                        affected += 1
+                        if verbose:
+                            print(f"[CleanShort] WARN: Entfernen von '{name}' fehlgeschlagen, Track gemutet: {ex!s}")
+                    except Exception as ex2:
+                        if verbose:
+                            print(f"[CleanShort] WARN: Entfernen von '{name}' fehlgeschlagen: {ex!s} | zusätzliches Muten scheiterte: {ex2!s}")
+
+    # Frischliste säubern: nur behalten, was noch existiert
+    if respect_fresh and fresh:
         still_exists = set()
         try:
-            for tr in tracking.tracks:
-                n = _coerce_utf8_str(tr.name).strip()
+            for t in clip.tracking.tracks:
+                n = _coerce_utf8_str(getattr(t, "name", ""))
                 if n:
                     still_exists.add(n)
         except Exception:
