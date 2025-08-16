@@ -1,6 +1,6 @@
-# detect_neu.py — adaptive Merker-Detektion mit auflösungsbasierten Parametern,
-#                 robustem Pre-Pass-Cleanup, UI-Kontext-Override, Handoff-Gate
-#                 und Schutz vor Endlosschleifen.
+# Helper/detect.py — adaptive Merker-Detektion mit auflösungsbasierten Parametern,
+#                    robustem Pre-Pass-Cleanup, UI-Kontext-Override, Handoff-Gate
+#                    und Schutz vor Endlosschleifen.
 #
 # Wichtig (wie alte Operator-Version):
 # - Handoff: handoff_to_pipeline=False  →  scene["detect_status"]="standalone_success",
