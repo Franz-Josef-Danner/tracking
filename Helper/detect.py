@@ -252,34 +252,37 @@ def _safe_track_name(track: bpy.types.MovieTrackingTrack) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # PRE-PASS (Zwischenstände/Persistenz bereinigen, KEIN Short-Track-Clean)
 # ---------------------------------------------------------------------------
-
 def detect_prepass_cleanup(context, *, remove_names=None):
-    """Bereinigt nur Persistenz/Zwischenstände für Detect-Retries."""
+    """Bereinigt Persistenz/Zwischenstände für Detect-Retries UND löscht
+    die im letzten Run erzeugten Tracks (Legacy-Verhalten)."""
     scn = context.scene
 
-    # Vorherige RUNNING-Reste (defensiv lesen – kann bereits crashen!)
+    # 1) Namen aus letztem erfolgreichen Detect defensiv lesen
     prev_raw = _safe_idprop_get_list(scn, "detect_prev_names")
     if prev_raw:
         _debug_dump_names("Prev RAW (pre-sanitize)", prev_raw)
+
+    # 2) Zielmenge zusammenstellen: prev_names (+ optional remove_names)
+    names_to_remove = set(_coerce_utf8_str_list(prev_raw))
+    if remove_names:
+        names_to_remove.update(_coerce_utf8_str_list(remove_names))
+
+    # 3) Tracks jetzt wirklich löschen (wie im alten Operator)
+    clip = _resolve_clip(context)
+    if clip and names_to_remove:
+        _remove_tracks_by_name(clip.tracking, names_to_remove)
+
+    # 4) Liste leeren (sauberer Zustand für den nächsten Run)
     try:
         scn["detect_prev_names"] = []
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
-    if remove_names:
-        clip = _resolve_clip(context)
-        if clip:
-            _remove_tracks_by_name(clip.tracking, remove_names)
-
-    # Frischliste normalisieren (nicht löschen, Clean-Short schützt sie)
+    # 5) Frischliste normalisieren (CleanShort nutzt sie als Schutz)
     fresh_raw = _safe_idprop_get_list(scn, "__just_created_names")
     if fresh_raw:
-        _try_set_scene_list(scn, "__just_created_names", fresh_raw)  # erneut geschrieben → garantiert clean
+        _try_set_scene_list(scn, "__just_created_names", fresh_raw)  # garantiert ASCII-safe
 
-
-# ---------------------------------------------------------------------------
-# Feature-Detektion (mit Kontext-Override)
-# ---------------------------------------------------------------------------
 
 def perform_marker_detection(
     clip: bpy.types.MovieClip,
