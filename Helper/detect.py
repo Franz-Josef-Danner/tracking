@@ -18,7 +18,11 @@
 import bpy
 import math
 from typing import Dict, Any, Optional, List, Tuple, Iterable
-from .naming import _safe_name
+try:
+    # optional, kann fehlen – wir kapseln Aufrufe defensiv
+    from .naming import _safe_name as _naming_safe_name
+except Exception:  # noqa: BLE001
+    _naming_safe_name = None  # type: ignore[assignment]
 
 __all__ = [
     "perform_marker_detection",
@@ -29,9 +33,8 @@ __all__ = [
 
 _LOCK_KEY = "__detect_lock"
 
-
 # ---------------------------------------------------------------------------
-# Kontext-Utilities & String-Sanitizing/Logging
+# Kontext-Utilities & String/IDProperty-Sicherheit
 # ---------------------------------------------------------------------------
 
 def _coerce_utf8_str(x):
@@ -45,19 +48,27 @@ def _coerce_utf8_str(x):
         except UnicodeDecodeError:
             try:
                 return b.decode("latin-1").strip()
-            except Exception:
+            except Exception:  # noqa: BLE001
                 return None
     try:
         s = str(x).strip()
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
-    # evtl. Surrogates neutralisieren
+    # mögliche Surrogates entschärfen
     s = s.replace("\udcff", "")
     return s or None
 
 
 def _coerce_utf8_str_list(seq):
     return [s for s in (_coerce_utf8_str(x) for x in (seq or [])) if s]
+
+
+def _ascii_safe(s: str) -> str:
+    """Für Logs/IDProps – macht jeden String ASCII-sicher (\\u, \\x, \\N escapes)."""
+    try:
+        return s.encode("utf-8", "backslashreplace").decode("ascii", "backslashreplace")
+    except Exception:  # noqa: BLE001
+        return "<unprintable>"
 
 
 def _debug_dump_names(label, seq):
@@ -68,23 +79,44 @@ def _debug_dump_names(label, seq):
             safe.append("BYTES(" + bytes(x).hex(" ") + ")")
         else:
             try:
-                s = str(x)
-                s = s.encode("utf-8", "backslashreplace").decode("ascii", "backslashreplace")
-            except Exception:
-                s = f"<unprintable type={type(x).__name__}>"
-            safe.append(s)
+                safe.append(_ascii_safe(str(x)))
+            except Exception:  # noqa: BLE001
+                safe.append(f"<unprintable type={type(x).__name__}>")
     print(f"[DetectDebug] {label}: {safe}")
 
 
-def _try_set_scene_list(scn, key, seq):
+def _safe_idprop_get_list(scn, key: str) -> List[str]:
+    """
+    Liest scene[key] defensiv. Wenn Blender/IDProperty beim Decoden crasht,
+    wird die Property geleert und [] zurückgegeben.
+    """
+    try:
+        raw = scn.get(key, [])
+    except Exception as ex:  # noqa: BLE001
+        print(f"[DetectDebug] IDProp READ FAIL scene[{key!r}] → {ex} | Reset auf []")
+        try:
+            scn[key] = []
+        except Exception:  # noqa: BLE001
+            pass
+        return []
+    # erfolgreiche Rückgabe – aber ggf. normalisieren
+    return _coerce_utf8_str_list(raw if isinstance(raw, (list, tuple)) else [])
+
+
+def _try_set_scene_list(scn, key: str, seq):
     """Setzt eine Stringliste robust in eine ID-Property; loggt, wenn’s kracht."""
     sanitized = _coerce_utf8_str_list(seq)
+    # zusätzlich: erzwinge ASCII-safe Darstellung, damit Blender-UI/IDProps nie decoden müssen
+    ascii_sanitized = [_ascii_safe(s) for s in sanitized]
     try:
-        scn[key] = sanitized
-    except Exception as ex:
+        scn[key] = ascii_sanitized
+    except Exception as ex:  # noqa: BLE001
         print(f"[DetectDebug] SANITIZE FAIL on set scene[{key!r}] → {ex}")
         _debug_dump_names(f"SANITIZE RAW {key}", seq)
-        scn[key] = []  # Fallback, damit der Run weitergeht
+        try:
+            scn[key] = []
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _find_clip_editor_context():
@@ -134,11 +166,11 @@ def _remove_tracks_by_name(tracking: bpy.types.MovieTracking, names_to_remove: I
     removed = 0
     target = set(_coerce_utf8_str_list(names_to_remove))
     for t in list(tracking.tracks):
-        if t.name in target:
+        if _coerce_utf8_str(t.name) in target:
             try:
                 tracking.tracks.remove(t)
                 removed += 1
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
     return removed
 
@@ -179,6 +211,44 @@ def _scaled_params(
     return margin, min_distance
 
 
+def _safe_track_name(track: bpy.types.MovieTrackingTrack) -> Optional[str]:
+    """
+    Liefert einen robusten, für IDProps geeigneten Namen.
+    Versucht zuerst .naming._safe_name (falls vorhanden), sonst Sanitizing.
+    """
+    # 1) versuche naming._safe_name defensiv
+    if _naming_safe_name:
+        try:
+            n = _naming_safe_name(track)
+            if n:
+                n = str(n).strip()
+                if n:
+                    return _ascii_safe(n)
+        except Exception:  # noqa: BLE001
+            pass
+
+    # 2) direkten Namen sicher verwerten
+    raw = getattr(track, "name", None)
+    if isinstance(raw, (bytes, bytearray)):
+        b = bytes(raw)
+        for enc in ("utf-8", "latin-1"):
+            try:
+                s = b.decode(enc).strip()
+                if s:
+                    return _ascii_safe(s)
+            except Exception:  # noqa: BLE001
+                continue
+        # letzte Eskalationsstufe: Hex
+        return f"BYTES({b.hex()})"
+    try:
+        s = str(raw).strip() if raw is not None else None
+    except Exception:  # noqa: BLE001
+        s = None
+    if s:
+        return _ascii_safe(s)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # PRE-PASS (Zwischenstände/Persistenz bereinigen, KEIN Short-Track-Clean)
 # ---------------------------------------------------------------------------
@@ -187,14 +257,13 @@ def detect_prepass_cleanup(context, *, remove_names=None):
     """Bereinigt nur Persistenz/Zwischenstände für Detect-Retries."""
     scn = context.scene
 
-    # Vorherige RUNNING-Reste
-    prev_raw = scn.get("detect_prev_names", []) or []
-    prev = set(_coerce_utf8_str_list(prev_raw))
-    if prev_raw and (len(prev) != len(prev_raw)):
+    # Vorherige RUNNING-Reste (defensiv lesen – kann bereits crashen!)
+    prev_raw = _safe_idprop_get_list(scn, "detect_prev_names")
+    if prev_raw:
         _debug_dump_names("Prev RAW (pre-sanitize)", prev_raw)
     try:
         scn["detect_prev_names"] = []
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
 
     if remove_names:
@@ -203,11 +272,9 @@ def detect_prepass_cleanup(context, *, remove_names=None):
             _remove_tracks_by_name(clip.tracking, remove_names)
 
     # Frischliste normalisieren (nicht löschen, Clean-Short schützt sie)
-    fresh_raw = scn.get("__just_created_names", []) or []
-    fresh_norm = _coerce_utf8_str_list(fresh_raw)
-    if fresh_raw and len(fresh_norm) != len(fresh_raw):
-        print("[DetectDebug] normalized __just_created_names")
-    _try_set_scene_list(scn, "__just_created_names", fresh_norm)
+    fresh_raw = _safe_idprop_get_list(scn, "__just_created_names")
+    if fresh_raw:
+        _try_set_scene_list(scn, "__just_created_names", fresh_raw)  # erneut geschrieben → garantiert clean
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +300,7 @@ def perform_marker_detection(
             min_distance=min_distance,
             threshold=float(threshold),
         )
-    except Exception as ex:
+    except Exception as ex:  # noqa: BLE001
         print("[DetectDebug] detect_features failed in override:", ex)
         raise
     return sum(1 for t in tracking.tracks if getattr(t, "select", False))
@@ -276,7 +343,7 @@ def run_detect_once(
         if start_frame is not None:
             try:
                 scn.frame_set(int(start_frame))
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
         frame = int(scn.frame_current)
 
@@ -285,17 +352,21 @@ def run_detect_once(
 
         # Threshold laden
         if threshold is None:
-            threshold = float(
-                scn.get(
-                    "last_detection_threshold",
-                    float(getattr(settings, "default_correlation_min", 0.75)),
-                )
-            )
-        threshold = max(1e-6, float(threshold))
+            base_thr = float(getattr(settings, "default_correlation_min", 0.75))
+            try:
+                last_thr = float(scn.get("last_detection_threshold", base_thr))
+            except Exception:  # noqa: BLE001
+                last_thr = base_thr
+            threshold = max(1e-6, float(last_thr))
+        else:
+            threshold = max(1e-6, float(threshold))
 
         # Zielkorridor
         if marker_adapt is None:
-            marker_adapt = int(scn.get("marker_adapt", scn.get("marker_basis", 20)))
+            try:
+                marker_adapt = int(scn.get("marker_adapt", scn.get("marker_basis", 20)))
+            except Exception:  # noqa: BLE001
+                marker_adapt = int(scn.get("marker_basis", 20))
         safe_adapt = max(1, int(marker_adapt))
 
         if min_marker is None:
@@ -310,7 +381,7 @@ def run_detect_once(
             min_distance_base = max(1, int(width * 0.05))
 
         # Snapshot
-        initial_names = {t.name for t in tracking.tracks}
+        initial_names = {_coerce_utf8_str(t.name) or str(t.name) for t in tracking.tracks}
         existing_px = _collect_existing_positions(tracking, frame, width, height)
 
         # Detect
@@ -321,20 +392,23 @@ def run_detect_once(
                 float(threshold),
                 int(margin_base), int(min_distance_base),
             )
-        except Exception as ex:
+        except Exception as ex:  # noqa: BLE001
             print("[DetectDebug] FAILED: Operator bpy.ops.clip.detect_features failed:", ex)
-            scn["detect_status"] = "failed"
+            try:
+                scn["detect_status"] = "failed"
+            except Exception:  # noqa: BLE001
+                pass
             return {"status": "FAILED", "reason": "detect_features_failed"}
 
         try:
             bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
 
         # Neue Tracks
         tracks = tracking.tracks
-        new_tracks_raw = [t for t in tracks if t.name not in initial_names]
-        added_names = {t.name for t in new_tracks_raw}
+        new_tracks_raw = [t for t in tracks if (_coerce_utf8_str(t.name) or str(t.name)) not in initial_names]
+        added_names = {_coerce_utf8_str(t.name) or str(t.name) for t in new_tracks_raw}
 
         # Near-Duplicates entfernen
         rel = close_dist_rel if close_dist_rel > 0.0 else 0.01
@@ -352,7 +426,8 @@ def run_detect_once(
                     x = m.co[0] * width
                     y = m.co[1] * height
                     for ex, ey in existing_px:
-                        dx = x - ex; dy = y - ey
+                        dx = x - ex
+                        dy = y - ey
                         if (dx * dx + dy * dy) < thr2:
                             close_tracks.append(tr)
                             break
@@ -363,7 +438,7 @@ def run_detect_once(
                 t.select = True
             try:
                 _run_in_clip_context(lambda **kw: bpy.ops.clip.delete_track(**kw))
-            except Exception:
+            except Exception:  # noqa: BLE001
                 _remove_tracks_by_name(tracking, {t.name for t in close_tracks})
 
         close_set = {t.name for t in close_tracks}
@@ -372,19 +447,7 @@ def run_detect_once(
 
         created_names: List[str] = []
         for t in cleaned_tracks:
-            n = _safe_name(t)  # nutzt errors="ignore"
-            if not n and hasattr(t, "name"):
-                raw = t.name
-                if isinstance(raw, (bytes, bytearray)):
-                    try:
-                        n = bytes(raw).decode("utf-8")
-                    except UnicodeDecodeError:
-                        try:
-                            n = bytes(raw).decode("latin-1")
-                        except Exception:
-                            n = None
-                else:
-                    n = str(raw)
+            n = _safe_track_name(t)
             if n:
                 n = n.strip()
                 if n:
@@ -403,42 +466,45 @@ def run_detect_once(
             if added_names:
                 _deselect_all(tracking)
                 for t in tracks:
-                    if t.name in added_names:
+                    if (_coerce_utf8_str(t.name) or str(t.name)) in added_names:
                         t.select = True
                 try:
                     _run_in_clip_context(lambda **kw: bpy.ops.clip.delete_track(**kw))
-                except Exception:
+                except Exception:  # noqa: BLE001
                     pass
 
-                still_there = [t.name for t in tracking.tracks if t.name in added_names]
+                still_there = [(_coerce_utf8_str(t.name) or str(t.name)) for t in tracking.tracks
+                               if (_coerce_utf8_str(t.name) or str(t.name)) in added_names]
                 if still_there:
                     _remove_tracks_by_name(tracking, still_there)
-                    remaining = [t.name for t in tracking.tracks if t.name in added_names]
+                    remaining = [(_coerce_utf8_str(t.name) or str(t.name)) for t in tracking.tracks
+                                 if (_coerce_utf8_str(t.name) or str(t.name)) in added_names]
                     remaining_after_delete = remaining or []
                 try:
                     bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
-                except Exception:
+                except Exception:  # noqa: BLE001
                     pass
 
             # Sanitize & optional Diagnoselog
-            sanitized_remaining = _coerce_utf8_str_list(remaining_after_delete)
-            if remaining_after_delete and (len(sanitized_remaining) != len(remaining_after_delete)):
+            if remaining_after_delete:
                 _debug_dump_names("Remaining RAW (pre-sanitize)", remaining_after_delete)
 
             new_threshold = max(
                 float(threshold) * ((anzahl_neu + 0.1) / float(safe_adapt)),
                 1e-4,
             )
-            scn["last_detection_threshold"] = float(new_threshold)
-            scn["detect_status"] = "running"  # Detect will retry
+            try:
+                scn["last_detection_threshold"] = float(new_threshold)
+                scn["detect_status"] = "running"  # Detect wird erneut versucht
+                _try_set_scene_list(scn, "detect_prev_names", remaining_after_delete)
+            except Exception:  # noqa: BLE001
+                pass
 
             print(
                 "[DetectDebug] RUNNING → new_threshold=%.6f (old=%.6f, adapt=%d) | anzahl_neu=%d | corridor=[%d..%d]"
                 % (float(new_threshold), float(threshold), int(marker_adapt),
                    int(anzahl_neu), int(min_marker), int(max_marker))
             )
-
-            _try_set_scene_list(scn, "detect_prev_names", sanitized_remaining)
 
             return {
                 "status": "RUNNING",
@@ -451,22 +517,28 @@ def run_detect_once(
         # READY: Erfolg
         try:
             scn["detect_prev_names"] = []
-        except Exception:
+            scn["last_detection_threshold"] = float(threshold)
+        except Exception:  # noqa: BLE001
             pass
-        scn["last_detection_threshold"] = float(threshold)
 
         # === Handoff-Gate ===
-        if handoff_to_pipeline:
-            scn["detect_status"] = "success"
-            scn["pipeline_do_not_start"] = False
-        else:
-            scn["detect_status"] = "standalone_success"
-            scn["pipeline_do_not_start"] = True
+        try:
+            if handoff_to_pipeline:
+                scn["detect_status"] = "success"
+                scn["pipeline_do_not_start"] = False
+            else:
+                scn["detect_status"] = "standalone_success"
+                scn["pipeline_do_not_start"] = True
+        except Exception:  # noqa: BLE001
+            pass
         # ====================
 
         # Airbag gegen CleanShort direkt danach
-        scn["__skip_clean_short_once"] = True
-        _try_set_scene_list(scn, "__just_created_names", created_names)
+        try:
+            scn["__skip_clean_short_once"] = True
+            _try_set_scene_list(scn, "__just_created_names", created_names)
+        except Exception:  # noqa: BLE001
+            pass
 
         print(
             "[DetectDebug] READY | anzahl_neu=%d liegt im Korridor [%d..%d] | threshold_keep=%.6f | created=%d"
@@ -481,14 +553,17 @@ def run_detect_once(
             "created_names": created_names,
         }
 
-    except Exception as ex:
+    except Exception as ex:  # noqa: BLE001
         print("[DetectDebug] FAILED:", ex)
-        scn["detect_status"] = "failed"
+        try:
+            scn["detect_status"] = "failed"
+        except Exception:  # noqa: BLE001
+            pass
         return {"status": "FAILED", "reason": str(ex)}
     finally:
         try:
             scn[_LOCK_KEY] = False
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
 
 
