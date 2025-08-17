@@ -233,29 +233,17 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._state = "FIND_LOW"
             return {"RUNNING_MODAL"}
 
-        elif self._state == "FIND_LOW":
+        elif st == "NONE":
             try:
-                from ..Helper.find_low_marker_frame import run_find_low_marker_frame
-                res = run_find_low_marker_frame(context) or {}
+                from ..Helper.clean_error_tracks import run_clean_error_tracks
+                self._log("[Coordinator] NO_MORE_FRAMES → Trigger run_clean_error_tracks")
+                res = run_clean_error_tracks(context)
+                self._log(f"[Coordinator] run_clean_error_tracks DONE → {res}")
             except Exception as ex:
-                self._log(f"[FindLow] Fehler: {ex}")
-                res = {"status": "FAILED"}
+                self._log(f"[Coordinator] run_clean_error_tracks FAILED: {ex}")
+            # danach sofort beenden
+            return {"FINISHED"}
 
-            st = res.get("status", "FAILED")
-            if st == "FOUND":
-                context.scene["goto_frame"] = int(res.get("frame", context.scene.frame_current))
-                self._jump_done = False
-                self._detect_attempts = 0
-                self._state = "JUMP"
-            elif st == "NONE":
-                # keine neuen Marker → in Solve-Phase wechseln
-                self._state = "SOLVE"
-            else:
-                # Fallback: trotzdem Sprung versuchen (z. B. aktueller Frame)
-                self._jump_done = False
-                self._detect_attempts = 0
-                self._state = "JUMP"
-            return {"RUNNING_MODAL"}
 
         elif self._state == "JUMP":
             goto = int(context.scene.get("goto_frame", context.scene.frame_current))
