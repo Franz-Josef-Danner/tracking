@@ -517,9 +517,9 @@ def run_detect_once(
                 "created_names": created_names,
             }
 
-        # READY: Erfolg
+        # READY: Erfolg  (→ wie alte Version: erzeugte Namen für nächsten Run merken)
         try:
-            scn["detect_prev_names"] = []
+            _try_set_scene_list(scn, "detect_prev_names", created_names)
             scn["last_detection_threshold"] = float(threshold)
         except Exception:  # noqa: BLE001
             pass
