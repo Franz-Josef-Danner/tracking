@@ -290,7 +290,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if not self._jump_done or goto != cur:
                 try:
                     from ..Helper.jump_to_frame import run_jump_to_frame
-                    run_jump_to_frame(context, frame=goto)
+                    run_jump_to_frame(context, frame=goto, repeat_map=self._repeat_map)
                 except Exception as ex:
                     self._log(f"[Jump] Fehler: {ex}")
                 self._jump_done = True
