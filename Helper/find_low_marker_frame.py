@@ -123,7 +123,7 @@ def _count_markers_on_frame(
 def find_low_marker_frame_core(
     clip: bpy.types.MovieClip,
     *,
-    marker_min: int,
+    marker_basis: int,
     frame_start: int,
     frame_end: int,
     exact: bool = True,
@@ -132,9 +132,9 @@ def find_low_marker_frame_core(
 ) -> Optional[int]:
     """
     Scannt von frame_start bis frame_end und gibt den ERSTEN Frame zurück,
-    bei dem die Markerdichte < marker_min ist. None, wenn keiner gefunden.
+    bei dem die Markerdichte < marker_basis ist. None, wenn keiner gefunden.
     """
-    marker_min = max(1, int(marker_min))
+    marker_basis = max(1, int(marker_basis))
     fs = int(frame_start)
     fe = int(frame_end)
     if fe < fs:
@@ -148,7 +148,7 @@ def find_low_marker_frame_core(
             ignore_muted_marker=ignore_muted_marker,
             ignore_muted_track=ignore_muted_track,
         )
-        if n < marker_min:
+        if n < marker_basis:
             return f
     return None
 
@@ -161,14 +161,14 @@ def _resolve_threshold_from_scene(
     default_basis: int = 20,
 ) -> int:
     """
-    Ermittelt den Schwellenwert (marker_min) mit Priorität:
-        scene["marker_min"] > scene["marker_adapt"] > scene["marker_basis"] > default_basis
+    Ermittelt den Schwellenwert (marker_basis) mit Priorität:
+        scene["marker_basis"] > scene["marker_adapt"] > scene["marker_basis"] > default_basis
     """
     if scn is None:
         return int(default_basis)
 
-    if prefer_adapt and ("marker_min" in scn):
-        return int(scn["marker_min"])
+    if prefer_adapt and ("marker_basis" in scn):
+        return int(scn["marker_basis"])
     if prefer_adapt and ("marker_adapt" in scn):
         return int(scn["marker_adapt"])
     if use_scene_basis:
@@ -188,20 +188,20 @@ def run_find_low_marker_frame(
     Orchestrator-kompatibel:
       - Liefert {"status": "FOUND", "frame": F} | {"status": "NONE"} | {"status":"FAILED","reason":...}
       - **Scannt IMMER im Szenenbereich** (scene.frame_start .. scene.frame_end) – optional übersteuerbar per frame_start/frame_end
-      - Threshold-Auflösung: marker_min > marker_adapt > marker_basis > 20
+      - Threshold-Auflösung: marker_basis > marker_adapt > marker_basis > 20
     """
     try:
         clip, scn = _resolve_clip_and_scene(context)
         if not clip:
             return {"status": "FAILED", "reason": "Kein MovieClip im Kontext."}
 
-        marker_min = _resolve_threshold_from_scene(
+        marker_basis = _resolve_threshold_from_scene(
             scn,
             prefer_adapt=prefer_adapt,
             use_scene_basis=use_scene_basis,
             default_basis=20,
         )
-        marker_min = max(1, int(marker_min))
+        marker_basis = max(1, int(marker_basis))
 
         # --- Szenenbereich bestimmen (mit Clamp auf Clip) ---
         fs, fe = _scene_scan_range(clip, scn, frame_start, frame_end)
@@ -209,7 +209,7 @@ def run_find_low_marker_frame(
         # --- Suchen ---
         frame = find_low_marker_frame_core(
             clip,
-            marker_min=marker_min,
+            marker_basis=marker_basis,
             frame_start=fs,
             frame_end=fe,
             exact=True,
