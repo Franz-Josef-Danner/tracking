@@ -232,33 +232,49 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         if self._state == "INIT":
             self._state = "FIND_LOW"
             return {"RUNNING_MODAL"}
-
-        elif st == "NONE":
-            # keine neuen Marker → Error-Clean ausführen und Ende
-            try:
-                from ..Helper.clean_error_tracks import run_clean_error_tracks
-                self._log("[Coordinator] NO_MORE_FRAMES → run_clean_error_tracks")
-                res_ce = run_clean_error_tracks(context)
-                self._log(f"[Coordinator] clean_error_tracks DONE → {res_ce}")
-            except Exception as ex:
-                self._log(f"[Coordinator] clean_error_tracks FAILED: {ex}")
         
-            # sauber beenden (Timer/Flags räumen), KEIN Solve
-            self._remove_timer(context)
-            self._deactivate_flag(context)
+        elif self._state == "FIND_LOW":
             try:
-                context.scene[LOCK_KEY] = False
-            except Exception:
-                pass
-            self._state = "DONE"
-            return {"FINISHED"}
-
-            else:
-                # Fallback: trotzdem Sprung versuchen (z. B. aktueller Frame)
+                from ..Helper.find_low_marker_frame import run_find_low_marker_frame
+                res = run_find_low_marker_frame(context) or {}
+            except Exception as ex:
+                self._log(f"[FindLow] Fehler: {ex}")
+                res = {"status": "FAILED"}
+        
+            st = res.get("status", "FAILED")
+        
+            if st == "FOUND":
+                context.scene["goto_frame"] = int(res.get("frame", context.scene.frame_current))
                 self._jump_done = False
                 self._detect_attempts = 0
                 self._state = "JUMP"
+                return {"RUNNING_MODAL"}
+        
+            if st == "NONE":
+                # NEU: statt Solve → Error-Clean & Ende
+                try:
+                    from ..Helper.clean_error_tracks import run_clean_error_tracks
+                    self._log("[Coordinator] NO_MORE_FRAMES → run_clean_error_tracks")
+                    res_ce = run_clean_error_tracks(context)
+                    self._log(f"[Coordinator] clean_error_tracks DONE → {res_ce}")
+                except Exception as ex:
+                    self._log(f"[Coordinator] clean_error_tracks FAILED: {ex}")
+        
+                self._remove_timer(context)
+                self._deactivate_flag(context)
+                try:
+                    context.scene[LOCK_KEY] = False
+                except Exception:
+                    pass
+                self._state = "DONE"
+                return {"FINISHED"}
+        
+            # Fallback: trotzdem Sprung (z. B. aktueller Frame)
+            self._jump_done = False
+            self._detect_attempts = 0
+            self._state = "JUMP"
             return {"RUNNING_MODAL"}
+
 
         elif self._state == "JUMP":
             goto = int(context.scene.get("goto_frame", context.scene.frame_current))
