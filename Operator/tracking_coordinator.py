@@ -7,7 +7,7 @@ from typing import Set
 LOCK_KEY = "__detect_lock"
 
 
-class CLIP_OT_lowjump(bpy.types.Operator):
+class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     """Finde Low-Marker-Frame und springe dorthin"""
 
     bl_idname = "clip.lowjump"
