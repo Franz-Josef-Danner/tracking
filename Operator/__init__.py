@@ -5,7 +5,6 @@ from .clip_clean_error_tracks_modular import CLIP_OT_clean_error_tracks_modular
 
 classes = (
     CLIP_OT_tracking_coordinator,
-    CLIP_OT_clean_error_tracks_modular,
 )
 
 def register():
