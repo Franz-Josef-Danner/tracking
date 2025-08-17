@@ -94,8 +94,7 @@ def recursive_split_cleanup(context, area, region, space, tracks):
 
     # Abschluss im gültigen UI-Kontext
     with context.temp_override(area=area, region=region, space_data=space):
-        clean_short_tracks(context, action="DELETE_TRACK", frames=context.scene.get("frames_track", 25))
-
+        clean_short_tracks(context, action="DELETE_TRACK")
 
     # Safety-Pass
     mute_unassigned_markers(tracks)
