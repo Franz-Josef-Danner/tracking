@@ -3,6 +3,7 @@ import bpy
 from .naming import _safe_name
 from .segments import get_track_segments, track_has_internal_gaps
 from .mute_ops import mute_marker_path, mute_unassigned_markers, mute_after_last_marker
+from .clean_short_tracks import clean_short_tracks
 
 def clear_path_on_split_tracks_segmented(context, area, region, space, original_tracks, new_tracks):
     clip = space.clip
@@ -93,7 +94,8 @@ def recursive_split_cleanup(context, area, region, space, tracks):
 
     # Abschluss im gültigen UI-Kontext
     with context.temp_override(area=area, region=region, space_data=space):
-        bpy.ops.clip.clean_short_tracks('INVOKE_DEFAULT')
+        clean_short_tracks(context, action="DELETE_TRACK", frames=context.scene.get("frames_track", 25))
+
 
     # Safety-Pass
     mute_unassigned_markers(tracks)
