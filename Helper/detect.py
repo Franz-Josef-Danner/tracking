@@ -450,6 +450,26 @@ def run_detect_once(
         except Exception:
             pass
 
+        try:
+            _deselect_all(tracking)
+            for t in cleaned_tracks:   # kommt von oben (nach Near-Duplicate-Clean)
+                t.select = True
+            bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
+        except Exception:
+            pass
+
+        print(
+            "[DetectDebug] READY | anzahl_neu=%d liegt im Korridor [%d..%d] | threshold_keep=%.6f"
+            % (int(anzahl_neu), int(min_marker), int(max_marker), float(threshold))
+        )
+
+        return {
+            "status": "READY",
+            "new_tracks": int(anzahl_neu),
+            "threshold": float(threshold),
+            "frame": int(frame),
+        }
+
 # ============================================================
 # Mehrfach-Wrapper (adaptive Re-Runs)
 # ============================================================
