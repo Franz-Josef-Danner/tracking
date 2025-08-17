@@ -253,12 +253,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._state = "DONE"
             return {"FINISHED"}
 
-        else:
-            # Fallback: trotzdem Sprung versuchen (z. B. aktueller Frame)
-            self._jump_done = False
-            self._detect_attempts = 0
-            self._state = "JUMP"
-        return {"RUNNING_MODAL"}
+            else:
+                # Fallback: trotzdem Sprung versuchen (z. B. aktueller Frame)
+                self._jump_done = False
+                self._detect_attempts = 0
+                self._state = "JUMP"
+            return {"RUNNING_MODAL"}
 
         elif self._state == "JUMP":
             goto = int(context.scene.get("goto_frame", context.scene.frame_current))
