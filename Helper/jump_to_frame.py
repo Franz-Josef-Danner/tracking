@@ -127,18 +127,18 @@ def run_jump_to_frame(
             scn.frame_current = target
     else:
         scn.frame_current = target
-
-    # Repeat-Zählung NUR für Jump-Frames
-    repeat_count = 0
+    # Besuchszählung je Ziel-Frame (1=erster Besuch, 2=erste Wiederholung, ...)
+    repeat_count = 1
     if repeat_map is not None:
-        repeat_count = repeat_map.get(target, 0) + 1 if scn.frame_current == target else 0
-        if scn.frame_current == target:
-            repeat_map[target] = repeat_count
+        repeat_count = int(repeat_map.get(target, 0)) + 1
+        repeat_map[target] = repeat_count
+    
+    # optional: wenn du nur eine Logzeile möchtest, kannst du diese entfernen
     # ------------------------------------------------------------------
     # REPEAT-HOOK: Bei Wiederholung (Frame wurde schon einmal per Jump angefahren)
     # → Nur noch marker_helper_main() ausführen.
     # ------------------------------------------------------------------
-    if repeat_count >= 0:
+    if repeat_count >= 2:
         # robust importieren (Package vs. Flat)
         try:
             from ..Helper.marker_helper_main import marker_helper_main
