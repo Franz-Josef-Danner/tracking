@@ -8,7 +8,7 @@ from .jump_to_frame import run_jump_to_frame
 from .detect import perform_marker_detection, run_detect_adaptive, run_detect_once
 from .bidirectional_track import run_bidirectional_track, CLIP_OT_bidirectional_track
 from .clean_short_tracks import clean_short_tracks
-from .clean_error_tracks_modular import run_clean_error_tracks
+from .clean_error_tracks import run_clean_error_tracks
 from .solve_camera import solve_watch_clean, run_solve_watch_clean
 from .find_max_marker_frame import get_active_marker_counts_sorted
 from .projection_cleanup_builtin import builtin_projection_cleanup, find_clip_window
