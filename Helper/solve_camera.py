@@ -52,7 +52,7 @@ def _solve_once(context, *, label: str = "") -> float:
         raise RuntimeError("Kein CLIP_EDITOR-Fenster gefunden (Kontext erforderlich).")
 
     with context.temp_override(area=area, region=region, space_data=space):
-        res = bpy.ops.clip.solve_camera('EXEC_DEFAULT')
+        res = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
         if res != {'FINISHED'}:
             raise RuntimeError("Solve fehlgeschlagen oder abgebrochen.")
 
