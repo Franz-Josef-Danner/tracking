@@ -292,19 +292,17 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self._state = "DONE"
                 return {"FINISHED"}
 
-
-
-    else:
-        # FAILED/Unbekannt → defensiv beenden (kein Solve)
-        self._log(f"[Coordinator] FIND_LOW unexpected status={st} → finish")
-        self._remove_timer(context)
-        self._deactivate_flag(context)
-        try:
-            context.scene[LOCK_KEY] = False
-        except Exception:
-            pass
-        self._state = "DONE"
-        return {"FINISHED"}
+            else:
+                # FAILED/Unbekannt → defensiv beenden (kein Solve)
+                self._log(f"[Coordinator] FIND_LOW unexpected status={st} → finish")
+                self._remove_timer(context)
+                self._deactivate_flag(context)
+                try:
+                    context.scene[LOCK_KEY] = False
+                except Exception:
+                    pass
+                self._state = "DONE"
+                return {"FINISHED"}
 
 
 
