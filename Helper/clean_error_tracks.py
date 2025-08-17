@@ -5,12 +5,12 @@ from bpy.props import BoolProperty
 
 # --- deine bestehenden Helper (neu) ---
 # Pfade ggf. an dein Paket anpassen:
-from ..Helper.clean_error_tracks_neu import _clip_override
-from ..Helper.multiscale_temporal_grid_clean import multiscale_temporal_grid_clean
-from ..Helper.segments import track_has_internal_gaps
-from ..Helper.mute_ops import mute_after_last_marker, mute_unassigned_markers
-from ..Helper.split_cleanup import clear_path_on_split_tracks_segmented, recursive_split_cleanup
-from ..Helper.clean_short_tracks import clean_short_tracks  # << neu gefordert
+from .clean_error_tracks_neu import _clip_override
+from .multiscale_temporal_grid_clean import multiscale_temporal_grid_clean
+from .segments import track_has_internal_gaps
+from .mute_ops import mute_after_last_marker, mute_unassigned_markers
+from .split_cleanup import clear_path_on_split_tracks_segmented, recursive_split_cleanup
+from .clean_short_tracks import clean_short_tracks  # << neu gefordert
 
 # Optionales HUD (Text im Clip-Editor zeichnen)
 _draw_handle = None
