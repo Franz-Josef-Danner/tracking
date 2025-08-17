@@ -1,12 +1,14 @@
 # Operator/tracking_coordinator.py
-# — Orchestrator mit Find→Jump→Detect→BidirectionalTrack (Helper)→CleanShort→(Repeat)→Solve/Refine/Cleanup
+# — Orchestrator mit Find → Jump → (Wait/Settle) → Detect → BidirectionalTrack (Helper) → CleanShort → (Repeat) → Solve/Refine/Cleanup
 # Garantiert: CleanShort wird JEDES MAL direkt nach dem bidirektionalen Tracking aufgerufen,
-# sofern auto_clean_short=True (Default).
+# sofern auto_clean_short=True (Default). Zusätzlich wird nach dem Jump ein kurzer Settle-Zeitraum
+# erzwungen, damit Detect **immer** NACH dem Frame-Set und einem Depsgraph/Redraw-Tick läuft.
 
 from __future__ import annotations
 
-import time
+import unicodedata
 import bpy
+from typing import Dict, Set
 
 from ..Helper.marker_helper_main import marker_helper_main
 from ..Helper.main_to_adapt import main_to_adapt
@@ -15,8 +17,42 @@ from ..Helper.tracker_settings import apply_tracker_settings
 LOCK_KEY = "__detect_lock"  # exklusiver Detect-/Cleanup-Lock in scene
 
 
+# ------------------------------------------------------------
+# String-Sanitizer (gegen NBSP/Encoding-Ausreißer)
+# ------------------------------------------------------------
+
+def _sanitize_str(s) -> str:
+    if isinstance(s, (bytes, bytearray)):
+        try:
+            s = s.decode("utf-8")
+        except Exception:
+            s = s.decode("latin-1", errors="replace")
+    s = str(s).replace("\u00A0", " ")  # NBSP → Space
+    return unicodedata.normalize("NFKC", s).strip()
+
+
+def _sanitize_all_track_names(context: bpy.types.Context) -> None:
+    """Bereinigt sicher alle Track-Namen im aktiven/zugeordneten MovieClip.
+    Das entschärft Encoding-Probleme, bevor Detect läuft.
+    """
+    mc = getattr(context, "edit_movieclip", None) or getattr(context.space_data, "clip", None)
+    if not mc:
+        return
+    try:
+        tracks = mc.tracking.tracks
+    except Exception:
+        return
+    for tr in tracks:
+        try:
+            tr.name = _sanitize_str(tr.name)
+        except Exception:
+            # Namen nie hart verlieren, notfalls ignorieren
+            pass
+
+
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     """Orchestriert Low-Marker-Find, Jump, Detect, Bidirectional-Track (Helper), Cleanup und Solve."""
+
     bl_idname = "clip.tracking_coordinator"
     bl_label = "Tracking Orchestrator (Pipeline)"
     bl_options = {"REGISTER", "UNDO"}
@@ -76,7 +112,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     _detect_attempts: int = 0
     _detect_attempts_max: int = 8
     _jump_done: bool = False
-    _repeat_map: dict | None = None  # Frame→Count (nur via Jump gepflegt)
+    _repeat_map: Dict[int, int] | None = None  # Frame→Count (nur via Jump gepflegt)
+    _settle_ticks: int = 0  # Warten nach Jump, bevor Detect läuft
 
     # --------------------------
     # interne Hilfsfunktionen
@@ -105,7 +142,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             pass
         self._timer = None
 
-    def _cancel(self, context: bpy.types.Context, reason: str = "Cancelled") -> set:
+    def _cancel(self, context: bpy.types.Context, reason: str = "Cancelled") -> Set[str]:
         self._log(f"Abbruch: {reason}")
         self._remove_timer(context)
         try:
@@ -123,6 +160,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._detect_attempts_max = 8
         self._jump_done = False
         self._repeat_map = {}
+        self._settle_ticks = 0
 
         # Lock sauber initialisieren
         try:
@@ -159,7 +197,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     def poll(cls, context: bpy.types.Context) -> bool:
         return (context.area is not None) and (context.area.type == "CLIP_EDITOR")
 
-    def invoke(self, context: bpy.types.Context, event) -> set:
+    def invoke(self, context: bpy.types.Context, event) -> Set[str]:
         self._bootstrap(context)
         wm = context.window_manager
         self._timer = wm.event_timer_add(self.poll_every, window=context.window)
@@ -167,13 +205,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._log("Start")
         return {"RUNNING_MODAL"}
 
-    def execute(self, context: bpy.types.Context) -> set:
+    def execute(self, context: bpy.types.Context) -> Set[str]:
         return self.invoke(context, None)
 
     # ------------------------------------------------------------
     # Modal FSM
     # ------------------------------------------------------------
-    def modal(self, context: bpy.types.Context, event) -> set:
+    def modal(self, context: bpy.types.Context, event) -> Set[str]:
         # Detect-/Cleanup-Lock respektieren: solange Detect/Cleanup läuft, nichts anderes tun.
         try:
             if context.scene.get(LOCK_KEY, False):
@@ -210,9 +248,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self._detect_attempts = 0
                 self._state = "JUMP"
             elif st == "NONE":
+                # keine neuen Marker → in Solve-Phase wechseln
                 self._state = "SOLVE"
             else:
-                # Fallback: trotzdem Sprung versuchen
+                # Fallback: trotzdem Sprung versuchen (z. B. aktueller Frame)
                 self._jump_done = False
                 self._detect_attempts = 0
                 self._state = "JUMP"
@@ -228,6 +267,26 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 except Exception as ex:
                     self._log(f"[Jump] Fehler: {ex}")
                 self._jump_done = True
+            # **NEU**: Nach Jump immer kurz warten, damit Depsgraph/Redraw stabil ist
+            self._settle_ticks = 2  # 2 Timer-Zyklen warten
+            self._state = "WAIT_GOTO"
+            return {"RUNNING_MODAL"}
+
+        elif self._state == "WAIT_GOTO":
+            # Depsgraph/Redraw „setzen lassen“, dann Track-Namen sanitisieren
+            if self._settle_ticks > 0:
+                self._settle_ticks -= 1
+                try:
+                    context.view_layer.update()
+                except Exception:
+                    pass
+                try:
+                    bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                except Exception:
+                    pass
+                return {"RUNNING_MODAL"}
+            # Vor Detect: Strings bereinigen, um Encoding-Fails zu vermeiden
+            _sanitize_all_track_names(context)
             self._state = "DETECT"
             return {"RUNNING_MODAL"}
 
@@ -237,6 +296,16 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 from ..Helper.detect import run_detect_once
                 # Handoff zur Pipeline aktivieren
                 res = run_detect_once(context, start_frame=goto, handoff_to_pipeline=True)
+            except UnicodeDecodeError as ex:
+                # Typischer 0xA0/NBSP-Fall – einmalig sanitizen und erneut versuchen
+                self._log(f"[Detect] UnicodeDecodeError – Retry nach Sanitize: {ex}")
+                _sanitize_all_track_names(context)
+                try:
+                    from ..Helper.detect import run_detect_once as _retry_detect
+                    res = _retry_detect(context, start_frame=goto, handoff_to_pipeline=True)
+                except Exception as ex2:
+                    self._log(f"[Detect] Ausnahme (Retry) : {ex2}")
+                    res = {"status": "FAILED", "reason": f"exception(retry):{ex2}"}
             except Exception as ex:
                 self._log(f"[Detect] Ausnahme: {ex}")
                 res = {"status": "FAILED", "reason": f"exception:{ex}"}
