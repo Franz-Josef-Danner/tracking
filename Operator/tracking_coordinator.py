@@ -1,7 +1,5 @@
-# Operator/tracking_coordinator.py
-# — Orchestrator mit Find → Jump → (Wait/Settle) → Detect → BidirectionalTrack (Helper)
-#   → CleanShort → (Repeat) → (NEU: Bei NO_MORE_FRAMES: CleanError & Ende; KEIN Solve)
-#
+# Operator/tracking_coordtorina.py
+# — Orchestrator mit Find → Jump → (Wait/Settle) → Detect → BidirectionalTrack (Helper) → CleanShort → (Repeat) → Solve/Refine/Cleanup
 # Garantiert: CleanShort wird JEDES MAL direkt nach dem bidirektionalen Tracking aufgerufen,
 # sofern auto_clean_short=True (Default). Zusätzlich wird nach dem Jump ein kurzer Settle-Zeitraum
 # erzwungen, damit Detect **immer** NACH dem Frame-Set und einem Depsgraph/Redraw-Tick läuft.
@@ -9,9 +7,8 @@
 from __future__ import annotations
 
 import unicodedata
-from typing import Dict, Set
-
 import bpy
+from typing import Dict, Set
 
 from ..Helper.marker_helper_main import marker_helper_main
 from ..Helper.main_to_adapt import main_to_adapt
@@ -38,7 +35,7 @@ def _sanitize_all_track_names(context: bpy.types.Context) -> None:
     """Bereinigt sicher alle Track-Namen im aktiven/zugeordneten MovieClip.
     Das entschärft Encoding-Probleme, bevor Detect läuft.
     """
-    mc = getattr(context, "edit_movieclip", None) or getattr(getattr(context, "space_data", None), "clip", None)
+    mc = getattr(context, "edit_movieclip", None) or getattr(context.space_data, "clip", None)
     if not mc:
         return
     try:
@@ -54,11 +51,11 @@ def _sanitize_all_track_names(context: bpy.types.Context) -> None:
 
 
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
-    """Orchestriert Low-Marker-Find, Jump, Detect, Bidirectional-Track (Helper) und Cleanup."""
+    """Orchestriert Low-Marker-Find, Jump, Detect, Bidirectional-Track (Helper), Cleanup und Solve."""
 
     bl_idname = "clip.tracking_coordinator"
     bl_label = "Tracking Orchestrator (Pipeline)"
-    bl_options = {"REGISTER"}  # bewusst ohne UNDO
+    bl_options = {"REGISTER", "UNDO"}
 
     # ------------------------------------------------------------
     # User Properties
@@ -71,7 +68,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     do_backward: bpy.props.BoolProperty(
         name="Bidirectional",
         default=True,
-        description="Run backward tracking after forward pass (im Helper gesteuert)",
+        description="Run backward tracking after forward pass (in Helper gesteuert)",
     )
     auto_clean_short: bpy.props.BoolProperty(
         name="Auto Clean Short",
@@ -85,17 +82,17 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         description="Modal poll period",
     )
 
-    # (Solve-bezogene Optionen bleiben bestehen, werden aktuell nicht benutzt.)
+    # Solve/Refine/Cleanup-Optionen
     enable_refine: bpy.props.BoolProperty(
         name="Refine High Error",
         default=True,
-        description="(ungenuzt in diesem Build) Nach erstem Solve verfeinern",
+        description="Nach erstem Solve die Top-Fehlerframes gezielt verfeinern und danach erneut lösen",
     )
     refine_limit_frames: bpy.props.IntProperty(
         name="Refine Limit Frames",
         default=10,
         min=0,
-        description="(ungenutzt in diesem Build) Anzahl Frames mit höchstem Fehler",
+        description="Anzahl Frames mit höchstem Fehler, die im Refine adressiert werden",
     )
     projection_cleanup_action: bpy.props.EnumProperty(
         name="Projection Cleanup Action",
@@ -104,7 +101,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             ("MUTE", "Mute Tracks", "Fehlerhafte Tracks stummschalten"),
         ],
         default="DELETE_TRACK",
-        description="(ungenutzt in diesem Build) Aktion für builtin_projection_cleanup",
+        description="Aktion für builtin_projection_cleanup nach zweitem Solve",
     )
 
     # ------------------------------------------------------------
@@ -237,63 +234,28 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return {"RUNNING_MODAL"}
 
         elif self._state == "FIND_LOW":
-            scene = context.scene
-
-            # defensiv initialisieren
-            st = None
-            frame = None
-            out = None
-
             try:
                 from ..Helper.find_low_marker_frame import run_find_low_marker_frame
-                min_req = int(scene.get("marker_min", 0))
-                out = run_find_low_marker_frame(context, min_required=min_req) or {}
-                st = out.get("status")
-                frame = out.get("frame")
-                self._log(f"[Coordinator] FIND_LOW → status={st}, frame={frame}, raw={out}")
+                res = run_find_low_marker_frame(context) or {}
             except Exception as ex:
-                st = "FAILED"
-                self._log(f"[Coordinator] FIND_LOW failed: {ex}")
+                self._log(f"[FindLow] Fehler: {ex}")
+                res = {"status": "FAILED"}
 
-            if st == "FOUND" and isinstance(frame, int):
-                # normal weiter: Jump → Settle → Detect/Track
-                context.scene["goto_frame"] = int(frame)
+            st = res.get("status", "FAILED")
+            if st == "FOUND":
+                context.scene["goto_frame"] = int(res.get("frame", context.scene.frame_current))
                 self._jump_done = False
                 self._detect_attempts = 0
                 self._state = "JUMP"
-                return {"RUNNING_MODAL"}
-
             elif st == "NONE":
-                # NEU: kein Solve, sondern CleanError und Ende
-                try:
-                    from ..Helper.clean_error_tracks import run_clean_error_tracks
-                    self._log("[Coordinator] NO_MORE_FRAMES → run_clean_error_tracks")
-                    res = run_clean_error_tracks(context)
-                    self._log(f"[Coordinator] clean_error_tracks DONE → {res}")
-                except Exception as ex:
-                    self._log(f"[Coordinator] clean_error_tracks FAILED: {ex}")
-
-                # sauber beenden (Timer/Flags räumen)
-                self._remove_timer(context)
-                self._deactivate_flag(context)
-                try:
-                    context.scene[LOCK_KEY] = False
-                except Exception:
-                    pass
-                self._state = "DONE"
-                return {"FINISHED"}
-
+                # keine neuen Marker → in Solve-Phase wechseln
+                self._state = "SOLVE"
             else:
-                # FAILED/Unbekannt → defensiv beenden (kein Solve)
-                self._log(f"[Coordinator] FIND_LOW unexpected status={st} → finish")
-                self._remove_timer(context)
-                self._deactivate_flag(context)
-                try:
-                    context.scene[LOCK_KEY] = False
-                except Exception:
-                    pass
-                self._state = "DONE"
-                return {"FINISHED"}
+                # Fallback: trotzdem Sprung versuchen (z. B. aktueller Frame)
+                self._jump_done = False
+                self._detect_attempts = 0
+                self._state = "JUMP"
+            return {"RUNNING_MODAL"}
 
         elif self._state == "JUMP":
             goto = int(context.scene.get("goto_frame", context.scene.frame_current))
@@ -409,6 +371,110 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._state = "FIND_LOW"
             return {"RUNNING_MODAL"}
 
+        elif self._state == "SOLVE":
+            # —— Sequenz: Solve → (Refine) → Solve → Projection-Cleanup (resolve_error) ——
+            try:
+                from ..Helper import solve_camera as _solve_mod
+            except Exception as ex:
+                _solve_mod = None
+                self._log(f"[Solve] Modul-Import solve_camera fehlgeschlagen: {ex}")
+
+            def _call(fn_name: str, *args, **kwargs):
+                if _solve_mod and hasattr(_solve_mod, fn_name):
+                    fn = getattr(_solve_mod, fn_name)
+                    return fn(context, *args, **kwargs)
+                raise RuntimeError(f"Helper '{fn_name}' nicht verfügbar")
+
+            # 1) erster Solve
+            try:
+                self._log("[Solve] Solve #1")
+                if _solve_mod and hasattr(_solve_mod, "run_solve"):
+                    _call("run_solve")
+                else:
+                    bpy.ops.clip.solve_camera("EXEC_DEFAULT")
+            except Exception as ex:
+                self._log(f"[Solve] Fehler bei Solve #1: {ex}")
+
+            # 2) optional Refine High Error
+            if self.enable_refine:
+                try:
+                    if _solve_mod and hasattr(_solve_mod, "refine_high_error"):
+                        self._log(f"[Solve] Refine High Error (limit_frames={self.refine_limit_frames})")
+                        _call("refine_high_error", limit_frames=int(self.refine_limit_frames))
+                    elif _solve_mod and hasattr(_solve_mod, "run_refine_on_high_error"):
+                        self._log(f"[Solve] Refine High Error (legacy, limit_frames={self.refine_limit_frames})")
+                        _call("run_refine_on_high_error", limit_frames=int(self.refine_limit_frames))
+                    else:
+                        self._log("[Solve] Refine-Helper nicht gefunden – überspringe Refine")
+                except Exception as ex:
+                    self._log(f"[Solve] Fehler im Refine: {ex}")
+
+                # 3) zweiter Solve nach Refine
+                try:
+                    self._log("[Solve] Solve #2 (nach Refine)")
+                    if _solve_mod and hasattr(_solve_mod, "run_solve"):
+                        _call("run_solve")
+                    else:
+                        bpy.ops.clip.solve_camera("EXEC_DEFAULT")
+                except Exception as ex:
+                    self._log(f"[Solve] Fehler bei Solve #2: {ex}")
+
+            # 4) Projection-Cleanup falls Fehler > resolve_error
+            try:
+                thr = float(context.scene.get("resolve_error", 2.0))
+            except Exception:
+                thr = 2.0
+
+            need_cleanup = False
+            try:
+                if _solve_mod and hasattr(_solve_mod, "get_current_solve_error"):
+                    cur_err = _call("get_current_solve_error")
+                else:
+                    cur_err = None
+                if cur_err is not None:
+                    self._log(
+                        f"[Solve] aktueller Solve-Error={cur_err:.4f}, Schwellwert resolve_error={thr:.4f}"
+                    )
+                    need_cleanup = cur_err > thr
+                else:
+                    self._log("[Solve] Solve-Error nicht lesbar – überspringe automatische Prüfung")
+            except Exception as ex:
+                self._log(f"[Solve] Fehler beim Lesen des Solve-Errors: {ex}")
+
+            if need_cleanup:
+                try:
+                    self._log(
+                        f"[Solve] Projection Cleanup (builtin) mit threshold={thr}, action={self.projection_cleanup_action}"
+                    )
+                    if _solve_mod and hasattr(_solve_mod, "builtin_projection_cleanup"):
+                        _call(
+                            "builtin_projection_cleanup",
+                            threshold=thr,
+                            action=self.projection_cleanup_action,
+                        )
+                    else:
+                        bpy.ops.clip.clean_tracks(
+                            frames=0, error=thr, action=self.projection_cleanup_action
+                        )
+                except Exception as ex:
+                    self._log(f"[Solve] Fehler beim Projection Cleanup: {ex}")
+
+            # Fallback-Route, falls dedizierte Helfer fehlen:
+            if not _solve_mod or (
+                not hasattr(_solve_mod, "run_solve")
+                and not hasattr(_solve_mod, "builtin_projection_cleanup")
+            ):
+                try:
+                    from ..Helper.solve_camera import run_solve_watch_clean
+                    self._log("[Solve] Fallback run_solve_watch_clean()")
+                    run_solve_watch_clean(context)
+                except Exception:
+                    pass
+
+            self._deactivate_flag(context)
+            self._state = "DONE"
+            return {"FINISHED"}
+
         elif self._state == "DONE":
             self._remove_timer(context)
             self._deactivate_flag(context)
@@ -419,19 +485,3 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return {"FINISHED"}
 
         return {"RUNNING_MODAL"}
-
-
-# --- Registrierung ---
-
-classes = (
-    CLIP_OT_tracking_coordinator,
-)
-
-def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
-
-
-def unregister():
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
