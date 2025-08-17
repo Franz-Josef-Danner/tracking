@@ -11,7 +11,6 @@ import bpy
 from typing import Dict, Set
 
 from ..Helper.marker_helper_main import marker_helper_main
-from ..Helper.main_to_adapt import main_to_adapt
 from ..Helper.tracker_settings import apply_tracker_settings
 
 LOCK_KEY = "__detect_lock"  # exklusiver Detect-/Cleanup-Lock in scene
@@ -174,12 +173,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._log(f"[MarkerHelper] ok={ok}, adapt={adapt_val}, op_result={op_result}")
         except Exception as ex:
             self._log(f"[MarkerHelper] Fehler: {ex}")
-
-        try:
-            res = main_to_adapt(context, use_override=True)
-            self._log(f"[MainToAdapt] Übergabe an tracker_settings (Helper) → {res}")
-        except Exception as ex:
-            self._log(f"[MainToAdapt] Fehler: {ex}")
 
         if self.use_apply_settings:
             try:
