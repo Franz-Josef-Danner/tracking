@@ -253,12 +253,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if st == "NONE":
                 # NEU: statt Solve → Error-Clean & Ende
                 try:
-                    from ..Helper.clean_error_tracks_modular import run_clean_error_tracks_modular
-                    self._log("[Coordinator] NO_MORE_FRAMES → run_clean_error_tracks_modular")
-                    res_ce = run_clean_error_tracks_modular(context)
-                    self._log(f"[Coordinator] clean_error_tracks_modular DONE → {res_ce}")
+                    from ..Helper.clean_error_tracks import run_clean_error_tracks
+                    self._log("[Coordinator] NO_MORE_FRAMES → run_clean_error_tracks")
+                    res_ce = run_clean_error_tracks(context)
+                    self._log(f"[Coordinator] clean_error_tracks DONE → {res_ce}")
                 except Exception as ex:
-                    self._log(f"[Coordinator] clean_error_tracks_modular FAILED: {ex}")
+                    self._log(f"[Coordinator] clean_error_tracks FAILED: {ex}")
         
                 self._remove_timer(context)
                 self._deactivate_flag(context)
