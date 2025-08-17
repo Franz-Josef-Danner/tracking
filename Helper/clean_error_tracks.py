@@ -106,7 +106,7 @@ def run_clean_error_tracks(context, *, show_popups: bool = False):
                 wm.progress_end()
             except Exception:
                 pass
-            return {'CANCELLED'}
+            return {'status': 'CANCELLED'}
 
     # ---------- 2) MULTISCALE CLEAN ----------
     step_update(2, "Multiscale Clean")
@@ -123,6 +123,11 @@ def run_clean_error_tracks(context, *, show_popups: bool = False):
         _deps_sync(context)
 
     # ---------- 3) GAP SPLIT + RECURSIVE ----------
+    # Globale Zähler (vor allen Operationen)
+    with context.temp_override(**ovr):
+        tracks_global_before = len(clip.tracking.tracks)
+        markers_global_before = sum(len(t.markers) for t in clip.tracking.tracks)
+        
     step_update(3, "Gap Split & Recursive Cleanup")
     with context.temp_override(**ovr):
         tracks = clip.tracking.tracks
@@ -210,4 +215,28 @@ def run_clean_error_tracks(context, *, show_popups: bool = False):
     except Exception:
         pass
 
-    return {'FINISHED'}
+    # Globale Zähler (nach allen Operationen)
+    with context.temp_override(**ovr):
+        tracks_global_after = len(clip.tracking.tracks)
+        markers_global_after = sum(len(t.markers) for t in clip.tracking.tracks)
+
+    deleted_tracks_global = max(0, tracks_global_before - tracks_global_after)
+    deleted_markers_global = max(0, markers_global_before - markers_global_after)
+    deleted_any_global = (deleted_tracks_global > 0) or (deleted_markers_global > 0)
+
+    result = {
+        'status': 'FINISHED',
+        # global über *alle* Schritte:
+        'deleted_any': bool(deleted_any_global),
+        'deleted_tracks': int(deleted_tracks_global),
+        'deleted_markers': int(deleted_markers_global),
+        # Detailinfos (optional/diagnostisch):
+        'multiscale_deleted': int(deleted),
+        'changes_step3': bool(made_changes),
+        'tracks_before': int(tracks_global_before),
+        'tracks_after': int(tracks_global_after),
+        'markers_before': int(markers_global_before),
+        'markers_after': int(markers_global_after),
+    }
+    print(f"[CleanError] SUMMARY: {result}")
+    return result
