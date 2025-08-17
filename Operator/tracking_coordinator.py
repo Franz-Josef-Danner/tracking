@@ -237,15 +237,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 elif self._state == "FIND_LOW":
     scene = context.scene
 
-    # --- defensiv initialisieren (verhindert UnboundLocalError)
+    # defensiv initialisieren
     st = None
     frame = None
     out = None
 
-    # --- Helper ausführen
     try:
         from ..Helper.find_low_marker_frame import run_find_low_marker_frame
-        min_req = int(scene.get("marker_min", 0))  # dein Korridor-Min
+        min_req = int(scene.get("marker_min", 0))
         out = run_find_low_marker_frame(context, min_required=min_req)
         st = (out or {}).get("status")
         frame = (out or {}).get("frame")
@@ -254,16 +253,14 @@ elif self._state == "FIND_LOW":
         st = "FAILED"
         self._log(f"[Coordinator] FIND_LOW failed: {ex}")
 
-    # --- Branches
     if st == "FOUND" and isinstance(frame, int):
-        # normaler Flow: springen, kurz settle, dann Detect/Track
-        self._log(f"[Coordinator] Jump to frame {frame}")
+        # normal weiter: Jump → Settle → Detect/Track
         scene.frame_set(frame)
         self._state = "SETTLE"
         return {"RUNNING_MODAL"}
 
     elif st == "NONE":
-        # NEU: Kein Solve mehr – nur Fehler-Clean und Ende
+        # NEU: Error-Clean statt Solve, dann Ende
         try:
             from ..Helper.clean_error_tracks import run_clean_error_tracks
             self._log("[Coordinator] NO_MORE_FRAMES → run_clean_error_tracks")
@@ -271,7 +268,8 @@ elif self._state == "FIND_LOW":
             self._log(f"[Coordinator] clean_error_tracks DONE → {res}")
         except Exception as ex:
             self._log(f"[Coordinator] clean_error_tracks FAILED: {ex}")
-        # sauber beenden
+
+        # sauber beenden (Timer/Flags räumen)
         self._remove_timer(context)
         self._deactivate_flag(context)
         try:
@@ -282,7 +280,7 @@ elif self._state == "FIND_LOW":
         return {"FINISHED"}
 
     else:
-        # FAILED / unbekannt → defensiv beenden (kein Solve)
+        # FAILED/Unbekannt → defensiv beenden (kein Solve)
         self._log(f"[Coordinator] FIND_LOW unexpected status={st} → finish")
         self._remove_timer(context)
         self._deactivate_flag(context)
@@ -292,6 +290,7 @@ elif self._state == "FIND_LOW":
             pass
         self._state = "DONE"
         return {"FINISHED"}
+
 
 
 
