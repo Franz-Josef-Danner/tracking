@@ -251,23 +251,38 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {"RUNNING_MODAL"}
         
             if st == "NONE":
-                # NEU: statt Solve → Error-Clean & Ende
+                # NEU: Error-Clean und je nach Ergebnis: erneut FIND_LOW oder → SOLVE
                 try:
                     from ..Helper.clean_error_tracks import run_clean_error_tracks
                     self._log("[Coordinator] NO_MORE_FRAMES → run_clean_error_tracks")
                     res_ce = run_clean_error_tracks(context)
                     self._log(f"[Coordinator] clean_error_tracks DONE → {res_ce}")
+                    # Auswertung des Feedbacks:
+                    deleted_any = False
+                    if isinstance(res_ce, dict):
+                        # Bevorzugt globaler Lösch-Flag; fallback auf Detailfelder
+                        deleted_any = bool(
+                            res_ce.get("deleted_any")
+                            or res_ce.get("deleted_tracks", 0) > 0
+                            or res_ce.get("deleted_markers", 0) > 0
+                            or res_ce.get("changes_step3", False)
+                            or res_ce.get("multiscale_deleted", 0) > 0
+                        )
+                except Exception as ex:
+                    self._log(f"[Coordinator] clean_error_tracks FAILED: {ex}")
+                    deleted_any = False
                 except Exception as ex:
                     self._log(f"[Coordinator] clean_error_tracks FAILED: {ex}")
         
-                self._remove_timer(context)
-                self._deactivate_flag(context)
-                try:
-                    context.scene[LOCK_KEY] = False
-                except Exception:
-                    pass
-                self._state = "DONE"
-                return {"FINISHED"}
+                # Branching:
+                if deleted_any:
+                    self._log("[Coordinator] CleanError hat gelöscht → zurück zu FIND_LOW")
+                    self._state = "FIND_LOW"
+                    return {"RUNNING_MODAL"}
+                else:
+                    self._log("[Coordinator] CleanError: nichts gelöscht → weiter zu SOLVE")
+                    self._state = "SOLVE"
+                    return {"RUNNING_MODAL"}
         
             # Fallback: trotzdem Sprung (z. B. aktueller Frame)
             self._jump_done = False
