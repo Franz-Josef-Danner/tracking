@@ -6,7 +6,6 @@ from .multiscale_temporal_grid_clean import multiscale_temporal_grid_clean
 from .segments import track_has_internal_gaps
 from .mute_ops import mute_after_last_marker, mute_unassigned_markers
 from .split_cleanup import clear_path_on_split_tracks_segmented, recursive_split_cleanup
-from .clean_short_tracks import clean_short_tracks  # <<< neu: finaler Pass
 
 __all__ = ("run_clean_error_tracks",)
 
@@ -65,7 +64,6 @@ def run_clean_error_tracks(context, *, show_popups: bool = False):
       2) Multiscale-Grid-Clean
       3) Gap-Split + Recursive-Cleanup (+ leere Duplikate entfernen)
       4) Safety-Pässe (mute)
-      5) Finaler Short-Track-Cleanup (frames=scene.frames_track)
     Rückgabe: {'FINISHED'} oder {'CANCELLED'}.
     """
     scene = context.scene
@@ -79,7 +77,7 @@ def run_clean_error_tracks(context, *, show_popups: bool = False):
         return {'CANCELLED'}
 
     # Fortschritt vorbereiten (5 Hauptschritte)
-    steps_total = 5
+    steps_total = 4
     try:
         wm.progress_begin(0, steps_total)
     except Exception:
@@ -199,17 +197,6 @@ def run_clean_error_tracks(context, *, show_popups: bool = False):
         for t in tracks:
             mute_after_last_marker(t, scene.frame_end)
         mute_unassigned_markers(tracks)
-        _deps_sync(context)
-
-    # ---------- 5) FINAL SHORT CLEAN ----------
-    step_update(5, "Final Short Clean")
-    with context.temp_override(**ovr):
-        frames_limit = int(scene.get("frames_track", 25))
-        try:
-            clean_short_tracks(context, action='DELETE_TRACK', frames=frames_limit)
-            print(f"[CleanError] Final short-track cleanup done (frames < {frames_limit})")
-        except Exception as e:
-            print(f"[CleanError] WARN: final clean_short_tracks failed: {e}")
         _deps_sync(context)
 
     # ---------- Abschluss ----------
