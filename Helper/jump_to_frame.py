@@ -134,6 +134,51 @@ def run_jump_to_frame(
         repeat_count = repeat_map.get(target, 0) + 1 if scn.frame_current == target else 0
         if scn.frame_current == target:
             repeat_map[target] = repeat_count
+    # ------------------------------------------------------------------
+    # REPEAT-HOOK: Bei erster Wiederholung (Frame wurde schon einmal per Jump angefahren)
+    # rufe Helper/marker_adapt_helper.py:
+    #   - bevorzugt: optimize_tracking_modal(context)
+    #   - fallback:  marker_helper_main(context) -> main_to_adapt(context, use_override=True)
+    # Begründung/Design: Vorgabe "optimize_tracking_modal ab der ersten Wiederholung".
+    # ------------------------------------------------------------------
+    if repeat_count >= 2:
+        try:
+            # verschiedene Importpfade robust handhaben (Addon-Struktur vs. lose Datei)
+            try:
+                from ..Helper.marker_adapt_helper import (
+                    optimize_tracking_modal, marker_helper_main, main_to_adapt
+                )
+            except Exception:
+                from Helper.marker_adapt_helper import (  # type: ignore
+                    optimize_tracking_modal, marker_helper_main, main_to_adapt
+                )
+        except Exception:
+            optimize_tracking_modal = None  # type: ignore
+            marker_helper_main = None       # type: ignore
+            main_to_adapt = None            # type: ignore
+
+        triggered = False
+        try:
+            if callable(optimize_tracking_modal):
+                optimize_tracking_modal(context)
+                triggered = True
+                print(f"[JumpRepeat] optimize_tracking_modal ausgelöst (frame={target}, repeat={repeat_count})")
+        except Exception as ex:
+            print(f"[JumpRepeat] optimize_tracking_modal Fehler: {ex}")
+
+        if not triggered:
+            try:
+                if callable(marker_helper_main) and callable(main_to_adapt):
+                    # Neu berechnen & konsolidieren
+                    marker_helper_main(context)
+                    main_to_adapt(context, use_override=True)
+                    triggered = True
+                    print(f"[JumpRepeat] marker_helper_main + main_to_adapt ausgelöst (frame={target}, repeat={repeat_count})")
+            except Exception as ex:
+                print(f"[JumpRepeat] Fallback-Berechnung Fehler: {ex}")
+
+        if not triggered:
+            print("[JumpRepeat] Hinweis: marker_adapt_helper nicht verfügbar – kein Repeat-Hook ausgeführt.")
 
     # Debugging & Transparenz
     try:
