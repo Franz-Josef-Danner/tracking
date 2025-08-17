@@ -1,25 +1,17 @@
-# Helper/detect.py — adaptive Marker-Detektion mit selektionsbasiertem Pre-Pass-Cleanup,
-# UI-Kontext-Override, Encoding-Sanitizing, Handoff-Gates und Schutz vor Endlosschleifen.
+# Helper/detect.py — adaptive Marker-Detektion ohne Pre-Cleanup
+# (kein Löschen vor Detect), mit UI-Kontext-Override, Encoding-Sanitizing,
+# Korridor-Logik (RUNNING) und Near-Duplicate-Entfernung innerhalb des Runs.
 #
 # Exportierte API:
 #   - perform_marker_detection(...)
 #   - run_detect_once(...)
 #   - run_detect_adaptive(...)
-#   - detect_prepass_cleanup(...)
-#
-# Verhalten:
-# - Vor jedem Detect werden die vom letzten Detect erzeugten Tracks per Selektion gelöscht
-#   (Tracks sind getaggt mit track["__detect_created"] == True).
-# - Near-Duplicates werden per Selektion entfernt.
-# - Korridorprüfung steuert adaptive Threshold-Anpassung (Status "RUNNING") für erneute Versuche.
-# - Handoff: handoff_to_pipeline steuert detect_status + pipeline_do_not_start.
-# - Alle String-/IDProperty-Zugriffe sind encoding-sicher (UTF-8 → Latin-1 Fallback, ASCII-safe Ablage).
 
 from __future__ import annotations
 
 import math
 import unicodedata
-from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import bpy
 
@@ -27,11 +19,9 @@ __all__ = [
     "perform_marker_detection",
     "run_detect_once",
     "run_detect_adaptive",
-    "detect_prepass_cleanup",
 ]
 
 # Scene-Keys
-DETECT_PREV_KEY = "detect_prev_names"                   # list[str] – legacy, wird geleert
 DETECT_LAST_THRESHOLD_KEY = "last_detection_threshold"  # float – zuletzt verwendete Schwelle
 _LOCK_KEY = "__detect_lock"
 
@@ -63,10 +53,6 @@ def _coerce_utf8_str(x) -> Optional[str]:
         return None
 
 
-def _coerce_utf8_str_list(seq) -> List[str]:
-    return [s for s in (_coerce_utf8_str(x) for x in (seq or [])) if s]
-
-
 def _ascii_safe(s: str) -> str:
     try:
         return s.encode("utf-8", "backslashreplace").decode("ascii", "backslashreplace")
@@ -75,12 +61,10 @@ def _ascii_safe(s: str) -> str:
 
 
 def _try_set_scene_list(scn: bpy.types.Scene, key: str, seq) -> None:
-    sanitized = _coerce_utf8_str_list(seq)
-    ascii_sanitized = [_ascii_safe(s) for s in sanitized]
+    # nur noch für optionale Airbags genutzt
     try:
-        scn[key] = ascii_sanitized
-    except Exception as ex:
-        print(f"[DetectDebug] SANITIZE FAIL on set scene[{key!r}] → {ex}")
+        scn[key] = [_ascii_safe(_safe_str(v)) for v in (seq or [])]
+    except Exception:
         try:
             scn[key] = []
         except Exception:
@@ -160,59 +144,25 @@ def _collect_existing_positions(
             out.append((m.co[0] * w, m.co[1] * h))
     return out
 
-# ============================================================
-# Pre-Pass: Selektionsbasierte Löschung zuvor erzeugter Tracks
-# ============================================================
 
-def detect_prepass_cleanup(context: bpy.types.Context, *, confirm: bool = True) -> Dict[str, Any]:
-    """Selektionsbasierter Pre-Cleanup vor Detect.
-
-    Löscht alle zuvor vom Detect erzeugten Tracks, indem sie selektiert und
-    dann über bpy.ops.clip.delete_track(confirm=...) entfernt werden.
-    Grundlage ist das Tag track["__detect_created"] == True.
+def _hard_sanitize_track_names(tracking: bpy.types.MovieTracking) -> int:
+    """Erzwingt gültige Namen, ohne sich auf vorhandene Namen zu stützen.
+    Falls das Lesen von t.name UnicodeDecodeError wirft, wird sofort ein sicherer
+    Platzhaltername vergeben. Gibt die Anzahl gefixter Namen zurück.
     """
-    scn = context.scene
-    mc = _get_movieclip(context)
-    if not mc:
-        return {"status": "FAILED", "reason": "no_movieclip"}
-
-    tracking = mc.tracking
-
-    # 1) Alles deselektieren
-    _deselect_all(tracking)
-
-    # 2) Alle vom letzten Detect getaggten Tracks selektieren
-    to_select = 0
-    for tr in tracking.tracks:
+    fixed = 0
+    for i, tr in enumerate(tracking.tracks):
         try:
-            if bool(tr.get("__detect_created", False)):
-                tr.select = True
-                to_select += 1
-        except Exception:
-            pass
-
-    removed = 0
-
-    # 3) Ausgewählte Tracks über Operator löschen (selektionbasiert)
-    if to_select > 0:
-        try:
-            _delete_selected_tracks(confirm=confirm)
-            removed = to_select
-        except Exception:
-            # Fallback, falls Operator-Kontext versagt → harte Entfernung
-            for tr in list(tracking.tracks):
-                try:
-                    if tr.select:
-                        tracking.tracks.remove(tr)
-                        removed += 1
-                except Exception:
-                    pass
-
-    # 4) Persistenzlisten/Legacy aufräumen (keine Namenslogik mehr)
-    _try_set_scene_list(scn, DETECT_PREV_KEY, [])
-
-    print(f"[DetectDebug] Pre-Cleanup: removed={removed} (selection-based)")
-    return {"status": "OK", "removed": removed}
+            _ = tr.name  # kann UnicodeDecodeError werfen
+        except UnicodeDecodeError:
+            try:
+                tr.name = f"Track_FIX_{i:04d}"
+                fixed += 1
+            except Exception:
+                pass
+    if fixed:
+        print(f"[DetectDebug] Hard-sanitized invalid names: {fixed}")
+    return fixed
 
 # ============================================================
 # Kern: Detect-Operator-Wrapper
@@ -295,8 +245,9 @@ def run_detect_once(
                 pass
         frame = int(scn.frame_current)
 
-        # PRE-PASS (selektionsbasiert)
-        detect_prepass_cleanup(context, confirm=True)
+        # **Kein Pre-Cleanup** mehr — nur harte Namens-Sanitization,
+        # damit spätere Name-Zugriffe sicher sind:
+        _hard_sanitize_track_names(tracking)
 
         # Threshold bestimmen
         if threshold is None:
@@ -351,9 +302,7 @@ def run_detect_once(
             pass
 
         # Neue Tracks bestimmen
-        tracks = tracking.tracks
-        new_tracks_raw = [t for t in tracks if (_coerce_utf8_str(t.name) or str(t.name)) not in initial_names]
-        added_names = {_coerce_utf8_str(t.name) or str(t.name) for t in new_tracks_raw}
+        new_tracks_raw = [t for t in tracking.tracks if (_coerce_utf8_str(t.name) or str(t.name)) not in initial_names]
 
         # Near-Duplicates entfernen (gegen Cluster auf identischer Stelle)
         rel = close_dist_rel if close_dist_rel > 0.0 else 0.01
@@ -395,14 +344,6 @@ def run_detect_once(
         cleaned_tracks = [t for t in new_tracks_raw if t.name not in close_set]
         anzahl_neu = len(cleaned_tracks)
 
-        # **Taggen**: alle in diesem Detect-Lauf erstellten (bereinigten) Tracks kennzeichnen,
-        # damit der nächste Pre-Cleanup sie über Selektion löschen kann.
-        for t in cleaned_tracks:
-            try:
-                t["__detect_created"] = True
-            except Exception:
-                pass
-
         print(
             "[DetectDebug] Frame=%d | anzahl_neu=%d | marker_min=%d | marker_max=%d | "
             "marker_adapt=%d | threshold_old=%.6f"
@@ -411,16 +352,20 @@ def run_detect_once(
 
         # Korridorprüfung → RUNNING (adaptive threshold)
         if anzahl_neu < int(min_marker) or anzahl_neu > int(max_marker):
-            # alles, was wir gerade erzeugt hatten, wieder entfernen (sauberer Neustart)
-            if added_names:
+            # innerhalb DESSENSELBEN Runs: die gerade erzeugten Tracks wieder entfernen
+            if cleaned_tracks:
                 _deselect_all(tracking)
-                for t in tracks:
-                    if (_coerce_utf8_str(t.name) or str(t.name)) in added_names:
-                        t.select = True
+                for t in cleaned_tracks:
+                    t.select = True
                 try:
                     _delete_selected_tracks(confirm=True)
                 except Exception:
-                    pass
+                    # Fallback: direkter Remove
+                    for t in list(cleaned_tracks):
+                        try:
+                            tracking.tracks.remove(t)
+                        except Exception:
+                            pass
                 try:
                     bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
                 except Exception:
@@ -434,7 +379,6 @@ def run_detect_once(
             try:
                 scn[DETECT_LAST_THRESHOLD_KEY] = float(new_threshold)
                 scn["detect_status"] = "running"
-                _try_set_scene_list(scn, DETECT_PREV_KEY, [])  # legacy leer
             except Exception:
                 pass
 
@@ -455,12 +399,10 @@ def run_detect_once(
                 "new_tracks": int(anzahl_neu),
                 "threshold": float(new_threshold),
                 "frame": int(frame),
-                "created_names": [],  # Namen sind hier nicht mehr relevant
             }
 
-        # READY: Erfolg → (legacy) Liste leeren, Schwelle merken
+        # READY: Erfolg → Schwelle merken
         try:
-            _try_set_scene_list(scn, DETECT_PREV_KEY, [])  # wir verlassen uns auf Tagging, nicht auf Namen
             scn[DETECT_LAST_THRESHOLD_KEY] = float(threshold)
         except Exception:
             pass
@@ -476,10 +418,10 @@ def run_detect_once(
         except Exception:
             pass
 
-        # Airbag gegen direkt folgenden CleanShort (falls in deiner Pipeline genutzt)
+        # Optionaler Airbag gegen direkt folgenden CleanShort deiner Pipeline
         try:
             scn["__skip_clean_short_once"] = True
-            _try_set_scene_list(scn, "__just_created_names", [])  # optional
+            _try_set_scene_list(scn, "__just_created_names", [])
         except Exception:
             pass
 
@@ -493,7 +435,6 @@ def run_detect_once(
             "new_tracks": int(anzahl_neu),
             "threshold": float(threshold),
             "frame": int(frame),
-            "created_names": [],  # wir speichern keine Namen mehr ab
         }
 
     except Exception as ex:
