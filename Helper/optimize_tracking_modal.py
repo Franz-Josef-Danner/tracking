@@ -1,112 +1,164 @@
-# Helper/optimize_tracking_modal.py
-# Minimal, robust: Operator + Fallback-Funktion für den Tracking-Optimizer.
+# Operator/tracking_coordtorina.py
+# Minimal-Orchestrator: löst NUR Helper/optimize_tracking_modal aus.
+# Priorität: bpy.ops.clip.optimize_tracking_modal("INVOKE_DEFAULT")
+# Fallback:  Helper.run_optimize_tracking_modal(context) bzw. run_optimize_tracking_modal()
 
 from __future__ import annotations
+
 import bpy
+import unicodedata
+from typing import Set, Optional
+
+__all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
+
+LOCK_KEY = "__detect_lock"  # bleibt für Kompatibilität, wird hier nicht genutzt
 
 
-__all__ = [
-    "CLIP_OT_optimize_tracking_modal",
-    "run_optimize_tracking_modal",
-]
-
-
-class CLIP_OT_optimize_tracking_modal(bpy.types.Operator):
-    """Modaler Helper, um auf dem aktuellen Frame Optimierungs-Schritte auszuführen.
-    Wird vom Tracking-Coordinator bei Repeat-Sättigung (>=10) gestartet.
-    """
-    bl_idname = "clip.optimize_tracking_modal"
-    bl_label = "Optimize Tracking (Modal)"
-    bl_options = {"REGISTER", "INTERNAL"}
-
-    _timer = None
-
-    # --- interne Hilfen -------------------------------------------------------
-    def _optimize_once(self, context: bpy.types.Context) -> None:
-        """Hier deine eigentlichen Optimize-Schritte einfügen.
-        Platzhalter: falls verfügbar, den Marker-Helper ausführen.
-        """
-        # Beispiel: vorhandenen Helper-Operator aufrufen (falls registriert)
+# ------------------------------------------------------------
+# String-Sanitizer (defensiv gegen NBSP/Encoding-Ausreißer)
+# ------------------------------------------------------------
+def _sanitize_str(s) -> str:
+    if isinstance(s, (bytes, bytearray)):
         try:
-            bpy.ops.clip.marker_helper_main("EXEC_DEFAULT")
+            s = s.decode("utf-8")
+        except Exception:
+            s = s.decode("latin-1", errors="replace")
+    s = str(s).replace("\u00A0", " ")  # NBSP → Space
+    return unicodedata.normalize("NFKC", s).strip()
+
+
+def _sanitize_all_track_names(context: bpy.types.Context) -> None:
+    """Bereinigt sicher alle Track-Namen im aktiven/zugeordneten MovieClip."""
+    mc = getattr(context, "edit_movieclip", None) or getattr(context.space_data, "clip", None)
+    if not mc:
+        return
+    try:
+        tracks = mc.tracking.tracks
+    except Exception:
+        return
+    for tr in tracks:
+        try:
+            tr.name = _sanitize_str(tr.name)
         except Exception:
             pass
 
-        # Weitere typische Stellen, die hier Sinn machen könnten:
-        # - Tracker-Parameter nachschärfen (Pattern/Search/Motion etc.)
-        # - fehlerhafte Marker maskieren/entmuten
-        # - kurze Tracks kappen
-        # - lokales Detect/Track-Rekick o. Ä.
 
-    def _finish(self, context: bpy.types.Context) -> None:
-        if self._timer is not None:
-            try:
-                context.window_manager.event_timer_remove(self._timer)
-            except Exception:
-                pass
-        self._timer = None
+# ------------------------------------------------------------
+# Optionaler, sicherer CLIP_EDITOR-Override (wird nur genutzt,
+# falls der Helper zwingend einen Editor-Kontext erwartet)
+# ------------------------------------------------------------
+def _clip_override(context: bpy.types.Context) -> Optional[dict]:
+    win = getattr(context, "window", None)
+    scr = getattr(win, "screen", None) if win else None
+    if not (win and scr):
+        return None
+    for area in scr.areas:
+        if area.type == "CLIP_EDITOR":
+            for region in area.regions:
+                if region.type == "WINDOW":
+                    return {
+                        "window": win,
+                        "screen": scr,
+                        "area": area,
+                        "region": region,
+                        "space_data": area.spaces.active,
+                        "scene": context.scene,
+                    }
+    return None
 
-    # --- Blender Hooks --------------------------------------------------------
-    def invoke(self, context: bpy.types.Context, event):
-        # Sicherstellen, dass wir im CLIP_EDITOR sind und ein Clip aktiv ist
-        area_ok = (context.area is not None) and (context.area.type == "CLIP_EDITOR")
-        clip_ok = getattr(context.space_data, "clip", None) is not None
-        if not (area_ok and clip_ok):
-            self.report({"ERROR"}, "Clip Editor/Clip nicht aktiv.")
-            return {"CANCELLED"}
 
-        # kleiner Timer → kurzer, berechenbarer Modal-Durchlauf
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(0.15, window=context.window)
-        wm.modal_handler_add(self)
-        return {"RUNNING_MODAL"}
+# ------------------------------------------------------------
+# Kern: nur Optimize triggern (Operator-first, dann Fallback)
+# ------------------------------------------------------------
+def _run_optimize_helper(context: bpy.types.Context) -> None:
+    print(f"[Coordinator] Optimize-Start auf Frame {context.scene.frame_current}")
 
-    def modal(self, context: bpy.types.Context, event):
-        if event.type == "ESC":
-            self._finish(context)
-            return {"CANCELLED"}
+    # 1) Versuche den registrierten Operator (bevorzugt, inkl. UI)
+    try:
+        if hasattr(bpy.ops.clip, "optimize_tracking_modal"):
+            # INVOKE_DEFAULT zeigt typische UI/Modal-Flows des Helpers
+            bpy.ops.clip.optimize_tracking_modal("INVOKE_DEFAULT")
+            print("[Coordinator] bpy.ops.clip.optimize_tracking_modal → INVOKE_DEFAULT")
+            return
+    except Exception as ex:
+        print(f"[Coordinator] Operator-Aufruf fehlgeschlagen: {ex}")
 
-        if event.type != "TIMER":
-            return {"PASS_THROUGH"}
-
-        # Ein einziger, kurzer Optimize-Pass (reicht für den Coordinator-Handoff)
+    # 2) Fallback: direkte Helper-Funktion
+    try:
+        from ..Helper.optimize_tracking_modal import run_optimize_tracking_modal  # type: ignore
         try:
-            self._optimize_once(context)
-        except Exception as ex:
-            # Soft-fail: wir beenden trotzdem sauber
-            print(f"[OptimizeHelper] Exception: {ex}")
+            # Primär mit Context
+            run_optimize_tracking_modal(context)
+            print("[Coordinator] Helper.run_optimize_tracking_modal(context) ausgeführt")
+        except TypeError:
+            # Sekundär ohne Argumente (kompatibel zu deiner Skizze)
+            run_optimize_tracking_modal()
+            print("[Coordinator] Helper.run_optimize_tracking_modal() (ohne ctx) ausgeführt")
+    except Exception as ex:
+        print(f"[Coordinator] Fallback-Helper nicht aufrufbar: {ex}")
 
-        self._finish(context)
+
+class CLIP_OT_tracking_coordinator(bpy.types.Operator):
+    """Minimaler Orchestrator: triggert ausschließlich den Optimize-Helper."""
+
+    bl_idname = "clip.tracking_coordinator"
+    bl_label = "Tracking Orchestrator (Optimize Only)"
+    bl_description = "Löst nur Helper/optimize_tracking_modal aus (Operator-first, Fallback auf Funktion)"
+    bl_options = {"REGISTER", "UNDO"}
+
+    # Optional: sanftes Preflight-Sanitizing aktivierbar
+    sanitize_names: bpy.props.BoolProperty(
+        name="Sanitize Track Names",
+        default=True,
+        description="Vor dem Optimize-Start Track-Namen auf Encoding-Probleme prüfen/bereinigen",
+    )
+
+    @classmethod
+    def poll(cls, context: bpy.types.Context) -> bool:
+        # Schlank und robust: bevorzugt im CLIP_EDITOR laufen
+        return (context.area is not None) and (context.area.type == "CLIP_EDITOR")
+
+    def invoke(self, context: bpy.types.Context, event) -> Set[str]:
+        # Optional defensiv: Strings entschärfen, um spätere Unicode-Fails im Helper zu vermeiden
+        if self.sanitize_names:
+            try:
+                _sanitize_all_track_names(context)
+            except Exception as ex:
+                print(f"[Coordinator] Sanitize-Namen Warnung: {ex}")
+
+        # Falls der Helper Editor-Kontext braucht → Override nutzen
+        override = _clip_override(context)
+
+        if override:
+            try:
+                with bpy.context.temp_override(**override):
+                    _run_optimize_helper(context)
+            except Exception as ex:
+                print(f"[Coordinator] Override-Ausführung fehlgeschlagen: {ex}")
+                _run_optimize_helper(context)
+        else:
+            _run_optimize_helper(context)
+
+        # Keine eigene Modal-FSM – der Optimize-Helper übernimmt (modal) oder lief (funktional) durch.
+        print("[Coordinator] Done (Optimize-only).")
         return {"FINISHED"}
 
-
-# -----------------------------------------------------------------------------
-# Fallback-API: direkte Funktionsschnittstelle (nicht-modal)
-# Wird vom Coordinator genutzt, wenn der Operator (noch) nicht registriert ist.
-# -----------------------------------------------------------------------------
-def run_optimize_tracking_modal(context: bpy.types.Context | None = None) -> None:
-    ctx = context or bpy.context
-    scn = ctx.scene
-    print(f"[OptimizeHelper] running on frame {scn.frame_current}")
-
-    # Gleiche Schritte wie im Operator – aber synchron und ohne Timer
-    try:
-        bpy.ops.clip.marker_helper_main("EXEC_DEFAULT")
-    except Exception:
-        pass
-    # Platz für weitere direkte Schritte (Parameter-Tweaks etc.)
+    def execute(self, context: bpy.types.Context) -> Set[str]:
+        # execute spiegelt invoke (ohne Event) – für Scripting/Batch-Aufrufe
+        return self.invoke(context, None)
 
 
-# Optional: lokale Registrierung (praktisch fürs Einzeltesten dieser Datei)
+# ------------------------------------------------------------
+# Register/Unregister
+# ------------------------------------------------------------
+classes = (CLIP_OT_tracking_coordinator,)
+
 def register():
-    try:
-        bpy.utils.register_class(CLIP_OT_optimize_tracking_modal)
-    except Exception:
-        pass
-
+    for cls in classes:
+        bpy.utils.register_class(cls)
+    print("[Coordinator] tracking_coordtorina registered (Optimize-only)")
 
 def unregister():
-    try:
-        bpy.utils.unregister_class(CLIP_OT_optimize_tracking_modal)
-    except Exception:
-        pass
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
+    print("[Coordinator] tracking_coordtorina unregistered")
