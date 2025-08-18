@@ -2,10 +2,7 @@
 from __future__ import annotations
 import bpy
 
-try:
-    from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
-except Exception:
-    CLIP_OT_optimize_tracking_modal = None
+from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 
 # OPTIONAL: wenn du marker_helper_main als Operator registriert hast:
 try:
