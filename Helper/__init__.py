@@ -21,6 +21,10 @@ from .split_cleanup import clear_path_on_split_tracks_segmented, recursive_split
 from .refine_high_error import run_refine_on_high_error
 from .marker_adapt_helper import run_marker_adapt_boost
 from .marker_helper_main import marker_helper_main
+try:
+    from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal  # type: ignore
+except Exception:
+    CLIP_OT_optimize_tracking_modal = None
 
 __all__ = [
     "run_refine_on_high_error",
@@ -29,6 +33,7 @@ __all__ = [
 classes = (
     RepeatEntry,
     CLIP_OT_bidirectional_track,
+    *(((CLIP_OT_optimize_tracking_modal,),) if CLIP_OT_optimize_tracking_modal else ()),
 )
 
 def register():
