@@ -7,12 +7,26 @@
 
 from __future__ import annotations
 import bpy
-from typing import Set, Tuple, Optional, Dict
+from typing import Set, Tuple, Optional
 
 __all__ = ["CLIP_OT_optimize_tracking_modal", "run_optimize_tracking_modal"]
 
 
 # --------------------- Infra / Utilities --------------------------------------
+
+def _baseline_for_selected_tracks(mc: bpy.types.MovieClip, frame: int) -> dict[int, int]:
+    """
+    Erstellt eine Baseline für den Fortschritt: {track_ptr: count_after_frame}
+    Nur bereits AUSGEWÄHLTE Tracks (Detect hat sie exklusiv selektiert).
+    """
+    baseline: dict[int, int] = {}
+    for tr in mc.tracking.tracks:
+        if getattr(tr, "select", False):
+            ptr = int(tr.as_pointer()) if hasattr(tr, "as_pointer") else id(tr)
+            after = sum(1 for m in tr.markers if m.frame > frame)
+            baseline[ptr] = after
+    return baseline
+
 
 def _log(msg: str) -> None:
     print(f"[Optimize] {msg}")
@@ -54,16 +68,6 @@ def _track_ptr(tr) -> int:
         return int(tr.as_pointer())
     except Exception:
         return id(tr)
-
-def _active_marker_count(mc: bpy.types.MovieClip, frame: int) -> int:
-    cnt = 0
-    for tr in mc.tracking.tracks:
-        for m in tr.markers:
-            if m.frame == frame:
-                cnt += 1
-                break
-    return cnt
-
 
 # --------------------- Snapshot / Cleanup -------------------------------------
 
@@ -177,46 +181,27 @@ def _try_error_value(context) -> Optional[float]:
     except Exception:
         return None
 
-def _select_markers_at_frame(mc: bpy.types.MovieClip, frame: int) -> Dict[int, int]:
-    """
-    Selektiert alle Marker exakt auf `frame`.
-    Rückgabe: dict track_ptr -> initial_count_after = Anzahl Marker mit frame > frame (Baseline für Progress).
-    """
-    after0: Dict[int, int] = {}
-    for tr in mc.tracking.tracks:
-        tr.select = False
-        any_sel = False
-        for m in tr.markers:
-            sel = (m.frame == frame)
-            m.select = sel
-            any_sel |= sel
-        if any_sel:
-            tr.select = True
-            # Baseline: wie viele Marker gibt es bereits HINTER dem Startframe?
-            after0[_track_ptr(tr)] = sum(1 for m in tr.markers if m.frame > frame)
-    return after0
-
 def _forward_track_current_selection(context) -> None:
-    bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True) # nur vorwärts, durchtracken
+    bpy.ops.clip.track_markers(backwards=False, sequence=True)
 
-def _progress_sum(mc: bpy.types.MovieClip, frame: int, baseline_after: Dict[int, int]) -> int:
-    """
-    Fortschritt messen: Summe der NEU hinzugekommenen Marker > frame für die selektierten Tracks.
-    """
+def _progress_sum_from_selected(mc: bpy.types.MovieClip, frame: int, baseline: dict[int, int]) -> int:
     progress = 0
     for tr in mc.tracking.tracks:
-        ptr = _track_ptr(tr)
-        if ptr in baseline_after:
-            now_after = sum(1 for m in tr.markers if m.frame > frame)
-            progress += max(0, now_after - baseline_after[ptr])
+        if getattr(tr, "select", False):
+            ptr = int(tr.as_pointer()) if hasattr(tr, "as_pointer") else id(tr)
+            if ptr in baseline:
+                now_after = sum(1 for m in tr.markers if m.frame > frame)
+                progress += max(0, now_after - baseline[ptr])
     return int(progress)
 
-def _trial_score_progress_then_error(mc, frame, context, baseline_after: Dict[int, int]) -> Tuple[int, float]:
-    prog = _progress_sum(mc, frame, baseline_after)
-    err = _try_error_value(context)
-    inv_err = -float(err) if (err is not None) else 0.0
+def _trial_score_progress_then_error(mc, frame, context, baseline: dict[int, int]) -> tuple[int, float]:
+    prog = _progress_sum_from_selected(mc, frame, baseline)
+    try:
+        from .error_value import error_value  # type: ignore
+        inv_err = -float(error_value(context))
+    except Exception:
+        inv_err = 0.0
     return prog, inv_err
-
 
 # --------------------- Kandidaten (wie alt) -----------------------------------
 
@@ -231,6 +216,7 @@ def _make_candidate_grid(mc: bpy.types.MovieClip) -> Tuple[list[int], list[int],
     mot  = [0, 1, 2, 3, 4, 5]
     ch   = [0, 1, 2, 3, 4]
     return patt, sea, mot, ch
+
 
 
 # --------------------- Modal Operator -----------------------------------------
@@ -376,19 +362,19 @@ class CLIP_OT_optimize_tracking_modal(bpy.types.Operator):
             st = str(res.get("status", "UNKNOWN"))
             _log(f"Detect → status={st}")
 
-            # Marker am Startframe selektieren und Baseline für Progress bilden
-            baseline_after = _select_markers_at_frame(mc, self._start_frame)
+            # Detect hat die neuen Tracks exklusiv selektiert → Baseline nur von ausgewählten Tracks
+            baseline_after = _baseline_for_selected_tracks(mc, self._start_frame)
             selected_tracks = len(baseline_after)
-            _log(f"Select@frame → tracks_selected={selected_tracks}")
-
-            # Nur wenn etwas da ist, vorwärts tracken
+            _log(f"Selected@frame → tracks_selected={selected_tracks}")
+            
             if selected_tracks > 0:
                 try:
-                    _forward_track_current_selection(bpy.context)
+                    _forward_track_current_selection(bpy.context)  # nur vorwärts
                     _flush(bpy.context)
                     _log("ForwardTrack: OK")
                 except Exception as ex:
                     _log(f"ForwardTrack FAILED: {ex}")
+
 
             # Scoring: Progress (neu hinzugekommene Marker > frame), Tie-Break error_value
             score = _trial_score_progress_then_error(mc, self._start_frame, bpy.context, baseline_after)
@@ -448,7 +434,7 @@ class CLIP_OT_optimize_tracking_modal(bpy.types.Operator):
 
             # Optional: direkt im Anschluss vorwärts tracken
             if self.run_forward_track_after:
-                baseline_after = _select_markers_at_frame(mc, self._start_frame)
+                baseline_after = _baseline_for_selected_tracks(mc, self._start_frame)
                 if len(baseline_after) > 0:
                     try:
                         _forward_track_current_selection(bpy.context)
@@ -456,6 +442,7 @@ class CLIP_OT_optimize_tracking_modal(bpy.types.Operator):
                         _log("Final ForwardTrack: OK")
                     except Exception as ex:
                         _log(f"Final ForwardTrack FAILED: {ex}")
+
 
             # Playhead zurück
             bpy.context.scene.frame_current = self._start_frame
