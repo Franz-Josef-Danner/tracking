@@ -447,8 +447,6 @@ class CLIP_OT_optimize_tracking_modal(bpy.types.Operator):
                     except Exception as ex:
                         _log(f"Final ForwardTrack FAILED: {ex}")
 
-
-
             # Playhead zurück
             bpy.context.scene.frame_current = self._start_frame
 
