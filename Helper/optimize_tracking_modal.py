@@ -187,7 +187,7 @@ def _try_error_value(context) -> Optional[float]:
         return None
 
 def _forward_track_current_selection(context) -> None:
-    bpy.ops.clip.track_markers(backwards=False, sequence=True)
+    bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
 
 def _progress_sum_from_selected(mc: bpy.types.MovieClip, frame: int, baseline: dict[int, int]) -> int:
     progress = 0
