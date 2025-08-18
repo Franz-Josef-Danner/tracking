@@ -33,35 +33,85 @@ def _active_marker_count(mc: bpy.types.MovieClip, frame: int) -> int:
         return 0
 
 
-def _snapshot_tracks(mc: bpy.types.MovieClip) -> set[int]:
-    base = set()
+# --- NEU: Snapshots -----------------------------------------------------------
+
+def _snapshot_tracks_and_frame_markers(mc: bpy.types.MovieClip, frame: int) -> tuple[set[int], set[int]]:
+    """Liefert:
+    - base_ptrs: Track-Pointer vor dem Trial (Ident der 'alten' Tracks)
+    - base_ptrs_with_marker: Pointer jener Tracks, die VOR dem Trial am 'frame' einen Marker hatten
+    """
+    base_ptrs = set()
+    base_ptrs_with_marker = set()
     for tr in mc.tracking.tracks:
         try:
-            base.add(int(tr.as_pointer()))
+            ptr = int(tr.as_pointer())
         except Exception:
-            base.add(id(tr))
-    return base
+            ptr = id(tr)
+        base_ptrs.add(ptr)
+        # Marker-Präsenz am Frame merken
+        try:
+            if any(m.frame == frame for m in tr.markers):
+                base_ptrs_with_marker.add(ptr)
+        except Exception:
+            pass
+    return base_ptrs, base_ptrs_with_marker
 
 
-def _remove_new_tracks(mc: bpy.types.MovieClip, base_ptrs: set[int]) -> Tuple[int, int]:
-    """Entfernt alle neu angelegten Tracks (nicht in base_ptrs). Rückgabe: (deleted, kept)."""
-    deleted = 0
-    kept = 0
+def _remove_new_tracks_and_frame_markers(mc: bpy.types.MovieClip,
+                                         frame: int,
+                                         base_ptrs: set[int],
+                                         base_ptrs_with_marker: set[int]) -> tuple[int, int, int]:
+    """Entfernt:
+       (a) Tracks, die im Trial NEU entstanden sind (nicht in base_ptrs)
+       (b) Marker am 'frame' auf bestehenden Tracks, wenn diese VOR dem Trial keinen Marker am frame hatten.
+    Rückgabe: (deleted_tracks, deleted_markers, kept_tracks)
+    """
+    deleted_tracks = 0
+    deleted_markers = 0
+    kept_tracks = 0
+
     tracks = mc.tracking.tracks
+
+    # 1) Neue Tracks komplett löschen
     for tr in list(tracks):
         try:
             ptr = int(tr.as_pointer())
         except Exception:
             ptr = id(tr)
+
         if ptr not in base_ptrs:
             try:
                 tracks.remove(tr)
-                deleted += 1
+                deleted_tracks += 1
             except Exception:
-                kept += 1
+                pass
         else:
-            kept += 1
-    return deleted, kept
+            kept_tracks += 1
+
+    # 2) Auf bestehenden Tracks: Marker am frame löschen, falls es vor dem Trial dort keinen gab
+    for tr in list(tracks):
+        try:
+            ptr = int(tr.as_pointer())
+        except Exception:
+            ptr = id(tr)
+
+        if ptr in base_ptrs:
+            had_marker_before = ptr in base_ptrs_with_marker
+            if not had_marker_before:
+                # lösche NUR Marker am 'frame'
+                try:
+                    ms = [m for m in tr.markers if m.frame == frame]
+                    for m in ms:
+                        try:
+                            tr.markers.remove(m)
+                            deleted_markers += 1
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+    return deleted_tracks, deleted_markers, kept_tracks
+
 
 
 def _set_tracker_flags(mc: bpy.types.MovieClip,
@@ -186,6 +236,9 @@ class CLIP_OT_optimize_tracking_modal(bpy.types.Operator):
     _idxs = (0, 0, 0, 0)  # laufende Indizes (p, s, m, c)
     _best: Tuple[int, float] = (-1, float("-inf"))  # (count, -err)
     _best_cfg: Tuple[int, int, int, int] | None = None
+    _base_ptrs: set[int] = set()
+    _base_ptrs_with_marker: set[int] = set()
+
 
     @classmethod
     def poll(cls, context):
@@ -200,7 +253,7 @@ class CLIP_OT_optimize_tracking_modal(bpy.types.Operator):
             self.report({'ERROR'}, "Kein Movie Clip aktiv.")
             return {'CANCELLED'}
 
-        self._frame = int(context.scene.frame_current)
+        self._base_ptrs, self._base_ptrs_with_marker = _snapshot_tracks_and_frame_markers(self._mc, self._frame)
         self._base_ptrs = _snapshot_tracks(self._mc)
         self._cands = _make_candidate_grid(self._mc)
         self._idxs = (0, 0, 0, 0)
@@ -278,8 +331,14 @@ class CLIP_OT_optimize_tracking_modal(bpy.types.Operator):
 
         # Neu angelegte Tracks wieder entfernen (keine Kumulierung zwischen Trials)
         try:
-            delc, kept = _remove_new_tracks(self._mc, self._base_ptrs)
-            self._log(f"Cleanup: removed={delc}, kept={kept}")
+            del_tracks, del_markers, kept = _remove_new_tracks_and_frame_markers(
+                self._mc,
+                self._frame,
+                self._base_ptrs,
+                self._base_ptrs_with_marker
+            )
+            self._log(f"Cleanup: removed_tracks={del_tracks}, removed_markers_at_frame={del_markers}, kept_tracks={kept}")
+
         except Exception as ex:
             self._log(f"Cleanup Fehler: {ex}")
 
