@@ -2,6 +2,8 @@ from __future__ import annotations
 import bpy
 
 # Nur was für die Registrierung nötig ist:
+from .set_test_value import set_test_value
+
 try:
     from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 except Exception:
