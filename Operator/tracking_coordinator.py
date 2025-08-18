@@ -20,6 +20,13 @@ LOCK_KEY = "__detect_lock"  # exklusiver Detect-/Cleanup-Lock in scene
 # String-Sanitizer (gegen NBSP/Encoding-Ausreißer)
 # ------------------------------------------------------------
 
+# minimize: Helper-Funktion
+def run_optimize_tracking_modal(context=None):
+    import bpy
+    scn = (context.scene if context else bpy.context.scene)
+    print(f"[OptimizeHelper] running on frame {scn.frame_current}")
+    # hier deine eigentlichen Optimize-Schritte (Flags setzen, Detect-Varianten, etc.)
+
 def _sanitize_str(s) -> str:
     if isinstance(s, (bytes, bytearray)):
         try:
