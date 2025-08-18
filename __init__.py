@@ -11,8 +11,8 @@ bl_info = {
 import bpy
 from bpy.props import IntProperty, FloatProperty, CollectionProperty
 from bpy.types import PropertyGroup, Panel
-
-# Helper-Module (enthält CLIP_OT_bidirectional_track + register/unregister)
+from .Operator.tracking_coordtorina import register as _reg_coord, unregister as _unreg_coord
+from .Helper import register as _reg_helper, unregister as _unreg_helper
 from .Helper import bidirectional_track
 from .Operator.tracking_coordinator import CLIP_OT_tracking_coordinator
 
@@ -61,6 +61,9 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
+    _reg_helper()   # registriert u.a. CLIP_OT_optimize_tracking_modal
+    _reg_coord()    # registriert clip.tracking_coordinator (Optimize-only Trigger)
+
     # Dann Helper-Operator registrieren
     bidirectional_track.register()
 
@@ -91,6 +94,8 @@ def unregister():
     del bpy.types.Scene.frames_track
     del bpy.types.Scene.error_track
 
+    _unreg_coord()
+    _unreg_helper()
     # Helper-Operator deregistrieren
     bidirectional_track.unregister()
 
