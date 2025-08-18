@@ -1,11 +1,173 @@
 # Helper/optimize_tracking_modal.py
-# Modal-Helper ohne marker_helper_main: nutzt nur Scene-Werte, klare Logs, sauberer Modal-Lifecycle.
+# Modal-Optimierer: testet Detect-Parameter (Pattern/Search, Motion-Model, Channel-Set),
+# wählt die beste Variante (MarkerCount, Tie-Break: error_value) und übernimmt sie.
+# Abhängigkeiten (optional/robust): .detect, .error_value, .set_test_value
 
 from __future__ import annotations
 import bpy
-from typing import Set
+from typing import Set, Tuple, Optional
 
 __all__ = ["CLIP_OT_optimize_tracking_modal", "run_optimize_tracking_modal"]
+
+
+def _log(msg: str) -> None:
+    print(f"[Optimize] {msg}")
+
+
+def _get_clip(context) -> Optional[bpy.types.MovieClip]:
+    return getattr(context.space_data, "clip", None)
+
+
+def _active_marker_count(mc: bpy.types.MovieClip, frame: int) -> int:
+    """Zählt Marker, die exakt auf 'frame' einen Key besitzen (sichtbar)."""
+    try:
+        cnt = 0
+        for tr in mc.tracking.tracks:
+            # markers ist eine Sequenz; schneller: binäre Suche wäre möglich – hier reicht O(n)
+            for m in tr.markers:
+                if m.frame == frame:
+                    cnt += 1
+                    break
+        return cnt
+    except Exception:
+        return 0
+
+
+def _snapshot_tracks(mc: bpy.types.MovieClip) -> set[int]:
+    base = set()
+    for tr in mc.tracking.tracks:
+        try:
+            base.add(int(tr.as_pointer()))
+        except Exception:
+            base.add(id(tr))
+    return base
+
+
+def _remove_new_tracks(mc: bpy.types.MovieClip, base_ptrs: set[int]) -> Tuple[int, int]:
+    """Entfernt alle neu angelegten Tracks (nicht in base_ptrs). Rückgabe: (deleted, kept)."""
+    deleted = 0
+    kept = 0
+    tracks = mc.tracking.tracks
+    for tr in list(tracks):
+        try:
+            ptr = int(tr.as_pointer())
+        except Exception:
+            ptr = id(tr)
+        if ptr not in base_ptrs:
+            try:
+                tracks.remove(tr)
+                deleted += 1
+            except Exception:
+                kept += 1
+        else:
+            kept += 1
+    return deleted, kept
+
+
+def _set_tracker_flags(mc: bpy.types.MovieClip,
+                       pattern: int,
+                       search: int,
+                       motion_index: int,
+                       channel_variant: int) -> None:
+    """Schreibt Pattern/Search/Motion/Channel-Flags in tracking.settings."""
+    s = mc.tracking.settings
+    s.default_pattern_size = int(max(9, min(111, pattern)))
+    s.default_search_size = int(max(16, min(256, search)))
+    # Margin konservativ = search (wie bisherige Heuristiken)
+    s.default_margin = s.default_search_size
+
+    motion_models = ('Perspective', 'Affine', 'LocRotScale', 'LocScale', 'LocRot', 'Loc')
+    if 0 <= motion_index < len(motion_models):
+        s.default_motion_model = motion_models[motion_index]
+
+    # Farbkanal-Varianten: 0:R, 1:RG, 2:G, 3:GB, 4:B
+    idx = int(channel_variant)
+    s.use_default_red_channel   = (idx in (0, 1))
+    s.use_default_green_channel = (idx in (1, 2, 3))
+    s.use_default_blue_channel  = (idx in (3, 4))
+
+
+def _try_detect(context, frame: int) -> dict:
+    """Versucht run_detect_once, fallback perform_marker_detection. Rückgabe: dict mit status."""
+    # Wichtig: auf Ziel-Frame stehen
+    try:
+        context.scene.frame_current = int(frame)
+    except Exception:
+        pass
+
+    # primär: run_detect_once(context, start_frame=..., handoff_to_pipeline=False)
+    try:
+        from .detect import run_detect_once  # type: ignore
+        try:
+            res = run_detect_once(context, start_frame=int(frame), handoff_to_pipeline=False) or {}
+        except TypeError:
+            # ältere Signatur
+            res = run_detect_once(context, start_frame=int(frame)) or {}
+        return res if isinstance(res, dict) else {"status": "UNKNOWN"}
+    except Exception:
+        pass
+
+    # sekundär: perform_marker_detection(context) o.ä.
+    try:
+        from .detect import perform_marker_detection  # type: ignore
+        res2 = perform_marker_detection(context) or {}
+        return res2 if isinstance(res2, dict) else {"status": "UNKNOWN"}
+    except Exception:
+        return {"status": "FAILED", "reason": "no_detect_impl"}
+
+
+def _try_error_value(context) -> Optional[float]:
+    """Optionaler Tie-Breaker: kleiner ist besser. Falls nicht verfügbar → None."""
+    try:
+        from .error_value import error_value  # type: ignore
+        v = error_value(context)
+        try:
+            return float(v)
+        except Exception:
+            return None
+    except Exception:
+        return None
+
+
+def _trial_score(mc: bpy.types.MovieClip, frame: int, context) -> Tuple[int, float]:
+    """Score: (marker_count DESC, -error ASC via invert). Wir geben (count, -err) zurück."""
+    cnt = _active_marker_count(mc, frame)
+    err = _try_error_value(context)
+    inv_err = -float(err) if (err is not None) else 0.0  # wenn kein error_value vorhanden, Tie-Breaker neutral
+    return cnt, inv_err
+
+
+def _make_candidate_grid(mc: bpy.types.MovieClip) -> Tuple[list[int], list[int], list[int], list[int]]:
+    """Baut Kandidatenlisten um aktuelle Defaults herum (defensiv begrenzt)."""
+    s = mc.tracking.settings
+    p0 = int(getattr(s, "default_pattern_size", 21)) or 21
+    q0 = int(getattr(s, "default_search_size", 42)) or 42
+
+    # Pattern-Candidates (um p0 herum)
+    patt = sorted(set([
+        max(9,  p0 // 2),
+        max(9,  int(round(p0 * 0.75))),
+        max(9,  p0),
+        min(111, int(round(p0 * 1.25))),
+        min(111, p0 * 2),
+    ]))
+
+    # Search-Candidates (um q0 herum)
+    sea = sorted(set([
+        max(16,  q0 // 2),
+        max(16,  int(round(q0 * 0.75))),
+        max(16,  q0),
+        min(256, int(round(q0 * 1.25))),
+        min(256, q0 * 2),
+    ]))
+
+    # Motion-Models 0..5 (siehe _set_tracker_flags)
+    mot = [0, 1, 2, 3, 4, 5]
+
+    # Channel-Sets 0..4
+    ch = [0, 1, 2, 3, 4]
+
+    return patt, sea, mot, ch
 
 
 class CLIP_OT_optimize_tracking_modal(bpy.types.Operator):
@@ -16,27 +178,40 @@ class CLIP_OT_optimize_tracking_modal(bpy.types.Operator):
     _timer = None
     _step = 0
 
+    # State für das Sweep
+    _frame: int = 0
+    _mc: Optional[bpy.types.MovieClip] = None
+    _base_ptrs: set[int] = set()
+    _cands: Tuple[list[int], list[int], list[int], list[int]] | None = None
+    _idxs = (0, 0, 0, 0)  # laufende Indizes (p, s, m, c)
+    _best: Tuple[int, float] = (-1, float("-inf"))  # (count, -err)
+    _best_cfg: Tuple[int, int, int, int] | None = None
+
     @classmethod
     def poll(cls, context):
-        return (context.area is not None) and (context.area.type == "CLIP_EDITOR")
+        return (context.area is not None) and (context.area.type == "CLIP_EDITOR") and _get_clip(context) is not None
 
     def _log(self, msg: str) -> None:
-        print(f"[Optimize] {msg}")
-
-    def _read_scene_values(self, scene):
-        """Liest die im Pre-Hook gesetzten Werte (falls vorhanden) und loggt sie."""
-        ma = scene.get("marker_adapt")
-        mn = scene.get("marker_min")
-        mx = scene.get("marker_max")
-        self._log(f"Scene Values → adapt={ma}, min={mn}, max={mx}")
-        return ma, mn, mx
+        _log(msg)
 
     def invoke(self, context, event) -> Set[str]:
+        self._mc = _get_clip(context)
+        if not self._mc:
+            self.report({'ERROR'}, "Kein Movie Clip aktiv.")
+            return {'CANCELLED'}
+
+        self._frame = int(context.scene.frame_current)
+        self._base_ptrs = _snapshot_tracks(self._mc)
+        self._cands = _make_candidate_grid(self._mc)
+        self._idxs = (0, 0, 0, 0)
+        self._best = (-1, float("-inf"))
+        self._best_cfg = None
+
         wm = context.window_manager
         self._step = 0
-        self._timer = wm.event_timer_add(0.15, window=context.window)
+        self._timer = wm.event_timer_add(0.05, window=context.window)  # reaktiv
         wm.modal_handler_add(self)
-        self._log(f"Start (frame={context.scene.frame_current})")
+        self._log(f"Start (frame={self._frame})")
         return {"RUNNING_MODAL"}
 
     def modal(self, context, event) -> Set[str]:
@@ -48,30 +223,95 @@ class CLIP_OT_optimize_tracking_modal(bpy.types.Operator):
 
         if self._step == 0:
             self._log("Step 0: Preflight")
-            # Nur lesend: was hat der Pre-Hook gesetzt?
-            self._read_scene_values(context.scene)
             self._step = 1
             return {"RUNNING_MODAL"}
 
         if self._step == 1:
-            self._log("Step 1: Optimize-Pass (ohne marker_helper_main)")
-            # Placeholders für deine künftigen Optimizer-Schritte.
-            # Hier kannst du direkt eigene Heuristiken/Parameter-Sweeps einhängen,
-            # ohne weitere Operator-Registrierungen.
-            # Beispiel: nur als sichtbarer Proof-of-Work ein no-op:
-            try:
-                context.view_layer.update()
-            except Exception:
-                pass
-            self._step = 2
+            # Iterativer Sweep über das Gitter – je Timer-Tick genau EIN Trial → UI bleibt responsiv
+            done = self._run_next_trial(context)
+            if done:
+                self._step = 2
             return {"RUNNING_MODAL"}
 
         if self._step == 2:
-            self._log("Step 2: Abschluss")
+            self._apply_best_and_finalize(context)
             return self._finish(context)
 
         return {"RUNNING_MODAL"}
 
+    # --- Sweep-Engine ---------------------------------------------------------
+    def _run_next_trial(self, context) -> bool:
+        """Führt den nächsten Trial aus; gibt True zurück, wenn alle durch sind."""
+        assert self._mc is not None and self._cands is not None
+        patt, sea, mot, ch = self._cands
+        ip, is_, im, ic = self._idxs
+
+        if ip >= len(patt):
+            # fertig
+            self._log(f"Trials fertig. Best={self._best} cfg={self._best_cfg}")
+            return True
+
+        # aktuelle Werte
+        p = patt[ip]
+        s = sea[is_]
+        m = mot[im]
+        c = ch[ic]
+        self._log(f"Trial p={p} s={s} m={m} c={c}")
+
+        # Flags setzen
+        _set_tracker_flags(self._mc, p, s, m, c)
+
+        # Detect ausführen
+        res = _try_detect(context, self._frame)
+        st = str(res.get("status", "UNKNOWN"))
+        self._log(f"Detect → status={st}")
+
+        # Scoring
+        score = _trial_score(self._mc, self._frame, context)
+        self._log(f"Score → count={score[0]} inv_err={score[1]}")
+
+        # Bestergebnis aktualisieren
+        if (score[0] > self._best[0]) or (score[0] == self._best[0] and score[1] > self._best[1]):
+            self._best = score
+            self._best_cfg = (p, s, m, c)
+            self._log(f"→ NEW BEST {self._best} cfg={self._best_cfg}")
+
+        # Neu angelegte Tracks wieder entfernen (keine Kumulierung zwischen Trials)
+        try:
+            delc, kept = _remove_new_tracks(self._mc, self._base_ptrs)
+            self._log(f"Cleanup: removed={delc}, kept={kept}")
+        except Exception as ex:
+            self._log(f"Cleanup Fehler: {ex}")
+
+        # Indizes weiterschalten (nested loops)
+        ic += 1
+        if ic >= len(ch):
+            ic = 0
+            im += 1
+            if im >= len(mot):
+                im = 0
+                is_ += 1
+                if is_ >= len(sea):
+                    is_ = 0
+                    ip += 1
+        self._idxs = (ip, is_, im, ic)
+        return False
+
+    def _apply_best_and_finalize(self, context) -> None:
+        """Beste Konfiguration dauerhaft setzen und abschließend Detect ausführen."""
+        if not self._mc or not self._best_cfg:
+            self._log("Keine Best-Konfiguration gefunden – nichts zu übernehmen.")
+            return
+
+        p, s, m, c = self._best_cfg
+        self._log(f"Apply BEST cfg p={p} s={s} m={m} c={c}")
+        _set_tracker_flags(self._mc, p, s, m, c)
+
+        # Finaler Detect mit der Gewinner-Konfiguration
+        res = _try_detect(context, self._frame)
+        self._log(f"Final Detect status={res.get('status')}")
+
+    # --- Lifecycle ------------------------------------------------------------
     def _finish(self, context) -> Set[str]:
         self._teardown(context)
         self._log("Done.")
@@ -92,14 +332,14 @@ class CLIP_OT_optimize_tracking_modal(bpy.types.Operator):
 
 
 def run_optimize_tracking_modal(context: bpy.types.Context | None = None) -> None:
-    """Fallback-Funktion: startet den Operator modal, ohne weitere Abhängigkeiten."""
+    """Fallback-Aufruf: startet den Modal-Operator (wie INVOKE_DEFAULT)."""
     try:
         bpy.ops.clip.optimize_tracking_modal("INVOKE_DEFAULT")
     except Exception as ex:
-        print(f"[Optimize] Fallback-Aufruf fehlgeschlagen: {ex}")
+        _log(f"Fallback-Aufruf fehlgeschlagen: {ex}")
 
 
-# Lokale Registrierung (optional für Einzeltests)
+# Lokale Registrierung (für Einzeltests nützlich)
 def register():
     try:
         bpy.utils.register_class(CLIP_OT_optimize_tracking_modal)
