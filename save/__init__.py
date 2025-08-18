@@ -22,6 +22,7 @@ from .split_cleanup import clear_path_on_split_tracks_segmented, recursive_split
 from .refine_high_error import run_refine_on_high_error
 from .marker_adapt_helper import run_marker_adapt_boost
 from .marker_helper_main import marker_helper_main
+
 # Nur was für die Registrierung wirklich nötig ist:
 try:
     from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
