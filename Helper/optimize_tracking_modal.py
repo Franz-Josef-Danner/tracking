@@ -197,7 +197,7 @@ def _select_markers_at_frame(mc: bpy.types.MovieClip, frame: int) -> Dict[int, i
     return after0
 
 def _forward_track_current_selection(context) -> None:
-    bpy.ops.clip.track_markers(backwards=False, sequence=True)  # nur vorwärts, durchtracken
+    bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True) # nur vorwärts, durchtracken
 
 def _progress_sum(mc: bpy.types.MovieClip, frame: int, baseline_after: Dict[int, int]) -> int:
     """
