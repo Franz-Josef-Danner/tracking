@@ -1,19 +1,25 @@
+# Helper/__init__.py (Minimal-Registrar + optionaler Operator)
 from __future__ import annotations
 import bpy
-
-# Nur was für die Registrierung nötig ist:
-from .set_test_value import set_test_value
 
 try:
     from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 except Exception:
     CLIP_OT_optimize_tracking_modal = None
 
+# OPTIONAL: wenn du marker_helper_main als Operator registriert hast:
+try:
+    from .marker_helper_main import CLIP_OT_marker_helper_main
+except Exception:
+    CLIP_OT_marker_helper_main = None
+
 __all__ = ("register", "unregister", "CLIP_OT_optimize_tracking_modal")
 
 _classes = []
-if CLIP_OT_optimize_tracking_modal is not None:
+if CLIP_OT_optimize_tracking_modal:
     _classes.append(CLIP_OT_optimize_tracking_modal)
+if CLIP_OT_marker_helper_main:  # nur falls vorhanden
+    _classes.append(CLIP_OT_marker_helper_main)
 
 def register():
     for cls in _classes:
