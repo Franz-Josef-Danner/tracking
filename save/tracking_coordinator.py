@@ -1,4 +1,4 @@
-# Operator/tracking_coordtorina.py
+# Operator/tracking_coordinator.py
 # — Orchestrator mit Find → Jump → (Wait/Settle) → Detect → BidirectionalTrack (Helper) → CleanShort → (Repeat) → Solve/Refine/Cleanup
 # Garantiert: CleanShort wird JEDES MAL direkt nach dem bidirektionalen Tracking aufgerufen,
 # sofern auto_clean_short=True (Default). Zusätzlich wird nach dem Jump ein kurzer Settle-Zeitraum
