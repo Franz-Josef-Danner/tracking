@@ -22,7 +22,7 @@ from .refine_high_error import run_refine_on_high_error
 from .marker_adapt_helper import run_marker_adapt_boost
 from .marker_helper_main import marker_helper_main
 try:
-    from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal  # type: ignore
+    from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 except Exception:
     CLIP_OT_optimize_tracking_modal = None
 
