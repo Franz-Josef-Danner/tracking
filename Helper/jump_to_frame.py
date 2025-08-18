@@ -2,6 +2,8 @@ import bpy
 from typing import Optional, Dict, Any, Tuple
 
 __all__ = ("run_jump_to_frame", "jump_to_frame")  # jump_to_frame = Legacy-Wrapper
+REPEAT_SATURATION = 10  # Ab dieser Wiederholungsanzahl: Optimizer anstoßen statt Detect
+
 
 
 # -----------------------------------------------------------------------------
@@ -132,6 +134,8 @@ def run_jump_to_frame(
     if repeat_map is not None:
         repeat_count = int(repeat_map.get(target, 0)) + 1
         repeat_map[target] = repeat_count
+    # NEU: Sättigungs-Schwelle (10)
+    repeat_saturated = repeat_count >= 10
     
     # optional: wenn du nur eine Logzeile möchtest, kannst du diese entfernen
     # ------------------------------------------------------------------
@@ -156,8 +160,15 @@ def run_jump_to_frame(
     except Exception:
         pass
 
-    print(f"[GotoFrame] Playhead auf Frame {target} gesetzt. (clamped={clamped}, repeat={repeat_count})")
-    return {"status": "OK", "frame": int(target), "repeat_count": int(repeat_count), "clamped": bool(clamped), "area_switched": bool(area_switched)}
+    print(f"[GotoFrame] Playhead auf Frame {target} gesetzt. (clamped={clamped}, repeat={repeat_count}, saturated={repeat_saturated})")
+    return {
+        "status": "OK",
+        "frame": int(target),
+        "repeat_count": int(repeat_count),
+        "repeat_saturated": bool(repeat_saturated),
+        "clamped": bool(clamped),
+        "area_switched": bool(area_switched),
+    }
 
 
 # -----------------------------------------------------------------------------
