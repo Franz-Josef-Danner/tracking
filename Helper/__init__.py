@@ -33,7 +33,7 @@ try:
     from .properties import RepeatEntry
 except Exception:
     RepeatEntry = None
-    
+
 __all__ = (
     "register",
     "unregister",
