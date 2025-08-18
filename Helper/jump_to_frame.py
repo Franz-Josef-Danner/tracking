@@ -136,19 +136,19 @@ def run_jump_to_frame(
     # optional: wenn du nur eine Logzeile möchtest, kannst du diese entfernen
     # ------------------------------------------------------------------
     # REPEAT-HOOK: Bei Wiederholung (Frame wurde schon einmal per Jump angefahren)
-    # → Nur noch marker_helper_main() ausführen.
+    # → Nur noch run_marker_adapt_boost() ausführen.
     # ------------------------------------------------------------------
     if repeat_count >= 2:
         # robust importieren (Package vs. Flat)
         try:
-            from ..Helper.marker_helper_main import marker_helper_main
+            from .marker_adapt_helper import run_marker_adapt_boost
         except Exception:
-            from Helper.marker_helper_main import marker_helper_main  # type: ignore
+            from .marker_adapt_helper import run_marker_adapt_boost  # type: ignore
         try:
-            marker_helper_main(context)
-            print(f"[JumpRepeat] marker_helper_main ausgelöst (frame={target}, repeat={repeat_count})")
+            run_marker_adapt_boost(context)
+            print(f"[JumpRepeat] run_marker_adapt_boost ausgelöst (frame={target}, repeat={repeat_count})")
         except Exception as ex:
-            print(f"[JumpRepeat] marker_helper_main Fehler: {ex}")
+            print(f"[JumpRepeat] run_marker_adapt_boost Fehler: {ex}")
 
     # Debugging & Transparenz
     try:
