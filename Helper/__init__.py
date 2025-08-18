@@ -34,32 +34,18 @@ try:
 except Exception:
     RepeatEntry = None
 
-__all__ = (
-    "register",
-    "unregister",
-    "CLIP_OT_optimize_tracking_modal",
-)
+__all__ = ("register", "unregister", "CLIP_OT_optimize_tracking_modal")
 
 _classes = []
 if CLIP_OT_optimize_tracking_modal is not None:
     _classes.append(CLIP_OT_optimize_tracking_modal)
 
-def _register_scene_props():
-    if RepeatEntry is not None and not hasattr(bpy.types.Scene, "repeat_frame"):
-        bpy.types.Scene.repeat_frame = bpy.props.CollectionProperty(type=RepeatEntry)
-
-def _unregister_scene_props():
-    if hasattr(bpy.types.Scene, "repeat_frame"):
-        del bpy.types.Scene.repeat_frame
-
 def register():
     for cls in _classes:
         bpy.utils.register_class(cls)
-    _register_scene_props()
     print("[Helper] register() OK")
 
 def unregister():
-    _unregister_scene_props()
     for cls in reversed(_classes):
         try:
             bpy.utils.unregister_class(cls)
