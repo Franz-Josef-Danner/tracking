@@ -82,11 +82,13 @@ def _snapshot_tracks_and_frame_markers(mc: bpy.types.MovieClip, frame: int) -> t
     return base_ptrs, base_ptrs_with_marker
 
 def _pretrial_sanitize_frame(mc: bpy.types.MovieClip, frame: int, base_ptrs_with_marker: set[int]) -> None:
-    # Entferne prophylaktisch Marker am frame bei Tracks, die vorher dort KEINEN Marker hatten.
+    """Entfernt Marker GENAU am Startframe für Tracks, die dort vorher KEINEN Marker hatten."""
     for tr in mc.tracking.tracks:
         if _track_ptr(tr) not in base_ptrs_with_marker:
-            for m in [m for m in tr.markers if m.frame == frame]:
-                tr.markers.remove(m)
+            # Mehrfach aufrufen, falls mehrere Einträge existieren
+            while tr.markers.find_frame(frame):
+                tr.markers.delete_frame(frame)
+
 
 def _rollback_after_forward_track(
     mc: bpy.types.MovieClip,
@@ -106,14 +108,17 @@ def _rollback_after_forward_track(
     kept_tracks = 0
     tracks = mc.tracking.tracks
 
-    # (a) neue Tracks
+    # (b) Marker >= start_frame auf Bestands-Tracks ohne ursprünglichen Startframe-Marker
     for tr in list(tracks):
-        if _track_ptr(tr) not in base_ptrs:
-            try:
-                tracks.remove(tr)
-                deleted_tracks += 1
-            except Exception:
-                pass
+        ptr = _track_ptr(tr)
+        if ptr in base_ptrs and ptr not in base_ptrs_with_marker:
+            frames_to_del = sorted({m.frame for m in tr.markers if m.frame >= start_frame})
+            for f in frames_to_del:
+                try:
+                    tr.markers.delete_frame(f)
+                    deleted_markers += 1
+                except Exception:
+                    pass
         else:
             kept_tracks += 1
 
@@ -369,12 +374,11 @@ class CLIP_OT_optimize_tracking_modal(bpy.types.Operator):
             
             if selected_tracks > 0:
                 try:
-                    _forward_track_current_selection(bpy.context)  # nur vorwärts
+                    bpy.ops.clip.track_markers(backwards=False, sequence=True)  # nur vorwärts, bis Ende
                     _flush(bpy.context)
                     _log("ForwardTrack: OK")
                 except Exception as ex:
                     _log(f"ForwardTrack FAILED: {ex}")
-
 
             # Scoring: Progress (neu hinzugekommene Marker > frame), Tie-Break error_value
             score = _trial_score_progress_then_error(mc, self._start_frame, bpy.context, baseline_after)
@@ -437,11 +441,12 @@ class CLIP_OT_optimize_tracking_modal(bpy.types.Operator):
                 baseline_after = _baseline_for_selected_tracks(mc, self._start_frame)
                 if len(baseline_after) > 0:
                     try:
-                        _forward_track_current_selection(bpy.context)
+                        bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
                         _flush(bpy.context)
                         _log("Final ForwardTrack: OK")
                     except Exception as ex:
                         _log(f"Final ForwardTrack FAILED: {ex}")
+
 
 
             # Playhead zurück
