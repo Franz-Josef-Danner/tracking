@@ -113,6 +113,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     _jump_done: bool = False
     _repeat_map: Dict[int, int] | None = None  # Frame→Count (nur via Jump gepflegt)
     _settle_ticks: int = 0  # Warten nach Jump, bevor Detect läuft
+    _opt_frame: int | None = None  # Ziel-Frame für Optimize-Helper (bei Repeat-Sättigung)
 
     # --------------------------
     # interne Hilfsfunktionen
@@ -290,7 +291,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if not self._jump_done or goto != cur:
                 try:
                     from ..Helper.jump_to_frame import run_jump_to_frame
-                    run_jump_to_frame(context, frame=goto, repeat_map=self._repeat_map)
+                    res_j = run_jump_to_frame(context, frame=goto, repeat_map=self._repeat_map) or {}
+                    # NEU: Wenn der Frame bereits >=10× per Jump erreicht wurde:
+                    if bool(res_j.get("repeat_saturated", False)):
+                        self._opt_frame = int(res_j.get("frame", goto))
+                        self._jump_done = True
+                        self._settle_ticks = 0
+                        self._state = "OPTIMIZE"
+                        return {"RUNNING_MODAL"}
                 except Exception as ex:
                     self._log(f"[Jump] Fehler: {ex}")
                 self._jump_done = True
@@ -342,6 +350,36 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self._detect_attempts = 0
                 self._state = "BIDITRACK"
                 return {"RUNNING_MODAL"}
+
+        # ---------------- Repeat-Sättigung: Optimize-Helfer starten ----------------
+        elif self._state == "OPTIMIZE":
+            # Sicherheit: auf Ziel-Frame stehen
+            try:
+                if self._opt_frame is not None and context.scene.frame_current != int(self._opt_frame):
+                    context.scene.frame_current = int(self._opt_frame)
+            except Exception:
+                pass
+            self._log("[Optimize] Starte optimize_tracking_modal (Repeat-Sättigung ≥10)")
+            try:
+                # bevorzugt als registrierter Operator
+                if hasattr(bpy.ops.clip, "optimize_tracking_modal"):
+                    bpy.ops.clip.optimize_tracking_modal("INVOKE_DEFAULT")
+                else:
+                    # Fallback: Funktions-API
+                    try:
+                        from ..Helper.optimize_tracking_modal import run_optimize_tracking_modal  # type: ignore
+                        try:
+                            run_optimize_tracking_modal(context)
+                        except TypeError:
+                            run_optimize_tracking_modal()
+                    except Exception as ex2:
+                        self._log(f"[Optimize] Helper nicht aufrufbar: {ex2}")
+            except Exception as ex:
+                self._log(f"[Optimize] Fehler beim Start: {ex}")
+            # danach normal weiter (ohne Detect)
+            self._opt_frame = None
+            self._state = "FIND_LOW"
+            return {"RUNNING_MODAL"}
 
             if st == "RUNNING":
                 self._detect_attempts += 1
