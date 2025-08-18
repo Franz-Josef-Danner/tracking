@@ -12,4 +12,4 @@ def set_test_value(scene):
     scene["marker_max"] = max_marker
     scene["marker_min"] = min_marker
 
-    return marker_value
+    return marker_adapt
