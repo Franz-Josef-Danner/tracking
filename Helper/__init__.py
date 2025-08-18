@@ -1,3 +1,4 @@
+from __future__ import annotations
 import bpy
 
 from .error_value import error_value
@@ -25,9 +26,14 @@ try:
     from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 except Exception:
     CLIP_OT_optimize_tracking_modal = None
-
+try:
+    from .properties import RepeatEntry  # falls ihr die CollectionProperty nutzen wollt
+except Exception:
+    RepeatEntry = None
+    
 __all__ = [
     "run_refine_on_high_error",
+    "CLIP_OT_optimize_tracking_modal",
 ]
 
 classes = (
@@ -35,6 +41,38 @@ classes = (
     CLIP_OT_bidirectional_track,
     *(((CLIP_OT_optimize_tracking_modal,),) if CLIP_OT_optimize_tracking_modal else ()),
 )
+
+_classes = []
+
+if CLIP_OT_optimize_tracking_modal is not None:
+    _classes.append(CLIP_OT_optimize_tracking_modal)
+
+if RepeatEntry is not None:
+    # Scene-Property nur registrieren, wenn der Typ existiert
+    def _register_scene_props():
+        bpy.types.Scene.repeat_frame = bpy.props.CollectionProperty(type=RepeatEntry)
+
+    def _unregister_scene_props():
+        if hasattr(bpy.types.Scene, "repeat_frame"):
+            del bpy.types.Scene.repeat_frame
+else:
+    def _register_scene_props(): ...
+    def _unregister_scene_props(): ...
+
+def register():
+    for cls in _classes:
+        bpy.utils.register_class(cls)
+    _register_scene_props()
+    print("[Helper] register() OK")
+
+def unregister():
+    _unregister_scene_props()
+    for cls in reversed(_classes):
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception:
+            pass
+    print("[Helper] unregister() OK")
 
 def register():
     for cls in classes:
