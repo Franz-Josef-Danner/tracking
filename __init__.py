@@ -11,7 +11,7 @@ bl_info = {
 import bpy
 from bpy.types import PropertyGroup, Panel
 from bpy.props import IntProperty, FloatProperty, CollectionProperty
-from .Operator.tracking_coordtorina import register as _reg_coord, unregister as _unreg_coord
+from .Operator.tracking_coordinator import register as _reg_coord, unregister as _unreg_coord
 from .Helper import register as _reg_helper, unregister as _unreg_helper
 from .Helper import bidirectional_track
 from .Operator.tracking_coordinator import CLIP_OT_tracking_coordinator
