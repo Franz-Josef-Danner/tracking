@@ -135,7 +135,7 @@ def run_jump_to_frame(
         repeat_count = int(repeat_map.get(target, 0)) + 1
         repeat_map[target] = repeat_count
     # NEU: Sättigungs-Schwelle (10)
-    repeat_saturated = repeat_count >= 10
+    repeat_saturated = repeat_count >= 4
     
     # optional: wenn du nur eine Logzeile möchtest, kannst du diese entfernen
     # ------------------------------------------------------------------
