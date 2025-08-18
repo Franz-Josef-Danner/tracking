@@ -22,42 +22,35 @@ from .split_cleanup import clear_path_on_split_tracks_segmented, recursive_split
 from .refine_high_error import run_refine_on_high_error
 from .marker_adapt_helper import run_marker_adapt_boost
 from .marker_helper_main import marker_helper_main
+# Nur was für die Registrierung wirklich nötig ist:
 try:
     from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
 except Exception:
     CLIP_OT_optimize_tracking_modal = None
+
+# Optional: Scene-Collection für Repeat-Tracking (falls ihr sie nutzt)
 try:
-    from .properties import RepeatEntry  # falls ihr die CollectionProperty nutzen wollt
+    from .properties import RepeatEntry
 except Exception:
     RepeatEntry = None
     
-__all__ = [
-    "run_refine_on_high_error",
+__all__ = (
+    "register",
+    "unregister",
     "CLIP_OT_optimize_tracking_modal",
-]
-
-classes = (
-    RepeatEntry,
-    CLIP_OT_bidirectional_track,
-    *(((CLIP_OT_optimize_tracking_modal,),) if CLIP_OT_optimize_tracking_modal else ()),
 )
 
 _classes = []
-
 if CLIP_OT_optimize_tracking_modal is not None:
     _classes.append(CLIP_OT_optimize_tracking_modal)
 
-if RepeatEntry is not None:
-    # Scene-Property nur registrieren, wenn der Typ existiert
-    def _register_scene_props():
+def _register_scene_props():
+    if RepeatEntry is not None and not hasattr(bpy.types.Scene, "repeat_frame"):
         bpy.types.Scene.repeat_frame = bpy.props.CollectionProperty(type=RepeatEntry)
 
-    def _unregister_scene_props():
-        if hasattr(bpy.types.Scene, "repeat_frame"):
-            del bpy.types.Scene.repeat_frame
-else:
-    def _register_scene_props(): ...
-    def _unregister_scene_props(): ...
+def _unregister_scene_props():
+    if hasattr(bpy.types.Scene, "repeat_frame"):
+        del bpy.types.Scene.repeat_frame
 
 def register():
     for cls in _classes:
@@ -73,15 +66,3 @@ def unregister():
         except Exception:
             pass
     print("[Helper] unregister() OK")
-
-def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
-    bpy.types.Scene.repeat_frame = bpy.props.CollectionProperty(type=RepeatEntry)
-    reg_adapt()
-
-def unregister():
-    del bpy.types.Scene.repeat_frame
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
-    unreg_adapt()
