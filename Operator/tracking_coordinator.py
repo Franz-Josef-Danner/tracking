@@ -13,8 +13,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return context.area and context.area.type == "CLIP_EDITOR"
 
     def invoke(self, context, event):
-        # Lazy-Import, damit das Paket vollständig initialisiert ist
-        from ..Helper.optimize_tracking_modal import start_optimization
+        # Import NACH vollständigem Paketinit (vermeidet Zirkularprobleme)
+        from .. import optimize_pipeline_fn as opt  # falls Datei im Paket‑Root heißt: optimize_pipeline_fn.py
+        # oder: from ..Helper import optimize_pipeline_fn as opt  # wenn du sie unter Helper/ ablegst
         opt.start_optimization(context)
         self.report({'INFO'}, "Optimization started (functional pipeline)")
         return {'FINISHED'}
