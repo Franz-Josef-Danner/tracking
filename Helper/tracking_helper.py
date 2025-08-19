@@ -1,16 +1,18 @@
+# =========================
 # File: Helper/tracking_helper.py
+# =========================
 # SPDX-License-Identifier: GPL-2.0-or-later
 """
-Track-Helper: trackt **selektierte Marker** mit INVOKE_DEFAULT, backwards=False,
-sequence=True, setzt danach den Playhead zurück und meldet Abschluss via
-WindowManager-Token an den Coordinator.
+Track-Helper: **einziger** Operator `BW_OT_track_to_scene_end` (bl_idname:
+"bw.track_to_scene_end").
 
-WICHTIG (Fix für ImportError):
-Dieses Modul exportiert **zwei** Operator-Klassen:
-- `BW_OT_track_to_scene_end`  (bl_idname: "bw.track_to_scene_end")
-- `BW_OT_track_simple_forward` (Alias-Klasse für Legacy-Imports; bl_idname: "bw.track_simple_forward")
-
-Damit funktionieren beide Varianten deiner bestehenden Imports/Coordinators.
+- Trackt *selektierte* Marker vorwärts (backwards=False) über die Sequenz
+  (sequence=True)
+- Verwendet `context.temp_override(window, area, region, space_data)` und ruft
+  `bpy.ops.clip.track_markers('INVOKE_DEFAULT', ...)` **ohne** Override-Arg auf
+  (Fix für "1-2 args execution context is supported").
+- Setzt nach dem Tracking den Playhead auf den Ausgangsframe zurück.
+- Optionales Feedback an Coordinator via WindowManager-Token.
 """
 from __future__ import annotations
 
@@ -18,32 +20,28 @@ from typing import Optional, Dict, Any
 import bpy
 from bpy.props import BoolProperty, StringProperty
 
-__all__ = (
-    "BW_OT_track_to_scene_end",
-    "BW_OT_track_simple_forward",
-    "register",
-    "unregister",
-)
+__all__ = ("BW_OT_track_to_scene_end", "register", "unregister")
 
 
 # ------------------------------------------------------------
-# Utility: Clip-Editor-Override finden
+# Utility: Clip-Editor-Handles suchen
 # ------------------------------------------------------------
 
-def _clip_editor_override(ctx: bpy.types.Context) -> Optional[Dict[str, Any]]:
+def _clip_editor_handles(ctx: bpy.types.Context) -> Optional[Dict[str, Any]]:
     win = ctx.window
-    if not win:
+    if not win or not win.screen:
         return None
     for area in win.screen.areas:
         if area.type == 'CLIP_EDITOR':
-            reg = next((r for r in area.regions if r.type == 'WINDOW'), None)
-            if reg:
-                return {"window": win, "screen": win.screen, "area": area, "region": reg}
+            region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+            space = area.spaces.active if hasattr(area, "spaces") else None
+            if region and space:
+                return {"window": win, "area": area, "region": region, "space_data": space}
     return None
 
 
 # ------------------------------------------------------------
-# Haupt-Operator
+# Einziger Operator
 # ------------------------------------------------------------
 class BW_OT_track_to_scene_end(bpy.types.Operator):
     bl_idname = "bw.track_to_scene_end"
@@ -53,29 +51,14 @@ class BW_OT_track_to_scene_end(bpy.types.Operator):
     )
     bl_options = {"REGISTER", "UNDO"}
 
-    backwards: BoolProperty(
-        name="Backwards",
-        default=False,
-        description="Nur Vorwärts-Tracking (wie angefordert)",
-        options={'HIDDEN'},
-    )
-    sequence: BoolProperty(
-        name="Sequence",
-        default=True,
-        description="Über die ganze Sequenz weitertracken",
-        options={'HIDDEN'},
-    )
-    coord_token: StringProperty(
-        name="Coordinator Token",
-        default="",
-        description="Token zur Synchronisation mit dem Coordinator",
-        options={'HIDDEN'},
-    )
+    backwards: BoolProperty(name="Backwards", default=False, options={'HIDDEN'})
+    sequence: BoolProperty(name="Sequence", default=True, options={'HIDDEN'})
+    coord_token: StringProperty(name="Coordinator Token", default="", options={'HIDDEN'})
 
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-        # Idealerweise im Clip-Editor, aber wir erlauben Execute mit Override
-        return True
+        # Nur aktivieren, wenn ein Clip-Editor offen ist (wir brauchen space_data)
+        return _clip_editor_handles(context) is not None
 
     def invoke(self, context: bpy.types.Context, event):
         return self.execute(context)
@@ -87,38 +70,36 @@ class BW_OT_track_to_scene_end(bpy.types.Operator):
             self.report({'ERROR'}, "Kein Scene-Kontext verfügbar")
             return {'CANCELLED'}
 
-        orig_frame = int(scene.frame_current)
-
-        # Clip-Editor-Override aufbauen
-        override = _clip_editor_override(context)
-        if override is None:
+        handles = _clip_editor_handles(context)
+        if not handles:
             self.report({'ERROR'}, "Kein CLIP_EDITOR im aktuellen Window gefunden")
             return {'CANCELLED'}
 
+        start_frame = int(scene.frame_current)
+        end_frame = int(scene.frame_end)
+
         try:
-            end_frame = int(scene.frame_end)
+            # Robustes Ausführen innerhalb temp_override
+            with context.temp_override(**handles):
+                bpy.ops.clip.track_markers(
+                    'INVOKE_DEFAULT',
+                    backwards=False,   # explizit: nur vorwärts
+                    sequence=True,     # über gesamte Sequenz
+                )
 
-            # Tracking: selektierte Marker, vorwärts, sequence=True
-            bpy.ops.clip.track_markers(
-                override,
-                'EXEC_DEFAULT',
-                backwards=bool(self.backwards),
-                sequence=bool(self.sequence),
-            )
-
-            # Nach dem Tracking Playhead zurücksetzen
             tracked_until = int(context.scene.frame_current)
-            scene.frame_set(orig_frame)
+            # Playhead zurücksetzen
+            scene.frame_set(start_frame)
 
-            # Rückmeldung an Coordinator
+            # Rückmeldung an Coordinator (optional)
             if self.coord_token:
                 wm["bw_tracking_done_token"] = self.coord_token
             wm["bw_tracking_last_info"] = {
-                "start_frame": orig_frame,
+                "start_frame": start_frame,
                 "tracked_until": tracked_until,
                 "scene_end": end_frame,
-                "backwards": bool(self.backwards),
-                "sequence": bool(self.sequence),
+                "backwards": False,
+                "sequence": True,
             }
             self.report({'INFO'}, "Tracking abgeschlossen; Playhead zurückgesetzt")
             return {'FINISHED'}
@@ -127,30 +108,10 @@ class BW_OT_track_to_scene_end(bpy.types.Operator):
             return {'CANCELLED'}
 
 
-# ------------------------------------------------------------
-# Alias-Operator (Legacy-Name)
-# ------------------------------------------------------------
-class BW_OT_track_simple_forward(BW_OT_track_to_scene_end):
-    """Alias zu BW_OT_track_to_scene_end.
-
-    Diese Klasse existiert nur, damit bestehende Imports wie
-    `from .tracking_helper import BW_OT_track_simple_forward` funktionieren.
-    """
-
-    bl_idname = "bw.track_simple_forward"
-    bl_label = "Track Selected Markers (Simple Forward)"
-
-    # Defaults sicherstellen (bereitgestellt durch Basisklasse):
-    # backwards=False, sequence=True
-
-
 # ----------
 # Register
 # ----------
-_classes = (
-    BW_OT_track_to_scene_end,
-    BW_OT_track_simple_forward,
-)
+_classes = (BW_OT_track_to_scene_end,)
 
 
 def register():
@@ -167,3 +128,35 @@ def unregister():
             bpy.utils.unregister_class(c)
         except Exception:
             pass
+
+
+# =========================
+# File: Helper/__init__.py
+# =========================
+# SPDX-License-Identifier: GPL-2.0-or-later
+"""
+Helper/__init__.py – **nur** `BW_OT_track_to_scene_end` wird exportiert und
+registriert. Keine Alias-/Legacy-Varianten mehr.
+"""
+from __future__ import annotations
+
+import bpy
+from .tracking_helper import BW_OT_track_to_scene_end
+
+__all__ = ["BW_OT_track_to_scene_end", "register", "unregister"]
+
+
+def register() -> None:
+    try:
+        bpy.utils.register_class(BW_OT_track_to_scene_end)
+    except ValueError:
+        pass
+    print("[Helper] register() OK (track_to_scene_end)")
+
+
+def unregister() -> None:
+    try:
+        bpy.utils.unregister_class(BW_OT_track_to_scene_end)
+    except Exception:
+        pass
+    print("[Helper] unregister() OK (track_to_scene_end)")
