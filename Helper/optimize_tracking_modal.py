@@ -422,11 +422,35 @@ def _timer_step() -> float | None:
 # -----------------------------------------------------------------------------
 
 def _ensure_markers(st: _State) -> None:
-    if run_detect_once is not None:
+    if run_detect_once is None:
+        return
+    try:
+        # Führe Detect IMMER im Clip-Editor-Kontext aus, damit space_data.clip garantiert vorhanden ist.
+        def _kickoff(**kw):
+            # run_detect_once erwartet den Context als erstes Argument
+            return run_detect_once(st.context, **kw)
+        _call_in_clip_context(
+            st.context,
+            _kickoff,
+            ensure_tracking_mode=True,
+            start_frame=st.origin_frame,
+            handoff_to_pipeline=False,
+        )
+    except AttributeError as ex:
+        # Häufige Ursache: "'NoneType' object has no attribute 'clip'" wenn kein gültiger space_data gesetzt ist.
+        print(f"[Detect] WARN: Kontextproblem bei Detect ({ex}) – erneuter Versuch im Clip-Kontext…")
         try:
-            run_detect_once(st.context, start_frame=st.origin_frame, handoff_to_pipeline=False)
+            _call_in_clip_context(
+                st.context,
+                _kickoff,
+                ensure_tracking_mode=True,
+                start_frame=st.origin_frame,
+                handoff_to_pipeline=False,
+            )
         except Exception:
             pass
+    except Exception:
+        pass
 
 def _start_track(st: _State) -> None:
     if st.tracker:
