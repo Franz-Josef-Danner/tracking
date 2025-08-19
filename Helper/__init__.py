@@ -3,7 +3,7 @@ from __future__ import annotations
 import bpy
 
 from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal
-
+from .tracking_helper import BW_OT_track_to_scene_end
 # OPTIONAL: wenn du marker_helper_main als Operator registriert hast:
 try:
     from .marker_helper_main import CLIP_OT_marker_helper_main
