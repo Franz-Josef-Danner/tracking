@@ -3,8 +3,8 @@
 Kaiserlich Tracker – Top-Level Add-on (__init__.py)
 - UI-Panel im CLIP_EDITOR
 - Scene-Properties
-- Delegiert Registrierung an Helper + Coordinator
-- Robuste optionale Importe, keine _classes-NameError mehr
+- Delegiert Registrierung an Helper + Coordinator (ohne try/except)
+- Keine optionalen/symbolischen Imports mehr
 """
 from __future__ import annotations
 
@@ -22,28 +22,9 @@ bl_info = {
     "category": "Tracking",
 }
 
-# --- Registrare (robust) -----------------------------------------------------
-try:
-    from .Operator.tracking_coordinator import register as _reg_coord, unregister as _unreg_coord
-except Exception:
-    _reg_coord = _unreg_coord = None  # type: ignore
-
-try:
-    from .Helper import register as _reg_helper, unregister as _unreg_helper
-except Exception:
-    _reg_helper = _unreg_helper = None  # type: ignore
-
-# Optional: symbolischer Import – darf fehlen
-try:  # noqa: SIM105
-    from .Helper import bidirectional_track  # type: ignore  # pylint: disable=unused-import
-except Exception:  # pragma: no cover
-    bidirectional_track = None  # type: ignore
-
-# Optional: nur für Typ-/ID-Existenz; kein Muss
-try:
-    from .Operator.tracking_coordinator import CLIP_OT_tracking_coordinator  # noqa: F401
-except Exception:
-    CLIP_OT_tracking_coordinator = None  # type: ignore
+# --- Strikte, direkte Importe (fail-fast) -----------------------------------
+from .Operator.tracking_coordinator import register as _reg_coord, unregister as _unreg_coord
+from .Helper import register as _reg_helper, unregister as _unreg_helper
 
 
 # --- Datenmodelle ------------------------------------------------------------
@@ -74,7 +55,6 @@ class CLIP_PT_kaiserlich_panel(Panel):
         scene = context.scene
 
         layout.label(text="Tracking Einstellungen")
-        # Properties können bei fehlerhafter Registrierung fehlen → defensiv zeichnen
         if hasattr(scene, "marker_frame"):
             layout.prop(scene, "marker_frame")
         if hasattr(scene, "frames_track"):
@@ -82,15 +62,7 @@ class CLIP_PT_kaiserlich_panel(Panel):
         if hasattr(scene, "error_track"):
             layout.prop(scene, "error_track")
 
-        layout.separator()
-        # Button existiert nur, wenn Operator registriert ist
-        ops = getattr(bpy.ops, "clip", None)
-        if ops and hasattr(ops, "tracking_coordinator"):
-            layout.operator("clip.tracking_coordinator", text="Track")
-        else:
-            col = layout.column()
-            col.enabled = False
-            col.operator("wm.call_menu", text="Track (Operator fehlt)")
+        layout.operator("clip.tracking_coordinator", text="Track")
 
 
 # --- Registrierung ------------------------------------------------------------
@@ -142,21 +114,17 @@ def register() -> None:
     # 2) Scene-Properties
     _register_scene_props()
 
-    # 3) Externe Registrare (nur wenn vorhanden)
-    if _reg_helper:
-        _reg_helper()
-    if _reg_coord:
-        _reg_coord()
+    # 3) Externe Registrare (direkt, ohne try/except)
+    _reg_helper()
+    _reg_coord()
 
     print("[Kaiserlich] register OK")
 
 
 def unregister() -> None:
-    # 1) Externe Deregistrare zuerst (Operator clean entfernen)
-    if _unreg_coord:
-        _unreg_coord()
-    if _unreg_helper:
-        _unreg_helper()
+    # 1) Externe Deregistrare zuerst
+    _unreg_coord()
+    _unreg_helper()
 
     # 2) Scene-Properties
     _unregister_scene_props()
