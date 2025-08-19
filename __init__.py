@@ -118,9 +118,6 @@ def register() -> None:
     _reg_helper()
     _reg_coord()
 
-    print("[Kaiserlich] register OK")
-
-
 def unregister() -> None:
     # 1) Externe Deregistrare zuerst
     _unreg_coord()
@@ -135,9 +132,6 @@ def unregister() -> None:
             bpy.utils.unregister_class(cls)
         except Exception:
             pass
-
-    print("[Kaiserlich] unregister OK")
-
 
 if __name__ == "__main__":
     register()
