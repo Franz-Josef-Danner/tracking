@@ -13,12 +13,10 @@ from __future__ import annotations
 
 import bpy
 
-# Fester Bestandteil: einfacher Track-Helper
-from .tracking_helper import (
-    BW_OT_track_simple_forward,
-    register as _reg_impl,
-    unregister as _unreg_impl,
-)
+# WICHTIG: Den **Alias-Operator** importieren, nicht per "as" umbenennen,
+# damit bl_idname == 'bw.track_simple_forward' bleibt.
+from .tracking_helper import BW_OT_track_simple_forward  # noqa: F401
+
 
 # Optional 1: Optimize-Operator (falls Modul existiert)
 try:
@@ -51,6 +49,23 @@ if CLIP_OT_optimize_tracking_modal is not None:
     _optional_classes.append(CLIP_OT_optimize_tracking_modal)
 if CLIP_OT_marker_helper_main is not None:
     _optional_classes.append(CLIP_OT_marker_helper_main)
+
+
+# --- Kern-Registrierung für den einfachen Track-Operator ---
+
+def _reg_impl() -> None:
+    try:
+        bpy.utils.register_class(BW_OT_track_simple_forward)
+    except ValueError:
+        # Bereits registriert → ok
+        pass
+
+
+def _unreg_impl() -> None:
+    try:
+        bpy.utils.unregister_class(BW_OT_track_simple_forward)
+    except Exception:
+        pass
 
 
 def register() -> None:
