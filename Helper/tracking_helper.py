@@ -68,8 +68,8 @@ def _ensure_bw_op_registered() -> None:
 # ------------------------------------------------------------
 # Operator (Coordinator)
 # ------------------------------------------------------------
-class BW_OT_track_simple_forward(bpy.types.Operator):
-    """Startet nur den simplen Track‑Helper (INVOLVE_DEFAULT, forwards, sequence=True)."""
+class CLIP_OT_tracking_coordinator(bpy.types.Operator):
+    """Startet nur den simplen Track‑Helper (INVOKE_DEFAULT, forwards, sequence=True)."""
 
     bl_idname = "clip.tracking_coordinator"
     bl_label = "Tracking Orchestrator (Simple Forward)"
@@ -86,7 +86,7 @@ class BW_OT_track_simple_forward(bpy.types.Operator):
     def invoke(self, context: bpy.types.Context, event) -> Set[str]:
         try:
             _ensure_bw_op_registered()
-            # UI‑konformer Aufruf
+            # UI‑konformer Aufruf des simplen Helpers
             bpy.ops.bw.track_simple_forward('INVOKE_DEFAULT')
             return {"FINISHED"}
         except Exception as ex:
@@ -101,16 +101,18 @@ class BW_OT_track_simple_forward(bpy.types.Operator):
 # ----------
 # Register
 # ----------
-_classes = (BW_OT_track_simple_forward,)
+_classes = (CLIP_OT_tracking_coordinator,)
 
 
 def register():
     for c in _classes:
         bpy.utils.register_class(c)
 
+
 def unregister():
     for c in reversed(_classes):
         bpy.utils.unregister_class(c)
+
 
 if __name__ == "__main__":
     # keine Self‑Tests nötig; Coordinator ohne UI nicht sinnvoll testbar
