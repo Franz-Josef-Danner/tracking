@@ -5,11 +5,13 @@
 """
 Function-only Helper für Tracking im Movie Clip Editor.
 
-Bereitgestellt wird **nur**:
+Bereitgestellt wird:
 
     track_to_scene_end_fn(context, *, coord_token: str = "") -> dict
+    remember_playhead(context) -> Contextmanager, der den Startframe merkt und
+                                 den Playhead beim Verlassen zurücksetzt.
 
-Die Funktion:
+Die Tracking-Funktion:
 - findet einen CLIP_EDITOR im aktuellen Window
 - ruft **INVOKE_DEFAULT** auf `bpy.ops.clip.track_markers` innerhalb eines
   `context.temp_override(window, area, region, space_data)`
@@ -18,10 +20,11 @@ Die Funktion:
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from contextlib import contextmanager
+from typing import Any, Dict, Optional, Iterator
 import bpy
 
-__all__ = ("track_to_scene_end_fn",)
+__all__ = ("track_to_scene_end_fn", "remember_playhead")
 
 
 # ---------------------------------------------------------------------------
@@ -39,6 +42,33 @@ def _clip_editor_handles(ctx: bpy.types.Context) -> Optional[Dict[str, Any]]:
             if region and space:
                 return {"window": win, "area": area, "region": region, "space_data": space}
     return None
+
+
+# ---------------------------------------------------------------------------
+# Public API: Playhead merken/zurücksetzen
+# ---------------------------------------------------------------------------
+
+@contextmanager
+def remember_playhead(context: bpy.types.Context) -> Iterator[int]:
+    """Merkt den aktuellen Scene-Frame und setzt ihn beim Verlassen zurück.
+
+    Yields
+    ------
+    int
+        Der gemerkte Startframe (vor der Operation).
+    """
+    scene = context.scene
+    if scene is None:
+        raise RuntimeError("Kein Scene-Kontext verfügbar")
+    start_frame = int(scene.frame_current)
+    try:
+        yield start_frame
+    finally:
+        try:
+            scene.frame_set(start_frame)
+        except Exception:
+            # Defensive: auch bei Fehlern den ursprünglichen Frame bestmöglich herstellen
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -75,28 +105,25 @@ def track_to_scene_end_fn(context: bpy.types.Context, *, coord_token: str = "") 
         raise RuntimeError("Kein Scene-Kontext verfügbar")
 
     wm = context.window_manager
-    start_frame = int(scene.frame_current)
     end_frame = int(scene.frame_end)
 
-    # Tracking ausführen – robust im UI-Kontext des Clip-Editors
+    # Tracking ausführen – und Playhead garantiert zurücksetzen
     try:
-        with context.temp_override(**handles):
-            bpy.ops.clip.track_markers(
-                'INVOKE_DEFAULT',
-                backwards=False,  # nur vorwärts
-                sequence=True,    # über gesamte Sequenz
-            )
+        with remember_playhead(context) as start_frame:
+            with context.temp_override(**handles):
+                bpy.ops.clip.track_markers(
+                    'INVOKE_DEFAULT',
+                    backwards=False,  # nur vorwärts
+                    sequence=True,    # über gesamte Sequenz
+                )
+            tracked_until = int(context.scene.frame_current)
     except Exception as ex:
         raise RuntimeError(f"track_markers fehlgeschlagen: {ex}") from ex
-
-    tracked_until = int(context.scene.frame_current)
-
-    # Playhead zurücksetzen
-    scene.frame_set(start_frame)
 
     # Rückmeldung ablegen (optional Token)
     if coord_token:
         wm["bw_tracking_done_token"] = coord_token
+
     info = {
         "start_frame": start_frame,
         "tracked_until": tracked_until,
@@ -106,3 +133,29 @@ def track_to_scene_end_fn(context: bpy.types.Context, *, coord_token: str = "") 
     }
     wm["bw_tracking_last_info"] = info
     return info
+
+
+# =========================
+# File: Helper/__init__.py
+# =========================
+# SPDX-License-Identifier: GPL-2.0-or-later
+"""
+Helper/__init__.py – Function-only Export.
+
+- Exportiert `track_to_scene_end_fn` und `remember_playhead` für Coordinator
+  und andere Operatoren/Funktionen.
+- `register()`/`unregister()` bleiben No-Ops für Kompatibilität.
+"""
+from __future__ import annotations
+
+from .tracking_helper import track_to_scene_end_fn, remember_playhead  # noqa: F401
+
+__all__ = ["track_to_scene_end_fn", "remember_playhead", "register", "unregister"]
+
+
+def register() -> None:  # No-Op, für Kompatibilität
+    print("[Helper] register() noop (function-only)")
+
+
+def unregister() -> None:  # No-Op, für Kompatibilität
+    print("[Helper] unregister() noop (function-only)")
