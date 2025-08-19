@@ -11,15 +11,25 @@ bl_info = {
 import bpy
 from bpy.types import PropertyGroup, Panel
 from bpy.props import IntProperty, FloatProperty, CollectionProperty
-
-# Sub-Registrare (Aggregator-Import, keine Klassen direkt)
-from .Operator import register as _reg_coord, unregister as _unreg_coord
+from .Operator.tracking_coordinator import register as _reg_coord, unregister as _unreg_coord
 from .Helper import register as _reg_helper, unregister as _unreg_helper
+from .Helper import bidirectional_track
+from .Operator.tracking_coordinator import CLIP_OT_tracking_coordinator
 
-# --- Scene-PropertyGroup (Root verwaltet zentral die Scene-Props) ---
+# --- PropertyGroup für Wiederhol-Frames ---
 class RepeatEntry(PropertyGroup):
-    frame: IntProperty(name="Frame", default=0, min=0)
-    count: IntProperty(name="Count", default=0, min=0)
+    frame: IntProperty(
+        name="Frame",
+        description="Frame-Index, der mehrfach zu wenige Marker hatte",
+        default=0,
+        min=0,
+    )
+    count: IntProperty(
+        name="Count",
+        description="Anzahl Wiederholungen für diesen Frame",
+        default=0,
+        min=0,
+    )
 
 # --- UI-Panel ---
 class CLIP_PT_kaiserlich_panel(Panel):
@@ -31,6 +41,7 @@ class CLIP_PT_kaiserlich_panel(Panel):
     def draw(self, context):
         layout = self.layout
         scene = context.scene
+
         layout.label(text="Tracking Einstellungen")
         layout.prop(scene, "marker_frame")
         layout.prop(scene, "frames_track")
@@ -38,8 +49,8 @@ class CLIP_PT_kaiserlich_panel(Panel):
         layout.separator()
         layout.operator("clip.tracking_coordinator", text="Track")
 
-# >>> einheitliche Variable VOR register()
-_classes = (
+# --- Registrierung ---
+classes = (
     RepeatEntry,
     CLIP_PT_kaiserlich_panel,
 )
@@ -49,32 +60,39 @@ def register():
     for cls in _classes:
         bpy.utils.register_class(cls)
 
-    # 2) Scene-Properties
+    # 2) Scene-Properties (Root verwaltet diese zentral)
     if not hasattr(bpy.types.Scene, "repeat_frame"):
         bpy.types.Scene.repeat_frame = CollectionProperty(type=RepeatEntry)
+
     if not hasattr(bpy.types.Scene, "marker_frame"):
         bpy.types.Scene.marker_frame = IntProperty(
-            name="Marker per Frame", default=25, min=10, max=50
+            name="Marker per Frame",
+            default=25, min=10, max=50,
+            description="Mindestanzahl Marker pro Frame",
         )
     if not hasattr(bpy.types.Scene, "frames_track"):
         bpy.types.Scene.frames_track = IntProperty(
-            name="Frames per Track", default=25, min=5, max=100
+            name="Frames per Track",
+            default=25, min=5, max=100,
+            description="Track-Länge in Frames",
         )
     if not hasattr(bpy.types.Scene, "error_track"):
         bpy.types.Scene.error_track = FloatProperty(
-            name="Error-Limit (px)", default=2.0, min=0.1, max=10.0
+            name="Error-Limit (px)",
+            description="Maximale tolerierte Reprojektion in Pixeln",
+            default=2.0, min=0.1, max=10.0,
         )
 
-    # 3) Sub-Registrare
-    _reg_helper()   # registriert u.a. clip.optimize_tracking_modal
-    _reg_coord()    # registriert clip.tracking_coordinator
+    # 3) Externe Registrare
+    _reg_helper()   # registriert u.a. CLIP_OT_optimize_tracking_modal
+    _reg_coord()    # registriert clip.tracking_coordinator (Optimize-only Trigger)
 
 def unregister():
-    # 1) Sub-Registrare zuerst
+    # 1) Externe Deregistrare (um Operator zuerst sauber zu entfernen)
     _unreg_coord()
     _unreg_helper()
 
-    # 2) Scene-Props sicher löschen
+    # 2) Scene-Properties sicher entfernen (nur wenn vorhanden)
     if hasattr(bpy.types.Scene, "repeat_frame"):
         del bpy.types.Scene.repeat_frame
     if hasattr(bpy.types.Scene, "marker_frame"):
