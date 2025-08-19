@@ -11,12 +11,11 @@ Bereitgestellt wird:
     remember_playhead(context) -> Contextmanager, der den Startframe merkt und
                                  den Playhead beim Verlassen zurücksetzt.
 
-Hinweis zum Playhead-Reset:
-- Bei `EXEC_DEFAULT` ist das Tracking **synchron** → der Playhead wird zuverlässig
-  nach Abschluss zurückgesetzt.
-- Bei `INVOKE_DEFAULT` läuft der Tracking-Operator **modal/asynchron** weiter.
-  Damit der Playhead trotzdem wieder auf den Startframe springt, registrieren wir
-  einen kleinen Timer, der nach Ende der Bewegung zurücksetzt.
+Hinweis Playhead-Reset bei INVOKE:
+`INVOKE_DEFAULT` startet den Blender-Operator **modal**. Deshalb kann der
+Operator nach Funktionsrückkehr weiterhin den Playhead bewegen. Um den
+Ausgangsframe dennoch **zuverlässig** wiederherzustellen, nutzen wir eine
+zweistufige Timer-Heuristik ("settle" + "enforce").
 """
 from __future__ import annotations
 
@@ -49,38 +48,57 @@ def _clip_editor_handles(ctx: bpy.types.Context) -> Optional[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 def _schedule_playhead_restore(context: bpy.types.Context, target_frame: int,
-                               *, poll_every: float = 0.1, idle_ticks: int = 5) -> None:
-    """Setzt den Playhead zurück, **nachdem** sich der Frame einige Ticks nicht
-    mehr geändert hat (Heuristik für das Ende des modal laufenden Trackings).
+                               *, interval: float = 0.10,
+                               settle_ticks: int = 8,
+                               enforce_ticks: int = 10) -> None:
+    """Stellt den Playhead **nach Abschluss** der modalen Bewegung wieder her.
 
-    poll_every: Abtastintervall in Sekunden
-    idle_ticks: Anzahl stabiler Abtastungen in Folge bis zum Reset
+    Ablauf:
+    - *settle*-Phase: Warten, bis sich `frame_current` `settle_ticks` mal
+      hintereinander **nicht** geändert hat (Tracking ist zur Ruhe gekommen).
+    - *enforce*-Phase: Danach `enforce_ticks` lang sicherstellen, dass der
+      Playhead auf `target_frame` bleibt (falls spät noch etwas verschiebt).
     """
-    last = {"frame": None, "stable": 0}
+    state = {"last": None, "stable": 0, "phase": "settle", "enforce": 0}
 
-    def _poll() -> Optional[float]:
+    def _poll():
         sc = context.scene
         if sc is None:
             return None
         cur = int(sc.frame_current)
-        if last["frame"] == cur:
-            last["stable"] += 1
-        else:
-            last["frame"] = cur
-            last["stable"] = 0
-        if last["stable"] >= idle_ticks:
+
+        if state["phase"] == "settle":
+            if state["last"] == cur:
+                state["stable"] += 1
+            else:
+                state["last"] = cur
+                state["stable"] = 0
+            if state["stable"] >= settle_ticks:
+                try:
+                    sc.frame_set(target_frame)
+                except Exception:
+                    pass
+                state["phase"] = "enforce"
+                state["enforce"] = 0
+            return interval
+
+        # enforce-Phase: ein paar Ticks lang "festnageln"
+        if cur != target_frame:
             try:
                 sc.frame_set(target_frame)
             except Exception:
                 pass
-            return None  # Timer beenden
-        return poll_every
+            state["enforce"] = 0  # erneut stabilisieren
+        else:
+            state["enforce"] += 1
+        if state["enforce"] >= enforce_ticks:
+            return None  # fertig – Timer entfernen
+        return interval
 
-    # Timer registrieren (nach kurzer Verzögerung starten)
     try:
-        bpy.app.timers.register(_poll, first_interval=poll_every)
+        bpy.app.timers.register(_poll, first_interval=interval)
     except Exception:
-        # Fallback: sofort setzen, wenn Timer nicht verfügbar ist
+        # Fallback: direkter Setzversuch
         try:
             context.scene.frame_set(target_frame)
         except Exception:
@@ -122,13 +140,13 @@ def track_to_scene_end_fn(context: bpy.types.Context, *, coord_token: str = "", 
         Wenn gesetzt, schreibt der Helper das Token in
         ``context.window_manager["bw_tracking_done_token"]``.
     use_invoke : bool, default True
-        True  → nutze `INVOKE_DEFAULT` (modal), setze Playhead via Timer zurück.
-        False → nutze `EXEC_DEFAULT` (synchron), setze Playhead direkt zurück.
+        True  → nutze `INVOKE_DEFAULT` (modal) + Timer-Reset
+        False → nutze `EXEC_DEFAULT` (synchron) + direkten Reset
 
     Returns
     -------
     Dict[str, Any]
-        "start_frame", "tracked_until", "scene_end", "backwards" (False), "sequence" (True)
+        "start_frame", "tracked_until", "scene_end", "backwards" (False), "sequence" (True), "mode"
     """
     handles = _clip_editor_handles(context)
     if not handles:
@@ -142,7 +160,6 @@ def track_to_scene_end_fn(context: bpy.types.Context, *, coord_token: str = "", 
     end_frame = int(scene.frame_end)
 
     if use_invoke:
-        # INVOKE: Operator läuft modal → Playhead-Reset per Timer
         with remember_playhead(context) as start_frame:
             with context.temp_override(**handles):
                 bpy.ops.clip.track_markers(
@@ -151,11 +168,9 @@ def track_to_scene_end_fn(context: bpy.types.Context, *, coord_token: str = "", 
                     sequence=True,
                 )
             tracked_until = int(context.scene.frame_current)
-        # remember_playhead setzt *sofort* zurück; der Operator bewegt aber
-        # anschließend weiter. Deshalb zusätzlich per Timer final zurücksetzen.
+        # Zusätzliche Sicherung nach modalem Finish
         _schedule_playhead_restore(context, start_frame)
     else:
-        # EXEC: synchron – wir können zuverlässig nach Abschluss zurücksetzen
         with remember_playhead(context) as start_frame:
             with context.temp_override(**handles):
                 bpy.ops.clip.track_markers(
@@ -164,9 +179,8 @@ def track_to_scene_end_fn(context: bpy.types.Context, *, coord_token: str = "", 
                     sequence=True,
                 )
             tracked_until = int(context.scene.frame_current)
-        # remember_playhead setzte bereits zurück
+        # remember_playhead hat bereits zurückgesetzt
 
-    # Rückmeldung ablegen (optional Token)
     if coord_token:
         wm["bw_tracking_done_token"] = coord_token
 
