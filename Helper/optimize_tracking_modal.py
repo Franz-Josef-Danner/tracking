@@ -51,42 +51,48 @@ class CLIP_OT_optimize_tracking_modal(Operator):
         return self.execute(context)
 
     def execute(self, context):
-        ...
-        self._timer = wm.event_timer_add(0.2, window=win)
-        wm.modal_handler_add(self)
-    
-        # Kick: ersten Step direkt ausführen
-        try:
-            first = self.run_step(context)
-            if isinstance(first, set) and ('FINISHED' in first or 'CANCELLED' in first):
-                self.cancel(context)
-                return first
-        except Exception as e:
-            self.report({'ERROR'}, f"run_step (kick) failed: {e}")
-            self.cancel(context)
+        # Clip resolven
+        self._clip = getattr(getattr(context, "space_data", None), "clip", None)
+        if not self._clip:
+            self.report({'ERROR'}, "Kein Movie Clip aktiv.")
             return {'CANCELLED'}
     
+        # set_test_value (optional)
+        if set_test_value is not None:
+            try:
+                set_test_value(context)
+            except Exception as e:
+                self.report({'WARNING'}, f"set_test_value: {e}")
+    
+        self._start_frame = context.scene.frame_current
+    
+        # HIER: window_manager holen
+        wm = context.window_manager
+        win = getattr(context, "window", None) or getattr(bpy.context, "window", None)
+        if not win:
+            self.report({'ERROR'}, "Kein aktives Window – TIMER kann nicht registriert werden.")
+            return {'CANCELLED'}
+    
+        # alten Timer sauber entfernen (falls vorhanden)
         try:
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            if self._timer:
+                wm.event_timer_remove(self._timer)
         except Exception:
             pass
     
-        print("[Optimize] Start (execute→modal)")
-        return {'RUNNING_MODAL'}
-
-
         # Timer + Modal-Handler registrieren
         self._timer = wm.event_timer_add(0.2, window=win)
         wm.modal_handler_add(self)
-
+    
         # Kick für Event-Loop
         try:
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
         except Exception:
             pass
-
+    
         print("[Optimize] Start (execute→modal)")
         return {'RUNNING_MODAL'}
+
 
     def cancel(self, context):
         try:
