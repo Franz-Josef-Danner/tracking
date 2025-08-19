@@ -135,27 +135,4 @@ def track_to_scene_end_fn(context: bpy.types.Context, *, coord_token: str = "") 
     return info
 
 
-# =========================
-# File: Helper/__init__.py
-# =========================
-# SPDX-License-Identifier: GPL-2.0-or-later
-"""
-Helper/__init__.py – Function-only Export.
 
-- Exportiert `track_to_scene_end_fn` und `remember_playhead` für Coordinator
-  und andere Operatoren/Funktionen.
-- `register()`/`unregister()` bleiben No-Ops für Kompatibilität.
-"""
-from __future__ import annotations
-
-from .tracking_helper import track_to_scene_end_fn, remember_playhead  # noqa: F401
-
-__all__ = ["track_to_scene_end_fn", "remember_playhead", "register", "unregister"]
-
-
-def register() -> None:  # No-Op, für Kompatibilität
-    print("[Helper] register() noop (function-only)")
-
-
-def unregister() -> None:  # No-Op, für Kompatibilität
-    print("[Helper] unregister() noop (function-only)")
