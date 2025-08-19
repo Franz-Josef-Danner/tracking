@@ -61,40 +61,52 @@ def _clip_editor_handles(ctx: bpy.types.Context) -> Optional[Dict[str, Any]]:
 
 def _schedule_playhead_restore(context: bpy.types.Context, target_frame: int,
                                *, interval: float = 0.10,
-                               settle_ticks: int = 8,
-                               enforce_ticks: int = 10,
+                               settle_ticks: int = 2,
+                               enforce_ticks: int = 6,
                                wm: Optional[bpy.types.WindowManager] = None,
                                coord_token: str = "",
                                info_ref: Optional[dict] = None) -> None:
-    """Stellt den Playhead **nach Abschluss** der modalen Bewegung wieder her
-    und signalisiert erst **dann** das Token. Aktualisiert optional `info_ref`
-    mit dem maximal erreichten Frame (tracked_until).
+    """Nachbildung der *bidirectional* Logik mit Stabilitätsprüfung.
 
-    Ablauf:
-    - *settle*-Phase: Warten, bis sich `frame_current` `settle_ticks` mal
-      hintereinander **nicht** geändert hat (Tracking ist zur Ruhe gekommen).
-    - *enforce*-Phase: Danach `enforce_ticks` lang sicherstellen, dass der
-      Playhead auf `target_frame` bleibt (falls spät noch etwas verschiebt).
+    Stabil gilt nur, wenn **sowohl** `frame_current` als auch die **Marker-Anzahl**
+    (Summe über alle Tracks) sich `settle_ticks` Zyklen **nicht** verändert haben.
+    Danach wird der Playhead auf `target_frame` gesetzt und für `enforce_ticks`
+    Zyklen „festgenagelt“. Erst **danach** wird ein optionales Token gesetzt.
     """
-    state = {"last": None, "stable": 0, "phase": "settle", "enforce": 0, "max": int(target_frame)}
-    _log(f"Timer registrieren: target_frame={target_frame}, interval={interval}s, settle={settle_ticks}, enforce={enforce_ticks}")
+    state = {"last_frame": None, "last_count": None, "stable": 0,
+             "phase": "settle", "enforce": 0, "max_frame": int(target_frame)}
+    _log(f"Timer registrieren (bidir-like): target={target_frame}, interval={interval}s, settle={settle_ticks}, enforce={enforce_ticks}")
+
+    def _marker_count() -> int:
+        handles = _clip_editor_handles(context)
+        if not handles:
+            return -1
+        space = handles.get("space_data")
+        clip = getattr(space, "clip", None) if space else None
+        if clip is None:
+            return -1
+        try:
+            return sum(len(t.markers) for t in clip.tracking.tracks)
+        except Exception:
+            return -1
 
     def _poll():
         sc = context.scene
         if sc is None:
-            _log("Timer: kein Scene-Kontext mehr – breche ab")
+            _log("Timer: kein Scene-Kontext – stop")
             return None
-        cur = int(sc.frame_current)
-        if cur > state["max"]:
-            state["max"] = cur
 
+        cur_frame = int(sc.frame_current)
+        cur_count = _marker_count()
+        if cur_frame > state["max_frame"]:
+            state["max_frame"] = cur_frame
+
+        # --- settle-Phase: auf Stabilität warten (Frame & Markerzahl) ---
         if state["phase"] == "settle":
-            if state["last"] == cur:
-                state["stable"] += 1
-            else:
-                state["last"] = cur
-                state["stable"] = 0
-            _log(f"Timer/settle: cur={cur}, stable={state['stable']}")
+            same = (state["last_frame"] == cur_frame) and (state["last_count"] == cur_count)
+            state["stable"] = state["stable"] + 1 if same else 0
+            state["last_frame"], state["last_count"] = cur_frame, cur_count
+            _log(f"Timer/settle: frame={cur_frame}, count={cur_count}, stable={state['stable']}")
             if state["stable"] >= settle_ticks:
                 try:
                     sc.frame_set(target_frame)
@@ -105,23 +117,24 @@ def _schedule_playhead_restore(context: bpy.types.Context, target_frame: int,
                 state["enforce"] = 0
             return interval
 
-        # enforce-Phase: ein paar Ticks lang "festnageln"
-        if cur != target_frame:
+        # --- enforce-Phase: eine Weile auf target halten ---
+        if cur_frame != target_frame:
             try:
                 sc.frame_set(target_frame)
-                _log(f"Timer/enforce: korrigiere Frame {cur} -> {target_frame}")
+                _log(f"Timer/enforce: korrigiere {cur_frame} -> {target_frame}")
             except Exception as ex:
                 _log(f"Timer/enforce: frame_set Fehler: {ex}")
             state["enforce"] = 0
         else:
             state["enforce"] += 1
-            _log(f"Timer/enforce: ok (cur={cur}), ok_ticks={state['enforce']}")
+            _log(f"Timer/enforce: ok (cur={cur_frame}), ok_ticks={state['enforce']}")
+
         if state["enforce"] >= enforce_ticks:
-            # Finale Aktualisierung + Token erst jetzt setzen
+            # Finale Aktualisierung + optional Token setzen
             if info_ref is not None:
                 try:
-                    info_ref["tracked_until"] = state["max"]
-                    _log(f"Timer: final tracked_until={state['max']}")
+                    info_ref["tracked_until"] = state["max_frame"]
+                    _log(f"Timer: final tracked_until={state['max_frame']}")
                     if wm is not None:
                         wm["bw_tracking_last_info"] = info_ref
                 except Exception:
@@ -133,7 +146,7 @@ def _schedule_playhead_restore(context: bpy.types.Context, target_frame: int,
                 except Exception as ex:
                     _log(f"Timer: Token-Set Fehler: {ex}")
             _log("Timer: fertig – entferne Timer")
-            return None  # Timer entfernen
+            return None
         return interval
 
     try:
