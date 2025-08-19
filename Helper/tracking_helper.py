@@ -70,17 +70,25 @@ def _set_frame_and_notify(frame: int, *, verbose: bool = True) -> None:
         scene.frame_current = frame
 
     # UI‑Wechsel wie Benutzerinteraktion
-    for window, area in _iter_clip_areas():
-        override = {'window': window, 'screen': window.screen, 'area': area, 'region': None}
-        try:
-            bpy.ops.anim.change_frame(override, frame=frame)
-            if verbose:
-                _log(f"anim.change_frame in Area id={getattr(area,'as_pointer',lambda:None)()} ok")
-        except Exception as ex:
-            _log(f"anim.change_frame Exception in Area: {ex!r}")
-    _redraw_clip_editors(None)
-    if verbose:
-        _log(f"Reset fertig – aktuell: {scene.frame_current}")
+for window, area in _iter_clip_areas():
+    # WINDOW-Region suchen
+    region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+    if not region:
+        _log("Keine WINDOW-Region in Area gefunden – überspringe anim.change_frame")
+        continue
+
+    override = {
+        'window': window,
+        'screen': window.screen,
+        'area': area,
+        'region': region,
+    }
+    try:
+        bpy.ops.anim.change_frame(override, frame=frame)
+        _log(f"anim.change_frame OK (Area={area.as_pointer()})")
+    except Exception as ex:
+        _log(f"anim.change_frame Exception (Area={area.as_pointer()}): {ex!r}")
+
 
 
 # -----------------------------------------------------------------------------
