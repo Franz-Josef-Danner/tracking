@@ -62,8 +62,13 @@ def _clip_editor_handles(ctx: bpy.types.Context) -> Optional[Dict[str, Any]]:
 def _schedule_playhead_restore(context: bpy.types.Context, target_frame: int,
                                *, interval: float = 0.10,
                                settle_ticks: int = 8,
-                               enforce_ticks: int = 10) -> None:
-    """Stellt den Playhead **nach Abschluss** der modalen Bewegung wieder her.
+                               enforce_ticks: int = 10,
+                               wm: Optional[bpy.types.WindowManager] = None,
+                               coord_token: str = "",
+                               info_ref: Optional[dict] = None) -> None:
+    """Stellt den Playhead **nach Abschluss** der modalen Bewegung wieder her
+    und signalisiert erst **dann** das Token. Aktualisiert optional `info_ref`
+    mit dem maximal erreichten Frame (tracked_until).
 
     Ablauf:
     - *settle*-Phase: Warten, bis sich `frame_current` `settle_ticks` mal
@@ -71,7 +76,7 @@ def _schedule_playhead_restore(context: bpy.types.Context, target_frame: int,
     - *enforce*-Phase: Danach `enforce_ticks` lang sicherstellen, dass der
       Playhead auf `target_frame` bleibt (falls spät noch etwas verschiebt).
     """
-    state = {"last": None, "stable": 0, "phase": "settle", "enforce": 0}
+    state = {"last": None, "stable": 0, "phase": "settle", "enforce": 0, "max": int(target_frame)}
     _log(f"Timer registrieren: target_frame={target_frame}, interval={interval}s, settle={settle_ticks}, enforce={enforce_ticks}")
 
     def _poll():
@@ -80,6 +85,8 @@ def _schedule_playhead_restore(context: bpy.types.Context, target_frame: int,
             _log("Timer: kein Scene-Kontext mehr – breche ab")
             return None
         cur = int(sc.frame_current)
+        if cur > state["max"]:
+            state["max"] = cur
 
         if state["phase"] == "settle":
             if state["last"] == cur:
@@ -110,6 +117,21 @@ def _schedule_playhead_restore(context: bpy.types.Context, target_frame: int,
             state["enforce"] += 1
             _log(f"Timer/enforce: ok (cur={cur}), ok_ticks={state['enforce']}")
         if state["enforce"] >= enforce_ticks:
+            # Finale Aktualisierung + Token erst jetzt setzen
+            if info_ref is not None:
+                try:
+                    info_ref["tracked_until"] = state["max"]
+                    _log(f"Timer: final tracked_until={state['max']}")
+                    if wm is not None:
+                        wm["bw_tracking_last_info"] = info_ref
+                except Exception:
+                    pass
+            if wm is not None and coord_token:
+                try:
+                    wm["bw_tracking_done_token"] = coord_token
+                    _log(f"Timer: Token gesetzt -> {coord_token}")
+                except Exception as ex:
+                    _log(f"Timer: Token-Set Fehler: {ex}")
             _log("Timer: fertig – entferne Timer")
             return None  # Timer entfernen
         return interval
@@ -117,11 +139,16 @@ def _schedule_playhead_restore(context: bpy.types.Context, target_frame: int,
     try:
         bpy.app.timers.register(_poll, first_interval=interval)
     except Exception as ex:
-        _log(f"Timer-Registrierung fehlgeschlagen: {ex} – setze sofort target")
+        _log(f"Timer-Registrierung fehlgeschlagen: {ex} – setze sofort target & Token")
         try:
             context.scene.frame_set(target_frame)
         except Exception as ex2:
             _log(f"Fallback frame_set Fehler: {ex2}")
+        if wm is not None and coord_token:
+            try:
+                wm["bw_tracking_done_token"] = coord_token
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -192,9 +219,20 @@ def track_to_scene_end_fn(context: bpy.types.Context, *, coord_token: str = "", 
                     sequence=True,
                 )
                 _log(f"Operator-Return (INVOKE): {ret}")
+            # Der Operator läuft modal weiter → tracked_until ermitteln wir per Timer
             tracked_until = int(context.scene.frame_current)
             _log(f"tracked_until (sofort nach Call): {tracked_until}")
-        _schedule_playhead_restore(context, start_frame)
+        # Info-Dict anlegen, aber Token **noch nicht** setzen – das übernimmt der Timer
+        info = {
+            "start_frame": start_frame,
+            "tracked_until": tracked_until,  # wird vom Timer auf max aktualisiert
+            "scene_end": end_frame,
+            "backwards": False,
+            "sequence": True,
+            "mode": "INVOKE",
+        }
+        wm["bw_tracking_last_info"] = info
+        _schedule_playhead_restore(context, start_frame, wm=wm, coord_token=coord_token, info_ref=info)
     else:
         with remember_playhead(context) as start_frame:
             with context.temp_override(**handles):
@@ -208,9 +246,9 @@ def track_to_scene_end_fn(context: bpy.types.Context, *, coord_token: str = "", 
             tracked_until = int(context.scene.frame_current)
             _log(f"tracked_until (nach EXEC): {tracked_until}")
 
-    if coord_token:
+    if not use_invoke and coord_token:
         wm["bw_tracking_done_token"] = coord_token
-        _log(f"WM-Token gesetzt -> {coord_token}")
+        _log(f"WM-Token gesetzt (EXEC) -> {coord_token}")
 
     info = {
         "start_frame": start_frame,
