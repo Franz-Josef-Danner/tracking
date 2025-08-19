@@ -32,42 +32,67 @@ __all__ = (
 # Utilities
 # -----------------------------------------------------------------------------
 
-def _get_clip_from_context(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
-    """Versucht, einen aktiven MovieClip aus dem CLIP_EDITOR zu holen."""
-    area = getattr(context, "area", None)
-    if area and area.type == 'CLIP_EDITOR':
-        space = getattr(context, "space_data", None)
-        if space and getattr(space, "clip", None) is not None:
-            return space.clip
-    # Fallback: in allen Fenstern/Areas suchen
-    for window in context.window_manager.windows:
+def _iter_clip_areas():
+    wm = bpy.context.window_manager
+    for window in wm.windows:
         for area in window.screen.areas:
             if area.type == 'CLIP_EDITOR':
-                space = area.spaces.active
-                if getattr(space, "clip", None) is not None:
-                    return space.clip
+                yield window, area
+
+
+def _get_active_clip_in_area(area: bpy.types.Area) -> Optional[bpy.types.MovieClip]:
+    space = area.spaces.active if hasattr(area, "spaces") else None
+    if space and getattr(space, "clip", None) is not None:
+        return space.clip
     return None
 
 
-def _redraw_clip_editors(context: bpy.types.Context) -> None:
+def _get_any_clip() -> Optional[bpy.types.MovieClip]:
+    for _w, area in _iter_clip_areas():
+        clip = _get_active_clip_in_area(area)
+        if clip is not None:
+            return clip
+    return None
+
+
+def _redraw_clip_editors(_context: bpy.types.Context | None = None) -> None:
     """Force‑Redraw aller Clip‑Editoren."""
-    for window in context.window_manager.windows:
-        for area in window.screen.areas:
-            if area.type == 'CLIP_EDITOR':
-                for region in area.regions:
-                    if region.type == 'WINDOW':
-                        region.tag_redraw()
+    for _w, area in _iter_clip_areas():
+        for region in area.regions:
+            if region.type == 'WINDOW':
+                region.tag_redraw()
+
+
+def _set_frame_and_notify(frame: int) -> None:
+    """Robuster Frame‑Reset mit UI‑Update.
+
+    - setzt `scene.frame_set(frame)`
+    - triggert `bpy.ops.anim.change_frame` (pro CLIP‑Area via Override), damit der Clip‑Editor sicher
+      nachzieht (entspricht dem Verhalten in deinem funktionierenden Bidi‑Flow, dort geschieht der
+      Reset im Modal‑Tick → hier emulieren wir das mit einem Timer‑Tick).
+    """
+    scene = bpy.context.scene
+    try:
+        scene.frame_set(frame)
+    except Exception:
+        scene.frame_current = frame
+
+    for window, area in _iter_clip_areas():
+        override = {'window': window, 'screen': window.screen, 'area': area, 'region': None}
+        try:
+            # erzwingt die UI‑Aktualisierung wie ein Benutzer‑Framewechsel
+            bpy.ops.anim.change_frame(override, frame=frame)
+        except Exception:
+            pass
+    _redraw_clip_editors(None)
 
 
 # -----------------------------------------------------------------------------
-# Kern‑Helper: vorwärts tracken (INVOKE, sequence) → nach Ende Reset auf Ursprungs‑Frame
+# Kern‑Helper: vorwärts tracken (INVOKE, sequence) → *nächster Tick* Frame‑Reset
 # -----------------------------------------------------------------------------
 
 def _start_forward_tracking_invoke(context: bpy.types.Context) -> Tuple[bool, str]:
-    """Startet das Vorwärts‑Tracking mit INVOKE + sequence=True.
-
-    Liefert (ok, info) zurück. **Kein** EXEC‑Fallback – Vorgabe verlangt INVOKE.
-    """
+    """Startet das Vorwärts‑Tracking mit INVOKE + sequence=True (ohne EXEC‑Fallback)."""
     try:
         res = bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
         return True, f"track_markers INVOKE → {res}"
@@ -82,73 +107,39 @@ def track_to_scene_end_fn(
 ) -> None:
     """Nur‑Vorwärts‑Tracking (INVOKE, sequence) und **danach** Playhead‑Reset.
 
-    Diese Funktion ist **ohne eigenen Operator** nutzbar (Regel 1) und gibt selbst nichts zurück.
-    Der Abschluss wird über `wm["bw_tracking_done_token"]` signalisiert, kompatibel zum
-    Orchestrator. (Vorbild/Referenzlogik: bidirektionaler Operator mit Stabilitäts‑Check.)
-    """
-    wm = context.window_manager
-    scene = context.scene
+    Entspricht deinen Regeln 1–4. Kein eigener Operator – reine Funktion.
 
-    # 1) Preconditions: aktiver Clip vorhanden?
-    clip = _get_clip_from_context(context)
+    WICHTIG: Wir resetten **nicht sofort** in derselben Ausführung, sondern auf dem **nächsten UI‑Tick**
+    via `bpy.app.timers.register(...)`, um das Verhalten des funktionierenden bidi‑Operators nachzuahmen,
+    der den Reset ebenfalls **asynchron im Modal‑Tick** setzt. (Siehe deine Datei `bidirectional_track.py`.)
+    """
+    # Preconditions
+    clip = _get_any_clip()
     if clip is None:
         raise RuntimeError("Kein aktiver MovieClip im CLIP_EDITOR gefunden.")
 
-    # 2) Ursprungs‑Frame merken (für Reset nach Abschluss)
+    scene = context.scene
+    wm = context.window_manager
+
     origin_frame: int = int(scene.frame_current)
 
-    # 3) Vorwärts‑Tracking via INVOKE_DEFAULT starten (Regel 2 & 3)
     ok, info = _start_forward_tracking_invoke(context)
     if not ok:
         raise RuntimeError(info)
 
-    # 4) Timer registrieren, der auf **Ende** des Trackings wartet (Stabilität über 2 Ticks)
-    state = {
-        "prev_frame": -10**9,
-        "prev_count": -10**9,
-        "stable": 0,
-        "origin": origin_frame,
-        "token": coord_token,
-    }
+    # -- Delayed Reset: exakt wie im Bidi‑Flow wird *nach* Start des Vorwärtstrackings
+    #    in der nächsten Tick‑Iteration auf den Ursprungsframe zurückgestellt.
+    def _tick_once() -> Optional[float]:
+        _set_frame_and_notify(origin_frame)
+        if coord_token:
+            wm["bw_tracking_done_token"] = coord_token
+        wm["bw_tracking_last_info"] = {
+            "start_frame": origin_frame,
+            "tracked_until": int(bpy.context.scene.frame_current),
+            "mode": "INVOKE",
+            "note": info,
+        }
+        return None
 
-    def _is_tracking_stable() -> bool:
-        # Zähle Marker (gesamt) und lese aktuellen Frame – heuristisch ausreichend, wie im Bidi‑Op.
-        current_frame = int(scene.frame_current)
-        try:
-            current_count = sum(len(t.markers) for t in clip.tracking.tracks)
-        except Exception:
-            current_count = -1
-        if state["prev_frame"] == current_frame and state["prev_count"] == current_count:
-            state["stable"] += 1
-        else:
-            state["stable"] = 0
-        state["prev_frame"] = current_frame
-        state["prev_count"] = current_count
-        # Zwei aufeinanderfolgende stabile Ticks ⇒ fertig (analog zum Beispielcode)
-        return state["stable"] >= 2
-
-    def _timer_cb() -> Optional[float]:
-        try:
-            if not _is_tracking_stable():
-                return 0.25  # weiter pollen
-            # Fertig erkannt → Reset auf Ursprungs‑Frame (Regel 4)
-            try:
-                scene.frame_set(state["origin"])
-            except Exception:
-                scene.frame_current = state["origin"]
-            _redraw_clip_editors(context)
-            # Token/Info für Orchestrator setzen
-            if state["token"]:
-                wm["bw_tracking_done_token"] = state["token"]
-            wm["bw_tracking_last_info"] = {
-                "start_frame": state["origin"],
-                "tracked_until": int(scene.frame_current),
-                "mode": "INVOKE",
-                "note": info,
-            }
-        finally:
-            # Timer beenden (None)
-            return None
-
-    # Timer starten (poll alle 0.25s)
-    bpy.app.timers.register(_timer_cb, first_interval=0.25)
+    # kurzer Delay (0.1s) – genug, damit INVOKE startet, aber gefühlt „sofort“ für den Nutzer
+    bpy.app.timers.register(_tick_once, first_interval=0.1)
