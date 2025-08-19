@@ -68,7 +68,7 @@ def _ensure_bw_op_registered() -> None:
 # ------------------------------------------------------------
 # Operator (Coordinator)
 # ------------------------------------------------------------
-class CLIP_OT_tracking_coordinator(bpy.types.Operator):
+class BW_OT_track_simple_forward(bpy.types.Operator):
     """Startet nur den simplen Track‑Helper (INVOLVE_DEFAULT, forwards, sequence=True)."""
 
     bl_idname = "clip.tracking_coordinator"
