@@ -106,29 +106,3 @@ def track_to_scene_end_fn(context: bpy.types.Context, *, coord_token: str = "") 
     }
     wm["bw_tracking_last_info"] = info
     return info
-
-
-# =========================
-# File: Helper/__init__.py
-# =========================
-# SPDX-License-Identifier: GPL-2.0-or-later
-"""
-Helper/__init__.py – Function-only Export.
-
-- Exportiert `track_to_scene_end_fn` für den Coordinator und andere Operatoren.
-- `register()`/`unregister()` sind **No-Ops**, damit bestehende Top-Level-Registrar
-  sie gefahrlos aufrufen kann.
-"""
-from __future__ import annotations
-
-from .tracking_helper import track_to_scene_end_fn  # noqa: F401
-
-__all__ = ["track_to_scene_end_fn", "register", "unregister"]
-
-
-def register() -> None:  # No-Op, für Kompatibilität
-    print("[Helper] register() noop (function-only)")
-
-
-def unregister() -> None:  # No-Op, für Kompatibilität
-    print("[Helper] unregister() noop (function-only)")
