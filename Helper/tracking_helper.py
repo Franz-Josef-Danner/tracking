@@ -136,7 +136,7 @@ def track_to_scene_end_fn(
     - INVOKE_DEFAULT, backwards=False, sequence=True (Regel 3)
     - Playhead‑Reset auf Ursprungs‑Frame (Regel 4)
 
-    Mit **Debug‑Logs** und einer Watch‑Loop, die den Playhead für einige Ticks stabil hält.
+    Mit **Debug‑Logs**, Frame‑**Progress‑Probe** und einer Watch‑Loop.
     """
     wm = context.window_manager
     scene = context.scene
@@ -151,14 +151,13 @@ def track_to_scene_end_fn(
     if debug:
         _log(f"Clip Name: {getattr(clip,'name','<unnamed>')}")
 
-    # Startframe bestimmen: explizit (falls übergeben) oder aktueller Frame
+    # Startframe bestimmen
     if start_frame is not None:
         try:
             origin_frame = int(start_frame)
         except Exception:
             origin_frame = int(scene.frame_current)
         else:
-            # In Szenenbereich clampen
             origin_frame = max(int(scene.frame_start), min(int(scene.frame_end), origin_frame))
     else:
         origin_frame = int(scene.frame_current)
@@ -166,8 +165,32 @@ def track_to_scene_end_fn(
         _log(f"Origin Frame: {origin_frame} (source={'param' if start_frame is not None else 'scene'})")
         _log(f"Vor Start: furthest_tracked={_furthest_tracked_frame(clip)}")
 
+    # Progress‑Probe: misst, ob sich der Szenen‑Frame *während* INVOKE bewegt
+    probe = {
+        "changes": 0,
+        "max_seen": origin_frame,
+        "last": origin_frame,
+        "done": False,
+    }
+
+    def _probe_progress() -> Optional[float]:
+        if probe["done"]:
+            return None
+        cur = int(bpy.context.scene.frame_current)
+        if cur != probe["last"]:
+            probe["changes"] += 1
+            probe["last"] = cur
+            if cur > probe["max_seen"]:
+                probe["max_seen"] = cur
+            if debug:
+                _log(f"[Probe] scene.frame_current bewegt → {cur} (changes={probe['changes']}, max_seen={probe['max_seen']})")
+        return 0.1
+
+    bpy.app.timers.register(_probe_progress, first_interval=0.1)
+
     ok, info = _start_forward_tracking_invoke(context)
     if not ok:
+        probe["done"] = True
         raise RuntimeError(info)
 
     # Diagnose + erster Reset nach kleinem Delay --------------------------------
@@ -200,6 +223,13 @@ def track_to_scene_end_fn(
                 _log(f"Watch: Frame != origin ({cur} != {origin_frame}) → setze erneut")
             _set_frame_and_notify(origin_frame, verbose=False)
         if state["stable"] >= watch_stable_ticks:
+            probe["done"] = True
+            # Abschluss‑Summary
+            if debug:
+                _log(
+                    f"Summary: probe.changes={probe['changes']}, probe.max_seen={probe['max_seen']}, "
+                    f"furthest_tracked={_furthest_tracked_frame(clip)}"
+                )
             if coord_token:
                 wm["bw_tracking_done_token"] = coord_token
             wm["bw_tracking_last_info"] = {
@@ -208,9 +238,11 @@ def track_to_scene_end_fn(
                 "mode": "INVOKE",
                 "note": info,
                 "watch_stable": state["stable"],
+                "probe_changes": probe["changes"],
+                "probe_max_seen": probe["max_seen"],
             }
             if debug:
-                _log("Watch: stabil erreicht → Token gesetzt, beende Watch")
+                _log("Watch: stabil erreicht → Token gesetzt, beende Watch & Probe")
             return None
         return watch_interval
 
