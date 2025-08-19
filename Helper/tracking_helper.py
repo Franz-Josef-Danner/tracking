@@ -2,23 +2,19 @@
 """
 Helper/tracking_helper.py
 
-Fix:
-- Entfernt den zirkulären Import (dieses Modul importiert **nicht** mehr sich selbst).
-- Bietet die Funktions‑API, die vom Coordinator genutzt wird.
+Anforderung umgesetzt (nur Funktion, kein eigener Operator):
+- Regel 1: **Kein eigener Operator** – reine Funktions‑API zum Aufruf durch den Orchestrator.
+- Regel 2: **Nur vorwärts** tracken.
+- Regel 3: Tracking via **'INVOKE_DEFAULT'**, `backwards=False`, `sequence=True`.
+- Regel 4: **Playhead nach dem Tracken** robust auf den Ursprungs‑Frame zurücksetzen (erst **nachdem** das
+  Vorwärtstracking fertig ist).
 
-Regeln umgesetzt:
-1) Nur vorwärts tracken → `backwards=False`.
-2) Operator‑Aufruf als `'INVOKE_DEFAULT'` (fallback EXEC), mit `sequence=True`.
-3) Nach dem Tracken den Playhead auf den Ursprungs‑Frame zurücksetzen + Viewer redraw.
-
-Hinweis zur INVOKE/EXEC‑Wahl:
-`INVOKE_DEFAULT` startet in Blender üblicherweise eine modale Ausführung. Da eine verlässliche
-Fertigstellungs‑Erkennung aus einem reinen Funktions‑Helper heraus nicht trivial ist, erzwingt diese
-Funktion als Fallback einen synchronen `'EXEC_DEFAULT'`‑Aufruf, wenn der INVOKE‑Pfad nicht sofort
-startet. Dadurch können wir den Playhead deterministisch zurücksetzen und das Token setzen.
-
-Der Coordinator (`CLIP_OT_tracking_coordinator`) ruft diese Funktion mit `use_invoke=True` auf.
-Das wird respektiert; sollte INVOKE nicht verfügbar sein, wird EXEC genutzt und geloggt.
+Technik:
+Wir starten das Tracking mit INVOKE (modal) und registrieren einen Timer, der die **Tracking‑Stabilität**
+überwacht (ähnlich wie in deinem bidirektionalen Operator: Frame/Marker‑Zählung über zwei Ticks stabil ⇒
+Tracking gilt als beendet). Erst dann setzen wir den Playhead zurück, taggen Redraw und setzen das Token
+für den Coordinator. Damit wird vermieden, dass der Reset zu früh geschieht. (Vorbild: `CLIP_OT_bidirectional_track`
+– dort funktioniert der Reset, weil über eine kurze Stabilitätsphase gewartet wird.)
 """
 from __future__ import annotations
 
@@ -33,24 +29,29 @@ __all__ = (
 
 
 # -----------------------------------------------------------------------------
-# kleine Utilities
+# Utilities
 # -----------------------------------------------------------------------------
 
-def _get_clip_area(context: bpy.types.Context) -> Optional[bpy.types.Area]:
-    for area in getattr(context.window.screen, "areas", []):
-        if area.type == 'CLIP_EDITOR':
-            return area
+def _get_clip_from_context(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
+    """Versucht, einen aktiven MovieClip aus dem CLIP_EDITOR zu holen."""
+    area = getattr(context, "area", None)
+    if area and area.type == 'CLIP_EDITOR':
+        space = getattr(context, "space_data", None)
+        if space and getattr(space, "clip", None) is not None:
+            return space.clip
+    # Fallback: in allen Fenstern/Areas suchen
+    for window in context.window_manager.windows:
+        for area in window.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                space = area.spaces.active
+                if getattr(space, "clip", None) is not None:
+                    return space.clip
     return None
 
 
 def _redraw_clip_editors(context: bpy.types.Context) -> None:
-    """Force‑Redraw aller Clip‑Editoren.
-
-    Wird nach dem Playhead‑Reset aufgerufen, damit der sichtbare Viewer
-    den Ursprungs‑Frame zeigt.
-    """
-    wm = context.window_manager
-    for window in getattr(bpy.context, "window_manager", wm).windows:
+    """Force‑Redraw aller Clip‑Editoren."""
+    for window in context.window_manager.windows:
         for area in window.screen.areas:
             if area.type == 'CLIP_EDITOR':
                 for region in area.regions:
@@ -59,97 +60,95 @@ def _redraw_clip_editors(context: bpy.types.Context) -> None:
 
 
 # -----------------------------------------------------------------------------
-# Kern‑Helper: bis Szenenende tracken, Playhead zurück, Token setzen
+# Kern‑Helper: vorwärts tracken (INVOKE, sequence) → nach Ende Reset auf Ursprungs‑Frame
 # -----------------------------------------------------------------------------
 
-def _do_track_forward(context: bpy.types.Context, *, use_invoke: bool) -> Tuple[bool, str]:
-    """Startet das Vorwärts‑Tracking mit `sequence=True`.
+def _start_forward_tracking_invoke(context: bpy.types.Context) -> Tuple[bool, str]:
+    """Startet das Vorwärts‑Tracking mit INVOKE + sequence=True.
 
-    Returns (ok, message)
+    Liefert (ok, info) zurück. **Kein** EXEC‑Fallback – Vorgabe verlangt INVOKE.
     """
     try:
-        if use_invoke:
-            # Regel 2: INVOKE_DEFAULT, sequence=True, backwards=False
-            result = bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
-            # INVOKE sollte i. d. R. 'RUNNING_MODAL' liefern – wir können nicht sicher
-            # auf das Ende warten. Wenn INVOKE unmittelbar fehlschlägt, fallback auf EXEC.
-            if result not in {{'RUNNING_MODAL', {'RUNNING_MODAL'}}}:
-                exec_res = bpy.ops.clip.track_markers('EXEC_DEFAULT', backwards=False, sequence=True)
-                return (exec_res == {'FINISHED'}, f"EXEC_DEFAULT fallback → {exec_res}")
-            return (True, "INVOKE_DEFAULT gestartet (modal)")
-        else:
-            exec_res = bpy.ops.clip.track_markers('EXEC_DEFAULT', backwards=False, sequence=True)
-            return (exec_res == {'FINISHED'}, f"EXEC_DEFAULT → {exec_res}")
-    except Exception as ex:  # noqa: BLE001 – wir wollen jeden Ops‑Fehler abfangen
-        return (False, f"Track‑Fehler: {ex}")
+        res = bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
+        return True, f"track_markers INVOKE → {res}"
+    except Exception as ex:  # noqa: BLE001
+        return False, f"Track‑Fehler: {ex}"
 
 
 def track_to_scene_end_fn(
     context: bpy.types.Context,
     *,
     coord_token: Optional[str] = None,
-    use_invoke: bool = True,
 ) -> None:
-    """Trackt die aktiven Marker **vorwärts** bis zum Szenenende und setzt anschließend
-    den Playhead auf den Ursprungs‑Frame zurück.
+    """Nur‑Vorwärts‑Tracking (INVOKE, sequence) und **danach** Playhead‑Reset.
 
-    Zusätzlich: optionales Token‑Feedback an den Coordinator über `wm["bw_tracking_done_token"]`.
+    Diese Funktion ist **ohne eigenen Operator** nutzbar (Regel 1) und gibt selbst nichts zurück.
+    Der Abschluss wird über `wm["bw_tracking_done_token"]` signalisiert, kompatibel zum
+    Orchestrator. (Vorbild/Referenzlogik: bidirektionaler Operator mit Stabilitäts‑Check.)
     """
-    scene = context.scene
     wm = context.window_manager
+    scene = context.scene
 
-    # Ursprungs‑Frame merken (Regel 3)
+    # 1) Preconditions: aktiver Clip vorhanden?
+    clip = _get_clip_from_context(context)
+    if clip is None:
+        raise RuntimeError("Kein aktiver MovieClip im CLIP_EDITOR gefunden.")
+
+    # 2) Ursprungs‑Frame merken (für Reset nach Abschluss)
     origin_frame: int = int(scene.frame_current)
 
-    # Track auslösen (Regel 1 & 2)
-    ok, info = _do_track_forward(context, use_invoke=use_invoke)
+    # 3) Vorwärts‑Tracking via INVOKE_DEFAULT starten (Regel 2 & 3)
+    ok, info = _start_forward_tracking_invoke(context)
+    if not ok:
+        raise RuntimeError(info)
 
-    # Wenn INVOKE gestartet wurde, haben wir i. d. R. RUNNING_MODAL. Wir kümmern uns **hier**
-    # nur um den deterministischen Teil: Playhead‑Reset & Token setzen, sobald EXEC gelaufen ist
-    # oder INVOKE sofort fertig wurde. Für den INVOKE‑Dauerfall übernimmt der Coordinator das
-    # finale Redraw (er ruft _redraw_clip_editors() selbst) nachdem dieses Modul das Token setzt.
+    # 4) Timer registrieren, der auf **Ende** des Trackings wartet (Stabilität über 2 Ticks)
+    state = {
+        "prev_frame": -10**9,
+        "prev_count": -10**9,
+        "stable": 0,
+        "origin": origin_frame,
+        "token": coord_token,
+    }
 
-    # Bei echtem INVOKE (modal) können wir den Reset nicht unmittelbar machen ohne zu stören.
-    # Daher: wenn INVOKE läuft, registrieren wir einen Timer, der den Reset verzögert ausführt.
-    def _delayed_reset() -> Optional[float]:  # bpy.app.timers callback
-        # Safe‑Reset des Playheads (Regel 3)
+    def _is_tracking_stable() -> bool:
+        # Zähle Marker (gesamt) und lese aktuellen Frame – heuristisch ausreichend, wie im Bidi‑Op.
+        current_frame = int(scene.frame_current)
         try:
-            scene.frame_set(origin_frame)
+            current_count = sum(len(t.markers) for t in clip.tracking.tracks)
         except Exception:
-            scene.frame_current = origin_frame
-        # Viewer aktualisieren
-        _redraw_clip_editors(context)
-        # Feedback für den Coordinator
-        if coord_token:
-            wm["bw_tracking_done_token"] = coord_token
+            current_count = -1
+        if state["prev_frame"] == current_frame and state["prev_count"] == current_count:
+            state["stable"] += 1
+        else:
+            state["stable"] = 0
+        state["prev_frame"] = current_frame
+        state["prev_count"] = current_count
+        # Zwei aufeinanderfolgende stabile Ticks ⇒ fertig (analog zum Beispielcode)
+        return state["stable"] >= 2
+
+    def _timer_cb() -> Optional[float]:
+        try:
+            if not _is_tracking_stable():
+                return 0.25  # weiter pollen
+            # Fertig erkannt → Reset auf Ursprungs‑Frame (Regel 4)
+            try:
+                scene.frame_set(state["origin"])
+            except Exception:
+                scene.frame_current = state["origin"]
+            _redraw_clip_editors(context)
+            # Token/Info für Orchestrator setzen
+            if state["token"]:
+                wm["bw_tracking_done_token"] = state["token"]
             wm["bw_tracking_last_info"] = {
-                "start_frame": origin_frame,
+                "start_frame": state["origin"],
                 "tracked_until": int(scene.frame_current),
-                "mode": "INVOKE" if use_invoke else "EXEC",
+                "mode": "INVOKE",
                 "note": info,
             }
-        return None  # einmalig
+        finally:
+            # Timer beenden (None)
+            return None
 
-    if use_invoke and ok:
-        # leichte Verzögerung, damit der INVOKE‑Operator Zeit zum Starten hat;
-        # der Coordinator wartet modal auf das Token und triggert abschl. Redraw nochmal.
-        import bpy.app.timers  # type: ignore
-
-        bpy.app.timers.register(_delayed_reset, first_interval=0.25)
-        return
-
-    # EXEC‑Pfad oder INVOKE hat sofort beendet → direkt zurücksetzen
-    try:
-        scene.frame_set(origin_frame)
-    except Exception:
-        scene.frame_current = origin_frame
-    _redraw_clip_editors(context)
-
-    if coord_token:
-        wm["bw_tracking_done_token"] = coord_token
-        wm["bw_tracking_last_info"] = {
-            "start_frame": origin_frame,
-            "tracked_until": int(scene.frame_current),
-            "mode": "EXEC" if not use_invoke else "INVOKE/instant",
-            "note": info,
-        }
+    # Timer starten (poll alle 0.25s)
+    bpy.app.timers.register(_timer_cb, first_interval=0.25)
