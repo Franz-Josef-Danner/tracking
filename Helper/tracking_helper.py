@@ -79,15 +79,21 @@ def _set_frame_and_notify(frame: int, *, verbose: bool = True) -> None:
         _log(f"scene.frame_set Exception: {ex!r} – fallback scene.frame_current = {frame}")
         scene.frame_current = frame
 
-    # UI‑Wechsel wie Benutzerinteraktion – benutze *minimales* Override (nur area/region)
-    for area, _window, region in _area_window_region_triplets():
+    # UI‑Wechsel wie Benutzerinteraktion – **vollständiges** Override pro CLIP‑Area
+    for window, area in _iter_clip_areas():
+        region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+        if not region:
+            _log(f"Keine WINDOW‑Region in Area {getattr(area,'as_pointer',lambda:None)()} – überspringe anim.change_frame")
+            continue
+        ctx = bpy.context.copy()
+        ctx['window'] = window
+        ctx['screen'] = window.screen
+        ctx['area'] = area
+        ctx['region'] = region
         try:
-            ctx = bpy.context.copy()
-            ctx['area'] = area
-            ctx['region'] = region
             bpy.ops.anim.change_frame(ctx, frame=frame)
             if verbose:
-                _log(f"anim.change_frame OK (Area={area.as_pointer()})")
+                _log(f"anim.change_frame OK (Area={area.as_pointer()}, Region={region.as_pointer()})")
         except Exception as ex:
             _log(f"anim.change_frame Exception (Area={area.as_pointer()}): {ex!r}")
     _redraw_clip_editors(None)
@@ -96,6 +102,17 @@ def _set_frame_and_notify(frame: int, *, verbose: bool = True) -> None:
 
 
 def _furthest_tracked_frame(clip: bpy.types.MovieClip) -> int:
+    """Ermittle den maximalen Marker‑**frame** im Clip (Diagnose)."""
+    mx = 0
+    try:
+        for tr in clip.tracking.tracks:
+            for m in tr.markers:
+                if int(getattr(m, 'frame', 0)) > mx:
+                    mx = int(m.frame)
+    except Exception:
+        pass
+    return mx
+(clip: bpy.types.MovieClip) -> int:
     """Ermittle den maximalen Marker‑Frame im Clip (Diagnose)."""
     mx = 0
     try:
@@ -209,4 +226,45 @@ def track_to_scene_end_fn(
     # etwas längerer Delay, damit INVOKE zuverlässig anläuft
     if debug:
         _log("Register Timer Tick #1 in 0.25s")
+
+    # Nach Tick #1 halten wir den Playhead ggf. aktiv auf Origin, bis Stabilität erkannt wurde
+    state = {"stable": 0}
+
+    def _watch_reset() -> Optional[float]:
+        cur = int(bpy.context.scene.frame_current)
+        if cur == origin_frame:
+            state["stable"] += 1
+        else:
+            state["stable"] = 0
+            if debug:
+                _log(f"Watch: Frame != origin ({cur} != {origin_frame}) → setze erneut")
+            _set_frame_and_notify(origin_frame, verbose=False)
+        if state["stable"] >= 2:
+            if coord_token:
+                wm["bw_tracking_done_token"] = coord_token
+            wm["bw_tracking_last_info"] = {
+                "start_frame": origin_frame,
+                "tracked_until": cur,
+                "mode": "INVOKE",
+                "note": info,
+                "watch_stable": state["stable"],
+            }
+            if debug:
+                _log("Watch: stabil = 2 → Token gesetzt, beende Watch")
+            return None
+        return 0.2
+
+    def _tick_once() -> Optional[float]:
+        if debug:
+            _log("Timer Tick #1 – versuche Reset auf Origin")
+            _log(f"Tick #1 Diagnose: scene.frame_current={int(bpy.context.scene.frame_current)}, furthest_tracked={_furthest_tracked_frame(clip)}")
+        before = int(bpy.context.scene.frame_current)
+        _set_frame_and_notify(origin_frame, verbose=debug)
+        after = int(bpy.context.scene.frame_current)
+        if debug:
+            _log(f"Timer Tick #1 – Frame vorher={before}, nachher={after}")
+        # Starte Watch‑Loop, die den Playhead hält, bis Stabilität erkannt ist
+        bpy.app.timers.register(_watch_reset, first_interval=0.2)
+        return None
+
     bpy.app.timers.register(_tick_once, first_interval=0.25)
