@@ -158,8 +158,8 @@ def _schedule_playhead_restore(context: bpy.types.Context, target_frame: int,
         if cur_frame != target_frame:
             try:
                 sc.frame_set(target_frame)
-            _redraw_clip_editors(context)
-            _log(f"Timer/enforce: korrigiere {cur_frame} -> {target_frame} + redraw")
+                _redraw_clip_editors(context)
+                _log(f"Timer/enforce: korrigiere {cur_frame} -> {target_frame} + redraw")
             except Exception as ex:
                 _log(f"Timer/enforce: frame_set Fehler: {ex}")
             state["enforce"] = 0
