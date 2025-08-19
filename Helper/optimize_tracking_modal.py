@@ -73,7 +73,7 @@ except Exception:  # pragma: no cover
     track_to_scene_end_fn = None  # type: ignore
 
 try:  # Fehler/Qualitätsmetrik (aus altem System)
-    from .Helper.error_value import error_value  # type: ignore
+    from .error_value import error_value  # type: ignore
 except Exception:  # pragma: no cover
     error_value = None  # type: ignore
 
