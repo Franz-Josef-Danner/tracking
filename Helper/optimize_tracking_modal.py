@@ -1,236 +1,452 @@
+"""Blender-Add-on – funktionaler Optimierungs‑Flow (keine Operatoren)
+
+Ziel
+----
+Die funktionale Portierung der alten, bewährten Optimierung in eine reine
+Funktions‑API. Es gibt **keine** Operatoren in diesem Modul. Stattdessen werden
+Timer‑Callbacks (``bpy.app.timers``) benutzt, um nicht-blockierend zu arbeiten.
+
+Vorgaben des Nutzers
+--------------------
+• Regel 1: kein Operator, nur Funktionen zum Aufrufen.
+• Die Aufrufe für Detect & Track bleiben identisch zur neuen Version
+  (d. h. wir verwenden dieselben Helper‑Funktionen wie dort).
+
+Pseudo‑Code (vereinfacht übertragen)
+------------------------------------
+
+    default setzen: pt = Pattern Size, sus = Search Size
+    flag1 setzen (Pattern/Search übernehmen)
+    Marker setzen
+    track → für jeden Track: f_i = Frames pro Track, e_i = Error → eg_i = f_i / e_i
+    ega = Σ eg_i
+    if ev < 0:
+        ev = ega; pt *= 1.1; sus = pt*2; flag1
+    else:
+        if ega > ev:
+            ev = ega; dg = 4; ptv = pt; pt *= 1.1; sus = pt*2; flag1
+        else:
+            dg -= 1
+            if dg >= 0:
+                pt *= 1.1; sus = pt*2; flag1
+            else:
+                // Motion‑Model‑Schleife (0..4)
+                Pattern size = ptv; Search = ptv*2; flag2 setzen
+                marker setzen; tracken; … → beste Motion wählen
+                // Channel‑Schleife (vv 0..3), R/G/B‑Kombis laut Vorgabe
+
+API‑Überblick
+-------------
+• ``start_optimization(context)`` – öffentlicher Einstieg, startet Ablauf.
+• ``cancel_optimization()`` – bricht ggf. laufende Optimierung ab.
+• Ablauf läuft über ``bpy.app.timers`` und setzt intern Status/Token.
+
+Abhängigkeiten (Helper)
+-----------------------
+Wir verwenden dieselben Helper-Funktionen wie in der neuen Version:
+• ``detect.run_detect_once(context, start_frame: int, handoff_to_pipeline=False)``
+• ``tracking_helper.track_to_scene_end_fn(context, coord_token: str, start_frame: int, ...)``
+
+Beide werden dynamisch importiert; fehlen sie, wird sauber abgebrochen.
+
+Hinweis: Dieses Modul ist bewusst selbsterklärend und ausführlich kommentiert,
+um die Logik später leicht anpassen zu können.
+"""
 from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Optional, Dict, Any, List, Callable
+
 import bpy
-from bpy.types import Operator
-from typing import Optional, Dict, Any
 
 # -----------------------------------------------------------------------------
-# Externe Helper (nur Funktionen, keine Operatoren direkt aus diesem Modul)
+# Dynamische Helper‑Imports (gleichen Signaturen wie in optimize_tracking_modal_neu)
 # -----------------------------------------------------------------------------
-try:
-    # Detect: einzelner Pass, liefert Status {status: RUNNING|READY|FAILED, frame, ...}
+try:  # Detect-Einzelpass
     from .detect import run_detect_once  # type: ignore
 except Exception:  # pragma: no cover
     run_detect_once = None  # type: ignore
 
-try:
-    # Tracking: vorwärts, INVOKE_DEFAULT, sequence=True, Playhead-Reset per Timer
+try:  # Async‑Tracking bis Szenenende, setzt ein Done‑Token im WindowManager
     from .tracking_helper import track_to_scene_end_fn  # type: ignore
 except Exception:  # pragma: no cover
     track_to_scene_end_fn = None  # type: ignore
 
-__all__ = ["CLIP_OT_optimize_tracking_modal"]
+try:  # Fehler/Qualitätsmetrik (aus altem System)
+    from .Helper.error_value import error_value  # type: ignore
+except Exception:  # pragma: no cover
+    error_value = None  # type: ignore
+
+try:  # Marker‑Erstellung (aus altem System)
+    from .detect import perform_marker_detection  # type: ignore
+except Exception:  # pragma: no cover
+    perform_marker_detection = None  # type: ignore
+
+# -----------------------------------------------------------------------------
+# Konfiguration & Mapping
+# -----------------------------------------------------------------------------
+MOTION_MODELS: List[str] = [
+    "Perspective",   # 0 → R: True,  G: False, B: False
+    "Affine",        # 1 → R: True,  G: True,  B: False
+    "LocRotScale",   # 2 → R: False, G: True,  B: False
+    "LocScale",      # 3 → R: False, G: True,  B: True
+    "LocRot",        # 4 → R: False, G: False, B: True
+]
+
+# Channel‑Preset gemäß Vorgabe
+# vv = 0..3 → (R,G,B) wie in der Pseudologik
+CHANNEL_PRESETS = {
+    0: (True, False, False),
+    1: (True, True, False),
+    2: (False, True, False),
+    3: (False, True, True),
+    # Hinweis: Die Pseudo‑Liste zeigt 5 Fälle (0..4) für Motion, aber 4 für Channels.
+}
+
+# -----------------------------------------------------------------------------
+# Hilfsfunktionen: Flags / Defaults setzen
+# -----------------------------------------------------------------------------
+
+def _set_flag1(clip: bpy.types.MovieClip, pattern: int, search: int) -> None:
+    s = clip.tracking.settings
+    s.default_pattern_size = int(pattern)
+    s.default_search_size = int(search)
+    s.default_margin = s.default_search_size
 
 
-class CLIP_OT_optimize_tracking_modal(Operator):
+def _set_flag2_motion_model(clip: bpy.types.MovieClip, model_index: int) -> None:
+    if 0 <= model_index < len(MOTION_MODELS):
+        clip.tracking.settings.default_motion_model = MOTION_MODELS[model_index]
+
+
+def _set_flag3_channels(clip: bpy.types.MovieClip, vv: int) -> None:
+    r, g, b = CHANNEL_PRESETS.get(vv, (True, True, True))
+    s = clip.tracking.settings
+    s.use_default_red_channel = bool(r)
+    s.use_default_green_channel = bool(g)
+    s.use_default_blue_channel = bool(b)
+
+
+# -----------------------------------------------------------------------------
+# Metriken: EGA = Σ (frames_per_track / error_per_track)
+# -----------------------------------------------------------------------------
+
+def _calc_track_quality_sum(context: bpy.types.Context, clip: bpy.types.MovieClip) -> float:
+    """Ermittelt die Gesamtqualität der aktuellen Tracks.
+
+    Erwartet, dass ``error_value`` pro Track einen Error liefert (>=0, sonst 0).
+    Frames pro Track werden über Marker‑Sequenzen (Start..Ende) bestimmt.
     """
-    Optimierungs-Flow ohne direkte Operator-Aufrufe:
-      1) Detect per Helper.detect.run_detect_once (ggf. mehrfach bis READY)
-      2) Tracking vorwärts per Helper.tracking_helper.track_to_scene_end_fn
-      3) Warten auf Fertig-Signal (Token), dann Abschluss
+    if error_value is None:
+        # Fallback: simple Heuristik über Anzahl Keyframes
+        total = 0.0
+        for ob in clip.tracking.objects:
+            for tr in ob.tracks:
+                err = getattr(tr, "average_error", 0.0) or 0.0
+                err = max(err, 1e-12)
+                frames = max(len(tr.markers), 1)
+                total += (frames / err)
+        return float(total)
 
-    Regeln (vom Nutzer):
-      • Regel 1: Kein Operator hier; nur Helper-Funktionen verwenden.
-      • Regel 2: Nur vorwärts tracken.
-      • Regel 3: 'INVOKE_DEFAULT', backwards=False, sequence=True (in tracking_helper implementiert).
-      • Regel 4: Playhead nach dem Tracken zurück auf Ursprungs-Frame (tracking_helper garantiert dies + extra Check).
-    """
-
-    bl_idname = "clip.optimize_tracking_modal"
-    bl_label = "Optimiertes Tracking (Modal)"
-    bl_options = {"REGISTER", "UNDO"}
-
-    # ------------------ interne Zustände ------------------
-    _timer: Optional[bpy.types.Timer] = None
-    _state: str = "INIT"
-    _origin_frame: int = 0
-    _detect_attempts: int = 0
-    _detect_max_attempts: int = 8
-    _last_detect: Dict[str, Any] | None = None
-    _coord_token: str = ""
-
-    # ------------------ Operator Lifecycle ------------------
-    def invoke(self, context, event):
-        return self.execute(context)
-
-    def execute(self, context):
-        # Sanity: Helper vorhanden?
-        if run_detect_once is None:
-            self.report({'ERROR'}, "Helper.detect.run_detect_once nicht verfügbar.")
-            return {'CANCELLED'}
-        if track_to_scene_end_fn is None:
-            self.report({'ERROR'}, "Helper.tracking_helper.track_to_scene_end_fn nicht verfügbar.")
-            return {'CANCELLED'}
-
-        # Ausgangsframe merken
-        self._origin_frame = int(context.scene.frame_current)
-        self._state = "DETECT"
-        self._detect_attempts = 0
-        self._last_detect = None
-        self._coord_token = f"bw_optimize_token_{id(self)}"
-
-        wm = context.window_manager
-        win = getattr(context, "window", None) or getattr(bpy.context, "window", None)
-        if not win:
-            self.report({'ERROR'}, "Kein aktives Window – TIMER kann nicht registriert werden.")
-            return {'CANCELLED'}
-
-        # alten Timer entfernen
-        try:
-            if self._timer:
-                wm.event_timer_remove(self._timer)
-        except Exception:
-            pass
-
-        # Timer registrieren (sanft)
-        self._timer = wm.event_timer_add(0.2, window=win)
-        wm.modal_handler_add(self)
-        print("[Optimize] Start → state=DETECT, origin=", self._origin_frame)
-        return {'RUNNING_MODAL'}
-
-    def cancel(self, context):
-        try:
-            if self._timer:
-                context.window_manager.event_timer_remove(self._timer)
-        except Exception:
-            pass
-        self._timer = None
-
-    # ------------------ Modal-Loop ------------------
-    def modal(self, context, event):
-        try:
-            if event.type == 'ESC':
-                self.report({'WARNING'}, "Optimierung abgebrochen (ESC).")
-                self.cancel(context)
-                return {'CANCELLED'}
-
-            if event.type != 'TIMER':
-                return {'PASS_THROUGH'}
-
-            # Kontext-Validierung (Clip-Editor erforderlich?) – optional
-            space = getattr(context, 'space_data', None)
-            if not space or getattr(space, 'type', '') != 'CLIP_EDITOR':
-                # Nicht hart abbrechen, aber warnen
-                print("[Optimize] WARN: Kein CLIP_EDITOR fokussiert – fahre trotzdem fort.")
-
-            # FSM-Step
-            if self._state == "DETECT":
-                return self._step_detect(context)
-            elif self._state == "TRACK_START":
-                return self._step_track_start(context)
-            elif self._state == "TRACK_WAIT":
-                return self._step_track_wait(context)
-            elif self._state == "FINISH":
-                self.cancel(context)
-                return {'FINISHED'}
-            else:
-                # Unbekannter Zustand → sauber beenden
-                self.report({'ERROR'}, f"Unbekannter Zustand: {self._state}")
-                self.cancel(context)
-                return {'CANCELLED'}
-        except Exception as ex:  # noqa: BLE001
-            self.report({'ERROR'}, f"Modal crashed: {ex}")
-            self.cancel(context)
-            return {'CANCELLED'}
-
-    # ------------------ Zustands-Implementierungen ------------------
-    def _step_detect(self, context):
-        """Führt einzelne Detect-Pässe aus, bis READY/FAILED gemeldet wird."""
-        scn = context.scene
-        # Safety: nicht parallel, falls ein Lock aus anderem Code aktiv wäre
-        if bool(scn.get("__detect_lock", False)):
-            # Warten bis Detect frei ist
-            return {'RUNNING_MODAL'}
-
-        # Detect-Pass
-        self._detect_attempts += 1
-        print(f"[Optimize][Detect] attempt {self._detect_attempts}/{self._detect_max_attempts} @frame={self._origin_frame}")
-        try:
-            res = run_detect_once(
-                context,
-                start_frame=int(self._origin_frame),
-                handoff_to_pipeline=False,
-            )
-        except Exception as ex:  # noqa: BLE001
-            self.report({'ERROR'}, f"Detect-Helper Exception: {ex}")
-            return {'CANCELLED'}
-
-        self._last_detect = dict(res or {})
-        status = str(self._last_detect.get('status', 'FAILED'))
-        print(f"[Optimize][Detect] status={status} → data={self._last_detect}")
-
-        if status == 'RUNNING' and self._detect_attempts < self._detect_max_attempts:
-            # weiterer Versuch im nächsten Timer-Tick
-            return {'RUNNING_MODAL'}
-
-        if status == 'READY' or (status == 'RUNNING' and self._detect_attempts >= self._detect_max_attempts):
-            # Weiter zum Tracking
-            self._state = "TRACK_START"
-            return {'RUNNING_MODAL'}
-
-        # FAILED → trotzdem versuchen zu tracken (best effort)
-        self._state = "TRACK_START"
-        return {'RUNNING_MODAL'}
-
-    def _step_track_start(self, context):
-        """Startet das Vorwärts-Tracking via Helper und initialisiert das Feedback-Token."""
-        wm = context.window_manager
-        # Token vorab bereinigen
-        try:
-            if wm.get("bw_tracking_done_token", None) == self._coord_token:
-                del wm["bw_tracking_done_token"]
-        except Exception:
-            pass
-
-        # Tracking starten (nicht blockierend; Helper registriert Timer & setzt Token bei Fertig)
-        print(f"[Optimize][Track] start forward tracking (token={self._coord_token})")
-        try:
-            track_to_scene_end_fn(
-                context,
-                coord_token=self._coord_token,
-                start_frame=int(self._origin_frame),
-                debug=True,
-                first_delay=0.25,
-            )
-        except Exception as ex:  # noqa: BLE001
-            self.report({'ERROR'}, f"Tracking-Helper Exception: {ex}")
-            return {'CANCELLED'}
-
-        self._state = "TRACK_WAIT"
-        return {'RUNNING_MODAL'}
-
-    def _step_track_wait(self, context):
-        """Wartet, bis tracking_helper das Fertig-Token setzt; prüft zusätzlich Playhead-Reset."""
-        wm = context.window_manager
-        token = wm.get("bw_tracking_done_token", None)
-        if token != self._coord_token:
-            # noch nicht fertig
-            return {'RUNNING_MODAL'}
-
-        # Fertig – Token aufräumen
-        try:
-            del wm["bw_tracking_done_token"]
-        except Exception:
-            pass
-
-        # Regel 4: Playhead-Reset sicherstellen (Scene + Editoren)
-        # tracking_helper erledigt das bereits, aber wir prüfen hart und korrigieren ggf.
-        cur = int(context.scene.frame_current)
-        if cur != int(self._origin_frame):
-            print(f"[Optimize][Track] WARN: scene.frame_current={cur} != origin={self._origin_frame} → set")
+    # Wenn Helper vorhanden: nutze präzise Fehlerbewertung
+    total = 0.0
+    for ob in clip.tracking.objects:
+        for tr in ob.tracks:
             try:
-                context.scene.frame_set(int(self._origin_frame))
+                err = float(error_value(context, tr))  # type: ignore[arg-type]
             except Exception:
-                context.scene.frame_current = int(self._origin_frame)
+                err = getattr(tr, "average_error", 0.0) or 0.0
+            err = max(err, 1e-12)
+            frames = max(len(tr.markers), 1)
+            total += (frames / err)
+    return float(total)
 
-        # Abschluss
-        self._state = "FINISH"
-        print("[Optimize] FINISH")
-        return {'RUNNING_MODAL'}
+
+# -----------------------------------------------------------------------------
+# Detect + Track orchestration (nicht blockierend) via WindowManager‑Token
+# -----------------------------------------------------------------------------
+@dataclass
+class _AsyncTracker:
+    context: bpy.types.Context
+    origin_frame: int
+    token: str = field(default_factory=lambda: f"bw_optimize_token_{id(object())}")
+
+    def start(self) -> None:
+        assert track_to_scene_end_fn is not None, "tracking_helper fehlt"
+        # altes Token ggf. räumen
+        wm = self.context.window_manager
+        if wm.get("bw_tracking_done_token", None) == self.token:
+            del wm["bw_tracking_done_token"]
+        # Start
+        track_to_scene_end_fn(
+            self.context,
+            coord_token=self.token,
+            start_frame=int(self.origin_frame),
+            debug=True,
+            first_delay=0.25,
+        )
+
+    def done(self) -> bool:
+        return self.context.window_manager.get("bw_tracking_done_token", None) == self.token
+
+    def clear(self) -> None:
+        wm = self.context.window_manager
+        if wm.get("bw_tracking_done_token", None) == self.token:
+            del wm["bw_tracking_done_token"]
 
 
-# Optional: Register/Unregister – falls das Modul eigenständig getestet wird
-def register():  # pragma: no cover
-    bpy.utils.register_class(CLIP_OT_optimize_tracking_modal)
+# -----------------------------------------------------------------------------
+# Hauptzustand der Optimierung (entspricht Pseudo‑Logik)
+# -----------------------------------------------------------------------------
+@dataclass
+class _State:
+    context: bpy.types.Context
+    clip: bpy.types.MovieClip
+    origin_frame: int
 
-def unregister():  # pragma: no cover
-    bpy.utils.unregister_class(CLIP_OT_optimize_tracking_modal)
+    # Dynamik
+    ev: float = -1.0  # bester bisheriger Score
+    dg: int = 0       # Degression‑Zähler
+    pt: float = 21.0  # Pattern Size
+    ptv: float = 21.0 # Pattern Size (Vorhalte)
+    sus: float = 42.0 # Search Size (≈ 2*pt)
+
+    mo_index: int = 0  # Motion‑Model‑Index (0..4)
+    mov: int = 0       # bestes Motion‑Model
+
+    vv: int = 0        # Channel‑Preset‑Index (0..3)
+    vf: int = 0        # bestes Channel‑Preset
+
+    phase: str = "INIT"
+    tracker: Optional[_AsyncTracker] = None
+
+
+# -----------------------------------------------------------------------------
+# Steuerlogik als Timer‑Pipeline
+# -----------------------------------------------------------------------------
+
+_RUNNING: Optional[_State] = None
+
+
+def start_optimization(context: bpy.types.Context) -> None:
+    """Öffentlicher Einstieg: startet die nicht‑blockierende Optimierung.
+
+    Kann mehrfach aufgerufen werden; ein bestehender Lauf wird vorher beendet.
+    """
+    cancel_optimization()
+
+    space = getattr(context, "space_data", None)
+    if not space or getattr(space, "type", "") != "CLIP_EDITOR":
+        print("[Optimize] WARN: Kein CLIP_EDITOR aktiv – fahre trotzdem fort.")
+
+    clip = getattr(space, "clip", None) or getattr(context.space_data, "clip", None)
+    if not clip:
+        raise RuntimeError("Kein aktiver Movie Clip.")
+
+    st = _State(context=context, clip=clip, origin_frame=int(context.scene.frame_current))
+    st.phase = "FLAG1_INIT"
+    globals()["_RUNNING"] = st
+
+    bpy.app.timers.register(_timer_step, first_interval=0.2)
+    print(f"[Optimize] Start @frame={st.origin_frame}")
+
+
+def cancel_optimization() -> None:
+    global _RUNNING
+    _RUNNING = None
+
+
+# ---------------------- Timer‑Step ----------------------
+
+def _timer_step() -> float | None:
+    st = globals().get("_RUNNING")
+    if not st:
+        return None
+
+    try:
+        if st.phase == "FLAG1_INIT":
+            # Defaults setzen + Marker erzeugen + erster Track
+            _set_flag1(st.clip, int(st.pt), int(st.sus))
+            _ensure_markers(st)
+            _start_track(st)
+            st.phase = "WAIT_TRACK_BASE"
+            return 0.1
+
+        if st.phase == "WAIT_TRACK_BASE":
+            if not st.tracker or not st.tracker.done():
+                return 0.1
+            _finish_track(st)
+            ega = _calc_track_quality_sum(st.context, st.clip)
+            if st.ev < 0:
+                st.ev = ega
+                st.pt *= 1.1
+                st.sus = st.pt * 2
+                _set_flag1(st.clip, int(st.pt), int(st.sus))
+                _start_track(st)
+                st.phase = "WAIT_TRACK_IMPROVE"
+                return 0.1
+            else:
+                return _branch_ev_known(st, ega)
+
+        if st.phase == "WAIT_TRACK_IMPROVE":
+            if not st.tracker or not st.tracker.done():
+                return 0.1
+            _finish_track(st)
+            ega = _calc_track_quality_sum(st.context, st.clip)
+            return _branch_ev_known(st, ega)
+
+        if st.phase == "MOTION_LOOP_SETUP":
+            # Setze pt := ptv, sus := ptv*2
+            st.pt = st.ptv
+            st.sus = st.pt * 2
+            _set_flag1(st.clip, int(st.pt), int(st.sus))
+            st.mo_index = 0
+            st.mov = 0
+            st.phase = "MOTION_LOOP_RUN"
+            return 0.0
+
+        if st.phase == "MOTION_LOOP_RUN":
+            if st.mo_index >= 5:
+                # Motion abgeschlossen → Channel‑Loop
+                st.vv = 0
+                st.vf = 0
+                st.phase = "CHANNEL_LOOP_RUN"
+                return 0.0
+
+            _set_flag2_motion_model(st.clip, st.mo_index)
+            _ensure_markers(st)
+            _start_track(st)
+            st.phase = "MOTION_WAIT"
+            return 0.1
+
+        if st.phase == "MOTION_WAIT":
+            if not st.tracker or not st.tracker.done():
+                return 0.1
+            _finish_track(st)
+            ega = _calc_track_quality_sum(st.context, st.clip)
+            if ega > st.ev:
+                st.ev = ega
+                st.mov = st.mo_index
+            st.mo_index += 1
+            st.phase = "MOTION_LOOP_RUN"
+            return 0.0
+
+        if st.phase == "CHANNEL_LOOP_RUN":
+            if st.vv >= 4:
+                # Channel‑Schleife fertig → bestes anwenden & Finish
+                _apply_best_and_finish(st)
+                return None
+
+            _set_flag3_channels(st.clip, st.vv)
+            _ensure_markers(st)
+            _start_track(st)
+            st.phase = "CHANNEL_WAIT"
+            return 0.1
+
+        if st.phase == "CHANNEL_WAIT":
+            if not st.tracker or not st.tracker.done():
+                return 0.1
+            _finish_track(st)
+            ega = _calc_track_quality_sum(st.context, st.clip)
+            if ega > st.ev:
+                st.ev = ega
+                st.vf = st.vv
+            st.vv += 1
+            st.phase = "CHANNEL_LOOP_RUN"
+            return 0.0
+
+        # Unbekannte Phase → abbrechen
+        print(f"[Optimize] Unbekannte Phase: {st.phase}")
+        globals()["_RUNNING"] = None
+        return None
+
+    except Exception as ex:  # noqa: BLE001
+        print(f"[Optimize] Fehler: {ex}")
+        globals()["_RUNNING"] = None
+        return None
+
+
+# ---------------------- Branch‑Helfer ----------------------
+
+def _branch_ev_known(st: _State, ega: float) -> float:
+    if ega > st.ev:
+        st.ev = ega
+        st.dg = 4
+        st.ptv = st.pt
+        st.pt *= 1.1
+        st.sus = st.pt * 2
+        _set_flag1(st.clip, int(st.pt), int(st.sus))
+        _start_track(st)
+        st.phase = "WAIT_TRACK_IMPROVE"
+        return 0.1
+    else:
+        st.dg -= 1
+        if st.dg >= 0:
+            st.pt *= 1.1
+            st.sus = st.pt * 2
+            _set_flag1(st.clip, int(st.pt), int(st.sus))
+            _start_track(st)
+            st.phase = "WAIT_TRACK_IMPROVE"
+            return 0.1
+        else:
+            st.phase = "MOTION_LOOP_SETUP"
+            return 0.0
+
+
+# ---------------------- Ablauf‑Helfer ----------------------
+
+def _ensure_markers(st: _State) -> None:
+    # Detect/Marker setzen; bei fehlendem Helper: noop
+    if perform_marker_detection is not None:
+        try:
+            perform_marker_detection(st.context)
+        except Exception:
+            pass
+    else:
+        # Alternativ: Detect‑Pass (wie neue Version)
+        if run_detect_once is not None:
+            try:
+                run_detect_once(st.context, start_frame=st.origin_frame, handoff_to_pipeline=False)
+            except Exception:
+                pass
+
+
+def _start_track(st: _State) -> None:
+    if st.tracker:
+        st.tracker.clear()
+    st.tracker = _AsyncTracker(st.context, st.origin_frame)
+    st.tracker.start()
+
+
+def _finish_track(st: _State) -> None:
+    if st.tracker:
+        st.tracker.clear()
+    # Playhead-Reset sicherstellen
+    cur = int(st.context.scene.frame_current)
+    if cur != st.origin_frame:
+        try:
+            st.context.scene.frame_set(st.origin_frame)
+        except Exception:
+            st.context.scene.frame_current = st.origin_frame
+
+
+def _apply_best_and_finish(st: _State) -> None:
+    # bestes Motion‑Model anwenden
+    _set_flag2_motion_model(st.clip, st.mov)
+    # bestes Channel‑Preset anwenden
+    _set_flag3_channels(st.clip, st.vf)
+
+    print(
+        f"[Optimize] Fertig. ev={st.ev:.3f}, Motion={st.mov}, Channels={st.vf}, pt≈{st.ptv:.1f}"
+    )
+
+    globals()["_RUNNING"] = None
+
+
+# -----------------------------------------------------------------------------
+# Optionale Komfort‑Funktion für UI‑Buttons (kein Operator!)
+# -----------------------------------------------------------------------------
+
+def optimize_now(context: bpy.types.Context) -> None:
+    """Bequemer Alias – kann z.B. in einem Panel‑Draw‑Callback aufgerufen werden."""
+    start_optimization(context)
