@@ -1,22 +1,19 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """
-Helper/__init__.py (Minimal-Registrar + optionale Operatoren)
+Helper/__init__.py (Single-Operator Registrar)
 
-- Registriert immer den simplen Track-Helper aus `tracking_helper.py`
-  (`BW_OT_track_simple_forward`).
-- Registriert zusätzlich – falls vorhanden –
-  `CLIP_OT_optimize_tracking_modal` und `CLIP_OT_marker_helper_main`.
-- Robuste Imports: optionale Module werden per try/except geladen,
-  damit das Add-on auch ohne sie aktivierbar ist.
+- Registriert **nur** den Track-Helper `BW_OT_track_to_scene_end` aus
+  `tracking_helper.py` (bl_idname: `bw.track_to_scene_end`).
+- Optionale Operatoren (`CLIP_OT_optimize_tracking_modal`,
+  `CLIP_OT_marker_helper_main`) werden best-effort geladen/registriert.
+- Keine Alias-/Legacy-Namen mehr.
 """
 from __future__ import annotations
 
 import bpy
 
-# WICHTIG: Den **Alias-Operator** importieren, nicht per "as" umbenennen,
-# damit bl_idname == 'bw.track_simple_forward' bleibt.
-from .tracking_helper import BW_OT_track_simple_forward  # noqa: F401
-
+# Fester Bestandteil: einziger Track-Helper
+from .tracking_helper import BW_OT_track_to_scene_end  # noqa: F401
 
 # Optional 1: Optimize-Operator (falls Modul existiert)
 try:
@@ -33,7 +30,7 @@ except Exception:
 
 # Public API
 __all__ = [
-    "BW_OT_track_simple_forward",
+    "BW_OT_track_to_scene_end",
     "register",
     "unregister",
 ]
@@ -41,7 +38,6 @@ if CLIP_OT_optimize_tracking_modal is not None:
     __all__.append("CLIP_OT_optimize_tracking_modal")
 if CLIP_OT_marker_helper_main is not None:
     __all__.append("CLIP_OT_marker_helper_main")
-
 
 # Sammle optionale Klassen
 _optional_classes = []
@@ -51,11 +47,11 @@ if CLIP_OT_marker_helper_main is not None:
     _optional_classes.append(CLIP_OT_marker_helper_main)
 
 
-# --- Kern-Registrierung für den einfachen Track-Operator ---
+# --- Kern-Registrierung ------------------------------------------------------
 
 def _reg_impl() -> None:
     try:
-        bpy.utils.register_class(BW_OT_track_simple_forward)
+        bpy.utils.register_class(BW_OT_track_to_scene_end)
     except ValueError:
         # Bereits registriert → ok
         pass
@@ -63,14 +59,14 @@ def _reg_impl() -> None:
 
 def _unreg_impl() -> None:
     try:
-        bpy.utils.unregister_class(BW_OT_track_simple_forward)
+        bpy.utils.unregister_class(BW_OT_track_to_scene_end)
     except Exception:
         pass
 
 
 def register() -> None:
-    """Registriert den simplen Track-Helper + optionale Operatoren."""
-    # 1) Kern-Helper registrieren (stellt bw.track_simple_forward bereit)
+    """Registriert den Track-Helper + optionale Operatoren."""
+    # 1) Kern-Helper registrieren (stellt bw.track_to_scene_end bereit)
     _reg_impl()
     # 2) Optionale Operatoren – nur wenn vorhanden
     for cls in _optional_classes:
@@ -79,7 +75,7 @@ def register() -> None:
         except ValueError:
             # Bereits registriert
             pass
-    print("[Helper] register() OK")
+    print("[Helper] register() OK (track_to_scene_end)")
 
 
 def unregister() -> None:
@@ -90,10 +86,10 @@ def unregister() -> None:
         except Exception:
             pass
     _unreg_impl()
-    print("[Helper] unregister() OK")
+    print("[Helper] unregister() OK (track_to_scene_end)")
 
 
 if __name__ == "__main__":
-    # Leichter Sanity-Check ohne UI/Operator-Aufruf
-    assert hasattr(BW_OT_track_simple_forward, 'bl_idname')
-    assert BW_OT_track_simple_forward.bl_idname == 'bw.track_simple_forward'
+    # Sanity-Check
+    assert hasattr(BW_OT_track_to_scene_end, 'bl_idname')
+    assert BW_OT_track_to_scene_end.bl_idname == 'bw.track_to_scene_end'
