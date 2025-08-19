@@ -101,26 +101,16 @@ class BW_OT_track_simple_forward(bpy.types.Operator):
 # ----------
 # Register
 # ----------
-_classes = (CLIP_OT_tracking_coordinator,)
+_classes = (BW_OT_track_simple_forward,)
 
 
 def register():
     for c in _classes:
-        try:
-            bpy.utils.register_class(c)
-        except ValueError:
-            pass
-    print("[Coordinator] registered (Simple Forward)")
-
+        bpy.utils.register_class(c)
 
 def unregister():
     for c in reversed(_classes):
-        try:
-            bpy.utils.unregister_class(c)
-        except Exception:
-            pass
-    print("[Coordinator] unregistered")
-
+        bpy.utils.unregister_class(c)
 
 if __name__ == "__main__":
     # keine Self‑Tests nötig; Coordinator ohne UI nicht sinnvoll testbar
