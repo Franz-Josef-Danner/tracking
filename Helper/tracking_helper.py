@@ -1,134 +1,127 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """
-Helper/tracking_helper.py (MINIMAL)
+Operator/tracking_coordinator.py
 
-Ein **schlanker** Track‑Helper, der *nur* den bestehenden Blender‑Operator
-aufruft:
+Minimaler Coordinator: ruft **ausschließlich** den simplen Track‑Helper‑Operator
+`bw.track_simple_forward` auf, der den eingebauten Blender‑Operator
+`bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)`
+auslöst.
 
-    bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
-
-Voraussetzungen:
-- Du hast im **Clip Editor** bereits den gewünschten Clip offen.
-- Die **Marker/Tracks sind bereits selektiert** (der Helper nimmt keine Auto‑Selektion vor).
-
-Bereitgestellt:
-- Operator: `bw.track_simple_forward`
-- Funktion: `helper_track_forward_sequence_invoke_default()`
-
-Hinweis Blender 4.x: Aufrufe erfolgen mit `context.temp_override(**ctx)` (kein
-positional Override‑Dict), um den Fehler "1-2 args execution context is supported"
-zu vermeiden.
+Anpassung: Import/Registrierung wurden auf `BW_OT_track_simple_forward`
+umgestellt (vorher: BW_OT_track_to_scene_end).
 """
 from __future__ import annotations
 
 import bpy
-from bpy.types import Operator
+from typing import Set, Optional
+from importlib import import_module
 
-__all__ = (
-    "BW_OT_track_simple_forward",
-    "helper_track_forward_sequence_invoke_default",
-    "register",
-    "unregister",
-)
+__all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
 
 
 # ------------------------------------------------------------
-# Kontext-Helfer (nur was für temp_override nötig ist)
+# Import/Registration des simplen Track‑Operators (bw.track_simple_forward)
 # ------------------------------------------------------------
-
-def _find_clip_context_full(context: bpy.types.Context) -> dict:
-    win = getattr(context, "window", None)
-    scr = getattr(win, "screen", None) if win else None
-    if not (win and scr):
-        raise RuntimeError("Kein aktives Fenster/Screen verfügbar.")
-
-    for area in scr.areas:
-        if area.type == 'CLIP_EDITOR':
-            for region in area.regions:
-                if region.type == 'WINDOW':
-                    return {
-                        'window': win,
-                        'screen': scr,
-                        'area': area,
-                        'region': region,
-                        'space_data': area.spaces.active,
-                        'scene': context.scene,
-                    }
-    raise RuntimeError("Kein CLIP_EDITOR mit WINDOW-Region im aktuellen UI-Layout gefunden.")
+_BW_OP = None  # type: Optional[type]
 
 
-def _has_selected_tracks(override: dict) -> bool:
-    space = override.get('space_data')
-    clip = getattr(space, 'clip', None) if space else None
-    if not clip:
-        return False
-    return any(t.select for t in clip.tracking.tracks)
+def _try_import_candidates() -> Optional[type]:
+    """Versucht die Operator‑Klasse `BW_OT_track_simple_forward` zu importieren.
+
+    Unterstützte Layouts:
+    - Paket/Helper/tracking_helper.py  →  ..Helper.tracking_helper
+    - Paket/tracking_helper.py         →  ..tracking_helper
+    - Direkt importierbar              →  tracking_helper
+    """
+    candidates = (
+        ("..Helper.tracking_helper", True),
+        ("..tracking_helper", True),
+        ("tracking_helper", False),
+    )
+    for name, is_rel in candidates:
+        try:
+            mod = import_module(name, package=__package__) if is_rel else import_module(name)
+            op = getattr(mod, "BW_OT_track_simple_forward", None)
+            if op is not None:
+                return op
+        except Exception:
+            pass
+    return None
+
+
+def _ensure_bw_op_registered() -> None:
+    """Importiert und registriert `BW_OT_track_simple_forward` wenn nötig."""
+    global _BW_OP
+    if _BW_OP is None:
+        _BW_OP = _try_import_candidates()
+    if _BW_OP is None:
+        raise RuntimeError(
+            "Konnte BW_OT_track_simple_forward nicht importieren. Prüfe 'Helper/tracking_helper.py'."
+        )
+    try:
+        bpy.utils.register_class(_BW_OP)
+    except ValueError:
+        # Bereits registriert → ok
+        pass
 
 
 # ------------------------------------------------------------
-# Öffentliche Helper-Funktion
+# Operator (Coordinator)
 # ------------------------------------------------------------
+class CLIP_OT_tracking_coordinator(bpy.types.Operator):
+    """Startet nur den simplen Track‑Helper (INVOLVE_DEFAULT, forwards, sequence=True)."""
 
-def helper_track_forward_sequence_invoke_default() -> None:
-    """UI‑konformer Aufruf des eingebauten Track‑Operators (vorwärts, Sequenz)."""
-    ctx = _find_clip_context_full(bpy.context)
-    if not _has_selected_tracks(ctx):
-        raise RuntimeError("Keine selektierten Tracks im aktiven Clip.")
-    with bpy.context.temp_override(**ctx):
-        bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
-
-
-# ------------------------------------------------------------
-# Minimaler Operator (nur Trigger)
-# ------------------------------------------------------------
-
-class BW_OT_track_simple_forward(Operator):
-    """Löst `track_markers` mit INVOKE_DEFAULT, forwards, sequence=True aus."""
-
-    bl_idname = "bw.track_simple_forward"
-    bl_label = "Track Forwards (Sequence, Invoke)"
-    bl_options = {"REGISTER", "UNDO", "INTERNAL"}
+    bl_idname = "clip.tracking_coordinator"
+    bl_label = "Tracking Orchestrator (Simple Forward)"
+    bl_description = (
+        "Löst den eingebauten Track-Operator aus (forwards, sequence=True)."
+    )
+    bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-        return (context.area is not None) and (context.area.type == 'CLIP_EDITOR')
+        # Minimal: Nur im Clip‑Editor verfügbar (verhindert falschen Kontext).
+        return (context.area is not None) and (context.area.type == "CLIP_EDITOR")
 
-    def invoke(self, context: bpy.types.Context, _event):
+    def invoke(self, context: bpy.types.Context, event) -> Set[str]:
         try:
-            ctx = _find_clip_context_full(context)
-            if not _has_selected_tracks(ctx):
-                self.report({'ERROR'}, "Keine selektierten Tracks im aktiven Clip.")
-                return {'CANCELLED'}
-            with bpy.context.temp_override(**ctx):
-                bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
-            return {'FINISHED'}
+            _ensure_bw_op_registered()
+            # UI‑konformer Aufruf
+            bpy.ops.bw.track_simple_forward('INVOKE_DEFAULT')
+            return {"FINISHED"}
         except Exception as ex:
             self.report({'ERROR'}, f"Track-Helper-Fehler: {ex}")
-            return {'CANCELLED'}
+            return {"CANCELLED"}
 
-    def execute(self, context: bpy.types.Context):
+    def execute(self, context: bpy.types.Context) -> Set[str]:
+        # Spiegelung für Scripting
         return self.invoke(context, None)
 
 
-# ------------------------------------------------------------
-# Registrierung
-# ------------------------------------------------------------
+# ----------
+# Register
+# ----------
+_classes = (CLIP_OT_tracking_coordinator,)
+
 
 def register():
-    bpy.utils.register_class(BW_OT_track_simple_forward)
+    for c in _classes:
+        try:
+            bpy.utils.register_class(c)
+        except ValueError:
+            pass
+    print("[Coordinator] registered (Simple Forward)")
 
 
 def unregister():
-    bpy.utils.unregister_class(BW_OT_track_simple_forward)
-
-
-# ------------------------------------------------------------
-# Kleine Self‑Tests (ohne UI‑Aktion)
-# ------------------------------------------------------------
-
-def _selftest():
-    assert BW_OT_track_simple_forward.bl_idname == 'bw.track_simple_forward'
+    for c in reversed(_classes):
+        try:
+            bpy.utils.unregister_class(c)
+        except Exception:
+            pass
+    print("[Coordinator] unregistered")
 
 
 if __name__ == "__main__":
-    _selftest()
+    # keine Self‑Tests nötig; Coordinator ohne UI nicht sinnvoll testbar
+    pass
