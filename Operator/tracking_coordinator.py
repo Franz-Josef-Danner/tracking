@@ -1,32 +1,24 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """
-Operator/tracking_coordinator.py – Funktionsvariante (keine Helper-Operator-Registration)
+Operator/tracking_coordinator.py – Coordinator, der den Optimize-Flow startet
 
-- Ruft **direkt die Helper-Funktion** `track_to_scene_end_fn(context, coord_token=...)` auf,
-  die intern `bpy.ops.clip.track_markers('INVOKE_DEFAULT', ...)` ausführt.
-- **Kein** Modal-/Timer-Loop mehr nötig – die Funktion liefert nach Abschluss ein Info-Dict zurück.
-- Gibt danach "Finish" aus.
+• Startet **CLIP_OT_optimize_tracking_modal** per INVOKE_DEFAULT.
+• Keine eigenen Detect/Track-Aufrufe mehr; das übernimmt der Helper-basierte Optimize-Operator.
+• Bleibt im UI simpel (ein Button / F3-Eintrag), Log-Meldungen für Start/Finish.
 """
 from __future__ import annotations
 
-from time import time_ns
 from typing import Set
-
 import bpy
-
-# Direkter Funktionsimport aus dem Helper-Paket
-from ..Helper.tracking_helper import track_to_scene_end_fn  # type: ignore
 
 __all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
 
 
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
-    """Startet das Tracking über die **Funktion** und meldet danach Finish."""
-
     bl_idname = "clip.tracking_coordinator"
-    bl_label = "Tracking Orchestrator (function call)"
+    bl_label = "Tracking Orchestrator (Optimize)"
     bl_description = (
-        "Ruft track_to_scene_end_fn auf (Forward, Sequence, INVOKE_DEFAULT) und meldet danach 'Finish'."
+        "Startet den optimierten Detect→Track-Flow (nur Funktionen innen)."
     )
     bl_options = {"REGISTER"}
 
@@ -35,20 +27,17 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return (context.area is not None) and (context.area.type == "CLIP_EDITOR")
 
     def invoke(self, context: bpy.types.Context, event) -> Set[str]:
-        token = str(time_ns())
+        # Übergibt keine weiteren Parameter – Optimize liest origin-frame aus scene
         try:
-            info = track_to_scene_end_fn(context, coord_token=token)
+            self.report({'INFO'}, "Starte Optimize-Flow…")
+            # WICHTIG: INVOKE_DEFAULT, damit der Optimize-Operator seinen Modal-Loop registriert
+            bpy.ops.clip.optimize_tracking_modal('INVOKE_DEFAULT')
         except Exception as ex:
-            self.report({'ERROR'}, f"Helper-Fehler: {ex}")
+            self.report({'ERROR'}, f"Start fehlgeschlagen: {ex}")
             return {"CANCELLED"}
 
-        # Optionales Logging der Rückgabe
-        try:
-            self.report({'INFO'}, f"Tracking done: start={info.get('start_frame')} → {info.get('tracked_until')}")
-        except Exception:
-            pass
-
-        self.report({'INFO'}, "Finish")
+        # Der eigentliche Ablauf passiert modal im Optimize-Operator.
+        # Wir melden hier nur den Start; Finish wird vom Optimize-Operator geloggt.
         return {"FINISHED"}
 
 
@@ -64,7 +53,7 @@ def register():
             bpy.utils.register_class(c)
         except ValueError:
             pass
-    print("[Coordinator] registered (function variant)")
+    print("[Coordinator] registered (Optimize launcher)")
 
 
 def unregister():
