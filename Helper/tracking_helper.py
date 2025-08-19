@@ -56,6 +56,42 @@ def _clip_editor_handles(ctx: bpy.types.Context) -> Optional[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+# Intern: Viewer-Redraw erzwingen
+# ---------------------------------------------------------------------------
+
+def _redraw_clip_editors(ctx: bpy.types.Context) -> None:
+    """Erzwingt ein Redraw aller CLIP_EDITOR-Areas (Viewer aktualisieren)."""
+    try:
+        wm = ctx.window_manager
+    except Exception:
+        wm = bpy.context.window_manager
+    try:
+        for win in wm.windows:
+            scr = win.screen
+            if not scr:
+                continue
+            for area in scr.areas:
+                if area.type == 'CLIP_EDITOR':
+                    try:
+                        area.tag_redraw()
+                    except Exception:
+                        pass
+                    for reg in area.regions:
+                        if reg.type in {'WINDOW', 'UI'}:
+                            try:
+                                reg.tag_redraw()
+                            except Exception:
+                                pass
+        # Zusatz: einmalig global redraw anstoßen
+        try:
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Intern: Playhead nach INVOKE zuverlässig zurücksetzen (Timer)
 # ---------------------------------------------------------------------------
 
@@ -110,7 +146,8 @@ def _schedule_playhead_restore(context: bpy.types.Context, target_frame: int,
             if state["stable"] >= settle_ticks:
                 try:
                     sc.frame_set(target_frame)
-                    _log(f"Timer/settle: setze Frame -> {target_frame}")
+                    _redraw_clip_editors(context)
+                    _log(f"Timer/settle: setze Frame -> {target_frame} + redraw")
                 except Exception as ex:
                     _log(f"Timer/settle: frame_set Fehler: {ex}")
                 state["phase"] = "enforce"
@@ -121,7 +158,8 @@ def _schedule_playhead_restore(context: bpy.types.Context, target_frame: int,
         if cur_frame != target_frame:
             try:
                 sc.frame_set(target_frame)
-                _log(f"Timer/enforce: korrigiere {cur_frame} -> {target_frame}")
+            _redraw_clip_editors(context)
+            _log(f"Timer/enforce: korrigiere {cur_frame} -> {target_frame} + redraw")
             except Exception as ex:
                 _log(f"Timer/enforce: frame_set Fehler: {ex}")
             state["enforce"] = 0
@@ -181,7 +219,8 @@ def remember_playhead(context: bpy.types.Context) -> Iterator[int]:
     finally:
         try:
             scene.frame_set(start_frame)
-            _log(f"remember_playhead: setze zurück -> {start_frame}")
+            _redraw_clip_editors(context)
+            _log(f"remember_playhead: setze zurück -> {start_frame} + redraw")
         except Exception as ex:
             _log(f"remember_playhead: frame_set Fehler: {ex}")
 
