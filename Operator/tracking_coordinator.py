@@ -14,7 +14,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     def invoke(self, context, event):
         # Lazy-Import, damit das Paket vollständig initialisiert ist
-        from .. import optimize_tracking_modal as opt  # <-- richtiger Modulname!
+        from ..Helper.optimize_tracking_modal import start_optimization
         opt.start_optimization(context)
         self.report({'INFO'}, "Optimization started (functional pipeline)")
         return {'FINISHED'}
