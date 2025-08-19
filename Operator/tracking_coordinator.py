@@ -99,10 +99,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         # Helper mit Token starten (INVOKE_DEFAULT)
         try:
-            bpy.ops.bw.track_to_scene_end('INVOKE_DEFAULT', coord_token=self._token)
+            ret = bpy.ops.bw.track_to_scene_end('INVOKE_DEFAULT', coord_token=self._token)
+            if ret and 'CANCELLED' in ret:
+                self.report({'ERROR'}, "Helper wurde abgebrochen (kein Clip/keine Marker?)")
+                return {"CANCELLED"}
         except Exception as ex:
             self.report({'ERROR'}, f"Helper-Start fehlgeschlagen: {ex}")
             return {"CANCELLED"}
+
 
         # Modal‑Timer anwerfen und warten
         self._timer = wm.event_timer_add(0.1, window=context.window)
