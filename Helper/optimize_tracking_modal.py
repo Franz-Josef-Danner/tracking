@@ -294,6 +294,7 @@ def _timer_step() -> float | None:
                 return 0.1
             _finish_track(st)
             ega = _calc_track_quality_sum(st.context, st.clip)
+            _delete_selected_tracks(st.context)  # Aufräumen NACH dem Messen
             st.sweep_history.append((st.pt, ega))
             st.best_ega = ega
             st.best_pt = st.pt
@@ -304,6 +305,7 @@ def _timer_step() -> float | None:
             st.pt = st.pt * st.sweep_step_factor
             st.sus = st.pt * 2
             _set_flag1(st.clip, int(st.pt), int(st.sus))
+            _ensure_markers(st)
             _start_track(st)
             st.phase = "SWEEP_WAIT_RUN"
             return 0.1
@@ -313,6 +315,7 @@ def _timer_step() -> float | None:
                 return 0.1
             _finish_track(st)
             ega = _calc_track_quality_sum(st.context, st.clip)
+            _delete_selected_tracks(st.context)  # Aufräumen NACH dem Messen
             st.sweep_history.append((st.pt, ega))
 
             # Update best
@@ -351,6 +354,7 @@ def _timer_step() -> float | None:
             st.pt = st.pt * st.sweep_step_factor
             st.sus = st.pt * 2
             _set_flag1(st.clip, int(st.pt), int(st.sus))
+            _ensure_markers(st)
             _start_track(st)
             return 0.1
 
@@ -372,6 +376,7 @@ def _timer_step() -> float | None:
                 return 0.1
             _finish_track(st)
             ega = _calc_track_quality_sum(st.context, st.clip)
+            _delete_selected_tracks(st.context)  # Aufräumen NACH dem Messen
             if ega > st.ev:
                 st.ev = ega
                 st.mov = st.mo_index
@@ -395,6 +400,7 @@ def _timer_step() -> float | None:
                 return 0.1
             _finish_track(st)
             ega = _calc_track_quality_sum(st.context, st.clip)
+            _delete_selected_tracks(st.context)  # Aufräumen NACH dem Messen
             if ega > st.ev:
                 st.ev = ega
                 st.vf = st.vv
@@ -438,7 +444,7 @@ def _finish_track(st: _State) -> None:
             st.context.scene.frame_set(st.origin_frame)
         except Exception:
             st.context.scene.frame_current = st.origin_frame
-    _delete_selected_tracks(st.context)
+
 
 
 def _apply_best_and_finish(st: _State) -> None:
