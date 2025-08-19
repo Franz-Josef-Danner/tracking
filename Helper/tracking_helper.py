@@ -59,6 +59,16 @@ def _redraw_clip_editors(_context: bpy.types.Context | None = None) -> None:
                 region.tag_redraw()
 
 
+def _area_window_region_triplets():
+    """Liefert (area, window, region[WINDOW]) Triplets; loggt, falls keine WINDOW‑Region vorhanden."""
+    for window, area in _iter_clip_areas():
+        region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+        if not region:
+            _log(f"Area ohne WINDOW‑Region gefunden (area={getattr(area,'as_pointer',lambda:None)()})")
+            continue
+        yield area, window, region
+
+
 def _set_frame_and_notify(frame: int, *, verbose: bool = True) -> None:
     scene = bpy.context.scene
     if verbose:
@@ -69,27 +79,33 @@ def _set_frame_and_notify(frame: int, *, verbose: bool = True) -> None:
         _log(f"scene.frame_set Exception: {ex!r} – fallback scene.frame_current = {frame}")
         scene.frame_current = frame
 
-    # UI‑Wechsel wie Benutzerinteraktion
-    for window, area in _iter_clip_areas():
-        # WINDOW-Region suchen
-        region = next((r for r in area.regions if r.type == 'WINDOW'), None)
-        if not region:
-            _log("Keine WINDOW-Region in Area gefunden – überspringe anim.change_frame")
-            continue
-    
-        override = {
-            'window': window,
-            'screen': window.screen,
-            'area': area,
-            'region': region,
-        }
+    # UI‑Wechsel wie Benutzerinteraktion – benutze *minimales* Override (nur area/region)
+    for area, _window, region in _area_window_region_triplets():
         try:
-            bpy.ops.anim.change_frame(override, frame=frame)
-            _log(f"anim.change_frame OK (Area={area.as_pointer()})")
+            ctx = bpy.context.copy()
+            ctx['area'] = area
+            ctx['region'] = region
+            bpy.ops.anim.change_frame(ctx, frame=frame)
+            if verbose:
+                _log(f"anim.change_frame OK (Area={area.as_pointer()})")
         except Exception as ex:
             _log(f"anim.change_frame Exception (Area={area.as_pointer()}): {ex!r}")
+    _redraw_clip_editors(None)
+    if verbose:
+        _log(f"Reset fertig – aktuell: {scene.frame_current}")
 
 
+def _furthest_tracked_frame(clip: bpy.types.MovieClip) -> int:
+    """Ermittle den maximalen Marker‑Frame im Clip (Diagnose)."""
+    mx = 0
+    try:
+        for tr in clip.tracking.tracks:
+            for m in tr.markers:
+                if m.co_frame > mx:
+                    mx = int(m.co_frame)
+    except Exception:
+        pass
+    return mx
 
 # -----------------------------------------------------------------------------
 # Kern‑Helper: vorwärts tracken (INVOKE, sequence) → *nächster Tick* Frame‑Reset
@@ -123,7 +139,6 @@ def track_to_scene_end_fn(
     wm = context.window_manager
     scene = context.scene
 
-    # Clip / Areas loggen
     areas = list(_iter_clip_areas())
     if debug:
         _log(f"Gefundene CLIP_EDITOR Areas: {len(areas)}")
@@ -137,25 +152,26 @@ def track_to_scene_end_fn(
     origin_frame: int = int(scene.frame_current)
     if debug:
         _log(f"Origin Frame: {origin_frame}")
+        _log(f"Vor Start: furthest_tracked={_furthest_tracked_frame(clip)}")
 
     ok, info = _start_forward_tracking_invoke(context)
     if not ok:
         raise RuntimeError(info)
 
-    # Delayed Reset Tick 1 -----------------------------------------------------
+    # Diagnose: nach kleinem Delay prüfen wir, ob Frames/Marker sich bewegt haben
     def _tick_once() -> Optional[float]:
         if debug:
             _log("Timer Tick #1 – versuche Reset auf Origin")
+            _log(f"Tick #1 Diagnose: scene.frame_current={int(bpy.context.scene.frame_current)}, furthest_tracked={_furthest_tracked_frame(clip)}")
         before = int(bpy.context.scene.frame_current)
         _set_frame_and_notify(origin_frame, verbose=debug)
         after = int(bpy.context.scene.frame_current)
         if debug:
             _log(f"Timer Tick #1 – Frame vorher={before}, nachher={after}")
-        # Falls der Frame *nicht* auf origin steht, zweiter Versuch später
         if after != origin_frame:
             if debug:
-                _log("Timer Tick #1 – Reset nicht wirksam, plane Tick #2 in 0.3s")
-            bpy.app.timers.register(_tick_twice, first_interval=0.3)
+                _log("Timer Tick #1 – Reset nicht wirksam, plane Tick #2 in 0.35s")
+            bpy.app.timers.register(_tick_twice, first_interval=0.35)
         else:
             if coord_token:
                 wm["bw_tracking_done_token"] = coord_token
@@ -170,10 +186,10 @@ def track_to_scene_end_fn(
                 _log("Timer Tick #1 – Reset erfolgreich, Token gesetzt")
         return None
 
-    # Delayed Reset Tick 2 (Fallback) -----------------------------------------
     def _tick_twice() -> Optional[float]:
         if debug:
             _log("Timer Tick #2 – erneuter Reset‑Versuch")
+            _log(f"Tick #2 Diagnose: scene.frame_current={int(bpy.context.scene.frame_current)}, furthest_tracked={_furthest_tracked_frame(clip)}")
         before = int(bpy.context.scene.frame_current)
         _set_frame_and_notify(origin_frame, verbose=debug)
         after = int(bpy.context.scene.frame_current)
@@ -190,7 +206,7 @@ def track_to_scene_end_fn(
             _log(f"Timer Tick #2 – Frame vorher={before}, nachher={after}; Token gesetzt")
         return None
 
-    # Timer starten (0.12s gibt INVOKE minimal Zeit zu starten, aber bleibt snappy)
+    # etwas längerer Delay, damit INVOKE zuverlässig anläuft
     if debug:
-        _log("Register Timer Tick #1 in 0.12s")
-    bpy.app.timers.register(_tick_once, first_interval=0.12)
+        _log("Register Timer Tick #1 in 0.25s")
+    bpy.app.timers.register(_tick_once, first_interval=0.25)
