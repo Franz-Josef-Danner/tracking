@@ -132,34 +132,36 @@ def _set_flag3_channels(clip: bpy.types.MovieClip, vv: int) -> None:
 # -----------------------------------------------------------------------------
 
 def _calc_track_quality_sum(context: bpy.types.Context, clip: bpy.types.MovieClip) -> float:
-    """Ermittelt die Gesamtqualität der aktuellen Tracks.
-
-    Erwartet, dass ``error_value`` pro Track einen Error liefert (>=0, sonst 0).
-    Frames pro Track werden über Marker‑Sequenzen (Start..Ende) bestimmt.
-    """
-    if error_value is None:
-        # Fallback: simple Heuristik über Anzahl Keyframes
-        total = 0.0
-        for ob in clip.tracking.objects:
-            for tr in ob.tracks:
-                err = getattr(tr, "average_error", 0.0) or 0.0
-                err = max(err, 1e-12)
-                frames = max(len(tr.markers), 1)
-                total += (frames / err)
-        return float(total)
-
-    # Wenn Helper vorhanden: nutze präzise Fehlerbewertung
     total = 0.0
     for ob in clip.tracking.objects:
         for tr in ob.tracks:
-            try:
-                err = float(error_value(context, tr))  # type: ignore[arg-type]
-            except Exception:
-                err = getattr(tr, "average_error", 0.0) or 0.0
+            err = None
+            if error_value is not None:
+                try:
+                    # Variante A: (context, track)
+                    err = float(error_value(context, tr))  # type: ignore[misc]
+                except TypeError:
+                    try:
+                        # Variante B: (scene) – nutzt selektierte Marker; wir selektieren kurz den Track
+                        sel_backup = tr.select
+                        tr.select = True
+                        err = float(error_value(context.scene))  # type: ignore[misc]
+                    except Exception:
+                        pass
+                    finally:
+                        try:
+                            tr.select = sel_backup
+                        except Exception:
+                            pass
+                except Exception:
+                    err = None
+            if err is None:
+                err = float(getattr(tr, "average_error", 0.0) or 0.0)
             err = max(err, 1e-12)
             frames = max(len(tr.markers), 1)
             total += (frames / err)
     return float(total)
+
 
 
 # -----------------------------------------------------------------------------
@@ -396,10 +398,10 @@ def _branch_ev_known(st: _State, ega: float) -> float:
 # ---------------------- Ablauf‑Helfer ----------------------
 
 def _ensure_markers(st: _State) -> None:
-    # Detect/Marker setzen; bei fehlendem Helper: noop
-    if perform_marker_detection is not None:
+    # Immer den robusten Detect‑Pass nutzen (Signatur passt zur neuen Version)
+    if run_detect_once is not None:
         try:
-            perform_marker_detection(st.context)
+            run_detect_once(st.context, start_frame=st.origin_frame, handoff_to_pipeline=False)
         except Exception:
             pass
     else:
