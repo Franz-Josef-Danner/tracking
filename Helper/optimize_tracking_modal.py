@@ -202,6 +202,22 @@ def _call_in_clip_context(context, fn, *, ensure_tracking_mode=True, **kwargs):
                 pass
         return fn(**kwargs)
 
+def _delete_selected_tracks(context: bpy.types.Context) -> None:
+    """Löscht aktuell selektierte Tracks im CLIP_EDITOR-Kontext."""
+    def _op(**kw):
+        return bpy.ops.clip.delete_track(**kw)
+
+    try:
+        _call_in_clip_context(
+            context,
+            _op,
+            ensure_tracking_mode=True,
+            confirm=True,   # <<< genau das wolltest du
+        )
+        print("[Optimize] Selektierte (neue) Marker/Tracks gelöscht.")
+    except Exception as ex:
+        print(f"[Optimize] WARN: delete_track fehlgeschlagen: {ex}")
+
 
 # -----------------------------------------------------------------------------
 # Detect + Track orchestration (nicht blockierend) via WindowManager‑Token
@@ -411,7 +427,6 @@ def _timer_step() -> float | None:
         globals()["_RUNNING"] = None
         return None
 
-
 # ---------------------- Branch‑Helfer ----------------------
 
 def _branch_ev_known(st: _State, ega: float) -> float:
@@ -438,7 +453,6 @@ def _branch_ev_known(st: _State, ega: float) -> float:
             st.phase = "MOTION_LOOP_SETUP"
             return 0.0
 
-
 # ---------------------- Ablauf‑Helfer ----------------------
 
 def _ensure_markers(st: _State) -> None:
@@ -456,13 +470,11 @@ def _ensure_markers(st: _State) -> None:
             except Exception:
                 pass
 
-
 def _start_track(st: _State) -> None:
     if st.tracker:
         st.tracker.clear()
     st.tracker = _AsyncTracker(st.context, st.origin_frame)
     st.tracker.start()
-
 
 def _finish_track(st: _State) -> None:
     if st.tracker:
@@ -474,7 +486,7 @@ def _finish_track(st: _State) -> None:
             st.context.scene.frame_set(st.origin_frame)
         except Exception:
             st.context.scene.frame_current = st.origin_frame
-
+    _delete_selected_tracks(st.context)
 
 def _apply_best_and_finish(st: _State) -> None:
     # bestes Motion‑Model anwenden
@@ -487,7 +499,6 @@ def _apply_best_and_finish(st: _State) -> None:
     )
 
     globals()["_RUNNING"] = None
-
 
 # -----------------------------------------------------------------------------
 # Optionale Komfort‑Funktion für UI‑Buttons (kein Operator!)
