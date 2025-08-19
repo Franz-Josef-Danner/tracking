@@ -69,12 +69,12 @@ def _ensure_bw_op_registered() -> None:
 # Operator (Coordinator)
 # ------------------------------------------------------------
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
-    """Startet nur den simplen Track‑Helper (INVOKE_DEFAULT, forwards, sequence=True)."""
+    """Startet nur den simplen Track‑Helper (INVOKE_DEFAULT, backwards=False, sequence=True)."""
 
     bl_idname = "clip.tracking_coordinator"
     bl_label = "Tracking Orchestrator (Simple Forward)"
     bl_description = (
-        "Löst den eingebauten Track-Operator aus (forwards, sequence=True)."
+        "Löst den eingebauten Track-Operator aus (backwards=False, sequence=True)."
     )
     bl_options = {"REGISTER", "UNDO"}
 
