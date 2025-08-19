@@ -162,6 +162,45 @@ def _calc_track_quality_sum(context: bpy.types.Context, clip: bpy.types.MovieCli
             total += (frames / err)
     return float(total)
 
+def _find_clip_editor_context(context):
+    """Sucht ein (window, area, region, space) Tupel für den CLIP_EDITOR."""
+    wm = context.window_manager
+    if not wm:
+        return None
+    for win in wm.windows:
+        screen = win.screen
+        if not screen:
+            continue
+        for area in screen.areas:
+            if area.type != 'CLIP_EDITOR':
+                continue
+            region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+            space = area.spaces.active if hasattr(area, "spaces") else None
+            if region and space:
+                return win, area, region, space
+    return None
+
+def _call_in_clip_context(context, fn, *, ensure_tracking_mode=True, **kwargs):
+    """Ruft fn(**kwargs) innerhalb eines gültigen CLIP_EDITOR-Kontexts auf."""
+    found = _find_clip_editor_context(context)
+    if not found:
+        # Kein sichtbarer CLIP_EDITOR – versuch’s ohne Override (best effort)
+        return fn(**kwargs)
+    win, area, region, space = found
+    override = {
+        "window": win,
+        "area": area,
+        "region": region,
+        "space_data": space,
+        "scene": context.scene,
+    }
+    with context.temp_override(**override):
+        if ensure_tracking_mode and hasattr(space, "mode") and space.mode != 'TRACKING':
+            try:
+                space.mode = 'TRACKING'
+            except Exception:
+                pass
+        return fn(**kwargs)
 
 
 # -----------------------------------------------------------------------------
@@ -175,13 +214,18 @@ class _AsyncTracker:
 
     def start(self) -> None:
         assert track_to_scene_end_fn is not None, "tracking_helper fehlt"
-        # altes Token ggf. räumen
         wm = self.context.window_manager
         if wm.get("bw_tracking_done_token", None) == self.token:
             del wm["bw_tracking_done_token"]
-        # Start
-        track_to_scene_end_fn(
+
+        # WICHTIG: track_to_scene_end_fn im CLIP_EDITOR-Kontext aufrufen
+        def _kickoff(**kw):
+            return track_to_scene_end_fn(self.context, **kw)
+
+        _call_in_clip_context(
             self.context,
+            _kickoff,
+            ensure_tracking_mode=True,
             coord_token=self.token,
             start_frame=int(self.origin_frame),
             debug=True,
