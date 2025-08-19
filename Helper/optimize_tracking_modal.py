@@ -51,33 +51,29 @@ class CLIP_OT_optimize_tracking_modal(Operator):
         return self.execute(context)
 
     def execute(self, context):
-        # Clip resolven
-        self._clip = getattr(getattr(context, "space_data", None), "clip", None)
-        if not self._clip:
-            self.report({'ERROR'}, "Kein Movie Clip aktiv.")
-            return {'CANCELLED'}
-
-        # set_test_value (optional)
-        if set_test_value is not None:
-            try:
-                set_test_value(context)
-            except Exception as e:
-                self.report({'WARNING'}, f"set_test_value: {e}")
-
-        self._start_frame = context.scene.frame_current
-
-        wm = context.window_manager
-        win = getattr(context, "window", None) or getattr(bpy.context, "window", None)
-        if not win:
-            self.report({'ERROR'}, "Kein aktives Window – TIMER kann nicht registriert werden.")
-            return {'CANCELLED'}
-
-        # alten Timer sauber entfernen (falls vorhanden)
+        ...
+        self._timer = wm.event_timer_add(0.2, window=win)
+        wm.modal_handler_add(self)
+    
+        # Kick: ersten Step direkt ausführen
         try:
-            if self._timer:
-                wm.event_timer_remove(self._timer)
+            first = self.run_step(context)
+            if isinstance(first, set) and ('FINISHED' in first or 'CANCELLED' in first):
+                self.cancel(context)
+                return first
+        except Exception as e:
+            self.report({'ERROR'}, f"run_step (kick) failed: {e}")
+            self.cancel(context)
+            return {'CANCELLED'}
+    
+        try:
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
         except Exception:
             pass
+    
+        print("[Optimize] Start (execute→modal)")
+        return {'RUNNING_MODAL'}
+
 
         # Timer + Modal-Handler registrieren
         self._timer = wm.event_timer_add(0.2, window=win)
@@ -102,6 +98,8 @@ class CLIP_OT_optimize_tracking_modal(Operator):
 
     def modal(self, context, event):
         try:
+            # DEBUG: Event-Flow anzeigen
+            print(f"[Optimize][DBG] modal event={event.type}")
             if event.type == 'ESC':
                 self.report({'WARNING'}, "Tracking-Optimierung manuell abgebrochen.")
                 self.cancel(context)
@@ -168,21 +166,18 @@ class CLIP_OT_optimize_tracking_modal(Operator):
             s.use_default_blue_channel  = vv_index in (3, 4)
 
         def detect_markers():
-            # Deine Detektion (bewusst unverändert benannt)
             if perform_marker_detection is not None:
                 perform_marker_detection(context)
             else:
-                # Alternativer Hook aus deinem Code: marker_helper_main
-                bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')
-
+                bpy.ops.clip.marker_helper_main('EXEC_DEFAULT')  # ← EXEC, nicht INVOKE
+        
         def track_now():
-            # Dein Tracking-Hook (falls du einen dedizierten Operator nutzt, hier einsetzen)
-            # Standard: bidirektional/forward – wir rufen deinen Helper/Op auf:
+            # Immer EXEC, nie INVOKE (kein zweiter Modal-Loop starten)
             try:
-                bpy.ops.clip.track_markers('INVOKE_DEFAULT')  # ggf. ersetzen durch deinen Helper
-            except Exception:
-                # Fallback: versuche Exec (ohne Dialog)
                 bpy.ops.clip.track_markers('EXEC_DEFAULT')
+            except Exception as e:
+                self.report({'WARNING'}, f"track_markers EXEC failed: {e}")
+
 
         def frames_after_start(track):
             cnt = 0
