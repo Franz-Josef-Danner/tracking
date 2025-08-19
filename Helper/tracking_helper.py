@@ -1,20 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """
-Helper/tracking_helper.py
+Helper/tracking_helper.py – mit ausführlichen Konsolen‑Logs
 
-Anforderung umgesetzt (nur Funktion, kein eigener Operator):
-- Regel 1: **Kein eigener Operator** – reine Funktions‑API zum Aufruf durch den Orchestrator.
-- Regel 2: **Nur vorwärts** tracken.
-- Regel 3: Tracking via **'INVOKE_DEFAULT'**, `backwards=False`, `sequence=True`.
-- Regel 4: **Playhead nach dem Tracken** robust auf den Ursprungs‑Frame zurücksetzen (erst **nachdem** das
-  Vorwärtstracking fertig ist).
+Erfüllt deine Regeln 1–4 und fügt **detaillierte Debug‑Ausgaben** hinzu, um das
+Playhead‑Reset‑Problem gezielt zu finden.
 
-Technik:
-Wir starten das Tracking mit INVOKE (modal) und registrieren einen Timer, der die **Tracking‑Stabilität**
-überwacht (ähnlich wie in deinem bidirektionalen Operator: Frame/Marker‑Zählung über zwei Ticks stabil ⇒
-Tracking gilt als beendet). Erst dann setzen wir den Playhead zurück, taggen Redraw und setzen das Token
-für den Coordinator. Damit wird vermieden, dass der Reset zu früh geschieht. (Vorbild: `CLIP_OT_bidirectional_track`
-– dort funktioniert der Reset, weil über eine kurze Stabilitätsphase gewartet wird.)
+Log‑Präfix: "[BW-Track]"
 """
 from __future__ import annotations
 
@@ -27,10 +18,16 @@ __all__ = (
     "_redraw_clip_editors",
 )
 
+LOG_PREFIX = "[BW-Track]"
+
 
 # -----------------------------------------------------------------------------
 # Utilities
 # -----------------------------------------------------------------------------
+
+def _log(msg: str) -> None:
+    print(f"{LOG_PREFIX} {msg}")
+
 
 def _iter_clip_areas():
     wm = bpy.context.window_manager
@@ -56,35 +53,34 @@ def _get_any_clip() -> Optional[bpy.types.MovieClip]:
 
 
 def _redraw_clip_editors(_context: bpy.types.Context | None = None) -> None:
-    """Force‑Redraw aller Clip‑Editoren."""
     for _w, area in _iter_clip_areas():
         for region in area.regions:
             if region.type == 'WINDOW':
                 region.tag_redraw()
 
 
-def _set_frame_and_notify(frame: int) -> None:
-    """Robuster Frame‑Reset mit UI‑Update.
-
-    - setzt `scene.frame_set(frame)`
-    - triggert `bpy.ops.anim.change_frame` (pro CLIP‑Area via Override), damit der Clip‑Editor sicher
-      nachzieht (entspricht dem Verhalten in deinem funktionierenden Bidi‑Flow, dort geschieht der
-      Reset im Modal‑Tick → hier emulieren wir das mit einem Timer‑Tick).
-    """
+def _set_frame_and_notify(frame: int, *, verbose: bool = True) -> None:
     scene = bpy.context.scene
+    if verbose:
+        _log(f"Reset versuch: frame_set({frame}) – vorher: {scene.frame_current}")
     try:
         scene.frame_set(frame)
-    except Exception:
+    except Exception as ex:
+        _log(f"scene.frame_set Exception: {ex!r} – fallback scene.frame_current = {frame}")
         scene.frame_current = frame
 
+    # UI‑Wechsel wie Benutzerinteraktion
     for window, area in _iter_clip_areas():
         override = {'window': window, 'screen': window.screen, 'area': area, 'region': None}
         try:
-            # erzwingt die UI‑Aktualisierung wie ein Benutzer‑Framewechsel
             bpy.ops.anim.change_frame(override, frame=frame)
-        except Exception:
-            pass
+            if verbose:
+                _log(f"anim.change_frame in Area id={getattr(area,'as_pointer',lambda:None)()} ok")
+        except Exception as ex:
+            _log(f"anim.change_frame Exception in Area: {ex!r}")
     _redraw_clip_editors(None)
+    if verbose:
+        _log(f"Reset fertig – aktuell: {scene.frame_current}")
 
 
 # -----------------------------------------------------------------------------
@@ -92,11 +88,12 @@ def _set_frame_and_notify(frame: int) -> None:
 # -----------------------------------------------------------------------------
 
 def _start_forward_tracking_invoke(context: bpy.types.Context) -> Tuple[bool, str]:
-    """Startet das Vorwärts‑Tracking mit INVOKE + sequence=True (ohne EXEC‑Fallback)."""
     try:
         res = bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
+        _log(f"track_markers INVOKE aufgerufen → result={res}")
         return True, f"track_markers INVOKE → {res}"
     except Exception as ex:  # noqa: BLE001
+        _log(f"track_markers INVOKE Exception: {ex!r}")
         return False, f"Track‑Fehler: {ex}"
 
 
@@ -104,33 +101,74 @@ def track_to_scene_end_fn(
     context: bpy.types.Context,
     *,
     coord_token: Optional[str] = None,
+    debug: bool = True,
 ) -> None:
     """Nur‑Vorwärts‑Tracking (INVOKE, sequence) und **danach** Playhead‑Reset.
 
-    Entspricht deinen Regeln 1–4. Kein eigener Operator – reine Funktion.
+    - Kein eigener Operator (Regel 1)
+    - Nur vorwärts (Regel 2)
+    - INVOKE_DEFAULT, backwards=False, sequence=True (Regel 3)
+    - Playhead‑Reset auf Ursprungs‑Frame (Regel 4)
 
-    WICHTIG: Wir resetten **nicht sofort** in derselben Ausführung, sondern auf dem **nächsten UI‑Tick**
-    via `bpy.app.timers.register(...)`, um das Verhalten des funktionierenden bidi‑Operators nachzuahmen,
-    der den Reset ebenfalls **asynchron im Modal‑Tick** setzt. (Siehe deine Datei `bidirectional_track.py`.)
+    Mit **Debug‑Logs** zur Fehlersuche.
     """
-    # Preconditions
+    wm = context.window_manager
+    scene = context.scene
+
+    # Clip / Areas loggen
+    areas = list(_iter_clip_areas())
+    if debug:
+        _log(f"Gefundene CLIP_EDITOR Areas: {len(areas)}")
     clip = _get_any_clip()
     if clip is None:
+        _log("Kein aktiver MovieClip gefunden – Abbruch")
         raise RuntimeError("Kein aktiver MovieClip im CLIP_EDITOR gefunden.")
-
-    scene = context.scene
-    wm = context.window_manager
+    if debug:
+        _log(f"Clip Name: {getattr(clip,'name','<unnamed>')}")
 
     origin_frame: int = int(scene.frame_current)
+    if debug:
+        _log(f"Origin Frame: {origin_frame}")
 
     ok, info = _start_forward_tracking_invoke(context)
     if not ok:
         raise RuntimeError(info)
 
-    # -- Delayed Reset: exakt wie im Bidi‑Flow wird *nach* Start des Vorwärtstrackings
-    #    in der nächsten Tick‑Iteration auf den Ursprungsframe zurückgestellt.
+    # Delayed Reset Tick 1 -----------------------------------------------------
     def _tick_once() -> Optional[float]:
-        _set_frame_and_notify(origin_frame)
+        if debug:
+            _log("Timer Tick #1 – versuche Reset auf Origin")
+        before = int(bpy.context.scene.frame_current)
+        _set_frame_and_notify(origin_frame, verbose=debug)
+        after = int(bpy.context.scene.frame_current)
+        if debug:
+            _log(f"Timer Tick #1 – Frame vorher={before}, nachher={after}")
+        # Falls der Frame *nicht* auf origin steht, zweiter Versuch später
+        if after != origin_frame:
+            if debug:
+                _log("Timer Tick #1 – Reset nicht wirksam, plane Tick #2 in 0.3s")
+            bpy.app.timers.register(_tick_twice, first_interval=0.3)
+        else:
+            if coord_token:
+                wm["bw_tracking_done_token"] = coord_token
+            wm["bw_tracking_last_info"] = {
+                "start_frame": origin_frame,
+                "tracked_until": int(bpy.context.scene.frame_current),
+                "mode": "INVOKE",
+                "note": info,
+                "tick": 1,
+            }
+            if debug:
+                _log("Timer Tick #1 – Reset erfolgreich, Token gesetzt")
+        return None
+
+    # Delayed Reset Tick 2 (Fallback) -----------------------------------------
+    def _tick_twice() -> Optional[float]:
+        if debug:
+            _log("Timer Tick #2 – erneuter Reset‑Versuch")
+        before = int(bpy.context.scene.frame_current)
+        _set_frame_and_notify(origin_frame, verbose=debug)
+        after = int(bpy.context.scene.frame_current)
         if coord_token:
             wm["bw_tracking_done_token"] = coord_token
         wm["bw_tracking_last_info"] = {
@@ -138,8 +176,13 @@ def track_to_scene_end_fn(
             "tracked_until": int(bpy.context.scene.frame_current),
             "mode": "INVOKE",
             "note": info,
+            "tick": 2,
         }
+        if debug:
+            _log(f"Timer Tick #2 – Frame vorher={before}, nachher={after}; Token gesetzt")
         return None
 
-    # kurzer Delay (0.1s) – genug, damit INVOKE startet, aber gefühlt „sofort“ für den Nutzer
-    bpy.app.timers.register(_tick_once, first_interval=0.1)
+    # Timer starten (0.12s gibt INVOKE minimal Zeit zu starten, aber bleibt snappy)
+    if debug:
+        _log("Register Timer Tick #1 in 0.12s")
+    bpy.app.timers.register(_tick_once, first_interval=0.12)
