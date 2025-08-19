@@ -1,86 +1,55 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """
-Operator/tracking_coordinator.py – robuste, importlose Fallback-Variante
+Operator/tracking_coordinator.py – robuste Variante (erzwingt Helper-Registration)
 
-Ziel:
-- **Kein** scheitern mehr an Importpfaden. Wir versuchen zuerst, den Operator
-  `bw.track_to_scene_end` direkt zu benutzen. Wenn er fehlt, registrieren wir
-  ihn über den Helper-Registrar, und als letzte Option direkt über die Klasse.
-- Start weiterhin mit **INVOKE_DEFAULT**, warten **modal** auf WM-Token, dann
-  "Finish".
+- Startet `bw.track_to_scene_end` mit **INVOKE_DEFAULT**.
+- **Registriert den Helper-Operator immer aktiv**, statt nur zu prüfen, ob
+  er existiert (hasattr-Checks sind bei bpy.ops trügerisch).
+- **Wartet modal** auf WindowManager-Token, optionales Timeout.
 """
 from __future__ import annotations
 
 from importlib import import_module
 from time import time_ns, monotonic
-from typing import Optional, Set
+from typing import Optional, Set, Type
 
 import bpy
 
 __all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
 
-TIMEOUT_SEC = 30.0  # optionales Timeout, damit der Modal-Loop nie ewig hängt
-
+TIMEOUT_SEC = 30.0
 
 # ---------------------------------------------------------------------------
-# Operator-Verfügbarkeit sicherstellen
+# Helper-Klasse importieren & REGISTRIEREN (erzwingen)
 # ---------------------------------------------------------------------------
 
-def _op_available() -> bool:
-    try:
-        # Zugriff auf Unter-Namespace kann AttributeError werfen, wenn 'bw' nicht existiert
-        return hasattr(bpy.ops, "bw") and hasattr(bpy.ops.bw, "track_to_scene_end")
-    except Exception:
-        return False
-
-
-def _ensure_operator_available() -> None:
-    """Sorgt dafür, dass `bw.track_to_scene_end` registriert ist.
-
-    Reihenfolge:
-    1) Wenn vorhanden → fertig
-    2) Helper-Registrar (`..Helper.register`) versuchen
-    3) Direkten Klassenimport (`..Helper.tracking_helper.BW_OT_track_to_scene_end`) und
-       Registrierung versuchen
-    4) Als Fallback auch absolute Importe probieren
-    """
-    if _op_available():
-        return
-
-    # (2) Versuche den Helper-Registrar aufzurufen
-    try:
-        # relativ aus Nachbarpaket
-        from ..Helper import register as _reg_helper  # type: ignore
-        _reg_helper()
-    except Exception:
-        # Best effort: vielleicht existiert nur das Modul
-        pass
-
-    if _op_available():
-        return
-
-    # (3) Direkte Klassenregistrierung versuchen
-    last_ex = None
-    for modname, is_rel in (("..Helper.tracking_helper", True), ("Helper.tracking_helper", False), ("tracking_helper", False)):
+def _import_helper_class() -> Type[bpy.types.Operator]:
+    last_ex: Exception | None = None
+    for modname, is_rel in (
+        ("..Helper.tracking_helper", True),
+        ("..tracking_helper", True),
+        ("tracking_helper", False),
+    ):
         try:
             mod = import_module(modname, package=__package__) if is_rel else import_module(modname)
             cls = getattr(mod, "BW_OT_track_to_scene_end", None)
-            if cls is None:
-                continue
-            try:
-                bpy.utils.register_class(cls)
-            except ValueError:
-                # bereits registriert
-                pass
-            break
-        except Exception as ex:  # speichere letzte Ausnahme zur Fehlermeldung
+            if cls is not None:
+                return cls
+        except Exception as ex:
             last_ex = ex
-    if not _op_available():
-        raise RuntimeError(
-            "Operator 'bw.track_to_scene_end' nicht verfügbar. Prüfe Paketstruktur:"
-            " <AddonRoot>/Helper/__init__.py, <AddonRoot>/Helper/tracking_helper.py und"
-            " <AddonRoot>/Operator/__init__.py müssen existieren."
-        ) from last_ex
+    raise RuntimeError(
+        "Konnte Klasse BW_OT_track_to_scene_end nicht importieren. Prüfe Paketstruktur:"
+        " <AddonRoot>/Helper/tracking_helper.py (mit Operator-Klasse) und __init__.py."
+    ) from last_ex
+
+
+def _ensure_registered() -> None:
+    cls = _import_helper_class()
+    try:
+        bpy.utils.register_class(cls)
+    except ValueError:
+        # Bereits registriert → ok
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -103,8 +72,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return (context.area is not None) and (context.area.type == "CLIP_EDITOR")
 
     def invoke(self, context: bpy.types.Context, event) -> Set[str]:
+        # **Immer** versuchen, den Helper zu registrieren (sicherer als hasattr-Checks)
         try:
-            _ensure_operator_available()
+            _ensure_registered()
         except Exception as ex:
             self.report({'ERROR'}, f"Track-Helper-Setup fehlgeschlagen: {ex}")
             return {"CANCELLED"}
@@ -118,15 +88,23 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         # Helper starten (INVOKE_DEFAULT)
         try:
+            # Optional: Presence-Check via poll() – gibt False zurück, wenn Kontext falsch ist
+            poll_ok = False
+            try:
+                poll_ok = bool(bpy.ops.bw.track_to_scene_end.poll())
+            except Exception:
+                # poll() ggf. nicht verfügbar – ignorieren und versuchen zu starten
+                pass
+
             ret = bpy.ops.bw.track_to_scene_end('INVOKE_DEFAULT', coord_token=self._token)
             if ret and 'CANCELLED' in ret:
-                self.report({'ERROR'}, "Helper wurde abgebrochen (kein Clip/keine Marker?)")
+                self.report({'ERROR'}, "Helper wurde abgebrochen (kein Clip/keine Marker/kein CLIP_EDITOR?)")
                 return {"CANCELLED"}
         except Exception as ex:
             self.report({'ERROR'}, f"Helper-Start fehlgeschlagen: {ex}")
             return {"CANCELLED"}
 
-        # Modal warten
+        # Modal warten (Timeout schützt vor ewigem Hängen)
         self._deadline = monotonic() + TIMEOUT_SEC
         self._timer = wm.event_timer_add(0.1, window=context.window)
         wm.modal_handler_add(self)
@@ -137,7 +115,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return self._finish(context, cancelled=True, msg="Abgebrochen (ESC)")
 
         if event.type == 'TIMER':
-            # Timeout prüfen
             if self._deadline is not None and monotonic() > self._deadline:
                 return self._finish(context, cancelled=True, msg="Timeout (kein Feedback vom Helper)")
 
@@ -178,7 +155,7 @@ def register():
             bpy.utils.register_class(c)
         except ValueError:
             pass
-    print("[Coordinator] registered (importless fallback)")
+    print("[Coordinator] registered (forces helper registration)")
 
 
 def unregister():
