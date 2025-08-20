@@ -72,27 +72,38 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # ---------------- Lifecycle ----------------
 
     def _run_pre_flight_helpers(self, context) -> None:
-        """Pre-Flight: Marker-Korridor & Defaults setzen, bevor FIND_LOW startet."""
-        print("[Coord] BOOTSTRAP → marker_helper_main() / main_to_adapt()")
-        # 1) marker_helper_main: schreibt marker_basis/adapt/min/max, frames_track, resolve_error
+        """Pre-Flight vor dem ersten FIND_LOW: Tracker-Defaults + Marker-Basiswerte setzen."""
+        # 1) tracker_settings.py – robust mehrere Funktionsnamen versuchen
+        try:
+            try:
+                from ..Helper.tracker_settings import apply_tracker_settings as _ts  # type: ignore
+            except Exception:
+                try:
+                    from ..Helper.tracker_settings import set_tracker_defaults as _ts  # type: ignore
+                except Exception:
+                    from ..Helper.tracker_settings import run as _ts  # type: ignore
+            _ts(context)
+            print("[Coord] BOOTSTRAP → tracker_settings OK")
+        except Exception as ex:
+            print(f"[Coord] BOOTSTRAP WARN: tracker_settings failed: {ex!r}")
+            # Operator-Fallback, falls vorhanden
+            try:
+                bpy.ops.clip.apply_tracker_settings('INVOKE_DEFAULT')
+            except Exception:
+                pass
+
+        # 2) marker_helper_main.py
         try:
             from ..Helper.marker_helper_main import run_marker_helper_main  # type: ignore
             run_marker_helper_main(context)
+            print("[Coord] BOOTSTRAP → marker_helper_main OK")
         except Exception as ex_func:
             print(f"[Coord] BOOTSTRAP WARN: marker_helper_main failed: {ex_func!r}")
-            # Fallback: Operator, falls vorhanden
             try:
                 bpy.ops.clip.marker_helper_main('INVOKE_DEFAULT')
-            except Exception as ex_op:
-                print(f"[Coord] BOOTSTRAP WARN: marker_helper_main operator failed: {ex_op!r}")
-    
-        # 2) main_to_adapt: konsolidiert/adaptiert Werte (use_override=True wie in Vorgabe)
-        try:
-            from ..Helper.marker_helper_main import main_to_adapt  # type: ignore
-            main_to_adapt(context, use_override=True)
-        except Exception as ex:
-            print(f"[Coord] BOOTSTRAP WARN: main_to_adapt failed: {ex!r}")
-    
+            except Exception:
+                pass
+
         # 3) (optional) Tracker-Defaults anwenden, wenn UI-Option aktiv
         if self.use_apply_settings:
             try:
