@@ -58,7 +58,7 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
     ts.default_pattern_match = 'KEYFRAME'
     ts.use_default_normalization = True
     ts.default_weight = 1.0
-    ts.default_correlation_min = 0.9
+    ts.default_correlation_min = 0.95
     ts.default_margin = 100
     ts.use_default_mask = False
     ts.use_default_red_channel = True
