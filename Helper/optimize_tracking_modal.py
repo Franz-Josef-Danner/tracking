@@ -1,57 +1,57 @@
-"""Blender-Add-on – funktionaler Optimierungs‑Flow (keine Operatoren)
+# Blender-Add-on – funktionaler Optimierungs‑Flow (keine Operatoren)
+#
+# Ziel
+# ----
+# Die funktionale Portierung der alten, bewährten Optimierung in eine reine
+# Funktions‑API. Es gibt **keine** Operatoren in diesem Modul. Stattdessen werden
+# Timer‑Callbacks (``bpy.app.timers``) benutzt, um nicht-blockierend zu arbeiten.
+#
+# Vorgaben des Nutzers
+# --------------------
+# • Regel 1: kein Operator, nur Funktionen zum Aufrufen.
+# • Die Aufrufe für Detect & Track bleiben identisch zur neuen Version
+#   (d. h. wir verwenden dieselben Helper‑Funktionen wie dort).
+#
+# Pseudo‑Code (vereinfacht übertragen)
+# ------------------------------------
+#
+#     default setzen: pt = Pattern Size, sus = Search Size
+#     flag1 setzen (Pattern/Search übernehmen)
+#     Marker setzen
+#     track → für jeden Track: f_i = Frames pro Track, e_i = Error → eg_i = f_i / e_i
+#     ega = Σ eg_i
+#     if ev < 0:
+#         ev = ega; pt *= 1.1; sus = pt*2; flag1
+#     else:
+#         if ega > ev:
+#             ev = ega; dg = 4; ptv = pt; pt *= 1.1; sus = pt*2; flag1
+#         else:
+#             dg -= 1
+#             if dg >= 0:
+#                 pt *= 1.1; sus = pt*2; flag1
+#             else:
+#                 // Motion‑Model‑Schleife (0..4)
+#                 Pattern size = ptv; Search = ptv*2; flag2 setzen
+#                 marker setzen; tracken; … → beste Motion wählen
+#                 // Channel‑Schleife (vv 0..3), R/G/B‑Kombis laut Vorgabe
+#
+# API‑Überblick
+# -------------
+# • ``start_optimization(context)`` – öffentlicher Einstieg, startet Ablauf.
+# • ``cancel_optimization()`` – bricht ggf. laufende Optimierung ab.
+# • Ablauf läuft über ``bpy.app.timers`` und setzt intern Status/Token.
+#
+# Abhängigkeiten (Helper)
+# -----------------------
+# Wir verwenden dieselben Helper-Funktionen wie in der neuen Version:
+# • ``detect.run_detect_once(context, start_frame: int, handoff_to_pipeline=False)``
+# • ``tracking_helper.track_to_scene_end_fn(context, coord_token: str, start_frame: int, ...)``
+#
+# Beide werden dynamisch importiert; fehlen sie, wird sauber abgebrochen.
+#
+# Hinweis: Dieses Modul ist bewusst selbsterklärend und ausführlich kommentiert,
+# um die Logik später leicht anpassen zu können.
 
-Ziel
-----
-Die funktionale Portierung der alten, bewährten Optimierung in eine reine
-Funktions‑API. Es gibt **keine** Operatoren in diesem Modul. Stattdessen werden
-Timer‑Callbacks (``bpy.app.timers``) benutzt, um nicht-blockierend zu arbeiten.
-
-Vorgaben des Nutzers
---------------------
-• Regel 1: kein Operator, nur Funktionen zum Aufrufen.
-• Die Aufrufe für Detect & Track bleiben identisch zur neuen Version
-  (d. h. wir verwenden dieselben Helper‑Funktionen wie dort).
-
-Pseudo‑Code (vereinfacht übertragen)
-------------------------------------
-
-    default setzen: pt = Pattern Size, sus = Search Size
-    flag1 setzen (Pattern/Search übernehmen)
-    Marker setzen
-    track → für jeden Track: f_i = Frames pro Track, e_i = Error → eg_i = f_i / e_i
-    ega = Σ eg_i
-    if ev < 0:
-        ev = ega; pt *= 1.1; sus = pt*2; flag1
-    else:
-        if ega > ev:
-            ev = ega; dg = 4; ptv = pt; pt *= 1.1; sus = pt*2; flag1
-        else:
-            dg -= 1
-            if dg >= 0:
-                pt *= 1.1; sus = pt*2; flag1
-            else:
-                // Motion‑Model‑Schleife (0..4)
-                Pattern size = ptv; Search = ptv*2; flag2 setzen
-                marker setzen; tracken; … → beste Motion wählen
-                // Channel‑Schleife (vv 0..3), R/G/B‑Kombis laut Vorgabe
-
-API‑Überblick
--------------
-• ``start_optimization(context)`` – öffentlicher Einstieg, startet Ablauf.
-• ``cancel_optimization()`` – bricht ggf. laufende Optimierung ab.
-• Ablauf läuft über ``bpy.app.timers`` und setzt intern Status/Token.
-
-Abhängigkeiten (Helper)
------------------------
-Wir verwenden dieselben Helper-Funktionen wie in der neuen Version:
-• ``detect.run_detect_once(context, start_frame: int, handoff_to_pipeline=False)``
-• ``tracking_helper.track_to_scene_end_fn(context, coord_token: str, start_frame: int, ...)``
-
-Beide werden dynamisch importiert; fehlen sie, wird sauber abgebrochen.
-
-Hinweis: Dieses Modul ist bewusst selbsterklärend und ausführlich kommentiert,
-um die Logik später leicht anpassen zu können.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -102,6 +102,11 @@ CHANNEL_PRESETS = {
     3: (False, True, True),
     # Hinweis: Die Pseudo‑Liste zeigt 5 Fälle (0..4) für Motion, aber 4 für Channels.
 }
+
+# --- Nur für Pattern‑Size‑Übernahme nach alter Version (signifikante Verschlechterung) ---
+# Minimale Ergänzung: Schwellwerte für die Bestätigung des besten Pattern‑Werts.
+DETERIORATION_RATIO: float = 0.12     # 12% schlechter gilt als signifikant
+MIN_SAME_PT_REPEATS: int = 3          # wie oft die Verschlechterung am selben pt bestätigt werden muss
 
 # -----------------------------------------------------------------------------
 # Hilfsfunktionen: Flags / Defaults setzen
@@ -162,6 +167,7 @@ def _calc_track_quality_sum(context: bpy.types.Context, clip: bpy.types.MovieCli
             total += (frames / err)
     return float(total)
 
+
 def _find_clip_editor_context(context):
     """Sucht ein (window, area, region, space) Tupel für den CLIP_EDITOR."""
     wm = context.window_manager
@@ -179,6 +185,7 @@ def _find_clip_editor_context(context):
             if region and space:
                 return win, area, region, space
     return None
+
 
 def _call_in_clip_context(context, fn, *, ensure_tracking_mode=True, **kwargs):
     """Ruft fn(**kwargs) innerhalb eines gültigen CLIP_EDITOR-Kontexts auf."""
@@ -202,6 +209,7 @@ def _call_in_clip_context(context, fn, *, ensure_tracking_mode=True, **kwargs):
                 pass
         return fn(**kwargs)
 
+
 def _delete_selected_tracks(context: bpy.types.Context) -> None:
     """Löscht aktuell selektierte Tracks im CLIP_EDITOR-Kontext."""
     def _op(**kw):
@@ -212,7 +220,7 @@ def _delete_selected_tracks(context: bpy.types.Context) -> None:
             context,
             _op,
             ensure_tracking_mode=True,
-            confirm=True,   # <<< genau das wolltest du
+            confirm=True,   # gewollt: Operator-Confirm im Kontext
         )
         print("[Optimize] Selektierte (neue) Marker/Tracks gelöscht.")
     except Exception as ex:
@@ -234,7 +242,7 @@ class _AsyncTracker:
         if wm.get("bw_tracking_done_token", None) == self.token:
             del wm["bw_tracking_done_token"]
 
-        # WICHTIG: track_to_scene_end_fn im CLIP_EDITOR-Kontext aufrufen
+        # track_to_scene_end_fn im CLIP_EDITOR-Kontext aufrufen
         def _kickoff(**kw):
             return track_to_scene_end_fn(self.context, **kw)
 
@@ -281,6 +289,9 @@ class _State:
 
     phase: str = "INIT"
     tracker: Optional[_AsyncTracker] = None
+
+    # Nur für Pattern‑Size‑Bestätigung nach alter Logik
+    rep_same_pt: int = 0  # Zähler, wie oft die Verschlechterung am aktuellen pt bestätigt wurde
 
 
 # -----------------------------------------------------------------------------
@@ -430,10 +441,39 @@ def _timer_step() -> float | None:
 # ---------------------- Branch‑Helfer ----------------------
 
 def _branch_ev_known(st: _State, ega: float) -> float:
+    # Verbesserung → wie gehabt, plus Reset des Bestätigungszählers
     if ega > st.ev:
         st.ev = ega
         st.dg = 4
         st.ptv = st.pt
+        st.rep_same_pt = 0
+        st.pt *= 1.1
+        st.sus = st.pt * 2
+        _set_flag1(st.clip, int(st.pt), int(st.sus))
+        _start_track(st)
+        st.phase = "WAIT_TRACK_IMPROVE"
+        return 0.1
+
+    # Keine Verbesserung: prüfen, ob signifikant schlechter als Bestwert
+    signif_worse_cut = st.ev * (1.0 - DETERIORATION_RATIO)
+    if ega <= signif_worse_cut:
+        # Verschlechterung am selben pt bestätigen lassen (mehrfach tracken, ohne pt zu ändern)
+        st.rep_same_pt += 1
+        if st.rep_same_pt >= MIN_SAME_PT_REPEATS:
+            # Bestwert ist stabil → Pattern‑Suche beenden und mit ptv fortfahren
+            st.phase = "MOTION_LOOP_SETUP"
+            return 0.0
+        else:
+            # Gleicher pt erneut tracken, um die Verschlechterung zu verifizieren
+            _set_flag1(st.clip, int(st.pt), int(st.sus))
+            _start_track(st)
+            st.phase = "WAIT_TRACK_IMPROVE"
+            return 0.1
+
+    # Nicht besser, aber auch nicht signifikant schlechter → weiter erhöhen (wie neuere Version)
+    st.rep_same_pt = 0
+    st.dg -= 1
+    if st.dg >= 0:
         st.pt *= 1.1
         st.sus = st.pt * 2
         _set_flag1(st.clip, int(st.pt), int(st.sus))
@@ -441,17 +481,8 @@ def _branch_ev_known(st: _State, ega: float) -> float:
         st.phase = "WAIT_TRACK_IMPROVE"
         return 0.1
     else:
-        st.dg -= 1
-        if st.dg >= 0:
-            st.pt *= 1.1
-            st.sus = st.pt * 2
-            _set_flag1(st.clip, int(st.pt), int(st.sus))
-            _start_track(st)
-            st.phase = "WAIT_TRACK_IMPROVE"
-            return 0.1
-        else:
-            st.phase = "MOTION_LOOP_SETUP"
-            return 0.0
+        st.phase = "MOTION_LOOP_SETUP"
+        return 0.0
 
 # ---------------------- Ablauf‑Helfer ----------------------
 
@@ -463,18 +494,16 @@ def _ensure_markers(st: _State) -> None:
         except Exception:
             pass
     else:
-        # Alternativ: Detect‑Pass (wie neue Version)
-        if run_detect_once is not None:
-            try:
-                run_detect_once(st.context, start_frame=st.origin_frame, handoff_to_pipeline=False)
-            except Exception:
-                pass
+        # Alternativ (Fallback): nichts tun
+        pass
+
 
 def _start_track(st: _State) -> None:
     if st.tracker:
         st.tracker.clear()
     st.tracker = _AsyncTracker(st.context, st.origin_frame)
     st.tracker.start()
+
 
 def _finish_track(st: _State) -> None:
     if st.tracker:
@@ -487,6 +516,7 @@ def _finish_track(st: _State) -> None:
         except Exception:
             st.context.scene.frame_current = st.origin_frame
     _delete_selected_tracks(st.context)
+
 
 def _apply_best_and_finish(st: _State) -> None:
     # bestes Motion‑Model anwenden
