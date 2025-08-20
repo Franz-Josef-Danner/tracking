@@ -55,7 +55,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List, Callable
+from typing import Optional, List
 
 import bpy
 
@@ -77,10 +77,7 @@ try:  # Fehler/Qualitätsmetrik (aus altem System)
 except Exception:  # pragma: no cover
     error_value = None  # type: ignore
 
-try:  # Marker‑Erstellung (aus altem System)
-    from .detect import perform_marker_detection  # type: ignore
-except Exception:  # pragma: no cover
-    perform_marker_detection = None  # type: ignore
+# perform_marker_detection wird indirekt in detect.run_detect_once verwendet.
 
 # -----------------------------------------------------------------------------
 # Konfiguration & Mapping
@@ -93,20 +90,19 @@ MOTION_MODELS: List[str] = [
     "LocRot",        # 4 → R: False, G: False, B: True
 ]
 
-# Channel‑Preset gemäß Vorgabe
-# vv = 0..3 → (R,G,B) wie in der Pseudologik
+# Channel‑Preset gemäß Vorgabe (hier nur Mapping; Umschaltung am Ende)
 CHANNEL_PRESETS = {
     0: (True, False, False),
     1: (True, True, False),
     2: (False, True, False),
     3: (False, True, True),
-    # Hinweis: Die Pseudo‑Liste zeigt 5 Fälle (0..4) für Motion, aber 4 für Channels.
 }
 
-# --- Nur für Pattern‑Size‑Übernahme nach alter Version (signifikante Verschlechterung) ---
-# Minimale Ergänzung: Schwellwerte für die Bestätigung des besten Pattern‑Werts.
-DETERIORATION_RATIO: float = 0.12     # 12% schlechter gilt als signifikant
-MIN_SAME_PT_REPEATS: int = 3          # wie oft die Verschlechterung am selben pt bestätigt werden muss
+# --- Nur für Pattern‑Size‑Übernahme nach alter Version ---
+# Signifikante Verschlechterung muss AM SELBEN Pattern-Wert mehrfach bestätigt werden,
+# bevor die Schleife beendet/umgeschaltet wird.
+DETERIORATION_RATIO: float = 0.12   # 12% schlechter als aktueller Bestwert ⇒ signifikant
+MIN_SAME_PT_REPEATS: int = 3        # so oft am selben pt bestätigen
 
 # -----------------------------------------------------------------------------
 # Hilfsfunktionen: Flags / Defaults setzen
@@ -355,6 +351,7 @@ def _timer_step() -> float | None:
                 st.pt *= 1.1
                 st.sus = st.pt * 2
                 _set_flag1(st.clip, int(st.pt), int(st.sus))
+                _ensure_markers(st)  # wichtig: wir haben soeben selektierte gelöscht
                 _start_track(st)
                 st.phase = "WAIT_TRACK_IMPROVE"
                 return 0.1
@@ -442,51 +439,59 @@ def _timer_step() -> float | None:
 
 def _branch_ev_known(st: _State, ega: float) -> float:
     """Branch-Logik nach einem Tracking-Pass, wenn bereits ein ev existiert.
-    WICHTIG (Fix): Für jeden erneuten Pattern-Size-Versuch müssen wir **erneut** Marker
-    erzeugen, weil wir am Ende von _finish_track die selektierten (frisch
-erzeugten) Tracks löschen. Ohne erneute Detect würden die folgenden
-    track_markers()-Aufrufe mangels Selektion sofort mit {'CANCELLED'} enden.
+
+    WICHTIG: Für jeden neuen Versuch (egal ob gleicher oder erhöhter Pattern-Wert)
+    müssen wir **erneut** Marker erzeugen, weil _finish_track die selektierten
+    (frisch erzeugten) Tracks löscht. Ohne erneute Detect würden folgende
+    track_markers()-Aufrufe oft mit {'CANCELLED'} enden (mangels Selektion).
+
+    Zusätzlich übernehmen wir die *alte* Logik für Pattern Size:
+    - Erst wenn eine *signifikante Verschlechterung* mehrmals am selben pt
+      bestätigt wurde, wird der vorherige beste pt (ptv) als endgültig angenommen
+      und in die Motion/Channel-Schleifen gewechselt.
     """
+    # Verbesserung → klassischen Schritt machen
     if ega > st.ev:
         st.ev = ega
         st.dg = 4
         st.ptv = st.pt
+        st.rep_same_pt = 0
         st.pt *= 1.1
         st.sus = st.pt * 2
         _set_flag1(st.clip, int(st.pt), int(st.sus))
-        # *** NEU: Marker für nächste Iteration neu erzeugen, sonst kein Tracking ***
         _ensure_markers(st)
         _start_track(st)
         st.phase = "WAIT_TRACK_IMPROVE"
         return 0.1
-    else:
-        st.dg -= 1
-        if st.dg >= 0:
-            st.pt *= 1.1
-            st.sus = st.pt * 2
+
+    # Keine Verbesserung → prüfen, ob signifikant schlechter
+    worse_ratio = (st.ev - ega) / max(1e-12, st.ev) if st.ev > 0 else 0.0
+    if worse_ratio >= DETERIORATION_RATIO:
+        st.rep_same_pt += 1
+        print(f"[Optimize] Signifikant schlechter ({worse_ratio:.2%}) – Bestätigung {st.rep_same_pt}/{MIN_SAME_PT_REPEATS} @pt={st.pt:.1f}")
+        if st.rep_same_pt < MIN_SAME_PT_REPEATS:
+            # Gleichen pt erneut versuchen, nur Marker neu detektieren
             _set_flag1(st.clip, int(st.pt), int(st.sus))
-            # *** NEU: Marker wieder neu detektieren, da vorige selektierte gelöscht wurden ***
             _ensure_markers(st)
             _start_track(st)
             st.phase = "WAIT_TRACK_IMPROVE"
             return 0.1
         else:
+            # Genug bestätigt: auf besten ptv zurück und Motion/Channel starten
+            st.pt = st.ptv
+            st.sus = st.pt * 2
+            st.rep_same_pt = 0
             st.phase = "MOTION_LOOP_SETUP"
             return 0.0
-        else:
-            # Gleicher pt erneut tracken, um die Verschlechterung zu verifizieren
-            _set_flag1(st.clip, int(st.pt), int(st.sus))
-            _start_track(st)
-            st.phase = "WAIT_TRACK_IMPROVE"
-            return 0.1
 
-    # Nicht besser, aber auch nicht signifikant schlechter → weiter erhöhen (wie neuere Version)
+    # Nicht besser, aber auch nicht signifikant schlechter → wie neue Version:
     st.rep_same_pt = 0
     st.dg -= 1
     if st.dg >= 0:
         st.pt *= 1.1
         st.sus = st.pt * 2
         _set_flag1(st.clip, int(st.pt), int(st.sus))
+        _ensure_markers(st)
         _start_track(st)
         st.phase = "WAIT_TRACK_IMPROVE"
         return 0.1
@@ -501,10 +506,10 @@ def _ensure_markers(st: _State) -> None:
     if run_detect_once is not None:
         try:
             run_detect_once(st.context, start_frame=st.origin_frame, handoff_to_pipeline=False)
-        except Exception:
-            pass
+        except Exception as ex:
+            print(f"[Optimize] Detect pass failed: {ex}")
     else:
-        # Alternativ (Fallback): nichts tun
+        # Fallback: nichts
         pass
 
 
