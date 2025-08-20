@@ -8,6 +8,11 @@ Strikter FSM-Ablauf: FIND_LOW → JUMP → DETECT (nur READY/FAILED zählen) →
 - Detect läuft ggf. mehrfach (RUNNING) im selben State, bis READY/FAILED oder Timebox.
 - Nach Detect: einmaliges Clean-Short-Gate (__skip_clean_short_once) setzen, dann Bi-Track starten.
 - Erst nach Bi-Track erfolgt Clean-Short.
+
+NEU:
+- Wenn Helper/optimize_tracking_modal.py angestoßen wurde und abgeschlossen ist, wird **vor** dem nächsten
+  FIND_LOW zunächst Helper/marker_helper_main.py ausgeführt. Implementiert via Pending-Flag, das beim Start des
+  Optimizers gesetzt und beim Eintritt in FIND_LOW (einmalig) abgearbeitet wird.
 """
 
 import bpy
@@ -28,6 +33,9 @@ _CLEAN_SKIP_ONCE = "__skip_clean_short_once"  # vom Cleaner respektiert
 _OPT_REQ_KEY = "__optimize_request"
 _OPT_REQ_VAL = "JUMP_REPEAT"
 _OPT_FRAME_KEY = "__optimize_frame"
+
+# NEU: Nachlauf-Aktion nach Optimizer
+_OPT_POST_MARKER_PENDING = "__opt_post_marker_pending"  # True → bei nächstem FIND_LOW erst marker_helper_main ausführen
 
 
 def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
@@ -110,6 +118,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         scn[_LOCK_KEY] = False
         scn[_BIDI_ACTIVE_KEY] = False
         scn[_BIDI_RESULT_KEY] = ""
+        # Pending-Flag auf False beim Start
+        scn[_OPT_POST_MARKER_PENDING] = False
         self._state = "INIT"
         self._detect_attempts = 0
         self._jump_done = False
@@ -123,9 +133,35 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._state = "FIND_LOW"
         return {"RUNNING_MODAL"}
 
+    def _run_post_opt_marker_if_needed(self, context) -> None:
+        """Falls der Optimizer zuvor gestartet wurde, einmalig Marker-Helper ausführen,
+        **bevor** wieder FIND_LOW arbeitet.
+        """
+        scn = context.scene
+        if not scn.get(_OPT_POST_MARKER_PENDING, False):
+            return
+        print("[Coord] POST-OPT → run marker_helper_main()")
+        try:
+            # Funktions-API bevorzugen
+            from ..Helper.marker_helper_main import run_marker_helper_main  # type: ignore
+            run_marker_helper_main(context)
+        except Exception as ex_func:
+            print(f"[Coord] marker_helper_main function failed: {ex_func!r} → try operator fallback")
+            try:
+                # Fallback: evtl. existierender Operator
+                bpy.ops.clip.marker_helper_main('INVOKE_DEFAULT')
+            except Exception as ex_op:
+                print(f"[Coord] marker_helper_main launch failed: {ex_op!r}")
+        finally:
+            scn[_OPT_POST_MARKER_PENDING] = False
+            print("[Coord] POST-OPT → done (flag cleared)")
+
     def _state_find_low(self, context):
         from ..Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
         from ..Helper.clean_error_tracks import run_clean_error_tracks        # type: ignore
+
+        # NEU: Erst Marker-Helper nach Optimizer abarbeiten (einmalig)
+        self._run_post_opt_marker_if_needed(context)
 
         result = run_find_low_marker_frame(context)
         status = str(result.get("status", "FAILED")).upper()
@@ -225,7 +261,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         print(f"[Coord] JUMP → OPTIMIZE (operator fallback, frame={opt_frame})")
                     except Exception as ex_op:
                         print(f"[Coord] OPTIMIZE launch failed: {ex_op!r}")
-
+                finally:
+                    # NEU: Merken, dass nach Optimizer einmalig Marker-Helper laufen soll
+                    scn[_OPT_POST_MARKER_PENDING] = True
+                    print("[Coord] OPTIMIZE → set post-marker pending flag")
 
             self._jump_done = True
         self._detect_attempts = 0
