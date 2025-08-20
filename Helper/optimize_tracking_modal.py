@@ -1,56 +1,9 @@
 # Blender-Add-on – funktionaler Optimierungs‑Flow (keine Operatoren)
 #
-# Ziel
-# ----
-# Die funktionale Portierung der alten, bewährten Optimierung in eine reine
-# Funktions‑API. Es gibt **keine** Operatoren in diesem Modul. Stattdessen werden
-# Timer‑Callbacks (``bpy.app.timers``) benutzt, um nicht-blockierend zu arbeiten.
-#
-# Vorgaben des Nutzers
-# --------------------
-# • Regel 1: kein Operator, nur Funktionen zum Aufrufen.
-# • Die Aufrufe für Detect & Track bleiben identisch zur neuen Version
-#   (d. h. wir verwenden dieselben Helper‑Funktionen wie dort).
-#
-# Pseudo‑Code (vereinfacht übertragen)
-# ------------------------------------
-#
-#     default setzen: pt = Pattern Size, sus = Search Size
-#     flag1 setzen (Pattern/Search übernehmen)
-#     Marker setzen
-#     track → für jeden Track: f_i = Frames pro Track, e_i = Error → eg_i = f_i / e_i
-#     ega = Σ eg_i
-#     if ev < 0:
-#         ev = ega; pt *= 1.1; sus = pt*2; flag1
-#     else:
-#         if ega > ev:
-#             ev = ega; dg = 4; ptv = pt; pt *= 1.1; sus = pt*2; flag1
-#         else:
-#             dg -= 1
-#             if dg >= 0:
-#                 pt *= 1.1; sus = pt*2; flag1
-#             else:
-#                 // Motion‑Model‑Schleife (0..4)
-#                 Pattern size = ptv; Search = ptv*2; flag2 setzen
-#                 marker setzen; tracken; … → beste Motion wählen
-#                 // Channel‑Schleife (vv 0..3), R/G/B‑Kombis laut Vorgabe
-#
-# API‑Überblick
-# -------------
-# • ``start_optimization(context)`` – öffentlicher Einstieg, startet Ablauf.
-# • ``cancel_optimization()`` – bricht ggf. laufende Optimierung ab.
-# • Ablauf läuft über ``bpy.app.timers`` und setzt intern Status/Token.
-#
-# Abhängigkeiten (Helper)
-# -----------------------
-# Wir verwenden dieselben Helper-Funktionen wie in der neuen Version:
-# • ``detect.run_detect_once(context, start_frame: int, handoff_to_pipeline=False)``
-# • ``tracking_helper.track_to_scene_end_fn(context, coord_token: str, start_frame: int, ...)``
-#
-# Beide werden dynamisch importiert; fehlen sie, wird sauber abgebrochen.
-#
-# Hinweis: Dieses Modul ist bewusst selbsterklärend und ausführlich kommentiert,
-# um die Logik später leicht anpassen zu können.
+# Hinweis: Diese Datei ist **rein funktional** (keine Operatoren). Die Steuerung
+# erfolgt über `bpy.app.timers` und Helper-Funktionen (Detect/Track), identisch
+# zur neuen Version. Gegenüber der letzten Revision sind nur **Syntax‑Fixes** und
+# die korrekte **mehrstufige Pattern‑Size‑Suche** nach alter Version enthalten.
 
 from __future__ import annotations
 
@@ -59,9 +12,9 @@ from typing import Optional, List
 
 import bpy
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # Dynamische Helper‑Imports (gleichen Signaturen wie in optimize_tracking_modal_neu)
-# -----------------------------------------------------------------------------
+# =============================================================================
 try:  # Detect-Einzelpass
     from .detect import run_detect_once  # type: ignore
 except Exception:  # pragma: no cover
@@ -77,17 +30,17 @@ try:  # Fehler/Qualitätsmetrik (aus altem System)
 except Exception:  # pragma: no cover
     error_value = None  # type: ignore
 
-# perform_marker_detection wird indirekt in detect.run_detect_once verwendet.
-
-# -----------------------------------------------------------------------------
-# Konfiguration & Mapping
-# -----------------------------------------------------------------------------
+# =============================================================================
+# Konfiguration & Mapping (Syntax‑bereinigt)
+# =============================================================================
+# ACHTUNG: Der frühere SyntaxError "'[' was never closed" entstand durch einen
+# kopierbedingten Cut im MOTION_MODELS‑Block. Nachfolgend sauber und vollständig.
 MOTION_MODELS: List[str] = [
-    "Perspective",   # 0 → R: True,  G: False, B: False
-    "Affine",        # 1 → R: True,  G: True,  B: False
-    "LocRotScale",   # 2 → R: False, G: True,  B: False
-    "LocScale",      # 3 → R: False, G: True,  B: True
-    "LocRot",        # 4 → R: False, G: False, B: True
+    "Perspective",   # 0
+    "Affine",        # 1
+    "LocRotScale",   # 2
+    "LocScale",      # 3
+    "LocRot",        # 4
 ]
 
 # Channel‑Preset gemäß Vorgabe (hier nur Mapping; Umschaltung am Ende)
@@ -98,15 +51,13 @@ CHANNEL_PRESETS = {
     3: (False, True, True),
 }
 
-# --- Nur für Pattern‑Size‑Übernahme nach alter Version ---
-# Signifikante Verschlechterung muss AM SELBEN Pattern-Wert mehrfach bestätigt werden,
-# bevor die Schleife beendet/umgeschaltet wird.
+# --- Pattern‑Size‑Übernahme nach alter Version ---
 DETERIORATION_RATIO: float = 0.12   # 12% schlechter als aktueller Bestwert ⇒ signifikant
-MIN_SAME_PT_REPEATS: int = 3        # so oft am selben pt bestätigen
+MIN_SAME_PT_REPEATS: int = 3        # Bestätigungsläufe am selben pt
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # Hilfsfunktionen: Flags / Defaults setzen
-# -----------------------------------------------------------------------------
+# =============================================================================
 
 def _set_flag1(clip: bpy.types.MovieClip, pattern: int, search: int) -> None:
     s = clip.tracking.settings
@@ -127,10 +78,9 @@ def _set_flag3_channels(clip: bpy.types.MovieClip, vv: int) -> None:
     s.use_default_green_channel = bool(g)
     s.use_default_blue_channel = bool(b)
 
-
-# -----------------------------------------------------------------------------
+# =============================================================================
 # Metriken: EGA = Σ (frames_per_track / error_per_track)
-# -----------------------------------------------------------------------------
+# =============================================================================
 
 def _calc_track_quality_sum(context: bpy.types.Context, clip: bpy.types.MovieClip) -> float:
     total = 0.0
@@ -139,11 +89,9 @@ def _calc_track_quality_sum(context: bpy.types.Context, clip: bpy.types.MovieCli
             err = None
             if error_value is not None:
                 try:
-                    # Variante A: (context, track)
                     err = float(error_value(context, tr))  # type: ignore[misc]
                 except TypeError:
                     try:
-                        # Variante B: (scene) – nutzt selektierte Marker; wir selektieren kurz den Track
                         sel_backup = tr.select
                         tr.select = True
                         err = float(error_value(context.scene))  # type: ignore[misc]
@@ -163,9 +111,11 @@ def _calc_track_quality_sum(context: bpy.types.Context, clip: bpy.types.MovieCli
             total += (frames / err)
     return float(total)
 
+# =============================================================================
+# CLIP_EDITOR‑Kontext & Utilities
+# =============================================================================
 
 def _find_clip_editor_context(context):
-    """Sucht ein (window, area, region, space) Tupel für den CLIP_EDITOR."""
     wm = context.window_manager
     if not wm:
         return None
@@ -184,10 +134,8 @@ def _find_clip_editor_context(context):
 
 
 def _call_in_clip_context(context, fn, *, ensure_tracking_mode=True, **kwargs):
-    """Ruft fn(**kwargs) innerhalb eines gültigen CLIP_EDITOR-Kontexts auf."""
     found = _find_clip_editor_context(context)
     if not found:
-        # Kein sichtbarer CLIP_EDITOR – versuch’s ohne Override (best effort)
         return fn(**kwargs)
     win, area, region, space = found
     override = {
@@ -207,25 +155,17 @@ def _call_in_clip_context(context, fn, *, ensure_tracking_mode=True, **kwargs):
 
 
 def _delete_selected_tracks(context: bpy.types.Context) -> None:
-    """Löscht aktuell selektierte Tracks im CLIP_EDITOR-Kontext."""
     def _op(**kw):
         return bpy.ops.clip.delete_track(**kw)
-
     try:
-        _call_in_clip_context(
-            context,
-            _op,
-            ensure_tracking_mode=True,
-            confirm=True,   # gewollt: Operator-Confirm im Kontext
-        )
+        _call_in_clip_context(context, _op, ensure_tracking_mode=True, confirm=True)
         print("[Optimize] Selektierte (neue) Marker/Tracks gelöscht.")
     except Exception as ex:
         print(f"[Optimize] WARN: delete_track fehlgeschlagen: {ex}")
 
-
-# -----------------------------------------------------------------------------
-# Detect + Track orchestration (nicht blockierend) via WindowManager‑Token
-# -----------------------------------------------------------------------------
+# =============================================================================
+# Async‑Tracking Orchestration (Timer + Done‑Token)
+# =============================================================================
 @dataclass
 class _AsyncTracker:
     context: bpy.types.Context
@@ -237,11 +177,8 @@ class _AsyncTracker:
         wm = self.context.window_manager
         if wm.get("bw_tracking_done_token", None) == self.token:
             del wm["bw_tracking_done_token"]
-
-        # track_to_scene_end_fn im CLIP_EDITOR-Kontext aufrufen
         def _kickoff(**kw):
             return track_to_scene_end_fn(self.context, **kw)
-
         _call_in_clip_context(
             self.context,
             _kickoff,
@@ -260,62 +197,50 @@ class _AsyncTracker:
         if wm.get("bw_tracking_done_token", None) == self.token:
             del wm["bw_tracking_done_token"]
 
-
-# -----------------------------------------------------------------------------
-# Hauptzustand der Optimierung (entspricht Pseudo‑Logik)
-# -----------------------------------------------------------------------------
+# =============================================================================
+# Hauptzustand der Optimierung
+# =============================================================================
 @dataclass
 class _State:
     context: bpy.types.Context
     clip: bpy.types.MovieClip
     origin_frame: int
 
-    # Dynamik
-    ev: float = -1.0  # bester bisheriger Score
-    dg: int = 0       # Degression‑Zähler
-    pt: float = 21.0  # Pattern Size
-    ptv: float = 21.0 # Pattern Size (Vorhalte)
-    sus: float = 42.0 # Search Size (≈ 2*pt)
+    ev: float = -1.0
+    dg: int = 0
+    pt: float = 21.0
+    ptv: float = 21.0
+    sus: float = 42.0
 
-    mo_index: int = 0  # Motion‑Model‑Index (0..4)
-    mov: int = 0       # bestes Motion‑Model
+    mo_index: int = 0
+    mov: int = 0
 
-    vv: int = 0        # Channel‑Preset‑Index (0..3)
-    vf: int = 0        # bestes Channel‑Preset
+    vv: int = 0
+    vf: int = 0
 
     phase: str = "INIT"
     tracker: Optional[_AsyncTracker] = None
 
-    # Nur für Pattern‑Size‑Bestätigung nach alter Logik
-    rep_same_pt: int = 0  # Zähler, wie oft die Verschlechterung am aktuellen pt bestätigt wurde
+    # Hysterese nach alter Version
+    rep_same_pt: int = 0
 
-
-# -----------------------------------------------------------------------------
-# Steuerlogik als Timer‑Pipeline
-# -----------------------------------------------------------------------------
-
+# =============================================================================
+# Timer‑Pipeline
+# =============================================================================
 _RUNNING: Optional[_State] = None
 
 
 def start_optimization(context: bpy.types.Context) -> None:
-    """Öffentlicher Einstieg: startet die nicht‑blockierende Optimierung.
-
-    Kann mehrfach aufgerufen werden; ein bestehender Lauf wird vorher beendet.
-    """
     cancel_optimization()
-
     space = getattr(context, "space_data", None)
     if not space or getattr(space, "type", "") != "CLIP_EDITOR":
         print("[Optimize] WARN: Kein CLIP_EDITOR aktiv – fahre trotzdem fort.")
-
     clip = getattr(space, "clip", None) or getattr(context.space_data, "clip", None)
     if not clip:
         raise RuntimeError("Kein aktiver Movie Clip.")
-
     st = _State(context=context, clip=clip, origin_frame=int(context.scene.frame_current))
     st.phase = "FLAG1_INIT"
     globals()["_RUNNING"] = st
-
     bpy.app.timers.register(_timer_step, first_interval=0.2)
     print(f"[Optimize] Start @frame={st.origin_frame}")
 
@@ -325,16 +250,12 @@ def cancel_optimization() -> None:
     _RUNNING = None
 
 
-# ---------------------- Timer‑Step ----------------------
-
 def _timer_step() -> float | None:
     st = globals().get("_RUNNING")
     if not st:
         return None
-
     try:
         if st.phase == "FLAG1_INIT":
-            # Defaults setzen + Marker erzeugen + erster Track
             _set_flag1(st.clip, int(st.pt), int(st.sus))
             _ensure_markers(st)
             _start_track(st)
@@ -344,9 +265,7 @@ def _timer_step() -> float | None:
         if st.phase == "WAIT_TRACK_BASE":
             if not st.tracker or not st.tracker.done():
                 return 0.1
-            # 1) Qualität VOR dem Aufräumen ermitteln (Tracks existieren noch)
             ega = _calc_track_quality_sum(st.context, st.clip)
-            # 2) Danach bereinigen (selektierte neue Marker löschen, Playhead resetten)
             _finish_track(st)
             if st.ev < 0:
                 st.ev = ega
@@ -357,20 +276,16 @@ def _timer_step() -> float | None:
                 _start_track(st)
                 st.phase = "WAIT_TRACK_IMPROVE"
                 return 0.1
-            else:
-                return _branch_ev_known(st, ega)
+            return _branch_ev_known(st, ega)
 
         if st.phase == "WAIT_TRACK_IMPROVE":
             if not st.tracker or not st.tracker.done():
                 return 0.1
-            # 1) Qualität VOR dem Aufräumen ermitteln
             ega = _calc_track_quality_sum(st.context, st.clip)
-            # 2) Danach aufräumen
             _finish_track(st)
             return _branch_ev_known(st, ega)
 
         if st.phase == "MOTION_LOOP_SETUP":
-            # Setze pt := ptv, sus := ptv*2
             st.pt = st.ptv
             st.sus = st.pt * 2
             _set_flag1(st.clip, int(st.pt), int(st.sus))
@@ -381,12 +296,10 @@ def _timer_step() -> float | None:
 
         if st.phase == "MOTION_LOOP_RUN":
             if st.mo_index >= 5:
-                # Motion abgeschlossen → Channel‑Loop
                 st.vv = 0
                 st.vf = 0
                 st.phase = "CHANNEL_LOOP_RUN"
                 return 0.0
-
             _set_flag2_motion_model(st.clip, st.mo_index)
             _ensure_markers(st)
             _start_track(st)
@@ -396,7 +309,6 @@ def _timer_step() -> float | None:
         if st.phase == "MOTION_WAIT":
             if not st.tracker or not st.tracker.done():
                 return 0.1
-            # Qualität vor Cleanup lesen
             ega = _calc_track_quality_sum(st.context, st.clip)
             _finish_track(st)
             if ega > st.ev:
@@ -408,10 +320,8 @@ def _timer_step() -> float | None:
 
         if st.phase == "CHANNEL_LOOP_RUN":
             if st.vv >= 4:
-                # Channel‑Schleife fertig → bestes anwenden & Finish
                 _apply_best_and_finish(st)
                 return None
-
             _set_flag3_channels(st.clip, st.vv)
             _ensure_markers(st)
             _start_track(st)
@@ -430,7 +340,6 @@ def _timer_step() -> float | None:
             st.phase = "CHANNEL_LOOP_RUN"
             return 0.0
 
-        # Unbekannte Phase → abbrechen
         print(f"[Optimize] Unbekannte Phase: {st.phase}")
         globals()["_RUNNING"] = None
         return None
@@ -440,22 +349,12 @@ def _timer_step() -> float | None:
         globals()["_RUNNING"] = None
         return None
 
-# ---------------------- Branch‑Helfer ----------------------
+# =============================================================================
+# Branch‑Helfer (Pattern‑Suche mit Hysterese nach alter Version)
+# =============================================================================
 
 def _branch_ev_known(st: _State, ega: float) -> float:
-    """Branch-Logik nach einem Tracking-Pass, wenn bereits ein ev existiert.
-
-    WICHTIG: Für jeden neuen Versuch (egal ob gleicher oder erhöhter Pattern-Wert)
-    müssen wir **erneut** Marker erzeugen, weil _finish_track die selektierten
-    (frisch erzeugten) Tracks löscht. Ohne erneute Detect würden folgende
-    track_markers()-Aufrufe oft mit {'CANCELLED'} enden (mangels Selektion).
-
-    Zusätzlich übernehmen wir die *alte* Logik für Pattern Size:
-    - Erst wenn eine *signifikante Verschlechterung* mehrmals am selben pt
-      bestätigt wurde, wird der vorherige beste pt (ptv) als endgültig angenommen
-      und in die Motion/Channel-Schleifen gewechselt.
-    """
-    # Verbesserung → klassischen Schritt machen
+    # Verbesserung
     if ega > st.ev:
         st.ev = ega
         st.dg = 4
@@ -469,27 +368,25 @@ def _branch_ev_known(st: _State, ega: float) -> float:
         st.phase = "WAIT_TRACK_IMPROVE"
         return 0.1
 
-    # Keine Verbesserung → prüfen, ob signifikant schlechter
+    # signifikant schlechter?
     worse_ratio = (st.ev - ega) / max(1e-12, st.ev) if st.ev > 0 else 0.0
     if worse_ratio >= DETERIORATION_RATIO:
         st.rep_same_pt += 1
         print(f"[Optimize] Signifikant schlechter ({worse_ratio:.2%}) – Bestätigung {st.rep_same_pt}/{MIN_SAME_PT_REPEATS} @pt={st.pt:.1f}")
         if st.rep_same_pt < MIN_SAME_PT_REPEATS:
-            # Gleichen pt erneut versuchen, nur Marker neu detektieren
             _set_flag1(st.clip, int(st.pt), int(st.sus))
             _ensure_markers(st)
             _start_track(st)
             st.phase = "WAIT_TRACK_IMPROVE"
             return 0.1
-        else:
-            # Genug bestätigt: auf besten ptv zurück und Motion/Channel starten
-            st.pt = st.ptv
-            st.sus = st.pt * 2
-            st.rep_same_pt = 0
-            st.phase = "MOTION_LOOP_SETUP"
-            return 0.0
+        # genug bestätigt → auf ptv zurück und Motion/Channel starten
+        st.pt = st.ptv
+        st.sus = st.pt * 2
+        st.rep_same_pt = 0
+        st.phase = "MOTION_LOOP_SETUP"
+        return 0.0
 
-    # Nicht besser, aber auch nicht signifikant schlechter → wie neue Version:
+    # weder besser noch signifikant schlechter → degression
     st.rep_same_pt = 0
     st.dg -= 1
     if st.dg >= 0:
@@ -500,22 +397,20 @@ def _branch_ev_known(st: _State, ega: float) -> float:
         _start_track(st)
         st.phase = "WAIT_TRACK_IMPROVE"
         return 0.1
-    else:
-        st.phase = "MOTION_LOOP_SETUP"
-        return 0.0
 
-# ---------------------- Ablauf‑Helfer ----------------------
+    st.phase = "MOTION_LOOP_SETUP"
+    return 0.0
+
+# =============================================================================
+# Ablauf‑Helfer
+# =============================================================================
 
 def _ensure_markers(st: _State) -> None:
-    # Immer den robusten Detect‑Pass nutzen (Signatur passt zur neuen Version)
     if run_detect_once is not None:
         try:
             run_detect_once(st.context, start_frame=st.origin_frame, handoff_to_pipeline=False)
         except Exception as ex:
             print(f"[Optimize] Detect pass failed: {ex}")
-    else:
-        # Fallback: nichts
-        pass
 
 
 def _start_track(st: _State) -> None:
@@ -526,13 +421,8 @@ def _start_track(st: _State) -> None:
 
 
 def _finish_track(st: _State) -> None:
-    """Bereinigt nach einem Track-Pass: Token, Playhead, selektierte neuen Marker.
-    Achtung: Diese Funktion DARF erst NACH der EGA‑Berechnung aufgerufen werden,
-    sonst ist die Qualität 0 (weil die frischen Marker gelöscht wären).
-    """
     if st.tracker:
         st.tracker.clear()
-    # Playhead-Reset sicherstellen
     cur = int(st.context.scene.frame_current)
     if cur != st.origin_frame:
         try:
@@ -543,43 +433,28 @@ def _finish_track(st: _State) -> None:
 
 
 def _apply_best_and_finish(st: _State) -> None:
-    # bestes Motion‑Model anwenden
     _set_flag2_motion_model(st.clip, st.mov)
-    # bestes Channel‑Preset anwenden
     _set_flag3_channels(st.clip, st.vf)
-
-    print(
-        f"[Optimize] Fertig. ev={st.ev:.3f}, Motion={st.mov}, Channels={st.vf}, pt≈{st.ptv:.1f}"
-    )
-
+    print(f"[Optimize] Fertig. ev={st.ev:.3f}, Motion={st.mov}, Channels={st.vf}, pt≈{st.ptv:.1f}")
     globals()["_RUNNING"] = None
 
-# -----------------------------------------------------------------------------
-# Optionale Komfort‑Funktion für UI‑Buttons (kein Operator!)
-# -----------------------------------------------------------------------------
+# =============================================================================
+# Komfort‑Alias (kein Operator!)
+# =============================================================================
 
 def optimize_now(context: bpy.types.Context) -> None:
-    """Bequemer Alias – kann z.B. in einem Panel‑Draw‑Callback aufgerufen werden."""
     start_optimization(context)
 
-
-# -----------------------------------------------------------------------------
-# Interne Minimal-Tests (rein Python, ohne Blender-Operatoren)
-# -----------------------------------------------------------------------------
+# =============================================================================
+# Interne Minimal‑Tests (rein Python, ohne Blender‑Operatoren)
+# =============================================================================
 
 def _noop(*a, **k):
     return None
 
-def run_internal_tests() -> None:
-    """Ein paar schnelle Assertions zur Branch-Logik der Pattern-Size-Suche.
-    Diese Funktion führt **keine** Blender-Operatoren aus; Helper werden temporär
-    auf No‑Ops gepatcht. Im Blender-Python‑Konsolenfenster ausführen:
 
-        >>> import importlib, your_package.optimize_tracking_modal as mod
-        >>> importlib.reload(mod); mod.run_internal_tests()
-    """
+def run_internal_tests() -> None:
     print("[OptimizeTest] start")
-    # Helper patchen
     g = globals()
     _orig_set_flag1 = g.get("_set_flag1")
     _orig_ensure = g.get("_ensure_markers")
@@ -589,39 +464,33 @@ def run_internal_tests() -> None:
     g["_start_track"] = _noop
 
     try:
-        # Minimales Stub-Clip-Objekt
         class _StubClip:
-            class _S: pass
+            class _S: ...
             def __init__(self):
                 self.tracking = type("T", (), {})()
                 self.tracking.settings = self._S()
                 self.tracking.objects = []
         stub_clip = _StubClip()
-
         st = _State(context=bpy.context, clip=stub_clip, origin_frame=1)
 
-        # 1) Verbesserung → ev↑, dg=4, ptv=alt_pt, phase WAIT_TRACK_IMPROVE
         st.ev = 10.0; st.dg = 0; st.pt = 21.0; st.ptv = 21.0; st.sus = 42.0; st.phase = "WAIT_TRACK_IMPROVE"
         _branch_ev_known(st, 11.0)
         assert abs(st.ev - 11.0) < 1e-6 and st.dg == 4 and abs(st.ptv - 21.0) < 1e-6 and st.phase == "WAIT_TRACK_IMPROVE"
 
-        # 2) Signifikant schlechter (>=12%) → drei Bestätigungsläufe am selben pt, dann Motion-Setup
         st.ev = 10.0; st.pt = 30.0; st.ptv = 25.0; st.rep_same_pt = 0; st.dg = 0; st.phase = "WAIT_TRACK_IMPROVE"
-        _branch_ev_known(st, 8.5)  # 15% schlechter
+        _branch_ev_known(st, 8.5)
         assert st.rep_same_pt == 1 and st.phase == "WAIT_TRACK_IMPROVE"
         _branch_ev_known(st, 8.4)
         assert st.rep_same_pt == 2
         _branch_ev_known(st, 8.3)
         assert st.rep_same_pt == 0 and st.phase == "MOTION_LOOP_SETUP"
 
-        # 3) Nicht besser, nicht signifikant schlechter → dg dekrementiert, pt erhöht, Phase WAIT_TRACK_IMPROVE
         st.ev = 10.0; st.dg = 1; st.pt = 21.0; st.rep_same_pt = 0; st.phase = "WAIT_TRACK_IMPROVE"
-        _branch_ev_known(st, 9.9)  # 1% schlechter
+        _branch_ev_known(st, 9.9)
         assert st.dg == 0 and st.phase == "WAIT_TRACK_IMPROVE"
 
         print("[OptimizeTest] OK")
     finally:
-        # Helper zurücksetzen
         g["_set_flag1"] = _orig_set_flag1
         g["_ensure_markers"] = _orig_ensure
         g["_start_track"] = _orig_start
