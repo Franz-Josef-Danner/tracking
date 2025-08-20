@@ -45,7 +45,7 @@ def apply_tracker_settings(
     default_pattern_match: str = 'KEYFRAME',
     use_default_normalization: bool = True,
     default_weight: float = 1.0,
-    default_correlation_min: float = 0.90,
+    default_correlation_min: float = 0.95,
     default_margin: int = 100,
     use_default_mask: bool = False,
     use_default_red_channel: bool = True,
