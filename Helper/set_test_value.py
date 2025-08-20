@@ -1,16 +1,22 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Helper/set_test_value.py
+from __future__ import annotations
+
 import bpy
 from typing import Any, Dict, Optional
 
 
+# ---------------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------------
+
 def _get_active_clip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
-    """Aktiven MovieClip robust ermitteln (CLIP_EDITOR bevorzugen)."""
+    """Aktiven MovieClip robust ermitteln (CLIP_EDITOR bevorzugen, sonst erster Clip)."""
     space = getattr(context, "space_data", None)
     if space and getattr(space, "type", None) == 'CLIP_EDITOR':
         clip = getattr(space, "clip", None)
         if clip:
             return clip
-
-    # Fallback: erster vorhandener Clip
     for c in bpy.data.movieclips:
         return c
     return None
@@ -27,6 +33,10 @@ def _safe_set(obj: Any, attr: str, value: Any, report: Dict[str, Any]) -> None:
     else:
         report["missing"].append(attr)
 
+
+# ---------------------------------------------------------------------------
+# Public: Tracker-Defaults setzen
+# ---------------------------------------------------------------------------
 
 def apply_tracker_settings(
     context: bpy.types.Context,
@@ -45,7 +55,7 @@ def apply_tracker_settings(
     sync_detect_threshold: bool = True,
 ) -> Dict[str, Any]:
     """
-    Setzt die gewünschten Default-Tracker-Einstellungen auf dem aktiven MovieClip.
+    Setzt gewünschte Default-Tracker-Einstellungen auf dem aktiven MovieClip.
     Rückgabe enthält 'applied', 'missing', 'failed' zur Diagnose.
     """
     report: Dict[str, Any] = {"applied": {}, "missing": [], "failed": {}}
@@ -57,7 +67,6 @@ def apply_tracker_settings(
 
     ts = clip.tracking.settings
 
-    # Vorgabewerte setzen (nur falls Attribut existiert)
     _safe_set(ts, "default_motion_model", default_motion_model, report)
     _safe_set(ts, "default_pattern_match", default_pattern_match, report)
     _safe_set(ts, "use_default_normalization", use_default_normalization, report)
@@ -69,7 +78,7 @@ def apply_tracker_settings(
     _safe_set(ts, "use_default_green_channel", use_default_green_channel, report)
     _safe_set(ts, "use_default_blue_channel", use_default_blue_channel, report)
 
-    # Manche Blender-Versionen unterscheiden 'use_default_brute' vs. 'use_brute'
+    # Unterschiedliche Feldnamen je Blender-Version
     if hasattr(ts, "use_default_brute"):
         _safe_set(ts, "use_default_brute", use_default_brute, report)
     elif hasattr(ts, "use_brute"):
@@ -77,8 +86,7 @@ def apply_tracker_settings(
     else:
         report["missing"].append("use_default_brute/use_brute")
 
-    # Optional: Detect-Helper mit der neuen Korrelation synchronisieren
-    # (wird u. a. in detect.run_detect_once als Startschwelle genutzt)
+    # Detect-Startschwelle synchronisieren
     if sync_detect_threshold:
         try:
             context.scene["last_detection_threshold"] = float(default_correlation_min)
@@ -89,7 +97,11 @@ def apply_tracker_settings(
     return report
 
 
-set_test_value(context.scene, apply_settings=True, context=context)
+# ---------------------------------------------------------------------------
+# Public: Marker-Korridor setzen (+ optional Tracker-Defaults anwenden)
+# ---------------------------------------------------------------------------
+
+def set_test_value(
     scene: bpy.types.Scene,
     *,
     apply_settings: bool = True,
@@ -98,9 +110,9 @@ set_test_value(context.scene, apply_settings=True, context=context)
     corridor: float = 0.10,
 ) -> Optional[int]:
     """
-    Erweitert: Berechnet Marker-Korridorwerte **und** setzt (optional) die Tracker-Defaults.
-    - marker_adapt = (marker_basis / basis_divisor)
-    - marker_min/max = ± corridor
+    Berechnet Marker-Korridorwerte **und** setzt (optional) die Tracker-Defaults.
+      - marker_adapt = round(marker_basis / basis_divisor)
+      - marker_min/max = marker_adapt ± corridor
     Gibt marker_adapt zurück oder None, wenn marker_basis fehlt.
     """
     marker_basis = getattr(scene, "marker_frame", None)
@@ -118,7 +130,7 @@ set_test_value(context.scene, apply_settings=True, context=context)
     scene["marker_min"] = int(min_marker)
     scene["marker_basis"] = int(marker_basis)
 
-    # Optional die geforderten Tracking-Settings setzen
+    # Optional: Tracking-Defaults anwenden
     if apply_settings:
         ctx = context or bpy.context
         apply_tracker_settings(ctx)
