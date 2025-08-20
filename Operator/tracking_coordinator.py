@@ -24,11 +24,6 @@ _BIDI_ACTIVE_KEY = "bidi_active"
 _BIDI_RESULT_KEY = "bidi_result"
 _CLEAN_SKIP_ONCE = "__skip_clean_short_once"  # vom Cleaner respektiert
 
-# --- Neu: Keys für Optimizer-Signal (werden von Helper/jump_to_frame.py gesetzt) ---
-_OPT_REQ_KEY = "__optimize_request"
-_OPT_REQ_VAL = "JUMP_REPEAT"
-_OPT_FRAME_KEY = "__optimize_frame"
-
 
 def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
     try:
@@ -209,31 +204,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self._state = "FIND_LOW"
                 return {"RUNNING_MODAL"}
             print(f"[Coord] JUMP → frame={jr['frame']} repeat={jr['repeat_count']} → DETECT")
-
-            # ---------------------- NEU: Optimizer-Signal verwerten ----------------------
-            scn = context.scene
-            opt_req = scn.get(_OPT_REQ_KEY, None)
-            # Herkunftsframe aus Scene übernehmen oder auf den gesprungenen Frame zurückfallen
-            opt_frame = int(scn.get(_OPT_FRAME_KEY, jr.get('frame', scn.frame_current)))
-            if jr.get("optimize_signal") or opt_req == _OPT_REQ_VAL:
-                # Signal verbrauchen
-                scn.pop(_OPT_REQ_KEY, None)
-                # Frame-Info belassen; Helper/Optimizer kann _OPT_FRAME_KEY auslesen
-                scn[_OPT_FRAME_KEY] = opt_frame
-                try:
-                    # Bevorzugt: direkte Startfunktion, falls Helper dies anbietet
-                    try:
-                        from ..Helper.optimize_tracking_modal import start_optimization  # type: ignore
-                        start_optimization(context, origin_frame=opt_frame)
-                        print(f"[Coord] JUMP → OPTIMIZE (start_optimization, frame={opt_frame})")
-                    except Exception:
-                        # Fallback: Operator-Start (falls als Operator registriert)
-                        bpy.ops.clip.optimize_tracking_modal('INVOKE_DEFAULT')
-                        print(f"[Coord] JUMP → OPTIMIZE (operator invoke, frame={opt_frame})")
-                except Exception as ex:
-                    print(f"[Coord] OPTIMIZE launch failed: {ex!r}")
-            # ---------------------------------------------------------------------------
-
             self._jump_done = True
         self._detect_attempts = 0
         self._state = "DETECT"
