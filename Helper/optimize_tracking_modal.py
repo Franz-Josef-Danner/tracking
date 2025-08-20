@@ -509,12 +509,13 @@ def _apply_best_and_finish(st: _State) -> None:
     _set_flag3_channels(st.clip, st.vf)
     print(f"[Optimize] Fertig. ev={st.ev:.3f}, Motion={st.mov}, Channels={st.vf}, pt≈{st.ptv:.1f}")
     try:
-        st.context.scene[_LOCK_KEY] = False   # ← Lock freigeben
-    except Exception:
-        pass
+        st.context.scene["__opt_post_marker_pending"] = True
+        print("[Optimize] Set post-marker pending flag for coordinator.")
+    except Exception as _ex:
+        print(f"[Optimize] WARN: could not set post-marker flag: {_ex!r}")
+
+    # Aufräumen: laufenden State beenden
     globals()["_RUNNING"] = None
-
-
 
 # =============================================================================
 # Komfort‑Alias (kein Operator!)
