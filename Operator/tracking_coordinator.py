@@ -1,11 +1,11 @@
 from __future__ import annotations
 """
-Tracking-Orchestrator – mit Feedback-Auswertung
+Tracking-Orchestrator – nur Übergabe an Helper
 -----------------------------------
-FSM nutzt konsequent die Rückmeldungen der Helper:
-- Detect: wartet solange RUNNING
-- Bidirectional Track: wartet solange scene["bidi_active"] True ist
-- Danach geht es weiter nach CLEAN_SHORT usw.
+FSM übergibt die Tracking-Arbeit ausschließlich an Helper/bidirectional_track.py.
+- Coordinator ruft **nie direkt track_markers** auf.
+- Detect → TRACK (Bidi) → wartet auf Feedback (scene["bidi_active"], scene["bidi_result"]).
+- Danach Clean Short und Loop zurück zu FIND_LOW.
 """
 
 import bpy
@@ -35,10 +35,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     use_apply_settings: bpy.props.BoolProperty(  # type: ignore
         name="Apply Tracker Defaults",
-        default=True,
-    )
-    do_backward: bpy.props.BoolProperty(  # type: ignore
-        name="Bidirectional",
         default=True,
     )
     auto_clean_short: bpy.props.BoolProperty(  # type: ignore
@@ -82,10 +78,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return self._state_jump(context)
         elif self._state == "DETECT":
             return self._state_detect(context)
-        elif self._state == "TRACK_FWD":
-            return self._state_track_fwd(context)
-        elif self._state == "TRACK_BWD":
-            return self._state_track_bwd(context)
+        elif self._state == "TRACK":
+            return self._state_track(context)
         elif self._state == "CLEAN_SHORT":
             return self._state_clean_short(context)
         elif self._state == "FINALIZE":
@@ -138,25 +132,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         if status == "RUNNING":
             self._detect_attempts += 1
             if self._detect_attempts >= _MAX_DETECT_ATTEMPTS:
-                self._state = "TRACK_FWD"
+                self._state = "TRACK"
             return {"RUNNING_MODAL"}
         self._detect_attempts = 0
-        self._state = "TRACK_FWD"
+        self._state = "TRACK"
         return {"RUNNING_MODAL"}
 
-    def _state_track_fwd(self, context):
-        try:
-            bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
-        except Exception as ex:
-            _safe_report(self, {"WARNING"}, f"TrackFwd Fehler: {ex}")
-        if self.do_backward:
-            self._state = "TRACK_BWD"
-            self._bidi_started = False
-        else:
-            self._state = "CLEAN_SHORT"
-        return {"RUNNING_MODAL"}
-
-    def _state_track_bwd(self, context):
+    def _state_track(self, context):
         scn = context.scene
         if not self._bidi_started:
             bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
