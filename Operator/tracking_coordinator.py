@@ -72,23 +72,27 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # ---------------- Lifecycle ----------------
 
     def _run_pre_flight_helpers(self, context) -> None:
-        """Pre-Flight vor dem ersten FIND_LOW: Tracker-Defaults + Marker-Basiswerte setzen."""
-        # 1) tracker_settings.py – robust mehrere Funktionsnamen versuchen
+        # 1) tracker_settings.py
         try:
-            try:
-                from ..Helper.tracker_settings import apply_tracker_settings as _ts  # type: ignore
-            except Exception:
-                try:
-                    from ..Helper.tracker_settings import set_tracker_defaults as _ts  # type: ignore
-                except Exception:
-                    from ..Helper.tracker_settings import run as _ts  # type: ignore
-            _ts(context)
+            from ..Helper.tracker_settings import apply_tracker_settings  # type: ignore
+            apply_tracker_settings(context, log=True)
             print("[Coord] BOOTSTRAP → tracker_settings OK")
         except Exception as ex:
             print(f"[Coord] BOOTSTRAP WARN: tracker_settings failed: {ex!r}")
-            # Operator-Fallback, falls vorhanden
             try:
                 bpy.ops.clip.apply_tracker_settings('INVOKE_DEFAULT')
+            except Exception:
+                pass
+
+        # 2) marker_helper_main.py
+        try:
+            from ..Helper.marker_helper_main import run_marker_helper_main  # type: ignore
+            run_marker_helper_main(context)
+            print("[Coord] BOOTSTRAP → marker_helper_main OK")
+        except Exception as ex_func:
+            print(f"[Coord] BOOTSTRAP WARN: marker_helper_main failed: {ex_func!r}")
+            try:
+                bpy.ops.clip.marker_helper_main('INVOKE_DEFAULT')
             except Exception:
                 pass
 
