@@ -191,10 +191,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         """
         # Import lokal halten (robust gegenüber Paket-Struktur)
         try:
-            from ..Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
+            from .find_low_marker_frame import run_find_low_marker_frame  # type: ignore
         except Exception:
             try:
-                from ..Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
+                from .find_low_marker_frame import run_find_low_marker_frame  # type: ignore
             except Exception as ex:
                 _safe_report(self, {"ERROR"}, f"FindLow nicht verfügbar: {ex}")
                 return self._finish(context, cancelled=True)
@@ -205,9 +205,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             use_scene_basis=True,
             frame_start=None,
             frame_end=None,
-            exact=True,
-            ignore_muted_marker=True,
-            ignore_muted_track=True,
         )
 
         status = str(result.get("status", "FAILED")).upper()
