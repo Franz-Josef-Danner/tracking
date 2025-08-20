@@ -1,4 +1,4 @@
-stimmt das so?: # Blender-Add-on – funktionaler Optimierungs‑Flow (keine Operatoren)
+# Blender-Add-on – funktionaler Optimierungs‑Flow (keine Operatoren)
 #
 # Hinweis: Diese Datei ist **rein funktional** (keine Operatoren). Die Steuerung
 # erfolgt über `bpy.app.timers` und Helper-Funktionen (Detect/Track), identisch
