@@ -91,6 +91,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return self._state_track(context)
         elif self._state == "CLEAN_SHORT":
             return self._state_clean_short(context)
+        elif self._state == "SOLVE":                     # ← NEU
+            return self._state_solve(context) 
         elif self._state == "FINALIZE":
             return self._finish(context, cancelled=False)
 
@@ -118,8 +120,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     def _state_find_low(self, context):
         from ..Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
-        # NEU (für NONE-Zweig unten):
-        from ..Helper.clean_error_tracks import run_clean_error_tracks  # type: ignore
+        from ..Helper.clean_error_tracks import run_clean_error_tracks        # type: ignore  # 
 
         result = run_find_low_marker_frame(context)
         status = str(result.get("status", "FAILED")).upper()
@@ -132,18 +133,43 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._state = "JUMP"
 
         elif status == "NONE":
-            # ▼▼▼ Erweiterung: Clean Error Tracks vor dem Finalize ▼▼▼
+            # Erweiterung: Error‑Cleanup fahren und anhand des Feedbacks verzweigen
+            print("[Coord] FIND_LOW → NONE → run_clean_error_tracks()")
             try:
-                print("[Coord] FIND_LOW → NONE → run_clean_error_tracks()")
-                cr = run_clean_error_tracks(context, show_popups=False)
-                if isinstance(cr, dict) and cr.get('status') == 'CANCELLED':
-                    print("[Coord] CLEAN_ERROR_TRACKS abgebrochen – fahre dennoch fort zu FINALIZE")
+                cr = run_clean_error_tracks(context, show_popups=False)  # {'FINISHED'} | {'CANCELLED'} | evtl. dict
             except Exception as ex:
-                print(f"[Coord] CLEAN_ERROR_TRACKS Exception: {ex!r} – fahre fort zu FINALIZE")
-            # ▲▲▲ Ende der Erweiterung ▲▲▲
+                print(f"[Coord] CLEAN_ERROR_TRACKS Exception: {ex!r} → CANCEL")
+                return self._finish(context, cancelled=True)
 
-            print("[Coord] FIND_LOW → NONE → FINALIZE")
-            self._state = "FINALIZE"
+            def _map_clean_result(r) -> str:
+                # set-artige Rückgaben {'FINISHED'} / {'CANCELLED'}
+                if isinstance(r, set):
+                    return "OK" if "FINISHED" in r else "FAILED"
+                # dict-Rückgaben (robust)
+                if isinstance(r, dict):
+                    st = str(r.get("status", "")).upper()
+                    if st in {"OK", "NONE", "FAILED"}:
+                        return st
+                    if st == "CANCELLED":
+                        return "FAILED"
+                    deleted = r.get("deleted", None)
+                    if isinstance(deleted, int):
+                        return "OK" if deleted > 0 else "NONE"
+                # Fallback konservativ: erneut suchen
+                return "OK"
+
+            mapped = _map_clean_result(cr)
+            print(f"[Coord] CLEAN_ERROR_TRACKS → mapped={mapped}")
+
+            if mapped == "OK":
+                # Es wurden Marker/Tracks bereinigt → Loop fortsetzen und erneut Low‑Frames suchen
+                self._state = "FIND_LOW"
+            elif mapped == "NONE":
+                # Keine Änderungen → Solve starten
+                self._state = "SOLVE"
+            else:  # "FAILED"
+                _safe_report(self, {"ERROR"}, "Clean Error Tracks fehlgeschlagen – Abbruch.")
+                return self._finish(context, cancelled=True)
 
         else:
             # Best effort: versuche mit aktuellem Frame weiter
@@ -153,6 +179,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._state = "JUMP"
 
         return {"RUNNING_MODAL"}
+
+    def _state_solve(self, context):
+        """Solve‑Phase nach NONE→CleanErrorTracks(NONE)."""
+        try:
+            from ..Helper.solve_camera import solve_watch_clean  # type: ignore  # 
+            print("[Coord] SOLVE → solve_watch_clean()")
+            solve_watch_clean(context)
+        except Exception as ex:
+            print(f"[Coord] SOLVE failed: {ex!r}")
+            return self._finish(context, cancelled=True)
+        print("[Coord] SOLVE → FINALIZE")
+        self._state = "FINALIZE"
+        return {"RUNNING_MODAL"}
+
 
     def _state_jump(self, context):
         from ..Helper.jump_to_frame import run_jump_to_frame  # type: ignore
