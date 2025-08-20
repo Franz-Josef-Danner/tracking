@@ -232,26 +232,36 @@ _RUNNING: Optional[_State] = None
 
 
 def start_optimization(context: bpy.types.Context) -> None:
-    # Bootstrap jetzt deterministisch beim Start
+    # 1) Lauf ggf. beenden, bevor wir Szenewerte anfassen
+    cancel_optimization()
+
+    # 2) Voreinstellung: Helper/set_test_value.py nur beim Auslösen der Optimierung
     try:
-        set_test_value(context.scene)  # schreibt marker_adapt / min / max
-        print("[Bootstrap] set_test_value() beim Optimize-Start angewendet.")
+        scn = context.scene
+        # optionaler Guard gegen Headless:
+        if not getattr(bpy.app, "background", False):
+            # Falls marker_frame fehlt, kannst du hier einen Default setzen:
+            # if getattr(scn, "marker_frame", None) is None:
+            #     scn["marker_frame"] = int(scn.get("marker_basis", 20))
+            set_test_value(scn)  # -> schreibt marker_adapt / marker_min / marker_max
+            print("[Bootstrap] set_test_value() beim Optimize-Start angewendet.")
     except Exception as ex:
         print(f"[Bootstrap] WARN @start_optimization: {ex}")
-    cancel_optimization()
-    space = getattr(context, "space_data", None)
-    cancel_optimization()
+
+    # 3) Danach normal fortfahren – jetzt erst geht die eigentliche Test-/Tracking-Logik los
     space = getattr(context, "space_data", None)
     if not space or getattr(space, "type", "") != "CLIP_EDITOR":
         print("[Optimize] WARN: Kein CLIP_EDITOR aktiv – fahre trotzdem fort.")
     clip = getattr(space, "clip", None) or getattr(context.space_data, "clip", None)
     if not clip:
         raise RuntimeError("Kein aktiver Movie Clip.")
+
     st = _State(context=context, clip=clip, origin_frame=int(context.scene.frame_current))
     st.phase = "FLAG1_INIT"
     globals()["_RUNNING"] = st
     bpy.app.timers.register(_timer_step, first_interval=0.2)
     print(f"[Optimize] Start @frame={st.origin_frame}")
+
 
 
 def cancel_optimization() -> None:
