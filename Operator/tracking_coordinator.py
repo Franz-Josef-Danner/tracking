@@ -44,6 +44,37 @@ def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
     except Exception:
         print(f"[Coordinator] {msg}")
 
+def _run_pre_flight_helpers(self, context) -> None:
+    """Pre-Flight: Marker-Korridor & Defaults setzen, bevor FIND_LOW startet."""
+    print("[Coord] BOOTSTRAP → marker_helper_main() / main_to_adapt()")
+    # 1) marker_helper_main: schreibt marker_basis/adapt/min/max, frames_track, resolve_error
+    try:
+        from ..Helper.marker_helper_main import run_marker_helper_main  # type: ignore
+        run_marker_helper_main(context)
+    except Exception as ex_func:
+        print(f"[Coord] BOOTSTRAP WARN: marker_helper_main failed: {ex_func!r}")
+        # Fallback: Operator, falls vorhanden
+        try:
+            bpy.ops.clip.marker_helper_main('INVOKE_DEFAULT')
+        except Exception as ex_op:
+            print(f"[Coord] BOOTSTRAP WARN: marker_helper_main operator failed: {ex_op!r}")
+
+    # 2) main_to_adapt: konsolidiert/adaptiert Werte (use_override=True wie in Vorgabe)
+    try:
+        from ..Helper.marker_helper_main import main_to_adapt  # type: ignore
+        main_to_adapt(context, use_override=True)
+    except Exception as ex:
+        print(f"[Coord] BOOTSTRAP WARN: main_to_adapt failed: {ex!r}")
+
+    # 3) (optional) Tracker-Defaults anwenden, wenn UI-Option aktiv
+    if self.use_apply_settings:
+        try:
+            from ..Helper.apply_tracker_settings import apply_tracker_settings  # type: ignore
+            apply_tracker_settings(context)
+            print("[Coord] BOOTSTRAP → apply_tracker_settings() OK")
+        except Exception as ex:
+            print(f"[Coord] BOOTSTRAP INFO: apply_tracker_settings not available/failed: {ex!r}")
+
 
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     bl_idname = "clip.tracking_coordinator"
@@ -129,7 +160,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # ---------------- States ----------------
 
     def _state_init(self, context):
-        print("[Coord] INIT → FIND_LOW")
+        print("[Coord] INIT → BOOTSTRAP")
+        self._run_pre_flight_helpers(context)
+        print("[Coord] BOOTSTRAP → FIND_LOW")
         self._state = "FIND_LOW"
         return {"RUNNING_MODAL"}
 
