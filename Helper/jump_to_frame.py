@@ -134,6 +134,26 @@ def run_jump_to_frame(
     if repeat_map is not None:
         repeat_count = int(repeat_map.get(target, 0)) + 1
         repeat_map[target] = repeat_count
+
+        # --- Monitoring: Frames & Wiederholungen in die Konsole ---
+    if repeat_map is not None:
+        # Einzel-Info zum aktuellen Jump
+        print(f"[RepeatMon] frame={target} → count={repeat_count}")
+
+        # Kleine Übersicht der „heißesten“ Frames gelegentlich ausgeben
+        # (bei 5, 6 und danach alle 5 Sprünge; anpassen nach Bedarf)
+        if repeat_count in (5, 6) or (repeat_count % 5 == 0 and repeat_count >= 10):
+            try:
+                top = sorted(repeat_map.items(), key=lambda kv: kv[1], reverse=True)[:8]
+                summary = ", ".join(f"{f}×{c}" for f, c in top)
+                print(f"[RepeatMon] top: {summary}")
+            except Exception:
+                pass
+
+        # Optionaler Alarm, wenn die 5er-Schwelle gerade überschritten wurde
+        if repeat_count == 6:
+            print(f"[RepeatMon] ⚠ frame={target} hat die 5er-Schwelle überschritten.")
+
     # Nach stabiler Playhead-Setzung: Wiederholungen auswerten und ggf. Signal setzen
     # Bedingung: >5 Wiederholungen & scene["marker_adapt"] > 200
     if repeat_count > 5:
