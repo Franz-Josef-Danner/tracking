@@ -1,21 +1,20 @@
 from __future__ import annotations
 """
-Tracking-Orchestrator – Schritt 2
+Tracking-Orchestrator – Schritt 3
 ---------------------------------
-Erweitert die FSM um die in der Anforderung gewünschte Verzweigung:
-- Ergebnis von Helper/find_low_marker_frame.py wird wie folgt verwertet:
-  * Wenn ein Frame mit Markern < marker_basis gefunden wurde → Übergang zu "JUMP"
-    und Sprung auf den ersten solchen Frame via Helper/jump_to_frame.py.
-  * Wenn KEIN solcher Frame existiert (alle Marker >= marker_basis) → "CLEAN_ERROR"
-    via Helper/clean_error_tracks.py.
+Fügt zum Schritt-2-Stand den State "DETECT" hinzu und bindet Helper/detect.py an.
+Ablauf gem. Vorgabe (Kurzfassung):
+  INIT → FIND_LOW → JUMP → DETECT → TRACK_FWD → TRACK_BWD? → CLEAN_SHORT → (Loop)
 
-Änderungen ggü. Schritt 1:
-- Neuer State "JUMP" mit run_jump_to_frame().
-- Neuer State "CLEAN_ERROR" mit run_clean_error_tracks().
-- FIND_LOW verzweigt nun: FOUND → JUMP, NONE → CLEAN_ERROR, FAILED → best-effort → JUMP
-- Finale States landen aktuell in FINALIZE.
+- FIND_LOW nutzt Helper/find_low_marker_frame.py
+- JUMP nutzt Helper/jump_to_frame.py
+- DETECT nutzt Helper/detect.py (run_detect_once)
+- CLEAN_ERROR bleibt als Alternativzweig aus Schritt 2 erhalten
 
-Hinweis: Operator bleibt PEP 8-konform und robust gegenüber fehlendem UI-Kontext.
+Hinweise:
+- PEP 8-konform, UI-robust (CLIP_EDITOR-Check im poll)
+- Globaler Detect-Lock scene["__detect_lock"] wird respektiert
+- Timebox für wiederholte Detect-Versuche: 8
 """
 
 import bpy
@@ -29,6 +28,7 @@ __all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
 # ------------------------------------------------------------
 _LOCK_KEY = "__detect_lock"
 _GOTO_KEY = "goto_frame"
+_MAX_DETECT_ATTEMPTS = 8
 
 
 def _has_clip_editor(context: bpy.types.Context) -> bool:
@@ -44,7 +44,7 @@ def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
 
 
 # ------------------------------------------------------------
-# Orchestrator-Operator (Schritt 2)
+# Orchestrator-Operator
 # ------------------------------------------------------------
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     bl_idname = "clip.tracking_coordinator"
@@ -82,7 +82,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # --------------------------------------------------------
     @classmethod
     def poll(cls, context):
-        # Bootstrap darf nur im Clip-Editor gestartet werden (dein Wunsch)
+        # Bootstrap darf nur im Clip-Editor gestartet werden (deine Vorgabe)
         return _has_clip_editor(context)
 
     def invoke(self, context: bpy.types.Context, event: bpy.types.Event):
@@ -120,9 +120,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return self._state_find_low(context)
             elif self._state == "JUMP":
                 return self._state_jump(context)
+            elif self._state == "DETECT":
+                return self._state_detect(context)
             elif self._state == "CLEAN_ERROR":
                 return self._state_clean_error(context)
-            elif self._state in {"DETECT", "TRACK_FWD", "TRACK_BWD", "CLEAN_SHORT", "SOLVE"}:
+            elif self._state in {"TRACK_FWD", "TRACK_BWD", "CLEAN_SHORT", "SOLVE"}:
                 # werden in späteren Schritten implementiert
                 _safe_report(self, {"INFO"}, f"State '{self._state}' ist noch nicht implementiert – wechsle zu FINALIZE")
                 self._state = "FINALIZE"
@@ -179,7 +181,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._repeat_map = {}
 
     # --------------------------------------------------------
-    # States – INIT, FIND_LOW, JUMP, CLEAN_ERROR
+    # States – INIT, FIND_LOW, JUMP, DETECT, CLEAN_ERROR
     # --------------------------------------------------------
     def _state_init(self, context: bpy.types.Context):
         # Direkt in die erste Suche übergehen
@@ -191,7 +193,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         """Ermittelt ersten Frame mit zu niedriger Markerdichte.
         Übergänge:
           FOUND  → setze goto_frame, state="JUMP"
-          NONE   → state="CLEAN_ERROR"  (alle Marker >= Basis)
+          NONE   → state="SOLVE"  (alle Marker >= Basis)
           FAILED → wie FOUND behandeln (best effort)
         """
         # Import lokal halten (robust gegenüber Paket-Struktur)
@@ -204,115 +206,130 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 _safe_report(self, {"ERROR"}, f"FindLow nicht verfügbar: {ex}")
                 return self._finish(context, cancelled=True)
 
-        result: Dict[str, Any] = run_find_low_marker_frame(
-            context,
-            prefer_adapt=True,
-            use_scene_basis=True,
-            frame_start=None,
-            frame_end=None,
-        )
+        try:
+            result = run_find_low_marker_frame(context)
+        except Exception as ex:
+            _safe_report(self, {"WARNING"}, f"FindLow FAILED: {ex} – best effort JUMP")
+            result = {"status": "FAILED"}
 
         status = str(result.get("status", "FAILED")).upper()
-        frame = result.get("frame", None)
-        print(f"[FIND_LOW] status={status} frame={frame}")
-
-        scn = context.scene
-        if status == "FOUND" and isinstance(frame, int):
-            scn[_GOTO_KEY] = int(frame)
+        if status == "FOUND":
+            f = int(result.get("frame", context.scene.frame_current))
+            context.scene[_GOTO_KEY] = f
             self._jump_done = False
             self._detect_attempts = 0
             self._state = "JUMP"
-            _safe_report(self, {"INFO"}, f"Low-Marker bei Frame {frame} → JUMP")
-            return {"RUNNING_MODAL"}
-
-        if status == "NONE":
-            # Kein Frame unterhalb Basis → Fehlerbereinigung ausführen
-            self._state = "CLEAN_ERROR"
-            _safe_report(self, {"INFO"}, "Keine Low-Marker-Frames → CLEAN_ERROR")
-            return {"RUNNING_MODAL"}
-
-        # FAILED → Best-Effort: Wenn wir irgendeinen Frame vorschlagen können, tun wir es
-        if isinstance(frame, int):
-            scn[_GOTO_KEY] = int(frame)
+            print(f"[FSM] FIND_LOW → JUMP (goto={f})")
+        elif status == "NONE":
+            self._state = "SOLVE"
+            print("[FSM] FIND_LOW → SOLVE (keine Low-Frames)")
+        else:  # FAILED → best effort → JUMP
+            context.scene[_GOTO_KEY] = int(context.scene.frame_current)
             self._jump_done = False
             self._detect_attempts = 0
             self._state = "JUMP"
-            _safe_report(self, {"WARNING"}, f"FindLow FAILED – nutze Frame {frame} → JUMP")
-            return {"RUNNING_MODAL"}
-
-        _safe_report(self, {"ERROR"}, "FindLow FAILED ohne Frame – Abbruch")
-        return self._finish(context, cancelled=True)
+            print("[FSM] FIND_LOW FAILED → JUMP (best effort)")
+        return {"RUNNING_MODAL"}
 
     def _state_jump(self, context: bpy.types.Context):
-        """Springt deterministisch auf scene['goto_frame'] (oder gesetzten Frame)."""
         try:
             from ..Helper.jump_to_frame import run_jump_to_frame  # type: ignore
-        except Exception:
-            try:
-                from ..Helper.jump_to_frame import run_jump_to_frame  # type: ignore
-            except Exception as ex:
-                _safe_report(self, {"ERROR"}, f"JumpToFrame nicht verfügbar: {ex}")
-                return self._finish(context, cancelled=True)
+        except Exception as ex:
+            _safe_report(self, {"ERROR"}, f"Jump nicht verfügbar: {ex}")
+            return self._finish(context, cancelled=True)
 
-        res = run_jump_to_frame(
-            context,
-            frame=None,  # liest scene['goto_frame']
-            ensure_clip=True,
-            ensure_tracking_mode=True,
-            use_ui_override=True,
-            repeat_map=self._repeat_map,
-        )
-        ok = (res.get("status") == "OK")
-        target = res.get("frame")
-        _safe_report(self, {"INFO" if ok else "WARNING"}, f"JUMP → Frame {target} | ok={ok}")
+        goto = int(context.scene.get(_GOTO_KEY, context.scene.frame_current))
+        try:
+            res = run_jump_to_frame(context, frame=goto, repeat_map=self._repeat_map)
+        except Exception as ex:
+            _safe_report(self, {"WARNING"}, f"Jump-Fehler: {ex}")
+            res = {"status": "FAILED"}
 
-        # Für diesen Schritt ist der Jump das Ziel → FINALIZE
-        self._state = "FINALIZE"
+        if str(res.get("status", "FAILED")).upper() != "OK":
+            # Trotz Fehler weiter – DETECT versuchen
+            print("[FSM] JUMP result != OK – trotzdem weiter zu DETECT")
+        else:
+            self._jump_done = True
+
+        self._state = "DETECT"
+        print("[FSM] JUMP → DETECT")
+        return {"RUNNING_MODAL"}
+
+    def _state_detect(self, context: bpy.types.Context):
+        """Führt eine einzelne Marker-Detektion durch und entscheidet über die nächsten Schritte."""
+        try:
+            from ..Helper.detect import run_detect_once  # type: ignore
+        except Exception as ex:
+            _safe_report(self, {"ERROR"}, f"Detect nicht verfügbar: {ex}")
+            return self._finish(context, cancelled=True)
+
+        goto = int(context.scene.get(_GOTO_KEY, context.scene.frame_current))
+        result: Dict[str, Any]
+        try:
+            result = run_detect_once(context, start_frame=goto, handoff_to_pipeline=True)
+        except Exception as ex:
+            _safe_report(self, {"ERROR"}, f"Detect-Fehler: {ex}")
+            result = {"status": "FAILED"}
+
+        status = str(result.get("status", "FAILED")).upper()
+        print(f"[FSM] DETECT → Ergebnis {status} (Versuch {self._detect_attempts})")
+
+        if status == "READY":
+            self._detect_attempts = 0
+            self._state = "TRACK_FWD"
+        elif status == "RUNNING":
+            self._detect_attempts += 1
+            if self._detect_attempts >= _MAX_DETECT_ATTEMPTS:
+                _safe_report(self, {"WARNING"}, "Detect Timebox erreicht – weiter mit TRACK_FWD")
+                self._detect_attempts = 0
+                self._state = "TRACK_FWD"
+            else:
+                # im selben State bleiben → nächster Timer-Tick versucht erneut
+                self._state = "DETECT"
+        else:  # FAILED oder unbekannt
+            self._detect_attempts = 0
+            self._state = "TRACK_FWD"
+
         return {"RUNNING_MODAL"}
 
     def _state_clean_error(self, context: bpy.types.Context):
-        """Führt die robuste Fehlerbereinigung aus, wenn kein Low-Frame existiert."""
         try:
             from ..Helper.clean_error_tracks import run_clean_error_tracks  # type: ignore
         except Exception as ex:
             _safe_report(self, {"ERROR"}, f"CleanError nicht verfügbar: {ex}")
             return self._finish(context, cancelled=True)
 
-        res = run_clean_error_tracks(context, show_popups=False)
-        status = res.get('status', 'FINISHED') if isinstance(res, dict) else 'FINISHED'
-        _safe_report(self, {"INFO"}, f"CLEAN_ERROR abgeschlossen (status={status})")
+        try:
+            run_clean_error_tracks(context, show_popups=False)
+        except Exception as ex:
+            _safe_report(self, {"WARNING"}, f"CleanError-Fehler: {ex}")
 
-        # Danach fertig
+        # Nach CLEAN_ERROR aktuell in FINALIZE übergehen
         self._state = "FINALIZE"
+        print("[FSM] CLEAN_ERROR → FINALIZE")
         return {"RUNNING_MODAL"}
 
     # --------------------------------------------------------
-    # Abschluss/Cleanup
+    # Finalize / Cleanup
     # --------------------------------------------------------
-    def _finish(self, context: bpy.types.Context, *, cancelled: bool) -> set:
-        # Timer aufräumen
-        wm = context.window_manager
-        if self._timer is not None:
-            try:
-                wm.event_timer_remove(self._timer)
-            except Exception:
-                pass
-            self._timer = None
-
-        # Lock freigeben
+    def _finish(self, context: bpy.types.Context, *, cancelled: bool):
+        # Timer entfernen, Lock freigeben
+        try:
+            if self._timer is not None:
+                context.window_manager.event_timer_remove(self._timer)
+        except Exception:
+            pass
         try:
             context.scene[_LOCK_KEY] = False
         except Exception:
             pass
-
-        msg = "Abgebrochen" if cancelled else "Fertig"
-        _safe_report(self, {"INFO"}, f"Coordinator: {msg}")
         return {"CANCELLED"} if cancelled else {"FINISHED"}
 
 
 # ------------------------------------------------------------
-# Registrierung
+# Registration
 # ------------------------------------------------------------
+
 def register():
     bpy.utils.register_class(CLIP_OT_tracking_coordinator)
 
