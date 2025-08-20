@@ -1,23 +1,21 @@
 from __future__ import annotations
 """
-Tracking-Orchestrator – Schritt 1
+Tracking-Orchestrator – Schritt 2
 ---------------------------------
-Bootstrap + Modal/FSM-Skelett mit den ersten Zuständen "INIT" → "FIND_LOW".
+Erweitert die FSM um die in der Anforderung gewünschte Verzweigung:
+- Ergebnis von Helper/find_low_marker_frame.py wird wie folgt verwertet:
+  * Wenn ein Frame mit Markern < marker_basis gefunden wurde → Übergang zu "JUMP"
+    und Sprung auf den ersten solchen Frame via Helper/jump_to_frame.py.
+  * Wenn KEIN solcher Frame existiert (alle Marker >= marker_basis) → "CLEAN_ERROR"
+    via Helper/clean_error_tracks.py.
 
-In diesem Schritt:
-- Operator startet modal mit Timer.
-- Bootstrap setzt Hilfswerte und (optional) Tracker-Defaults.
-- FSM führt ersten Übergang INIT → FIND_LOW aus.
-- FIND_LOW ruft run_find_low_marker_frame() auf und entscheidet über nächste States:
-    - FOUND  → goto_frame setzen, wechselt zu "JUMP"
-    - NONE   → wechselt zu "SOLVE" (Ablauf fertig vorbereitet)
-    - FAILED → best effort: wie FOUND behandeln, wenn möglich
+Änderungen ggü. Schritt 1:
+- Neuer State "JUMP" mit run_jump_to_frame().
+- Neuer State "CLEAN_ERROR" mit run_clean_error_tracks().
+- FIND_LOW verzweigt nun: FOUND → JUMP, NONE → CLEAN_ERROR, FAILED → best-effort → JUMP
+- Finale States landen aktuell in FINALIZE.
 
-Weitere States (JUMP, DETECT, TRACK_FWD, TRACK_BWD, CLEAN_SHORT, SOLVE, FINALIZE)
-werden in den nächsten Schritten implementiert.
-
-Hinweis: Dieser Operator ist PEP 8-konform, robust gegen fehlende UI-Kontexte
-und loggt klar nachvollziehbare Schritte.
+Hinweis: Operator bleibt PEP 8-konform und robust gegenüber fehlendem UI-Kontext.
 """
 
 import bpy
@@ -46,7 +44,7 @@ def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
 
 
 # ------------------------------------------------------------
-# Orchestrator-Operator (Schritt 1)
+# Orchestrator-Operator (Schritt 2)
 # ------------------------------------------------------------
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     bl_idname = "clip.tracking_coordinator"
@@ -120,9 +118,16 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return self._state_init(context)
             elif self._state == "FIND_LOW":
                 return self._state_find_low(context)
-            elif self._state in {"JUMP", "DETECT", "TRACK_FWD", "TRACK_BWD", "CLEAN_SHORT", "SOLVE"}:
+            elif self._state == "JUMP":
+                return self._state_jump(context)
+            elif self._state == "CLEAN_ERROR":
+                return self._state_clean_error(context)
+            elif self._state in {"DETECT", "TRACK_FWD", "TRACK_BWD", "CLEAN_SHORT", "SOLVE"}:
                 # werden in späteren Schritten implementiert
                 _safe_report(self, {"INFO"}, f"State '{self._state}' ist noch nicht implementiert – wechsle zu FINALIZE")
+                self._state = "FINALIZE"
+                return {"RUNNING_MODAL"}
+            elif self._state == "FINALIZE":
                 return self._finish(context, cancelled=False)
             else:
                 _safe_report(self, {"WARNING"}, f"Unbekannter State '{self._state}' – Abbruch")
@@ -174,7 +179,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._repeat_map = {}
 
     # --------------------------------------------------------
-    # States – Schritt 1: INIT, FIND_LOW
+    # States – INIT, FIND_LOW, JUMP, CLEAN_ERROR
     # --------------------------------------------------------
     def _state_init(self, context: bpy.types.Context):
         # Direkt in die erste Suche übergehen
@@ -186,7 +191,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         """Ermittelt ersten Frame mit zu niedriger Markerdichte.
         Übergänge:
           FOUND  → setze goto_frame, state="JUMP"
-          NONE   → state="SOLVE"
+          NONE   → state="CLEAN_ERROR"  (alle Marker >= Basis)
           FAILED → wie FOUND behandeln (best effort)
         """
         # Import lokal halten (robust gegenüber Paket-Struktur)
@@ -216,13 +221,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             scn[_GOTO_KEY] = int(frame)
             self._jump_done = False
             self._detect_attempts = 0
-            self._state = "JUMP"  # Implementierung folgt in Schritt 2
+            self._state = "JUMP"
             _safe_report(self, {"INFO"}, f"Low-Marker bei Frame {frame} → JUMP")
             return {"RUNNING_MODAL"}
 
         if status == "NONE":
-            self._state = "SOLVE"  # Implementierung folgt in späterem Schritt
-            _safe_report(self, {"INFO"}, "Keine Low-Marker-Frames → SOLVE")
+            # Kein Frame unterhalb Basis → Fehlerbereinigung ausführen
+            self._state = "CLEAN_ERROR"
+            _safe_report(self, {"INFO"}, "Keine Low-Marker-Frames → CLEAN_ERROR")
             return {"RUNNING_MODAL"}
 
         # FAILED → Best-Effort: Wenn wir irgendeinen Frame vorschlagen können, tun wir es
@@ -236,6 +242,49 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         _safe_report(self, {"ERROR"}, "FindLow FAILED ohne Frame – Abbruch")
         return self._finish(context, cancelled=True)
+
+    def _state_jump(self, context: bpy.types.Context):
+        """Springt deterministisch auf scene['goto_frame'] (oder gesetzten Frame)."""
+        try:
+            from ..Helper.jump_to_frame import run_jump_to_frame  # type: ignore
+        except Exception:
+            try:
+                from ..Helper.jump_to_frame import run_jump_to_frame  # type: ignore
+            except Exception as ex:
+                _safe_report(self, {"ERROR"}, f"JumpToFrame nicht verfügbar: {ex}")
+                return self._finish(context, cancelled=True)
+
+        res = run_jump_to_frame(
+            context,
+            frame=None,  # liest scene['goto_frame']
+            ensure_clip=True,
+            ensure_tracking_mode=True,
+            use_ui_override=True,
+            repeat_map=self._repeat_map,
+        )
+        ok = (res.get("status") == "OK")
+        target = res.get("frame")
+        _safe_report(self, {"INFO" if ok else "WARNING"}, f"JUMP → Frame {target} | ok={ok}")
+
+        # Für diesen Schritt ist der Jump das Ziel → FINALIZE
+        self._state = "FINALIZE"
+        return {"RUNNING_MODAL"}
+
+    def _state_clean_error(self, context: bpy.types.Context):
+        """Führt die robuste Fehlerbereinigung aus, wenn kein Low-Frame existiert."""
+        try:
+            from ..Helper.clean_error_tracks import run_clean_error_tracks  # type: ignore
+        except Exception as ex:
+            _safe_report(self, {"ERROR"}, f"CleanError nicht verfügbar: {ex}")
+            return self._finish(context, cancelled=True)
+
+        res = run_clean_error_tracks(context, show_popups=False)
+        status = res.get('status', 'FINISHED') if isinstance(res, dict) else 'FINISHED'
+        _safe_report(self, {"INFO"}, f"CLEAN_ERROR abgeschlossen (status={status})")
+
+        # Danach fertig
+        self._state = "FINALIZE"
+        return {"RUNNING_MODAL"}
 
     # --------------------------------------------------------
     # Abschluss/Cleanup
