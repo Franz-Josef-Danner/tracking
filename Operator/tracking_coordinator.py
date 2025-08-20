@@ -118,6 +118,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     def _state_find_low(self, context):
         from ..Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
+        # NEU (für NONE-Zweig unten):
+        from ..Helper.clean_error_tracks import run_clean_error_tracks  # type: ignore
+
         result = run_find_low_marker_frame(context)
         status = str(result.get("status", "FAILED")).upper()
 
@@ -127,15 +130,28 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._jump_done = False
             print(f"[Coord] FIND_LOW → FOUND frame={frame} → JUMP")
             self._state = "JUMP"
+
         elif status == "NONE":
+            # ▼▼▼ Erweiterung: Clean Error Tracks vor dem Finalize ▼▼▼
+            try:
+                print("[Coord] FIND_LOW → NONE → run_clean_error_tracks()")
+                cr = run_clean_error_tracks(context, show_popups=False)
+                if isinstance(cr, dict) and cr.get('status') == 'CANCELLED':
+                    print("[Coord] CLEAN_ERROR_TRACKS abgebrochen – fahre dennoch fort zu FINALIZE")
+            except Exception as ex:
+                print(f"[Coord] CLEAN_ERROR_TRACKS Exception: {ex!r} – fahre fort zu FINALIZE")
+            # ▲▲▲ Ende der Erweiterung ▲▲▲
+
             print("[Coord] FIND_LOW → NONE → FINALIZE")
             self._state = "FINALIZE"
+
         else:
             # Best effort: versuche mit aktuellem Frame weiter
             context.scene[_GOTO_KEY] = context.scene.frame_current
             self._jump_done = False
             print(f"[Coord] FIND_LOW → FAILED ({result.get('reason', '?')}) → JUMP (best-effort)")
             self._state = "JUMP"
+
         return {"RUNNING_MODAL"}
 
     def _state_jump(self, context):
