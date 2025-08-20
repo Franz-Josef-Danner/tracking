@@ -36,8 +36,6 @@ except Exception:  # pragma: no cover
 # =============================================================================
 # Konfiguration & Mapping (Syntax‑bereinigt)
 # =============================================================================
-# ACHTUNG: Der frühere SyntaxError "'[' was never closed" entstand durch einen
-# kopierbedingten Cut im MOTION_MODELS‑Block. Nachfolgend sauber und vollständig.
 MOTION_MODELS: List[str] = [
     "Perspective",   # 0
     "Affine",        # 1
@@ -54,9 +52,16 @@ CHANNEL_PRESETS = {
     3: (False, True, True),
 }
 
-# --- Pattern‑Size‑Übernahme nach alter Version ---
+# --- Pattern‑Size‑Suche / Hysterese ---
 DETERIORATION_RATIO: float = 0.12   # 12% schlechter als aktueller Bestwert ⇒ signifikant
 MIN_SAME_PT_REPEATS: int = 3        # Bestätigungsläufe am selben pt
+
+# --- NEU: Robustheit, wenn ein Track‑Run "nichts bringt" (EGA≈0) ---
+NO_RESULT_EGA: float = 1e-9         # EGA ~ 0 ⇒ kein verwertbares Ergebnis
+PT_GROWTH_FAST: float = 1.25        # schneller Schritt, wenn gar nichts kam
+PT_GROWTH: float = 1.10             # normaler Schritt
+PT_MAX: int = 121                   # Sicherheitskappe für Pattern‑Size
+
 
 # =============================================================================
 # Hilfsfunktionen: Flags / Defaults setzen
@@ -80,6 +85,17 @@ def _set_flag3_channels(clip: bpy.types.MovieClip, vv: int) -> None:
     s.use_default_red_channel = bool(r)
     s.use_default_green_channel = bool(g)
     s.use_default_blue_channel = bool(b)
+
+
+def _bump_pattern(st: "_State", *, fast: bool = False) -> None:
+    """Pattern/Search vergrößern, Flags setzen, Detect+Track erneut starten."""
+    factor = PT_GROWTH_FAST if fast else PT_GROWTH
+    st.pt = min(float(PT_MAX), st.pt * factor)
+    st.sus = st.pt * 2.0
+    _set_flag1(st.clip, int(st.pt), int(st.sus))
+    _ensure_markers(st)
+    _start_track(st)
+
 
 # =============================================================================
 # Metriken: EGA = Σ (frames_per_track / error_per_track)
@@ -113,6 +129,7 @@ def _calc_track_quality_sum(context: bpy.types.Context, clip: bpy.types.MovieCli
             frames = max(len(tr.markers), 1)
             total += (frames / err)
     return float(total)
+
 
 # =============================================================================
 # CLIP_EDITOR‑Kontext & Utilities
@@ -166,6 +183,7 @@ def _delete_selected_tracks(context: bpy.types.Context) -> None:
     except Exception as ex:
         print(f"[Optimize] WARN: delete_track fehlgeschlagen: {ex}")
 
+
 # =============================================================================
 # Async‑Tracking Orchestration (Timer + Done‑Token)
 # =============================================================================
@@ -180,8 +198,10 @@ class _AsyncTracker:
         wm = self.context.window_manager
         if wm.get("bw_tracking_done_token", None) == self.token:
             del wm["bw_tracking_done_token"]
+
         def _kickoff(**kw):
             return track_to_scene_end_fn(self.context, **kw)
+
         _call_in_clip_context(
             self.context,
             _kickoff,
@@ -199,6 +219,7 @@ class _AsyncTracker:
         wm = self.context.window_manager
         if wm.get("bw_tracking_done_token", None) == self.token:
             del wm["bw_tracking_done_token"]
+
 
 # =============================================================================
 # Hauptzustand der Optimierung
@@ -227,6 +248,7 @@ class _State:
     # Hysterese nach alter Version
     rep_same_pt: int = 0
 
+
 # =============================================================================
 # Timer‑Pipeline
 # =============================================================================
@@ -250,7 +272,6 @@ def start_optimization(context: bpy.types.Context) -> None:
 
     # 4) Jetzt – und nur jetzt – die Voreinstellung setzen
     try:
-        # kein Einfluss auf UI-Override/Timer; nur Scene-IDs
         set_test_value(context.scene)  # schreibt marker_basis/adapt/min/max
         print("[Bootstrap] set_test_value() vor FLAG1_INIT angewendet.")
     except Exception as ex:
@@ -262,7 +283,6 @@ def start_optimization(context: bpy.types.Context) -> None:
     globals()["_RUNNING"] = st
     bpy.app.timers.register(_timer_step, first_interval=0.2)
     print(f"[Optimize] Start @frame={st.origin_frame}")
-
 
 
 def cancel_optimization() -> None:
@@ -287,15 +307,20 @@ def _timer_step() -> float | None:
                 return 0.1
             ega = _calc_track_quality_sum(st.context, st.clip)
             _finish_track(st)
+
+            # Kein Tracking-Ergebnis → Baseline NICHT setzen, Pattern aggressiv erhöhen
+            if ega <= NO_RESULT_EGA:
+                print(f"[Optimize] Kein Tracking-Ergebnis bei pt={st.pt:.1f} → erhöhe Pattern (fast) & wiederhole Basis.")
+                _bump_pattern(st, fast=True)
+                st.phase = "WAIT_TRACK_BASE"
+                return 0.1
+
             if st.ev < 0:
                 st.ev = ega
-                st.pt *= 1.1
-                st.sus = st.pt * 2
-                _set_flag1(st.clip, int(st.pt), int(st.sus))
-                _ensure_markers(st)
-                _start_track(st)
+                _bump_pattern(st, fast=False)  # normal weiter steigern
                 st.phase = "WAIT_TRACK_IMPROVE"
                 return 0.1
+
             return _branch_ev_known(st, ega)
 
         if st.phase == "WAIT_TRACK_IMPROVE":
@@ -369,22 +394,27 @@ def _timer_step() -> float | None:
         globals()["_RUNNING"] = None
         return None
 
+
 # =============================================================================
-# Branch‑Helfer (Pattern‑Suche mit Hysterese nach alter Version)
+# Branch‑Helfer (Pattern‑Suche mit Hysterese nach alter Version + No-Result-Handling)
 # =============================================================================
 
 def _branch_ev_known(st: _State, ega: float) -> float:
+    # Kein Ergebnis? → nicht als "schlechter" werten, sondern Pattern anheben & weiter testen
+    if ega <= NO_RESULT_EGA:
+        print(f"[Optimize] EGA≈0 bei pt={st.pt:.1f} → Pattern anheben (fast) & erneut testen.")
+        st.rep_same_pt = 0
+        _bump_pattern(st, fast=True)
+        st.phase = "WAIT_TRACK_IMPROVE"
+        return 0.1
+
     # Verbesserung
     if ega > st.ev:
         st.ev = ega
         st.dg = 4
         st.ptv = st.pt
         st.rep_same_pt = 0
-        st.pt *= 1.1
-        st.sus = st.pt * 2
-        _set_flag1(st.clip, int(st.pt), int(st.sus))
-        _ensure_markers(st)
-        _start_track(st)
+        _bump_pattern(st, fast=False)
         st.phase = "WAIT_TRACK_IMPROVE"
         return 0.1
 
@@ -410,16 +440,13 @@ def _branch_ev_known(st: _State, ega: float) -> float:
     st.rep_same_pt = 0
     st.dg -= 1
     if st.dg >= 0:
-        st.pt *= 1.1
-        st.sus = st.pt * 2
-        _set_flag1(st.clip, int(st.pt), int(st.sus))
-        _ensure_markers(st)
-        _start_track(st)
+        _bump_pattern(st, fast=False)
         st.phase = "WAIT_TRACK_IMPROVE"
         return 0.1
 
     st.phase = "MOTION_LOOP_SETUP"
     return 0.0
+
 
 # =============================================================================
 # Ablauf‑Helfer
@@ -450,6 +477,7 @@ def _finish_track(st: _State) -> None:
         except Exception:
             st.context.scene.frame_current = st.origin_frame
     _delete_selected_tracks(st.context)
+    print(f"[Optimize] Track‑Run beendet (pt={st.pt:.1f}, sus={st.sus:.1f}).")
 
 
 def _apply_best_and_finish(st: _State) -> None:
@@ -458,12 +486,14 @@ def _apply_best_and_finish(st: _State) -> None:
     print(f"[Optimize] Fertig. ev={st.ev:.3f}, Motion={st.mov}, Channels={st.vf}, pt≈{st.ptv:.1f}")
     globals()["_RUNNING"] = None
 
+
 # =============================================================================
 # Komfort‑Alias (kein Operator!)
 # =============================================================================
 
 def optimize_now(context: bpy.types.Context) -> None:
     start_optimization(context)
+
 
 # =============================================================================
 # Interne Minimal‑Tests (rein Python, ohne Blender‑Operatoren)
@@ -508,6 +538,11 @@ def run_internal_tests() -> None:
         st.ev = 10.0; st.dg = 1; st.pt = 21.0; st.rep_same_pt = 0; st.phase = "WAIT_TRACK_IMPROVE"
         _branch_ev_known(st, 9.9)
         assert st.dg == 0 and st.phase == "WAIT_TRACK_IMPROVE"
+
+        # Kein Ergebnis → sollte nicht abbrechen, sondern Pattern bumpen
+        st.ev = 10.0; st.dg = 0; st.pt = 21.0; st.phase = "WAIT_TRACK_IMPROVE"
+        _branch_ev_known(st, 0.0)
+        assert st.phase == "WAIT_TRACK_IMPROVE" and st.pt > 21.0
 
         print("[OptimizeTest] OK")
     finally:
