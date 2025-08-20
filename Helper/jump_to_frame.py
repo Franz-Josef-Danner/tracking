@@ -134,13 +134,22 @@ def run_jump_to_frame(
     if repeat_map is not None:
         repeat_count = int(repeat_map.get(target, 0)) + 1
         repeat_map[target] = repeat_count
-    # NEU: Sättigungs-Schwelle (10)
-    repeat_saturated = repeat_count >= 4
-    
-    # optional: wenn du nur eine Logzeile möchtest, kannst du diese entfernen
-    # ------------------------------------------------------------------
-    # REPEAT-HOOK: Bei Wiederholung (Frame wurde schon einmal per Jump angefahren)
-    # → Nur noch run_marker_adapt_boost() ausführen.
+    # Nach stabiler Playhead-Setzung: Wiederholungen auswerten und ggf. Signal setzen
+    # Bedingung: >5 Wiederholungen & scene["marker_adapt"] > 200
+    if repeat_count > 5:
+        try:
+            marker_adapt_val = int(scn.get("marker_adapt", 0))
+        except Exception:
+            marker_adapt_val = 0
+
+        if marker_adapt_val > 200:
+            # Nur setzen, nicht triggern – der Koordinator wertet das Flag aus
+            if scn.get("__optimize_request") != "JUMP_REPEAT":
+                scn["__optimize_request"] = "JUMP_REPEAT"
+            scn["__optimize_frame"] = int(target)
+            print(f"[GotoFrame] Repeat>{5} & marker_adapt={marker_adapt_val} → Optimizer-Signal gesetzt (frame={target}).")
+        else:
+            print(f"[GotoFrame] Repeat>{5} aber marker_adapt={marker_adapt_val} ≤ 200 → kein Optimizer-Signal.")
     # ------------------------------------------------------------------
     if repeat_count >= 2:
         # robust importieren (Package vs. Flat)
