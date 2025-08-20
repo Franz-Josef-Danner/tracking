@@ -441,26 +441,36 @@ def _timer_step() -> float | None:
 # ---------------------- Branch‑Helfer ----------------------
 
 def _branch_ev_known(st: _State, ega: float) -> float:
-    # Verbesserung → wie gehabt, plus Reset des Bestätigungszählers
+    """Branch-Logik nach einem Tracking-Pass, wenn bereits ein ev existiert.
+    WICHTIG (Fix): Für jeden erneuten Pattern-Size-Versuch müssen wir **erneut** Marker
+    erzeugen, weil wir am Ende von _finish_track die selektierten (frisch
+erzeugten) Tracks löschen. Ohne erneute Detect würden die folgenden
+    track_markers()-Aufrufe mangels Selektion sofort mit {'CANCELLED'} enden.
+    """
     if ega > st.ev:
         st.ev = ega
         st.dg = 4
         st.ptv = st.pt
-        st.rep_same_pt = 0
         st.pt *= 1.1
         st.sus = st.pt * 2
         _set_flag1(st.clip, int(st.pt), int(st.sus))
+        # *** NEU: Marker für nächste Iteration neu erzeugen, sonst kein Tracking ***
+        _ensure_markers(st)
         _start_track(st)
         st.phase = "WAIT_TRACK_IMPROVE"
         return 0.1
-
-    # Keine Verbesserung: prüfen, ob signifikant schlechter als Bestwert
-    signif_worse_cut = st.ev * (1.0 - DETERIORATION_RATIO)
-    if ega <= signif_worse_cut:
-        # Verschlechterung am selben pt bestätigen lassen (mehrfach tracken, ohne pt zu ändern)
-        st.rep_same_pt += 1
-        if st.rep_same_pt >= MIN_SAME_PT_REPEATS:
-            # Bestwert ist stabil → Pattern‑Suche beenden und mit ptv fortfahren
+    else:
+        st.dg -= 1
+        if st.dg >= 0:
+            st.pt *= 1.1
+            st.sus = st.pt * 2
+            _set_flag1(st.clip, int(st.pt), int(st.sus))
+            # *** NEU: Marker wieder neu detektieren, da vorige selektierte gelöscht wurden ***
+            _ensure_markers(st)
+            _start_track(st)
+            st.phase = "WAIT_TRACK_IMPROVE"
+            return 0.1
+        else:
             st.phase = "MOTION_LOOP_SETUP"
             return 0.0
         else:
