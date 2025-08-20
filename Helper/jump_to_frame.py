@@ -156,20 +156,24 @@ def run_jump_to_frame(
 
     # Nach stabiler Playhead-Setzung: Wiederholungen auswerten und ggf. Signal setzen
     # Bedingung: >5 Wiederholungen & scene["marker_adapt"] > 150
-    if repeat_count > 3:
+    if repeat_count > 3: 
         try:
             marker_adapt_val = int(scn.get("marker_adapt", 0))
+            marker_basis_val = int(scn.get("marker_basis", 0))
         except Exception:
             marker_adapt_val = 0
-
-        if marker_adapt_val > 150:
-            # Nur setzen, nicht triggern – der Koordinator wertet das Flag aus
+            marker_basis_val = 0
+    
+        threshold = int(marker_basis_val * 1.5)
+    
+        if marker_adapt_val > threshold:
             if scn.get("__optimize_request") != "JUMP_REPEAT":
                 scn["__optimize_request"] = "JUMP_REPEAT"
             scn["__optimize_frame"] = int(target)
-            print(f"[GotoFrame] Repeat>{3} & marker_adapt={marker_adapt_val} → Optimizer-Signal gesetzt (frame={target}).")
+            print(f"[GotoFrame] Repeat>{3} & marker_adapt={marker_adapt_val} > threshold={threshold} → Optimizer-Signal gesetzt (frame={target}).")
         else:
-            print(f"[GotoFrame] Repeat>{3} aber marker_adapt={marker_adapt_val} ≤ 150 → kein Optimizer-Signal.")
+            print(f"[GotoFrame] Repeat>{3} aber marker_adapt={marker_adapt_val} ≤ threshold={threshold} → kein Optimizer-Signal.")
+
     # ------------------------------------------------------------------
     if repeat_count >= 2:
         # robust importieren (Package vs. Flat)
