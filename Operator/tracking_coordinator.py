@@ -261,11 +261,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         print(f"[Coord] JUMP → OPTIMIZE (operator fallback, frame={opt_frame})")
                     except Exception as ex_op:
                         print(f"[Coord] OPTIMIZE launch failed: {ex_op!r}")
-                finally:
-                    # NEU: Merken, dass nach Optimizer einmalig Marker-Helper laufen soll
-                    scn[_OPT_POST_MARKER_PENDING] = True
-                    print("[Coord] OPTIMIZE → set post-marker pending flag")
-
+                      
             self._jump_done = True
         self._detect_attempts = 0
         self._state = "DETECT"
