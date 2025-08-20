@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Optional, List
 
 import bpy
+from .set_test_value import set_test_value
 
 # =============================================================================
 # Dynamische Helper‑Imports (gleichen Signaturen wie in optimize_tracking_modal_neu)
@@ -29,6 +30,15 @@ try:  # Fehler/Qualitätsmetrik (aus altem System)
     from .error_value import error_value  # type: ignore
 except Exception:  # pragma: no cover
     error_value = None  # type: ignore
+
+# Bootstrap: Marker-Korridor vorbereiten
+try:
+    scn = bpy.context.scene
+    if scn is not None:
+        set_test_value(scn)
+        print("[Bootstrap] set_test_value() erfolgreich angewendet.")
+except Exception as ex:
+    print(f"[Bootstrap] WARN: set_test_value() fehlgeschlagen: {ex}")
 
 # =============================================================================
 # Konfiguration & Mapping (Syntax‑bereinigt)
