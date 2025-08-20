@@ -18,7 +18,7 @@ def marker_helper_main(context) -> Tuple[bool, int, Dict[str, Any]]:
 
     # Ableitungen (klassische Heuristik)
     factor         = int(getattr(scn, "marker_factor", 4))     # optionaler UI-Faktor; Default 4
-    marker_adapt   = int(marker_basis * factor * 0.9)
+    marker_adapt   = int(marker_basis * factor)
     marker_min     = int(max(1, round(marker_adapt * 0.9)))
     marker_max     = int(max(2, round(marker_adapt * 1.1)))
 
