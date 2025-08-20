@@ -89,7 +89,7 @@ def apply_tracker_settings(
     return report
 
 
-def set_test_value(
+set_test_value(context.scene, apply_settings=True, context=context)
     scene: bpy.types.Scene,
     *,
     apply_settings: bool = True,
