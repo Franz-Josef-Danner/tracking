@@ -34,10 +34,6 @@ _OPT_REQ_KEY = "__optimize_request"
 _OPT_REQ_VAL = "JUMP_REPEAT"
 _OPT_FRAME_KEY = "__optimize_frame"
 
-# NEU: Nachlauf-Aktion nach Optimizer
-_OPT_POST_MARKER_PENDING = "__opt_post_marker_pending"  # True → bei nächstem FIND_LOW erst marker_helper_main ausführen
-
-
 def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
     try:
         self.report(level, msg)
@@ -164,7 +160,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         scn[_BIDI_ACTIVE_KEY] = False
         scn[_BIDI_RESULT_KEY] = ""
         # Pending-Flag auf False beim Start
-        scn[_OPT_POST_MARKER_PENDING] = False
         self._state = "INIT"
         self._detect_attempts = 0
         self._jump_done = False
@@ -206,9 +201,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     def _state_find_low(self, context):
         from ..Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
         from ..Helper.clean_error_tracks import run_clean_error_tracks        # type: ignore
-
-        # NEU: Erst Marker-Helper nach Optimizer abarbeiten (einmalig)
-        self._run_post_opt_marker_if_needed(context)
 
         result = run_find_low_marker_frame(context)
         status = str(result.get("status", "FAILED")).upper()
