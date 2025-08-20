@@ -508,18 +508,26 @@ def _apply_best_and_finish(st: _State) -> None:
     _set_flag2_motion_model(st.clip, st.mov)
     _set_flag3_channels(st.clip, st.vf)
     print(f"[Optimize] Fertig. ev={st.ev:.3f}, Motion={st.mov}, Channels={st.vf}, pt≈{st.ptv:.1f}")
+
+    # NEU: Marker-Helper direkt ausführen
     try:
-        # ← Signal für den Koordinator: beim nächsten FIND_LOW zuerst Marker-Helper laufen lassen
-        st.context.scene["__opt_post_marker_pending"] = True
-        print("[Optimize] Set post-marker pending flag for coordinator.")
-    except Exception as _ex:
-        print(f"[Optimize] WARN: could not set post-marker flag: {_ex!r}")
+        from .marker_helper_main import marker_helper_main
+        marker_helper_main(st.context)
+        print("[Optimize] marker_helper_main direkt nach Optimizer ausgeführt.")
+    except Exception as ex_func:
+        print(f"[Optimize] WARN: marker_helper_main function failed: {ex_func!r}")
+        try:
+            import bpy
+            bpy.ops.clip.marker_helper_main('INVOKE_DEFAULT')
+            print("[Optimize] marker_helper_main Operator-Fallback ausgeführt.")
+        except Exception as ex_op:
+            print(f"[Optimize] WARN: marker_helper_main launch failed: {ex_op!r}")
+
     try:
         st.context.scene[_LOCK_KEY] = False  # Safety: etwaige Detect-Locks freigeben
     except Exception:
         pass
     globals()["_RUNNING"] = None
-
 
 # =============================================================================
 # Komfort‑Alias (kein Operator!)
