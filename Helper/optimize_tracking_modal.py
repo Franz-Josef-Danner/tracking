@@ -67,6 +67,7 @@ _LOCK_KEY = "__detect_lock"
 # =============================================================================
 # Hilfsfunktionen: Flags / Defaults setzen
 # =============================================================================
+# Helper/optimize_tracking_modal.py
 
 def _set_flag1(clip: bpy.types.MovieClip, pattern: int, search: int) -> None:
     s = clip.tracking.settings
@@ -503,19 +504,22 @@ def _finish_track(st: _State) -> None:
     _delete_selected_tracks(st.context)
     print(f"[Optimize] Track‑Run beendet (pt={st.pt:.1f}, sus={st.sus:.1f}).")
 
-
 def _apply_best_and_finish(st: _State) -> None:
     _set_flag2_motion_model(st.clip, st.mov)
     _set_flag3_channels(st.clip, st.vf)
     print(f"[Optimize] Fertig. ev={st.ev:.3f}, Motion={st.mov}, Channels={st.vf}, pt≈{st.ptv:.1f}")
     try:
+        # ← Signal für den Koordinator: beim nächsten FIND_LOW zuerst Marker-Helper laufen lassen
         st.context.scene["__opt_post_marker_pending"] = True
         print("[Optimize] Set post-marker pending flag for coordinator.")
     except Exception as _ex:
         print(f"[Optimize] WARN: could not set post-marker flag: {_ex!r}")
-
-    # Aufräumen: laufenden State beenden
+    try:
+        st.context.scene[_LOCK_KEY] = False  # Safety: etwaige Detect-Locks freigeben
+    except Exception:
+        pass
     globals()["_RUNNING"] = None
+
 
 # =============================================================================
 # Komfort‑Alias (kein Operator!)
