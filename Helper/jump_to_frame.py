@@ -2,8 +2,15 @@ import bpy
 from typing import Optional, Dict, Any, Tuple
 
 __all__ = ("run_jump_to_frame", "jump_to_frame")  # jump_to_frame = Legacy-Wrapper
-REPEAT_SATURATION = 10  # Ab dieser Wiederholungsanzahl: Optimizer anstoßen statt Detect
 
+# Ab wie vielen Wiederholungen prüfen wir marker_adapt und signalisieren ggf. den Optimizer
+REPEAT_CHECK_THRESHOLD: int = 5
+# Obergrenze/Schutzkappe: ab dieser Wiederholungsanzahl könnte der Orchestrator sowieso alternative Pfade fahren
+REPEAT_SATURATION: int = 10
+# Scene-Key, über den wir den Operator (tracking_coordinator) benachrichtigen
+OPTIMIZE_SIGNAL_KEY: str = "__optimize_request"
+OPTIMIZE_SIGNAL_VAL: str = "JUMP_REPEAT"
+OPTIMIZE_FRAME_KEY: str = "__optimize_frame"
 
 
 # -----------------------------------------------------------------------------
@@ -66,31 +73,43 @@ def run_jump_to_frame(
 ) -> Dict[str, Any]:
     """
     Setzt den Playhead deterministisch auf 'frame' (oder scene['goto_frame']).
-    - Clamped auf Clipgrenzen
+    - Clamp auf Clipgrenzen
     - Optionaler CLIP_EDITOR-Override & Modus-Setzung
     - Zählt Wiederholungen NUR für per Jump gesetzte Frames via repeat_map
 
+    Erweiterung: Wenn derselbe Frame > REPEAT_CHECK_THRESHOLD mal wiederholt
+    angesprungen wurde UND scene["marker_adapt"] > 200 ist, wird ein Signal an den
+    Tracking-Koordinator gelegt (scene[OPTIMIZE_SIGNAL_KEY] / scene[OPTIMIZE_FRAME_KEY]).
+
     Returns:
-      {"status": "OK"|"FAILED",
-       "frame": int,
-       "repeat_count": int,
-       "clamped": bool,
-       "area_switched": bool}
+      {
+        "status": "OK"|"FAILED",
+        "frame": int | None,
+        "repeat_count": int,
+        "clamped": bool,
+        "area_switched": bool,
+        "optimize_signal": bool
+      }
     """
     scn = context.scene
     clip, scn = _resolve_clip_and_scene(context)
     if ensure_clip and not clip:
         print("[GotoFrame] Kein MovieClip im Kontext.")
-        return {"status": "FAILED", "reason": "no_clip", "frame": None, "repeat_count": 0, "clamped": False, "area_switched": False}
+        return {
+            "status": "FAILED", "reason": "no_clip", "frame": None,
+            "repeat_count": 0, "clamped": False, "area_switched": False,
+            "optimize_signal": False,
+        }
 
     # Ziel-Frame bestimmen
-    target = frame
-    if target is None:
-        target = scn.get("goto_frame", None)
+    target = frame if frame is not None else scn.get("goto_frame", None)
     if target is None:
         print("[GotoFrame] Scene-Variable 'goto_frame' nicht gesetzt.")
-        return {"status": "FAILED", "reason": "no_target", "frame": None, "repeat_count": 0, "clamped": False, "area_switched": False}
-
+        return {
+            "status": "FAILED", "reason": "no_target", "frame": None,
+            "repeat_count": 0, "clamped": False, "area_switched": False,
+            "optimize_signal": False,
+        }
     target = int(target)
 
     # Clamp an Clipgrenzen
@@ -105,87 +124,72 @@ def run_jump_to_frame(
             target = end
             clamped = True
 
-    # Optional: UI-Override (Area/Region) & Tracking-Mode
+    # UI-Override / Modus setzen (optional)
     area_switched = False
     if use_ui_override:
-        area, region = _find_clip_area(getattr(context, "window", None))
+        win = context.window
+        area, region = _find_clip_area(win)
         if area and region:
-            try:
-                with context.temp_override(area=area, region=region, space_data=area.spaces.active):
-                    if ensure_tracking_mode:
-                        try:
-                            sd = area.spaces.active
-                            if hasattr(sd, "mode") and sd.mode != 'TRACKING':
-                                sd.mode = 'TRACKING'
-                                area_switched = True
-                        except Exception:
-                            pass
-                    scn.frame_current = target
-            except Exception:
-                # Fallback: ohne Override setzen
-                scn.frame_current = target
+            area_switched = True
+            with context.temp_override(area=area, region=region, space_data=area.spaces.active):
+                if ensure_tracking_mode and hasattr(area.spaces.active, "mode"):
+                    try:
+                        area.spaces.active.mode = 'TRACKING'
+                    except Exception:
+                        pass
+                scn.frame_set(target)
         else:
-            # Kein CLIP_EDITOR sichtbar → trotzdem setzen
-            scn.frame_current = target
+            scn.frame_set(target)
     else:
-        scn.frame_current = target
-    # Besuchszählung je Ziel-Frame (1=erster Besuch, 2=erste Wiederholung, ...)
-    repeat_count = 1
+        scn.frame_set(target)
+
+    # Wiederholungszähler
     if repeat_map is not None:
-        repeat_count = int(repeat_map.get(target, 0)) + 1
-        repeat_map[target] = repeat_count
-    # NEU: Sättigungs-Schwelle (10)
-    repeat_saturated = repeat_count >= 4
-    
-    # optional: wenn du nur eine Logzeile möchtest, kannst du diese entfernen
-    # ------------------------------------------------------------------
-    # REPEAT-HOOK: Bei Wiederholung (Frame wurde schon einmal per Jump angefahren)
-    # → Nur noch run_marker_adapt_boost() ausführen.
-    # ------------------------------------------------------------------
-    if repeat_count >= 2:
-        # robust importieren (Package vs. Flat)
-        try:
-            from .marker_adapt_helper import run_marker_adapt_boost
-        except Exception:
-            from .marker_adapt_helper import run_marker_adapt_boost  # type: ignore
-        try:
-            run_marker_adapt_boost(context)
-            print(f"[JumpRepeat] run_marker_adapt_boost ausgelöst (frame={target}, repeat={repeat_count})")
-        except Exception as ex:
-            print(f"[JumpRepeat] run_marker_adapt_boost Fehler: {ex}")
+        repeat_map[target] = int(repeat_map.get(target, 0)) + 1
+        repeat_count = int(repeat_map[target])
+    else:
+        repeat_count = 1  # konservativ: erster Besuch
 
-    # Debugging & Transparenz
-    try:
-        scn["last_jump_frame"] = int(target)  # rein informativ; orchestrator nutzt repeat_map intern
-    except Exception:
-        pass
+    # --- NEU: Optimizer-Signal nur, wenn >5 Wiederholungen **und** marker_adapt > 200 ---
+    optimize_signal = False
+    marker_adapt_val = int(scn.get("marker_adapt", 0))
+    if repeat_count > int(REPEAT_CHECK_THRESHOLD):
+        if marker_adapt_val > 200:
+            # Signal an den Orchestrator legen – dieser sollte es im Modal-Tick auswerten
+            scn[OPTIMIZE_SIGNAL_KEY] = OPTIMIZE_SIGNAL_VAL
+            scn[OPTIMIZE_FRAME_KEY] = int(target)
+            optimize_signal = True
+            print(
+                f"[GotoFrame] Wiederholung>{REPEAT_CHECK_THRESHOLD} (={repeat_count}) und marker_adapt={marker_adapt_val} > 200 → Optimizer-Signal gesetzt."
+            )
+        else:
+            print(
+                f"[GotoFrame] Wiederholung>{REPEAT_CHECK_THRESHOLD} (={repeat_count}), aber marker_adapt={marker_adapt_val} ≤ 200 → kein Optimizer-Signal."
+            )
 
-    print(f"[GotoFrame] Playhead auf Frame {target} gesetzt. (clamped={clamped}, repeat={repeat_count}, saturated={repeat_saturated})")
+    # Soft-Kappe als Zusatzinfo: ab Sättigung könnte der Orchestrator alternative Pfade wählen
+    if repeat_count >= REPEAT_SATURATION:
+        print(f"[GotoFrame] Repeat-Sättigung erreicht (≥{REPEAT_SATURATION}) am Frame {target}.")
+
     return {
         "status": "OK",
-        "frame": int(target),
-        "repeat_count": int(repeat_count),
-        "repeat_saturated": bool(repeat_saturated),
-        "clamped": bool(clamped),
-        "area_switched": bool(area_switched),
+        "frame": target,
+        "repeat_count": repeat_count,
+        "clamped": clamped,
+        "area_switched": area_switched,
+        "optimize_signal": optimize_signal,
     }
 
 
-# -----------------------------------------------------------------------------
-# Legacy-Wrapper (Kompatibilität)
-# -----------------------------------------------------------------------------
+# Legacy-Wrapper (Backwards-Compat)
 
-def jump_to_frame(context):
-    """
-    Kompatibel zur alten Signatur:
-      - liest 'scene[\"goto_frame\"]'
-      - ruft run_jump_to_frame()
-      - gibt bool zurück (True bei OK)
-    """
-    res = run_jump_to_frame(context, frame=None, repeat_map=None)
-    ok = (res.get("status") == "OK")
-    if ok:
-        print(f"[GotoFrame] Legacy OK → Frame {res.get('frame')}")
-    else:
-        print(f"[GotoFrame] Legacy FAILED → {res.get('reason','')}")
-    return ok
+def jump_to_frame(context, frame: Optional[int] = None, repeat_map: Optional[Dict[int, int]] = None) -> Dict[str, Any]:
+    """Kompatibler Wrapper, der die neue Logik nutzt."""
+    return run_jump_to_frame(
+        context,
+        frame=frame,
+        ensure_clip=True,
+        ensure_tracking_mode=True,
+        use_ui_override=True,
+        repeat_map=repeat_map,
+    )
