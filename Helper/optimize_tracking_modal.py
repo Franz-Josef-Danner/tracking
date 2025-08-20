@@ -31,15 +31,6 @@ try:  # Fehler/Qualitätsmetrik (aus altem System)
 except Exception:  # pragma: no cover
     error_value = None  # type: ignore
 
-# Bootstrap: Marker-Korridor vorbereiten
-try:
-    scn = bpy.context.scene
-    if scn is not None:
-        set_test_value(scn)
-        print("[Bootstrap] set_test_value() erfolgreich angewendet.")
-except Exception as ex:
-    print(f"[Bootstrap] WARN: set_test_value() fehlgeschlagen: {ex}")
-
 # =============================================================================
 # Konfiguration & Mapping (Syntax‑bereinigt)
 # =============================================================================
@@ -241,6 +232,14 @@ _RUNNING: Optional[_State] = None
 
 
 def start_optimization(context: bpy.types.Context) -> None:
+    # Bootstrap jetzt deterministisch beim Start
+    try:
+        set_test_value(context.scene)  # schreibt marker_adapt / min / max
+        print("[Bootstrap] set_test_value() beim Optimize-Start angewendet.")
+    except Exception as ex:
+        print(f"[Bootstrap] WARN @start_optimization: {ex}")
+    cancel_optimization()
+    space = getattr(context, "space_data", None)
     cancel_optimization()
     space = getattr(context, "space_data", None)
     if not space or getattr(space, "type", "") != "CLIP_EDITOR":
