@@ -344,14 +344,16 @@ def _timer_step() -> float | None:
         if st.phase == "WAIT_TRACK_BASE":
             if not st.tracker or not st.tracker.done():
                 return 0.1
-            _finish_track(st)
+            # 1) Qualität VOR dem Aufräumen ermitteln (Tracks existieren noch)
             ega = _calc_track_quality_sum(st.context, st.clip)
+            # 2) Danach bereinigen (selektierte neue Marker löschen, Playhead resetten)
+            _finish_track(st)
             if st.ev < 0:
                 st.ev = ega
                 st.pt *= 1.1
                 st.sus = st.pt * 2
                 _set_flag1(st.clip, int(st.pt), int(st.sus))
-                _ensure_markers(st)  # wichtig: wir haben soeben selektierte gelöscht
+                _ensure_markers(st)
                 _start_track(st)
                 st.phase = "WAIT_TRACK_IMPROVE"
                 return 0.1
@@ -361,8 +363,10 @@ def _timer_step() -> float | None:
         if st.phase == "WAIT_TRACK_IMPROVE":
             if not st.tracker or not st.tracker.done():
                 return 0.1
-            _finish_track(st)
+            # 1) Qualität VOR dem Aufräumen ermitteln
             ega = _calc_track_quality_sum(st.context, st.clip)
+            # 2) Danach aufräumen
+            _finish_track(st)
             return _branch_ev_known(st, ega)
 
         if st.phase == "MOTION_LOOP_SETUP":
@@ -392,8 +396,9 @@ def _timer_step() -> float | None:
         if st.phase == "MOTION_WAIT":
             if not st.tracker or not st.tracker.done():
                 return 0.1
-            _finish_track(st)
+            # Qualität vor Cleanup lesen
             ega = _calc_track_quality_sum(st.context, st.clip)
+            _finish_track(st)
             if ega > st.ev:
                 st.ev = ega
                 st.mov = st.mo_index
@@ -416,8 +421,8 @@ def _timer_step() -> float | None:
         if st.phase == "CHANNEL_WAIT":
             if not st.tracker or not st.tracker.done():
                 return 0.1
-            _finish_track(st)
             ega = _calc_track_quality_sum(st.context, st.clip)
+            _finish_track(st)
             if ega > st.ev:
                 st.ev = ega
                 st.vf = st.vv
@@ -521,6 +526,10 @@ def _start_track(st: _State) -> None:
 
 
 def _finish_track(st: _State) -> None:
+    """Bereinigt nach einem Track-Pass: Token, Playhead, selektierte neuen Marker.
+    Achtung: Diese Funktion DARF erst NACH der EGA‑Berechnung aufgerufen werden,
+    sonst ist die Qualität 0 (weil die frischen Marker gelöscht wären).
+    """
     if st.tracker:
         st.tracker.clear()
     # Playhead-Reset sicherstellen
@@ -533,7 +542,7 @@ def _finish_track(st: _State) -> None:
     _delete_selected_tracks(st.context)
 
 
-def _apply_best_and_finish(st: _State) -> None:
+def _apply_best_and_finish(st: _State) -> None:(st: _State) -> None:
     # bestes Motion‑Model anwenden
     _set_flag2_motion_model(st.clip, st.mov)
     # bestes Channel‑Preset anwenden
