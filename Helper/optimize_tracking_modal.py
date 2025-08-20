@@ -1,4 +1,4 @@
-# Blender-Add-on – funktionaler Optimierungs‑Flow (keine Operatoren)
+stimmt das so?: # Blender-Add-on – funktionaler Optimierungs‑Flow (keine Operatoren)
 #
 # Hinweis: Diese Datei ist **rein funktional** (keine Operatoren). Die Steuerung
 # erfolgt über `bpy.app.timers` und Helper-Funktionen (Detect/Track), identisch
@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from typing import Optional, List
 
 import bpy
-from .set_test_value import set_test_value
 
 # =============================================================================
 # Dynamische Helper‑Imports (gleichen Signaturen wie in optimize_tracking_modal_neu)
@@ -30,6 +29,7 @@ try:  # Fehler/Qualitätsmetrik (aus altem System)
     from .error_value import error_value  # type: ignore
 except Exception:  # pragma: no cover
     error_value = None  # type: ignore
+
 
 # =============================================================================
 # Konfiguration & Mapping (Syntax‑bereinigt)
@@ -232,23 +232,10 @@ _RUNNING: Optional[_State] = None
 
 
 def start_optimization(context: bpy.types.Context) -> None:
-    # 1) Lauf ggf. beenden, bevor wir Szenewerte anfassen
+    # 1) sauberen Zustand sicherstellen
     cancel_optimization()
 
-    # 2) Voreinstellung: Helper/set_test_value.py nur beim Auslösen der Optimierung
-    try:
-        scn = context.scene
-        # optionaler Guard gegen Headless:
-        if not getattr(bpy.app, "background", False):
-            # Falls marker_frame fehlt, kannst du hier einen Default setzen:
-            # if getattr(scn, "marker_frame", None) is None:
-            #     scn["marker_frame"] = int(scn.get("marker_basis", 20))
-            set_test_value(scn)  # -> schreibt marker_adapt / marker_min / marker_max
-            print("[Bootstrap] set_test_value() beim Optimize-Start angewendet.")
-    except Exception as ex:
-        print(f"[Bootstrap] WARN @start_optimization: {ex}")
-
-    # 3) Danach normal fortfahren – jetzt erst geht die eigentliche Test-/Tracking-Logik los
+    # 2) Clip/Editor ermitteln
     space = getattr(context, "space_data", None)
     if not space or getattr(space, "type", "") != "CLIP_EDITOR":
         print("[Optimize] WARN: Kein CLIP_EDITOR aktiv – fahre trotzdem fort.")
@@ -256,7 +243,19 @@ def start_optimization(context: bpy.types.Context) -> None:
     if not clip:
         raise RuntimeError("Kein aktiver Movie Clip.")
 
-    st = _State(context=context, clip=clip, origin_frame=int(context.scene.frame_current))
+    # 3) Startframe einfrieren (wichtig für Detect-Seed & Async-Tracker)
+    origin = int(context.scene.frame_current)
+
+    # 4) Jetzt – und nur jetzt – die Voreinstellung setzen
+    try:
+        # kein Einfluss auf UI-Override/Timer; nur Scene-IDs
+        set_test_value(context.scene)  # schreibt marker_basis/adapt/min/max
+        print("[Bootstrap] set_test_value() vor FLAG1_INIT angewendet.")
+    except Exception as ex:
+        print(f"[Bootstrap] WARN @start_optimization: {ex}")
+
+    # 5) Optimizer-State aufbauen und Timer starten
+    st = _State(context=context, clip=clip, origin_frame=origin)
     st.phase = "FLAG1_INIT"
     globals()["_RUNNING"] = st
     bpy.app.timers.register(_timer_step, first_interval=0.2)
