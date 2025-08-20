@@ -94,8 +94,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         # 2) marker_helper_main.py
         try:
-            from ..Helper.marker_helper_main import run_marker_helper_main  # type: ignore
-            run_marker_helper_main(context)
+            from ..Helper.marker_helper_main import marker_helper_main  # type: ignore
+            marker_helper_main(context)
             print("[Coord] BOOTSTRAP → marker_helper_main OK")
         except Exception as ex_func:
             print(f"[Coord] BOOTSTRAP WARN: marker_helper_main failed: {ex_func!r}")
