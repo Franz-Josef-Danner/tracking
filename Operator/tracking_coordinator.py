@@ -211,15 +211,21 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 scn.pop(_OPT_REQ_KEY, None)
                 scn[_OPT_FRAME_KEY] = opt_frame
                 try:
+                    from ..Helper.optimize_tracking_modal import start_optimization  # type: ignore
+                    # start_optimization nimmt den Startframe aus scene.frame_current (siehe Datei)
+                    if int(context.scene.frame_current) != int(opt_frame):
+                        context.scene.frame_set(int(opt_frame))
+                    start_optimization(context)
+                    print(f"[Coord] JUMP → OPTIMIZE (start_optimization, frame={opt_frame})")
+                except Exception as ex_func:
+                    print(f"[Coord] OPTIMIZE failed (function): {ex_func!r}")
+                    # Nur falls irgendwo doch ein Operator existiert: Fallback versuchen
                     try:
-                        from ..Helper.optimize_tracking_modal import start_optimization  # type: ignore
-                        start_optimization(context, origin_frame=opt_frame)
-                        print(f"[Coord] JUMP → OPTIMIZE (start_optimization, frame={opt_frame})")
-                    except Exception:
                         bpy.ops.clip.optimize_tracking_modal('INVOKE_DEFAULT')
-                        print(f"[Coord] JUMP → OPTIMIZE (operator invoke, frame={opt_frame})")
-                except Exception as ex:
-                    print(f"[Coord] OPTIMIZE launch failed: {ex!r}")
+                        print(f"[Coord] JUMP → OPTIMIZE (operator fallback, frame={opt_frame})")
+                    except Exception as ex_op:
+                        print(f"[Coord] OPTIMIZE launch failed: {ex_op!r}")
+
 
             self._jump_done = True
         self._detect_attempts = 0
