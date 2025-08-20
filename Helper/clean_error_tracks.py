@@ -77,7 +77,7 @@ def run_clean_error_tracks(context, *, show_popups: bool = False):
         return {'CANCELLED'}
 
     # Fortschritt vorbereiten (5 Hauptschritte)
-    steps_total = 4
+    steps_total = 5
     try:
         wm.progress_begin(0, steps_total)
     except Exception:
@@ -90,9 +90,33 @@ def run_clean_error_tracks(context, *, show_popups: bool = False):
         except Exception:
             pass
         _pulse_ui()
+    # ---------- 1b) EARLY SHORT CLEAN ----------
+    step_update(1, "Early Short Clean")
+    with context.temp_override(**ovr):
+        from .clean_short_tracks import clean_short_tracks as _short
+        scn = context.scene
+    
+        # Gate einmalig sicher deaktivieren (sonst wird geskippt)
+        prev_skip = bool(scn.get("__skip_clean_short_once", False))
+        try:
+            scn["__skip_clean_short_once"] = False
+            # Vor-Pass: zu kurze/unstabile Tracks raus, schont frische Namen
+            frames = int(getattr(scn, "frames_track", 25) or 25)
+            _short(
+                context,
+                min_len=frames,
+                action="DELETE_TRACK",
+                respect_fresh=True,   # frisch erzeugte (falls vorhanden) werden geschont
+                verbose=True,
+            )
+        finally:
+            # Ursprungszustand wiederherstellen
+            scn["__skip_clean_short_once"] = prev_skip
+    
+        _deps_sync(context)  # wie in PREPARE/anderen Schritten üblich
 
-    # ---------- 1) PREPARE ----------
-    step_update(1, "Prepare")
+    # ---------- 2) PREPARE ----------
+    step_update(2, "Prepare")
     with context.temp_override(**ovr):
         _deps_sync(context)
         clip = ovr["space_data"].clip
@@ -108,8 +132,8 @@ def run_clean_error_tracks(context, *, show_popups: bool = False):
                 pass
             return {'status': 'CANCELLED'}
 
-    # ---------- 2) MULTISCALE CLEAN ----------
-    step_update(2, "Multiscale Clean")
+    # ---------- 3) MULTISCALE CLEAN ----------
+    step_update(3, "Multiscale Clean")
     with context.temp_override(**ovr):
         w, h = clip.size
         fr = (scene.frame_start, scene.frame_end)
@@ -122,13 +146,13 @@ def run_clean_error_tracks(context, *, show_popups: bool = False):
         print(f"[MultiScale] total deleted: {deleted}")
         _deps_sync(context)
 
-    # ---------- 3) GAP SPLIT + RECURSIVE ----------
+    # ---------- 4) GAP SPLIT + RECURSIVE ----------
     # Globale Zähler (vor allen Operationen)
     with context.temp_override(**ovr):
         tracks_global_before = len(clip.tracking.tracks)
         markers_global_before = sum(len(t.markers) for t in clip.tracking.tracks)
         
-    step_update(3, "Gap Split & Recursive Cleanup")
+    step_update(4, "Gap Split & Recursive Cleanup")
     with context.temp_override(**ovr):
         tracks = clip.tracking.tracks
         original_tracks = [t for t in tracks if track_has_internal_gaps(t)]
@@ -195,8 +219,8 @@ def run_clean_error_tracks(context, *, show_popups: bool = False):
               f"markers: {markers_before}->{markers_after} | "
               f"recursive_changed={recursive_changed}")
 
-    # ---------- 4) SAFETY ----------
-    step_update(4, "Safety Passes")
+    # ---------- 5) SAFETY ----------
+    step_update(5, "Safety Passes")
     with context.temp_override(**ovr):
         tracks = clip.tracking.tracks
         for t in tracks:
