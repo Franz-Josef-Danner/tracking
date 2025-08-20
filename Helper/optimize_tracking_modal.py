@@ -62,6 +62,7 @@ PT_GROWTH_FAST: float = 1.25        # schneller Schritt, wenn gar nichts kam
 PT_GROWTH: float = 1.10             # normaler Schritt
 PT_MAX: int = 121                   # Sicherheitskappe für Pattern‑Size
 
+_LOCK_KEY = "__detect_lock"
 
 # =============================================================================
 # Hilfsfunktionen: Flags / Defaults setzen
@@ -270,6 +271,10 @@ def start_optimization(context: bpy.types.Context) -> None:
     # 3) Startframe einfrieren (wichtig für Detect-Seed & Async-Tracker)
     origin = int(context.scene.frame_current)
 
+    try:
+        context.scene[_LOCK_KEY] = True
+    except Exception:
+        pass
     # 4) Jetzt – und nur jetzt – die Voreinstellung setzen
     try:
         set_test_value(context.scene)  # schreibt marker_basis/adapt/min/max
@@ -287,7 +292,13 @@ def start_optimization(context: bpy.types.Context) -> None:
 
 def cancel_optimization() -> None:
     global _RUNNING
+    if _RUNNING:
+        try:
+            _RUNNING.context.scene[_LOCK_KEY] = False
+        except Exception:
+            pass
     _RUNNING = None
+
 
 
 def _timer_step() -> float | None:
@@ -385,14 +396,15 @@ def _timer_step() -> float | None:
             st.phase = "CHANNEL_LOOP_RUN"
             return 0.0
 
-        print(f"[Optimize] Unbekannte Phase: {st.phase}")
-        globals()["_RUNNING"] = None
-        return None
+        except Exception as ex:
+            print(f"[Optimize] Fehler: {ex}")
+            try:
+                st.context.scene[_LOCK_KEY] = False
+            except Exception:
+                pass
+            globals()["_RUNNING"] = None
+            return None
 
-    except Exception as ex:  # noqa: BLE001
-        print(f"[Optimize] Fehler: {ex}")
-        globals()["_RUNNING"] = None
-        return None
 
 
 # =============================================================================
