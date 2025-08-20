@@ -169,6 +169,9 @@ def run_jump_to_frame(
     except Exception:
         pass
 
+    # Sättigungsflag für Rückgabe/Logging  ← HIER EINFÜGEN
+    repeat_saturated = repeat_count >= REPEAT_SATURATION
+
     print(f"[GotoFrame] Playhead auf Frame {target} gesetzt. (clamped={clamped}, repeat={repeat_count}, saturated={repeat_saturated})")
     return {
         "status": "OK",
@@ -178,7 +181,6 @@ def run_jump_to_frame(
         "clamped": bool(clamped),
         "area_switched": bool(area_switched),
     }
-
 
 # -----------------------------------------------------------------------------
 # Legacy-Wrapper (Kompatibilität)
