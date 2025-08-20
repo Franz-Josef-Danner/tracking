@@ -179,7 +179,7 @@ def _delete_selected_tracks(context: bpy.types.Context) -> None:
     def _op(**kw):
         return bpy.ops.clip.delete_track(**kw)
     try:
-        _call_in_clip_context(context, _op, ensure_tracking_mode=True, confirm=True)
+        _call_in_clip_context(context, _op, ensure_tracking_mode=True, confirm=False)
         print("[Optimize] Selektierte (neue) Marker/Tracks gelöscht.")
     except Exception as ex:
         print(f"[Optimize] WARN: delete_track fehlgeschlagen: {ex}")
@@ -319,7 +319,6 @@ def _timer_step() -> float | None:
             ega = _calc_track_quality_sum(st.context, st.clip)
             _finish_track(st)
 
-            # Kein Tracking-Ergebnis → Baseline NICHT setzen, Pattern aggressiv erhöhen
             if ega <= NO_RESULT_EGA:
                 print(f"[Optimize] Kein Tracking-Ergebnis bei pt={st.pt:.1f} → erhöhe Pattern (fast) & wiederhole Basis.")
                 _bump_pattern(st, fast=True)
@@ -328,7 +327,7 @@ def _timer_step() -> float | None:
 
             if st.ev < 0:
                 st.ev = ega
-                _bump_pattern(st, fast=False)  # normal weiter steigern
+                _bump_pattern(st, fast=False)
                 st.phase = "WAIT_TRACK_IMPROVE"
                 return 0.1
 
@@ -396,17 +395,19 @@ def _timer_step() -> float | None:
             st.phase = "CHANNEL_LOOP_RUN"
             return 0.0
 
-        except Exception as ex:
-            print(f"[Optimize] Fehler: {ex}")
-            try:
-                st.context.scene[_LOCK_KEY] = False
-            except Exception:
-                pass
-            globals()["_RUNNING"] = None
-            return None
+        # Fallback – sollte eigentlich nie passieren
+        print(f"[Optimize] Unbekannte Phase: {st.phase}")
+        globals()["_RUNNING"] = None
+        return None
 
-
-
+    except Exception as ex:
+        print(f"[Optimize] Fehler: {ex}")
+        try:
+            st.context.scene[_LOCK_KEY] = False
+        except Exception:
+            pass
+        globals()["_RUNNING"] = None
+        return None
 # =============================================================================
 # Branch‑Helfer (Pattern‑Suche mit Hysterese nach alter Version + No-Result-Handling)
 # =============================================================================
@@ -466,11 +467,22 @@ def _branch_ev_known(st: _State, ega: float) -> float:
 
 def _ensure_markers(st: _State) -> None:
     if run_detect_once is not None:
+        was_locked = bool(st.context.scene.get(_LOCK_KEY, False))
+        if was_locked:
+            try:
+                st.context.scene[_LOCK_KEY] = False
+            except Exception:
+                was_locked = False
         try:
             run_detect_once(st.context, start_frame=st.origin_frame, handoff_to_pipeline=False)
         except Exception as ex:
             print(f"[Optimize] Detect pass failed: {ex}")
-
+        finally:
+            if was_locked:
+                try:
+                    st.context.scene[_LOCK_KEY] = True
+                except Exception:
+                    pass
 
 def _start_track(st: _State) -> None:
     if st.tracker:
@@ -496,7 +508,12 @@ def _apply_best_and_finish(st: _State) -> None:
     _set_flag2_motion_model(st.clip, st.mov)
     _set_flag3_channels(st.clip, st.vf)
     print(f"[Optimize] Fertig. ev={st.ev:.3f}, Motion={st.mov}, Channels={st.vf}, pt≈{st.ptv:.1f}")
+    try:
+        st.context.scene[_LOCK_KEY] = False   # ← Lock freigeben
+    except Exception:
+        pass
     globals()["_RUNNING"] = None
+
 
 
 # =============================================================================
