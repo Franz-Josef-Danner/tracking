@@ -12,6 +12,8 @@ from typing import Optional, List
 
 import bpy
 
+from .set_test_value import set_test_value
+
 # =============================================================================
 # Dynamische Helper‑Imports (gleichen Signaturen wie in optimize_tracking_modal_neu)
 # =============================================================================
