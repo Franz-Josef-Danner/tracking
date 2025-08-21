@@ -486,20 +486,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._solve_retry_done = False
         return {"RUNNING_MODAL"}
 
-  def _clip_override(context):
-      """Sichert area=CLIP_EDITOR & region=WINDOW für Operator-Calls."""
-      win = context.window
-      if not win:
-          return None
-      scr = getattr(win, "screen", None)
-      if not scr:
-          return None
-      for area in scr.areas:
-          if getattr(area, "type", None) == 'CLIP_EDITOR':
-              for region in area.regions:
-                  if getattr(region, "type", None) == 'WINDOW':
-                      return {'area': area, 'region': region, 'space_data': area.spaces.active}
-      return None
+    def _clip_override(context):
+        """Sichert area=CLIP_EDITOR & region=WINDOW für Operator-Calls."""
+        win = context.window
+        if not win:
+            return None
+        scr = getattr(win, "screen", None)
+        if not scr:
+            return None
+        for area in scr.areas:
+            if getattr(area, "type", None) == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if getattr(region, "type", None) == 'WINDOW':
+                        return {'area': area, 'region': region, 'space_data': area.spaces.active}
+        return None
 
     def _state_jump(self, context):
         from ..Helper.jump_to_frame import run_jump_to_frame  # type: ignore
