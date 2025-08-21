@@ -351,6 +351,16 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     def _state_solve(self, context):
         """Solve-Start (asynchron, INVOKE_DEFAULT) → dann in SOLVE_WAIT wechseln."""
+    
+        # --- NEU: CleanErrorTracks nur beim allerersten Solve ---
+        if not self._solve_retry_done:
+            try:
+                from ..Helper.clean_error_tracks import run_clean_error_tracks  # type: ignore
+                print("[Coord] SOLVE (first run) → run_clean_error_tracks()")
+                run_clean_error_tracks(context, show_popups=True)
+            except Exception as ex_clean:
+                print(f"[Coord] CleanErrorTracks failed: {ex_clean!r}")
+    
         try:
             from ..Helper.solve_camera import solve_watch_clean  # type: ignore
             print("[Coord] SOLVE → solve_watch_clean()")
@@ -359,12 +369,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         except Exception as ex:
             print(f"[Coord] SOLVE failed to start: {ex!r}")
             return self._handle_failed_solve(context)
-
+    
         # SOLVE_WAIT initialisieren (nicht blockierend, Timer-getaktet)
         self._solve_wait_ticks = int(_SOLVE_WAIT_TICKS_DEFAULT)
-        # Wichtig: in jeder Solve-Phase (neu gestartet aus FIND_LOW) ist zunächst kein Retry erfolgt
-        # Das Flag wird erst gesetzt, sobald wir tatsächlich REFINE+Retry auslösen.
-        # (Wenn wir aus SOLVE_WAIT heraus ein Retry starten, bleibt derselbe SOLVE-Zyklus.)
         self._state = "SOLVE_WAIT"
         return {"RUNNING_MODAL"}
 
