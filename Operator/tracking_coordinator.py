@@ -81,11 +81,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         # 2) marker_helper_main.py (Funktions-API bevorzugt)
         try:
-            from ..Helper.marker_helper_main import marker_helper_main  # type: ignore
-            marker_helper_main(context)
+            from ..Helper.marker_helper_main import run_marker_helper_main  # type: ignore
+            run_marker_helper_main(context)
             print("[Coord] BOOTSTRAP → marker_helper_main OK (run_*)")
         except Exception as ex_func:
-            print(f"[Coord] BOOTSTRAP WARN: marker_helper_main failed: {ex_func!r}")
+            print(f"[Coord] BOOTSTRAP WARN: run_marker_helper_main failed: {ex_func!r}")
             try:
                 bpy.ops.clip.marker_helper_main('INVOKE_DEFAULT')
             except Exception:
@@ -284,14 +284,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_solve(self, context):
-        """Solve-Phase: Direkt nach FIND_LOW→NONE."""
+        """Solve-Phase: Direkt nach FIND_LOW→NONE. Muss via Operator INVOKE_DEFAULT ausgelöst werden."""
         try:
-            from ..Helper.solve_camera import solve_watch_clean  # type: ignore
-            print("[Coord] SOLVE → solve_watch_clean()")
-            solve_watch_clean(context)
-        except Exception as ex:
-            print(f"[Coord] SOLVE failed: {ex!r}")
-            return self._finish(context, cancelled=True)
+            # Primär: Operator-Start gemäß Vorgabe
+            print("[Coord] SOLVE → bpy.ops.clip.solve_camera('INVOKE_DEFAULT')")
+            bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+        except Exception as ex_op:
+            print(f"[Coord] SOLVE operator failed: {ex_op!r} → try functional fallback")
+            try:
+                # Fallback, falls der Operator (noch) nicht registriert ist
+                from ..Helper.solve_camera import solve_watch_clean  # type: ignore
+                solve_watch_clean(context)
+            except Exception as ex_fn:
+                print(f"[Coord] SOLVE fallback failed: {ex_fn!r}")
+                return self._finish(context, cancelled=True)
         print("[Coord] SOLVE → FINALIZE")
         self._state = "FINALIZE"
         return {"RUNNING_MODAL"}
