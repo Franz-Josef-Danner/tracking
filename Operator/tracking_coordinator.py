@@ -28,6 +28,7 @@ Hinweis:
 
 import bpy
 from typing import Optional, Dict
+from contextlib import nullcontext
 
 __all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
 
@@ -487,7 +488,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _clip_override(context):
-        """Sichert area=CLIP_EDITOR & region=WINDOW für Operator-Calls."""
+        """Sichert area=CLIP_EDITOR & region=WINDOW und hängt notfalls einen Clip an."""
         win = context.window
         if not win:
             return None
@@ -498,8 +499,18 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if getattr(area, "type", None) == 'CLIP_EDITOR':
                 for region in area.regions:
                     if getattr(region, "type", None) == 'WINDOW':
-                        return {'area': area, 'region': region, 'space_data': area.spaces.active}
+                        space = area.spaces.active
+                        # Falls der CLIP-Editor keinen Clip hat: einen auswählen
+                        if getattr(space, "clip", None) is None:
+                            clip = _get_active_clip(context)
+                            if clip is not None:
+                                try:
+                                    space.clip = clip
+                                except Exception as ex:
+                                    print(f"[Coord] WARN: could not assign clip to space: {ex!r}")
+                        return {'area': area, 'region': region, 'space_data': space}
         return None
+
 
     def _state_jump(self, context):
         from ..Helper.jump_to_frame import run_jump_to_frame  # type: ignore
