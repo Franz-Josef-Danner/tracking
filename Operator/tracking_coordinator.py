@@ -351,29 +351,53 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     def _state_solve(self, context):
         """Solve-Start (asynchron, INVOKE_DEFAULT) → dann in SOLVE_WAIT wechseln."""
+        from contextlib import nullcontext
     
-        # --- NEU: CleanErrorTracks nur beim allerersten Solve ---
-        if not self._solve_retry_done:
-            try:
-                from ..Helper.clean_error_tracks import run_clean_error_tracks  # type: ignore
-                print("[Coord] SOLVE (first run) → run_clean_error_tracks()")
-                run_clean_error_tracks(context, show_popups=True)
-            except Exception as ex_clean:
-                print(f"[Coord] CleanErrorTracks failed: {ex_clean!r}")
+        # Garantiert CLIP_EDITOR/WINDOW für beide Calls
+        ovr = _clip_override(context)
+        ctxmgr = context.temp_override(**ovr) if ovr else nullcontext()
     
         try:
-            from ..Helper.solve_camera import solve_watch_clean  # type: ignore
-            print("[Coord] SOLVE → solve_watch_clean()")
-            res = solve_watch_clean(context)  # {'RUNNING_MODAL'} erwartet
-            print(f"[Coord] SOLVE → solve_watch_clean() returned {res}")
-        except Exception as ex:
-            print(f"[Coord] SOLVE failed to start: {ex!r}")
+            with ctxmgr:
+                # Nur beim allerersten Solve in diesem Zyklus: CleanErrorTracks
+                if not self._solve_retry_done:
+                    try:
+                        from ..Helper.clean_error_tracks import run_clean_error_tracks  # type: ignore
+                        print("[Coord] SOLVE (first run) → run_clean_error_tracks()")
+                        run_clean_error_tracks(context, show_popups=True)
+                    except Exception as ex_clean:
+                        print(f"[Coord] CleanErrorTracks failed: {ex_clean!r}")
+    
+                # Solve starten
+                try:
+                    from ..Helper.solve_camera import solve_watch_clean  # type: ignore
+                    print("[Coord] SOLVE → solve_watch_clean()")
+                    res = solve_watch_clean(context)  # erwartet RUNNING_MODAL
+                    print(f"[Coord] SOLVE → solve_watch_clean() returned {res}")
+                except Exception as ex:
+                    print(f"[Coord] SOLVE failed to start: {ex!r}")
+                    return self._handle_failed_solve(context)
+        except Exception as ex_ctx:
+            print(f"[Coord] SOLVE context override failed: {ex_ctx!r}")
             return self._handle_failed_solve(context)
     
-        # SOLVE_WAIT initialisieren (nicht blockierend, Timer-getaktet)
+        # Rückgabewert robust prüfen – nur bei RUNNING in SOLVE_WAIT wechseln
+        ok = False
+        if isinstance(res, dict):
+            status = str(res.get("status", ""))
+            ok = ("RUNNING_MODAL" in res) or status.upper().startswith("RUNNING")
+        else:
+            ok = str(res).upper().find("RUNNING") != -1
+    
+        if not ok:
+            print("[Coord] SOLVE → not RUNNING → handle_failed_solve()")
+            return self._handle_failed_solve(context)
+    
+        # SOLVE_WAIT initialisieren
         self._solve_wait_ticks = int(_SOLVE_WAIT_TICKS_DEFAULT)
         self._state = "SOLVE_WAIT"
         return {"RUNNING_MODAL"}
+
 
     def _state_solve_wait(self, context):
         """Nicht-blockierendes Warten auf gültige Rekonstruktion, danach Error-Bewertung."""
@@ -461,6 +485,21 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # Reset des Retry-Flags für kommenden Solve-Zyklus
         self._solve_retry_done = False
         return {"RUNNING_MODAL"}
+
+  def _clip_override(context):
+      """Sichert area=CLIP_EDITOR & region=WINDOW für Operator-Calls."""
+      win = context.window
+      if not win:
+          return None
+      scr = getattr(win, "screen", None)
+      if not scr:
+          return None
+      for area in scr.areas:
+          if getattr(area, "type", None) == 'CLIP_EDITOR':
+              for region in area.regions:
+                  if getattr(region, "type", None) == 'WINDOW':
+                      return {'area': area, 'region': region, 'space_data': area.spaces.active}
+      return None
 
     def _state_jump(self, context):
         from ..Helper.jump_to_frame import run_jump_to_frame  # type: ignore
