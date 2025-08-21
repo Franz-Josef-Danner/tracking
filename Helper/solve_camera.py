@@ -5,12 +5,16 @@ import bpy
 
 # Sicherstellen, dass der Refine-Helper geladen ist (liegt in Helper/)
 from .refine_high_error import run_refine_on_high_error  # noqa: F401 (import beibehalten, keine Funktionsänderung)
-from .projection_cleanup_builtin import builtin_projection_cleanup, find_clip_window
+from .projection_cleanup_builtin import find_clip_window  # nur für Kontext, kein direkter Cleanup mehr
 
 __all__ = (
     "solve_watch_clean",
     "run_solve_watch_clean",
 )
+
+# POST-CLEAN Signal-Keys (vom Coordinator ausgewertet)
+_POST_REQ_KEY = "__post_cleanup_request"
+_POST_THR_KEY = "__post_cleanup_threshold"
 
 # -------------------------- Kontext-/Helper-Funktionen ------------------------
 
@@ -69,16 +73,16 @@ def solve_watch_clean(
     context,
     *,
     refine_limit_frames: int = 0,
-    cleanup_factor: float = 1.0,
-    cleanup_mute_only: bool = False,
-    cleanup_dry_run: bool = False,
+    cleanup_factor: float = 1.0,      # ungenutzt (Cleanup im Coordinator)
+    cleanup_mute_only: bool = False,  # ungenutzt
+    cleanup_dry_run: bool = False,    # ungenutzt
 ):
     """
     Orchestriert:
       1) Solve (Operator via INVOKE_DEFAULT)
       2) Solve-Error lesen und in scene['solve_error'] persistieren
-      3) **NEU:** scene['error_track'] auf **mindestens** AvgErr klemmen (niemals darunter)
-      4) CLIP-Projection-Cleanup mit dem (ggf. angehobenen) Schwellwert ausführen
+      3) **Signal an Coordinator** setzen, WENN AvgErr ≥ scene['error_track'].
+         (Coordinator führt dann Projection-Cleanup mit genau diesem AvgErr aus.)
     """
     scene = context.scene
 
@@ -93,7 +97,6 @@ def solve_watch_clean(
     print("[SolveWatch] Starte Kamera-Solve …")
     with context.temp_override(area=area, region=region, space_data=space):
         try:
-            # WICHTIG: INVOKE_DEFAULT
             res = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
         except Exception as e:
             print(f"[SolveWatch] ERROR: Solve-Aufruf fehlgeschlagen: {e}")
@@ -101,81 +104,39 @@ def solve_watch_clean(
     print(f"[SolveWatch] Solve-Operator Rückgabe: {res}")
 
     # --- 2) Solve-Error sicher auslesen ---
-    avg2 = None
+    avg = None
     try:
-        # Aktives Tracking-Objekt → Reconstruction
         tracking = clip.tracking
         obj = tracking.objects.active if tracking.objects else None
         recon = obj.reconstruction if obj else None
         if recon and getattr(recon, "is_valid", False):
-            avg2 = float(getattr(recon, "average_error", 0.0))
+            avg = float(getattr(recon, "average_error", 0.0))
     except Exception as e:
         print(f"[SolveWatch] WARN: Konnte Solve-Error nicht lesen: {e}")
 
-    if avg2 is None:
+    if avg is None:
         print("[SolveWatch] ERROR: Solve-Error konnte nicht ermittelt werden (Reconstruction ungültig).")
         return {'CANCELLED'}
 
-    print(f"[SolveWatch] Solve OK (AvgErr={avg2:.6f}).")
+    print(f"[SolveWatch] Solve OK (AvgErr={avg:.6f}).")
 
-    # --- 3) Persistieren + Schwellen steuern ---
-    scene["solve_error"] = float(avg2)
-    print(f"[SolveWatch] Persistiert: scene['solve_error'] = {avg2:.6f}")
+    # --- 3) Persistieren ---
+    scene["solve_error"] = float(avg)
+    print(f"[SolveWatch] Persistiert: scene['solve_error'] = {avg:.6f}")
 
-    # NEU: Cleanup-Schwelle niemals unter dem Solve-AvgErr verwenden
+    # --- 4) Signal setzen, wenn AvgErr >= error_track ---
     current_thr = float(scene.get("error_track", 2.0))
-    clamped_thr = max(current_thr, float(avg2))
-    if clamped_thr != current_thr:
-        scene["error_track"] = clamped_thr
-        print(
-            f"[SolveWatch] NEU: scene['error_track'] von {current_thr:.6f} → {clamped_thr:.6f} angehoben (>= AvgErr)."
-        )
+    if float(avg) >= current_thr:
+        scene[_POST_THR_KEY] = float(avg)
+        scene[_POST_REQ_KEY] = True
+        print(f"[SolveWatch] POST-CLEAN Signal gesetzt (thr={avg:.6f} ≥ error_track={current_thr:.6f}).")
     else:
-        print(f"[SolveWatch] INFO: error_track ({current_thr:.6f}) ≥ AvgErr ({avg2:.6f}) – keine Anhebung nötig.")
+        print(f"[SolveWatch] Kein POST-CLEAN: AvgErr({avg:.6f}) < error_track({current_thr:.6f}).")
 
-    # Standard-Keys/Parameter
-    threshold_key = "error_track"
-    cleanup_frames = 0  # gesamte Sequenz
-    cleanup_action = 'SELECT' if bool(cleanup_mute_only) else 'DELETE_TRACK'
-
-    print(
-        f"[SolveWatch] Starte Projection-Cleanup (builtin): key={threshold_key}, "
-        f"factor={cleanup_factor}, frames={cleanup_frames}, action={cleanup_action}, dry_run={cleanup_dry_run}"
-    )
-
-    # --- 4) Built-in Cleanup ausführen ---
-    try:
-        report = builtin_projection_cleanup(
-            context,
-            error_key=threshold_key,
-            factor=float(cleanup_factor),
-            frames=int(cleanup_frames),
-            action=cleanup_action,
-            dry_run=bool(cleanup_dry_run),
-        )
-    except Exception as e:
-        print(f"[SolveWatch] ERROR: Projection-Cleanup fehlgeschlagen: {e}")
-        return {'CANCELLED'}
-
-    for line in report.get("log", []):
-        print(line)
-
-    # Schwelle für das Logging aus Report entnehmen, sonst den geklemmten Wert
-    reported_thr = float(report.get("threshold", clamped_thr))
-    print(
-        f"[SolveWatch] Projection-Cleanup abgeschlossen: "
-        f"affected={int(report.get('affected', 0))}, "
-        f"threshold={reported_thr:.6f}, "
-        f"mode={report.get('action', cleanup_action)}"
-    )
-
-    print(
-        f"[SolveWatch] INFO: Cleanup getriggert (AvgErr={avg2:.6f} ≥ error_track={clamped_thr:.6f})."
-    )
     return {'FINISHED'}
 
 
-# -------------- Convenience-Wrapper (für Aufrufe aus __init__.py etc.) -------
+# -------------- Convenience-Wrapper -----------------------------------------
 
 def run_solve_watch_clean(
     context,
