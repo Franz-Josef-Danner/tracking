@@ -227,10 +227,10 @@ class CLIP_OT_bidirectional_track(Operator):
 
         # ---- Nacharbeit: Clean Error Tracks aufrufen ----
         try:
-            from . import clean_error_tracks
-            if hasattr(clean_error_tracks, "run_clean_error_tracks"):
+            from . import clean_short_tracks
+            if hasattr(clean_short_tracks, "clean_short_tracks"):
                 print("[BidiTrack] Starte Clean-Error-Tracks nach Bidirectional Tracking …")
-                clean_error_tracks.run_clean_error_tracks(context)
+                clean_short_tracks.clean_short_tracks(context)
         except Exception as ex:
             print(f"[BidiTrack] WARN: Clean-Error-Tracks konnte nicht ausgeführt werden: {ex}")
 
