@@ -158,17 +158,17 @@ def _run_projection_cleanup(context, error_value: float) -> None:
     )
     try:
         # Funktions-API bevorzugen
-        from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin  # type: ignore
+        from ..Helper.projection_cleanup_builtin import run_refine_on_high_error  # type: ignore
         for kw in kwargs_varianten:
             try:
-                run_projection_cleanup_builtin(context, **kw)
-                print(f"[Coord] PROJECTION_CLEANUP (run_projection_cleanup_builtin, kwargs={kw})")
+                run_refine_on_high_error(context, **kw)
+                print(f"[Coord] PROJECTION_CLEANUP (run_refine_on_high_error, kwargs={kw})")
                 return
             except TypeError:
                 continue
         # Letzter Versuch ohne Keyword (falls alte Signatur)
-        run_projection_cleanup_builtin(context, float(error_value))
-        print("[Coord] PROJECTION_CLEANUP (run_projection_cleanup_builtin, positional)")
+        run_refine_on_high_error(context, float(error_value))
+        print("[Coord] PROJECTION_CLEANUP (run_refine_on_high_error, positional)")
         return
     except Exception as ex_func:
         print(f"[Coord] projection_cleanup function failed: {ex_func!r} → try operator fallback")
