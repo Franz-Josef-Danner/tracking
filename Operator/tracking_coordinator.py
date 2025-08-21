@@ -13,6 +13,12 @@ NEU:
 - Wenn Helper/optimize_tracking_modal.py angestoßen wurde und abgeschlossen ist, wird **vor** dem nächsten
   FIND_LOW zunächst Helper/marker_helper_main.py ausgeführt. Implementiert via Pending-Flag, das beim Start des
   Optimizers gesetzt und beim Eintritt in FIND_LOW (einmalig) abgearbeitet wird.
+- Nach Abschluss von Helper/solve_camera.py wird der Solve-Error mit scene.error_track verglichen.
+  Ist der Solve-Error größer als error_track, erfolgt:
+    1) Helper/refine_high_error.py → erneut Helper/solve_camera.py
+    2) Ist der Solve-Error **immer noch** größer als error_track, wird
+       Helper/projection_cleanup_builtin.py mit dem Solve-Error-Wert aufgerufen und anschließend
+       wieder zu Helper/find_low_marker_frame.py (State: FIND_LOW) übergeben.
 
 Hinweis:
 - Der zuvor vorhandene Aufruf von Helper/clean_error_tracks.run_clean_error_tracks wurde entfernt.
@@ -44,6 +50,94 @@ def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
         self.report(level, msg)
     except Exception:
         print(f"[Coordinator] {msg}")
+
+
+# ---------------------------------------------------------------------------
+# Solve-Error Utilities (neu)
+# ---------------------------------------------------------------------------
+
+def _get_active_clip(context) -> Optional[bpy.types.MovieClip]:
+    space = getattr(context, "space_data", None)
+    if getattr(space, "type", None) == 'CLIP_EDITOR' and getattr(space, "clip", None):
+        return space.clip
+    try:
+        return bpy.data.movieclips[0] if bpy.data.movieclips else None
+    except Exception:
+        return None
+
+
+def _compute_solve_error(context) -> Optional[float]:
+    """Ermittelt den aktuellen Solve-Error aus der aktiven Rekonstruktion.
+    Bevorzugt reconstruction.average_error; Fallback: Mittelwert der Kamera-Errors.
+    """
+    clip = _get_active_clip(context)
+    if not clip:
+        return None
+    try:
+        recon = clip.tracking.objects.active.reconstruction
+    except Exception:
+        return None
+    if not getattr(recon, "is_valid", False):
+        return None
+
+    # Direktes average_error, falls vorhanden
+    if hasattr(recon, "average_error"):
+        try:
+            return float(recon.average_error)
+        except Exception:
+            pass
+
+    # Fallback: Mittelwert über Kameras
+    try:
+        errs = [float(c.average_error) for c in getattr(recon, "cameras", [])]
+        if not errs:
+            return None
+        return sum(errs) / len(errs)
+    except Exception:
+        return None
+
+
+def _run_projection_cleanup(context, error_value: float) -> None:
+    """Startet Helper/projection_cleanup_builtin mit robustem Fallback.
+    Übergibt den Solve-Error als Grenzwert (mehrere mögliche Parameternamen werden unterstützt).
+    """
+    kwargs_varianten = (
+        {"error_limit": float(error_value)},
+        {"threshold": float(error_value)},
+        {"max_error": float(error_value)},
+    )
+    try:
+        # Funktions-API bevorzugen
+        from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin  # type: ignore
+        for kw in kwargs_varianten:
+            try:
+                run_projection_cleanup_builtin(context, **kw)
+                print(f"[Coord] PROJECTION_CLEANUP (run_projection_cleanup_builtin, kwargs={kw})")
+                return
+            except TypeError:
+                continue
+        # Letzter Versuch ohne Keyword (falls alte Signatur)
+        run_projection_cleanup_builtin(context, float(error_value))
+        print("[Coord] PROJECTION_CLEANUP (run_projection_cleanup_builtin, positional)")
+        return
+    except Exception as ex_func:
+        print(f"[Coord] projection_cleanup function failed: {ex_func!r} → try operator fallback")
+        try:
+            # Operator-Fallback mit generischen Properties
+            # Wir probieren eine Reihe plausibler Property-Namen.
+            for prop_name in ("error_limit", "threshold", "max_error"):
+                try:
+                    op_kwargs = {prop_name: float(error_value)}
+                    bpy.ops.clip.projection_cleanup_builtin('INVOKE_DEFAULT', **op_kwargs)
+                    print(f"[Coord] PROJECTION_CLEANUP (operator, {prop_name}={error_value})")
+                    return
+                except TypeError:
+                    continue
+            # Letzter Fallback ohne kwargs
+            bpy.ops.clip.projection_cleanup_builtin('INVOKE_DEFAULT')
+            print("[Coord] PROJECTION_CLEANUP (operator, no-arg fallback)")
+        except Exception as ex_op:
+            print(f"[Coord] projection_cleanup launch failed: {ex_op!r}")
 
 
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
@@ -231,7 +325,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_solve(self, context):
-        """Solve-Phase nach NONE."""
+        """Solve-Phase nach NONE + Solve-Error-Workflows (neu)."""
         try:
             from ..Helper.solve_camera import solve_watch_clean  # type: ignore
             print("[Coord] SOLVE → solve_watch_clean()")
@@ -239,6 +333,41 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         except Exception as ex:
             print(f"[Coord] SOLVE failed: {ex!r}")
             return self._finish(context, cancelled=True)
+
+        # --- Solve-Error prüfen ---
+        threshold = float(getattr(context.scene, "error_track", 2.0) or 2.0)
+        current_err = _compute_solve_error(context)
+        print(f"[Coord] SOLVE → error={current_err!r} vs. threshold={threshold}")
+
+        if current_err is None:
+            print("[Coord] SOLVE → Kein gültiger Solve-Error ermittelbar → FINALIZE")
+            self._state = "FINALIZE"
+            return {"RUNNING_MODAL"}
+
+        if current_err > threshold:
+            print("[Coord] SOLVE → Error > threshold → REFINE (Helper/refine_high_error.py)")
+            try:
+                from ..Helper.refine_high_error import run_refine_on_high_error  # type: ignore
+                run_refine_on_high_error(context, limit_frames=0, resolve_after=False)
+            except Exception as ex_ref:
+                print(f"[Coord] REFINE failed: {ex_ref!r}")
+
+            # Erneut lösen
+            try:
+                print("[Coord] SOLVE → retry solve_watch_clean() nach REFINE")
+                solve_watch_clean(context)
+            except Exception as ex2:
+                print(f"[Coord] SOLVE retry failed: {ex2!r}")
+
+            # Erneut prüfen
+            current_err = _compute_solve_error(context)
+            print(f"[Coord] SOLVE(after refine) → error={current_err!r} vs. threshold={threshold}")
+            if current_err is not None and current_err > threshold:
+                print("[Coord] SOLVE → Error weiterhin > threshold → PROJECTION_CLEANUP und zurück zu FIND_LOW")
+                _run_projection_cleanup(context, current_err)
+                self._state = "FIND_LOW"  # zurück in den regulären Loop
+                return {"RUNNING_MODAL"}
+
         print("[Coord] SOLVE → FINALIZE")
         self._state = "FINALIZE"
         return {"RUNNING_MODAL"}
