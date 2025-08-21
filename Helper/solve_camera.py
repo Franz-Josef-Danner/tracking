@@ -1,5 +1,6 @@
 # Helper/solve_camera.py
 
+from __future__ import annotations
 import bpy
 
 # Sicherstellen, dass der Refine-Helper geladen ist (liegt in Helper/)
@@ -46,7 +47,7 @@ def _get_reconstruction(context):
 
 
 def _solve_once(context, *, label: str = "") -> float:
-    """Startet Solve synchron, liefert average_error (oder 0.0)."""
+    """Startet Solve synchron per Operator, liefert average_error (oder 0.0)."""
     area, region, space = _find_clip_window(context)
     if not area:
         raise RuntimeError("Kein CLIP_EDITOR-Fenster gefunden (Kontext erforderlich).")
@@ -74,11 +75,10 @@ def solve_watch_clean(
 ):
     """
     Orchestriert:
-      1) Solve
-      2) Refine (Top-N per scene['marker_basis'])
-      3) Solve
-      4) Wenn AvgErr >= scene['error_track']: scene['solve_error']=AvgErr setzen und
-         CLIP-Projection-Cleanup ausführen.
+      1) Solve (Operator via INVOKE_DEFAULT)
+      2) Solve-Error lesen und in scene['solve_error'] persistieren
+      3) **NEU:** scene['error_track'] auf **mindestens** AvgErr klemmen (niemals darunter)
+      4) CLIP-Projection-Cleanup mit dem (ggf. angehobenen) Schwellwert ausführen
     """
     scene = context.scene
 
@@ -93,7 +93,8 @@ def solve_watch_clean(
     print("[SolveWatch] Starte Kamera-Solve …")
     with context.temp_override(area=area, region=region, space_data=space):
         try:
-            res = bpy.ops.clip.solve_camera()
+            # WICHTIG: INVOKE_DEFAULT
+            res = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
         except Exception as e:
             print(f"[SolveWatch] ERROR: Solve-Aufruf fehlgeschlagen: {e}")
             return {'CANCELLED'}
@@ -121,14 +122,26 @@ def solve_watch_clean(
     scene["solve_error"] = float(avg2)
     print(f"[SolveWatch] Persistiert: scene['solve_error'] = {avg2:.6f}")
 
-    # Standard: szenischer Track-Threshold (Pixel) verwenden
-    error_track = float(scene.get("error_track", 2.0))
+    # NEU: Cleanup-Schwelle niemals unter dem Solve-AvgErr verwenden
+    current_thr = float(scene.get("error_track", 2.0))
+    clamped_thr = max(current_thr, float(avg2))
+    if clamped_thr != current_thr:
+        scene["error_track"] = clamped_thr
+        print(
+            f"[SolveWatch] NEU: scene['error_track'] von {current_thr:.6f} → {clamped_thr:.6f} angehoben (>= AvgErr)."
+        )
+    else:
+        print(f"[SolveWatch] INFO: error_track ({current_thr:.6f}) ≥ AvgErr ({avg2:.6f}) – keine Anhebung nötig.")
+
+    # Standard-Keys/Parameter
     threshold_key = "error_track"
-    cleanup_frames = 0  # wie zuvor via getattr(self, "cleanup_frames", 0); kein externer Parameter vorgesehen
+    cleanup_frames = 0  # gesamte Sequenz
     cleanup_action = 'SELECT' if bool(cleanup_mute_only) else 'DELETE_TRACK'
 
-    print(f"[SolveWatch] Starte Projection-Cleanup (builtin): key={threshold_key}, "
-          f"factor={cleanup_factor}, frames={cleanup_frames}, action={cleanup_action}, dry_run={cleanup_dry_run}")
+    print(
+        f"[SolveWatch] Starte Projection-Cleanup (builtin): key={threshold_key}, "
+        f"factor={cleanup_factor}, frames={cleanup_frames}, action={cleanup_action}, dry_run={cleanup_dry_run}"
+    )
 
     # --- 4) Built-in Cleanup ausführen ---
     try:
@@ -147,12 +160,18 @@ def solve_watch_clean(
     for line in report.get("log", []):
         print(line)
 
-    print(f"[SolveWatch] Projection-Cleanup abgeschlossen: "
-          f"affected={int(report.get('affected', 0))}, "
-          f"threshold={float(report.get('threshold', error_track)):.6f}, "
-          f"mode={report.get('action', cleanup_action)}")
+    # Schwelle für das Logging aus Report entnehmen, sonst den geklemmten Wert
+    reported_thr = float(report.get("threshold", clamped_thr))
+    print(
+        f"[SolveWatch] Projection-Cleanup abgeschlossen: "
+        f"affected={int(report.get('affected', 0))}, "
+        f"threshold={reported_thr:.6f}, "
+        f"mode={report.get('action', cleanup_action)}"
+    )
 
-    print(f"[SolveWatch] INFO: Cleanup getriggert (AvgErr={avg2:.6f} ≥ error_track={error_track:.6f}).")
+    print(
+        f"[SolveWatch] INFO: Cleanup getriggert (AvgErr={avg2:.6f} ≥ error_track={clamped_thr:.6f})."
+    )
     return {'FINISHED'}
 
 
@@ -165,7 +184,7 @@ def run_solve_watch_clean(
     cleanup_mute_only: bool = False,
     cleanup_dry_run: bool = False,
 ):
-    # Identisches Verhalten wie zuvor, aber ohne Operator-Dispatch.
+    """Identisches Verhalten wie solve_watch_clean, aber ohne separaten Operator-Dispatch."""
     area, region, space = _find_clip_window(context)
     if not area:
         raise RuntimeError("Kein CLIP_EDITOR-Fenster gefunden (Kontext erforderlich).")
