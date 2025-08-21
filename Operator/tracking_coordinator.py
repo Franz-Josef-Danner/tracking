@@ -116,46 +116,46 @@ def _wait_for_reconstruction(context, tries: int = 12) -> bool:
             pass
     return False
 
-
 def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
     """Startet Helper/projection_cleanup_builtin; wenn error_value None ist,
-    wartet der Helper intern (optional endlos) bis ein Solve-Error verfügbar ist.
+    wartet der Helper intern (optional) bis ein Solve-Error verfügbar ist.
     """
     try:
         from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin  # type: ignore
         if error_value is None:
-            # Kein Error vorhanden → im Helper warten (Timeout 20s; für Endlos: wait_forever=True)
             res = run_projection_cleanup_builtin(
                 context,
                 error_limit=None,
                 wait_for_error=True,
-                wait_forever=False,   # bei Bedarf auf True setzen (Achtung: blockiert!)
+                wait_forever=False,   # falls gewünscht True (blockiert ggf.!)
                 timeout_s=20.0,
+                action="DELETE_TRACK",     # oder "DELETE_TRACK"
             )
         else:
             res = run_projection_cleanup_builtin(
                 context,
                 error_limit=float(error_value),
                 wait_for_error=False,
+                action="DELETE_TRACK",     # oder "DELETE_TRACK"
             )
-        print(f"[Coord] PROJECTION_CLEANUP (run_projection_cleanup_builtin) → {res}")
+        print(f"[Coord] PROJECTION_CLEANUP → {res}")
         return
     except Exception as ex_func:
         print(f"[Coord] projection_cleanup function failed: {ex_func!r} → try operator fallback")
-        # Operator-Fallback ohne Error → kein echtes Warten möglich
+        # Operator-Fallback: ohne Warte-Logik
         try:
             if error_value is not None:
-                for prop_name in ("error_limit", "threshold", "max_error"):
+                for prop_name in ("clean_error", "error"):  # möglichst native Param-Namen
                     try:
-                        bpy.ops.clip.projection_cleanup_builtin('INVOKE_DEFAULT', **{prop_name: float(error_value)})
-                        print(f"[Coord] PROJECTION_CLEANUP (operator, {prop_name}={error_value})")
+                        bpy.ops.clip.clean_tracks(**{prop_name: float(error_value)}, action="DISABLE")
+                        print(f"[Coord] clean_tracks (fallback, {prop_name}={error_value})")
                         return
                     except TypeError:
                         continue
-            bpy.ops.clip.projection_cleanup_builtin('INVOKE_DEFAULT')
-            print("[Coord] PROJECTION_CLEANUP (operator, no-arg fallback)")
+            # Ohne Error-Wert kein sinnvoller Fallback möglich
+            print("[Coord] clean_tracks Fallback SKIPPED: kein error_value")
         except Exception as ex_op:
-            print(f"[Coord] projection_cleanup launch failed: {ex_op!r}")
+            print(f"[Coord] projection_cleanup fallback launch failed: {ex_op!r}")
 
 
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
