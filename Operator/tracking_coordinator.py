@@ -1,3 +1,4 @@
+# Operator/tracking_coordinator.py
 from __future__ import annotations
 """
 Tracking-Orchestrator (STRICT)
@@ -82,14 +83,12 @@ def _compute_solve_error(context) -> Optional[float]:
     if not getattr(recon, "is_valid", False):
         return None
 
-    # Direktes average_error, falls vorhanden
     if hasattr(recon, "average_error"):
         try:
             return float(recon.average_error)
         except Exception:
             pass
 
-    # Fallback: Mittelwert über Kameras
     try:
         errs = [float(c.average_error) for c in getattr(recon, "cameras", [])]
         if not errs:
@@ -100,9 +99,7 @@ def _compute_solve_error(context) -> Optional[float]:
 
 
 def _wait_for_reconstruction(context, tries: int = 12) -> bool:
-    """Kurzes, synchrones Warten, bis eine gültige Rekonstruktion verfügbar ist.
-    Gibt True zurück, wenn recon.is_valid innerhalb der Versuche erreicht wurde.
-    """
+    """Kurzes, synchrones Warten, bis eine gültige Rekonstruktion verfügbar ist."""
     clip = _get_active_clip(context)
     if not clip:
         return False
@@ -113,7 +110,6 @@ def _wait_for_reconstruction(context, tries: int = 12) -> bool:
                 return True
         except Exception:
             pass
-        # Soft-Redraw, um Operator-Resultate zu verarbeiten
         try:
             bpy.context.view_layer.update()
         except Exception:
@@ -121,62 +117,45 @@ def _wait_for_reconstruction(context, tries: int = 12) -> bool:
     return False
 
 
-def _run_projection_cleanup(context, error_value: float) -> None:
-    """Startet Helper/projection_cleanup_builtin mit robustem Fallback.
-    Übergibt den Solve-Error als Grenzwert (mehrere mögliche Parameternamen werden unterstützt).
+def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
+    """Startet Helper/projection_cleanup_builtin; wenn error_value None ist,
+    wartet der Helper intern (optional endlos) bis ein Solve-Error verfügbar ist.
     """
-    kwargs_varianten = (
-        {"error_limit": float(error_value)},
-        {"threshold": float(error_value)},
-        {"max_error": float(error_value)},
-    )
-    # 1) Bevorzugt echte Cleanup-Funktion
     try:
         from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin  # type: ignore
-        for kw in kwargs_varianten:
-            try:
-                run_projection_cleanup_builtin(context, **kw)
-                print(f"[Coord] PROJECTION_CLEANUP (run_projection_cleanup_builtin, kwargs={kw})")
-                return
-            except TypeError:
-                continue
-        # Letzter Versuch ohne Keyword
-        run_projection_cleanup_builtin(context, float(error_value))
-        print("[Coord] PROJECTION_CLEANUP (run_projection_cleanup_builtin, positional)")
-        return
-    except Exception:
-        pass
-
-    # 2) Fallback: in manchen Projekten heißt die Funktion noch run_refine_on_high_error
-    try:
-        from ..Helper.projection_cleanup_builtin import run_refine_on_high_error  # type: ignore
-        for kw in kwargs_varianten:
-            try:
-                run_refine_on_high_error(context, **kw)
-                print(f"[Coord] PROJECTION_CLEANUP (run_refine_on_high_error, kwargs={kw})")
-                return
-            except TypeError:
-                continue
-        run_refine_on_high_error(context, float(error_value))
-        print("[Coord] PROJECTION_CLEANUP (run_refine_on_high_error, positional)")
+        if error_value is None:
+            # Kein Error vorhanden → im Helper warten (Timeout 20s; für Endlos: wait_forever=True)
+            res = run_projection_cleanup_builtin(
+                context,
+                error_limit=None,
+                wait_for_error=True,
+                wait_forever=False,   # bei Bedarf auf True setzen (Achtung: blockiert!)
+                timeout_s=20.0,
+            )
+        else:
+            res = run_projection_cleanup_builtin(
+                context,
+                error_limit=float(error_value),
+                wait_for_error=False,
+            )
+        print(f"[Coord] PROJECTION_CLEANUP (run_projection_cleanup_builtin) → {res}")
         return
     except Exception as ex_func:
         print(f"[Coord] projection_cleanup function failed: {ex_func!r} → try operator fallback")
-
-    # 3) Operator-Fallback
-    try:
-        for prop_name in ("error_limit", "threshold", "max_error"):
-            try:
-                op_kwargs = {prop_name: float(error_value)}
-                bpy.ops.clip.projection_cleanup_builtin('INVOKE_DEFAULT', **op_kwargs)
-                print(f"[Coord] PROJECTION_CLEANUP (operator, {prop_name}={error_value})")
-                return
-            except TypeError:
-                continue
-        bpy.ops.clip.projection_cleanup_builtin('INVOKE_DEFAULT')
-        print("[Coord] PROJECTION_CLEANUP (operator, no-arg fallback)")
-    except Exception as ex_op:
-        print(f"[Coord] projection_cleanup launch failed: {ex_op!r}")
+        # Operator-Fallback ohne Error → kein echtes Warten möglich
+        try:
+            if error_value is not None:
+                for prop_name in ("error_limit", "threshold", "max_error"):
+                    try:
+                        bpy.ops.clip.projection_cleanup_builtin('INVOKE_DEFAULT', **{prop_name: float(error_value)})
+                        print(f"[Coord] PROJECTION_CLEANUP (operator, {prop_name}={error_value})")
+                        return
+                    except TypeError:
+                        continue
+            bpy.ops.clip.projection_cleanup_builtin('INVOKE_DEFAULT')
+            print("[Coord] PROJECTION_CLEANUP (operator, no-arg fallback)")
+        except Exception as ex_op:
+            print(f"[Coord] projection_cleanup launch failed: {ex_op!r}")
 
 
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
@@ -199,9 +178,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     _jump_done: bool = False
     _repeat_map: Dict[int, int]
     _bidi_started: bool = False
-
-    # NEU: Solve-Wait Zähler
-    _solve_wait_ticks: int = 0
+    _solve_wait_ticks: int = 0  # NEU
 
     @classmethod
     def poll(cls, context):
@@ -399,8 +376,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         print(f"[Coord] SOLVE_WAIT → error={current_err!r} vs. threshold={threshold}")
 
         if current_err is None:
-            print("[Coord] SOLVE_WAIT → Kein gültiger Error → FAIL-SOLVE fallback")
-            return self._handle_failed_solve(context)
+            print("[Coord] SOLVE_WAIT → Kein gültiger Error → PROJECTION_CLEANUP (wartend)")
+            _run_projection_cleanup(context, None)
+            self._state = "FIND_LOW"
+            return {"RUNNING_MODAL"}
 
         if current_err > threshold:
             print("[Coord] SOLVE_WAIT → Error > threshold → REFINE (Top-N) + Retry")
@@ -435,10 +414,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         except Exception as ex_ref:
             print(f"[Coord] FAIL-SOLVE REFINE failed: {ex_ref!r}")
 
-        # Konservatives Cleanup
+        # Konservatives Cleanup – wenn kein Error da: im Helper warten
         try:
-            print("[Coord] FAIL-SOLVE → PROJECTION_CLEANUP (conservative)")
-            _run_projection_cleanup(context, float(getattr(context.scene, "error_track", 2.0) or 2.0))
+            print("[Coord] FAIL-SOLVE → PROJECTION_CLEANUP (wartend)")
+            _run_projection_cleanup(context, None)
         except Exception as ex_cu:
             print(f"[Coord] FAIL-SOLVE CLEANUP failed: {ex_cu!r}")
 
@@ -578,4 +557,3 @@ def register():
 
 def unregister():
     bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
-
