@@ -81,15 +81,23 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         # 2) marker_helper_main.py (Funktions-API bevorzugt)
         try:
-            from ..Helper.marker_helper_main import run_marker_helper_main  # type: ignore
-            run_marker_helper_main(context)
-            print("[Coord] BOOTSTRAP → marker_helper_main OK")
+            from ..Helper.marker_helper_main import marker_helper_main  # type: ignore
+            marker_helper_main(context)
+            print("[Coord] BOOTSTRAP → marker_helper_main OK (run_*)")
         except Exception as ex_func:
             print(f"[Coord] BOOTSTRAP WARN: marker_helper_main failed: {ex_func!r}")
             try:
                 bpy.ops.clip.marker_helper_main('INVOKE_DEFAULT')
             except Exception:
                 pass
+
+        # 2b) marker_helper_main.py (Fallback: direkte Funktions-API, falls vorhanden)
+        try:
+            from ..Helper.marker_helper_main import marker_helper_main  # type: ignore
+            marker_helper_main(context)
+            print("[Coord] BOOTSTRAP → marker_helper_main OK (direct)")
+        except Exception as ex_func2:
+            print(f"[Coord] BOOTSTRAP INFO: marker_helper_main direct call not available/failed: {ex_func2!r}")
 
         # 3) (optional) Tracker-Defaults anwenden, wenn UI-Option aktiv
         if self.use_apply_settings:
