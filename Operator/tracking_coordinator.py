@@ -339,46 +339,83 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._state = "FIND_LOW"
         return {"RUNNING_MODAL"}
 
-    def _state_solve(self, context):
-        scn = context.scene
+def _state_solve(self, context):
+    scn = context.scene
+    try:
+        from ..Helper.solve_camera import solve_watch_clean  # type: ignore
+        print("[Coord] SOLVE → solve_watch_clean() (Operator INVOKE_DEFAULT inside)")
+        solve_watch_clean(context)
+    except Exception as ex:
+        print(f"[Coord] SOLVE failed: {ex!r}")
+        return self._finish(context, cancelled=True)
+
+    # 1) Falls der Solver einen expliziten POST-CLEAN angefordert hat → wie bisher behandeln
+    post_req = bool(scn.get(_POST_REQ_KEY, False))
+    post_thr = float(scn.get(_POST_THR_KEY, -1.0) or -1.0)
+    if post_req and post_thr > 0.0:
+        print(f"[Coord] SOLVE → POST-CLEAN request erkannt (threshold={post_thr:.6f})")
         try:
-            from ..Helper.solve_camera import solve_watch_clean  # type: ignore
-            print("[Coord] SOLVE → solve_watch_clean() (Operator INVOKE_DEFAULT inside)")
-            solve_watch_clean(context)
+            from .Helper.projection_cleanup_builtin import builtin_projection_cleanup  # type: ignore
+            scn[_POST_THR_KEY] = float(post_thr)
+            report = builtin_projection_cleanup(
+                context,
+                error_key=_POST_THR_KEY,
+                factor=1.0,
+                frames=0,
+                action='DELETE_TRACK',
+                dry_run=False,
+            )
+            print("[Coord] POST-CLEAN report:", {k: report.get(k) for k in ("affected", "threshold", "action")})
         except Exception as ex:
-            print(f"[Coord] SOLVE failed: {ex!r}")
-            return self._finish(context, cancelled=True)
-
-        # Post-Cleanup-Signal prüfen
-        post_req = bool(scn.get(_POST_REQ_KEY, False))
-        post_thr = float(scn.get(_POST_THR_KEY, -1.0) or -1.0)
-        if post_req and post_thr > 0.0:
-            print(f"[Coord] SOLVE → POST-CLEAN request erkannt (threshold={post_thr:.6f})")
-            try:
-                from ..Helper.projection_cleanup_builtin import builtin_projection_cleanup  # type: ignore
-                scn[_POST_THR_KEY] = float(post_thr)
-                report = builtin_projection_cleanup(
-                    context,
-                    error_key=_POST_THR_KEY,
-                    factor=1.0,
-                    frames=0,
-                    action='DELETE_TRACK',
-                    dry_run=False,
-                )
-                print("[Coord] POST-CLEAN report:", {k: report.get(k) for k in ("affected", "threshold", "action")})
-            except Exception as ex:
-                print(f"[Coord] POST-CLEAN failed: {ex!r}")
-            finally:
-                scn.pop(_POST_REQ_KEY, None)
-                # Schwelle aufräumen, damit spätere Cleanups nicht versehentlich diesen Wert nehmen
-                scn.pop(_POST_THR_KEY, None)
-            print("[Coord] SOLVE → FIND_LOW (nach POST-CLEAN)")
-            self._state = "FIND_LOW"
-            return {"RUNNING_MODAL"}
-
-        print("[Coord] SOLVE → FINALIZE (kein POST-CLEAN Signal)")
-        self._state = "FINALIZE"
+            print(f"[Coord] POST-CLEAN failed: {ex!r}")
+        finally:
+            scn.pop(_POST_REQ_KEY, None)
+            scn.pop(_POST_THR_KEY, None)
+        print("[Coord] SOLVE → FIND_LOW (nach POST-CLEAN)")
+        self._state = "FIND_LOW"
         return {"RUNNING_MODAL"}
+
+    # 2) NEU: Kein Post-Signal? → End-of-Solve Cleanup vor FINALIZE
+    print("[Coord] SOLVE → END-CLEANUP (builtin) vor FINALIZE")
+    try:
+        from .Helper.projection_cleanup_builtin import builtin_projection_cleanup  # type: ignore
+        # Schwellenwahl: bevorzugt 'resolve_error', sonst 'error_track', sonst aktueller Solve-Fehler
+        thr_key = None
+        if "resolve_error" in scn:
+            thr_key = "resolve_error"
+        elif "error_track" in scn:
+            thr_key = "error_track"
+        else:
+            # Fallback: temporär Solve-AvgErr als Schlüssel verwenden
+            thr_key = "__endclean_threshold"
+            scn[thr_key] = float(scn.get("solve_error", 0.0))
+
+        # Sicherer CLIP_EDITOR-Kontext
+        area, region, space = _find_clip_window(context)
+        if not area or not space or not getattr(space, "clip", None):
+            raise RuntimeError("Kein CLIP_EDITOR-Kontext für END-CLEANUP.")
+
+        with context.temp_override(area=area, region=region, space_data=space):
+            report = builtin_projection_cleanup(
+                context,
+                error_key=thr_key,
+                factor=1.0,
+                frames=0,                 # ganze Sequenz
+                action='DELETE_TRACK',    # oder 'SELECT' falls nur muten gewünscht
+                dry_run=False,
+            )
+        print("[Coord] END-CLEANUP report:", {k: report.get(k) for k in ("affected", "threshold", "action")})
+    except Exception as ex:
+        print(f"[Coord] END-CLEANUP failed: {ex!r}")
+    finally:
+        # Fallback-Schlüssel aufräumen, falls gesetzt
+        if "__endclean_threshold" in scn:
+            scn.pop("__endclean_threshold", None)
+
+    print("[Coord] SOLVE → FINALIZE (End-Cleanup ausgeführt)")
+    self._state = "FINALIZE"
+    return {"RUNNING_MODAL"}
+
 
     # ---------------- Finish ----------------
 
