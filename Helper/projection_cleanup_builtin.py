@@ -1,25 +1,27 @@
 # Helper/projection_cleanup_builtin.py
 from __future__ import annotations
 """
-projection_cleanup_builtin.py — Cleanup mit optionalem Warten auf Solve-Error
+projection_cleanup_builtin.py — Reprojection-Cleanup mit optionalem Warten auf Solve-Error
 
-Diese Datei wartet – falls gewünscht – solange, bis ein gültiger Solve-Error verfügbar ist
-(oder bis ein Timeout erreicht ist). Optional kann auch endlos gewartet werden (wait_forever=True).
-Danach kann ein Cleanup-Schritt erfolgen (Platzhalter – an eure Bedürfnisse anpassen).
+- Kein run_refine_on_high_error mehr.
+- Einziger Einstiegspunkt: run_projection_cleanup_builtin(...).
+- Wartet optional, bis ein gültiger Solve-Error verfügbar ist (oder Timeout),
+  und führt dann bpy.ops.clip.clean_tracks mit clean_error=<used_error> aus.
 
-Bestehende Kompatibilitätsfunktion:
-- run_refine_on_high_error(...) bleibt als Alias erhalten.
+Hinweis:
+- Der Operator-Parameter heißt in gängigen Blender-Versionen 'clean_error'.
+  Für Kompatibilität probieren wir auch 'error' als Fallback.
 """
 
 from typing import Optional, Tuple, Dict, Any
 import bpy
 import time
 
-__all__ = ("run_projection_cleanup_builtin", "run_refine_on_high_error")
+__all__ = ("run_projection_cleanup_builtin",)
 
 
 # -----------------------------------------------------------------------------
-# Kontext- und Error-Utilities (kein Import aus solve_camera → Zyklus vermeiden)
+# Kontext- und Error-Utilities
 # -----------------------------------------------------------------------------
 
 def _find_clip_window(context) -> Tuple[Optional[bpy.types.Area], Optional[bpy.types.Region], Optional[bpy.types.Space]]:
@@ -75,7 +77,6 @@ def _get_current_solve_error_now(context) -> Optional[float]:
 
 
 def _poke_update():
-    # Leichtes „Atmen“, damit Blender UI/Depsgraph weiterarbeiten kann
     try:
         bpy.context.view_layer.update()
     except Exception:
@@ -83,26 +84,22 @@ def _poke_update():
 
 
 def _wait_until_error(context, *, wait_forever: bool, timeout_s: float, tick_s: float = 0.25) -> Optional[float]:
-    """Wartet, bis ein gültiger Solve-Error verfügbar ist.
-    - wait_forever=True  → endlos (UI kann blockieren!)
-    - wait_forever=False → Timeout nach timeout_s Sekunden
-    """
+    """Wartet, bis ein gültiger Solve-Error verfügbar ist (optional endlos / mit Timeout)."""
     deadline = time.monotonic() + float(timeout_s)
-    n = 0
+    ticks = 0
     while True:
         err = _get_current_solve_error_now(context)
         if err is not None:
-            print(f"[CleanupWait] Solve-Error verfügbar: {err:.4f}px (after {n} ticks)")
+            print(f"[CleanupWait] Solve-Error verfügbar: {err:.4f}px (after {ticks} ticks)")
             return err
 
         _poke_update()
-        n += 1
+        ticks += 1
 
         if not wait_forever and time.monotonic() >= deadline:
             print(f"[CleanupWait] Timeout nach {timeout_s:.1f}s – kein gültiger Error verfügbar.")
             return None
 
-        # Kurze Pause; vermeidet 100% CPU
         try:
             time.sleep(max(0.0, float(tick_s)))
         except Exception:
@@ -116,22 +113,32 @@ def _wait_until_error(context, *, wait_forever: bool, timeout_s: float, tick_s: 
 def run_projection_cleanup_builtin(
     context: bpy.types.Context,
     *,
-    # Mögliche Schwellenwert-Argumente (eins reicht; None → automatisch ermitteln)
+    # Einer dieser Werte (wenn gesetzt) wird als Schwellwert verwendet;
+    # wenn keiner gesetzt ist, kann gewartet werden, bis ein Error verfügbar ist.
     error_limit: float | None = None,
     threshold: float | None = None,
     max_error: float | None = None,
-    # Warte-Parameter
+
+    # Warte-Optionen
     wait_for_error: bool = True,
     wait_forever: bool = False,
     timeout_s: float = 20.0,
+
+    # Cleanup-Optionen
+    action: str = "DISABLE",   # 'DISABLE', 'DELETE_TRACK', 'DELETE_SEGMENTS', 'SELECT'
 ) -> Dict[str, Any]:
     """
-    Wartet optional auf einen gültigen Solve-Error und führt dann den Cleanup aus.
-    Gibt ein Ergebnis-Dict zurück, inkl. 'used_error' (falls verfügbar).
+    Führt Reprojection-Cleanup per bpy.ops.clip.clean_tracks aus.
 
-    Achtung: wait_forever=True kann Blender blockieren (Endlosschleife)!
+    Ablauf:
+      1) Error-Schwelle feststellen oder (optional) warten, bis Solve-Error lesbar.
+      2) Operator ausführen: clean_tracks(clean_error=<used_error>, action=<action>).
+         (Fallback-Parametername 'error' wird ebenfalls versucht.)
+
+    Rückgabe:
+      dict(status='OK'|'SKIPPED'|'ERROR', used_error=float|None, action=str, reason=str|None)
     """
-    # 1) Fehlerwert bestimmen/abwarten
+    # 1) Schwelle bestimmen / warten
     used_error = None
     for val in (error_limit, threshold, max_error):
         if val is not None:
@@ -144,37 +151,30 @@ def run_projection_cleanup_builtin(
 
     if used_error is None:
         print("[Cleanup] Kein gültiger Solve-Error verfügbar – Cleanup wird SKIPPED.")
-        return {"status": "SKIPPED", "reason": "no_error", "used_error": None}
+        return {"status": "SKIPPED", "reason": "no_error", "used_error": None, "action": action}
 
-    print(f"[Cleanup] Starte Cleanup mit Grenzwert {used_error:.4f}px")
+    print(f"[Cleanup] Starte clean_tracks mit Grenzwert {used_error:.4f}px, action={action}")
 
-    # 2) Hier eure eigentliche Cleanup-Logik einfügen:
-    #    Beispiel: Marker mit sehr hohem reprojection error muten/löschen/etc.
-    #    Der folgende Block ist absichtlich konservativ (kein zerstörerisches Verhalten).
+    # 2) Operator ausführen (Kontext-Override für CLIP_EDITOR)
     try:
         area, region, space = _find_clip_window(context)
-        if area and space and getattr(space, "clip", None):
+        if not (area and region and space and getattr(space, "clip", None)):
+            print("[Cleanup] Kein CLIP_EDITOR-Kontext gefunden – versuche ohne Override.")
+
+            # Erst mit 'clean_error', dann Fallback 'error'
+            try:
+                bpy.ops.clip.clean_tracks(clean_error=float(used_error), action=str(action))
+            except TypeError:
+                bpy.ops.clip.clean_tracks(error=float(used_error), action=str(action))
+        else:
             with context.temp_override(area=area, region=region, space_data=space):
-                # TODO: Ersetze dies durch eure echte Cleanup-Aktion.
-                # Beispiel (Pseudo): bpy.ops.clip.filter_tracks(action='DELETE_TRACK', track_threshold=used_error)
-                pass
+                try:
+                    bpy.ops.clip.clean_tracks(clean_error=float(used_error), action=str(action))
+                except TypeError:
+                    bpy.ops.clip.clean_tracks(error=float(used_error), action=str(action))
     except Exception as ex:
-        print(f"[Cleanup] Cleanup-Operator fehlgeschlagen: {ex!r}")
-        return {"status": "ERROR", "reason": repr(ex), "used_error": used_error}
+        print(f"[Cleanup] Fehler bei clean_tracks: {ex!r}")
+        return {"status": "ERROR", "reason": repr(ex), "used_error": used_error, "action": action}
 
     print("[Cleanup] Cleanup abgeschlossen.")
-    return {"status": "OK", "used_error": used_error}
-
-
-# -----------------------------------------------------------------------------
-# Abwärtskompatibler Name (wird im Coordinator als Fallback verwendet)
-# -----------------------------------------------------------------------------
-
-def run_refine_on_high_error(
-    context: bpy.types.Context,
-    *,
-    max_error: float = 0.0,
-    **_kw,
-) -> Dict[str, Any]:
-    """Alias zu run_projection_cleanup_builtin (Kompatibilität)."""
-    return run_projection_cleanup_builtin(context, max_error=float(max_error), **_kw)
+    return {"status": "OK", "used_error": used_error, "action": action}
