@@ -13,6 +13,8 @@ Neu / Fix:
   mit sicherem CLIP_EDITOR-Kontext (temp_override). Dadurch „greifen“ die Einstellungen sofort.
 - Doppelte Ausführung im State INIT wird vermieden via Flag _preflight_done.
 - Pre-Flight nutzt robusten Fallback (Funktions-API → Operator), mit klaren Logs.
+- **Fix:** _state_solve war außerhalb der Klasse; jetzt korrekt *innerhalb*
+  von CLIP_OT_tracking_coordinator. Zusätzlich konsistente relative Importe.
 """
 
 import bpy
@@ -47,15 +49,17 @@ def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
         print(f"[Coordinator] {msg}")
 
 
-def _find_clip_window(context) -> Tuple[Optional[bpy.types.Area], Optional[bpy.types.Region], Optional[bpy.types.Space]]:
+def _find_clip_window(
+    context,
+) -> Tuple[Optional[bpy.types.Area], Optional[bpy.types.Region], Optional[bpy.types.Space]]:
     win = context.window
     if not win or not getattr(win, "screen", None):
         return None, None, None
     for area in win.screen.areas:
-        if area.type == 'CLIP_EDITOR':
+        if area.type == "CLIP_EDITOR":
             region_window = None
             for r in area.regions:
-                if r.type == 'WINDOW':
+                if r.type == "WINDOW":
                     region_window = r
                     break
             if region_window:
@@ -103,7 +107,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception as ex_func:
                 print(f"[Coord] BOOTSTRAP WARN: run_marker_helper_main failed: {ex_func!r}")
                 try:
-                    bpy.ops.clip.marker_helper_main('INVOKE_DEFAULT')
+                    bpy.ops.clip.marker_helper_main("INVOKE_DEFAULT")
                     print("[Coord] BOOTSTRAP → marker_helper_main OK (operator)")
                     return True
                 except Exception as ex_op:
@@ -127,7 +131,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception as ex:
                 print(f"[Coord] BOOTSTRAP WARN: tracker_settings failed: {ex!r}")
                 try:
-                    bpy.ops.clip.apply_tracker_settings('INVOKE_DEFAULT')
+                    bpy.ops.clip.apply_tracker_settings("INVOKE_DEFAULT")
                     print("[Coord] BOOTSTRAP → apply_tracker_settings operator OK")
                     return True
                 except Exception as ex2:
@@ -278,7 +282,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 except Exception as ex_func:
                     print(f"[Coord] OPTIMIZE failed (function): {ex_func!r}")
                     try:
-                        bpy.ops.clip.optimize_tracking_modal('INVOKE_DEFAULT')
+                        bpy.ops.clip.optimize_tracking_modal("INVOKE_DEFAULT")
                         print(f"[Coord] JUMP → OPTIMIZE (operator fallback, frame={opt_frame})")
                     except Exception as ex_op:
                         print(f"[Coord] OPTIMIZE launch failed: {ex_op!r}")
@@ -320,7 +324,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             scn[_BIDI_ACTIVE_KEY] = False
             print("[Coord] TRACK → launch clip.bidirectional_track (INVOKE_DEFAULT)")
             try:
-                bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
+                bpy.ops.clip.bidirectional_track("INVOKE_DEFAULT")
                 self._bidi_started = True
             except Exception as ex:
                 print(f"[Coord] TRACK launch failed: {ex!r} → FIND_LOW (best-effort)")
@@ -339,83 +343,89 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._state = "FIND_LOW"
         return {"RUNNING_MODAL"}
 
-def _state_solve(self, context):
-    scn = context.scene
-    try:
-        from ..Helper.solve_camera import solve_watch_clean  # type: ignore
-        print("[Coord] SOLVE → solve_watch_clean() (Operator INVOKE_DEFAULT inside)")
-        solve_watch_clean(context)
-    except Exception as ex:
-        print(f"[Coord] SOLVE failed: {ex!r}")
-        return self._finish(context, cancelled=True)
-
-    # 1) Falls der Solver einen expliziten POST-CLEAN angefordert hat → wie bisher behandeln
-    post_req = bool(scn.get(_POST_REQ_KEY, False))
-    post_thr = float(scn.get(_POST_THR_KEY, -1.0) or -1.0)
-    if post_req and post_thr > 0.0:
-        print(f"[Coord] SOLVE → POST-CLEAN request erkannt (threshold={post_thr:.6f})")
+    def _state_solve(self, context):
+        scn = context.scene
         try:
-            from .Helper.projection_cleanup_builtin import builtin_projection_cleanup  # type: ignore
-            scn[_POST_THR_KEY] = float(post_thr)
-            report = builtin_projection_cleanup(
-                context,
-                error_key=_POST_THR_KEY,
-                factor=1.0,
-                frames=0,
-                action='DELETE_TRACK',
-                dry_run=False,
-            )
-            print("[Coord] POST-CLEAN report:", {k: report.get(k) for k in ("affected", "threshold", "action")})
+            from ..Helper.solve_camera import solve_watch_clean  # type: ignore
+            print("[Coord] SOLVE → solve_watch_clean() (Operator INVOKE_DEFAULT inside)")
+            solve_watch_clean(context)
         except Exception as ex:
-            print(f"[Coord] POST-CLEAN failed: {ex!r}")
-        finally:
-            scn.pop(_POST_REQ_KEY, None)
-            scn.pop(_POST_THR_KEY, None)
-        print("[Coord] SOLVE → FIND_LOW (nach POST-CLEAN)")
-        self._state = "FIND_LOW"
-        return {"RUNNING_MODAL"}
+            print(f"[Coord] SOLVE failed: {ex!r}")
+            return self._finish(context, cancelled=True)
 
-    # 2) NEU: Kein Post-Signal? → End-of-Solve Cleanup vor FINALIZE
-    print("[Coord] SOLVE → END-CLEANUP (builtin) vor FINALIZE")
-    try:
-        from .Helper.projection_cleanup_builtin import builtin_projection_cleanup  # type: ignore
-        # Schwellenwahl: bevorzugt 'resolve_error', sonst 'error_track', sonst aktueller Solve-Fehler
-        thr_key = None
-        if "resolve_error" in scn:
-            thr_key = "resolve_error"
-        elif "error_track" in scn:
-            thr_key = "error_track"
-        else:
-            # Fallback: temporär Solve-AvgErr als Schlüssel verwenden
-            thr_key = "__endclean_threshold"
-            scn[thr_key] = float(scn.get("solve_error", 0.0))
+        # 1) Falls der Solver einen expliziten POST-CLEAN angefordert hat → wie bisher behandeln
+        post_req = bool(scn.get(_POST_REQ_KEY, False))
+        post_thr = float(scn.get(_POST_THR_KEY, -1.0) or -1.0)
+        if post_req and post_thr > 0.0:
+            print(f"[Coord] SOLVE → POST-CLEAN request erkannt (threshold={post_thr:.6f})")
+            try:
+                from ..Helper.projection_cleanup_builtin import builtin_projection_cleanup  # type: ignore
+                scn[_POST_THR_KEY] = float(post_thr)
+                report = builtin_projection_cleanup(
+                    context,
+                    error_key=_POST_THR_KEY,
+                    factor=1.0,
+                    frames=0,
+                    action='DELETE_TRACK',
+                    dry_run=False,
+                )
+                print(
+                    "[Coord] POST-CLEAN report:",
+                    {k: report.get(k) for k in ("affected", "threshold", "action")},
+                )
+            except Exception as ex:
+                print(f"[Coord] POST-CLEAN failed: {ex!r}")
+            finally:
+                scn.pop(_POST_REQ_KEY, None)
+                scn.pop(_POST_THR_KEY, None)
+            print("[Coord] SOLVE → FIND_LOW (nach POST-CLEAN)")
+            self._state = "FIND_LOW"
+            return {"RUNNING_MODAL"}
 
-        # Sicherer CLIP_EDITOR-Kontext
-        area, region, space = _find_clip_window(context)
-        if not area or not space or not getattr(space, "clip", None):
-            raise RuntimeError("Kein CLIP_EDITOR-Kontext für END-CLEANUP.")
+        # 2) NEU: Kein Post-Signal? → End-of-Solve Cleanup vor FINALIZE
+        print("[Coord] SOLVE → END-CLEANUP (builtin) vor FINALIZE")
+        try:
+            from ..Helper.projection_cleanup_builtin import (
+                builtin_projection_cleanup,
+            )  # type: ignore
+            # Schwellenwahl: bevorzugt 'resolve_error', sonst 'error_track', sonst aktueller Solve-Fehler
+            if "resolve_error" in scn:
+                thr_key = "resolve_error"
+            elif "error_track" in scn:
+                thr_key = "error_track"
+            else:
+                # Fallback: temporär Solve-AvgErr als Schlüssel verwenden
+                thr_key = "__endclean_threshold"
+                scn[thr_key] = float(scn.get("solve_error", 0.0))
 
-        with context.temp_override(area=area, region=region, space_data=space):
-            report = builtin_projection_cleanup(
-                context,
-                error_key=thr_key,
-                factor=1.0,
-                frames=0,                 # ganze Sequenz
-                action='DELETE_TRACK',    # oder 'SELECT' falls nur muten gewünscht
-                dry_run=False,
+            # Sicherer CLIP_EDITOR-Kontext
+            area, region, space = _find_clip_window(context)
+            if not area or not space or not getattr(space, "clip", None):
+                raise RuntimeError("Kein CLIP_EDITOR-Kontext für END-CLEANUP.")
+
+            with context.temp_override(area=area, region=region, space_data=space):
+                report = builtin_projection_cleanup(
+                    context,
+                    error_key=thr_key,
+                    factor=1.0,
+                    frames=0,  # ganze Sequenz
+                    action='DELETE_TRACK',  # oder 'SELECT' falls nur muten gewünscht
+                    dry_run=False,
+                )
+            print(
+                "[Coord] END-CLEANUP report:",
+                {k: report.get(k) for k in ("affected", "threshold", "action")},
             )
-        print("[Coord] END-CLEANUP report:", {k: report.get(k) for k in ("affected", "threshold", "action")})
-    except Exception as ex:
-        print(f"[Coord] END-CLEANUP failed: {ex!r}")
-    finally:
-        # Fallback-Schlüssel aufräumen, falls gesetzt
-        if "__endclean_threshold" in scn:
-            scn.pop("__endclean_threshold", None)
+        except Exception as ex:
+            print(f"[Coord] END-CLEANUP failed: {ex!r}")
+        finally:
+            # Fallback-Schlüssel aufräumen, falls gesetzt
+            if "__endclean_threshold" in scn:
+                scn.pop("__endclean_threshold", None)
 
-    print("[Coord] SOLVE → FINALIZE (End-Cleanup ausgeführt)")
-    self._state = "FINALIZE"
-    return {"RUNNING_MODAL"}
-
+        print("[Coord] SOLVE → FINALIZE (End-Cleanup ausgeführt)")
+        self._state = "FINALIZE"
+        return {"RUNNING_MODAL"}
 
     # ---------------- Finish ----------------
 
@@ -430,10 +440,11 @@ def _state_solve(self, context):
         return {"CANCELLED" if cancelled else "FINISHED"}
 
 
+# ---------------- Registration ----------------
+
 def register():
     bpy.utils.register_class(CLIP_OT_tracking_coordinator)
 
 
 def unregister():
     bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
-
