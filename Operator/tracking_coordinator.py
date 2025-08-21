@@ -97,6 +97,56 @@ def _compute_solve_error(context) -> Optional[float]:
         return None
 
 
+def _wait_for_reconstruction(context, tries: int = 12) -> bool:
+    """Kurzes, synchrones Warten, bis eine gültige Rekonstruktion verfügbar ist.
+    Gibt True zurück, wenn recon.is_valid innerhalb der Versuche erreicht wurde.
+    """
+    clip = _get_active_clip(context)
+    if not clip:
+        return False
+    for _ in range(max(1, int(tries))):
+        try:
+            recon = clip.tracking.objects.active.reconstruction
+            if getattr(recon, "is_valid", False):
+                return True
+        except Exception:
+            pass
+        # Soft-Redraw, um Operator-Resultate zu verarbeiten
+        try:
+            bpy.context.view_layer.update()
+        except Exception:
+            pass
+    return False
+    """Ermittelt den aktuellen Solve-Error aus der aktiven Rekonstruktion.
+    Bevorzugt reconstruction.average_error; Fallback: Mittelwert der Kamera-Errors.
+    """
+    clip = _get_active_clip(context)
+    if not clip:
+        return None
+    try:
+        recon = clip.tracking.objects.active.reconstruction
+    except Exception:
+        return None
+    if not getattr(recon, "is_valid", False):
+        return None
+
+    # Direktes average_error, falls vorhanden
+    if hasattr(recon, "average_error"):
+        try:
+            return float(recon.average_error)
+        except Exception:
+            pass
+
+    # Fallback: Mittelwert über Kameras
+    try:
+        errs = [float(c.average_error) for c in getattr(recon, "cameras", [])]
+        if not errs:
+            return None
+        return sum(errs) / len(errs)
+    except Exception:
+        return None
+
+
 def _run_projection_cleanup(context, error_value: float) -> None:
     """Startet Helper/projection_cleanup_builtin mit robustem Fallback.
     Übergibt den Solve-Error als Grenzwert (mehrere mögliche Parameternamen werden unterstützt).
@@ -325,14 +375,19 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_solve(self, context):
-        """Solve-Phase nach NONE + Solve-Error-Workflows (neu)."""
+        """Solve-Phase nach NONE + Solve-Error-Workflows (robuster)."""
         try:
             from ..Helper.solve_camera import solve_watch_clean  # type: ignore
             print("[Coord] SOLVE → solve_watch_clean()")
-            solve_watch_clean(context)
+            res = solve_watch_clean(context)
+            print(f"[Coord] SOLVE → solve_watch_clean() returned {res}")
         except Exception as ex:
             print(f"[Coord] SOLVE failed: {ex!r}")
-            return self._finish(context, cancelled=True)
+            # Bei hartem Fehler: wie High-Error behandeln → Refine versuchen
+            return self._handle_failed_solve(context)
+
+        # Kurze Wartephase, bis Reconstruction wirklich vorliegt
+        _wait_for_reconstruction(context, tries=12)
 
         # --- Solve-Error prüfen ---
         threshold = float(getattr(context.scene, "error_track", 2.0) or 2.0)
@@ -340,9 +395,58 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         print(f"[Coord] SOLVE → error={current_err!r} vs. threshold={threshold}")
 
         if current_err is None:
-            print("[Coord] SOLVE → Kein gültiger Solve-Error ermittelbar → FINALIZE")
-            self._state = "FINALIZE"
-            return {"RUNNING_MODAL"}
+            print("[Coord] SOLVE → Keine gültige Rekonstruktion/Kein Error → behandle als High-Error-Fall")
+            return self._handle_failed_solve(context)
+
+        if current_err > threshold:
+            print("[Coord] SOLVE → Error > threshold → REFINE (Helper/refine_high_error.py)")
+            try:
+                from ..Helper.refine_high_error import run_refine_on_high_error  # type: ignore
+                run_refine_on_high_error(context, limit_frames=0, resolve_after=False)
+            except Exception as ex_ref:
+                print(f"[Coord] REFINE failed: {ex_ref!r}")
+
+            # Erneut lösen
+            try:
+                print("[Coord] SOLVE → retry solve_watch_clean() nach REFINE")
+                solve_watch_clean(context)
+            except Exception as ex2:
+                print(f"[Coord] SOLVE retry failed: {ex2!r}")
+
+            _wait_for_reconstruction(context, tries=12)
+
+            # Erneut prüfen
+            current_err = _compute_solve_error(context)
+            print(f"[Coord] SOLVE(after refine) → error={current_err!r} vs. threshold={threshold}")
+            if current_err is None or current_err > threshold:
+                print("[Coord] SOLVE → Error weiterhin > threshold/kein Recon → PROJECTION_CLEANUP und zurück zu FIND_LOW")
+                _run_projection_cleanup(context, float(current_err) if current_err is not None else float(threshold))
+                self._state = "FIND_LOW"  # zurück in den regulären Loop
+                return {"RUNNING_MODAL"}
+
+        print("[Coord] SOLVE → FINALIZE")
+        self._state = "FINALIZE"
+        return {"RUNNING_MODAL"}
+
+    def _handle_failed_solve(self, context):
+        """Fallback-Pfad, wenn Solve keine gültige Reconstruction erzeugt (z. B. \"No camera for frame\")."""
+        try:
+            from ..Helper.refine_high_error import run_refine_on_high_error  # type: ignore
+            print("[Coord] FAIL-SOLVE → versuche REFINE (Top-N)")
+            run_refine_on_high_error(context, limit_frames=0, resolve_after=False)
+        except Exception as ex_ref:
+            print(f"[Coord] FAIL-SOLVE REFINE failed: {ex_ref!r}")
+
+        # Direktes Cleanup als zweite Stufe
+        try:
+            print("[Coord] FAIL-SOLVE → PROJECTION_CLEANUP (conservative)")
+            _run_projection_cleanup(context, float(getattr(context.scene, "error_track", 2.0) or 2.0))
+        except Exception as ex_cu:
+            print(f"[Coord] FAIL-SOLVE CLEANUP failed: {ex_cu!r}")
+
+        # Danach zurück in FIND_LOW für erneuten Pipeline-Durchlauf
+        self._state = "FIND_LOW"
+        return {"RUNNING_MODAL"}
 
         if current_err > threshold:
             print("[Coord] SOLVE → Error > threshold → REFINE (Helper/refine_high_error.py)")
