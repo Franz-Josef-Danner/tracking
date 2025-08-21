@@ -224,6 +224,16 @@ class CLIP_OT_bidirectional_track(Operator):
         print(f"[BidiTrack] FINISH result={result} | total_time={total_time:.3f}s | ticks={self._tick}")
 
         self._cleanup_timer(context)
+
+        # ---- Nacharbeit: Clean Error Tracks aufrufen ----
+        try:
+            from . import clean_error_tracks
+            if hasattr(clean_error_tracks, "run_clean_error_tracks"):
+                print("[BidiTrack] Starte Clean-Error-Tracks nach Bidirectional Tracking …")
+                clean_error_tracks.run_clean_error_tracks(context)
+        except Exception as ex:
+            print(f"[BidiTrack] WARN: Clean-Error-Tracks konnte nicht ausgeführt werden: {ex}")
+
         return {'FINISHED'}
 
     def _cleanup_timer(self, context):
