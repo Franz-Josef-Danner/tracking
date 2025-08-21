@@ -1,20 +1,18 @@
 from __future__ import annotations
 """
-Tracking-Orchestrator (SIMPLIFIED)
----------------------------------
-Ablauf (FSM): INIT → FIND_LOW → JUMP → DETECT (READY/FAILED zählen; RUNNING timeboxed) → TRACK (bidirectional, modal) → zurück zu FIND_LOW …
-Sobald Helper/find_low_marker_frame.py **keinen** Frame mit zu wenigen Markern mehr findet (Status "NONE"),
-wird **sofort** Helper/solve_camera.py ausgelöst und der Orchestrator beendet.
+Tracking-Orchestrator (SIMPLIFIED + POST-CLEAN)
+----------------------------------------------
+FSM: INIT → FIND_LOW → JUMP → DETECT → TRACK → FIND_LOW …
+Wenn Helper/find_low_marker_frame.py **NONE** zurückgibt, wird **SOLVE** ausgeführt.
+Nach dem Solve prüft der Coordinator auf ein POST-CLEAN-Signal (von Helper/solve_camera.py):
+  - wenn gesetzt, wird zuerst Helper/projection_cleanup_builtin.py mit der übermittelten Schwelle
+    (AvgErr) ausgeführt, dann zurück zu FIND_LOW;
+  - sonst FINALIZE.
 
 Wichtig:
-- KEIN Helper/clean_error_tracks.py mehr.
-- KEIN Helper/clean_short_tracks.py mehr (Property entfernt).
-- Coordinator ruft niemals direkt bpy.ops.clip.track_markers auf, sondern ausschließlich den Helper-Operator
-  Helper/bidirectional_track.py (clip.bidirectional_track).
-- Detect kann mehrfach (RUNNING) im selben State laufen, bis READY/FAILED oder Timebox (_MAX_DETECT_ATTEMPTS).
-
-Bestehende Pre-Flight-Helper (tracker_settings, marker_helper_main, apply_tracker_settings) bleiben erhalten.
-Optimizer-Signal via jump_to_frame wird weiterhin unterstützt.
+- Kein Clean-Error- und kein Clean-Short-Postprocessing im Orchestrator.
+- Solve läuft via Helper/solve_camera.solve_watch_clean(), der intern den Operator
+  `bpy.ops.clip.solve_camera('INVOKE_DEFAULT')` ausführt.
 """
 
 import bpy
@@ -35,6 +33,10 @@ _OPT_REQ_KEY = "__optimize_request"
 _OPT_REQ_VAL = "JUMP_REPEAT"
 _OPT_FRAME_KEY = "__optimize_frame"
 
+# POST-CLEAN Signal (vom Solver gesetzt)
+_POST_REQ_KEY = "__post_cleanup_request"
+_POST_THR_KEY = "__post_cleanup_threshold"
+
 
 def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
     try:
@@ -45,7 +47,7 @@ def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
 
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     bl_idname = "clip.tracking_coordinator"
-    bl_label = "Tracking Orchestrator (Simplified)"
+    bl_label = "Tracking Orchestrator (Simplified + Post-Clean)"
     bl_options = {"REGISTER", "UNDO"}
 
     use_apply_settings: bpy.props.BoolProperty(  # type: ignore
@@ -83,21 +85,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         try:
             from ..Helper.marker_helper_main import run_marker_helper_main  # type: ignore
             run_marker_helper_main(context)
-            print("[Coord] BOOTSTRAP → marker_helper_main OK (run_*)")
+            print("[Coord] BOOTSTRAP → marker_helper_main OK")
         except Exception as ex_func:
-            print(f"[Coord] BOOTSTRAP WARN: run_marker_helper_main failed: {ex_func!r}")
+            print(f"[Coord] BOOTSTRAP WARN: marker_helper_main failed: {ex_func!r}")
             try:
                 bpy.ops.clip.marker_helper_main('INVOKE_DEFAULT')
             except Exception:
                 pass
-
-        # 2b) marker_helper_main.py (Fallback: direkte Funktions-API, falls vorhanden)
-        try:
-            from ..Helper.marker_helper_main import marker_helper_main  # type: ignore
-            marker_helper_main(context)
-            print("[Coord] BOOTSTRAP → marker_helper_main OK (direct)")
-        except Exception as ex_func2:
-            print(f"[Coord] BOOTSTRAP INFO: marker_helper_main direct call not available/failed: {ex_func2!r}")
 
         # 3) (optional) Tracker-Defaults anwenden, wenn UI-Option aktiv
         if self.use_apply_settings:
@@ -113,7 +107,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.25, window=context.window)
         wm.modal_handler_add(self)
-        _safe_report(self, {"INFO"}, "Coordinator (Simplified) gestartet")
+        _safe_report(self, {"INFO"}, "Coordinator (Simplified+PostClean) gestartet")
         print("[Coord] START (Detect→BiTrack) – Solve sobald FIND_LOW=NONE")
         return {"RUNNING_MODAL"}
 
@@ -152,6 +146,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         scn[_LOCK_KEY] = False
         scn[_BIDI_ACTIVE_KEY] = False
         scn[_BIDI_RESULT_KEY] = ""
+        # Post-Clean Signal entsättigen
+        scn.pop(_POST_REQ_KEY, None)
+        scn.pop(_POST_THR_KEY, None)
         self._state = "INIT"
         self._detect_attempts = 0
         self._jump_done = False
@@ -181,7 +178,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._state = "JUMP"
 
         elif status == "NONE":
-            # NEU: Direkt in SOLVE verzweigen, keinerlei Cleanups mehr
             print("[Coord] FIND_LOW → NONE → SOLVE (direkt)")
             self._state = "SOLVE"
 
@@ -231,7 +227,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_detect(self, context):
-        """Akzeptiert READY/FAILED → TRACK, RUNNING → im DETECT-State bleiben (bis Timebox)."""
         from ..Helper.detect import run_detect_once  # type: ignore
 
         goto = int(context.scene.get(_GOTO_KEY, context.scene.frame_current))
@@ -256,7 +251,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_track(self, context):
-        """Startet und überwacht den Bidirectional-Operator; danach zurück zu FIND_LOW."""
         scn = context.scene
 
         if not self._bidi_started:
@@ -284,21 +278,44 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_solve(self, context):
-        """Solve-Phase: Direkt nach FIND_LOW→NONE. Muss via Operator INVOKE_DEFAULT ausgelöst werden."""
+        scn = context.scene
         try:
-            # Primär: Operator-Start gemäß Vorgabe
-            print("[Coord] SOLVE → bpy.ops.clip.solve_camera('INVOKE_DEFAULT')")
-            bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-        except Exception as ex_op:
-            print(f"[Coord] SOLVE operator failed: {ex_op!r} → try functional fallback")
+            from ..Helper.solve_camera import solve_watch_clean  # type: ignore
+            print("[Coord] SOLVE → solve_watch_clean() (Operator INVOKE_DEFAULT inside)")
+            solve_watch_clean(context)
+        except Exception as ex:
+            print(f"[Coord] SOLVE failed: {ex!r}")
+            return self._finish(context, cancelled=True)
+
+        # Post-Cleanup-Signal prüfen
+        post_req = bool(scn.get(_POST_REQ_KEY, False))
+        post_thr = float(scn.get(_POST_THR_KEY, -1.0) or -1.0)
+        if post_req and post_thr > 0.0:
+            print(f"[Coord] SOLVE → POST-CLEAN request erkannt (threshold={post_thr:.6f})")
             try:
-                # Fallback, falls der Operator (noch) nicht registriert ist
-                from ..Helper.solve_camera import solve_watch_clean  # type: ignore
-                solve_watch_clean(context)
-            except Exception as ex_fn:
-                print(f"[Coord] SOLVE fallback failed: {ex_fn!r}")
-                return self._finish(context, cancelled=True)
-        print("[Coord] SOLVE → FINALIZE")
+                from ..Helper.projection_cleanup_builtin import builtin_projection_cleanup  # type: ignore
+                scn[_POST_THR_KEY] = float(post_thr)
+                report = builtin_projection_cleanup(
+                    context,
+                    error_key=_POST_THR_KEY,
+                    factor=1.0,
+                    frames=0,
+                    action='DELETE_TRACK',
+                    dry_run=False,
+                )
+                print("[Coord] POST-CLEAN report:", {k: report.get(k) for k in ("affected", "threshold", "action")})
+            except Exception as ex:
+                print(f"[Coord] POST-CLEAN failed: {ex!r}")
+            finally:
+                try:
+                    scn.pop(_POST_REQ_KEY, None)
+                except Exception:
+                    pass
+            print("[Coord] SOLVE → FIND_LOW (nach POST-CLEAN)")
+            self._state = "FIND_LOW"
+            return {"RUNNING_MODAL"}
+
+        print("[Coord] SOLVE → FINALIZE (kein POST-CLEAN Signal)")
         self._state = "FINALIZE"
         return {"RUNNING_MODAL"}
 
