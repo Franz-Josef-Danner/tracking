@@ -161,6 +161,29 @@ def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
         except Exception as ex_op:
             print(f"[Coord] projection_cleanup fallback launch failed: {ex_op!r}")
 
+# --- neu auf Modulebene (außerhalb der Klasse) ---
+def _clip_override(context):
+    """Sichert area=CLIP_EDITOR & region=WINDOW und hängt notfalls einen Clip an."""
+    win = context.window
+    if not win:
+        return None
+    scr = getattr(win, "screen", None)
+    if not scr:
+        return None
+    for area in scr.areas:
+        if getattr(area, "type", None) == 'CLIP_EDITOR':
+            for region in area.regions:
+                if getattr(region, "type", None) == 'WINDOW':
+                    space = area.spaces.active
+                    if getattr(space, "clip", None) is None:
+                        clip = _get_active_clip(context)
+                        if clip is not None:
+                            try:
+                                space.clip = clip
+                            except Exception as ex:
+                                print(f"[Coord] WARN: could not assign clip to space: {ex!r}")
+                    return {'area': area, 'region': region, 'space_data': space}
+    return None
 
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     bl_idname = "clip.tracking_coordinator"
@@ -486,31 +509,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # Reset des Retry-Flags für kommenden Solve-Zyklus
         self._solve_retry_done = False
         return {"RUNNING_MODAL"}
-
-    def _clip_override(context):
-        """Sichert area=CLIP_EDITOR & region=WINDOW und hängt notfalls einen Clip an."""
-        win = context.window
-        if not win:
-            return None
-        scr = getattr(win, "screen", None)
-        if not scr:
-            return None
-        for area in scr.areas:
-            if getattr(area, "type", None) == 'CLIP_EDITOR':
-                for region in area.regions:
-                    if getattr(region, "type", None) == 'WINDOW':
-                        space = area.spaces.active
-                        # Falls der CLIP-Editor keinen Clip hat: einen auswählen
-                        if getattr(space, "clip", None) is None:
-                            clip = _get_active_clip(context)
-                            if clip is not None:
-                                try:
-                                    space.clip = clip
-                                except Exception as ex:
-                                    print(f"[Coord] WARN: could not assign clip to space: {ex!r}")
-                        return {'area': area, 'region': region, 'space_data': space}
-        return None
-
 
     def _state_jump(self, context):
         from ..Helper.jump_to_frame import run_jump_to_frame  # type: ignore
