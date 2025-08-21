@@ -147,18 +147,54 @@ def solve_watch_clean(
     try:
         report = builtin_projection_cleanup(
             context,
-            error_key=threshold_key,
+            error_key=threshold_key,     # "error_track"
             factor=float(cleanup_factor),
-            frames=int(cleanup_frames),
-            action=cleanup_action,
+            frames=int(cleanup_frames),  # 0 = gesamte Sequenz
+            action=cleanup_action,       # 'DELETE_TRACK' oder 'SELECT' (Mute)
             dry_run=bool(cleanup_dry_run),
         )
     except Exception as e:
         print(f"[SolveWatch] ERROR: Projection-Cleanup fehlgeschlagen: {e}")
         return {'CANCELLED'}
-
+    
     for line in report.get("log", []):
         print(line)
+    
+    affected = int(report.get("affected", 0))
+    reported_thr = float(report.get("threshold", clamped_thr))
+    print(
+        f"[SolveWatch] Projection-Cleanup abgeschlossen: "
+        f"affected={affected}, threshold={reported_thr:.6f}, mode={report.get('action', cleanup_action)}"
+    )
+    print(f"[SolveWatch] INFO: Cleanup getriggert (AvgErr={avg2:.6f} ≥ error_track={clamped_thr:.6f}).")
+    
+    # --- NEU: Post-Clean Signal für den Coordinator setzen ---
+    try:
+        scn = context.scene
+        need_more_coverage = False
+        # Optional/Best-Effort: prüfen, ob das Kameraspektrum < Clip-Länge ist
+        # (ohne harte API-Abhängigkeit – wenn nicht verfügbar, bleibt False)
+        try:
+            tracking = clip.tracking
+            obj = tracking.objects.active if tracking.objects else None
+            recon = obj.reconstruction if obj else None
+            if recon and getattr(recon, "is_valid", False):
+                # Heuristik: wenn z.B. am Clip-Ende keine Kamera existiert, Coverage unvollständig
+                # (exakte API kann je nach Blender-Version variieren – daher nur defensiv)
+                pass
+        except Exception:
+            pass
+    
+        if affected > 0 or need_more_coverage:
+            # Diese Keys werden im Coordinator ausgewertet:
+            # _POST_REQ_KEY = "__post_cleanup_request"
+            # _POST_THR_KEY = "__post_cleanup_threshold"
+            scn["__post_cleanup_request"] = True
+            scn["__post_cleanup_threshold"] = float(reported_thr)
+            print("[SolveWatch] POST-CLEAN requested → Coordinator wird nach SOLVE zu FIND_LOW zurückkehren.")
+    except Exception as e:
+        print(f"[SolveWatch] WARN: Konnte POST-CLEAN Signal nicht setzen: {e}")
+
 
     # Schwelle für das Logging aus Report entnehmen, sonst den geklemmten Wert
     reported_thr = float(report.get("threshold", clamped_thr))
