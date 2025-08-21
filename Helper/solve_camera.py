@@ -1,29 +1,52 @@
-# Helper/solve_camera.py
-
 from __future__ import annotations
-import bpy
 
-# Sicherstellen, dass der Refine-Helper geladen ist (liegt in Helper/)
-from .refine_high_error import run_refine_on_high_error  # noqa: F401 (import beibehalten, keine Funktionsänderung)
-from .projection_cleanup_builtin import builtin_projection_cleanup, find_clip_window
+"""
+solve_camera.py — Orchestrator for camera solving + projection cleanup (builtin)
+
+Fixes included:
+- Run builtin projection cleanup inside a guaranteed CLIP_EDITOR context
+- Use 'resolve_error' (per process spec) as the threshold key for cleanup
+- Post-clean signal to Coordinator when cleanup affected tracks OR when
+  camera coverage has gaps (e.g., "No camera for frame …")
+- Cleaner logging, PEP 8 formatting
+
+This module assumes that another part of the pipeline stores an error
+threshold in scene["resolve_error"]. If it's missing, we fall back to
+current solve average error.
+"""
+
+import bpy
+from typing import Optional, Tuple, Set
+
+# Keep import (side-effect: ensure helper is loaded; do not remove)
+from .refine_high_error import run_refine_on_high_error  # noqa: F401
+from .projection_cleanup_builtin import (
+    builtin_projection_cleanup,
+    find_clip_window,
+)
 
 __all__ = (
     "solve_watch_clean",
     "run_solve_watch_clean",
 )
 
-# -------------------------- Kontext-/Helper-Funktionen ------------------------
 
-def _find_clip_window(context):
-    """Sichert einen gültigen CLIP_EDITOR-Kontext für Operator-Aufrufe."""
+# ---------------------------------------------------------------------------
+# Context & helper utilities
+# ---------------------------------------------------------------------------
+
+def _find_clip_window(context: bpy.types.Context) -> Tuple[
+    Optional[bpy.types.Area], Optional[bpy.types.Region], Optional[bpy.types.Space]
+]:
+    """Return an area/region/space triple for the CLIP_EDITOR if available."""
     win = context.window
     if not win or not getattr(win, "screen", None):
         return None, None, None
     for area in win.screen.areas:
-        if area.type == 'CLIP_EDITOR':
+        if area.type == "CLIP_EDITOR":
             region_window = None
             for r in area.regions:
-                if r.type == 'WINDOW':
+                if r.type == "WINDOW":
                     region_window = r
                     break
             if region_window:
@@ -31,14 +54,16 @@ def _find_clip_window(context):
     return None, None, None
 
 
-def _get_active_clip(context):
+def _get_active_clip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
     space = getattr(context, "space_data", None)
     if space and getattr(space, "clip", None):
         return space.clip
     return bpy.data.movieclips[0] if bpy.data.movieclips else None
 
 
-def _get_reconstruction(context):
+def _get_reconstruction(
+    context: bpy.types.Context,
+) -> Tuple[Optional[bpy.types.MovieClip], Optional[object]]:
     clip = _get_active_clip(context)
     if not clip:
         return None, None
@@ -46,16 +71,16 @@ def _get_reconstruction(context):
     return clip, obj.reconstruction
 
 
-def _solve_once(context, *, label: str = "") -> float:
-    """Startet Solve synchron per Operator, liefert average_error (oder 0.0)."""
+def _solve_once(context: bpy.types.Context, *, label: str = "") -> float:
+    """Run the Blender solve operator and return the reconstruction avg error."""
     area, region, space = _find_clip_window(context)
     if not area:
-        raise RuntimeError("Kein CLIP_EDITOR-Fenster gefunden (Kontext erforderlich).")
+        raise RuntimeError("No CLIP_EDITOR window found (context required).")
 
     with context.temp_override(area=area, region=region, space_data=space):
-        res = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-        if res != {'FINISHED'}:
-            raise RuntimeError("Solve fehlgeschlagen oder abgebrochen.")
+        res = bpy.ops.clip.solve_camera("INVOKE_DEFAULT")
+        if res != {"FINISHED"}:
+            raise RuntimeError("Solve failed or was cancelled.")
 
     _, recon = _get_reconstruction(context)
     avg = float(getattr(recon, "average_error", 0.0)) if (recon and recon.is_valid) else 0.0
@@ -63,167 +88,214 @@ def _solve_once(context, *, label: str = "") -> float:
     return avg
 
 
-# ------------------------------- Orchestrator --------------------------------
+def _compute_camera_coverage(
+    clip: Optional[bpy.types.MovieClip],
+    recon: Optional[object],
+) -> dict:
+    """Best-effort coverage heuristic over reconstructed cameras.
+
+    Returns a dict with:
+      - has_gap: bool
+      - first_cam: Optional[int]
+      - last_cam: Optional[int]
+      - clip_start: Optional[int]
+      - clip_end: Optional[int]
+    """
+    result = {
+        "has_gap": False,
+        "first_cam": None,
+        "last_cam": None,
+        "clip_start": None,
+        "clip_end": None,
+    }
+
+    if not clip or not recon or not getattr(recon, "is_valid", False):
+        return result
+
+    cams: Set[int] = set()
+    try:
+        for c in getattr(recon, "cameras", []):  # MovieTrackingReconstructedCameras
+            frame = getattr(c, "frame", None)
+            if isinstance(frame, int):
+                cams.add(frame)
+    except Exception:
+        pass
+
+    if not cams:
+        return result
+
+    first_cam = min(cams)
+    last_cam = max(cams)
+    # MovieClip frame_start / frame_duration are defined in clip space
+    clip_start = int(getattr(clip, "frame_start", 1))
+    clip_end = clip_start + int(getattr(clip, "frame_duration", 0)) - 1
+
+    result.update(
+        {
+            "first_cam": first_cam,
+            "last_cam": last_cam,
+            "clip_start": clip_start,
+            "clip_end": clip_end,
+            "has_gap": (first_cam > clip_start + 1) or (last_cam < clip_end - 1),
+        }
+    )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Orchestrator
+# ---------------------------------------------------------------------------
 
 def solve_watch_clean(
-    context,
+    context: bpy.types.Context,
     *,
     refine_limit_frames: int = 0,
     cleanup_factor: float = 1.0,
     cleanup_mute_only: bool = False,
     cleanup_dry_run: bool = False,
 ):
-    """
-    Orchestriert:
-      1) Solve (Operator via INVOKE_DEFAULT)
-      2) Solve-Error lesen und in scene['solve_error'] persistieren
-      3) **NEU:** scene['error_track'] auf **mindestens** AvgErr klemmen (niemals darunter)
-      4) CLIP-Projection-Cleanup mit dem (ggf. angehobenen) Schwellwert ausführen
+    """Solve, store errors, run builtin projection cleanup, and signal Coordinator.
+
+    Steps
+    -----
+    1) Run camera solve (INVOKE_DEFAULT)
+    2) Read solve average error and persist to scene['solve_error']
+    3) Determine cleanup threshold using scene['resolve_error'] (spec) or fallback
+       to current solve average if missing
+    4) Run builtin projection cleanup inside a guaranteed CLIP_EDITOR context
+    5) If tracks were affected or coverage has gaps, set post-clean flags for the
+       Coordinator to loop back to FIND_LOW / tracking
     """
     scene = context.scene
 
-    # --- 0) Clip-Kontext sicherstellen ---
+    # --- 0) Ensure CLIP context/clip is available ---
     area, region, space = find_clip_window(context)
     if not area or not space or not getattr(space, "clip", None):
-        print("[SolveWatch] ERROR: Kein aktiver Movie Clip im CLIP_EDITOR gefunden.")
-        return {'CANCELLED'}
+        print("[SolveWatch] ERROR: No active Movie Clip in CLIP_EDITOR found.")
+        return {"CANCELLED"}
+
     clip = space.clip
 
-    # --- 1) Kamera-Solve ausführen ---
-    print("[SolveWatch] Starte Kamera-Solve …")
+    # --- 1) Solve camera ---
+    print("[SolveWatch] Starting camera solve …")
     with context.temp_override(area=area, region=region, space_data=space):
         try:
-            # WICHTIG: INVOKE_DEFAULT
-            res = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+            res = bpy.ops.clip.solve_camera("INVOKE_DEFAULT")
         except Exception as e:
-            print(f"[SolveWatch] ERROR: Solve-Aufruf fehlgeschlagen: {e}")
-            return {'CANCELLED'}
-    print(f"[SolveWatch] Solve-Operator Rückgabe: {res}")
+            print(f"[SolveWatch] ERROR: Solve operator call failed: {e}")
+            return {"CANCELLED"}
+    print(f"[SolveWatch] Solve-Operator returned: {res}")
 
-    # --- 2) Solve-Error sicher auslesen ---
-    avg2 = None
+    # --- 2) Read solve error ---
+    avg_err: Optional[float] = None
     try:
-        # Aktives Tracking-Objekt → Reconstruction
         tracking = clip.tracking
         obj = tracking.objects.active if tracking.objects else None
         recon = obj.reconstruction if obj else None
         if recon and getattr(recon, "is_valid", False):
-            avg2 = float(getattr(recon, "average_error", 0.0))
+            avg_err = float(getattr(recon, "average_error", 0.0))
     except Exception as e:
-        print(f"[SolveWatch] WARN: Konnte Solve-Error nicht lesen: {e}")
+        print(f"[SolveWatch] WARN: Could not read solve error: {e}")
 
-    if avg2 is None:
-        print("[SolveWatch] ERROR: Solve-Error konnte nicht ermittelt werden (Reconstruction ungültig).")
-        return {'CANCELLED'}
+    if avg_err is None:
+        print("[SolveWatch] ERROR: Solve error could not be determined (invalid reconstruction).")
+        return {"CANCELLED"}
 
-    print(f"[SolveWatch] Solve OK (AvgErr={avg2:.6f}).")
+    print(f"[SolveWatch] Solve OK (AvgErr={avg_err:.6f}).")
+    scene["solve_error"] = float(avg_err)
+    print(f"[SolveWatch] Persisted: scene['solve_error'] = {avg_err:.6f}")
 
-    # --- 3) Persistieren + Schwellen steuern ---
-    scene["solve_error"] = float(avg2)
-    print(f"[SolveWatch] Persistiert: scene['solve_error'] = {avg2:.6f}")
-
-    # NEU: Cleanup-Schwelle niemals unter dem Solve-AvgErr verwenden
-    current_thr = float(scene.get("error_track", 2.0))
-    clamped_thr = max(current_thr, float(avg2))
-    if clamped_thr != current_thr:
-        scene["error_track"] = clamped_thr
-        print(
-            f"[SolveWatch] NEU: scene['error_track'] von {current_thr:.6f} → {clamped_thr:.6f} angehoben (>= AvgErr)."
-        )
-    else:
-        print(f"[SolveWatch] INFO: error_track ({current_thr:.6f}) ≥ AvgErr ({avg2:.6f}) – keine Anhebung nötig.")
-
-    # Standard-Keys/Parameter
-    threshold_key = "error_track"
-    cleanup_frames = 0  # gesamte Sequenz
-    cleanup_action = 'SELECT' if bool(cleanup_mute_only) else 'DELETE_TRACK'
-
+    # --- 3) Threshold selection (spec: use 'resolve_error') ---
+    threshold_key = "resolve_error"
+    # Fallback to current solve average if the pipeline hasn't set resolve_error yet
+    threshold_base = float(scene.get(threshold_key, avg_err))
     print(
-        f"[SolveWatch] Starte Projection-Cleanup (builtin): key={threshold_key}, "
-        f"factor={cleanup_factor}, frames={cleanup_frames}, action={cleanup_action}, dry_run={cleanup_dry_run}"
+        f"[SolveWatch] Cleanup threshold source: scene['{threshold_key}'] = "
+        f"{threshold_base:.6f} (fallback to AvgErr if missing)."
     )
 
-    # --- 4) Built-in Cleanup ausführen ---
+    cleanup_frames = 0  # 0 = whole sequence (interpreted by helper)
+    cleanup_action = "SELECT" if bool(cleanup_mute_only) else "DELETE_TRACK"
+
+    print(
+        "[SolveWatch] Running builtin Projection-Cleanup: "
+        f"key={threshold_key}, factor={cleanup_factor}, frames={cleanup_frames}, "
+        f"action={cleanup_action}, dry_run={cleanup_dry_run}"
+    )
+
+    # --- 4) Builtin Cleanup in safe CLIP context ---
     try:
-        report = builtin_projection_cleanup(
-            context,
-            error_key=threshold_key,     # "error_track"
-            factor=float(cleanup_factor),
-            frames=int(cleanup_frames),  # 0 = gesamte Sequenz
-            action=cleanup_action,       # 'DELETE_TRACK' oder 'SELECT' (Mute)
-            dry_run=bool(cleanup_dry_run),
-        )
+        with context.temp_override(area=area, region=region, space_data=space):
+            report = builtin_projection_cleanup(
+                context,
+                error_key=threshold_key,
+                factor=float(cleanup_factor),
+                frames=int(cleanup_frames),
+                action=cleanup_action,
+                dry_run=bool(cleanup_dry_run),
+            )
     except Exception as e:
-        print(f"[SolveWatch] ERROR: Projection-Cleanup fehlgeschlagen: {e}")
-        return {'CANCELLED'}
-    
+        print(f"[SolveWatch] ERROR: Projection-Cleanup failed: {e}")
+        return {"CANCELLED"}
+
     for line in report.get("log", []):
         print(line)
-    
+
     affected = int(report.get("affected", 0))
-    reported_thr = float(report.get("threshold", clamped_thr))
+    reported_thr = float(report.get("threshold", threshold_base))
     print(
-        f"[SolveWatch] Projection-Cleanup abgeschlossen: "
-        f"affected={affected}, threshold={reported_thr:.6f}, mode={report.get('action', cleanup_action)}"
-    )
-    print(f"[SolveWatch] INFO: Cleanup getriggert (AvgErr={avg2:.6f} ≥ error_track={clamped_thr:.6f}).")
-    
-    # --- NEU: Post-Clean Signal für den Coordinator setzen ---
-    try:
-        scn = context.scene
-        need_more_coverage = False
-        # Optional/Best-Effort: prüfen, ob das Kameraspektrum < Clip-Länge ist
-        # (ohne harte API-Abhängigkeit – wenn nicht verfügbar, bleibt False)
-        try:
-            tracking = clip.tracking
-            obj = tracking.objects.active if tracking.objects else None
-            recon = obj.reconstruction if obj else None
-            if recon and getattr(recon, "is_valid", False):
-                # Heuristik: wenn z.B. am Clip-Ende keine Kamera existiert, Coverage unvollständig
-                # (exakte API kann je nach Blender-Version variieren – daher nur defensiv)
-                pass
-        except Exception:
-            pass
-    
-        if affected > 0 or need_more_coverage:
-            # Diese Keys werden im Coordinator ausgewertet:
-            # _POST_REQ_KEY = "__post_cleanup_request"
-            # _POST_THR_KEY = "__post_cleanup_threshold"
-            scn["__post_cleanup_request"] = True
-            scn["__post_cleanup_threshold"] = float(reported_thr)
-            print("[SolveWatch] POST-CLEAN requested → Coordinator wird nach SOLVE zu FIND_LOW zurückkehren.")
-    except Exception as e:
-        print(f"[SolveWatch] WARN: Konnte POST-CLEAN Signal nicht setzen: {e}")
-
-
-    # Schwelle für das Logging aus Report entnehmen, sonst den geklemmten Wert
-    reported_thr = float(report.get("threshold", clamped_thr))
-    print(
-        f"[SolveWatch] Projection-Cleanup abgeschlossen: "
-        f"affected={int(report.get('affected', 0))}, "
-        f"threshold={reported_thr:.6f}, "
+        "[SolveWatch] Projection-Cleanup done: "
+        f"affected={affected}, threshold={reported_thr:.6f}, "
         f"mode={report.get('action', cleanup_action)}"
     )
 
-    print(
-        f"[SolveWatch] INFO: Cleanup getriggert (AvgErr={avg2:.6f} ≥ error_track={clamped_thr:.6f})."
-    )
-    return {'FINISHED'}
+    # --- 5) Post-clean signal to Coordinator (affected OR coverage gaps) ---
+    need_more_coverage = False
+    try:
+        tracking = clip.tracking
+        obj = tracking.objects.active if tracking.objects else None
+        recon = obj.reconstruction if obj else None
+        cov = _compute_camera_coverage(clip, recon)
+        need_more_coverage = bool(cov.get("has_gap", False))
+        if need_more_coverage:
+            print(
+                "[SolveWatch] Coverage gaps detected: "
+                f"first_cam={cov.get('first_cam')}, last_cam={cov.get('last_cam')}, "
+                f"clip_range=[{cov.get('clip_start')}..{cov.get('clip_end')}]"
+            )
+    except Exception:
+        # Best-effort only
+        pass
+
+    if affected > 0 or need_more_coverage:
+        scene["__post_cleanup_request"] = True
+        scene["__post_cleanup_threshold"] = float(reported_thr)
+        print(
+            "[SolveWatch] POST-CLEAN requested → Coordinator will jump to FIND_LOW "
+            f"(threshold={reported_thr:.6f}, affected={affected}, coverage_gap={need_more_coverage})."
+        )
+    else:
+        print("[SolveWatch] No POST-CLEAN request (no affected tracks and no coverage gap).")
+
+    return {"FINISHED"}
 
 
-# -------------- Convenience-Wrapper (für Aufrufe aus __init__.py etc.) -------
+# ---------------------------------------------------------------------------
+# Convenience wrapper (for calls from __init__.py, operators, etc.)
+# ---------------------------------------------------------------------------
 
 def run_solve_watch_clean(
-    context,
+    context: bpy.types.Context,
     refine_limit_frames: int = 0,
     cleanup_factor: float = 1.0,
     cleanup_mute_only: bool = False,
     cleanup_dry_run: bool = False,
 ):
-    """Identisches Verhalten wie solve_watch_clean, aber ohne separaten Operator-Dispatch."""
+    """Same behavior as solve_watch_clean but resolves CLIP_EDITOR override here."""
     area, region, space = _find_clip_window(context)
     if not area:
-        raise RuntimeError("Kein CLIP_EDITOR-Fenster gefunden (Kontext erforderlich).")
+        raise RuntimeError("No CLIP_EDITOR window found (context required).")
+
     with context.temp_override(area=area, region=region, space_data=space):
         return solve_watch_clean(
             context,
