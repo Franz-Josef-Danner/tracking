@@ -2,11 +2,11 @@ from future import annotations
 
 import bpy
 
-=====================================================================
 
-Utility-Funktionen für Marker-Namen und Pattern-Triplet
 
-=====================================================================
+# Utility-Funktionen für Marker-Namen und Pattern-Triplet
+
+
 
 from typing import Iterable, List, Set, Tuple
 
@@ -22,11 +22,10 @@ def _get_pattern_size(tracking: bpy.types.MovieTracking) -> int: try: return int
 
 def _run_detect_features_in_context(margin: int = None, min_distance: int = None, threshold: float = None): kw = {} if margin is not None: kw["margin"] = int(margin) if min_distance is not None: kw["min_distance"] = int(min_distance) if threshold is not None: kw["threshold"] = float(threshold) try: return bpy.ops.clip.detect_features(**kw) except TypeError: return bpy.ops.clip.detect_features()
 
-=====================================================================
 
-Öffentliche Funktion: Pattern-Triplet mit Namensaggregation
 
-=====================================================================
+# Öffentliche Funktion: Pattern-Triplet mit Namensaggregation
+
 
 def run_pattern_triplet_and_select_by_name( context: bpy.types.Context, *, scale_low: float = 0.8, scale_high: float = 1.2, also_include_ready_selection: bool = True, adjust_search_with_pattern: bool = False, ) -> dict: clip = getattr(context, "edit_movieclip", None) or getattr(getattr(context, "space_data", None), "clip", None) if not clip: for c in bpy.data.movieclips: clip = c break if not clip: print("[PatternTriplet] Kein MovieClip verfügbar.") return {"status": "FAILED", "reason": "no_movieclip"}
 
@@ -101,11 +100,11 @@ return {
     "names": sorted(aggregated_names),
 }
 
-=====================================================================
 
-Integration in run_detect_once (READY-Zweig)
 
-=====================================================================
+# Integration in run_detect_once (READY-Zweig)
+
+
 
 from typing import Any, Dict, Optional
 
