@@ -350,86 +350,57 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     def _state_find_low(self, context):
         from ..Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
-
+    
         result = run_find_low_marker_frame(context)
         status = str(result.get("status", "FAILED")).upper()
-
+    
         if status == "FOUND":
             frame = int(result.get("frame", context.scene.frame_current))
             context.scene[_GOTO_KEY] = frame
             self._jump_done = False
             print(f"[Coord] FIND_LOW → FOUND frame={frame} → JUMP")
             self._state = "JUMP"
-
+    
         elif status == "NONE":
             # Zwischen-Schritt: Clean Error Tracks **bevor** wir zum Solve gehen
             print("[Coord] FIND_LOW → NONE → CLEAN_ERROR_TRACKS → SOLVE")
             try:
                 from ..Helper.clean_error_tracks import run_clean_error_tracks  # type: ignore
-                run_clean_error_tracks(context, show_popups=True)  # synchron, eigener CLIP-Override
+                # Läuft synchron durch, hat eigenes CLIP_EDITOR-Kontext-Override
+                run_clean_error_tracks(context, show_popups=True)
             except Exception as ex_clean:
                 # Cleaner darf den Ablauf nicht blockieren – nur loggen und weiter
                 print(f"[Coord] CLEAN_ERROR_TRACKS failed: {ex_clean!r}")
             # Danach normal weiter zum Solve
             self._state = "SOLVE"
-
+    
         else:
             context.scene[_GOTO_KEY] = context.scene.frame_current
             self._jump_done = False
             print(f"[Coord] FIND_LOW → FAILED ({result.get('reason', '?')}) → JUMP (best-effort)")
             self._state = "JUMP"
-
+    
         return {"RUNNING_MODAL"}
+
 
     def _state_solve(self, context):
         """Solve-Start (asynchron, INVOKE_DEFAULT) → dann in SOLVE_WAIT wechseln."""
-        from contextlib import nullcontext
-    
-        # Garantiert CLIP_EDITOR/WINDOW für beide Calls
-        ovr = _clip_override(context)
-        ctxmgr = context.temp_override(**ovr) if ovr else nullcontext()
-    
         try:
-            with ctxmgr:
-                # Nur beim allerersten Solve in diesem Zyklus: CleanErrorTracks
-                if not self._solve_retry_done:
-                    try:
-                        from ..Helper.clean_error_tracks import run_clean_error_tracks  # type: ignore
-                        print("[Coord] SOLVE (first run) → run_clean_error_tracks()")
-                        run_clean_error_tracks(context, show_popups=True)
-                    except Exception as ex_clean:
-                        print(f"[Coord] CleanErrorTracks failed: {ex_clean!r}")
-    
-                # Solve starten
-                try:
-                    from ..Helper.solve_camera import solve_watch_clean  # type: ignore
-                    print("[Coord] SOLVE → solve_watch_clean()")
-                    res = solve_watch_clean(context)  # erwartet RUNNING_MODAL
-                    print(f"[Coord] SOLVE → solve_watch_clean() returned {res}")
-                except Exception as ex:
-                    print(f"[Coord] SOLVE failed to start: {ex!r}")
-                    return self._handle_failed_solve(context)
-        except Exception as ex_ctx:
-            print(f"[Coord] SOLVE context override failed: {ex_ctx!r}")
+            from ..Helper.solve_camera import solve_watch_clean  # type: ignore
+            print("[Coord] SOLVE → solve_watch_clean()")
+            res = solve_watch_clean(context)  # {'RUNNING_MODAL'} erwartet
+            print(f"[Coord] SOLVE → solve_watch_clean() returned {res}")
+        except Exception as ex:
+            print(f"[Coord] SOLVE failed to start: {ex!r}")
             return self._handle_failed_solve(context)
-    
-        # Rückgabewert robust prüfen – nur bei RUNNING in SOLVE_WAIT wechseln
-        ok = False
-        if isinstance(res, dict):
-            status = str(res.get("status", ""))
-            ok = ("RUNNING_MODAL" in res) or status.upper().startswith("RUNNING")
-        else:
-            ok = str(res).upper().find("RUNNING") != -1
-    
-        if not ok:
-            print("[Coord] SOLVE → not RUNNING → handle_failed_solve()")
-            return self._handle_failed_solve(context)
-    
-        # SOLVE_WAIT initialisieren
+
+        # SOLVE_WAIT initialisieren (nicht blockierend, Timer-getaktet)
         self._solve_wait_ticks = int(_SOLVE_WAIT_TICKS_DEFAULT)
+        # Wichtig: in jeder Solve-Phase (neu gestartet aus FIND_LOW) ist zunächst kein Retry erfolgt
+        # Das Flag wird erst gesetzt, sobald wir tatsächlich REFINE+Retry auslösen.
+        # (Wenn wir aus SOLVE_WAIT heraus ein Retry starten, bleibt derselbe SOLVE-Zyklus.)
         self._state = "SOLVE_WAIT"
         return {"RUNNING_MODAL"}
-
 
     def _state_solve_wait(self, context):
         """Nicht-blockierendes Warten auf gültige Rekonstruktion, danach Error-Bewertung."""
