@@ -136,24 +136,36 @@ def _count_tracks(context) -> int:
 
 
 def _run_clean_error_tracks_and_count(context, show_popups: bool = True) -> int:
-    """Startet Helper/clean_error_tracks und versucht robust die Anzahl gelöschter
-    Tracks zu ermitteln. Unterstützt verschiedene mögliche Rückgabeformen; Fallback: Scene-Key.
+    """Startet Helper/clean_error_tracks und ermittelt robust die Anzahl gelöschter
+    Elemente. Zählt bevorzugt *wirkliche* Deletes (Tracks/Marker), nicht nur Änderungen.
+    Rückgabe: Anzahl gelöschter Items (>0 ⇒ zurück zu FIND_LOW).
     """
     deleted = 0
     try:
         from ..Helper.clean_error_tracks import run_clean_error_tracks  # type: ignore
         res = run_clean_error_tracks(context, show_popups=show_popups)
-        # Rückgabe normalisieren
+        # Rückgabe normalisieren (kennt u. a. Keys aus deinem Helper):
         if isinstance(res, dict):
-            for key in ("deleted", "removed", "num_deleted", "num_removed", "changes", "deleted_count"):
-                val = res.get(key, None)
-                if isinstance(val, (int, float)):
-                    deleted = int(val)
-                    break
-            else:
-                did_delete = res.get("did_delete", None)
-                if isinstance(did_delete, bool):
-                    deleted = 1 if did_delete else 0
+            # 1) Explizite Zähler summieren
+            num = 0
+            for k in ("deleted_tracks", "deleted_markers", "multiscale_deleted", "total_deleted", "num_deleted"):
+                try:
+                    v = int(res.get(k, 0) or 0)
+                    num += max(0, v)
+                except Exception:
+                    pass
+            # 2) Bool-Flag deleted_any als mindestens 1 werten
+            if bool(res.get("deleted_any", False)):
+                num = max(num, 1)
+            # 3) Fallback auf generische Felder
+            if num == 0:
+                for key in ("deleted", "removed", "deleted_count", "num_removed"):
+                    try:
+                        v = int(res.get(key, 0) or 0)
+                        num = max(num, v)
+                    except Exception:
+                        pass
+            deleted = int(num)
         elif isinstance(res, (int, float)):
             deleted = int(res)
     except Exception as ex_clean:
@@ -164,12 +176,11 @@ def _run_clean_error_tracks_and_count(context, show_popups: bool = True) -> int:
         scn_val = int(context.scene.get(_CLEAN_DELETED_KEY, 0) or 0)
         if scn_val > deleted:
             deleted = scn_val
-        # zurücksetzen, damit beim nächsten Lauf frische Werte vorliegen
         context.scene[_CLEAN_DELETED_KEY] = 0
     except Exception:
         pass
 
-    print(f"[Coord] CLEAN_ERROR_TRACKS → reported_deleted={deleted}")
+    print(f"[Coord] CLEAN_ERROR_TRACKS → deleted={deleted}")
     return deleted
 
 
