@@ -1,4 +1,3 @@
-# Operator/tracking_coordinator.py
 from __future__ import annotations
 """
 Tracking-Orchestrator (STRICT)
@@ -22,13 +21,13 @@ NEU (Solve-Workflow – angepasst):
     3) Ist der Solve-Error ≤ scene.error_track → FINALIZE.
 
 Hinweis:
-- Der zuvor vorhandene Aufruf von Helper/clean_error_tracks.run_clean_error_tracks wurde entfernt.
-  Bei FIND_LOW → NONE wird nun direkt in den SOLVE-State verzweigt.
+- Bei FIND_LOW → NONE wird nun zunächst Helper/clean_error_tracks.py gestartet.
+  → Hat der Cleaner etwas gelöscht: zurück zu FIND_LOW.
+  → Hat der Cleaner nichts gefunden: weiter zu SOLVE.
 """
 
 import bpy
 from typing import Optional, Dict
-from contextlib import nullcontext
 
 __all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
 
@@ -50,6 +49,9 @@ _OPT_FRAME_KEY = "__optimize_frame"
 _SOLVE_WAIT_TICKS_DEFAULT = 48  # ≈ 12 s
 _SOLVE_WAIT_TRIES_PER_TICK = 1  # pro Tick nur ein kurzer Versuch (nicht blockierend)
 
+# NEU: optionaler Scene-Zähler, falls der Cleaner dort mitschreibt
+_CLEAN_DELETED_KEY = "__clean_error_deleted"
+
 
 def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
     try:
@@ -61,6 +63,7 @@ def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
 # ---------------------------------------------------------------------------
 # Solve-Error Utilities (lokale Hilfen)
 # ---------------------------------------------------------------------------
+
 
 def _get_active_clip(context) -> Optional[bpy.types.MovieClip]:
     space = getattr(context, "space_data", None)
@@ -120,6 +123,46 @@ def _wait_for_reconstruction(context, tries: int = 12) -> bool:
     return False
 
 
+# --- neu: Cleaner robust starten und Anzahl gelöschter Tracks ermitteln ---
+
+def _run_clean_error_tracks_and_count(context, show_popups: bool = True) -> int:
+    """Startet Helper/clean_error_tracks und versucht robust die Anzahl gelöschter
+    Tracks zu ermitteln. Unterstützt verschiedene mögliche Rückgabeformen; Fallback: Scene-Key.
+    """
+    deleted = 0
+    try:
+        from ..Helper.clean_error_tracks import run_clean_error_tracks  # type: ignore
+        res = run_clean_error_tracks(context, show_popups=show_popups)
+        # Rückgabe normalisieren
+        if isinstance(res, dict):
+            for key in ("deleted", "removed", "num_deleted", "num_removed", "changes", "deleted_count"):
+                val = res.get(key, None)
+                if isinstance(val, (int, float)):
+                    deleted = int(val)
+                    break
+            else:
+                did_delete = res.get("did_delete", None)
+                if isinstance(did_delete, bool):
+                    deleted = 1 if did_delete else 0
+        elif isinstance(res, (int, float)):
+            deleted = int(res)
+    except Exception as ex_clean:
+        print(f"[Coord] CLEAN_ERROR_TRACKS failed: {ex_clean!r}")
+
+    # Fallback: optionaler Scene-Key, wenn der Helper dort mitschreibt
+    try:
+        scn_val = int(context.scene.get(_CLEAN_DELETED_KEY, 0) or 0)
+        if scn_val > deleted:
+            deleted = scn_val
+        # zurücksetzen, damit beim nächsten Lauf frische Werte vorliegen
+        context.scene[_CLEAN_DELETED_KEY] = 0
+    except Exception:
+        pass
+
+    print(f"[Coord] CLEAN_ERROR_TRACKS → deleted={deleted}")
+    return deleted
+
+
 def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
     """Startet Helper/projection_cleanup_builtin; wenn error_value None ist,
     wartet der Helper intern (optional) bis ein Solve-Error verfügbar ist.
@@ -161,7 +204,9 @@ def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
         except Exception as ex_op:
             print(f"[Coord] projection_cleanup fallback launch failed: {ex_op!r}")
 
+
 # --- neu auf Modulebene (außerhalb der Klasse) ---
+
 def _clip_override(context):
     """Sichert area=CLIP_EDITOR & region=WINDOW und hängt notfalls einen Clip an."""
     win = context.window
@@ -184,6 +229,7 @@ def _clip_override(context):
                                 print(f"[Coord] WARN: could not assign clip to space: {ex!r}")
                     return {'area': area, 'region': region, 'space_data': space}
     return None
+
 
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     bl_idname = "clip.tracking_coordinator"
@@ -350,38 +396,35 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     def _state_find_low(self, context):
         from ..Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
-    
+
         result = run_find_low_marker_frame(context)
         status = str(result.get("status", "FAILED")).upper()
-    
+
         if status == "FOUND":
             frame = int(result.get("frame", context.scene.frame_current))
             context.scene[_GOTO_KEY] = frame
             self._jump_done = False
             print(f"[Coord] FIND_LOW → FOUND frame={frame} → JUMP")
             self._state = "JUMP"
-    
+
         elif status == "NONE":
-            # Zwischen-Schritt: Clean Error Tracks **bevor** wir zum Solve gehen
-            print("[Coord] FIND_LOW → NONE → CLEAN_ERROR_TRACKS → SOLVE")
-            try:
-                from ..Helper.clean_error_tracks import run_clean_error_tracks  # type: ignore
-                # Läuft synchron durch, hat eigenes CLIP_EDITOR-Kontext-Override
-                run_clean_error_tracks(context, show_popups=True)
-            except Exception as ex_clean:
-                # Cleaner darf den Ablauf nicht blockieren – nur loggen und weiter
-                print(f"[Coord] CLEAN_ERROR_TRACKS failed: {ex_clean!r}")
-            # Danach normal weiter zum Solve
-            self._state = "SOLVE"
-    
+            # Gate: nur zu SOLVE, wenn der Cleaner nichts mehr findet; sonst zurück zu FIND_LOW
+            print("[Coord] FIND_LOW → NONE → CLEAN_ERROR_TRACKS gate")
+            deleted = _run_clean_error_tracks_and_count(context, show_popups=True)
+            if deleted > 0:
+                print(f"[Coord] CLEAN_ERROR_TRACKS deleted {deleted} → zurück zu FIND_LOW")
+                self._state = "FIND_LOW"
+            else:
+                print("[Coord] CLEAN_ERROR_TRACKS fand nichts → SOLVE")
+                self._state = "SOLVE"
+
         else:
             context.scene[_GOTO_KEY] = context.scene.frame_current
             self._jump_done = False
             print(f"[Coord] FIND_LOW → FAILED ({result.get('reason', '?')}) → JUMP (best-effort)")
             self._state = "JUMP"
-    
-        return {"RUNNING_MODAL"}
 
+        return {"RUNNING_MODAL"}
 
     def _state_solve(self, context):
         """Solve-Start (asynchron, INVOKE_DEFAULT) → dann in SOLVE_WAIT wechseln."""
@@ -449,8 +492,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {"RUNNING_MODAL"}
 
             # Retry wurde bereits gemacht → PROJECTION_CLEANUP mit diesem Error und direkt FIND_LOW
-            print(f"[Coord] SOLVE_WAIT → Error weiterhin zu hoch ({current_err}) "
-                  f"→ PROJECTION_CLEANUP(error_limit={current_err}) → FIND_LOW")
+            print(
+                f"[Coord] SOLVE_WAIT → Error weiterhin zu hoch ({current_err}) "
+                f"→ PROJECTION_CLEANUP(error_limit={current_err}) → FIND_LOW"
+            )
             try:
                 _run_projection_cleanup(context, current_err)  # error_limit = aktueller Solve-Error
             except Exception as ex_cu:
@@ -621,4 +666,3 @@ def register():
 
 def unregister():
     bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
-
