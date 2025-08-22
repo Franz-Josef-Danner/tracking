@@ -22,12 +22,13 @@ NEU (Solve-Workflow – angepasst):
 
 Hinweis:
 - Bei FIND_LOW → NONE wird nun zunächst Helper/clean_error_tracks.py gestartet.
-  → Hat der Cleaner etwas gelöscht: zurück zu FIND_LOW.
+  → Hat der Cleaner etwas gelöscht: zurück zu FIND_LOW (ggf. nach mehreren Durchläufen bis stabil).
   → Hat der Cleaner nichts gefunden: weiter zu SOLVE.
 """
 
+import os
 import bpy
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 
 __all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
 
@@ -125,6 +126,7 @@ def _wait_for_reconstruction(context, tries: int = 12) -> bool:
 
 # --- neu: Cleaner robust starten und Anzahl gelöschter Tracks ermitteln ---
 
+
 def _count_tracks(context) -> int:
     clip = _get_active_clip(context)
     if not clip:
@@ -135,51 +137,66 @@ def _count_tracks(context) -> int:
         return 0
 
 
+def _normalize_clean_error_result(res: Any, scene_val: int = 0) -> int:
+    """Normalisiert diverse Rückgabeformen von run_clean_error_tracks zu einer Zahl.
+    Nutzt bekannte Felder deines Helpers und generische Fallbacks. "scene_val" kann
+    einen externen Scene-basierten Zähler (z. B. __clean_error_deleted) repräsentieren.
+    """
+    if res is None:
+        return max(0, int(scene_val))
+
+    count = 0
+    if isinstance(res, dict):
+        # 1) Explizite Zähler addieren
+        for k in ("deleted_tracks", "deleted_markers", "multiscale_deleted", "total_deleted", "num_deleted"):
+            try:
+                v = int(res.get(k, 0) or 0)
+                count += max(0, v)
+            except Exception:
+                pass
+        # 2) Bool-Flag als mind. 1 zählen
+        if bool(res.get("deleted_any", False)):
+            count = max(count, 1)
+        # 3) Generische Fallbacks
+        if count == 0:
+            for key in ("deleted", "removed", "deleted_count", "num_removed"):
+                try:
+                    v = int(res.get(key, 0) or 0)
+                    count = max(count, v)
+                except Exception:
+                    pass
+    elif isinstance(res, (int, float)):
+        count = int(res)
+
+    try:
+        sv = int(scene_val or 0)
+        count = max(count, sv)
+    except Exception:
+        pass
+    return int(max(0, count))
+
+
 def _run_clean_error_tracks_and_count(context, show_popups: bool = True) -> int:
     """Startet Helper/clean_error_tracks und ermittelt robust die Anzahl gelöschter
     Elemente. Zählt bevorzugt *wirkliche* Deletes (Tracks/Marker), nicht nur Änderungen.
     Rückgabe: Anzahl gelöschter Items (>0 ⇒ zurück zu FIND_LOW).
     """
-    deleted = 0
+    result: Any = None
     try:
         from ..Helper.clean_error_tracks import run_clean_error_tracks  # type: ignore
-        res = run_clean_error_tracks(context, show_popups=show_popups)
-        # Rückgabe normalisieren (kennt u. a. Keys aus deinem Helper):
-        if isinstance(res, dict):
-            # 1) Explizite Zähler summieren
-            num = 0
-            for k in ("deleted_tracks", "deleted_markers", "multiscale_deleted", "total_deleted", "num_deleted"):
-                try:
-                    v = int(res.get(k, 0) or 0)
-                    num += max(0, v)
-                except Exception:
-                    pass
-            # 2) Bool-Flag deleted_any als mindestens 1 werten
-            if bool(res.get("deleted_any", False)):
-                num = max(num, 1)
-            # 3) Fallback auf generische Felder
-            if num == 0:
-                for key in ("deleted", "removed", "deleted_count", "num_removed"):
-                    try:
-                        v = int(res.get(key, 0) or 0)
-                        num = max(num, v)
-                    except Exception:
-                        pass
-            deleted = int(num)
-        elif isinstance(res, (int, float)):
-            deleted = int(res)
+        result = run_clean_error_tracks(context, show_popups=show_popups)
     except Exception as ex_clean:
         print(f"[Coord] CLEAN_ERROR_TRACKS failed: {ex_clean!r}")
 
     # Fallback: optionaler Scene-Key, wenn der Helper dort mitschreibt
+    scene_val = 0
     try:
-        scn_val = int(context.scene.get(_CLEAN_DELETED_KEY, 0) or 0)
-        if scn_val > deleted:
-            deleted = scn_val
+        scene_val = int(context.scene.get(_CLEAN_DELETED_KEY, 0) or 0)
         context.scene[_CLEAN_DELETED_KEY] = 0
     except Exception:
         pass
 
+    deleted = _normalize_clean_error_result(result, scene_val)
     print(f"[Coord] CLEAN_ERROR_TRACKS → deleted={deleted}")
     return deleted
 
@@ -217,7 +234,7 @@ def _run_clean_error_until_stable(context, max_passes: int = 5, show_popups: boo
     return total_delta
 
 
-def _run_projection_cleanup(context, error_value: Optional[float]) -> None:(context, error_value: Optional[float]) -> None:
+def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
     """Startet Helper/projection_cleanup_builtin; wenn error_value None ist,
     wartet der Helper intern (optional) bis ein Solve-Error verfügbar ist.
     """
@@ -260,6 +277,7 @@ def _run_projection_cleanup(context, error_value: Optional[float]) -> None:(cont
 
 
 # --- neu auf Modulebene (außerhalb der Klasse) ---
+
 
 def _clip_override(context):
     """Sichert area=CLIP_EDITOR & region=WINDOW und hängt notfalls einen Clip an."""
@@ -720,3 +738,23 @@ def register():
 
 def unregister():
     bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
+
+
+# ---------------- Self-Tests (reine Python-Checks, laufen nur, wenn explizit aktiviert) ----------------
+if __name__ == "__main__" and os.getenv("ADDON_RUN_TESTS", "0") == "1":
+    # Die Tests prüfen ausschließlich die Normalisierung der Cleaner-Rückgabe,
+    # damit sie ohne Blender-Kontext lauffähig sind.
+    test_cases = [
+        ("empty dict", {}, 0, 0),
+        ("deleted_any", {"status": "FINISHED", "deleted_any": True}, 0, 1),
+        ("tracks+markers", {"deleted_tracks": 2, "deleted_markers": 5}, 0, 7),
+        ("multiscale_only", {"multiscale_deleted": 3}, 0, 3),
+        ("fallback_generic", {"deleted": 4}, 0, 4),
+        ("scene_val_override", {}, 2, 2),
+        ("mixed_all", {"deleted_tracks": 1, "deleted_markers": 1, "deleted_any": True}, 0, 2),
+    ]
+
+    for name, res, scene_val, expected in test_cases:
+        got = _normalize_clean_error_result(res, scene_val)
+        assert got == expected, f"case '{name}': expected {expected}, got {got}"
+    print("[SelfTest] _normalize_clean_error_result: OK (", len(test_cases), "cases )")
