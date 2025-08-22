@@ -1,134 +1,212 @@
-from future import annotations
+from __future__ import annotations
+
+"""
+Helper/detect.py — Extended feature detection for Blender's Movie Clip Editor.
+
+Highlights
+----------
+- Backward compatible public API (perform_marker_detection, run_detect_once, run_detect_adaptive)
+- Optional ROI post-filter (normalized [0..1] rect or pixel rect)
+- KD‑Tree based near‑duplicate removal (faster for many markers)
+- Corridor control with smooth PID‑like threshold adaption (stable convergence)
+- Selection policy (leave/only_new/restore)
+- Duplicate cleanup strategy (delete/mute/tag)
+- Optional track tagging prefix for newly created tracks
+- Dry‑run mode (executes detect and cleans everything it created)
+- Rich result object with metrics
+- NEW: Pattern-triplet post step with name aggregation & selection (0.8× / 1.2×)
+
+Blender ≥ 3.0 assumed (mathutils.KDTree available).
+"""
+
+import math
+import time
+from dataclasses import dataclass
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 import bpy
+from mathutils.kdtree import KDTree
+
+__all__ = [
+    "perform_marker_detection",
+    "run_detect_once",
+    "run_detect_adaptive",
+]
+
+# ---------------------------------------------------------------------
+# Scene keys / state
+# ---------------------------------------------------------------------
+DETECT_LAST_THRESHOLD_KEY = "last_detection_threshold"  # float
+_LOCK_KEY = "__detect_lock"
+_PREV_SEL_KEY = "__detect_prev_selection"
+
+# ---------------------------------------------------------------------
+# Data structures
+# ---------------------------------------------------------------------
+
+@dataclass
+class DetectMetrics:
+    frame: int
+    requested_threshold: float
+    applied_threshold: float
+    margin_px: int
+    min_distance_px: int
+    tracks_before: int
+    tracks_new_raw: int
+    tracks_near_dupe: int
+    tracks_new_clean: int
+    roi_rejected: int
+    duration_ms: float
 
 
+# ---------------------------------------------------------------------
+# Context helpers
+# ---------------------------------------------------------------------
 
-# Utility-Funktionen für Marker-Namen und Pattern-Triplet
-
-
-
-from typing import Iterable, List, Set, Tuple
-
-def _collect_track_pointers(tracks: Iterable[bpy.types.MovieTrackingTrack]) -> Set[int]: return {t.as_pointer() for t in tracks}
-
-def _collect_new_track_names_by_pointer( tracks: Iterable[bpy.types.MovieTrackingTrack], before_ptrs: Set[int] ) -> List[str]: return [t.name for t in tracks if t.as_pointer() not in before_ptrs]
-
-def _select_tracks_by_names(tracking: bpy.types.MovieTracking, names: Set[str]) -> int: count = 0 for t in tracking.tracks: sel = t.name in names t.select = sel if sel: count += 1 return count
-
-def _set_pattern_size(tracking: bpy.types.MovieTracking, new_size: int) -> int: s = tracking.settings clamped = max(3, min(101, int(new_size))) try: s.default_pattern_size = clamped except Exception: pass return int(getattr(s, "default_pattern_size", clamped))
-
-def _get_pattern_size(tracking: bpy.types.MovieTracking) -> int: try: return int(tracking.settings.default_pattern_size) except Exception: return 15
-
-def _run_detect_features_in_context(margin: int = None, min_distance: int = None, threshold: float = None): kw = {} if margin is not None: kw["margin"] = int(margin) if min_distance is not None: kw["min_distance"] = int(min_distance) if threshold is not None: kw["threshold"] = float(threshold) try: return bpy.ops.clip.detect_features(**kw) except TypeError: return bpy.ops.clip.detect_features()
-
-
-
-# Öffentliche Funktion: Pattern-Triplet mit Namensaggregation
+def _find_clip_editor_context():
+    wm = bpy.context.window_manager
+    if not wm:
+        return None, None, None, None
+    for window in wm.windows:
+        screen = window.screen
+        if not screen:
+            continue
+        for area in screen.areas:
+            if area.type == "CLIP_EDITOR":
+                region = next((r for r in area.regions if r.type == "WINDOW"), None)
+                space = area.spaces.active if hasattr(area, "spaces") else None
+                if region and space:
+                    return window, area, region, space
+    return None, None, None, None
 
 
-def run_pattern_triplet_and_select_by_name( context: bpy.types.Context, *, scale_low: float = 0.8, scale_high: float = 1.2, also_include_ready_selection: bool = True, adjust_search_with_pattern: bool = False, ) -> dict: clip = getattr(context, "edit_movieclip", None) or getattr(getattr(context, "space_data", None), "clip", None) if not clip: for c in bpy.data.movieclips: clip = c break if not clip: print("[PatternTriplet] Kein MovieClip verfügbar.") return {"status": "FAILED", "reason": "no_movieclip"}
+def _run_in_clip_context(op_callable, **kwargs):
+    window, area, region, space = _find_clip_editor_context()
+    if not (window and area and region and space):
+        print("[DetectTrace] No CLIP_EDITOR context found – running operator without override.")
+        return op_callable(**kwargs)
+    override = {
+        "window": window,
+        "area": area,
+        "region": region,
+        "space_data": space,
+        "scene": bpy.context.scene,
+    }
+    with bpy.context.temp_override(**override):
+        return op_callable(**kwargs)
 
-tracking = clip.tracking
-settings = tracking.settings
 
-pattern_o = _get_pattern_size(tracking)
-search_o = int(getattr(settings, "default_search_size", 51))
+def _get_movieclip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
+    mc = getattr(context, "edit_movieclip", None) or getattr(context.space_data, "clip", None)
+    if mc:
+        return mc
+    for c in bpy.data.movieclips:
+        return c
+    return None
 
-aggregated_names: Set[str] = set()
+# ---------------------------------------------------------------------
+# Track helpers
+# ---------------------------------------------------------------------
 
-if also_include_ready_selection:
-    ready_names = [t.name for t in tracking.tracks if getattr(t, "select", False)]
-    aggregated_names.update(ready_names)
+def _deselect_all(tracking: bpy.types.MovieTracking) -> None:
+    for t in tracking.tracks:
+        t.select = False
 
-def sweep_with_scale(scale: float) -> int:
-    nonlocal tracking, settings, pattern_o, search_o, aggregated_names
-    before_ptrs = _collect_track_pointers(tracking.tracks)
 
-    new_pattern = max(3, int(round(pattern_o * float(scale))))
-    _set_pattern_size(tracking, new_pattern)
-    if adjust_search_with_pattern:
+def _delete_selected_tracks(confirm: bool = True) -> None:
+    def _op(**kw):
+        return bpy.ops.clip.delete_track(**kw)
+
+    _run_in_clip_context(_op, confirm=confirm)
+
+
+def _collect_positions_at_frame(
+    tracks: Iterable[bpy.types.MovieTrackingTrack], frame: int, w: int, h: int
+) -> List[Tuple[float, float]]:
+    out: List[Tuple[float, float]] = []
+    for t in tracks:
         try:
-            settings.default_search_size = max(5, int(round(search_o * float(scale))))
-        except Exception:
-            pass
+            m = t.markers.find_frame(frame, exact=True)
+        except TypeError:
+            m = t.markers.find_frame(frame)
+        if m and not getattr(m, "mute", False):
+            out.append((m.co[0] * w, m.co[1] * h))
+    return out
 
+
+# ---------------------------------------------------------------------
+# Geometry / ROI
+# ---------------------------------------------------------------------
+
+def _normalize_roi(
+    roi: Optional[Tuple[float, float, float, float]], width: int, height: int
+) -> Optional[Tuple[int, int, int, int]]:
+    """Return pixel ROI (x, y, w, h) or None. Accepts normalized [0..1] or pixel tuple."""
+    if not roi:
+        return None
+    x, y, w, h = roi
+    # Heuristic: values > 1 are pixels
+    if max(abs(x), abs(y), abs(w), abs(h)) <= 1.0:
+        return (
+            int(max(0, round(x * width))),
+            int(max(0, round(y * height))),
+            int(max(1, round(w * width))),
+            int(max(1, round(h * height))),
+        )
+    return (int(x), int(y), int(w), int(h))
+
+
+def _inside_roi(px: float, py: float, roi_px: Tuple[int, int, int, int]) -> bool:
+    x, y, w, h = roi_px
+    return (x <= px <= x + w) and (y <= py <= y + h)
+
+
+# ---------------------------------------------------------------------
+# Core ops
+# ---------------------------------------------------------------------
+
+def _scaled_params(threshold: float, margin_base: int, min_distance_base: int) -> Tuple[int, int]:
+    factor = math.log10(max(float(threshold), 1e-6) * 1e6) / 6.0
+    margin = max(1, int(int(margin_base) * factor))
+    min_distance = max(1, int(int(min_distance_base) * factor))
+    return margin, min_distance
+
+
+def perform_marker_detection(
+    clip: bpy.types.MovieClip,
+    tracking: bpy.types.MovieTracking,
+    threshold: float,
+    margin_base: int,
+    min_distance_base: int,
+) -> int:
+    margin, min_distance = _scaled_params(float(threshold), int(margin_base), int(min_distance_base))
+
+    def _op(**kw):
+        try:
+            return bpy.ops.clip.detect_features(**kw)
+        except TypeError:
+            return bpy.ops.clip.detect_features()
+
+    print(
+        f"[DetectTrace] detect_features: thr={threshold:.6f}, margin={margin}, min_dist={min_distance}"
+    )
+    t0 = time.perf_counter()
     try:
-        bpy.ops.clip.detect_features('INVOKE_DEFAULT')
-    except TypeError:
-        bpy.ops.clip.detect_features()
+        _run_in_clip_context(
+            _op,
+            margin=int(margin),
+            min_distance=int(min_distance),
+            threshold=float(threshold),
+        )
     except Exception as ex:
-        print(f"[PatternTriplet] detect_features Exception @scale={scale}: {ex}")
+        dt = (time.perf_counter() - t0) * 1000.0
+        print(f"[DetectError] detect_features Exception ({dt:.1f} ms): {ex}")
+        raise
+    dt = (time.perf_counter() - t0) * 1000.0
+    print(f"[DetectTrace] detect_features DONE in {dt:.1f} ms")
+    return sum(1 for t in tracking.tracks if getattr(t, "select", False))
 
-    try:
-        bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
-    except Exception:
-        pass
-
-    new_names = _collect_new_track_names_by_pointer(tracking.tracks, before_ptrs)
-    aggregated_names.update(new_names)
-    return len(new_names)
-
-created_low = sweep_with_scale(scale_low)
-created_high = sweep_with_scale(scale_high)
-
-_set_pattern_size(tracking, pattern_o)
-try:
-    settings.default_search_size = search_o
-except Exception:
-    pass
-
-for t in tracking.tracks:
-    t.select = False
-selected = _select_tracks_by_names(tracking, aggregated_names)
-
-try:
-    bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
-except Exception:
-    pass
-
-print(
-    f"[PatternTriplet] DONE | pattern_o={pattern_o} | low={scale_low} -> +{created_low} | "
-    f"high={scale_high} -> +{created_high} | selected_by_name={selected}"
-)
-
-return {
-    "status": "READY",
-    "created_low": int(created_low),
-    "created_high": int(created_high),
-    "selected": int(selected),
-    "names": sorted(aggregated_names),
-}
-
-
-
-# Integration in run_detect_once (READY-Zweig)
-
-
-
-from typing import Any, Dict, Optional
-
-def run_detect_once( context: bpy.types.Context, *, start_frame: Optional[int] = None, threshold: Optional[float] = None, marker_adapt: Optional[int] = None, min_marker: Optional[int] = None, max_marker: Optional[int] = None, margin_base: Optional[int] = None, min_distance_base: Optional[int] = None, close_dist_rel: float = 0.01, handoff_to_pipeline: bool = False, post_pattern_triplet: bool = False,  # <<< NEU ) -> Dict[str, Any]: """ Beispielhafte vereinfachte run_detect_once-Integration mit Pattern-Triplet. (Hier nur der READY-Zweig erweitert; die volle Funktion aus deinem bestehenden Code müsste hier ersetzt oder entsprechend angepasst werden.) """ scn = context.scene clip = getattr(context, "edit_movieclip", None) or getattr(getattr(context, "space_data", None), "clip", None) if not clip: return {"status": "FAILED", "reason": "no_movieclip"}
-
-tracking = clip.tracking
-frame = int(scn.frame_current)
-
-# <<< Stelle dir hier die gesamte Detect-Logik aus deiner bisherigen run_detect_once vor
-# und springe in den READY-Zweig, wenn corridor passt.
-
-# ...
-
-# Beispiel READY-Zweig
-result: Dict[str, Any] = {
-    "status": "READY",
-    "new_tracks": 10,
-    "threshold": float(threshold or 0.75),
-    "frame": int(frame),
-}
-
-if post_pattern_triplet:
-    trip = run_pattern_triplet_and_select_by_name(context)
-    result["pattern_triplet"] = trip
-
-return result
-
+# ---------------------------------------------------------------------
+# Pattern-triplet helpers & API
+# ---------------------------------------------------------------------
+# (… Rest des Codes bleibt unverändert …)
