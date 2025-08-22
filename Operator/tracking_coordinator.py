@@ -125,6 +125,16 @@ def _wait_for_reconstruction(context, tries: int = 12) -> bool:
 
 # --- neu: Cleaner robust starten und Anzahl gelöschter Tracks ermitteln ---
 
+def _count_tracks(context) -> int:
+    clip = _get_active_clip(context)
+    if not clip:
+        return 0
+    try:
+        return len(clip.tracking.tracks)
+    except Exception:
+        return 0
+
+
 def _run_clean_error_tracks_and_count(context, show_popups: bool = True) -> int:
     """Startet Helper/clean_error_tracks und versucht robust die Anzahl gelöschter
     Tracks zu ermitteln. Unterstützt verschiedene mögliche Rückgabeformen; Fallback: Scene-Key.
@@ -159,11 +169,44 @@ def _run_clean_error_tracks_and_count(context, show_popups: bool = True) -> int:
     except Exception:
         pass
 
-    print(f"[Coord] CLEAN_ERROR_TRACKS → deleted={deleted}")
+    print(f"[Coord] CLEAN_ERROR_TRACKS → reported_deleted={deleted}")
     return deleted
 
 
-def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
+def _run_clean_error_until_stable(context, max_passes: int = 5, show_popups: bool = True) -> int:
+    """Führt den Cleaner mehrfach aus, bis er nichts mehr findet **oder** die Track-Anzahl
+    nicht weiter sinkt. Robust gegen asynchrone/unklare Rückgaben.
+    Gibt die *gesamt* Anzahl entfernte Tracks (per Heuristik) zurück.
+    """
+    total_delta = 0
+    prev_count = _count_tracks(context)
+
+    for i in range(max(1, int(max_passes))):
+        reported = _run_clean_error_tracks_and_count(context, show_popups=show_popups)
+        # Re-evaluate tatsächliche Änderungen an der Datenstruktur
+        try:
+            bpy.context.view_layer.update()
+        except Exception:
+            pass
+        now = _count_tracks(context)
+        delta = max(0, prev_count - now)
+        if delta == 0 and reported <= 0:
+            print(f"[Coord] CLEAN_ERROR_TRACKS pass {i+1}: no changes → stable")
+            break
+        if delta > 0:
+            total_delta += delta
+        elif reported > 0:
+            # Falls der Cleaner nicht wirklich gelöscht, sondern z. B. deaktiviert hat,
+            # zählt trotzdem als Änderung, aber wir können die Anzahl nicht exakt ableiten.
+            total_delta += reported
+        print(f"[Coord] CLEAN_ERROR_TRACKS pass {i+1}: delta={delta}, reported={reported}, total={total_delta}")
+        prev_count = now
+
+    print(f"[Coord] CLEAN_ERROR_TRACKS total removed ≈ {total_delta}")
+    return total_delta
+
+
+def _run_projection_cleanup(context, error_value: Optional[float]) -> None:(context, error_value: Optional[float]) -> None:
     """Startet Helper/projection_cleanup_builtin; wenn error_value None ist,
     wartet der Helper intern (optional) bis ein Solve-Error verfügbar ist.
     """
@@ -409,10 +452,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         elif status == "NONE":
             # Gate: nur zu SOLVE, wenn der Cleaner nichts mehr findet; sonst zurück zu FIND_LOW
-            print("[Coord] FIND_LOW → NONE → CLEAN_ERROR_TRACKS gate")
-            deleted = _run_clean_error_tracks_and_count(context, show_popups=True)
-            if deleted > 0:
-                print(f"[Coord] CLEAN_ERROR_TRACKS deleted {deleted} → zurück zu FIND_LOW")
+            print("[Coord] FIND_LOW → NONE → CLEAN_ERROR_TRACKS until stable")
+            total_removed = _run_clean_error_until_stable(context, max_passes=5, show_popups=True)
+            if total_removed > 0:
+                print(f"[Coord] CLEAN_ERROR_TRACKS removed ≈{total_removed} → zurück zu FIND_LOW")
                 self._state = "FIND_LOW"
             else:
                 print("[Coord] CLEAN_ERROR_TRACKS fand nichts → SOLVE")
