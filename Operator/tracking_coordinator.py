@@ -362,7 +362,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._state = "JUMP"
 
         elif status == "NONE":
-            print("[Coord] FIND_LOW → NONE → SOLVE")
+            # Zwischen-Schritt: Clean Error Tracks **bevor** wir zum Solve gehen
+            print("[Coord] FIND_LOW → NONE → CLEAN_ERROR_TRACKS → SOLVE")
+            try:
+                from ..Helper.clean_error_tracks import run_clean_error_tracks  # type: ignore
+                run_clean_error_tracks(context, show_popups=True)  # synchron, eigener CLIP-Override
+            except Exception as ex_clean:
+                # Cleaner darf den Ablauf nicht blockieren – nur loggen und weiter
+                print(f"[Coord] CLEAN_ERROR_TRACKS failed: {ex_clean!r}")
+            # Danach normal weiter zum Solve
             self._state = "SOLVE"
 
         else:
