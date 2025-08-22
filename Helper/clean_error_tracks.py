@@ -118,7 +118,7 @@ def run_clean_error_tracks(context, *, show_popups: bool = False):
             context, ovr["area"], ovr["region"], ovr["space_data"],
             list(clip.tracking.tracks), fr, w, h,
             grid=(6, 6), start_delta=None, min_delta=3,
-            outlier_q=2, hysteresis_hits=2, min_cell_items=4
+            outlier_q=0.5, hysteresis_hits=2, min_cell_items=4
         )
         print(f"[MultiScale] total deleted: {deleted}")
         _deps_sync(context)
