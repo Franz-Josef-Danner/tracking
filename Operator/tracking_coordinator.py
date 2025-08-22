@@ -351,6 +351,17 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     def _state_solve(self, context):
         """Solve-Start (asynchron, INVOKE_DEFAULT) → dann in SOLVE_WAIT wechseln."""
+        # Nur vor dem ALLERERSTEN Solve-Versuch dieses Zyklus: Clean Error Tracks
+        # (läuft synchron durch; hat eigenes CLIP_EDITOR-Override im Helper)
+        if not self._solve_retry_done:
+            try:
+                from ..Helper.clean_error_tracks import run_clean_error_tracks  # type: ignore
+                print("[Coord] SOLVE (first run) → run_clean_error_tracks()")
+                run_clean_error_tracks(context, show_popups=True)
+            except Exception as ex_clean:
+                # Fehler im Cleaner sollen den Solve-Flow NICHT blockieren
+                print(f"[Coord] CleanErrorTracks failed: {ex_clean!r}")
+
         try:
             from ..Helper.solve_camera import solve_watch_clean  # type: ignore
             print("[Coord] SOLVE → solve_watch_clean()")
