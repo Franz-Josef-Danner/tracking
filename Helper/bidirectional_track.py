@@ -43,23 +43,27 @@ def _get_pos(track: bpy.types.MovieTrackingTrack, frame: int) -> Vec2:
     return float(mk.co[0]), float(mk.co[1])
 
 
-def _set_pos(track, frame, pos):
-    mk = track.markers.insert_frame(frame, (0.5, 0.5))
-    if mk is None:
-        return  # nichts erzeugen
-    mk = track.markers.insert_frame(frame=frame, co=(0.5, 0.5))
-
-
-def _set_active_for_frame(track, frame, active: bool) -> None:
+def _set_pos(track: bpy.types.MovieTrackingTrack, frame: int, pos: tuple[float, float]) -> None:
+    markers = track.markers
     mk = _find_marker_at_frame(track, frame)
     if mk is None:
-        # NICHT künstlich erzeugen – sonst bläst du die Markerzahl auf
-        return
-    mk.mute = (not active)
-    elif not active and hasattr(track, "mute"):
-        # Fallback: global mute nur für Deaktivierung, nie erzwungenes Aktivieren
-        track.mute = True
+        # Wenn noch kein Marker in diesem Frame existiert, einen anlegen:
+        # Wichtig: 'co=' als Keyword übergeben!
+        ref = markers[0].co if len(markers) > 0 else (0.5, 0.5)
+        mk = markers.insert_frame(frame=frame, co=ref)
+    # Position setzen
+    mk.co[0], mk.co[1] = float(pos[0]), float(pos[1])
 
+def _set_active_for_frame(track: bpy.types.MovieTrackingTrack, frame: int, active: bool) -> None:
+    mk = _find_marker_at_frame(track, frame)
+    if mk is None:
+        # Marker muss existieren, damit wir ihn muten können
+        mk = track.markers.insert_frame(frame=frame, co=(0.5, 0.5))
+    if hasattr(mk, "mute"):
+        mk.mute = (not active)
+    elif not active and hasattr(track, "mute"):
+        # Fallback: nur deaktivieren (nie zwangsweise aktivieren)
+        track.mute = True
 
 def _dist(a: Vec2, b: Vec2) -> float:
     return math.hypot(float(a[0]) - float(b[0]), float(a[1]) - float(b[1]))
