@@ -301,7 +301,7 @@ class CLIP_OT_bidirectional_track(Operator):
             try:
                 # Wichtig: Wir lassen sequence=True (bestehender Ablauf),
                 # die "nur 1 Frame"-Logik wird über unseren Kooperations-Vorstep pro Modal-Tick erreicht.
-                ret = bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
+                ret = bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=False)
             except Exception as ex:
                 print(f"[BidiTrack] EXC beim Start Vorwärts-Tracking: {ex!r}")
                 return self._finish(context, result="FAILED")
@@ -337,7 +337,7 @@ class CLIP_OT_bidirectional_track(Operator):
             total_before = _count_total_markers(clip)
             frames_before = _count_tracks_with_marker_on_frame(clip, context.scene.frame_current)
             try:
-                ret = bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
+                ret = bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=False)
             except Exception as ex:
                 print(f"[BidiTrack] EXC beim Start Rückwärts-Tracking: {ex!r}")
                 return self._finish(context, result="FAILED")
