@@ -278,7 +278,7 @@ def run_pattern_triplet_and_select_by_name(
     if also_include_ready_selection:
         for t in tracking.tracks:
             if getattr(t, "select", False):
-                aggregated_names.add(t.name
+                aggregated_names.add(t.name)
                                      
     def sweep(scale: float) -> int:
         before_ptrs = _collect_track_pointers(tracking.tracks)
