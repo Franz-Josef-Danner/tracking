@@ -17,6 +17,7 @@ from mathutils.kdtree import KDTree
 #  - *Nur* Vorbereitung auf dem aktuellen Frame; das eigentliche Tracking
 #    bleibt unverändert (sequence=False), damit bestehender Ablauf unberührt.
 _TRIPLET_KEY = "__coop_triplets"   # Clip-Property
+_FORWARD_DONE_KEY = "__bidi_forward_done"  # Cleanup-Gate
 
 Vec2 = Tuple[float, float]
 
@@ -354,6 +355,10 @@ class CLIP_OT_bidirectional_track(Operator):
         # Abbruchkriterien: kein aktiver Marker im aktuellen Frame oder Clipende erreicht
         if _count_tracks_with_marker_on_frame(clip, curf) == 0 or (self._frame_end and curf >= int(self._frame_end)):
             print("✓ Keine aktiven Marker mehr (oder Clipende) → FINISH")
+            try:
+                bpy.context.scene[_FORWARD_DONE_KEY] = True
+            except Exception:
+                pass
             return self._finish(context, result="FINISHED")
 
         # 1) Triplet‑Kooperation (optional) auf dem *aktuellen* Frame
@@ -432,6 +437,20 @@ class CLIP_OT_bidirectional_track(Operator):
 
         self._cleanup_timer(context)
 
+        # Kopf der Datei, bei den anderen Keys:
+        _FORWARD_DONE_KEY = "__bidi_forward_done"  # vom Helper gesetzt
+        
+        # ... in deinem Ablauf nach BIDI (Beispiel: in der Methode/State-Transition,
+        # wo aktuell nach dem Bidirectional-Track stets CLEAN_SHORT gestartet wird):
+        scene = context.scene
+        if not bool(scene.get(_FORWARD_DONE_KEY, False)):
+            print("[Coord] CLEAN_SHORT gated: warte auf Vorwärts-Track-Signal …")
+            # → nochmal BIDI starten ODER einfach im selben State bleiben,
+            #    je nachdem, wie du deine Loop baust (RUNNING_MODAL / Timer-Tick etc.).
+            return {'RUNNING_MODAL'}  # oder State nicht wechseln
+        # Signal konsumieren und Cleanup starten
+        scene[_FORWARD_DONE_KEY] = False
+        print("[Coord] Signal erhalten → starte CLEAN_SHORT …")
         # Beibehaltung deines Clean-Short‑Hooks
         try:
             from . import clean_short_tracks
