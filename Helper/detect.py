@@ -251,8 +251,8 @@ def _get_pattern_size(tracking: bpy.types.MovieTracking) -> int:
 def run_pattern_triplet_and_select_by_name(
     context: bpy.types.Context,
     *,
-    scale_low: float = 0.5,
-    scale_high: float = 1.5,
+    scale_low: float = 0.8,
+    scale_high: float = 1.2,
     also_include_ready_selection: bool = True,
     adjust_search_with_pattern: bool = False,
     # NEU:
@@ -265,41 +265,43 @@ def run_pattern_triplet_and_select_by_name(
     """
     clip = getattr(context, "edit_movieclip", None) or getattr(getattr(context, "space_data", None), "clip", None)
     if not clip:
+        for c in bpy.data.movieclips:
+            clip = c
+            break
+    if not clip:
         print("[PatternTriplet] No MovieClip available.")
         return {"status": "FAILED", "reason": "no_movieclip"}
-    
+
     tracking = clip.tracking
     settings = tracking.settings
-    
+
     pattern_o = _get_pattern_size(tracking)
-    search_o = int(getattr(settings, "default_search_size", max(5, pattern_o * 2)))
+    search_o = int(getattr(settings, "default_search_size", 51))
     aggregated_names: Set[str] = set()
-    
+
     if also_include_ready_selection:
         for t in tracking.tracks:
             if getattr(t, "select", False):
                 aggregated_names.add(t.name)
-    
+                                     
     def sweep(scale: float) -> int:
         before_ptrs = _collect_track_pointers(tracking.tracks)
         new_pattern = max(3, int(round(pattern_o * float(scale))))
         _set_pattern_size(tracking, new_pattern)
+        if adjust_search_with_pattern:
+            try:
+                settings.default_search_size = max(5, int(round(search_o * float(scale))))
+            except Exception:
+                pass
     
-        # NEU: search size = pattern_size * 2
-        try:
-            settings.default_search_size = max(5, new_pattern * 2)
-        except Exception:
-            pass
-
-    
-        # detect_features mit identischen Parametern wie im READY-Pass
         def _op(**kw):
             return bpy.ops.clip.detect_features(**kw)
     
+        # exakt dieselben Detect-Parameter wie im READY-Pass verwenden
         kw = {}
-        if detect_threshold is not None:    kw["threshold"] = float(detect_threshold)
-        if detect_margin is not None:       kw["margin"] = int(detect_margin)
-        if detect_min_distance is not None: kw["min_distance"] = int(detect_min_distance)
+        if detect_threshold is not None:   kw["threshold"] = float(detect_threshold)
+        if detect_margin is not None:      kw["margin"] = int(detect_margin)
+        if detect_min_distance is not None:kw["min_distance"] = int(detect_min_distance)
     
         try:
             _run_in_clip_context(_op, **kw)
@@ -314,19 +316,16 @@ def run_pattern_triplet_and_select_by_name(
         new_names = _collect_new_track_names_by_pointer(tracking.tracks, before_ptrs)
         aggregated_names.update(new_names)
         return len(new_names)
-    
-    # Sweeps ausführen
+
+
     created_low = sweep(scale_low)
     created_high = sweep(scale_high)
-    
-    # --- Rückstellung NACH den Sweeps (einmalig) ---
+
     _set_pattern_size(tracking, pattern_o)
     try:
-        # Konsistenz: Search-Size zurück auf 2 × ursprüngliches Pattern
-        settings.default_search_size = max(5, pattern_o * 2)
+        settings.default_search_size = search_o
     except Exception:
         pass
-
 
     for t in tracking.tracks:
         t.select = False
