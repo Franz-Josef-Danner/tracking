@@ -654,7 +654,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             handoff_to_pipeline=True,
             # ---- NEU: Pattern-Triplet aktivieren ----
             post_pattern_triplet=True,
-            triplet_scale_low=0.5,
+            triplet_scale_low=0.7,
             triplet_scale_high=2,
             triplet_include_ready_selection=True,
             triplet_adjust_search_with_pattern=False,
