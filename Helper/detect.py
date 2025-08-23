@@ -255,6 +255,10 @@ def run_pattern_triplet_and_select_by_name(
     scale_high: float = 1.2,
     also_include_ready_selection: bool = True,
     adjust_search_with_pattern: bool = False,
+    # NEU:
+    detect_threshold: Optional[float] = None,
+    detect_margin: Optional[int] = None,
+    detect_min_distance: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Runs two extra detect sweeps with scaled pattern size and selects all newly created
     markers by NAME (aggregated across both sweeps, optionally including current selection).
@@ -290,11 +294,17 @@ def run_pattern_triplet_and_select_by_name(
             except Exception:
                 pass
     
-        # WICHTIG: sicher im CLIP_EDITOR-Kontext ausführen
         def _op(**kw):
             return bpy.ops.clip.detect_features(**kw)
+    
+        # exakt dieselben Detect-Parameter wie im READY-Pass verwenden
+        kw = {}
+        if detect_threshold is not None:   kw["threshold"] = float(detect_threshold)
+        if detect_margin is not None:      kw["margin"] = int(detect_margin)
+        if detect_min_distance is not None:kw["min_distance"] = int(detect_min_distance)
+    
         try:
-            _run_in_clip_context(_op)  # statt bpy.ops.clip.detect_features('INVOKE_DEFAULT')
+            _run_in_clip_context(_op, **kw)
         except Exception as ex:
             print(f"[PatternTriplet] detect_features Exception @scale={scale}: {ex}")
     
@@ -672,13 +682,22 @@ def run_detect_once(
         triplet_result: Optional[Dict[str, Any]] = None
         if post_pattern_triplet:
             try:
+                # identische detect-Parameter berechnen wie im READY-Pass verwendet:
+                margin_applied, min_dist_applied = _scaled_params(float(threshold),
+                                                                  int(margin_base),
+                                                                  int(min_distance_base))
                 triplet_result = run_pattern_triplet_and_select_by_name(
                     context,
                     scale_low=float(triplet_scale_low),
                     scale_high=float(triplet_scale_high),
                     also_include_ready_selection=bool(triplet_include_ready_selection),
                     adjust_search_with_pattern=bool(triplet_adjust_search_with_pattern),
+                    # NEU: festnageln
+                    detect_threshold=float(threshold),
+                    detect_margin=int(margin_applied),
+                    detect_min_distance=int(min_dist_applied),
                 )
+
                 print(f"[DetectTrace] Post pattern-triplet result: {triplet_result}")
             except Exception as ex:
                 print(f"[DetectError] pattern-triplet failed: {ex}")
