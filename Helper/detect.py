@@ -278,8 +278,8 @@ def run_pattern_triplet_and_select_by_name(
     if also_include_ready_selection:
         for t in tracking.tracks:
             if getattr(t, "select", False):
-                aggregated_names.add(t.name)
-
+                aggregated_names.add(t.name
+                                     
     def sweep(scale: float) -> int:
         before_ptrs = _collect_track_pointers(tracking.tracks)
         new_pattern = max(3, int(round(pattern_o * float(scale))))
@@ -289,19 +289,24 @@ def run_pattern_triplet_and_select_by_name(
                 settings.default_search_size = max(5, int(round(search_o * float(scale))))
             except Exception:
                 pass
+    
+        # WICHTIG: sicher im CLIP_EDITOR-Kontext ausführen
+        def _op(**kw):
+            return bpy.ops.clip.detect_features(**kw)
         try:
-            bpy.ops.clip.detect_features('INVOKE_DEFAULT')
-        except TypeError:
-            bpy.ops.clip.detect_features()
+            _run_in_clip_context(_op)  # statt bpy.ops.clip.detect_features('INVOKE_DEFAULT')
         except Exception as ex:
             print(f"[PatternTriplet] detect_features Exception @scale={scale}: {ex}")
+    
         try:
             bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
         except Exception:
             pass
+    
         new_names = _collect_new_track_names_by_pointer(tracking.tracks, before_ptrs)
         aggregated_names.update(new_names)
         return len(new_names)
+
 
     created_low = sweep(scale_low)
     created_high = sweep(scale_high)
