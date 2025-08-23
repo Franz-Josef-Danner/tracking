@@ -451,14 +451,6 @@ class CLIP_OT_bidirectional_track(Operator):
         # Signal konsumieren und Cleanup starten
         scene[_FORWARD_DONE_KEY] = False
         print("[Coord] Signal erhalten → starte CLEAN_SHORT …")
-        # Beibehaltung deines Clean-Short‑Hooks
-        try:
-            from . import clean_short_tracks
-            if hasattr(clean_short_tracks, "clean_short_tracks"):
-                print("[BidiTrack] Starte Clean-Error-Tracks nach Bidirectional Tracking …")
-                clean_short_tracks.clean_short_tracks(context)
-        except Exception as ex:
-            print(f"[BidiTrack] WARN: Clean-Error-Tracks konnte nicht ausgeführt werden: {ex}")
 
         return {'FINISHED'}
 
