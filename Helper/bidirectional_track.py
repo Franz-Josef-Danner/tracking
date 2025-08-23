@@ -82,7 +82,8 @@ def _nearest_pair_midpoint(p1: Vec2, p2: Vec2, p3: Vec2) -> Tuple[int, Vec2]:
 
 
 def _prefix_before_last_us(name: str) -> str:
-    return name.rsplit("_", 1)[0] if "_" in name else name
+    # Akzeptiere Endungen wie "_001" ODER ".001"
+    return re.sub(r'([_.])\d+$', '', name)
 
 
 def _group_triplets_by_name(tracks: List[bpy.types.MovieTrackingTrack]) -> List[Tuple[bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack]]:
