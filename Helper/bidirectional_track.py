@@ -1,6 +1,7 @@
-import time
-import math
 import bpy
+import math
+import time
+import re   # <<< NEU
 from bpy.types import Operator
 from typing import List, Tuple, Dict
 
