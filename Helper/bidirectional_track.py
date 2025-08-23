@@ -1,38 +1,22 @@
-"""Add-on Extension: Cooperative Triplet Per-Frame Tracking
-
-Dieses Snippet ist **ergänzend** zu eurem bestehenden `bidirectional_track.py` zu verstehen
-(keine Änderungen am vorhandenen Code nötig). Es fügt einen separaten Operator
-hinzu, der die vom Nutzer gewünschte Triplet-Kooperation pro Frame umsetzt:
-
-- Es wird **immer nur 1 Frame** vorwärts getrackt; der Operator läuft modal in einer Schleife.
-- Pro Triplet (3 Marker/Tracks) gilt: Ist in einem Frame **einer inaktiv**, werden **alle inaktiv** gesetzt.
-- Sind **alle aktiv**, werden die **zwei nächst beieinander liegenden** Marker bestimmt und der **dritte** Marker
-  exakt **auf den Mittelpunkt** dieses Paares gesetzt (nur für diesen Frame).
-- Danach **einen Frame tracken** (`sequence=False`) und wiederholen, bis `max_steps` erreicht sind.
-
-Triplet-Gruppierung:
-- Standard: automatische Gruppierung nach **räumlicher Nähe** auf dem Start-Frame (Pixelradius `group_radius_px`).
-- Optional: Wenn in der Selektion eine Anzahl von Tracks vorliegt, die durch `name_prefix` in Dreiergruppen
-  zusammengehören, können die Gruppen namentlich gebildet werden (z. B. `BASE_small`, `BASE_mid`, `BASE_large`).
-  Das ist tolerant implementiert: Der gemeinsame **Prefix vor dem letzten Unterstrich** wird als Basis verwendet.
-
-Einbindung: Den gesamten Block unten **ans Ende** eures bestehenden `bidirectional_track.py` kopieren.
-
-"""
-from __future__ import annotations
-
-import math
 import time
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
-
+import math
 import bpy
 from bpy.types import Operator
+from typing import List, Tuple, Dict
+
+# -----------------------------------------------------------------------------
+# NEU: Triplet‑Kooperation (nicht-invasiv)
+# -----------------------------------------------------------------------------
+# Ziel: Vor dem bestehenden Vorwärts/Rückwärts‑Tracking optional pro Frame
+# Triplets kooperieren lassen:
+#  - Ist einer der drei Marker auf dem Frame inaktiv → alle drei inaktiv.
+#  - Sind alle aktiv → zwei nächst beieinander liegende finden, dritten
+#    Marker auf deren Mittelpunkt setzen.
+#  - *Nur* Vorbereitung auf dem aktuellen Frame; das eigentliche Tracking
+#    bleibt unverändert (sequence=True), damit bestehender Ablauf unberührt.
 
 Vec2 = Tuple[float, float]
 
-# -----------------------------------------------------------------------------
-# Utility: Marker-IO pro Frame (defensiv für unterschiedliche Blender-Versionen)
-# -----------------------------------------------------------------------------
 
 def _find_marker_at_frame(track: bpy.types.MovieTrackingTrack, frame: int):
     markers = track.markers
@@ -42,126 +26,54 @@ def _find_marker_at_frame(track: bpy.types.MovieTrackingTrack, frame: int):
         return markers.find_frame(frame)
 
 
-def _ensure_marker_at_frame(track: bpy.types.MovieTrackingTrack, frame: int):
-    mk = _find_marker_at_frame(track, frame)
-    if mk is None:
-        # Fallback: wenn es keinen Marker gibt, nimm letzte bekannte Pos oder Mittelpunkt
-        if len(track.markers) > 0:
-            ref = track.markers[0]
-            mk = track.markers.insert_frame(frame, ref.co)
-        else:
-            mk = track.markers.insert_frame(frame, (0.5, 0.5))
-    return mk
-
-
 def _marker_active(mk) -> bool:
-    # Einige Blender-Versionen führen `mute` am Marker, andere nur am Track.
-    muted = bool(getattr(mk, "mute", False))
-    tr_muted = bool(getattr(getattr(mk, "track", None) or object(), "mute", False))
-    return not (muted or tr_muted)
+    if mk is None:
+        return False
+    muted_marker = bool(getattr(mk, "mute", False))
+    tr = getattr(mk, "track", None)
+    muted_track = bool(getattr(tr, "mute", False)) if tr else False
+    return not (muted_marker or muted_track)
 
 
-def _set_marker_active_for_frame(track: bpy.types.MovieTrackingTrack, frame: int, active: bool) -> None:
-    mk = _ensure_marker_at_frame(track, frame)
-    # Bevorzugt per-Frame: Marker.mute, wenn vorhanden.
-    if hasattr(mk, "mute"):
-        mk.mute = (not active)
-    else:
-        # Fallback: Track.mute (wirkt global), deshalb NUR wenn Inaktivität gewünscht.
-        if not active and hasattr(track, "mute"):
-            track.mute = True
-    # Hinweis: Aktivierung eines global gemuteten Tracks (track.mute=False) unterlassen,
-    # damit bestehende Pipeline-Entscheidungen nicht überschrieben werden.
-
-
-def _get_marker_pos(track: bpy.types.MovieTrackingTrack, frame: int) -> Vec2:
+def _get_pos(track: bpy.types.MovieTrackingTrack, frame: int) -> Vec2:
     mk = _find_marker_at_frame(track, frame)
     if mk is None:
-        if len(track.markers) > 0:
-            mk = track.markers[0]
-        else:
-            return (0.5, 0.5)
+        return 0.5, 0.5
     return float(mk.co[0]), float(mk.co[1])
 
 
-def _set_marker_pos(track: bpy.types.MovieTrackingTrack, frame: int, pos: Vec2) -> None:
-    mk = _ensure_marker_at_frame(track, frame)
+def _set_pos(track: bpy.types.MovieTrackingTrack, frame: int, pos: Vec2) -> None:
+    markers = track.markers
+    mk = _find_marker_at_frame(track, frame)
+    if mk is None:
+        # insert with fallback pos
+        if len(markers) > 0:
+            ref = markers[0].co
+        else:
+            ref = (0.5, 0.5)
+        mk = markers.insert_frame(frame, ref)
     mk.co[0], mk.co[1] = float(pos[0]), float(pos[1])
 
 
-# -----------------------------------------------------------------------------
-# Triplet-Gruppierung
-# -----------------------------------------------------------------------------
-
-def _common_prefix_before_last_underscore(name: str) -> str:
-    if "_" not in name:
-        return name
-    return name.rsplit("_", 1)[0]
-
-
-def _group_triplets_by_name(tracks: Sequence[bpy.types.MovieTrackingTrack]) -> List[Tuple[bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack]]:
-    buckets: Dict[str, List[bpy.types.MovieTrackingTrack]] = {}
-    for t in tracks:
-        key = _common_prefix_before_last_underscore(t.name)
-        buckets.setdefault(key, []).append(t)
-    out = []
-    for key, lst in buckets.items():
-        if len(lst) >= 3:
-            # Nimm jeweils Dreierpakete in stabiler Reihenfolge
-            lst_sorted = sorted(lst, key=lambda tr: tr.name)
-            for i in range(0, len(lst_sorted) - 2, 3):
-                out.append((lst_sorted[i], lst_sorted[i + 1], lst_sorted[i + 2]))
-    return out
+def _set_active_for_frame(track: bpy.types.MovieTrackingTrack, frame: int, active: bool) -> None:
+    mk = _find_marker_at_frame(track, frame)
+    if mk is None:
+        mk = track.markers.insert_frame(frame, (0.5, 0.5))
+    if hasattr(mk, "mute"):
+        mk.mute = (not active)
+    elif not active and hasattr(track, "mute"):
+        # Fallback: global mute nur für Deaktivierung, nie erzwungenes Aktivieren
+        track.mute = True
 
 
-def _group_triplets_by_proximity(
-    tracks: Sequence[bpy.types.MovieTrackingTrack], frame: int, width: int, height: int, radius_px: int
-) -> List[Tuple[bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack]]:
-    # Einfache räumliche Gruppierung: solange möglich, bilde Triplets aus jeweils 3 nächstgelegenen Tracks.
-    remaining = list(tracks)
-    used: set[int] = set()
-    out: List[Tuple[bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack]] = []
-
-    # Hilfsfunktion: Distanz in Pixeln
-    def px_dist(a: bpy.types.MovieTrackingTrack, b: bpy.types.MovieTrackingTrack) -> float:
-        ax, ay = _get_marker_pos(a, frame)
-        bx, by = _get_marker_pos(b, frame)
-        ax, ay, bx, by = ax * width, ay * height, bx * width, by * height
-        dx, dy = ax - bx, ay - by
-        return math.hypot(dx, dy)
-
-    for i, t in enumerate(remaining):
-        if i in used:
-            continue
-        # Nächste 2 Nachbarn innerhalb Radius suchen
-        dists: List[Tuple[float, int]] = []
-        for j, u in enumerate(remaining):
-            if j == i or j in used:
-                continue
-            d = px_dist(t, u)
-            if d <= float(radius_px):
-                dists.append((d, j))
-        dists.sort(key=lambda x: x[0])
-        if len(dists) >= 2:
-            j1 = dists[0][1]
-            j2 = dists[1][1]
-            used.update({i, j1, j2})
-            out.append((remaining[i], remaining[j1], remaining[j2]))
-    return out
-
-
-# -----------------------------------------------------------------------------
-# Kernlogik: nächstliegendes Paar und Mittelpunkt setzen
-# -----------------------------------------------------------------------------
-
-def _distance(p: Vec2, q: Vec2) -> float:
-    return math.hypot(float(p[0]) - float(q[0]), float(p[1]) - float(q[1]))
+def _dist(a: Vec2, b: Vec2) -> float:
+    return math.hypot(float(a[0]) - float(b[0]), float(a[1]) - float(b[1]))
 
 
 def _nearest_pair_midpoint(p1: Vec2, p2: Vec2, p3: Vec2) -> Tuple[int, Vec2]:
-    d12 = _distance(p1, p2)
-    d13 = _distance(p1, p3)
-    d23 = _distance(p2, p3)
+    d12 = _dist(p1, p2)
+    d13 = _dist(p1, p3)
+    d23 = _dist(p2, p3)
     if d12 <= d13 and d12 <= d23:
         return 2, ((p1[0] + p2[0]) * 0.5, (p1[1] + p2[1]) * 0.5)
     if d13 <= d12 and d13 <= d23:
@@ -169,139 +81,327 @@ def _nearest_pair_midpoint(p1: Vec2, p2: Vec2, p3: Vec2) -> Tuple[int, Vec2]:
     return 0, ((p2[0] + p3[0]) * 0.5, (p2[1] + p3[1]) * 0.5)
 
 
-def _cooperate_triplet_on_frame(tracks: Tuple[bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack], frame: int) -> None:
-    t0, t1, t2 = tracks
-    m0 = _find_marker_at_frame(t0, frame)
-    m1 = _find_marker_at_frame(t1, frame)
-    m2 = _find_marker_at_frame(t2, frame)
-    a0 = _marker_active(m0) if m0 else False
-    a1 = _marker_active(m1) if m1 else False
-    a2 = _marker_active(m2) if m2 else False
+def _prefix_before_last_us(name: str) -> str:
+    return name.rsplit("_", 1)[0] if "_" in name else name
 
-    if not (a0 and a1 and a2):
-        # Einer inaktiv → alle inaktiv für diesen Frame
-        for tr in (t0, t1, t2):
-            _set_marker_active_for_frame(tr, frame, False)
-        return
 
-    # Alle aktiv → dritten auf Mittelpunkt der zwei nähesten setzen
-    p0 = _get_marker_pos(t0, frame)
-    p1 = _get_marker_pos(t1, frame)
-    p2 = _get_marker_pos(t2, frame)
-    idx_third, mid = _nearest_pair_midpoint(p0, p1, p2)
-    target = (t0, t1, t2)[idx_third]
-    _set_marker_pos(target, frame, mid)
+def _group_triplets_by_name(tracks: List[bpy.types.MovieTrackingTrack]) -> List[Tuple[bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack]]:
+    buckets: Dict[str, List[bpy.types.MovieTrackingTrack]] = {}
+    for t in tracks:
+        buckets.setdefault(_prefix_before_last_us(t.name), []).append(t)
+    groups = []
+    for _, lst in buckets.items():
+        if len(lst) >= 3:
+            lst = sorted(lst, key=lambda x: x.name)
+            for i in range(0, len(lst) - 2, 3):
+                groups.append((lst[i], lst[i + 1], lst[i + 2]))
+    return groups
+
+
+def _apply_triplet_cooperation_on_frame(clip: bpy.types.MovieClip, frame: int,
+                                         only_selected: bool = True,
+                                         prefer_name_grouping: bool = True) -> int:
+    """Wendet die Regel auf alle erkannten Triplets an (nur aktueller Frame).
+    Rückgabe: Anzahl verarbeiteter Triplets.
+    """
+    tracks_all = list(clip.tracking.tracks)
+    tracks = [t for t in tracks_all if (t.select if only_selected else True)]
+    if not tracks:
+        return 0
+
+    triplets = _group_triplets_by_name(tracks) if prefer_name_grouping else []
+    if not triplets and not prefer_name_grouping:
+        return 0
+    if not triplets:
+        # Fallback: keine Gruppen → nichts tun (konservativ, um Verhalten nicht zu ändern)
+        return 0
+
+    processed = 0
+    for a, b, c in triplets:
+        ma, mb, mc = _find_marker_at_frame(a, frame), _find_marker_at_frame(b, frame), _find_marker_at_frame(c, frame)
+        aa, ab, ac = _marker_active(ma), _marker_active(mb), _marker_active(mc)
+        if not (aa and ab and ac):
+            for tr in (a, b, c):
+                _set_active_for_frame(tr, frame, False)
+            processed += 1
+            continue
+        p1, p2, p3 = _get_pos(a, frame), _get_pos(b, frame), _get_pos(c, frame)
+        idx_third, mid = _nearest_pair_midpoint(p1, p2, p3)
+        target = (a, b, c)[idx_third]
+        _set_pos(target, frame, mid)
+        processed += 1
+    return processed
 
 
 # -----------------------------------------------------------------------------
-# Operator: Cooperative Triplet Track (per-frame, modal)
+# Bestehende Zähl‑Utilities
 # -----------------------------------------------------------------------------
 
-class CLIP_OT_cooperative_triplet_track(Operator):
-    bl_idname = "clip.cooperative_triplet_track"
-    bl_label = "Cooperative Triplet Track (per-frame)"
-    bl_description = (
-        "Triplet-Kooperation: pro Frame drittes Element mittig setzen bzw. alle drei inaktivieren; "
-        "danach genau einen Frame tracken und wiederholen."
-    )
+def _count_total_markers(clip) -> int:
+    try:
+        return sum(len(t.markers) for t in clip.tracking.tracks)
+    except Exception:
+        return 0
 
-    max_steps: bpy.props.IntProperty(
-        name="Max Steps", default=50, min=1, description="Maximalzahl Einzelschritte (Frames)"
+
+def _count_tracks_with_marker_on_frame(clip, frame: int) -> int:
+    cnt = 0
+    try:
+        for tr in clip.tracking.tracks:
+            try:
+                mk = tr.markers.find_frame(frame, exact=True)
+            except TypeError:
+                mk = tr.markers.find_frame(frame)
+            if mk and not getattr(mk, "mute", False):
+                cnt += 1
+    except Exception:
+        pass
+    return cnt
+
+
+class CLIP_OT_bidirectional_track(Operator):
+    bl_idname = "clip.bidirectional_track"
+    bl_label = "Bidirectional Track"
+    bl_description = "Trackt Marker vorwärts und rückwärts (sichtbar im UI) und signalisiert Fertig an Orchestrator"
+
+    # NEU: Option, Triplet‑Kooperation vor dem Tracking pro aktuellem Frame anzuwenden
+    use_cooperative_triplets: bpy.props.BoolProperty(  # type: ignore
+        name="Cooperative Triplets (pre-step)",
+        default=False,
+        description=(
+            "Vor dem Vorwärts/Rückwärts‑Tracking auf dem aktuellen Frame Triplet‑Kooperation anwenden. "
+            "Wirkt nur, wenn die Auswahl in Dreiergruppen per Namenspräfix erkannt wird."
+        ),
     )
-    group_radius_px: bpy.props.IntProperty(
-        name="Group Radius (px)", default=40, min=1, description="Räumliche Gruppierungsschwelle in Pixeln"
-    )
-    prefer_name_grouping: bpy.props.BoolProperty(
-        name="Prefer Name Grouping", default=True,
-        description="Zuerst Dreiergruppen anhand gemeinsamen Namenspräfix bilden, sonst über räumliche Nähe"
+    auto_enable_from_selection: bpy.props.BoolProperty(  # type: ignore
+        name="Auto from Selection",
+        default=True,
+        description=(
+            "Falls genau 3, 6, 9, … Tracks selektiert sind und Namensgruppen erkannt werden, "
+            "aktiviert sich die Kooperations‑Vorstufe automatisch."
+        ),
     )
 
     _timer = None
     _step = 0
     _start_frame = 0
-    _triplets: List[Tuple[bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack]] = []
+
+    _prev_marker_count = -1
+    _prev_frame = -1
+    _stable_count = 0
+
+    # Debug/Tracing
+    _t0 = 0.0
+    _tick = 0
+    _t_last_action = 0.0
+
+    def _dbg_header(self, context, clip):
+        curf = context.scene.frame_current
+        total = _count_total_markers(clip) if clip else -1
+        on_cur = _count_tracks_with_marker_on_frame(clip, curf) if clip else -1
+        print(
+            "[BidiTrack] tick=%d | step=%d | t=%.3fs | frame=%d | "
+            "markers_total=%d | tracks@frame=%d"
+            % (self._tick, self._step, time.perf_counter() - self._t0, int(curf), int(total), int(on_cur))
+        )
 
     def execute(self, context):
-        space = getattr(context, "space_data", None)
-        clip = getattr(space, "clip", None) if space else None
-        if not clip:
-            self.report({'ERROR'}, "Kein aktiver Clip im Tracking-Editor gefunden.")
-            return {'CANCELLED'}
+        # Flags für Orchestrator setzen
+        context.scene["bidi_active"] = True
+        context.scene["bidi_result"] = ""
 
-        scn = context.scene
-        self._start_frame = int(scn.frame_current)
-
-        # Gruppen bilden
-        tracks = list(clip.tracking.tracks)
-        selected_tracks = [t for t in tracks if getattr(t, "select", False)]
-        basis = selected_tracks if selected_tracks else tracks
-
-        triplets: List[Tuple[bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack]] = []
-        if self.prefer_name_grouping:
-            triplets = _group_triplets_by_name(basis)
-
-        if not triplets:
-            w, h = int(clip.size[0]), int(clip.size[1])
-            triplets = _group_triplets_by_proximity(basis, self._start_frame, w, h, int(self.group_radius_px))
-
-        if not triplets:
-            self.report({'ERROR'}, "Keine Triplets gefunden (Name/Proximity). Auswahl oder Radius prüfen.")
-            return {'CANCELLED'}
-
-        self._triplets = triplets
         self._step = 0
+        self._stable_count = 0
+        self._prev_marker_count = -1
+        self._prev_frame = -1
+        self._start_frame = context.scene.frame_current
+
+        self._t0 = time.perf_counter()
+        self._t_last_action = self._t0
+        self._tick = 0
 
         wm = context.window_manager
-        self._timer = wm.event_timer_add(0.25, window=context.window)
+        self._timer = wm.event_timer_add(0.5, window=context.window)
         wm.modal_handler_add(self)
-        print(f"[TripletTrack] START | groups={len(self._triplets)} | start_frame={self._start_frame}")
+
+        # AUTO‑Erkennung: wenn Auswahl plausibel Triplets beinhaltet, auto‑enable
+        try:
+            space = getattr(context, "space_data", None)
+            clip = getattr(space, "clip", None) if space else None
+            if self.auto_enable_from_selection and clip is not None:
+                sel = [t for t in clip.tracking.tracks if getattr(t, "select", False)]
+                if sel and len(sel) % 3 == 0:
+                    # Prüfe, ob Namens‑Triplets gefunden werden können
+                    if _group_triplets_by_name(sel):
+                        self.use_cooperative_triplets = True
+                        print("[BidiTrack] Auto‑enable cooperative triplets based on selection.")
+        except Exception:
+            pass
+
+        # Erste Umgebungsausgabe
+        space = getattr(context, "space_data", None)
+        clip = getattr(space, "clip", None) if space else None
+        total = _count_total_markers(clip) if clip else -1
+        on_start = _count_tracks_with_marker_on_frame(clip, self._start_frame) if clip else -1
+        print("[Tracking] Schritt: 0 (Start Bidirectional Track)")
+        print(
+            "[BidiTrack] INIT | start_frame=%d | markers_total=%d | tracks@start=%d | coop=%s"
+            % (int(self._start_frame), int(total), int(on_start), str(self.use_cooperative_triplets))
+        )
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
-        if event.type != 'TIMER':
-            return {'PASS_THROUGH'}
-        if self._step >= int(self.max_steps):
-            return self._finish(context)
+        if event.type == 'TIMER':
+            self._tick += 1
+            print("[BidiTrack] TIMER tick=%d (dt=%.3fs seit Start)"
+                  % (self._tick, time.perf_counter() - self._t0))
+            return self.run_tracking_step(context)
+        return {'PASS_THROUGH'}
 
+    def run_tracking_step(self, context):
         space = getattr(context, "space_data", None)
         clip = getattr(space, "clip", None) if space else None
-        if not clip:
-            return self._finish(context)
+        if clip is None:
+            self.report({'ERROR'}, "Kein aktiver Clip im Tracking-Editor gefunden.")
+            print("[BidiTrack] ABORT: Kein aktiver Clip im Tracking-Editor.")
+            return self._finish(context, result="FAILED")
 
-        scn = context.scene
-        frame = int(scn.frame_current)
+        self._dbg_header(context, clip)
 
-        # 1) Kooperation auf aktuellem Frame
-        for tri in self._triplets:
-            _cooperate_triplet_on_frame(tri, frame)
+        if self._step == 0:
+            # NEU: Optionale Triplet‑Kooperation auf *aktuellen* Frame anwenden
+            if self.use_cooperative_triplets:
+                processed = _apply_triplet_cooperation_on_frame(
+                    clip,
+                    int(context.scene.frame_current),
+                    only_selected=True,
+                    prefer_name_grouping=True,
+                )
+                if processed > 0:
+                    print(f"[BidiTrack] Cooperative triplets applied on frame {int(context.scene.frame_current)} → groups={processed}")
 
-        # 2) Auswahl auf alle Triplet-Tracks setzen und EINEN Frame tracken
-        for t in clip.tracking.tracks:
-            t.select = False
-        for a, b, c in self._triplets:
-            a.select = True
-            b.select = True
-            c.select = True
-        try:
-            bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=False)
-        except Exception as ex:
-            print(f"[TripletTrack] track_markers failed: {ex}")
+            # Vorwärts-Tracking starten (bestehendes Verhalten)
+            print("→ Starte Vorwärts-Tracking...")
+            total_before = _count_total_markers(clip)
+            frames_before = _count_tracks_with_marker_on_frame(clip, context.scene.frame_current)
+            try:
+                ret = bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
+            except Exception as ex:
+                print(f"[BidiTrack] EXC beim Start Vorwärts-Tracking: {ex!r}")
+                return self._finish(context, result="FAILED")
 
-        # 3) +1 Frame vorwärts
-        try:
-            scn.frame_set(frame + 1)
-        except Exception:
-            scn.frame_current = frame + 1
+            print(
+                f"[BidiTrack] Vorwärts-Tracking ausgelöst | op_ret={ret} | "
+                f"markers_total_before={total_before} | tracks@frame_before={frames_before}"
+            )
+            self._t_last_action = time.perf_counter()
+            self._step = 1
+            return {'PASS_THROUGH'}
 
-        self._step += 1
+        elif self._step == 1:
+            total_now = _count_total_markers(clip)
+            on_cur = _count_tracks_with_marker_on_frame(clip, context.scene.frame_current)
+            print(
+                f"→ Warte auf Abschluss des Vorwärts-Trackings... | "
+                f"markers_total_now={total_now} | tracks@cur={on_cur}"
+            )
+            context.scene.frame_current = self._start_frame
+            self._step = 2
+            print(f"← Frame zurückgesetzt auf {self._start_frame}")
+            return {'PASS_THROUGH'}
+
+        elif self._step == 2:
+            print("→ Frame gesetzt. Warte eine Schleife, bevor Rückwärts-Tracking startet...")
+            self._step = 3
+            return {'PASS_THROUGH'}
+
+        elif self._step == 3:
+            print("→ Starte Rückwärts-Tracking...")
+            total_before = _count_total_markers(clip)
+            frames_before = _count_tracks_with_marker_on_frame(clip, context.scene.frame_current)
+            try:
+                ret = bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
+            except Exception as ex:
+                print(f"[BidiTrack] EXC beim Start Rückwärts-Tracking: {ex!r}")
+                return self._finish(context, result="FAILED")
+
+            print(
+                f"[BidiTrack] Rückwärts-Tracking ausgelöst | op_ret={ret} | "
+                f"markers_total_before={total_before} | tracks@frame_before={frames_before}"
+            )
+            self._t_last_action = time.perf_counter()
+            self._step = 4
+            return {'PASS_THROUGH'}
+
+        elif self._step == 4:
+            return self.run_tracking_stability_check(context, clip)
+
+        return {'PASS_THROUGH'}
+
+    def run_tracking_stability_check(self, context, clip):
+        current_frame = context.scene.frame_current
+        current_marker_count = _count_total_markers(clip)
+        tracks_on_cur = _count_tracks_with_marker_on_frame(clip, current_frame)
+
+        if (self._prev_marker_count == current_marker_count and
+                self._prev_frame == current_frame):
+            self._stable_count += 1
+        else:
+            if self._prev_marker_count != -1:
+                print(
+                    "[BidiTrack] Änderung erkannt | "
+                    f"prev_markers={self._prev_marker_count} -> now={current_marker_count} | "
+                    f"prev_frame={self._prev_frame} -> now={current_frame}"
+                )
+            self._stable_count = 0
+
+        self._prev_marker_count = current_marker_count
+        self._prev_frame = current_frame
+
+        print(
+            f"[Tracking-Stabilität] Frame: {current_frame}, "
+            f"Marker_total: {current_marker_count}, tracks@frame: {tracks_on_cur}, "
+            f"Stabil: {self._stable_count}/2"
+        )
+
         try:
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
         except Exception:
             pass
+
+        if self._stable_count >= 2:
+            print("✓ Tracking stabil erkannt – gebe Fertig-Signal an Orchestrator.")
+            return self._finish(context, result="FINISHED")
+
+        if self._stable_count == 0:
+            dt = time.perf_counter() - self._t_last_action
+            if dt > 1.5:
+                print(f"[BidiTrack] Hinweis: Seit {dt:.2f}s keine Stabilität. "
+                      "Operatoren evtl. noch busy oder keine Markerbewegung messbar.")
+
         return {'PASS_THROUGH'}
 
-    def _finish(self, context):
-        print(f"[TripletTrack] FINISH | steps={self._step} | start={self._start_frame} -> end={context.scene.frame_current}")
+    def _finish(self, context, result="FINISHED"):
+        context.scene["bidi_active"] = False
+        context.scene["bidi_result"] = str(result)
+
+        total_time = time.perf_counter() - self._t0
+        print(f"[BidiTrack] FINISH result={result} | total_time={total_time:.3f}s | ticks={self._tick}")
+
+        self._cleanup_timer(context)
+
+        # Beibehaltung deines Clean-Short‑Hooks
+        try:
+            from . import clean_short_tracks
+            if hasattr(clean_short_tracks, "clean_short_tracks"):
+                print("[BidiTrack] Starte Clean-Error-Tracks nach Bidirectional Tracking …")
+                clean_short_tracks.clean_short_tracks(context)
+        except Exception as ex:
+            print(f"[BidiTrack] WARN: Clean-Error-Tracks konnte nicht ausgeführt werden: {ex}")
+
+        return {'FINISHED'}
+
+    def _cleanup_timer(self, context):
         wm = context.window_manager
         if self._timer is not None:
             try:
@@ -309,27 +409,18 @@ class CLIP_OT_cooperative_triplet_track(Operator):
             except Exception:
                 pass
             self._timer = None
-        return {'FINISHED'}
 
 
-# ---- Helper Aufrufer ----
-
-def run_cooperative_triplet_track(context):
-    return bpy.ops.clip.cooperative_triplet_track('INVOKE_DEFAULT')
-
-
-# ---- Registrierung (zusätzlich zu eurer bestehenden) ----
-
-def register():  # noqa: F811 – absichtlich gleiche Signatur wie im Hauptmodul
-    try:
-        bpy.utils.register_class(CLIP_OT_cooperative_triplet_track)
-    except ValueError:
-        # bereits registriert
-        pass
+def run_bidirectional_track(context):
+    """Startet den Operator aus Skript-Kontext."""
+    return bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
 
 
-def unregister():  # noqa: F811
-    try:
-        bpy.utils.unregister_class(CLIP_OT_cooperative_triplet_track)
-    except Exception:
-        pass
+# ---- Registrierung für Haupt-__init__.py ----
+
+def register():
+    bpy.utils.register_class(CLIP_OT_bidirectional_track)
+
+
+def unregister():
+    bpy.utils.unregister_class(CLIP_OT_bidirectional_track)
