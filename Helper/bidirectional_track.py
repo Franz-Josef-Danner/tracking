@@ -14,7 +14,7 @@ from typing import List, Tuple, Dict
 #  - Sind alle aktiv → zwei nächst beieinander liegende finden, dritten
 #    Marker auf deren Mittelpunkt setzen.
 #  - *Nur* Vorbereitung auf dem aktuellen Frame; das eigentliche Tracking
-#    bleibt unverändert (sequence=True), damit bestehender Ablauf unberührt.
+#    bleibt unverändert (sequence=False), damit bestehender Ablauf unberührt.
 
 Vec2 = Tuple[float, float]
 
@@ -43,25 +43,19 @@ def _get_pos(track: bpy.types.MovieTrackingTrack, frame: int) -> Vec2:
     return float(mk.co[0]), float(mk.co[1])
 
 
-def _set_pos(track: bpy.types.MovieTrackingTrack, frame: int, pos: Vec2) -> None:
-    markers = track.markers
-    mk = _find_marker_at_frame(track, frame)
+def _set_pos(track, frame, pos):
+    mk = track.markers.insert_frame(frame, (0.5, 0.5))
     if mk is None:
-        # insert with fallback pos
-        if len(markers) > 0:
-            ref = markers[0].co
-        else:
-            ref = (0.5, 0.5)
-        mk = markers.insert_frame(frame, ref)
-    mk.co[0], mk.co[1] = float(pos[0]), float(pos[1])
+        return  # nichts erzeugen
+    mk = track.markers.insert_frame(frame=frame, co=(0.5, 0.5))
 
 
-def _set_active_for_frame(track: bpy.types.MovieTrackingTrack, frame: int, active: bool) -> None:
+def _set_active_for_frame(track, frame, active: bool) -> None:
     mk = _find_marker_at_frame(track, frame)
     if mk is None:
-        mk = track.markers.insert_frame(frame, (0.5, 0.5))
-    if hasattr(mk, "mute"):
-        mk.mute = (not active)
+        # NICHT künstlich erzeugen – sonst bläst du die Markerzahl auf
+        return
+    mk.mute = (not active)
     elif not active and hasattr(track, "mute"):
         # Fallback: global mute nur für Deaktivierung, nie erzwungenes Aktivieren
         track.mute = True
@@ -299,7 +293,7 @@ class CLIP_OT_bidirectional_track(Operator):
             total_before = _count_total_markers(clip)
             frames_before = _count_tracks_with_marker_on_frame(clip, context.scene.frame_current)
             try:
-                # Wichtig: Wir lassen sequence=True (bestehender Ablauf),
+                # Wichtig: Wir lassen sequence=False (bestehender Ablauf),
                 # die "nur 1 Frame"-Logik wird über unseren Kooperations-Vorstep pro Modal-Tick erreicht.
                 ret = bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=False)
             except Exception as ex:
