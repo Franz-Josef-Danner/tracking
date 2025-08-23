@@ -283,17 +283,18 @@ def run_pattern_triplet_and_select_by_name(
         for t in tracking.tracks:
             if getattr(t, "select", False):
                 aggregated_names.add(t.name)
-                                     
+                                         
     def sweep(scale: float) -> int:
         before_ptrs = _collect_track_pointers(tracking.tracks)
         new_pattern = max(3, int(round(pattern_o * float(scale))))
         _set_pattern_size(tracking, new_pattern)
-        if adjust_search_with_pattern:
-            try:
-                settings.default_search_size = max(5, int(round(search_o * float(scale))))
-            except Exception:
-                pass
     
+        # NEU: search size = pattern_size * 2
+        try:
+            settings.default_search_size = max(5, new_pattern * 2)
+        except Exception:
+            pass
+
         def _op(**kw):
             return bpy.ops.clip.detect_features(**kw)
     
@@ -317,13 +318,12 @@ def run_pattern_triplet_and_select_by_name(
         aggregated_names.update(new_names)
         return len(new_names)
 
-
     created_low = sweep(scale_low)
     created_high = sweep(scale_high)
 
     _set_pattern_size(tracking, pattern_o)
     try:
-        settings.default_search_size = search_o
+        settings.default_search_size = pattern_o * 2   # konsistent wiederherstellen
     except Exception:
         pass
 
