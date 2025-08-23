@@ -698,8 +698,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             scn[_BIDI_ACTIVE_KEY] = False
             print("[Coord] TRACK → launch clip.bidirectional_track (INVOKE_DEFAULT)")
             try:
-                bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
-                self._bidi_started = True
+                # tracking_coordinator.py → _state_track()
+                print("[Coord] TRACK → launch clip.bidirectional_track (INVOKE_DEFAULT)")
+                bpy.ops.clip.bidirectional_track(
+                    'INVOKE_DEFAULT',
+                    use_cooperative_triplets=True,      # <<< NEU: Koop-Modus erzwingen
+                    auto_enable_from_selection=True,    # (optional) Auto-Fallback weiter erlauben
+                )
+
             except Exception as ex:
                 print(f"[Coord] TRACK launch failed: {ex!r} → CLEAN_SHORT (best-effort)")
                 self._bidi_started = False
