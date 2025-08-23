@@ -261,15 +261,27 @@ class CLIP_OT_bidirectional_track(Operator):
         return {'PASS_THROUGH'}
 
     def run_tracking_step(self, context):
+        # Frame-Ende aus Clip ableiten (Fallback: Szenenende)
+        self._frame_end = getattr(context.space_data.clip, "frame_duration", 0) or context.scene.frame_end
+    
         space = getattr(context, "space_data", None)
         clip = getattr(space, "clip", None) if space else None
         if clip is None:
             self.report({'ERROR'}, "Kein aktiver Clip im Tracking-Editor gefunden.")
             print("[BidiTrack] ABORT: Kein aktiver Clip im Tracking-Editor.")
             return self._finish(context, result="FAILED")
-
+    
+        # Aktuellen Frame sicherheitshalber einklemmen
+        cf = int(context.scene.frame_current)
+        if cf < 1:
+            cf = 1
+        if self._frame_end and cf > int(self._frame_end):
+            cf = int(self._frame_end)
+        if cf != context.scene.frame_current:
+            context.scene.frame_current = cf
+    
         self._dbg_header(context, clip)
-
+    
         if self._step == 0:
             # NEU: Optionale Triplet‑Kooperation auf *aktuellen* Frame anwenden
             if self.use_cooperative_triplets:
@@ -281,17 +293,19 @@ class CLIP_OT_bidirectional_track(Operator):
                 )
                 if processed > 0:
                     print(f"[BidiTrack] Cooperative triplets applied on frame {int(context.scene.frame_current)} → groups={processed}")
-
-            # Vorwärts-Tracking starten (bestehendes Verhalten)
+    
+            # Vorwärts-Tracking starten (bestehendes Verhalten beibehalten)
             print("→ Starte Vorwärts-Tracking...")
             total_before = _count_total_markers(clip)
             frames_before = _count_tracks_with_marker_on_frame(clip, context.scene.frame_current)
             try:
+                # Wichtig: Wir lassen sequence=True (bestehender Ablauf),
+                # die "nur 1 Frame"-Logik wird über unseren Kooperations-Vorstep pro Modal-Tick erreicht.
                 ret = bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
             except Exception as ex:
                 print(f"[BidiTrack] EXC beim Start Vorwärts-Tracking: {ex!r}")
                 return self._finish(context, result="FAILED")
-
+    
             print(
                 f"[BidiTrack] Vorwärts-Tracking ausgelöst | op_ret={ret} | "
                 f"markers_total_before={total_before} | tracks@frame_before={frames_before}"
@@ -299,7 +313,7 @@ class CLIP_OT_bidirectional_track(Operator):
             self._t_last_action = time.perf_counter()
             self._step = 1
             return {'PASS_THROUGH'}
-
+    
         elif self._step == 1:
             total_now = _count_total_markers(clip)
             on_cur = _count_tracks_with_marker_on_frame(clip, context.scene.frame_current)
@@ -307,16 +321,17 @@ class CLIP_OT_bidirectional_track(Operator):
                 f"→ Warte auf Abschluss des Vorwärts-Trackings... | "
                 f"markers_total_now={total_now} | tracks@cur={on_cur}"
             )
+            # Zum Startframe zurückspringen, damit die Rückwärts-Phase vom gleichen Punkt startet
             context.scene.frame_current = self._start_frame
             self._step = 2
             print(f"← Frame zurückgesetzt auf {self._start_frame}")
             return {'PASS_THROUGH'}
-
+    
         elif self._step == 2:
             print("→ Frame gesetzt. Warte eine Schleife, bevor Rückwärts-Tracking startet...")
             self._step = 3
             return {'PASS_THROUGH'}
-
+    
         elif self._step == 3:
             print("→ Starte Rückwärts-Tracking...")
             total_before = _count_total_markers(clip)
@@ -326,7 +341,7 @@ class CLIP_OT_bidirectional_track(Operator):
             except Exception as ex:
                 print(f"[BidiTrack] EXC beim Start Rückwärts-Tracking: {ex!r}")
                 return self._finish(context, result="FAILED")
-
+    
             print(
                 f"[BidiTrack] Rückwärts-Tracking ausgelöst | op_ret={ret} | "
                 f"markers_total_before={total_before} | tracks@frame_before={frames_before}"
@@ -334,11 +349,12 @@ class CLIP_OT_bidirectional_track(Operator):
             self._t_last_action = time.perf_counter()
             self._step = 4
             return {'PASS_THROUGH'}
-
+    
         elif self._step == 4:
             return self.run_tracking_stability_check(context, clip)
-
+    
         return {'PASS_THROUGH'}
+
 
     def run_tracking_stability_check(self, context, clip):
         current_frame = context.scene.frame_current
