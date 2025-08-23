@@ -287,13 +287,13 @@ def run_pattern_triplet_and_select_by_name(
     def sweep(scale: float) -> int:
         before_ptrs = _collect_track_pointers(tracking.tracks)
         new_pattern = max(3, int(round(pattern_o * float(scale))))
-        _set_pattern_size(tracking, new_pattern)
-    
-        # NEU: search size = pattern_size * 2
+        eff = _set_pattern_size(tracking, new_pattern)
         try:
-            settings.default_search_size = max(5, new_pattern * 2)
+            settings.default_search_size = max(5, eff * 2)
         except Exception:
             pass
+        print(f"[Triplet] scale={scale} pattern_o={pattern_o} -> req={new_pattern} eff={eff} "
+              f"search={getattr(settings,'default_search_size',None)}")
 
         def _op(**kw):
             return bpy.ops.clip.detect_features(**kw)
@@ -374,7 +374,7 @@ def run_detect_once(
     roi: Optional[Tuple[float, float, float, float]] = None,
     dry_run: bool = False,
     # --- NEW: post pattern-triplet ---
-    post_pattern_triplet: bool = False,
+    post_pattern_triplet=True,
     triplet_scale_low: float = 0.5,
     triplet_scale_high: float = 2,
     triplet_include_ready_selection: bool = True,
