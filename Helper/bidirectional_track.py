@@ -4,6 +4,7 @@ import time
 import re   # <<< NEU
 from bpy.types import Operator
 from typing import List, Tuple, Dict
+from mathutils.kdtree import KDTree
 
 # -----------------------------------------------------------------------------
 # NEU: Triplet‑Kooperation (nicht-invasiv)
@@ -15,10 +16,82 @@ from typing import List, Tuple, Dict
 #    Marker auf deren Mittelpunkt setzen.
 #  - *Nur* Vorbereitung auf dem aktuellen Frame; das eigentliche Tracking
 #    bleibt unverändert (sequence=False), damit bestehender Ablauf unberührt.
+_TRIPLET_KEY = "__coop_triplets"   # Clip-Property
 
 Vec2 = Tuple[float, float]
 
+def _collect_active_markers_on_frame(tracks, frame):
+    items = []
+    for t in tracks:
+        try:
+            mk = t.markers.find_frame(frame, exact=True)
+        except TypeError:
+            mk = t.markers.find_frame(frame)
+        if mk and not getattr(mk, "mute", False):
+            items.append((t, float(mk.co[0]), float(mk.co[1])))
+    return items
 
+def _group_triplets_by_position_at_frame(clip, frame: int, tol_px: float = 3.0) -> list[tuple]:
+    """Bilde Triplets rein über räumliche Nähe im gegebenen Frame.
+    - tol_px: Toleranz in Pixeln (auf norm. Koords skaliert).
+    """
+    w = int(getattr(clip, "size", [1, 1])[0] or 1)
+    h = int(getattr(clip, "size", [1, 1])[1] or 1)
+    tracks = list(clip.tracking.tracks)
+
+    items = _collect_active_markers_on_frame(tracks, frame)
+    if not items:
+        return []
+
+    # KDTree auf Pixelkoordinaten
+    kd = KDTree(len(items))
+    for i, (_, x, y) in enumerate(items):
+        kd.insert((x * w, y * h, 0.0), i)
+    kd.balance()
+
+    used = set()
+    triplets = []
+    for i, (ti, xi, yi) in enumerate(items):
+        if i in used:
+            continue
+        # Nächste 3 Nachbarn (einschl. self)
+        nearest = kd.find_n((xi * w, yi * h, 0.0), 3)
+        cand = [j for (_, j, _) in nearest if j not in used]
+        if len(cand) < 3:
+            continue
+        # Abstands-Check (alle drei unter tol)
+        pts_px = [(items[j][1] * w, items[j][2] * h) for j in cand[:3]]
+        dists = [
+            math.hypot(pts_px[0][0]-pts_px[1][0], pts_px[0][1]-pts_px[1][1]),
+            math.hypot(pts_px[0][0]-pts_px[2][0], pts_px[0][1]-pts_px[2][1]),
+            math.hypot(pts_px[1][0]-pts_px[2][0], pts_px[1][1]-pts_px[2][1]),
+        ]
+        if max(dists) <= float(tol_px):
+            trip = (items[cand[0]][0], items[cand[1]][0], items[cand[2]][0])
+            triplets.append(trip)
+            used.update(cand[:3])
+
+    # Persistiere als Namen (stabil, undo-freundlich)
+    clip[_TRIPLET_KEY] = [[t0.name, t1.name, t2.name] for (t0, t1, t2) in triplets]
+    return triplets
+
+def _get_bound_triplets(clip, only_selected=True) -> list[tuple]:
+    """Liest persistierte Triplets; fällt auf Name‑Grouping zurück, wenn leer."""
+    names_groups = clip.get(_TRIPLET_KEY)
+    if names_groups:
+        name2track = {t.name: t for t in clip.tracking.tracks}
+        groups = []
+        for g in names_groups:
+            if all(n in name2track for n in g):
+                trip = (name2track[g[0]], name2track[g[1]], name2track[g[2]])
+                groups.append(trip)
+        if groups:
+            if only_selected:
+                groups = [g for g in groups if all(getattr(t, "select", False) for t in g)]
+            return groups
+    # Fallback (alt): Name‑Präfix (nur wenn nix gebunden wurde)
+    return _group_triplets_by_name([t for t in clip.tracking.tracks if (t.select if only_selected else True)])
+    
 def _find_marker_at_frame(track: bpy.types.MovieTrackingTrack, frame: int):
     markers = track.markers
     try:
