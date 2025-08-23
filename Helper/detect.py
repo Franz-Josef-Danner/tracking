@@ -251,8 +251,8 @@ def _get_pattern_size(tracking: bpy.types.MovieTracking) -> int:
 def run_pattern_triplet_and_select_by_name(
     context: bpy.types.Context,
     *,
-    scale_low: float = 0.8,
-    scale_high: float = 1.2,
+    scale_low: float = 0.5,
+    scale_high: float = 1.5,
     also_include_ready_selection: bool = True,
     adjust_search_with_pattern: bool = False,
     # NEU:
