@@ -282,16 +282,15 @@ def run_pattern_triplet_and_select_by_name(
     
     def sweep(scale: float) -> int:
         before_ptrs = _collect_track_pointers(tracking.tracks)
-    
-        # neues Pattern setzen
         new_pattern = max(3, int(round(pattern_o * float(scale))))
         _set_pattern_size(tracking, new_pattern)
     
-        # NEU: Search-Size = 2 × aktuelles Pattern
+        # NEU: search size = pattern_size * 2
         try:
             settings.default_search_size = max(5, new_pattern * 2)
         except Exception:
             pass
+
     
         # detect_features mit identischen Parametern wie im READY-Pass
         def _op(**kw):
