@@ -154,25 +154,34 @@ def track_selected_forward_until_done() -> int:
 
 class HELPER_OT_track_selected_forward_until_done(bpy.types.Operator):
     """Trackt selektierte Marker immer 1 Frame vorwärts, bis kein Fortschritt mehr möglich ist."""
-    bl_idname = "helper.track_selected_forward_until_done"
-    bl_label = "Track: Selektierte vorwärts (bis fertig)"
+    bl_idname = "clip.bidirectional_track"   # <<< WICHTIG: so wie Coordinator ihn aufruft
+    bl_label = "Bidirectional Track (stepwise forward)"
     bl_options = {'REGISTER', 'UNDO'}
 
-    performed_steps: bpy.props.IntProperty(
-        name="Durchgeführte Schritte",
-        default=0,
-        options={'HIDDEN'}
+    # Falls du die Argumente aus tracking_coordinator übernehmen willst:
+    use_cooperative_triplets: bpy.props.BoolProperty(
+        name="Use Cooperative Triplets",
+        default=False,
+    )
+    auto_enable_from_selection: bpy.props.BoolProperty(
+        name="Auto Enable from Selection",
+        default=False,
     )
 
     def execute(self, context):
         try:
             steps = track_selected_forward_until_done()
-            self.performed_steps = steps
             self.report({'INFO'}, f"Tracking beendet. Schritte: {steps}")
+            # Damit Coordinator weiterkommt:
+            context.scene["bidi_active"] = False
+            context.scene["bidi_result"] = "FINISHED"
             return {'FINISHED'}
         except RuntimeError as err:
             self.report({'ERROR'}, str(err))
+            context.scene["bidi_active"] = False
+            context.scene["bidi_result"] = "FAILED"
             return {'CANCELLED'}
+
 
 
 # ---------- Register/Unregister ----------
