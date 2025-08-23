@@ -353,10 +353,34 @@ class CLIP_OT_bidirectional_track(Operator):
         # Einen Frame vorwärts tracken (sequence=False)
         print("→ Vorwärts‑Tracking (ein Schritt)…")
         try:
-            bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=False)
+            bpy.ops.clip.track_markers('EXEC_DEFAULT', backwards=False, sequence=False)
         except Exception as ex:
             print(f"[BidiTrack] Vorwärts‑Tracking Exception: {ex!r}")
             return self._finish(context, result="FAILED")
+
+        # nach EXEC_DEFAULT-Call, noch auf curf bleiben:
+        for _ in range(3):  # kleine Sicherheitswarteschleife
+            try:
+                bpy.context.view_layer.update()
+                bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+            except Exception:
+                pass
+        
+        nxt = curf + 1
+        # sanity check: existieren Marker im nächsten Frame?
+        if _count_tracks_with_marker_on_frame(clip, nxt) == 0:
+            # ein zweites Mal kurz warten (Render/Depsgraph Nachlauf)
+            for _ in range(5):
+                try:
+                    bpy.context.view_layer.update()
+                    bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                except Exception:
+                    pass
+                if _count_tracks_with_marker_on_frame(clip, nxt) > 0:
+                    break
+        
+        context.scene.frame_current = nxt
+
 
         # Nächster Frame
         nxt = curf + 1
