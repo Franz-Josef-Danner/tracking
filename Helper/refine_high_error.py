@@ -17,6 +17,18 @@ def _find_clip_window(context):
                     return area, region, area.spaces.active
     return None, None, None
 
+# --- UI Redraw Helper (neu) ---------------------------------------------------
+def _pulse_ui(context, area=None, region=None):
+    """Sofortiges Neuzeichnen der UI erzwingen (sichtbarer Framewechsel)."""
+    try:
+        if area:
+            area.tag_redraw()
+        with context.temp_override(window=context.window, area=area, region=region):
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN', iterations=1)
+    except Exception:
+        # Fallback: wenigstens Area zum Redraw markieren
+        if area:
+            area.tag_redraw()
 
 def _get_active_clip(context):
     space = getattr(context, "space_data", None)
@@ -136,7 +148,9 @@ def run_refine_on_high_error(
     for f in bad_frames:
         print(f"\n[FRAME] Refine für Frame {f}")
         scene.frame_set(f)
-
+        
+        _pulse_ui(context, area=area, region=region)
+        
         tracks_forward, tracks_backward = [], []
         for tr in clip.tracking.tracks:
             if getattr(tr, "hide", False) or getattr(tr, "lock", False):
@@ -175,8 +189,10 @@ def run_refine_on_high_error(
         print("[ACTION] Starte erneutes Kamera-Solve…")
         with context.temp_override(area=area, region=region, space_data=space_ce):
             bpy.ops.clip.solve_camera()
+        _pulse_ui(context, area=area, region=region)
         print("[DONE] Kamera-Solve abgeschlossen.")
 
     scene.frame_set(original_frame)
+    _pulse_ui(context, area=area, region=region)  # UI auf ursprünglichem Frame aktualisieren
     print(f"\n[SUMMARY] Insgesamt bearbeitet: {processed} Frame(s)")
     return processed
