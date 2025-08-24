@@ -178,13 +178,16 @@ def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
     """Führt zunächst Helper/refine_high_error aus,
     danach Helper/projection_cleanup_builtin und weitere Nacharbeiten.
     """
-    # 0) Refine-High-Error vorher anwenden
-    try:
-        from ..Helper.refine_high_error import run_refine_on_high_error  # type: ignore
-        print("[Coord] PROJECTION_CLEANUP → pre-refine_high_error()")
-        run_refine_on_high_error(context, limit_frames=0, resolve_after=False)
-    except Exception as ex_ref:
-        print(f"[Coord] refine_high_error skipped/failed: {ex_ref!r}")
+    # 0) Refine-High-Error vorher anwenden (einfaches Gate gegen Doppelaufrufe)
+    gate_key = "__pre_refine_done"
+    if not bool(getattr(context.scene, gate_key, False)):
+        try:
+            from ..Helper.refine_high_error import run_refine_on_high_error  # type: ignore
+            print("[Coord] PROJECTION_CLEANUP → pre-refine_high_error()")
+            run_refine_on_high_error(context, limit_frames=0, resolve_after=False)
+            context.scene[gate_key] = True
+        except Exception as ex_ref:
+            print(f"[Coord] refine_high_error skipped/failed: {ex_ref!r}")
 
     # 1) Projection cleanup (wie bisher)
     try:
@@ -213,7 +216,7 @@ def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
             if error_value is not None:
                 for prop_name in ("clean_error", "error"):  # native Param-Namen probieren
                     try:
-                        bpy.ops.clip.clean_tracks(**{prop_name: float(error_value)}, action="DISABLE")
+                        bpy.ops.clip.clean_tracks(**{prop_name: float(error_value)}, action="DELETE_TRACK")
                         print(f"[Coord] clean_tracks (fallback, {prop_name}={error_value})")
                         break
                     except TypeError:
@@ -362,6 +365,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         scn[_BIDI_RESULT_KEY] = ""
         # Safety: altes Skip-Gate entfernen, wir arbeiten strikt reihenfolgebasiert
         scn.pop("__skip_clean_short_once", None)
+        scn.pop("__pre_refine_done", None)
         self._state = "INIT"
         self._detect_attempts = 0
         self._jump_done = False
