@@ -149,37 +149,46 @@ class _RefinePump:
         self._refine_one(f)
         return 0.0  # sofort wieder schedulen
 
-
-# --- Public API ---------------------------------------------------------------
+# --- oberhalb belassen: Helpers & _RefinePump ...
 
 def run_refine_on_high_error(
     context,
     limit_frames: int = 0,
     resolve_after: bool = False,
     error_threshold: float | None = None,
+    run_mode: str = "async",          # NEU: "async" | "sync"
     **_compat_ignored,
 ) -> int:
-    if error_threshold is not None:
-        print("[Refine][Compat] 'error_threshold' wird ignoriert.")
-    if _compat_ignored:
-        print(f"[Refine][Compat] Ignoriere Alt-Args: {list(_compat_ignored.keys())}")
+    # ... unverändert: Clip/Reconstruction prüfen, bad_frames ermitteln ...
 
-    clip = _get_active_clip(context)
-    if not clip:
-        raise RuntimeError("Kein MovieClip geladen.")
+    area, region, space_ce = _find_clip_window(context)
+    if not area:
+        raise RuntimeError("Kein CLIP_EDITOR-Fenster gefunden.")
 
-    obj = clip.tracking.objects.active
-    recon = obj.reconstruction
-    if not getattr(recon, "is_valid", False):
-        raise RuntimeError("Keine gültige Rekonstruktion gefunden.")
+    original_frame = context.scene.frame_current
 
-    bad_frames = _select_frames_over_high_threshold(context, recon)
-    if limit_frames > 0 and bad_frames:
-        bad_frames = bad_frames[:int(limit_frames)]
+    # --- NEU: synchroner Pfad (blockierend, kein Live-UI) ---
+    if str(run_mode).lower() == "sync":
+        pump = _RefinePump(context, clip, bad_frames, area, region, space_ce,
+                           resolve_after, original_frame)
+        for f in list(bad_frames):
+            pump._refine_one(f)                # direkt, ohne Timer
+        if resolve_after:
+            with context.temp_override(area=area, region=region, space_data=space_ce):
+                bpy.ops.clip.solve_camera()
+        context.scene.frame_set(original_frame)
+        # Ein einmaliger UI-Refresh am Ende:
+        _pulse_ui(context, area, region)
+        print(f"[SUMMARY] Insgesamt bearbeitet (sync): {pump.processed} Frame(s)")
+        return pump.processed
 
-    if not bad_frames:
-        print("[INFO] Keine Frames über High-Threshold gefunden.")
-        return 0
+    # --- Standard: asynchroner Pfad (wie bisher) ---
+    pump = _RefinePump(context, clip, bad_frames, area, region, space_ce,
+                       resolve_after, original_frame)
+    bpy.app.timers.register(pump.tick, first_interval=0.0)
+    print(f"[INFO] Refine gestartet: {len(bad_frames)} Frames (asynchron).")
+    return 0
+
 
     area, region, space_ce = _find_clip_window(context)
     if not area:
