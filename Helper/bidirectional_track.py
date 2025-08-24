@@ -1,7 +1,51 @@
 import time
+import json
 import bpy
 from bpy.types import Operator
+from typing import List, Dict, Any, Optional, Tuple
 
+# Scene keys für Triplet-Gruppen (müssen zu Helper/detect.py passen)
+_TRIPLET_NAMES_KEY = "pattern_triplet_groups_json"
+_TRIPLET_PTRS_KEY = "pattern_triplet_groups_ptr_json"
+_TRIPLET_COUNT_KEY = "pattern_triplet_groups_count"
+
+
+# ---------- UI/Context-Utilities ----------
+
+def _find_clip_context() -> Tuple[Optional[bpy.types.Window], Optional[bpy.types.Area], Optional[bpy.types.Region], Optional[bpy.types.Space]]:
+    wm = bpy.context.window_manager
+    if not wm:
+        return None, None, None, None
+    for win in wm.windows:
+        scr = win.screen
+        if not scr:
+            continue
+        for area in scr.areas:
+            if area.type == 'CLIP_EDITOR':
+                region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+                space = area.spaces.active if hasattr(area, "spaces") else None
+                if region and space:
+                    return win, area, region, space
+    return None, None, None, None
+
+
+def _run_in_clip_context(op_callable, **kwargs):
+    win, area, region, space = _find_clip_context()
+    if not (win and area and region and space):
+        # Fallback: ohne Override ausführen (funktioniert oft trotzdem)
+        return op_callable(**kwargs)
+    override = {
+        "window": win,
+        "area": area,
+        "region": region,
+        "space_data": space,
+        "scene": bpy.context.scene,
+    }
+    with bpy.context.temp_override(**override):
+        return op_callable(**kwargs)
+
+
+# ---------- Marker/Track-Utilities ----------
 
 def _count_total_markers(clip) -> int:
     try:
@@ -24,6 +68,131 @@ def _count_tracks_with_marker_on_frame(clip, frame: int) -> int:
         pass
     return cnt
 
+
+def _deselect_all_tracks(clip) -> None:
+    try:
+        for t in clip.tracking.tracks:
+            t.select = False
+    except Exception:
+        pass
+
+
+def _track_by_ptr_or_name(clip, ptr: Optional[int], name: Optional[str]):
+    """Robuste Track-Auflösung: bevorzugt Pointer, sonst Name."""
+    tracks = getattr(getattr(clip, "tracking", None), "tracks", [])
+    # Pointer
+    if ptr is not None:
+        for t in tracks:
+            try:
+                if int(t.as_pointer()) == int(ptr):
+                    return t
+            except Exception:
+                pass
+    # Name Fallback
+    if name:
+        for t in tracks:
+            try:
+                if t.name == name:
+                    return t
+            except Exception:
+                pass
+    return None
+
+
+def _load_triplet_groups_from_scene(scene) -> List[List[Dict[str, Any]]]:
+    """
+    Lädt Triplet-Gruppen aus Scene-Props. Form:
+      - scene[_TRIPLET_PTRS_KEY] = JSON [[ptr1,ptr2,ptr3], ...]
+      - scene[_TRIPLET_NAMES_KEY] = JSON [[n1,n2,n3], ...]
+    Gibt Liste von Dicts je Track zurück: {"ptr": int|None, "name": str|None}
+    """
+    groups: List[List[Dict[str, Any]]] = []
+    try:
+        ptr_json = scene.get(_TRIPLET_PTRS_KEY)
+        name_json = scene.get(_TRIPLET_NAMES_KEY)
+
+        ptr_groups = json.loads(ptr_json) if isinstance(ptr_json, str) else []
+        name_groups = json.loads(name_json) if isinstance(name_json, str) else []
+
+        # Normalisieren auf gleiche Länge
+        L = max(len(ptr_groups), len(name_groups))
+        for idx in range(L):
+            ptr_trip = ptr_groups[idx] if idx < len(ptr_groups) else []
+            name_trip = name_groups[idx] if idx < len(name_groups) else []
+            # Auf Länge 3 polstern
+            while len(ptr_trip) < 3:
+                ptr_trip.append(None)
+            while len(name_trip) < 3:
+                name_trip.append(None)
+
+            trip: List[Dict[str, Any]] = [
+                {"ptr": ptr_trip[0], "name": name_trip[0]},
+                {"ptr": ptr_trip[1], "name": name_trip[1]},
+                {"ptr": ptr_trip[2], "name": name_trip[2]},
+            ]
+            groups.append(trip)
+    except Exception as ex:
+        print(f"[BidiTrack] WARN: Triplet-Gruppen konnten nicht geladen werden: {ex}")
+    return groups
+
+
+def _join_triplet_groups(context, clip) -> int:
+    """
+    Kernfunktion: Nimmt gespeicherte 3er-Gruppen aus der Szene,
+    selektiert pro Gruppe die drei Tracks und ruft bpy.ops.clip.join_tracks().
+    Returns: Anzahl erfolgreich verarbeiteter Join-Operationen.
+    """
+    scene = context.scene
+    groups = _load_triplet_groups_from_scene(scene)
+    if not groups:
+        print("[BidiTrack] Info: Keine Triplet-Gruppen auf Szene gefunden – kein Join notwendig.")
+        return 0
+
+    joined_ops = 0
+    for g_idx, trip in enumerate(groups, start=1):
+        # Tracks auflösen (Pointer bevorzugt, Name Fallback)
+        tr_objs = []
+        for item in trip:
+            tr = _track_by_ptr_or_name(clip, item.get("ptr"), item.get("name"))
+            if tr:
+                tr_objs.append(tr)
+
+        if len(tr_objs) < 3:
+            print(f"[BidiTrack] Gruppe #{g_idx}: <3 gültige Tracks aufgelöst – überspringe.")
+            continue
+
+        # Selektion vorbereiten
+        _deselect_all_tracks(clip)
+        for t in tr_objs:
+            try:
+                t.select = True
+            except Exception:
+                pass
+
+        # Operator ausführen (im CLIP-Kontext)
+        def _op_join(**kw):
+            return bpy.ops.clip.join_tracks(**kw)
+
+        try:
+            ret = _run_in_clip_context(_op_join)
+            print(f"[BidiTrack] Gruppe #{g_idx}: join_tracks() -> {ret}")
+            joined_ops += 1
+        except Exception as ex:
+            print(f"[BidiTrack] Gruppe #{g_idx}: join_tracks() Fehlgeschlagen: {ex}")
+
+        # UI-Refresh
+        try:
+            bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
+        except Exception:
+            pass
+
+    # Selektion aufräumen
+    _deselect_all_tracks(clip)
+    print(f"[BidiTrack] Join-Zusammenfassung: {joined_ops}/{len(groups)} Gruppen zusammengeführt.")
+    return joined_ops
+
+
+# ---------- Operator ----------
 
 class CLIP_OT_bidirectional_track(Operator):
     bl_idname = "clip.bidirectional_track"
@@ -131,14 +300,14 @@ class CLIP_OT_bidirectional_track(Operator):
                 f"→ Warte auf Abschluss des Vorwärts-Trackings... | "
                 f"markers_total_now={total_now} | tracks@cur={on_cur}"
             )
-            # Zurück auf Startframe – wie in deiner Version
+            # Zurück auf Startframe
             context.scene.frame_current = self._start_frame
             self._step = 2
             print(f"← Frame zurückgesetzt auf {self._start_frame}")
             return {'PASS_THROUGH'}
 
         elif self._step == 2:
-            # Ein „Zwischen‑Tick“ als sichtbarer Puffer
+            # Ein „Zwischen-Tick“ als sichtbarer Puffer
             print("→ Frame gesetzt. Warte eine Schleife, bevor Rückwärts-Tracking startet...")
             self._step = 3
             return {'PASS_THROUGH'}
@@ -173,12 +342,11 @@ class CLIP_OT_bidirectional_track(Operator):
         current_marker_count = _count_total_markers(clip)
         tracks_on_cur = _count_tracks_with_marker_on_frame(clip, current_frame)
 
-        # Stabilitätsprüfung wie gehabt
+        # Stabilitätsprüfung
         if (self._prev_marker_count == current_marker_count and
                 self._prev_frame == current_frame):
             self._stable_count += 1
         else:
-            # Extra-Log um Veränderungen zu sehen
             if self._prev_marker_count != -1:
                 print(
                     "[BidiTrack] Änderung erkannt | "
@@ -196,7 +364,7 @@ class CLIP_OT_bidirectional_track(Operator):
             f"Stabil: {self._stable_count}/2"
         )
 
-        # Kleines UI-Pulse, damit man in der Oberfläche auch Aktivität sieht
+        # UI-Pulse
         try:
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
         except Exception:
@@ -206,7 +374,7 @@ class CLIP_OT_bidirectional_track(Operator):
             print("✓ Tracking stabil erkannt – gebe Fertig-Signal an Orchestrator.")
             return self._finish(context, result="FINISHED")
 
-        # Zusatzhinweis, falls „nichts“ passiert
+        # Zusatzhinweis
         if self._stable_count == 0:
             dt = time.perf_counter() - self._t_last_action
             if dt > 1.5:
@@ -216,23 +384,44 @@ class CLIP_OT_bidirectional_track(Operator):
         return {'PASS_THROUGH'}
 
     def _finish(self, context, result="FINISHED"):
-        # Flags für Orchestrator setzen
-        context.scene["bidi_active"] = False
-        context.scene["bidi_result"] = str(result)
-
+        """
+        Abschlussroutine:
+        1) Timer/Cleanup
+        2) Triplet-Gruppen joinen (bpy.ops.clip.join_tracks)
+        3) Optionaler Clean-Short
+        4) Orchestrator-Flags setzen & beenden
+        """
         total_time = time.perf_counter() - self._t0
-        print(f"[BidiTrack] FINISH result={result} | total_time={total_time:.3f}s | ticks={self._tick}")
+        print(f"[BidiTrack] FINISH (pre) result={result} | total_time={total_time:.3f}s | ticks={self._tick}")
 
+        # 1) Timer-Cleanup zuerst stoppen (keine weiteren TIMER-Events)
         self._cleanup_timer(context)
 
-        # ---- Nacharbeit: Clean Error Tracks aufrufen ----
+        # 2) Triplet-Gruppen zusammenführen (Join)
+        try:
+            space = getattr(context, "space_data", None)
+            clip = getattr(space, "clip", None) if space else None
+            if clip:
+                joined = _join_triplet_groups(context, clip)
+                print(f"[BidiTrack] Post-Join abgeschlossen | groups_joined={joined}")
+            else:
+                print("[BidiTrack] WARN: Kein Clip im Kontext – Join übersprungen.")
+        except Exception as ex:
+            print(f"[BidiTrack] WARN: Join-Phase fehlgeschlagen: {ex}")
+
+        # 3) Nacharbeit: Clean Short Tracks (wenn verfügbar)
         try:
             from . import clean_short_tracks
             if hasattr(clean_short_tracks, "clean_short_tracks"):
-                print("[BidiTrack] Starte Clean-Error-Tracks nach Bidirectional Tracking …")
+                print("[BidiTrack] Starte Clean-Short-Tracks nach Bidirectional Tracking …")
                 clean_short_tracks.clean_short_tracks(context)
         except Exception as ex:
-            print(f"[BidiTrack] WARN: Clean-Error-Tracks konnte nicht ausgeführt werden: {ex}")
+            print(f"[BidiTrack] WARN: Clean-Short-Tracks konnte nicht ausgeführt werden: {ex}")
+
+        # 4) Orchestrator-Flags zuletzt setzen
+        context.scene["bidi_active"] = False
+        context.scene["bidi_result"] = str(result)
+        print(f"[BidiTrack] FINISH (post) result={result}")
 
         return {'FINISHED'}
 
