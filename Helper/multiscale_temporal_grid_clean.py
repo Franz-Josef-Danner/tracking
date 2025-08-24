@@ -2,33 +2,52 @@ import bpy
 import statistics
 import math
 
-def multiscale_temporal_grid_clean(context, area, region, space, tracks, frame_range,
-                                   width, height, grid=(6, 6),
-                                   start_delta=None, min_delta=3,
-                                   outlier_q=0.9, hysteresis_hits=2, min_cell_items=4):
+def multiscale_temporal_grid_clean(
+    context, area, region, space, tracks, frame_range,
+    width, height, grid=(6, 6),
+    start_delta=None,
+    # --- SEHR SOFT DEFAULTS ---
+    # Höherer outlier_q => relaxter (weniger Löschungen)
+    # Mehr Hysterese-Hits => braucht öftere Bestätigung
+    # Mehr Mindestitems pro Zelle => nur auf Datenbasis mit Substanz entscheiden
+    # Größeres min_delta => stabilere Trend-Schätzung
+    min_delta=4,
+    outlier_q=1.35,
+    hysteresis_hits=3,
+    min_cell_items=6
+):
     """
     Multiskaliger Grid-Cleaner für Tracking-Marker.
 
-    Parameter
-    ---------
-    outlier_q : float
-        Steuert die Strenge der Ausreißer-Erkennung.
-        - 0.0 .. 1.0  → Quantil-Schwelle (z.B. 0.9 = 90%-Quantil).
-        - > 1.0       → Relaxed Mode: Basis = 100%-Quantil (Maximum), dazu
-                        ein Aufschlag proportional zur robusten Streuung (MAD).
-                        Beispiel: 1.1 oder 1.2 = milder (weniger Löschungen).
+    *** Soft-Profil (Defaults) ***
+    - outlier_q = 1.35:
+        Relaxed Mode ( > 1.0 ): Coarse-Pass-Schwelle wird vom Maximum ausgehend
+        um einen robusten Zuschlag (∝ MAD) nach oben verschoben. Ergebnis:
+        deutlich höhere Toleranz, nur eindeutige Ausreißer werden geflaggt.
+    - hysteresis_hits = 3:
+        Ein Marker muss in mehreren Durchläufen/Skalen auffällig sein,
+        bevor gelöscht wird. Ergebnis: Fehlalarme werden stark reduziert.
+    - min_cell_items = 6:
+        In spärlich besetzten Regionen wird nicht bereinigt.
+        Ergebnis: Entscheidungen nur auf solider Datenbasis.
+    - min_delta = 4:
+        Δ-Trendbetrachtung mit größerem Abstand => robustere Schätzung,
+        weniger „Nervosität“ bei sporadischen Ausreißern.
 
-        Praktisch:
-            0.90 → eher streng
-            1.00 → nur die schlimmsten Werte (≈ Maximum) treffen
-            1.15 → sichtbar milder; coarse pass löscht deutlich weniger
+    Praktischer Effekt:
+        „Sehr soft“ löscht spürbar weniger; gute Tracks bleiben erhalten,
+        nur klar auffällige Marker werden entfernt.
+
+    Hinweis:
+        Du kannst die Defaults jederzeit beim Aufruf überschreiben,
+        z. B. outlier_q=1.15 (etwas strenger) oder hysteresis_hits=2 (aggressiver).
     """
     scene = context.scene
     clip = getattr(space, "clip", None)
     if not clip or not tracks:
         return 0
 
-    # --- start_delta Fallback ---
+    # --- start_delta Fallback (belassen, soft genug via min_delta=4) ---
     if start_delta is None:
         frames_track = getattr(scene, "frames_track", None)
         range_len = int(frame_range[1] - frame_range[0] + 1)
@@ -38,7 +57,7 @@ def multiscale_temporal_grid_clean(context, area, region, space, tracks, frame_r
             start_delta = max(min_delta * 2, range_len // 6)
         start_delta = min(start_delta, max(min_delta * 4, range_len // 2))
 
-    # --- Δ-Pyramide (ASCII) ---
+    # --- Δ-Pyramide ---
     D0 = int(max(start_delta, min_delta * 2))
     D0 = min(D0, max(24, min_delta * 4))
     deltas = []
@@ -76,7 +95,7 @@ def multiscale_temporal_grid_clean(context, area, region, space, tracks, frame_r
     try:
         outlier_q = float(outlier_q)
     except Exception:
-        outlier_q = 1.0
+        outlier_q = 1.35  # fallback weich
 
     q_base = max(0.0, min(1.0, outlier_q))   # Quantil-Anteil [0..1]
     relax = max(0.0, outlier_q - 1.0)        # Relax-Zuschlag für >1.0
@@ -113,15 +132,14 @@ def multiscale_temporal_grid_clean(context, area, region, space, tracks, frame_r
                 if not rs:
                     continue
 
-                # Basis-Quantil (0..1)
+                # Basis-Quantil (0..1) bzw. Maximum (q>=1.0) als Startpunkt
                 idx = int(max(0, min(len(rs) - 1, math.floor(len(rs) * q_base))))
                 base_thr = rs[idx]
 
-                # Robuster Relax-Zuschlag bei outlier_q > 1
+                # Relax-Zuschlag (weich): bei q>1.0 pushen wir Schwelle nach oben
                 if relax > 0.0 and len(rs) >= 3:
                     med_r = statistics.median(rs)
                     mad_r = statistics.median([abs(r - med_r) for r in rs]) or 1e-6
-                    # 3*MAD ist "normaler" Robust-Schwellwert; wir addieren relax‑Anteil davon.
                     base_thr = base_thr + relax * (3.0 * mad_r)
 
                 thr = base_thr
@@ -131,6 +149,7 @@ def multiscale_temporal_grid_clean(context, area, region, space, tracks, frame_r
                         key = (t.name, fcur)
                         hits[key] = hits.get(key, 0) + 1
 
+    # Hysterese: nur wenn ein Frame mehrfach auffällt, wird gelöscht
     coarse_delete = {}
     for (tname, f), n in hits.items():
         if n >= int(hysteresis_hits):
@@ -157,14 +176,13 @@ def multiscale_temporal_grid_clean(context, area, region, space, tracks, frame_r
     def _micro_outlier_pass():
         deleted = 0
 
-        # Skaliere die 3*MAD-Schwelle passend zu outlier_q:
-        # - q < 1  → kleiner Faktor  → strenger
-        # - q = 1  → 3.0
-        # - q > 1  → größerer Faktor → milder
+        # Soft-Logik:
+        # outlier_q > 1.0 ⇒ relax > 0 ⇒ micro_k = 3.0 * (1 + relax)
+        # Beispiel: 1.35 ⇒ relax=0.35 ⇒ micro_k = 3.0 * 1.35 = 4.05 (mild)
         if outlier_q <= 1.0:
-            micro_k = max(0.25, 3.0 * max(0.1, outlier_q))  # nie zu klein werden lassen
+            micro_k = max(0.25, 3.0 * max(0.1, outlier_q))
         else:
-            micro_k = 3.0 * (1.0 + relax)                   # z.B. q=1.2 → 3.6
+            micro_k = 3.0 * (1.0 + relax)
 
         with context.temp_override(area=area, region=region, space_data=space):
             for fi in range(frame_start + 1, frame_end - 1):
