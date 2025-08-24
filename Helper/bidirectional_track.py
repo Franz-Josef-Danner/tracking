@@ -87,51 +87,12 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
         return getattr(context.area, "type", None) == "CLIP_EDITOR"
 
     def _select_only_groups(self) -> None:
-        """Nur unsere Triplet-Tracks selektieren (alles andere deselektieren)."""
+        """Sichert die Selektion: nur unsere Triplet-Tracks bleiben selektiert."""
         for t in self._all_tracks:
             t.select = False
         for g in self._groups:
             for t in g:
                 t.select = True
-
-    def _track_one_step(self) -> bool:
-        """Führe genau einen Tracking-Schritt aus.
-        Mit robusten Fallbacks; gibt True zurück, wenn irgendein Call erfolgreich war.
-        Bricht **nicht** den Modal-Loop ab."""
-        # Selektion restriktiv halten
-        self._select_only_groups()
-
-        # 1) Override + EXEC_DEFAULT
-        try:
-            if self._override_ctx:
-                bpy.ops.clip.track_markers(self._override_ctx, 'EXEC_DEFAULT', backwards=False, sequence=False)
-                return True
-        except Exception as ex:
-            self._log(f"track_markers (override+EXEC) failed: {ex!r}")
-
-        # 2) Plain + EXEC_DEFAULT (wenn wir ohnehin im CLIP_EDITOR sind)
-        try:
-            bpy.ops.clip.track_markers('EXEC_DEFAULT', backwards=False, sequence=False)
-            return True
-        except Exception as ex:
-            self._log(f"track_markers (EXEC) failed: {ex!r}")
-
-        # 3) Override ohne Kontext-String
-        try:
-            if self._override_ctx:
-                bpy.ops.clip.track_markers(self._override_ctx, backwards=False, sequence=False)
-                return True
-        except Exception as ex:
-            self._log(f"track_markers (override) failed: {ex!r}")
-
-        # 4) Ganz plain
-        try:
-            bpy.ops.clip.track_markers(backwards=False, sequence=False)
-            return True
-        except Exception as ex:
-            self._log(f"track_markers (plain) failed: {ex!r}")
-
-        return False
 
     def invoke(self, context: bpy.types.Context, event: bpy.types.Event):
         scn = context.scene
@@ -211,6 +172,8 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.10, window=context.window)
         wm.modal_handler_add(self)
+        # Zu Beginn Selektion hart setzen
+        self._select_only_groups()
         self._log(f"Start bei Frame {self._frame}, Range=[{self._frame_start}..{self._frame_end}] | Triplets={len(self._groups)}")
         return {"RUNNING_MODAL"}
 
@@ -220,12 +183,15 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
         if event.type != "TIMER":
             return {"PASS_THROUGH"}
 
-        # Nur am Clip-Ende (oder ESC) signalisieren
-        if self._frame > self._frame_end:
+        # Stop-Kriterien: keine Gruppen mehr oder Frame > Ende
+        if not self._groups or self._frame >= self._frame_end:
             return self._finish(context, cancelled=False)
 
         scn = context.scene
         scn.frame_set(int(self._frame))
+
+        # Sicherstellen, dass unsere Tracks selektiert sind (Blender kann Selektion nach Operator-Aufrufen ändern)
+        self._select_only_groups()
 
         # Pro Frame: jede Gruppe prüfen
         deactivated: List[int] = []
@@ -235,16 +201,14 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
             m2 = _marker_at(t2, self._frame)
 
             # Aktiv? (Marker vorhanden & nicht gemutet)
-            if not (m0 and not getattr(m0, "mute", False) and
-                    m1 and not getattr(m1, "mute", False) and
-                    m2 and not getattr(m2, "mute", False)):
-                # Fällt einer aus → ganze Gruppe deaktivieren
+            if not (m0 and not m0.mute and m1 and not m1.mute and m2 and not m2.mute):
+                # Spezifikation: Fällt einer aus → alle aus
                 for trk, mk in ((t0, m0), (t1, m1), (t2, m2)):
                     if mk:
                         mk.mute = True
                     trk.select = False
                 names = f"{t0.name}, {t1.name}, {t2.name}"
-                self._log(f"Frame {self._frame}: '{names}' -> Gruppe deaktiviert (Ausfall).")
+                self._log(f"Frame {self._frame}: '{names}' -> {int(bool(m0))+int(bool(m1))+int(bool(m2))}/3 aktiv → gesamte Gruppe deaktiviert.")
                 deactivated.append(idx)
                 continue
 
@@ -280,17 +244,38 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
                 except Exception:
                     pass
 
-        # WICHTIG: Hier NICHT mehr vorzeitig beenden!
-        # - Wenn keine Gruppen mehr existieren, laufen wir die Frames nur noch durch.
-        # - Wenn Gruppen existieren, versuchen wir genau einen Tracking-Schritt.
+        # Wenn keine Gruppen mehr übrig sind → sauber beenden
+        if not self._groups:
+            self._log("Keine aktiven Triplet-Gruppen mehr → Ende.")
+            return self._finish(context, cancelled=False)
 
-        if self._groups:
-            ok = self._track_one_step()
-            if not ok:
-                # Kein Signal an Coordinator – wir bleiben aktiv und versuchen es beim nächsten Timer-Tick erneut.
-                return {"RUNNING_MODAL"}
+        # Genau EIN Tracking-Schritt vorwärts; nur unsere Triplet-Tracks selektiert
+        self._select_only_groups()
 
-        # Nächster Frame (mit oder ohne Tracking)
+        success = False
+        try:
+            if self._override_ctx:
+                result = bpy.ops.clip.track_markers(self._override_ctx, backwards=False, sequence=False)
+            else:
+                # Ohne Override nur den Exec-String verwenden
+                result = bpy.ops.clip.track_markers('EXEC_DEFAULT', backwards=False, sequence=False)
+
+            # Blender gibt i. d. R. {'FINISHED'} zurück – wir werten das großzügig
+            success = (result is None) or ('FINISHED' in str(result))
+        except Exception as ex:
+            self._log(f"WARN: track_markers failed: {ex!r}")
+            success = False
+
+        if not success:
+            # Nicht vorwärts springen; beim nächsten TIMER erneut versuchen.
+            # Selektion erneut sichern, damit beim nächsten Tick nichts "weg" ist.
+            self._select_only_groups()
+            return {"RUNNING_MODAL"}
+
+        # Nach erfolgreichem Tracking die Selektion stabil halten (UI-Konsistenz)
+        self._select_only_groups()
+
+        # Nächster Frame
         if self._frame < self._frame_end:
             self._frame += 1
             return {"RUNNING_MODAL"}
