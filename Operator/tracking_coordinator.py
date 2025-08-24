@@ -180,7 +180,7 @@ def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
     """
     # 0) Refine-High-Error vorher anwenden
     try:
-        from .Helper.refine_high_error import run_refine_on_high_error  # type: ignore
+        from ..Helper.refine_high_error import run_refine_on_high_error  # type: ignore
         print("[Coord] PROJECTION_CLEANUP → pre-refine_high_error()")
         run_refine_on_high_error(context, limit_frames=0, resolve_after=False)
     except Exception as ex_ref:
@@ -188,7 +188,7 @@ def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
 
     # 1) Projection cleanup (wie bisher)
     try:
-        from .Helper.projection_cleanup_builtin import run_projection_cleanup_builtin  # type: ignore
+        from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin  # type: ignore
         if error_value is None:
             res = run_projection_cleanup_builtin(
                 context,
