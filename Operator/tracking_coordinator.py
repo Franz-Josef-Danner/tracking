@@ -175,15 +175,20 @@ def _normalize_clean_error_result(res: Any, scene_val: int = 0) -> int:
 # -----------------------------------------------------------------------------
 
 def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
-    """Führt Helper/projection_cleanup_builtin aus und **danach**:
-    1) Triplet-Join (falls Gruppen vorhanden),
-    2) Clean-Short (kurze Tracks entfernen/deaktivieren).
-
-    Wenn error_value None ist, wartet der Helper intern (optional) bis ein Solve-Error verfügbar ist.
+    """Führt zunächst Helper/refine_high_error aus,
+    danach Helper/projection_cleanup_builtin und weitere Nacharbeiten.
     """
-    # 1) Projection cleanup
+    # 0) Refine-High-Error vorher anwenden
     try:
-        from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin  # type: ignore
+        from .Helper.refine_high_error import run_refine_on_high_error  # type: ignore
+        print("[Coord] PROJECTION_CLEANUP → pre-refine_high_error()")
+        run_refine_on_high_error(context, limit_frames=0, resolve_after=False)
+    except Exception as ex_ref:
+        print(f"[Coord] refine_high_error skipped/failed: {ex_ref!r}")
+
+    # 1) Projection cleanup (wie bisher)
+    try:
+        from .Helper.projection_cleanup_builtin import run_projection_cleanup_builtin  # type: ignore
         if error_value is None:
             res = run_projection_cleanup_builtin(
                 context,
