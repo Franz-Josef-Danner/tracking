@@ -1,79 +1,22 @@
-# Helper/clean_error_tracks.py
-# Sichtbares UI-Feedback (Statusleiste + Progress) + finaler clean_short_tracks-Pass
-
-import bpy
-from .multiscale_temporal_grid_clean import multiscale_temporal_grid_clean
-from .segments import track_has_internal_gaps
-from .mute_ops import mute_after_last_marker, mute_unassigned_markers
-from .split_cleanup import clear_path_on_split_tracks_segmented, recursive_split_cleanup
-
-__all__ = ("run_clean_error_tracks",)
-
-
-def _track_ptr(t):
-    try:
-        return int(t.as_pointer())
-    except Exception:
-        return id(t)
-
-
-def _clip_override(context):
-    """Sicher in den CLIP_EDITOR kontexten."""
-    win = context.window
-    if not win:
-        return None
-    scr = getattr(win, "screen", None)
-    if not scr:
-        return None
-    for area in scr.areas:
-        if area.type == 'CLIP_EDITOR':
-            for region in area.regions:
-                if region.type == 'WINDOW':
-                    return {'area': area, 'region': region, 'space_data': area.spaces.active}
-    return None
-
-
-def _deps_sync(context):
-    deps = context.evaluated_depsgraph_get()
-    deps.update()
-    bpy.context.view_layer.update()
-    context.scene.frame_set(context.scene.frame_current)
-
-
-def _status(wm, text: str | None):
-    """Kurztext in der Statusleiste setzen/entfernen."""
-    try:
-        wm.status_text_set(text)
-    except Exception:
-        pass
-
-
-def _pulse_ui():
-    """Sanftes UI-Refresh, damit Progress/Status sichtbar ist."""
-    try:
-        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-    except Exception:
-        # Fallback: nichts, Progress wird beim nächsten Draw sichtbar
-        pass
-
-
-def run_clean_error_tracks(context, *, show_popups: bool = False):
+def run_clean_error_tracks(context, *, show_popups: bool = False, soften: float = 0.5):
     """
-    Führt Clean Error Tracks mit sichtbaren UI-Schritten aus:
-      1) Prepare/Sync
-      2) Multiscale-Grid-Clean
-      3) Gap-Split + Recursive-Cleanup (+ leere Duplikate entfernen)
-      4) Safety-Pässe (mute)
-      5) Final Short Clean
+    Führt Clean Error Tracks mit sichtbaren UI-Schritten aus.
+    Der Parameter `soften` (0..1) reduziert die Lösch-Aggressivität:
+      0.0 = maximal weich (löscht am wenigsten)
+      0.5 = ca. halb so aggressiv (Standard)
+      1.0 = ursprüngliches Verhalten
     Rückgabe: {'FINISHED'} oder {'CANCELLED'}.
     """
+    soften = max(0.0, min(soften, 1.0))  # clamp
     scene = context.scene
     wm = context.window_manager
     ovr = _clip_override(context)
     if not ovr:
         if show_popups:
-            wm.popup_menu(lambda self, ctx: self.layout.label(text="Kein CLIP_EDITOR-Kontext gefunden."),
-                          title="Clean Error Tracks", icon='CANCEL')
+            wm.popup_menu(
+                lambda self, ctx: self.layout.label(text="Kein CLIP_EDITOR-Kontext gefunden."),
+                title="Clean Error Tracks", icon='CANCEL'
+            )
         print("[CleanError] ERROR: Kein gültiger CLIP_EDITOR-Kontext gefunden.")
         return {'CANCELLED'}
 
@@ -109,22 +52,34 @@ def run_clean_error_tracks(context, *, show_popups: bool = False):
                 pass
             return {'status': 'CANCELLED'}
 
-    # ---------- 2) MULTISCALE CLEAN ----------
+    # ---------- 2) MULTISCALE CLEAN (weicher) ----------
     step_update(2, "Multiscale Clean")
     with context.temp_override(**ovr):
         w, h = clip.size
         fr = (scene.frame_start, scene.frame_end)
+
+        # Weichheits-Mapping:
+        # - Je kleiner soften, desto weniger wird gelöscht.
+        # - Wir erhöhen outlier_q, hysteresis_hits und min_cell_items leicht,
+        #   und vergrößern min_delta minimal. Bei soften=1.0 landen wir nahe Original.
+        # Ursprünglich: outlier_q=2, hysteresis_hits=2, min_cell_items=4, min_delta=3
+        outlier_q = 2 + (1 if soften <= 0.75 else 0) + (1 if soften <= 0.25 else 0)
+        hysteresis_hits = 2 + (1 if soften <= 0.75 else 0)
+        min_cell_items = 4 + (2 if soften <= 0.5 else 1 if soften < 1.0 else 0)
+        min_delta = 3 + (1 if soften <= 0.5 else 0)
+
         deleted = multiscale_temporal_grid_clean(
             context, ovr["area"], ovr["region"], ovr["space_data"],
             list(clip.tracking.tracks), fr, w, h,
-            grid=(6, 6), start_delta=None, min_delta=3,
-            outlier_q=2, hysteresis_hits=2, min_cell_items=4
+            grid=(6, 6), start_delta=None, min_delta=min_delta,
+            outlier_q=outlier_q, hysteresis_hits=hysteresis_hits, min_cell_items=min_cell_items
         )
-        print(f"[MultiScale] total deleted: {deleted}")
+        print(f"[MultiScale] (soften={soften:.2f}) params: "
+              f"outlier_q={outlier_q}, hysteresis_hits={hysteresis_hits}, "
+              f"min_cell_items={min_cell_items}, min_delta={min_delta} | deleted: {deleted}")
         _deps_sync(context)
 
     # ---------- 3) GAP SPLIT + RECURSIVE ----------
-    # Globale Zähler (vor allen Operationen)
     with context.temp_override(**ovr):
         tracks_global_before = len(clip.tracking.tracks)
         markers_global_before = sum(len(t.markers) for t in clip.tracking.tracks)
@@ -165,6 +120,8 @@ def run_clean_error_tracks(context, *, show_popups: bool = False):
                 original_tracks, new_tracks
             )
 
+            # Hinweis: Falls recursive_split_cleanup intern sehr aggressiv ist,
+            # könnte man hier optional einen "softer mode" per globalem Flag implementieren.
             changed_in_recursive = recursive_split_cleanup(
                 context, ovr["area"], ovr["region"], ovr["space_data"],
                 tracks
@@ -173,7 +130,7 @@ def run_clean_error_tracks(context, *, show_popups: bool = False):
                (isinstance(changed_in_recursive, int) and changed_in_recursive > 0):
                 recursive_changed = True
 
-            # Leere Duplikate entsorgen (damit sie nicht als Änderung zählen)
+            # Leere Duplikate entsorgen (neutral)
             empty_dupes = [t for t in new_tracks if len(t.markers) == 0]
             if empty_dupes:
                 for t in tracks:
@@ -205,22 +162,30 @@ def run_clean_error_tracks(context, *, show_popups: bool = False):
         mute_unassigned_markers(tracks)
         _deps_sync(context)
 
-    # ---------- 5) FINAL SHORT CLEAN ----------
+    # ---------- 5) FINAL SHORT CLEAN (weicher) ----------
     step_update(5, "Final Short Clean")
     with context.temp_override(**ovr):
         from .clean_short_tracks import clean_short_tracks as _short
         scn = context.scene
 
-        # Gate einmalig deaktivieren, damit dieser Pass sicher läuft
         prev_skip = bool(scn.get("__skip_clean_short_once", False))
         try:
             scn["__skip_clean_short_once"] = False
-            frames = int(getattr(scn, "frames_track", 25) or 25)
+
+            # Ursprünglich: frames = getattr(scn, "frames_track", 25)
+            base_frames = int(getattr(scn, "frames_track", 25) or 25)
+
+            # Weicher: je kleiner soften, desto kleiner die Mindestlänge -> weniger Löschungen.
+            # soften=0.5 => ~halbe Mindestlänge.
+            frames_eff = max(5, int(round(base_frames * max(0.1, soften))))
+
+            print(f"[ShortClean] base_frames={base_frames} -> frames_eff={frames_eff} (soften={soften:.2f})")
+
             _short(
                 context,
-                min_len=frames,
-                action="DELETE_TRACK",
-                respect_fresh=True,   # frische Namen weiterhin schonen
+                min_len=frames_eff,
+                action="DELETE_TRACK",   # beibehalten; Reduktion erfolgt über min_len
+                respect_fresh=True,
                 verbose=True,
             )
         finally:
@@ -239,7 +204,6 @@ def run_clean_error_tracks(context, *, show_popups: bool = False):
     except Exception:
         pass
 
-    # Globale Zähler (nach allen Operationen)
     with context.temp_override(**ovr):
         tracks_global_after = len(clip.tracking.tracks)
         markers_global_after = sum(len(t.markers) for t in clip.tracking.tracks)
@@ -259,7 +223,7 @@ def run_clean_error_tracks(context, *, show_popups: bool = False):
         'tracks_after': int(tracks_global_after),
         'markers_before': int(markers_global_before),
         'markers_after': int(markers_global_after),
+        'soften': float(soften),
     }
     print(f"[CleanError] SUMMARY: {result}")
     return result
-
