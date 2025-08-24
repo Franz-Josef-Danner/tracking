@@ -2,29 +2,19 @@
 # Zweck: Selektierte Tracking-Marker frameweise NUR VORWÄRTS tracken,
 #        in einer Schleife, bis kein Track mehr Fortschritt macht.
 #
-# Drop‑in kompatibel zum Orchestrator in tracking_coordinator.py:
-#  - Registriert einen Operator unter der ID "clip.bidirectional_track",
-#    weil der Coordinator genau diesen aufruft (INVOKE_DEFAULT).
-#  - Nutzt die Scene-Keys "bidi_active" und "bidi_result" zur Kommunikation.
-#  - Akzeptiert (und ignoriert intern) die Properties
-#      use_cooperative_triplets, auto_enable_from_selection
-#    damit der Operator-Aufruf mit diesen Parametern nicht fehlschlägt.
+# Drop-in kompatibel zum Orchestrator in tracking_coordinator.py:
+#  - Operator-ID: "clip.bidirectional_track" (so ruft ihn der Coordinator auf)
+#  - Szene-Keys:  "bidi_active" und "bidi_result" für den Status-Handshake
+#  - akzeptiert die Properties: use_cooperative_triplets, auto_enable_from_selection
 #
-# Zusätzlich wird ein Hilfsoperator "helper.track_selected_forward_until_done"
-# bereitgestellt, falls du ihn separat aufrufen willst (F3-Suche etc.).
-#
-# Voraussetzungen:
-#  - Ein CLIP_EDITOR muss geöffnet sein und einen Movie Clip anzeigen.
-#  - Marker/Tracks müssen selektiert sein.
-#
-# PEP 8, defensive Fehlerbehandlung, keine Hintergrund-Threads.
+# Zusätzlich: Utility-Operator "helper.track_selected_forward_until_done" für manuelle Nutzung.
 
 from __future__ import annotations
 
 import bpy
 from typing import Iterable, Optional, Tuple, Any
 
-# Scene-Schlüssel müssen zu tracking_coordinator.py passen
+# Scene keys (müssen mit tracking_coordinator.py übereinstimmen)
 _BIDI_ACTIVE_KEY = "bidi_active"
 _BIDI_RESULT_KEY = "bidi_result"
 
@@ -34,11 +24,7 @@ _BIDI_RESULT_KEY = "bidi_result"
 # -----------------------------------------------------------------------------
 
 def _find_clip_context() -> Tuple[Optional[Any], Optional[Any], Optional[Any]]:
-    """Suche einen CLIP_EDITOR nebst WINDOW-Region und SpaceClip.
-
-    Returns:
-        (area, region, space) oder (None, None, None)
-    """
+    """Suche einen CLIP_EDITOR nebst WINDOW-Region und SpaceClip."""
     wm = bpy.context.window_manager
     for window in wm.windows:
         screen = window.screen
@@ -65,29 +51,31 @@ def _get_active_clip(space: Optional[Any]) -> Optional[Any]:
 
 
 def _selected_tracks(clip: Any) -> Iterable[Any]:
+    """Nur nach Track-Selektion filtern (Blender 4.x: keine .mute/.disabled-Garantie)."""
     if not clip:
         return []
-    # Blender 4.x: MovieTrackingTrack hat i. d. R. keine .mute/.disabled Properties
-    # → wir filtern hier NUR auf .select und überlassen weitere Ausschlüsse _can_attempt_step.
     tracks = clip.tracking.tracks
     return [t for t in tracks if bool(getattr(t, "select", False))]
 
 
 def _has_marker_at(track: Any, frame: int) -> bool:
+    """Prüfen, ob Track einen Marker an 'frame' hat (API-kompatibel)."""
     try:
         return track.markers.find_frame(frame) is not None
     except Exception:
-        return any(m.frame == frame for m in track.markers)
+        return any(getattr(m, "frame", None) == frame for m in track.markers)
 
 
 def _can_attempt_step(track: Any, clip: Any, current_frame: int) -> bool:
-    # defensiv: optionale Flags abfragen, ohne AttributeError zu werfen
+    """Darf/soll dieser Track einen Vorwärts-Schritt versuchen?"""
+    # defensiv gegen Build-Unterschiede
     if bool(getattr(track, "mute", False)) or bool(getattr(track, "muted", False)):
         return False
     if bool(getattr(track, "disabled", False)) or bool(getattr(track, "hide", False)):
         return False
     if not _has_marker_at(track, current_frame):
         return False
+    # Clipgrenze beachten
     next_frame = current_frame + 1
     end_frame = getattr(clip, "frame_end", None)
     try:
@@ -106,7 +94,7 @@ def track_selected_forward_until_done() -> int:
     """Trackt selektierte Marker frameweise VORWÄRTS, bis kein Fortschritt mehr möglich ist.
 
     Returns:
-        Anzahl der tatsächlich durchgeführten Vorwärts-Schritte (Frames).
+        int: Anzahl der tatsächlich durchgeführten Vorwärts-Schritte (Frames).
     Raises:
         RuntimeError: wenn kein CLIP_EDITOR/Clip vorhanden ist.
     """
@@ -128,34 +116,37 @@ def track_selected_forward_until_done() -> int:
         current_frame = int(scene.frame_current)
         next_frame = current_frame + 1
 
-        # Alle Tracks (für Selektion-Management) und aktuell selektierte sammeln
+        # Selektion erfassen
         all_tracks = list(clip.tracking.tracks)
-        selected_tracks = [t for t in all_tracks if t.select]
+        selected_tracks = [t for t in all_tracks if bool(getattr(t, "select", False))]
         if not selected_tracks:
             break
 
-        # Kandidaten: am aktuellen Frame marker-haltend, nicht gemutet/disabled, innerhalb Clip
+        # Kandidaten bestimmen (Marker am current_frame vorhanden etc.)
         candidates = [t for t in selected_tracks if _can_attempt_step(t, clip, current_frame)]
         if not candidates:
             break
 
-        # WICHTIG: Nur Tracks tracken, die am nächsten Frame noch KEINEN Marker haben
+        # Nur Tracks tracken, die im next_frame noch keinen Marker besitzen
         eligible = [t for t in candidates if not _has_marker_at(t, next_frame)]
         if not eligible:
-            # Es gibt nichts mehr anzulegen – Arbeit erledigt
-            break
+            break  # nichts zu tun
 
-        # Selektion temporär auf eligible einschränken, damit keine Marker an bereits
-        # belegten next_frame-Positionen neu gesetzt/überschrieben werden
-        original_sel = {t.name: bool(t.select) for t in all_tracks}
+        # Selektion temporär auf eligible einschränken
+        original_sel = {t.name: bool(getattr(t, "select", False)) for t in all_tracks}
         try:
             for t in all_tracks:
-                t.select = False
+                try:
+                    t.select = False
+                except Exception:
+                    pass
             for t in eligible:
-                t.select = True
+                try:
+                    t.select = True
+                except Exception:
+                    pass
 
-            # Vor dem Operator sicherstellen, dass bei jedem eligible-Track
-            # der Marker am *aktuellen* Frame selektiert ist (Operator arbeitet markerbasiert).
+            # Marker am aktuellen Frame markieren (Operator ist markerbasiert)
             for t in eligible:
                 try:
                     mk = t.markers.find_frame(current_frame)
@@ -164,23 +155,23 @@ def track_selected_forward_until_done() -> int:
                 except Exception:
                     pass
 
-            # Exakt EIN Frame tracken (nur für eligible)
+            # Genau EIN Frame tracken
             with bpy.context.temp_override(area=area, region=region, space_data=space):
                 bpy.ops.clip.track_markers(backwards=False, sequence=False)
         finally:
-            # Selektion sauber wiederherstellen
+            # ursprüngliche Track-Selektion wiederherstellen
             for t in all_tracks:
                 try:
                     t.select = bool(original_sel.get(t.name, False))
                 except Exception:
                     pass
 
-        # Fortschritt prüfen: hat mind. ein eligible nun einen Marker im next_frame?
+        # Fortschritt prüfen
         progressed = any(_has_marker_at(t, next_frame) for t in eligible)
         if not progressed:
             break
 
-        # Szene-Frame einen Schritt weiter
+        # Einen Frame weiter
         scene.frame_set(next_frame)
         step_count += 1
 
@@ -188,7 +179,7 @@ def track_selected_forward_until_done() -> int:
 
 
 # -----------------------------------------------------------------------------
-# UI-Operator: helper.track_selected_forward_until_done (direkter Aufruf)
+# UI-Operator: helper.track_selected_forward_until_done (manuell via F3)
 # -----------------------------------------------------------------------------
 
 class HELPER_OT_track_selected_forward_until_done(bpy.types.Operator):
@@ -197,6 +188,59 @@ class HELPER_OT_track_selected_forward_until_done(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     performed_steps: bpy.props.IntProperty(name="Durchgeführte Schritte", default=0, options={'HIDDEN'})
+
+    def execute(self, context):
+        try:
+            steps = track_selected_forward_until_done()
+        except RuntimeError as err:
+            self.report({'ERROR'}, str(err))
+            return {'CANCELLED'}
+        self.performed_steps = int(steps)
+        self.report({'INFO'}, f"Tracking beendet. Schritte: {steps}")
+        return {'FINISHED'}
+
+
+# -----------------------------------------------------------------------------
+# Drop-in Operator für den Coordinator: clip.bidirectional_track
+# -----------------------------------------------------------------------------
+
+class CLIP_OT_bidirectional_track(bpy.types.Operator):
+    """Kompatibler Operator für tracking_coordinator._state_track()."""
+
+    bl_idname = "clip.bidirectional_track"
+    bl_label = "Bidirectional Track (stepwise forward)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    # Erwartete (optionale) Properties aus dem Coordinator-Aufruf:
+    use_cooperative_triplets: bpy.props.BoolProperty(  # type: ignore
+        name="Use Cooperative Triplets",
+        default=True,
+        description="Kompatibilitäts-Property – wird hier nicht verwendet.",
+    )
+    auto_enable_from_selection: bpy.props.BoolProperty(  # type: ignore
+        name="Auto Enable from Selection",
+        default=True,
+        description="Kompatibilitäts-Property – wird hier nicht verwendet.",
+    )
+
+    _running: bool = False  # interner Status
+
+    @classmethod
+    def poll(cls, context):
+        return getattr(context.area, "type", None) == "CLIP_EDITOR"
+
+    def invoke(self, context, event):
+        scn = context.scene
+        # idempotent: nicht doppelt starten
+        if scn.get(_BIDI_ACTIVE_KEY, False):
+            self.report({'INFO'}, "Bidirectional-Track läuft bereits – überspringe zweiten Start.")
+            return {'CANCELLED'}
+
+        scn[_BIDI_ACTIVE_KEY] = True
+        scn[_BIDI_RESULT_KEY] = ""
+        self._running = True
+        # blockierend ausführen (kein eigener Modal-Loop)
+        return self.execute(context)
 
     def execute(self, context):
         scn = context.scene
@@ -227,16 +271,13 @@ classes = (
     CLIP_OT_bidirectional_track,
 )
 
-
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
-
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
-
 
 if __name__ == "__main__":
     register()
