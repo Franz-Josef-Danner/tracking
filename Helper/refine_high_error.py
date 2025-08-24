@@ -121,6 +121,98 @@ def _select_frames_over_high_threshold(context, recon):
         print("[Select] Keine Frames über high_threshold gefunden.")
     return selected
 
+class _RefinePump:
+    def __init__(self, context, clip, bad_frames, area, region, space_ce, resolve_after, original_frame):
+        self.context = context
+        self.clip = clip
+        self.bad_frames = list(bad_frames)
+        self.area, self.region, self.space_ce = area, region, space_ce
+        self.resolve_after = resolve_after
+        self.original_frame = original_frame
+        self.processed = 0
+        self.scene = context.scene
+        self._cancelled = False
+
+    def _pulse(self):
+        try:
+            if self.area:
+                self.area.tag_redraw()
+            with self.context.temp_override(window=self.context.window, area=self.area, region=self.region):
+                bpy.ops.wm.redraw_timer(type='DRAW_WIN', iterations=1)
+        except Exception:
+            if self.area:
+                self.area.tag_redraw()
+
+    def _do_refine_one(self, f):
+        scene = self.scene
+        clip = self.clip
+        print(f"\n[FRAME] Refine für Frame {f}")
+        scene.frame_set(f)
+        # falls du _sync_clip_editor_frame hast, hier optional:
+        # _sync_clip_editor_frame(self.space_ce, f)
+        self._pulse()
+
+        tracks_forward, tracks_backward = [], []
+        for tr in clip.tracking.tracks:
+            if getattr(tr, "hide", False) or getattr(tr, "lock", False):
+                continue
+            prev_k, next_k = _prev_next_keyframes(tr, f)
+            mk = tr.markers.find_frame(f, exact=True)
+            if mk and getattr(mk, "mute", False):
+                continue
+            if prev_k is not None:
+                tracks_forward.append(tr)
+            if next_k is not None:
+                tracks_backward.append(tr)
+
+        print(f"  → Vorwärts: {len(tracks_forward)} | Rückwärts: {len(tracks_backward)}")
+
+        if tracks_forward:
+            with self.context.temp_override(area=self.area, region=self.region, space_data=self.space_ce):
+                for tr in clip.tracking.tracks:
+                    tr.select = False
+                for tr in tracks_forward:
+                    tr.select = True
+                bpy.ops.clip.refine_markers(backwards=False)
+        if tracks_backward:
+            with self.context.temp_override(area=self.area, region=self.region, space_data=self.space_ce):
+                for tr in clip.tracking.tracks:
+                    tr.select = False
+                for tr in tracks_backward:
+                    tr.select = True
+                bpy.ops.clip.refine_markers(backwards=True)
+
+        self.processed += 1
+        print(f"  [DONE] Frame {f} abgeschlossen.")
+        self._pulse()
+
+    def tick(self):
+        # Abbruch/Ende?
+        if self._cancelled:
+            return None
+
+        if not self.bad_frames:
+            if self.resolve_after:
+                print("[ACTION] Starte erneutes Kamera-Solve…")
+                with self.context.temp_override(area=self.area, region=self.region, space_data=self.space_ce):
+                    bpy.ops.clip.solve_camera()
+                # _sync_clip_editor_frame(self.space_ce, self.scene.frame_current)
+                self._pulse()
+                print("[DONE] Kamera-Solve abgeschlossen.")
+
+            # zurück auf ursprünglichen Frame
+            self.scene.frame_set(self.original_frame)
+            # _sync_clip_editor_frame(self.space_ce, self.original_frame)
+            self._pulse()
+            print(f"\n[SUMMARY] Insgesamt bearbeitet: {self.processed} Frame(s)")
+            return None  # Timer endet
+
+        # Nächstes Stück Arbeit:
+        f = self.bad_frames.pop(0)
+        self._do_refine_one(f)
+
+        # sofort wieder schedulen (0.0) → UI bekommt Event‑Loop
+        return 0.0
 
 # --- Core Routine -------------------------------------------------------------
 
@@ -169,6 +261,11 @@ def run_refine_on_high_error(
 
     scene = context.scene
     original_frame = scene.frame_current
+    # --- NEU: Timer-Pump statt for-Schleife ---
+    pump = _RefinePump(context, clip, bad_frames, area, region, space_ce, resolve_after, original_frame)
+    bpy.app.timers.register(pump.tick, first_interval=0.0)
+    print(f"[INFO] Refine (High-Error) gestartet: {len(bad_frames)} Frames, UI bleibt responsiv.")
+    return 0  # Rückgabe sofort; Arbeit läuft im Timer
     processed = 0
 
     for f in bad_frames:
