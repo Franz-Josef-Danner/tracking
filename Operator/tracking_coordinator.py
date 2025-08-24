@@ -27,8 +27,9 @@ Hinweis:
 """
 
 import os
-import bpy
 from typing import Optional, Dict, Any
+
+import bpy
 from ..Helper.triplet_grouping import run_triplet_grouping  # top-level import
 
 __all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
@@ -65,7 +66,6 @@ def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
 # ---------------------------------------------------------------------------
 # Solve-Error Utilities (lokale Hilfen)
 # ---------------------------------------------------------------------------
-
 
 def _get_active_clip(context) -> Optional[bpy.types.MovieClip]:
     space = getattr(context, "space_data", None)
@@ -126,7 +126,6 @@ def _wait_for_reconstruction(context, tries: int = 12) -> bool:
 
 
 # --- neu: Cleaner robust starten und Anzahl gelöschter Tracks ermitteln ---
-
 
 def _count_tracks(context) -> int:
     clip = _get_active_clip(context)
@@ -235,15 +234,18 @@ def _run_clean_error_until_stable(context, max_passes: int = 5, show_popups: boo
     return total_delta
 
 
-# --- PATCH: Trigger Clean-Short after projection cleanup ---
-# Insert this replacement for the helper function `_run_projection_cleanup` in
-# Operator/tracking_coordinator.py.
+# -----------------------------------------------------------------------------
+# Projection-Cleanup Wrapper: Triplet-Join + Clean-Short danach
+# -----------------------------------------------------------------------------
 
 def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
-    """Startet Helper/projection_cleanup_builtin und **danach** einen Clean‑Short‑Pass.
-    Wenn error_value None ist, wartet der Helper intern (optional) bis ein Solve‑Error verfügbar ist.
+    """Führt Helper/projection_cleanup_builtin aus und **danach**:
+    1) Triplet-Join (falls Gruppen vorhanden),
+    2) Clean-Short (kurze Tracks entfernen/deaktivieren).
+
+    Wenn error_value None ist, wartet der Helper intern (optional) bis ein Solve-Error verfügbar ist.
     """
-    # 1) Projection cleanup (unverändert)
+    # 1) Projection cleanup
     try:
         from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin  # type: ignore
         if error_value is None:
@@ -265,10 +267,10 @@ def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
         print(f"[Coord] PROJECTION_CLEANUP → {res}")
     except Exception as ex_func:
         print(f"[Coord] projection_cleanup function failed: {ex_func!r} → try operator fallback")
-        # Operator‑Fallback: ohne Warte‑Logik
+        # Operator-Fallback: ohne Warte-Logik (nur mit error_value sinnvoll)
         try:
             if error_value is not None:
-                for prop_name in ("clean_error", "error"):
+                for prop_name in ("clean_error", "error"):  # native Param-Namen probieren
                     try:
                         bpy.ops.clip.clean_tracks(**{prop_name: float(error_value)}, action="DISABLE")
                         print(f"[Coord] clean_tracks (fallback, {prop_name}={error_value})")
@@ -280,7 +282,15 @@ def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
         except Exception as ex_op:
             print(f"[Coord] projection_cleanup fallback launch failed: {ex_op!r}")
 
-    # 2) NEU: Clean‑Short direkt im Anschluss an Projection Cleanup
+    # 2) Triplet-Join – idempotent; wird übersprungen, falls Helper fehlt
+    try:
+        from ..Helper.triplet_joiner import run_triplet_join  # type: ignore
+        res_join = run_triplet_join(context, active_policy="first")
+        print(f"[Coord] PROJECTION_CLEANUP → TRIPLET_JOIN: {res_join}")
+    except Exception as ex_join:
+        print(f"[Coord] PROJECTION_CLEANUP triplet_join skipped/failed: {ex_join!r}")
+
+    # 3) Clean-Short direkt im Anschluss
     try:
         from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
         frames = int(getattr(context.scene, "frames_track", 25) or 25)
@@ -294,7 +304,8 @@ def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
         )
     except Exception as ex:
         print(f"[Coord] PROJECTION_CLEANUP CLEAN_SHORT failed: {ex!r}")
-      
+
+
 # --- neu auf Modulebene (außerhalb der Klasse) ---
 
 def _clip_override(context):
@@ -530,14 +541,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # SOLVE_WAIT initialisieren (nicht blockierend, Timer-getaktet)
         self._solve_wait_ticks = int(_SOLVE_WAIT_TICKS_DEFAULT)
         # Wichtig: in jeder Solve-Phase (neu gestartet aus FIND_LOW) ist zunächst kein Retry erfolgt
-        # Das Flag wird erst gesetzt, sobald wir tatsächlich REFINE+Retry auslösen.
-        # (Wenn wir aus SOLVE_WAIT heraus ein Retry starten, bleibt derselbe SOLVE-Zyklus.)
+        self._solve_retry_done = False
         self._state = "SOLVE_WAIT"
         return {"RUNNING_MODAL"}
 
     def _state_solve_wait(self, context):
         """Nicht-blockierendes Warten auf gültige Rekonstruktion, danach Error-Bewertung."""
-        # pro Tick nur kurz prüfen (keine Busy-Wait)
         if not _wait_for_reconstruction(context, tries=_SOLVE_WAIT_TRIES_PER_TICK):
             self._solve_wait_ticks -= 1
             print(f"[Coord] SOLVE_WAIT → waiting ({self._solve_wait_ticks} ticks left)")
@@ -556,7 +565,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print("[Coord] SOLVE_WAIT → Kein gültiger Error → PROJECTION_CLEANUP (wartend) → FIND_LOW")
             _run_projection_cleanup(context, None)
             self._state = "FIND_LOW"
-            # Reset für nächsten Solve-Zyklus
             self._solve_retry_done = False
             return {"RUNNING_MODAL"}
 
@@ -591,14 +599,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception as ex_cu:
                 print(f"[Coord] PROJECTION_CLEANUP failed: {ex_cu!r}")
             self._state = "FIND_LOW"
-            # Reset für nächsten Solve-Zyklus
             self._solve_retry_done = False
             return {"RUNNING_MODAL"}
 
         # Fehler unter Schwelle → fertig
         print("[Coord] SOLVE_WAIT → FINALIZE")
         self._state = "FINALIZE"
-        # Reset für etwaige nächste Zyklen
         self._solve_retry_done = False
         return {"RUNNING_MODAL"}
 
@@ -620,7 +626,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         # Danach zurück in FIND_LOW für erneuten Pipeline-Durchlauf
         self._state = "FIND_LOW"
-        # Reset des Retry-Flags für kommenden Solve-Zyklus
         self._solve_retry_done = False
         return {"RUNNING_MODAL"}
 
@@ -687,7 +692,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print(f"[Coord] TRIPLET_GROUPING → {tg}")
         except Exception as ex_tg:
             print(f"[Coord] TRIPLET_GROUPING failed: {ex_tg!r}")
-        
+
         self._detect_attempts = 0
         context.scene[_CLEAN_SKIP_ONCE] = True  # CleanShort erst NACH Bi-Track
         print(f"[Coord] DETECT → {status} → TRACK (Bidirectional)")
