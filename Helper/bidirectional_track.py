@@ -2,45 +2,28 @@
 """
 Helper/bidirectional_track.py
 
-Bidirektionales Tracking (sichtbar im UI) mit nachgelagerter Join-Phase
-basierend auf zuvor in der Szene gespeicherten Triplet-Gruppen
-(kompatibel zu Helper/detect.py).
+Bidirektionales Tracking (sichtbar im UI) mit nachgelagerter Join-Phase,
+die an Helper/triplet_joiner.py delegiert ist. Die Triplet-Gruppen müssen
+vorher in der Szene persistiert worden sein (z. B. durch Helper/triplet_grouping.py
+oder einen Post-Schritt in detect.py).
 
 Features
 --------
 - Modal-Operator startet Vorwärts- und Rückwärts-Tracking (sequence=True).
 - Stabilitätsdetektion über Marker-/Frame-Konstanz.
 - Robuste CLIP_EDITOR-Kontext-Findung (temp_override) für bpy.ops.clip.*.
-- Triplet-Gruppen aus Szene-Props laden (Names/Ptrs), zugehörige Tracks selektieren
-  und via bpy.ops.clip.join_tracks() zusammenführen.
+- Delegierter Triplet-Join via Helper/triplet_joiner.run_triplet_join(...).
 - Optionaler Clean-Short (falls Modul vorhanden).
 - Orchestrator-Handshake via scene["bidi_active"], scene["bidi_result"].
-
-Hinweis
--------
-Dieser Helper erwartet, dass Helper/detect.py zuvor Triplet-Gruppen in die Szene
-serialisiert hat:
-  - "pattern_triplet_groups_json"    → [[name1,name2,name3], ...]
-  - "pattern_triplet_groups_ptr_json"→ [[ptr1,ptr2,ptr3], ...]
-  - "pattern_triplet_groups_count"   → int
 """
 
 from __future__ import annotations
 
 import time
-import json
-from typing import List, Dict, Any, Optional, Tuple
+from typing import Optional, Tuple
 
 import bpy
 from bpy.types import Operator
-
-
-# ---------------------------------------------------------------------------
-# Scene keys für Triplet-Gruppen (müssen zu Helper/detect.py passen)
-# ---------------------------------------------------------------------------
-_TRIPLET_NAMES_KEY = "pattern_triplet_groups_json"
-_TRIPLET_PTRS_KEY = "pattern_triplet_groups_ptr_json"
-_TRIPLET_COUNT_KEY = "pattern_triplet_groups_count"
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +69,7 @@ def _run_in_clip_context(op_callable, **kwargs):
 def _get_active_clip_fallback() -> Optional[bpy.types.MovieClip]:
     """Versucht, einen aktiven Clip zu finden – erst UI, dann bpy.data.movieclips."""
     # 1) Aus aktivem CLIP_EDITOR
-    win, area, region, space = _find_clip_context()
+    _, _, _, space = _find_clip_context()
     if space:
         clip = getattr(space, "clip", None)
         if clip:
@@ -132,125 +115,6 @@ def _deselect_all_tracks(clip) -> None:
             t.select = False
     except Exception:
         pass
-
-
-def _track_by_ptr_or_name(clip, ptr: Optional[int], name: Optional[str]):
-    """Robuste Track-Auflösung: bevorzugt Pointer, sonst Name."""
-    tracks = getattr(getattr(clip, "tracking", None), "tracks", [])
-    # Pointer
-    if ptr is not None:
-        for t in tracks:
-            try:
-                if int(t.as_pointer()) == int(ptr):
-                    return t
-            except Exception:
-                pass
-    # Name Fallback
-    if name:
-        for t in tracks:
-            try:
-                if t.name == name:
-                    return t
-            except Exception:
-                pass
-    return None
-
-
-# ---------------------------------------------------------------------------
-# Triplet-Gruppen laden & joinen
-# ---------------------------------------------------------------------------
-
-def _load_triplet_groups_from_scene(scene) -> List[List[Dict[str, Any]]]:
-    """
-    Lädt Triplet-Gruppen aus Scene-Props. Form:
-      - scene[_TRIPLET_PTRS_KEY]  = JSON [[ptr1,ptr2,ptr3], ...]
-      - scene[_TRIPLET_NAMES_KEY] = JSON [[n1,n2,n3], ...]
-    Gibt Liste von Dicts je Track zurück: {"ptr": int|None, "name": str|None}
-    """
-    groups: List[List[Dict[str, Any]]] = []
-    try:
-        ptr_json = scene.get(_TRIPLET_PTRS_KEY)
-        name_json = scene.get(_TRIPLET_NAMES_KEY)
-
-        ptr_groups = json.loads(ptr_json) if isinstance(ptr_json, str) else []
-        name_groups = json.loads(name_json) if isinstance(name_json, str) else []
-
-        # Normalisieren auf gleiche Länge
-        L = max(len(ptr_groups), len(name_groups))
-        for idx in range(L):
-            ptr_trip = list(ptr_groups[idx]) if idx < len(ptr_groups) else []
-            name_trip = list(name_groups[idx]) if idx < len(name_groups) else []
-            # Auf Länge 3 polstern
-            while len(ptr_trip) < 3:
-                ptr_trip.append(None)
-            while len(name_trip) < 3:
-                name_trip.append(None)
-
-            trip: List[Dict[str, Any]] = [
-                {"ptr": ptr_trip[0], "name": name_trip[0]},
-                {"ptr": ptr_trip[1], "name": name_trip[1]},
-                {"ptr": ptr_trip[2], "name": name_trip[2]},
-            ]
-            groups.append(trip)
-    except Exception as ex:
-        print(f"[BidiTrack] WARN: Triplet-Gruppen konnten nicht geladen werden: {ex}")
-    return groups
-
-
-def _join_triplet_groups(context, clip) -> int:
-    """
-    Kernfunktion: Nimmt gespeicherte 3er-Gruppen aus der Szene,
-    selektiert pro Gruppe die drei Tracks und ruft bpy.ops.clip.join_tracks().
-    Returns: Anzahl erfolgreich verarbeiteter Join-Operationen.
-    """
-    scene = context.scene
-    groups = _load_triplet_groups_from_scene(scene)
-    if not groups:
-        print("[BidiTrack] Info: Keine Triplet-Gruppen auf Szene gefunden – kein Join notwendig.")
-        return 0
-
-    joined_ops = 0
-    for g_idx, trip in enumerate(groups, start=1):
-        # Tracks auflösen (Pointer bevorzugt, Name Fallback)
-        tr_objs = []
-        for item in trip:
-            tr = _track_by_ptr_or_name(clip, item.get("ptr"), item.get("name"))
-            if tr:
-                tr_objs.append(tr)
-
-        if len(tr_objs) < 3:
-            print(f"[BidiTrack] Gruppe #{g_idx}: <3 gültige Tracks aufgelöst – überspringe.")
-            continue
-
-        # Selektion vorbereiten
-        _deselect_all_tracks(clip)
-        for t in tr_objs:
-            try:
-                t.select = True
-            except Exception:
-                pass
-
-        # Operator ausführen (im CLIP-Kontext)
-        def _op_join(**kw):
-            return bpy.ops.clip.join_tracks(**kw)
-
-        try:
-            ret = _run_in_clip_context(_op_join)
-            print(f"[BidiTrack] Gruppe #{g_idx}: join_tracks() -> {ret}")
-            joined_ops += 1
-        except Exception as ex:
-            print(f"[BidiTrack] Gruppe #{g_idx}: join_tracks() fehlgeschlagen: {ex}")
-
-        # UI-Refresh
-        try:
-            bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
-        except Exception:
-            pass
-
-    # Selektion aufräumen
-    _deselect_all_tracks(clip)
-    print(f"[BidiTrack] Join-Zusammenfassung: {joined_ops}/{len(groups)} Gruppen zusammengeführt.")
-    return joined_ops
 
 
 # ---------------------------------------------------------------------------
@@ -460,7 +324,7 @@ class CLIP_OT_bidirectional_track(Operator):
         """
         Abschlussroutine:
         1) Timer/Cleanup
-        2) Triplet-Gruppen joinen (bpy.ops.clip.join_tracks)
+        2) Triplet-Join via Helper/triplet_joiner.run_triplet_join()
         3) Optionaler Clean-Short
         4) Orchestrator-Flags setzen & beenden
         """
@@ -470,12 +334,18 @@ class CLIP_OT_bidirectional_track(Operator):
         # 1) Timer-Cleanup zuerst stoppen (keine weiteren TIMER-Events)
         self._cleanup_timer(context)
 
-        # 2) Triplet-Gruppen zusammenführen (Join)
+        # 2) Triplet-Gruppen zusammenführen (delegiert)
         try:
             clip = _get_active_clip_fallback()
             if clip:
-                joined = _join_triplet_groups(context, clip)
-                print(f"[BidiTrack] Post-Join abgeschlossen | groups_joined={joined}")
+                try:
+                    from . import triplet_joiner
+                except Exception as imp_ex:
+                    print(f"[BidiTrack] WARN: triplet_joiner nicht verfügbar: {imp_ex}")
+                else:
+                    res = triplet_joiner.run_triplet_join(context, active_policy="first")
+                    print(f"[BidiTrack] Post-Join abgeschlossen | groups_joined={res.get('joined', 0)} "
+                          f"| total={res.get('total', 0)} | skipped={res.get('skipped', 0)}")
             else:
                 print("[BidiTrack] WARN: Kein Clip im Kontext – Join übersprungen.")
         except Exception as ex:
