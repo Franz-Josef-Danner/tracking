@@ -235,10 +235,15 @@ def _run_clean_error_until_stable(context, max_passes: int = 5, show_popups: boo
     return total_delta
 
 
+# --- PATCH: Trigger Clean-Short after projection cleanup ---
+# Insert this replacement for the helper function `_run_projection_cleanup` in
+# Operator/tracking_coordinator.py.
+
 def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
-    """Startet Helper/projection_cleanup_builtin; wenn error_value None ist,
-    wartet der Helper intern (optional) bis ein Solve-Error verfügbar ist.
+    """Startet Helper/projection_cleanup_builtin und **danach** einen Clean‑Short‑Pass.
+    Wenn error_value None ist, wartet der Helper intern (optional) bis ein Solve‑Error verfügbar ist.
     """
+    # 1) Projection cleanup (unverändert)
     try:
         from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin  # type: ignore
         if error_value is None:
@@ -246,7 +251,7 @@ def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
                 context,
                 error_limit=None,
                 wait_for_error=True,
-                wait_forever=False,   # falls gewünscht True (blockiert ggf.!),
+                wait_forever=False,
                 timeout_s=20.0,
                 action="DELETE_TRACK",
             )
@@ -258,27 +263,39 @@ def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
                 action="DELETE_TRACK",
             )
         print(f"[Coord] PROJECTION_CLEANUP → {res}")
-        return
     except Exception as ex_func:
         print(f"[Coord] projection_cleanup function failed: {ex_func!r} → try operator fallback")
-        # Operator-Fallback: ohne Warte-Logik
+        # Operator‑Fallback: ohne Warte‑Logik
         try:
             if error_value is not None:
-                for prop_name in ("clean_error", "error"):  # möglichst native Param-Namen
+                for prop_name in ("clean_error", "error"):
                     try:
                         bpy.ops.clip.clean_tracks(**{prop_name: float(error_value)}, action="DISABLE")
                         print(f"[Coord] clean_tracks (fallback, {prop_name}={error_value})")
-                        return
+                        break
                     except TypeError:
                         continue
-            # Ohne Error-Wert kein sinnvoller Fallback möglich
-            print("[Coord] clean_tracks Fallback SKIPPED: kein error_value")
+            else:
+                print("[Coord] clean_tracks Fallback SKIPPED: kein error_value")
         except Exception as ex_op:
             print(f"[Coord] projection_cleanup fallback launch failed: {ex_op!r}")
 
-
+    # 2) NEU: Clean‑Short direkt im Anschluss an Projection Cleanup
+    try:
+        from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
+        frames = int(getattr(context.scene, "frames_track", 25) or 25)
+        print(f"[Coord] PROJECTION_CLEANUP → CLEAN_SHORT (frames<{frames}, DELETE_TRACK)")
+        clean_short_tracks(
+            context,
+            min_len=frames,
+            action="DELETE_TRACK",
+            respect_fresh=True,
+            verbose=True,
+        )
+    except Exception as ex:
+        print(f"[Coord] PROJECTION_CLEANUP CLEAN_SHORT failed: {ex!r}")
+      
 # --- neu auf Modulebene (außerhalb der Klasse) ---
-
 
 def _clip_override(context):
     """Sichert area=CLIP_EDITOR & region=WINDOW und hängt notfalls einen Clip an."""
