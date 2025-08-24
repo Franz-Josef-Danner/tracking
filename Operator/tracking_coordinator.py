@@ -41,7 +41,6 @@ _MAX_DETECT_ATTEMPTS = 8
 
 _BIDI_ACTIVE_KEY = "bidi_active"
 _BIDI_RESULT_KEY = "bidi_result"
-_CLEAN_SKIP_ONCE = "__skip_clean_short_once"  # vom Cleaner respektiert
 
 # Keys für Optimizer-Signal (werden von Helper/jump_to_frame.py gesetzt)
 _OPT_REQ_KEY = "__optimize_request"
@@ -356,6 +355,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         scn[_LOCK_KEY] = False
         scn[_BIDI_ACTIVE_KEY] = False
         scn[_BIDI_RESULT_KEY] = ""
+        # Safety: altes Skip-Gate entfernen, wir arbeiten strikt reihenfolgebasiert
+        scn.pop("__skip_clean_short_once", None)
         self._state = "INIT"
         self._detect_attempts = 0
         self._jump_done = False
@@ -590,7 +591,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print(f"[Coord] DETECT → RUNNING (attempt {self._detect_attempts}/{_MAX_DETECT_ATTEMPTS})")
             if self._detect_attempts >= _MAX_DETECT_ATTEMPTS:
                 print("[Coord] DETECT Timebox erreicht → force TRACK")
-                context.scene[_CLEAN_SKIP_ONCE] = True
                 self._state = "TRACK"
             return {"RUNNING_MODAL"}
 
@@ -600,8 +600,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         except Exception as ex_tg:
             print(f"[Coord] TRIPLET_GROUPING failed: {ex_tg!r}")
 
-        self._detect_attempts = 0
-        context.scene[_CLEAN_SKIP_ONCE] = True  # CleanShort erst NACH Bi-Track
         print(f"[Coord] DETECT → {status} → TRACK (Bidirectional)")
         self._state = "TRACK"
         return {"RUNNING_MODAL"}
@@ -627,10 +625,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print("[Coord] TRACK → waiting (bidi_active=True)")
             return {"RUNNING_MODAL"}
 
-        result = str(scn.get(_BIDI_RESULT_KEY, "") or "").upper()
         scn[_BIDI_RESULT_KEY] = ""
         self._bidi_started = False
-        print(f"[Coord] TRACK → finished (result={result or 'NONE'}) → CLEAN_SHORT")
         self._state = "CLEAN_SHORT"
         return {"RUNNING_MODAL"}
 
@@ -645,7 +641,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     context,
                     min_len=frames,
                     action="DELETE_TRACK",
-                    respect_fresh=True,
                     verbose=True,
                 )
             except Exception as ex:
