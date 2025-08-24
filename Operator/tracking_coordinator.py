@@ -184,7 +184,7 @@ def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
         try:
             from ..Helper.refine_high_error import run_refine_on_high_error  # type: ignore
             print("[Coord] PROJECTION_CLEANUP → pre-refine_high_error()")
-            run_refine_on_high_error(context, limit_frames=0, resolve_after=False, run_mode="sync")
+            run_refine_on_high_error(context, limit_frames=0, resolve_after=False)
             context.scene[gate_key] = True
         except Exception as ex_ref:
             print(f"[Coord] refine_high_error skipped/failed: {ex_ref!r}")
