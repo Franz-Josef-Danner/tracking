@@ -3,7 +3,18 @@ from __future__ import annotations
 """
 Helper/bidirectional_track.py
 
-Bidirektionales Tracking (sichtbar im UI) mit nachgelagerter Join-Phase.
+Bidirektionales Tracking (sichtbar im UI) mit nachgelagerter Join-Phase,
+die an Helper/triplet_joiner.py delegiert ist. Die Triplet-Gruppen müssen
+vorher in der Szene persistiert worden sein (z. B. durch Helper/triplet_grouping.py
+oder einen Post-Schritt in detect.py).
+
+Features
+--------
+- Modal-Operator startet Vorwärts- und Rückwärts-Tracking (sequence=True).
+- Stabilitätsdetektion über Marker-/Frame-Konstanz.
+- Robuste CLIP_EDITOR-Kontext-Findung (temp_override) für bpy.ops.clip.*.
+- Delegierter Triplet-Join via Helper/triplet_joiner.run_triplet_join(...).
+- Orchestrator-Handshake via scene["bidi_active"], scene["bidi_result"].
 """
 
 import time
@@ -11,7 +22,7 @@ from typing import Optional, Tuple
 
 import bpy
 from bpy.types import Operator
-from .utils_busy import is_busy  # neu
+
 
 # ---------------------------------------------------------------------------
 # UI/Context-Utilities
@@ -40,6 +51,7 @@ def _find_clip_context() -> Tuple[Optional[bpy.types.Window],
 def _run_in_clip_context(op_callable, **kwargs):
     win, area, region, space = _find_clip_context()
     if not (win and area and region and space):
+        # Fallback: ohne Override ausführen (funktioniert oft trotzdem)
         return op_callable(**kwargs)
     override = {
         "window": win,
@@ -53,6 +65,7 @@ def _run_in_clip_context(op_callable, **kwargs):
 
 
 def _get_active_clip_fallback() -> Optional[bpy.types.MovieClip]:
+    """Versucht, einen aktiven Clip zu finden – erst UI, dann bpy.data.movieclips."""
     _, _, _, space = _find_clip_context()
     if space:
         clip = getattr(space, "clip", None)
@@ -171,10 +184,6 @@ class CLIP_OT_bidirectional_track(Operator):
 
     def modal(self, context, event):
         if event.type == 'TIMER':
-            # NEU: Busy respektieren – solange Refine läuft, nur warten
-            if is_busy():
-                return {'RUNNING_MODAL'}
-
             self._tick += 1
             print("[BidiTrack] TIMER tick=%d (dt=%.3fs seit Start)"
                   % (self._tick, time.perf_counter() - self._t0))
@@ -205,11 +214,10 @@ class CLIP_OT_bidirectional_track(Operator):
             return {'PASS_THROUGH'}
 
         elif self._step == 1:
-            # Zurück auf Startframe – aber nur, wenn NICHT busy
-            if not is_busy():
-                context.scene.frame_current = self._start_frame
-                print(f"← Frame zurückgesetzt auf {self._start_frame}")
+            # Zurück auf Startframe
+            context.scene.frame_current = self._start_frame
             self._step = 2
+            print(f"← Frame zurückgesetzt auf {self._start_frame}")
             return {'PASS_THROUGH'}
 
         elif self._step == 2:
@@ -238,19 +246,42 @@ class CLIP_OT_bidirectional_track(Operator):
     # ---------------------------------------------------------------------
 
     def _finish(self, context, result: str):
+        """
+        Abschlussroutine:
+        1) Timer/Cleanup stoppen
+        2) Triplet‑Join via Helper/triplet_joiner.run_triplet_join() (falls verfügbar)
+        3) Orchestrator-Flags setzen & beenden
+        """
+        total_time = time.perf_counter() - self._t0
+        print(f"[BidiTrack] FINISH (pre) result={result} | total_time={total_time:.3f}s | ticks={self._tick}")
+
+        # 1) Timer entfernen
         wm = context.window_manager
         if self._timer:
-            wm.event_timer_remove(self._timer)
+            try:
+                wm.event_timer_remove(self._timer)
+            except Exception:
+                pass
             self._timer = None
+
+        # 2) Triplet‑Join (idempotent, überspringt wenn nicht vorhanden)
+        try:
+            from . import triplet_joiner
+        except Exception as imp_ex:
+            print(f"[BidiTrack] WARN: triplet_joiner nicht verfügbar: {imp_ex}")
+        else:
+            try:
+                res = triplet_joiner.run_triplet_join(context, active_policy="first")
+                print(
+                    f"[BidiTrack] Post-Join abgeschlossen | "
+                    f"groups_joined={res.get('joined', 0)} | total={res.get('total', 0)} | "
+                    f"skipped={res.get('skipped', 0)}"
+                )
+            except Exception as ex:
+                print(f"[BidiTrack] WARN: Join-Phase fehlgeschlagen: {ex}")
+
+        # 3) Orchestrator-Flags
         context.scene["bidi_active"] = False
-        context.scene["bidi_result"] = str(result or "")
+        context.scene["bidi_result"] = result
         print(f"[BidiTrack] FINISH (post) result={result}")
-        return {'FINISHED' if result == "OK" else 'CANCELLED'}
-
-
-def register():
-    bpy.utils.register_class(CLIP_OT_bidirectional_track)
-
-
-def unregister():
-    bpy.utils.unregister_class(CLIP_OT_bidirectional_track)
+        return {'FINISHED'}
