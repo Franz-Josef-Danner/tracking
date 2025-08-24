@@ -25,30 +25,6 @@ __all__ = ("CLIP_OT_bidirectional_track", "register", "unregister")
 
 # ---- interne Hilfen ---------------------------------------------------------
 
-def _find_clip_override(context) -> Optional[dict]:
-    """Sichert CLIP_EDITOR-Kontext für Operator-Aufrufe."""
-    win = context.window
-    if not win:
-        return None
-    scr = getattr(win, "screen", None)
-    if not scr:
-        return None
-    for area in scr.areas:
-        if getattr(area, "type", None) == 'CLIP_EDITOR':
-            # aktive Space referenzieren/erzwingen
-            space = area.spaces.active
-            for region in area.regions:
-                if getattr(region, "type", None) == 'WINDOW':
-                    ov = {'window': win, 'screen': scr, 'area': area, 'region': region, 'space_data': space, 'scene': context.scene}
-                    # Clip sicherstellen
-                    if getattr(space, "clip", None) is None:
-                        try:
-                            space.clip = _get_active_clip(context)
-                        except Exception:
-                            pass
-                    return ov
-    return None
-
 def _get_active_clip(context) -> Optional[bpy.types.MovieClip]:
     space = getattr(context, "space_data", None)
     if getattr(space, "type", None) == 'CLIP_EDITOR' and getattr(space, "clip", None):
@@ -58,11 +34,45 @@ def _get_active_clip(context) -> Optional[bpy.types.MovieClip]:
     except Exception:
         return None
 
+
+def _find_clip_override(context) -> Optional[dict]:
+    """Sichert CLIP_EDITOR-Kontext für Operator-Aufrufe (schlank & stabil)."""
+    win = context.window
+    if not win:
+        return None
+    scr = getattr(win, "screen", None)
+    if not scr:
+        return None
+    for area in scr.areas:
+        if getattr(area, "type", None) == 'CLIP_EDITOR':
+            space = area.spaces.active
+            # Clip sicherstellen
+            if getattr(space, "clip", None) is None:
+                clip = _get_active_clip(context)
+                if clip:
+                    try:
+                        space.clip = clip
+                    except Exception:
+                        pass
+            region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+            if not region:
+                continue
+            return {
+                'window': win,
+                'area': area,
+                'region': region,
+                'space_data': space,
+                'scene': context.scene,
+            }
+    return None
+
+
 def _current_frame_in_clip(context) -> int:
     ov = _find_clip_override(context)
     if ov and ov.get('space_data') and getattr(ov['space_data'], "clip_user", None):
         return int(ov['space_data'].clip_user.frame_current)
     return int(context.scene.frame_current)
+
 
 def _set_frame_in_clip(context, frame: int) -> None:
     ov = _find_clip_override(context)
@@ -77,12 +87,12 @@ def _set_frame_in_clip(context, frame: int) -> None:
     except Exception:
         pass
 
+
 def _selected_tracks_with_marker_at_frame(clip: bpy.types.MovieClip, frame: int) -> List[Tuple[bpy.types.MovieTrackingTrack, Vector]]:
     out: List[Tuple[bpy.types.MovieTrackingTrack, Vector]] = []
     for t in clip.tracking.tracks:
         if not getattr(t, "select", False):
             continue
-        m = None
         try:
             m = t.markers.find_frame(frame, exact=True)
         except TypeError:
@@ -90,6 +100,7 @@ def _selected_tracks_with_marker_at_frame(clip: bpy.types.MovieClip, frame: int)
         if m and not getattr(m, "mute", False):
             out.append((t, Vector(m.co)))
     return out
+
 
 def _greedy_triplets_by_min_sum(points: List[Tuple[bpy.types.MovieTrackingTrack, Vector]]) -> List[Tuple[bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack]]:
     """Bildet Tripel, indem jeweils die Kombination mit minimaler Summe der drei Kanten gewählt wird."""
@@ -116,6 +127,17 @@ def _greedy_triplets_by_min_sum(points: List[Tuple[bpy.types.MovieTrackingTrack,
             pts.pop(idx)
     return triplets
 
+
+def _deselect_all(tracking: bpy.types.MovieTracking) -> None:
+    for t in tracking.tracks:
+        try:
+            t.select = False
+            t.select_anchor = False
+            t.select_pattern = False
+        except Exception:
+            t.select = False
+
+
 def _select_tracks(tracks: List[bpy.types.MovieTrackingTrack], sel: bool = True) -> None:
     for t in tracks:
         try:
@@ -124,6 +146,7 @@ def _select_tracks(tracks: List[bpy.types.MovieTrackingTrack], sel: bool = True)
             t.select_pattern = bool(sel)
         except Exception:
             t.select = bool(sel)
+
 
 def _pair_midpoint_correction(t1, t2, t3, frame: int) -> None:
     """Bestimme in der Dreiergruppe das nächstliegende Paar und setze den dritten auf dessen Mittelpunkt."""
@@ -150,6 +173,7 @@ def _pair_midpoint_correction(t1, t2, t3, frame: int) -> None:
         mid = (p2 + p3) * 0.5
         m1.co = mid
 
+
 # ---- Operator ---------------------------------------------------------------
 
 class CLIP_OT_bidirectional_track(bpy.types.Operator):
@@ -170,6 +194,17 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
 
     _timer = None
     _triplets: List[Tuple[bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack]] = []
+
+    # --- interne Beenden-Hilfe ---
+    def _finish_flag(self, context: bpy.types.Context, *, result: str = "FINISHED"):
+        scn = context.scene
+        try:
+            if self._timer:
+                context.window_manager.event_timer_remove(self._timer)
+        except Exception:
+            pass
+        scn["bidi_result"] = str(result)
+        scn["bidi_active"] = False
 
     def invoke(self, context: bpy.types.Context, event: bpy.types.Event):
         scn = context.scene
@@ -198,7 +233,9 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
 
         # Triplets bilden
         self._triplets = _greedy_triplets_by_min_sum(pts)
-        # Sicherheit: exakt selektieren (nur Gruppe)
+
+        # Sicherheit: exakt selektieren (nur Triplets; erst ALLE deselektieren)
+        _deselect_all(clip.tracking)
         _select_tracks([t for tri in self._triplets for t in tri], True)
 
         # Timer starten
@@ -225,27 +262,21 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
         # Szenenende checken
         cur = _current_frame_in_clip(context)
         if cur >= int(scn.frame_end):
-            try:
-                if self._timer:
-                    context.window_manager.event_timer_remove(self._timer)
-            finally:
-                scn["bidi_result"] = "FINISHED"
-                scn["bidi_active"] = False
+            self._finish_flag(context, result="FINISHED")
             return {'FINISHED'}
 
-        # 1) Einen Frame vorwärts tracken (nur selektierte)
+        # 1) Einen Frame vorwärts tracken (nur selektierte) – stabil via temp_override
         ov = _find_clip_override(context)
+        if not ov:
+            print("[Bidir] No CLIP_EDITOR context → cancel")
+            self._finish_flag(context, result="FINISHED")
+            return {'FINISHED'}
         try:
-            bpy.ops.clip.track_markers(ov or {}, backwards=False, sequence=False)
+            with bpy.context.temp_override(**ov):
+                bpy.ops.clip.track_markers('EXEC_DEFAULT', backwards=False, sequence=False)
         except Exception as ex:
             print(f"[Bidir] track_markers failed: {ex!r}")
-            # Abbruch mit FINISHED, damit Coordinator weiterkommt
-            try:
-                if self._timer:
-                    context.window_manager.event_timer_remove(self._timer)
-            finally:
-                scn["bidi_result"] = "FINISHED"
-                scn["bidi_active"] = False
+            self._finish_flag(context, result="FINISHED")
             return {'FINISHED'}
 
         next_frame = cur + 1
@@ -261,6 +292,7 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
         _set_frame_in_clip(context, next_frame)
 
         return {'RUNNING_MODAL'}
+
 
 # ---- Register ---------------------------------------------------------------
 
