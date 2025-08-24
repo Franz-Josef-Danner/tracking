@@ -646,21 +646,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     def _state_detect(self, context):
         """Nur ein Signal akzeptieren: READY/FAILED → TRACK, RUNNING → im DETECT-State bleiben."""
         from ..Helper.detect import run_detect_once  # type: ignore
-    
+
         goto = int(context.scene.get(_GOTO_KEY, context.scene.frame_current))
         res = run_detect_once(
             context,
             start_frame=goto,
             handoff_to_pipeline=True,
-            # ---- NEU: Pattern-Triplet aktivieren ----
-            post_pattern_triplet=True,
-            triplet_scale_low=0.7,
-            triplet_scale_high=2,
-            triplet_include_ready_selection=True,
-            triplet_adjust_search_with_pattern=False,
         )
         status = str(res.get("status", "FAILED")).upper()
-    
+
         if status == "RUNNING":
             self._detect_attempts += 1
             print(f"[Coord] DETECT → RUNNING (attempt {self._detect_attempts}/{_MAX_DETECT_ATTEMPTS})")
@@ -669,25 +663,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 context.scene[_CLEAN_SKIP_ONCE] = True
                 self._state = "TRACK"
             return {"RUNNING_MODAL"}
-    
-        # READY oder FAILED
+
         self._detect_attempts = 0
         context.scene[_CLEAN_SKIP_ONCE] = True  # CleanShort erst NACH Bi-Track
-    
-        # ---- NEU: Ergebnis des Pattern-Triplets (falls vorhanden) loggen ----
-        trip = res.get("post_pattern_triplet")
-        if trip:
-            print(
-                "[Coord] POST TRIPLET: "
-                f"low+{int(trip.get('created_low', 0))} | "
-                f"high+{int(trip.get('created_high', 0))} | "
-                f"selected={int(trip.get('selected', 0))}"
-            )
-    
         print(f"[Coord] DETECT → {status} → TRACK (Bidirectional)")
         self._state = "TRACK"
         return {"RUNNING_MODAL"}
-
 
     def _state_track(self, context):
         """Startet und überwacht den Bidirectional-Operator. CleanShort kommt erst nach Abschluss."""
@@ -698,14 +679,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             scn[_BIDI_ACTIVE_KEY] = False
             print("[Coord] TRACK → launch clip.bidirectional_track (INVOKE_DEFAULT)")
             try:
-                # tracking_coordinator.py → _state_track()
-                print("[Coord] TRACK → launch clip.bidirectional_track (INVOKE_DEFAULT)")
-                bpy.ops.clip.bidirectional_track(
-                    'INVOKE_DEFAULT',
-                    use_cooperative_triplets=True,      # <<< NEU: Koop-Modus erzwingen
-                    auto_enable_from_selection=True,    # (optional) Auto-Fallback weiter erlauben
-                )
-
+                bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
+                self._bidi_started = True
             except Exception as ex:
                 print(f"[Coord] TRACK launch failed: {ex!r} → CLEAN_SHORT (best-effort)")
                 self._bidi_started = False
