@@ -120,30 +120,49 @@ def track_selected_forward_until_done() -> int:
         current_frame = int(scene.frame_current)
         next_frame = current_frame + 1
 
-        tracks = list(_selected_tracks(clip))
-        if not tracks:
+        # Alle Tracks (für Selektion-Management) und aktuell selektierte sammeln
+        all_tracks = list(clip.tracking.tracks)
+        selected_tracks = [t for t in all_tracks if t.select]
+        if not selected_tracks:
             break
 
-        if not any(_can_attempt_step(t, clip, current_frame) for t in tracks):
+        # Kandidaten: am aktuellen Frame marker-haltend, nicht gemutet/disabled, innerhalb Clip
+        candidates = [t for t in selected_tracks if _can_attempt_step(t, clip, current_frame)]
+        if not candidates:
             break
 
-        # Merken, welche Tracks bereits Marker im next_frame hatten
-        had_next = {t.name: _has_marker_at(t, next_frame) for t in tracks}
+        # WICHTIG: Nur Tracks tracken, die am nächsten Frame noch KEINEN Marker haben
+        eligible = [t for t in candidates if not _has_marker_at(t, next_frame)]
+        if not eligible:
+            # Es gibt nichts mehr anzulegen – Arbeit erledigt
+            break
 
-        # Exakt EIN Frame tracken
-        with bpy.context.temp_override(area=area, region=region, space_data=space):
-            bpy.ops.clip.track_markers(backwards=False, sequence=False)
+        # Selektion temporär auf eligible einschränken, damit keine Marker an bereits
+        # belegten next_frame-Positionen neu gesetzt/überschrieben werden
+        original_sel = {t.name: bool(t.select) for t in all_tracks}
+        try:
+            for t in all_tracks:
+                t.select = False
+            for t in eligible:
+                t.select = True
 
-        # Fortschritt prüfen
-        progressed = False
-        for t in tracks:
-            now_has = _has_marker_at(t, next_frame)
-            if now_has and not had_next.get(t.name, False):
-                progressed = True
+            # Exakt EIN Frame tracken (nur für eligible)
+            with bpy.context.temp_override(area=area, region=region, space_data=space):
+                bpy.ops.clip.track_markers(backwards=False, sequence=False)
+        finally:
+            # Selektion sauber wiederherstellen
+            for t in all_tracks:
+                try:
+                    t.select = bool(original_sel.get(t.name, False))
+                except Exception:
+                    pass
 
+        # Fortschritt prüfen: hat mind. ein eligible nun einen Marker im next_frame?
+        progressed = any(_has_marker_at(t, next_frame) for t in eligible)
         if not progressed:
             break
 
+        # Szene-Frame einen Schritt weiter
         scene.frame_set(next_frame)
         step_count += 1
 
