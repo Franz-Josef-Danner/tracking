@@ -29,6 +29,7 @@ Hinweis:
 import os
 import bpy
 from typing import Optional, Dict, Any
+from ..Helper.triplet_grouping import run_triplet_grouping  # top-level import
 
 __all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
 
@@ -664,6 +665,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self._state = "TRACK"
             return {"RUNNING_MODAL"}
 
+        try:
+            tg = run_triplet_grouping(context)
+            print(f"[Coord] TRIPLET_GROUPING → {tg}")
+        except Exception as ex_tg:
+            print(f"[Coord] TRIPLET_GROUPING failed: {ex_tg!r}")
+        
         self._detect_attempts = 0
         context.scene[_CLEAN_SKIP_ONCE] = True  # CleanShort erst NACH Bi-Track
         print(f"[Coord] DETECT → {status} → TRACK (Bidirectional)")
