@@ -32,37 +32,6 @@ _BIDI_RESULT_KEY = "bidi_result"
 # -----------------------------------------------------------------------------
 # Kontext-/Utility-Funktionen
 # -----------------------------------------------------------------------------
-def _state_track(self, context):
-    scn = context.scene
-
-    if not self._bidi_started:
-        scn[_BIDI_RESULT_KEY] = ""
-        scn[_BIDI_ACTIVE_KEY] = False
-        print("[Coord] TRACK → launch clip.bidirectional_track (INVOKE_DEFAULT)")
-        try:
-            bpy.ops.clip.bidirectional_track(
-                'INVOKE_DEFAULT',
-                use_cooperative_triplets=True,
-                auto_enable_from_selection=True,
-            )
-            self._bidi_started = True   # <<< WICHTIG: nur EINMAL starten
-        except Exception as ex:
-            print(f"[Coord] TRACK launch failed: {ex!r} → CLEAN_SHORT (best-effort)")
-            self._bidi_started = False
-            self._state = "CLEAN_SHORT"
-        return {"RUNNING_MODAL"}
-
-    if scn.get(_BIDI_ACTIVE_KEY, False):
-        print("[Coord] TRACK → waiting (bidi_active=True)")
-        return {"RUNNING_MODAL"}
-
-    result = str(scn.get(_BIDI_RESULT_KEY, "") or "").upper()
-    scn[_BIDI_RESULT_KEY] = ""
-    self._bidi_started = False
-    print(f"[Coord] TRACK → finished (result={result or 'NONE'}) → CLEAN_SHORT")
-    self._state = "CLEAN_SHORT"
-    return {"RUNNING_MODAL"}
-
 
 def _find_clip_context() -> Tuple[Optional[Any], Optional[Any], Optional[Any]]:
     """Suche einen CLIP_EDITOR nebst WINDOW-Region und SpaceClip.
@@ -98,8 +67,10 @@ def _get_active_clip(space: Optional[Any]) -> Optional[Any]:
 def _selected_tracks(clip: Any) -> Iterable[Any]:
     if not clip:
         return []
+    # Blender 4.x: MovieTrackingTrack hat i. d. R. keine .mute/.disabled Properties
+    # → wir filtern hier NUR auf .select und überlassen weitere Ausschlüsse _can_attempt_step.
     tracks = clip.tracking.tracks
-    return [t for t in tracks if t.select and not t.mute and not t.disabled]
+    return [t for t in tracks if bool(getattr(t, "select", False))]
 
 
 def _has_marker_at(track: Any, frame: int) -> bool:
@@ -110,14 +81,20 @@ def _has_marker_at(track: Any, frame: int) -> bool:
 
 
 def _can_attempt_step(track: Any, clip: Any, current_frame: int) -> bool:
-    if track.mute or track.disabled:
+    # defensiv: optionale Flags abfragen, ohne AttributeError zu werfen
+    if bool(getattr(track, "mute", False)) or bool(getattr(track, "muted", False)):
+        return False
+    if bool(getattr(track, "disabled", False)) or bool(getattr(track, "hide", False)):
         return False
     if not _has_marker_at(track, current_frame):
         return False
     next_frame = current_frame + 1
     end_frame = getattr(clip, "frame_end", None)
-    if end_frame is not None and next_frame > int(end_frame):
-        return False
+    try:
+        if end_frame is not None and next_frame > int(end_frame):
+            return False
+    except Exception:
+        pass
     return True
 
 
