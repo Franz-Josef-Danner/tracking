@@ -18,7 +18,8 @@ Hinweis:
   Wir steuern **space.clip_user.frame_current** im Movie-Clip-Editor und rufen
   die Operatoren mit Context-Override des CLIP_EDITORs auf. Außerdem validieren wir
   nach jedem Step, ob der Frame wirklich gewechselt hat – falls nicht, wird der
-  Frame manuell um ±1 weitergestellt und der View-Layer aktualisiert.
+  Frame manuell um ±1 weitergestellt. Zusätzlich: Bei CANCELLED oder No-Progress
+  versuchen wir einen erneuten Step, bevor wir endgültig abbrechen.
 """
 
 from __future__ import annotations
@@ -43,9 +44,6 @@ __all__ = (
 # ----------------------------------------------------------------------------
 
 def _find_clip_area_ctx(context: bpy.types.Context) -> Optional[dict]:
-    """Sucht eine CLIP_EDITOR-Area+Region und baut ein temp_override-Dict.
-    Hängt, falls möglich, den aktiven Clip an die Space, damit ops sicher laufen.
-    """
     win = context.window
     if not win:
         return None
@@ -59,7 +57,6 @@ def _find_clip_area_ctx(context: bpy.types.Context) -> Optional[dict]:
                 continue
             space = area.spaces.active
             if getattr(space, "clip", None) is None:
-                # versuche einen Clip zu finden
                 try:
                     space.clip = bpy.data.movieclips[0] if bpy.data.movieclips else None
                 except Exception:
@@ -95,7 +92,6 @@ def _has_selected_tracks(clip: Optional[bpy.types.MovieClip]) -> bool:
 
 
 def _clip_frame_range(clip: bpy.types.MovieClip) -> tuple[int, int]:
-    """Ermittelt eine sinnvolle Frame-Range aus dem Clip (Start..End inkl.)."""
     try:
         f0 = int(clip.frame_start)
         dur = int(clip.frame_duration)
@@ -103,21 +99,14 @@ def _clip_frame_range(clip: bpy.types.MovieClip) -> tuple[int, int]:
             return f0, f0 + dur - 1
     except Exception:
         pass
-    # Fallback: Szenenbereich
     scn = bpy.context.scene
     return int(scn.frame_start), int(scn.frame_end)
 
 
 def _bump_frame(space: bpy.types.SpaceClip, *, backwards: bool) -> None:
-    """Stellt den Clip-User-Frame manuell um ±1 und synchronisiert die Szene."""
     try:
         user = space.clip_user
         user.frame_current += (-1 if backwards else 1)
-    except Exception:
-        pass
-    # Szene best-effort mitziehen, damit andere Komponenten konsistent sind
-    try:
-        bpy.context.scene.frame_set(bpy.context.scene.frame_current)
     except Exception:
         pass
     try:
@@ -127,7 +116,7 @@ def _bump_frame(space: bpy.types.SpaceClip, *, backwards: bool) -> None:
 
 
 # ----------------------------------------------------------------------------
-# Framewise Tracking – Kernfunktion (mit CLIP_EDITOR-Override & clip_user-Frame)
+# Framewise Tracking – Kernfunktion
 # ----------------------------------------------------------------------------
 
 def run_framewise_track(
@@ -135,12 +124,29 @@ def run_framewise_track(
     *,
     backwards: bool = False,
     max_steps: Optional[int] = None,
+    retry_on_cancelled: bool = True,
+    retry_on_no_progress: bool = True,
+    max_retries: int = 3,
 ) -> Dict[str, Any]:
     """Trackt selektierte Marker **frameweise** und robust gegen Frame-Drift.
 
     - Verwendet CLIP_EDITOR-Context-Override.
     - Liest/setzt **space.clip_user.frame_current** statt nur scene.frame_current.
-    - Verifiziert nach jedem Step den Framewechsel; sonst manuelles Weiterstellen.
+    - Verifiziert nach jedem Step den Framewechsel; bei Problemen optional **Retry**
+      mit manuellem Frame-Bump (±1), bis *max_retries* erreicht sind.
+
+    Parameters
+    ----------
+    backwards : bool
+        Richtung (False=vorwärts, True=rückwärts)
+    max_steps : int | None
+        Sicherheitslimit der Schritte (None = unbegrenzt)
+    retry_on_cancelled : bool
+        Bei {'CANCELLED'} vom Operator erneut probieren (mit Bump)
+    retry_on_no_progress : bool
+        Wenn Frame nicht wechselt, erneut probieren (mit Bump)
+    max_retries : int
+        Max. Retries **pro Schritt**, bevor abgebrochen wird
     """
     ov = _find_clip_area_ctx(context)
     if ov is None:
@@ -162,9 +168,20 @@ def run_framewise_track(
 
     fmin, fmax = _clip_frame_range(clip)
 
+    def _clamp_user_frame():
+        try:
+            u = space.clip_user
+            if u.frame_current < fmin:
+                u.frame_current = fmin
+            elif u.frame_current > fmax:
+                u.frame_current = fmax
+        except Exception:
+            pass
+
     steps = 0
     with bpy.context.temp_override(**ov):
         user = space.clip_user
+        _clamp_user_frame()
         while True:
             if max_steps is not None and steps >= int(max_steps):
                 return {"status": "FINISHED", "steps": steps}
@@ -173,47 +190,47 @@ def run_framewise_track(
             if cur < fmin or cur > fmax:
                 return {"status": "FINISHED", "steps": steps}
 
-            # Single-Step Tracking (kein sequence)
-            result = bpy.ops.clip.track_markers(backwards=backwards, sequence=False)
-            if {'CANCELLED'} == set(result):
-                return {"status": "CANCELLED", "steps": steps}
-
-            steps += 1
-
-            # Prüfen, ob der Clip-User-Frame wirklich gewechselt hat
-            new_cur = int(user.frame_current)
-            if new_cur == cur:
-                # Notfall: manuell eine Frame-Stufe vor/zurück
-                _bump_frame(space, backwards=backwards)
-                # nach dem Bump erneut prüfen; wenn noch gleich, abbrechen
-                if int(user.frame_current) == cur:
+            # --- versuche EINEN Schritt, mit optionalen Retries ---
+            retries = 0
+            while True:
+                # Single-Step Tracking (kein sequence)
+                result = bpy.ops.clip.track_markers(backwards=backwards, sequence=False)
+                if {'CANCELLED'} == set(result):
+                    if retry_on_cancelled and retries < int(max_retries):
+                        retries += 1
+                        _bump_frame(space, backwards=backwards)
+                        _clamp_user_frame()
+                        continue
+                    # keine weiteren Versuche
                     return {"status": "CANCELLED", "steps": steps}
 
-    # (unerreichbar)
+                # Schritt war formal erfolgreich → prüfen, ob Frame wechselte
+                new_cur = int(user.frame_current)
+                if new_cur == cur:
+                    if retry_on_no_progress and retries < int(max_retries):
+                        retries += 1
+                        _bump_frame(space, backwards=backwards)
+                        _clamp_user_frame()
+                        # Wiederhole den Versuch: ggf. hilft der Bump, den Clip voranzuschalten
+                        continue
+                    # Kein Fortschritt trotz Retries → abbrechen
+                    return {"status": "CANCELLED", "steps": steps}
 
+                # Fortschritt! Schritt gezählt, äußere Schleife fortsetzen
+                steps += 1
+                break
 
 # ----------------------------------------------------------------------------
 # Operator: Framewise Track
 # ----------------------------------------------------------------------------
 
 class CLIP_OT_framewise_track(bpy.types.Operator):
-    """Trackt selektierte Marker Frame-für-Frame (kein Sequence-Track)."""
-
     bl_idname = "clip.framewise_track"
     bl_label = "Framewise Track"
     bl_options = {"REGISTER", "UNDO"}
 
-    backwards: bpy.props.BoolProperty(  # type: ignore
-        name="Backwards",
-        description="Rückwärts tracken",
-        default=False,
-    )
-    max_steps: bpy.props.IntProperty(  # type: ignore
-        name="Max Steps (0=unbegrenzt)",
-        description="Sicherheitslimit für Einzelschritte",
-        default=0,
-        min=0,
-    )
+    backwards: bpy.props.BoolProperty(default=False)
+    max_steps: bpy.props.IntProperty(default=0, min=0)
 
     def execute(self, context: bpy.types.Context):
         max_steps = None if self.max_steps == 0 else int(self.max_steps)
@@ -231,48 +248,25 @@ class CLIP_OT_framewise_track(bpy.types.Operator):
 # ----------------------------------------------------------------------------
 
 class CLIP_OT_bidirectional_track(bpy.types.Operator):
-    """Minimaler, kompatibler Bidirectional-Operator.
-
-    Setzt die erwarteten Scene-Flags und läuft modal. Als Platzhalter führt er
-    je einen Framewise-Schritt vorwärts und rückwärts aus. Später einfach durch
-    die echte Bi-Tracking-Logik ersetzen.
-    """
-
     bl_idname = "clip.bidirectional_track"
     bl_label = "Bidirectional Track (Compat)"
     bl_options = {"REGISTER", "UNDO"}
 
-    # Props, die vom Coordinator evtl. übergeben werden
-    use_cooperative_triplets: bpy.props.BoolProperty(  # type: ignore
-        name="Use Cooperative Triplets",
-        default=True,
-    )
-    auto_enable_from_selection: bpy.props.BoolProperty(  # type: ignore
-        name="Auto Enable From Selection",
-        default=True,
-    )
-
-    # Optional: wie viele Schritte je Tick ausführen
-    steps_per_tick: bpy.props.IntProperty(  # type: ignore
-        name="Steps per Tick",
-        default=1,
-        min=1,
-        max=32,
-    )
+    use_cooperative_triplets: bpy.props.BoolProperty(default=True)
+    auto_enable_from_selection: bpy.props.BoolProperty(default=True)
+    steps_per_tick: bpy.props.IntProperty(default=1, min=1, max=32)
 
     _timer: Optional[bpy.types.Timer] = None
     _ran_any_step: bool = False
 
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-        # Coordinator ruft im CLIP_EDITOR auf – wir halten das bei.
         return getattr(context.area, "type", None) == "CLIP_EDITOR"
 
     def invoke(self, context: bpy.types.Context, event: bpy.types.Event):
         scn = context.scene
         scn[_BIDI_RESULT_KEY] = ""
         scn[_BIDI_ACTIVE_KEY] = True
-
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.02, window=context.window)
         wm.modal_handler_add(self)
