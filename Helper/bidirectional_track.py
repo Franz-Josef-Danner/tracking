@@ -14,7 +14,11 @@ Enthält:
   „echte“ Bidirectional-Logik ersetzt werden.
 
 Hinweis:
-- Die vom Coordinator verwendeten Scene-Keys müssen exakt übereinstimmen.
+- **Wichtig gegen "Frame springt zurück / ab Frame 4 Reset"**:
+  Wir steuern **space.clip_user.frame_current** im Movie-Clip-Editor und rufen
+  die Operatoren mit Context-Override des CLIP_EDITORs auf. Außerdem validieren wir
+  nach jedem Step, ob der Frame wirklich gewechselt hat – falls nicht, wird der
+  Frame manuell um ±1 weitergestellt und der View-Layer aktualisiert.
 """
 
 from __future__ import annotations
@@ -38,6 +42,39 @@ __all__ = (
 # Utilities
 # ----------------------------------------------------------------------------
 
+def _find_clip_area_ctx(context: bpy.types.Context) -> Optional[dict]:
+    """Sucht eine CLIP_EDITOR-Area+Region und baut ein temp_override-Dict.
+    Hängt, falls möglich, den aktiven Clip an die Space, damit ops sicher laufen.
+    """
+    win = context.window
+    if not win:
+        return None
+    screen = win.screen
+    if not screen:
+        return None
+    for area in screen.areas:
+        if getattr(area, "type", None) == 'CLIP_EDITOR':
+            region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+            if not region:
+                continue
+            space = area.spaces.active
+            if getattr(space, "clip", None) is None:
+                # versuche einen Clip zu finden
+                try:
+                    space.clip = bpy.data.movieclips[0] if bpy.data.movieclips else None
+                except Exception:
+                    pass
+            return {
+                "window": win,
+                "screen": screen,
+                "area": area,
+                "region": region,
+                "space_data": space,
+                "scene": context.scene,
+            }
+    return None
+
+
 def _get_active_clip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
     space = getattr(context, "space_data", None)
     if getattr(space, "type", None) == 'CLIP_EDITOR' and getattr(space, "clip", None):
@@ -57,8 +94,40 @@ def _has_selected_tracks(clip: Optional[bpy.types.MovieClip]) -> bool:
         return False
 
 
+def _clip_frame_range(clip: bpy.types.MovieClip) -> tuple[int, int]:
+    """Ermittelt eine sinnvolle Frame-Range aus dem Clip (Start..End inkl.)."""
+    try:
+        f0 = int(clip.frame_start)
+        dur = int(clip.frame_duration)
+        if dur > 0:
+            return f0, f0 + dur - 1
+    except Exception:
+        pass
+    # Fallback: Szenenbereich
+    scn = bpy.context.scene
+    return int(scn.frame_start), int(scn.frame_end)
+
+
+def _bump_frame(space: bpy.types.SpaceClip, *, backwards: bool) -> None:
+    """Stellt den Clip-User-Frame manuell um ±1 und synchronisiert die Szene."""
+    try:
+        user = space.clip_user
+        user.frame_current += (-1 if backwards else 1)
+    except Exception:
+        pass
+    # Szene best-effort mitziehen, damit andere Komponenten konsistent sind
+    try:
+        bpy.context.scene.frame_set(bpy.context.scene.frame_current)
+    except Exception:
+        pass
+    try:
+        bpy.context.view_layer.update()
+    except Exception:
+        pass
+
+
 # ----------------------------------------------------------------------------
-# Framewise Tracking – Kernfunktion
+# Framewise Tracking – Kernfunktion (mit CLIP_EDITOR-Override & clip_user-Frame)
 # ----------------------------------------------------------------------------
 
 def run_framewise_track(
@@ -67,49 +136,60 @@ def run_framewise_track(
     backwards: bool = False,
     max_steps: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Trackt selektierte Marker **frameweise** bis Ende/Abbruch.
+    """Trackt selektierte Marker **frameweise** und robust gegen Frame-Drift.
 
-    Parameters
-    ----------
-    backwards: bool
-        False = vorwärts, True = rückwärts.
-    max_steps: int | None
-        Sicherheitslimit für Einzelschritte; None = unbegrenzt.
-
-    Returns
-    -------
-    dict
-        {"status": "FINISHED"|"CANCELLED"|"NO_SELECTION"|"NO_CLIP", "steps": int}
+    - Verwendet CLIP_EDITOR-Context-Override.
+    - Liest/setzt **space.clip_user.frame_current** statt nur scene.frame_current.
+    - Verifiziert nach jedem Step den Framewechsel; sonst manuelles Weiterstellen.
     """
-    clip = _get_active_clip(context)
-    if clip is None:
+    ov = _find_clip_area_ctx(context)
+    if ov is None:
         return {"status": "NO_CLIP", "steps": 0}
+
+    space = ov["space_data"]
+    clip = getattr(space, "clip", None)
+    if clip is None:
+        clip = _get_active_clip(context)
+        if clip is None:
+            return {"status": "NO_CLIP", "steps": 0}
+        try:
+            space.clip = clip
+        except Exception:
+            pass
+
     if not _has_selected_tracks(clip):
         return {"status": "NO_SELECTION", "steps": 0}
 
-    scene = context.scene
-    frame_min = int(scene.frame_start)
-    frame_max = int(scene.frame_end)
+    fmin, fmax = _clip_frame_range(clip)
 
     steps = 0
-    while True:
-        if max_steps is not None and steps >= int(max_steps):
-            return {"status": "FINISHED", "steps": steps}
+    with bpy.context.temp_override(**ov):
+        user = space.clip_user
+        while True:
+            if max_steps is not None and steps >= int(max_steps):
+                return {"status": "FINISHED", "steps": steps}
 
-        cur = int(scene.frame_current)
-        if cur < frame_min or cur > frame_max:
-            return {"status": "FINISHED", "steps": steps}
+            cur = int(user.frame_current)
+            if cur < fmin or cur > fmax:
+                return {"status": "FINISHED", "steps": steps}
 
-        # WICHTIG: sequence=False erzwingt Single-Step-Tracking
-        res = bpy.ops.clip.track_markers(backwards=backwards, sequence=False)
-        if {'CANCELLED'} == set(res):
-            return {"status": "CANCELLED", "steps": steps}
+            # Single-Step Tracking (kein sequence)
+            result = bpy.ops.clip.track_markers(backwards=backwards, sequence=False)
+            if {'CANCELLED'} == set(result):
+                return {"status": "CANCELLED", "steps": steps}
 
-        steps += 1
+            steps += 1
 
-        # Sicherheitsnetz: falls der Frame nicht wechselt, abbrechen
-        if int(scene.frame_current) == cur:
-            return {"status": "CANCELLED", "steps": steps}
+            # Prüfen, ob der Clip-User-Frame wirklich gewechselt hat
+            new_cur = int(user.frame_current)
+            if new_cur == cur:
+                # Notfall: manuell eine Frame-Stufe vor/zurück
+                _bump_frame(space, backwards=backwards)
+                # nach dem Bump erneut prüfen; wenn noch gleich, abbrechen
+                if int(user.frame_current) == cur:
+                    return {"status": "CANCELLED", "steps": steps}
+
+    # (unerreichbar)
 
 
 # ----------------------------------------------------------------------------
@@ -214,22 +294,22 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
 
-        clip = _get_active_clip(context)
-        if not _has_selected_tracks(clip):
-            # Nichts zu tun → NOOP
+        ov = _find_clip_area_ctx(context)
+        if ov is None:
             return self._finish(context, result="NOOP")
+        with bpy.context.temp_override(**ov):
+            clip = _get_active_clip(bpy.context)
+            if not _has_selected_tracks(clip):
+                return self._finish(context, result="NOOP")
 
-        # Minimaler bidi-Zyklus: vorwärts- und rückwärts-Einzelschritt
-        did_steps = 0
-        for _ in range(int(self.steps_per_tick)):
-            r1 = run_framewise_track(context, backwards=False, max_steps=1)
-            did_steps += int(r1.get("steps", 0))
-            r2 = run_framewise_track(context, backwards=True, max_steps=1)
-            did_steps += int(r2.get("steps", 0))
+            did_steps = 0
+            for _ in range(int(self.steps_per_tick)):
+                r1 = run_framewise_track(bpy.context, backwards=False, max_steps=1)
+                did_steps += int(r1.get("steps", 0))
+                r2 = run_framewise_track(bpy.context, backwards=True, max_steps=1)
+                did_steps += int(r2.get("steps", 0))
 
         self._ran_any_step = self._ran_any_step or (did_steps > 0)
-
-        # In dieser Platzhalter-Variante beenden wir direkt nach einem Tick
         return self._finish(context, result=("DONE" if self._ran_any_step else "NOOP"))
 
 
