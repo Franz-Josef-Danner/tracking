@@ -30,6 +30,32 @@ def _pulse_ui(context, area=None, region=None):
         if area:
             area.tag_redraw()
 
+# --- Clip-Editor Sync Helper --------------------------------------------------
+def _sync_clip_editor_frame(space_ce, frame: int):
+    """Sorgt dafür, dass der CLIP_EDITOR wirklich den gewünschten Frame zeigt."""
+    # In Blender gibt es je nach Version zwei Wege:
+    # 1) Editor auf Szenen-Frame syncen (wenn vorhanden)
+    if hasattr(space_ce, "use_scene_frame"):
+        space_ce.use_scene_frame = True
+
+    # 2) Safety: explizit die Editor-Ansicht und den Clip-User-Frame setzen
+    #    (falls der Editor seine eigene Zeit führt)
+    if hasattr(space_ce, "view"):
+        # sicherstellen, dass wir in der CLIP-Ansicht sind (nicht GRAPH/DOPESHEET)
+        try:
+            space_ce.view = 'CLIP'
+        except Exception:
+            pass
+
+    # einige Builds führen eine eigene Zeit im Clip-User:
+    cu = getattr(space_ce, "clip_user", None)
+    if cu and hasattr(cu, "frame_current"):
+        cu.frame_current = int(frame)
+
+    # falls der Zeitcursor „gelockt“ ist, folgt die Ansicht nicht
+    if hasattr(space_ce, "lock_time_cursor"):
+        space_ce.lock_time_cursor = False
+
 def _get_active_clip(context):
     space = getattr(context, "space_data", None)
     if space and getattr(space, "clip", None):
@@ -149,6 +175,7 @@ def run_refine_on_high_error(
         print(f"\n[FRAME] Refine für Frame {f}")
         scene.frame_set(f)
         
+        _sync_clip_editor_frame(space_ce, f)
         _pulse_ui(context, area=area, region=region)
         
         tracks_forward, tracks_backward = [], []
@@ -189,10 +216,12 @@ def run_refine_on_high_error(
         print("[ACTION] Starte erneutes Kamera-Solve…")
         with context.temp_override(area=area, region=region, space_data=space_ce):
             bpy.ops.clip.solve_camera()
+        _sync_clip_editor_frame(space_ce, scene.frame_current)
         _pulse_ui(context, area=area, region=region)
         print("[DONE] Kamera-Solve abgeschlossen.")
 
     scene.frame_set(original_frame)
+    _sync_clip_editor_frame(space_ce, original_frame)
     _pulse_ui(context, area=area, region=region)  # UI auf ursprünglichem Frame aktualisieren
     print(f"\n[SUMMARY] Insgesamt bearbeitet: {processed} Frame(s)")
     return processed
