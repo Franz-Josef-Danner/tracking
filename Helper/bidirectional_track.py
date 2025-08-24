@@ -22,7 +22,7 @@
 from __future__ import annotations
 
 import bpy
-from typing import Iterable, Optional, Tuple
+from typing import Iterable, Optional, Tuple, Any
 
 # Scene-Schlüssel müssen zu tracking_coordinator.py passen
 _BIDI_ACTIVE_KEY = "bidi_active"
@@ -33,7 +33,7 @@ _BIDI_RESULT_KEY = "bidi_result"
 # Kontext-/Utility-Funktionen
 # -----------------------------------------------------------------------------
 
-def _find_clip_context() -> Tuple[Optional[bpy.types.Area], Optional[bpy.types.Region], Optional[bpy.types.SpaceClip]]:
+def _find_clip_context() -> Tuple[Optional[Any], Optional[Any], Optional[Any]]:
     """Suche einen CLIP_EDITOR nebst WINDOW-Region und SpaceClip.
 
     Returns:
@@ -54,7 +54,7 @@ def _find_clip_context() -> Tuple[Optional[bpy.types.Area], Optional[bpy.types.R
     return None, None, None
 
 
-def _get_active_clip(space: Optional[bpy.types.SpaceClip]) -> Optional[bpy.types.MovieClip]:
+def _get_active_clip(space: Optional[Any]) -> Optional[Any]:
     """Gibt das aktive MovieClip des SpaceClip zurück, oder erstes verfügbares."""
     if space and getattr(space, "clip", None):
         return space.clip
@@ -64,21 +64,21 @@ def _get_active_clip(space: Optional[bpy.types.SpaceClip]) -> Optional[bpy.types
         return None
 
 
-def _selected_tracks(clip: bpy.types.MovieClip) -> Iterable[bpy.types.MovieTrackingTrack]:
+def _selected_tracks(clip: Any) -> Iterable[Any]:
     if not clip:
         return []
     tracks = clip.tracking.tracks
     return [t for t in tracks if t.select and not t.mute and not t.disabled]
 
 
-def _has_marker_at(track: bpy.types.MovieTrackingTrack, frame: int) -> bool:
+def _has_marker_at(track: Any, frame: int) -> bool:
     try:
         return track.markers.find_frame(frame) is not None
     except Exception:
         return any(m.frame == frame for m in track.markers)
 
 
-def _can_attempt_step(track: bpy.types.MovieTrackingTrack, clip: bpy.types.MovieClip, current_frame: int) -> bool:
+def _can_attempt_step(track: Any, clip: Any, current_frame: int) -> bool:
     if track.mute or track.disabled:
         return False
     if not _has_marker_at(track, current_frame):
