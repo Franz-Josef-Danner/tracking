@@ -18,21 +18,6 @@ def _find_clip_window(context):
     return None, None, None
 
 
-# --- UI Redraw Helper ---------------------------------------------------------
-def _pulse_ui(context, area=None, region=None):
-    """Sofortiges Neuzeichnen der UI erzwingen."""
-    try:
-        if area:
-            area.tag_redraw()
-        with context.temp_override(window=context.window, area=area, region=region):
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN', iterations=1)
-    except Exception:
-        if area:
-            area.tag_redraw()
-
-
-# --- Core Helpers -------------------------------------------------------------
-
 def _get_active_clip(context):
     space = getattr(context, "space_data", None)
     if space and getattr(space, "clip", None):
@@ -52,7 +37,10 @@ def _prev_next_keyframes(track, frame):
     return prev_k, next_k
 
 
+# --- Error-Serie --------------------------------------------------------------
+
 def _build_error_series(recon):
+    """frame -> average_error (float) aus Reconstruction Cameras."""
     series = {}
     for cam in getattr(recon, "cameras", []):
         try:
@@ -62,21 +50,32 @@ def _build_error_series(recon):
     return dict(sorted(series.items()))
 
 
+# --- Neue Selektion: Alle Frames über High-Threshold --------------------------
+
 def _select_frames_over_high_threshold(context, recon):
+    """
+    Wählt *alle* Frames f im Szenenbereich, deren Error > (scene.error_track * 10) ist.
+    Gibt sortierte Frame-Indices zurück.
+    """
     scene = context.scene
     frame_start = int(scene.frame_start)
     frame_end = int(scene.frame_end)
 
-    base = float(getattr(scene, "error_track", 2.0) or 2.0)
+    # Schwelle aus UI-Property (Default 2.0), High-Threshold = *10
+    base = float(getattr(scene, "error_track", 2.0) or 2.0)  # siehe UI-Property in __init__.py
     high_threshold = base * 10.0
 
     series = _build_error_series(recon)
+    # Szenenbereich filtern
     series = {f: e for f, e in series.items() if frame_start <= f <= frame_end}
+
+    # Auswahl nach High-Threshold
     selected = sorted(f for f, e in series.items() if e > high_threshold)
 
-    print(f"[Select] Bereich {frame_start}–{frame_end}, "
-          f"error_track={base:.3f} → high_threshold={high_threshold:.3f}")
+    print(f"[Select] Bereich {frame_start}–{frame_end}, error_track={base:.3f} "
+          f"→ high_threshold={high_threshold:.3f}")
     if selected:
+        # zur Transparenz Fehlerwerte anzeigen (Top zuerst)
         preview = sorted(((f, series[f]) for f in selected), key=lambda kv: (-kv[1], kv[0]))
         print("[Select] Frames über Schwelle:", [f for f, _ in preview])
         print("[Select] Fehler (desc):", [round(err, 3) for _, err in preview[:10]])
@@ -85,22 +84,57 @@ def _select_frames_over_high_threshold(context, recon):
     return selected
 
 
-# --- Pump (non-blocking Refine) -----------------------------------------------
+# --- Core Routine -------------------------------------------------------------
 
-class _RefinePump:
-    def __init__(self, context, clip, bad_frames, area, region, space_ce, resolve_after, original_frame):
-        self.context = context
-        self.clip = clip
-        self.bad_frames = list(bad_frames)
-        self.area, self.region, self.space_ce = area, region, space_ce
-        self.resolve_after = resolve_after
-        self.original_frame = original_frame
-        self.processed = 0
-        self.scene = context.scene
+def run_refine_on_high_error(
+    context,
+    limit_frames: int = 0,
+    resolve_after: bool = False,
+    # --- Backward-Compat (ignoriert, aber akzeptiert) ---
+    error_threshold: float | None = None,
+    **_compat_ignored,
+) -> int:
+    """
+    Refine auf allen Frames mit Solve-Frame-Error > (scene.error_track * 10).
 
-    def _refine_one(self, f: int):
-        scene = self.scene
-        clip = self.clip
+    Optional: limit_frames > 0 begrenzt die Anzahl der zu bearbeitenden Frames.
+    Hinweis: 'error_threshold' und weitere Alt-Argumente sind nur für Kompatibilität vorhanden.
+    """
+    if error_threshold is not None:
+        print("[Refine][Compat] 'error_threshold' übergeben, wird im High-Threshold-Modus ignoriert.")
+    if _compat_ignored:
+        print(f"[Refine][Compat] Ignoriere zusätzliche Alt-Argumente: {list(_compat_ignored.keys())}")
+
+    clip = _get_active_clip(context)
+    if not clip:
+        raise RuntimeError("Kein MovieClip geladen.")
+
+    obj = clip.tracking.objects.active
+    recon = obj.reconstruction
+    if not getattr(recon, "is_valid", False):
+        raise RuntimeError("Keine gültige Rekonstruktion gefunden (Solve fehlt oder wurde gelöscht).")
+
+    # --- Frame-Selektion (neu) ---
+    bad_frames = _select_frames_over_high_threshold(context, recon)
+
+    # Optional zusätzlich begrenzen
+    if limit_frames > 0 and bad_frames:
+        bad_frames = bad_frames[:int(limit_frames)]
+
+    if not bad_frames:
+        print("[INFO] Keine Frames über High-Threshold gefunden.")
+        return 0
+
+    area, region, space_ce = _find_clip_window(context)
+    if not area:
+        raise RuntimeError("Kein CLIP_EDITOR-Fenster gefunden (Kontext erforderlich).")
+
+    scene = context.scene
+    original_frame = scene.frame_current
+    processed = 0
+
+    for f in bad_frames:
+        print(f"\n[FRAME] Refine für Frame {f}")
         scene.frame_set(f)
 
         tracks_forward, tracks_backward = [], []
@@ -116,8 +150,10 @@ class _RefinePump:
             if next_k is not None:
                 tracks_backward.append(tr)
 
+        print(f"  → Vorwärts: {len(tracks_forward)} | Rückwärts: {len(tracks_backward)}")
+
         if tracks_forward:
-            with self.context.temp_override(area=self.area, region=self.region, space_data=self.space_ce):
+            with context.temp_override(area=area, region=region, space_data=space_ce):
                 for tr in clip.tracking.tracks:
                     tr.select = False
                 for tr in tracks_forward:
@@ -125,77 +161,22 @@ class _RefinePump:
                 bpy.ops.clip.refine_markers(backwards=False)
 
         if tracks_backward:
-            with self.context.temp_override(area=self.area, region=self.region, space_data=self.space_ce):
+            with context.temp_override(area=area, region=region, space_data=space_ce):
                 for tr in clip.tracking.tracks:
                     tr.select = False
                 for tr in tracks_backward:
                     tr.select = True
                 bpy.ops.clip.refine_markers(backwards=True)
 
-        self.processed += 1
+        processed += 1
+        print(f"  [DONE] Frame {f} abgeschlossen.")
 
-    def tick(self):
-        if not self.bad_frames:
-            if self.resolve_after:
-                with self.context.temp_override(area=self.area, region=self.region, space_data=self.space_ce):
-                    bpy.ops.clip.solve_camera()
-            # restore
-            self.scene.frame_set(self.original_frame)
-            _pulse_ui(self.context, self.area, self.region)
-            print(f"[SUMMARY] Insgesamt bearbeitet: {self.processed} Frame(s)")
-            return None  # stop timer
+    if resolve_after:
+        print("[ACTION] Starte erneutes Kamera-Solve…")
+        with context.temp_override(area=area, region=region, space_data=space_ce):
+            bpy.ops.clip.solve_camera()
+        print("[DONE] Kamera-Solve abgeschlossen.")
 
-        f = self.bad_frames.pop(0)
-        self._refine_one(f)
-        return 0.0  # sofort wieder schedulen
-
-# --- oberhalb belassen: Helpers & _RefinePump ...
-
-def run_refine_on_high_error(
-    context,
-    limit_frames: int = 0,
-    resolve_after: bool = False,
-    error_threshold: float | None = None,
-    run_mode: str = "async",          # NEU: "async" | "sync"
-    **_compat_ignored,
-) -> int:
-    # ... unverändert: Clip/Reconstruction prüfen, bad_frames ermitteln ...
-
-    area, region, space_ce = _find_clip_window(context)
-    if not area:
-        raise RuntimeError("Kein CLIP_EDITOR-Fenster gefunden.")
-
-    original_frame = context.scene.frame_current
-
-    # --- NEU: synchroner Pfad (blockierend, kein Live-UI) ---
-    if str(run_mode).lower() == "sync":
-        pump = _RefinePump(context, clip, bad_frames, area, region, space_ce,
-                           resolve_after, original_frame)
-        for f in list(bad_frames):
-            pump._refine_one(f)                # direkt, ohne Timer
-        if resolve_after:
-            with context.temp_override(area=area, region=region, space_data=space_ce):
-                bpy.ops.clip.solve_camera()
-        context.scene.frame_set(original_frame)
-        # Ein einmaliger UI-Refresh am Ende:
-        _pulse_ui(context, area, region)
-        print(f"[SUMMARY] Insgesamt bearbeitet (sync): {pump.processed} Frame(s)")
-        return pump.processed
-
-    # --- Standard: asynchroner Pfad (wie bisher) ---
-    pump = _RefinePump(context, clip, bad_frames, area, region, space_ce,
-                       resolve_after, original_frame)
-    bpy.app.timers.register(pump.tick, first_interval=0.0)
-    print(f"[INFO] Refine gestartet: {len(bad_frames)} Frames (asynchron).")
-    return 0
-
-
-    area, region, space_ce = _find_clip_window(context)
-    if not area:
-        raise RuntimeError("Kein CLIP_EDITOR-Fenster gefunden.")
-
-    pump = _RefinePump(context, clip, bad_frames, area, region, space_ce,
-                       resolve_after, context.scene.frame_current)
-    bpy.app.timers.register(pump.tick, first_interval=0.0)
-    print(f"[INFO] Refine gestartet: {len(bad_frames)} Frames (asynchron).")
-    return 0
+    scene.frame_set(original_frame)
+    print(f"\n[SUMMARY] Insgesamt bearbeitet: {processed} Frame(s)")
+    return processed
