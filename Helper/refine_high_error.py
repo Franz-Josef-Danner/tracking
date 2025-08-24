@@ -1,4 +1,5 @@
 # refine_high_error.py
+from __future__ import annotations
 import bpy
 
 __all__ = ("run_refine_on_high_error",)
@@ -41,46 +42,46 @@ def _prev_next_keyframes(track, frame):
 def _build_error_series(recon):
     """frame -> average_error (float) aus Reconstruction Cameras."""
     series = {}
-    for cam in recon.cameras:
-        series[int(cam.frame)] = float(cam.average_error)
-    # sortiert zurückgeben
+    for cam in getattr(recon, "cameras", []):
+        try:
+            series[int(cam.frame)] = float(cam.average_error)
+        except Exception:
+            continue
     return dict(sorted(series.items()))
 
 
-# --- Neue Selektion: Top-N nach Szene/marker_basis ----------------------------
+# --- Neue Selektion: Alle Frames über High-Threshold --------------------------
 
-def _select_top_n_frames_by_scene_basis(context, recon):
+def _select_frames_over_high_threshold(context, recon):
     """
-    N = (scene.frame_end - scene.frame_start + 1) // scene['marker_basis']
-    mind. 1. Wählt die N höchsten Error-Frames (innerhalb des Szenenbereichs).
+    Wählt *alle* Frames f im Szenenbereich, deren Error > (scene.error_track * 10) ist.
+    Gibt sortierte Frame-Indices zurück.
     """
     scene = context.scene
     frame_start = int(scene.frame_start)
     frame_end = int(scene.frame_end)
-    total_frames = max(0, frame_end - frame_start + 1)
 
-    marker_basis = int(scene.get("marker_basis", 25))
-    if marker_basis <= 0:
-        marker_basis = 25
-
-    # Ganzzahlige Division; mindestens 1
-    n = max(1, total_frames // marker_basis)
+    # Schwelle aus UI-Property (Default 2.0), High-Threshold = *10
+    base = float(getattr(scene, "error_track", 2.0) or 2.0)  # siehe UI-Property in __init__.py
+    high_threshold = base * 10.0
 
     series = _build_error_series(recon)
-
-    # Auf Szenenbereich filtern
+    # Szenenbereich filtern
     series = {f: e for f, e in series.items() if frame_start <= f <= frame_end}
 
-    if not series:
-        return []
+    # Auswahl nach High-Threshold
+    selected = sorted(f for f, e in series.items() if e > high_threshold)
 
-    # Top-N Frames nach Error (desc), stabil nach Frame (asc) für Reproduzierbarkeit
-    sorted_by_error = sorted(series.items(), key=lambda kv: (-kv[1], kv[0]))
-    selected = [f for f, _ in sorted_by_error[:n]]
-
-    print(f"[Select] Szene-Frames: {total_frames}, marker_basis: {marker_basis} → N={n}")
-    print(f"[Select] Top-{n} Frames (höchste Errors): {selected}")
-    return sorted(selected)
+    print(f"[Select] Bereich {frame_start}–{frame_end}, error_track={base:.3f} "
+          f"→ high_threshold={high_threshold:.3f}")
+    if selected:
+        # zur Transparenz Fehlerwerte anzeigen (Top zuerst)
+        preview = sorted(((f, series[f]) for f in selected), key=lambda kv: (-kv[1], kv[0]))
+        print("[Select] Frames über Schwelle:", [f for f, _ in preview])
+        print("[Select] Fehler (desc):", [round(err, 3) for _, err in preview[:10]])
+    else:
+        print("[Select] Keine Frames über high_threshold gefunden.")
+    return selected
 
 
 # --- Core Routine -------------------------------------------------------------
@@ -94,14 +95,13 @@ def run_refine_on_high_error(
     **_compat_ignored,
 ) -> int:
     """
-    Refine an genau N Frames mit den höchsten Solve-Frame-Errors.
-    N = (Szenen-Frameanzahl) // scene['marker_basis'], N >= 1.
+    Refine auf allen Frames mit Solve-Frame-Error > (scene.error_track * 10).
 
-    Hinweis: 'error_threshold' und weitere Alt-Argumente werden im Top-N-Modus ignoriert
-    (Kompatibilität für ältere Aufrufer/Operatoren).
+    Optional: limit_frames > 0 begrenzt die Anzahl der zu bearbeitenden Frames.
+    Hinweis: 'error_threshold' und weitere Alt-Argumente sind nur für Kompatibilität vorhanden.
     """
     if error_threshold is not None:
-        print("[Refine][Compat] 'error_threshold' übergeben, wird im Top-N-Modus ignoriert.")
+        print("[Refine][Compat] 'error_threshold' übergeben, wird im High-Threshold-Modus ignoriert.")
     if _compat_ignored:
         print(f"[Refine][Compat] Ignoriere zusätzliche Alt-Argumente: {list(_compat_ignored.keys())}")
 
@@ -111,18 +111,18 @@ def run_refine_on_high_error(
 
     obj = clip.tracking.objects.active
     recon = obj.reconstruction
-    if not recon.is_valid:
+    if not getattr(recon, "is_valid", False):
         raise RuntimeError("Keine gültige Rekonstruktion gefunden (Solve fehlt oder wurde gelöscht).")
 
     # --- Frame-Selektion (neu) ---
-    bad_frames = _select_top_n_frames_by_scene_basis(context, recon)
+    bad_frames = _select_frames_over_high_threshold(context, recon)
 
     # Optional zusätzlich begrenzen
     if limit_frames > 0 and bad_frames:
         bad_frames = bad_frames[:int(limit_frames)]
 
     if not bad_frames:
-        print("[INFO] Keine Frames für Refine gefunden.")
+        print("[INFO] Keine Frames über High-Threshold gefunden.")
         return 0
 
     area, region, space_ce = _find_clip_window(context)
@@ -134,7 +134,7 @@ def run_refine_on_high_error(
     processed = 0
 
     for f in bad_frames:
-        print(f"\n[FRAME] Starte Refine für Frame {f}")
+        print(f"\n[FRAME] Refine für Frame {f}")
         scene.frame_set(f)
 
         tracks_forward, tracks_backward = [], []
@@ -150,7 +150,7 @@ def run_refine_on_high_error(
             if next_k is not None:
                 tracks_backward.append(tr)
 
-        print(f"  → Vorwärts-Refine Tracks: {len(tracks_forward)} | Rückwärts-Refine Tracks: {len(tracks_backward)}")
+        print(f"  → Vorwärts: {len(tracks_forward)} | Rückwärts: {len(tracks_backward)}")
 
         if tracks_forward:
             with context.temp_override(area=area, region=region, space_data=space_ce):
