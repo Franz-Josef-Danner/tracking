@@ -86,13 +86,52 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
     def poll(cls, context):
         return getattr(context.area, "type", None) == "CLIP_EDITOR"
 
-    def _select_only_groups(self):
-        # Nur unsere Triplet-Tracks selektieren (alles andere deselektieren)
+    def _select_only_groups(self) -> None:
+        """Nur unsere Triplet-Tracks selektieren (alles andere deselektieren)."""
         for t in self._all_tracks:
             t.select = False
         for g in self._groups:
             for t in g:
                 t.select = True
+
+    def _track_one_step(self) -> bool:
+        """Führe genau einen Tracking-Schritt aus.
+        Mit robusten Fallbacks; gibt True zurück, wenn irgendein Call erfolgreich war.
+        Bricht **nicht** den Modal-Loop ab."""
+        # Selektion restriktiv halten
+        self._select_only_groups()
+
+        # 1) Override + EXEC_DEFAULT
+        try:
+            if self._override_ctx:
+                bpy.ops.clip.track_markers(self._override_ctx, 'EXEC_DEFAULT', backwards=False, sequence=False)
+                return True
+        except Exception as ex:
+            self._log(f"track_markers (override+EXEC) failed: {ex!r}")
+
+        # 2) Plain + EXEC_DEFAULT (wenn wir ohnehin im CLIP_EDITOR sind)
+        try:
+            bpy.ops.clip.track_markers('EXEC_DEFAULT', backwards=False, sequence=False)
+            return True
+        except Exception as ex:
+            self._log(f"track_markers (EXEC) failed: {ex!r}")
+
+        # 3) Override ohne Kontext-String
+        try:
+            if self._override_ctx:
+                bpy.ops.clip.track_markers(self._override_ctx, backwards=False, sequence=False)
+                return True
+        except Exception as ex:
+            self._log(f"track_markers (override) failed: {ex!r}")
+
+        # 4) Ganz plain
+        try:
+            bpy.ops.clip.track_markers(backwards=False, sequence=False)
+            return True
+        except Exception as ex:
+            self._log(f"track_markers (plain) failed: {ex!r}")
+
+        return False
 
     def invoke(self, context: bpy.types.Context, event: bpy.types.Event):
         scn = context.scene
@@ -181,8 +220,8 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
         if event.type != "TIMER":
             return {"PASS_THROUGH"}
 
-        # Stop-Kriterien: keine Gruppen mehr oder Frame > Ende
-        if not self._groups or self._frame >= self._frame_end:
+        # Nur am Clip-Ende (oder ESC) signalisieren
+        if self._frame > self._frame_end:
             return self._finish(context, cancelled=False)
 
         scn = context.scene
@@ -196,14 +235,16 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
             m2 = _marker_at(t2, self._frame)
 
             # Aktiv? (Marker vorhanden & nicht gemutet)
-            if not (m0 and not m0.mute and m1 and not m1.mute and m2 and not m2.mute):
-                # Spezifikation: Fällt einer aus → alle aus
+            if not (m0 and not getattr(m0, "mute", False) and
+                    m1 and not getattr(m1, "mute", False) and
+                    m2 and not getattr(m2, "mute", False)):
+                # Fällt einer aus → ganze Gruppe deaktivieren
                 for trk, mk in ((t0, m0), (t1, m1), (t2, m2)):
                     if mk:
                         mk.mute = True
                     trk.select = False
                 names = f"{t0.name}, {t1.name}, {t2.name}"
-                self._log(f"Frame {self._frame}: '{names}' -> {int(bool(m0))+int(bool(m1))+int(bool(m2))}/3 aktiv → gesamte Gruppe deaktiviert.")
+                self._log(f"Frame {self._frame}: '{names}' -> Gruppe deaktiviert (Ausfall).")
                 deactivated.append(idx)
                 continue
 
@@ -239,30 +280,22 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
                 except Exception:
                     pass
 
-        # Wenn nach der Prüfung nichts mehr selektiert → fertig
-        if not any(trk.select for grp in self._groups for trk in grp):
-            self._log("Keine selektierten Marker mehr → Ende.")
-            return self._finish(context, cancelled=False)
+        # WICHTIG: Hier NICHT mehr vorzeitig beenden!
+        # - Wenn keine Gruppen mehr existieren, laufen wir die Frames nur noch durch.
+        # - Wenn Gruppen existieren, versuchen wir genau einen Tracking-Schritt.
 
-        # Genau EIN Tracking-Schritt vorwärts; nur unsere Triplet-Tracks selektiert
-        self._select_only_groups()
-        try:
-            if self._override_ctx:
-                bpy.ops.clip.track_markers(self._override_ctx, 'EXEC_DEFAULT', backwards=False, sequence=False)
-            else:
-                bpy.ops.clip.track_markers('EXEC_DEFAULT', backwards=False, sequence=False)
-        except Exception as ex:
-            self._log(f"WARN: track_markers failed: {ex!r}")
-            # Ohne Tracking entstehen im nächsten Frame keine Marker → kontrolliertes Ende
-            return self._finish(context, cancelled=True)
+        if self._groups:
+            ok = self._track_one_step()
+            if not ok:
+                # Kein Signal an Coordinator – wir bleiben aktiv und versuchen es beim nächsten Timer-Tick erneut.
+                return {"RUNNING_MODAL"}
 
-        # Nächster Frame
+        # Nächster Frame (mit oder ohne Tracking)
         if self._frame < self._frame_end:
             self._frame += 1
+            return {"RUNNING_MODAL"}
         else:
             return self._finish(context, cancelled=False)
-
-        return {"RUNNING_MODAL"}
 
     def _finish(self, context: bpy.types.Context, *, cancelled: bool):
         scn = context.scene
