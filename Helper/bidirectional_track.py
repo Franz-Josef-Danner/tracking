@@ -1,260 +1,247 @@
-import time
+# SPDX-License-Identifier: GPL-2.0-or-later
+"""
+Helper/bidirectional_track.py
+
+Enthält:
+- run_framewise_track(): Utility, die selektierte Marker **Frame für Frame** trackt
+  (kein Sequence-Tracking, kein Setzen/Neuplazieren), bis die Szenenrange endet
+  oder Blender keine Schritte mehr machen kann.
+- CLIP_OT_framewise_track: Komfort-Operator für run_framewise_track().
+- CLIP_OT_bidirectional_track: Kompatibilitäts-/Brücken-Operator, den der
+  tracking_coordinator erwartet. Setzt die Scene-Flags, läuft modal und beendet
+  sich mit einem Ergebnis-Flag. Implementiert hier eine einfache Bi-Schrittkette
+  (1x vorwärts, 1x rückwärts als Minimalfall), kann später leicht durch die
+  „echte“ Bidirectional-Logik ersetzt werden.
+
+Hinweis:
+- Die vom Coordinator verwendeten Scene-Keys müssen exakt übereinstimmen.
+"""
+
+from __future__ import annotations
 import bpy
-from bpy.types import Operator
+from typing import Optional, Dict, Any
+
+# --- Scene Keys (müssen zu tracking_coordinator.py passen) --------------------
+_BIDI_ACTIVE_KEY = "bidi_active"
+_BIDI_RESULT_KEY = "bidi_result"
+
+__all__ = (
+    "run_framewise_track",
+    "CLIP_OT_framewise_track",
+    "CLIP_OT_bidirectional_track",
+    "register",
+    "unregister",
+)
 
 
-def _count_total_markers(clip) -> int:
+# ----------------------------------------------------------------------------
+# Utilities
+# ----------------------------------------------------------------------------
+
+def _get_active_clip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
+    space = getattr(context, "space_data", None)
+    if getattr(space, "type", None) == 'CLIP_EDITOR' and getattr(space, "clip", None):
+        return space.clip
     try:
-        return sum(len(t.markers) for t in clip.tracking.tracks)
+        return bpy.data.movieclips[0] if bpy.data.movieclips else None
     except Exception:
-        return 0
+        return None
 
 
-def _count_tracks_with_marker_on_frame(clip, frame: int) -> int:
-    cnt = 0
+def _has_selected_tracks(clip: Optional[bpy.types.MovieClip]) -> bool:
+    if clip is None:
+        return False
     try:
-        for tr in clip.tracking.tracks:
-            try:
-                mk = tr.markers.find_frame(frame, exact=True)
-            except TypeError:
-                mk = tr.markers.find_frame(frame)
-            if mk and not getattr(mk, "mute", False):
-                cnt += 1
+        return any(t.select for t in clip.tracking.tracks)
     except Exception:
-        pass
-    return cnt
+        return False
 
 
-class CLIP_OT_bidirectional_track(Operator):
-    bl_idname = "clip.bidirectional_track"
-    bl_label = "Bidirectional Track"
-    bl_description = "Trackt Marker vorwärts und rückwärts (sichtbar im UI) und signalisiert Fertig an Orchestrator"
+# ----------------------------------------------------------------------------
+# Framewise Tracking – Kernfunktion
+# ----------------------------------------------------------------------------
 
-    _timer = None
-    _step = 0
-    _start_frame = 0
+def run_framewise_track(
+    context: bpy.types.Context,
+    *,
+    backwards: bool = False,
+    max_steps: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Trackt selektierte Marker **frameweise** bis Ende/Abbruch.
 
-    _prev_marker_count = -1
-    _prev_frame = -1
-    _stable_count = 0
+    Parameters
+    ----------
+    backwards: bool
+        False = vorwärts, True = rückwärts.
+    max_steps: int | None
+        Sicherheitslimit für Einzelschritte; None = unbegrenzt.
 
-    # Debug/Tracing
-    _t0 = 0.0
-    _tick = 0
-    _t_last_action = 0.0
+    Returns
+    -------
+    dict
+        {"status": "FINISHED"|"CANCELLED"|"NO_SELECTION"|"NO_CLIP", "steps": int}
+    """
+    clip = _get_active_clip(context)
+    if clip is None:
+        return {"status": "NO_CLIP", "steps": 0}
+    if not _has_selected_tracks(clip):
+        return {"status": "NO_SELECTION", "steps": 0}
 
-    def _dbg_header(self, context, clip):
-        curf = context.scene.frame_current
-        total = _count_total_markers(clip) if clip else -1
-        on_cur = _count_tracks_with_marker_on_frame(clip, curf) if clip else -1
-        print(
-            "[BidiTrack] tick=%d | step=%d | t=%.3fs | frame=%d | "
-            "markers_total=%d | tracks@frame=%d"
-            % (self._tick, self._step, time.perf_counter() - self._t0, int(curf), int(total), int(on_cur))
+    scene = context.scene
+    frame_min = int(scene.frame_start)
+    frame_max = int(scene.frame_end)
+
+    steps = 0
+    while True:
+        if max_steps is not None and steps >= int(max_steps):
+            return {"status": "FINISHED", "steps": steps}
+
+        cur = int(scene.frame_current)
+        if cur < frame_min or cur > frame_max:
+            return {"status": "FINISHED", "steps": steps}
+
+        # WICHTIG: sequence=False erzwingt Single-Step-Tracking
+        res = bpy.ops.clip.track_markers(backwards=backwards, sequence=False)
+        if {'CANCELLED'} == set(res):
+            return {"status": "CANCELLED", "steps": steps}
+
+        steps += 1
+
+        # Sicherheitsnetz: falls der Frame nicht wechselt, abbrechen
+        if int(scene.frame_current) == cur:
+            return {"status": "CANCELLED", "steps": steps}
+
+
+# ----------------------------------------------------------------------------
+# Operator: Framewise Track
+# ----------------------------------------------------------------------------
+
+class CLIP_OT_framewise_track(bpy.types.Operator):
+    """Trackt selektierte Marker Frame-für-Frame (kein Sequence-Track)."""
+
+    bl_idname = "clip.framewise_track"
+    bl_label = "Framewise Track"
+    bl_options = {"REGISTER", "UNDO"}
+
+    backwards: bpy.props.BoolProperty(  # type: ignore
+        name="Backwards",
+        description="Rückwärts tracken",
+        default=False,
+    )
+    max_steps: bpy.props.IntProperty(  # type: ignore
+        name="Max Steps (0=unbegrenzt)",
+        description="Sicherheitslimit für Einzelschritte",
+        default=0,
+        min=0,
+    )
+
+    def execute(self, context: bpy.types.Context):
+        max_steps = None if self.max_steps == 0 else int(self.max_steps)
+        result = run_framewise_track(
+            context,
+            backwards=bool(self.backwards),
+            max_steps=max_steps,
         )
-
-    def execute(self, context):
-        # Flags für Orchestrator setzen
-        context.scene["bidi_active"] = True
-        context.scene["bidi_result"] = ""
-
-        self._step = 0
-        self._stable_count = 0
-        self._prev_marker_count = -1
-        self._prev_frame = -1
-        self._start_frame = context.scene.frame_current
-
-        self._t0 = time.perf_counter()
-        self._t_last_action = self._t0
-        self._tick = 0
-
-        wm = context.window_manager
-        # Hinweis: 0.5 s ist dein aktuelles Intervall – nur Logging, kein Verhalten geändert
-        self._timer = wm.event_timer_add(0.5, window=context.window)
-        wm.modal_handler_add(self)
-
-        # Erste Umgebungsausgabe
-        space = getattr(context, "space_data", None)
-        clip = getattr(space, "clip", None) if space else None
-        total = _count_total_markers(clip) if clip else -1
-        on_start = _count_tracks_with_marker_on_frame(clip, self._start_frame) if clip else -1
-        print("[Tracking] Schritt: 0 (Start Bidirectional Track)")
-        print(
-            "[BidiTrack] INIT | start_frame=%d | markers_total=%d | tracks@start=%d"
-            % (int(self._start_frame), int(total), int(on_start))
-        )
-        return {'RUNNING_MODAL'}
-
-    def modal(self, context, event):
-        if event.type == 'TIMER':
-            self._tick += 1
-            # Kleiner Heartbeat pro Tick
-            print("[BidiTrack] TIMER tick=%d (dt=%.3fs seit Start)"
-                  % (self._tick, time.perf_counter() - self._t0))
-            return self.run_tracking_step(context)
-        return {'PASS_THROUGH'}
-
-    def run_tracking_step(self, context):
-        space = getattr(context, "space_data", None)
-        clip = getattr(space, "clip", None) if space else None
-        if clip is None:
-            self.report({'ERROR'}, "Kein aktiver Clip im Tracking-Editor gefunden.")
-            print("[BidiTrack] ABORT: Kein aktiver Clip im Tracking-Editor.")
-            return self._finish(context, result="FAILED")
-
-        self._dbg_header(context, clip)
-
-        if self._step == 0:
-            # Vorwärts-Tracking starten
-            print("→ Starte Vorwärts-Tracking...")
-            total_before = _count_total_markers(clip)
-            frames_before = _count_tracks_with_marker_on_frame(clip, context.scene.frame_current)
-            try:
-                ret = bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
-            except Exception as ex:
-                print(f"[BidiTrack] EXC beim Start Vorwärts-Tracking: {ex!r}")
-                return self._finish(context, result="FAILED")
-
-            print(
-                f"[BidiTrack] Vorwärts-Tracking ausgelöst | op_ret={ret} | "
-                f"markers_total_before={total_before} | tracks@frame_before={frames_before}"
-            )
-            self._t_last_action = time.perf_counter()
-            self._step = 1
-            return {'PASS_THROUGH'}
-
-        elif self._step == 1:
-            # Kurze Statusmeldung: hat sich seit dem Auslösen etwas geändert?
-            total_now = _count_total_markers(clip)
-            on_cur = _count_tracks_with_marker_on_frame(clip, context.scene.frame_current)
-            print(
-                f"→ Warte auf Abschluss des Vorwärts-Trackings... | "
-                f"markers_total_now={total_now} | tracks@cur={on_cur}"
-            )
-            # Zurück auf Startframe – wie in deiner Version
-            context.scene.frame_current = self._start_frame
-            self._step = 2
-            print(f"← Frame zurückgesetzt auf {self._start_frame}")
-            return {'PASS_THROUGH'}
-
-        elif self._step == 2:
-            # Ein „Zwischen‑Tick“ als sichtbarer Puffer
-            print("→ Frame gesetzt. Warte eine Schleife, bevor Rückwärts-Tracking startet...")
-            self._step = 3
-            return {'PASS_THROUGH'}
-
-        elif self._step == 3:
-            # Rückwärts-Tracking starten
-            print("→ Starte Rückwärts-Tracking...")
-            total_before = _count_total_markers(clip)
-            frames_before = _count_tracks_with_marker_on_frame(clip, context.scene.frame_current)
-            try:
-                ret = bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
-            except Exception as ex:
-                print(f"[BidiTrack] EXC beim Start Rückwärts-Tracking: {ex!r}")
-                return self._finish(context, result="FAILED")
-
-            print(
-                f"[BidiTrack] Rückwärts-Tracking ausgelöst | op_ret={ret} | "
-                f"markers_total_before={total_before} | tracks@frame_before={frames_before}"
-            )
-            self._t_last_action = time.perf_counter()
-            self._step = 4
-            return {'PASS_THROUGH'}
-
-        elif self._step == 4:
-            return self.run_tracking_stability_check(context, clip)
-
-        return {'PASS_THROUGH'}
-
-    def run_tracking_stability_check(self, context, clip):
-        # Aktuelle Zahlen
-        current_frame = context.scene.frame_current
-        current_marker_count = _count_total_markers(clip)
-        tracks_on_cur = _count_tracks_with_marker_on_frame(clip, current_frame)
-
-        # Stabilitätsprüfung wie gehabt
-        if (self._prev_marker_count == current_marker_count and
-                self._prev_frame == current_frame):
-            self._stable_count += 1
-        else:
-            # Extra-Log um Veränderungen zu sehen
-            if self._prev_marker_count != -1:
-                print(
-                    "[BidiTrack] Änderung erkannt | "
-                    f"prev_markers={self._prev_marker_count} -> now={current_marker_count} | "
-                    f"prev_frame={self._prev_frame} -> now={current_frame}"
-                )
-            self._stable_count = 0
-
-        self._prev_marker_count = current_marker_count
-        self._prev_frame = current_frame
-
-        print(
-            f"[Tracking-Stabilität] Frame: {current_frame}, "
-            f"Marker_total: {current_marker_count}, tracks@frame: {tracks_on_cur}, "
-            f"Stabil: {self._stable_count}/2"
-        )
-
-        # Kleines UI-Pulse, damit man in der Oberfläche auch Aktivität sieht
-        try:
-            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-        except Exception:
-            pass
-
-        if self._stable_count >= 2:
-            print("✓ Tracking stabil erkannt – gebe Fertig-Signal an Orchestrator.")
-            return self._finish(context, result="FINISHED")
-
-        # Zusatzhinweis, falls „nichts“ passiert
-        if self._stable_count == 0:
-            dt = time.perf_counter() - self._t_last_action
-            if dt > 1.5:
-                print(f"[BidiTrack] Hinweis: Seit {dt:.2f}s keine Stabilität. "
-                      "Operatoren evtl. noch busy oder keine Markerbewegung messbar.")
-
-        return {'PASS_THROUGH'}
-
-    def _finish(self, context, result="FINISHED"):
-        # Flags für Orchestrator setzen
-        context.scene["bidi_active"] = False
-        context.scene["bidi_result"] = str(result)
-
-        total_time = time.perf_counter() - self._t0
-        print(f"[BidiTrack] FINISH result={result} | total_time={total_time:.3f}s | ticks={self._tick}")
-
-        self._cleanup_timer(context)
-
-        # ---- Nacharbeit: Clean Error Tracks aufrufen ----
-        try:
-            from . import clean_short_tracks
-            if hasattr(clean_short_tracks, "clean_short_tracks"):
-                print("[BidiTrack] Starte Clean-Error-Tracks nach Bidirectional Tracking …")
-                clean_short_tracks.clean_short_tracks(context)
-        except Exception as ex:
-            print(f"[BidiTrack] WARN: Clean-Error-Tracks konnte nicht ausgeführt werden: {ex}")
-
+        self.report({'INFO'}, f"FramewiseTrack: {result}")
         return {'FINISHED'}
 
-    def _cleanup_timer(self, context):
+
+# ----------------------------------------------------------------------------
+# Operator: Bidirectional Track (Kompatibilität für Coordinator)
+# ----------------------------------------------------------------------------
+
+class CLIP_OT_bidirectional_track(bpy.types.Operator):
+    """Minimaler, kompatibler Bidirectional-Operator.
+
+    Setzt die erwarteten Scene-Flags und läuft modal. Als Platzhalter führt er
+    je einen Framewise-Schritt vorwärts und rückwärts aus. Später einfach durch
+    die echte Bi-Tracking-Logik ersetzen.
+    """
+
+    bl_idname = "clip.bidirectional_track"
+    bl_label = "Bidirectional Track (Compat)"
+    bl_options = {"REGISTER", "UNDO"}
+
+    # Props, die vom Coordinator evtl. übergeben werden
+    use_cooperative_triplets: bpy.props.BoolProperty(  # type: ignore
+        name="Use Cooperative Triplets",
+        default=True,
+    )
+    auto_enable_from_selection: bpy.props.BoolProperty(  # type: ignore
+        name="Auto Enable From Selection",
+        default=True,
+    )
+
+    # Optional: wie viele Schritte je Tick ausführen
+    steps_per_tick: bpy.props.IntProperty(  # type: ignore
+        name="Steps per Tick",
+        default=1,
+        min=1,
+        max=32,
+    )
+
+    _timer: Optional[bpy.types.Timer] = None
+    _ran_any_step: bool = False
+
+    @classmethod
+    def poll(cls, context: bpy.types.Context) -> bool:
+        # Coordinator ruft im CLIP_EDITOR auf – wir halten das bei.
+        return getattr(context.area, "type", None) == "CLIP_EDITOR"
+
+    def invoke(self, context: bpy.types.Context, event: bpy.types.Event):
+        scn = context.scene
+        scn[_BIDI_RESULT_KEY] = ""
+        scn[_BIDI_ACTIVE_KEY] = True
+
         wm = context.window_manager
-        if self._timer is not None:
+        self._timer = wm.event_timer_add(0.02, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def _finish(self, context: bpy.types.Context, *, result: str):
+        scn = context.scene
+        scn[_BIDI_RESULT_KEY] = str(result).upper()
+        scn[_BIDI_ACTIVE_KEY] = False
+        if self._timer:
             try:
-                wm.event_timer_remove(self._timer)
+                context.window_manager.event_timer_remove(self._timer)
             except Exception:
                 pass
             self._timer = None
+        return {'FINISHED'}
+
+    def modal(self, context: bpy.types.Context, event: bpy.types.Event):
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+
+        clip = _get_active_clip(context)
+        if not _has_selected_tracks(clip):
+            # Nichts zu tun → NOOP
+            return self._finish(context, result="NOOP")
+
+        # Minimaler bidi-Zyklus: vorwärts- und rückwärts-Einzelschritt
+        did_steps = 0
+        for _ in range(int(self.steps_per_tick)):
+            r1 = run_framewise_track(context, backwards=False, max_steps=1)
+            did_steps += int(r1.get("steps", 0))
+            r2 = run_framewise_track(context, backwards=True, max_steps=1)
+            did_steps += int(r2.get("steps", 0))
+
+        self._ran_any_step = self._ran_any_step or (did_steps > 0)
+
+        # In dieser Platzhalter-Variante beenden wir direkt nach einem Tick
+        return self._finish(context, result=("DONE" if self._ran_any_step else "NOOP"))
 
 
-def run_bidirectional_track(context):
-    """Startet den Operator aus Skript-Kontext."""
-    return bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
+# ----------------------------------------------------------------------------
+# Register API
+# ----------------------------------------------------------------------------
 
-
-# ---- Registrierung für Haupt-__init__.py ----
-def register():
+def register() -> None:
+    bpy.utils.register_class(CLIP_OT_framewise_track)
     bpy.utils.register_class(CLIP_OT_bidirectional_track)
 
 
-def unregister():
+def unregister() -> None:
     bpy.utils.unregister_class(CLIP_OT_bidirectional_track)
+    bpy.utils.unregister_class(CLIP_OT_framewise_track)
