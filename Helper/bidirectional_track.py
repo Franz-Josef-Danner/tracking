@@ -3,7 +3,7 @@
 Helper/bidirectional_track.py
 
 Frameweises Forward-Tracking der aktuell selektierten Marker in Dreier-Gruppen:
-- Gruppierung NUR über Koordinaten (Annahme: Anzahl selektierter Tracks % 3 == 0).
+- Gruppierung NUR über Koordinaten; es werden so viele Dreiergruppen wie möglich gebildet (Restmarker werden ignoriert).
 - Nach jedem Track-Schritt wird in jeder Dreiergruppe das nächstliegende Paar
   bestimmt; der dritte Marker wird auf deren Mittelpunkt gesetzt.
 - Danach werden alle Gruppen-Tracks (wieder) selektiert.
@@ -212,7 +212,6 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
             clip = _get_active_clip(context)
             if not clip:
                 self.report({'WARNING'}, "Kein MovieClip verfügbar.")
-                # Kein Lauf → klar signalisieren, aber nicht NONE
                 scn["bidi_active"] = False
                 scn["bidi_result"] = "NOOP"
                 return {'FINISHED'}
@@ -224,18 +223,28 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
             # aktuelle Selektion + Frame lesen
             frame = _current_frame_in_clip(context)
             pts = _selected_tracks_with_marker_at_frame(clip, frame)
-            if not pts or (len(pts) % 3) != 0:
-                self.report({'WARNING'}, "Marker fehlen oder Anzahl ist kein Vielfaches von 3.")
+            if not pts or len(pts) < 3:
+                # Nichts verwertbares → NOOP
                 scn["bidi_active"] = False
                 scn["bidi_result"] = "NOOP"
                 return {'FINISHED'}
 
-            # Triplets bilden
+            # Triplets bilden (greedy) – Restmarker werden ignoriert
             self._triplets = _greedy_triplets_by_min_sum(pts)
+            if not self._triplets:
+                scn["bidi_active"] = False
+                scn["bidi_result"] = "NOOP"
+                return {'FINISHED'}
 
-            # Sicherheit: exakt selektieren (nur Triplets; erst ALLE deselektieren)
+            # Nur die tatsächlich verwendeten Tracks selektieren; andere hart deselektieren
             _deselect_all(clip.tracking)
             _select_tracks([t for tri in self._triplets for t in tri], True)
+
+            # Optionales Debug
+            # print(f"[Bidir] using_triplets={len(self._triplets)} "
+            #       f"markers_used={len(self._triplets)*3} "
+            #       f"markers_seen={len(pts)} "
+            #       f"remainder={len(pts) - len(self._triplets)*3}")
 
             # Timer starten
             wm = context.window_manager
