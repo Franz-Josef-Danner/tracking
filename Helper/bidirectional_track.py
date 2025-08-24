@@ -472,12 +472,9 @@ class CLIP_OT_bidirectional_track(Operator):
 
         # 2) Triplet-Gruppen zusammenführen (Join)
         try:
-            clip = _get_active_clip_fallback()
-            if clip:
-                joined = _join_triplet_groups(context, clip)
-                print(f"[BidiTrack] Post-Join abgeschlossen | groups_joined={joined}")
-            else:
-                print("[BidiTrack] WARN: Kein Clip im Kontext – Join übersprungen.")
+            from . import triplet_joiner
+            res = triplet_joiner.run_triplet_join(context, active_policy="first")
+            print(f"[BidiTrack] Post-Join abgeschlossen | groups_joined={res.get('joined', 0)}")
         except Exception as ex:
             print(f"[BidiTrack] WARN: Join-Phase fehlgeschlagen: {ex}")
 
