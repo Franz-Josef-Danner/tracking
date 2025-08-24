@@ -1,321 +1,282 @@
+# Helper/bidirectional_track.py
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""
-Helper/bidirectional_track.py
-
-Enthält:
-- run_framewise_track(): Utility, die selektierte Marker **Frame für Frame** trackt
-  (kein Sequence-Tracking, kein Setzen/Neuplazieren), bis die Szenenrange endet
-  oder Blender keine Schritte mehr machen kann.
-- CLIP_OT_framewise_track: Komfort-Operator für run_framewise_track().
-- CLIP_OT_bidirectional_track: Kompatibilitäts-/Brücken-Operator, den der
-  tracking_coordinator erwartet. Setzt die Scene-Flags, läuft modal und beendet
-  sich mit einem Ergebnis-Flag. Implementiert hier eine einfache Bi-Schrittkette
-  (1x vorwärts, 1x rückwärts als Minimalfall), kann später leicht durch die
-  „echte“ Bidirectional-Logik ersetzt werden.
-
-Hinweis:
-- **Wichtig gegen "Frame springt zurück / ab Frame 4 Reset"**:
-  Wir steuern **space.clip_user.frame_current** im Movie-Clip-Editor und rufen
-  die Operatoren mit Context-Override des CLIP_EDITORs auf. Außerdem validieren wir
-  nach jedem Step, ob der Frame wirklich gewechselt hat – falls nicht, wird der
-  Frame manuell um ±1 weitergestellt. Zusätzlich: Bei CANCELLED oder No-Progress
-  versuchen wir einen erneuten Step, bevor wir endgültig abbrechen.
-"""
-
 from __future__ import annotations
-import bpy
-from typing import Optional, Dict, Any
 
-# --- Scene Keys (müssen zu tracking_coordinator.py passen) --------------------
+import bpy
+from typing import List, Tuple, Dict, Optional
+from mathutils import Vector
+
+__all__ = ("CLIP_OT_bidirectional_track", "register", "unregister")
+
+# Szene-Handshake-Keys (müssen zum Coordinator passen)
 _BIDI_ACTIVE_KEY = "bidi_active"
 _BIDI_RESULT_KEY = "bidi_result"
 
-__all__ = (
-    "run_framewise_track",
-    "CLIP_OT_framewise_track",
-    "CLIP_OT_bidirectional_track",
-    "register",
-    "unregister",
-)
-
-
-# ----------------------------------------------------------------------------
-# Utilities
-# ----------------------------------------------------------------------------
-
-def _find_clip_area_ctx(context: bpy.types.Context) -> Optional[dict]:
-    win = context.window
+def _find_clip_override(ctx) -> Optional[Dict]:
+    """Sichert CLIP_EDITOR-Kontext für Operator-Aufrufe."""
+    win = ctx.window
     if not win:
         return None
-    screen = win.screen
-    if not screen:
+    scr = getattr(win, "screen", None)
+    if not scr:
         return None
-    for area in screen.areas:
+    for area in scr.areas:
         if getattr(area, "type", None) == 'CLIP_EDITOR':
-            region = next((r for r in area.regions if r.type == 'WINDOW'), None)
-            if not region:
-                continue
-            space = area.spaces.active
-            if getattr(space, "clip", None) is None:
-                try:
-                    space.clip = bpy.data.movieclips[0] if bpy.data.movieclips else None
-                except Exception:
-                    pass
-            return {
-                "window": win,
-                "screen": screen,
-                "area": area,
-                "region": region,
-                "space_data": space,
-                "scene": context.scene,
-            }
+            for region in area.regions:
+                if getattr(region, "type", None) == 'WINDOW':
+                    space = area.spaces.active
+                    # Clip notfalls injizieren
+                    if getattr(space, "clip", None) is None:
+                        try:
+                            if bpy.data.movieclips:
+                                space.clip = bpy.data.movieclips[0]
+                        except Exception:
+                            pass
+                    return {'window': win, 'area': area, 'region': region, 'space_data': space, 'scene': ctx.scene}
     return None
 
 
-def _get_active_clip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
-    space = getattr(context, "space_data", None)
-    if getattr(space, "type", None) == 'CLIP_EDITOR' and getattr(space, "clip", None):
-        return space.clip
+def _marker_at(track: bpy.types.MovieTrackingTrack, frame: int) -> Optional[bpy.types.MovieTrackingMarker]:
+    """Robuste Marker-Abfrage (Blender API variiert bei exact-Param)."""
     try:
-        return bpy.data.movieclips[0] if bpy.data.movieclips else None
-    except Exception:
-        return None
+        return track.markers.find_frame(frame, exact=True)
+    except TypeError:
+        return track.markers.find_frame(frame)
 
 
-def _has_selected_tracks(clip: Optional[bpy.types.MovieClip]) -> bool:
-    if clip is None:
-        return False
+def _ensure_marker(track: bpy.types.MovieTrackingTrack, frame: int, co: Vector) -> bpy.types.MovieTrackingMarker:
+    """Sorge dafür, dass im Frame ein Marker existiert (insert bei Bedarf)."""
+    mk = _marker_at(track, frame)
+    if mk:
+        return mk
+    # Insert erwartet Koordinate in Normalized Space (0..1)
     try:
-        return any(t.select for t in clip.tracking.tracks)
-    except Exception:
-        return False
+        mk = track.markers.insert_frame(int(frame), (float(co.x), float(co.y)))
+    except TypeError:
+        mk = track.markers.insert_frame(frame=int(frame), co=(float(co.x), float(co.y)))
+    return mk
 
-
-def _clip_frame_range(clip: bpy.types.MovieClip) -> tuple[int, int]:
-    try:
-        f0 = int(clip.frame_start)
-        dur = int(clip.frame_duration)
-        if dur > 0:
-            return f0, f0 + dur - 1
-    except Exception:
-        pass
-    scn = bpy.context.scene
-    return int(scn.frame_start), int(scn.frame_end)
-
-
-def _bump_frame(space: bpy.types.SpaceClip, *, backwards: bool) -> None:
-    try:
-        user = space.clip_user
-        user.frame_current += (-1 if backwards else 1)
-    except Exception:
-        pass
-    try:
-        bpy.context.view_layer.update()
-    except Exception:
-        pass
-
-
-# ----------------------------------------------------------------------------
-# Framewise Tracking – Kernfunktion
-# ----------------------------------------------------------------------------
-
-def run_framewise_track(
-    context: bpy.types.Context,
-    *,
-    backwards: bool = False,
-    max_steps: Optional[int] = None,
-    retry_on_cancelled: bool = True,
-    retry_on_no_progress: bool = True,
-    max_retries: int = 3,
-) -> Dict[str, Any]:
-    """Trackt selektierte Marker **frameweise** und robust gegen Frame-Drift.
-
-    - Verwendet CLIP_EDITOR-Context-Override.
-    - Liest/setzt **space.clip_user.frame_current** statt nur scene.frame_current.
-    - Verifiziert nach jedem Step den Framewechsel; bei Problemen optional **Retry**
-      mit manuellem Frame-Bump (±1), bis *max_retries* erreicht sind.
-
-    Parameters
-    ----------
-    backwards : bool
-        Richtung (False=vorwärts, True=rückwärts)
-    max_steps : int | None
-        Sicherheitslimit der Schritte (None = unbegrenzt)
-    retry_on_cancelled : bool
-        Bei {'CANCELLED'} vom Operator erneut probieren (mit Bump)
-    retry_on_no_progress : bool
-        Wenn Frame nicht wechselt, erneut probieren (mit Bump)
-    max_retries : int
-        Max. Retries **pro Schritt**, bevor abgebrochen wird
-    """
-    ov = _find_clip_area_ctx(context)
-    if ov is None:
-        return {"status": "NO_CLIP", "steps": 0}
-
-    space = ov["space_data"]
-    clip = getattr(space, "clip", None)
-    if clip is None:
-        clip = _get_active_clip(context)
-        if clip is None:
-            return {"status": "NO_CLIP", "steps": 0}
-        try:
-            space.clip = clip
-        except Exception:
-            pass
-
-    if not _has_selected_tracks(clip):
-        return {"status": "NO_SELECTION", "steps": 0}
-
-    fmin, fmax = _clip_frame_range(clip)
-
-    def _clamp_user_frame():
-        try:
-            u = space.clip_user
-            if u.frame_current < fmin:
-                u.frame_current = fmin
-            elif u.frame_current > fmax:
-                u.frame_current = fmax
-        except Exception:
-            pass
-
-    steps = 0
-    with bpy.context.temp_override(**ov):
-        user = space.clip_user
-        _clamp_user_frame()
-        while True:
-            if max_steps is not None and steps >= int(max_steps):
-                return {"status": "FINISHED", "steps": steps}
-
-            cur = int(user.frame_current)
-            if cur < fmin or cur > fmax:
-                return {"status": "FINISHED", "steps": steps}
-
-            # --- versuche EINEN Schritt, mit optionalen Retries ---
-            retries = 0
-            while True:
-                # Single-Step Tracking (kein sequence)
-                result = bpy.ops.clip.track_markers(backwards=backwards, sequence=False)
-                if {'CANCELLED'} == set(result):
-                    if retry_on_cancelled and retries < int(max_retries):
-                        retries += 1
-                        _bump_frame(space, backwards=backwards)
-                        _clamp_user_frame()
-                        continue
-                    # keine weiteren Versuche
-                    return {"status": "CANCELLED", "steps": steps}
-
-                # Schritt war formal erfolgreich → prüfen, ob Frame wechselte
-                new_cur = int(user.frame_current)
-                if new_cur == cur:
-                    if retry_on_no_progress and retries < int(max_retries):
-                        retries += 1
-                        _bump_frame(space, backwards=backwards)
-                        _clamp_user_frame()
-                        # Wiederhole den Versuch: ggf. hilft der Bump, den Clip voranzuschalten
-                        continue
-                    # Kein Fortschritt trotz Retries → abbrechen
-                    return {"status": "CANCELLED", "steps": steps}
-
-                # Fortschritt! Schritt gezählt, äußere Schleife fortsetzen
-                steps += 1
-                break
-
-# ----------------------------------------------------------------------------
-# Operator: Framewise Track
-# ----------------------------------------------------------------------------
-
-class CLIP_OT_framewise_track(bpy.types.Operator):
-    bl_idname = "clip.framewise_track"
-    bl_label = "Framewise Track"
-    bl_options = {"REGISTER", "UNDO"}
-
-    backwards: bpy.props.BoolProperty(default=False)
-    max_steps: bpy.props.IntProperty(default=0, min=0)
-
-    def execute(self, context: bpy.types.Context):
-        max_steps = None if self.max_steps == 0 else int(self.max_steps)
-        result = run_framewise_track(
-            context,
-            backwards=bool(self.backwards),
-            max_steps=max_steps,
-        )
-        self.report({'INFO'}, f"FramewiseTrack: {result}")
-        return {'FINISHED'}
-
-
-# ----------------------------------------------------------------------------
-# Operator: Bidirectional Track (Kompatibilität für Coordinator)
-# ----------------------------------------------------------------------------
 
 class CLIP_OT_bidirectional_track(bpy.types.Operator):
+    """Frameweises Tracking mit kooperierenden Triplets (3 Marker je Position)."""
     bl_idname = "clip.bidirectional_track"
-    bl_label = "Bidirectional Track (Compat)"
+    bl_label = "Bidirectional Track (Triplet-Coop)"
     bl_options = {"REGISTER", "UNDO"}
 
-    use_cooperative_triplets: bpy.props.BoolProperty(default=True)
-    auto_enable_from_selection: bpy.props.BoolProperty(default=True)
-    steps_per_tick: bpy.props.IntProperty(default=1, min=1, max=32)
+    # Kompatibilitäts-Args (vom Coordinator gesetzt)
+    use_cooperative_triplets: bpy.props.BoolProperty(  # type: ignore
+        name="Cooperative Triplets",
+        default=True,
+    )
+    auto_enable_from_selection: bpy.props.BoolProperty(  # type: ignore
+        name="Only From Selection",
+        default=True,
+    )
 
+    # interne Laufzeitdaten
     _timer: Optional[bpy.types.Timer] = None
-    _ran_any_step: bool = False
+    _groups: List[Tuple[bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack]]
+    _frame: int
+    _frame_start: int
+    _frame_end: int
+    _override_ctx: Optional[Dict]
+
+    def _log(self, msg: str) -> None:
+        print(f"[BidiTriplet] {msg}")
 
     @classmethod
-    def poll(cls, context: bpy.types.Context) -> bool:
+    def poll(cls, context):
         return getattr(context.area, "type", None) == "CLIP_EDITOR"
 
     def invoke(self, context: bpy.types.Context, event: bpy.types.Event):
         scn = context.scene
-        scn[_BIDI_RESULT_KEY] = ""
         scn[_BIDI_ACTIVE_KEY] = True
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(0.02, window=context.window)
-        wm.modal_handler_add(self)
-        return {'RUNNING_MODAL'}
+        scn[_BIDI_RESULT_KEY] = ""
+        self._override_ctx = _find_clip_override(context)
+        space = getattr(self._override_ctx or {}, "get", lambda *_: None)("space_data") if self._override_ctx else None
+        clip = getattr(space, "clip", None) if space else getattr(context.space_data, "clip", None)
 
-    def _finish(self, context: bpy.types.Context, *, result: str):
+        if not clip:
+            self._log("ERROR: Kein MovieClip verfügbar.")
+            scn[_BIDI_ACTIVE_KEY] = False
+            scn[_BIDI_RESULT_KEY] = "NOOP"
+            return {"CANCELLED"}
+
+        # Tracks ermitteln (Active Object bevorzugen)
+        tracking = clip.tracking
+        if getattr(tracking, "objects", None) and tracking.objects:
+            obj = tracking.objects.active or tracking.objects[0]
+            tracks = obj.tracks
+        else:
+            tracks = tracking.tracks
+
+        # Start-/Ende definieren
+        self._frame = int(scn.frame_current)
+        self._frame_start = int(getattr(clip, "frame_start", scn.frame_start))
+        try:
+            self._frame_end = int(clip.frame_start + clip.frame_duration - 1)
+        except Exception:
+            self._frame_end = int(scn.frame_end)
+
+        # Triplets am Startframe über identische Position erkennen
+        # Kriterium: *gleiche Mittelpunktposition* (Toleranz via Rundung)
+        pos_map: Dict[Tuple[int, int], List[bpy.types.MovieTrackingTrack]] = {}
+        consider = [t for t in tracks if (not self.auto_enable_from_selection) or getattr(t, "select", False)]
+
+        # Selektion vereinheitlichen: nur unsere Kandidaten bleiben selektiert
+        for t in tracks:
+            t.select = False
+        for t in consider:
+            t.select = True
+
+        for t in consider:
+            mk = _marker_at(t, self._frame)
+            if not mk or getattr(mk, "mute", False):
+                continue
+            # Normalized Koords runden → stabile Gruppierung
+            key = (int(round(mk.co[0] * 1000.0)), int(round(mk.co[1] * 1000.0)))
+            pos_map.setdefault(key, []).append(t)
+
+        self._groups = []
+        for key, bucket in pos_map.items():
+            if len(bucket) == 3:
+                self._groups.append((bucket[0], bucket[1], bucket[2]))
+                self._log(f"Triplet@{(key[0]/1000.0, key[1]/1000.0)}: {bucket[0].name}, {bucket[1].name}, {bucket[2].name}")
+            elif len(bucket) > 3:
+                # deterministische Dreier-Pakete bilden (Name sortiert)
+                bucket_sorted = sorted(bucket, key=lambda t: t.name)
+                for i in range(0, len(bucket_sorted), 3):
+                    grp = bucket_sorted[i:i+3]
+                    if len(grp) == 3:
+                        self._groups.append((grp[0], grp[1], grp[2]))
+                        self._log(f"Triplet(split)@{(key[0]/1000.0, key[1]/1000.0)}: {grp[0].name}, {grp[1].name}, {grp[2].name}")
+                    else:
+                        self._log(f"Skip unvollständige Restgruppe ({len(grp)}) @key={key}")
+
+        if not self._groups:
+            self._log(f"NOOP: Keine Triplets auf Frame {self._frame} gefunden.")
+            scn[_BIDI_ACTIVE_KEY] = False
+            scn[_BIDI_RESULT_KEY] = "NOOP"
+            return {"CANCELLED"}
+
+        # Modal starten
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.10, window=context.window)
+        wm.modal_handler_add(self)
+        self._log(f"Start bei Frame {self._frame}, Range=[{self._frame_start}..{self._frame_end}] | Triplets={len(self._groups)}")
+        return {"RUNNING_MODAL"}
+
+    def modal(self, context: bpy.types.Context, event: bpy.types.Event):
+        if event.type == "ESC":
+            return self._finish(context, cancelled=True)
+        if event.type != "TIMER":
+            return {"PASS_THROUGH"}
+
+        # Stop-Kriterien: keine Gruppen mehr oder Frame > Ende
+        if not self._groups or self._frame >= self._frame_end:
+            return self._finish(context, cancelled=False)
+
         scn = context.scene
-        scn[_BIDI_RESULT_KEY] = str(result).upper()
-        scn[_BIDI_ACTIVE_KEY] = False
+        scn.frame_set(int(self._frame))
+
+        # Pro Frame: jede Gruppe prüfen
+        deactivated: List[int] = []
+        for idx, (t0, t1, t2) in enumerate(self._groups):
+            m0 = _marker_at(t0, self._frame)
+            m1 = _marker_at(t1, self._frame)
+            m2 = _marker_at(t2, self._frame)
+
+            # Aktiv? (Marker vorhanden & nicht gemutet)
+            act0 = bool(m0 and not m0.mute)
+            act1 = bool(m1 and not m1.mute)
+            act2 = bool(m2 and not m2.mute)
+            active_count = int(act0) + int(act1) + int(act2)
+
+            if active_count < 3:
+                # Vorgabe: Wenn einer inaktiv => alle inaktiv setzen
+                for trk, mk in ((t0, m0), (t1, m1), (t2, m2)):
+                    if mk:
+                        mk.mute = True
+                    trk.select = False
+                names = f"{t0.name}, {t1.name}, {t2.name}"
+                self._log(f"Frame {self._frame}: '{names}' -> {active_count}/3 aktiv → gesamte Gruppe deaktiviert.")
+                deactivated.append(idx)
+                continue
+
+            # Alle 3 aktiv → Outlier mittig zu den beiden nächstliegenden setzen
+            co0, co1, co2 = Vector(m0.co), Vector(m1.co), Vector(m2.co)
+            d01 = (co0 - co1).length
+            d02 = (co0 - co2).length
+            d12 = (co1 - co2).length
+
+            if d01 <= d02 and d01 <= d12:
+                # 0-1 sind das Paar → 2 ist Outlier
+                out_trk, out_mk = t2, m2
+                A, B = co0, co1
+                pair = (t0.name, t1.name)
+            elif d02 <= d01 and d02 <= d12:
+                out_trk, out_mk = t1, m1
+                A, B = co0, co2
+                pair = (t0.name, t2.name)
+            else:
+                out_trk, out_mk = t0, m0
+                A, B = co1, co2
+                pair = (t1.name, t2.name)
+
+            mid = (A + B) * 0.5
+            # Marker sicherstellen & setzen
+            mk = _ensure_marker(out_trk, self._frame, mid)
+            mk.co = (float(mid.x), float(mid.y))
+            mk.is_keyed = True
+            self._log(f"Frame {self._frame}: '{out_trk.name}' → midpoint({pair[0]}, {pair[1]}) = ({mid.x:.4f}, {mid.y:.4f})")
+
+        # Deaktivierte Gruppen hinten beginnend löschen (Indices stabil halten)
+        if deactivated:
+            for i in sorted(deactivated, reverse=True):
+                try:
+                    self._groups.pop(i)
+                except Exception:
+                    pass
+
+        # Wenn nach der Prüfung nichts mehr selektiert → fertig
+        if not any(trk.select for grp in self._groups for trk in grp):
+            self._log("Keine selektierten Marker mehr → Ende.")
+            return self._finish(context, cancelled=False)
+
+        # Genau EIN Tracking-Schritt vorwärts; nur unsere Tracks bleiben selektiert
+        try:
+            if self._override_ctx:
+                bpy.ops.clip.track_markers(self._override_ctx, backwards=False, sequence=False)
+            else:
+                bpy.ops.clip.track_markers(backwards=False, sequence=False)
+        except Exception as ex:
+            self._log(f"WARN: track_markers Exception: {ex!r}")
+
+        # Nächster Frame
+        if self._frame < self._frame_end:
+            self._frame += 1
+        else:
+            return self._finish(context, cancelled=False)
+
+        return {"RUNNING_MODAL"}
+
+    def _finish(self, context: bpy.types.Context, *, cancelled: bool):
+        scn = context.scene
         if self._timer:
             try:
                 context.window_manager.event_timer_remove(self._timer)
             except Exception:
                 pass
             self._timer = None
-        return {'FINISHED'}
-
-    def modal(self, context: bpy.types.Context, event: bpy.types.Event):
-        if event.type != 'TIMER':
-            return {'PASS_THROUGH'}
-
-        ov = _find_clip_area_ctx(context)
-        if ov is None:
-            return self._finish(context, result="NOOP")
-        with bpy.context.temp_override(**ov):
-            clip = _get_active_clip(bpy.context)
-            if not _has_selected_tracks(clip):
-                return self._finish(context, result="NOOP")
-
-            did_steps = 0
-            for _ in range(int(self.steps_per_tick)):
-                r1 = run_framewise_track(bpy.context, backwards=False, max_steps=1)
-                did_steps += int(r1.get("steps", 0))
-                r2 = run_framewise_track(bpy.context, backwards=True, max_steps=1)
-                did_steps += int(r2.get("steps", 0))
-
-        self._ran_any_step = self._ran_any_step or (did_steps > 0)
-        return self._finish(context, result=("DONE" if self._ran_any_step else "NOOP"))
+        scn[_BIDI_ACTIVE_KEY] = False
+        scn[_BIDI_RESULT_KEY] = "CANCELLED" if cancelled else "FINISHED"
+        self._log(f"DONE ({'CANCELLED' if cancelled else 'FINISHED'})")
+        return {"CANCELLED" if cancelled else "FINISHED"}
 
 
-# ----------------------------------------------------------------------------
-# Register API
-# ----------------------------------------------------------------------------
-
-def register() -> None:
-    bpy.utils.register_class(CLIP_OT_framewise_track)
+def register():
     bpy.utils.register_class(CLIP_OT_bidirectional_track)
 
 
-def unregister() -> None:
+def unregister():
     bpy.utils.unregister_class(CLIP_OT_bidirectional_track)
-    bpy.utils.unregister_class(CLIP_OT_framewise_track)
