@@ -32,6 +32,37 @@ _BIDI_RESULT_KEY = "bidi_result"
 # -----------------------------------------------------------------------------
 # Kontext-/Utility-Funktionen
 # -----------------------------------------------------------------------------
+def _state_track(self, context):
+    scn = context.scene
+
+    if not self._bidi_started:
+        scn[_BIDI_RESULT_KEY] = ""
+        scn[_BIDI_ACTIVE_KEY] = False
+        print("[Coord] TRACK → launch clip.bidirectional_track (INVOKE_DEFAULT)")
+        try:
+            bpy.ops.clip.bidirectional_track(
+                'INVOKE_DEFAULT',
+                use_cooperative_triplets=True,
+                auto_enable_from_selection=True,
+            )
+            self._bidi_started = True   # <<< WICHTIG: nur EINMAL starten
+        except Exception as ex:
+            print(f"[Coord] TRACK launch failed: {ex!r} → CLEAN_SHORT (best-effort)")
+            self._bidi_started = False
+            self._state = "CLEAN_SHORT"
+        return {"RUNNING_MODAL"}
+
+    if scn.get(_BIDI_ACTIVE_KEY, False):
+        print("[Coord] TRACK → waiting (bidi_active=True)")
+        return {"RUNNING_MODAL"}
+
+    result = str(scn.get(_BIDI_RESULT_KEY, "") or "").upper()
+    scn[_BIDI_RESULT_KEY] = ""
+    self._bidi_started = False
+    print(f"[Coord] TRACK → finished (result={result or 'NONE'}) → CLEAN_SHORT")
+    self._state = "CLEAN_SHORT"
+    return {"RUNNING_MODAL"}
+
 
 def _find_clip_context() -> Tuple[Optional[Any], Optional[Any], Optional[Any]]:
     """Suche einen CLIP_EDITOR nebst WINDOW-Region und SpaceClip.
