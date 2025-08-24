@@ -22,7 +22,8 @@ def _marker_at(track: bpy.types.MovieTrackingTrack, frame: int) -> Optional[bpy.
 
 
 def _clip_exec_ctx(context: bpy.types.Context) -> Optional[Dict]:
-    """Erstellt einen minimalen, gültigen Override-Kontext für Clip-Operatoren (Blender 4.x)."""
+    """Erstellt einen gültigen Override-Kontext für Clip-Operatoren (Blender 4.x) und stellt sicher,
+    dass space_data.clip gesetzt ist."""
     win = context.window
     scr = win.screen if win else None
     if not (win and scr):
@@ -33,7 +34,24 @@ def _clip_exec_ctx(context: bpy.types.Context) -> Optional[Dict]:
     region = next((r for r in area.regions if r.type == 'WINDOW'), None)
     if not region:
         return None
-    return {'window': win, 'screen': scr, 'area': area, 'region': region}
+
+    # Aktiven Space holen und Clip notfalls injizieren
+    space = area.spaces.active
+    if getattr(space, "clip", None) is None:
+        try:
+            if bpy.data.movieclips:
+                space.clip = bpy.data.movieclips[0]
+        except Exception:
+            pass
+
+    return {
+        'window': win,
+        'screen': scr,
+        'area': area,
+        'region': region,
+        'space_data': space,
+        'scene': context.scene,
+    }
 
 
 class CLIP_OT_bidirectional_track(bpy.types.Operator):
@@ -82,8 +100,11 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
         scn[_BIDI_RESULT_KEY] = ""
 
         self._override_ctx = _clip_exec_ctx(context)
-        space = context.space_data if getattr(context, "space_data", None) and context.space_data.type == 'CLIP_EDITOR' else None
+
+        # Clip aus dem Space des Overrides holen (nicht aus context.space_data!)
+        space = (self._override_ctx or {}).get('space_data') if self._override_ctx else None
         clip = getattr(space, "clip", None) if space else None
+
         if not clip:
             self._log("ERROR: Kein MovieClip verfügbar.")
             scn[_BIDI_ACTIVE_KEY] = False
