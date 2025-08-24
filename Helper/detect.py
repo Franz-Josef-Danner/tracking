@@ -7,22 +7,20 @@ Highlights
 ----------
 - Backward compatible public API (perform_marker_detection, run_detect_once, run_detect_adaptive)
 - Optional ROI post-filter (normalized [0..1] rect or pixel rect)
-- KD-Tree based near-duplicate removal (faster for many markers)
-- Corridor control with smooth PID-like threshold adaption (stable convergence)
+- KD‑Tree based near‑duplicate removal (faster for many markers)
+- Corridor control with smooth PID‑like threshold adaption (stable convergence)
 - Selection policy (leave/only_new/restore)
 - Duplicate cleanup strategy (delete/mute/tag)
 - Optional track tagging prefix for newly created tracks
-- Dry-run mode (executes detect and cleans everything it created)
+- Dry‑run mode (executes detect and cleans everything it created)
 - Rich result object with metrics
 - NEW: Pattern-triplet post step with name aggregation & selection (0.8× / 1.2×)
-- NEW: Persistente 3er-Gruppierung der selektierten Marker (Namen & Pointer) in Scene-Props
 
 Blender ≥ 3.0 assumed (mathutils.KDTree available).
 """
 
 import math
 import time
-import json
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
@@ -41,11 +39,6 @@ __all__ = [
 DETECT_LAST_THRESHOLD_KEY = "last_detection_threshold"  # float
 _LOCK_KEY = "__detect_lock"
 _PREV_SEL_KEY = "__detect_prev_selection"
-
-# keys for persisted triplet groups
-_TRIPLET_NAMES_KEY = "pattern_triplet_groups_json"
-_TRIPLET_PTRS_KEY = "pattern_triplet_groups_ptr_json"
-_TRIPLET_COUNT_KEY = "pattern_triplet_groups_count"
 
 # ---------------------------------------------------------------------
 # Data structures
@@ -255,90 +248,6 @@ def _get_pattern_size(tracking: bpy.types.MovieTracking) -> int:
         return 15
 
 
-# ---- NEW: helpers for triplet grouping & scene persistence ----
-
-def _selected_tracks_with_pos(
-    tracking: bpy.types.MovieTracking, frame: int, width: int, height: int
-) -> List[Dict[str, Any]]:
-    """Return selected tracks with pixel positions at frame (only unmuted markers)."""
-    out: List[Dict[str, Any]] = []
-    for t in tracking.tracks:
-        if not getattr(t, "select", False):
-            continue
-        try:
-            m = t.markers.find_frame(frame, exact=True)
-        except TypeError:
-            m = t.markers.find_frame(frame)
-        if not m or getattr(m, "mute", False):
-            continue
-        out.append({
-            "name": t.name,
-            "ptr": int(t.as_pointer()),
-            "x": float(m.co[0]) * float(width),
-            "y": float(m.co[1]) * float(height),
-        })
-    return out
-
-
-def _group_into_triplets_by_position(
-    items: List[Dict[str, Any]],
-    *,
-    eps_px: float = 0.75
-) -> List[List[Dict[str, Any]]]:
-    """
-    Bildet disjunkte 3er-Gruppen anhand identischer/nahezu identischer Positionen.
-    Tracks mit gleichem Mittelpunkt (± eps_px) landen im selben Bucket.
-    Pro Bucket werden strikt 3er-Chunks gebildet. Reste <3 werden ignoriert (mit Log).
-    """
-    if not items:
-        return []
-
-    def key(x: float, y: float) -> Tuple[int, int]:
-        kx = int(round(x / eps_px))
-        ky = int(round(y / eps_px))
-        return (kx, ky)
-
-    buckets: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
-    for it in items:
-        k = key(float(it["x"]), float(it["y"]))
-        buckets.setdefault(k, []).append(it)
-
-    # deterministisch je Bucket sortieren (Pointer, Name)
-    for k, lst in buckets.items():
-        lst.sort(key=lambda d: (int(d.get("ptr", 0)), str(d.get("name", ""))))
-
-    groups: List[List[Dict[str, Any]]] = []
-    for k, lst in buckets.items():
-        full = len(lst) // 3
-        for i in range(full):
-            chunk = lst[i*3:(i+1)*3]
-            if len(chunk) == 3:
-                groups.append(chunk)
-        rest = len(lst) % 3
-        if rest:
-            print(f"[PatternTriplet] WARN: Bucket {k} hat Restgröße {rest} (nur volle Triplets werden gespeichert).")
-    return groups
-
-
-def _store_triplet_groups_on_scene(
-    scene: bpy.types.Scene,
-    groups: List[List[Dict[str, Any]]],
-    *,
-    name_key: str = _TRIPLET_NAMES_KEY,
-    ptr_key: str = _TRIPLET_PTRS_KEY,
-    count_key: str = _TRIPLET_COUNT_KEY,
-) -> None:
-    """Persist groups to scene custom properties (names, pointers, count) using JSON."""
-    names_payload: List[List[str]] = [[g[0]["name"], g[1]["name"], g[2]["name"]] for g in groups]
-    ptrs_payload: List[List[int]] = [[g[0]["ptr"], g[1]["ptr"], g[2]["ptr"]] for g in groups]
-    try:
-        scene[name_key] = json.dumps(names_payload)
-        scene[ptr_key] = json.dumps(ptrs_payload)
-        scene[count_key] = int(len(groups))
-    except Exception as ex:
-        print(f"[PatternTriplet] Scene store failed: {ex}")
-
-
 def run_pattern_triplet_and_select_by_name(
     context: bpy.types.Context,
     *,
@@ -353,7 +262,6 @@ def run_pattern_triplet_and_select_by_name(
 ) -> Dict[str, Any]:
     """Runs two extra detect sweeps with scaled pattern size and selects all newly created
     markers by NAME (aggregated across both sweeps, optionally including current selection).
-    Additionally clusters selected markers at current frame into triplets and stores them on the scene.
     """
     clip = getattr(context, "edit_movieclip", None) or getattr(getattr(context, "space_data", None), "clip", None)
     if not clip:
@@ -375,43 +283,37 @@ def run_pattern_triplet_and_select_by_name(
         for t in tracking.tracks:
             if getattr(t, "select", False):
                 aggregated_names.add(t.name)
-
+                                         
     def sweep(scale: float) -> int:
         before_ptrs = _collect_track_pointers(tracking.tracks)
         new_pattern = max(3, int(round(pattern_o * float(scale))))
         eff = _set_pattern_size(tracking, new_pattern)
         try:
-            if adjust_search_with_pattern:
-                settings.default_search_size = max(5, eff * 2)
+            settings.default_search_size = max(5, eff * 2)
         except Exception:
             pass
-        print(
-            f"[Triplet] scale={scale} pattern_o={pattern_o} -> req={new_pattern} eff={eff} "
-            f"search={getattr(settings,'default_search_size',None)}"
-        )
+        print(f"[Triplet] scale={scale} pattern_o={pattern_o} -> req={new_pattern} eff={eff} "
+              f"search={getattr(settings,'default_search_size',None)}")
 
         def _op(**kw):
             return bpy.ops.clip.detect_features(**kw)
-
-        # reuse same detect params as in READY pass
+    
+        # exakt dieselben Detect-Parameter wie im READY-Pass verwenden
         kw = {}
-        if detect_threshold is not None:
-            kw["threshold"] = float(detect_threshold)
-        if detect_margin is not None:
-            kw["margin"] = int(detect_margin)
-        if detect_min_distance is not None:
-            kw["min_distance"] = int(detect_min_distance)
-
+        if detect_threshold is not None:   kw["threshold"] = float(detect_threshold)
+        if detect_margin is not None:      kw["margin"] = int(detect_margin)
+        if detect_min_distance is not None:kw["min_distance"] = int(detect_min_distance)
+    
         try:
             _run_in_clip_context(_op, **kw)
         except Exception as ex:
             print(f"[PatternTriplet] detect_features Exception @scale={scale}: {ex}")
-
+    
         try:
             bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
         except Exception:
             pass
-
+    
         new_names = _collect_new_track_names_by_pointer(tracking.tracks, before_ptrs)
         aggregated_names.update(new_names)
         return len(new_names)
@@ -421,7 +323,7 @@ def run_pattern_triplet_and_select_by_name(
 
     _set_pattern_size(tracking, pattern_o)
     try:
-        settings.default_search_size = search_o  # restore original search size
+        settings.default_search_size = pattern_o * 2   # konsistent wiederherstellen
     except Exception:
         pass
 
@@ -434,30 +336,6 @@ def run_pattern_triplet_and_select_by_name(
     except Exception:
         pass
 
-    # --- NEW: cluster selected markers at current frame and persist groups on scene ---
-    groups_count = 0
-    try:
-        scene = bpy.context.scene
-        frame_now = int(getattr(scene, "frame_current", 0))
-        width, height = int(clip.size[0]), int(clip.size[1])
-
-        selected_items = _selected_tracks_with_pos(tracking, frame_now, width, height)
-
-        # Dynamische Epsilon-Heuristik (robust über Auflösungen):
-        eps = max(0.5, min(2.0, width * 0.00025))  # z.B. 0.96 px bei 3840 Breite
-        triplet_groups = _group_into_triplets_by_position(selected_items, eps_px=eps)
-
-        _store_triplet_groups_on_scene(scene, triplet_groups)
-        groups_count = int(scene.get(_TRIPLET_COUNT_KEY, 0))
-
-        sel_n = len(selected_items)
-        if groups_count * 3 != sel_n:
-            print(f"[PatternTriplet] INFO: selected={sel_n}, groups*3={groups_count*3} "
-                  f"(Δ={sel_n - groups_count*3}). Rest bewusst nicht gruppiert.")
-        print(f"[PatternTriplet] GROUPS stored: {groups_count} triplets @frame={frame_now} (eps={eps:.3f}px)")
-    except Exception as ex:
-        print(f"[PatternTriplet] GROUPS failed: {ex}")
-
     print(
         f"[PatternTriplet] DONE | pattern_o={pattern_o} | low={scale_low} -> +{created_low} | "
         f"high={scale_high} -> +{created_high} | selected_by_name={selected}"
@@ -469,7 +347,6 @@ def run_pattern_triplet_and_select_by_name(
         "created_high": int(created_high),
         "selected": int(selected),
         "names": sorted(aggregated_names),
-        "groups_stored": int(groups_count),
     }
 
 
@@ -504,7 +381,7 @@ def run_detect_once(
     triplet_adjust_search_with_pattern: bool = False,
 ) -> Dict[str, Any]:
     """Execute one detection round with optional ROI/duplicate clean and optional
-    post pattern-triplet step which aggregates names and selects them.
+    post pattern‑triplet step which aggregates names and selects them.
     """
     scn = context.scene
     if scn.get(_LOCK_KEY):
@@ -805,16 +682,17 @@ def run_detect_once(
         triplet_result: Optional[Dict[str, Any]] = None
         if post_pattern_triplet:
             try:
-                # use same detect params as applied in this READY pass
-                margin_applied, min_dist_applied = _scaled_params(
-                    float(threshold), int(margin_base), int(min_distance_base)
-                )
+                # identische detect-Parameter berechnen wie im READY-Pass verwendet:
+                margin_applied, min_dist_applied = _scaled_params(float(threshold),
+                                                                  int(margin_base),
+                                                                  int(min_distance_base))
                 triplet_result = run_pattern_triplet_and_select_by_name(
                     context,
                     scale_low=float(triplet_scale_low),
                     scale_high=float(triplet_scale_high),
                     also_include_ready_selection=bool(triplet_include_ready_selection),
                     adjust_search_with_pattern=bool(triplet_adjust_search_with_pattern),
+                    # NEU: festnageln
                     detect_threshold=float(threshold),
                     detect_margin=int(margin_applied),
                     detect_min_distance=int(min_dist_applied),
