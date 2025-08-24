@@ -199,74 +199,15 @@ class HELPER_OT_track_selected_forward_until_done(bpy.types.Operator):
     performed_steps: bpy.props.IntProperty(name="Durchgeführte Schritte", default=0, options={'HIDDEN'})
 
     def execute(self, context):
-        try:
-            steps = track_selected_forward_until_done()
-        except RuntimeError as err:
-            self.report({'ERROR'}, str(err))
-            return {'CANCELLED'}
-        self.performed_steps = int(steps)
-        self.report({'INFO'}, f"Tracking beendet. Schritte: {steps}")
-        return {'FINISHED'}
-
-
-# -----------------------------------------------------------------------------
-# Drop‑in Operator für den Coordinator: clip.bidirectional_track
-# -----------------------------------------------------------------------------
-
-class CLIP_OT_bidirectional_track(bpy.types.Operator):
-    """Kompatibler Operator für tracking_coordinator._state_track().
-
-    Hinweis: Der Coordinator ruft diesen Operator mit INVOKE_DEFAULT und
-    übergibt u. a. use_cooperative_triplets / auto_enable_from_selection.
-    Wir akzeptieren diese Properties, nutzen sie hier aber nicht.
-    """
-
-    bl_idname = "clip.bidirectional_track"
-    bl_label = "Bidirectional Track (stepwise forward)"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    # Erwartete (optionale) Properties aus dem Coordinator-Aufruf
-    use_cooperative_triplets: bpy.props.BoolProperty(  # type: ignore
-        name="Use Cooperative Triplets",
-        default=True,
-        description="Kompatibilitäts-Property – wird hier nicht verwendet.",
-    )
-    auto_enable_from_selection: bpy.props.BoolProperty(  # type: ignore
-        name="Auto Enable from Selection",
-        default=True,
-        description="Kompatibilitäts-Property – wird hier nicht verwendet.",
-    )
-
-    # Interner Status
-    _running: bool = False
-
-    @classmethod
-    def poll(cls, context):
-        # Nur im CLIP_EDITOR sinnvoll; spiegelt Coordinator.poll()
-        return getattr(context.area, "type", None) == "CLIP_EDITOR"
-
-    def invoke(self, context, event):  # noqa: D401
-        scn = context.scene
-        # Falls bereits aktiv, sofort freundlich abbrechen (idempotent)
-        if scn.get(_BIDI_ACTIVE_KEY, False):
-            self.report({'INFO'}, "Bidirectional-Track läuft bereits – überspringe zweiten Start.")
-            return {'CANCELLED'}
-
-        # Startsignal setzen
-        scn[_BIDI_ACTIVE_KEY] = True
-        scn[_BIDI_RESULT_KEY] = ""
-        self._running = True
-
-        # In diesem Fall blockierend ausführen (kein eigener Modal-Loop nötig)
-        return self.execute(context)
-
-    def execute(self, context):
         scn = context.scene
         try:
-            steps = track_selected_forward_until_done()
-            # Ergebnis kommunizieren
-            scn[_BIDI_RESULT_KEY] = "FINISHED"
-            self.report({'INFO'}, f"Bidirectional-Track fertig. Schritte: {steps}")
+            steps = int(track_selected_forward_until_done())
+            if steps > 0:
+                scn[_BIDI_RESULT_KEY] = "FINISHED"
+                self.report({'INFO'}, f"Bidirectional-Track fertig. Schritte: {steps}")
+            else:
+                scn[_BIDI_RESULT_KEY] = "NOOP"
+                self.report({'INFO'}, "Bidirectional-Track: nichts zu tun (0 Schritte)")
             return {'FINISHED'}
         except RuntimeError as err:
             scn[_BIDI_RESULT_KEY] = "FAILED"
