@@ -280,37 +280,43 @@ def _selected_tracks_with_pos(
     return out
 
 
-def _group_into_triplets_greedy(items: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
-    """Greedy clustering into disjoint 3-tuples: seed + two nearest unused neighbors."""
-    def dist2(a, b) -> float:
-        dx = a["x"] - b["x"]
-        dy = a["y"] - b["y"]
-        return dx * dx + dy * dy
+def _group_into_triplets_by_position(
+    items: List[Dict[str, Any]],
+    *,
+    eps_px: float = 0.75
+) -> List[List[Dict[str, Any]]]:
+    """
+    Bildet disjunkte 3er-Gruppen anhand identischer/nahezu identischer Positionen.
+    Tracks mit gleichem Mittelpunkt (± eps_px) landen im selben Bucket.
+    Pro Bucket werden strikt 3er-Chunks gebildet. Reste <3 werden ignoriert (mit Log).
+    """
+    if not items:
+        return []
 
-    unused = list(range(len(items)))
+    def key(x: float, y: float) -> Tuple[int, int]:
+        kx = int(round(x / eps_px))
+        ky = int(round(y / eps_px))
+        return (kx, ky)
+
+    buckets: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
+    for it in items:
+        k = key(float(it["x"]), float(it["y"]))
+        buckets.setdefault(k, []).append(it)
+
+    # deterministisch je Bucket sortieren (Pointer, Name)
+    for k, lst in buckets.items():
+        lst.sort(key=lambda d: (int(d.get("ptr", 0)), str(d.get("name", ""))))
+
     groups: List[List[Dict[str, Any]]] = []
-
-    while len(unused) >= 3:
-        i = unused[0]
-        seed = items[i]
-
-        candidates = unused[1:]
-        if len(candidates) < 2:
-            break
-
-        candidates_sorted = sorted(candidates, key=lambda j: dist2(seed, items[j]))
-        j = candidates_sorted[0]
-        k = candidates_sorted[1]
-
-        groups.append([items[i], items[j], items[k]])
-
-        # remove used indices
-        for idx in sorted([i, j, k], reverse=True):
-            try:
-                unused.remove(idx)
-            except ValueError:
-                pass
-
+    for k, lst in buckets.items():
+        full = len(lst) // 3
+        for i in range(full):
+            chunk = lst[i*3:(i+1)*3]
+            if len(chunk) == 3:
+                groups.append(chunk)
+        rest = len(lst) % 3
+        if rest:
+            print(f"[PatternTriplet] WARN: Bucket {k} hat Restgröße {rest} (nur volle Triplets werden gespeichert).")
     return groups
 
 
@@ -436,11 +442,19 @@ def run_pattern_triplet_and_select_by_name(
         width, height = int(clip.size[0]), int(clip.size[1])
 
         selected_items = _selected_tracks_with_pos(tracking, frame_now, width, height)
-        triplet_groups = _group_into_triplets_greedy(selected_items)
+
+        # Dynamische Epsilon-Heuristik (robust über Auflösungen):
+        eps = max(0.5, min(2.0, width * 0.00025))  # z.B. 0.96 px bei 3840 Breite
+        triplet_groups = _group_into_triplets_by_position(selected_items, eps_px=eps)
+
         _store_triplet_groups_on_scene(scene, triplet_groups)
         groups_count = int(scene.get(_TRIPLET_COUNT_KEY, 0))
 
-        print(f"[PatternTriplet] GROUPS stored: {groups_count} triplets @frame={frame_now}")
+        sel_n = len(selected_items)
+        if groups_count * 3 != sel_n:
+            print(f"[PatternTriplet] INFO: selected={sel_n}, groups*3={groups_count*3} "
+                  f"(Δ={sel_n - groups_count*3}). Rest bewusst nicht gruppiert.")
+        print(f"[PatternTriplet] GROUPS stored: {groups_count} triplets @frame={frame_now} (eps={eps:.3f}px)")
     except Exception as ex:
         print(f"[PatternTriplet] GROUPS failed: {ex}")
 
