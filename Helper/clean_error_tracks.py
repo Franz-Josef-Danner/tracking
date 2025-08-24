@@ -68,7 +68,7 @@ def _lerp(a: float, b: float, t: float) -> float:
     return (1.0 - t) * a + t * b
 
 
-def run_clean_error_tracks(context, *, show_popups: bool = False, soften: float = 0.2):
+def run_clean_error_tracks(context, *, show_popups: bool = False, soften: float = 0.5):
     """
     Clean Error Tracks mit sichtbaren UI-Schritten.
     soften (0..1) reduziert Aggressivität:
