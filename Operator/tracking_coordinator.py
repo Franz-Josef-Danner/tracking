@@ -689,39 +689,50 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
 
+
     def _state_track(self, context):
         """Startet und überwacht den Bidirectional-Operator. CleanShort kommt erst nach Abschluss."""
         scn = context.scene
-
+    
+        # 1) Nur EINMAL starten
         if not self._bidi_started:
             scn[_BIDI_RESULT_KEY] = ""
             scn[_BIDI_ACTIVE_KEY] = False
             print("[Coord] TRACK → launch clip.bidirectional_track (INVOKE_DEFAULT)")
             try:
-                # tracking_coordinator.py → _state_track()
-                print("[Coord] TRACK → launch clip.bidirectional_track (INVOKE_DEFAULT)")
                 bpy.ops.clip.bidirectional_track(
                     'INVOKE_DEFAULT',
-                    use_cooperative_triplets=True,      # <<< NEU: Koop-Modus erzwingen
-                    auto_enable_from_selection=True,    # (optional) Auto-Fallback weiter erlauben
+                    use_cooperative_triplets=True,      # Kompat.-Args
+                    auto_enable_from_selection=True,
                 )
-
+                # >>> WICHTIG: Start markieren, sonst startet der Timer immer wieder neu
+                self._bidi_started = True
             except Exception as ex:
                 print(f"[Coord] TRACK launch failed: {ex!r} → CLEAN_SHORT (best-effort)")
                 self._bidi_started = False
                 self._state = "CLEAN_SHORT"
             return {"RUNNING_MODAL"}
-
+    
+        # 2) Solange der Helper aktiv ist, einfach warten
         if scn.get(_BIDI_ACTIVE_KEY, False):
-            print("[Coord] TRACK → waiting (bidi_active=True)")
+            # Optional: Log auskommentiert lassen, um Spam zu vermeiden
+            # print("[Coord] TRACK → waiting (bidi_active=True)")
             return {"RUNNING_MODAL"}
-
+    
+        # 3) Fertig → Ergebnis lesen, Flag zurücksetzen, weiterleiten
         result = str(scn.get(_BIDI_RESULT_KEY, "") or "").upper()
         scn[_BIDI_RESULT_KEY] = ""
         self._bidi_started = False
-        print(f"[Coord] TRACK → finished (result={result or 'NONE'}) → CLEAN_SHORT")
-        self._state = "CLEAN_SHORT"
+    
+        if result == "NOOP":
+            print("[Coord] TRACK → finished (result=NOOP) → FIND_LOW")
+            self._state = "FIND_LOW"
+        else:
+            print(f"[Coord] TRACK → finished (result={result or 'NONE'}) → CLEAN_SHORT")
+            self._state = "CLEAN_SHORT"
+    
         return {"RUNNING_MODAL"}
+
 
     def _state_clean_short(self, context):
         """Short-Clean ausschließlich nach Bi-Track."""
