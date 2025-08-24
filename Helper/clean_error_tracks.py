@@ -1,11 +1,80 @@
+import bpy
+from .multiscale_temporal_grid_clean import multiscale_temporal_grid_clean
+from .segments import track_has_internal_gaps
+from .mute_ops import mute_after_last_marker, mute_unassigned_markers
+from .split_cleanup import clear_path_on_split_tracks_segmented, recursive_split_cleanup
+
+__all__ = ("run_clean_error_tracks",)
+
+
+# ---------------------------------------------------------------------------
+# Fallback-Helper (werden nur genutzt, wenn sie nicht bereits importiert sind)
+# ---------------------------------------------------------------------------
+try:
+    _clip_override
+except NameError:
+    def _clip_override(context):
+        """Sicher in den CLIP_EDITOR kontexten."""
+        win = context.window
+        if not win:
+            return None
+        scr = getattr(win, "screen", None)
+        if not scr:
+            return None
+        for area in scr.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        return {
+                            'area': area,
+                            'region': region,
+                            'space_data': area.spaces.active
+                        }
+        return None
+
+try:
+    _deps_sync
+except NameError:
+    def _deps_sync(context):
+        deps = context.evaluated_depsgraph_get()
+        deps.update()
+        bpy.context.view_layer.update()
+        context.scene.frame_set(context.scene.frame_current)
+
+try:
+    _status
+except NameError:
+    def _status(wm, text: str | None):
+        try:
+            wm.status_text_set(text)
+        except Exception:
+            pass
+
+try:
+    _pulse_ui
+except NameError:
+    def _pulse_ui():
+        try:
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+        except Exception:
+            pass
+
+
+# ---------------------------------
+# Utility
+# ---------------------------------
+def _lerp(a: float, b: float, t: float) -> float:
+    """Linear interpolation between a (soft) and b (original) by t∈[0,1]."""
+    return (1.0 - t) * a + t * b
+
+
 def run_clean_error_tracks(context, *, show_popups: bool = False, soften: float = 0.5):
     """
-    Führt Clean Error Tracks mit sichtbaren UI-Schritten aus.
-    Der Parameter `soften` (0..1) reduziert die Lösch-Aggressivität:
+    Clean Error Tracks mit sichtbaren UI-Schritten.
+    soften (0..1) reduziert Aggressivität:
       0.0 = maximal weich (löscht am wenigsten)
-      0.5 = ca. halb so aggressiv (Standard)
+      0.5 = moderat (etwas aggressiver als vorherige 0.5-Version)
       1.0 = ursprüngliches Verhalten
-    Rückgabe: {'FINISHED'} oder {'CANCELLED'}.
     """
     soften = max(0.0, min(soften, 1.0))  # clamp
     scene = context.scene
@@ -42,31 +111,42 @@ def run_clean_error_tracks(context, *, show_popups: bool = False, soften: float 
         clip = ovr["space_data"].clip
         if not clip:
             if show_popups:
-                wm.popup_menu(lambda self, ctx: self.layout.label(text="Kein aktiver Clip."),
-                              title="Clean Error Tracks", icon='CANCEL')
+                wm.popup_menu(
+                    lambda self, ctx: self.layout.label(text="Kein aktiver Clip."),
+                    title="Clean Error Tracks", icon='CANCEL'
+                )
             print("[CleanError] ERROR: Kein aktiver Clip.")
             _status(wm, None)
             try:
                 wm.progress_end()
             except Exception:
                 pass
-            return {'status': 'CANCELLED'}
+            return {'CANCELLED'}
 
-    # ---------- 2) MULTISCALE CLEAN (weicher) ----------
+    # ---------- 2) MULTISCALE CLEAN (leicht stärker als vorheriges soften=0.5) ----------
     step_update(2, "Multiscale Clean")
     with context.temp_override(**ovr):
         w, h = clip.size
         fr = (scene.frame_start, scene.frame_end)
 
-        # Weichheits-Mapping:
-        # - Je kleiner soften, desto weniger wird gelöscht.
-        # - Wir erhöhen outlier_q, hysteresis_hits und min_cell_items leicht,
-        #   und vergrößern min_delta minimal. Bei soften=1.0 landen wir nahe Original.
-        # Ursprünglich: outlier_q=2, hysteresis_hits=2, min_cell_items=4, min_delta=3
-        outlier_q = 2 + (1 if soften <= 0.75 else 0) + (1 if soften <= 0.25 else 0)
-        hysteresis_hits = 2 + (1 if soften <= 0.75 else 0)
-        min_cell_items = 4 + (2 if soften <= 0.5 else 1 if soften < 1.0 else 0)
-        min_delta = 3 + (1 if soften <= 0.5 else 0)
+        # Zielwerte:
+        #   Original (hart):          outlier_q=2, hysteresis=2, min_items=4, min_delta=3
+        #   Sehr weich (soft=0.0):    outlier_q=4, hysteresis=3, min_items=6, min_delta=4
+        # Wir lerpen zwischen "weich" (a) und "original" (b) mit soften∈[0..1].
+        outlier_q_f   = _lerp(4.0, 2.0, soften)
+        hysteresis_f  = _lerp(3.0, 2.0, soften)
+        min_items_f   = _lerp(6.0, 4.0, soften)
+        min_delta_f   = _lerp(4.0, 3.0, soften)
+
+        # Rundung/Ganzzahlen
+        outlier_q = int(round(outlier_q_f))
+        hysteresis_hits = int(round(hysteresis_f))
+        min_cell_items = int(round(min_items_f))
+        min_delta = int(round(min_delta_f))
+
+        # *Verstärkung ggü. deiner letzten soften=0.5-Version*:
+        # Durch das lineare Mapping liegen die Parameter etwas näher an "Original".
+        # Beispiel soften=0.5 -> outlier_q≈3, hysteresis≈2, min_items≈5, min_delta≈4.
 
         deleted = multiscale_temporal_grid_clean(
             context, ovr["area"], ovr["region"], ovr["space_data"],
@@ -74,9 +154,13 @@ def run_clean_error_tracks(context, *, show_popups: bool = False, soften: float 
             grid=(6, 6), start_delta=None, min_delta=min_delta,
             outlier_q=outlier_q, hysteresis_hits=hysteresis_hits, min_cell_items=min_cell_items
         )
-        print(f"[MultiScale] (soften={soften:.2f}) params: "
-              f"outlier_q={outlier_q}, hysteresis_hits={hysteresis_hits}, "
-              f"min_cell_items={min_cell_items}, min_delta={min_delta} | deleted: {deleted}")
+        print(
+            f"[MultiScale] soften={soften:.2f} -> "
+            f"outlier_q={outlier_q} ({outlier_q_f:.2f}), "
+            f"hysteresis_hits={hysteresis_hits} ({hysteresis_f:.2f}), "
+            f"min_cell_items={min_cell_items} ({min_items_f:.2f}), "
+            f"min_delta={min_delta} ({min_delta_f:.2f}) | deleted: {deleted}"
+        )
         _deps_sync(context)
 
     # ---------- 3) GAP SPLIT + RECURSIVE ----------
@@ -120,8 +204,6 @@ def run_clean_error_tracks(context, *, show_popups: bool = False, soften: float 
                 original_tracks, new_tracks
             )
 
-            # Hinweis: Falls recursive_split_cleanup intern sehr aggressiv ist,
-            # könnte man hier optional einen "softer mode" per globalem Flag implementieren.
             changed_in_recursive = recursive_split_cleanup(
                 context, ovr["area"], ovr["region"], ovr["space_data"],
                 tracks
@@ -130,7 +212,7 @@ def run_clean_error_tracks(context, *, show_popups: bool = False, soften: float 
                (isinstance(changed_in_recursive, int) and changed_in_recursive > 0):
                 recursive_changed = True
 
-            # Leere Duplikate entsorgen (neutral)
+            # Leere Duplikate entsorgen
             empty_dupes = [t for t in new_tracks if len(t.markers) == 0]
             if empty_dupes:
                 for t in tracks:
@@ -148,10 +230,12 @@ def run_clean_error_tracks(context, *, show_popups: bool = False, soften: float 
             (markers_after != markers_before) or
             recursive_changed
         )
-        print(f"[CleanError] Changes? {made_changes} | "
-              f"tracks: {tracks_before}->{tracks_after} | "
-              f"markers: {markers_before}->{markers_after} | "
-              f"recursive_changed={recursive_changed}")
+        print(
+            f"[CleanError] Changes? {made_changes} | "
+            f"tracks: {tracks_before}->{tracks_after} | "
+            f"markers: {markers_before}->{markers_after} | "
+            f"recursive_changed={recursive_changed}"
+        )
 
     # ---------- 4) SAFETY ----------
     step_update(4, "Safety Passes")
@@ -162,7 +246,7 @@ def run_clean_error_tracks(context, *, show_popups: bool = False, soften: float 
         mute_unassigned_markers(tracks)
         _deps_sync(context)
 
-    # ---------- 5) FINAL SHORT CLEAN (weicher) ----------
+    # ---------- 5) FINAL SHORT CLEAN (etwas stärker) ----------
     step_update(5, "Final Short Clean")
     with context.temp_override(**ovr):
         from .clean_short_tracks import clean_short_tracks as _short
@@ -172,19 +256,19 @@ def run_clean_error_tracks(context, *, show_popups: bool = False, soften: float 
         try:
             scn["__skip_clean_short_once"] = False
 
-            # Ursprünglich: frames = getattr(scn, "frames_track", 25)
             base_frames = int(getattr(scn, "frames_track", 25) or 25)
 
-            # Weicher: je kleiner soften, desto kleiner die Mindestlänge -> weniger Löschungen.
-            # soften=0.5 => ~halbe Mindestlänge.
-            frames_eff = max(5, int(round(base_frames * max(0.1, soften))))
+            # Etwas stärker als vorher: bei soften=0.5 nun ~60% von base statt ~50%.
+            # Bei soften<0.5 verhindern wir zu weiche Werte über Untergrenze 0.35*base.
+            scale = max(0.35, soften * 1.2)  # 0.5 -> 0.6 ; 0.8 -> 0.96 (nahe original)
+            frames_eff = max(6, int(round(base_frames * min(scale, 1.0))))
 
-            print(f"[ShortClean] base_frames={base_frames} -> frames_eff={frames_eff} (soften={soften:.2f})")
+            print(f"[ShortClean] base_frames={base_frames} -> frames_eff={frames_eff} (soften={soften:.2f}, scale={scale:.2f})")
 
             _short(
                 context,
                 min_len=frames_eff,
-                action="DELETE_TRACK",   # beibehalten; Reduktion erfolgt über min_len
+                action="DELETE_TRACK",
                 respect_fresh=True,
                 verbose=True,
             )
