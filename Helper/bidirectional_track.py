@@ -208,90 +208,96 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
 
     def invoke(self, context: bpy.types.Context, event: bpy.types.Event):
         scn = context.scene
-        clip = _get_active_clip(context)
-        if not clip:
-            self.report({'WARNING'}, "Kein MovieClip verfügbar.")
-            return {'CANCELLED'}
+        try:
+            clip = _get_active_clip(context)
+            if not clip:
+                self.report({'WARNING'}, "Kein MovieClip verfügbar.")
+                # Kein Lauf → klar signalisieren, aber nicht NONE
+                scn["bidi_active"] = False
+                scn["bidi_result"] = "NOOP"
+                return {'FINISHED'}
 
-        # Startsignal für den Coordinator
-        scn["bidi_active"] = True
-        scn["bidi_result"] = ""
+            # Startsignal für den Coordinator
+            scn["bidi_active"] = True
+            scn["bidi_result"] = "RUNNING"
 
-        # aktuelle Selektion + Frame lesen
-        frame = _current_frame_in_clip(context)
-        pts = _selected_tracks_with_marker_at_frame(clip, frame)
-        if not pts:
-            # Nichts zu tun → NOOP
+            # aktuelle Selektion + Frame lesen
+            frame = _current_frame_in_clip(context)
+            pts = _selected_tracks_with_marker_at_frame(clip, frame)
+            if not pts or (len(pts) % 3) != 0:
+                self.report({'WARNING'}, "Marker fehlen oder Anzahl ist kein Vielfaches von 3.")
+                scn["bidi_active"] = False
+                scn["bidi_result"] = "NOOP"
+                return {'FINISHED'}
+
+            # Triplets bilden
+            self._triplets = _greedy_triplets_by_min_sum(pts)
+
+            # Sicherheit: exakt selektieren (nur Triplets; erst ALLE deselektieren)
+            _deselect_all(clip.tracking)
+            _select_tracks([t for tri in self._triplets for t in tri], True)
+
+            # Timer starten
+            wm = context.window_manager
+            self._timer = wm.event_timer_add(0.15, window=context.window)
+            wm.modal_handler_add(self)
+            return {'RUNNING_MODAL'}
+
+        except Exception as ex:
+            print(f"[Bidir] invoke error: {ex!r}")
             scn["bidi_active"] = False
-            scn["bidi_result"] = "NOOP"
+            scn["bidi_result"] = "FAILED"
             return {'FINISHED'}
-        if len(pts) % 3 != 0:
-            self.report({'WARNING'}, "Markeranzahl ist kein Vielfaches von 3.")
-            scn["bidi_active"] = False
-            scn["bidi_result"] = "NOOP"
-            return {'FINISHED'}
-
-        # Triplets bilden
-        self._triplets = _greedy_triplets_by_min_sum(pts)
-
-        # Sicherheit: exakt selektieren (nur Triplets; erst ALLE deselektieren)
-        _deselect_all(clip.tracking)
-        _select_tracks([t for tri in self._triplets for t in tri], True)
-
-        # Timer starten
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(0.15, window=context.window)
-        wm.modal_handler_add(self)
-        return {'RUNNING_MODAL'}
 
     def modal(self, context: bpy.types.Context, event: bpy.types.Event):
         scn = context.scene
-
-        # Sofortiger ESC-Abbruch: ohne Ergebnis zurück
-        if event.type == 'ESC':
-            try:
-                if self._timer:
-                    context.window_manager.event_timer_remove(self._timer)
-            finally:
-                scn["bidi_active"] = False
-            return {'CANCELLED'}
-
-        if event.type != 'TIMER':
-            return {'PASS_THROUGH'}
-
-        # Szenenende checken
-        cur = _current_frame_in_clip(context)
-        if cur >= int(scn.frame_end):
-            self._finish_flag(context, result="FINISHED")
-            return {'FINISHED'}
-
-        # 1) Einen Frame vorwärts tracken (nur selektierte) – stabil via temp_override
-        ov = _find_clip_override(context)
-        if not ov:
-            print("[Bidir] No CLIP_EDITOR context → cancel")
-            self._finish_flag(context, result="FINISHED")
-            return {'FINISHED'}
         try:
+            # Sofortiger ESC-Abbruch: gefordert OHNE Rückmeldung (kein bidi_result setzen)
+            if event.type == 'ESC':
+                try:
+                    if self._timer:
+                        context.window_manager.event_timer_remove(self._timer)
+                finally:
+                    scn["bidi_active"] = False
+                return {'CANCELLED'}
+
+            if event.type != 'TIMER':
+                return {'PASS_THROUGH'}
+
+            # Szenenende checken
+            cur = _current_frame_in_clip(context)
+            if cur >= int(scn.frame_end):
+                self._finish_flag(context, result="FINISHED")
+                return {'FINISHED'}
+
+            # 1) Einen Frame vorwärts tracken (nur selektierte) – stabil via temp_override
+            ov = _find_clip_override(context)
+            if not ov:
+                print("[Bidir] No CLIP_EDITOR context → cancel")
+                self._finish_flag(context, result="FAILED")
+                return {'FINISHED'}
+
             with bpy.context.temp_override(**ov):
                 bpy.ops.clip.track_markers('EXEC_DEFAULT', backwards=False, sequence=False)
+
+            next_frame = cur + 1
+
+            # 2) Korrektur pro Triplet im neuen Frame
+            for (t1, t2, t3) in self._triplets:
+                _pair_midpoint_correction(t1, t2, t3, next_frame)
+
+            # 3) Triplets wieder selektieren (sicherstellen)
+            _select_tracks([t for tri in self._triplets for t in tri], True)
+
+            # 4) Frame im Clip-Editor erhöhen
+            _set_frame_in_clip(context, next_frame)
+
+            return {'RUNNING_MODAL'}
+
         except Exception as ex:
-            print(f"[Bidir] track_markers failed: {ex!r}")
-            self._finish_flag(context, result="FINISHED")
+            print(f"[Bidir] modal error: {ex!r}")
+            self._finish_flag(context, result="FAILED")
             return {'FINISHED'}
-
-        next_frame = cur + 1
-
-        # 2) Korrektur pro Triplet im neuen Frame
-        for (t1, t2, t3) in self._triplets:
-            _pair_midpoint_correction(t1, t2, t3, next_frame)
-
-        # 3) Triplets wieder selektieren (sicherstellen)
-        _select_tracks([t for tri in self._triplets for t in tri], True)
-
-        # 4) Frame im Clip-Editor erhöhen
-        _set_frame_in_clip(context, next_frame)
-
-        return {'RUNNING_MODAL'}
 
 
 # ---- Register ---------------------------------------------------------------
