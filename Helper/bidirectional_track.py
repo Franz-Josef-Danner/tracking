@@ -154,6 +154,16 @@ def track_selected_forward_until_done() -> int:
             for t in eligible:
                 t.select = True
 
+            # Vor dem Operator sicherstellen, dass bei jedem eligible-Track
+            # der Marker am *aktuellen* Frame selektiert ist (Operator arbeitet markerbasiert).
+            for t in eligible:
+                try:
+                    mk = t.markers.find_frame(current_frame)
+                    if mk is not None:
+                        mk.select = True
+                except Exception:
+                    pass
+
             # Exakt EIN Frame tracken (nur für eligible)
             with bpy.context.temp_override(area=area, region=region, space_data=space):
                 bpy.ops.clip.track_markers(backwards=False, sequence=False)
