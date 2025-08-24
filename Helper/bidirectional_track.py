@@ -12,49 +12,28 @@ __all__ = ("CLIP_OT_bidirectional_track", "register", "unregister")
 _BIDI_ACTIVE_KEY = "bidi_active"
 _BIDI_RESULT_KEY = "bidi_result"
 
-def _find_clip_override(ctx) -> Optional[Dict]:
-    """Sichert CLIP_EDITOR-Kontext für Operator-Aufrufe."""
-    win = ctx.window
-    if not win:
-        return None
-    scr = getattr(win, "screen", None)
-    if not scr:
-        return None
-    for area in scr.areas:
-        if getattr(area, "type", None) == 'CLIP_EDITOR':
-            for region in area.regions:
-                if getattr(region, "type", None) == 'WINDOW':
-                    space = area.spaces.active
-                    # Clip notfalls injizieren
-                    if getattr(space, "clip", None) is None:
-                        try:
-                            if bpy.data.movieclips:
-                                space.clip = bpy.data.movieclips[0]
-                        except Exception:
-                            pass
-                    return {'window': win, 'area': area, 'region': region, 'space_data': space, 'scene': ctx.scene}
-    return None
-
 
 def _marker_at(track: bpy.types.MovieTrackingTrack, frame: int) -> Optional[bpy.types.MovieTrackingMarker]:
-    """Robuste Marker-Abfrage (Blender API variiert bei exact-Param)."""
+    """Robuste Marker-Abfrage (Blender API variiert beim exact-Param)."""
     try:
         return track.markers.find_frame(frame, exact=True)
     except TypeError:
         return track.markers.find_frame(frame)
 
 
-def _ensure_marker(track: bpy.types.MovieTrackingTrack, frame: int, co: Vector) -> bpy.types.MovieTrackingMarker:
-    """Sorge dafür, dass im Frame ein Marker existiert (insert bei Bedarf)."""
-    mk = _marker_at(track, frame)
-    if mk:
-        return mk
-    # Insert erwartet Koordinate in Normalized Space (0..1)
-    try:
-        mk = track.markers.insert_frame(int(frame), (float(co.x), float(co.y)))
-    except TypeError:
-        mk = track.markers.insert_frame(frame=int(frame), co=(float(co.x), float(co.y)))
-    return mk
+def _clip_exec_ctx(context: bpy.types.Context) -> Optional[Dict]:
+    """Erstellt einen minimalen, gültigen Override-Kontext für Clip-Operatoren (Blender 4.x)."""
+    win = context.window
+    scr = win.screen if win else None
+    if not (win and scr):
+        return None
+    area = next((a for a in scr.areas if a.type == 'CLIP_EDITOR'), None)
+    if not area:
+        return None
+    region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+    if not region:
+        return None
+    return {'window': win, 'screen': scr, 'area': area, 'region': region}
 
 
 class CLIP_OT_bidirectional_track(bpy.types.Operator):
@@ -76,6 +55,7 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
     # interne Laufzeitdaten
     _timer: Optional[bpy.types.Timer] = None
     _groups: List[Tuple[bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack, bpy.types.MovieTrackingTrack]]
+    _all_tracks: List[bpy.types.MovieTrackingTrack]
     _frame: int
     _frame_start: int
     _frame_end: int
@@ -88,14 +68,22 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
     def poll(cls, context):
         return getattr(context.area, "type", None) == "CLIP_EDITOR"
 
+    def _select_only_groups(self):
+        # Nur unsere Triplet-Tracks selektieren (alles andere deselektieren)
+        for t in self._all_tracks:
+            t.select = False
+        for g in self._groups:
+            for t in g:
+                t.select = True
+
     def invoke(self, context: bpy.types.Context, event: bpy.types.Event):
         scn = context.scene
         scn[_BIDI_ACTIVE_KEY] = True
         scn[_BIDI_RESULT_KEY] = ""
-        self._override_ctx = _find_clip_override(context)
-        space = getattr(self._override_ctx or {}, "get", lambda *_: None)("space_data") if self._override_ctx else None
-        clip = getattr(space, "clip", None) if space else getattr(context.space_data, "clip", None)
 
+        self._override_ctx = _clip_exec_ctx(context)
+        space = context.space_data if getattr(context, "space_data", None) and context.space_data.type == 'CLIP_EDITOR' else None
+        clip = getattr(space, "clip", None) if space else None
         if not clip:
             self._log("ERROR: Kein MovieClip verfügbar.")
             scn[_BIDI_ACTIVE_KEY] = False
@@ -109,6 +97,7 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
             tracks = obj.tracks
         else:
             tracks = tracking.tracks
+        self._all_tracks = list(tracks)
 
         # Start-/Ende definieren
         self._frame = int(scn.frame_current)
@@ -118,22 +107,21 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
         except Exception:
             self._frame_end = int(scn.frame_end)
 
-        # Triplets am Startframe über identische Position erkennen
-        # Kriterium: *gleiche Mittelpunktposition* (Toleranz via Rundung)
-        pos_map: Dict[Tuple[int, int], List[bpy.types.MovieTrackingTrack]] = {}
-        consider = [t for t in tracks if (not self.auto_enable_from_selection) or getattr(t, "select", False)]
+        # Kandidaten bestimmen
+        consider = [t for t in self._all_tracks if (not self.auto_enable_from_selection) or getattr(t, "select", False)]
 
-        # Selektion vereinheitlichen: nur unsere Kandidaten bleiben selektiert
-        for t in tracks:
+        # Selektion auf Kandidaten normalisieren
+        for t in self._all_tracks:
             t.select = False
         for t in consider:
             t.select = True
 
+        # Triplets am Startframe über identische Position (gerundet) erkennen
+        pos_map: Dict[Tuple[int, int], List[bpy.types.MovieTrackingTrack]] = {}
         for t in consider:
             mk = _marker_at(t, self._frame)
             if not mk or getattr(mk, "mute", False):
                 continue
-            # Normalized Koords runden → stabile Gruppierung
             key = (int(round(mk.co[0] * 1000.0)), int(round(mk.co[1] * 1000.0)))
             pos_map.setdefault(key, []).append(t)
 
@@ -187,30 +175,24 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
             m2 = _marker_at(t2, self._frame)
 
             # Aktiv? (Marker vorhanden & nicht gemutet)
-            act0 = bool(m0 and not m0.mute)
-            act1 = bool(m1 and not m1.mute)
-            act2 = bool(m2 and not m2.mute)
-            active_count = int(act0) + int(act1) + int(act2)
-
-            if active_count < 3:
-                # Vorgabe: Wenn einer inaktiv => alle inaktiv setzen
+            if not (m0 and not m0.mute and m1 and not m1.mute and m2 and not m2.mute):
+                # Spezifikation: Fällt einer aus → alle aus
                 for trk, mk in ((t0, m0), (t1, m1), (t2, m2)):
                     if mk:
                         mk.mute = True
                     trk.select = False
                 names = f"{t0.name}, {t1.name}, {t2.name}"
-                self._log(f"Frame {self._frame}: '{names}' -> {active_count}/3 aktiv → gesamte Gruppe deaktiviert.")
+                self._log(f"Frame {self._frame}: '{names}' -> {int(bool(m0))+int(bool(m1))+int(bool(m2))}/3 aktiv → gesamte Gruppe deaktiviert.")
                 deactivated.append(idx)
                 continue
 
-            # Alle 3 aktiv → Outlier mittig zu den beiden nächstliegenden setzen
+            # Alle 3 aktiv → Outlier mittig zu den beiden nächstliegenden setzen (kein Insert!)
             co0, co1, co2 = Vector(m0.co), Vector(m1.co), Vector(m2.co)
             d01 = (co0 - co1).length
             d02 = (co0 - co2).length
             d12 = (co1 - co2).length
 
             if d01 <= d02 and d01 <= d12:
-                # 0-1 sind das Paar → 2 ist Outlier
                 out_trk, out_mk = t2, m2
                 A, B = co0, co1
                 pair = (t0.name, t1.name)
@@ -224,10 +206,8 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
                 pair = (t1.name, t2.name)
 
             mid = (A + B) * 0.5
-            # Marker sicherstellen & setzen
-            mk = _ensure_marker(out_trk, self._frame, mid)
-            mk.co = (float(mid.x), float(mid.y))
-            mk.is_keyed = True
+            out_mk.co = (float(mid.x), float(mid.y))
+            out_mk.is_keyed = True
             self._log(f"Frame {self._frame}: '{out_trk.name}' → midpoint({pair[0]}, {pair[1]}) = ({mid.x:.4f}, {mid.y:.4f})")
 
         # Deaktivierte Gruppen hinten beginnend löschen (Indices stabil halten)
@@ -243,14 +223,17 @@ class CLIP_OT_bidirectional_track(bpy.types.Operator):
             self._log("Keine selektierten Marker mehr → Ende.")
             return self._finish(context, cancelled=False)
 
-        # Genau EIN Tracking-Schritt vorwärts; nur unsere Tracks bleiben selektiert
+        # Genau EIN Tracking-Schritt vorwärts; nur unsere Triplet-Tracks selektiert
+        self._select_only_groups()
         try:
             if self._override_ctx:
-                bpy.ops.clip.track_markers(self._override_ctx, backwards=False, sequence=False)
+                bpy.ops.clip.track_markers(self._override_ctx, 'EXEC_DEFAULT', backwards=False, sequence=False)
             else:
-                bpy.ops.clip.track_markers(backwards=False, sequence=False)
+                bpy.ops.clip.track_markers('EXEC_DEFAULT', backwards=False, sequence=False)
         except Exception as ex:
-            self._log(f"WARN: track_markers Exception: {ex!r}")
+            self._log(f"WARN: track_markers failed: {ex!r}")
+            # Ohne Tracking entstehen im nächsten Frame keine Marker → kontrolliertes Ende
+            return self._finish(context, cancelled=True)
 
         # Nächster Frame
         if self._frame < self._frame_end:
