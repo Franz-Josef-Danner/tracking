@@ -1,18 +1,56 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+"""
+Helper/bidirectional_track.py
+
+Bidirektionales Tracking (sichtbar im UI) mit nachgelagerter Join-Phase
+basierend auf zuvor in der Szene gespeicherten Triplet-Gruppen
+(kompatibel zu Helper/detect.py).
+
+Features
+--------
+- Modal-Operator startet Vorwärts- und Rückwärts-Tracking (sequence=True).
+- Stabilitätsdetektion über Marker-/Frame-Konstanz.
+- Robuste CLIP_EDITOR-Kontext-Findung (temp_override) für bpy.ops.clip.*.
+- Triplet-Gruppen aus Szene-Props laden (Names/Ptrs), zugehörige Tracks selektieren
+  und via bpy.ops.clip.join_tracks() zusammenführen.
+- Optionaler Clean-Short (falls Modul vorhanden).
+- Orchestrator-Handshake via scene["bidi_active"], scene["bidi_result"].
+
+Hinweis
+-------
+Dieser Helper erwartet, dass Helper/detect.py zuvor Triplet-Gruppen in die Szene
+serialisiert hat:
+  - "pattern_triplet_groups_json"    → [[name1,name2,name3], ...]
+  - "pattern_triplet_groups_ptr_json"→ [[ptr1,ptr2,ptr3], ...]
+  - "pattern_triplet_groups_count"   → int
+"""
+
+from __future__ import annotations
+
 import time
 import json
-import bpy
-from bpy.types import Operator
 from typing import List, Dict, Any, Optional, Tuple
 
+import bpy
+from bpy.types import Operator
+
+
+# ---------------------------------------------------------------------------
 # Scene keys für Triplet-Gruppen (müssen zu Helper/detect.py passen)
+# ---------------------------------------------------------------------------
 _TRIPLET_NAMES_KEY = "pattern_triplet_groups_json"
 _TRIPLET_PTRS_KEY = "pattern_triplet_groups_ptr_json"
 _TRIPLET_COUNT_KEY = "pattern_triplet_groups_count"
 
 
-# ---------- UI/Context-Utilities ----------
+# ---------------------------------------------------------------------------
+# UI/Context-Utilities
+# ---------------------------------------------------------------------------
 
-def _find_clip_context() -> Tuple[Optional[bpy.types.Window], Optional[bpy.types.Area], Optional[bpy.types.Region], Optional[bpy.types.Space]]:
+def _find_clip_context() -> Tuple[Optional[bpy.types.Window],
+                                  Optional[bpy.types.Area],
+                                  Optional[bpy.types.Region],
+                                  Optional[bpy.types.Space]]:
     wm = bpy.context.window_manager
     if not wm:
         return None, None, None, None
@@ -45,7 +83,26 @@ def _run_in_clip_context(op_callable, **kwargs):
         return op_callable(**kwargs)
 
 
-# ---------- Marker/Track-Utilities ----------
+def _get_active_clip_fallback() -> Optional[bpy.types.MovieClip]:
+    """Versucht, einen aktiven Clip zu finden – erst UI, dann bpy.data.movieclips."""
+    # 1) Aus aktivem CLIP_EDITOR
+    win, area, region, space = _find_clip_context()
+    if space:
+        clip = getattr(space, "clip", None)
+        if clip:
+            return clip
+    # 2) Erstbesten Clip aus Datenbank
+    try:
+        for c in bpy.data.movieclips:
+            return c
+    except Exception:
+        pass
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Marker/Track-Utilities
+# ---------------------------------------------------------------------------
 
 def _count_total_markers(clip) -> int:
     try:
@@ -99,10 +156,14 @@ def _track_by_ptr_or_name(clip, ptr: Optional[int], name: Optional[str]):
     return None
 
 
+# ---------------------------------------------------------------------------
+# Triplet-Gruppen laden & joinen
+# ---------------------------------------------------------------------------
+
 def _load_triplet_groups_from_scene(scene) -> List[List[Dict[str, Any]]]:
     """
     Lädt Triplet-Gruppen aus Scene-Props. Form:
-      - scene[_TRIPLET_PTRS_KEY] = JSON [[ptr1,ptr2,ptr3], ...]
+      - scene[_TRIPLET_PTRS_KEY]  = JSON [[ptr1,ptr2,ptr3], ...]
       - scene[_TRIPLET_NAMES_KEY] = JSON [[n1,n2,n3], ...]
     Gibt Liste von Dicts je Track zurück: {"ptr": int|None, "name": str|None}
     """
@@ -117,8 +178,8 @@ def _load_triplet_groups_from_scene(scene) -> List[List[Dict[str, Any]]]:
         # Normalisieren auf gleiche Länge
         L = max(len(ptr_groups), len(name_groups))
         for idx in range(L):
-            ptr_trip = ptr_groups[idx] if idx < len(ptr_groups) else []
-            name_trip = name_groups[idx] if idx < len(name_groups) else []
+            ptr_trip = list(ptr_groups[idx]) if idx < len(ptr_groups) else []
+            name_trip = list(name_groups[idx]) if idx < len(name_groups) else []
             # Auf Länge 3 polstern
             while len(ptr_trip) < 3:
                 ptr_trip.append(None)
@@ -178,7 +239,7 @@ def _join_triplet_groups(context, clip) -> int:
             print(f"[BidiTrack] Gruppe #{g_idx}: join_tracks() -> {ret}")
             joined_ops += 1
         except Exception as ex:
-            print(f"[BidiTrack] Gruppe #{g_idx}: join_tracks() Fehlgeschlagen: {ex}")
+            print(f"[BidiTrack] Gruppe #{g_idx}: join_tracks() fehlgeschlagen: {ex}")
 
         # UI-Refresh
         try:
@@ -192,7 +253,9 @@ def _join_triplet_groups(context, clip) -> int:
     return joined_ops
 
 
-# ---------- Operator ----------
+# ---------------------------------------------------------------------------
+# Operator
+# ---------------------------------------------------------------------------
 
 class CLIP_OT_bidirectional_track(Operator):
     bl_idname = "clip.bidirectional_track"
@@ -212,6 +275,8 @@ class CLIP_OT_bidirectional_track(Operator):
     _tick = 0
     _t_last_action = 0.0
 
+    # ---------------------------------------------------------------------
+
     def _dbg_header(self, context, clip):
         curf = context.scene.frame_current
         total = _count_total_markers(clip) if clip else -1
@@ -221,6 +286,8 @@ class CLIP_OT_bidirectional_track(Operator):
             "markers_total=%d | tracks@frame=%d"
             % (self._tick, self._step, time.perf_counter() - self._t0, int(curf), int(total), int(on_cur))
         )
+
+    # ---------------------------------------------------------------------
 
     def execute(self, context):
         # Flags für Orchestrator setzen
@@ -238,13 +305,12 @@ class CLIP_OT_bidirectional_track(Operator):
         self._tick = 0
 
         wm = context.window_manager
-        # Hinweis: 0.5 s ist dein aktuelles Intervall – nur Logging, kein Verhalten geändert
+        # 0.5 s Timer – UI-sichtbarer Pulsschlag
         self._timer = wm.event_timer_add(0.5, window=context.window)
         wm.modal_handler_add(self)
 
         # Erste Umgebungsausgabe
-        space = getattr(context, "space_data", None)
-        clip = getattr(space, "clip", None) if space else None
+        clip = _get_active_clip_fallback()
         total = _count_total_markers(clip) if clip else -1
         on_start = _count_tracks_with_marker_on_frame(clip, self._start_frame) if clip else -1
         print("[Tracking] Schritt: 0 (Start Bidirectional Track)")
@@ -254,18 +320,20 @@ class CLIP_OT_bidirectional_track(Operator):
         )
         return {'RUNNING_MODAL'}
 
+    # ---------------------------------------------------------------------
+
     def modal(self, context, event):
         if event.type == 'TIMER':
             self._tick += 1
-            # Kleiner Heartbeat pro Tick
             print("[BidiTrack] TIMER tick=%d (dt=%.3fs seit Start)"
                   % (self._tick, time.perf_counter() - self._t0))
             return self.run_tracking_step(context)
         return {'PASS_THROUGH'}
 
+    # ---------------------------------------------------------------------
+
     def run_tracking_step(self, context):
-        space = getattr(context, "space_data", None)
-        clip = getattr(space, "clip", None) if space else None
+        clip = _get_active_clip_fallback()
         if clip is None:
             self.report({'ERROR'}, "Kein aktiver Clip im Tracking-Editor gefunden.")
             print("[BidiTrack] ABORT: Kein aktiver Clip im Tracking-Editor.")
@@ -279,6 +347,7 @@ class CLIP_OT_bidirectional_track(Operator):
             total_before = _count_total_markers(clip)
             frames_before = _count_tracks_with_marker_on_frame(clip, context.scene.frame_current)
             try:
+                # sequence=True: vollständiger Vorwärtslauf
                 ret = bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
             except Exception as ex:
                 print(f"[BidiTrack] EXC beim Start Vorwärts-Tracking: {ex!r}")
@@ -336,6 +405,8 @@ class CLIP_OT_bidirectional_track(Operator):
 
         return {'PASS_THROUGH'}
 
+    # ---------------------------------------------------------------------
+
     def run_tracking_stability_check(self, context, clip):
         # Aktuelle Zahlen
         current_frame = context.scene.frame_current
@@ -383,6 +454,8 @@ class CLIP_OT_bidirectional_track(Operator):
 
         return {'PASS_THROUGH'}
 
+    # ---------------------------------------------------------------------
+
     def _finish(self, context, result="FINISHED"):
         """
         Abschlussroutine:
@@ -399,8 +472,7 @@ class CLIP_OT_bidirectional_track(Operator):
 
         # 2) Triplet-Gruppen zusammenführen (Join)
         try:
-            space = getattr(context, "space_data", None)
-            clip = getattr(space, "clip", None) if space else None
+            clip = _get_active_clip_fallback()
             if clip:
                 joined = _join_triplet_groups(context, clip)
                 print(f"[BidiTrack] Post-Join abgeschlossen | groups_joined={joined}")
@@ -425,6 +497,8 @@ class CLIP_OT_bidirectional_track(Operator):
 
         return {'FINISHED'}
 
+    # ---------------------------------------------------------------------
+
     def _cleanup_timer(self, context):
         wm = context.window_manager
         if self._timer is not None:
@@ -435,12 +509,19 @@ class CLIP_OT_bidirectional_track(Operator):
             self._timer = None
 
 
+# ---------------------------------------------------------------------------
+# Convenience-API
+# ---------------------------------------------------------------------------
+
 def run_bidirectional_track(context):
     """Startet den Operator aus Skript-Kontext."""
     return bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
 
 
-# ---- Registrierung für Haupt-__init__.py ----
+# ---------------------------------------------------------------------------
+# Registrierung für Haupt-__init__.py
+# ---------------------------------------------------------------------------
+
 def register():
     bpy.utils.register_class(CLIP_OT_bidirectional_track)
 
