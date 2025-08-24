@@ -523,24 +523,41 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     def _handle_failed_solve(self, context):
         """Fallback-Pfad, wenn Solve keine gültige Reconstruction erzeugt (z. B. 'No camera for frame')."""
+        print("[Coord] FAIL-SOLVE → versuche CleanErrorTracks")
+
+        try:
+            from ..Helper.clean_error_tracks import run_clean_error_tracks  # type: ignore
+            res = run_clean_error_tracks(context, show_popups=False, soften=0.5)
+            deleted_count = _normalize_clean_error_result(res, context.scene.get("__clean_error_deleted", 0))
+        except Exception as ex_clean:
+            print(f"[Coord] FAIL-SOLVE Cleaner failed: {ex_clean!r}")
+            deleted_count = 0
+
+        if deleted_count > 0:
+            # Tracks wurden entfernt → zurück zu FIND_LOW
+            print(f"[Coord] FAIL-SOLVE → Cleaner deleted {deleted_count} → FIND_LOW restart")
+            self._state = "FIND_LOW"
+            self._solve_retry_done = False
+            return {"RUNNING_MODAL"}
+
+        # Fallback wenn nichts gelöscht wurde → alter Weg (Refine + ProjectionCleanup)
         try:
             from ..Helper.refine_high_error import run_refine_on_high_error  # type: ignore
-            print("[Coord] FAIL-SOLVE → versuche REFINE (Top-N)")
+            print("[Coord] FAIL-SOLVE → Cleaner fand nichts → versuche REFINE (Top-N)")
             run_refine_on_high_error(context, limit_frames=0, resolve_after=False)
         except Exception as ex_ref:
             print(f"[Coord] FAIL-SOLVE REFINE failed: {ex_ref!r}")
 
-        # Konservatives Cleanup – wenn kein Error da: im Helper warten
         try:
             print("[Coord] FAIL-SOLVE → PROJECTION_CLEANUP (wartend)")
             _run_projection_cleanup(context, None)
         except Exception as ex_cu:
             print(f"[Coord] FAIL-SOLVE CLEANUP failed: {ex_cu!r}")
 
-        # Danach zurück in FIND_LOW für erneuten Pipeline-Durchlauf
         self._state = "FIND_LOW"
         self._solve_retry_done = False
         return {"RUNNING_MODAL"}
+
 
     def _state_jump(self, context):
         from ..Helper.jump_to_frame import run_jump_to_frame  # type: ignore
