@@ -2,28 +2,15 @@ from __future__ import annotations
 """
 Tracking-Orchestrator (STRICT)
 ------------------------------
-Strikter FSM-Ablauf: FIND_LOW → JUMP → DETECT (nur READY/FAILED zählen) → BIDI (modal) → CLEAN_SHORT → Loop.
-- Coordinator ruft niemals direkt bpy.ops.clip.track_markers auf, sondern ausschließlich den Helper-Operator
-  Helper/bidirectional_track.py (clip.bidirectional_track).
-- Detect läuft ggf. mehrfach (RUNNING) im selben State, bis READY/FAILED oder Timebox.
-- Nach Detect: einmaliges Clean-Short-Gate (__skip_clean_short_once) setzen, dann Bi-Track starten.
-- Erst nach Bi-Track erfolgt Clean-Short.
+Strikter FSM-Ablauf: FIND_LOW → JUMP → DETECT → BIDI (modal) → CLEAN_SHORT → Loop.
 
-NEU (Solve-Workflow – angepasst):
-- Solve wird weiterhin asynchron per Helper/solve_camera.solve_watch_clean() (INVOKE_DEFAULT) gestartet.
-- Anschließend wechselt die FSM in den State SOLVE_WAIT und wartet nicht-blockierend per Timer-Ticks,
-  bis eine gültige Reconstruction verfügbar ist. Erst dann wird der Solve-Error bewertet.
-- Direkt nach dem ersten Solve-Versuch: Error mit scene.error_track vergleichen:
-    1) Ist der Solve-Error > scene.error_track → GENAU EINMAL Refine-Modaloperator
-       (Helper/refine_high_error.py) starten, anschließend Solve-Retry und wieder SOLVE_WAIT.
-    2) Ist der Solve-Error danach IMMER NOCH > scene.error_track → Helper/projection_cleanup_builtin.py
-       (mit diesem Solve-Error als Grenzwert) und anschließend zurück zu Helper/find_low_marker_frame.py (State: FIND_LOW).
-    3) Ist der Solve-Error ≤ scene.error_track → FINALIZE.
-
-Hinweis:
-- Bei FIND_LOW → NONE wird nun zunächst Helper/clean_error_tracks.py gestartet.
-  → Hat der Cleaner etwas gelöscht: zurück zu FIND_LOW (ggf. nach mehreren Durchläufen bis stabil).
-  → Hat der Cleaner nichts gefunden: weiter zu SOLVE.
+Solve-Workflow (dieser Build):
+- Solve wird asynchron per Helper/solve_camera.solve_watch_clean() gestartet.
+- Nach *jedem* erfolgreichen Solve → IMMER zuerst REFINE (modal, UI sichtbar).
+- Nach abgeschlossenem Refine → Solve-Retry → zurück in SOLVE_WAIT.
+- Erst danach Error-Bewertung:
+    - Error weiterhin > threshold → PROJECTION_CLEANUP (und danach zurück zu FIND_LOW)
+    - Error ≤ threshold → FINALIZE
 """
 
 import os
@@ -59,7 +46,7 @@ def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Solve-Error Utilities (lokale Hilfen)
+# Solve-Error Utilities
 # ---------------------------------------------------------------------------
 
 def _get_active_clip(context) -> Optional[bpy.types.MovieClip]:
@@ -73,9 +60,6 @@ def _get_active_clip(context) -> Optional[bpy.types.MovieClip]:
 
 
 def _compute_solve_error(context) -> Optional[float]:
-    """Ermittelt den aktuellen Solve-Error aus der aktiven Rekonstruktion.
-    Bevorzugt reconstruction.average_error; Fallback: Mittelwert der Kamera-Errors.
-    """
     clip = _get_active_clip(context)
     if not clip:
         return None
@@ -102,7 +86,6 @@ def _compute_solve_error(context) -> Optional[float]:
 
 
 def _wait_for_reconstruction(context, tries: int = 12) -> bool:
-    """Kurzes, synchrones Warten, bis eine gültige Rekonstruktion verfügbar ist."""
     clip = _get_active_clip(context)
     if not clip:
         return False
@@ -120,39 +103,21 @@ def _wait_for_reconstruction(context, tries: int = 12) -> bool:
     return False
 
 
-# --- neu: Cleaner robust starten und Anzahl gelöschter Tracks ermitteln ---
-
-def _count_tracks(context) -> int:
-    clip = _get_active_clip(context)
-    if not clip:
-        return 0
-    try:
-        return len(clip.tracking.tracks)
-    except Exception:
-        return 0
-
+# --- Cleaner Ergebnis-Normalisierung ---
 
 def _normalize_clean_error_result(res: Any, scene_val: int = 0) -> int:
-    """Normalisiert diverse Rückgabeformen von run_clean_error_tracks zu einer Zahl.
-    Nutzt bekannte Felder deines Helpers und generische Fallbacks. "scene_val" kann
-    einen externen Scene-basierten Zähler (z. B. __clean_error_deleted) repräsentieren.
-    """
     if res is None:
         return max(0, int(scene_val))
-
     count = 0
     if isinstance(res, dict):
-        # 1) Explizite Zähler addieren
         for k in ("deleted_tracks", "deleted_markers", "multiscale_deleted", "total_deleted", "num_deleted"):
             try:
                 v = int(res.get(k, 0) or 0)
                 count += max(0, v)
             except Exception:
                 pass
-        # 2) Bool-Flag als mind. 1 zählen
         if bool(res.get("deleted_any", False)):
             count = max(count, 1)
-        # 3) Generische Fallbacks
         if count == 0:
             for key in ("deleted", "removed", "deleted_count", "num_removed"):
                 try:
@@ -162,7 +127,6 @@ def _normalize_clean_error_result(res: Any, scene_val: int = 0) -> int:
                     pass
     elif isinstance(res, (int, float)):
         count = int(res)
-
     try:
         sv = int(scene_val or 0)
         count = max(count, sv)
@@ -170,14 +134,12 @@ def _normalize_clean_error_result(res: Any, scene_val: int = 0) -> int:
         pass
     return int(max(0, count))
 
+
 # -----------------------------------------------------------------------------
-# Projection-Cleanup Wrapper (Refine-Vorschritt entfernt – jetzt zentral im Coordinator)
+# Projection-Cleanup (ohne Pre-Refine)
 # -----------------------------------------------------------------------------
 
 def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
-    """Führt Helper/projection_cleanup_builtin und Nacharbeiten aus.
-    (Kein Pre-Refine mehr – Refine wird zentral modal gestartet.)"""
-    # 1) Projection cleanup (wie bisher)
     try:
         from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin  # type: ignore
         if error_value is None:
@@ -199,10 +161,9 @@ def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
         print(f"[Coord] PROJECTION_CLEANUP → {res}")
     except Exception as ex_func:
         print(f"[Coord] projection_cleanup function failed: {ex_func!r} → try operator fallback")
-        # Operator-Fallback: ohne Warte-Logik (nur mit error_value sinnvoll)
         try:
             if error_value is not None:
-                for prop_name in ("clean_error", "error"):  # native Param-Namen probieren
+                for prop_name in ("clean_error", "error"):
                     try:
                         bpy.ops.clip.clean_tracks(**{prop_name: float(error_value)}, action="DELETE_TRACK")
                         print(f"[Coord] clean_tracks (fallback, {prop_name}={error_value})")
@@ -214,7 +175,6 @@ def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
         except Exception as ex_op:
             print(f"[Coord] projection_cleanup fallback launch failed: {ex_op!r}")
 
-    # 2) Triplet-Join – idempotent; wird übersprungen, falls Helper fehlt
     try:
         from ..Helper.triplet_joiner import run_triplet_join  # type: ignore
         res_join = run_triplet_join(context, active_policy="first")
@@ -222,7 +182,6 @@ def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
     except Exception as ex_join:
         print(f"[Coord] PROJECTION_CLEANUP triplet_join skipped/failed: {ex_join!r}")
 
-    # 3) Clean-Short direkt im Anschluss
     try:
         from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
         frames = int(getattr(context.scene, "frames_track", 25) or 25)
@@ -236,8 +195,6 @@ def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
         )
     except Exception as ex:
         print(f"[Coord] PROJECTION_CLEANUP CLEAN_SHORT failed: {ex!r}")
-
-
 
 
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
@@ -260,15 +217,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     _jump_done: bool = False
     _repeat_map: Dict[int, int]
     _bidi_started: bool = False
-    _solve_wait_ticks: int = 0  # NEU
+    _solve_wait_ticks: int = 0
 
-    # NEU: genau ein REFINE+Retry Solve zulassen
+    # Solve-Retry-Bookkeeping
     _solve_retry_done: bool = False
 
-    # NEU: Refine-Modalsteuerung
+    # Refine-Modalsteuerung
     _waiting_refine: bool = False
-    _refine_params: Optional[tuple] = None   # (start, end, step, threshold)
-    _refine_cont: Optional[str] = None       # "retry_solve" | "fail_solve_cleanup"
+    _refine_cont: Optional[str] = None   # "retry_solve" | "cleanup_then_findlow"
+    _post_solve_refine_done: bool = False
 
     @classmethod
     def poll(cls, context):
@@ -277,7 +234,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # ---------------- Lifecycle ----------------
 
     def _run_pre_flight_helpers(self, context) -> None:
-        # 1) tracker_settings.py
         try:
             from ..Helper.tracker_settings import apply_tracker_settings  # type: ignore
             apply_tracker_settings(context, log=True)
@@ -289,7 +245,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception:
                 pass
 
-        # 2) marker_helper_main.py (zweite Variante)
         try:
             from ..Helper.marker_helper_main import marker_helper_main  # type: ignore
             marker_helper_main(context)
@@ -301,7 +256,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception:
                 pass
 
-        # 3) (optional) Tracker-Defaults anwenden, wenn UI-Option aktiv
         if self.use_apply_settings:
             try:
                 from ..Helper.apply_tracker_settings import apply_tracker_settings  # type: ignore
@@ -325,65 +279,44 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         if event.type != "TIMER":
             return {"PASS_THROUGH"}
 
-        # Detect-Lock respektieren (kritische Sektion in Helper/detect.py)
         if context.scene.get(_LOCK_KEY, False):
             return {"RUNNING_MODAL"}
 
-        # --- NEU: Globale Wartephase auf Refine-Modaloperator ----------------
+        # --- Wartephase auf Refine-Modaloperator ----------------------------
         if self._waiting_refine:
             scn = context.scene
             if (scn.get("refine_active") is False) and bool(scn.get("refine_result", "")):
                 result = scn.get("refine_result", "CANCELLED")
                 self._waiting_refine = False
-                self._refine_params = None
 
                 if result != "OK":
                     self._safe_report(context, {'WARNING'}, f"Refine abgebrochen ({result})")
-                    # Bei Abbruch im Retry-Pfad: weiter mit Cleanup
-                    if self._refine_cont == "retry_solve":
-                        # direkte Eskalation in Cleanup-Zweig
-                        cur_err = _compute_solve_error(context)
-                        try:
-                            _run_projection_cleanup(context, cur_err)
-                        except Exception as ex_cu:
-                            print(f"[Coord] PROJECTION_CLEANUP after Refine abort failed: {ex_cu!r}")
-                        self._state = "FIND_LOW"
-                    elif self._refine_cont == "fail_solve_cleanup":
-                        try:
-                            _run_projection_cleanup(context, None)
-                        except Exception as ex_cu2:
-                            print(f"[Coord] FAIL-SOLVE CLEANUP after Refine abort failed: {ex_cu2!r}")
-                        self._state = "FIND_LOW"
+                    # nach Abbruch → trotzdem Cleanup-Zweig, um zu stabilisieren
+                    self._post_solve_refine_done = True
                     self._refine_cont = None
-                    return {"RUNNING_MODAL"}
-
-                # Refine erfolgreich abgeschlossen
-                if self._refine_cont == "retry_solve":
+                    cur_err = _compute_solve_error(context)
                     try:
-                        from ..Helper.solve_camera import solve_watch_clean  # type: ignore
-                        print("[Coord] REFINE done → retry solve_watch_clean()")
-                        solve_watch_clean(context)
-                    except Exception as ex2:
-                        print(f"[Coord] SOLVE retry failed: {ex2!r}")
-
-                    self._solve_retry_done = True
-                    self._solve_wait_ticks = int(getattr(context.scene, "solve_wait_ticks", _SOLVE_WAIT_TICKS_DEFAULT))
-                    self._refine_cont = None
-                    # Weiter in SOLVE_WAIT
-                    self._state = "SOLVE_WAIT"
-                    return {"RUNNING_MODAL"}
-
-                if self._refine_cont == "fail_solve_cleanup":
-                    try:
-                        print("[Coord] REFINE done → FAIL-SOLVE cleanup")
-                        _run_projection_cleanup(context, None)
+                        _run_projection_cleanup(context, cur_err if cur_err is not None else None)
                     except Exception as ex_cu:
-                        print(f"[Coord] FAIL-SOLVE CLEANUP failed: {ex_cu!r}")
-                    self._refine_cont = None
+                        print(f"[Coord] PROJECTION_CLEANUP after Refine abort failed: {ex_cu!r}")
                     self._state = "FIND_LOW"
                     return {"RUNNING_MODAL"}
 
-            # Refine läuft noch
+                # Refine erfolgreich → Solve-Retry starten
+                try:
+                    from ..Helper.solve_camera import solve_watch_clean  # type: ignore
+                    print("[Coord] REFINE done → retry solve_watch_clean()")
+                    solve_watch_clean(context)
+                except Exception as ex2:
+                    print(f"[Coord] SOLVE retry failed: {ex2!r}")
+
+                self._solve_retry_done = True
+                self._solve_wait_ticks = int(getattr(context.scene, "solve_wait_ticks", _SOLVE_WAIT_TICKS_DEFAULT))
+                self._post_solve_refine_done = True
+                self._refine_cont = None
+                self._state = "SOLVE_WAIT"
+                return {"RUNNING_MODAL"}
+
             return {"RUNNING_MODAL"}
 
         # ----------------------------- FSM -----------------------------------
@@ -401,7 +334,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return self._state_clean_short(context)
         elif self._state == "SOLVE":
             return self._state_solve(context)
-        elif self._state == "SOLVE_WAIT":  # NEU
+        elif self._state == "SOLVE_WAIT":
             return self._state_solve_wait(context)
         elif self._state == "FINALIZE":
             return self._finish(context, cancelled=False)
@@ -415,7 +348,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         scn[_LOCK_KEY] = False
         scn[_BIDI_ACTIVE_KEY] = False
         scn[_BIDI_RESULT_KEY] = ""
-        # Safety: altes Skip-Gate entfernen, wir arbeiten strikt reihenfolgebasiert
         scn.pop("__skip_clean_short_once", None)
         scn.pop("__pre_refine_done", None)
         self._state = "INIT"
@@ -426,31 +358,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._solve_wait_ticks = 0
         self._solve_retry_done = False
         self._waiting_refine = False
-        self._refine_params = None
         self._refine_cont = None
-
-    # ---------------- Refine-Launch (NEU) ----------------
-
-    def _launch_refine(self, context, *, start: int, end: int, step: int = 1, threshold: float = 2.0, cont: str = "retry_solve") -> None:
-        """Startet den Refine-Modaloperator isoliert und setzt Scene-Flags."""
-        scn = context.scene
-
-        # nicht starten, wenn Bidi läuft
-        if scn.get(_BIDI_ACTIVE_KEY, False):
-            self._safe_report(context, {'WARNING'}, "Bidirectional Tracking aktiv – Refine später.")
-            return
-
-        scn["refine_active"] = True
-        scn["refine_result"] = ""
-
-        self._waiting_refine = True
-        self._refine_params = (start, end, step, threshold)
-        self._refine_cont = cont  # "retry_solve" oder "fail_solve_cleanup"
-
-        bpy.ops.kaiserlich.refine_high_error(
-            'INVOKE_DEFAULT',
-            start_frame=start, end_frame=end, step=step, threshold=threshold
-        )
+        self._post_solve_refine_done = False
 
     # ---------------- States ----------------
 
@@ -460,27 +369,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         print("[Coord] BOOTSTRAP → FIND_LOW")
         self._state = "FIND_LOW"
         return {"RUNNING_MODAL"}
-
-    def _run_post_opt_marker_if_needed(self, context) -> None:
-        """Falls der Optimizer zuvor gestartet wurde, einmalig Marker-Helper ausführen,
-        **bevor** wieder FIND_LOW arbeitet.
-        """
-        scn = context.scene
-        if not scn.get("_OPT_POST_MARKER_PENDING", False):  # Flag kann extern gesetzt werden
-            return
-        print("[Coord] POST-OPT → run marker_helper_main()")
-        try:
-            from ..Helper.marker_helper_main import run_marker_helper_main  # type: ignore
-            run_marker_helper_main(context)
-        except Exception as ex_func:
-            print(f"[Coord] marker_helper_main function failed: {ex_func!r} → try operator fallback")
-            try:
-                bpy.ops.clip.marker_helper_main('INVOKE_DEFAULT')
-            except Exception as ex_op:
-                print(f"[Coord] marker_helper_main launch failed: {ex_op!r}")
-        finally:
-            scn["_OPT_POST_MARKER_PENDING"] = False
-            print("[Coord] POST-OPT → done (flag cleared)")
 
     def _state_find_low(self, context):
         from ..Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
@@ -523,115 +411,114 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_solve(self, context):
-        """Solve-Start (asynchron, INVOKE_DEFAULT) → dann in SOLVE_WAIT wechseln."""
+        """Solve-Start (asynchron) → dann SOLVE_WAIT (mit Post-Solve-Refine)."""
         try:
             from ..Helper.solve_camera import solve_watch_clean  # type: ignore
             print("[Coord] SOLVE → solve_watch_clean()")
-            res = solve_watch_clean(context)  # {'RUNNING_MODAL'} erwartet
+            res = solve_watch_clean(context)
             print(f"[Coord] SOLVE → solve_watch_clean() returned {res}")
         except Exception as ex:
             print(f"[Coord] SOLVE failed to start: {ex!r}")
             return self._handle_failed_solve(context)
 
-        # SOLVE_WAIT initialisieren (nicht blockierend, Timer-getaktet)
         self._solve_wait_ticks = int(_SOLVE_WAIT_TICKS_DEFAULT)
         self._solve_retry_done = False
+        self._post_solve_refine_done = False   # << WICHTIG: pro Solve-Phase genau 1x Refine
         self._state = "SOLVE_WAIT"
         return {"RUNNING_MODAL"}
 
     def _state_solve_wait(self, context):
-        """Nicht-blockierendes Warten auf gültige Rekonstruktion, danach Error-Bewertung."""
+        """Nicht-blockierendes Warten → nach erstem Solve IMMER Refine; danach Bewertung."""
         if not _wait_for_reconstruction(context, tries=_SOLVE_WAIT_TRIES_PER_TICK):
             self._solve_wait_ticks -= 1
             print(f"[Coord] SOLVE_WAIT → waiting ({self._solve_wait_ticks} ticks left)")
             if self._solve_wait_ticks > 0:
                 return {"RUNNING_MODAL"}
-            # Timeout → fehlgeschlagen behandeln
             print("[Coord] SOLVE_WAIT → timeout → FAIL-SOLVE fallback")
             return self._handle_failed_solve(context)
 
-        # Rekonstruktion ist gültig → Error auswerten
+        # Rekonstruktion ist gültig → Schritt 1: REFINE (wenn noch nicht getan)
+        if not self._post_solve_refine_done:
+            sf = int(getattr(context.scene, "frame_start", 1))
+            ef = int(getattr(context.scene, "frame_end", max(sf, 250)))
+            th = float(getattr(context.scene, "error_track", 2.0) or 2.0)
+            print("[Coord] SOLVE_WAIT → launch REFINE (always-first after solve)")
+            self._launch_refine(context, start=sf, end=ef, step=1, threshold=th)
+            return {"RUNNING_MODAL"}
+
+        # Schritt 2: Error-Bewertung NACH dem Refine + Solve-Retry
         threshold = float(getattr(context.scene, "error_track", 2.0) or 2.0)
         current_err = _compute_solve_error(context)
         high_threshold = threshold * 10.0
-        print(f"[Coord] SOLVE_WAIT → error={current_err!r} vs. threshold={threshold} (hi={high_threshold})")
+        print(f"[Coord] SOLVE_WAIT(after refine) → error={current_err!r} vs. threshold={threshold} (hi={high_threshold})")
 
-        if current_err is None:
-            print("[Coord] SOLVE_WAIT → Kein gültiger Error → PROJECTION_CLEANUP (wartend) → FIND_LOW")
-            _run_projection_cleanup(context, None)
-            self._state = "FIND_LOW"
-            self._solve_retry_done = False
-            return {"RUNNING_MODAL"}
-
-        # 1) High-Gate: sofortiges Cleanup bei extrem hohem Error
-        if current_err > high_threshold:
-            print(f"[Coord] SOLVE_WAIT → Error > high_threshold ({current_err} > {high_threshold}) "
-                  f"→ PROJECTION_CLEANUP(error_limit={current_err}) → FIND_LOW")
+        if current_err is None or current_err > threshold:
+            # Bei extremer Instabilität/None → Cleanup ohne zu zögern
+            print("[Coord] SOLVE_WAIT → PROJECTION_CLEANUP → FIND_LOW")
             try:
-                _run_projection_cleanup(context, current_err)
+                _run_projection_cleanup(context, current_err if current_err is not None else None)
             except Exception as ex_cu:
                 print(f"[Coord] PROJECTION_CLEANUP failed: {ex_cu!r}")
             self._state = "FIND_LOW"
             self._solve_retry_done = False
             return {"RUNNING_MODAL"}
 
-        # 2) Normales Gate: einmaliger Refine-Retry, danach ggf. Cleanup
-        if current_err > threshold:
-            if not self._solve_retry_done:
-                # Einmaliger Versuch: REFINE (modal, UI-sichtbar) → Solve-Retry
-                print("[Coord] SOLVE_WAIT → Error > threshold → REFINE (modal) + Retry Solve")
-                sf = int(getattr(context.scene, "frame_start", 1))
-                ef = int(getattr(context.scene, "frame_end", max(sf, 250)))
-                th = float(getattr(context.scene, "error_track", threshold) or threshold)
-                self._launch_refine(context, start=sf, end=ef, step=1, threshold=th, cont="retry_solve")
-                return {"RUNNING_MODAL"}
-
-            # Retry wurde bereits gemacht → PROJECTION_CLEANUP mit diesem Error und direkt FIND_LOW
-            print(
-                f"[Coord] SOLVE_WAIT → Error weiterhin zu hoch ({current_err}) "
-                f"→ PROJECTION_CLEANUP(error_limit={current_err}) → FIND_LOW"
-            )
-            try:
-                _run_projection_cleanup(context, current_err)  # error_limit = aktueller Solve-Error
-            except Exception as ex_cu:
-                print(f"[Coord] PROJECTION_CLEANUP failed: {ex_cu!r}")
-            self._state = "FIND_LOW"
-            self._solve_retry_done = False
-            return {"RUNNING_MODAL"}
-
-        # 3) Fehler unter Schwelle → fertig
         print("[Coord] SOLVE_WAIT → FINALIZE")
         self._state = "FINALIZE"
         self._solve_retry_done = False
         return {"RUNNING_MODAL"}
 
+    # ---------------- Refine-Launch ----------------
+
+    def _launch_refine(self, context, *, start: int, end: int, step: int = 1, threshold: float = 2.0) -> None:
+        scn = context.scene
+        if scn.get(_BIDI_ACTIVE_KEY, False):
+            self._safe_report(context, {'WARNING'}, "Bidirectional Tracking aktiv – Refine später.")
+            return
+
+        scn["refine_active"] = True
+        scn["refine_result"] = ""
+        self._waiting_refine = True
+        self._refine_cont = "retry_solve"
+
+        bpy.ops.kaiserlich.refine_high_error(
+            'INVOKE_DEFAULT',
+            start_frame=start, end_frame=end, step=step, threshold=threshold
+        )
+
+    # ---------------- Fehlerpfad ----------------
+
     def _handle_failed_solve(self, context):
-        """Fallback-Pfad, wenn Solve keine gültige Reconstruction erzeugt (z. B. 'No camera for frame')."""
-        print("[Coord] FAIL-SOLVE → versuche CleanErrorTracks")
-
-        try:
-            from ..Helper.clean_error_tracks import run_clean_error_tracks  # type: ignore
-            res = run_clean_error_tracks(context, show_popups=False, soften=0.5)
-            deleted_count = _normalize_clean_error_result(res, context.scene.get("__clean_error_deleted", 0))
-        except Exception as ex_clean:
-            print(f"[Coord] FAIL-SOLVE Cleaner failed: {ex_clean!r}")
-            deleted_count = 0
-
-        if deleted_count > 0:
-            # Tracks wurden entfernt → zurück zu FIND_LOW
-            print(f"[Coord] FAIL-SOLVE → Cleaner deleted {deleted_count} → FIND_LOW restart")
-            self._state = "FIND_LOW"
-            self._solve_retry_done = False
-            return {"RUNNING_MODAL"}
-
-        # Fallback wenn nichts gelöscht wurde → früher: Refine + ProjectionCleanup
-        # Jetzt: Refine modal starten, danach Cleanup und zurück zu FIND_LOW.
-        print("[Coord] FAIL-SOLVE → Cleaner fand nichts → starte REFINE (modal), danach Cleanup")
+        """Wenn Solve keine gültige Reconstruction liefert:
+        → erst Refine (modal), danach Cleanup und zurück zu FIND_LOW.
+        """
+        print("[Coord] FAIL-SOLVE → starte REFINE (modal), danach Cleanup")
         sf = int(getattr(context.scene, "frame_start", 1))
         ef = int(getattr(context.scene, "frame_end", max(sf, 250)))
         th = float(getattr(context.scene, "error_track", 2.0) or 2.0)
-        self._launch_refine(context, start=sf, end=ef, step=1, threshold=th, cont="fail_solve_cleanup")
+
+        # Refine starten; nach Abbruch/Finish wird oben in der Wartephase bereinigt
+        self._waiting_refine = True
+        self._refine_cont = "cleanup_then_findlow"
+        try:
+            bpy.ops.kaiserlich.refine_high_error(
+                'INVOKE_DEFAULT',
+                start_frame=sf, end_frame=ef, step=1, threshold=th
+            )
+        except Exception as ex_ref:
+            print(f"[Coord] FAIL-SOLVE REFINE launch failed: {ex_ref!r}")
+            # Fallback direkt: Cleanup
+            try:
+                _run_projection_cleanup(context, None)
+            except Exception as ex_cu:
+                print(f"[Coord] FAIL-SOLVE CLEANUP failed: {ex_cu!r}")
+            self._state = "FIND_LOW"
+            return {"RUNNING_MODAL"}
+
+        # Warten auf Refine in modal()
         return {"RUNNING_MODAL"}
+
+    # ---------------- JUMP/DETECT/TRACK/CLEAN_SHORT (unverändert) ----------------
 
     def _state_jump(self, context):
         from ..Helper.jump_to_frame import run_jump_to_frame  # type: ignore
@@ -644,7 +531,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {"RUNNING_MODAL"}
             print(f"[Coord] JUMP → frame={jr['frame']} repeat={jr['repeat_count']} → DETECT")
 
-            # Signal aus jump_to_frame verwerten (falls gesetzt)
             scn = context.scene
             opt_req = scn.get(_OPT_REQ_KEY, None)
             opt_frame = int(scn.get(_OPT_FRAME_KEY, jr.get('frame', scn.frame_current)))
@@ -671,15 +557,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_detect(self, context):
-        """Nur ein Signal akzeptieren: READY/FAILED → TRACK, RUNNING → im DETECT-State bleiben."""
         from ..Helper.detect import run_detect_once  # type: ignore
 
         goto = int(context.scene.get(_GOTO_KEY, context.scene.frame_current))
-        res = run_detect_once(
-            context,
-            start_frame=goto,
-            handoff_to_pipeline=True,
-        )
+        res = run_detect_once(context, start_frame=goto, handoff_to_pipeline=True)
         status = str(res.get("status", "FAILED")).upper()
 
         if status == "RUNNING":
@@ -701,7 +582,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_track(self, context):
-        """Startet und überwacht den Bidirectional-Operator. CleanShort kommt erst nach Abschluss."""
         scn = context.scene
 
         if not self._bidi_started:
@@ -727,7 +607,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_clean_short(self, context):
-        """Short-Clean ausschließlich nach Bi-Track."""
         if self.auto_clean_short:
             from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
             frames = int(getattr(context.scene, "frames_track", 25) or 25)
@@ -767,11 +646,9 @@ def unregister():
     bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
 
 
-# ---------------- Self-Tests (reine Python-Checks, laufen nur, wenn explizit aktiviert) ----------------
 if __name__ == "__main__" and os.getenv("ADDON_RUN_TESTS", "0") == "1":
-    # Die Tests prüfen ausschließlich die Normalisierung der Cleaner-Rückgabe,
-    # damit sie ohne Blender-Kontext lauffähig sind.
-    test_cases = [
+    # Nur _normalize_clean_error_result wird hier getestet.
+    cases = [
         ("empty dict", {}, 0, 0),
         ("deleted_any", {"status": "FINISHED", "deleted_any": True}, 0, 1),
         ("tracks+markers", {"deleted_tracks": 2, "deleted_markers": 5}, 0, 7),
@@ -780,8 +657,7 @@ if __name__ == "__main__" and os.getenv("ADDON_RUN_TESTS", "0") == "1":
         ("scene_val_override", {}, 2, 2),
         ("mixed_all", {"deleted_tracks": 1, "deleted_markers": 1, "deleted_any": True}, 0, 2),
     ]
-
-    for name, res, scene_val, expected in test_cases:
+    for name, res, scene_val, expected in cases:
         got = _normalize_clean_error_result(res, scene_val)
-        assert got == expected, f"case '{name}': expected {expected}, got {got}"
-    print("[SelfTest] _normalize_clean_error_result: OK (", len(test_cases), "cases )")
+        assert got == expected, f"{name}: expected {expected}, got {got}"
+    print("[SelfTest] _normalize_clean_error_result OK")
