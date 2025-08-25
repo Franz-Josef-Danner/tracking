@@ -2,35 +2,32 @@
 """
 Refine High Error (modal, mit sichtbarem Frame-Redraw)
 
-Dieses Modul führt die bisher "im Hintergrund" laufende High-Error-Refine-Logik
-timer-gesteuert als Modal-Operator aus. Pro Timer-Takt wird GENAU EIN Frame
-verarbeitet, wodurch der Framewechsel im UI sichtbar ist.
-
-Flags an der Scene (analog zu Bidi):
+- Pro Timer-Tick wird GENAU EIN Frame verarbeitet -> Framewechsel ist im UI sichtbar.
+- Scene-Flags (analog zum Bidi-Operator):
     scene["refine_active"] : bool
     scene["refine_result"] : str ("", "OK", "CANCELLED", "ERROR:<msg>")
 
-Start via:
+Start (Operator):
     bpy.ops.kaiserlich.refine_high_error('INVOKE_DEFAULT',
         start_frame=sf, end_frame=ef, step=1, threshold=2.0)
 
-oder aus Python:
-    from .refine_high_error import run_refine_modal
-    run_refine_modal(context, start=sf, end=ef, step=1, threshold=2.0)
+Kompatibilitäts-Wrapper (falls Alt-Code ihn aufruft):
+    run_refine_on_high_error(context, limit_frames=0, resolve_after=False)
+    -> startet nur den Modal-Operator (nicht-blockierend), gibt {"status":"STARTED"} zurück.
 """
 
 from __future__ import annotations
 
 import bpy
 from bpy.types import Operator, Context, Area, Region
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 
 # -----------------------------------------------------------------------------
-# Utility
+# Utilities
 # -----------------------------------------------------------------------------
 
-def _find_clip_area_and_region(context: Context) -> tuple[Optional[Area], Optional[Region]]:
+def _find_clip_area_and_region(context: Context) -> Tuple[Optional[Area], Optional[Region]]:
     """Finde eine CLIP_EDITOR Area/Region für sichere Operator-Contexts."""
     win = getattr(context, "window", None)
     if not win:
@@ -58,39 +55,30 @@ def _tag_redraw_all(context: Context) -> None:
 
 
 # -----------------------------------------------------------------------------
-# Pro-Frame Arbeit
+# Pro-Frame Arbeit (Passe diesen Block an deine bisherige Logik an)
 # -----------------------------------------------------------------------------
 
 def _refine_step(context: Context, *, threshold: float) -> None:
     """
-    Führt die High-Error-Verbesserung genau für den AKTUELLEN Frame aus.
+    High-Error-Verbesserung für den AKTUELLEN Frame.
 
-    Die hier implementierte Standard-Variante nutzt die Blender-Operatoren
-    für Tracking-Cleanup. Passe diesen Block bei Bedarf an deine bisherige
-    Refine-Logik an (Marker-Selektionsregeln, eigene Filter etc.).
-
-    Strategie:
-      1) Reprojektion-Fehler über clip.clean_tracks (error=threshold) bereinigen.
-      2) Optional: Kürzeste Tracks entfernen (frames=0 belässt alles; erhöhe, falls gewünscht).
+    Standard-Implementierung nutzt clip.clean_tracks als pragmatischen Refine-Schritt.
+    Wenn du pro Frame eine spezifische Marker-/Filterlogik hattest, füge sie hier ein.
     """
-    clip = context.edit_movieclip
+    clip = getattr(context, "edit_movieclip", None)
     if clip is None:
         return
 
     area, region = _find_clip_area_and_region(context)
 
-    # Sicherer Context für clip-Operatoren
     if area and region:
         with context.temp_override(area=area, region=region):
             try:
-                # Reprojection-Fehler bereinigen (nur aktueller Frame wird angezeigt; Operator wirkt global)
+                # Reprojection-Fehler bereinigen (nur Auswahl markieren – nicht direkt löschen)
                 bpy.ops.clip.clean_tracks(frames=0, error=threshold, action='SELECT')
-                # Hinweis: Wenn du statt SELECT direkt löschen willst:
-                # bpy.ops.clip.clean_tracks(frames=0, error=threshold, action='DELETE_TRACKS')
             except Exception as ex:
                 print(f"[Refine] clean_tracks failed: {ex}")
     else:
-        # Fallback ohne speziellen UI-Kontext
         try:
             bpy.ops.clip.clean_tracks(frames=0, error=threshold, action='SELECT')
         except Exception as ex:
@@ -114,12 +102,11 @@ class KAISERLICH_OT_refine_high_error(Operator):
         name="Error Threshold (px)", default=2.0, min=0.1, soft_max=10.0
     )
 
-    _timer: Optional[object] = None
+    _timer: Optional[bpy.types.Timer] = None
     _frames: List[int] = []
     _area: Optional[Area] = None
     _region: Optional[Region] = None
 
-    # --- Lifecycle ---------------------------------------------------------
     def invoke(self, context: Context, event):
         scn = context.scene
 
@@ -128,15 +115,12 @@ class KAISERLICH_OT_refine_high_error(Operator):
             self.report({'WARNING'}, "Bidirectional Tracking läuft – Refine später starten.")
             return {'CANCELLED'}
 
-        # Frames vorbereiten
         start = min(self.start_frame, self.end_frame)
         end = max(self.start_frame, self.end_frame)
         self._frames = list(range(start, end + 1, max(1, self.step)))
 
-        # Clip-Editor Area/Region merken (für Override)
         self._area, self._region = _find_clip_area_and_region(context)
 
-        # Flags setzen (analog zu Bidi)
         scn["refine_active"] = True
         scn["refine_result"] = ""
 
@@ -151,7 +135,7 @@ class KAISERLICH_OT_refine_high_error(Operator):
         if event.type == 'TIMER':
             try:
                 if not self._frames:
-                    return self._finish(context, result="OK")
+                    return self._finish(context, "OK")
 
                 frame = self._frames.pop(0)
 
@@ -163,16 +147,14 @@ class KAISERLICH_OT_refine_high_error(Operator):
                 _refine_step(context, threshold=self.threshold)
 
                 return {'RUNNING_MODAL'}
-
             except Exception as ex:
-                return self._finish(context, result=f"ERROR:{ex}")
+                return self._finish(context, f"ERROR:{ex}")
 
         elif event.type in {'ESC'}:
-            return self._finish(context, result="CANCELLED")
+            return self._finish(context, "CANCELLED")
 
         return {'RUNNING_MODAL'}
 
-    # --- Helpers -----------------------------------------------------------
     def _finish(self, context: Context, result: str):
         wm = context.window_manager
         if self._timer:
@@ -189,15 +171,38 @@ class KAISERLICH_OT_refine_high_error(Operator):
 
 
 # -----------------------------------------------------------------------------
-# Public Convenience API
+# Public Convenience / Kompatibilität
 # -----------------------------------------------------------------------------
 
 def run_refine_modal(context: Context, start: int, end: int, step: int = 1, threshold: float = 2.0):
-    """Bequemer Python-Einstieg."""
+    """Bequemer Python-Einstieg für Skripte."""
     return bpy.ops.kaiserlich.refine_high_error(
         'INVOKE_DEFAULT',
         start_frame=start, end_frame=end, step=step, threshold=threshold
     )
+
+
+def run_refine_on_high_error(context: Context, limit_frames: int = 0, resolve_after: bool = False):
+    """
+    Kompatibilität zur Alt-Signatur:
+    Startet lediglich den Modaloperator (nicht-blockierend) und gibt sofort zurück.
+    Der Coordinator überwacht die Scene-Flags und führt danach die nächsten Schritte aus.
+    """
+    sf = int(getattr(context.scene, "frame_start", 1))
+    ef = int(getattr(context.scene, "frame_end", max(sf, 250)))
+    th = float(getattr(context.scene, "error_track", 2.0) or 2.0)
+
+    # Optional: limit_frames beachten (z.B. 0=voller Bereich)
+    if isinstance(limit_frames, int) and limit_frames > 0:
+        cur = int(context.scene.frame_current)
+        sf = max(sf, cur - limit_frames)
+        ef = min(ef, cur + limit_frames)
+
+    bpy.ops.kaiserlich.refine_high_error(
+        'INVOKE_DEFAULT',
+        start_frame=sf, end_frame=ef, step=1, threshold=th
+    )
+    return {"status": "STARTED", "start": sf, "end": ef, "threshold": th}
 
 
 # -----------------------------------------------------------------------------
