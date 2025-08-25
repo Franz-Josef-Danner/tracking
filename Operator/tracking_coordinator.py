@@ -18,6 +18,7 @@ from typing import Optional, Dict, Any
 
 import bpy
 from ..Helper.triplet_grouping import run_triplet_grouping  # top-level import
+from ..Helper.refine_high_error import run_refine_on_high_error
 
 __all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
 
@@ -289,8 +290,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 result = scn.get("refine_result", "CANCELLED")
                 self._waiting_refine = False
 
-                if result != "OK":
-                    self._safe_report(context, {'WARNING'}, f"Refine abgebrochen ({result})")
+                if result != "FINISHED":
+                    msg = scn.get("refine_error_msg", "")
+                    if msg:
+                        _safe_report(self, {'WARNING'}, f"Refine aborted ({result}): {msg}")
+                    else:
+                        _safe_report(self, {'WARNING'}, f"Refine aborted ({result})")
                     # nach Abbruch → trotzdem Cleanup-Zweig, um zu stabilisieren
                     self._post_solve_refine_done = True
                     self._refine_cont = None
@@ -439,11 +444,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         # Rekonstruktion ist gültig → Schritt 1: REFINE (wenn noch nicht getan)
         if not self._post_solve_refine_done:
-            sf = int(getattr(context.scene, "frame_start", 1))
-            ef = int(getattr(context.scene, "frame_end", max(sf, 250)))
-            th = float(getattr(context.scene, "error_track", 2.0) or 2.0)
+            th = float(getattr(context.scene, "error_track", 2.0) or 2.0) * 10.0
             print("[Coord] SOLVE_WAIT → launch REFINE (always-first after solve)")
-            self._launch_refine(context, start=sf, end=ef, step=1, threshold=th)
+            self._launch_refine(context, threshold=th)
             return {"RUNNING_MODAL"}
 
         # Schritt 2: Error-Bewertung NACH dem Refine + Solve-Retry
@@ -470,21 +473,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     # ---------------- Refine-Launch ----------------
 
-    def _launch_refine(self, context, *, start: int, end: int, step: int = 1, threshold: float = 2.0) -> None:
+    def _launch_refine(self, context, *, threshold: float) -> None:
         scn = context.scene
-        if scn.get(_BIDI_ACTIVE_KEY, False):
-            self._safe_report(context, {'WARNING'}, "Bidirectional Tracking aktiv – Refine später.")
+        if scn.get(_BIDI_ACTIVE_KEY, False) or scn.get("solve_active") or scn.get("refine_active"):
+            _safe_report(self, {'WARNING'}, "Busy: tracking/solve/refine active")
             return
 
-        scn["refine_active"] = True
-        scn["refine_result"] = ""
-        self._waiting_refine = True
-        self._refine_cont = "retry_solve"
-
-        bpy.ops.kaiserlich.refine_high_error(
-            'INVOKE_DEFAULT',
-            start_frame=start, end_frame=end, step=step, threshold=threshold
-        )
+        res = run_refine_on_high_error(context, threshold=threshold)
+        if res.get("status") == "STARTED":
+            self._waiting_refine = True
+            self._refine_cont = "retry_solve"
+        else:
+            self._waiting_refine = False
+            self._refine_cont = None
+            self._post_solve_refine_done = True
 
     # ---------------- Fehlerpfad ----------------
 
@@ -493,29 +495,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         → erst Refine (modal), danach Cleanup und zurück zu FIND_LOW.
         """
         print("[Coord] FAIL-SOLVE → starte REFINE (modal), danach Cleanup")
-        sf = int(getattr(context.scene, "frame_start", 1))
-        ef = int(getattr(context.scene, "frame_end", max(sf, 250)))
-        th = float(getattr(context.scene, "error_track", 2.0) or 2.0)
+        th = float(getattr(context.scene, "error_track", 2.0) or 2.0) * 10.0
 
-        # Refine starten; nach Abbruch/Finish wird oben in der Wartephase bereinigt
-        self._waiting_refine = True
-        self._refine_cont = "cleanup_then_findlow"
-        try:
-            bpy.ops.kaiserlich.refine_high_error(
-                'INVOKE_DEFAULT',
-                start_frame=sf, end_frame=ef, step=1, threshold=th
-            )
-        except Exception as ex_ref:
-            print(f"[Coord] FAIL-SOLVE REFINE launch failed: {ex_ref!r}")
-            # Fallback direkt: Cleanup
-            try:
-                _run_projection_cleanup(context, None)
-            except Exception as ex_cu:
-                print(f"[Coord] FAIL-SOLVE CLEANUP failed: {ex_cu!r}")
-            self._state = "FIND_LOW"
+        res = run_refine_on_high_error(context, threshold=th)
+        if res.get("status") == "STARTED":
+            self._waiting_refine = True
+            self._refine_cont = "cleanup_then_findlow"
             return {"RUNNING_MODAL"}
 
-        # Warten auf Refine in modal()
+        print("[Coord] FAIL-SOLVE → no frames to refine, run cleanup directly")
+        try:
+            _run_projection_cleanup(context, None)
+        except Exception as ex_cu:
+            print(f"[Coord] FAIL-SOLVE CLEANUP failed: {ex_cu!r}")
+        self._state = "FIND_LOW"
         return {"RUNNING_MODAL"}
 
     # ---------------- JUMP/DETECT/TRACK/CLEAN_SHORT (unverändert) ----------------

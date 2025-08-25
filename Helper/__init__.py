@@ -15,7 +15,11 @@ from .tracking_helper import track_to_scene_end_fn  # noqa: F401
 
 # Feste Operatoren
 from .bidirectional_track import CLIP_OT_bidirectional_track
-from .refine_high_error import KAISERLICH_OT_refine_high_error
+from .refine_high_error import (
+    CLIP_OT_refine_high_error,
+    run_refine_on_high_error,
+    compute_high_error_frames,
+)
 
 # Optionale Operatoren
 try:
@@ -34,7 +38,9 @@ __all__ = [
     "register",
     "unregister",
     "CLIP_OT_bidirectional_track",
-    "KAISERLICH_OT_refine_high_error",
+    "CLIP_OT_refine_high_error",
+    "run_refine_on_high_error",
+    "compute_high_error_frames",
 ]
 
 _optional_classes = []
@@ -46,7 +52,7 @@ if CLIP_OT_marker_helper_main is not None:
 
 def register() -> None:
     """Registriert feste Operatoren + optionale Operatoren."""
-    for cls in (CLIP_OT_bidirectional_track, KAISERLICH_OT_refine_high_error):
+    for cls in (CLIP_OT_bidirectional_track, CLIP_OT_refine_high_error):
         try:
             bpy.utils.register_class(cls)
         except ValueError:
@@ -67,7 +73,7 @@ def unregister() -> None:
             bpy.utils.unregister_class(cls)
         except Exception:
             pass
-    for cls in (KAISERLICH_OT_refine_high_error, CLIP_OT_bidirectional_track):
+    for cls in (CLIP_OT_refine_high_error, CLIP_OT_bidirectional_track):
         try:
             bpy.utils.unregister_class(cls)
         except Exception:
