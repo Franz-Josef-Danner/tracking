@@ -4,7 +4,7 @@ from __future__ import annotations
 Helper: find_max_marker_frame (nach Szenenvariable, Szene-Zeitraum)
 ------------------------------------------------------------------
 Verwendet die Szenenvariable `scene.marker_frame` (vom UI gesetzt) und
-bildet daraus die feste Schwelle `threshold = scene.marker_frame * 2`.
+bildet daraus die feste Schwelle `threshold = scene.marker_frame * 3`.
 
 Es wird **ausschließlich innerhalb des Szenen-Zeitraums**
 `scene.frame_start .. scene.frame_end` gesucht (aufsteigend). Sobald ein
@@ -16,7 +16,7 @@ Rückgabe (dict):
 - status: "FOUND" | "NONE" | "FAILED"
 - frame: int (falls FOUND)
 - count: int (Markeranzahl am gefundenen Frame)
-- threshold: int (scene.marker_frame * 2)
+- threshold: int (scene.marker_frame * 3)
 - reason: optional, bei Fehler
 """
 
@@ -87,7 +87,7 @@ def run_find_max_marker_frame(context: bpy.types.Context) -> Dict[str, Any]:
 
         # Schwelle aus Szenenvariable marker_frame (UI-Wert)
         marker_frame_val = int(getattr(scene, "marker_frame", scene.frame_current) or scene.frame_current)
-        threshold = int(marker_frame_val * 2)
+        threshold = int(marker_frame_val * 3)
 
         tracks = _get_tracks_collection(clip)
         if tracks is None:
