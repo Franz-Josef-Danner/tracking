@@ -60,15 +60,18 @@ __all__ = (
 # -----------------------------------------------------------------------------
 
 def _clip_override(context: Context) -> Optional[dict]:
-    """Ermittelt einen Override-Dict für den CLIP_EDITOR."""
-    win = context.window
-    if not win or not getattr(win, "screen", None):
+    """Ermittelt einen Override-Dict für den CLIP_EDITOR (inkl. window/screen)."""
+    win = getattr(context, "window", None)
+    scr = getattr(win, "screen", None) if win else None
+    if not win or not scr:
         return None
-    for area in win.screen.areas:
+    for area in scr.areas:
         if area.type == "CLIP_EDITOR":
             for region in area.regions:
                 if region.type == "WINDOW":
                     return {
+                        "window": win,
+                        "screen": scr,
                         "area": area,
                         "region": region,
                         "space_data": area.spaces.active,
@@ -198,19 +201,19 @@ class CLIP_OT_refine_high_error(Operator):
 
                 ovr = _clip_override(context)
                 if ovr:
-                    bpy.ops.clip.clean_tracks(
-                        ovr,
-                        "EXEC_DEFAULT",
-                        frames=0,
-                        error=self._threshold,
-                        action="SELECT",
-                    )
+                    with context.temp_override(**ovr):
+                        bpy.ops.clip.clean_tracks(
+                            'EXEC_DEFAULT',
+                            frames=0,
+                            error=self._threshold,
+                            action='SELECT',
+                        )
                 else:
                     bpy.ops.clip.clean_tracks(
-                        "EXEC_DEFAULT",
+                        'EXEC_DEFAULT',
                         frames=0,
                         error=self._threshold,
-                        action="SELECT",
+                        action='SELECT',
                     )
                 self._idx += 1
             except Exception as ex:
@@ -269,11 +272,13 @@ def run_refine_on_high_error(
     scn["refine_active"] = True
     scn.pop("refine_error_msg", None)
 
+    # Blender 4.4: Operator mit temp_override + 'INVOKE_DEFAULT' starten
     ovr = _clip_override(context)
     if ovr:
-        bpy.ops.clip.refine_high_error(ovr, "INVOKE_DEFAULT")
+        with context.temp_override(**ovr):
+            bpy.ops.clip.refine_high_error('INVOKE_DEFAULT')
     else:
-        bpy.ops.clip.refine_high_error("INVOKE_DEFAULT")
+        bpy.ops.clip.refine_high_error('INVOKE_DEFAULT')
 
     return {"status": "STARTED", "frames": frames, "threshold": th}
 
