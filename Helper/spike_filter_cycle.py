@@ -15,7 +15,7 @@ Parameter:
 - marker_baseline: int|None – Basisframe für die Prüfung. Fällt zurück auf
   scene.marker_frame oder scene.frame_current.
 - track_threshold: float – Threshold für bpy.ops.clip.filter_tracks.
-- delete_frame_num: int – Frame, an dem Marker via Track.markers.delete_frame() gelöscht werden.
+- delete_frame_num: int – Startframe, an dem Marker via Track.markers.delete_frame() gelöscht werden.
 - max_loops: int – Schutz gegen Endlosschleifen.
 
 Rückgabe (dict):
@@ -26,7 +26,6 @@ Rückgabe (dict):
 """
 
 from typing import Optional, Dict, Any
-
 import bpy
 
 from .find_low_marker_frame import run_find_low_marker_frame
@@ -58,11 +57,10 @@ def _delete_marker_at_frame_for_all_tracks(context, frame: int) -> int:
 
     for tr in tracks:
         try:
-            # MovieTrackingMarkers.delete_frame(int frame)
-            tr.markers.delete_frame(int(frame))
+            tr.markers.delete_frame(int(frame))  # MovieTrackingMarkers.delete_frame(int)
             count += 1
         except Exception:
-            # Marker evtl. nicht vorhanden → ignorieren
+            # Marker an diesem Frame evtl. nicht vorhanden → ignorieren
             pass
     return count
 
@@ -117,16 +115,9 @@ def run_spike_filter_cycle(
         # Schritt 2: kurze Tracks bereinigen (bestehender Helper)
         try:
             frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
-            # Aktion ist in dieser Pipeline extern definiert; falls clean_short_tracks
-            # eine 'action' erfordert, bitte innerhalb der Helper-Implementierung behandeln.
-            clean_short_tracks(
-                context,
-                min_len=frames_min,
-                verbose=True,
-            )
+            clean_short_tracks(context, min_len=frames_min, verbose=True)
             print(f"[SpikeCycle] clean_short_tracks done (min_len={frames_min})")
         except TypeError:
-            # Fallback, falls ältere Signaturen existieren
             try:
                 clean_short_tracks(context)
                 print("[SpikeCycle] clean_short_tracks done (fallback signature)")
@@ -145,12 +136,23 @@ def run_spike_filter_cycle(
             bpy.ops.clip.frame_jump(position='PATHSTART')
             print("[SpikeCycle] frame_jump(PATHSTART)")
 
-            # c) Marker an delete_frame_num löschen (für alle Tracks)
-            deleted_on_tracks = _delete_marker_at_frame_for_all_tracks(context, int(delete_frame_num))
-            print(f"[SpikeCycle] delete_frame(frame={int(delete_frame_num)}) on {deleted_on_tracks} track(s)")
+            # c) Marker an delete_frame_num löschen (für alle Tracks), falls gültig
+            if int(delete_frame_num) >= 0:
+                deleted_on_tracks = _delete_marker_at_frame_for_all_tracks(context, int(delete_frame_num))
+                print(f"[SpikeCycle] delete_frame(frame={int(delete_frame_num)}) on {deleted_on_tracks} track(s)")
+            else:
+                print("[SpikeCycle] delete_frame skipped (delete_frame_num < 0)")
 
-            # d) „Wert -1 setzen“ → hier als internes Flag genutzt: einmalige Ausführung
-            delete_frame_num = -1
+            # d) Runterzählung via Multiplikation × 0.9 (mit Fortschritts-Garantie)
+            #    - int() sorgt für Abrunden.
+            #    - Wenn Abrunden keine Änderung bewirkt, dekrementieren wir um 1.
+            #    - Bei <= 0 setzen wir auf -1 (Sentinel) → weitere Deletes werden übersprungen.
+            next_val = int(float(delete_frame_num) * 0.9)
+            if next_val == int(delete_frame_num) and delete_frame_num > 0:
+                next_val = int(delete_frame_num) - 1
+            delete_frame_num = next_val if next_val > 0 else -1
+            print(f"[SpikeCycle] next delete_frame_num → {delete_frame_num}")
+
         except Exception as ex_ops:
             print(f"[SpikeCycle] spike-filter step failed: {ex_ops!r}")
 
