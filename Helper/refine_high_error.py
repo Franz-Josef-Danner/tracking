@@ -48,6 +48,27 @@ from typing import List, Optional, Sequence
 
 import bpy
 from bpy.types import Context, Operator
+try:  # NumPy optional
+    import numpy as np
+except Exception:  # Fallback ohne NumPy
+    np = None
+
+def _isfinite(v: float) -> bool:
+    return bool(np.isfinite(v)) if np else (v == v and abs(v) != float("inf"))
+
+def _median(vals):
+    s = sorted(vals)
+    n = len(s)
+    return s[n // 2] if n % 2 else 0.5 * (s[n // 2 - 1] + s[n // 2])
+
+def _percentile(vals, p):
+    s = sorted(vals)
+    if not s:
+        return float("nan")
+    k = (len(s) - 1) * p / 100.0
+    f = int(k)
+    c = min(f + 1, len(s) - 1)
+    return s[f] + (s[c] - s[f]) * (k - f)
 
 # --- Debug-Schalter: temporär aktivieren, um nach REFINE hart zu stoppen ---
 DEBUG_STOP_AFTER_REFINE = False
@@ -57,7 +78,6 @@ __all__ = (
     "run_refine_on_high_error",
     "compute_high_error_frames",
 )
-
 
 # -----------------------------------------------------------------------------
 # Kontext-Utilities
@@ -82,11 +102,9 @@ def _clip_override(context: Context) -> Optional[dict]:
                     }
     return None
 
-
 # -----------------------------------------------------------------------------
 # Frame-Selection Helpers
 # -----------------------------------------------------------------------------
-
 
 def _get_active_clip(context: Context):
     """Ermittelt die aktive MovieClip."""
@@ -95,7 +113,6 @@ def _get_active_clip(context: Context):
         return space.clip
     return bpy.data.movieclips[0] if bpy.data.movieclips else None
 
-
 def _find_marker_on_frame(track, frame: int):
     """Sucht einen Marker eines Tracks auf einem spezifischen Frame."""
     for m in track.markers:
@@ -103,12 +120,30 @@ def _find_marker_on_frame(track, frame: int):
             return m
     return None
 
+def _robust_score(errors: List[float]) -> float:
+    """Kombiniert Median und 95. Perzentil zu einem robusten Score."""
+    if not errors:
+        return float("-inf")
+    if np:
+        arr = np.asarray(errors, dtype=float)
+        arr = arr[np.isfinite(arr)]
+        if arr.size == 0:
+            return float("-inf")
+        med = float(np.median(arr))
+        p95 = float(np.percentile(arr, 95))
+    else:
+        finite = [v for v in errors if _isfinite(v)]
+        if not finite:
+            return float("-inf")
+        med = float(_median(finite))
+        p95 = float(_percentile(finite, 95))
+    return 0.7 * p95 + 0.3 * med
 
 def _frame_error(context: Context, frame: int) -> float:
-    """Schätzt den Reprojektion-Error eines Frames."""
+    """Robuster Reprojektion-Score eines Frames (Median/95p-Mix)."""
     clip = _get_active_clip(context)
     if not clip or not getattr(clip, "tracking", None):
-        return 0.0
+        return float("-inf")
 
     values: List[float] = []
     for track in clip.tracking.tracks:
@@ -118,15 +153,22 @@ def _frame_error(context: Context, frame: int) -> float:
             if err is None:
                 err = getattr(track, "average_error", None)
             if err is not None:
-                values.append(float(err))
+                v = float(err)
+                if _isfinite(v):
+                    values.append(v)
         except Exception:
             pass
-
-    return (sum(values) / len(values)) if values else 0.0
-
+    if len(values) < int(getattr(context.scene, "refine_min_markers", 10)):
+        return float("-inf")
+    return _robust_score(values)
 
 def compute_high_error_frames(context: Context, threshold: float) -> List[int]:
-    """Liefert Frames, deren Fehler größer als ``threshold`` ist."""
+    """
+    Liefert problematische Frames.
+    Wenn scene['refine_px_thresh'] gesetzt ist → absolute px-Schwelle.
+    Sonst → schlechteste max_frac (default 15%) per robustem Score.
+    Optional: refine_limit_frames erweitert um ein Fenster.
+    """
     scn = context.scene
     preset = scn.get("refine_frames_json")
     if preset:
@@ -136,14 +178,116 @@ def compute_high_error_frames(context: Context, threshold: float) -> List[int]:
         except Exception:
             pass
 
-    frames_all = range(scn.frame_start, scn.frame_end + 1)
-    return [f for f in frames_all if _frame_error(context, f) > threshold]
+    fstart, fend = scn.frame_start, scn.frame_end
+    frames_all = list(range(fstart, fend + 1))
+    scores = [(f, _frame_error(context, f)) for f in frames_all]
 
+    max_frac = float(scn.get("refine_max_frac", 0.15))
+    min_frames = int(scn.get("refine_min_frames", 30))
+    px_thresh = scn.get("refine_px_thresh", None)
+    try:
+        px_thresh = float(px_thresh) if px_thresh is not None else None
+    except Exception:
+        px_thresh = None
+
+    if px_thresh is not None:
+        selected = [f for f, s in scores if _isfinite(s) and s >= px_thresh]
+    else:
+        finite_scores = [kv for kv in scores if _isfinite(kv[1])]
+        scores_sorted = sorted(finite_scores, key=lambda kv: kv[1], reverse=True)
+        k = max(min_frames, int(len(scores_sorted) * max_frac))
+        selected = [f for f, _ in scores_sorted[:k]]
+
+    win = int(scn.get("refine_limit_frames", 0))  # 0 = aus
+    if win > 0:
+        expanded: set[int] = set()
+        for f in selected:
+            for g in range(f - win, f + win + 1):
+                if fstart <= g <= fend:
+                    expanded.add(g)
+        selected = sorted(expanded)
+
+    return [int(f) for f in selected]
+
+def _dataset_error_summary(context: Context) -> dict:
+    """Grober Before/After-Überblick über die Sequenz."""
+    scn = context.scene
+    frames = list(range(scn.frame_start, scn.frame_end + 1))
+    vals = [_frame_error(context, f) for f in frames]
+    finite = [v for v in vals if _isfinite(v)]
+    if not finite:
+        return {"median": float("inf"), "p95": float("inf"), "mean": float("inf")}
+    if np:
+        arr = np.asarray(finite, dtype=float)
+        return {
+            "median": float(np.median(arr)),
+            "p95": float(np.percentile(arr, 95)),
+            "mean": float(np.mean(arr)),
+        }
+    return {
+        "median": float(_median(finite)),
+        "p95": float(_percentile(finite, 95)),
+        "mean": float(sum(finite) / len(finite)),
+    }
+
+def _select_bad_markers_on_frame(
+    context: Context, frame: int, px_thresh: float, ovr: dict | None = None
+) -> int:
+    """
+    Deselect all, select Marker (und deren Tracks) auf 'frame' mit Fehler >= px_thresh.
+    Rückgabe: Anzahl selektierter Marker.
+    """
+    clip = _get_active_clip(context)
+    if not clip or not getattr(clip, "tracking", None):
+        return 0
+
+    # Sauberes Deselektieren: bevorzugt Operator im gültigen Override, sonst API
+    if ovr:
+        try:
+            with context.temp_override(**ovr):
+                bpy.ops.clip.select_all(action='DESELECT')
+        except Exception:
+            for tr in clip.tracking.tracks:
+                tr.select = False
+                for m in tr.markers:
+                    m.select = False
+    else:
+        for tr in clip.tracking.tracks:
+            tr.select = False
+            for m in tr.markers:
+                m.select = False
+
+    candidates = []
+    for tr in clip.tracking.tracks:
+        mk = _find_marker_on_frame(tr, frame)
+        if not mk:
+            continue
+        err = getattr(mk, "error", None)
+        if err is None:
+            err = getattr(tr, "average_error", None)
+        try:
+            v = float(err) if err is not None else None
+        except Exception:
+            v = None
+        if v is None or not _isfinite(v):
+            continue
+        if v >= px_thresh:
+            candidates.append((v, tr, mk))
+
+    # ggf. auf schlechteste N beschränken
+    max_sel = int(getattr(context.scene, "refine_max_sel_per_frame", 0))
+    if max_sel > 0 and len(candidates) > max_sel:
+        candidates.sort(key=lambda t: t[0], reverse=True)
+        candidates = candidates[:max_sel]
+
+    for _, tr, mk in candidates:
+        mk.select = True
+        tr.select = True
+    return len(candidates)
 
 # -----------------------------------------------------------------------------
 # Modal Operator
 # -----------------------------------------------------------------------------
-
 
 class CLIP_OT_refine_high_error(Operator):
     """Refine High Error (Modal)."""
@@ -156,6 +300,8 @@ class CLIP_OT_refine_high_error(Operator):
     _frames: List[int]
     _idx: int = 0
     _threshold: float = 0.0
+    _px_for_selection: float = 0.0  # robuste Auswahl-Schwelle
+    _do_bidir: bool = False
 
     def invoke(self, context: Context, event):
         scn = context.scene
@@ -180,6 +326,9 @@ class CLIP_OT_refine_high_error(Operator):
         self._threshold = float(
             scn.get("refine_threshold", float(getattr(scn, "error_track", 0.0)) * 10.0)
         )
+        # Auswahl-Schwelle: nutze 'refine_px_thresh' wenn gesetzt, sonst fallback auf threshold
+        self._px_for_selection = float(scn.get("refine_px_thresh", self._threshold))
+        self._do_bidir = bool(scn.get("refine_bidir", False))
 
         wm = context.window_manager
         step_ms = int(scn.get("refine_step_ms", 10))
@@ -204,21 +353,27 @@ class CLIP_OT_refine_high_error(Operator):
                 context.scene.frame_set(frame)
 
                 ovr = _clip_override(context)
-                if ovr:
-                    with context.temp_override(**ovr):
-                        bpy.ops.clip.clean_tracks(
-                            'EXEC_DEFAULT',
-                            frames=0,
-                            error=self._threshold,
-                            action='SELECT',
-                        )
-                else:
-                    bpy.ops.clip.clean_tracks(
-                        'EXEC_DEFAULT',
-                        frames=0,
-                        error=self._threshold,
-                        action='SELECT',
-                    )
+
+                # 1) Auswahl schlechter Marker auf diesem Frame
+                def _run_refine(backwards: bool) -> None:
+                    if ovr:
+                        with context.temp_override(**ovr):
+                            bpy.ops.clip.refine_markers('EXEC_DEFAULT', backwards=backwards)
+                    else:
+                        bpy.ops.clip.refine_markers('EXEC_DEFAULT', backwards=backwards)
+
+                n_sel = _select_bad_markers_on_frame(
+                    context, frame, self._px_for_selection, ovr
+                )
+                if n_sel > 0:
+                    # 2) Refine vorwärts (reference -> current)
+                    _run_refine(backwards=False)
+                    # 3) Optional auch rückwärts (current -> reference)
+                    if self._do_bidir:
+                        _run_refine(backwards=True)
+                    if self._idx % 25 == 0:
+                        print(f"[Refine] frame={frame} selected={n_sel} px_thresh={self._px_for_selection:.2f}")
+
                 self._idx += 1
                 if self._idx % 25 == 0 or self._idx == len(self._frames):
                     ts = time.strftime('%H:%M:%S')
@@ -238,6 +393,19 @@ class CLIP_OT_refine_high_error(Operator):
         scn["refine_result"] = result
         scn["refine_active"] = False
 
+        # After-Metrics
+        try:
+            base = json.loads(context.scene.get("refine_baseline_json", "{}")) or {}
+            after = _dataset_error_summary(context)
+            def _fmt(k):
+                b = base.get(k, after[k])
+                return f"{after[k]:.2f}px (Δ {after[k]-b:+.2f})"
+            print("[Refine] after: "
+                  f"median={_fmt('median')}, p95={_fmt('p95')}, mean={_fmt('mean')}")
+        except Exception:
+            pass
+        scn.pop("refine_baseline_json", None)
+
         # --- Debug: Abschluss-Logging + optionaler Hard-Stop NACH refine ---
         print(f"[Refine] _finish(): result={result!r}")
         if DEBUG_STOP_AFTER_REFINE and result in {"FINISHED", "ERROR"}:
@@ -247,15 +415,13 @@ class CLIP_OT_refine_high_error(Operator):
 
         return {"FINISHED"} if result == "FINISHED" else {"CANCELLED"}
 
-
 # -----------------------------------------------------------------------------
 # Convenience Wrapper
 # -----------------------------------------------------------------------------
+
 def _preview(seq, n=10):
     seq = list(seq)
     return seq[:n] + (['...'] if len(seq) > n else [])
-
-
 
 def run_refine_on_high_error(
     context: Context,
@@ -278,6 +444,10 @@ def run_refine_on_high_error(
         else float(getattr(scn, "error_track", 0.0)) * 10.0
     )
     print(f"[Refine] threshold (th) = {th}")
+
+    base = _dataset_error_summary(context)
+    scn["refine_baseline_json"] = json.dumps(base)
+    print(f"[Refine] baseline: median={base['median']:.2f}px, p95={base['p95']:.2f}px, mean={base['mean']:.2f}px")
 
     if frames is None:
         frames = compute_high_error_frames(context, th)
@@ -312,14 +482,11 @@ def run_refine_on_high_error(
     # Hinweis: Der Hard-Stop erfolgt NACH dem Refine in _finish(), nicht hier!
     return result
 
-
 # -----------------------------------------------------------------------------
 # Register
 # -----------------------------------------------------------------------------
 
-
 _classes = (CLIP_OT_refine_high_error,)
-
 
 def register() -> None:
     from bpy.utils import register_class
@@ -327,10 +494,8 @@ def register() -> None:
     for cls in _classes:
         register_class(cls)
 
-
 def unregister() -> None:
     from bpy.utils import unregister_class
 
     for cls in reversed(_classes):
         unregister_class(cls)
-
