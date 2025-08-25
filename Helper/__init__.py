@@ -3,7 +3,7 @@
 Helper/__init__.py – Function + Operator Registrar
 
 - Exportiert Funktions-API (z. B. track_to_scene_end_fn).
-- Registriert **immer** den Bidirectional-Operator,
+- Registriert Bidirectional-Operator und Refine-Operator immer,
   sowie optionale weitere Operatoren (optimize, marker_helper_main).
 """
 
@@ -13,8 +13,9 @@ import bpy
 # Funktions-API
 from .tracking_helper import track_to_scene_end_fn  # noqa: F401
 
-# Fester Operator: Bidirectional Track
+# Feste Operatoren
 from .bidirectional_track import CLIP_OT_bidirectional_track
+from .refine_high_error import KAISERLICH_OT_refine_high_error
 
 # Optionale Operatoren
 try:
@@ -33,6 +34,7 @@ __all__ = [
     "register",
     "unregister",
     "CLIP_OT_bidirectional_track",
+    "KAISERLICH_OT_refine_high_error",
 ]
 
 _optional_classes = []
@@ -41,13 +43,13 @@ if CLIP_OT_optimize_tracking_modal is not None:
 if CLIP_OT_marker_helper_main is not None:
     _optional_classes.append(CLIP_OT_marker_helper_main)
 
-
 def register() -> None:
-    """Registriert Bidirectional-Operator + optionale Operatoren."""
-    try:
-        bpy.utils.register_class(CLIP_OT_bidirectional_track)
-    except ValueError:
-        pass
+    """Registriert feste Operatoren + optionale Operatoren."""
+    for cls in (CLIP_OT_bidirectional_track, KAISERLICH_OT_refine_high_error):
+        try:
+            bpy.utils.register_class(cls)
+        except ValueError:
+            pass
 
     for cls in _optional_classes:
         try:
@@ -55,8 +57,7 @@ def register() -> None:
         except ValueError:
             pass
 
-    print("[Helper] register() OK (bidirectional + optional ops registered)")
-
+    print("[Helper] register() OK (bidirectional + refine + optional ops registered)")
 
 def unregister() -> None:
     for cls in reversed(_optional_classes):
@@ -64,13 +65,13 @@ def unregister() -> None:
             bpy.utils.unregister_class(cls)
         except Exception:
             pass
-    try:
-        bpy.utils.unregister_class(CLIP_OT_bidirectional_track)
-    except Exception:
-        pass
+    for cls in (KAISERLICH_OT_refine_high_error, CLIP_OT_bidirectional_track):
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception:
+            pass
 
-    print("[Helper] unregister() OK (bidirectional + optional ops unregistered)")
-
+    print("[Helper] unregister() OK (bidirectional + refine + optional ops unregistered)")
 
 if __name__ == "__main__":
     assert callable(track_to_scene_end_fn)
