@@ -7,14 +7,14 @@ Strikter FSM-Ablauf: FIND_LOW → JUMP → DETECT → BIDI (modal) → CLEAN_SHO
 Solve-Workflow (dieser Build):
 - Solve wird asynchron per Helper/solve_camera.solve_watch_clean() gestartet.
 - Nach *jedem* erfolgreichen Solve → IMMER zuerst REFINE (modal, UI sichtbar).
-- Nach abgeschlossenem Refine → Solve-Retry → zurück in SOLVE_WAIT.
+- Nach abgeschlossenem Refine → Solve-Retry → zurück zu SOLVE_WAIT.
 - Erst danach Error-Bewertung:
     - Error weiterhin > threshold → zurück zu FIND_LOW (ohne Lösch-Operationen)
     - Error ≤ threshold → FINALIZE
 """
 
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict
 
 import bpy
 from ..Helper.triplet_grouping import run_triplet_grouping  # top-level import
@@ -28,7 +28,6 @@ _GOTO_KEY = "goto_frame"
 _MAX_DETECT_ATTEMPTS = 8
 
 _BIDI_ACTIVE_KEY = "bidi_active"
-_BIDI_RESULT_KEY = "bidi_result"
 
 # Keys für Optimizer-Signal (werden von Helper/jump_to_frame.py gesetzt)
 _OPT_REQ_KEY = "__optimize_request"
@@ -114,10 +113,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         name="Apply Tracker Defaults",
         default=True,
     )
-    auto_clean_short: bpy.props.BoolProperty(  # type: ignore
-        name="Auto Clean Short",
-        default=True,
-    )
 
     _timer: Optional[bpy.types.Timer] = None
     _state: str = "INIT"
@@ -127,12 +122,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     _bidi_started: bool = False
     _solve_wait_ticks: int = 0
 
-    # Solve-Retry-Bookkeeping
-    _solve_retry_done: bool = False
-
     # Refine-Modalsteuerung
     _waiting_refine: bool = False
-    _refine_cont: Optional[str] = None   # "retry_solve" | "cleanup_then_findlow" (Cleanup wird nicht mehr benutzt)
     _post_solve_refine_done: bool = False
 
     @classmethod
@@ -203,9 +194,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         _safe_report(self, {'WARNING'}, f"Refine aborted ({result}): {msg}")
                     else:
                         _safe_report(self, {'WARNING'}, f"Refine aborted ({result})")
-                    # Nach Abbruch → direkt zurück zu FIND_LOW (kein Cleanup)
+                    # Nach Abbruch → zurück zu FIND_LOW (kein Cleanup)
                     self._post_solve_refine_done = True
-                    self._refine_cont = None
                     self._state = "FIND_LOW"
                     return {"RUNNING_MODAL"}
 
@@ -217,10 +207,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 except Exception as ex2:
                     print(f"[Coord] SOLVE retry failed: {ex2!r}")
 
-                self._solve_retry_done = True
                 self._solve_wait_ticks = int(getattr(context.scene, "solve_wait_ticks", _SOLVE_WAIT_TICKS_DEFAULT))
                 self._post_solve_refine_done = True
-                self._refine_cont = None
                 self._state = "SOLVE_WAIT"
                 return {"RUNNING_MODAL"}
 
@@ -254,7 +242,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         scn = context.scene
         scn[_LOCK_KEY] = False
         scn[_BIDI_ACTIVE_KEY] = False
-        scn[_BIDI_RESULT_KEY] = ""
         scn.pop("__skip_clean_short_once", None)
         scn.pop("__pre_refine_done", None)
         self._state = "INIT"
@@ -263,9 +250,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._repeat_map = {}
         self._bidi_started = False
         self._solve_wait_ticks = 0
-        self._solve_retry_done = False
         self._waiting_refine = False
-        self._refine_cont = None
         self._post_solve_refine_done = False
 
     # ---------------- States ----------------
@@ -291,7 +276,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._state = "JUMP"
 
         elif status == "NONE":
-            # Sofortiger Abbruch ohne weitere Lösch- oder Cleanup-Schritte
+            # Sofortiger Abbruch ohne weitere Schritte
             print("[Coord] FIND_LOW → NONE → keine Frames mehr → FINALIZE")
             self._state = "FINALIZE"
 
@@ -315,7 +300,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return self._handle_failed_solve(context)
 
         self._solve_wait_ticks = int(_SOLVE_WAIT_TICKS_DEFAULT)
-        self._solve_retry_done = False
         self._post_solve_refine_done = False   # pro Solve-Phase genau 1x Refine
         self._state = "SOLVE_WAIT"
         return {"RUNNING_MODAL"}
@@ -340,19 +324,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # Schritt 2: Error-Bewertung NACH dem Refine + Solve-Retry
         threshold = float(getattr(context.scene, "error_track", 2.0) or 2.0)
         current_err = _compute_solve_error(context)
-        high_threshold = threshold * 10.0
-        print(f"[Coord] SOLVE_WAIT(after refine) → error={current_err!r} vs. threshold={threshold} (hi={high_threshold})")
+        print(f"[Coord] SOLVE_WAIT(after refine) → error={current_err!r} vs. threshold={threshold}")
 
         if current_err is None or current_err > threshold:
-            # Keine Lösch-Operationen mehr → einfach zurück zu FIND_LOW
-            print("[Coord] SOLVE_WAIT → error high/None → FIND_LOW (no cleanup)")
+            print("[Coord] SOLVE_WAIT → error high/None → FIND_LOW")
             self._state = "FIND_LOW"
-            self._solve_retry_done = False
             return {"RUNNING_MODAL"}
 
         print("[Coord] SOLVE_WAIT → FINALIZE")
         self._state = "FINALIZE"
-        self._solve_retry_done = False
         return {"RUNNING_MODAL"}
 
     # ---------------- Refine-Launch ----------------
@@ -366,10 +346,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         res = run_refine_on_high_error(context, threshold=threshold)
         if res.get("status") == "STARTED":
             self._waiting_refine = True
-            self._refine_cont = "retry_solve"
         else:
             self._waiting_refine = False
-            self._refine_cont = None
             self._post_solve_refine_done = True
 
     # ---------------- Fehlerpfad ----------------
@@ -378,13 +356,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         """Wenn Solve keine gültige Reconstruction liefert:
         → erst Refine (modal), danach zurück zu FIND_LOW (kein Cleanup).
         """
-        print("[Coord] FAIL-SOLVE → starte REFINE (modal), danach FIND_LOW (no cleanup)")
+        print("[Coord] FAIL-SOLVE → starte REFINE (modal), danach FIND_LOW")
         th = float(getattr(context.scene, "error_track", 2.0) or 2.0) * 10.0
 
         res = run_refine_on_high_error(context, threshold=th)
         if res.get("status") == "STARTED":
             self._waiting_refine = True
-            self._refine_cont = "retry_solve"  # nach Refine wird Solve-Redo versucht
             return {"RUNNING_MODAL"}
 
         print("[Coord] FAIL-SOLVE → no frames to refine → FIND_LOW")
@@ -458,14 +435,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         scn = context.scene
 
         if not self._bidi_started:
-            scn[_BIDI_RESULT_KEY] = ""
             scn[_BIDI_ACTIVE_KEY] = False
             print("[Coord] TRACK → launch clip.bidirectional_track (INVOKE_DEFAULT)")
             try:
                 bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
                 self._bidi_started = True
             except Exception as ex:
-                print(f"[Coord] TRACK launch failed: {ex!r} → CLEAN_SHORT (skip deletes)")
+                print(f"[Coord] TRACK launch failed: {ex!r} → CLEAN_SHORT (no-op)")
                 self._bidi_started = False
                 self._state = "CLEAN_SHORT"
             return {"RUNNING_MODAL"}
@@ -474,20 +450,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print("[Coord] TRACK → waiting (bidi_active=True)")
             return {"RUNNING_MODAL"}
 
-        scn[_BIDI_RESULT_KEY] = ""
         self._bidi_started = False
         self._state = "CLEAN_SHORT"
         return {"RUNNING_MODAL"}
 
     def _state_clean_short(self, context):
-        # Keine Löschaktionen mehr – dieser Schritt ist jetzt ein No-Op (nur Logging)
-        if self.auto_clean_short:
-            frames = int(getattr(context.scene, "frames_track", 25) or 25)
-            print(f"[Coord] CLEAN_SHORT (no-op) → frames<{frames} (no deletes)")
-        else:
-            print("[Coord] CLEAN_SHORT skipped (auto_clean_short=False)")
-
-        print("[Coord] CLEAN_SHORT → FIND_LOW")
+        # No-Op: Bestandteil der FSM, aber ohne Operationen
+        print("[Coord] CLEAN_SHORT (no-op) → FIND_LOW")
         self._state = "FIND_LOW"
         return {"RUNNING_MODAL"}
 
@@ -513,5 +482,5 @@ def unregister():
 
 
 if __name__ == "__main__" and os.getenv("ADDON_RUN_TESTS", "0") == "1":
-    # Keine Lösch-Funktionen mehr zu testen; placeholder sanity.
+    # Minimaler Sanity-Check
     print("[SelfTest] basic import OK")
