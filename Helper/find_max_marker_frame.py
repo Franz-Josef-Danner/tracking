@@ -4,14 +4,14 @@ from __future__ import annotations
 Helper: find_max_marker_frame (angepasste Semantik)
 ---------------------------------------------------
 Sucht den *ersten* Frame (aufsteigend), dessen Anzahl an Markern
-< (marker_frame * 1.1) ist. Wird ein solcher Frame gefunden, kann der
+< (marker_frame * 2) ist. Wird ein solcher Frame gefunden, kann der
 aufrufende Zyklus beendet werden.
 
 Rückgabe (dict):
 - status: "FOUND" | "NONE" | "FAILED"
 - frame: int (falls FOUND)
 - count: int (Markeranzahl am gefundenen Frame)
-- threshold: int (marker_frame * 1.1)
+- threshold: int (marker_frame * 2)
 - reason: optional, bei Fehler
 """
 
@@ -40,7 +40,7 @@ def run_find_max_marker_frame(context: bpy.types.Context) -> Dict[str, Any]:
             getattr(context.scene, "marker_frame", context.scene.frame_current)
             or context.scene.frame_current
         )
-        threshold = int(baseline * 1.1)
+        threshold = int(baseline * 2)
 
         # Zähle Marker pro Frame über alle Tracks
         frame_counts: Dict[int, int] = {}
