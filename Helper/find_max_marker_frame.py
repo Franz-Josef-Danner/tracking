@@ -4,7 +4,7 @@ from __future__ import annotations
 Helper: find_max_marker_frame (angepasste Semantik)
 ---------------------------------------------------
 Sucht den *ersten* Frame (aufsteigend), dessen Anzahl an Markern
-< (baseline_marker_count * 2) ist. Die Baseline ist die Markeranzahl
+< (baseline_marker_count * 1.5) ist. Die Baseline ist die Markeranzahl
 am Szene-Frame `scene.marker_frame` (Fallback: `scene.frame_current`).
 
 Wenn ein solcher Frame gefunden wird → status = "FOUND" (Zyklus kann enden).
@@ -14,7 +14,7 @@ Rückgabe (dict):
 - status: "FOUND" | "NONE" | "FAILED"
 - frame: int (falls FOUND)
 - count: int (Markeranzahl am gefundenen Frame)
-- threshold: int (baseline_marker_count * 2, mindestens 1)
+- threshold: int (baseline_marker_count * 1.5, mindestens 1)
 - reason: optional, bei Fehler
 """
 
@@ -84,7 +84,7 @@ def run_find_max_marker_frame(context: bpy.types.Context) -> Dict[str, Any]:
         baseline_count = int(frame_counts.get(baseline_frame, 0))
         # Threshold mindestens 1, damit eine sinnvolle Suche möglich ist,
         # auch wenn baseline_count == 0 (dann gilt: count < 1 → Frames mit 0 Markern)
-        threshold = max(1, baseline_count * 2)
+        threshold = max(1, baseline_count * 1.5)
 
         # Framebereich bestimmen (inkl. Frames mit 0 Markern berücksichtigen)
         start = int(getattr(clip, "frame_start", 1) or 1)
