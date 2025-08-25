@@ -19,30 +19,13 @@ Kompatibilitäts-Wrapper:
 from __future__ import annotations
 
 import bpy
-from bpy.types import Operator, Context, Area, Region
-from typing import List, Optional, Tuple
+from bpy.types import Operator, Context
+from typing import List, Optional
 
 
 # -----------------------------------------------------------------------------
 # Utilities
 # -----------------------------------------------------------------------------
-
-def _find_clip_area_and_region(context: Context) -> Tuple[Optional[Area], Optional[Region]]:
-    """Finde eine CLIP_EDITOR Area/Region für sichere Operator-Contexts."""
-    win = getattr(context, "window", None)
-    if not win:
-        return None, None
-    screen = win.screen
-    if not screen:
-        return None, None
-    for area in screen.areas:
-        if area.type == 'CLIP_EDITOR':
-            for region in area.regions:
-                if region.type == 'WINDOW':
-                    return area, region
-            return area, None
-    return None, None
-
 
 def _tag_redraw_all(context: Context) -> None:
     """Sichtbares UI-Feedback in relevanten Areas."""
@@ -65,11 +48,6 @@ def _refine_step(context: Context, *, threshold: float) -> None:
     Standard-Implementierung nutzt clip.clean_tracks als pragmatischen Refine-Schritt.
     Wenn du pro Frame eine spezifische Marker-/Filterlogik hattest, füge sie hier ein.
     """
-    clip = getattr(context, "edit_movieclip", None)
-    if clip is None:
-        return
-
-    # Reprojection-Fehler bereinigen (nur Auswahl markieren – nicht direkt löschen)
     try:
         bpy.ops.clip.clean_tracks(frames=0, error=threshold, action='SELECT')
     except Exception as ex:
