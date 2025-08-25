@@ -1,20 +1,21 @@
 # File: Helper/find_max_marker_frame.py
 from __future__ import annotations
 """
-Helper: find_max_marker_frame (angepasste Semantik)
+Helper: find_max_marker_frame (nach Szenenvariable)
 ---------------------------------------------------
-Sucht den *ersten* Frame (aufsteigend), dessen Anzahl an Markern
-< (baseline_marker_count * 1.5) ist. Die Baseline ist die Markeranzahl
-am Szene-Frame `scene.marker_frame` (Fallback: `scene.frame_current`).
+Verwendet die Szenenvariable `scene.marker_frame` (vom UI gesetzt) und
+bildet daraus die feste Schwelle `threshold = scene.marker_frame * 2`.
 
-Wenn ein solcher Frame gefunden wird → status = "FOUND" (Zyklus kann enden).
-Wenn keiner gefunden wird → status = "NONE" (Zyklus läuft weiter).
+Dann wird der Clip zeitlich (aufsteigend) durchsucht. Sobald ein Frame
+gefunden wird, bei dem die Anzahl **aktiver Marker** (Marker existiert an
+Frame f, Track und Marker nicht gemutet) **< threshold** ist, wird
+`FOUND` zurückgegeben. Wenn kein solcher Frame existiert: `NONE`.
 
 Rückgabe (dict):
 - status: "FOUND" | "NONE" | "FAILED"
 - frame: int (falls FOUND)
 - count: int (Markeranzahl am gefundenen Frame)
-- threshold: int (baseline_marker_count * 1.5, mindestens 1)
+- threshold: int (scene.marker_frame * 2)
 - reason: optional, bei Fehler
 """
 
@@ -50,6 +51,27 @@ def _get_tracks_collection(clip) -> Optional[bpy.types.bpy_prop_collection]:
         return None
 
 
+def _count_active_markers_at_frame(tracks, frame: int) -> int:
+    """Zählt Marker an `frame` über alle Tracks.
+    - zählt pro Track höchstens 1 Marker (typischerweise gibt es pro Frame max. einen Marker je Track)
+    - ignoriert gemutete Tracks/Marker
+    """
+    f = int(frame)
+    count = 0
+    for tr in tracks:
+        try:
+            if bool(getattr(tr, "mute", False)):
+                continue
+            for m in tr.markers:
+                if int(getattr(m, "frame", -10**9)) == f:
+                    if not bool(getattr(m, "mute", False)):
+                        count += 1
+                    break  # pro Track nur einmal zählen
+        except Exception:
+            continue
+    return count
+
+
 # ---------------------------------------------------------------------------
 # Öffentliche API
 # ---------------------------------------------------------------------------
@@ -60,50 +82,40 @@ def run_find_max_marker_frame(context: bpy.types.Context) -> Dict[str, Any]:
         return {"status": "FAILED", "reason": "no active MovieClip"}
 
     try:
-        # Baseline-Frame: bevorzugt scene.marker_frame, sonst current
-        baseline_frame = int(
-            getattr(context.scene, "marker_frame", context.scene.frame_current)
-            or context.scene.frame_current
-        )
+        # Schwelle aus Szenenvariable marker_frame (UI-Wert)
+        scene = context.scene
+        marker_frame_val = int(getattr(scene, "marker_frame", scene.frame_current) or scene.frame_current)
+        threshold = int(marker_frame_val * 2)
 
         tracks = _get_tracks_collection(clip)
         if tracks is None:
-            return {"status": "NONE", "threshold": 1}
+            return {"status": "NONE", "threshold": threshold}
 
-        # Marker pro Frame aggregieren
-        frame_counts: Dict[int, int] = {}
-        for tr in tracks:
-            try:
-                for m in tr.markers:
-                    f = int(m.frame)
-                    frame_counts[f] = frame_counts.get(f, 0) + 1
-            except Exception:
-                continue
-
-        # Baseline-Markeranzahl ermitteln (0, falls keine Marker am Baseline-Frame)
-        baseline_count = int(frame_counts.get(baseline_frame, 0))
-        # Threshold mindestens 1, damit eine sinnvolle Suche möglich ist,
-        # auch wenn baseline_count == 0 (dann gilt: count < 1 → Frames mit 0 Markern)
-        threshold = max(1, baseline_count * 1.5)
-
-        # Framebereich bestimmen (inkl. Frames mit 0 Markern berücksichtigen)
+        # Framebereich bestimmen (Clip-Start bis -Ende)
         start = int(getattr(clip, "frame_start", 1) or 1)
         dur = int(getattr(clip, "frame_duration", 0) or 0)
         if dur > 0:
             end = start + dur - 1
             search_iter = range(start, end + 1)
         else:
-            # Fallback: nur bekannte Marker-Frames sortiert prüfen
-            search_iter = sorted(frame_counts.keys())
+            # Fallback: bekannte Marker-Frames sortiert prüfen
+            frames = set()
+            for tr in tracks:
+                try:
+                    frames.update(int(m.frame) for m in tr.markers)
+                except Exception:
+                    pass
+            if not frames:
+                return {"status": "NONE", "threshold": threshold}
+            search_iter = sorted(frames)
 
-        # Ersten Frame finden, dessen Markeranzahl < threshold ist
+        # Suche: erster Frame mit count < threshold
         for f in search_iter:
-            c = int(frame_counts.get(int(f), 0))
+            c = _count_active_markers_at_frame(tracks, int(f))
             if c < threshold:
-                return {"status": "FOUND", "frame": int(f), "count": c, "threshold": threshold}
+                return {"status": "FOUND", "frame": int(f), "count": int(c), "threshold": int(threshold)}
 
-        # Nichts gefunden
-        return {"status": "NONE", "threshold": threshold}
+        return {"status": "NONE", "threshold": int(threshold)}
 
     except Exception as ex:
         return {"status": "FAILED", "reason": repr(ex)}
