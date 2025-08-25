@@ -46,33 +46,36 @@ def _get_active_clip(context) -> Optional[bpy.types.MovieClip]:
     except Exception:
         return None
 
-
 def _delete_selected_tracks(context) -> int:
-    """Löscht alle aktuell selektierten Tracking-Tracks des aktiven Clips.
-    Rückgabe: Anzahl gelöschter Tracks.
-    """
+    """Löscht Tracks, wenn der Track selbst oder irgendein Marker im Track selektiert ist."""
     clip = _get_active_clip(context)
     if not clip:
         return 0
 
-    try:
-        tracks = clip.tracking.tracks
-    except Exception:
+    tracks = _get_tracks_collection(clip)
+    if tracks is None:
         return 0
 
-    # Kandidaten sammeln (nicht während Iteration löschen)
-    to_delete = [tr for tr in tracks if getattr(tr, "select", False)]
+    to_delete = []
+    for tr in list(tracks):
+        try:
+            if getattr(tr, "select", False):
+                to_delete.append(tr)
+                continue
+            # Marker-Selektion prüfen
+            if any(getattr(m, "select", False) for m in tr.markers):
+                to_delete.append(tr)
+        except Exception:
+            pass
 
     deleted = 0
     for tr in to_delete:
         try:
-            tracks.remove(tr)  # entfernt den gesamten MovieTrackingTrack
+            tracks.remove(tr)
             deleted += 1
         except Exception:
-            # Robust gegen Einzel-Fehler
             pass
     return deleted
-
 
 def _lower_threshold(thr: float) -> float:
     """Senkt den Threshold progressiv ab.
