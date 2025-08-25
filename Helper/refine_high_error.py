@@ -120,6 +120,42 @@ def _find_marker_on_frame(track, frame: int):
             return m
     return None
 
+
+def _ref_frame_of_track(track) -> Optional[int]:
+    """Frühester Marker-Frame des Tracks (als Referenz)."""
+    try:
+        return min(m.frame for m in track.markers) if track.markers else None
+    except Exception:
+        return None
+
+
+def _keep_only_selection(context: Context, tracks, frame: int, ovr: dict | None):
+    """Nur gegebene Tracks + deren Marker auf 'frame' selektieren."""
+    clip = _get_active_clip(context)
+    if not clip:
+        return
+    # Deselect all
+    if ovr:
+        try:
+            with context.temp_override(**ovr):
+                bpy.ops.clip.select_all(action='DESELECT')
+        except Exception:
+            for tr in clip.tracking.tracks:
+                tr.select = False
+                for m in tr.markers:
+                    m.select = False
+    else:
+        for tr in clip.tracking.tracks:
+            tr.select = False
+            for m in tr.markers:
+                m.select = False
+    # Select only requested
+    for tr in tracks:
+        mk = _find_marker_on_frame(tr, frame)
+        if mk:
+            tr.select = True
+            mk.select = True
+
 def _robust_score(errors: List[float]) -> float:
     """Kombiniert Median und 95. Perzentil zu einem robusten Score."""
     if not errors:
@@ -149,13 +185,14 @@ def _frame_error(context: Context, frame: int) -> float:
     for track in clip.tracking.tracks:
         try:
             marker = _find_marker_on_frame(track, frame)
-            err = getattr(marker, "error", None) if marker else None
+            if not marker:
+                continue
+            err = getattr(marker, "error", None)
             if err is None:
-                err = getattr(track, "average_error", None)
-            if err is not None:
-                v = float(err)
-                if _isfinite(v):
-                    values.append(v)
+                continue
+            v = float(err)
+            if _isfinite(v):
+                values.append(v)
         except Exception:
             pass
     if len(values) < int(getattr(context.scene, "refine_min_markers", 10)):
@@ -232,16 +269,16 @@ def _dataset_error_summary(context: Context) -> dict:
 
 def _select_bad_markers_on_frame(
     context: Context, frame: int, px_thresh: float, ovr: dict | None = None
-) -> int:
+):
     """
-    Deselect all, select Marker (und deren Tracks) auf 'frame' mit Fehler >= px_thresh.
-    Rückgabe: Anzahl selektierter Marker.
+    Deselect all, suche Marker mit Fehler >= px_thresh und gruppiere nach Richtung.
+    Rückgabe: (Anzahl, forward_tracks, backward_tracks).
     """
     clip = _get_active_clip(context)
     if not clip or not getattr(clip, "tracking", None):
-        return 0
+        return 0, [], []
 
-    # Sauberes Deselektieren: bevorzugt Operator im gültigen Override, sonst API
+    # Sauberes Deselektieren (wie gehabt)
     if ovr:
         try:
             with context.temp_override(**ovr):
@@ -257,14 +294,12 @@ def _select_bad_markers_on_frame(
             for m in tr.markers:
                 m.select = False
 
-    candidates = []
+    fwd, bwd = [], []
     for tr in clip.tracking.tracks:
         mk = _find_marker_on_frame(tr, frame)
         if not mk:
             continue
         err = getattr(mk, "error", None)
-        if err is None:
-            err = getattr(tr, "average_error", None)
         try:
             v = float(err) if err is not None else None
         except Exception:
@@ -272,18 +307,24 @@ def _select_bad_markers_on_frame(
         if v is None or not _isfinite(v):
             continue
         if v >= px_thresh:
-            candidates.append((v, tr, mk))
+            ref_f = _ref_frame_of_track(tr)
+            if ref_f is None:
+                continue
+            (fwd if frame >= ref_f else bwd).append((v, tr))
 
     # ggf. auf schlechteste N beschränken
     max_sel = int(getattr(context.scene, "refine_max_sel_per_frame", 0))
-    if max_sel > 0 and len(candidates) > max_sel:
-        candidates.sort(key=lambda t: t[0], reverse=True)
-        candidates = candidates[:max_sel]
 
-    for _, tr, mk in candidates:
-        mk.select = True
-        tr.select = True
-    return len(candidates)
+    def _cap(lst):
+        if max_sel > 0 and len(lst) > max_sel:
+            lst.sort(key=lambda t: t[0], reverse=True)
+            return lst[:max_sel]
+        return lst
+
+    fwd = _cap(fwd)
+    bwd = _cap(bwd)
+    # Rückgabe: Anzahlen + reine Track-Listen
+    return len(fwd) + len(bwd), [t for _, t in fwd], [t for _, t in bwd]
 
 # -----------------------------------------------------------------------------
 # Modal Operator
@@ -301,7 +342,6 @@ class CLIP_OT_refine_high_error(Operator):
     _idx: int = 0
     _threshold: float = 0.0
     _px_for_selection: float = 0.0  # robuste Auswahl-Schwelle
-    _do_bidir: bool = False
 
     def invoke(self, context: Context, event):
         scn = context.scene
@@ -328,7 +368,6 @@ class CLIP_OT_refine_high_error(Operator):
         )
         # Auswahl-Schwelle: nutze 'refine_px_thresh' wenn gesetzt, sonst fallback auf threshold
         self._px_for_selection = float(scn.get("refine_px_thresh", self._threshold))
-        self._do_bidir = bool(scn.get("refine_bidir", False))
 
         wm = context.window_manager
         step_ms = int(scn.get("refine_step_ms", 10))
@@ -362,17 +401,23 @@ class CLIP_OT_refine_high_error(Operator):
                     else:
                         bpy.ops.clip.refine_markers('EXEC_DEFAULT', backwards=backwards)
 
-                n_sel = _select_bad_markers_on_frame(
+                n_sel, fwd_tracks, bwd_tracks = _select_bad_markers_on_frame(
                     context, frame, self._px_for_selection, ovr
                 )
                 if n_sel > 0:
-                    # 2) Refine vorwärts (reference -> current)
-                    _run_refine(backwards=False)
-                    # 3) Optional auch rückwärts (current -> reference)
-                    if self._do_bidir:
+                    # forward-Gruppe
+                    if fwd_tracks:
+                        _keep_only_selection(context, fwd_tracks, frame, ovr)
+                        _run_refine(backwards=False)
+                    # backward-Gruppe
+                    if bwd_tracks:
+                        _keep_only_selection(context, bwd_tracks, frame, ovr)
                         _run_refine(backwards=True)
                     if self._idx % 25 == 0:
-                        print(f"[Refine] frame={frame} selected={n_sel} px_thresh={self._px_for_selection:.2f}")
+                        print(
+                            f"[Refine] frame={frame} fwd={len(fwd_tracks)} bwd={len(bwd_tracks)} "
+                            f"th={self._px_for_selection:.2f}"
+                        )
 
                 self._idx += 1
                 if self._idx % 25 == 0 or self._idx == len(self._frames):
