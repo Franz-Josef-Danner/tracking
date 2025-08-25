@@ -589,7 +589,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 marker_baseline=baseline,
                 track_threshold=float(getattr(context.scene, "spike_track_threshold", 5.0) or 5.0),
                 delete_frame_num=int(getattr(context.scene, "spike_delete_frame", 100) or 100),
-                max_loops=int(getattr(context.scene, "spike_inner_max_loops", 10) or 10),
+                max_loops=int(getattr(context.scene, "spike_inner_max_loops", 90) or 90),
             )
             print(f"[Coord] CYCLE_SPIKE → spike_filter_cycle result={res}")
         except Exception as ex:
