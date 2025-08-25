@@ -147,7 +147,7 @@ def run_spike_filter_cycle(
             #    - int() sorgt für Abrunden.
             #    - Wenn Abrunden keine Änderung bewirkt, dekrementieren wir um 1.
             #    - Bei <= 0 setzen wir auf -1 (Sentinel) → weitere Deletes werden übersprungen.
-            next_val = int(float(delete_frame_num) * 0.9)
+            next_val = int(float(delete_frame_num) * 0.95)
             if next_val == int(delete_frame_num) and delete_frame_num > 0:
                 next_val = int(delete_frame_num) - 1
             delete_frame_num = next_val if next_val > 0 else -1
