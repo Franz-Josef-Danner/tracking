@@ -1,13 +1,17 @@
 # File: Helper/find_max_marker_frame.py
 from __future__ import annotations
 """
-Helper: find_max_marker_frame
------------------------------
-Sucht nach einem Frame, der >= marker_frame * 2 liegt.
+Helper: find_max_marker_frame (angepasste Semantik)
+---------------------------------------------------
+Sucht den *ersten* Frame (aufsteigend), dessen Anzahl an Markern
+< (marker_frame * 2) ist. Wird ein solcher Frame gefunden, kann der
+aufrufende Zyklus beendet werden.
 
 Rückgabe (dict):
 - status: "FOUND" | "NONE" | "FAILED"
 - frame: int (falls FOUND)
+- count: int (Markeranzahl am gefundenen Frame)
+- threshold: int (marker_frame * 2)
 - reason: optional, bei Fehler
 """
 
@@ -31,32 +35,37 @@ def run_find_max_marker_frame(context: bpy.types.Context) -> Dict[str, Any]:
         return {"status": "FAILED", "reason": "no active MovieClip"}
 
     try:
-        # Basiswert marker_frame oder Fallback auf aktuelle Frameposition
+        # Baseline: scene.marker_frame → Fallback: aktuelle Frameposition
         baseline = int(
             getattr(context.scene, "marker_frame", context.scene.frame_current)
             or context.scene.frame_current
         )
-        target = baseline * 2
+        threshold = int(baseline * 2)
 
-        best_frame: Optional[int] = None
+        # Zähle Marker pro Frame über alle Tracks
+        frame_counts: Dict[int, int] = {}
 
-        # Alle Marker durchlaufen
+        # Hinweis: marker.frame ist ein int-ähnlicher Index im Clip
         for tr in clip.tracking.tracks:
-            for marker in tr.markers:
-                f = int(marker.frame)
-                if f >= target:
-                    if best_frame is None or f < best_frame:
-                        best_frame = f
+            try:
+                for m in tr.markers:
+                    f = int(m.frame)
+                    frame_counts[f] = frame_counts.get(f, 0) + 1
+            except Exception:
+                # Falls ein Track keine Marker-Liste o.ä. hat, einfach überspringen
+                continue
 
-        if best_frame is not None:
-            return {"status": "FOUND", "frame": best_frame}
+        if not frame_counts:
+            return {"status": "NONE", "threshold": threshold}
 
-        return {"status": "NONE"}
+        # Ersten Frame (aufsteigend) finden, dessen Markeranzahl < threshold ist
+        for f in sorted(frame_counts.keys()):
+            c = frame_counts[f]
+            if c < threshold:
+                return {"status": "FOUND", "frame": f, "count": c, "threshold": threshold}
+
+        # Nichts gefunden
+        return {"status": "NONE", "threshold": threshold}
 
     except Exception as ex:
         return {"status": "FAILED", "reason": repr(ex)}
-
-
-# Selftest
-if __name__ == "__main__":
-    print("[find_max_marker_frame] Modul geladen (kein automatischer Test)")
