@@ -177,24 +177,32 @@ def _normalize_clean_error_result(res: Any, scene_val: int = 0) -> int:
 def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
     """Führt Helper/projection_cleanup_builtin und Nacharbeiten aus.
     (Kein Pre-Refine mehr – Refine wird zentral modal gestartet.)"""
+    # 1) Projection cleanup (wie bisher)
     try:
         from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin  # type: ignore
         if error_value is None:
             res = run_projection_cleanup_builtin(
-                context, error_limit=None, wait_for_error=True,
-                wait_forever=False, timeout_s=20.0, action="DELETE_TRACK",
+                context,
+                error_limit=None,
+                wait_for_error=True,
+                wait_forever=False,
+                timeout_s=20.0,
+                action="DELETE_TRACK",
             )
         else:
             res = run_projection_cleanup_builtin(
-                context, error_limit=float(error_value),
-                wait_for_error=False, action="DELETE_TRACK",
+                context,
+                error_limit=float(error_value),
+                wait_for_error=False,
+                action="DELETE_TRACK",
             )
         print(f"[Coord] PROJECTION_CLEANUP → {res}")
     except Exception as ex_func:
         print(f"[Coord] projection_cleanup function failed: {ex_func!r} → try operator fallback")
+        # Operator-Fallback: ohne Warte-Logik (nur mit error_value sinnvoll)
         try:
             if error_value is not None:
-                for prop_name in ("clean_error", "error"):
+                for prop_name in ("clean_error", "error"):  # native Param-Namen probieren
                     try:
                         bpy.ops.clip.clean_tracks(**{prop_name: float(error_value)}, action="DELETE_TRACK")
                         print(f"[Coord] clean_tracks (fallback, {prop_name}={error_value})")
@@ -206,7 +214,7 @@ def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
         except Exception as ex_op:
             print(f"[Coord] projection_cleanup fallback launch failed: {ex_op!r}")
 
-    # Triplet-Join (idempotent)
+    # 2) Triplet-Join – idempotent; wird übersprungen, falls Helper fehlt
     try:
         from ..Helper.triplet_joiner import run_triplet_join  # type: ignore
         res_join = run_triplet_join(context, active_policy="first")
@@ -214,14 +222,21 @@ def _run_projection_cleanup(context, error_value: Optional[float]) -> None:
     except Exception as ex_join:
         print(f"[Coord] PROJECTION_CLEANUP triplet_join skipped/failed: {ex_join!r}")
 
-    # Clean-Short
+    # 3) Clean-Short direkt im Anschluss
     try:
         from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
         frames = int(getattr(context.scene, "frames_track", 25) or 25)
         print(f"[Coord] PROJECTION_CLEANUP → CLEAN_SHORT (frames<{frames}, DELETE_TRACK)")
-        clean_short_tracks(context, min_len=frames, action="DELETE_TRACK", respect_fresh=True, verbose=True)
+        clean_short_tracks(
+            context,
+            min_len=frames,
+            action="DELETE_TRACK",
+            respect_fresh=True,
+            verbose=True,
+        )
     except Exception as ex:
         print(f"[Coord] PROJECTION_CLEANUP CLEAN_SHORT failed: {ex!r}")
+
 
 
 
