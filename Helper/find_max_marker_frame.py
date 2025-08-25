@@ -1,45 +1,62 @@
-# Helper/find_max_marker_frame.py
+# File: Helper/find_max_marker_frame.py
+from __future__ import annotations
+"""
+Helper: find_max_marker_frame
+-----------------------------
+Sucht nach einem Frame, der >= marker_frame * 2 liegt.
 
+Rückgabe (dict):
+- status: "FOUND" | "NONE" | "FAILED"
+- frame: int (falls FOUND)
+- reason: optional, bei Fehler
+"""
+
+from typing import Optional, Dict, Any
 import bpy
-from typing import List, Tuple
 
-def get_active_marker_counts_sorted(
-    context: bpy.types.Context
-) -> List[Tuple[int, int]]:
-    """
-    Liefert (frame, count) für scene.frame_start..scene.frame_end,
-    sortiert absteigend nach aktiven Markern.
-    Aktiv = marker.mute == False (Selektion ignoriert).
-    """
-    scene = context.scene
-    frame_start = int(scene.frame_start)
-    frame_end = int(scene.frame_end)
 
-    # Clip robust holen
-    clip = None
+def _get_active_clip(context) -> Optional[bpy.types.MovieClip]:
     space = getattr(context, "space_data", None)
-    if space and getattr(space, "clip", None):
-        clip = space.clip
-    else:
-        for area in context.screen.areas:
-            if area.type == 'CLIP_EDITOR':
-                sp = area.spaces.active
-                if getattr(sp, "clip", None):
-                    clip = sp.clip
-                    break
+    if getattr(space, "type", None) == "CLIP_EDITOR" and getattr(space, "clip", None):
+        return space.clip
+    try:
+        return bpy.data.movieclips[0] if bpy.data.movieclips else None
+    except Exception:
+        return None
+
+
+def run_find_max_marker_frame(context: bpy.types.Context) -> Dict[str, Any]:
+    clip = _get_active_clip(context)
     if not clip:
-        return []
+        return {"status": "FAILED", "reason": "no active MovieClip"}
 
-    counts = {}
-    for tr in clip.tracking.tracks:
-        # Kein tr.mute in Blender 4.4 -> nur Marker-Mute werten
-        for mk in tr.markers:
-            if getattr(mk, "mute", False):
-                continue
-            f = getattr(mk, "frame", None)
-            if f is None or f < frame_start or f > frame_end:
-                continue
-            counts[f] = counts.get(f, 0) + 1
+    try:
+        # Basiswert marker_frame oder Fallback auf aktuelle Frameposition
+        baseline = int(
+            getattr(context.scene, "marker_frame", context.scene.frame_current)
+            or context.scene.frame_current
+        )
+        target = baseline * 2
 
-    # Sortierung: count desc, frame asc (Ties → früherer Frame gewinnt)
-    return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        best_frame: Optional[int] = None
+
+        # Alle Marker durchlaufen
+        for tr in clip.tracking.tracks:
+            for marker in tr.markers:
+                f = int(marker.frame)
+                if f >= target:
+                    if best_frame is None or f < best_frame:
+                        best_frame = f
+
+        if best_frame is not None:
+            return {"status": "FOUND", "frame": best_frame}
+
+        return {"status": "NONE"}
+
+    except Exception as ex:
+        return {"status": "FAILED", "reason": repr(ex)}
+
+
+# Selftest
+if __name__ == "__main__":
+    print("[find_max_marker_frame] Modul geladen (kein automatischer Test)")
