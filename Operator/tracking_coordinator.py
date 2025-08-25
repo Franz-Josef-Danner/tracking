@@ -17,7 +17,7 @@ Wenn FIND_LOW keine Frames mehr findet, wird zyklisch (modal) ausgeführt:
     CYCLE_CLEAN  → Helper/clean_short_tracks.py
     CYCLE_FIND_MAX → Helper/find_max_marker_frame.py
     CYCLE_SPIKE → Helper/spike_filter_cycle.py
-und wieder von vorne – bis find_max_marker_frame keinen Frame mehr findet → FINALIZE.
+und wieder von vorne – bis find_max_marker_frame einen Frame mit weniger Markern als marker_frame*2 findet → FINALIZE.
 """
 
 import os
@@ -524,32 +524,42 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_cycle_findmax(self, context):
-        """Cycle Schritt 2: find_max_marker_frame → bei NONE: FINALIZE, sonst SPIKE."""
+        """Cycle Schritt 2: find_max_marker_frame → bei FOUND: FINALIZE, sonst SPIKE."""
         if not self._cycle_active:
             print("[Coord] CYCLE_FIND_MAX reached but cycle inactive → FINALIZE")
             self._state = "FINALIZE"
             return {"RUNNING_MODAL"}
-
+    
         try:
             res = run_find_max_marker_frame(context)
         except Exception as ex:
             print(f"[Coord] CYCLE_FIND_MAX failed: {ex!r}")
             res = {"status": "FAILED", "reason": repr(ex)}
-
+    
         status = str(res.get("status", "FAILED")).upper()
         if status == "FOUND":
             frame = int(res.get("frame", getattr(context.scene, "frame_current", 0)))
-            print(f"[Coord] CYCLE_FIND_MAX → FOUND frame={frame} → CYCLE_SPIKE")
-            self._cycle_stage = "CYCLE_SPIKE"
-            self._state = "CYCLE_SPIKE"
-            return {"RUNNING_MODAL"}
-
-        if status == "NONE":
-            print("[Coord] CYCLE_FIND_MAX → NONE → beende Cycle → FINALIZE")
+            count = res.get("count", "?")
+            thresh = res.get("threshold", "?")
+            print(f"[Coord] CYCLE_FIND_MAX → FOUND frame={frame} (count={count} < threshold={thresh}) → FINALIZE")
             self._cycle_active = False
             self._cycle_stage = ""
             self._state = "FINALIZE"
             return {"RUNNING_MODAL"}
+    
+        if status == "NONE":
+            # Nichts unter threshold gefunden → weiter zyklieren (SPIKE → CLEAN → FIND_MAX ...)
+            print("[Coord] CYCLE_FIND_MAX → NONE → continue cycle → CYCLE_SPIKE")
+            self._cycle_stage = "CYCLE_SPIKE"
+            self._state = "CYCLE_SPIKE"
+            return {"RUNNING_MODAL"}
+    
+        # FAILED oder anderes → trotzdem SPIKE versuchen (best effort)
+        print(f"[Coord] CYCLE_FIND_MAX → {status} → fallback CYCLE_SPIKE")
+        self._cycle_stage = "CYCLE_SPIKE"
+        self._state = "CYCLE_SPIKE"
+        return {"RUNNING_MODAL"}
+
 
         # FAILED oder anderes → trotzdem SPIKE versuchen (best effort)
         print(f"[Coord] CYCLE_FIND_MAX → {status} → fallback CYCLE_SPIKE")
