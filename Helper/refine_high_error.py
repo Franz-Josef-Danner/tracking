@@ -11,7 +11,7 @@ Start (Operator):
     bpy.ops.kaiserlich.refine_high_error('INVOKE_DEFAULT',
         start_frame=sf, end_frame=ef, step=1, threshold=2.0)
 
-Kompatibilitäts-Wrapper (falls Alt-Code ihn aufruft):
+Kompatibilitäts-Wrapper:
     run_refine_on_high_error(context, limit_frames=0, resolve_after=False)
     -> startet nur den Modal-Operator (nicht-blockierend), gibt {"status":"STARTED"} zurück.
 """
@@ -69,20 +69,11 @@ def _refine_step(context: Context, *, threshold: float) -> None:
     if clip is None:
         return
 
-    area, region = _find_clip_area_and_region(context)
-
-    if area and region:
-        with context.temp_override(area=area, region=region):
-            try:
-                # Reprojection-Fehler bereinigen (nur Auswahl markieren – nicht direkt löschen)
-                bpy.ops.clip.clean_tracks(frames=0, error=threshold, action='SELECT')
-            except Exception as ex:
-                print(f"[Refine] clean_tracks failed: {ex}")
-    else:
-        try:
-            bpy.ops.clip.clean_tracks(frames=0, error=threshold, action='SELECT')
-        except Exception as ex:
-            print(f"[Refine] clean_tracks failed (no UI override): {ex}")
+    # Reprojection-Fehler bereinigen (nur Auswahl markieren – nicht direkt löschen)
+    try:
+        bpy.ops.clip.clean_tracks(frames=0, error=threshold, action='SELECT')
+    except Exception as ex:
+        print(f"[Refine] clean_tracks failed: {ex}")
 
 
 # -----------------------------------------------------------------------------
@@ -104,8 +95,6 @@ class KAISERLICH_OT_refine_high_error(Operator):
 
     _timer: Optional[bpy.types.Timer] = None
     _frames: List[int] = []
-    _area: Optional[Area] = None
-    _region: Optional[Region] = None
 
     def invoke(self, context: Context, event):
         scn = context.scene
@@ -118,8 +107,6 @@ class KAISERLICH_OT_refine_high_error(Operator):
         start = min(self.start_frame, self.end_frame)
         end = max(self.start_frame, self.end_frame)
         self._frames = list(range(start, end + 1, max(1, self.step)))
-
-        self._area, self._region = _find_clip_area_and_region(context)
 
         scn["refine_active"] = True
         scn["refine_result"] = ""
@@ -192,7 +179,7 @@ def run_refine_on_high_error(context: Context, limit_frames: int = 0, resolve_af
     ef = int(getattr(context.scene, "frame_end", max(sf, 250)))
     th = float(getattr(context.scene, "error_track", 2.0) or 2.0)
 
-    # Optional: limit_frames beachten (z.B. 0=voller Bereich)
+    # Optional: limit_frames (0 = voller Bereich)
     if isinstance(limit_frames, int) and limit_frames > 0:
         cur = int(context.scene.frame_current)
         sf = max(sf, cur - limit_frames)
@@ -209,9 +196,7 @@ def run_refine_on_high_error(context: Context, limit_frames: int = 0, resolve_af
 # Register
 # -----------------------------------------------------------------------------
 
-_classes = (
-    KAISERLICH_OT_refine_high_error,
-)
+_classes = (KAISERLICH_OT_refine_high_error,)
 
 def register():
     from bpy.utils import register_class
