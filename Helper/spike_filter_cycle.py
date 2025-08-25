@@ -46,8 +46,25 @@ def _get_active_clip(context) -> Optional[bpy.types.MovieClip]:
     except Exception:
         return None
 
-def _delete_selected_tracks(context) -> int:
-    """Löscht Tracks, wenn der Track selbst oder irgendein Marker im Track selektiert ist."""
+
+def _get_tracks_collection(clip) -> Optional[bpy.types.bpy_prop_collection]:
+    """Bevorzuge Tracks des aktiven Tracking-Objekts; Fallback: globale Tracks."""
+    try:
+        obj = clip.tracking.objects.active
+        if obj and getattr(obj, "tracks", None):
+            return obj.tracks
+    except Exception:
+        pass
+    try:
+        return clip.tracking.tracks
+    except Exception:
+        return None
+
+
+def _remove_selected_tracks(context) -> int:
+    """Löscht selektierte Tracks. Erst per Operator, dann Fallback via API.
+    Zählt die Anzahl effektiv entfernter Tracks.
+    """
     clip = _get_active_clip(context)
     if not clip:
         return 0
@@ -56,26 +73,62 @@ def _delete_selected_tracks(context) -> int:
     if tracks is None:
         return 0
 
-    to_delete = []
-    for tr in list(tracks):
-        try:
-            if getattr(tr, "select", False):
-                to_delete.append(tr)
-                continue
-            # Marker-Selektion prüfen
-            if any(getattr(m, "select", False) for m in tr.markers):
-                to_delete.append(tr)
-        except Exception:
-            pass
+    # ------- Versuch A: Operator (löscht auch, wenn nur Marker selektiert) -------
+    before = len(tracks)
+    op_ok = False
+    try:
+        # Direkter Operator-Versuch
+        if bpy.ops.clip.delete_track.poll():
+            bpy.ops.clip.delete_track()
+            op_ok = True
+        else:
+            # Context-Override für CLIP_EDITOR
+            win = context.window
+            # win kann in seltenen Fällen None sein (Unit-Tests/Headless)
+            if win is not None:
+                area = next((a for a in win.screen.areas if a.type == 'CLIP_EDITOR'), None)
+                if area is not None:
+                    region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+                    space = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
+                    if region and space:
+                        with bpy.context.temp_override(window=win, area=area, region=region, space_data=space):
+                            if bpy.ops.clip.delete_track.poll():
+                                bpy.ops.clip.delete_track()
+                                op_ok = True
+    except Exception:
+        op_ok = False
 
-    deleted = 0
-    for tr in to_delete:
-        try:
-            tracks.remove(tr)
-            deleted += 1
-        except Exception:
-            pass
-    return deleted
+    if op_ok:
+        # Nach Operator: erneut aktuelle Collection ermitteln (kann sich ändern)
+        clip_after = _get_active_clip(context)
+        tracks_after = _get_tracks_collection(clip_after) or []
+        removed = max(0, before - len(tracks_after))
+        return removed
+
+    # ------- Versuch B: Direktes Entfernen in Python-API (Track/Marker-Select) ---
+    try:
+        to_delete = []
+        for tr in list(tracks):
+            sel_track = bool(getattr(tr, "select", False))
+            sel_marker = False
+            try:
+                sel_marker = any(bool(getattr(m, "select", False)) for m in tr.markers)
+            except Exception:
+                pass
+            if sel_track or sel_marker:
+                to_delete.append(tr)
+
+        deleted = 0
+        for tr in to_delete:
+            try:
+                tracks.remove(tr)
+                deleted += 1
+            except Exception:
+                pass
+        return deleted
+    except Exception:
+        return 0
+
 
 def _lower_threshold(thr: float) -> float:
     """Senkt den Threshold progressiv ab.
@@ -163,8 +216,8 @@ def run_spike_filter_cycle(
             bpy.ops.clip.filter_tracks(track_threshold=float(thr))
             print(f"[SpikeCycle] filter_tracks(track_threshold={thr})")
 
-            # b) Alle dadurch selektierten Tracks komplett löschen
-            removed = _delete_selected_tracks(context)
+            # b) Alle dadurch selektierten Tracks komplett löschen (Operator + Fallback)
+            removed = _remove_selected_tracks(context)
             print(f"[SpikeCycle] removed {removed} track(s) selected by filter")
 
             # c) Threshold für nächste Runde absenken (aggressiver werden)
