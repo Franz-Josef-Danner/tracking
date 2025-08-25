@@ -389,23 +389,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._state = "JUMP"
 
         elif status == "NONE":
-            print("[Coord] FIND_LOW → NONE → run_clean_error_tracks() first")
-            try:
-                from ..Helper.clean_error_tracks import run_clean_error_tracks  # type: ignore
-                res = run_clean_error_tracks(context, show_popups=False, soften=0.5)
-                deleted_count = _normalize_clean_error_result(
-                    res, context.scene.get("__clean_error_deleted", 0)
-                )
-            except Exception as ex_clean:
-                print(f"[Coord] CleanErrorTracks failed: {ex_clean!r}")
-                deleted_count = 0
-        
-            if deleted_count > 0:
-                print(f"[Coord] Cleaner deleted {deleted_count} → retry FIND_LOW")
-                self._state = "FIND_LOW"
-            else:
-                print("[Coord] Cleaner found nothing → SOLVE")
-                self._state = "SOLVE"
+            # <<< Änderung: Hier sofort beenden >>>
+            print("[Coord] FIND_LOW → NONE → keine Frames mehr → FINALIZE")
+            self._state = "FINALIZE"
 
         else:
             context.scene[_GOTO_KEY] = context.scene.frame_current
@@ -414,6 +400,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._state = "JUMP"
 
         return {"RUNNING_MODAL"}
+
 
     def _state_solve(self, context):
         """Solve-Start (asynchron) → dann SOLVE_WAIT (mit Post-Solve-Refine)."""
