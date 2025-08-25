@@ -3,7 +3,7 @@
 Helper/__init__.py – Function + Operator Registrar
 
 - Exportiert Funktions-API (z. B. track_to_scene_end_fn).
-- Registriert Bidirectional-Operator und Refine-Operator immer,
+- Registriert **immer** den Bidirectional-Operator und den Refine-Operator,
   sowie optionale weitere Operatoren (optimize, marker_helper_main).
 """
 
@@ -43,6 +43,7 @@ if CLIP_OT_optimize_tracking_modal is not None:
 if CLIP_OT_marker_helper_main is not None:
     _optional_classes.append(CLIP_OT_marker_helper_main)
 
+
 def register() -> None:
     """Registriert feste Operatoren + optionale Operatoren."""
     for cls in (CLIP_OT_bidirectional_track, KAISERLICH_OT_refine_high_error):
@@ -59,6 +60,7 @@ def register() -> None:
 
     print("[Helper] register() OK (bidirectional + refine + optional ops registered)")
 
+
 def unregister() -> None:
     for cls in reversed(_optional_classes):
         try:
@@ -72,6 +74,7 @@ def unregister() -> None:
             pass
 
     print("[Helper] unregister() OK (bidirectional + refine + optional ops unregistered)")
+
 
 if __name__ == "__main__":
     assert callable(track_to_scene_end_fn)
