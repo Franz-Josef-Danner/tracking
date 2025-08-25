@@ -573,7 +573,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print("[Coord] CYCLE_SPIKE reached but cycle inactive → FINALIZE")
             self._state = "FINALIZE"
             return {"RUNNING_MODAL"}
-
+    
         self._cycle_loops += 1
         if self._cycle_loops > int(getattr(context.scene, "cycle_max_loops", _CYCLE_MAX_LOOPS)):
             print(f"[Coord] CYCLE_SPIKE → max_loops reached ({self._cycle_loops}) → FINALIZE")
@@ -581,24 +581,24 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._cycle_stage = ""
             self._state = "FINALIZE"
             return {"RUNNING_MODAL"}
-
+    
         try:
             baseline = int(getattr(context.scene, "marker_frame", context.scene.frame_current) or context.scene.frame_current)
             res = run_spike_filter_cycle(
                 context,
                 marker_baseline=baseline,
-                track_threshold=float(getattr(context.scene, "spike_track_threshold", 5.0) or 5.0),
-                delete_frame_num=int(getattr(context.scene, "spike_delete_frame", 100) or 100),
+                track_threshold=float(getattr(context.scene, "spike_track_threshold", 100.0) or 100.0),
                 max_loops=int(getattr(context.scene, "spike_inner_max_loops", 90) or 90),
             )
             print(f"[Coord] CYCLE_SPIKE → spike_filter_cycle result={res}")
         except Exception as ex:
             print(f"[Coord] CYCLE_SPIKE failed: {ex!r}")
-
+    
         # Nach SPIKE immer zurück zu CLEAN und weiter zyklieren
         self._cycle_stage = "CYCLE_CLEAN"
         self._state = "CYCLE_CLEAN"
         return {"RUNNING_MODAL"}
+
 
     # ---------------- Finish ----------------
 
