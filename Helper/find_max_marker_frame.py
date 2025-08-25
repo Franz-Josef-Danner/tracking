@@ -1,15 +1,16 @@
 # File: Helper/find_max_marker_frame.py
 from __future__ import annotations
 """
-Helper: find_max_marker_frame (nach Szenenvariable)
----------------------------------------------------
+Helper: find_max_marker_frame (nach Szenenvariable, Szene-Zeitraum)
+------------------------------------------------------------------
 Verwendet die Szenenvariable `scene.marker_frame` (vom UI gesetzt) und
 bildet daraus die feste Schwelle `threshold = scene.marker_frame * 2`.
 
-Dann wird der Clip zeitlich (aufsteigend) durchsucht. Sobald ein Frame
-gefunden wird, bei dem die Anzahl **aktiver Marker** (Marker existiert an
-Frame f, Track und Marker nicht gemutet) **< threshold** ist, wird
-`FOUND` zurückgegeben. Wenn kein solcher Frame existiert: `NONE`.
+Es wird **ausschließlich innerhalb des Szenen-Zeitraums**
+`scene.frame_start .. scene.frame_end` gesucht (aufsteigend). Sobald ein
+Frame gefunden wird, bei dem die Anzahl **aktiver Marker** (pro Track
+max. ein Marker, gemutete Tracks/Marker werden ignoriert) **< threshold**
+ist, wird `FOUND` zurückgegeben. Existiert keiner → `NONE`.
 
 Rückgabe (dict):
 - status: "FOUND" | "NONE" | "FAILED"
@@ -53,7 +54,7 @@ def _get_tracks_collection(clip) -> Optional[bpy.types.bpy_prop_collection]:
 
 def _count_active_markers_at_frame(tracks, frame: int) -> int:
     """Zählt Marker an `frame` über alle Tracks.
-    - zählt pro Track höchstens 1 Marker (typischerweise gibt es pro Frame max. einen Marker je Track)
+    - pro Track höchstens 1 Marker (früher Ausstieg via break)
     - ignoriert gemutete Tracks/Marker
     """
     f = int(frame)
@@ -82,8 +83,9 @@ def run_find_max_marker_frame(context: bpy.types.Context) -> Dict[str, Any]:
         return {"status": "FAILED", "reason": "no active MovieClip"}
 
     try:
-        # Schwelle aus Szenenvariable marker_frame (UI-Wert)
         scene = context.scene
+
+        # Schwelle aus Szenenvariable marker_frame (UI-Wert)
         marker_frame_val = int(getattr(scene, "marker_frame", scene.frame_current) or scene.frame_current)
         threshold = int(marker_frame_val * 2)
 
@@ -91,26 +93,14 @@ def run_find_max_marker_frame(context: bpy.types.Context) -> Dict[str, Any]:
         if tracks is None:
             return {"status": "NONE", "threshold": threshold}
 
-        # Framebereich bestimmen (Clip-Start bis -Ende)
-        start = int(getattr(clip, "frame_start", 1) or 1)
-        dur = int(getattr(clip, "frame_duration", 0) or 0)
-        if dur > 0:
-            end = start + dur - 1
-            search_iter = range(start, end + 1)
-        else:
-            # Fallback: bekannte Marker-Frames sortiert prüfen
-            frames = set()
-            for tr in tracks:
-                try:
-                    frames.update(int(m.frame) for m in tr.markers)
-                except Exception:
-                    pass
-            if not frames:
-                return {"status": "NONE", "threshold": threshold}
-            search_iter = sorted(frames)
+        # --- Suche strikt im Szenenbereich ---
+        s_start = int(getattr(scene, "frame_start", 1) or 1)
+        s_end = int(getattr(scene, "frame_end", s_start) or s_start)
+        if s_end < s_start:
+            s_start, s_end = s_end, s_start
 
-        # Suche: erster Frame mit count < threshold
-        for f in search_iter:
+        # Ersten Frame im Szenenbereich finden, dessen Markeranzahl < threshold ist
+        for f in range(s_start, s_end + 1):
             c = _count_active_markers_at_frame(tracks, int(f))
             if c < threshold:
                 return {"status": "FOUND", "frame": int(f), "count": int(c), "threshold": int(threshold)}
