@@ -43,10 +43,14 @@ Convenience-Wrapper
 from __future__ import annotations
 
 import json
+import time
 from typing import List, Optional, Sequence
 
 import bpy
 from bpy.types import Context, Operator
+
+# --- Debug-Schalter: temporär aktivieren, um nach REFINE hart zu stoppen ---
+DEBUG_STOP_AFTER_REFINE = False
 
 __all__ = (
     "CLIP_OT_refine_high_error",
@@ -216,6 +220,9 @@ class CLIP_OT_refine_high_error(Operator):
                         action='SELECT',
                     )
                 self._idx += 1
+                if self._idx % 25 == 0 or self._idx == len(self._frames):
+                    ts = time.strftime('%H:%M:%S')
+                    print(f'[{ts}] [Refine] Progress: {self._idx}/{len(self._frames)}')
             except Exception as ex:
                 context.scene["refine_error_msg"] = str(ex)
                 return self._finish(context, "ERROR")
@@ -231,12 +238,23 @@ class CLIP_OT_refine_high_error(Operator):
         scn["refine_result"] = result
         scn["refine_active"] = False
 
+        # --- Debug: Abschluss-Logging + optionaler Hard-Stop NACH refine ---
+        print(f"[Refine] _finish(): result={result!r}")
+        if DEBUG_STOP_AFTER_REFINE and result in {"FINISHED", "ERROR"}:
+            print("[Refine] DEBUG_STOP_AFTER_REFINE aktiv – breche jetzt ab, "
+                  "um nachfolgende Logs zu verhindern.")
+            raise RuntimeError("[Refine] DEBUG STOP after refine (_finish)")
+
         return {"FINISHED"} if result == "FINISHED" else {"CANCELLED"}
 
 
 # -----------------------------------------------------------------------------
 # Convenience Wrapper
 # -----------------------------------------------------------------------------
+def _preview(seq, n=10):
+    seq = list(seq)
+    return seq[:n] + (['...'] if len(seq) > n else [])
+
 
 
 def run_refine_on_high_error(
@@ -246,8 +264,12 @@ def run_refine_on_high_error(
 ):
     """Startet den Refine-Modaloperator mit vorbereiteten Scene-Keys."""
 
+    print("\n[Refine] Starte run_refine_on_high_error()")
+    print(f"[Refine] Eingabewerte: frames={frames}, threshold={threshold}")
+
     scn = context.scene
     if scn.get("bidi_active") or scn.get("solve_active") or scn.get("refine_active"):
+        print("[Refine] Busy-Flags aktiv (bidi/solve/refine) – breche Start ab.")
         return {"status": "BUSY"}
 
     th = (
@@ -255,11 +277,14 @@ def run_refine_on_high_error(
         if threshold is not None
         else float(getattr(scn, "error_track", 0.0)) * 10.0
     )
+    print(f"[Refine] threshold (th) = {th}")
 
     if frames is None:
         frames = compute_high_error_frames(context, th)
+        print(f"[Refine] compute_high_error_frames -> {len(frames)} Frames")
 
     frames = [int(f) for f in frames]
+    print(f"[Refine] Frames (Preview): {_preview(frames)}  (total={len(frames)})")
     if not frames:
         scn["refine_result"] = "FINISHED"
         scn["refine_active"] = False
@@ -275,12 +300,17 @@ def run_refine_on_high_error(
     # Blender 4.4: Operator mit temp_override + 'INVOKE_DEFAULT' starten
     ovr = _clip_override(context)
     if ovr:
+        print(f"[Refine] Starte Operator (override, {len(frames)} Frames)...")
         with context.temp_override(**ovr):
             bpy.ops.clip.refine_high_error('INVOKE_DEFAULT')
     else:
+        print(f"[Refine] Starte Operator (kein override, {len(frames)} Frames)...")
         bpy.ops.clip.refine_high_error('INVOKE_DEFAULT')
 
-    return {"status": "STARTED", "frames": frames, "threshold": th}
+    result = {"status": "STARTED", "frames": frames, "threshold": th}
+    print(f"[Refine] Operator gestartet -> {result}")
+    # Hinweis: Der Hard-Stop erfolgt NACH dem Refine in _finish(), nicht hier!
+    return result
 
 
 # -----------------------------------------------------------------------------
