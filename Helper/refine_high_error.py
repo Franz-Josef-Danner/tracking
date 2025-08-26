@@ -7,8 +7,7 @@ from math import isfinite
 @contextmanager
 def clip_context(clip=None):
     """
-    Kontext-Override für CLIP_EDITOR, damit clip.* Operatoren zuverlässig laufen.
-    Liefert ein vollständiges Override (window/screen/area/region/space_data/edit_movieclip).
+    Kontext-Override für CLIP_EDITOR (window/screen/area/region/space_data/edit_movieclip).
     """
     ctx = bpy.context.copy()
     win = bpy.context.window
@@ -34,10 +33,7 @@ def clip_context(clip=None):
 # ---------- UI-Helpers -------------------------------------------------------
 
 def _scene_to_clip_frame(context, clip, scene_frame: int) -> int:
-    """
-    Mappt Szenen-Frame deterministisch auf Clip-Frame (beachtet fps & Offsets),
-    und klemmt auf die Clip-Dauer.
-    """
+    """Szenen-Frame deterministisch auf Clip-Frame mappen (fps/Offsets/Clamping)."""
     scn = context.scene
     scene_start = int(getattr(scn, "frame_start", 1))
     clip_start = int(getattr(clip, "frame_start", 1))
@@ -53,29 +49,41 @@ def _scene_to_clip_frame(context, clip, scene_frame: int) -> int:
     return f
 
 
-def _ui_show_playhead(ctx: dict, scene: bpy.types.Scene, clip: bpy.types.MovieClip, scene_frame: int,
-                      *, sleep_s: float = 0.03) -> None:
+def _force_visible_playhead(ctx: dict, scene: bpy.types.Scene, clip: bpy.types.MovieClip,
+                            scene_frame: int, *, sleep_s: float = 0.06) -> None:
     """
     Setzt Playhead sichtbar auf scene_frame:
       - Szene-Frame setzen
-      - Clip-User-Frame (lokal im Editor) anpassen
-      - Redraw des CLIP_EDITOR erzwingen
+      - Clip-User-Frame synchronisieren (bei fps/Offset-Differenzen)
+      - View-Layer updaten
+      - 2× Redraw anstoßen
+      - kurze Wartezeit für zuverlässiges Zeichnen
     """
+    # 1) Szene-Frame setzen
     scene.frame_set(int(scene_frame))
 
-    # Clip-Frame im Editor mitziehen (falls fps/Offsets abweichen)
+    # 2) Clip-Frame im Editor mitziehen
     try:
         clip_frame = _scene_to_clip_frame(bpy.context, clip, int(scene_frame))
-        with bpy.context.temp_override(**ctx):
-            space = ctx.get("space_data", None)
-            if space and getattr(space, "clip_user", None):
-                space.clip_user.frame_current = int(clip_frame)
+        space = ctx.get("space_data", None)
+        if space and getattr(space, "clip_user", None):
+            space.clip_user.frame_current = int(clip_frame)
     except Exception:
         pass
 
-    # Harte Redraw-Sequenz (ohne Zoom/Extras)
+    # 3) Layer/Depsgraph aktualisieren (stellt sicher, dass UI gültige Daten hat)
+    try:
+        bpy.context.view_layer.update()
+    except Exception:
+        pass
+
+    # 4) Harte Redraw-Sequenz
     try:
         area = ctx.get("area", None)
+        if area:
+            area.tag_redraw()
+        with bpy.context.temp_override(**ctx):
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
         if area:
             area.tag_redraw()
         with bpy.context.temp_override(**ctx):
@@ -83,7 +91,7 @@ def _ui_show_playhead(ctx: dict, scene: bpy.types.Scene, clip: bpy.types.MovieCl
     except Exception:
         pass
 
-    # winziger Schlaf lässt der UI Zeit, den Cursor sichtbar zu malen
+    # 5) winzige Pause lässt den Playhead wirklich erscheinen
     if sleep_s and sleep_s > 0.0:
         try:
             time.sleep(float(sleep_s))
@@ -94,9 +102,7 @@ def _ui_show_playhead(ctx: dict, scene: bpy.types.Scene, clip: bpy.types.MovieCl
 # ---------- Fehler-/Selektion-Helpers ---------------------------------------
 
 def _iter_tracks_with_marker_at_frame(tracks, frame):
-    """
-    Tracks mit Marker auf 'frame' (geschätzt/ exakt), die nicht deaktiviert sind.
-    """
+    """Tracks mit Marker auf 'frame' (geschätzt/ exakt), die nicht deaktiviert sind."""
     for tr in tracks:
         if hasattr(tr, "enabled") and not bool(getattr(tr, "enabled")):
             continue
@@ -109,10 +115,7 @@ def _iter_tracks_with_marker_at_frame(tracks, frame):
 
 
 def _marker_error_on_frame(track, frame):
-    """
-    Liefert bevorzugt den Marker-Error des Tracks auf 'frame';
-    Fallback: track.average_error. Nicht-finite Werte -> None.
-    """
+    """Bevorzugt Marker.error auf 'frame', sonst track.average_error. Non-finite → None."""
     try:
         mk = track.markers.find_frame(frame, exact=False)
         if mk is not None and hasattr(mk, "error"):
@@ -135,9 +138,7 @@ def _refine_markers_with_override(ctx: dict, *, backwards: bool) -> None:
 
 
 def _set_selection_for_tracks(tob, frame, tracks_subset):
-    """
-    Setzt die Selektion ausschließlich auf 'tracks_subset' und deren Marker auf 'frame'.
-    """
+    """Selektion ausschließlich auf 'tracks_subset' und deren Marker auf 'frame' setzen."""
     for t in tob.tracks:
         try:
             t.select = False
@@ -145,7 +146,6 @@ def _set_selection_for_tracks(tob, frame, tracks_subset):
                 m.select = False
         except Exception:
             pass
-
     for t in tracks_subset:
         try:
             mk = t.markers.find_frame(frame, exact=False)
@@ -168,7 +168,7 @@ def refine_on_high_error(
     wait_seconds: float = 0.05,
     max_per_frame: int = 20,          # Top-N Marker pro Frame
     ui_preview: bool = True,          # Playhead sichtbar springen lassen
-    ui_sleep_s: float = 0.03,         # kleine Wartezeit für Rendering des Cursors
+    ui_sleep_s: float = 0.06,         # kleine Wartezeit für Rendering des Cursors
 ) -> None:
     """
     Durchläuft alle Frames; wenn FE > error_track*2:
@@ -229,9 +229,9 @@ def refine_on_high_error(
                 scored.sort(key=lambda kv: kv[0], reverse=True)
                 top_tracks = [t for _, t in scored[:max(1, int(max_per_frame))]]
 
-                # Playhead sichtbar setzen (nur wenn gewünscht)
+                # Playhead sichtbar setzen
                 if ui_preview:
-                    _ui_show_playhead(ctx, scene, clip, f, sleep_s=ui_sleep_s)
+                    _force_visible_playhead(ctx, scene, clip, f, sleep_s=ui_sleep_s)
                 else:
                     scene.frame_set(f)
 
