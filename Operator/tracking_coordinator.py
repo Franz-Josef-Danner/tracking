@@ -338,6 +338,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # interne Solve-Wartezeit (Deadline in Sekunden, via time.monotonic)
     _solve_wait_deadline: float | None = None
 
+    # --- Re-Solve Bookkeeping (wichtig: NACH refine wirklich warten) ---
+    _re_solve_waiting: bool = False
+    _re_solve_deadline: Optional[float] = None
+    _re_solve_fallback_err: float = 0.0
+
     # --- Cycle-Bookkeeping ---
     _cycle_active: bool = False
     _cycle_stage: str = ""      # "CYCLE_FIND_LOW" | "CYCLE_FIND_MAX" | "CYCLE_SPIKE"
@@ -421,6 +426,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._cycle_spike_threshold = 100.0
         self._solve_wait_deadline = None
 
+        # Re-Solve reset
+        self._re_solve_waiting = False
+        self._re_solve_deadline = None
+        self._re_solve_fallback_err = 0.0
+
     # ---------------- States ----------------
 
     def _state_init(self, context):
@@ -484,9 +494,92 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_solve_wait(self, context):
+        # PHASE A: Warten auf Abschluss eines Re-Solve (nach dem Refine)
+        if self._re_solve_waiting:
+            curr = self._get_current_solve_error_now(context)
+            if curr is not None:
+                print(f"[Coord] RE-SOLVE done → CLEANUP (limit={curr:.4f})")
+                ok, cleanup = _safe_call(
+                    run_projection_cleanup_builtin,
+                    context,
+                    error_limit=float(curr),
+                    wait_for_error=False,
+                    action="DELETE_TRACK",
+                )
+                if ok:
+                    print(f"[Coord] Cleanup after re-solve → {cleanup}")
+                else:
+                    print(f"[Coord] Cleanup failed: {cleanup!r}")
+
+                # Reset Re-Solve-Warteflags
+                self._re_solve_waiting = False
+                self._re_solve_deadline = None
+
+                # Zielprüfung / Cycle-Entscheidung
+                try:
+                    curr_err = self._get_current_solve_error_now(context) or float(curr)
+                    target = _scene_float(context.scene, "error_track", 0.0)
+                except Exception:
+                    curr_err = float(curr)
+                    target = 0.0
+
+                print(f"[Coord] Post-cleanup error check: curr_err={curr_err:.4f}px, target={target:.4f}px")
+                if target > 0.0 and curr_err <= target:
+                    print("[Coord] target reached → FINALIZE")
+                    self._state = "FINALIZE"
+                else:
+                    print("[Coord] target not reached → continue cycle (CYCLE_FIND_LOW)")
+                    self._cycle_active = True
+                    self._cycle_stage = "CYCLE_FIND_LOW"
+                    self._state = "CYCLE_FIND_LOW"
+                return {"RUNNING_MODAL"}
+
+            # Timeout für Re-Solve prüfen
+            now = time.monotonic()
+            if self._re_solve_deadline is not None and now >= float(self._re_solve_deadline):
+                fb = float(self._re_solve_fallback_err or 0.0)
+                print(f"[Coord] RE-SOLVE timeout → proceed to CLEANUP (fallback limit={fb:.4f})")
+                ok, cleanup = _safe_call(
+                    run_projection_cleanup_builtin,
+                    context,
+                    error_limit=fb,
+                    wait_for_error=False,
+                    action="DELETE_TRACK",
+                )
+                if ok:
+                    print(f"[Coord] Cleanup after re-solve TIMEOUT → {cleanup}")
+                else:
+                    print(f"[Coord] Cleanup (timeout) failed: {cleanup!r}")
+
+                self._re_solve_waiting = False
+                self._re_solve_deadline = None
+
+                # Entscheidung wie oben
+                try:
+                    curr_err = self._get_current_solve_error_now(context) or fb
+                    target = _scene_float(context.scene, "error_track", 0.0)
+                except Exception:
+                    curr_err = fb
+                    target = 0.0
+
+                print(f"[Coord] Post-cleanup error check: curr_err={curr_err:.4f}px, target={target:.4f}px")
+                if target > 0.0 and curr_err <= target:
+                    print("[Coord] target reached → FINALIZE")
+                    self._state = "FINALIZE"
+                else:
+                    print("[Coord] target not reached → continue cycle (CYCLE_FIND_LOW)")
+                    self._cycle_active = True
+                    self._cycle_stage = "CYCLE_FIND_LOW"
+                    self._state = "CYCLE_FIND_LOW"
+                return {"RUNNING_MODAL"}
+
+            # weiter warten
+            return {"RUNNING_MODAL"}
+
+        # PHASE B: normale Solve-Wartephase bis erster Solve valide ist
         err = self._get_current_solve_error_now(context)
         if err is not None:
-            # 1) Zuerst: Refine modal starten (einmalig) und warten, bis scene['refine_active'] wieder False ist
+            # 1) Refine modal starten (einmalig)
             if not self._refine_started:
                 thr = float(getattr(context.scene, "error_track", 0.0) or 0.0) or float(err)
                 res = start_refine_modal(
@@ -502,61 +595,27 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self._refine_started = (res.get("status") == "STARTED")
                 return {"RUNNING_MODAL"}
 
-            # warten bis refine fertig
+            # 2) Warten bis refine fertig
             if context.scene.get("refine_active", False):
-                # UI ist responsiv, einfach weiter tickern
                 return {"RUNNING_MODAL"}
 
-            # 2) Zweiter Solve NACH abgeschlossenem Refine, BEVOR Cleanup startet
-            print("[Coord] SOLVE_WAIT → refine finished → RE-SOLVE")
+            # 3) Refine ist fertig → Re-Solve STARTEN und WARTEN (Cleanup NOCH NICHT)
+            print("[Coord] SOLVE_WAIT → refine finished → RE-SOLVE (start & wait)")
             try:
-                res_solve = solve_camera_only(context)
-                print(f"[Coord] Re-solve after refine → {res_solve}")
+                _res_solve = solve_camera_only(context)
+                print(f"[Coord] Re-solve after refine → {_res_solve}")
             except Exception as ex:
-                print(f"[Coord] Re-solve failed (ignored) : {ex!r}")
+                print(f"[Coord] Re-solve start failed (ignored): {ex!r}")
 
-            # aktuellen Solve-Error für Cleanup nehmen (Fallback auf vorherigen err)
-            err_after_solve = self._get_current_solve_error_now(context)
-            if err_after_solve is None:
-                err_after_solve = float(err)
-
-            print(f"[Coord] SOLVE_WAIT → re-solve finished → CLEANUP (limit={err_after_solve:.4f})")
-            ok, cleanup = _safe_call(
-                run_projection_cleanup_builtin,
-                context,
-                error_limit=float(err_after_solve),
-                wait_for_error=False,
-                action="DELETE_TRACK",
-            )
-            if ok:
-                print(f"[Coord] Cleanup after refine+resolve → {cleanup}")
-            else:
-                print(f"[Coord] Cleanup failed: {cleanup!r}")
+            # Wartefenster für Re-Solve setzen und Fallback-Error merken
+            wait_timeout = _scene_float(context.scene, "solve_wait_timeout_s", 60.0)
+            self._re_solve_waiting = True
+            self._re_solve_deadline = time.monotonic() + float(wait_timeout)
+            self._re_solve_fallback_err = float(err)
             self._refine_started = False
+            return {"RUNNING_MODAL"}
 
-            # --- Entscheide: FINALIZE vs. neuer Cycle ---
-            try:
-                curr_err = self._get_current_solve_error_now(context)
-                if curr_err is None:
-                    curr_err = float(err_after_solve)
-                target = _scene_float(context.scene, "error_track", 0.0)
-            except Exception:
-                curr_err = float(err_after_solve)
-                target = 0.0
-
-            print(f"[Coord] Post-cleanup error check: curr_err={curr_err:.4f}px, target={target:.4f}px")
-            if target > 0.0 and curr_err <= target:
-                print("[Coord] target reached → FINALIZE")
-                self._state = "FINALIZE"
-                return {"RUNNING_MODAL"}
-            else:
-                print("[Coord] target not reached → continue cycle (CYCLE_FIND_LOW)")
-                self._cycle_active = True
-                self._cycle_stage = "CYCLE_FIND_LOW"
-                self._state = "CYCLE_FIND_LOW"
-                return {"RUNNING_MODAL"}
-
-        # Rekonstruktion noch nicht verfügbar → weiter warten bis Deadline oder nächster Tick
+        # PHASE C: erste Solve-Rekonstruktion noch nicht verfügbar
         if self._solve_wait_deadline is None:
             timeout_s = _scene_float(context.scene, "solve_wait_timeout_s", 60.0)
             self._solve_wait_deadline = time.monotonic() + timeout_s
