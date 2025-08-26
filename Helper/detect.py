@@ -267,6 +267,9 @@ def run_pattern_triplet_and_select_by_name(
     scale_high: float = 2,
     also_include_ready_selection: bool = True,
     adjust_search_with_pattern: bool = False,
+    # NEW: optionaler Dupe-Filter über beide Sweeps hinweg
+    triplet_dedupe: bool = False,
+    triplet_dedupe_rel: float = 0.01,
     # NEU:
     detect_threshold: Optional[float] = None,
     detect_margin: Optional[int] = None,
@@ -286,17 +289,22 @@ def run_pattern_triplet_and_select_by_name(
 
     tracking = clip.tracking
     settings = tracking.settings
+    scn = context.scene
+    frame = int(getattr(scn, "frame_current", 0))
+    width, height = int(clip.size[0]), int(clip.size[1])
 
     pattern_o = _get_pattern_size(tracking)
     search_o = int(getattr(settings, "default_search_size", 51))
     aggregated_names: Set[str] = set()
+    ready_names: Set[str] = set()
 
     if also_include_ready_selection:
         for t in tracking.tracks:
             if getattr(t, "select", False):
                 aggregated_names.add(t.name)
-                                         
-    def sweep(scale: float) -> int:
+                ready_names.add(t.name)
+
+    def sweep(scale: float) -> List[str]:
         before_ptrs = _collect_track_pointers(tracking.tracks)
         new_pattern = max(3, int(round(pattern_o * float(scale))))
         eff = _set_pattern_size(tracking, new_pattern)
@@ -330,13 +338,15 @@ def run_pattern_triplet_and_select_by_name(
             bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
         except Exception:
             pass
-    
+
         new_names = _collect_new_track_names_by_pointer(tracking.tracks, before_ptrs)
         aggregated_names.update(new_names)
-        return len(new_names)
+        return new_names
 
-    created_low = sweep(scale_low)
-    created_high = sweep(scale_high)
+    names_low = sweep(scale_low)
+    names_high = sweep(scale_high)
+    created_low = len(names_low)
+    created_high = len(names_high)
 
     _set_pattern_size(tracking, pattern_o)
     try:
@@ -353,6 +363,69 @@ def run_pattern_triplet_and_select_by_name(
     except Exception:
         pass
 
+    dedup_removed = 0
+    if triplet_dedupe and aggregated_names:
+        # Prioritäten-Reihenfolge: ready > low > high
+        priority = list(ready_names) + list(names_low) + list(names_high)
+        # Positionsmap am aktuellen Frame
+        pos_by_name: Dict[str, Tuple[float, float]] = {}
+        for t in tracking.tracks:
+            if t.name in aggregated_names:
+                try:
+                    m = t.markers.find_frame(frame, exact=True)
+                except TypeError:
+                    m = t.markers.find_frame(frame)
+                if m and not getattr(m, "mute", False):
+                    # direkt in Pixel speichern
+                    pos_by_name[t.name] = (m.co[0] * width, m.co[1] * height)
+
+        keep: Set[str] = set()
+        keep_pos: List[Tuple[float, float]] = []
+        thr_pix = max(1.0, float(min(width, height)) * float(triplet_dedupe_rel))
+        thr2 = thr_pix * thr_pix
+
+        for name in priority:
+            p = pos_by_name.get(name)
+            if not p:
+                continue
+            # Distanzprüfung gegen bereits behaltene
+            dup = False
+            px, py = p  # bereits in Pixeln
+            for (kx, ky) in keep_pos:
+                dx = px - kx
+                dy = py - ky
+                if (dx*dx + dy*dy) <= thr2:
+                    dup = True
+                    break
+            if dup:
+                continue
+            keep.add(name)
+            keep_pos.append(p)
+
+        to_delete = aggregated_names - keep
+        if to_delete:
+            _deselect_all(tracking)
+            for t in tracking.tracks:
+                if t.name in to_delete:
+                    t.select = True
+            try:
+                _delete_selected_tracks(confirm=True)
+            except Exception:
+                # Fallback
+                for t in list(tracking.tracks):
+                    if t.name in to_delete:
+                        try:
+                            tracking.tracks.remove(t)
+                        except Exception:
+                            pass
+            dedup_removed = len(to_delete)
+            # final auswählen: die behaltenen
+            for t in tracking.tracks:
+                t.select = False
+            selected = _select_tracks_by_names(tracking, keep)
+            aggregated_names = keep
+            print(f"[PatternTriplet] DeDupe | removed={dedup_removed} | selected_after={selected}")
+
     print(
         f"[PatternTriplet] DONE | pattern_o={pattern_o} | low={scale_low} -> +{created_low} | "
         f"high={scale_high} -> +{created_high} | selected_by_name={selected}"
@@ -363,6 +436,7 @@ def run_pattern_triplet_and_select_by_name(
         "created_low": int(created_low),
         "created_high": int(created_high),
         "selected": int(selected),
+        "dedup_removed": int(dedup_removed),
         "names": sorted(aggregated_names),
     }
 
