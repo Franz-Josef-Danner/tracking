@@ -1,21 +1,5 @@
 from __future__ import annotations
-"""
-Helper: find_max_marker_frame (fast, with per-frame logging)
------------------------------------------------------------
 
-Speed-up: statt pro Frame alle Tracks/Marker zu scannen (O(F×T×M))
-werden Marker **einmalig** in ein Frame-Histogramm gezählt (O(M)+O(F)).
-
-- Schwelle: ``threshold = scene.marker_frame * 1.5``
-- Scan-Bereich: ``scene.frame_start .. scene.frame_end`` (inklusiv)
-- Rückgabe bei Treffer: {status: "FOUND", frame, count, threshold}
-- Rückgabe ohne Treffer: {status: "NONE", threshold, observed_min, observed_min_frame}
-- Konsistentes Log pro Frame: ``[find_max_marker_frame] frame=… count=… threshold=…``
-
-Hinweise:
-- Gemutete Tracks/Marker werden ignoriert.
-- Pro Track & Frame wird maximal **ein** Marker gezählt ("last_frame"-Wächter).
-"""
 
 from typing import Optional, Dict, Any, List
 import bpy
