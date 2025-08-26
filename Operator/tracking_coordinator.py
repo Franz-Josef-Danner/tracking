@@ -10,9 +10,10 @@ Tracking-Orchestrator (NO-REFINE, NO-WAIT)
 """
 
 import os
+import time
+import bpy
 from typing import Optional, Dict
 
-import bpy
 from ..Helper.triplet_grouping import run_triplet_grouping  # top-level import
 from ..Helper.solve_camera import solve_camera_only
 from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin
@@ -141,6 +142,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return self._state_clean_short(context)
         elif self._state == "SOLVE":
             return self._state_solve(context)
+        elif self._state == "SOLVE_WAIT":
+            return self._state_solve_wait(context)
         elif self._state == "CYCLE_CLEAN":
             return self._state_cycle_clean(context)
         elif self._state == "CYCLE_FIND_MAX":
@@ -216,33 +219,69 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # ---------------- SOLVE ----------------
 
     def _state_solve(self, context):
-        """Startet ausschließlich den Kamera-Solve und beendet sofort."""
         try:
             res = solve_camera_only(context)
             print(f"[Coord] Solve invoked: {res}")
         except Exception as ex:
             print(f"[Coord] SOLVE start failed: {ex!r}")
 
-        # ⇩⇩ NEU: Nach abgeschlossenem Solve → Reprojection-Cleanup starten
+            self._state = "FINALIZE"
+            return {'RUNNING_MODAL'}
+
+        # Solve läuft modal → wir warten im nächsten State aktiv auf gültige Reconstruction
+        self._solve_wait_deadline = time.monotonic() + float(getattr(context.scene, "solve_wait_timeout_s", 60.0))
+        self._state = "SOLVE_WAIT"
+        return {"RUNNING_MODAL"}
+
+    def _state_solve_wait(self, context):
+        """Wartet bis die Reconstruction gültig ist (Solve fertig), dann Cleanup, dann FINALIZE."""
+        err = self._get_current_solve_error_now(context)
+        if err is not None:
+            print(f"[Coord] SOLVE_WAIT → reconstruction valid, avg_error={err:.4f}px → CLEANUP")
+            try:
+                # Jetzt ist Solve sicher fertig. Wir können direkt mit fester Schwelle
+                # ODER ohne Schwelle (Helper ermittelt sie sofort) arbeiten.
+                cleanup = run_projection_cleanup_builtin(
+                    context,
+                    # Variante A: feste Grenze benutzen (hier: den gemessenen Solve-Error)
+                    error_limit=float(err),
+                    wait_for_error=False,
+                    action="SELECT",  # 'SELECT' | 'DELETE_TRACK' | 'DELETE_SEGMENTS'
+                )
+                print(f"[Coord] Cleanup after solve → {cleanup}")
+            except Exception as ex_cleanup:
+                print(f"[Coord] Cleanup after solve failed: {ex_cleanup!r}")
+            self._state = "FINALIZE"
+            return {"RUNNING_MODAL"}
+
+        # Noch kein gültiger Solve-Error → Timeout prüfen
+        if time.monotonic() >= getattr(self, "_solve_wait_deadline", 0.0):
+            print("[Coord] SOLVE_WAIT → timeout → FINALIZE (kein gültiger Solve)")
+            self._state = "FINALIZE"
+            return {"RUNNING_MODAL"}
+        # weiter warten
+        return {"RUNNING_MODAL"}
+
+    # --- kleine Utility: Solve-Error prüfen (ohne Abhängigkeit vom Helper) ---
+    def _get_current_solve_error_now(self, context):
+        space = getattr(context, "space_data", None)
+        clip = space.clip if (getattr(space, "type", None) == 'CLIP_EDITOR' and getattr(space, "clip", None)) else None
+        if clip is None:
+            try:
+                clip = bpy.data.movieclips[0] if bpy.data.movieclips else None
+            except Exception:
+                clip = None
+        if not clip:
+            return None
         try:
-            # Keine feste Schwelle übergeben: die Helper-Funktion wartet (mit Timeout)
-            # auf einen gültigen Solve-Error und ruft dann bpy.ops.clip.clean_tracks auf.
-            # Aktion anpassen: 'DISABLE' | 'DELETE_TRACK' | 'DELETE_SEGMENTS' | 'SELECT'
-            cleanup = run_projection_cleanup_builtin(
-                context,
-                error_limit=1.0,        # feste px-Grenze → kein Warten nötig
-                wait_for_error=False,   # sofort ausführen
-                action="DISABLE",       # oder "DELETE_TRACK"
-                timeout_s=60.0,         # nur relevant, falls wait_for_error=True
-            )
-            print(f"[Coord] Cleanup after solve → {cleanup}")
-        except Exception as ex_cleanup:
-            print(f"[Coord] Cleanup after solve failed: {ex_cleanup!r}")
-
-        # Danach direkt → FINALIZE (kein Refine/kein weiteres Warten)
-
-        self._state = "FINALIZE"
-        return {'RUNNING_MODAL'}
+            recon = clip.tracking.objects.active.reconstruction
+            if not getattr(recon, "is_valid", False):
+                return None
+            if hasattr(recon, "average_error"):
+                return float(recon.average_error)
+        except Exception:
+            return None
+        return None
 
     # ---------------- JUMP/DETECT/TRACK/CLEAN_SHORT ----------------
 
