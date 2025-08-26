@@ -140,6 +140,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     _cycle_stage: str = ""      # "CYCLE_FIND_MAX" | "CYCLE_SPIKE"
     _cycle_loops: int = 0        # Anzahl der durchlaufenen FIND_MAX↔SPIKE Runden
     _cycle_initial_clean_done: bool = False  # << nur einmal zu Beginn
+    _cycle_spike_threshold: float = 100.0
 
     @classmethod
     def poll(cls, context):
@@ -278,6 +279,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._cycle_stage = ""
         self._cycle_loops = 0
         self._cycle_initial_clean_done = False
+        self._cycle_spike_threshold = 100.0
 
     # ---------------- States ----------------
 
@@ -308,6 +310,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._cycle_stage = "CYCLE_CLEAN"
             self._cycle_loops = 0
             self._cycle_initial_clean_done = False
+            self._cycle_spike_threshold = float(getattr(context.scene, "spike_start_threshold", 100.0) or 100.0)
             self._state = "CYCLE_CLEAN"
 
         else:
@@ -561,16 +564,21 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return {"RUNNING_MODAL"}
 
         try:
-            baseline = int(getattr(context.scene, "marker_frame", context.scene.frame_current) or context.scene.frame_current)
             res = run_spike_filter_cycle(
                 context,
-                marker_baseline=baseline,
-                track_threshold=float(getattr(context.scene, "spike_track_threshold", 100.0) or 100.0),
-                max_loops=int(getattr(context.scene, "spike_inner_max_loops", 90) or 90),
+                track_threshold=float(self._cycle_spike_threshold),
             )
             print(f"[Coord] CYCLE_SPIKE → spike_filter_cycle result={res}")
+            status = str(res.get("status", "")).upper()
+            if status == "OK":
+                next_thr = float(res.get("next_threshold", self._cycle_spike_threshold * 0.975))
+            else:
+                next_thr = self._cycle_spike_threshold * 0.975
         except Exception as ex:
             print(f"[Coord] CYCLE_SPIKE failed: {ex!r}")
+            next_thr = self._cycle_spike_threshold * 0.975
+
+        self._cycle_spike_threshold = max(5.0, next_thr)
 
         # Nach SPIKE **direkt** zurück zu FIND_MAX (kein Clean)
         self._cycle_stage = "CYCLE_FIND_MAX"

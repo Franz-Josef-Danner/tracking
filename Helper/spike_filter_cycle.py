@@ -4,16 +4,16 @@ Spike-Filter-Cycle Helper (finder- & clean-frei im Loop)
 -------------------------------------------------------
 
 Strikte Verantwortlichkeit:
-- **Dieses Modul** führt ausschließlich den Spike-Filter-Zyklus aus: Filter anwenden,
-  selektierte Tracks entfernen, Threshold senken, wiederholen.
-- **Kein** `clean_short_tracks` mehr im Loop (wird **einmalig** extern vom Coordinator
+- **Dieses Modul** führt genau **einen** Spike-Filter-Durchlauf aus:
+  Filter anwenden und selektierte Tracks löschen.
+- **Kein** `clean_short_tracks` im Loop (wird einmalig extern vom Coordinator
   im State `CYCLE_CLEAN` ausgeführt).
-- **Keine** Finder-Logik hier (die läuft separat, z. B. `run_find_max_marker_frame`).
+- **Keine** Finder-Logik hier (die läuft separat, z. B. `run_find_max_marker_frame`).
 
 Rückgabe (dict):
-* status: "NONE" | "FAILED"
-* loops: Anzahl durchlaufener Zyklen
-* reason: Fehler-/Abbruchgrund (optional)
+* status: "OK" | "FAILED"
+* removed: Anzahl gelöschter Tracks
+* next_threshold: vorgeschlagener Track-Threshold für den nächsten Pass
 """
 
 from typing import Optional, Dict, Any
@@ -135,54 +135,29 @@ def _lower_threshold(thr: float) -> float:
 # Öffentliche API
 # ---------------------------------------------------------------------------
 
+
 def run_spike_filter_cycle(
     context: bpy.types.Context,
     *,
-    marker_baseline: Optional[int] = None,
     track_threshold: float = 100.0,
-    max_loops: int = 90,
 ) -> Dict[str, Any]:
-    """Führt den Spike-Filter-Zyklus **ohne Clean & ohne Finder** aus.
-
-    Ablauf je Loop:
-      1) `bpy.ops.clip.filter_tracks(track_threshold=thr)` ausführen.
-      2) selektierte Tracks löschen.
-      3) Threshold für den nächsten Loop absenken.
-
-    Abbruch nach `max_loops`. Erfolg/Misserfolg bewertet ausschließlich die
-    übergeordnete Orchestrierung (Coordinator-FSM) anhand nachgelagerter Finder.
-    """
-
-    # Baseline wird ggf. noch für externe Logs/Abbruchkriterien verwendet.
-    _ = int(
-        marker_baseline
-        if marker_baseline is not None
-        else int(getattr(context.scene, "marker_frame", context.scene.frame_current) or context.scene.frame_current)
-    )
+    """Führt einen Spike-Filter-Durchlauf aus und gibt Ergebnisdaten zurück."""
 
     if not _get_active_clip(context):
         return {"status": "FAILED", "reason": "no active MovieClip"}
 
-    loops = 0
     thr = float(track_threshold)
+    try:
+        bpy.ops.clip.filter_tracks(track_threshold=thr)
+        print(f"[SpikeCycle] filter_tracks(track_threshold={thr})")
+    except Exception as ex_ops:
+        print(f"[SpikeCycle] spike-filter step failed: {ex_ops!r}")
 
-    while loops < int(max_loops):
-        loops += 1
+    removed = _remove_selected_tracks(context)
+    print(f"[SpikeCycle] removed {removed} track(s) selected by filter")
 
-        # 1) Spike-Filter anwenden und selektierte Tracks löschen
-        try:
-            bpy.ops.clip.filter_tracks(track_threshold=float(thr))
-            print(f"[SpikeCycle] filter_tracks(track_threshold={thr})")
-            removed = _remove_selected_tracks(context)
-            print(f"[SpikeCycle] removed {removed} track(s) selected by filter")
-        except Exception as ex_ops:
-            print(f"[SpikeCycle] spike-filter step failed: {ex_ops!r}")
+    next_thr = _lower_threshold(thr)
+    print(f"[SpikeCycle] next track_threshold → {next_thr}")
 
-        # 2) Threshold anpassen
-        thr = _lower_threshold(thr)
-        print(f"[SpikeCycle] next track_threshold → {thr}")
+    return {"status": "OK", "removed": int(removed), "next_threshold": float(next_thr)}
 
-        print(f"[SpikeCycle] loop {loops}/{max_loops} completed → retry")
-
-    print(f"[SpikeCycle] max_loops ({max_loops}) reached")
-    return {"status": "NONE", "reason": "max_loops_exceeded", "loops": loops}
