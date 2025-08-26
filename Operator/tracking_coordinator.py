@@ -12,6 +12,7 @@ from typing import Any, Callable, Tuple
 from ..Helper.triplet_grouping import run_triplet_grouping  # top-level import
 from ..Helper.solve_camera import solve_camera_only
 from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin
+from ..Helper.refine_high_error import refine_on_high_error
 
 # Cycle-Helpers
 from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
@@ -40,6 +41,38 @@ _CYCLE_MAX_LOOPS = 50
 
 def _tco_log(msg: str) -> None:
     print(f"[tracking_coordinator] {msg}")
+# --------- Cleanup-Wrapper: zuerst refine, dann builtin-cleanup ----------
+def _run_refine_then_cleanup(context: bpy.types.Context, **kwargs):
+    """
+    Führt den neuen Refine-Helper *vor* dem eigentlichen Cleanup aus.
+    Schwellenwert-Logik:
+      - bevorzugt scene.error_track (>0),
+      - sonst fallback auf den Solve-Error aus 'error_limit' (falls übergeben),
+      - sonst 0.0 (Refine löst dann effektiv nicht aus).
+    """
+    scn = context.scene
+    # Basis-Schwelle bestimmen
+    try:
+        base = float(getattr(scn, "error_track", 0.0) or 0.0)
+    except Exception:
+        base = 0.0
+    # Fallback: Solve-Error die der Caller ohnehin an cleanup übergibt
+    err_limit = kwargs.get("error_limit", None)
+    try:
+        err_limit_f = float(err_limit) if err_limit is not None else 0.0
+    except Exception:
+        err_limit_f = 0.0
+    threshold = base if base > 0.0 else err_limit_f
+
+    # Refine robust ausführen (niemals den Flow blockieren)
+    try:
+        print(f"[Coord] Vor Cleanup: refine_on_high_error(error_track={threshold:.4f})")
+        refine_on_high_error(error_track=threshold)
+    except Exception as ex:
+        _tco_log(f"refine_on_high_error failed (ignored): {ex!r}")
+
+    # Danach reguläres builtin-Cleanup
+    return run_projection_cleanup_builtin(context, **kwargs)
 
 # --------- kleine, generische Guards/Utilities (nur Robustheit, keine Logikänderung) ---------
 def _safe_call(func: Callable[..., Any], *args, **kwargs) -> Tuple[bool, Any]:
@@ -327,7 +360,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         if err is not None:
             print(f"[Coord] SOLVE_WAIT → reconstruction valid, avg_error={err:.4f}px → CLEANUP")
             ok, cleanup = _safe_call(
-                run_projection_cleanup_builtin,
+                _run_refine_then_cleanup,
                 context,
                 error_limit=float(err),
                 wait_for_error=False,
