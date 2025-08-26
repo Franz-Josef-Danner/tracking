@@ -221,8 +221,26 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print(f"[Coord] Solve invoked: {res}")
         except Exception as ex:
             print(f"[Coord] SOLVE start failed: {ex!r}")
-        
-        # Unabhängig vom Ergebnis: Nach Solve **nichts mehr** → FINALIZE
+
+        # ⇩⇩ NEU: Nach abgeschlossenem Solve → Reprojection-Cleanup starten
+        try:
+            # Keine feste Schwelle übergeben: die Helper-Funktion wartet (mit Timeout)
+            # auf einen gültigen Solve-Error und ruft dann bpy.ops.clip.clean_tracks auf.
+            # Aktion anpassen: 'DISABLE' | 'DELETE_TRACK' | 'DELETE_SEGMENTS' | 'SELECT'
+            cleanup = run_projection_cleanup_builtin(
+                context,
+                error_limit=None,           # oder z.B. 1.2 für eine feste Grenze in px
+                wait_for_error=True,
+                wait_forever=False,
+                timeout_s=20.0,
+                action="DISABLE",
+            )
+            print(f"[Coord] Cleanup after solve → {cleanup}")
+        except Exception as ex_cleanup:
+            print(f"[Coord] Cleanup after solve failed: {ex_cleanup!r}")
+
+        # Danach direkt → FINALIZE (kein Refine/kein weiteres Warten)
+
         self._state = "FINALIZE"
         return {'RUNNING_MODAL'}
 
