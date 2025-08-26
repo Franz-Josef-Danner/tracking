@@ -259,6 +259,8 @@ def run_pattern_triplet_and_select_by_name(
     detect_threshold: Optional[float] = None,
     detect_margin: Optional[int] = None,
     detect_min_distance: Optional[int] = None,
+    # NEU 2: Distanzprüfung Triplets vs. Bestand
+    close_dist_rel: float = 0.01,
 ) -> Dict[str, Any]:
     """Runs two extra detect sweeps with scaled pattern size and selects all newly created
     markers by NAME (aggregated across both sweeps, optionally including current selection).
@@ -274,6 +276,14 @@ def run_pattern_triplet_and_select_by_name(
 
     tracking = clip.tracking
     settings = tracking.settings
+    scn = context.scene
+
+    # Geometrie/Frame-Kontext
+    try:
+        frame_now = int(getattr(scn, "frame_current", 0))
+    except Exception:
+        frame_now = 0
+    width, height = int(clip.size[0]), int(clip.size[1])
 
     pattern_o = _get_pattern_size(tracking)
     search_o = int(getattr(settings, "default_search_size", 51))
@@ -283,6 +293,16 @@ def run_pattern_triplet_and_select_by_name(
         for t in tracking.tracks:
             if getattr(t, "select", False):
                 aggregated_names.add(t.name)
+
+    # Bestand vor Triplet-Messläufen: Pointer + Pixelpositionen für KDTree
+    before_ptrs_all = _collect_track_pointers(tracking.tracks)
+    existing_px = _collect_positions_at_frame(tracking.tracks, frame_now, width, height)
+    kd_tree = None
+    if existing_px:
+        kd_tree = KDTree(len(existing_px))
+        for i, (ex, ey) in enumerate(existing_px):
+            kd_tree.insert((ex, ey, 0.0), i)
+        kd_tree.balance()
                                          
     def sweep(scale: float) -> int:
         before_ptrs = _collect_track_pointers(tracking.tracks)
@@ -327,9 +347,54 @@ def run_pattern_triplet_and_select_by_name(
     except Exception:
         pass
 
+    # --- NACHBEARBEITUNG: Distanzprüfung NUR Triplets vs. Bestand ---
+    # Ziel: nur neue Triplet-Marker gegen zuvor existierende Marker vergleichen,
+    #       Triplets NICHT untereinander bewerten.
+    distance_px = max(1, int(width * (close_dist_rel if close_dist_rel > 0 else 0.01)))
+    thr2 = float(distance_px * distance_px)
+
+    # Sammle nur die wirklich neuen Triplet-Tracks (nach beiden Sweeps)
+    triplet_new_tracks = [t for t in tracking.tracks if t.as_pointer() not in before_ptrs_all]
+
+    reject_ptrs: Set[int] = set()
+    if kd_tree and triplet_new_tracks:
+        for tr in triplet_new_tracks:
+            try:
+                m = tr.markers.find_frame(frame_now, exact=True)
+            except TypeError:
+                m = tr.markers.find_frame(frame_now)
+            if not m or getattr(m, "mute", False):
+                continue
+            x = m.co[0] * width
+            y = m.co[1] * height
+            (loc, _idx, _dist) = kd_tree.find((x, y, 0.0))
+            dx = x - loc[0]
+            dy = y - loc[1]
+            if (dx * dx + dy * dy) < thr2:
+                reject_ptrs.add(tr.as_pointer())
+
+    # Unerwünschte Triplets (zu nah an Bestand) entfernen
+    if reject_ptrs:
+        _deselect_all(tracking)
+        for t in triplet_new_tracks:
+            if t.as_pointer() in reject_ptrs:
+                t.select = True
+        try:
+            _delete_selected_tracks(confirm=True)
+        except Exception as ex:
+            print(f"[PatternTriplet] delete_track failed, fallback remove: {ex}")
+            for t in list(tracking.tracks):
+                if t.as_pointer() in reject_ptrs:
+                    try:
+                        tracking.tracks.remove(t)
+                    except Exception:
+                        pass
+
+    # Recompute verbleibende Triplets & selektieren (nur Triplets)
+    remaining_triplet_names = {t.name for t in tracking.tracks if t.as_pointer() not in before_ptrs_all}
     for t in tracking.tracks:
         t.select = False
-    selected = _select_tracks_by_names(tracking, aggregated_names)
+    selected = _select_tracks_by_names(tracking, remaining_triplet_names)
 
     try:
         bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
@@ -338,15 +403,16 @@ def run_pattern_triplet_and_select_by_name(
 
     print(
         f"[PatternTriplet] DONE | pattern_o={pattern_o} | low={scale_low} -> +{created_low} | "
-        f"high={scale_high} -> +{created_high} | selected_by_name={selected}"
+        f"high={scale_high} -> +{created_high} | rejected_vs_existing={len(reject_ptrs)} | selected_triplets={selected}"
     )
 
     return {
         "status": "READY",
         "created_low": int(created_low),
         "created_high": int(created_high),
+        "rejected_vs_existing": int(len(reject_ptrs)),
         "selected": int(selected),
-        "names": sorted(aggregated_names),
+        "names": sorted(remaining_triplet_names),
     }
 
 
