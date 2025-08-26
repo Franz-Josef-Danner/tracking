@@ -1,6 +1,7 @@
 import bpy
 import time
 from contextlib import contextmanager
+from math import isfinite
 
 
 @contextmanager
@@ -27,7 +28,6 @@ def clip_context(clip=None):
             clip = space.clip
     if clip:
         ctx['edit_movieclip'] = clip
-        # für manche Operatoren hilfreich
         ctx['space_data'] = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
 
     yield ctx
@@ -35,34 +35,71 @@ def clip_context(clip=None):
 
 def _iter_tracks_with_marker_at_frame(tracks, frame):
     """
-    Liefert Tracks, die im angegebenen Frame einen Marker haben (geschätzt oder exakt),
-    und die nicht deaktiviert sind; Marker werden übersprungen, wenn sie gemutet sind.
+    Tracks mit Marker auf 'frame' (geschätzt/ exakt), die nicht deaktiviert sind.
     """
     for tr in tracks:
-        # Track-Enable prüfen (robuster als "mute", das es am Track nicht gibt)
         if hasattr(tr, "enabled") and not bool(getattr(tr, "enabled")):
             continue
-
-        # Marker in diesem Frame finden (exact=False erlaubt interpolierten Zugriff)
         mk = tr.markers.find_frame(frame, exact=False)
         if mk is None:
             continue
-
-        # Marker: 'mute' existiert ggf. → nur dann prüfen
         if hasattr(mk, "mute") and bool(getattr(mk, "mute")):
             continue
-
         yield tr
+
+
+def _marker_error_on_frame(track, frame):
+    """
+    Liefert möglichst den Marker-Error des Tracks auf 'frame';
+    Fallback: track.average_error. Nicht-finite Werte -> None.
+    """
+    try:
+        mk = track.markers.find_frame(frame, exact=False)
+        if mk is not None and hasattr(mk, "error"):
+            v = float(mk.error)
+            if isfinite(v):
+                return v
+    except Exception:
+        pass
+    try:
+        v = float(getattr(track, "average_error"))
+        return v if isfinite(v) else None
+    except Exception:
+        return None
 
 
 def _refine_markers_with_override(ctx: dict, *, backwards: bool) -> None:
     """
     Führt bpy.ops.clip.refine_markers sicher mit temp_override aus.
-    Verwendet EXEC_DEFAULT, damit kein Popup-Kontext benötigt wird.
     """
-    # Wichtig: temp_override benötigt die KONSTRUIERTEN Keys (window/screen/area/region/space_data)
     with bpy.context.temp_override(**ctx):
         bpy.ops.clip.refine_markers('EXEC_DEFAULT', backwards=bool(backwards))
+
+
+def _set_selection_for_tracks(tob, frame, tracks_subset):
+    """
+    Setzt die Selektion ausschließlich auf 'tracks_subset' und deren Marker auf 'frame'.
+    (per Property-Set, ohne Operator; robust gegen Kontext)
+    """
+    # Alles deselektieren
+    for t in tob.tracks:
+        try:
+            t.select = False
+            for m in t.markers:
+                m.select = False
+        except Exception:
+            pass
+
+    # Nur gewünschte Tracks + Marker auf diesem Frame selektieren
+    for t in tracks_subset:
+        try:
+            mk = t.markers.find_frame(frame, exact=False)
+            if mk is None:
+                continue
+            t.select = True
+            mk.select = True
+        except Exception:
+            pass
 
 
 def refine_on_high_error(
@@ -72,18 +109,21 @@ def refine_on_high_error(
     tracking_object_name: str | None = None,
     only_selected_tracks: bool = False,
     wait_seconds: float = 0.1,
+    max_per_frame: int = 20,  # NEW: Obergrenze Top-N pro Frame
 ) -> None:
     """
     Durchläuft alle Frames der aktuellen Szene. Für jeden Frame:
       - MEA = Anzahl aktiver Marker (Tracks mit Marker in diesem Frame)
-      - ME  = Summe der Track-Fehler (average_error) der aktiven Marker
+      - ME  = Summe der Track-Fehler (Marker.error- oder average_error-Fallback)
       - FE  = ME / MEA (Durchschnitt je Marker)
-      - Wenn FE > error_track * 2: Playhead auf Frame, refine_markers vorwärts & rückwärts.
+      - Wenn FE > error_track * 2:
+          * Selektion = Top-N (max_per_frame) Tracks mit größtem Fehler in diesem Frame
+          * refine_markers vorwärts & rückwärts
 
-    Hinweise
-    --------
-    Blender gibt per Python keinen pro-Frame-Fehler je Marker aus. Wir verwenden daher
-    tr.average_error als ME_i-Näherung, sofern der Track im aktuellen Frame einen Marker besitzt.
+    Hinweise:
+      - Auswahl wird immer auf die Top-N beschränkt.
+      - Wenn only_selected_tracks=True, wird bereits die Eingangs-Trackliste
+        auf zuvor selektierte Tracks gefiltert.
     """
     scene = bpy.context.scene
     if scene is None:
@@ -95,8 +135,6 @@ def refine_on_high_error(
             raise RuntimeError("Kein Movie Clip verfügbar (weder über Parameter noch im Editor).")
 
         tracking = clip.tracking
-
-        # Solve-Check
         recon = getattr(tracking, "reconstruction", None)
         if not recon or not getattr(recon, "is_valid", False):
             raise RuntimeError("Rekonstruktion ist nicht gültig. Bitte erst Solve durchführen.")
@@ -108,11 +146,8 @@ def refine_on_high_error(
             raise RuntimeError("Kein Tracking-Objekt gefunden/aktiv.")
 
         tracks = list(tob.tracks)
-
-        # Optional nur selektierte Tracks berücksichtigen
         if only_selected_tracks:
             tracks = [t for t in tracks if getattr(t, "select", False)]
-
         if not tracks:
             raise RuntimeError("Keine (passenden) Tracks gefunden.")
 
@@ -122,57 +157,54 @@ def refine_on_high_error(
         triggered_frames = []
 
         for f in range(frame_start, frame_end + 1):
-            # Aktive Marker/Tracks im Frame sammeln
+            # Alle Tracks mit Marker auf f
             active_tracks = list(_iter_tracks_with_marker_at_frame(tracks, f))
             MEA = len(active_tracks)
             if MEA == 0:
                 continue
 
-            # ME als Summe aus average_error der betreffenden Tracks (defensiv)
+            # FE (Frame-Mittel) für die Trigger-Entscheidung
             ME = 0.0
             for t in active_tracks:
-                try:
-                    ME += float(getattr(t, "average_error"))
-                except Exception:
-                    # falls ein Track kein average_error hat → ignorieren
-                    pass
+                v = _marker_error_on_frame(t, f)
+                if v is not None:
+                    ME += v
             FE = ME / MEA
 
             if FE > (error_track * 2.0):
-                # Playhead setzen
-                scene.frame_set(f)  # setzt auch DepGraph-Updates
-                triggered_frames.append((f, FE, MEA))
+                # Top-N Tracks nach Fehler bestimmen (Marker.error bevorzugt)
+                scored = []
+                for t in active_tracks:
+                    v = _marker_error_on_frame(t, f)
+                    if v is not None:
+                        scored.append((v, t))
+                # sort desc und cap
+                scored.sort(key=lambda kv: kv[0], reverse=True)
+                top_tracks = [t for _, t in scored[:max(1, int(max_per_frame))]]
+                if not top_tracks:
+                    continue  # nichts Sinnvolles auszuwählen
 
-                # Auswahl im MCE konsistent halten (nur falls only_selected_tracks=True)
-                if only_selected_tracks:
-                    # sicherstellen, dass Selektion stimmt (Operator arbeitet auf selektierten Markern)
-                    for t in tob.tracks:
-                        try:
-                            t.select = False
-                        except Exception:
-                            pass
-                    for t in active_tracks:
-                        try:
-                            t.select = True
-                        except Exception:
-                            pass
+                # Playhead setzen & Selection exakt auf Top-N beschränken
+                scene.frame_set(f)
+                _set_selection_for_tracks(tob, f, top_tracks)
 
-                # Refine vorwärts & rückwärts mit sauberem Context-Override
-                _refine_markers_with_override(ctx, backwards=False)  # nach vorne
-                # kurzer UI-Redraw + Wartezeit, um Feedback/Lag zu vermeiden
+                triggered_frames.append((f, FE, MEA, len(top_tracks)))
+
+                # Refine vorwärts & rückwärts (nur Top-N selektiert)
+                _refine_markers_with_override(ctx, backwards=False)
                 with bpy.context.temp_override(**ctx):
                     bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
                 if wait_seconds > 0:
                     time.sleep(wait_seconds)
-                _refine_markers_with_override(ctx, backwards=True)   # rückwärts
+                _refine_markers_with_override(ctx, backwards=True)
                 with bpy.context.temp_override(**ctx):
                     bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
 
-        # Optional: kurzes Protokoll in der Konsole
+        # Logging
         if triggered_frames:
             print("[RefineOnHighError] Ausgelöst bei Frames:")
-            for f, fe, mea in triggered_frames:
-                print(f"  Frame {f}: FE={fe:.4f} (MEA={mea}) > 2*error_track={2*error_track:.4f}")
+            for f, fe, mea, nsel in triggered_frames:
+                print(f"  Frame {f}: FE={fe:.4f} (MEA={mea}), Top-N selektiert: {nsel}")
         else:
             print("[RefineOnHighError] Keine Frames über Schwellwert gefunden.")
 
@@ -184,4 +216,5 @@ def refine_on_high_error(
 #     tracking_object_name=None,  # aktives Tracking-Objekt
 #     only_selected_tracks=False,
 #     wait_seconds=0.1,
+#     max_per_frame=20,
 # )
