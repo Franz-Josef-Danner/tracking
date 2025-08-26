@@ -23,6 +23,7 @@ from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin
 # Cycle-Helpers
 from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
 from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
+from ..Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
 from ..Helper.spike_filter_cycle import run_spike_filter_cycle  # type: ignore
 
 __all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
@@ -143,7 +144,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     # --- Cycle-Bookkeeping ---
     _cycle_active: bool = False
-    _cycle_stage: str = ""      # "CYCLE_FIND_MAX" | "CYCLE_SPIKE"
+    _cycle_stage: str = ""      # "CYCLE_FIND_LOW" | "CYCLE_FIND_MAX" | "CYCLE_SPIKE"
     _cycle_loops: int = 0        # Anzahl der durchlaufenen FIND_MAX↔SPIKE Runden
     _cycle_initial_clean_done: bool = False  # << nur einmal zu Beginn
     _cycle_spike_threshold: float = 100.0
@@ -222,6 +223,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return self._state_solve_wait(context)
         elif self._state == "CYCLE_CLEAN":
             return self._state_cycle_clean(context)
+        elif self._state == "CYCLE_FIND_LOW":
+            return self._state_cycle_find_low(context)
         elif self._state == "CYCLE_FIND_MAX":
             return self._state_cycle_findmax(context)
         elif self._state == "CYCLE_SPIKE":
@@ -262,8 +265,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_find_low(self, context):
-        from ..Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
-
         result = run_find_low_marker_frame(context)
         status = str(result.get("status", "FAILED")).upper()
 
@@ -315,18 +316,18 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         if err is not None:
             print(f"[Coord] SOLVE_WAIT → reconstruction valid, avg_error={err:.4f}px → CLEANUP")
             try:
-                # Jetzt ist Solve sicher fertig. Wir können direkt mit fester Schwelle
-                # ODER ohne Schwelle (Helper ermittelt sie sofort) arbeiten.
                 cleanup = run_projection_cleanup_builtin(
                     context,
-                    error_limit=float(err),   # den Solve-Error direkt verwenden!
+                    error_limit=float(err),
                     wait_for_error=False,
-                    action="DELETE_TRACK",    # direkt löschen
+                    action="DELETE_TRACK",
                 )
                 print(f"[Coord] Cleanup after solve → {cleanup}")
             except Exception as ex_cleanup:
                 print(f"[Coord] Cleanup after solve failed: {ex_cleanup!r}")
-            self._state = "FINALIZE"
+            self._cycle_active = True
+            self._cycle_stage = "CYCLE_FIND_LOW"
+            self._state = "CYCLE_FIND_LOW"
             return {"RUNNING_MODAL"}
 
         # Noch kein gültiger Solve-Error → Timeout prüfen
@@ -475,6 +476,24 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._cycle_initial_clean_done = True
 
         # Nach einmaligem CLEAN direkt zu FIND_MAX wechseln
+        self._cycle_stage = "CYCLE_FIND_MAX"
+        self._state = "CYCLE_FIND_MAX"
+        return {"RUNNING_MODAL"}
+
+    # ---------------- CYCLE_FIND_LOW ----------------
+    def _state_cycle_find_low(self, context):
+        """Findet einen *niedrigen* Marker-Frame als neuen Startpunkt für den nächsten Cycle."""
+        try:
+            ok, frame = run_find_low_marker_frame(context)
+            print(f"[Coord] CYCLE_FIND_LOW → ok={ok}, frame={frame}")
+            if ok:
+                context.scene.frame_current = int(frame)
+                self._cycle_stage = "CYCLE_SPIKE"
+                self._state = "CYCLE_SPIKE"
+                return {"RUNNING_MODAL"}
+        except Exception as ex:
+            print(f"[Coord] CYCLE_FIND_LOW failed: {ex!r}")
+
         self._cycle_stage = "CYCLE_FIND_MAX"
         self._state = "CYCLE_FIND_MAX"
         return {"RUNNING_MODAL"}
