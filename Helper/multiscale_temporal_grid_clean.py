@@ -6,42 +6,13 @@ def multiscale_temporal_grid_clean(
     context, area, region, space, tracks, frame_range,
     width, height, grid=(6, 6),
     start_delta=None,
-    # --- SEHR SOFT DEFAULTS ---
-    # Höherer outlier_q => relaxter (weniger Löschungen)
-    # Mehr Hysterese-Hits => braucht öftere Bestätigung
-    # Mehr Mindestitems pro Zelle => nur auf Datenbasis mit Substanz entscheiden
-    # Größeres min_delta => stabilere Trend-Schätzung
+
     min_delta=4,
     outlier_q=1.35,
     hysteresis_hits=3,
     min_cell_items=6
 ):
-    """
-    Multiskaliger Grid-Cleaner für Tracking-Marker.
 
-    *** Soft-Profil (Defaults) ***
-    - outlier_q = 1.35:
-        Relaxed Mode ( > 1.0 ): Coarse-Pass-Schwelle wird vom Maximum ausgehend
-        um einen robusten Zuschlag (∝ MAD) nach oben verschoben. Ergebnis:
-        deutlich höhere Toleranz, nur eindeutige Ausreißer werden geflaggt.
-    - hysteresis_hits = 3:
-        Ein Marker muss in mehreren Durchläufen/Skalen auffällig sein,
-        bevor gelöscht wird. Ergebnis: Fehlalarme werden stark reduziert.
-    - min_cell_items = 6:
-        In spärlich besetzten Regionen wird nicht bereinigt.
-        Ergebnis: Entscheidungen nur auf solider Datenbasis.
-    - min_delta = 4:
-        Δ-Trendbetrachtung mit größerem Abstand => robustere Schätzung,
-        weniger „Nervosität“ bei sporadischen Ausreißern.
-
-    Praktischer Effekt:
-        „Sehr soft“ löscht spürbar weniger; gute Tracks bleiben erhalten,
-        nur klar auffällige Marker werden entfernt.
-
-    Hinweis:
-        Du kannst die Defaults jederzeit beim Aufruf überschreiben,
-        z. B. outlier_q=1.15 (etwas strenger) oder hysteresis_hits=2 (aggressiver).
-    """
     scene = context.scene
     clip = getattr(space, "clip", None)
     if not clip or not tracks:
