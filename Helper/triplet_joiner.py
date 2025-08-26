@@ -1,20 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 from __future__ import annotations
 
-"""
-Helper/triplet_joiner.py
-
-Zweck
------
-- Persistierte 3er-Gruppen (Namen & Pointer) aus Szene lesen
-- Je Gruppe exakt drei Tracks selektieren, aktiven Track setzen
-- join_tracks() robust im CLIP-Context ausführen
-- Zusammenfassung zurückgeben
-
-Kompatibel mit:
-  - Helper/triplet_grouping.py (persistiert Gruppen)
-  - Helper/bidirectional_track.py (ruft Join nach dem Tracking)
-"""
 
 import json
 from typing import Any, Dict, List, Optional, Tuple
