@@ -230,11 +230,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # Aktion anpassen: 'DISABLE' | 'DELETE_TRACK' | 'DELETE_SEGMENTS' | 'SELECT'
             cleanup = run_projection_cleanup_builtin(
                 context,
-                error_limit=None,           # oder z.B. 1.2 für eine feste Grenze in px
-                wait_for_error=True,
-                wait_forever=False,
-                timeout_s=20.0,
-                action="DISABLE",
+                error_limit=1.0,        # feste px-Grenze → kein Warten nötig
+                wait_for_error=False,   # sofort ausführen
+                action="DISABLE",       # oder "DELETE_TRACK"
+                timeout_s=60.0,         # nur relevant, falls wait_for_error=True
             )
             print(f"[Coord] Cleanup after solve → {cleanup}")
         except Exception as ex_cleanup:
