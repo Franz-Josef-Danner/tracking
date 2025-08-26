@@ -10,11 +10,16 @@ def clip_context(clip=None):
     Wählt die erste CLIP_EDITOR-Area des aktiven Screens.
     """
     ctx = bpy.context.copy()
-    area = next((a for a in bpy.context.window.screen.areas if a.type == 'CLIP_EDITOR'), None)
+    win = bpy.context.window
+    scr = win.screen if win else None
+    area = next((a for a in (scr.areas if scr else []) if a.type == 'CLIP_EDITOR'), None)
     if area is None:
         raise RuntimeError("Kein 'Movie Clip Editor' (CLIP_EDITOR) im aktuellen Screen gefunden.")
+    ctx['window'] = win
+    ctx['screen'] = scr
     ctx['area'] = area
     ctx['region'] = next((r for r in area.regions if r.type == 'WINDOW'), None)
+
     if clip is None:
         # Aktiven Clip der Area verwenden, falls vorhanden
         space = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
@@ -22,13 +27,16 @@ def clip_context(clip=None):
             clip = space.clip
     if clip:
         ctx['edit_movieclip'] = clip
+        # für manche Operatoren hilfreich
+        ctx['space_data'] = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
+
     yield ctx
 
 
 def _iter_tracks_with_marker_at_frame(tracks, frame):
     """
     Liefert Tracks, die im angegebenen Frame einen Marker haben (geschätzt oder exakt),
-    und die nicht deaktiviert/gestummschaltet sind.
+    und die nicht deaktiviert sind; Marker werden übersprungen, wenn sie gemutet sind.
     """
     for tr in tracks:
         # Track-Enable prüfen (robuster als "mute", das es am Track nicht gibt)
@@ -45,6 +53,16 @@ def _iter_tracks_with_marker_at_frame(tracks, frame):
             continue
 
         yield tr
+
+
+def _refine_markers_with_override(ctx: dict, *, backwards: bool) -> None:
+    """
+    Führt bpy.ops.clip.refine_markers sicher mit temp_override aus.
+    Verwendet EXEC_DEFAULT, damit kein Popup-Kontext benötigt wird.
+    """
+    # Wichtig: temp_override benötigt die KONSTRUIERTEN Keys (window/screen/area/region/space_data)
+    with bpy.context.temp_override(**ctx):
+        bpy.ops.clip.refine_markers('EXEC_DEFAULT', backwards=bool(backwards))
 
 
 def refine_on_high_error(
@@ -139,14 +157,16 @@ def refine_on_high_error(
                         except Exception:
                             pass
 
-                # Refine vorwärts & rückwärts
-                bpy.ops.clip.refine_markers(ctx, backwards=False)  # nach vorne
+                # Refine vorwärts & rückwärts mit sauberem Context-Override
+                _refine_markers_with_override(ctx, backwards=False)  # nach vorne
                 # kurzer UI-Redraw + Wartezeit, um Feedback/Lag zu vermeiden
-                bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                with bpy.context.temp_override(**ctx):
+                    bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
                 if wait_seconds > 0:
                     time.sleep(wait_seconds)
-                bpy.ops.clip.refine_markers(ctx, backwards=True)   # rückwärts
-                bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                _refine_markers_with_override(ctx, backwards=True)   # rückwärts
+                with bpy.context.temp_override(**ctx):
+                    bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
 
         # Optional: kurzes Protokoll in der Konsole
         if triggered_frames:
