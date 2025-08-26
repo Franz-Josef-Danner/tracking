@@ -1,19 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 from __future__ import annotations
-"""
-Helper/triplet_grouping.py
 
-Zweck
------
-- Selektierte Tracks am aktuellen Frame auslesen
-- Positionsbasiert in 3er-Gruppen clustern (ε-Pixel-Bucket)
-- Gruppen (Namen & Pointer) robust in Scene-Props persistieren
-
-Kompatible Scene-Keys (werden von bidirectional_track.py gelesen):
-  - "pattern_triplet_groups_json"      → [[name1,name2,name3], ...]
-  - "pattern_triplet_groups_ptr_json"  → [[ptr1,ptr2,ptr3], ...]
-  - "pattern_triplet_groups_count"     → int
-"""
 
 import json
 from typing import Any, Dict, List, Optional, Tuple
