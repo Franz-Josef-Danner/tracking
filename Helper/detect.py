@@ -701,6 +701,103 @@ def run_detect_once(
                 print(f"[DetectTrace] Post pattern-triplet result: {triplet_result}")
             except Exception as ex:
                 print(f"[DetectError] pattern-triplet failed: {ex}")
+            # ---------------------------
+            # Nachverarbeitung: Triplet → nochmal Near-duplicate-Filter
+            # (verhindert Überlagerung der vom Triplet erzeugten Marker mit bereits vorhandenen)
+            # ---------------------------
+            try:
+                if triplet_result is not None and triplet_result.get("names"):
+                    names_set = set(triplet_result.get("names", []))
+
+                    # Tracks, die durch das Triplet identifiziert bzw. erstellt wurden
+                    triplet_tracks = [t for t in tracking.tracks if t.name in names_set]
+
+                    # Alle anderen Tracks (bestehende) — daraus bauen wir KDTree
+                    other_tracks = [t for t in tracking.tracks if t.name not in names_set]
+                    existing_after = _collect_positions_at_frame(other_tracks, frame, width, height)
+
+                    triplet_near_dupes: List[bpy.types.MovieTrackingTrack] = []
+                    if existing_after and triplet_tracks:
+                        tree = KDTree(len(existing_after))
+                        for i, (ex, ey) in enumerate(existing_after):
+                            tree.insert((ex, ey, 0.0), i)
+                        tree.balance()
+
+                        for tr in triplet_tracks:
+                            try:
+                                m = tr.markers.find_frame(frame, exact=True)
+                            except TypeError:
+                                m = tr.markers.find_frame(frame)
+                            if not m or getattr(m, "mute", False):
+                                continue
+                            x = m.co[0] * width
+                            y = m.co[1] * height
+                            try:
+                                (loc, _idx, _dist) = tree.find((x, y, 0.0))
+                            except Exception:
+                                # Falls KDTree.find scheitert (z.B. leeres Tree) → skip
+                                continue
+                            dx = x - loc[0]
+                            dy = y - loc[1]
+                            if (dx * dx + dy * dy) < thr2:
+                                triplet_near_dupes.append(tr)
+
+                    # Wende die gleiche duplicate_strategy an wie bei der ursprünglichen Detect-Pass
+                    if triplet_near_dupes:
+                        _deselect_all(tracking)
+                        for t in triplet_near_dupes:
+                            if duplicate_strategy == "mute":
+                                try:
+                                    t.mute = True
+                                except Exception:
+                                    pass
+                                # leave selected = False (mute only)
+                            elif duplicate_strategy == "tag":
+                                try:
+                                    t.name = f"{duplicate_tag}_{t.name}" if duplicate_tag else f"NEAR_DUP_{t.name}"
+                                except Exception:
+                                    pass
+                                t.select = True
+                            else:  # delete
+                                try:
+                                    t.select = True
+                                except Exception:
+                                    pass
+
+                        if any(getattr(t, "select", False) for t in tracking.tracks):
+                            try:
+                                if duplicate_strategy == "delete":
+                                    _delete_selected_tracks(confirm=True)
+                            except Exception as ex:
+                                print(f"[DetectError] delete_track failed (triplet cleanup): {ex}")
+                                # Fallback: direkte Entfernung
+                                for t in list(triplet_near_dupes):
+                                    try:
+                                        tracking.tracks.remove(t)
+                                    except Exception:
+                                        pass
+
+                        # Entferne ggf. aus 'cleaned' — falls Referenzen vorhanden (sicherheitsweise)
+                        try:
+                            dup_ptrs = {t.as_pointer() for t in triplet_near_dupes}
+                            cleaned = [t for t in cleaned if t.as_pointer() not in dup_ptrs]
+                        except Exception:
+                            pass
+
+                        # Ergänze triplet_result um Info zur Nachbereinigung
+                        try:
+                            triplet_result.setdefault("near_dupes_after_triplet", {})
+                            triplet_result["near_dupes_after_triplet"]["count"] = len(triplet_near_dupes)
+                            triplet_result["near_dupes_after_triplet"]["names"] = [t.name for t in triplet_near_dupes]
+                        except Exception:
+                            pass
+
+                try:
+                    bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
+                except Exception:
+                    pass
+            except Exception as ex:
+                print(f"[DetectError] post-triplet near-duplicate cleanup failed: {ex}")
 
         metrics = DetectMetrics(
             frame=frame,
