@@ -38,7 +38,7 @@ __all__ = [
 # ---------------------------------------------------------------------
 DETECT_LAST_THRESHOLD_KEY = "last_detection_threshold"  # float
 _LOCK_KEY = "__detect_lock"
-_PREV_SEL_KEY = "__detect_prev_selection"  # (nicht mehr benutzt; behalten für Backcompat, aber nicht schreiben)
+_PREV_SEL_KEY = "__detect_prev_selection"
 
 # ---------------------------------------------------------------------
 # Data structures
@@ -115,16 +115,9 @@ def _deselect_all(tracking: bpy.types.MovieTracking) -> None:
 
 def _delete_selected_tracks(confirm: bool = True) -> None:
     def _op(**kw):
-        # einige Blender-Versionen kennen 'confirm' nicht → defensiv
-        try:
-            return bpy.ops.clip.delete_track(**kw)
-        except TypeError:
-            return bpy.ops.clip.delete_track()
+        return bpy.ops.clip.delete_track(**kw)
 
-    try:
-        _run_in_clip_context(_op, confirm=confirm)
-    except Exception:
-        _run_in_clip_context(_op)
+    _run_in_clip_context(_op, confirm=confirm)
 
 
 def _collect_positions_at_frame(
@@ -148,24 +141,19 @@ def _collect_positions_at_frame(
 def _normalize_roi(
     roi: Optional[Tuple[float, float, float, float]], width: int, height: int
 ) -> Optional[Tuple[int, int, int, int]]:
-    """Return pixel ROI (x, y, w, h) within image bounds or None. Accepts normalized [0..1] or pixel tuple."""
+    """Return pixel ROI (x, y, w, h) or None. Accepts normalized [0..1] or pixel tuple."""
     if not roi:
         return None
     x, y, w, h = roi
     # Heuristic: values > 1 are pixels
     if max(abs(x), abs(y), abs(w), abs(h)) <= 1.0:
-        px = int(round(x * width))
-        py = int(round(y * height))
-        pw = int(max(1, round(w * width)))
-        ph = int(max(1, round(h * height)))
-    else:
-        px, py, pw, ph = int(x), int(y), int(w), int(h)
-    # clamp to image bounds
-    px = max(0, min(px, width - 1))
-    py = max(0, min(py, height - 1))
-    pw = max(1, min(pw, width - px))
-    ph = max(1, min(ph, height - py))
-    return (px, py, pw, ph)
+        return (
+            int(max(0, round(x * width))),
+            int(max(0, round(y * height))),
+            int(max(1, round(w * width))),
+            int(max(1, round(h * height))),
+        )
+    return (int(x), int(y), int(w), int(h))
 
 
 def _inside_roi(px: float, py: float, roi_px: Tuple[int, int, int, int]) -> bool:
@@ -264,12 +252,9 @@ def run_pattern_triplet_and_select_by_name(
     context: bpy.types.Context,
     *,
     scale_low: float = 0.5,
-    scale_high: float = 4,
+    scale_high: float = 2,
     also_include_ready_selection: bool = True,
     adjust_search_with_pattern: bool = False,
-    # NEW: optionaler Dupe-Filter über beide Sweeps hinweg
-    triplet_dedupe: bool = False,
-    triplet_dedupe_rel: float = 0.01,
     # NEU:
     detect_threshold: Optional[float] = None,
     detect_margin: Optional[int] = None,
@@ -289,32 +274,22 @@ def run_pattern_triplet_and_select_by_name(
 
     tracking = clip.tracking
     settings = tracking.settings
-    scn = context.scene
-    frame = int(getattr(scn, "frame_current", 0))
-    width, height = int(clip.size[0]), int(clip.size[1])
 
     pattern_o = _get_pattern_size(tracking)
     search_o = int(getattr(settings, "default_search_size", 51))
     aggregated_names: Set[str] = set()
-    ready_names: Set[str] = set()
 
     if also_include_ready_selection:
         for t in tracking.tracks:
             if getattr(t, "select", False):
                 aggregated_names.add(t.name)
-                ready_names.add(t.name)
-
-    def sweep(scale: float) -> List[str]:
+                                         
+    def sweep(scale: float) -> int:
         before_ptrs = _collect_track_pointers(tracking.tracks)
         new_pattern = max(3, int(round(pattern_o * float(scale))))
         eff = _set_pattern_size(tracking, new_pattern)
         try:
-            if adjust_search_with_pattern:
-                # dynamisch an Pattern koppeln
-                settings.default_search_size = max(5, eff * 2)
-            else:
-                # ursprünglichen Search beibehalten
-                settings.default_search_size = search_o
+            settings.default_search_size = max(5, eff * 2)
         except Exception:
             pass
         print(f"[Triplet] scale={scale} pattern_o={pattern_o} -> req={new_pattern} eff={eff} "
@@ -338,19 +313,17 @@ def run_pattern_triplet_and_select_by_name(
             bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
         except Exception:
             pass
-
+    
         new_names = _collect_new_track_names_by_pointer(tracking.tracks, before_ptrs)
         aggregated_names.update(new_names)
-        return new_names
+        return len(new_names)
 
-    names_low = sweep(scale_low)
-    names_high = sweep(scale_high)
-    created_low = len(names_low)
-    created_high = len(names_high)
+    created_low = sweep(scale_low)
+    created_high = sweep(scale_high)
 
     _set_pattern_size(tracking, pattern_o)
     try:
-        settings.default_search_size = search_o   # exakt wiederherstellen
+        settings.default_search_size = pattern_o * 2   # konsistent wiederherstellen
     except Exception:
         pass
 
@@ -363,69 +336,6 @@ def run_pattern_triplet_and_select_by_name(
     except Exception:
         pass
 
-    dedup_removed = 0
-    if triplet_dedupe and aggregated_names:
-        # Prioritäten-Reihenfolge: ready > low > high
-        priority = list(ready_names) + list(names_low) + list(names_high)
-        # Positionsmap am aktuellen Frame
-        pos_by_name: Dict[str, Tuple[float, float]] = {}
-        for t in tracking.tracks:
-            if t.name in aggregated_names:
-                try:
-                    m = t.markers.find_frame(frame, exact=True)
-                except TypeError:
-                    m = t.markers.find_frame(frame)
-                if m and not getattr(m, "mute", False):
-                    # direkt in Pixel speichern
-                    pos_by_name[t.name] = (m.co[0] * width, m.co[1] * height)
-
-        keep: Set[str] = set()
-        keep_pos: List[Tuple[float, float]] = []
-        thr_pix = max(1.0, float(min(width, height)) * float(triplet_dedupe_rel))
-        thr2 = thr_pix * thr_pix
-
-        for name in priority:
-            p = pos_by_name.get(name)
-            if not p:
-                continue
-            # Distanzprüfung gegen bereits behaltene
-            dup = False
-            px, py = p  # bereits in Pixeln
-            for (kx, ky) in keep_pos:
-                dx = px - kx
-                dy = py - ky
-                if (dx*dx + dy*dy) <= thr2:
-                    dup = True
-                    break
-            if dup:
-                continue
-            keep.add(name)
-            keep_pos.append(p)
-
-        to_delete = aggregated_names - keep
-        if to_delete:
-            _deselect_all(tracking)
-            for t in tracking.tracks:
-                if t.name in to_delete:
-                    t.select = True
-            try:
-                _delete_selected_tracks(confirm=True)
-            except Exception:
-                # Fallback
-                for t in list(tracking.tracks):
-                    if t.name in to_delete:
-                        try:
-                            tracking.tracks.remove(t)
-                        except Exception:
-                            pass
-            dedup_removed = len(to_delete)
-            # final auswählen: die behaltenen
-            for t in tracking.tracks:
-                t.select = False
-            selected = _select_tracks_by_names(tracking, keep)
-            aggregated_names = keep
-            print(f"[PatternTriplet] DeDupe | removed={dedup_removed} | selected_after={selected}")
-
     print(
         f"[PatternTriplet] DONE | pattern_o={pattern_o} | low={scale_low} -> +{created_low} | "
         f"high={scale_high} -> +{created_high} | selected_by_name={selected}"
@@ -436,7 +346,6 @@ def run_pattern_triplet_and_select_by_name(
         "created_low": int(created_low),
         "created_high": int(created_high),
         "selected": int(selected),
-        "dedup_removed": int(dedup_removed),
         "names": sorted(aggregated_names),
     }
 
@@ -480,7 +389,6 @@ def run_detect_once(
         return {"status": "FAILED", "reason": "locked"}
 
     scn[_LOCK_KEY] = True
-    t_start = time.perf_counter()
 
     frame: int = int(getattr(scn, "frame_current", 0))
     before_ids: set[int] = set()
@@ -548,6 +456,7 @@ def run_detect_once(
         # Save previous selection if needed
         if selection_policy == "restore":
             prev_selection = [t.as_pointer() for t in tracking.tracks if getattr(t, "select", False)]
+            scn[_PREV_SEL_KEY] = prev_selection
 
         before_ids = {t.as_pointer() for t in tracking.tracks}
         existing_px = _collect_positions_at_frame(tracking.tracks, frame, width, height)
@@ -665,24 +574,16 @@ def run_detect_once(
                         pass
             cleaned = []
 
-        # Selection handling (validiere Policy)
-        if selection_policy not in ("only_new", "restore", "leave"):
-            selection_policy = "only_new"
-        if duplicate_strategy not in ("delete", "mute", "tag"):
-            duplicate_strategy = "delete"
-
         # Selection handling
+        _deselect_all(tracking)
         if selection_policy == "only_new":
-            _deselect_all(tracking)
             for t in cleaned:
                 t.select = True
         elif selection_policy == "restore":
-            _deselect_all(tracking)
-            # nur noch die lokal gemerkte Auswahl verwenden
-            ptrs = set(prev_selection or [])
+            prev = scn.get(_PREV_SEL_KEY, []) or prev_selection
+            ptrs = set(prev)
             for t in tracking.tracks:
                 t.select = t.as_pointer() in ptrs
-        # "leave" → nichts tun (bestehende Auswahl bleibt unverändert)
 
         try:
             bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
@@ -713,11 +614,6 @@ def run_detect_once(
             k_p = 0.65
             k_i = 0.10
             acc = float(scn.get("__thr_i", 0.0)) + error
-            # Anti-Windup: enger Clamp verhindert Aufschaukeln
-            if acc > 2.0:
-                acc = 2.0
-            elif acc < -2.0:
-                acc = -2.0
             scn["__thr_i"] = acc
             scale = 1.0 + (k_p * error + k_i * acc)
             new_threshold = max(1e-4, float(threshold) * scale)
@@ -751,7 +647,7 @@ def run_detect_once(
                 tracks_near_dupe=len(near_dupes),
                 tracks_new_clean=new_count,
                 roi_rejected=len(roi_rejected),
-                duration_ms=(time.perf_counter() - t_start) * 1000.0,
+                duration_ms=0.0,
             )
             return {
                 "status": "RUNNING",
@@ -817,7 +713,7 @@ def run_detect_once(
             tracks_near_dupe=len(near_dupes),
             tracks_new_clean=len(cleaned),
             roi_rejected=len(roi_rejected),
-            duration_ms=(time.perf_counter() - t_start) * 1000.0,
+            duration_ms=0.0,
         )
 
         result: Dict[str, Any] = {
@@ -841,9 +737,9 @@ def run_detect_once(
         return {"status": "FAILED", "reason": str(ex), "frame": int(frame)}
     finally:
         try:
-            del scn[_LOCK_KEY]
-        except Exception:
             scn[_LOCK_KEY] = False
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------
