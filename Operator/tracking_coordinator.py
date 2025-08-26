@@ -337,6 +337,43 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._state = "SOLVE_WAIT"
         return {'RUNNING_MODAL'}
 
+    def _state_solve_wait(self, context):
+        """Wartet auf gültige Reconstruction, bewertet Solve-Error, entscheidet Pfad."""
+        # Falls nicht gesetzt (z. B. bei direktem Einstieg), initialisieren
+        if int(getattr(self, "_solve_wait_ticks", 0)) <= 0:
+            self._solve_wait_ticks = int(getattr(context.scene, "solve_wait_ticks", _SOLVE_WAIT_TICKS_DEFAULT))
+
+        # Pro Timer-Tick nur kurz warten, damit UI reaktiv bleibt
+        ready = _wait_for_reconstruction(context, tries=_SOLVE_WAIT_TRIES_PER_TICK)
+        if ready:
+            err = _compute_solve_error(context)
+            print(f"[Coord] SOLVE_WAIT → reconstruction valid, error={err}")
+
+            if err is None:
+                # Keine auswertbare Qualität → Fehlpfad
+                return self._handle_failed_solve(context)
+
+            # Schwelle aus Scene-Property (Fallback: 20.0)
+            thr = float(getattr(context.scene, "refine_threshold", 20.0) or 20.0)
+
+            # Optionaler Refine nach Solve (nur einmal)
+            if (not self._post_solve_refine_done) and (err > thr):
+                print(f"[Coord] SOLVE_WAIT → error {err:.3f} > {thr:.3f} → launch REFINE")
+                self._launch_refine(context, threshold=thr)
+                return {"RUNNING_MODAL"}
+
+            # Solve ok → fertig
+            print("[Coord] SOLVE_WAIT → OK → FINALIZE")
+            self._state = "FINALIZE"
+            return {"RUNNING_MODAL"}
+
+        # Noch nicht ready → Countdown
+        self._solve_wait_ticks = max(0, int(self._solve_wait_ticks) - 1)
+        if self._solve_wait_ticks <= 0:
+            print("[Coord] SOLVE_WAIT → timeout → FAIL-SOLVE")
+            return self._handle_failed_solve(context)
+
+        return {"RUNNING_MODAL"}
 
     # ---------------- Refine-Launch ----------------
 
