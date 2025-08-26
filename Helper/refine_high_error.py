@@ -30,10 +30,10 @@ def clip_context(clip=None):
     yield ctx
 
 
-# ---------- UI-Helpers -------------------------------------------------------
+# ---------- Frame-Mapping & UI -----------------------------------------------
 
 def _scene_to_clip_frame(context, clip, scene_frame: int) -> int:
-    """Szenen-Frame deterministisch auf Clip-Frame mappen (fps/Offsets/Clamping)."""
+    """Szenen-Frame → Clip-Frame (beachtet fps/Offsets; geklemmt auf Clipdauer)."""
     scn = context.scene
     scene_start = int(getattr(scn, "frame_start", 1))
     clip_start = int(getattr(clip, "frame_start", 1))
@@ -50,34 +50,29 @@ def _scene_to_clip_frame(context, clip, scene_frame: int) -> int:
 
 
 def _force_visible_playhead(ctx: dict, scene: bpy.types.Scene, clip: bpy.types.MovieClip,
-                            scene_frame: int, *, sleep_s: float = 0.06) -> None:
+                            scene_frame: int, clip_frame: int, *, sleep_s: float = 0.06) -> None:
     """
-    Setzt Playhead sichtbar auf scene_frame:
+    Playhead sichtbar setzen:
       - Szene-Frame setzen
-      - Clip-User-Frame synchronisieren (bei fps/Offset-Differenzen)
+      - Clip-User-Frame synchronisieren
       - View-Layer updaten
-      - 2× Redraw anstoßen
-      - kurze Wartezeit für zuverlässiges Zeichnen
+      - zwei Redraw-Zyklen
+      - kurze Pause für zuverlässiges Zeichnen
     """
-    # 1) Szene-Frame setzen
     scene.frame_set(int(scene_frame))
 
-    # 2) Clip-Frame im Editor mitziehen
     try:
-        clip_frame = _scene_to_clip_frame(bpy.context, clip, int(scene_frame))
         space = ctx.get("space_data", None)
         if space and getattr(space, "clip_user", None):
             space.clip_user.frame_current = int(clip_frame)
     except Exception:
         pass
 
-    # 3) Layer/Depsgraph aktualisieren (stellt sicher, dass UI gültige Daten hat)
     try:
         bpy.context.view_layer.update()
     except Exception:
         pass
 
-    # 4) Harte Redraw-Sequenz
     try:
         area = ctx.get("area", None)
         if area:
@@ -91,7 +86,6 @@ def _force_visible_playhead(ctx: dict, scene: bpy.types.Scene, clip: bpy.types.M
     except Exception:
         pass
 
-    # 5) winzige Pause lässt den Playhead wirklich erscheinen
     if sleep_s and sleep_s > 0.0:
         try:
             time.sleep(float(sleep_s))
@@ -99,14 +93,21 @@ def _force_visible_playhead(ctx: dict, scene: bpy.types.Scene, clip: bpy.types.M
             pass
 
 
-# ---------- Fehler-/Selektion-Helpers ---------------------------------------
+# ---------- Marker/Track-Helpers --------------------------------------------
 
-def _iter_tracks_with_marker_at_frame(tracks, frame):
-    """Tracks mit Marker auf 'frame' (geschätzt/ exakt), die nicht deaktiviert sind."""
+def _find_marker_on_clip_frame(track, frame_clip: int):
+    try:
+        return track.markers.find_frame(frame_clip, exact=False)
+    except Exception:
+        return None
+
+
+def _iter_tracks_with_marker_at_clip_frame(tracks, frame_clip: int):
+    """Tracks mit Marker auf 'frame_clip', die nicht deaktiviert und nicht gemutet sind."""
     for tr in tracks:
         if hasattr(tr, "enabled") and not bool(getattr(tr, "enabled")):
             continue
-        mk = tr.markers.find_frame(frame, exact=False)
+        mk = _find_marker_on_clip_frame(tr, frame_clip)
         if mk is None:
             continue
         if hasattr(mk, "mute") and bool(getattr(mk, "mute")):
@@ -114,10 +115,10 @@ def _iter_tracks_with_marker_at_frame(tracks, frame):
         yield tr
 
 
-def _marker_error_on_frame(track, frame):
-    """Bevorzugt Marker.error auf 'frame', sonst track.average_error. Non-finite → None."""
+def _marker_error_on_clip_frame(track, frame_clip: int):
+    """Bevorzugt Marker.error auf 'frame_clip', sonst track.average_error. Non-finite → None."""
     try:
-        mk = track.markers.find_frame(frame, exact=False)
+        mk = _find_marker_on_clip_frame(track, frame_clip)
         if mk is not None and hasattr(mk, "error"):
             v = float(mk.error)
             if isfinite(v):
@@ -137,8 +138,8 @@ def _refine_markers_with_override(ctx: dict, *, backwards: bool) -> None:
         bpy.ops.clip.refine_markers('EXEC_DEFAULT', backwards=bool(backwards))
 
 
-def _set_selection_for_tracks(tob, frame, tracks_subset):
-    """Selektion ausschließlich auf 'tracks_subset' und deren Marker auf 'frame' setzen."""
+def _set_selection_for_tracks_on_clip_frame(tob, frame_clip: int, tracks_subset):
+    """Selektion ausschließlich auf 'tracks_subset' und deren Marker auf 'frame_clip' setzen."""
     for t in tob.tracks:
         try:
             t.select = False
@@ -148,7 +149,7 @@ def _set_selection_for_tracks(tob, frame, tracks_subset):
             pass
     for t in tracks_subset:
         try:
-            mk = t.markers.find_frame(frame, exact=False)
+            mk = _find_marker_on_clip_frame(t, frame_clip)
             if mk is None:
                 continue
             t.select = True
@@ -166,19 +167,24 @@ def refine_on_high_error(
     tracking_object_name: str | None = None,
     only_selected_tracks: bool = False,
     wait_seconds: float = 0.05,
-    max_per_frame: int = 20,          # Top-N Marker pro Frame
     ui_preview: bool = True,          # Playhead sichtbar springen lassen
     ui_sleep_s: float = 0.06,         # kleine Wartezeit für Rendering des Cursors
+    max_refine_calls: int = 20,       # NEU: Maximale Anzahl Operator-Aufrufe insgesamt
 ) -> None:
     """
     Durchläuft alle Frames; wenn FE > error_track*2:
-      - Selektion = Top-N (max_per_frame) Tracks mit größtem Fehler in diesem Frame
+      - selektiert ALLE Tracks mit Marker im Frame
       - zeigt Playhead-Sprung (wenn ui_preview=True)
-      - refine_markers vorwärts & rückwärts.
+      - ruft refine_markers vorwärts und (falls Budget) rückwärts auf
+    Gesamtlimit: max_refine_calls zählt **jede** Operator-Ausführung (vorwärts oder rückwärts).
     """
     scene = bpy.context.scene
     if scene is None:
         raise RuntimeError("Keine aktive Szene gefunden.")
+
+    if int(max_refine_calls) <= 0:
+        print("[RefineOnHighError] max_refine_calls == 0 → nichts zu tun.")
+        return
 
     with clip_context(clip) as ctx:
         clip = ctx.get('edit_movieclip')
@@ -204,53 +210,62 @@ def refine_on_high_error(
         frame_start = scene.frame_start
         frame_end = scene.frame_end
 
+        refine_ops = 0
         triggered_frames = []
 
-        for f in range(frame_start, frame_end + 1):
-            act = list(_iter_tracks_with_marker_at_frame(tracks, f))
+        for f_scene in range(frame_start, frame_end + 1):
+            if refine_ops >= int(max_refine_calls):
+                break
+
+            f_clip = _scene_to_clip_frame(bpy.context, clip, f_scene)
+
+            act = list(_iter_tracks_with_marker_at_clip_frame(tracks, f_clip))
             MEA = len(act)
             if MEA == 0:
                 continue
 
+            # FE = Frame-Mittel der Fehler (Marker.error bevorzugt)
             ME = 0.0
-            scored = []
             for t in act:
-                v = _marker_error_on_frame(t, f)
-                if v is None:
-                    continue
-                ME += v
-                scored.append((v, t))
-            if not scored:
-                continue
+                v = _marker_error_on_clip_frame(t, f_clip)
+                if v is not None:
+                    ME += v
             FE = ME / max(1, MEA)
 
             if FE > (error_track * 2.0):
-                # Top-N bestimmen
-                scored.sort(key=lambda kv: kv[0], reverse=True)
-                top_tracks = [t for _, t in scored[:max(1, int(max_per_frame))]]
-
-                # Playhead sichtbar setzen
+                # Sichtbarer Sprung des Playheads
                 if ui_preview:
-                    _force_visible_playhead(ctx, scene, clip, f, sleep_s=ui_sleep_s)
+                    _force_visible_playhead(ctx, scene, clip, f_scene, f_clip, sleep_s=ui_sleep_s)
                 else:
-                    scene.frame_set(f)
+                    scene.frame_set(f_scene)
 
-                _set_selection_for_tracks(tob, f, top_tracks)
-                triggered_frames.append((f, FE, MEA, len(top_tracks)))
+                # Selektion = alle aktiven Marker dieses Frames
+                _set_selection_for_tracks_on_clip_frame(tob, f_clip, act)
+                triggered_frames.append((f_scene, FE, MEA))
 
-                # Refine vorwärts & rückwärts
-                _refine_markers_with_override(ctx, backwards=False)
-                with bpy.context.temp_override(**ctx):
-                    bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-                if wait_seconds > 0:
-                    time.sleep(wait_seconds)
-                _refine_markers_with_override(ctx, backwards=True)
-                with bpy.context.temp_override(**ctx):
-                    bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                # refine vorwärts
+                if refine_ops < int(max_refine_calls):
+                    _refine_markers_with_override(ctx, backwards=False)
+                    refine_ops += 1
+                    with bpy.context.temp_override(**ctx):
+                        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
 
+                # refine rückwärts (nur, wenn Budget vorhanden)
+                if refine_ops < int(max_refine_calls):
+                    if wait_seconds > 0:
+                        time.sleep(wait_seconds)
+                    _refine_markers_with_override(ctx, backwards=True)
+                    refine_ops += 1
+                    with bpy.context.temp_override(**ctx):
+                        bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+
+        # Logging
         if triggered_frames:
-            print("[RefineOnHighError] Ausgelöst bei Frames:")
-            for f, fe, mea, nsel in triggered_frames:
-                print(f"  Frame {f}: FE={fe:.4f} (MEA={mea}), Top-N selektiert: {nsel}")
+            print(f"[RefineOnHighError] Frames ausgelöst: {len(triggered_frames)} | "
+                  f"Operator-Aufrufe gesamt: {refine_ops}/{int(max_refine_calls)}")
+            for f, fe, mea in triggered_frames[:10]:
+                print(f"  Frame {f}: FE={fe:.4f} (MEA={mea})")
+            if len(triggered_frames) > 10:
+                print(f"  … (+{len(triggered_frames)-10} weitere Frames)")
         else:
             print("[RefineOnHighError] Keine Frames über Schwellwert gefunden.")
