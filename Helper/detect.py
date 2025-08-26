@@ -7,12 +7,12 @@ Highlights
 ----------
 - Backward compatible public API (perform_marker_detection, run_detect_once, run_detect_adaptive)
 - Optional ROI post-filter (normalized [0..1] rect or pixel rect)
-- KD‑Tree based near‑duplicate removal (faster for many markers)
-- Corridor control with smooth PID‑like threshold adaption (stable convergence)
+- KD-Tree based near-duplicate removal (faster for many markers)
+- Corridor control with smooth PID-like threshold adaption (stable convergence)
 - Selection policy (leave/only_new/restore)
 - Duplicate cleanup strategy (delete/mute/tag)
 - Optional track tagging prefix for newly created tracks
-- Dry‑run mode (executes detect and cleans everything it created)
+- Dry-run mode (executes detect and cleans everything it created)
 - Rich result object with metrics
 - NEW: Pattern-triplet post step with name aggregation & selection (0.8× / 1.2×)
 
@@ -255,15 +255,21 @@ def run_pattern_triplet_and_select_by_name(
     scale_high: float = 2,
     also_include_ready_selection: bool = True,
     adjust_search_with_pattern: bool = False,
-    # NEU:
+    # detect params (wie READY-Pass)
     detect_threshold: Optional[float] = None,
     detect_margin: Optional[int] = None,
     detect_min_distance: Optional[int] = None,
-    # NEU 2: Distanzprüfung Triplets vs. Bestand
+    # Distanzprüfung
     close_dist_rel: float = 0.01,
+    # Feste Vergleichsbasis "vor Detect"
+    pre_detect_ptrs: Optional[Set[int]] = None,
+    pre_detect_kdtree: Optional[KDTree] = None,
+    pre_frame: Optional[int] = None,
+    pre_size: Optional[Tuple[int, int]] = None,
 ) -> Dict[str, Any]:
     """Runs two extra detect sweeps with scaled pattern size and selects all newly created
-    markers by NAME (aggregated across both sweeps, optionally including current selection).
+    markers by NAME. Neue Marker (normal/klein/groß) werden *nicht* untereinander verglichen,
+    sondern ausschließlich gegen Marker, die *vor dem Detect* existierten.
     """
     clip = getattr(context, "edit_movieclip", None) or getattr(getattr(context, "space_data", None), "clip", None)
     if not clip:
@@ -285,6 +291,30 @@ def run_pattern_triplet_and_select_by_name(
         frame_now = 0
     width, height = int(clip.size[0]), int(clip.size[1])
 
+    # Vergleichsbasis: Pointer + KDTree ausschließlich aus "vor Detect"
+    kd_tree = pre_detect_kdtree
+    if pre_detect_ptrs is not None:
+        base_ptrs: Set[int] = set(pre_detect_ptrs)
+        if kd_tree is None and pre_size is not None and pre_frame is not None:
+            _w, _h = pre_size
+            existing_px = _collect_positions_at_frame(
+                [t for t in tracking.tracks if t.as_pointer() in base_ptrs], int(pre_frame), _w, _h
+            )
+            if existing_px:
+                kd_tree = KDTree(len(existing_px))
+                for i, (ex, ey) in enumerate(existing_px):
+                    kd_tree.insert((ex, ey, 0.0), i)
+                kd_tree.balance()
+    else:
+        # Rückwärtskompatibel: Basis zur Laufzeit (weniger strikt)
+        base_ptrs = _collect_track_pointers(tracking.tracks)
+        existing_px = _collect_positions_at_frame(tracking.tracks, frame_now, width, height)
+        if existing_px:
+            kd_tree = KDTree(len(existing_px))
+            for i, (ex, ey) in enumerate(existing_px):
+                kd_tree.insert((ex, ey, 0.0), i)
+            kd_tree.balance()
+
     pattern_o = _get_pattern_size(tracking)
     search_o = int(getattr(settings, "default_search_size", 51))
     aggregated_names: Set[str] = set()
@@ -294,16 +324,6 @@ def run_pattern_triplet_and_select_by_name(
             if getattr(t, "select", False):
                 aggregated_names.add(t.name)
 
-    # Bestand vor Triplet-Messläufen: Pointer + Pixelpositionen für KDTree
-    before_ptrs_all = _collect_track_pointers(tracking.tracks)
-    existing_px = _collect_positions_at_frame(tracking.tracks, frame_now, width, height)
-    kd_tree = None
-    if existing_px:
-        kd_tree = KDTree(len(existing_px))
-        for i, (ex, ey) in enumerate(existing_px):
-            kd_tree.insert((ex, ey, 0.0), i)
-        kd_tree.balance()
-                                         
     def sweep(scale: float) -> int:
         before_ptrs = _collect_track_pointers(tracking.tracks)
         new_pattern = max(3, int(round(pattern_o * float(scale))))
@@ -312,28 +332,33 @@ def run_pattern_triplet_and_select_by_name(
             settings.default_search_size = max(5, eff * 2)
         except Exception:
             pass
-        print(f"[Triplet] scale={scale} pattern_o={pattern_o} -> req={new_pattern} eff={eff} "
-              f"search={getattr(settings,'default_search_size',None)}")
+        print(
+            f"[Triplet] scale={scale} pattern_o={pattern_o} -> req={new_pattern} eff={eff} "
+            f"search={getattr(settings,'default_search_size',None)}"
+        )
 
         def _op(**kw):
             return bpy.ops.clip.detect_features(**kw)
-    
+
         # exakt dieselben Detect-Parameter wie im READY-Pass verwenden
         kw = {}
-        if detect_threshold is not None:   kw["threshold"] = float(detect_threshold)
-        if detect_margin is not None:      kw["margin"] = int(detect_margin)
-        if detect_min_distance is not None:kw["min_distance"] = int(detect_min_distance)
-    
+        if detect_threshold is not None:
+            kw["threshold"] = float(detect_threshold)
+        if detect_margin is not None:
+            kw["margin"] = int(detect_margin)
+        if detect_min_distance is not None:
+            kw["min_distance"] = int(detect_min_distance)
+
         try:
             _run_in_clip_context(_op, **kw)
         except Exception as ex:
             print(f"[PatternTriplet] detect_features Exception @scale={scale}: {ex}")
-    
+
         try:
             bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
         except Exception:
             pass
-    
+
         new_names = _collect_new_track_names_by_pointer(tracking.tracks, before_ptrs)
         aggregated_names.update(new_names)
         return len(new_names)
@@ -343,18 +368,16 @@ def run_pattern_triplet_and_select_by_name(
 
     _set_pattern_size(tracking, pattern_o)
     try:
-        settings.default_search_size = pattern_o * 2   # konsistent wiederherstellen
+        settings.default_search_size = pattern_o * 2  # konsistent wiederherstellen
     except Exception:
         pass
 
-    # --- NACHBEARBEITUNG: Distanzprüfung NUR Triplets vs. Bestand ---
-    # Ziel: nur neue Triplet-Marker gegen zuvor existierende Marker vergleichen,
-    #       Triplets NICHT untereinander bewerten.
+    # --- NACHBEARBEITUNG: Distanzprüfung NUR Triplets vs. Basis "vor Detect" ---
     distance_px = max(1, int(width * (close_dist_rel if close_dist_rel > 0 else 0.01)))
     thr2 = float(distance_px * distance_px)
 
-    # Sammle nur die wirklich neuen Triplet-Tracks (nach beiden Sweeps)
-    triplet_new_tracks = [t for t in tracking.tracks if t.as_pointer() not in before_ptrs_all]
+    # Triplet-Neuzugänge relativ zur *Basis* bestimmen
+    triplet_new_tracks = [t for t in tracking.tracks if t.as_pointer() not in base_ptrs]
 
     reject_ptrs: Set[int] = set()
     if kd_tree and triplet_new_tracks:
@@ -373,7 +396,7 @@ def run_pattern_triplet_and_select_by_name(
             if (dx * dx + dy * dy) < thr2:
                 reject_ptrs.add(tr.as_pointer())
 
-    # Unerwünschte Triplets (zu nah an Bestand) entfernen
+    # Unerwünschte Triplets (zu nah an Basis) entfernen
     if reject_ptrs:
         _deselect_all(tracking)
         for t in triplet_new_tracks:
@@ -390,8 +413,8 @@ def run_pattern_triplet_and_select_by_name(
                     except Exception:
                         pass
 
-    # Recompute verbleibende Triplets & selektieren (nur Triplets)
-    remaining_triplet_names = {t.name for t in tracking.tracks if t.as_pointer() not in before_ptrs_all}
+    # Verbleibende Triplets selektieren (nur Triplets, nicht Basis/Normal)
+    remaining_triplet_names = {t.name for t in tracking.tracks if t.as_pointer() not in base_ptrs}
     for t in tracking.tracks:
         t.select = False
     selected = _select_tracks_by_names(tracking, remaining_triplet_names)
@@ -447,7 +470,7 @@ def run_detect_once(
     triplet_adjust_search_with_pattern: bool = False,
 ) -> Dict[str, Any]:
     """Execute one detection round with optional ROI/duplicate clean and optional
-    post pattern‑triplet step which aggregates names and selects them.
+    post pattern-triplet step which aggregates names and selects them.
     """
     scn = context.scene
     if scn.get(_LOCK_KEY):
@@ -524,8 +547,15 @@ def run_detect_once(
             prev_selection = [t.as_pointer() for t in tracking.tracks if getattr(t, "select", False)]
             scn[_PREV_SEL_KEY] = prev_selection
 
+        # ---------- Feste Vergleichsbasis VOR DETECT sichern ----------
         before_ids = {t.as_pointer() for t in tracking.tracks}
         existing_px = _collect_positions_at_frame(tracking.tracks, frame, width, height)
+        pre_kd: Optional[KDTree] = None
+        if existing_px:
+            pre_kd = KDTree(len(existing_px))
+            for i, (ex, ey) in enumerate(existing_px):
+                pre_kd.insert((ex, ey, 0.0), i)
+            pre_kd.balance()
 
         # Detect
         _deselect_all(tracking)
@@ -556,16 +586,12 @@ def run_detect_once(
                 except Exception:
                     pass
 
-        # Near-duplicate detection (KDTree)
+        # Near-duplicate detection (KDTree) — ausschließlich vs. VOR-Detect-Basis
         distance_px = max(1, int(width * (close_dist_rel if close_dist_rel > 0 else 0.01)))
         thr2 = float(distance_px * distance_px)
 
         near_dupes = []
-        if existing_px and new_tracks_raw:
-            tree = KDTree(len(existing_px))
-            for i, (ex, ey) in enumerate(existing_px):
-                tree.insert((ex, ey, 0.0), i)
-            tree.balance()
+        if existing_px and new_tracks_raw and pre_kd:
             for tr in new_tracks_raw:
                 try:
                     m = tr.markers.find_frame(frame, exact=True)
@@ -574,7 +600,7 @@ def run_detect_once(
                 if m and not getattr(m, "mute", False):
                     x = m.co[0] * width
                     y = m.co[1] * height
-                    (loc, _idx, _dist) = tree.find((x, y, 0.0))
+                    (loc, _idx, _dist) = pre_kd.find((x, y, 0.0))
                     dx = x - loc[0]
                     dy = y - loc[1]
                     if (dx * dx + dy * dy) < thr2:
@@ -749,19 +775,24 @@ def run_detect_once(
         if post_pattern_triplet:
             try:
                 # identische detect-Parameter berechnen wie im READY-Pass verwendet:
-                margin_applied, min_dist_applied = _scaled_params(float(threshold),
-                                                                  int(margin_base),
-                                                                  int(min_distance_base))
+                margin_applied, min_dist_applied = _scaled_params(
+                    float(threshold), int(margin_base), int(min_distance_base)
+                )
                 triplet_result = run_pattern_triplet_and_select_by_name(
                     context,
                     scale_low=float(triplet_scale_low),
                     scale_high=float(triplet_scale_high),
-                    also_include_ready_selection=bool(triplet_include_ready_selection),
+                    also_include_ready_selection=False,  # nur Triplets am Ende selektieren
                     adjust_search_with_pattern=bool(triplet_adjust_search_with_pattern),
-                    # NEU: festnageln
                     detect_threshold=float(threshold),
                     detect_margin=int(margin_applied),
                     detect_min_distance=int(min_dist_applied),
+                    close_dist_rel=float(close_dist_rel),
+                    # feste Vergleichsbasis *vor Detect*:
+                    pre_detect_ptrs=set(before_ids),
+                    pre_detect_kdtree=pre_kd,
+                    pre_frame=int(frame),
+                    pre_size=(int(width), int(height)),
                 )
 
                 print(f"[DetectTrace] Post pattern-triplet result: {triplet_result}")
