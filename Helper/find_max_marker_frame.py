@@ -1,7 +1,10 @@
 from __future__ import annotations
 """
-Helper: find_max_marker_frame (mit detailliertem Logging)
---------------------------------------------------------
+Helper: find_max_marker_frame (fast, with per-frame logging)
+-----------------------------------------------------------
+
+Speed-up: statt pro Frame alle Tracks/Marker zu scannen (O(F×T×M))
+werden Marker **einmalig** in ein Frame-Histogramm gezählt (O(M)+O(F)).
 
 - Schwelle: ``threshold = scene.marker_frame * 2``
 - Scan-Bereich: ``scene.frame_start .. scene.frame_end`` (inklusiv)
@@ -9,11 +12,12 @@ Helper: find_max_marker_frame (mit detailliertem Logging)
 - Rückgabe ohne Treffer: {status: "NONE", threshold, observed_min, observed_min_frame}
 - Konsistentes Log pro Frame: ``[find_max_marker_frame] frame=… count=… threshold=…``
 
-Hinweis: Gemutete Tracks/Marker werden ignoriert, pro Track wird maximal 1 Marker
-gezählt (früher Ausstieg im Marker-Loop).
+Hinweise:
+- Gemutete Tracks/Marker werden ignoriert.
+- Pro Track & Frame wird maximal **ein** Marker gezählt ("last_frame"-Wächter).
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import bpy
 
 __all__ = ["run_find_max_marker_frame"]
@@ -54,22 +58,45 @@ def _get_tracks_collection(clip) -> Optional[bpy.types.bpy_prop_collection]:
         return None
 
 
-def _count_active_markers_at_frame(tracks, frame: int) -> int:
-    """Zählt aktive Marker an *frame* über alle Tracks (max. 1 je Track)."""
-    f = int(frame)
-    count = 0
-    for tr in tracks or []:
+def _build_frame_counts(tracks, start_frame: int, end_frame: int) -> List[int]:
+    """Erzeugt ein Histogramm der Marker-Anzahl je Frame im [start..end]-Intervall.
+
+    - Ignoriert gemutete Tracks/Marker
+    - Zählt je Track pro Frame höchstens 1 Marker
+    - Robust gegen unsortierte Markerlisten
+    """
+    s = int(start_frame)
+    e = int(end_frame)
+    n = e - s + 1
+    if n <= 0:
+        return []
+
+    counts = [0] * n
+
+    for tr in list(tracks) if tracks is not None else []:
         try:
             if bool(getattr(tr, "mute", False)):
                 continue
-            for m in tr.markers:
-                if int(getattr(m, "frame", -10 ** 9)) == f:
-                    if not bool(getattr(m, "mute", False)):
-                        count += 1
-                    break  # pro Track nur einmal zählen
+            last_frame = None  # verhindert Doppelzählungen im selben Track/Frame
+            for m in getattr(tr, "markers", []):
+                try:
+                    f = int(getattr(m, "frame", -10 ** 9))
+                except Exception:
+                    continue
+                if f < s or f > e:
+                    continue
+                if bool(getattr(m, "mute", False)):
+                    continue
+                if last_frame == f:
+                    # pro Track & Frame nur ein Marker
+                    continue
+                counts[f - s] += 1
+                last_frame = f
         except Exception:
+            # Defekten Track ignorieren
             continue
-    return count
+
+    return counts
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +112,7 @@ def run_find_max_marker_frame(
 ) -> Dict[str, Any]:
     """Sucht den **ersten** Frame im Szenenbereich, dessen aktive Markerzahl
     unter ``threshold = scene.marker_frame * 2`` liegt.
-    
+
     Zusätzlich werden (falls kein Treffer) das kleinste beobachtete ``count``
     sowie der zugehörige Frame zurückgegeben, um heuristische Entscheidungen
     außerhalb zu erleichtern.
@@ -115,15 +142,18 @@ def run_find_max_marker_frame(
     if s_end < s_start:
         s_start, s_end = s_end, s_start
 
+    # Einmalig zählen → schnell
+    counts = _build_frame_counts(tracks, s_start, s_end)
+
     observed_min = None
     observed_min_frame = None
 
-    for f in range(s_start, s_end + 1):
-        c = _count_active_markers_at_frame(tracks, f)
+    # Linearer Sweep über die gezählten Werte
+    for idx, c in enumerate(counts):
+        f = s_start + idx
         if log_each_frame:
             print(f"[find_max_marker_frame] frame={f} count={c} threshold={threshold}")
 
-        # Minimum mitführen
         if observed_min is None or c < observed_min:
             observed_min = c
             observed_min_frame = f
