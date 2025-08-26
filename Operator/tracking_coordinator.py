@@ -20,6 +20,7 @@ from typing import Optional, Dict
 import bpy
 from ..Helper.triplet_grouping import run_triplet_grouping  # top-level import
 from ..Helper.refine_high_error import run_refine_on_high_error
+from ..Helper.solve_camera import solve_camera_only
 
 # Cycle-Helpers
 from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
@@ -324,47 +325,18 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # ---------------- SOLVE ----------------
 
     def _state_solve(self, context):
+        """Startet ausschließlich den Kamera-Solve und wechselt in SOLVE_WAIT."""
         try:
-            from ..Helper.solve_camera import solve_watch_clean  # type: ignore
-            print("[Coord] SOLVE → solve_watch_clean()")
-            res = solve_watch_clean(context)
-            print(f"[Coord] SOLVE → solve_watch_clean() returned {res}")
+            res = solve_camera_only(context)
+            print(f"[Coord] Solve invoked: {res}")
         except Exception as ex:
-            print(f"[Coord] SOLVE failed to start: {ex!r}")
-            return self._handle_failed_solve(context)
-
-        self._solve_wait_ticks = int(_SOLVE_WAIT_TICKS_DEFAULT)
-        self._post_solve_refine_done = False
+            print(f"[Coord] SOLVE start failed: {ex!r}")
+            self._state = "FINALIZE"
+            return {'RUNNING_MODAL'}
+    
         self._state = "SOLVE_WAIT"
-        return {"RUNNING_MODAL"}
+        return {'RUNNING_MODAL'}
 
-    def _state_solve_wait(self, context):
-        if not _wait_for_reconstruction(context, tries=_SOLVE_WAIT_TRIES_PER_TICK):
-            self._solve_wait_ticks -= 1
-            print(f"[Coord] SOLVE_WAIT → waiting ({self._solve_wait_ticks} ticks left)")
-            if self._solve_wait_ticks > 0:
-                return {"RUNNING_MODAL"}
-            print("[Coord] SOLVE_WAIT → timeout → FAIL-SOLVE fallback")
-            return self._handle_failed_solve(context)
-
-        if not self._post_solve_refine_done:
-            th = float(getattr(context.scene, "error_track", 2.0) or 2.0) * 10.0
-            print("[Coord] SOLVE_WAIT → launch REFINE (always-first after solve)")
-            self._launch_refine(context, threshold=th)
-            return {"RUNNING_MODAL"}
-
-        threshold = float(getattr(context.scene, "error_track", 2.0) or 2.0)
-        current_err = _compute_solve_error(context)
-        print(f"[Coord] SOLVE_WAIT(after refine) → error={current_err!r} vs. threshold={threshold}")
-
-        if current_err is None or current_err > threshold:
-            print("[Coord] SOLVE_WAIT → error high/None → FIND_LOW")
-            self._state = "FIND_LOW"
-            return {"RUNNING_MODAL"}
-
-        print("[Coord] SOLVE_WAIT → FINALIZE")
-        self._state = "FINALIZE"
-        return {"RUNNING_MODAL"}
 
     # ---------------- Refine-Launch ----------------
 
