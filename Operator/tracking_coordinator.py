@@ -1,13 +1,5 @@
 from __future__ import annotations
-"""
-Tracking-Orchestrator (NO-REFINE, NO-WAIT)
-----------------------------------------
 
-Änderungen gemäß Anforderung:
-- Nach dem Solve **passiert nichts mehr**: Kein Warten, kein Refine.
-- `_state_solve` triggert ausschließlich den Operator und wechselt direkt zu `FINALIZE`.
-- Sämtliche Refine-Pfade, Wartezustände und SOLVE_WAIT wurden entfernt.
-"""
 
 import os
 import time
