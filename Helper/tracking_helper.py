@@ -1,18 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""
-Helper/tracking_helper.py — stable forward tracking + guaranteed playhead reset
 
-• Regel 1: Kein eigener Operator – nur Funktions‑API
-• Regel 2: Nur vorwärts tracken
-• Regel 3: 'INVOKE_DEFAULT', backwards=False, sequence=True
-• Regel 4: Playhead **immer** zurück auf den Startframe des Trackings
-
-Extras
-- Umfassende Logs (Prefix: [BW-Track])
-- Korrigierte Editor‑Synchronisierung (SpaceClip.clip_user.frame_current)
-- Progress‑Probe + Watch‑Loop, bis Szene **und** alle CLIP‑Editor‑Spaces stabil auf dem Startframe stehen
-- Kleine Selbsttests
-"""
 from __future__ import annotations
 
 from typing import Optional
