@@ -1,17 +1,5 @@
 from __future__ import annotations
-"""
-projection_cleanup_builtin.py — Reprojection-Cleanup mit optionalem Warten auf Solve-Error
 
-- Einziger Einstiegspunkt: run_projection_cleanup_builtin(...).
-- Wartet optional, bis ein gültiger Solve-Error verfügbar ist (oder Timeout),
-  und führt dann bpy.ops.clip.clean_tracks mit clean_error=<used_error> aus.
-- Zählt vor/nach dem Cleanup die Track-Anzahl und gibt Statistiken zurück.
-- Unterstützt 'DISABLE' via Emulation: SELECT → t.enabled = False.
-
-Hinweis:
-- Der Operator-Parameter heißt in gängigen Blender-Versionen 'clean_error'.
-  Für Kompatibilität probieren wir auch 'error' als Fallback.
-"""
 
 from typing import Optional, Tuple, Dict, Any, Iterable
 import bpy
