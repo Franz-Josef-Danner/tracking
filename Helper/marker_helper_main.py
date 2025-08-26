@@ -5,10 +5,7 @@ from typing import Tuple, Dict, Any
 __all__ = ("marker_helper_main",)
 
 def marker_helper_main(context) -> Tuple[bool, int, Dict[str, Any]]:
-    """
-    Liest Zielwerte direkt aus Scene-Properties und leitet Marker-Korridor ab.
-    Rückgabe: (ok, marker_adapt, {"FINISHED"})
-    """
+
     scn = context.scene
 
     # Source of Truth aus der Szene
