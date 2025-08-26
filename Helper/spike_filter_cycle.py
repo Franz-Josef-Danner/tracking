@@ -123,7 +123,7 @@ def _lower_threshold(thr: float) -> float:
     - Falls dies numerisch keine Änderung bewirkt, dekrementiere um 1.0.
     - Nicht unter 0.0 fallen lassen.
     """
-    next_thr = float(thr) * 0.975
+    next_thr = float(thr) * 0.9
     if abs(next_thr - float(thr)) < 1e-6 and thr > 0.0:
         next_thr = float(thr) - 1.0
     if next_thr < 0.0:
