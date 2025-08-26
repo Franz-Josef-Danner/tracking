@@ -3,13 +3,7 @@ import bpy
 __all__ = ("run_marker_adapt_boost",)
 
 def run_marker_adapt_boost(context: bpy.types.Context):
-    """
-    Erhöht scene['marker_adapt'] um +10%.
-    Verhalten entspricht dem ehemaligen Operator:
-    - Fallback auf scene['marker_basis']=25, falls 'marker_adapt' fehlt
-    - Rundung wie zuvor (round(...))
-    - Rückgabe {'FINISHED'} zur Abwärtskompatibilität
-    """
+
     scene = context.scene
 
     base = scene.get("marker_adapt", None)
