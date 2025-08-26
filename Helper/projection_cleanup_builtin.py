@@ -16,6 +16,7 @@ Hinweis:
 from typing import Optional, Tuple, Dict, Any, Iterable
 import bpy
 import time
+from ..Operator import tracking_coordinator as tco
 
 __all__ = ("run_projection_cleanup_builtin",)
 
@@ -277,6 +278,8 @@ def run_projection_cleanup_builtin(
 
     print(f"[Cleanup] Cleanup abgeschlossen. Vorher={before_count}, nachher={after_count}, "
           f"entfernt={deleted}, selektiert={selected}, deaktiviert={disabled}")
+
+    tco.on_projection_cleanup_finished(context=context)
 
     return {"status": "OK", "used_error": used_error, "action": action, "reason": None,
             "before": before_count, "after": after_count, "deleted": deleted,
