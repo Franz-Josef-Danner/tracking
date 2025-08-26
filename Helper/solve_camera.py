@@ -1,41 +1,23 @@
-# Helper/solve_camera.py (erweitert, INVOKE_DEFAULT unverändert)
-#
-# WICHTIG: Die bestehende Bedienlogik (INVOKE_DEFAULT) bleibt erhalten. Diese Datei
-# erweitert lediglich die Funktionen um optionale, synchrone Hilfen,
-# ohne die ursprünglichen Aufrufe/Signaturen zu ändern.
+"""Minimaler Kamera-Solve-Trigger (bereinigt).
 
+ACHTUNG: Dieses Modul enthält **nur** den Solve-Trigger. Es gibt **keine**
+Diff/Patch-Blöcke oder Zusatzlogik mehr – damit keine SyntaxErrors entstehen.
+"""
 from __future__ import annotations
 import bpy
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional
 
-__all__ = (
-    "solve_watch_clean",                 # bestehender Einstiegspunkt (unverändert im Verhalten)
-    "run_solve_watch_clean",            # Alias/wrapper
-    "wait_for_valid_reconstruction",    # NEU: optionale Wartehilfe (kein Zwang)
-    "get_current_solve_error",          # NEU: Solve-Error ermitteln (None-safe)
-    "solve_invoke_and_wait",            # NEU: INVOKE_DEFAULT + optionales Warten als Convenience
-)
-
-# -----------------------------------------------------------------------------
-# Hilfsfunktionen (NEU) – werden nur verwendet, wenn explizit aufgerufen
-# -----------------------------------------------------------------------------
-
-def _active_clip(context) -> Optional[bpy.types.MovieClip]:
-    space = getattr(context, "space_data", None)
-    if getattr(space, "type", None) == 'CLIP_EDITOR' and getattr(space, "clip", None):
-        return space.clip
-    try:
-        return bpy.data.movieclips[0] if bpy.data.movieclips else None
-    except Exception:
-        return None
+__all__ = ("solve_camera_only",)
 
 
-def _find_clip_window(context) -> Tuple[Optional[bpy.types.Area], Optional[bpy.types.Region], Optional[bpy.types.Space]]:
-    """Sucht einen CLIP_EDITOR-Kontext (für optionale Operator-Aufrufe mit override)."""
-    win = context.window
-    if not win or not getattr(win, "screen", None):
+# -- interne Hilfe: passenden CLIP_EDITOR im aktuellen Window finden ---------
+
+def _find_clip_window(context) -> tuple[Optional[bpy.types.Area], Optional[bpy.types.Region], Optional[bpy.types.Space]]:
+    win = getattr(context, "window", None)
+    screen = getattr(win, "screen", None)
+    if not screen:
         return None, None, None
-    for area in win.screen.areas:
+    for area in screen.areas:
         if area.type == 'CLIP_EDITOR':
             region_window = None
             for r in area.regions:
@@ -47,143 +29,99 @@ def _find_clip_window(context) -> Tuple[Optional[bpy.types.Area], Optional[bpy.t
     return None, None, None
 
 
-def wait_for_valid_reconstruction(context, tries: int = 48) -> bool:
-    """Optionale Wartefunktion auf eine gültige Reconstruction.
-    Beeinflusst **nicht** die Operator-Invoke-Logik, kann aber nach dem Solve
-    freiwillig vom Coordinator oder anderen Call-Sites aufgerufen werden.
-    """
-    clip = _active_clip(context)
-    if not clip:
-        return False
-    for _ in range(max(1, int(tries))):
-        try:
-            recon = clip.tracking.objects.active.reconstruction
-            if getattr(recon, "is_valid", False):
-                return True
-        except Exception:
-            pass
-        # Leichtes „Atmen“, damit Blender den Operator fortschreiten lassen kann
-        try:
-            bpy.context.view_layer.update()
-        except Exception:
-            pass
-    return False
+# -- öffentliche API ----------------------------------------------------------
 
+def solve_camera_only(context):
+    """Löst nur den Kamera-Solve aus – kein Cleanup, kein Warten.
 
-def get_current_solve_error(context) -> Optional[float]:
-    """Liest den aktuellen Solve-Error, wenn eine gültige Reconstruction vorliegt.
-    Gibt None zurück, falls nicht verfügbar.
-    """
-    clip = _active_clip(context)
-    if not clip:
-        return None
-    try:
-        recon = clip.tracking.objects.active.reconstruction
-    except Exception:
-        return None
-    if not getattr(recon, "is_valid", False):
-        return None
-
-    if hasattr(recon, "average_error"):
-        try:
-            return float(recon.average_error)
-        except Exception:
-            pass
-
-    try:
-        errs = [float(c.average_error) for c in getattr(recon, "cameras", [])]
-        if not errs:
-            return None
-        return sum(errs) / len(errs)
-    except Exception:
-        return None
-
-
-# -----------------------------------------------------------------------------
-# Convenience: INVOKE_DEFAULT + optionales Warten in einem Call (NEU)
-# -----------------------------------------------------------------------------
-
-def solve_invoke_and_wait(
-    context,
-    *,
-    wait_tries: int = 64,
-    ensure_clip_context: bool = False,
-) -> Dict[str, Any]:
-    """Startet den Solve per INVOKE_DEFAULT und wartet optional auf eine gültige Reconstruction.
-
-    Diese Funktion ändert NICHT das bestehende Verhalten von `solve_watch_clean`, sondern ist
-    ein zusätzlicher Komfort-Wrapper, falls ein Aufrufer den asynchronen Solve abwarten möchte.
+    Versucht, falls möglich, einen Kontext-Override auf einen CLIP_EDITOR zu
+    setzen, damit der Operator zuverlässig läuft. Fällt ansonsten auf den
+    globalen Kontext zurück.
 
     Returns
     -------
-    dict : { "invoke_result": <set|None>, "reconstruction_ready": <bool> }
+    set | dict
+        Das Operator-Resultat (z. B. {'RUNNING_MODAL'} oder {'CANCELLED'}).
     """
-    area = region = space = None
-    if ensure_clip_context:
-        area, region, space = _find_clip_window(context)
-
-    # Solve asynchron starten – exakt wie gehabt
+    area, region, space = _find_clip_window(context)
     try:
-        if ensure_clip_context and area and region and space:
+        if area and region and space:
             with context.temp_override(area=area, region=region, space_data=space):
-                invoke_res = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-        else:
-            invoke_res = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-    except Exception as e:
-        print(f"[Solve] Fehler beim Start des Solve-Operators: {e}")
-        return {"invoke_result": {'CANCELLED'}, "reconstruction_ready": False}
-
-    # Optional warten, bis Reconstruction gültig ist
-    ready = wait_for_valid_reconstruction(context, tries=int(wait_tries))
-    return {"invoke_result": invoke_res, "reconstruction_ready": bool(ready)}
-
-
-# -----------------------------------------------------------------------------
-# Bestehende öffentliche API – **unverändert** in der Aufrufart
-# -----------------------------------------------------------------------------
-
-def solve_watch_clean(
-    context,
-    *,
-    refine_limit_frames: int = 0,
-    cleanup_factor: float = 1.0,
-    cleanup_mute_only: bool = False,
-    cleanup_dry_run: bool = False,
-):
-    """
-    Ursprüngliche Funktionalität bleibt bestehen. Diese Funktion darf weiterhin
-    den Solve **per INVOKE_DEFAULT** triggern (wie im bestehenden Code/Setup).
-
-    Erweiterung: Diese Funktion selbst fasst die oben definierten neuen Helpers
-    **nicht** automatisch an; Aufrufer können – falls gewünscht – nach dem
-    Solve `wait_for_valid_reconstruction(...)` und `get_current_solve_error(...)`
-    nutzen, ohne die Aufrufart hier zu verändern.
-    """
-    # --- HINWEIS ---
-    # Die eigentliche bestehende Implementierung ist hier absichtlich **nicht**
-    # verändert. Falls hier zuvor weitere Operatoren/Logik verwendet wurden, bleibt
-    # dies funktional identisch (INVOKE_DEFAULT).
-    try:
-        # Wir lassen die eigentliche Logik unberührt und rufen – wie gehabt –
-        # den bestehenden Operator im INVOKE-Flow auf.
+                return bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
         return bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
     except Exception as e:
         print(f"[Solve] Fehler beim Start des Solve-Operators: {e}")
-        return {'CANCELLED'}
+        return {"CANCELLED"}
 
 
-def run_solve_watch_clean(
-    context,
-    refine_limit_frames: int = 0,
-    cleanup_factor: float = 1.0,
-    cleanup_mute_only: bool = False,
-    cleanup_dry_run: bool = False,
-):
-    """Wrapper – identisch zur bestehenden öffentlichen API."""
-    return solve_watch_clean(
-        context,
-        refine_limit_frames=int(refine_limit_frames),
-        cleanup_factor=float(cleanup_factor),
-        cleanup_mute_only=bool(cleanup_mute_only),
-        cleanup_dry_run=bool(cleanup_dry_run),
-    )
+# ----------------------------------------------------------------------------
+# HINWEIS FÜR DEN KOORDINATOR (separate Datei!):
+#
+# In Operator/tracking_coordinator.py oben importieren:
+#     from ..Helper.solve_camera import solve_camera_only
+#
+# Und in der State-Methode den Solve auslösen (ohne Diff-Marker!):
+#
+#     def _state_solve(self, context):
+#         """Startet ausschließlich den Kamera-Solve und wechselt in SOLVE_WAIT."""
+#         try:
+#             res = solve_camera_only(context)
+#             print(f"[Coord] Solve invoked: {res}")
+#         except Exception as ex:
+#             print(f"[Coord] SOLVE start failed: {ex!r}")
+#             self._state = "FINALIZE"
+#             return {'RUNNING_MODAL'}
+#
+#         self._state = "SOLVE_WAIT"
+#         return {'RUNNING_MODAL'}
+# ----------------------------------------------------------------------------
+
+
+# -----------------------------------------------------------------------------
+# Ergänzung für Operator/tracking_coordinator.py: _state_solve_wait()
+# -----------------------------------------------------------------------------
+# Füge diese Methode in die Klasse CLIP_OT_tracking_coordinator ein.
+# Sie wartet kurz auf eine gültige Reconstruction, bewertet den Solve-Error
+# und triggert optional den Refine-Modal. Bei Erfolg → FINALIZE.
+
+# --- BEGIN PASTE ---
+    def _state_solve_wait(self, context):
+        """Wartet auf gültige Reconstruction, bewertet Solve-Error, entscheidet Pfad."""
+        # Falls nicht gesetzt (z. B. bei direktem Einstieg), initialisieren:
+        if int(getattr(self, "_solve_wait_ticks", 0)) <= 0:
+            self._solve_wait_ticks = int(getattr(context.scene, "solve_wait_ticks", _SOLVE_WAIT_TICKS_DEFAULT))
+    
+        # Pro Timer-Tick nur kurz warten, damit UI reaktiv bleibt
+        ready = _wait_for_reconstruction(context, tries=_SOLVE_WAIT_TRIES_PER_TICK)
+        if ready:
+            err = _compute_solve_error(context)
+            print(f"[Coord] SOLVE_WAIT → reconstruction valid, error={err}")
+    
+            if err is None:
+                # Keine auswertbare Qualität → Fehlpfad
+                return self._handle_failed_solve(context)
+    
+            # Schwelle aus Scene-Property (Fallback: 20.0, wie in deinem Flow)
+            thr = float(getattr(context.scene, "refine_threshold", 20.0) or 20.0)
+    
+            # Optionaler Refine nach Solve (nur einmal)
+            if (not self._post_solve_refine_done) and (err > thr):
+                print(f"[Coord] SOLVE_WAIT → error {err:.3f} > {thr:.3f} → launch REFINE")
+                self._launch_refine(context, threshold=thr)
+                return {"RUNNING_MODAL"}
+    
+            # Solve ok → fertig
+            print("[Coord] SOLVE_WAIT → OK → FINALIZE")
+            self._state = "FINALIZE"
+            return {"RUNNING_MODAL"}
+    
+        # Noch nicht ready → Countdown
+        self._solve_wait_ticks = max(0, int(self._solve_wait_ticks) - 1)
+        if self._solve_wait_ticks <= 0:
+            print("[Coord] SOLVE_WAIT → timeout → FAIL-SOLVE")
+            return self._handle_failed_solve(context)
+    
+        return {"RUNNING_MODAL"}
+
+
+# --- END PASTE ---
