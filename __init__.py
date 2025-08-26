@@ -62,14 +62,25 @@ class CLIP_PT_kaiserlich_panel(Panel):
         if hasattr(scene, "error_track"):
             layout.prop(scene, "error_track")
 
-        layout.operator("clip.tracking_coordinator", text="Track")
+        # Defensiv: Operator nur anzeigen, wenn er registriert ist
+        op_ok = hasattr(bpy.ops, "clip") and hasattr(bpy.ops.clip, "tracking_coordinator")
+        if op_ok:
+            layout.operator("clip.tracking_coordinator", text="Track")
+        else:
+            row = layout.row()
+            row.enabled = False
+            row.operator("wm.call_menu", text="Track (Operator fehlt)").name = ""
+            # Optional: kleine Hilfe
+            layout.label(text="Hinweis: Operator noch nicht registriert.", icon='INFO')
 
 
 # --- Registrierung ------------------------------------------------------------
-_classes = (
-    RepeatEntry,
-    CLIP_PT_kaiserlich_panel,
-)
+
+# Wichtig: Property-Klassen müssen VOR Scene-Properties registriert sein,
+# Panels aber NACH allen Operatoren (Helper+Coordinator), damit deren draw()
+# keinen 'unknown operator' verursacht.
+_CLASSES_PROPS = (RepeatEntry,)
+_CLASSES_UI = (CLIP_PT_kaiserlich_panel,)
 
 
 def _register_scene_props() -> None:
@@ -107,31 +118,44 @@ def _unregister_scene_props() -> None:
 
 
 def register() -> None:
-    # 1) Lokale Klassen
-    for cls in _classes:
+    # 1) Property-Klassen
+    for cls in _CLASSES_PROPS:
         bpy.utils.register_class(cls)
 
-    # 2) Scene-Properties
+    # 2) Scene-Properties (benötigen RepeatEntry)
     _register_scene_props()
 
-    # 3) Externe Registrare (direkt, ohne try/except)
+    # 3) Externe Registrare: zuerst Helper (diverse Operatoren), dann Coordinator
     _reg_helper()
     _reg_coord()
 
+    # 4) UI-Panels GANZ ZUM SCHLUSS
+    for cls in _CLASSES_UI:
+        bpy.utils.register_class(cls)
+
+
 def unregister() -> None:
-    # 1) Externe Deregistrare zuerst
-    _unreg_coord()
-    _unreg_helper()
-
-    # 2) Scene-Properties
-    _unregister_scene_props()
-
-    # 3) Lokale Klassen
-    for cls in reversed(_classes):
+    # 1) UI-Panels zuerst deregistrieren
+    for cls in reversed(_CLASSES_UI):
         try:
             bpy.utils.unregister_class(cls)
         except Exception:
             pass
+
+    # 2) Externe Unregister
+    _unreg_coord()
+    _unreg_helper()
+
+    # 3) Scene-Properties
+    _unregister_scene_props()
+
+    # 4) Property-Klassen zum Schluss deregistrieren
+    for cls in reversed(_CLASSES_PROPS):
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception:
+            pass
+
 
 if __name__ == "__main__":
     register()
