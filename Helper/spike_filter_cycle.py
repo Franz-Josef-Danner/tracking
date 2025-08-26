@@ -1,27 +1,24 @@
 from __future__ import annotations
 """
-Spike-Filter-Cycle Helper (isoliert)
-------------------------------------
+Spike-Filter-Cycle Helper (finder-frei)
+--------------------------------------
 
 Strikte Trennung der Verantwortlichkeiten:
 - **Dieses Modul** steuert nur den Zyklus (bereinigen → filtern → erneut versuchen).
-- Die **Finder-Logik** (z. B. `run_find_max_marker_frame`) bleibt vollständig außerhalb und
-  wird bei Bedarf **als Callback** injiziert. Der Cycle wertet lediglich `status` und `frame`
-  aus; weitere Felder werden ignoriert.
+- **Finder-Logik** (z. B. `run_find_max_marker_frame`) ist vollständig extern und wird
+  hier **nicht** mehr injiziert oder aufgerufen.
 
 Ablauf je Loop:
-1) (Optional) `finder(context)` aufrufen
-2) kurze Tracks bereinigen (`clean_short_tracks`)
-3) Spike-Filter anwenden (`bpy.ops.clip.filter_tracks`) und selektierte Tracks löschen
+1) kurze Tracks bereinigen (`clean_short_tracks`)
+2) Spike-Filter anwenden (`bpy.ops.clip.filter_tracks`) und selektierte Tracks löschen
 
 Rückgabe (dict):
-* status: "FINISHED" | "NONE" | "FAILED"
-* frame: gefundener Frame (falls FINISHED)
+* status: "NONE" | "FAILED"  ("FINISHED" wird hier nicht mehr gesetzt)
 * loops: Anzahl durchlaufener Zyklen
 * reason: Fehler-/Abbruchgrund (optional)
 """
 
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Dict, Any
 import bpy
 
 from .clean_short_tracks import clean_short_tracks  # verwendet vorhandene Funktionalität
@@ -145,25 +142,25 @@ def _lower_threshold(thr: float) -> float:
 def run_spike_filter_cycle(
     context: bpy.types.Context,
     *,
-    finder: Optional[Callable[[bpy.types.Context], Dict[str, Any]]] = None,
     marker_baseline: Optional[int] = None,
     track_threshold: float = 100.0,
     max_loops: int = 10,
 ) -> Dict[str, Any]:
-    """Steuert den Spike-Filter-Zyklus **ohne** Finder-Logik zu enthalten.
+    """Steuert den Spike-Filter-Zyklus **ohne Finder-Logik**.
 
-    - Ist `finder` gegeben, wird er pro Loop aufgerufen und lediglich anhand
-      von `status` ("FOUND"/"NONE"/"FAILED") sowie `frame` ausgewertet.
-    - Keine Abhängigkeit zu konkreten Finder-Implementierungen (Dependency Injection).
+    Es werden wiederholt kurze Tracks bereinigt und ein Spike-Filter angewendet,
+    anschließend werden selektierte Tracks entfernt. Ein Abbruch erfolgt nach
+    `max_loops`. Diese Funktion setzt kein Ergebnis-Frame und meldet kein
+    "FINISHED" – die Entscheidung über Erfolg/Misserfolg trifft die übergeordnete
+    Orchestrierung (z. B. der Coordinator-FSM).
     """
 
-    # Baseline bestimmen (nur für Logging/Abbruchkriterien außerhalb des Finders)
-    baseline = int(
+    # Baseline wird ggf. noch für externe Logs/Abbruchkriterien verwendet.
+    _ = int(
         marker_baseline
         if marker_baseline is not None
         else int(getattr(context.scene, "marker_frame", context.scene.frame_current) or context.scene.frame_current)
     )
-    target_limit = baseline * 2
 
     if not _get_active_clip(context):
         return {"status": "FAILED", "reason": "no active MovieClip"}
@@ -174,31 +171,7 @@ def run_spike_filter_cycle(
     while loops < int(max_loops):
         loops += 1
 
-        # 1) Optional: Finder verwenden (nur Status/Frame beachten)
-        if callable(finder):
-            try:
-                res = finder(context) or {}
-            except Exception as ex:
-                print(f"[SpikeCycle] finder failed: {ex!r}")
-                res = {"status": "FAILED", "reason": repr(ex)}
-
-            status = str(res.get("status", "NONE")).upper()
-            if status == "FOUND":
-                frame = int(res.get("frame", baseline))
-                print(f"[SpikeCycle] FOUND candidate frame={frame}")
-                # Der Cycle selbst trifft keine Schwellen-Entscheidung mehr.
-                # Wenn der Finder entscheidet, ist das maßgeblich.
-                # Optional: prüfe weiterhin die historische Baseline-Grenze als Abbruchkriterium für den Cycle,
-                # ohne den Finder zu beeinflussen (kann auf Wunsch entfernt werden):
-                if frame < int(target_limit):
-                    print(f"[SpikeCycle] ACCEPT frame={frame} (< {target_limit}) after {loops} loop(s)")
-                    return {"status": "FINISHED", "frame": frame, "loops": loops}
-                else:
-                    print(f"[SpikeCycle] candidate frame={frame} not accepted by cycle (< {target_limit} required) → continue")
-            elif status not in {"NONE", "FAILED"}:
-                print(f"[SpikeCycle] finder status={status} → continue")
-
-        # 2) kurze Tracks bereinigen
+        # 1) kurze Tracks bereinigen
         try:
             frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
             clean_short_tracks(context, min_len=frames_min, verbose=True)
@@ -212,7 +185,7 @@ def run_spike_filter_cycle(
         except Exception as ex_clean:
             print(f"[SpikeCycle] clean_short_tracks failed: {ex_clean!r}")
 
-        # 3) Spike-Filter anwenden und selektierte Tracks löschen
+        # 2) Spike-Filter anwenden und selektierte Tracks löschen
         try:
             bpy.ops.clip.filter_tracks(track_threshold=float(thr))
             print(f"[SpikeCycle] filter_tracks(track_threshold={thr})")
@@ -225,5 +198,5 @@ def run_spike_filter_cycle(
 
         print(f"[SpikeCycle] loop {loops}/{max_loops} completed → retry")
 
-    print(f"[SpikeCycle] max_loops ({max_loops}) reached without suitable frame")
+    print(f"[SpikeCycle] max_loops ({max_loops}) reached")
     return {"status": "NONE", "reason": "max_loops_exceeded", "loops": loops}
