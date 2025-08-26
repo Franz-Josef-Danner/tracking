@@ -1,8 +1,3 @@
-"""Minimaler Kamera-Solve-Trigger (bereinigt).
-
-ACHTUNG: Dieses Modul enthält **nur** den Solve-Trigger. Es gibt **keine**
-Diff/Patch-Blöcke oder Zusatzlogik mehr – damit keine SyntaxErrors entstehen.
-"""
 from __future__ import annotations
 import bpy
 from typing import Optional
