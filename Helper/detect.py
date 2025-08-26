@@ -264,7 +264,7 @@ def run_pattern_triplet_and_select_by_name(
     context: bpy.types.Context,
     *,
     scale_low: float = 0.5,
-    scale_high: float = 2,
+    scale_high: float = 4,
     also_include_ready_selection: bool = True,
     adjust_search_with_pattern: bool = False,
     # NEW: optionaler Dupe-Filter über beide Sweeps hinweg
