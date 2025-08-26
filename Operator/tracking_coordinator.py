@@ -535,10 +535,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             frame = int(res.get("frame", getattr(context.scene, "frame_current", 0)))
             count = res.get("count", "?")
             thresh = res.get("threshold", "?")
-            print(f"[Coord] CYCLE_FIND_MAX → FOUND frame={frame} (count={count} < threshold={thresh}) → FINALIZE")
+            print(f"[Coord] CYCLE_FIND_MAX → FOUND frame={frame} (count={count} < threshold={thresh}) → SOLVE")
+
+            # Frame setzen (direkt), ohne über DETECT/TRACK zu gehen
+            try:
+                context.scene.frame_set(frame)
+            except Exception as ex_set:
+                print(f"[Coord] WARN: frame_set({frame}) failed: {ex_set!r}")
+
+            # Cycle beenden & Solve-Phase starten
             self._cycle_active = False
             self._cycle_stage = ""
-            self._state = "FINALIZE"
+            self._solve_wait_ticks = int(getattr(context.scene, "solve_wait_ticks", _SOLVE_WAIT_TICKS_DEFAULT))
+            self._post_solve_refine_done = False
+            self._state = "SOLVE"
             return {"RUNNING_MODAL"}
 
         # NONE oder FAILED → weiter mit SPIKE
