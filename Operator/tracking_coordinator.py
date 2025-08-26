@@ -461,8 +461,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     def _state_clean_short(self, context):
         # Bestandteil der ursprünglichen FSM, unverändert
-        print("[Coord] CLEAN_SHORT (no-op) → FIND_LOW")
-        self._state = "FIND_LOW"
+        print("[Coord] CLEAN_SHORT (no-op)")
+        if self._cycle_active and self._cycle_stage == "CYCLE_SPIKE":
+            print("[Coord] CLEAN_SHORT → CYCLE_SPIKE (cycle continuation)")
+            self._state = "CYCLE_SPIKE"
+        else:
+            print("[Coord] CLEAN_SHORT → FIND_LOW")
+            self._state = "FIND_LOW"
         return {"RUNNING_MODAL"}
 
     # ---------------- CYCLE STATES ----------------
@@ -516,13 +521,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     frame_i = int(frame)
                 except Exception:
                     raise ValueError(f"invalid frame value: {frame!r}")
-                try:
-                    context.scene.frame_set(frame_i)
-                except Exception as ex_set:
-                    print(f"[Coord] WARN: frame_set({frame_i}) failed: {ex_set!r}")
-                    context.scene.frame_current = frame_i
+                # Ziel über JUMP→DETECT→TRACK anfahren; SPIKE nur vormerken
+                context.scene[_GOTO_KEY] = frame_i
+                self._jump_done = False
                 self._cycle_stage = "CYCLE_SPIKE"
-                self._state = "CYCLE_SPIKE"
+                print(f"[Coord] CYCLE_FIND_LOW → FOUND frame={frame_i} → JUMP")
+                self._state = "JUMP"
                 return {"RUNNING_MODAL"}
         except Exception as ex:
             print(f"[Coord] CYCLE_FIND_LOW failed: {ex!r}")
