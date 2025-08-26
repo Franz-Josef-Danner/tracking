@@ -799,6 +799,27 @@ def run_detect_once(
             except Exception as ex:
                 print(f"[DetectError] post-triplet near-duplicate cleanup failed: {ex}")
 
+            # Version B: Selektiere abschließend nur die in 'cleaned' verbliebenen Tracks.
+            # Damit überschreiben wir die Auswahl, die das Pattern-Triplet ggf. gesetzt hat,
+            # und markieren ausschließlich die tatsächlich "clean" gebliebenen neuen Tracks.
+            try:
+                _deselect_all(tracking)
+                for t in cleaned:
+                    try:
+                        t.select = True
+                    except Exception:
+                        pass
+                # Ergänze triplet_result um Info zur finalen Auswahl (optional, falls vorhanden)
+                if triplet_result is not None:
+                    try:
+                        triplet_result.setdefault("final_selection", {})
+                        triplet_result["final_selection"]["selected_by_cleaned_count"] = len(cleaned)
+                        triplet_result["final_selection"]["selected_names"] = [t.name for t in cleaned]
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
         metrics = DetectMetrics(
             frame=frame,
             requested_threshold=float(threshold),
