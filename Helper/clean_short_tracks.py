@@ -1,7 +1,4 @@
 # Helper/clean_short_tracks.py — Short-Track-Cleaner nach dem Tracking
-# Nutzt ausschließlich Blender-Operatoren (clean_tracks / delete_track).
-# Respektiert __skip_clean_short_once und __just_created_names aus Detect.
-
 import bpy
 from typing import List, Optional, Tuple, Iterable, Set
 
