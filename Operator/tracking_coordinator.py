@@ -13,7 +13,6 @@ from ..Helper.triplet_grouping import run_triplet_grouping  # top-level import
 from ..Helper.solve_camera import solve_camera_only
 from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin
 from ..Helper.refine_high_error import start_refine_modal
-from ..Helper.refine_high_error import refine_on_high_error
 
 # Cycle-Helpers
 from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
