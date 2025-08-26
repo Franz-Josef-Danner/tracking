@@ -553,14 +553,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._cycle_stage = "CYCLE_SPIKE"
             self._state = "CYCLE_SPIKE"
             return {"RUNNING_MODAL"}
-    
-        # FAILED oder anderes → trotzdem SPIKE versuchen (best effort)
-        print(f"[Coord] CYCLE_FIND_MAX → {status} → fallback CYCLE_SPIKE")
-        self._cycle_stage = "CYCLE_SPIKE"
-        self._state = "CYCLE_SPIKE"
-        return {"RUNNING_MODAL"}
-
-
+            
         # FAILED oder anderes → trotzdem SPIKE versuchen (best effort)
         print(f"[Coord] CYCLE_FIND_MAX → {status} → fallback CYCLE_SPIKE")
         self._cycle_stage = "CYCLE_SPIKE"
