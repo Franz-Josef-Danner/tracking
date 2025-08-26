@@ -311,7 +311,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_solve_wait(self, context):
-        """Wartet bis die Reconstruction gültig ist (Solve fertig), dann Cleanup, dann FINALIZE."""
         err = self._get_current_solve_error_now(context)
         if err is not None:
             print(f"[Coord] SOLVE_WAIT → reconstruction valid, avg_error={err:.4f}px → CLEANUP")
@@ -325,18 +324,33 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 print(f"[Coord] Cleanup after solve → {cleanup}")
             except Exception as ex_cleanup:
                 print(f"[Coord] Cleanup after solve failed: {ex_cleanup!r}")
-            self._cycle_active = True
-            self._cycle_stage = "CYCLE_FIND_LOW"
-            self._state = "CYCLE_FIND_LOW"
-            return {"RUNNING_MODAL"}
+    
+            # --- Entscheide: FINALIZE vs. neuer Cycle ---
+            try:
+                # Nach Cleanup ändert sich der Solve-Error normalerweise erst nach dem nächsten Solve.
+                # Wir nutzen daher err (vor Cleanup) oder curr_err, falls verfügbar.
+                curr_err = self._get_current_solve_error_now(context)
+                if curr_err is None:
+                    curr_err = float(err)
+                target = float(getattr(context.scene, "error_track", 0.0) or 0.0)
+            except Exception:
+                curr_err = float(err)
+                target = 0.0
+    
+            print(f"[Coord] Post-cleanup error check: curr_err={curr_err:.4f}px, target={target:.4f}px")
+            if target > 0.0 and curr_err <= target:
+                print("[Coord] target reached → FINALIZE")
+                self._state = "FINALIZE"
+                return {"RUNNING_MODAL"}
+            else:
+                print("[Coord] target not reached → continue cycle (CYCLE_FIND_LOW)")
+                self._cycle_active = True
+                self._cycle_stage = "CYCLE_FIND_LOW"
+                self._state = "CYCLE_FIND_LOW"
+                return {"RUNNING_MODAL"}
+    
+        # Timeout/weiter warten unverändert …
 
-        # Noch kein gültiger Solve-Error → Timeout prüfen
-        if time.monotonic() >= getattr(self, "_solve_wait_deadline", 0.0):
-            print("[Coord] SOLVE_WAIT → timeout → FINALIZE (kein gültiger Solve)")
-            self._state = "FINALIZE"
-            return {"RUNNING_MODAL"}
-        # weiter warten
-        return {"RUNNING_MODAL"}
 
     # --- kleine Utility: Solve-Error prüfen (ohne Abhängigkeit vom Helper) ---
     def _get_current_solve_error_now(self, context):
@@ -484,19 +498,40 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     def _state_cycle_find_low(self, context):
         """Findet einen *niedrigen* Marker-Frame als neuen Startpunkt für den nächsten Cycle."""
         try:
-            ok, frame = run_find_low_marker_frame(context)
-            print(f"[Coord] CYCLE_FIND_LOW → ok={ok}, frame={frame}")
-            if ok:
-                context.scene.frame_current = int(frame)
+            res = run_find_low_marker_frame(context)
+            # Ergebnis normalisieren: dict- oder tuple-API unterstützen
+            status = "FAILED"
+            frame = None
+            if isinstance(res, dict):
+                status = str(res.get("status", "FAILED")).upper()
+                frame = res.get("frame", None)
+            elif isinstance(res, (list, tuple)) and len(res) >= 2:
+                ok = bool(res[0])
+                status = "FOUND" if ok else "NONE"
+                frame = res[1]
+            print(f"[Coord] CYCLE_FIND_LOW → res={res!r}")
+    
+            if status == "FOUND" and frame is not None:
+                try:
+                    frame_i = int(frame)
+                except Exception:
+                    raise ValueError(f"invalid frame value: {frame!r}")
+                try:
+                    context.scene.frame_set(frame_i)
+                except Exception as ex_set:
+                    print(f"[Coord] WARN: frame_set({frame_i}) failed: {ex_set!r}")
+                    context.scene.frame_current = frame_i
                 self._cycle_stage = "CYCLE_SPIKE"
                 self._state = "CYCLE_SPIKE"
                 return {"RUNNING_MODAL"}
         except Exception as ex:
             print(f"[Coord] CYCLE_FIND_LOW failed: {ex!r}")
-
+    
+        # Fallback-Pfad
         self._cycle_stage = "CYCLE_FIND_MAX"
         self._state = "CYCLE_FIND_MAX"
         return {"RUNNING_MODAL"}
+
 
     def _state_cycle_findmax(self, context):
         """FIND_MAX → bei FOUND: FINALIZE, sonst SPIKE."""
