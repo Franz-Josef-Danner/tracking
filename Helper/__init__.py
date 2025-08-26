@@ -46,7 +46,7 @@ if CLIP_OT_marker_helper_main is not None:
 
 def register() -> None:
     """Registriert feste Operatoren + optionale Operatoren."""
-    for cls in (CLIP_OT_bidirectional_track):
+    for cls in (CLIP_OT_bidirectional_track,):
         try:
             bpy.utils.register_class(cls)
         except ValueError:
