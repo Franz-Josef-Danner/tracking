@@ -1,9 +1,3 @@
-# Blender-Add-on – funktionaler Optimierungs‑Flow (keine Operatoren)
-#
-# Hinweis: Diese Datei ist **rein funktional** (keine Operatoren). Die Steuerung
-# erfolgt über `bpy.app.timers` und Helper-Funktionen (Detect/Track), identisch
-# zur neuen Version. Gegenüber der letzten Revision sind nur **Syntax‑Fixes** und
-# die korrekte **mehrstufige Pattern‑Size‑Suche** nach alter Version enthalten.
 
 from __future__ import annotations
 
