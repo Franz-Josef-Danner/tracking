@@ -212,8 +212,6 @@ def _clean_tracks(context, *, used_error: float, action: str) -> Dict[str, int]:
     # Normale Operator-Aktion
     op_action = action if action in allowed else "SELECT"
     _invoke_clean_tracks(context, used_error=used_error, action=op_action)
-    # Bei direkten Operator-Aktionen zählen wir hier nur die (vorher) selektierten,
-    # weil DELETE_* die Anzahl verändert, SELECT nur markiert.
     selected = _count_selected(clip)
     return {"selected": selected, "disabled": 0}
 
@@ -225,19 +223,13 @@ def _clean_tracks(context, *, used_error: float, action: str) -> Dict[str, int]:
 def run_projection_cleanup_builtin(
     context: bpy.types.Context,
     *,
-    # Einer dieser Werte (wenn gesetzt) wird als Schwellwert verwendet;
-    # wenn keiner gesetzt ist, kann gewartet werden, bis ein Error verfügbar ist.
     error_limit: float | None = None,
     threshold: float | None = None,
     max_error: float | None = None,
-
-    # Warte-Optionen
     wait_for_error: bool = True,
     wait_forever: bool = False,
     timeout_s: float = 20.0,
-
-    # Cleanup-Optionen
-    action: str = "DISABLE",   # 'DISABLE' (emuliert), 'DELETE_TRACK', 'DELETE_SEGMENTS', 'SELECT'
+    action: str = "DELETE_TRACK",   # Default jetzt: direkt löschen
 ) -> Dict[str, Any]:
     """
     Führt Reprojection-Cleanup per bpy.ops.clip.clean_tracks aus.
@@ -247,19 +239,6 @@ def run_projection_cleanup_builtin(
       2) Operator ausführen: clean_tracks(clean_error=<used_error>, action=<action>).
          (Fallback-Parametername 'error' wird ebenfalls versucht.)
       3) Vorher/Nachher-Counts ermitteln und zurückgeben.
-
-    Rückgabe:
-      {
-        "status": "OK"|"SKIPPED"|"ERROR",
-        "used_error": float|None,
-        "action": str,
-        "reason": str|None,
-        "before": int|None,
-        "after": int|None,
-        "deleted": int|None,
-        "selected": int|None,
-        "disabled": int|None,
-      }
     """
     # 1) Schwelle bestimmen / warten
     used_error: Optional[float] = None
@@ -274,17 +253,8 @@ def run_projection_cleanup_builtin(
 
     if used_error is None:
         print("[Cleanup] Kein gültiger Solve-Error verfügbar – Cleanup wird SKIPPED.")
-        return {
-            "status": "SKIPPED",
-            "reason": "no_error",
-            "used_error": None,
-            "action": action,
-            "before": None,
-            "after": None,
-            "deleted": None,
-            "selected": None,
-            "disabled": None,
-        }
+        return {"status": "SKIPPED", "reason": "no_error", "used_error": None, "action": action,
+                "before": None, "after": None, "deleted": None, "selected": None, "disabled": None}
 
     print(f"[Cleanup] Starte clean_tracks mit Grenzwert {used_error:.4f}px, action={action}")
 
@@ -296,37 +266,18 @@ def run_projection_cleanup_builtin(
         stats = _clean_tracks(context, used_error=float(used_error), action=str(action))
     except Exception as ex:
         print(f"[Cleanup] Fehler bei clean_tracks: {ex!r}")
-        return {
-            "status": "ERROR",
-            "reason": repr(ex),
-            "used_error": used_error,
-            "action": action,
-            "before": before_count,
-            "after": None,
-            "deleted": None,
-            "selected": None,
-            "disabled": None,
-        }
+        return {"status": "ERROR", "reason": repr(ex), "used_error": used_error, "action": action,
+                "before": before_count, "after": None, "deleted": None,
+                "selected": None, "disabled": None}
 
     after_count = _count_tracks(clip)
     deleted = max(0, (before_count or 0) - (after_count or 0))
     selected = int(stats.get("selected", 0))
     disabled = int(stats.get("disabled", 0))
 
-    print(
-        "[Cleanup] Cleanup abgeschlossen. "
-        f"Vorher={before_count}, nachher={after_count}, entfernt={deleted}, "
-        f"selektiert={selected}, deaktiviert={disabled}"
-    )
+    print(f"[Cleanup] Cleanup abgeschlossen. Vorher={before_count}, nachher={after_count}, "
+          f"entfernt={deleted}, selektiert={selected}, deaktiviert={disabled}")
 
-    return {
-        "status": "OK",
-        "used_error": used_error,
-        "action": action,
-        "reason": None,
-        "before": before_count,
-        "after": after_count,
-        "deleted": deleted,
-        "selected": selected,
-        "disabled": disabled,
-    }
+    return {"status": "OK", "used_error": used_error, "action": action, "reason": None,
+            "before": before_count, "after": after_count, "deleted": deleted,
+            "selected": selected, "disabled": disabled}
