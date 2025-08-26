@@ -28,15 +28,22 @@ def clip_context(clip=None):
 def _iter_tracks_with_marker_at_frame(tracks, frame):
     """
     Liefert Tracks, die im angegebenen Frame einen Marker haben (geschätzt oder exakt),
-    und die nicht stummgeschaltet sind.
+    und die nicht deaktiviert/gestummschaltet sind.
     """
     for tr in tracks:
-        if tr.mute:
+        # Track-Enable prüfen (robuster als "mute", das es am Track nicht gibt)
+        if hasattr(tr, "enabled") and not bool(getattr(tr, "enabled")):
             continue
+
         # Marker in diesem Frame finden (exact=False erlaubt interpolierten Zugriff)
         mk = tr.markers.find_frame(frame, exact=False)
-        if mk is None or mk.mute:
+        if mk is None:
             continue
+
+        # Marker: 'mute' existiert ggf. → nur dann prüfen
+        if hasattr(mk, "mute") and bool(getattr(mk, "mute")):
+            continue
+
         yield tr
 
 
@@ -55,19 +62,6 @@ def refine_on_high_error(
       - FE  = ME / MEA (Durchschnitt je Marker)
       - Wenn FE > error_track * 2: Playhead auf Frame, refine_markers vorwärts & rückwärts.
 
-    Parameter
-    ---------
-    error_track : float
-        Basis-Schwellwert; ausgelöst wird bei 2x diesem Wert.
-    clip : bpy.types.MovieClip | None
-        Optional expliziter Clip. Standard: aktiver Clip im CLIP_EDITOR.
-    tracking_object_name : str | None
-        Name des Tracking-Objekts (clip.tracking.objects[name]). Standard: aktives Objekt.
-    only_selected_tracks : bool
-        Wenn True, werden nur selektierte Tracks berücksichtigt und verfeinert.
-    wait_seconds : float
-        Kurze Wartezeit zwischen Vorwärts- und Rückwärts-Refine (UI-Update/Redraw).
-
     Hinweise
     --------
     Blender gibt per Python keinen pro-Frame-Fehler je Marker aus. Wir verwenden daher
@@ -85,7 +79,8 @@ def refine_on_high_error(
         tracking = clip.tracking
 
         # Solve-Check
-        if not tracking.reconstruction.is_valid:
+        recon = getattr(tracking, "reconstruction", None)
+        if not recon or not getattr(recon, "is_valid", False):
             raise RuntimeError("Rekonstruktion ist nicht gültig. Bitte erst Solve durchführen.")
 
         # Tracking-Objekt bestimmen
@@ -98,7 +93,7 @@ def refine_on_high_error(
 
         # Optional nur selektierte Tracks berücksichtigen
         if only_selected_tracks:
-            tracks = [t for t in tracks if t.select]
+            tracks = [t for t in tracks if getattr(t, "select", False)]
 
         if not tracks:
             raise RuntimeError("Keine (passenden) Tracks gefunden.")
@@ -115,8 +110,14 @@ def refine_on_high_error(
             if MEA == 0:
                 continue
 
-            # ME als Summe aus average_error der betreffenden Tracks
-            ME = sum(t.average_error for t in active_tracks)
+            # ME als Summe aus average_error der betreffenden Tracks (defensiv)
+            ME = 0.0
+            for t in active_tracks:
+                try:
+                    ME += float(getattr(t, "average_error"))
+                except Exception:
+                    # falls ein Track kein average_error hat → ignorieren
+                    pass
             FE = ME / MEA
 
             if FE > (error_track * 2.0):
@@ -128,9 +129,15 @@ def refine_on_high_error(
                 if only_selected_tracks:
                     # sicherstellen, dass Selektion stimmt (Operator arbeitet auf selektierten Markern)
                     for t in tob.tracks:
-                        t.select = False
+                        try:
+                            t.select = False
+                        except Exception:
+                            pass
                     for t in active_tracks:
-                        t.select = True
+                        try:
+                            t.select = True
+                        except Exception:
+                            pass
 
                 # Refine vorwärts & rückwärts
                 bpy.ops.clip.refine_markers(ctx, backwards=False)  # nach vorne
