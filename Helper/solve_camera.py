@@ -1,103 +1,77 @@
+"""Minimaler Kamera-Solve-Trigger (bereinigt).
+
+ACHTUNG: Dieses Modul enthält **nur** den Solve-Trigger. Es gibt **keine**
+Diff/Patch-Blöcke oder Zusatzlogik mehr – damit keine SyntaxErrors entstehen.
+"""
+from __future__ import annotations
 import bpy
-from ..Helper.solve_camera import solve_camera_only
+from typing import Optional
+
+__all__ = ("solve_camera_only",)
 
 
-class TrackingCoordinatorOperator(bpy.types.Operator):
-    bl_idname = "tracking.coordinator"
-    bl_label = "Tracking Coordinator"
-    bl_options = {"REGISTER", "UNDO", "BLOCKING"}
+# -- interne Hilfe: passenden CLIP_EDITOR im aktuellen Window finden ---------
 
-    def __init__(self):
-        self._state = "INIT"
-
-    def modal(self, context, event):
-        if self._state == "SOLVE":
-            return self._state_solve(context)
-        elif self._state == "SOLVE_WAIT":
-            return self._state_solve_wait(context)
-        # … weitere States …
-        return {"PASS_THROUGH"}
-
-    def _state_solve(self, context):
-        """Starte den Kamera-Solve (nur Operator). Danach Wechsel in SOLVE_WAIT."""
-        try:
-            solve_camera_only(context)
-        except Exception as ex:
-            print(f"[Coord] SOLVE start failed: {ex!r}")
-            self._state = "FINALIZE"
-            return {"RUNNING_MODAL"}
-
-        self._state = "SOLVE_WAIT"
-        return {"RUNNING_MODAL"}
-
-    def _state_solve_wait(self, context):
-        """Warte auf Solve-Ergebnis (ggf. Polling/Check ergänzen)."""
-        # hier würdest du mit get_current_solve_error(...) oder
-        # wait_for_valid_reconstruction(...) arbeiten, wenn gewünscht
-        # aktuell nur Übergang in FINALIZE
-        self._state = "FINALIZE"
-        return {"RUNNING_MODAL"}
+def _find_clip_window(context) -> tuple[Optional[bpy.types.Area], Optional[bpy.types.Region], Optional[bpy.types.Space]]:
+    win = getattr(context, "window", None)
+    screen = getattr(win, "screen", None)
+    if not screen:
+        return None, None, None
+    for area in screen.areas:
+        if area.type == 'CLIP_EDITOR':
+            region_window = None
+            for r in area.regions:
+                if r.type == 'WINDOW':
+                    region_window = r
+                    break
+            if region_window:
+                return area, region_window, area.spaces.active
+    return None, None, None
 
 
-# Registrierung
-def register():
-    bpy.utils.register_class(TrackingCoordinatorOperator)
+# -- öffentliche API ----------------------------------------------------------
+
+def solve_camera_only(context):
+    """Löst nur den Kamera-Solve aus – kein Cleanup, kein Warten.
+
+    Versucht, falls möglich, einen Kontext-Override auf einen CLIP_EDITOR zu
+    setzen, damit der Operator zuverlässig läuft. Fällt ansonsten auf den
+    globalen Kontext zurück.
+
+    Returns
+    -------
+    set | dict
+        Das Operator-Resultat (z. B. {'RUNNING_MODAL'} oder {'CANCELLED'}).
+    """
+    area, region, space = _find_clip_window(context)
+    try:
+        if area and region and space:
+            with context.temp_override(area=area, region=region, space_data=space):
+                return bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+        return bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+    except Exception as e:
+        print(f"[Solve] Fehler beim Start des Solve-Operators: {e}")
+        return {"CANCELLED"}
 
 
-def unregister():
-    bpy.utils.unregister_class(TrackingCoordinatorOperator)
-
-
-# -----------------------------------------------------------------------------
-# PATCH: Operator/tracking_coordinator.py – Solve-Trigger integrieren
-# -----------------------------------------------------------------------------
-# Unified-Diff zum Einfügen der minimalen Solve-Integration.
+# ----------------------------------------------------------------------------
+# HINWEIS FÜR DEN KOORDINATOR (separate Datei!):
 #
-# 1) Importiere den Minimal-Helper `solve_camera_only`.
-# 2) Starte den Solve ausschließlich darüber in `_state_solve`.
-# 3) Wechsle anschließend in den Wait-State `SOLVE_WAIT`.
+# In Operator/tracking_coordinator.py oben importieren:
+#     from ..Helper.solve_camera import solve_camera_only
 #
-# Falls deine Datei andere State-Namen nutzt, passe "SOLVE_WAIT" entsprechend an.
-
-"""
---- a/Operator/tracking_coordinator.py
-+++ b/Operator/tracking_coordinator.py
-@@
--from ..Helper.solve_camera import (  # ggf. vorhandene alte Imports entfernen/ersetzen
--    # solve_watch_clean,
--)
-+from ..Helper.solve_camera import solve_camera_only
-@@
- class TrackingCoordinatorOperator(bpy.types.Operator):
-@@
--    def _state_solve(self, context):
--        """Solve-Start."""
--        # bisherige Logik hier – ggf. andere Schritte
--        return {'RUNNING_MODAL'}
-+    def _state_solve(self, context):
-+        """Startet ausschließlich den Kamera-Solve und wechselt in SOLVE_WAIT."""
-+        try:
-+            res = solve_camera_only(context)  # löst NUR den Operator aus
-+            print(f"[Coord] Solve invoked: {res}")
-+        except Exception as ex:
-+            print(f"[Coord] SOLVE start failed: {ex!r}")
-+            # Optional: direkten Abbruch-State wählen
-+            if hasattr(self, "_set_state"):
-+                try:
-+                    self._set_state("FINALIZE")
-+                except Exception:
-+                    self._state = "FINALIZE"
-+            else:
-+                self._state = "FINALIZE"
-+            return {'RUNNING_MODAL'}
-+
-+        # In den Wait-State wechseln (passt ggf. an deine FSM an)
-+        if hasattr(self, "_set_state"):
-+            try:
-+                self._set_state("SOLVE_WAIT")
-+            except Exception:
-+                self._state = "SOLVE_WAIT"
-+        else:
-+            self._state = "SOLVE_WAIT"
-+        return {'RUNNING_MODAL'}
-"""
+# Und in der State-Methode den Solve auslösen (ohne Diff-Marker!):
+#
+#     def _state_solve(self, context):
+#         """Startet ausschließlich den Kamera-Solve und wechselt in SOLVE_WAIT."""
+#         try:
+#             res = solve_camera_only(context)
+#             print(f"[Coord] Solve invoked: {res}")
+#         except Exception as ex:
+#             print(f"[Coord] SOLVE start failed: {ex!r}")
+#             self._state = "FINALIZE"
+#             return {'RUNNING_MODAL'}
+#
+#         self._state = "SOLVE_WAIT"
+#         return {'RUNNING_MODAL'}
+# ----------------------------------------------------------------------------
