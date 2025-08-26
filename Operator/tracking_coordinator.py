@@ -571,12 +571,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print(f"[Coord] CYCLE_SPIKE → spike_filter_cycle result={res}")
             status = str(res.get("status", "")).upper()
             if status == "OK":
-                next_thr = float(res.get("next_threshold", self._cycle_spike_threshold * 0.975))
+                next_thr = float(res.get("next_threshold", self._cycle_spike_threshold * 0.9))
             else:
-                next_thr = self._cycle_spike_threshold * 0.975
+                next_thr = self._cycle_spike_threshold * 0.9
         except Exception as ex:
             print(f"[Coord] CYCLE_SPIKE failed: {ex!r}")
-            next_thr = self._cycle_spike_threshold * 0.975
+            next_thr = self._cycle_spike_threshold * 0.9
 
         self._cycle_spike_threshold = max(5.0, next_thr)
 
