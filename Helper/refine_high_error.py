@@ -8,7 +8,7 @@ from math import isfinite
 def clip_context(clip=None):
     """
     Kontext-Override für CLIP_EDITOR, damit clip.* Operatoren zuverlässig laufen.
-    Wählt die erste CLIP_EDITOR-Area des aktiven Screens.
+    Liefert ein vollständiges Override (window/screen/area/region/space_data/edit_movieclip).
     """
     ctx = bpy.context.copy()
     win = bpy.context.window
@@ -20,18 +20,78 @@ def clip_context(clip=None):
     ctx['screen'] = scr
     ctx['area'] = area
     ctx['region'] = next((r for r in area.regions if r.type == 'WINDOW'), None)
+    space = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
 
-    if clip is None:
-        # Aktiven Clip der Area verwenden, falls vorhanden
-        space = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
-        if space:
-            clip = space.clip
+    if clip is None and space:
+        clip = space.clip
     if clip:
         ctx['edit_movieclip'] = clip
-        ctx['space_data'] = next((s for s in area.spaces if s.type == 'CLIP_EDITOR'), None)
-
+    if space:
+        ctx['space_data'] = space
     yield ctx
 
+
+# ---------- UI-Helpers -------------------------------------------------------
+
+def _scene_to_clip_frame(context, clip, scene_frame: int) -> int:
+    """
+    Mappt Szenen-Frame deterministisch auf Clip-Frame (beachtet fps & Offsets),
+    und klemmt auf die Clip-Dauer.
+    """
+    scn = context.scene
+    scene_start = int(getattr(scn, "frame_start", 1))
+    clip_start = int(getattr(clip, "frame_start", 1))
+    scn_fps = float(getattr(getattr(scn, "render", None), "fps", 0) or 0.0)
+    clip_fps = float(getattr(clip, "fps", 0) or 0.0)
+    scale = (clip_fps / scn_fps) if (scn_fps > 0.0 and clip_fps > 0.0) else 1.0
+    rel = round((scene_frame - scene_start) * scale)
+    f = int(clip_start + rel)
+    dur = int(getattr(clip, "frame_duration", 0) or 0)
+    if dur > 0:
+        fmin, fmax = clip_start, clip_start + dur - 1
+        f = max(fmin, min(f, fmax))
+    return f
+
+
+def _ui_show_playhead(ctx: dict, scene: bpy.types.Scene, clip: bpy.types.MovieClip, scene_frame: int,
+                      *, sleep_s: float = 0.03) -> None:
+    """
+    Setzt Playhead sichtbar auf scene_frame:
+      - Szene-Frame setzen
+      - Clip-User-Frame (lokal im Editor) anpassen
+      - Redraw des CLIP_EDITOR erzwingen
+    """
+    scene.frame_set(int(scene_frame))
+
+    # Clip-Frame im Editor mitziehen (falls fps/Offsets abweichen)
+    try:
+        clip_frame = _scene_to_clip_frame(bpy.context, clip, int(scene_frame))
+        with bpy.context.temp_override(**ctx):
+            space = ctx.get("space_data", None)
+            if space and getattr(space, "clip_user", None):
+                space.clip_user.frame_current = int(clip_frame)
+    except Exception:
+        pass
+
+    # Harte Redraw-Sequenz (ohne Zoom/Extras)
+    try:
+        area = ctx.get("area", None)
+        if area:
+            area.tag_redraw()
+        with bpy.context.temp_override(**ctx):
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+    except Exception:
+        pass
+
+    # winziger Schlaf lässt der UI Zeit, den Cursor sichtbar zu malen
+    if sleep_s and sleep_s > 0.0:
+        try:
+            time.sleep(float(sleep_s))
+        except Exception:
+            pass
+
+
+# ---------- Fehler-/Selektion-Helpers ---------------------------------------
 
 def _iter_tracks_with_marker_at_frame(tracks, frame):
     """
@@ -50,7 +110,7 @@ def _iter_tracks_with_marker_at_frame(tracks, frame):
 
 def _marker_error_on_frame(track, frame):
     """
-    Liefert möglichst den Marker-Error des Tracks auf 'frame';
+    Liefert bevorzugt den Marker-Error des Tracks auf 'frame';
     Fallback: track.average_error. Nicht-finite Werte -> None.
     """
     try:
@@ -69,9 +129,7 @@ def _marker_error_on_frame(track, frame):
 
 
 def _refine_markers_with_override(ctx: dict, *, backwards: bool) -> None:
-    """
-    Führt bpy.ops.clip.refine_markers sicher mit temp_override aus.
-    """
+    """Sicherer refine_markers-Aufruf mit gültigem Kontext."""
     with bpy.context.temp_override(**ctx):
         bpy.ops.clip.refine_markers('EXEC_DEFAULT', backwards=bool(backwards))
 
@@ -79,9 +137,7 @@ def _refine_markers_with_override(ctx: dict, *, backwards: bool) -> None:
 def _set_selection_for_tracks(tob, frame, tracks_subset):
     """
     Setzt die Selektion ausschließlich auf 'tracks_subset' und deren Marker auf 'frame'.
-    (per Property-Set, ohne Operator; robust gegen Kontext)
     """
-    # Alles deselektieren
     for t in tob.tracks:
         try:
             t.select = False
@@ -90,7 +146,6 @@ def _set_selection_for_tracks(tob, frame, tracks_subset):
         except Exception:
             pass
 
-    # Nur gewünschte Tracks + Marker auf diesem Frame selektieren
     for t in tracks_subset:
         try:
             mk = t.markers.find_frame(frame, exact=False)
@@ -102,28 +157,24 @@ def _set_selection_for_tracks(tob, frame, tracks_subset):
             pass
 
 
+# ---------- Hauptfunktion ----------------------------------------------------
+
 def refine_on_high_error(
     error_track: float,
     *,
     clip: bpy.types.MovieClip | None = None,
     tracking_object_name: str | None = None,
     only_selected_tracks: bool = False,
-    wait_seconds: float = 0.1,
-    max_per_frame: int = 20,  # NEW: Obergrenze Top-N pro Frame
+    wait_seconds: float = 0.05,
+    max_per_frame: int = 20,          # Top-N Marker pro Frame
+    ui_preview: bool = True,          # Playhead sichtbar springen lassen
+    ui_sleep_s: float = 0.03,         # kleine Wartezeit für Rendering des Cursors
 ) -> None:
     """
-    Durchläuft alle Frames der aktuellen Szene. Für jeden Frame:
-      - MEA = Anzahl aktiver Marker (Tracks mit Marker in diesem Frame)
-      - ME  = Summe der Track-Fehler (Marker.error- oder average_error-Fallback)
-      - FE  = ME / MEA (Durchschnitt je Marker)
-      - Wenn FE > error_track * 2:
-          * Selektion = Top-N (max_per_frame) Tracks mit größtem Fehler in diesem Frame
-          * refine_markers vorwärts & rückwärts
-
-    Hinweise:
-      - Auswahl wird immer auf die Top-N beschränkt.
-      - Wenn only_selected_tracks=True, wird bereits die Eingangs-Trackliste
-        auf zuvor selektierte Tracks gefiltert.
+    Durchläuft alle Frames; wenn FE > error_track*2:
+      - Selektion = Top-N (max_per_frame) Tracks mit größtem Fehler in diesem Frame
+      - zeigt Playhead-Sprung (wenn ui_preview=True)
+      - refine_markers vorwärts & rückwärts.
     """
     scene = bpy.context.scene
     if scene is None:
@@ -139,7 +190,6 @@ def refine_on_high_error(
         if not recon or not getattr(recon, "is_valid", False):
             raise RuntimeError("Rekonstruktion ist nicht gültig. Bitte erst Solve durchführen.")
 
-        # Tracking-Objekt bestimmen
         tob = (tracking.objects.get(tracking_object_name)
                if tracking_object_name else tracking.objects.active)
         if tob is None:
@@ -157,40 +207,38 @@ def refine_on_high_error(
         triggered_frames = []
 
         for f in range(frame_start, frame_end + 1):
-            # Alle Tracks mit Marker auf f
-            active_tracks = list(_iter_tracks_with_marker_at_frame(tracks, f))
-            MEA = len(active_tracks)
+            act = list(_iter_tracks_with_marker_at_frame(tracks, f))
+            MEA = len(act)
             if MEA == 0:
                 continue
 
-            # FE (Frame-Mittel) für die Trigger-Entscheidung
             ME = 0.0
-            for t in active_tracks:
+            scored = []
+            for t in act:
                 v = _marker_error_on_frame(t, f)
-                if v is not None:
-                    ME += v
-            FE = ME / MEA
+                if v is None:
+                    continue
+                ME += v
+                scored.append((v, t))
+            if not scored:
+                continue
+            FE = ME / max(1, MEA)
 
             if FE > (error_track * 2.0):
-                # Top-N Tracks nach Fehler bestimmen (Marker.error bevorzugt)
-                scored = []
-                for t in active_tracks:
-                    v = _marker_error_on_frame(t, f)
-                    if v is not None:
-                        scored.append((v, t))
-                # sort desc und cap
+                # Top-N bestimmen
                 scored.sort(key=lambda kv: kv[0], reverse=True)
                 top_tracks = [t for _, t in scored[:max(1, int(max_per_frame))]]
-                if not top_tracks:
-                    continue  # nichts Sinnvolles auszuwählen
 
-                # Playhead setzen & Selection exakt auf Top-N beschränken
-                scene.frame_set(f)
+                # Playhead sichtbar setzen (nur wenn gewünscht)
+                if ui_preview:
+                    _ui_show_playhead(ctx, scene, clip, f, sleep_s=ui_sleep_s)
+                else:
+                    scene.frame_set(f)
+
                 _set_selection_for_tracks(tob, f, top_tracks)
-
                 triggered_frames.append((f, FE, MEA, len(top_tracks)))
 
-                # Refine vorwärts & rückwärts (nur Top-N selektiert)
+                # Refine vorwärts & rückwärts
                 _refine_markers_with_override(ctx, backwards=False)
                 with bpy.context.temp_override(**ctx):
                     bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
@@ -200,21 +248,9 @@ def refine_on_high_error(
                 with bpy.context.temp_override(**ctx):
                     bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
 
-        # Logging
         if triggered_frames:
             print("[RefineOnHighError] Ausgelöst bei Frames:")
             for f, fe, mea, nsel in triggered_frames:
                 print(f"  Frame {f}: FE={fe:.4f} (MEA={mea}), Top-N selektiert: {nsel}")
         else:
             print("[RefineOnHighError] Keine Frames über Schwellwert gefunden.")
-
-
-# Beispielaufruf:
-# refine_on_high_error(
-#     error_track=0.3,
-#     clip=None,  # aktiven Clip aus dem Movie Clip Editor verwenden
-#     tracking_object_name=None,  # aktives Tracking-Objekt
-#     only_selected_tracks=False,
-#     wait_seconds=0.1,
-#     max_per_frame=20,
-# )
