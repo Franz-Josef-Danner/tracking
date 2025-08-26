@@ -15,6 +15,7 @@ from typing import Optional, Dict
 import bpy
 from ..Helper.triplet_grouping import run_triplet_grouping  # top-level import
 from ..Helper.solve_camera import solve_camera_only
+from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin
 
 # Cycle-Helpers
 from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
