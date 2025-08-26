@@ -18,6 +18,7 @@ Rückgabe (dict):
 
 from typing import Optional, Dict, Any
 import bpy
+from ..Operator import tracking_coordinator as tco
 
 __all__ = ["run_spike_filter_cycle"]
 
@@ -159,5 +160,21 @@ def run_spike_filter_cycle(
     next_thr = _lower_threshold(thr)
     print(f"[SpikeCycle] next track_threshold → {next_thr}")
 
+    # Nur merken, wenn nicht vom Koordinator als "One-Shot" ausgelöst
+    suppress = bool(
+        getattr(context, "scene", None)
+        and context.scene.get("tco_spike_suppress_remember", False)
+    )
+    if not suppress:
+        # Falls *der verwendete* Wert gemerkt werden soll:
+        # tco.remember_spike_filter_value(thr, context=context)
+        # So wie hier: den vorgeschlagenen nächsten Wert merken
+        tco.remember_spike_filter_value(next_thr, context=context)
+
     return {"status": "OK", "removed": int(removed), "next_threshold": float(next_thr)}
+
+
+def run_with_value(context: bpy.types.Context, value: float) -> None:
+    """Ermöglicht dem Koordinator einen direkten Aufruf mit einem gegebenen Wert."""
+    run_spike_filter_cycle(context, track_threshold=float(value))
 

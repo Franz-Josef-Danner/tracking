@@ -12,6 +12,8 @@ Tracking-Orchestrator (NO-REFINE, NO-WAIT)
 import os
 import time
 import bpy
+from bpy.types import Scene
+from bpy.props import BoolProperty, FloatProperty
 from typing import Optional, Dict
 
 from ..Helper.triplet_grouping import run_triplet_grouping  # top-level import
@@ -39,6 +41,80 @@ _OPT_FRAME_KEY = "__optimize_frame"
 
 # Cycle: Sicherheitslimit (äußeres Loop-Limit)
 _CYCLE_MAX_LOOPS = 50
+
+
+def _tco_log(msg: str) -> None:
+    print(f"[tracking_coordinator] {msg}")
+
+
+def register_scene_state() -> None:
+    if not hasattr(Scene, "tco_spike_value"):
+        Scene.tco_spike_value = FloatProperty(
+            name="Spike Filter Value",
+            description=(
+                "Finaler Wert für spike_filter_cycle, der nach Cleanup einmalig ausgelöst wird."
+            ),
+            default=0.0,
+        )
+    if not hasattr(Scene, "tco_spike_pending"):
+        Scene.tco_spike_pending = BoolProperty(
+            name="Spike Pending",
+            description=(
+                "True, wenn ein finaler Spike-Wert gemerkt wurde und auf Cleanup wartet."
+            ),
+            default=False,
+        )
+
+
+def unregister_scene_state() -> None:
+    for attr in ("tco_spike_value", "tco_spike_pending"):
+        if hasattr(Scene, attr):
+            delattr(Scene, attr)
+
+
+def remember_spike_filter_value(value: float, *, context: bpy.types.Context | None = None) -> None:
+    ctx = context or bpy.context
+    scene = ctx.scene
+    scene.tco_spike_value = float(value)
+    scene.tco_spike_pending = True
+    _tco_log(
+        f"remember_spike_filter_value: value={scene.tco_spike_value:.6f}, pending=True"
+    )
+
+
+def on_projection_cleanup_finished(*, context: bpy.types.Context | None = None) -> None:
+    ctx = context or bpy.context
+    scene = ctx.scene
+    if getattr(scene, "tco_spike_pending", False):
+        value = float(getattr(scene, "tco_spike_value", 0.0))
+        _tco_log(f"cleanup finished -> trigger spike once with value={value:.6f}")
+        trigger_spike_filter_once(value, context=ctx)
+        scene.tco_spike_pending = False
+    else:
+        _tco_log("cleanup finished, no pending spike value -> noop")
+
+
+def trigger_spike_filter_once(value: float, *, context: bpy.types.Context | None = None) -> None:
+    ctx = context or bpy.context
+    scene = ctx.scene
+    # Reentrancy-Guard: Verhindert, dass run_spike_filter_cycle am Ende wieder "pending" setzt
+    scene["tco_spike_suppress_remember"] = True
+    try:
+        try:
+            from ..Helper import spike_filter_cycle as _sfc  # lazy import
+            if hasattr(_sfc, "run_with_value"):
+                _sfc.run_with_value(ctx, float(value))
+                return
+        except Exception as ex:  # noqa: BLE001 - logging
+            _tco_log(f"direct call failed: {ex!r}; fallback to bpy.ops")
+
+        try:
+            bpy.ops.helper.spike_filter_cycle("INVOKE_DEFAULT", value=float(value))
+        except Exception as ex:  # noqa: BLE001 - logging
+            _tco_log(f"bpy.ops fallback failed: {ex!r}")
+    finally:
+        # Flag immer zurücksetzen
+        scene["tco_spike_suppress_remember"] = False
 
 
 def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
@@ -493,10 +569,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
 
 def register():
+    register_scene_state()
     bpy.utils.register_class(CLIP_OT_tracking_coordinator)
 
 
 def unregister():
+    unregister_scene_state()
     bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
 
 
