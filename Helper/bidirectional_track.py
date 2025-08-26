@@ -1,21 +1,6 @@
 from __future__ import annotations
 
-"""
-Helper/bidirectional_track.py
 
-Bidirektionales Tracking (sichtbar im UI) mit nachgelagerter Join-Phase,
-die an Helper/triplet_joiner.py delegiert ist. Die Triplet-Gruppen müssen
-vorher in der Szene persistiert worden sein (z. B. durch Helper/triplet_grouping.py
-oder einen Post-Schritt in detect.py).
-
-Features
---------
-- Modal-Operator startet Vorwärts- und Rückwärts-Tracking (sequence=True).
-- Stabilitätsdetektion über Marker-/Frame-Konstanz.
-- Robuste CLIP_EDITOR-Kontext-Findung (temp_override) für bpy.ops.clip.*.
-- Delegierter Triplet-Join via Helper/triplet_joiner.run_triplet_join(...).
-- Orchestrator-Handshake via scene["bidi_active"], scene["bidi_result"].
-"""
 
 import time
 from typing import Optional, Tuple
