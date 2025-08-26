@@ -12,6 +12,7 @@ from typing import Any, Callable, Tuple
 from ..Helper.triplet_grouping import run_triplet_grouping  # top-level import
 from ..Helper.solve_camera import solve_camera_only
 from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin
+from ..Helper.refine_high_error import start_refine_modal
 from ..Helper.refine_high_error import refine_on_high_error
 
 # Cycle-Helpers
@@ -205,6 +206,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     _jump_done: bool = False
     _repeat_map: Dict[int, int]
     _bidi_started: bool = False
+    _refine_started: bool = False
 
     # interne Solve-Wartezeit (Deadline in Sekunden, via time.monotonic)
     _solve_wait_deadline: float | None = None
@@ -358,18 +360,40 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     def _state_solve_wait(self, context):
         err = self._get_current_solve_error_now(context)
         if err is not None:
-            print(f"[Coord] SOLVE_WAIT → reconstruction valid, avg_error={err:.4f}px → CLEANUP")
+            # 1) Zuerst: Refine modal starten (einmalig) und warten, bis scene['refine_active'] wieder False ist
+            if not self._refine_started:
+                thr = float(getattr(context.scene, "error_track", 0.0) or 0.0) or float(err)
+                res = start_refine_modal(
+                    context,
+                    error_track=thr,
+                    only_selected_tracks=False,
+                    wait_seconds=0.05,
+                    ui_sleep_s=0.04,
+                    max_refine_calls=int(getattr(context.scene, "refine_max_calls", 20) or 20),
+                    tracking_object_name=None,
+                )
+                print(f"[Coord] SOLVE_WAIT → start refine modal: {res}")
+                self._refine_started = (res.get("status") == "STARTED")
+                return {"RUNNING_MODAL"}
+
+            # warten bis refine fertig
+            if context.scene.get("refine_active", False):
+                # UI ist responsiv, einfach weiter tickern
+                return {"RUNNING_MODAL"}
+
+            print(f"[Coord] SOLVE_WAIT → refine finished → CLEANUP")
             ok, cleanup = _safe_call(
-                _run_refine_then_cleanup,
+                run_projection_cleanup_builtin,
                 context,
                 error_limit=float(err),
                 wait_for_error=False,
                 action="DELETE_TRACK",
             )
             if ok:
-                print(f"[Coord] Cleanup after solve → {cleanup}")
+                print(f"[Coord] Cleanup after refine → {cleanup}")
             else:
-                print(f"[Coord] Cleanup after solve failed: {cleanup!r}")
+                print(f"[Coord] Cleanup failed: {cleanup!r}")
+            self._refine_started = False
 
             # --- Entscheide: FINALIZE vs. neuer Cycle ---
             try:
