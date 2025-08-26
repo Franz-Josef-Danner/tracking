@@ -1,23 +1,5 @@
 from __future__ import annotations
 
-"""
-Helper/detect.py — Extended feature detection for Blender's Movie Clip Editor.
-
-Highlights
-----------
-- Backward compatible public API (perform_marker_detection, run_detect_once, run_detect_adaptive)
-- Optional ROI post-filter (normalized [0..1] rect or pixel rect)
-- KD-Tree based near-duplicate removal (faster for many markers)
-- Corridor control with smooth PID-like threshold adaption (stable convergence)
-- Selection policy (leave/only_new/restore)
-- Duplicate cleanup strategy (delete/mute/tag)
-- Optional track tagging prefix for newly created tracks
-- Dry-run mode (executes detect and cleans everything it created)
-- Rich result object with metrics
-- NEW: Pattern-triplet post step with name aggregation & selection (0.8× / 1.2×)
-
-Blender ≥ 3.0 assumed (mathutils.KDTree available).
-"""
 
 import math
 import time
