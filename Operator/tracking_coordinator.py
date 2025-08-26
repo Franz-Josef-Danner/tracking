@@ -243,9 +243,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 # ODER ohne Schwelle (Helper ermittelt sie sofort) arbeiten.
                 cleanup = run_projection_cleanup_builtin(
                     context,
-                    error_limit=1.2,
+                    error_limit=float(err),   # den Solve-Error direkt verwenden!
                     wait_for_error=False,
-                    # kein action → Default = DELETE_TRACK
+                    action="DELETE_TRACK",    # direkt löschen
                 )
                 print(f"[Coord] Cleanup after solve → {cleanup}")
             except Exception as ex_cleanup:
