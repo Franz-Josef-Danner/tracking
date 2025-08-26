@@ -38,7 +38,7 @@ __all__ = [
 # ---------------------------------------------------------------------
 DETECT_LAST_THRESHOLD_KEY = "last_detection_threshold"  # float
 _LOCK_KEY = "__detect_lock"
-_PREV_SEL_KEY = "__detect_prev_selection"
+_PREV_SEL_KEY = "__detect_prev_selection"  # (nicht mehr benutzt; behalten für Backcompat, aber nicht schreiben)
 
 # ---------------------------------------------------------------------
 # Data structures
@@ -115,9 +115,16 @@ def _deselect_all(tracking: bpy.types.MovieTracking) -> None:
 
 def _delete_selected_tracks(confirm: bool = True) -> None:
     def _op(**kw):
-        return bpy.ops.clip.delete_track(**kw)
+        # einige Blender-Versionen kennen 'confirm' nicht → defensiv
+        try:
+            return bpy.ops.clip.delete_track(**kw)
+        except TypeError:
+            return bpy.ops.clip.delete_track()
 
-    _run_in_clip_context(_op, confirm=confirm)
+    try:
+        _run_in_clip_context(_op, confirm=confirm)
+    except Exception:
+        _run_in_clip_context(_op)
 
 
 def _collect_positions_at_frame(
@@ -141,19 +148,24 @@ def _collect_positions_at_frame(
 def _normalize_roi(
     roi: Optional[Tuple[float, float, float, float]], width: int, height: int
 ) -> Optional[Tuple[int, int, int, int]]:
-    """Return pixel ROI (x, y, w, h) or None. Accepts normalized [0..1] or pixel tuple."""
+    """Return pixel ROI (x, y, w, h) within image bounds or None. Accepts normalized [0..1] or pixel tuple."""
     if not roi:
         return None
     x, y, w, h = roi
     # Heuristic: values > 1 are pixels
     if max(abs(x), abs(y), abs(w), abs(h)) <= 1.0:
-        return (
-            int(max(0, round(x * width))),
-            int(max(0, round(y * height))),
-            int(max(1, round(w * width))),
-            int(max(1, round(h * height))),
-        )
-    return (int(x), int(y), int(w), int(h))
+        px = int(round(x * width))
+        py = int(round(y * height))
+        pw = int(max(1, round(w * width)))
+        ph = int(max(1, round(h * height)))
+    else:
+        px, py, pw, ph = int(x), int(y), int(w), int(h)
+    # clamp to image bounds
+    px = max(0, min(px, width - 1))
+    py = max(0, min(py, height - 1))
+    pw = max(1, min(pw, width - px))
+    ph = max(1, min(ph, height - py))
+    return (px, py, pw, ph)
 
 
 def _inside_roi(px: float, py: float, roi_px: Tuple[int, int, int, int]) -> bool:
@@ -289,7 +301,12 @@ def run_pattern_triplet_and_select_by_name(
         new_pattern = max(3, int(round(pattern_o * float(scale))))
         eff = _set_pattern_size(tracking, new_pattern)
         try:
-            settings.default_search_size = max(5, eff * 2)
+            if adjust_search_with_pattern:
+                # dynamisch an Pattern koppeln
+                settings.default_search_size = max(5, eff * 2)
+            else:
+                # ursprünglichen Search beibehalten
+                settings.default_search_size = search_o
         except Exception:
             pass
         print(f"[Triplet] scale={scale} pattern_o={pattern_o} -> req={new_pattern} eff={eff} "
@@ -323,7 +340,7 @@ def run_pattern_triplet_and_select_by_name(
 
     _set_pattern_size(tracking, pattern_o)
     try:
-        settings.default_search_size = pattern_o * 2   # konsistent wiederherstellen
+        settings.default_search_size = search_o   # exakt wiederherstellen
     except Exception:
         pass
 
@@ -389,6 +406,7 @@ def run_detect_once(
         return {"status": "FAILED", "reason": "locked"}
 
     scn[_LOCK_KEY] = True
+    t_start = time.perf_counter()
 
     frame: int = int(getattr(scn, "frame_current", 0))
     before_ids: set[int] = set()
@@ -456,7 +474,6 @@ def run_detect_once(
         # Save previous selection if needed
         if selection_policy == "restore":
             prev_selection = [t.as_pointer() for t in tracking.tracks if getattr(t, "select", False)]
-            scn[_PREV_SEL_KEY] = prev_selection
 
         before_ids = {t.as_pointer() for t in tracking.tracks}
         existing_px = _collect_positions_at_frame(tracking.tracks, frame, width, height)
@@ -574,16 +591,24 @@ def run_detect_once(
                         pass
             cleaned = []
 
+        # Selection handling (validiere Policy)
+        if selection_policy not in ("only_new", "restore", "leave"):
+            selection_policy = "only_new"
+        if duplicate_strategy not in ("delete", "mute", "tag"):
+            duplicate_strategy = "delete"
+
         # Selection handling
-        _deselect_all(tracking)
         if selection_policy == "only_new":
+            _deselect_all(tracking)
             for t in cleaned:
                 t.select = True
         elif selection_policy == "restore":
-            prev = scn.get(_PREV_SEL_KEY, []) or prev_selection
-            ptrs = set(prev)
+            _deselect_all(tracking)
+            # nur noch die lokal gemerkte Auswahl verwenden
+            ptrs = set(prev_selection or [])
             for t in tracking.tracks:
                 t.select = t.as_pointer() in ptrs
+        # "leave" → nichts tun (bestehende Auswahl bleibt unverändert)
 
         try:
             bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
@@ -614,6 +639,11 @@ def run_detect_once(
             k_p = 0.65
             k_i = 0.10
             acc = float(scn.get("__thr_i", 0.0)) + error
+            # Anti-Windup: enger Clamp verhindert Aufschaukeln
+            if acc > 2.0:
+                acc = 2.0
+            elif acc < -2.0:
+                acc = -2.0
             scn["__thr_i"] = acc
             scale = 1.0 + (k_p * error + k_i * acc)
             new_threshold = max(1e-4, float(threshold) * scale)
@@ -647,7 +677,7 @@ def run_detect_once(
                 tracks_near_dupe=len(near_dupes),
                 tracks_new_clean=new_count,
                 roi_rejected=len(roi_rejected),
-                duration_ms=0.0,
+                duration_ms=(time.perf_counter() - t_start) * 1000.0,
             )
             return {
                 "status": "RUNNING",
@@ -713,7 +743,7 @@ def run_detect_once(
             tracks_near_dupe=len(near_dupes),
             tracks_new_clean=len(cleaned),
             roi_rejected=len(roi_rejected),
-            duration_ms=0.0,
+            duration_ms=(time.perf_counter() - t_start) * 1000.0,
         )
 
         result: Dict[str, Any] = {
@@ -737,9 +767,9 @@ def run_detect_once(
         return {"status": "FAILED", "reason": str(ex), "frame": int(frame)}
     finally:
         try:
-            scn[_LOCK_KEY] = False
+            del scn[_LOCK_KEY]
         except Exception:
-            pass
+            scn[_LOCK_KEY] = False
 
 
 # ---------------------------------------------------------------------
