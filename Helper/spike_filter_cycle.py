@@ -1,20 +1,5 @@
 from __future__ import annotations
-"""
-Spike-Filter-Cycle Helper (finder- & clean-frei im Loop)
--------------------------------------------------------
 
-Strikte Verantwortlichkeit:
-- **Dieses Modul** führt genau **einen** Spike-Filter-Durchlauf aus:
-  Filter anwenden und selektierte Tracks löschen.
-- **Kein** `clean_short_tracks` im Loop (wird einmalig extern vom Coordinator
-  im State `CYCLE_CLEAN` ausgeführt).
-- **Keine** Finder-Logik hier (die läuft separat, z. B. `run_find_max_marker_frame`).
-
-Rückgabe (dict):
-* status: "OK" | "FAILED"
-* removed: Anzahl gelöschter Tracks
-* next_threshold: vorgeschlagener Track-Threshold für den nächsten Pass
-"""
 
 from typing import Optional, Dict, Any
 import bpy
