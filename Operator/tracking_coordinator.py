@@ -38,7 +38,7 @@ _OPT_FRAME_KEY = "__optimize_frame"
 # Default-Parameter
 _DEFAULT_SOLVE_WAIT_S = 60.0
 _DEFAULT_REFINE_POLL_S = 0.05
-_DEFAULT_SPIKE_START = 100.0
+_DEFAULT_SPIKE_START = 50.0
 
 # Maximal erlaubte Anzahl an FIND_MAX↔SPIKE-Iterationen
 # Hinweis: Zähler beginnt erst, wenn ein Spike-Iteration tatsächlich Marker entfernt hat.
@@ -333,16 +333,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print("[Coord] FIND_LOW → NONE → CYCLE_START (FIND_MAX↔SPIKE, max iterations: {0})".format(_CYCLE_MAX_ITER))
             self._cycle_active = True
             self._cycle_target_frame = None
-            self._cycle_iterations = 0  # reset iteration counter beim Start des Zyklus
-            last = float(getattr(context.scene, "tco_spike_value", 0.0) or 0.0)
-            if last > 0.0:
-                self._spike_threshold = last
-                print(f"[Coord] CYCLE_START → reuse remembered spike start = {self._spike_threshold:.2f}")
-            else:
-                self._spike_threshold = float(
-                    getattr(context.scene, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START
-                )
-                print(f"[Coord] CYCLE_START → use default spike start = {self._spike_threshold:.2f}")
+            self._cycle_iterations = 0
+            
+            # harter Reset für jeden neuen Cycle
+            self._spike_threshold = float(
+                getattr(context.scene, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START
+            )
+            print(f"[Coord] CYCLE_START → reset spike start = {self._spike_threshold:.2f}")
             
             self._did_refine_this_cycle = False
             self._state = "CYCLE_FIND_MAX"
@@ -496,7 +493,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return {"RUNNING_MODAL"}
     
         try:
-            res = run_spike_filter_cycle(context, track_threshold=float(50.0))  # fix auf 50
+            res = run_spike_filter_cycle(context, track_threshold=float(self._spike_threshold))
+            
+            status = str(res.get("status", "")).upper()
+            removed = int(res.get("removed", 0) or 0)
+            next_thr = float(res.get("next_threshold", self._spike_threshold * 0.9))
+            print(f"[Coord] CYCLE_SPIKE → status={status}, removed={removed}, next={next_thr:.2f} (curr={self._spike_threshold:.2f})")
+            
+            # innerhalb DESSELBEN Cycles progressiv absenken
+            self._spike_threshold = max(next_thr, 0.0)
         except Exception as ex:
             print(f"[Coord] CYCLE_SPIKE failed: {ex!r}")
             self._state = "CYCLE_FIND_MAX"
