@@ -218,7 +218,7 @@ def run_projection_cleanup_builtin(
     wait_for_error: bool = True,
     wait_forever: bool = False,
     timeout_s: float = 20.0,
-    action: str = "DELETE_TRACK",   # Default jetzt: direkt löschen
+    action: str = "DELETE_SEGMENTS",   # Default jetzt: direkt löschen
 ) -> Dict[str, Any]:
     """
     Führt Reprojection-Cleanup per bpy.ops.clip.clean_tracks aus.
