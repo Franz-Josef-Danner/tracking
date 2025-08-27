@@ -142,7 +142,7 @@ def run_find_max_marker_frame(
             observed_min = c
             observed_min_frame = f
 
-        if c < threshold:
+        if c <= threshold:
             return {
                 "status": "FOUND",
                 "frame": int(f),
