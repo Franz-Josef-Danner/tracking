@@ -9,7 +9,6 @@ from typing import Optional, Dict, Any, Callable, Tuple
 
 from ..Helper.triplet_grouping import run_triplet_grouping  # top-level import
 from ..Helper.solve_camera import solve_camera_only
-from ..Helper.refine_high_error import start_refine_modal
 from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin
 
 # Loop-Helpers
@@ -528,12 +527,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._did_refine_this_cycle = False
             self._state = "FINALIZE"
         else:
-            if self._did_refine_this_cycle:
-                print("[Coord] EVAL → still above target after REFINE → CLEANUP")
-                self._state = "CLEANUP"
-            else:
-                print("[Coord] EVAL → above target → REFINE_LAUNCH")
-                self._state = "REFINE_LAUNCH"
+            print("[Coord] EVAL → above target → CLEANUP (Refine disabled)")
+            self._state = "CLEANUP"
         return {"RUNNING_MODAL"}
 
     def _state_refine_launch(self, context):
@@ -553,9 +548,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 max_refine_calls=int(getattr(context.scene, "refine_max_calls", 20) or 20),
                 tracking_object_name=None,
             )
-            print(f"[Coord] REFINE_LAUNCH → {res}")
         except Exception as ex:
-            print(f"[Coord] REFINE_LAUNCH failed (ignored): {ex!r}")
             res = {"status": "ERROR", "reason": repr(ex)}
 
         status = (res or {}).get("status", "").upper()
@@ -633,10 +626,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return self._state_solve(context)
             elif s == "EVAL":
                 return self._state_eval(context)
-            elif s == "REFINE_LAUNCH":
-                return self._state_refine_launch(context)
-            elif s == "REFINE_WAIT":
-                return self._state_refine_wait(context)
             elif s == "CLEANUP":
                 return self._state_cleanup(context)
             elif s == "FINALIZE":
