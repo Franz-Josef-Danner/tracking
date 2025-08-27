@@ -4,6 +4,8 @@
 
 import bpy
 import math
+import time
+from collections import defaultdict
 from mathutils import Vector
 
 # ----------------------------- Einstellungen ---------------------------------
@@ -39,29 +41,6 @@ def get_active_clip(context):
     return bpy.data.movieclips[0] if bpy.data.movieclips else None
 
 
-def marker_at_frame(track, frame):
-    """Marker eines Tracks an exakt diesem Frame holen (oder None)."""
-    for m in track.markers:
-        # defensiv: marker.mute existiert nicht in allen Builds
-        if m.frame == frame and not getattr(m, "mute", False):
-            return m
-    return None
-
-
-def common_markers_at_frames(tracks, fa, fb):
-    """Gemeinsame, gültige Marker (fa und fb vorhanden) als Liste von (ma, mb)."""
-    pairs = []
-    for tr in tracks:
-        # defensiv: track.mute existiert nicht immer; hide existiert
-        if getattr(tr, "mute", False) or getattr(tr, "hide", False):
-            continue
-        ma = marker_at_frame(tr, fa)
-        mb = marker_at_frame(tr, fb)
-        if ma and mb:
-            pairs.append((ma, mb))  # .co sind normalisierte Koordinaten [0..1]
-    return pairs
-
-
 def spread_area_norm(coords):
     """
     Grobe Bildabdeckung: Fläche der Bounding Box der Punkte (in [0..1]) relativ zur Bildfläche.
@@ -81,6 +60,7 @@ def parallax_score(pairs):
     """
     Parallax-Score: RMS der Residuen nach Abzug der mittleren Verschiebung.
     Reine Rotation/gleichförmige Verschiebung -> kleine Residuen; echte Parallaxe -> große Residuen.
+    Erwartet Liste von (marker_a, marker_b).
     """
     if not pairs:
         return 0.0
@@ -102,50 +82,6 @@ def parallax_score(pairs):
         sse += res.length_squared
     rms = math.sqrt(sse / len(dvs))
     return float(rms)
-
-
-def score_pair(clip, tracks, fa, fb):
-    """Bewertet ein Framepaar. Liefert Dict mit Scores oder None, falls unbrauchbar."""
-    pairs = common_markers_at_frames(tracks, fa, fb)
-    count = len(pairs)
-    if count < MIN_COMMON_TRACKS:
-        return None
-
-    pscore = parallax_score(pairs)
-
-    # Coverage: Punkte aus beiden Frames
-    coords_union = []
-    for ma, mb in pairs:
-        coords_union.append(Vector((ma.co[0], ma.co[1])))
-        coords_union.append(Vector((mb.co[0], mb.co[1])))
-    cscore = spread_area_norm(coords_union)
-
-    # Count-Score grob auf [0..1] relativ zu 100 Tracks
-    count_score = min(1.0, count / 100.0)
-
-    total = (W_PARALLAX * pscore) + (W_COVERAGE * cscore) + (W_COUNT * count_score)
-    return {
-        "fa": fa,
-        "fb": fb,
-        "total": total,
-        "parallax": pscore,
-        "coverage": cscore,
-        "count": count,
-    }
-
-
-def scan_pairs(clip, frame_start, frame_end, step, tracks):
-    """Alle brauchbaren Paare scannen (mit Mindestabstand)."""
-    results = []
-    for fa in range(frame_start, frame_end + 1, step):
-        fb_min = fa + MIN_FRAME_GAP
-        if fb_min > frame_end:
-            continue
-        for fb in range(fb_min, frame_end + 1, step):
-            s = score_pair(clip, tracks, fa, fb)
-            if s:
-                results.append(s)
-    return results
 
 
 def format_row(r):
@@ -170,6 +106,111 @@ def apply_keyframes(clip, fa, fb):
     settings.keyframe2 = fb
 
 
+# ----------------------------- Neue schnelle Indizes --------------------------
+
+def _build_marker_indices(tracks):
+    """Erzeuge schnelle Nachschlagewerke:
+    - track_index: track -> {frame: marker}
+    - frame_tracks: frame -> set(tracks mit Marker in diesem Frame)
+    """
+    track_index = {}
+    frame_tracks = defaultdict(set)
+    for tr in tracks:
+        if getattr(tr, "mute", False) or getattr(tr, "hide", False):
+            continue
+        fm = {}
+        for m in getattr(tr, "markers", []):
+            if getattr(m, "mute", False):
+                continue
+            f = int(getattr(m, "frame", -1))
+            if f >= 0:
+                fm[f] = m
+                frame_tracks[f].add(tr)
+        if fm:
+            track_index[tr] = fm
+    return track_index, frame_tracks
+
+
+def _score_pair_fast(track_index, frame_tracks, fa, fb, min_common_tracks):
+    """Bewertet ein Framepaar auf Basis der vorab gebauten Indizes.
+    Liefert Dict (wie vorher) oder None, wenn unbrauchbar.
+    """
+    common_tracks = frame_tracks.get(fa, set()) & frame_tracks.get(fb, set())
+    if len(common_tracks) < int(min_common_tracks):
+        return None
+
+    pairs = []
+    for tr in common_tracks:
+        mfa = track_index[tr].get(fa)
+        mfb = track_index[tr].get(fb)
+        if mfa and mfb:
+            pairs.append((mfa, mfb))
+
+    count = len(pairs)
+    if count < int(min_common_tracks):
+        return None
+
+    pscore = parallax_score(pairs)
+
+    coords_union = []
+    for ma, mb in pairs:
+        coords_union.append(Vector((ma.co[0], ma.co[1])))
+        coords_union.append(Vector((mb.co[0], mb.co[1])))
+    cscore = spread_area_norm(coords_union)
+
+    count_score = min(1.0, count / 100.0)
+    total = (W_PARALLAX * pscore) + (W_COVERAGE * cscore) + (W_COUNT * count_score)
+    return {
+        "fa": fa,
+        "fb": fb,
+        "total": total,
+        "parallax": pscore,
+        "coverage": cscore,
+        "count": count,
+    }
+
+
+def scan_pairs(clip, frame_start, frame_end, step, tracks,
+               *, min_gap, min_common_tracks,
+               time_budget_s=None, max_pairs=None, progress_log_every=1000):
+    """Alle brauchbaren Paare scannen – mit O(1)-Markerzugriff, früher Filterung und optionalem Zeit-/Mengengrenzer.
+    Gibt (results, truncated_flag) zurück.
+    """
+    t0 = time.monotonic()
+    results = []
+    checked = 0
+    truncated = False
+
+    track_index, frame_tracks = _build_marker_indices(tracks)
+
+    for fa in range(frame_start, frame_end + 1, int(step)):
+        fb_min = fa + int(min_gap)
+        if fb_min > frame_end:
+            continue
+        for fb in range(fb_min, frame_end + 1, int(step)):
+            checked += 1
+
+            # Limits prüfen
+            if max_pairs is not None and checked > int(max_pairs):
+                truncated = True
+                break
+            if time_budget_s is not None and (time.monotonic() - t0) > float(time_budget_s):
+                truncated = True
+                break
+
+            s = _score_pair_fast(track_index, frame_tracks, fa, fb, min_common_tracks)
+            if s:
+                results.append(s)
+
+            if progress_log_every and (checked % int(progress_log_every) == 0):
+                print(f"[Parallax] scanned={checked} results={len(results)} fa={fa} fb={fb}")
+
+        if truncated:
+            break
+
+    return results, truncated
+
+
 # ----------------------------- Öffentliche API --------------------------------
 
 def run_parallax_keyframe(context,
@@ -178,7 +219,11 @@ def run_parallax_keyframe(context,
                           min_frame_gap=MIN_FRAME_GAP,
                           frame_step=FRAME_STEP,
                           min_common_tracks=MIN_COMMON_TRACKS,
-                          top_k=TOP_K):
+                          top_k=TOP_K,
+                          time_budget_s=2.0,        # NEU: Zeitbudget
+                          max_pairs=40000,          # NEU: harte Obergrenze
+                          progress_log_every=2000   # optionales Fortschritts-Logging
+                          ):
     """
     Öffentliche API für den Coordinator. Liefert ein Ergebnis-Dict und
     kann optional das beste Paar in Keyframe A/B setzen.
@@ -208,12 +253,19 @@ def run_parallax_keyframe(context,
         if not tracks:
             return {"status": "NO_TRACKS"}
 
-        frame_start = clip.frame_start
-        frame_end = clip.frame_start + clip.frame_duration - 1
+        frame_start = int(clip.frame_start)
+        frame_end = int(clip.frame_start + clip.frame_duration - 1)
 
-        results = scan_pairs(clip, frame_start, frame_end, FRAME_STEP, tracks)
+        results, truncated = scan_pairs(
+            clip, frame_start, frame_end, FRAME_STEP, tracks,
+            min_gap=MIN_FRAME_GAP,
+            min_common_tracks=MIN_COMMON_TRACKS,
+            time_budget_s=time_budget_s,
+            max_pairs=max_pairs,
+            progress_log_every=progress_log_every,
+        )
         if not results:
-            return {"status": "NO_PAIRS"}
+            return {"status": "NO_PAIRS", "truncated": truncated}
 
         results.sort(key=lambda r: r["total"], reverse=True)
         top = results[:TOP_K]
@@ -229,11 +281,14 @@ def run_parallax_keyframe(context,
             "clip": clip.name,
             "top": top,
             "applied": applied,
+            "truncated": truncated,
             "params": {
                 "min_frame_gap": MIN_FRAME_GAP,
                 "frame_step": FRAME_STEP,
                 "min_common_tracks": MIN_COMMON_TRACKS,
                 "top_k": TOP_K,
+                "time_budget_s": time_budget_s,
+                "max_pairs": max_pairs,
             }
         }
     finally:
@@ -255,6 +310,8 @@ def main(context):
         frame_step=FRAME_STEP,
         min_common_tracks=MIN_COMMON_TRACKS,
         top_k=TOP_K,
+        time_budget_s=2.0,
+        max_pairs=40000,
     )
 
     status = res.get("status")
@@ -282,6 +339,8 @@ def main(context):
     if res.get("applied"):
         best = res["top"][0]
         print(f"[Parallax Helper] Bestes Paar gesetzt: A={best['fa']}  B={best['fb']}")
+    if res.get("truncated"):
+        print("[Parallax Helper] Hinweis: Scan wurde durch Zeit-/Mengengrenze gekappt (truncated=True).")
     print("[Parallax Helper] Fertig.")
 
 
