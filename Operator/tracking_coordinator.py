@@ -1,705 +1,290 @@
-# SPDX-License-Identifier: MIT
-from __future__ import annotations
+# Blender Parallax Keyframe Helper
+# Vorschläge für Keyframe A/B basierend auf Parallax in 2D-Trackdaten
+# PEP 8-konform, kommentiert. Für Blender 3.x/4.x.
 
-import os
-import time
 import bpy
-from bpy.types import Scene
-from bpy.props import BoolProperty, FloatProperty
-from typing import Optional, Dict, Any, Callable, Tuple
+import math
+from mathutils import Vector
 
-# Entfernt: Triplet-Grouping/Joiner aus dem Ablauf
-# from ..Helper.triplet_grouping import run_triplet_grouping  # removed
-from ..Helper.solve_camera import solve_camera_only
-from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin
+# ----------------------------- Einstellungen ---------------------------------
 
-# Loop-Helpers
-from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
-from ..Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
-from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
-from ..Helper.spike_filter_cycle import run_spike_filter_cycle  # type: ignore
+# Mindestabstand (Frames) zwischen Keyframe A und B
+MIN_FRAME_GAP = 25
 
-__all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
+# Wie viele Top-Paare ausgeben?
+TOP_K = 10
 
-# Scene Keys
-_LOCK_KEY = "__detect_lock"
-_GOTO_KEY = "goto_frame"
-_MAX_DETECT_ATTEMPTS = 8
+# Mindestanzahl gemeinsamer Tracks, damit ein Paar gewertet wird
+MIN_COMMON_TRACKS = 12
 
-_BIDI_ACTIVE_KEY = "bidi_active"
-_BIDI_RESULT_KEY = "bidi_result"
+# Schrittweite beim Scannen (1 = alle Frames; höher = schneller, grober)
+FRAME_STEP = 2
 
-# Keys für Optimizer-Signal (werden von Helper/jump_to_frame.py gesetzt)
-_OPT_REQ_KEY = "__optimize_request"
-_OPT_REQ_VAL = "JUMP_REPEAT"
-_OPT_FRAME_KEY = "__optimize_frame"
+# Optional: bestes Paar automatisch in Keyframe A/B eintragen?
+APPLY_BEST_PAIR = False
 
-# Default-Parameter
-_DEFAULT_SOLVE_WAIT_S = 60.0
-_DEFAULT_REFINE_POLL_S = 0.05
-_DEFAULT_SPIKE_START = 100.0
+# Gewichtung der Teil-Scores für Gesamtrang
+W_PARALLAX = 0.65   # Wichtigster Anteil
+W_COVERAGE = 0.25   # Bildabdeckung (Fläche der Marker)
+W_COUNT = 0.10      # Anzahl gemeinsamer Tracks
 
-# Maximal erlaubte Anzahl an FIND_MAX↔SPIKE-Iterationen
-# Hinweis: Zähler beginnt erst, wenn ein Spike-Iteration tatsächlich Marker entfernt hat.
-_CYCLE_MAX_ITER = 5
+# ----------------------------- Hilfsfunktionen --------------------------------
 
-
-def _tco_log(msg: str) -> None:
-    print(f"[tracking_coordinator] {msg}")
-
-
-# ---------------------------------------------------------------------------
-# Utilities
-# ---------------------------------------------------------------------------
-
-def _safe_call(func: Callable[..., Any], *args, **kwargs) -> Tuple[bool, Any]:
-    try:
-        return True, func(*args, **kwargs)
-    except Exception as ex:  # noqa: BLE001
-        _tco_log(f"_safe_call({getattr(func, '__name__', 'func')}): {ex!r}")
-        return False, ex
-
-
-def _safe_ops_invoke(ops_path: str, *args, **kwargs) -> Tuple[bool, Any]:
-    try:
-        mod, name = ops_path.split(".", 1)
-        op = getattr(getattr(bpy.ops, mod), name)
-    except Exception as ex:  # noqa: BLE001
-        _tco_log(f"_safe_ops_invoke: resolve failed for '{ops_path}': {ex!r}")
-        return False, ex
-    try:
-        return True, op(*args, **kwargs)
-    except Exception as ex:  # noqa: BLE001
-        _tco_log(f"_safe_ops_invoke: call failed for '{ops_path}': {ex!r}")
-        return False, ex
-
-
-def _scene_float(scene: bpy.types.Scene, key: str, default: float) -> float:
-    try:
-        v = getattr(scene, key, default)
-        v = default if v is None else v
-        return float(v)
-    except Exception:
-        return float(default)
-
-
-def _have_clip(context: bpy.types.Context) -> bool:
+def get_active_clip(context):
+    """Aktiven MovieClip aus dem Movie Clip Editor holen (oder Fallback)."""
     space = getattr(context, "space_data", None)
-    return bool(getattr(space, "type", None) == "CLIP_EDITOR" and getattr(space, "clip", None))
+    if space and getattr(space, "type", None) == "CLIP_EDITOR" and getattr(space, "clip", None):
+        return space.clip
+    # Fallback: erster Clip in der Datei
+    return bpy.data.movieclips[0] if bpy.data.movieclips else None
 
 
-def _current_solve_error(context: bpy.types.Context) -> Optional[float]:
-    """Average-Error aus aktiver Reconstruction (oder None)."""
-    space = getattr(context, "space_data", None)
-    clip = space.clip if (getattr(space, "type", None) == "CLIP_EDITOR" and getattr(space, "clip", None)) else None
-    if clip is None:
-        try:
-            clip = bpy.data.movieclips[0] if bpy.data.movieclips else None
-        except Exception:
-            clip = None
-    if not clip:
-        return None
-    try:
-        recon = clip.tracking.objects.active.reconstruction
-        if not getattr(recon, "is_valid", False):
-            return None
-        if hasattr(recon, "average_error"):
-            return float(recon.average_error)
-    except Exception:
-        return None
+def marker_at_frame(track, frame):
+    """Marker eines Tracks an exakt diesem Frame holen (oder None)."""
+    for m in track.markers:
+        # defensiv: marker.mute existiert nicht in allen Builds
+        if m.frame == frame and not getattr(m, "mute", False):
+            return m
     return None
 
 
-def _wait_for_valid_reconstruction(
-    context: bpy.types.Context, *, timeout_s: float, poll_s: float = 0.05
-) -> Optional[float]:
-    """Pollt bis valide Reconstruction oder Timeout; liefert avg_error oder None."""
-    deadline = time.monotonic() + float(timeout_s)
-    while time.monotonic() < deadline:
-        err = _current_solve_error(context)
-        if err is not None:
-            return float(err)
-        try:
-            time.sleep(float(poll_s))
-        except Exception:
-            pass
-    return None
+def common_markers_at_frames(tracks, fa, fb):
+    """Gemeinsame, gültige Marker (fa und fb vorhanden) als Liste von (ma, mb)."""
+    pairs = []
+    for tr in tracks:
+        # defensiv: track.mute existiert nicht immer; hide existiert
+        if getattr(tr, "mute", False) or getattr(tr, "hide", False):
+            continue
+        ma = marker_at_frame(tr, fa)
+        mb = marker_at_frame(tr, fb)
+        if ma and mb:
+            pairs.append((ma, mb))  # .co sind normalisierte Koordinaten [0..1]
+    return pairs
 
 
-# ---------------------------------------------------------------------------
-# (Optional) Spike-Value Memo für externe Trigger
-# ---------------------------------------------------------------------------
-
-def register_scene_state() -> None:
-    if not hasattr(Scene, "tco_spike_value"):
-        Scene.tco_spike_value = FloatProperty(
-            name="Spike Filter Value",
-            description="Gemerkter Wert für spike_filter_cycle (optional).",
-            default=0.0,
-        )
-    if not hasattr(Scene, "tco_spike_pending"):
-        Scene.tco_spike_pending = BoolProperty(
-            name="Spike Pending",
-            description="True, wenn ein Spike-Wert gemerkt wurde und nach Cleanup einmalig ausgelöst wird.",
-            default=False,
-        )
-    if not hasattr(Scene, "spike_start_threshold"):
-        Scene.spike_start_threshold = FloatProperty(
-            name="Spike Start",
-            default=_DEFAULT_SPIKE_START,
-            min=0.0,
-            description="Startthreshold für Spike-Filter-Zyklus",
-        )
+def spread_area_norm(coords):
+    """
+    Grobe Bildabdeckung: Fläche der Bounding Box der Punkte (in [0..1]) relativ zur Bildfläche.
+    Liefert 0..1.
+    """
+    if not coords:
+        return 0.0
+    xs = [c.x for c in coords]
+    ys = [c.y for c in coords]
+    bb_w = max(xs) - min(xs)
+    bb_h = max(ys) - min(ys)
+    area = max(0.0, bb_w) * max(0.0, bb_h)
+    return float(area)
 
 
-def unregister_scene_state() -> None:
-    for attr in ("tco_spike_value", "tco_spike_pending", "spike_start_threshold"):
-        if hasattr(Scene, attr):
-            delattr(Scene, attr)
+def parallax_score(pairs):
+    """
+    Parallax-Score: RMS der Residuen nach Abzug der mittleren Verschiebung.
+    Reine Rotation/gleichförmige Verschiebung -> kleine Residuen; echte Parallaxe -> große Residuen.
+    """
+    if not pairs:
+        return 0.0
+
+    dvs = []
+    for ma, mb in pairs:
+        da = Vector((ma.co[0], ma.co[1]))
+        db = Vector((mb.co[0], mb.co[1]))
+        dvs.append(db - da)
+
+    mean = Vector((0.0, 0.0))
+    for d in dvs:
+        mean += d
+    mean /= len(dvs)
+
+    sse = 0.0
+    for d in dvs:
+        res = d - mean
+        sse += res.length_squared
+    rms = math.sqrt(sse / len(dvs))
+    return float(rms)
 
 
-def remember_spike_filter_value(value: float, *, context: bpy.types.Context | None = None) -> None:
-    ctx = context or bpy.context
-    scene = ctx.scene
-    scene.tco_spike_value = float(value)
-    scene.tco_spike_pending = True
-    _tco_log(f"remember_spike_filter_value: value={scene.tco_spike_value:.6f}, pending=True")
+def score_pair(clip, tracks, fa, fb):
+    """Bewertet ein Framepaar. Liefert Dict mit Scores oder None, falls unbrauchbar."""
+    pairs = common_markers_at_frames(tracks, fa, fb)
+    count = len(pairs)
+    if count < MIN_COMMON_TRACKS:
+        return None
+
+    pscore = parallax_score(pairs)
+
+    # Coverage: Punkte aus beiden Frames
+    coords_union = []
+    for ma, mb in pairs:
+        coords_union.append(Vector((ma.co[0], ma.co[1])))
+        coords_union.append(Vector((mb.co[0], mb.co[1])))
+    cscore = spread_area_norm(coords_union)
+
+    # Count-Score grob auf [0..1] relativ zu 100 Tracks
+    count_score = min(1.0, count / 100.0)
+
+    total = (W_PARALLAX * pscore) + (W_COVERAGE * cscore) + (W_COUNT * count_score)
+    return {
+        "fa": fa,
+        "fb": fb,
+        "total": total,
+        "parallax": pscore,
+        "coverage": cscore,
+        "count": count,
+    }
 
 
-def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
+def scan_pairs(clip, frame_start, frame_end, step, tracks):
+    """Alle brauchbaren Paare scannen (mit Mindestabstand)."""
+    results = []
+    for fa in range(frame_start, frame_end + 1, step):
+        fb_min = fa + MIN_FRAME_GAP
+        if fb_min > frame_end:
+            continue
+        for fb in range(fb_min, frame_end + 1, step):
+            s = score_pair(clip, tracks, fa, fb)
+            if s:
+                results.append(s)
+    return results
+
+
+def format_row(r):
+    return (f"A={r['fa']:>5}  B={r['fb']:>5}  "
+            f"Score={r['total']:.4f}  Parallax={r['parallax']:.4f}  "
+            f"Coverage={r['coverage']:.3f}  Tracks={r['count']:>3}")
+
+
+def write_textblock(name, lines):
+    """Ergebnis in einen Text-Block schreiben (für einfache Ablage)."""
+    tb = bpy.data.texts.get(name) or bpy.data.texts.new(name)
+    tb.clear()
+    for ln in lines:
+        tb.write(ln + "\n")
+    return tb
+
+
+def apply_keyframes(clip, fa, fb):
+    """Setzt Keyframe A/B in den Clip-Tracking-Settings."""
+    settings = clip.tracking.settings
+    settings.keyframe1 = fa
+    settings.keyframe2 = fb
+
+
+# ----------------------------- Öffentliche API --------------------------------
+
+def run_parallax_keyframe(context,
+                          *,
+                          apply_best_pair=False,
+                          min_frame_gap=MIN_FRAME_GAP,
+                          frame_step=FRAME_STEP,
+                          min_common_tracks=MIN_COMMON_TRACKS,
+                          top_k=TOP_K):
+    """
+    Öffentliche API für den Coordinator. Liefert ein Ergebnis-Dict und
+    kann optional das beste Paar in Keyframe A/B setzen.
+    """
+    _old = (MIN_FRAME_GAP, FRAME_STEP, MIN_COMMON_TRACKS, TOP_K)
+    # temporär Parameter anwenden
     try:
-        self.report(level, msg)
+        mg = int(min_frame_gap)
+        st = int(frame_step)
+        mc = int(min_common_tracks)
+        tk = int(top_k)
     except Exception:
-        print(f"[Coordinator] {msg}")
+        mg, st, mc, tk = MIN_FRAME_GAP, FRAME_STEP, MIN_COMMON_TRACKS, TOP_K
+
+    globals()["MIN_FRAME_GAP"] = mg
+    globals()["FRAME_STEP"] = st
+    globals()["MIN_COMMON_TRACKS"] = mc
+    globals()["TOP_K"] = tk
+
+    try:
+        clip = get_active_clip(context)
+        if not clip:
+            return {"status": "NO_CLIP"}
+
+        # defensiv: mute/hide je nach Build unterschiedlich
+        tracks = [t for t in clip.tracking.tracks if not getattr(t, "mute", False) and not getattr(t, "hide", False)]
+        if not tracks:
+            return {"status": "NO_TRACKS"}
+
+        frame_start = clip.frame_start
+        frame_end = clip.frame_start + clip.frame_duration - 1
+
+        results = scan_pairs(clip, frame_start, frame_end, FRAME_STEP, tracks)
+        if not results:
+            return {"status": "NO_PAIRS"}
+
+        results.sort(key=lambda r: r["total"], reverse=True)
+        top = results[:TOP_K]
+
+        applied = False
+        if apply_best_pair and top:
+            best = top[0]
+            apply_keyframes(clip, best["fa"], best["fb"])
+            applied = True
+
+        return {
+            "status": "OK",
+            "clip": clip.name,
+            "top": top,
+            "applied": applied,
+            "params": {
+                "min_frame_gap": MIN_FRAME_GAP,
+                "frame_step": FRAME_STEP,
+                "min_common_tracks": MIN_COMMON_TRACKS,
+                "top_k": TOP_K,
+            }
+        }
+    finally:
+        # Defaults zurücksetzen
+        (globals()["MIN_FRAME_GAP"],
+         globals()["FRAME_STEP"],
+         globals()["MIN_COMMON_TRACKS"],
+         globals()["TOP_K"]) = _old
 
 
-# ---------------------------------------------------------------------------
-# Operator
-# ---------------------------------------------------------------------------
+# ----------------------------- Hauptausführung --------------------------------
 
-class CLIP_OT_tracking_coordinator(bpy.types.Operator):
-    """
-    Zielablauf:
-
-      A) FIND_LOW findet Frames:
-         → JUMP → DETECT → TRACK (bidi) → CLEAN_SHORT → zurück zu FIND_LOW
-
-      B) FIND_LOW liefert NONE:
-         → CYCLE_START
-         → Unbegrenzt: CYCLE_FIND_MAX; wenn NONE/FAILED → CYCLE_SPIKE; dann zurück zu CYCLE_FIND_MAX
-           … bis FIND_MAX einen Frame liefert
-         → SOLVE → EVAL
-              → wenn OK: FINALIZE
-              → wenn nicht: CLEANUP → zurück zu FIND_LOW
-
-    Hinweis: Die Iterationsbegrenzung für FIND_MAX↔SPIKE beginnt erst zu zählen,
-    wenn eine SPIKE-Iteration tatsächlich Marker entfernt hat.
-    """
-    bl_idname = "clip.tracking_coordinator"
-    bl_label = "Tracking Orchestrator"
-    bl_options = {"REGISTER", "UNDO"}
-
-    use_apply_settings: bpy.props.BoolProperty(  # type: ignore
-        name="Apply Tracker Defaults",
-        default=True,
+def main(context):
+    """Standalone-Lauf: Vorschläge erzeugen, Textblock schreiben, optional Keyframes setzen."""
+    res = run_parallax_keyframe(
+        context,
+        apply_best_pair=APPLY_BEST_PAIR,
+        min_frame_gap=MIN_FRAME_GAP,
+        frame_step=FRAME_STEP,
+        min_common_tracks=MIN_COMMON_TRACKS,
+        top_k=TOP_K,
     )
 
-    _timer: Optional[bpy.types.Timer] = None
-    _state: str = "INIT"
-    _detect_attempts: int = 0
-    _jump_done: bool = False
-    _repeat_map: Dict[int, int]
-    _bidi_started: bool = False
-
-    # CYCLE (FIND_MAX ↔ SPIKE)
-    _cycle_active: bool = False
-    _cycle_target_frame: Optional[int] = None
-    _cycle_iterations: int = 0  # neu: Zähler für die Anzahl der Cycle-Iterationen (zählt nur echte Löschaktionen)
-
-    # SPIKE
-    _spike_threshold: float = _DEFAULT_SPIKE_START
-
-    # Solve/Eval/Refine
-    _pending_eval_after_solve: bool = False
-    _did_refine_this_cycle: bool = False
-
-    @classmethod
-    def poll(cls, context):
-        return getattr(context.area, "type", None) == "CLIP_EDITOR"
-
-    # ---------------- Lifecycle ----------------
-
-    def _run_pre_flight_helpers(self, context) -> None:
-        # tracker_settings (defensiv)
-        try:
-            from ..Helper.tracker_settings import apply_tracker_settings  # type: ignore
-            ok, res = _safe_call(apply_tracker_settings, context, log=True)
-            if ok:
-                print("[Coord] BOOTSTRAP → tracker_settings OK")
-            else:
-                print(f"[Coord] BOOTSTRAP WARN: tracker_settings failed: {res!r}")
-                _safe_ops_invoke("clip.apply_tracker_settings", 'INVOKE_DEFAULT')
-        except Exception as ex:
-            print(f"[Coord] BOOTSTRAP WARN: tracker_settings import failed: {ex!r}")
-            _safe_ops_invoke("clip.apply_tracker_settings", 'INVOKE_DEFAULT')
-
-        # marker_helper_main (defensiv)
-        try:
-            from ..Helper.marker_helper_main import marker_helper_main  # type: ignore
-            ok, res = _safe_call(marker_helper_main, context)
-            if ok:
-                print("[Coord] BOOTSTRAP → marker_helper_main OK")
-            else:
-                print(f"[Coord] BOOTSTRAP WARN: marker_helper_main failed: {res!r}")
-        except Exception as ex_func:  # noqa: BLE001
-            print(f"[Coord] BOOTSTRAP WARN: marker_helper_main import failed: {ex_func!r}")
-            try:
-                bpy.ops.clip.marker_helper_main('INVOKE_DEFAULT')
-            except Exception:
-                pass
-
-        if self.use_apply_settings:
-            try:
-                from ..Helper.apply_tracker_settings import apply_tracker_settings  # type: ignore
-                apply_tracker_settings(context)
-                print("[Coord] BOOTSTRAP → apply_tracker_settings() OK")
-            except Exception as ex:
-                print(f"[Coord] BOOTSTRAP INFO: apply_tracker_settings not available/failed: {ex!r}")
-
-    def invoke(self, context: bpy.types.Context, event: bpy.types.Event):
-        self._bootstrap(context)
-        wm = context.window_manager
-        self._timer = wm.event_timer_add(0.25, window=context.window)
-        wm.modal_handler_add(self)
-        print("[Coord] START (Detect/Bidi-Loop; unendlicher CYCLE: FIND_MAX↔SPIKE bis FOUND; Solve→Eval→Cleanup)")
-        return {"RUNNING_MODAL"}
-
-    # ---------------- Bootstrap ----------------
-
-    def _bootstrap(self, context):
-        scn = context.scene
-        scn[_LOCK_KEY] = False
-        scn[_BIDI_ACTIVE_KEY] = False
-        scn[_BIDI_RESULT_KEY] = ""
-        scn.pop(_GOTO_KEY, None)
-
-        self._state = "INIT"
-        self._detect_attempts = 0
-        self._jump_done = False
-        self._repeat_map = {}
-        self._bidi_started = False
-
-        # Cycle reset
-        self._cycle_active = False
-        self._cycle_target_frame = None
-        self._cycle_iterations = 0  # reset counter
-
-        # Spike reset
-        self._spike_threshold = float(getattr(scn, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START)
-
-        # Solve/Eval/Refine
-        self._pending_eval_after_solve = False
-        self._did_refine_this_cycle = False
-
-    # ---------------- States ----------------
-
-    def _state_init(self, context):
-        print("[Coord] INIT → BOOTSTRAP")
-        self._run_pre_flight_helpers(context)
-        print("[Coord] BOOTSTRAP → FIND_LOW")
-        self._state = "FIND_LOW"
-        return {"RUNNING_MODAL"}
-
-    def _state_find_low(self, context):
-        if not _have_clip(context):
-            print("[Coord] FIND_LOW → no active clip → retry")
-            return {"RUNNING_MODAL"}
-
-        ok, result = _safe_call(run_find_low_marker_frame, context)
-        if not ok or not isinstance(result, dict):
-            print(f"[Coord] FIND_LOW → FAILED (exception/invalid) → treat as NONE")
-            result = {"status": "NONE", "reason": "exception-or-invalid-result"}
-
-        status = str(result.get("status", "NONE")).upper()
-        if status == "FOUND":
-            frame = int(result.get("frame", context.scene.frame_current))
-            context.scene[_GOTO_KEY] = frame
-            self._jump_done = False
-            print(f"[Coord] FIND_LOW → FOUND frame={frame} → JUMP")
-            self._state = "JUMP"
-        else:
-            # NONE → Zyklus starten
-            print("[Coord] FIND_LOW → NONE → CYCLE_START (FIND_MAX↔SPIKE, max iterations: {0})".format(_CYCLE_MAX_ITER))
-            self._cycle_active = True
-            self._cycle_target_frame = None
-            self._cycle_iterations = 0  # reset iteration counter beim Start des Zyklus
-            self._spike_threshold = float(getattr(context.scene, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START)
-            self._did_refine_this_cycle = False
-            self._state = "CYCLE_FIND_MAX"
-        return {"RUNNING_MODAL"}
-
-    # ---------------- JUMP/DETECT/TRACK/CLEAN_SHORT ----------------
-
-    def _state_jump(self, context):
-        from ..Helper.jump_to_frame import run_jump_to_frame  # type: ignore
-        if not self._jump_done:
-            goto = int(context.scene.get(_GOTO_KEY, context.scene.frame_current))
-            ok, jr = _safe_call(run_jump_to_frame, context, frame=goto, repeat_map=self._repeat_map)
-            if not ok or not isinstance(jr, dict) or jr.get("status") != "OK":
-                print(f"[Coord] JUMP failed → FIND_LOW")
-                self._state = "FIND_LOW"
-                return {"RUNNING_MODAL"}
-
-            print(f"[Coord] JUMP → frame={jr['frame']} repeat={jr.get('repeat_count', 0)} → DETECT")
-
-            scn = context.scene
-            opt_req = scn.get(_OPT_REQ_KEY, None)
-            opt_frame = int(scn.get(_OPT_FRAME_KEY, jr.get('frame', scn.frame_current)))
-            if jr.get("optimize_signal") or opt_req == _OPT_REQ_VAL:
-                scn.pop(_OPT_REQ_KEY, None)
-                scn[_OPT_FRAME_KEY] = opt_frame
-                try:
-                    from ..Helper.optimize_tracking_modal import start_optimization  # type: ignore
-                    if int(context.scene.frame_current) != int(opt_frame):
-                        context.scene.frame_set(int(opt_frame))
-                    ok_opt, res_opt = _safe_call(start_optimization, context)
-                    if ok_opt:
-                        print(f"[Coord] JUMP → OPTIMIZE (function, frame={opt_frame})")
-                    else:
-                        print(f"[Coord] OPTIMIZE failed (function): {res_opt!r}")
-                        ok_op, _ = _safe_ops_invoke("clip.optimize_tracking_modal", 'INVOKE_DEFAULT')
-                        if ok_op:
-                            print(f"[Coord] JUMP → OPTIMIZE (operator, frame={opt_frame})")
-                except Exception as ex_func:
-                    print(f"[Coord] OPTIMIZE failed: {ex_func!r}")
-
-            self._jump_done = True
-
-        self._detect_attempts = 0
-        self._state = "DETECT"
-        return {"RUNNING_MODAL"}
-
-    def _state_detect(self, context):
-        from ..Helper.detect import run_detect_once  # type: ignore
-        goto = int(context.scene.get(_GOTO_KEY, context.scene.frame_current))
-        ok, res = _safe_call(run_detect_once, context, start_frame=goto, handoff_to_pipeline=True)
-        status = "FAILED" if (not ok or not isinstance(res, dict)) else str(res.get("status", "FAILED")).upper()
-
-        if status == "RUNNING":
-            self._detect_attempts += 1
-            print(f"[Coord] DETECT → RUNNING ({self._detect_attempts}/{_MAX_DETECT_ATTEMPTS})")
-            if self._detect_attempts >= _MAX_DETECT_ATTEMPTS:
-                print("[Coord] DETECT Timebox erreicht → force TRACK")
-                self._state = "TRACK"
-            return {"RUNNING_MODAL"}
-
-        # Triplet-Grouping vollständig entfernt
-        print(f"[Coord] DETECT → {status} → TRACK (bidi)")
-        self._state = "TRACK"
-        return {"RUNNING_MODAL"}
-
-    def _state_track(self, context):
-        scn = context.scene
-
-        if not self._bidi_started:
-            scn[_BIDI_ACTIVE_KEY] = False
-            print("[Coord] TRACK → launch clip.bidirectional_track (INVOKE_DEFAULT)")
-            ok, _ = _safe_ops_invoke("clip.bidirectional_track", 'INVOKE_DEFAULT')
-            if ok:
-                self._bidi_started = True
-            else:
-                print("[Coord] TRACK launch failed → CLEAN_SHORT")
-                self._bidi_started = False
-                self._state = "CLEAN_SHORT"
-            return {"RUNNING_MODAL"}
-
-        if scn.get(_BIDI_ACTIVE_KEY, False):
-            return {"RUNNING_MODAL"}
-
-        result = str(scn.get(_BIDI_RESULT_KEY, "") or "").upper()
-        scn[_BIDI_RESULT_KEY] = ""
-        self._bidi_started = False
-        print(f"[Coord] TRACK → finished (result={result or 'NONE'}) → CLEAN_SHORT")
-        self._state = "CLEAN_SHORT"
-        return {"RUNNING_MODAL"}
-
-    def _state_clean_short(self, context):
-        try:
-            frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
-            clean_short_tracks(context, min_len=frames_min, verbose=True)
-            print(f"[Coord] CLEAN_SHORT → clean_short_tracks(min_len={frames_min})")
-        except TypeError:
-            clean_short_tracks(context)
-            print("[Coord] CLEAN_SHORT → clean_short_tracks() fallback")
-        except Exception as ex:
-            print(f"[Coord] CLEAN_SHORT failed: {ex!r}")
-
-        print("[Coord] CLEAN_SHORT → FIND_LOW")
-        self._state = "FIND_LOW"
-        return {"RUNNING_MODAL"}
-
-    # ---------------- CYCLE: FIND_MAX ↔ SPIKE (mit Iterationslimit) ----------------
-
-    def _state_cycle_find_max(self, context):
-        """Suche Frame mit Markeranzahl < threshold. Wenn gefunden → SOLVE; sonst → SPIKE.
-        Die Iterationsbegrenzung wird nicht hier hochgezählt — sie wird nur erhöht, wenn
-        eine vorherige SPIKE-Iteration tatsächlich Marker entfernt hat.
-        """
-        if not self._cycle_active:
-            print("[Coord] CYCLE_FIND_MAX reached with inactive cycle → FINALIZE")
-            self._state = "FINALIZE"
-            return {"RUNNING_MODAL"}
-
-        print(f"[Coord] CYCLE_FIND_MAX → check (current deletion-iterations={self._cycle_iterations}/{_CYCLE_MAX_ITER})")
-
-        try:
-            res = run_find_max_marker_frame(context)
-        except Exception as ex:
-            print(f"[Coord] CYCLE_FIND_MAX failed: {ex!r}")
-            res = {"status": "FAILED", "reason": repr(ex)}
-
-        status = str(res.get("status", "FAILED")).upper()
-        if status == "FOUND":
-            frame = int(res.get("frame", getattr(context.scene, "frame_current", 0)))
-            count = res.get("count", "?")
-            thresh = res.get("threshold", "?")
-            print(f"[Coord] CYCLE_FIND_MAX → FOUND frame={frame} (count={count} < threshold={thresh})")
-
-            self._cycle_target_frame = frame
-            try:
-                context.scene.frame_set(frame)
-            except Exception as ex_set:
-                print(f"[Coord] WARN: frame_set({frame}) failed: {ex_set!r}")
-
-            # Zyklus beenden → Solve-Pfad
-            self._cycle_active = False
-            print("[Coord] CYCLE_FIND_MAX → SOLVE")
-            self._pending_eval_after_solve = True
-            self._state = "SOLVE"
-            return {"RUNNING_MODAL"}
-
-        # NONE/FAILED → SPIKE
-        print(f"[Coord] CYCLE_FIND_MAX → {status} → CYCLE_SPIKE")
-        self._state = "CYCLE_SPIKE"
-        return {"RUNNING_MODAL"}
-
-    def _state_cycle_spike(self, context):
-        """Eine Spike-Iteration; danach immer zurück zu FIND_MAX. Keine Limits, ausser dem globalen Iterationslimit.
-        Die globale Iterationszählung wird nur erhöht, wenn diese SPIKE-Iteration tatsächlich Marker entfernt hat.
-        """
-        if not self._cycle_active:
-            print("[Coord] CYCLE_SPIKE with inactive cycle → FINALIZE")
-            self._state = "FINALIZE"
-            return {"RUNNING_MODAL"}
-
-        # Eine Iteration ausführen
-        try:
-            res = run_spike_filter_cycle(context, track_threshold=float(self._spike_threshold))
-        except Exception as ex:
-            print(f"[Coord] CYCLE_SPIKE failed: {ex!r}")
-            # Trotz Fehler zurück zu FIND_MAX
-            self._state = "CYCLE_FIND_MAX"
-            return {"RUNNING_MODAL"}
-
-        status = str(res.get("status", "")).upper()
-        removed = int(res.get("removed", 0) or 0)
-        next_thr = float(res.get("next_threshold", self._spike_threshold * 0.9))
-        print(f"[Coord] CYCLE_SPIKE → status={status}, removed={removed}, next={next_thr:.2f} (curr={self._spike_threshold:.2f})")
-
-        # Threshold aktualisieren; Minimalabsicherung gegen negative Werte
-        self._spike_threshold = max(next_thr, 0.0)
-
-        # Wenn diese SPIKE-Iteration tatsächlich Marker entfernt hat, zählt das als eine Iteration.
-        if removed > 0:
-            self._cycle_iterations += 1
-            print(f"[Coord] CYCLE_SPIKE → removed>0 → incremented deletion-iterations to {self._cycle_iterations}/{_CYCLE_MAX_ITER}")
-            if self._cycle_iterations > _CYCLE_MAX_ITER:
-                # Entscheidung: bei Erreichen des Limits zum Solve-Pfad wechseln
-                print(f"[Coord] CYCLE deletion-iteration limit ({_CYCLE_MAX_ITER}) reached → proceed to SOLVE")
-                # Zyklus beenden und Solve-Pfad einleiten
-                self._cycle_active = False
-                self._pending_eval_after_solve = True
-                self._state = "SOLVE"
-                return {"RUNNING_MODAL"}
-
-        # Danach wieder FIND_MAX prüfen
-        self._state = "CYCLE_FIND_MAX"
-        return {"RUNNING_MODAL"}
-
-    # ---------------- SOLVE → EVAL → CLEANUP ----------------
-
-    def _state_solve(self, context):
-        try:
-            _ = solve_camera_only(context)
-            print("[Coord] SOLVE invoked")
-        except Exception as ex:
-            print(f"[Coord] SOLVE failed: {ex!r}")
-        self._state = "EVAL" if self._pending_eval_after_solve else "FINALIZE"
-        return {"RUNNING_MODAL"}
-
-    def _state_eval(self, context):
-        target = _scene_float(context.scene, "error_track", 0.0)
-        wait_s = _scene_float(context.scene, "solve_wait_timeout_s", _DEFAULT_SOLVE_WAIT_S)
-
-        curr = _wait_for_valid_reconstruction(context, timeout_s=wait_s)
-        curr = _current_solve_error(context) if curr is None else curr
-        print(f"[Coord] EVAL → curr_error={curr if curr is not None else 'None'} target={target}")
-
-        if target > 0.0 and curr is not None and curr <= target:
-            # Neuer finaler Ablauf: bei erfolgreichem Solve unter Threshold: zwei Refinements ausführen
-            # 1) refine_intrinsics_focal_length = True → solve_camera_only()
-            # 2) refine_intrinsics_radial_distortion = True → solve_camera_only()
-
-            # Neuer Schritt: vor den finalen Intrinsics-Refinements zuerst parallax_keyframe auslösen
-            print("[Coord] EVAL → OK (≤ target) → invoking parallax_keyframe before final intrinsics refinement")
-            try:
-                from ..Helper.parallax_keyframe import run_parallax_keyframe  # type: ignore
-                ok_pk, res_pk = _safe_call(
-                    run_parallax_keyframe, context,
-                    apply_best_pair=True  # <— bestes A/B setzen
-                )
-                if ok_pk and isinstance(res_pk, dict) and res_pk.get("applied"):
-                    # direkt neu lösen (Pose-only), bevor Intrinsics-Refinement kommt
-                    ok_resolve, _ = _safe_call(solve_camera_only, context)
-                    print(f"[Coord] re-solve after parallax A/B applied: {'OK' if ok_resolve else 'FAILED'}")
-                if ok_pk:
-                    print(f"[Coord] parallax_keyframe result: {res_pk}")
-                else:
-                    print(f"[Coord] parallax_keyframe failed: {res_pk!r}")
-            except Exception as ex_pk:
-                print(f"[Coord] parallax_keyframe import/call exception: {ex_pk!r}")
-
-            print("[Coord] EVAL → OK (≤ target) → performing final intrinsics refinement steps")
-
-            scn = context.scene
-            try:
-                # Set focal length refinement and run solver
-                try:
-                    setattr(scn, "refine_intrinsics_focal_length", True)
-                except Exception:
-                    # fallback: set as dict item if attribute not supported
-                    scn["refine_intrinsics_focal_length"] = True
-
-                ok1, res1 = _safe_call(solve_camera_only, context)
-                if ok1:
-                    print("[Coord] Final refine: focal_length solve OK")
-                else:
-                    print(f"[Coord] Final refine: focal_length solve FAILED: {res1!r}")
-
-            except Exception as ex_ref1:
-                print(f"[Coord] Final refine (focal_length) exception: {ex_ref1!r}")
-
-            try:
-                # Set radial distortion refinement and run solver
-                try:
-                    setattr(scn, "refine_intrinsics_radial_distortion", True)
-                except Exception:
-                    scn["refine_intrinsics_radial_distortion"] = True
-
-                ok2, res2 = _safe_call(solve_camera_only, context)
-                if ok2:
-                    print("[Coord] Final refine: radial_distortion solve OK")
-                else:
-                    print(f"[Coord] Final refine: radial_distortion solve FAILED: {res2!r}")
-
-            except Exception as ex_ref2:
-                print(f"[Coord] Final refine (radial_distortion) exception: {ex_ref2!r}")
-
-            # Nach den finalen Steps normal beenden / finalisieren
-            print("[Coord] EVAL → final intrinsics refinement done → FINALIZE")
-            self._pending_eval_after_solve = False
-            self._did_refine_this_cycle = False
-            self._state = "FINALIZE"
-        else:
-            print("[Coord] EVAL → above target → CLEANUP")
-            self._state = "CLEANUP"
-        return {"RUNNING_MODAL"}
-
-    def _state_cleanup(self, context):
-        limit = _current_solve_error(context)
-        kwargs = {"wait_for_error": False, "action": "DELETE_TRACK"}
-        if limit is not None:
-            kwargs["error_limit"] = float(limit)
-
-        ok, res = _safe_call(run_projection_cleanup_builtin, context, **kwargs)
-        if ok:
-            print(f"[Coord] CLEANUP → {res}")
-        else:
-            print(f"[Coord] CLEANUP failed: {res!r}")
-
-        # Nach Cleanup zurück in den Tracking-Loop (FIND_LOW)
-        print("[Coord] CLEANUP → FIND_LOW (back to loop)")
-        self._pending_eval_after_solve = False
-        self._did_refine_this_cycle = False
-        self._state = "FIND_LOW"
-        return {"RUNNING_MODAL"}
-
-    # ---------------- Modal-Wrapper ----------------
-    def modal(self, context, event):
-        try:
-            if event.type == "ESC":
-                return self._finish(context, cancelled=True)
-            if event.type != "TIMER":
-                return {"PASS_THROUGH"}
-
-            if context.scene.get(_LOCK_KEY, False):
-                return {"RUNNING_MODAL"}
-
-            s = self._state
-            if s == "INIT":
-                return self._state_init(context)
-            elif s == "FIND_LOW":
-                return self._state_find_low(context)
-            elif s == "JUMP":
-                return self._state_jump(context)
-            elif s == "DETECT":
-                return self._state_detect(context)
-            elif s == "TRACK":
-                return self._state_track(context)
-            elif s == "CLEAN_SHORT":
-                return self._state_clean_short(context)
-            elif s == "CYCLE_FIND_MAX":
-                return self._state_cycle_find_max(context)
-            elif s == "CYCLE_SPIKE":
-                return self._state_cycle_spike(context)
-            elif s == "SOLVE":
-                return self._state_solve(context)
-            elif s == "EVAL":
-                return self._state_eval(context)
-            elif s == "CLEANUP":
-                return self._state_cleanup(context)
-            elif s == "FINALIZE":
-                return self._finish(context, cancelled=False)
-
-            _tco_log(f"Unknown state '{s}' → FINALIZE")
-            return self._finish(context, cancelled=False)
-
-        except Exception as ex:  # noqa: BLE001
-            _tco_log(f"modal: unexpected exception: {ex!r}")
-            return self._finish(context, cancelled=True)
-
-    # ---------------- Finish ----------------
-
-    def _finish(self, context, *, cancelled: bool):
-        wm = context.window_manager
-        if self._timer:
-            wm.event_timer_remove(self._timer)
-            self._timer = None
-        context.scene[_LOCK_KEY] = False
-        msg = "CANCELLED" if cancelled else "FINISHED"
-        print(f"[Coord] DONE ({msg})")
-        return {"CANCELLED" if cancelled else "FINISHED"}
-
-
-def register():
-    register_scene_state()
-    bpy.utils.register_class(CLIP_OT_tracking_coordinator)
-
-
-def unregister():
-    unregister_scene_state()
-    bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
-
-
-if __name__ == "__main__" and os.getenv("ADDON_RUN_TESTS", "0") == "1":
-    print("[SelfTest] basic import OK")
+    status = res.get("status")
+    if status != "OK":
+        print(f"[Parallax Helper] Abbruch: {status}")
+        return
+
+    clip_name = res.get("clip", "?")
+    params = res.get("params", {})
+    lines = [
+        f"Parallax Keyframe Suggestions for '{clip_name}'",
+        f"Step={params.get('frame_step', FRAME_STEP)}, "
+        f"MinGap={params.get('min_frame_gap', MIN_FRAME_GAP)}, "
+        f"MinCommonTracks={params.get('min_common_tracks', MIN_COMMON_TRACKS)}",
+        "-" * 78,
+    ]
+
+    for i, r in enumerate(res["top"], 1):
+        line = f"{i:>2}. {format_row(r)}"
+        lines.append(line)
+        print(line)
+
+    write_textblock("parallax_keyframe_suggestions.txt", lines)
+
+    if res.get("applied"):
+        best = res["top"][0]
+        print(f"[Parallax Helper] Bestes Paar gesetzt: A={best['fa']}  B={best['fb']}")
+    print("[Parallax Helper] Fertig.")
+
+
+# Direkt ausführen
+if __name__ == "__main__":
+    main(bpy.context)
