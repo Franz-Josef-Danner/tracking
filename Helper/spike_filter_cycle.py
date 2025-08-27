@@ -21,9 +21,9 @@ import math
 
 try:
     # wenn dieses Modul innerhalb des Pakets "Helper" liegt:
-    from .clean_short_tracks import clean_short_tracks  # type: ignore
+    from .clean_short_segments import clean_short_segments  # neu
 except Exception:
-    clean_short_tracks = None  # wird später geprüft
+    clean_short_segments = None  # wird später geprüft
     
 __all__ = [
     "run_marker_spike_filter_cycle",
@@ -211,32 +211,44 @@ def run_marker_spike_filter_cycle(
     action: str = "MUTE",           # "MUTE" | "DELETE" | "SELECT"
 ) -> Dict[str, Any]:
     """
-    Führt einen Marker-basierten Spike-Filter-Durchlauf aus (Pixel/Frame).
-    Ruft **immer** anschließend clean_short_tracks() auf.
+    Führt einen Marker-basierten Spike-Filter-Durchlauf aus (Pixel/Frame)
+    und ruft **immer** anschließend clean_short_tracks() auf.
     """
     if not _get_active_clip(context):
         return {"status": "FAILED", "reason": "no active MovieClip"}
 
+    if _clean_short_tracks is None:
+        # explizit fehlschlagen, damit klar ist, warum der Step nicht lief
+        return {"status": "FAILED", "reason": "clean_short_tracks not available (import failed)"}
+
     thr = float(track_threshold)
     act = str(action or "MUTE").upper()
 
+    # 1) Marker-Filter
     affected = _apply_marker_outlier_filter(context, threshold_px=thr, action=act)
     print(f"[MarkerSpike] affected {affected} marker(s) with action={act}")
 
-    # --- Immer clean_short_tracks direkt danach ---
-    from .clean_short_tracks import clean_short_tracks  # lokaler Import
+    # 2) Clean Short (immer)
     cleaned = 0
+    frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
     try:
-        frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
-        res = clean_short_tracks(context, min_len=frames_min, verbose=True)
+        res = _clean_short_tracks(context, min_len=frames_min, verbose=True)  # type: ignore[call-arg]
+        # defensiv normalisieren
         if isinstance(res, dict):
-            cleaned = int(res.get("removed", 0) or res.get("cleaned", 0) or 0)
+            cleaned = int(
+                res.get("removed", 0)
+                or res.get("deleted", 0)
+                or res.get("cleaned", 0)
+                or res.get("count", 0)
+                or 0
+            )
         elif isinstance(res, (int, float)):
             cleaned = int(res)
         print(f"[MarkerSpike] clean_short_tracks(min_len={frames_min}) → cleaned={cleaned}")
     except Exception as ex:
         print(f"[MarkerSpike] clean_short_tracks failed: {ex!r}")
 
+    # 3) Next Threshold
     next_thr = _lower_threshold(thr)
     print(f"[MarkerSpike] next threshold → {next_thr}")
 
@@ -244,7 +256,6 @@ def run_marker_spike_filter_cycle(
     return {
         "status": "OK",
         key: int(affected),
-        "cleaned": int(cleaned),           # immer enthalten
+        "cleaned": int(cleaned),
         "next_threshold": float(next_thr),
     }
-
