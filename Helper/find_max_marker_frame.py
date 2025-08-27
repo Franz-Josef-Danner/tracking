@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 from typing import Optional, Dict, Any, List
 import bpy
 
@@ -9,6 +10,7 @@ __all__ = ["run_find_max_marker_frame"]
 # ---------------------------------------------------------------------------
 # Interna
 # ---------------------------------------------------------------------------
+
 
 def _get_active_clip(context) -> Optional[bpy.types.MovieClip]:
     """Aktiven MovieClip bestimmen (bevorzugt CLIP_EDITOR, sonst erstes MovieClip)."""
@@ -62,7 +64,7 @@ def _build_frame_counts(tracks, start_frame: int, end_frame: int) -> List[int]:
             last_frame = None  # verhindert Doppelzählungen im selben Track/Frame
             for m in getattr(tr, "markers", []):
                 try:
-                    f = int(getattr(m, "frame", -10**9))
+                    f = int(getattr(m, "frame", -10 ** 9))
                 except Exception:
                     continue
                 if f < s or f > e:
@@ -85,101 +87,35 @@ def _build_frame_counts(tracks, start_frame: int, end_frame: int) -> List[int]:
 # Öffentliche API
 # ---------------------------------------------------------------------------
 
-def _resolve_threshold_from_scene(scene: bpy.types.Scene) -> Optional[int]:
-    """Liest optionale Szene-Hints aus (kompatibel zu Legacy-Aufrufern)."""
-    try:
-        if hasattr(scene, "find_max_start_threshold"):
-            val = getattr(scene, "find_max_start_threshold")
-            if val is not None:
-                return int(val)
-    except Exception:
-        pass
-    return None
-
-
-def _resolve_reuse_last_from_scene(scene: bpy.types.Scene) -> Optional[bool]:
-    try:
-        if hasattr(scene, "find_max_reuse_last"):
-            return bool(getattr(scene, "find_max_reuse_last"))
-    except Exception:
-        pass
-    return None
-
-
-def _get_default_legacy_threshold(scene: bpy.types.Scene) -> int:
-    """Legacy-Fallback: threshold aus marker_frame*1.1 ableiten."""
-    try:
-        marker_frame_val = int(getattr(scene, "marker_frame", scene.frame_current) or scene.frame_current)
-    except Exception:
-        marker_frame_val = int(getattr(scene, "frame_current", 0) or 0)
-    return int(marker_frame_val * 1.1)
-
 
 def run_find_max_marker_frame(
     context: bpy.types.Context,
     *,
-    # NEU: immer bei fixem Wert starten können (z. B. 50)
-    start_threshold: Optional[float] = None,
-    # NEU: ob ein "zuletzt verwendeter" Wert wiederverwendet werden darf
-    reuse_last: bool = True,
     log_each_frame: bool = True,
     return_observed_min: bool = True,
 ) -> Dict[str, Any]:
     """Sucht den **ersten** Frame im Szenenbereich, dessen aktive Markerzahl
-    unter ``threshold`` liegt.
+    unter ``threshold = scene.marker_frame * 1.1`` liegt.
 
-    Threshold-Ermittlung (Priorität absteigend):
-      1) Expliziter Parameter ``start_threshold`` (z. B. 50)
-      2) Szene-Hint ``scene.find_max_start_threshold`` (Legacy-Integration)
-      3) (optional) Wiederverwendung ``scene.find_max_last_threshold`` wenn ``reuse_last=True``
-      4) Legacy-Fallback: ``int(scene.marker_frame * 1.1)``
+    Zusätzlich werden (falls kein Treffer) das kleinste beobachtete ``count``
+    sowie der zugehörige Frame zurückgegeben, um heuristische Entscheidungen
+    außerhalb zu erleichtern.
     """
     clip = _get_active_clip(context)
     if not clip:
         return {"status": "FAILED", "reason": "no active MovieClip"}
 
     scene = context.scene
-
-    # --- Threshold bestimmen nach Priorität ---
-    threshold: Optional[int] = None
-
-    # 1) Expliziter Funktions-Parameter
-    if start_threshold is not None:
-        try:
-            threshold = int(start_threshold)
-        except Exception:
-            threshold = None
-
-    # 2) Szene-Hint (nur, wenn noch nicht gesetzt)
-    if threshold is None:
-        scene_hint = _resolve_threshold_from_scene(scene)
-        if scene_hint is not None:
-            threshold = int(scene_hint)
-
-    # 3) Reuse-Last (nur wenn erlaubt UND kein expliziter Start gesetzt)
-    if threshold is None:
-        reuse_flag = reuse_last
-        scene_reuse_opt = _resolve_reuse_last_from_scene(scene)
-        if scene_reuse_opt is not None:
-            reuse_flag = bool(scene_reuse_opt)
-        if reuse_flag:
-            try:
-                last_thr = getattr(scene, "find_max_last_threshold", None)
-                if last_thr is not None:
-                    threshold = int(last_thr)
-            except Exception:
-                pass
-
-    # 4) Legacy-Fallback
-    if threshold is None:
-        threshold = _get_default_legacy_threshold(scene)
-
-    # Sicherheitsklemme
-    threshold = max(int(threshold), 0)
+    try:
+        marker_frame_val = int(getattr(scene, "marker_frame", scene.frame_current) or scene.frame_current)
+    except Exception:
+        marker_frame_val = int(getattr(scene, "frame_current", 0) or 0)
+    threshold = int(marker_frame_val * 1.1)
 
     tracks = _get_tracks_collection(clip)
     if tracks is None:
-        out = {"status": "NONE", "threshold": int(threshold)}
+        # Kein Tracking-Kontext vorhanden → keine Marker → keine Treffer
+        out = {"status": "NONE", "threshold": threshold}
         if return_observed_min:
             out.update({"observed_min": 0, "observed_min_frame": int(getattr(scene, "frame_start", 1) or 1)})
         return out
@@ -207,11 +143,6 @@ def run_find_max_marker_frame(
             observed_min_frame = f
 
         if c <= threshold:
-            # den tatsächlich verwendeten Threshold im Scene-State persistieren (nur Info)
-            try:
-                setattr(scene, "find_max_last_threshold", int(threshold))
-            except Exception:
-                pass
             return {
                 "status": "FOUND",
                 "frame": int(f),
@@ -220,11 +151,6 @@ def run_find_max_marker_frame(
             }
 
     # Kein Treffer → optional min zurückgeben
-    try:
-        setattr(scene, "find_max_last_threshold", int(threshold))
-    except Exception:
-        pass
-
     out: Dict[str, Any] = {"status": "NONE", "threshold": int(threshold)}
     if return_observed_min:
         out.update({
