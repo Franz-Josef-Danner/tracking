@@ -333,7 +333,16 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._cycle_active = True
             self._cycle_target_frame = None
             self._cycle_iterations = 0  # reset iteration counter beim Start des Zyklus
-            self._spike_threshold = float(getattr(context.scene, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START)
+            last = float(getattr(context.scene, "tco_spike_value", 0.0) or 0.0)
+            if last > 0.0:
+                self._spike_threshold = last
+                print(f"[Coord] CYCLE_START → reuse remembered spike start = {self._spike_threshold:.2f}")
+            else:
+                self._spike_threshold = float(
+                    getattr(context.scene, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START
+                )
+                print(f"[Coord] CYCLE_START → use default spike start = {self._spike_threshold:.2f}")
+            
             self._did_refine_this_cycle = False
             self._state = "CYCLE_FIND_MAX"
         return {"RUNNING_MODAL"}
