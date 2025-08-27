@@ -9,6 +9,7 @@ from bpy.props import BoolProperty, FloatProperty
 from typing import Optional, Dict, Any, Callable, Tuple
 
 # Entfernt: Triplet-Grouping/Joiner aus dem Ablauf
+# Entfernt: parallax_keyframe (Helper/parallax_keyframe.py) vollständig aus Pipeline
 # from ..Helper.triplet_grouping import run_triplet_grouping  # removed
 from ..Helper.solve_camera import solve_camera_only
 from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin
@@ -541,46 +542,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         print(f"[Coord] EVAL → curr_error={curr if curr is not None else 'None'} target={target}")
 
         if target > 0.0 and curr is not None and curr <= target:
-            # Neuer Schritt: vor den finalen Intrinsics-Refinements zuerst parallax_keyframe auslösen
-            print("[Coord] EVAL → OK (≤ target) → invoking parallax_keyframe before final intrinsics refinement")
-            try:
-                from ..Helper.parallax_keyframe import run_parallax_keyframe  # type: ignore
-
-                # Clip-Länge ermitteln (robust)
-                frame_len = 0
-                try:
-                    clip = getattr(getattr(context.space_data, "clip", None), "tracking", None)
-                    c = context.space_data.clip if getattr(context.space_data, "clip", None) else None
-                    frame_len = int(getattr(c, "frame_duration", 0) or 0)
-                except Exception:
-                    frame_len = 0
-
-                # Adaptive Schrittweite
-                step = 2 if frame_len <= 300 else (4 if frame_len <= 800 else 8)
-
-                ok_pk, res_pk = _safe_call(
-                    run_parallax_keyframe, context,
-                    apply_best_pair=True,
-                    frame_step=step,
-                    min_frame_gap=35,
-                    min_common_tracks=10,
-                    top_k=5,
-                    time_budget_s=2.0,
-                    max_pairs=40000,
-                )
-                if ok_pk and isinstance(res_pk, dict) and res_pk.get("applied"):
-                    ok_resolve, _ = _safe_call(solve_camera_only, context)
-                    print(f"[Coord] re-solve after parallax A/B applied: {'OK' if ok_resolve else 'FAILED'}")
-                if ok_pk:
-                    print(f"[Coord] parallax_keyframe result: {res_pk}")
-                else:
-                    print(f"[Coord] parallax_keyframe failed: {res_pk!r}")
-            except Exception as ex_pk:
-                print(f"[Coord] parallax_keyframe import/call exception: {ex_pk!r}")
-
+            # Direkt zu den finalen Intrinsics-Refinements (parallax_keyframe entfernt)
             print("[Coord] EVAL → OK (≤ target) → performing final intrinsics refinement steps")
 
-            scn = context.scene
             clip = getattr(context.space_data, "clip", None)
             recon = None
             if clip and clip.tracking.objects.active:
@@ -602,7 +566,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     print(f"[Coord] Final refine (radial) exception: {ex_ref2!r}")
             else:
                 print("[Coord] WARN: no active reconstruction → skipping refine")
-
 
             print("[Coord] EVAL → final intrinsics refinement done → FINALIZE")
             self._pending_eval_after_solve = False
