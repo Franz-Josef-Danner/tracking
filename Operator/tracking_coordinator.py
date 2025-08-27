@@ -40,6 +40,7 @@ _DEFAULT_REFINE_POLL_S = 0.05
 _DEFAULT_SPIKE_START = 100.0
 
 # Maximal erlaubte Anzahl an FIND_MAX↔SPIKE-Iterationen
+# Hinweis: Zähler beginnt erst, wenn ein Spike-Iteration tatsächlich Marker entfernt hat.
 _CYCLE_MAX_ITER = 10
 
 
@@ -190,6 +191,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
          → SOLVE → EVAL
               → wenn OK: FINALIZE
               → wenn nicht: CLEANUP → zurück zu FIND_LOW
+
+    Hinweis: Die Iterationsbegrenzung für FIND_MAX↔SPIKE beginnt erst zu zählen,
+    wenn eine SPIKE-Iteration tatsächlich Marker entfernt hat. Solange SPIKE
+    keine Marker entfernt (removed == 0) laufen die Durchläufe unbegrenzt.
     """
     bl_idname = "clip.tracking_coordinator"
     bl_label = "Tracking Orchestrator"
@@ -210,7 +215,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # CYCLE (FIND_MAX ↔ SPIKE)
     _cycle_active: bool = False
     _cycle_target_frame: Optional[int] = None
-    _cycle_iterations: int = 0  # neu: Zähler für die Anzahl der Cycle-Iterationen
+    _cycle_iterations: int = 0  # neu: Zähler für die Anzahl der Cycle-Iterationen (zählt nur echte Löschaktionen)
 
     # SPIKE
     _spike_threshold: float = _DEFAULT_SPIKE_START
@@ -437,23 +442,16 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # ---------------- CYCLE: FIND_MAX ↔ SPIKE (mit Iterationslimit) ----------------
 
     def _state_cycle_find_max(self, context):
-        """Suche Frame mit Markeranzahl < threshold. Wenn gefunden → SOLVE; sonst → SPIKE (bis max Iterationen)."""
+        """Suche Frame mit Markeranzahl < threshold. Wenn gefunden → SOLVE; sonst → SPIKE.
+        Die Iterationsbegrenzung wird nicht hier hochgezählt — sie wird nur erhöht, wenn
+        eine vorherige SPIKE-Iteration tatsächlich Marker entfernt hat.
+        """
         if not self._cycle_active:
             print("[Coord] CYCLE_FIND_MAX reached with inactive cycle → FINALIZE")
             self._state = "FINALIZE"
             return {"RUNNING_MODAL"}
 
-        # Iterationszähler erhöhen und prüfen
-        self._cycle_iterations += 1
-        print(f"[Coord] CYCLE_FIND_MAX → iteration {self._cycle_iterations}/{_CYCLE_MAX_ITER}")
-        if self._cycle_iterations > _CYCLE_MAX_ITER:
-            # Entscheidung: bei Erreichen des Limits zum Solve-Pfad wechseln (anstatt direkt final zu machen)
-            print(f"[Coord] CYCLE limit ({_CYCLE_MAX_ITER}) reached → proceed to SOLVE")
-            # Zyklus beenden und Solve-Pfad einleiten
-            self._cycle_active = False
-            self._pending_eval_after_solve = True
-            self._state = "SOLVE"
-            return {"RUNNING_MODAL"}
+        print(f"[Coord] CYCLE_FIND_MAX → check (current deletion-iterations={self._cycle_iterations}/{_CYCLE_MAX_ITER})")
 
         try:
             res = run_find_max_marker_frame(context)
@@ -487,7 +485,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_cycle_spike(self, context):
-        """Eine Spike-Iteration; danach immer zurück zu FIND_MAX. Keine Limits, ausser dem globalen Iterationslimit."""
+        """Eine Spike-Iteration; danach immer zurück zu FIND_MAX. Keine Limits, ausser dem globalen Iterationslimit.
+        Die globale Iterationszählung wird nur erhöht, wenn diese SPIKE-Iteration tatsächlich Marker entfernt hat.
+        """
         if not self._cycle_active:
             print("[Coord] CYCLE_SPIKE with inactive cycle → FINALIZE")
             self._state = "FINALIZE"
@@ -509,6 +509,19 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         # Threshold aktualisieren; Minimalabsicherung gegen negative Werte
         self._spike_threshold = max(next_thr, 0.0)
+
+        # Wenn diese SPIKE-Iteration tatsächlich Marker entfernt hat, zählt das als eine Iteration.
+        if removed > 0:
+            self._cycle_iterations += 1
+            print(f"[Coord] CYCLE_SPIKE → removed>0 → incremented deletion-iterations to {self._cycle_iterations}/{_CYCLE_MAX_ITER}")
+            if self._cycle_iterations > _CYCLE_MAX_ITER:
+                # Entscheidung: bei Erreichen des Limits zum Solve-Pfad wechseln
+                print(f"[Coord] CYCLE deletion-iteration limit ({_CYCLE_MAX_ITER}) reached → proceed to SOLVE")
+                # Zyklus beenden und Solve-Pfad einleiten
+                self._cycle_active = False
+                self._pending_eval_after_solve = True
+                self._state = "SOLVE"
+                return {"RUNNING_MODAL"}
 
         # Danach wieder FIND_MAX prüfen
         self._state = "CYCLE_FIND_MAX"
