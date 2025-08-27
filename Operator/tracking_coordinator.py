@@ -38,7 +38,7 @@ _OPT_FRAME_KEY = "__optimize_frame"
 # Default-Parameter
 _DEFAULT_SOLVE_WAIT_S = 60.0
 _DEFAULT_REFINE_POLL_S = 0.05
-_DEFAULT_SPIKE_START = 20.0
+_DEFAULT_SPIKE_START = 2.0
 
 # Maximal erlaubte Anzahl an FIND_MAX↔SPIKE-Iterationen
 # Hinweis: Zähler beginnt erst, wenn ein Spike-Iteration tatsächlich Marker entfernt hat.
@@ -493,19 +493,40 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return {"RUNNING_MODAL"}
     
         try:
-            res = run_marker_spike_filter_cycle(context, track_threshold=float(self._spike_threshold))
-            
+            res = run_marker_spike_filter_cycle(
+                context,
+                track_threshold=float(self._spike_threshold),
+                action="MUTE",  # "MUTE" | "DELETE" | "SELECT"
+            )
+    
             status = str(res.get("status", "")).upper()
-            removed = int(res.get("muted", 0) or 0)
+            muted = int(res.get("muted", 0) or 0)
             next_thr = float(res.get("next_threshold", self._spike_threshold * 0.9))
-            print(f"[Coord] CYCLE_SPIKE → status={status}, muted={removed}, next={next_thr:.2f} (curr={self._spike_threshold:.2f})")
-            
+    
+            print(f"[Coord] CYCLE_SPIKE → status={status}, muted={muted}, next={next_thr:.2f} (curr={self._spike_threshold:.2f})")
+    
             # innerhalb DESSELBEN Cycles progressiv absenken
             self._spike_threshold = max(next_thr, 0.0)
+    
+            if muted > 0:
+                self._cycle_iterations += 1
+                print(f"[Coord] CYCLE_SPIKE → muted>0 → incremented deletion-iterations to {self._cycle_iterations}/{_CYCLE_MAX_ITER}")
+                if self._cycle_iterations > _CYCLE_MAX_ITER:
+                    print(f"[Coord] CYCLE deletion-iteration limit ({_CYCLE_MAX_ITER}) reached → proceed to SOLVE")
+                    self._cycle_active = False
+                    self._pending_eval_after_solve = True
+                    self._state = "SOLVE"
+                    return {"RUNNING_MODAL"}
+    
         except Exception as ex:
             print(f"[Coord] CYCLE_SPIKE failed: {ex!r}")
             self._state = "CYCLE_FIND_MAX"
             return {"RUNNING_MODAL"}
+    
+        # Nächster Schritt im Cycle
+        self._state = "CYCLE_FIND_MAX"
+        return {"RUNNING_MODAL"}
+
     
         status = str(res.get("status", "")).upper()
         removed = int(res.get("muted", 0) or 0)
