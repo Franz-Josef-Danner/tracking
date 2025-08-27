@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 from math import isfinite
-from typing import List, Optional
+from typing import List, Optional, Dict, Tuple
 
 import bpy
 from bpy.types import Context, Operator
@@ -142,8 +142,8 @@ def _set_selection_for_tracks_on_clip_frame(tob, frame_clip: int, tracks_subset)
 
 
 class CLIP_OT_refine_high_error_modal(Operator):
-    """Scannt alle Frames, vergleicht Fehler-Summen gegen den Solve-Error und refin’t nur dort, wo Frame-Fehler > Solve-Error ist.
-       Zusätzlich wird ein Mindestabstand von frames_track/2 zwischen Ziel-Frames erzwungen (keine Obergrenze der Ziel-Frames)."""
+    """Scannt alle Frames, bewertet „beste Positionen“ (viele aktive Marker bei moderater Fehler-Summe),
+       und refin’t nur dort. Untergrenze = Solve-Error; Mindestabstand = frames_track/2. Mit Rollback-Guard."""
     bl_idname = "clip.refine_high_error_modal"
     bl_label = "Refine Highest Error Frames (Modal)"
     bl_options = {"REGISTER", "INTERNAL"}
@@ -169,12 +169,13 @@ class CLIP_OT_refine_high_error_modal(Operator):
     _frame_end: int = 0
     _ops_left: int = 0
 
-    # 2-Phasen-Steuerung
+    # 2-Phasen-Steuerung & Scan-Daten
     _phase: str = "scan"  # "scan" -> "refine"
-    _scan_errors: dict[int, float] = {}         # scene_frame -> error_sum
-    _targets: List[int] = []                    # scene_frames (Ziele mit Mindestabstand)
+    _scan_errors: Dict[int, float] = {}     # scene_frame -> error_sum
+    _scan_counts: Dict[int, int] = {}       # scene_frame -> active_track_count
+    _targets: List[int] = []                # scene_frames (beste Positionen)
     _target_index: int = 0
-    _solve_error: float = 0.0                   # Untergrenze aus aktueller Reconstruction
+    _solve_error: float = 0.0               # Untergrenze aus aktueller Reconstruction
 
     def invoke(self, context: Context, event):
         # Kontext/Clip ermitteln
@@ -222,7 +223,8 @@ class CLIP_OT_refine_high_error_modal(Operator):
 
         # Phasen-Init
         self._phase = "scan"
-        self._scan_errors = {}
+        self._scan_errors.clear()
+        self._scan_counts.clear()
         self._targets = []
         self._target_index = 0
 
@@ -254,19 +256,20 @@ class CLIP_OT_refine_high_error_modal(Operator):
                     self._target_index = 0
                     return {"RUNNING_MODAL"}
 
-                # --- Scan-Schritt: Fehler-Summe für aktuellen Szenen-Frame ---
+                # --- Scan-Schritt: Fehler-Summe & aktive Marker für aktuellen Szenen-Frame ---
                 f_scene = self._frame_scene
                 f_clip = _scene_to_clip_frame(context, self._clip, f_scene)
                 err_sum = 0.0
-                found = False
+                count = 0
 
                 for tr in _iter_tracks_with_marker_at_clip_frame(self._tracks, f_clip):
                     v = _marker_error_on_clip_frame(tr, f_clip)
                     if v is not None:
                         err_sum += float(v)
-                        found = True
+                        count += 1
 
-                self._scan_errors[f_scene] = (err_sum if found else 0.0)
+                self._scan_errors[f_scene] = err_sum if count > 0 else 0.0
+                self._scan_counts[f_scene] = count
 
                 # nächster Frame
                 self._frame_scene += 1
@@ -279,6 +282,14 @@ class CLIP_OT_refine_high_error_modal(Operator):
             f_scene = int(self._targets[self._target_index])
             f_clip = _scene_to_clip_frame(context, self._clip, f_scene)
             active_tracks = list(_iter_tracks_with_marker_at_clip_frame(self._tracks, f_clip))
+            active_count = len(active_tracks)
+
+            # Gate: nur verfeinern, wenn genügend Marker am Frame (beste Bedingungen)
+            min_required = int(getattr(context.scene, "marker_frame", 25) or 25)
+            if active_count < min_required:
+                print(f"[RefineModal] SKIP @scene={f_scene} (active={active_count} < required={min_required})")
+                self._target_index += 1
+                return {"RUNNING_MODAL"}
 
             if active_tracks:
                 # Playhead zeigen
@@ -288,6 +299,17 @@ class CLIP_OT_refine_high_error_modal(Operator):
                 # Auswahl setzen (nur Marker dieses Frames)
                 _set_selection_for_tracks_on_clip_frame(self._tob, f_clip, active_tracks)
 
+                # --- Rollback-Snapshot vor Refine ---
+                baseline_err = 0.0
+                snapshot = {}
+                for tr in active_tracks:
+                    mk = _marker_on_clip_frame(tr, f_clip)
+                    if mk:
+                        snapshot[tr] = (mk.co.x, mk.co.y)
+                        v = _marker_error_on_clip_frame(tr, f_clip)
+                        if v is not None:
+                            baseline_err += float(v)
+
                 # refine vorwärts
                 if self._ops_left > 0:
                     with context.temp_override(**self._ovr):
@@ -296,15 +318,38 @@ class CLIP_OT_refine_high_error_modal(Operator):
                     with context.temp_override(**self._ovr):
                         bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
 
-                # refine rückwärts (wenn Budget)
+                # optionale kurze Pause
+                if float(self.wait_seconds) > 0.0:
+                    time.sleep(min(0.2, float(self.wait_seconds)))
+
+                # refine rückwärts (nur wenn noch Budget)
                 if self._ops_left > 0:
-                    if float(self.wait_seconds) > 0.0:
-                        time.sleep(min(0.2, float(self.wait_seconds)))
-                    with context.temp_override(**self._ovr):
+                    with context.temp_override(**self._ovr"):
                         bpy.ops.clip.refine_markers("EXEC_DEFAULT", backwards=True)
                     self._ops_left -= 1
                     with context.temp_override(**self._ovr):
                         bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
+
+                # --- Bewertung nach Refine + Rollback bei Verschlechterung ---
+                new_err = 0.0
+                for tr in active_tracks:
+                    v = _marker_error_on_clip_frame(tr, f_clip)
+                    if v is not None:
+                        new_err += float(v)
+
+                tol = 1.05  # +5% Toleranz
+                if baseline_err > 0.0 and new_err > baseline_err * tol:
+                    # schlechter → zurücksetzen
+                    for tr, (x, y) in snapshot.items():
+                        mk = _marker_on_clip_frame(tr, f_clip)
+                        if mk:
+                            try:
+                                mk.co.x, mk.co.y = x, y
+                            except Exception:
+                                pass
+                    print(f"[RefineModal] ROLLBACK @scene={f_scene} (err {baseline_err:.3f}→{new_err:.3f})")
+                else:
+                    print(f"[RefineModal] KEEP @scene={f_scene} (err {baseline_err:.3f}→{new_err:.3f})")
 
             # nächstes Ziel
             self._target_index += 1
@@ -314,36 +359,46 @@ class CLIP_OT_refine_high_error_modal(Operator):
             print(f"[RefineModal] Error: {ex!r}")
             return self._finish(context, cancelled=True)
 
-    # Hilfsfunktion: Ziele bestimmen (Solve-Error als Untergrenze + Mindestabstand)
+    # Hilfsfunktion: Ziele bestimmen (Beste Positionen + Solve-Error-Untergrenze + Mindestabstand)
     def _prepare_targets_after_scan(self, context: Context) -> None:
-        # Sortiere Szene-Frames nach Fehler-Summe absteigend
-        pairs = sorted(self._scan_errors.items(), key=lambda kv: kv[1], reverse=True)
+        # Liste: (frame, err_sum, count)
+        items: List[Tuple[int, float, int]] = [
+            (f, float(self._scan_errors.get(f, 0.0)), int(self._scan_counts.get(f, 0)))
+            for f in sorted(self._scan_errors.keys())
+        ]
+
+        # Solve-Error-Untergrenze
         thr = float(self._solve_error or 0.0)
+        filtered = [(f, e, c) for (f, e, c) in items if e > thr]
 
-        # Primär: nur Frames, deren kumulierter Fehler > Solve-Error ist
-        filtered = [f for (f, s) in pairs if s > thr]
+        # Fallbacks, falls alles herausfällt
+        if not filtered:
+            filtered = [(f, e, c) for (f, e, c) in items if e > 0.0]
+        if not filtered:
+            filtered = items[:]  # notfalls alle
 
-        # Falls dadurch alles herausfällt, fallback auf > 0.0, sonst beliebig
-        if not filtered:
-            filtered = [f for (f, s) in pairs if s > 0.0]
-        if not filtered:
-            filtered = [f for (f, _s) in pairs]
+        # Qualitätsscore: viele Marker bei moderater Fehler-Summe → score = c / e
+        def _score(t: Tuple[int, float, int]) -> float:
+            e = max(t[1], 1e-9)
+            return float(t[2]) / e
+
+        # Sortierung: beste Positionen zuerst (höchster Score)
+        filtered.sort(key=_score, reverse=True)
 
         # Mindestabstand bestimmen (frames_track / 2)
         frames_track = int(getattr(context.scene, "frames_track", 25) or 25)
         min_spacing = max(1, frames_track // 2)
 
-        # Spacing-Selektion: behalte Reihenfolge nach Fehler (pairs ist nach Fehler sortiert),
-        # wähle nur Frames, die zu ALLEN bereits gewählten Frames den Abstand einhalten.
+        # Spacing-Selektion: behalte Reihenfolge nach Score, wähle nur Frames mit Abstand
         selected: List[int] = []
-        for f in filtered:
+        for f, _e, _c in filtered:
             if all(abs(f - s) >= min_spacing for s in selected):
                 selected.append(f)
 
         self._targets = selected
         print(
             f"[RefineModal] Solve-Error={thr:.6f} | frames_track={frames_track} "
-            f"→ min_spacing={min_spacing} | selected={len(self._targets)}/{len(pairs)} frames"
+            f"→ min_spacing={min_spacing} | candidates={len(filtered)} | selected={len(self._targets)}"
         )
 
     def _finish(self, context: Context, *, cancelled: bool):
@@ -374,10 +429,12 @@ def start_refine_modal(
 ) -> dict:
     """
     Startet den 2-Phasen-Modal-Operator:
-      1) Scan aller Frames, Ermittlung des kumulierten Fehlerwertes pro Frame
-      2) Zielauswahl: nur Frames mit kumuliertem Fehler > Solve-Error, unter
-         Einhaltung eines Mindestabstands von frames_track/2; KEINE Obergrenze.
-         Danach Refine (vorwärts + rückwärts).
+      1) Scan aller Frames, Ermittlung pro Frame: Fehler-Summe & aktive Marker
+      2) Auswahl der „besten Positionen“:
+         - Untergrenze Solve-Error
+         - Priorisierung nach Score = aktive Marker / Fehler-Summe
+         - Mindestabstand von frames_track/2 (keine Obergrenze der Anzahl)
+         Danach Refine (vorwärts + rückwärts) mit Rollback-Guard.
     Rückgabe: {'status': 'STARTED'|'BUSY'|'FAILED'}.
     """
     scn = context.scene
@@ -390,7 +447,7 @@ def start_refine_modal(
 
     kwargs = dict(
         error_track=float(error_track),  # ungenutzt, aber kompatibel zur Signatur
-        top_n_frames=int(top_n_frames),  # wird intern nicht mehr zur Begrenzung genutzt
+        top_n_frames=int(top_n_frames),  # intern nicht mehr zur Begrenzung genutzt
         only_selected_tracks=bool(only_selected_tracks),
         wait_seconds=float(wait_seconds),
         ui_sleep_s=float(ui_sleep_s),
