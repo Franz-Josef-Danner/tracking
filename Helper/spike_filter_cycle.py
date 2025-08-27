@@ -1,9 +1,23 @@
 from __future__ import annotations
+"""
+Spike-Filter-Cycle Helper (finder- & clean-frei im Loop)
+-------------------------------------------------------
 
+Strikte Verantwortlichkeit:
+- **Dieses Modul** führt genau **einen** Spike-Filter-Durchlauf aus:
+  Filter anwenden und selektierte Tracks löschen.
+- **Kein** `clean_short_tracks` im Loop (wird einmalig extern vom Coordinator
+  im State `CYCLE_CLEAN` ausgeführt).
+- **Keine** Finder-Logik hier (die läuft separat, z. B. `run_find_max_marker_frame`).
+
+Rückgabe (dict):
+* status: "OK" | "FAILED"
+* removed: Anzahl gelöschter Tracks
+* next_threshold: vorgeschlagener Track-Threshold für den nächsten Pass
+"""
 
 from typing import Optional, Dict, Any
 import bpy
-from ..Operator import tracking_coordinator as tco
 
 __all__ = ["run_spike_filter_cycle"]
 
@@ -125,7 +139,7 @@ def _lower_threshold(thr: float) -> float:
 def run_spike_filter_cycle(
     context: bpy.types.Context,
     *,
-    track_threshold: float = 100.0,
+    track_threshold: float = 50.0,
 ) -> Dict[str, Any]:
     """Führt einen Spike-Filter-Durchlauf aus und gibt Ergebnisdaten zurück."""
 
@@ -145,21 +159,4 @@ def run_spike_filter_cycle(
     next_thr = _lower_threshold(thr)
     print(f"[SpikeCycle] next track_threshold → {next_thr}")
 
-    # Merke stets den tatsächlich verwendeten Schwellenwert (thr), unabhängig von Scene-Flags.
-    try:
-        tco.remember_spike_filter_value(next_thr, context=context)  # <- vorher: thr
-        # Optional: zusätzlich den tatsächlich verwendeten Wert dokumentieren
-        if getattr(context, "scene", None) is not None:
-            try:
-                context.scene["tco_last_spike_used"] = float(thr)  # reine Info
-            except Exception:
-                pass
-    except Exception as ex_rem:
-        print(f"[SpikeCycle] warning: could not remember spike filter value ({next_thr}): {ex_rem!r}")
-    
     return {"status": "OK", "removed": int(removed), "next_threshold": float(next_thr)}
-
-
-def run_with_value(context: bpy.types.Context, value: float) -> None:
-    """Ermöglicht dem Koordinator einen direkten Aufruf mit einem gegebenen Wert."""
-    run_spike_filter_cycle(context, track_threshold=float(value))
