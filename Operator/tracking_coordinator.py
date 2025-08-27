@@ -30,16 +30,19 @@ _MAX_DETECT_ATTEMPTS = 8
 _BIDI_ACTIVE_KEY = "bidi_active"
 _BIDI_RESULT_KEY = "bidi_result"
 
+# Keys für Optimizer-Signal (werden von Helper/jump_to_frame.py gesetzt)
+_OPT_REQ_KEY = "__optimize_request"
+_OPT_REQ_VAL = "JUMP_REPEAT"
+_OPT_FRAME_KEY = "__optimize_frame"
+
 # Default-Parameter
 _DEFAULT_SOLVE_WAIT_S = 60.0
 _DEFAULT_REFINE_POLL_S = 0.05
 _DEFAULT_SPIKE_START = 100.0
 
-# Maximal erlaubte Anzahl an FIND_MAX↔SPIKE-Iterationen (zählt nur echte Löschaktionen)
+# Maximal erlaubte Anzahl an FIND_MAX↔SPIKE-Iterationen
+# Hinweis: Zähler beginnt erst, wenn ein Spike-Iteration tatsächlich Marker entfernt hat.
 _CYCLE_MAX_ITER = 5
-
-# NEU: fester Startwert für FIND_MAX
-_FIND_MAX_START_THRESHOLD = 50
 
 
 def _tco_log(msg: str) -> None:
@@ -212,7 +215,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # CYCLE (FIND_MAX ↔ SPIKE)
     _cycle_active: bool = False
     _cycle_target_frame: Optional[int] = None
-    _cycle_iterations: int = 0  # zählt nur echte Löschaktionen
+    _cycle_iterations: int = 0  # neu: Zähler für die Anzahl der Cycle-Iterationen (zählt nur echte Löschaktionen)
 
     # SPIKE
     _spike_threshold: float = _DEFAULT_SPIKE_START
@@ -290,7 +293,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # Cycle reset
         self._cycle_active = False
         self._cycle_target_frame = None
-        self._cycle_iterations = 0
+        self._cycle_iterations = 0  # reset counter
 
         # Spike reset
         self._spike_threshold = float(getattr(scn, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START)
@@ -330,8 +333,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print("[Coord] FIND_LOW → NONE → CYCLE_START (FIND_MAX↔SPIKE, max iterations: {0})".format(_CYCLE_MAX_ITER))
             self._cycle_active = True
             self._cycle_target_frame = None
-            self._cycle_iterations = 0  # reset iteration counter
-            # Spike-Start ggf. aus gemerktem Wert
+            self._cycle_iterations = 0  # reset iteration counter beim Start des Zyklus
             last = float(getattr(context.scene, "tco_spike_value", 0.0) or 0.0)
             if last > 0.0:
                 self._spike_threshold = last
@@ -341,7 +343,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     getattr(context.scene, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START
                 )
                 print(f"[Coord] CYCLE_START → use default spike start = {self._spike_threshold:.2f}")
-
+            
             self._did_refine_this_cycle = False
             self._state = "CYCLE_FIND_MAX"
         return {"RUNNING_MODAL"}
@@ -359,6 +361,27 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {"RUNNING_MODAL"}
 
             print(f"[Coord] JUMP → frame={jr['frame']} repeat={jr.get('repeat_count', 0)} → DETECT")
+
+            scn = context.scene
+            opt_req = scn.get(_OPT_REQ_KEY, None)
+            opt_frame = int(scn.get(_OPT_FRAME_KEY, jr.get('frame', scn.frame_current)))
+            if jr.get("optimize_signal") or opt_req == _OPT_REQ_VAL:
+                scn.pop(_OPT_REQ_KEY, None)
+                scn[_OPT_FRAME_KEY] = opt_frame
+                try:
+                    from ..Helper.optimize_tracking_modal import start_optimization  # type: ignore
+                    if int(context.scene.frame_current) != int(opt_frame):
+                        context.scene.frame_set(int(opt_frame))
+                    ok_opt, res_opt = _safe_call(start_optimization, context)
+                    if ok_opt:
+                        print(f"[Coord] JUMP → OPTIMIZE (function, frame={opt_frame})")
+                    else:
+                        print(f"[Coord] OPTIMIZE failed (function): {res_opt!r}")
+                        ok_op, _ = _safe_ops_invoke("clip.optimize_tracking_modal", 'INVOKE_DEFAULT')
+                        if ok_op:
+                            print(f"[Coord] JUMP → OPTIMIZE (operator, frame={opt_frame})")
+                except Exception as ex_func:
+                    print(f"[Coord] OPTIMIZE failed: {ex_func!r}")
 
             self._jump_done = True
 
@@ -435,14 +458,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         print(f"[Coord] CYCLE_FIND_MAX → check (current deletion-iterations={self._cycle_iterations}/{_CYCLE_MAX_ITER})")
 
-        # NEU: Immer bei 50 starten, niemals Reuse, Logging aus
         try:
-            res = run_find_max_marker_frame(
-                context,
-                start_threshold=float(_FIND_MAX_START_THRESHOLD),
-                reuse_last=False,
-                log_each_frame=False,
-            )
+            res = run_find_max_marker_frame(context)
         except Exception as ex:
             print(f"[Coord] CYCLE_FIND_MAX failed: {ex!r}")
             res = {"status": "FAILED", "reason": repr(ex)}
@@ -509,18 +526,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     def _state_solve(self, context):
         try:
-            print("[Coord] SOLVE → calling solve_camera_only()")
             _ = solve_camera_only(context)
-            print("[Coord] SOLVE → finished")
+            print("[Coord] SOLVE invoked")
         except Exception as ex:
             print(f"[Coord] SOLVE failed: {ex!r}")
-        # Robustheit: immer nach SOLVE evaluieren
-        self._pending_eval_after_solve = True
-        self._state = "EVAL"
+        self._state = "EVAL" if self._pending_eval_after_solve else "FINALIZE"
         return {"RUNNING_MODAL"}
 
     def _state_eval(self, context):
-        print("[Coord] EVAL → start")
         target = _scene_float(context.scene, "error_track", 0.0)
         wait_s = _scene_float(context.scene, "solve_wait_timeout_s", _DEFAULT_SOLVE_WAIT_S)
 
@@ -528,7 +541,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         curr = _current_solve_error(context) if curr is None else curr
         print(f"[Coord] EVAL → curr_error={curr if curr is not None else 'None'} target={target}")
 
-        if target > 0.0 and curr is not None and curr <= target:
+        if target > 0.0 and curr is not None and curr <= target:            # Direkt zu den finalen Intrinsics-Refinements (parallax_keyframe entfernt)
             print("[Coord] EVAL → OK (≤ target) → performing final intrinsics refinement steps")
 
             clip = getattr(context.space_data, "clip", None)
@@ -576,7 +589,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 ok3, res3 = _safe_call(solve_camera_only, context)
                 print(f"[Coord] Final refine principal: {'OK' if ok3 else res3!r} (attr={principal_attr})")
 
-            # Flags wieder ausschalten
+            # Flags wieder ausschalten, damit Standard-Defaults beibehalten werden
             _toggle_attr(ts, ("refine_intrinsics_principal_point","refine_principal_point","refine_principal"), False)
             _toggle_attr(ts, ("refine_intrinsics_radial_distortion","refine_radial_distortion","refine_distortion","refine_k1"), False)
             _toggle_attr(ts, ("refine_intrinsics_focal_length","refine_focal_length","refine_focal"), False)
