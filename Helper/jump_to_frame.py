@@ -154,12 +154,8 @@ def run_jump_to_frame(
         if repeat_count == 6:
             print(f"[RepeatMon] ⚠ frame={target} hat die 5er-Schwelle überschritten.")
 
-    # Nach stabiler Playhead-Setzung: Wiederholungen auswerten und ggf. Signal setzen
-    if repeat_count > 3:
-        if scn.get("__optimize_request") != "JUMP_REPEAT":
-            scn["__optimize_request"] = "JUMP_REPEAT"
-        scn["__optimize_frame"] = int(target)
-        print(f"[GotoFrame] Repeat>{3} → Optimizer-Signal gesetzt (frame={target}).")
+    # Nach stabiler Playhead-Setzung: Wiederholungen auswerten (Optimizer-Signal entfernt)
+    # (Frühere Optimizer-Request-Setzung bei repeat_count > 3 wurde entfernt.)
 
     # ------------------------------------------------------------------
     if repeat_count >= 2:

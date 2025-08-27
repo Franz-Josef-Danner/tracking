@@ -30,10 +30,7 @@ _MAX_DETECT_ATTEMPTS = 8
 _BIDI_ACTIVE_KEY = "bidi_active"
 _BIDI_RESULT_KEY = "bidi_result"
 
-# Keys für Optimizer-Signal (werden von Helper/jump_to_frame.py gesetzt)
-_OPT_REQ_KEY = "__optimize_request"
-_OPT_REQ_VAL = "JUMP_REPEAT"
-_OPT_FRAME_KEY = "__optimize_frame"
+# (Optimizer removed)
 
 # Default-Parameter
 _DEFAULT_SOLVE_WAIT_S = 60.0
@@ -361,27 +358,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {"RUNNING_MODAL"}
 
             print(f"[Coord] JUMP → frame={jr['frame']} repeat={jr.get('repeat_count', 0)} → DETECT")
-
-            scn = context.scene
-            opt_req = scn.get(_OPT_REQ_KEY, None)
-            opt_frame = int(scn.get(_OPT_FRAME_KEY, jr.get('frame', scn.frame_current)))
-            if jr.get("optimize_signal") or opt_req == _OPT_REQ_VAL:
-                scn.pop(_OPT_REQ_KEY, None)
-                scn[_OPT_FRAME_KEY] = opt_frame
-                try:
-                    from ..Helper.optimize_tracking_modal import start_optimization  # type: ignore
-                    if int(context.scene.frame_current) != int(opt_frame):
-                        context.scene.frame_set(int(opt_frame))
-                    ok_opt, res_opt = _safe_call(start_optimization, context)
-                    if ok_opt:
-                        print(f"[Coord] JUMP → OPTIMIZE (function, frame={opt_frame})")
-                    else:
-                        print(f"[Coord] OPTIMIZE failed (function): {res_opt!r}")
-                        ok_op, _ = _safe_ops_invoke("clip.optimize_tracking_modal", 'INVOKE_DEFAULT')
-                        if ok_op:
-                            print(f"[Coord] JUMP → OPTIMIZE (operator, frame={opt_frame})")
-                except Exception as ex_func:
-                    print(f"[Coord] OPTIMIZE failed: {ex_func!r}")
 
             self._jump_done = True
 
