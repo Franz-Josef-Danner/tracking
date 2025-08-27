@@ -38,6 +38,9 @@ _DEFAULT_SOLVE_WAIT_S = 60.0
 _DEFAULT_REFINE_POLL_S = 0.05
 _DEFAULT_SPIKE_START = 100.0
 
+# Maximal erlaubte Anzahl an FIND_MAX↔SPIKE-Iterationen
+_CYCLE_MAX_ITER = 10
+
 
 def _tco_log(msg: str) -> None:
     print(f"[tracking_coordinator] {msg}")
@@ -206,6 +209,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # CYCLE (FIND_MAX ↔ SPIKE)
     _cycle_active: bool = False
     _cycle_target_frame: Optional[int] = None
+    _cycle_iterations: int = 0  # neu: Zähler für die Anzahl der Cycle-Iterationen
 
     # SPIKE
     _spike_threshold: float = _DEFAULT_SPIKE_START
@@ -283,6 +287,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # Cycle reset
         self._cycle_active = False
         self._cycle_target_frame = None
+        self._cycle_iterations = 0  # reset counter
 
         # Spike reset
         self._spike_threshold = float(getattr(scn, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START)
@@ -319,9 +324,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._state = "JUMP"
         else:
             # NONE → Zyklus starten
-            print("[Coord] FIND_LOW → NONE → CYCLE_START (FIND_MAX↔SPIKE, unbegrenzt)")
+            print("[Coord] FIND_LOW → NONE → CYCLE_START (FIND_MAX↔SPIKE, max iterations: {0})".format(_CYCLE_MAX_ITER))
             self._cycle_active = True
             self._cycle_target_frame = None
+            self._cycle_iterations = 0  # reset iteration counter beim Start des Zyklus
             self._spike_threshold = float(getattr(context.scene, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START)
             self._did_refine_this_cycle = False
             self._state = "CYCLE_FIND_MAX"
@@ -427,12 +433,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._state = "FIND_LOW"
         return {"RUNNING_MODAL"}
 
-    # ---------------- CYCLE: FIND_MAX ↔ SPIKE (ohne Obergrenzen) ----------------
+    # ---------------- CYCLE: FIND_MAX ↔ SPIKE (mit Iterationslimit) ----------------
 
     def _state_cycle_find_max(self, context):
-        """Suche Frame mit Markeranzahl < threshold. Wenn gefunden → SOLVE; sonst → SPIKE (endloser Wechsel)."""
+        """Suche Frame mit Markeranzahl < threshold. Wenn gefunden → SOLVE; sonst → SPIKE (bis max Iterationen)."""
         if not self._cycle_active:
             print("[Coord] CYCLE_FIND_MAX reached with inactive cycle → FINALIZE")
+            self._state = "FINALIZE"
+            return {"RUNNING_MODAL"}
+
+        # Iterationszähler erhöhen und prüfen
+        self._cycle_iterations += 1
+        print(f"[Coord] CYCLE_FIND_MAX → iteration {self._cycle_iterations}/{_CYCLE_MAX_ITER}")
+        if self._cycle_iterations > _CYCLE_MAX_ITER:
+            print(f"[Coord] CYCLE limit ({_CYCLE_MAX_ITER}) reached → FINALIZE")
             self._state = "FINALIZE"
             return {"RUNNING_MODAL"}
 
@@ -468,7 +482,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_cycle_spike(self, context):
-        """Eine Spike-Iteration; danach immer zurück zu FIND_MAX. Keine Limits, keine Caps."""
+        """Eine Spike-Iteration; danach immer zurück zu FIND_MAX. Keine Limits, ausser dem globalen Iterationslimit."""
         if not self._cycle_active:
             print("[Coord] CYCLE_SPIKE with inactive cycle → FINALIZE")
             self._state = "FINALIZE"
