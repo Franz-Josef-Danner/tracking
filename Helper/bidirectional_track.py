@@ -249,23 +249,7 @@ class CLIP_OT_bidirectional_track(Operator):
                 pass
             self._timer = None
 
-        # 2) Triplet‑Join (idempotent, überspringt wenn nicht vorhanden)
-        try:
-            from . import triplet_joiner
-        except Exception as imp_ex:
-            print(f"[BidiTrack] WARN: triplet_joiner nicht verfügbar: {imp_ex}")
-        else:
-            try:
-                res = triplet_joiner.run_triplet_join(context, active_policy="first")
-                print(
-                    f"[BidiTrack] Post-Join abgeschlossen | "
-                    f"groups_joined={res.get('joined', 0)} | total={res.get('total', 0)} | "
-                    f"skipped={res.get('skipped', 0)}"
-                )
-            except Exception as ex:
-                print(f"[BidiTrack] WARN: Join-Phase fehlgeschlagen: {ex}")
-
-        # 3) Orchestrator-Flags
+        # 2) Orchestrator-Flags
         context.scene["bidi_active"] = False
         context.scene["bidi_result"] = result
         print(f"[BidiTrack] FINISH (post) result={result}")
