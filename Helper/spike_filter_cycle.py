@@ -139,7 +139,7 @@ def _lower_threshold(thr: float) -> float:
 def run_spike_filter_cycle(
     context: bpy.types.Context,
     *,
-    track_threshold: float = 50.0,
+    track_threshold: float = 20.0,
 ) -> Dict[str, Any]:
     """Führt einen Spike-Filter-Durchlauf aus und gibt Ergebnisdaten zurück."""
 
