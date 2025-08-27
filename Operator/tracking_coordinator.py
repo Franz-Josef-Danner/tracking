@@ -526,14 +526,18 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     def _state_solve(self, context):
         try:
+            print("[Coord] SOLVE → calling solve_camera_only()")
             _ = solve_camera_only(context)
-            print("[Coord] SOLVE invoked")
+            print("[Coord] SOLVE → finished")
         except Exception as ex:
             print(f"[Coord] SOLVE failed: {ex!r}")
-        self._state = "EVAL" if self._pending_eval_after_solve else "FINALIZE"
+        # Robustheit: immer nach SOLVE evaluieren
+        self._pending_eval_after_solve = True
+        self._state = "EVAL"
         return {"RUNNING_MODAL"}
 
     def _state_eval(self, context):
+        print("[Coord] EVAL → start")
         target = _scene_float(context.scene, "error_track", 0.0)
         wait_s = _scene_float(context.scene, "solve_wait_timeout_s", _DEFAULT_SOLVE_WAIT_S)
 
