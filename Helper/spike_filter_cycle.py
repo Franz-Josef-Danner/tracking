@@ -147,17 +147,16 @@ def run_spike_filter_cycle(
 
     # Merke stets den tatsächlich verwendeten Schwellenwert (thr), unabhängig von Scene-Flags.
     try:
-        tco.remember_spike_filter_value(thr, context=context)
-        # Optional: zusätzlich als Scene-Metadatum speichern, falls Persistenz innerhalb der .blend hilfreich ist.
+        tco.remember_spike_filter_value(next_thr, context=context)  # <- vorher: thr
+        # Optional: zusätzlich den tatsächlich verwendeten Wert dokumentieren
         if getattr(context, "scene", None) is not None:
             try:
-                context.scene["tco_last_spike_used"] = float(thr)
+                context.scene["tco_last_spike_used"] = float(thr)  # reine Info
             except Exception:
                 pass
     except Exception as ex_rem:
-        # Nicht kritisch — nur zur Info.
-        print(f"[SpikeCycle] warning: could not remember spike filter value ({thr}): {ex_rem!r}")
-
+        print(f"[SpikeCycle] warning: could not remember spike filter value ({next_thr}): {ex_rem!r}")
+    
     return {"status": "OK", "removed": int(removed), "next_threshold": float(next_thr)}
 
 
