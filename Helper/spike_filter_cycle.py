@@ -209,12 +209,10 @@ def run_marker_spike_filter_cycle(
     *,
     track_threshold: float = 3.0,   # Pixel/Frame
     action: str = "MUTE",           # "MUTE" | "DELETE" | "SELECT"
-    clean_after: bool = True,       # ⬅️ NEU: nachgelagerten Short-Track-Clean auslösen
-    clean_min_len: int | None = None,  # ⬅️ NEU: Mindestlänge (Frames); None ⇒ Szenen-Property/Fallback
 ) -> Dict[str, Any]:
     """
     Führt einen Marker-basierten Spike-Filter-Durchlauf aus (Pixel/Frame).
-    Optional: ruft im Anschluss Helper/clean_short_tracks.py auf.
+    Ruft **immer** anschließend clean_short_tracks() auf.
     """
     if not _get_active_clip(context):
         return {"status": "FAILED", "reason": "no active MovieClip"}
@@ -225,13 +223,19 @@ def run_marker_spike_filter_cycle(
     affected = _apply_marker_outlier_filter(context, threshold_px=thr, action=act)
     print(f"[MarkerSpike] affected {affected} marker(s) with action={act}")
 
+    # --- Immer clean_short_tracks direkt danach ---
+    from .clean_short_tracks import clean_short_tracks  # lokaler Import
     cleaned = 0
-    if clean_after:
-        # Mindestlänge beziehen: Param > Scene-Property > Fallback 25
-        scn = context.scene
-        min_len = int(clean_min_len) if clean_min_len is not None else int(getattr(scn, "frames_track", 25) or 25)
-        cleaned = _run_clean_short_tracks(context, min_len=min_len, verbose=True)
-        print(f"[MarkerSpike] clean_short_tracks(min_len={min_len}) → cleaned={cleaned}")
+    try:
+        frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
+        res = clean_short_tracks(context, min_len=frames_min, verbose=True)
+        if isinstance(res, dict):
+            cleaned = int(res.get("removed", 0) or res.get("cleaned", 0) or 0)
+        elif isinstance(res, (int, float)):
+            cleaned = int(res)
+        print(f"[MarkerSpike] clean_short_tracks(min_len={frames_min}) → cleaned={cleaned}")
+    except Exception as ex:
+        print(f"[MarkerSpike] clean_short_tracks failed: {ex!r}")
 
     next_thr = _lower_threshold(thr)
     print(f"[MarkerSpike] next threshold → {next_thr}")
@@ -240,6 +244,7 @@ def run_marker_spike_filter_cycle(
     return {
         "status": "OK",
         key: int(affected),
-        "cleaned": int(cleaned),          # ⬅️ NEU: Info, wie viel der Short-Clean bereinigt hat
-        "next_threshold": float(next_thr)
+        "cleaned": int(cleaned),           # immer enthalten
+        "next_threshold": float(next_thr),
     }
+
