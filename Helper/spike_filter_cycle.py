@@ -145,16 +145,18 @@ def run_spike_filter_cycle(
     next_thr = _lower_threshold(thr)
     print(f"[SpikeCycle] next track_threshold → {next_thr}")
 
-    # Nur merken, wenn nicht vom Koordinator als "One-Shot" ausgelöst
-    suppress = bool(
-        getattr(context, "scene", None)
-        and context.scene.get("tco_spike_suppress_remember", False)
-    )
-    if not suppress:
-        # Falls *der verwendete* Wert gemerkt werden soll:
-        # tco.remember_spike_filter_value(thr, context=context)
-        # So wie hier: den vorgeschlagenen nächsten Wert merken
-        tco.remember_spike_filter_value(next_thr, context=context)
+    # Merke stets den tatsächlich verwendeten Schwellenwert (thr), unabhängig von Scene-Flags.
+    try:
+        tco.remember_spike_filter_value(thr, context=context)
+        # Optional: zusätzlich als Scene-Metadatum speichern, falls Persistenz innerhalb der .blend hilfreich ist.
+        if getattr(context, "scene", None) is not None:
+            try:
+                context.scene["tco_last_spike_used"] = float(thr)
+            except Exception:
+                pass
+    except Exception as ex_rem:
+        # Nicht kritisch — nur zur Info.
+        print(f"[SpikeCycle] warning: could not remember spike filter value ({thr}): {ex_rem!r}")
 
     return {"status": "OK", "removed": int(removed), "next_threshold": float(next_thr)}
 
@@ -162,4 +164,3 @@ def run_spike_filter_cycle(
 def run_with_value(context: bpy.types.Context, value: float) -> None:
     """Ermöglicht dem Koordinator einen direkten Aufruf mit einem gegebenen Wert."""
     run_spike_filter_cycle(context, track_threshold=float(value))
-
