@@ -4,7 +4,7 @@ import os
 import time
 import bpy
 from bpy.types import Scene
-from bpy.props import BoolProperty, FloatProperty
+from bpy.props import BoolProperty, FloatProperty, IntProperty
 from typing import Optional, Dict, Any, Callable, Tuple
 
 from ..Helper.triplet_grouping import run_triplet_grouping  # top-level import
@@ -12,11 +12,11 @@ from ..Helper.solve_camera import solve_camera_only
 from ..Helper.refine_high_error import start_refine_modal
 from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin
 
-# Cycle-Helpers
+# Loop-Helpers
 from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
+from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
 from ..Helper.spike_filter_cycle import run_spike_filter_cycle  # type: ignore
-from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # optional, aktuell ungenutzt
 
 __all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
 
@@ -35,8 +35,11 @@ _OPT_FRAME_KEY = "__optimize_frame"
 
 # Defaults
 _DEFAULT_SOLVE_WAIT_S = 60.0
-_DEFAULT_SPIKE_START = 100.0
 _DEFAULT_REFINE_TIMEOUT_S = 30.0
+_DEFAULT_SPIKE_START = 100.0
+_DEFAULT_SPIKE_MIN = 5.0
+_DEFAULT_SPIKE_MAX_LOOPS = 8
+_DEFAULT_CYCLE_MAX_ROUNDS = 90  # Sicherheitsnetz gegen Endlosschleifen
 
 
 def _tco_log(msg: str) -> None:
@@ -122,26 +125,61 @@ def _wait_for_valid_reconstruction(
 
 
 # ---------------------------------------------------------------------------
-# Optionales Spike-Value-Memo (nur Hilfsfeature)
+# Optional: Spike-Value-Memo für externen Trigger
 # ---------------------------------------------------------------------------
 
 def register_scene_state() -> None:
     if not hasattr(Scene, "tco_spike_value"):
         Scene.tco_spike_value = FloatProperty(
             name="Spike Filter Value",
-            description="Finaler Wert für spike_filter_cycle, der einmalig ausgelöst werden kann.",
+            description="Gemerkter Wert für spike_filter_cycle (optional).",
             default=0.0,
         )
     if not hasattr(Scene, "tco_spike_pending"):
         Scene.tco_spike_pending = BoolProperty(
             name="Spike Pending",
-            description="True, wenn ein finaler Spike-Wert gemerkt wurde und auf Cleanup wartet.",
+            description="True, wenn ein Spike-Wert gemerkt wurde und nach Cleanup einmalig ausgelöst wird.",
             default=False,
+        )
+    if not hasattr(Scene, "spike_start_threshold"):
+        Scene.spike_start_threshold = FloatProperty(
+            name="Spike Start",
+            default=_DEFAULT_SPIKE_START,
+            min=0.0,
+            description="Startthreshold für Spike-Filter-Zyklus",
+        )
+    if not hasattr(Scene, "spike_min_threshold"):
+        Scene.spike_min_threshold = FloatProperty(
+            name="Spike Min",
+            default=_DEFAULT_SPIKE_MIN,
+            min=0.0,
+            description="Untergrenze für Spike-Threshold",
+        )
+    if not hasattr(Scene, "spike_max_loops"):
+        Scene.spike_max_loops = IntProperty(
+            name="Spike Max Loops",
+            default=_DEFAULT_SPIKE_MAX_LOOPS,
+            min=1,
+            description="Maximale Spike-Iterationen bevor Solve erzwungen wird",
+        )
+    if not hasattr(Scene, "cycle_round_cap"):
+        Scene.cycle_round_cap = IntProperty(
+            name="Cycle Round Cap",
+            default=_DEFAULT_CYCLE_MAX_ROUNDS,
+            min=1,
+            description="Sicherheitslimit für Runden FIND_MAX↔SPIKE",
         )
 
 
 def unregister_scene_state() -> None:
-    for attr in ("tco_spike_value", "tco_spike_pending"):
+    for attr in (
+        "tco_spike_value",
+        "tco_spike_pending",
+        "spike_start_threshold",
+        "spike_min_threshold",
+        "spike_max_loops",
+        "cycle_round_cap",
+    ):
         if hasattr(Scene, attr):
             delattr(Scene, attr)
 
@@ -152,26 +190,6 @@ def remember_spike_filter_value(value: float, *, context: bpy.types.Context | No
     scene.tco_spike_value = float(value)
     scene.tco_spike_pending = True
     _tco_log(f"remember_spike_filter_value: value={scene.tco_spike_value:.6f}, pending=True")
-
-
-def trigger_spike_filter_once(value: float, *, context: bpy.types.Context | None = None) -> None:
-    ctx = context or bpy.context
-    scene = ctx.scene
-    scene["tco_spike_suppress_remember"] = True
-    try:
-        try:
-            from ..Helper import spike_filter_cycle as _sfc  # lazy import
-            if hasattr(_sfc, "run_with_value"):
-                _sfc.run_with_value(ctx, float(value))
-                return
-        except Exception as ex:  # noqa: BLE001
-            _tco_log(f"direct call failed: {ex!r}; fallback to bpy.ops")
-        try:
-            bpy.ops.helper.spike_filter_cycle("INVOKE_DEFAULT", value=float(value))
-        except Exception as ex:  # noqa: BLE001
-            _tco_log(f"bpy.ops fallback failed: {ex!r}")
-    finally:
-        scene["tco_spike_suppress_remember"] = False
 
 
 def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
@@ -187,17 +205,20 @@ def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
 
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     """
-    Zielablauf:
+    **Ablauf (Soll):**
 
     Tracking-Loop:
-      1) FIND_LOW: Solange niedrige Marker-Frames gefunden werden:
-            → JUMP → DETECT → (Triplet) → TRACK (bidi) → CLEAN_SHORT → zurück zu FIND_LOW
-      2) FIND_LOW liefert NONE:
-            → SPIKE_FILTER_CYCLE (einmal)
-            → SOLVE
-            → if error ≤ error_track: FINALIZE
-            → else REFINE (modal, blocking) → SOLVE → if error ≤ error_track: FINALIZE
-            → else PROJECTION_CLEANUP → zurück zu FIND_LOW
+      A) FIND_LOW findet Frames:
+         → JUMP → DETECT → (Triplet) → TRACK (bidi) → CLEAN_SHORT → zurück zu FIND_LOW
+      B) FIND_LOW liefert NONE:
+         → CYCLE_START
+         → Wiederhole: CYCLE_FIND_MAX; wenn NONE → CYCLE_SPIKE; zurück zu CYCLE_FIND_MAX
+           … bis FIND_MAX einen Frame findet
+         → SOLVE → EVAL
+              → wenn OK: FINALIZE
+              → wenn nicht: REFINE (modal, Wait) → SOLVE → EVAL
+                   → wenn OK: FINALIZE
+                   → sonst: CLEANUP → zurück zu FIND_LOW
     """
     bl_idname = "clip.tracking_coordinator"
     bl_label = "Tracking Orchestrator"
@@ -215,15 +236,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     _repeat_map: Dict[int, int]
     _bidi_started: bool = False
 
-    # Solve / Evaluate book-keeping
-    _pending_eval_after_solve: bool = False  # true → nach Solve steht EVAL an
-    _did_refine_this_cycle: bool = False     # true → letzter Solve kam direkt nach Refine
+    # Cycle-Bookkeeping (FIND_MAX ↔ SPIKE)
+    _cycle_active: bool = False
+    _cycle_rounds: int = 0
+    _cycle_target_frame: Optional[int] = None
 
-    # Spike control
-    _spike_run_done: bool = False
+    # Spike-Iteration
     _spike_threshold: float = _DEFAULT_SPIKE_START
+    _spike_min_threshold: float = _DEFAULT_SPIKE_MIN
+    _spike_loops: int = 0
+    _spike_max_loops: int = _DEFAULT_SPIKE_MAX_LOOPS
 
-    # Refine wait
+    # Solve / Evaluate
+    _pending_eval_after_solve: bool = False
+    _did_refine_this_cycle: bool = False
     _refine_deadline: Optional[float] = None
 
     @classmethod
@@ -274,7 +300,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.25, window=context.window)
         wm.modal_handler_add(self)
-        print("[Coord] START (Detect→Bidi→CleanShort Loop; Spike→Solve→Eval→Refine→Wait→Solve→Eval→Cleanup)")
+        print("[Coord] START (Detect/Bidi-Loop; CYCLE: FIND_MAX↔SPIKE bis FOUND; Solve→Eval→Refine→Solve→Eval→Cleanup)")
         return {"RUNNING_MODAL"}
 
     # ---------------- Bootstrap ----------------
@@ -292,10 +318,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._repeat_map = {}
         self._bidi_started = False
 
+        # Cycle reset
+        self._cycle_active = False
+        self._cycle_rounds = 0
+        self._cycle_target_frame = None
+
+        # Spike reset
+        self._spike_threshold = float(getattr(scn, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START)
+        self._spike_min_threshold = float(getattr(scn, "spike_min_threshold", _DEFAULT_SPIKE_MIN) or _DEFAULT_SPIKE_MIN)
+        self._spike_loops = 0
+        self._spike_max_loops = int(getattr(scn, "spike_max_loops", _DEFAULT_SPIKE_MAX_LOOPS) or _DEFAULT_SPIKE_MAX_LOOPS)
+
+        # Solve/Eval/Refine
         self._pending_eval_after_solve = False
         self._did_refine_this_cycle = False
-        self._spike_run_done = False
-        self._spike_threshold = float(getattr(context.scene, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START)
         self._refine_deadline = None
 
     # ---------------- States ----------------
@@ -325,12 +361,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print(f"[Coord] FIND_LOW → FOUND frame={frame} → JUMP")
             self._state = "JUMP"
         else:
-            # NONE → gewünschte Pipeline starten
-            self._spike_run_done = False
-            self._did_refine_this_cycle = False
-            print("[Coord] FIND_LOW → NONE → SPIKE")
-            self._state = "SPIKE"
+            # NONE → Zyklus starten
+            self._start_cycle(context)
         return {"RUNNING_MODAL"}
+
+    def _start_cycle(self, context):
+        print("[Coord] FIND_LOW → NONE → CYCLE_START (FIND_MAX↔SPIKE)")
+        self._cycle_active = True
+        self._cycle_rounds = 0
+        self._cycle_target_frame = None
+        # Spike bei jedem Cycle neu initialisieren
+        self._spike_threshold = float(getattr(context.scene, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START)
+        self._spike_loops = 0
+        self._did_refine_this_cycle = False
+        self._state = "CYCLE_FIND_MAX"
 
     # ---------------- JUMP/DETECT/TRACK/CLEAN_SHORT ----------------
 
@@ -387,7 +431,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self._state = "TRACK"
             return {"RUNNING_MODAL"}
 
-        # Triplet-Grouping defensiv
         ok_tg, tg = _safe_call(run_triplet_grouping, context)
         if ok_tg:
             print(f"[Coord] TRIPLET_GROUPING → {tg}")
@@ -416,7 +459,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         if scn.get(_BIDI_ACTIVE_KEY, False):
             return {"RUNNING_MODAL"}
 
-        # Ergebnisflag (optional)
         result = str(scn.get(_BIDI_RESULT_KEY, "") or "").upper()
         scn[_BIDI_RESULT_KEY] = ""
         self._bidi_started = False
@@ -439,21 +481,96 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._state = "FIND_LOW"
         return {"RUNNING_MODAL"}
 
-    # ---------------- SPIKE → SOLVE → EVAL → (REFINE_LAUNCH → REFINE_WAIT → SOLVE → EVAL) → (CLEANUP → FIND_LOW) ----------------
+    # ---------------- CYCLE: FIND_MAX ↔ SPIKE ----------------
 
-    def _state_spike(self, context):
-        if not self._spike_run_done:
+    def _state_cycle_find_max(self, context):
+        """Suche Frame mit Markeranzahl < threshold. Wenn gefunden → SOLVE; sonst → SPIKE."""
+        if not self._cycle_active:
+            print("[Coord] CYCLE_FIND_MAX reached with inactive cycle → FINALIZE")
+            self._state = "FINALIZE"
+            return {"RUNNING_MODAL"}
+
+        # Sicherheitsnetz (Rounds)
+        self._cycle_rounds += 1
+        cap = int(getattr(context.scene, "cycle_round_cap", _DEFAULT_CYCLE_MAX_ROUNDS) or _DEFAULT_CYCLE_MAX_ROUNDS)
+        if self._cycle_rounds > cap:
+            print(f"[Coord] CYCLE: round cap reached ({self._cycle_rounds}>{cap}) → SOLVE anyway")
+            self._cycle_target_frame = None
+            self._state = "SOLVE"
+            self._pending_eval_after_solve = True
+            return {"RUNNING_MODAL"}
+
+        try:
+            res = run_find_max_marker_frame(context)
+        except Exception as ex:
+            print(f"[Coord] CYCLE_FIND_MAX failed: {ex!r}")
+            res = {"status": "FAILED", "reason": repr(ex)}
+
+        status = str(res.get("status", "FAILED")).upper()
+        if status == "FOUND":
+            frame = int(res.get("frame", getattr(context.scene, "frame_current", 0)))
+            count = res.get("count", "?")
+            thresh = res.get("threshold", "?")
+            print(f"[Coord] CYCLE_FIND_MAX → FOUND frame={frame} (count={count} < threshold={thresh})")
+
+            self._cycle_target_frame = frame
             try:
-                res = run_spike_filter_cycle(context, track_threshold=float(self._spike_threshold))
-                print(f"[Coord] SPIKE → result={res}")
-            except Exception as ex:
-                print(f"[Coord] SPIKE failed: {ex!r}")
-            self._spike_run_done = True
+                context.scene.frame_set(frame)
+            except Exception as ex_set:
+                print(f"[Coord] WARN: frame_set({frame}) failed: {ex_set!r}")
 
-        print("[Coord] SPIKE → SOLVE")
-        self._pending_eval_after_solve = True
-        self._state = "SOLVE"
+            # Zyklus beenden → Solve-Pfad
+            self._cycle_active = False
+            print("[Coord] CYCLE_FIND_MAX → SOLVE")
+            self._pending_eval_after_solve = True
+            self._state = "SOLVE"
+            return {"RUNNING_MODAL"}
+
+        # NONE/FAILED → SPIKE als Gegenmaßnahme
+        print(f"[Coord] CYCLE_FIND_MAX → {status} → CYCLE_SPIKE")
+        self._state = "CYCLE_SPIKE"
         return {"RUNNING_MODAL"}
+
+    def _state_cycle_spike(self, context):
+        """Eine Spike-Iteration; danach zurück zu FIND_MAX. Multi-Iterationen werden durch den Loop realisiert."""
+        if not self._cycle_active:
+            print("[Coord] CYCLE_SPIKE with inactive cycle → FINALIZE")
+            self._state = "FINALIZE"
+            return {"RUNNING_MODAL"}
+
+        # Spike-Loop Limits absichern
+        if self._spike_loops >= max(1, int(self._spike_max_loops)):
+            print(f"[Coord] CYCLE_SPIKE → spike_max_loops reached ({self._spike_loops}) → back to FIND_MAX")
+            self._state = "CYCLE_FIND_MAX"
+            return {"RUNNING_MODAL"}
+
+        if self._spike_threshold <= max(0.0, float(self._spike_min_threshold)):
+            print(f"[Coord] CYCLE_SPIKE → threshold floor reached ({self._spike_threshold:.2f} ≤ {self._spike_min_threshold:.2f}) → back to FIND_MAX")
+            self._state = "CYCLE_FIND_MAX"
+            return {"RUNNING_MODAL"}
+
+        # Eine Iteration ausführen
+        try:
+            res = run_spike_filter_cycle(context, track_threshold=float(self._spike_threshold))
+        except Exception as ex:
+            print(f"[Coord] CYCLE_SPIKE failed: {ex!r}")
+            # Trotz Fehler zurück zu FIND_MAX
+            self._state = "CYCLE_FIND_MAX"
+            return {"RUNNING_MODAL"}
+
+        status = str(res.get("status", "")).upper()
+        removed = int(res.get("removed", 0) or 0)
+        next_thr = float(res.get("next_threshold", self._spike_threshold * 0.9))
+        print(f"[Coord] CYCLE_SPIKE(iter {self._spike_loops}) → status={status}, removed={removed}, next={next_thr:.2f} (curr={self._spike_threshold:.2f})")
+
+        self._spike_loops += 1
+        self._spike_threshold = max(next_thr, 0.0)
+
+        # Danach immer wieder FIND_MAX prüfen
+        self._state = "CYCLE_FIND_MAX"
+        return {"RUNNING_MODAL"}
+
+    # ---------------- SOLVE → EVAL → REFINE → SOLVE → EVAL → CLEANUP ----------------
 
     def _state_solve(self, context):
         try:
@@ -465,7 +582,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_eval(self, context):
-        # Zielschwelle
         target = _scene_float(context.scene, "error_track", 0.0)
         wait_s = _scene_float(context.scene, "solve_wait_timeout_s", _DEFAULT_SOLVE_WAIT_S)
 
@@ -475,10 +591,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         if target > 0.0 and curr is not None and curr <= target:
             print("[Coord] EVAL → OK (≤ target) → FINALIZE")
-            # Reset Cycle-Flags
             self._pending_eval_after_solve = False
             self._did_refine_this_cycle = False
-            self._spike_run_done = False
             self._state = "FINALIZE"
         else:
             if self._did_refine_this_cycle:
@@ -490,7 +604,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_refine_launch(self, context):
-        """Startet Refine modal; wechselt in REFINE_WAIT und blockiert dort bis Ende/Timeout."""
         thr = _scene_float(context.scene, "error_track", 0.0)
         if thr <= 0.0:
             curr = _current_solve_error(context)
@@ -516,11 +629,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._refine_deadline = time.monotonic() + float(timeout_s)
 
         if status in ("STARTED", "BUSY"):
-            # BUSY: bereits aktiv → trotzdem warten
             self._state = "REFINE_WAIT"
             return {"RUNNING_MODAL"}
 
-        # NOT_STARTED/ERROR → kein aktiver Refine; direkt zum Re-Solve
+        # NOT_STARTED/ERROR → kein aktiver Refine; direkt Solve
         print("[Coord] REFINE_LAUNCH → not active → SOLVE")
         self._did_refine_this_cycle = False
         self._pending_eval_after_solve = True
@@ -528,7 +640,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_refine_wait(self, context):
-        """Wartet bis der modal Refiner fertig ist (scene['refine_active'] == False) oder Timeout."""
         active = bool(context.scene.get("refine_active", False))
         now = time.monotonic()
         if not active:
@@ -539,17 +650,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return {"RUNNING_MODAL"}
 
         if self._refine_deadline is not None and now >= float(self._refine_deadline):
-            print("[Coord] REFINE_WAIT → TIMEOUT → SOLVE (fallback)")
-            self._did_refine_this_cycle = True  # wir haben versucht zu refinen
+            print("[Coord] REFINE_WAIT → TIMEOUT → SOLVE")
+            self._did_refine_this_cycle = True
             self._pending_eval_after_solve = True
             self._state = "SOLVE"
             return {"RUNNING_MODAL"}
 
-        # weiter warten
         return {"RUNNING_MODAL"}
 
     def _state_cleanup(self, context):
-        # Optional: mit aktuellem Error limitieren, falls vorhanden
         limit = _current_solve_error(context)
         kwargs = {"wait_for_error": False, "action": "DELETE_TRACK"}
         if limit is not None:
@@ -561,9 +670,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         else:
             print(f"[Coord] CLEANUP failed: {res!r}")
 
+        # Nach Cleanup zurück in den Tracking-Loop (FIND_LOW)
         print("[Coord] CLEANUP → FIND_LOW (back to loop)")
-        # Reset Flags für nächsten Loop
-        self._spike_run_done = False
         self._pending_eval_after_solve = False
         self._did_refine_this_cycle = False
         self._state = "FIND_LOW"
@@ -580,6 +688,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if context.scene.get(_LOCK_KEY, False):
                 return {"RUNNING_MODAL"}
 
+            # FSM switch
             s = self._state
             if s == "INIT":
                 return self._state_init(context)
@@ -593,8 +702,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return self._state_track(context)
             elif s == "CLEAN_SHORT":
                 return self._state_clean_short(context)
-            elif s == "SPIKE":
-                return self._state_spike(context)
+            elif s == "CYCLE_FIND_MAX":
+                return self._state_cycle_find_max(context)
+            elif s == "CYCLE_SPIKE":
+                return self._state_cycle_spike(context)
             elif s == "SOLVE":
                 return self._state_solve(context)
             elif s == "EVAL":
