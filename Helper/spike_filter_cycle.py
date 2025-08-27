@@ -15,9 +15,12 @@ Rückgabe (dict):
 * next_threshold: empfohlener Schwellenwert für nächsten Pass
 """
 
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, Callable, Optional
 import bpy
 import math
+
+_clean_short_tracks: Optional[Callable] = None
+_IMPORT_ERR: Optional[Exception] = None
 
 try:
     # wenn dieses Modul innerhalb des Pakets "Helper" liegt:
@@ -32,6 +35,26 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # Interna
 # ---------------------------------------------------------------------------
+
+def _resolve_clean_short_tracks():
+    """Versucht lazy, clean_short_tracks zu importieren und cached das Ergebnis."""
+    global _clean_short_tracks, _IMPORT_ERR
+    if _clean_short_tracks is not None:
+        return _clean_short_tracks
+    try:
+        # relativer Import, wenn dieses Modul als Teil des Add-ons läuft
+        from .clean_short_tracks import clean_short_tracks as _cst  # type: ignore
+        _clean_short_tracks = _cst
+        return _clean_short_tracks
+    except Exception as ex1:
+        # optionaler Fallback, falls Modulpfade anders sind
+        try:
+            from Helper.clean_short_tracks import clean_short_tracks as _cst  # type: ignore
+            _clean_short_tracks = _cst
+            return _clean_short_tracks
+        except Exception as ex2:
+            _IMPORT_ERR = ex2 or ex1
+            return None
 
 def _get_active_clip(context) -> Optional[bpy.types.MovieClip]:
     space = getattr(context, "space_data", None)
@@ -217,10 +240,6 @@ def run_marker_spike_filter_cycle(
     if not _get_active_clip(context):
         return {"status": "FAILED", "reason": "no active MovieClip"}
 
-    if _clean_short_tracks is None:
-        # explizit fehlschlagen, damit klar ist, warum der Step nicht lief
-        return {"status": "FAILED", "reason": "clean_short_tracks not available (import failed)"}
-
     thr = float(track_threshold)
     act = str(action or "MUTE").upper()
 
@@ -228,25 +247,29 @@ def run_marker_spike_filter_cycle(
     affected = _apply_marker_outlier_filter(context, threshold_px=thr, action=act)
     print(f"[MarkerSpike] affected {affected} marker(s) with action={act}")
 
-    # 2) Clean Short (immer)
+    # 2) Clean Short (immer) – lazy import + defensive handling
     cleaned = 0
-    frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
-    try:
-        res = _clean_short_tracks(context, min_len=frames_min, verbose=True)  # type: ignore[call-arg]
-        # defensiv normalisieren
-        if isinstance(res, dict):
-            cleaned = int(
-                res.get("removed", 0)
-                or res.get("deleted", 0)
-                or res.get("cleaned", 0)
-                or res.get("count", 0)
-                or 0
-            )
-        elif isinstance(res, (int, float)):
-            cleaned = int(res)
-        print(f"[MarkerSpike] clean_short_tracks(min_len={frames_min}) → cleaned={cleaned}")
-    except Exception as ex:
-        print(f"[MarkerSpike] clean_short_tracks failed: {ex!r}")
+    cst = _resolve_clean_short_tracks()
+    if cst is None:
+        reason = f"clean_short_tracks not available ({_IMPORT_ERR!r})"
+        print(f"[MarkerSpike] WARN: {reason}")
+    else:
+        frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
+        try:
+            res = cst(context, min_len=frames_min, verbose=True)  # type: ignore[call-arg]
+            if isinstance(res, dict):
+                cleaned = int(
+                    res.get("removed", 0)
+                    or res.get("deleted", 0)
+                    or res.get("cleaned", 0)
+                    or res.get("count", 0)
+                    or 0
+                )
+            elif isinstance(res, (int, float)):
+                cleaned = int(res)
+            print(f"[MarkerSpike] clean_short_tracks(min_len={frames_min}) → cleaned={cleaned}")
+        except Exception as ex:
+            print(f"[MarkerSpike] clean_short_tracks failed: {ex!r}")
 
     # 3) Next Threshold
     next_thr = _lower_threshold(thr)
@@ -259,3 +282,4 @@ def run_marker_spike_filter_cycle(
         "cleaned": int(cleaned),
         "next_threshold": float(next_thr),
     }
+
