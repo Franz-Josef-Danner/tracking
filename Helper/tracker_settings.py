@@ -36,11 +36,43 @@ def _clamp01(x: float) -> float:
     return float(x)
 
 
+def _try_set_false(container, names):
+    """Versucht der Reihe nach, ein Attribut in container oder dessen .solver zu False zu setzen.
+    Gibt das tatsächlich verwendete Attribut zurück oder None.
+    """
+    for name in names:
+        if hasattr(container, name):
+            try:
+                setattr(container, name, False)
+                return name
+            except Exception:
+                continue
+    # Falls es ein Subobjekt .solver gibt, versuchen wir dort
+    sub = getattr(container, "solver", None)
+    if sub:
+        for name in names:
+            if hasattr(sub, name):
+                try:
+                    setattr(sub, name, False)
+                    return f"solver.{name}"
+                except Exception:
+                    continue
+    return None
+
+
 def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) -> dict:
     """
     Setzt vordefinierte Tracking-Defaults abhängig von der Clip-Auflösung
     und initialisiert/aktualisiert scene['last_detection_threshold'].
     Triggert anschließend die Low-Marker-Logik via run_find_low_marker_frame.
+
+    Zusätzlich werden einige Solver-Optionen auf False gesetzt, damit die
+    Standard-Solver-Einstellungen erwartbar sind:
+      - Tripod Motion
+      - Keyframe Selection
+      - Refine Focal Length
+      - Refine Optical center (Principal Point)
+      - Refine Radial Distortion
     """
     clip, scene = _resolve_clip_and_scene(context, clip=clip, scene=scene)
     if clip is None or scene is None:
@@ -90,6 +122,29 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
     det_thr = _clamp01(det_thr)
     scene["last_detection_threshold"] = float(det_thr)
 
+    # --- Solver-Einstellungen: robuste Versuche mehrere mögliche Property-Namen ---
+    solver_changes = {}
+
+    # Tripod Motion
+    tripod_name = _try_set_false(ts, ("use_tripod_motion", "use_tripod_solver", "use_tripod"))
+    solver_changes['tripod'] = tripod_name
+
+    # Keyframe Selection
+    keyframe_name = _try_set_false(ts, ("use_keyframe_selection", "use_keyframes", "use_keyframe_selection_mode"))
+    solver_changes['keyframe_selection'] = keyframe_name
+
+    # Refine Focal Length
+    refine_focal_name = _try_set_false(ts, ("refine_focal_length", "refine_focal", "refine_focal_length_error"))
+    solver_changes['refine_focal_length'] = refine_focal_name
+
+    # Refine Optical center (Principal Point)
+    refine_principal_name = _try_set_false(ts, ("refine_principal_point", "refine_principal", "refine_principal_point_x"))
+    solver_changes['refine_principal_point'] = refine_principal_name
+
+    # Refine Radial Distortion
+    refine_radial_name = _try_set_false(ts, ("refine_radial_distortion", "refine_distortion", "refine_k1"))
+    solver_changes['refine_radial_distortion'] = refine_radial_name
+
     if log:
         print(
             "[TrackerSettings] Defaults angewendet | "
@@ -97,6 +152,12 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
             f"clean_frames={ts.clean_frames}, clean_error={ts.clean_error}, "
             f"last_detection_threshold={scene['last_detection_threshold']:.6f}"
         )
+        # Log welche Solver-Properties gesetzt wurden (falls vorhanden)
+        for k, v in solver_changes.items():
+            if v:
+                print(f"[TrackerSettings] Solver: gesetzt {k} -> {v} = False")
+            else:
+                print(f"[TrackerSettings] Solver: Property für {k} nicht gefunden, übersprungen")
 
     return {
         "status": "ok",
@@ -107,4 +168,5 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
         "clean_frames": int(ts.clean_frames),
         "clean_error": float(ts.clean_error),
         "last_detection_threshold": float(scene["last_detection_threshold"]),
+        "solver_changes": solver_changes,
     }
