@@ -18,7 +18,7 @@ from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin
 from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
 from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
-from ..Helper.spike_filter_cycle import run_spike_filter_cycle  # type: ignore
+from ..Helper.spike_filter_cycle import run_marker_spike_filter_cycle  # type: ignore
 
 __all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
 
@@ -493,12 +493,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return {"RUNNING_MODAL"}
     
         try:
-            res = run_spike_filter_cycle(context, track_threshold=float(self._spike_threshold))
+            res = run_marker_spike_filter_cycle(context, track_threshold=float(self._spike_threshold))
             
             status = str(res.get("status", "")).upper()
-            removed = int(res.get("removed", 0) or 0)
+            removed = int(res.get("muted", 0) or 0)
             next_thr = float(res.get("next_threshold", self._spike_threshold * 0.9))
-            print(f"[Coord] CYCLE_SPIKE → status={status}, removed={removed}, next={next_thr:.2f} (curr={self._spike_threshold:.2f})")
+            print(f"[Coord] CYCLE_SPIKE → status={status}, muted={removed}, next={next_thr:.2f} (curr={self._spike_threshold:.2f})")
             
             # innerhalb DESSELBEN Cycles progressiv absenken
             self._spike_threshold = max(next_thr, 0.0)
@@ -508,7 +508,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return {"RUNNING_MODAL"}
     
         status = str(res.get("status", "")).upper()
-        removed = int(res.get("removed", 0) or 0)
+        removed = int(res.get("muted", 0) or 0)
         print(f"[Coord] CYCLE_SPIKE → status={status}, removed={removed}, fixed-threshold=50.0")
     
         # self._spike_threshold wird nicht mehr auf next_thr gesetzt
