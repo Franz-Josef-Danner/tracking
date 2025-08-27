@@ -562,7 +562,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     # direkt neu lösen (Pose-only), bevor Intrinsics-Refinement kommt
                     ok_resolve, _ = _safe_call(solve_camera_only, context)
                     print(f"[Coord] re-solve after parallax A/B applied: {'OK' if ok_resolve else 'FAILED'}")
-                Damit werden die vorgeschlagenen Keyframes tatsächlich eingetragen und ein zusätzlicher Solve gemacht,
                 if ok_pk:
                     print(f"[Coord] parallax_keyframe result: {res_pk}")
                 else:
