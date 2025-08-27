@@ -581,35 +581,28 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print("[Coord] EVAL → OK (≤ target) → performing final intrinsics refinement steps")
 
             scn = context.scene
-            try:
+            clip = getattr(context.space_data, "clip", None)
+            recon = None
+            if clip and clip.tracking.objects.active:
+                recon = clip.tracking.objects.active.reconstruction
+            
+            if recon:
                 try:
-                    setattr(scn, "refine_intrinsics_focal_length", True)
-                except Exception:
-                    scn["refine_intrinsics_focal_length"] = True
-
-                ok1, res1 = _safe_call(solve_camera_only, context)
-                if ok1:
-                    print("[Coord] Final refine: focal_length solve OK")
-                else:
-                    print(f"[Coord] Final refine: focal_length solve FAILED: {res1!r}")
-
-            except Exception as ex_ref1:
-                print(f"[Coord] Final refine (focal_length) exception: {ex_ref1!r}")
-
-            try:
+                    recon.refine_intrinsics = {'FOCAL_LENGTH'}
+                    ok1, res1 = _safe_call(solve_camera_only, context)
+                    print(f"[Coord] Final refine focal_length: {'OK' if ok1 else res1!r}")
+                except Exception as ex_ref1:
+                    print(f"[Coord] Final refine (focal_length) exception: {ex_ref1!r}")
+            
                 try:
-                    setattr(scn, "refine_intrinsics_radial_distortion", True)
-                except Exception:
-                    scn["refine_intrinsics_radial_distortion"] = True
+                    recon.refine_intrinsics = {'FOCAL_LENGTH', 'RADIAL_DISTORTION'}
+                    ok2, res2 = _safe_call(solve_camera_only, context)
+                    print(f"[Coord] Final refine focal+radial: {'OK' if ok2 else res2!r}")
+                except Exception as ex_ref2:
+                    print(f"[Coord] Final refine (radial) exception: {ex_ref2!r}")
+            else:
+                print("[Coord] WARN: no active reconstruction → skipping refine")
 
-                ok2, res2 = _safe_call(solve_camera_only, context)
-                if ok2:
-                    print("[Coord] Final refine: radial_distortion solve OK")
-                else:
-                    print(f"[Coord] Final refine: radial_distortion solve FAILED: {res2!r}")
-
-            except Exception as ex_ref2:
-                print(f"[Coord] Final refine (radial_distortion) exception: {ex_ref2!r}")
 
             print("[Coord] EVAL → final intrinsics refinement done → FINALIZE")
             self._pending_eval_after_solve = False
