@@ -494,21 +494,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print("[Coord] CYCLE_SPIKE with inactive cycle → FINALIZE")
             self._state = "FINALIZE"
             return {"RUNNING_MODAL"}
-
+    
         try:
-            res = run_spike_filter_cycle(context, track_threshold=float(self._spike_threshold))
+            res = run_spike_filter_cycle(context, track_threshold=float(50.0))  # fix auf 50
         except Exception as ex:
             print(f"[Coord] CYCLE_SPIKE failed: {ex!r}")
             self._state = "CYCLE_FIND_MAX"
             return {"RUNNING_MODAL"}
-
+    
         status = str(res.get("status", "")).upper()
         removed = int(res.get("removed", 0) or 0)
-        next_thr = float(res.get("next_threshold", self._spike_threshold * 0.9))
-        print(f"[Coord] CYCLE_SPIKE → status={status}, removed={removed}, next={next_thr:.2f} (curr={self._spike_threshold:.2f})")
-
-        self._spike_threshold = max(next_thr, 0.0)
-
+        print(f"[Coord] CYCLE_SPIKE → status={status}, removed={removed}, fixed-threshold=50.0")
+    
+        # self._spike_threshold wird nicht mehr auf next_thr gesetzt
+        # optional: falls du den Counter brauchst, unverändert lassen
         if removed > 0:
             self._cycle_iterations += 1
             print(f"[Coord] CYCLE_SPIKE → removed>0 → incremented deletion-iterations to {self._cycle_iterations}/{_CYCLE_MAX_ITER}")
@@ -518,7 +517,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self._pending_eval_after_solve = True
                 self._state = "SOLVE"
                 return {"RUNNING_MODAL"}
-
+    
         self._state = "CYCLE_FIND_MAX"
         return {"RUNNING_MODAL"}
 
