@@ -554,7 +554,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print("[Coord] EVAL → OK (≤ target) → invoking parallax_keyframe before final intrinsics refinement")
             try:
                 from ..Helper.parallax_keyframe import run_parallax_keyframe  # type: ignore
-                ok_pk, res_pk = _safe_call(run_parallax_keyframe, context)
+                ok_pk, res_pk = _safe_call(
+                    run_parallax_keyframe, context,
+                    apply_best_pair=True  # <— bestes A/B setzen
+                )
+                if ok_pk and isinstance(res_pk, dict) and res_pk.get("applied"):
+                    # direkt neu lösen (Pose-only), bevor Intrinsics-Refinement kommt
+                    ok_resolve, _ = _safe_call(solve_camera_only, context)
+                    print(f"[Coord] re-solve after parallax A/B applied: {'OK' if ok_resolve else 'FAILED'}")
+                Damit werden die vorgeschlagenen Keyframes tatsächlich eingetragen und ein zusätzlicher Solve gemacht,
                 if ok_pk:
                     print(f"[Coord] parallax_keyframe result: {res_pk}")
                 else:
