@@ -1,0 +1,248 @@
+# Blender Parallax Keyframe Helper
+# Vorschläge für Keyframe A/B basierend auf Parallax in 2D-Trackdaten
+# PEP 8-konform, kommentiert. Für Blender 3.x/4.x.
+
+import bpy
+import math
+from mathutils import Vector
+
+# ----------------------------- Einstellungen ---------------------------------
+
+# Mindestabstand (Frames) zwischen Keyframe A und B
+MIN_FRAME_GAP = 25
+
+# Wie viele Top-Paare ausgeben?
+TOP_K = 10
+
+# Mindestanzahl gemeinsamer Tracks, damit ein Paar gewertet wird
+MIN_COMMON_TRACKS = 12
+
+# Schrittweite beim Scannen (1 = alle Frames; höher = schneller, grober)
+FRAME_STEP = 2
+
+# Optional: bestes Paar automatisch in Keyframe A/B eintragen?
+APPLY_BEST_PAIR = False
+
+# Gewichtung der Teil-Scores für Gesamtrang
+W_PARALLAX = 0.65   # Wichtigster Anteil
+W_COVERAGE = 0.25   # Bildabdeckung (Fläche der Marker)
+W_COUNT    = 0.10   # Anzahl gemeinsamer Tracks
+
+# ----------------------------- Hilfsfunktionen --------------------------------
+
+def get_active_clip(context):
+    """Aktiven MovieClip aus dem Movie Clip Editor holen."""
+    space = getattr(context, "space_data", None)
+    if space and hasattr(space, "clip") and space.clip:
+        return space.clip
+    # Fallback: erster Clip in der Blend-Datei
+    if bpy.data.movieclips:
+        return bpy.data.movieclips[0]
+    return None
+
+
+def marker_at_frame(track, frame):
+    """Marker eines Tracks an exakt diesem Frame holen (oder None)."""
+    # markers ist eine Collection von MovieTrackingMarker mit .frame
+    for m in track.markers:
+        if m.frame == frame and not m.mute:
+            return m
+    return None
+
+
+def common_markers_at_frames(tracks, fa, fb):
+    """Gemeinsame, gültige Marker (fa und fb vorhanden) als Liste von (ma, mb)."""
+    pairs = []
+    for tr in tracks:
+        if tr.mute or tr.hide:
+            continue
+        ma = marker_at_frame(tr, fa)
+        mb = marker_at_frame(tr, fb)
+        if ma and mb:
+            # ma.co, mb.co sind normalisierte Koordinaten in [0..1]
+            pairs.append((ma, mb))
+    return pairs
+
+
+def image_norm(clip):
+    """Normierungsfaktor: Diagonale der Bildgröße (in Pixeln)."""
+    w, h = clip.size
+    return math.hypot(w, h)
+
+
+def spread_area_norm(coords):
+    """
+    Grobe Bildabdeckung: Fläche der Bounding Box der Punkte (in [0..1]) relativ zur Bildfläche.
+    Liefert 0..1.
+    """
+    if not coords:
+        return 0.0
+    xs = [c.x for c in coords]
+    ys = [c.y for c in coords]
+    bb_w = max(xs) - min(xs)
+    bb_h = max(ys) - min(ys)
+    area = max(0.0, bb_w) * max(0.0, bb_h)
+    # keine weitere Normierung nötig, da bereits in [0..1]
+    return float(area)
+
+
+def parallax_score(pairs):
+    """
+    Parallax-Score: RMS der Residuen nach Abzug der mittleren Verschiebung.
+    Idee: reine Kamerarotation/gleichförmige Verschiebung -> alle d-Vektoren ähnlich -> geringe Residuen.
+    Echte Parallaxe -> stark unterschiedliche d-Vektoren -> große Residuen.
+    """
+    if not pairs:
+        return 0.0
+
+    dvs = []
+    for ma, mb in pairs:
+        da = Vector((ma.co[0], ma.co[1]))
+        db = Vector((mb.co[0], mb.co[1]))
+        dvs.append(db - da)
+
+    # Mittelverschiebung
+    mean = Vector((0.0, 0.0))
+    for d in dvs:
+        mean += d
+    mean /= len(dvs)
+
+    # RMS der Residuen
+    sse = 0.0
+    for d in dvs:
+        res = d - mean
+        sse += res.length_squared
+    rms = math.sqrt(sse / len(dvs))
+
+    # rms ist in Normalized-Coords; 0..~1 sinnvoll. Keine weitere Normierung.
+    return float(rms)
+
+
+def score_pair(clip, tracks, fa, fb):
+    """
+    Bewertet ein Framepaar. Liefert Dict mit Scores oder None, falls unbrauchbar.
+    """
+    pairs = common_markers_at_frames(tracks, fa, fb)
+    count = len(pairs)
+    if count < MIN_COMMON_TRACKS:
+        return None
+
+    # Parallax
+    pscore = parallax_score(pairs)
+
+    # Coverage: benutze Markerpositionen aus dem früheren Frame (stabiler) + späterem Frame
+    coords_union = []
+    for ma, mb in pairs:
+        coords_union.append(Vector((ma.co[0], ma.co[1])))
+        coords_union.append(Vector((mb.co[0], mb.co[1])))
+    cscore = spread_area_norm(coords_union)
+
+    # Count-Score grob auf [0..1] normieren relativ zum Maximum „realistisch“
+    # (Heuristik: 100 gemeinsame Tracks ~ 1.0)
+    count_score = min(1.0, count / 100.0)
+
+    # Kombinierter Score
+    total = (W_PARALLAX * pscore) + (W_COVERAGE * cscore) + (W_COUNT * count_score)
+
+    return {
+        "fa": fa,
+        "fb": fb,
+        "total": total,
+        "parallax": pscore,
+        "coverage": cscore,
+        "count": count,
+    }
+
+
+def scan_pairs(clip, frame_start, frame_end, step, tracks):
+    """Alle brauchbaren Paare scannen (mit Mindestabstand)."""
+    results = []
+    for fa in range(frame_start, frame_end + 1, step):
+        fb_min = fa + MIN_FRAME_GAP
+        if fb_min > frame_end:
+            continue
+        for fb in range(fb_min, frame_end + 1, step):
+            s = score_pair(clip, tracks, fa, fb)
+            if s:
+                results.append(s)
+    return results
+
+
+def format_row(r):
+    return (f"A={r['fa']:>5}  B={r['fb']:>5}  "
+            f"Score={r['total']:.4f}  Parallax={r['parallax']:.4f}  "
+            f"Coverage={r['coverage']:.3f}  Tracks={r['count']:>3}")
+
+
+def write_textblock(name, lines):
+    """Ergebnis in einen Text-Block schreiben (für einfache Ablage)."""
+    tb = bpy.data.texts.get(name) or bpy.data.texts.new(name)
+    tb.clear()
+    for ln in lines:
+        tb.write(ln + "\n")
+    return tb
+
+
+def apply_keyframes(clip, fa, fb):
+    """Setzt Keyframe A/B in den Clip-Tracking-Settings."""
+    settings = clip.tracking.settings
+    settings.keyframe1 = fa
+    settings.keyframe2 = fb
+
+
+# ----------------------------- Hauptausführung --------------------------------
+
+def main(context):
+    clip = get_active_clip(context)
+    if not clip:
+        print("[Parallax Helper] Kein MovieClip gefunden.")
+        return
+
+    tracks = [t for t in clip.tracking.tracks if not t.mute and not t.hide]
+    if not tracks:
+        print("[Parallax Helper] Keine sichtbaren Tracks im Clip.")
+        return
+
+    frame_start = clip.frame_start
+    frame_end = clip.frame_start + clip.frame_duration - 1
+
+    print(f"[Parallax Helper] Clip: {clip.name}")
+    print(f"[Parallax Helper] Frames: {frame_start}..{frame_end}  "
+          f"(Step={FRAME_STEP}, MinGap={MIN_FRAME_GAP})")
+    print(f"[Parallax Helper] Tracks sichtbar: {len(tracks)}")
+    print("[Parallax Helper] Scanne Frame-Paare... (kann je nach Länge dauern)")
+
+    results = scan_pairs(clip, frame_start, frame_end, FRAME_STEP, tracks)
+    if not results:
+        print("[Parallax Helper] Keine geeigneten Paare gefunden "
+              f"(MIN_COMMON_TRACKS={MIN_COMMON_TRACKS}).")
+        return
+
+    # Nach Gesamtscore absteigend sortieren
+    results.sort(key=lambda r: r["total"], reverse=True)
+    top = results[:TOP_K]
+
+    lines = []
+    lines.append(f"Parallax Keyframe Suggestions for '{clip.name}'")
+    lines.append(f"Step={FRAME_STEP}, MinGap={MIN_FRAME_GAP}, "
+                 f"MinCommonTracks={MIN_COMMON_TRACKS}")
+    lines.append("-" * 78)
+    for i, r in enumerate(top, 1):
+        line = f"{i:>2}. {format_row(r)}"
+        lines.append(line)
+        print(line)
+
+    write_textblock("parallax_keyframe_suggestions.txt", lines)
+
+    if APPLY_BEST_PAIR and top:
+        best = top[0]
+        apply_keyframes(clip, best["fa"], best["fb"])
+        print(f"[Parallax Helper] Bestes Paar gesetzt: "
+              f"A={best['fa']}  B={best['fb']}")
+
+    print("[Parallax Helper] Fertig.")
+
+
+# Direkt ausführen
+if __name__ == "__main__":
+    main(bpy.context)
