@@ -36,29 +36,27 @@ def _clamp01(x: float) -> float:
     return float(x)
 
 
-def _try_set_false(container, names):
-    """Versucht der Reihe nach, ein Attribut in container oder dessen .solver zu False zu setzen.
+def _try_set(container, names, value):
+    """Versucht der Reihe nach, ein Attribut in container oder dessen .solver zu `value` zu setzen.
     Gibt das tatsächlich verwendete Attribut zurück oder None.
     """
     for name in names:
         if hasattr(container, name):
             try:
-                setattr(container, name, False)
+                setattr(container, name, value)
                 return name
             except Exception:
                 continue
-    # Falls es ein Subobjekt .solver gibt, versuchen wir dort
     sub = getattr(container, "solver", None)
     if sub:
         for name in names:
             if hasattr(sub, name):
                 try:
-                    setattr(sub, name, False)
+                    setattr(sub, name, value)
                     return f"solver.{name}"
                 except Exception:
                     continue
     return None
-
 
 def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) -> dict:
     """
@@ -126,15 +124,15 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
     solver_changes = {}
 
     # Tripod Motion
-    tripod_name = _try_set_false(ts, ("use_tripod_motion", "use_tripod_solver", "use_tripod"))
+    tripod_name = _try_set(ts, ("use_tripod_motion", "use_tripod_solver", "use_tripod"), False)
     solver_changes['tripod'] = tripod_name
 
     # Keyframe Selection
-    keyframe_name = _try_set_false(ts, ("use_keyframe_selection", "use_keyframes", "use_keyframe_selection_mode"))
+    keyframe_name = _try_set(ts, ("use_keyframe_selection", "use_keyframes", "use_keyframe_selection_mode"), True)
     solver_changes['keyframe_selection'] = keyframe_name
 
     # Refine Focal Length
-    refine_focal_name = _try_set_false(
+    refine_focal_name = _try_set(
         ts,
         (
             "refine_intrinsics_focal_length",
@@ -142,6 +140,7 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
             "refine_focal",
             "refine_focal_length_error",
         ),
+        False,
     )
     solver_changes['refine_focal_length'] = refine_focal_name
 
