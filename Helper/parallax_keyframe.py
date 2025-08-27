@@ -30,23 +30,20 @@ W_COUNT = 0.10      # Anzahl gemeinsamer Tracks
 
 # ----------------------------- Hilfsfunktionen --------------------------------
 
-
 def get_active_clip(context):
-    """Aktiven MovieClip aus dem Movie Clip Editor holen."""
+    """Aktiven MovieClip aus dem Movie Clip Editor holen (oder Fallback)."""
     space = getattr(context, "space_data", None)
-    if space and hasattr(space, "clip") and space.clip:
+    if space and getattr(space, "type", None) == "CLIP_EDITOR" and getattr(space, "clip", None):
         return space.clip
-    # Fallback: erster Clip in der Blend-Datei
-    if bpy.data.movieclips:
-        return bpy.data.movieclips[0]
-    return None
+    # Fallback: erster Clip in der Datei
+    return bpy.data.movieclips[0] if bpy.data.movieclips else None
 
 
 def marker_at_frame(track, frame):
     """Marker eines Tracks an exakt diesem Frame holen (oder None)."""
-    # markers ist eine Collection von MovieTrackingMarker mit .frame
     for m in track.markers:
-        if m.frame == frame and not m.mute:
+        # defensiv: marker.mute existiert nicht in allen Builds
+        if m.frame == frame and not getattr(m, "mute", False):
             return m
     return None
 
@@ -55,13 +52,13 @@ def common_markers_at_frames(tracks, fa, fb):
     """Gemeinsame, gültige Marker (fa und fb vorhanden) als Liste von (ma, mb)."""
     pairs = []
     for tr in tracks:
-        if tr.mute or tr.hide:
+        # defensiv: track.mute existiert nicht immer; hide existiert
+        if getattr(tr, "mute", False) or getattr(tr, "hide", False):
             continue
         ma = marker_at_frame(tr, fa)
         mb = marker_at_frame(tr, fb)
         if ma and mb:
-            # ma.co, mb.co sind normalisierte Koordinaten in [0..1]
-            pairs.append((ma, mb))
+            pairs.append((ma, mb))  # .co sind normalisierte Koordinaten [0..1]
     return pairs
 
 
@@ -77,15 +74,13 @@ def spread_area_norm(coords):
     bb_w = max(xs) - min(xs)
     bb_h = max(ys) - min(ys)
     area = max(0.0, bb_w) * max(0.0, bb_h)
-    # keine weitere Normierung nötig, da bereits in [0..1]
     return float(area)
 
 
 def parallax_score(pairs):
     """
     Parallax-Score: RMS der Residuen nach Abzug der mittleren Verschiebung.
-    Idee: reine Kamerarotation/gleichförmige Verschiebung -> alle d-Vektoren ähnlich -> geringe Residuen.
-    Echte Parallaxe -> stark unterschiedliche d-Vektoren -> große Residuen.
+    Reine Rotation/gleichförmige Verschiebung -> kleine Residuen; echte Parallaxe -> große Residuen.
     """
     if not pairs:
         return 0.0
@@ -96,49 +91,39 @@ def parallax_score(pairs):
         db = Vector((mb.co[0], mb.co[1]))
         dvs.append(db - da)
 
-    # Mittelverschiebung
     mean = Vector((0.0, 0.0))
     for d in dvs:
         mean += d
     mean /= len(dvs)
 
-    # RMS der Residuen
     sse = 0.0
     for d in dvs:
         res = d - mean
         sse += res.length_squared
     rms = math.sqrt(sse / len(dvs))
-
-    # rms ist in Normalized-Coords; 0..~1 sinnvoll. Keine weitere Normierung.
     return float(rms)
 
 
 def score_pair(clip, tracks, fa, fb):
-    """
-    Bewertet ein Framepaar. Liefert Dict mit Scores oder None, falls unbrauchbar.
-    """
+    """Bewertet ein Framepaar. Liefert Dict mit Scores oder None, falls unbrauchbar."""
     pairs = common_markers_at_frames(tracks, fa, fb)
     count = len(pairs)
     if count < MIN_COMMON_TRACKS:
         return None
 
-    # Parallax
     pscore = parallax_score(pairs)
 
-    # Coverage: benutze Markerpositionen aus beiden Frames
+    # Coverage: Punkte aus beiden Frames
     coords_union = []
     for ma, mb in pairs:
         coords_union.append(Vector((ma.co[0], ma.co[1])))
         coords_union.append(Vector((mb.co[0], mb.co[1])))
     cscore = spread_area_norm(coords_union)
 
-    # Count-Score grob auf [0..1] normieren relativ zum Maximum „realistisch“
-    # (Heuristik: 100 gemeinsame Tracks ~ 1.0)
+    # Count-Score grob auf [0..1] relativ zu 100 Tracks
     count_score = min(1.0, count / 100.0)
 
-    # Kombinierter Score
     total = (W_PARALLAX * pscore) + (W_COVERAGE * cscore) + (W_COUNT * count_score)
-
     return {
         "fa": fa,
         "fb": fb,
@@ -187,7 +172,6 @@ def apply_keyframes(clip, fa, fb):
 
 # ----------------------------- Öffentliche API --------------------------------
 
-
 def run_parallax_keyframe(context,
                           *,
                           apply_best_pair=False,
@@ -199,10 +183,9 @@ def run_parallax_keyframe(context,
     Öffentliche API für den Coordinator. Liefert ein Ergebnis-Dict und
     kann optional das beste Paar in Keyframe A/B setzen.
     """
-    # Temporär Parameter anwenden, ohne Defaults dauerhaft zu ändern
     _old = (MIN_FRAME_GAP, FRAME_STEP, MIN_COMMON_TRACKS, TOP_K)
+    # temporär Parameter anwenden
     try:
-        # cast/validieren
         mg = int(min_frame_gap)
         st = int(frame_step)
         mc = int(min_common_tracks)
@@ -220,7 +203,8 @@ def run_parallax_keyframe(context,
         if not clip:
             return {"status": "NO_CLIP"}
 
-        tracks = [t for t in clip.tracking.tracks if not t.mute and not t.hide]
+        # defensiv: mute/hide je nach Build unterschiedlich
+        tracks = [t for t in clip.tracking.tracks if not getattr(t, "mute", False) and not getattr(t, "hide", False)]
         if not tracks:
             return {"status": "NO_TRACKS"}
 
@@ -261,7 +245,6 @@ def run_parallax_keyframe(context,
 
 
 # ----------------------------- Hauptausführung --------------------------------
-
 
 def main(context):
     """Standalone-Lauf: Vorschläge erzeugen, Textblock schreiben, optional Keyframes setzen."""
