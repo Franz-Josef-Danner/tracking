@@ -5,16 +5,15 @@ import time
 import bpy
 from bpy.types import Scene
 from bpy.props import BoolProperty, FloatProperty
-from typing import Optional, Dict
-from typing import Any, Callable, Tuple
+from typing import Optional, Dict, Any, Callable, Tuple
 
 from ..Helper.triplet_grouping import run_triplet_grouping  # top-level import
 from ..Helper.solve_camera import solve_camera_only
-from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin  # optional (derzeit ungenutzt)
+from ..Helper.refine_high_error import start_refine_modal
+from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin
 
 # Cycle-Helpers
 from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
-from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
 from ..Helper.spike_filter_cycle import run_spike_filter_cycle  # type: ignore
 
@@ -33,8 +32,9 @@ _OPT_REQ_KEY = "__optimize_request"
 _OPT_REQ_VAL = "JUMP_REPEAT"
 _OPT_FRAME_KEY = "__optimize_frame"
 
-# Cycle: Sicherheitslimit (äußeres Loop-Limit)
-_CYCLE_MAX_LOOPS = 50
+# Defaults
+_DEFAULT_SOLVE_WAIT_S = 60.0
+_DEFAULT_SPIKE_START = 100.0
 
 
 def _tco_log(msg: str) -> None:
@@ -42,36 +42,32 @@ def _tco_log(msg: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Generische Guards / Utilities
+# Utilities
 # ---------------------------------------------------------------------------
 
 def _safe_call(func: Callable[..., Any], *args, **kwargs) -> Tuple[bool, Any]:
-    """Ruft eine Funktion sicher auf. Liefert (ok, result_or_exc)."""
     try:
         return True, func(*args, **kwargs)
-    except Exception as ex:  # noqa: BLE001 - logging only
+    except Exception as ex:  # noqa: BLE001
         _tco_log(f"_safe_call({getattr(func, '__name__', 'func')}): {ex!r}")
         return False, ex
 
 
 def _safe_ops_invoke(ops_path: str, *args, **kwargs) -> Tuple[bool, Any]:
-    """bpy.ops sicher aufrufen, z.B. _safe_ops_invoke('clip.bidirectional_track', 'INVOKE_DEFAULT')."""
     try:
         mod, name = ops_path.split(".", 1)
-        ops_mod = getattr(bpy.ops, mod)
-        op = getattr(ops_mod, name)
-    except Exception as ex_resolve:  # noqa: BLE001
-        _tco_log(f"_safe_ops_invoke: resolve failed for '{ops_path}': {ex_resolve!r}")
-        return False, ex_resolve
+        op = getattr(getattr(bpy.ops, mod), name)
+    except Exception as ex:  # noqa: BLE001
+        _tco_log(f"_safe_ops_invoke: resolve failed for '{ops_path}': {ex!r}")
+        return False, ex
     try:
         return True, op(*args, **kwargs)
-    except Exception as ex_run:  # noqa: BLE001
-        _tco_log(f"_safe_ops_invoke: call failed for '{ops_path}': {ex_run!r}")
-        return False, ex_run
+    except Exception as ex:  # noqa: BLE001
+        _tco_log(f"_safe_ops_invoke: call failed for '{ops_path}': {ex!r}")
+        return False, ex
 
 
 def _scene_float(scene: bpy.types.Scene, key: str, default: float) -> float:
-    """Defensiver Float-Getter für Scene-Properties."""
     try:
         v = getattr(scene, key, default)
         v = default if v is None else v
@@ -85,25 +81,59 @@ def _have_clip(context: bpy.types.Context) -> bool:
     return bool(getattr(space, "type", None) == "CLIP_EDITOR" and getattr(space, "clip", None))
 
 
+def _current_solve_error(context: bpy.types.Context) -> Optional[float]:
+    """Average-Error aus aktiver Reconstruction (oder None)."""
+    space = getattr(context, "space_data", None)
+    clip = space.clip if (getattr(space, "type", None) == "CLIP_EDITOR" and getattr(space, "clip", None)) else None
+    if clip is None:
+        try:
+            clip = bpy.data.movieclips[0] if bpy.data.movieclips else None
+        except Exception:
+            clip = None
+    if not clip:
+        return None
+    try:
+        recon = clip.tracking.objects.active.reconstruction
+        if not getattr(recon, "is_valid", False):
+            return None
+        if hasattr(recon, "average_error"):
+            return float(recon.average_error)
+    except Exception:
+        return None
+    return None
+
+
+def _wait_for_valid_reconstruction(
+    context: bpy.types.Context, *, timeout_s: float, poll_s: float = 0.05
+) -> Optional[float]:
+    """Pollt bis valide Reconstruction oder Timeout; liefert avg_error oder None."""
+    deadline = time.monotonic() + float(timeout_s)
+    while time.monotonic() < deadline:
+        err = _current_solve_error(context)
+        if err is not None:
+            return float(err)
+        try:
+            time.sleep(float(poll_s))
+        except Exception:
+            pass
+    return None
+
+
 # ---------------------------------------------------------------------------
-# Optionales Spike-Value-Memo (für nachgelagerte Workflows)
+# Optionales Spike-Value-Memo (nur Hilfsfeature)
 # ---------------------------------------------------------------------------
 
 def register_scene_state() -> None:
     if not hasattr(Scene, "tco_spike_value"):
         Scene.tco_spike_value = FloatProperty(
             name="Spike Filter Value",
-            description=(
-                "Finaler Wert für spike_filter_cycle, der nach Cleanup einmalig ausgelöst wird."
-            ),
+            description="Finaler Wert für spike_filter_cycle, der einmalig ausgelöst werden kann.",
             default=0.0,
         )
     if not hasattr(Scene, "tco_spike_pending"):
         Scene.tco_spike_pending = BoolProperty(
             name="Spike Pending",
-            description=(
-                "True, wenn ein finaler Spike-Wert gemerkt wurde und auf Cleanup wartet."
-            ),
+            description="True, wenn ein finaler Spike-Wert gemerkt wurde und auf Cleanup wartet.",
             default=False,
         )
 
@@ -119,27 +149,12 @@ def remember_spike_filter_value(value: float, *, context: bpy.types.Context | No
     scene = ctx.scene
     scene.tco_spike_value = float(value)
     scene.tco_spike_pending = True
-    _tco_log(
-        f"remember_spike_filter_value: value={scene.tco_spike_value:.6f}, pending=True"
-    )
-
-
-def on_projection_cleanup_finished(*, context: bpy.types.Context | None = None) -> None:
-    ctx = context or bpy.context
-    scene = ctx.scene
-    if getattr(scene, "tco_spike_pending", False):
-        value = float(getattr(scene, "tco_spike_value", 0.0))
-        _tco_log(f"cleanup finished -> trigger spike once with value={value:.6f}")
-        trigger_spike_filter_once(value, context=ctx)
-        scene.tco_spike_pending = False
-    else:
-        _tco_log("cleanup finished, no pending spike value -> noop")
+    _tco_log(f"remember_spike_filter_value: value={scene.tco_spike_value:.6f}, pending=True")
 
 
 def trigger_spike_filter_once(value: float, *, context: bpy.types.Context | None = None) -> None:
     ctx = context or bpy.context
     scene = ctx.scene
-    # Reentrancy-Guard: Verhindert, dass run_spike_filter_cycle am Ende wieder "pending" setzt
     scene["tco_spike_suppress_remember"] = True
     try:
         try:
@@ -147,23 +162,14 @@ def trigger_spike_filter_once(value: float, *, context: bpy.types.Context | None
             if hasattr(_sfc, "run_with_value"):
                 _sfc.run_with_value(ctx, float(value))
                 return
-        except Exception as ex:  # noqa: BLE001 - logging
+        except Exception as ex:  # noqa: BLE001
             _tco_log(f"direct call failed: {ex!r}; fallback to bpy.ops")
-
         try:
             bpy.ops.helper.spike_filter_cycle("INVOKE_DEFAULT", value=float(value))
-        except Exception as ex:  # noqa: BLE001 - logging
+        except Exception as ex:  # noqa: BLE001
             _tco_log(f"bpy.ops fallback failed: {ex!r}")
     finally:
-        # Flag immer zurücksetzen
         scene["tco_spike_suppress_remember"] = False
-
-
-def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
-    try:
-        self.report(level, msg)
-    except Exception:
-        print(f"[Coordinator] {msg}")
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +177,22 @@ def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
 # ---------------------------------------------------------------------------
 
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
+    """
+    Zielablauf (präzise Vorgabe):
+
+    Tracking-Loop:
+      1) FIND_LOW: Solange niedrige Marker-Frames gefunden werden:
+            → JUMP → DETECT → (Triplet) → TRACK (bidi) → CLEAN_SHORT → zurück zu FIND_LOW
+      2) FIND_LOW liefert NONE:
+            → SPIKE_FILTER_CYCLE (einmal)
+            → SOLVE
+            → if error <= error_track: FINALIZE
+            → else REFINE (modal, blocking)
+                  → SOLVE (erneut)
+                  → if error <= error_track: FINALIZE
+                  → else PROJECTION_CLEANUP
+                        → zurück in Tracking-Loop (FIND_LOW)
+    """
     bl_idname = "clip.tracking_coordinator"
     bl_label = "Tracking Orchestrator"
     bl_options = {"REGISTER", "UNDO"}
@@ -187,12 +209,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     _repeat_map: Dict[int, int]
     _bidi_started: bool = False
 
-    # --- Cycle-Bookkeeping ---
-    _cycle_active: bool = False
-    _cycle_stage: str = ""      # "CYCLE_FIND_LOW" | "CYCLE_FIND_MAX" | "CYCLE_SPIKE"
-    _cycle_loops: int = 0        # Anzahl der durchlaufenen FIND_MAX↔SPIKE Runden
-    _cycle_initial_clean_done: bool = False  # << nur einmal zu Beginn
-    _cycle_spike_threshold: float = 100.0
+    # Solve / Evaluate book-keeping
+    _pending_eval_after_solve: bool = False  # true → nach Solve steht EVAL an
+
+    # Spike control
+    _spike_run_done: bool = False
+    _spike_threshold: float = _DEFAULT_SPIKE_START
 
     @classmethod
     def poll(cls, context):
@@ -242,8 +264,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.25, window=context.window)
         wm.modal_handler_add(self)
-        _safe_report(self, {"INFO"}, "Coordinator gestartet")
-        print("[Coord] START (STRICT Detect→Bidi→CleanShort→Cycle→Solve)")
+        print("[Coord] START (Detect→Bidi→CleanShort Loop; Spike→Solve→Eval→Refine→Solve→Eval→Cleanup)")
         return {"RUNNING_MODAL"}
 
     # ---------------- Bootstrap ----------------
@@ -254,7 +275,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         scn[_BIDI_ACTIVE_KEY] = False
         scn[_BIDI_RESULT_KEY] = ""
         scn.pop(_GOTO_KEY, None)
-        scn.pop("__skip_clean_short_once", None)
 
         self._state = "INIT"
         self._detect_attempts = 0
@@ -262,12 +282,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._repeat_map = {}
         self._bidi_started = False
 
-        # Cycle reset
-        self._cycle_active = False
-        self._cycle_stage = ""
-        self._cycle_loops = 0
-        self._cycle_initial_clean_done = False
-        self._cycle_spike_threshold = float(getattr(context.scene, "spike_start_threshold", 100.0) or 100.0)
+        self._pending_eval_after_solve = False
+        self._spike_run_done = False
+        self._spike_threshold = float(getattr(context.scene, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START)
 
     # ---------------- States ----------------
 
@@ -279,52 +296,27 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_find_low(self, context):
-        # defensiv: kein Clip → noop
         if not _have_clip(context):
             print("[Coord] FIND_LOW → no active clip → retry")
             return {"RUNNING_MODAL"}
 
         ok, result = _safe_call(run_find_low_marker_frame, context)
         if not ok or not isinstance(result, dict):
-            print(f"[Coord] FIND_LOW → FAILED (exception/invalid result) → JUMP (best-effort)")
-            result = {"status": "FAILED", "reason": "exception-or-invalid-result"}
+            print(f"[Coord] FIND_LOW → FAILED (exception/invalid) → treat as NONE")
+            result = {"status": "NONE", "reason": "exception-or-invalid-result"}
 
-        status = str(result.get("status", "FAILED")).upper()
-
+        status = str(result.get("status", "NONE")).upper()
         if status == "FOUND":
             frame = int(result.get("frame", context.scene.frame_current))
             context.scene[_GOTO_KEY] = frame
             self._jump_done = False
             print(f"[Coord] FIND_LOW → FOUND frame={frame} → JUMP")
             self._state = "JUMP"
-
-        elif status == "NONE":
-            # Cycle starten: einmal CLEAN, dann FIND_MAX ↔ SPIKE
-            print("[Coord] FIND_LOW → NONE → starte CYCLE_CLEAN (one-shot) → dann FIND_MAX↔SPIKE")
-            self._cycle_active = True
-            self._cycle_stage = "CYCLE_CLEAN"
-            self._cycle_loops = 0
-            self._cycle_initial_clean_done = False
-            self._state = "CYCLE_CLEAN"
-
         else:
-            context.scene[_GOTO_KEY] = context.scene.frame_current
-            self._jump_done = False
-            print(f"[Coord] FIND_LOW → FAILED ({result.get('reason', '?')}) → JUMP (best-effort)")
-            self._state = "JUMP"
-
-        return {"RUNNING_MODAL"}
-
-    # ---------------- SOLVE (NO-REFINE, NO-WAIT, NO-CLEANUP) ----------------
-
-    def _state_solve(self, context):
-        try:
-            res = solve_camera_only(context)
-            print(f"[Coord] SOLVE → invoked: {res}")
-        except Exception as ex:
-            print(f"[Coord] SOLVE start failed: {ex!r}")
-        # Direkt finalisieren – keine Warte-/Refine-/Cleanup-Phase
-        self._state = "FINALIZE"
+            # NONE → gewünschte Pipeline starten
+            self._spike_run_done = False
+            print("[Coord] FIND_LOW → NONE → SPIKE")
+            self._state = "SPIKE"
         return {"RUNNING_MODAL"}
 
     # ---------------- JUMP/DETECT/TRACK/CLEAN_SHORT ----------------
@@ -334,15 +326,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         if not self._jump_done:
             goto = int(context.scene.get(_GOTO_KEY, context.scene.frame_current))
             ok, jr = _safe_call(run_jump_to_frame, context, frame=goto, repeat_map=self._repeat_map)
-            if not ok or not isinstance(jr, dict):
-                print(f"[Coord] JUMP failed: invalid result → FIND_LOW")
+            if not ok or not isinstance(jr, dict) or jr.get("status") != "OK":
+                print(f"[Coord] JUMP failed → FIND_LOW")
                 self._state = "FIND_LOW"
                 return {"RUNNING_MODAL"}
-            if jr.get("status") != "OK":
-                print(f"[Coord] JUMP failed: {jr.get('reason','?')} → FIND_LOW")
-                self._state = "FIND_LOW"
-                return {"RUNNING_MODAL"}
-            print(f"[Coord] JUMP → frame={jr['frame']} repeat={jr['repeat_count']} → DETECT")
+
+            print(f"[Coord] JUMP → frame={jr['frame']} repeat={jr.get('repeat_count', 0)} → DETECT")
 
             scn = context.scene
             opt_req = scn.get(_OPT_REQ_KEY, None)
@@ -356,54 +345,43 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         context.scene.frame_set(int(opt_frame))
                     ok_opt, res_opt = _safe_call(start_optimization, context)
                     if ok_opt:
-                        print(f"[Coord] JUMP → OPTIMIZE (start_optimization, frame={opt_frame})")
+                        print(f"[Coord] JUMP → OPTIMIZE (function, frame={opt_frame})")
                     else:
                         print(f"[Coord] OPTIMIZE failed (function): {res_opt!r}")
                         ok_op, _ = _safe_ops_invoke("clip.optimize_tracking_modal", 'INVOKE_DEFAULT')
                         if ok_op:
-                            print(f"[Coord] JUMP → OPTIMIZE (operator fallback, frame={opt_frame})")
-                        else:
-                            print("[Coord] OPTIMIZE launch failed (operator)")
+                            print(f"[Coord] JUMP → OPTIMIZE (operator, frame={opt_frame})")
                 except Exception as ex_func:
-                    print(f"[Coord] OPTIMIZE failed (function): {ex_func!r}")
-                    ok_op, _ = _safe_ops_invoke("clip.optimize_tracking_modal", 'INVOKE_DEFAULT')
-                    if ok_op:
-                        print(f"[Coord] JUMP → OPTIMIZE (operator fallback, frame={opt_frame})")
-                    else:
-                        print("[Coord] OPTIMIZE launch failed (operator)")
+                    print(f"[Coord] OPTIMIZE failed: {ex_func!r}")
 
             self._jump_done = True
+
         self._detect_attempts = 0
         self._state = "DETECT"
         return {"RUNNING_MODAL"}
 
     def _state_detect(self, context):
         from ..Helper.detect import run_detect_once  # type: ignore
-
         goto = int(context.scene.get(_GOTO_KEY, context.scene.frame_current))
         ok, res = _safe_call(run_detect_once, context, start_frame=goto, handoff_to_pipeline=True)
-        if not ok or not isinstance(res, dict):
-            print(f"[Coord] DETECT → exception/invalid result → treat as FAILED")
-            status = "FAILED"
-        else:
-            status = str(res.get("status", "FAILED")).upper()
+        status = "FAILED" if (not ok or not isinstance(res, dict)) else str(res.get("status", "FAILED")).upper()
 
         if status == "RUNNING":
             self._detect_attempts += 1
-            print(f"[Coord] DETECT → RUNNING (attempt {self._detect_attempts}/{_MAX_DETECT_ATTEMPTS})")
+            print(f"[Coord] DETECT → RUNNING ({self._detect_attempts}/{_MAX_DETECT_ATTEMPTS})")
             if self._detect_attempts >= _MAX_DETECT_ATTEMPTS:
                 print("[Coord] DETECT Timebox erreicht → force TRACK")
                 self._state = "TRACK"
             return {"RUNNING_MODAL"}
 
-        # Triplet-Grouping defensiv (Fehler tolerieren, Flow unverändert)
+        # Triplet-Grouping defensiv
         ok_tg, tg = _safe_call(run_triplet_grouping, context)
         if ok_tg:
             print(f"[Coord] TRIPLET_GROUPING → {tg}")
         else:
             print(f"[Coord] TRIPLET_GROUPING failed: {tg!r}")
 
-        print(f"[Coord] DETECT → {status} → TRACK (Bidirectional)")
+        print(f"[Coord] DETECT → {status} → TRACK (bidi)")
         self._state = "TRACK"
         return {"RUNNING_MODAL"}
 
@@ -417,20 +395,16 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if ok:
                 self._bidi_started = True
             else:
-                print("[Coord] TRACK launch failed → CLEAN_SHORT (best-effort)")
+                print("[Coord] TRACK launch failed → CLEAN_SHORT")
                 self._bidi_started = False
                 self._state = "CLEAN_SHORT"
             return {"RUNNING_MODAL"}
 
         if scn.get(_BIDI_ACTIVE_KEY, False):
-            print("[Coord] TRACK → waiting (bidi_active=True)")
             return {"RUNNING_MODAL"}
 
-        # defensiver Zugriff auf Ergebnisflag
-        try:
-            result = str(scn.get(_BIDI_RESULT_KEY, "") or "").upper()
-        except Exception:
-            result = ""
+        # Ergebnisflag (optional)
+        result = str(scn.get(_BIDI_RESULT_KEY, "") or "").upper()
         scn[_BIDI_RESULT_KEY] = ""
         self._bidi_started = False
         print(f"[Coord] TRACK → finished (result={result or 'NONE'}) → CLEAN_SHORT")
@@ -438,163 +412,105 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_clean_short(self, context):
-        # Bestandteil der ursprünglichen FSM
-        print("[Coord] CLEAN_SHORT (no-op)")
-        if self._cycle_active and self._cycle_stage == "CYCLE_SPIKE":
-            print("[Coord] CLEAN_SHORT → CYCLE_SPIKE (cycle continuation)")
-            self._state = "CYCLE_SPIKE"
-        else:
-            print("[Coord] CLEAN_SHORT → FIND_LOW")
-            self._state = "FIND_LOW"
+        try:
+            frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
+            clean_short_tracks(context, min_len=frames_min, verbose=True)
+            print(f"[Coord] CLEAN_SHORT → clean_short_tracks(min_len={frames_min})")
+        except TypeError:
+            clean_short_tracks(context)
+            print("[Coord] CLEAN_SHORT → clean_short_tracks() fallback")
+        except Exception as ex:
+            print(f"[Coord] CLEAN_SHORT failed: {ex!r}")
+
+        print("[Coord] CLEAN_SHORT → FIND_LOW")
+        self._state = "FIND_LOW"
         return {"RUNNING_MODAL"}
 
-    # ---------------- CYCLE STATES ----------------
+    # ---------------- SPIKE → SOLVE → EVAL → (REFINE → SOLVE → EVAL) → (CLEANUP → FIND_LOW) ----------------
 
-    def _state_cycle_clean(self, context):
-        """One-shot CLEAN zu Beginn des Zyklus, danach FIND_MAX."""
-        if not self._cycle_active:
-            print("[Coord] CYCLE_CLEAN reached but cycle inactive → FINALIZE")
-            self._state = "FINALIZE"
-            return {"RUNNING_MODAL"}
-
-        if not self._cycle_initial_clean_done:
+    def _state_spike(self, context):
+        if not self._spike_run_done:
             try:
-                frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
-                clean_short_tracks(context, min_len=frames_min, verbose=True)
-                print(f"[Coord] CYCLE_CLEAN (one-shot) → clean_short_tracks(min_len={frames_min}) done")
-            except TypeError:
-                try:
-                    clean_short_tracks(context)
-                    print("[Coord] CYCLE_CLEAN (one-shot) → clean_short_tracks() fallback done")
-                except Exception as ex:
-                    print(f"[Coord] CYCLE_CLEAN failed: {ex!r}")
+                res = run_spike_filter_cycle(context, track_threshold=float(self._spike_threshold))
+                print(f"[Coord] SPIKE → result={res}")
             except Exception as ex:
-                print(f"[Coord] CYCLE_CLEAN failed: {ex!r}")
-            self._cycle_initial_clean_done = True
+                print(f"[Coord] SPIKE failed: {ex!r}")
+            self._spike_run_done = True
 
-        # Nach einmaligem CLEAN direkt zu FIND_MAX wechseln
-        self._cycle_stage = "CYCLE_FIND_MAX"
-        self._state = "CYCLE_FIND_MAX"
+        print("[Coord] SPIKE → SOLVE")
+        self._pending_eval_after_solve = True
+        self._state = "SOLVE"
         return {"RUNNING_MODAL"}
 
-    def _state_cycle_find_low(self, context):
-        """Findet einen *niedrigen* Marker-Frame als neuen Startpunkt für den nächsten Cycle."""
+    def _state_solve(self, context):
         try:
-            res = run_find_low_marker_frame(context)
-            # Ergebnis normalisieren: dict- oder tuple-API unterstützen
-            status = "FAILED"
-            frame = None
-            if isinstance(res, dict):
-                status = str(res.get("status", "FAILED")).upper()
-                frame = res.get("frame", None)
-            elif isinstance(res, (list, tuple)) and len(res) >= 2:
-                ok = bool(res[0])
-                status = "FOUND" if ok else "NONE"
-                frame = res[1]
-            print(f"[Coord] CYCLE_FIND_LOW → res={res!r}")
-
-            if status == "FOUND" and frame is not None:
-                try:
-                    frame_i = int(frame)
-                except Exception:
-                    raise ValueError(f"invalid frame value: {frame!r}")
-                # Ziel über JUMP→DETECT→TRACK anfahren; SPIKE nur vormerken
-                context.scene[_GOTO_KEY] = frame_i
-                self._jump_done = False
-                self._cycle_stage = "CYCLE_SPIKE"
-                print(f"[Coord] CYCLE_FIND_LOW → FOUND frame={frame_i} → JUMP")
-                self._state = "JUMP"
-                return {"RUNNING_MODAL"}
+            _ = solve_camera_only(context)
+            print("[Coord] SOLVE invoked")
         except Exception as ex:
-            print(f"[Coord] CYCLE_FIND_LOW failed: {ex!r}")
-
-        # Fallback-Pfad
-        self._cycle_stage = "CYCLE_FIND_MAX"
-        self._state = "CYCLE_FIND_MAX"
+            print(f"[Coord] SOLVE failed: {ex!r}")
+        self._state = "EVAL" if self._pending_eval_after_solve else "FINALIZE"
         return {"RUNNING_MODAL"}
 
-    def _state_cycle_findmax(self, context):
-        """FIND_MAX → bei FOUND: SOLVE, sonst SPIKE."""
-        if not self._cycle_active:
-            print("[Coord] CYCLE_FIND_MAX reached but cycle inactive → FINALIZE")
+    def _state_eval(self, context):
+        # Zielschwelle
+        target = _scene_float(context.scene, "error_track", 0.0)
+        wait_s = _scene_float(context.scene, "solve_wait_timeout_s", _DEFAULT_SOLVE_WAIT_S)
+        curr = _wait_for_valid_reconstruction(context, timeout_s=wait_s)
+        curr = _current_solve_error(context) if curr is None else curr
+        print(f"[Coord] EVAL → curr_error={curr if curr is not None else 'None'} target={target}")
+
+        if target > 0.0 and curr is not None and curr <= target:
+            print("[Coord] EVAL → OK (≤ target) → FINALIZE")
+            self._pending_eval_after_solve = False
             self._state = "FINALIZE"
-            return {"RUNNING_MODAL"}
-
-        try:
-            res = run_find_max_marker_frame(context)
-        except Exception as ex:
-            print(f"[Coord] CYCLE_FIND_MAX failed: {ex!r}")
-            res = {"status": "FAILED", "reason": repr(ex)}
-
-        status = str(res.get("status", "FAILED")).upper()
-        if status == "FOUND":
-            frame = int(res.get("frame", getattr(context.scene, "frame_current", 0)))
-            count = res.get("count", "?")
-            thresh = res.get("threshold", "?")
-            print(f"[Coord] CYCLE_FIND_MAX → FOUND frame={frame} (count={count} < threshold={thresh}) → SOLVE")
-
-            # Frame setzen (direkt), ohne über DETECT/TRACK zu gehen
-            try:
-                context.scene.frame_set(frame)
-            except Exception as ex_set:
-                print(f"[Coord] WARN: frame_set({frame}) failed: {ex_set!r}")
-
-            # Cycle beenden & Solve-Phase starten
-            self._cycle_active = False
-            self._cycle_stage = ""
-            self._state = "SOLVE"
-            return {"RUNNING_MODAL"}
-
-        # NONE oder FAILED → weiter mit SPIKE
-        print(f"[Coord] CYCLE_FIND_MAX → {status} → CYCLE_SPIKE")
-        self._cycle_stage = "CYCLE_SPIKE"
-        self._state = "CYCLE_SPIKE"
+        else:
+            print("[Coord] EVAL → above target → REFINE")
+            self._state = "REFINE"
         return {"RUNNING_MODAL"}
 
-    def _state_cycle_spike(self, context):
-        """SPIKE ausführen → danach **zurück zu FIND_MAX** (kein weiteres CLEAN)."""
-        if not self._cycle_active:
-            print("[Coord] CYCLE_SPIKE reached but cycle inactive → FINALIZE")
-            self._state = "FINALIZE"
-            return {"RUNNING_MODAL"}
-
-        # Äußeres Cycle-Limit prüfen/erhöhen
-        self._cycle_loops += 1
-        max_loops = int(getattr(context.scene, "cycle_max_loops", _CYCLE_MAX_LOOPS) or _CYCLE_MAX_LOOPS)
-        if max_loops <= 0:
-            print("[Coord] CYCLE_SPIKE → invalid max_loops ≤ 0 → FINALIZE")
-            self._cycle_active = False
-            self._cycle_stage = ""
-            self._state = "FINALIZE"
-            return {"RUNNING_MODAL"}
-
-        if self._cycle_loops > max_loops:
-            print(f"[Coord] CYCLE_SPIKE → max_loops reached ({self._cycle_loops}) → FINALIZE")
-            self._cycle_active = False
-            self._cycle_stage = ""
-            self._state = "FINALIZE"
-            return {"RUNNING_MODAL"}
-
+    def _state_refine(self, context):
+        # modal refine (blocking-wait pattern)
+        thr = _scene_float(context.scene, "error_track", 0.0)
+        if thr <= 0.0:
+            # fallback: versuche den aktuellen Error als Schwelle zu lesen
+            curr = _current_solve_error(context)
+            thr = float(curr) if curr is not None else 0.0
         try:
-            res = run_spike_filter_cycle(
+            res = start_refine_modal(
                 context,
-                track_threshold=float(self._cycle_spike_threshold),
+                error_track=float(thr),
+                only_selected_tracks=False,
+                wait_seconds=0.05,
+                ui_sleep_s=0.04,
+                max_refine_calls=int(getattr(context.scene, "refine_max_calls", 20) or 20),
+                tracking_object_name=None,
             )
-            print(f"[Coord] CYCLE_SPIKE → spike_filter_cycle result={res}")
-            status = str(res.get("status", "")).upper()
-            if status == "OK":
-                next_thr = float(res.get("next_threshold", self._cycle_spike_threshold * 0.9))
-            else:
-                next_thr = self._cycle_spike_threshold * 0.9
+            print(f"[Coord] REFINE → {res}")
         except Exception as ex:
-            print(f"[Coord] CYCLE_SPIKE failed: {ex!r}")
-            next_thr = self._cycle_spike_threshold * 0.9
+            print(f"[Coord] REFINE failed (ignored): {ex!r}")
 
-        self._cycle_spike_threshold = max(5.0, next_thr)
+        print("[Coord] REFINE → SOLVE (retry)")
+        self._pending_eval_after_solve = True
+        self._state = "SOLVE"
+        return {"RUNNING_MODAL"}
 
-        # Nach SPIKE **direkt** zurück zu FIND_MAX (kein Clean)
-        self._cycle_stage = "CYCLE_FIND_MAX"
-        self._state = "CYCLE_FIND_MAX"
+    def _state_cleanup(self, context):
+        # Optional: mit aktuellem Error limitieren, falls vorhanden
+        limit = _current_solve_error(context)
+        kwargs = {"wait_for_error": False, "action": "DELETE_TRACK"}
+        if limit is not None:
+            kwargs["error_limit"] = float(limit)
+
+        ok, res = _safe_call(run_projection_cleanup_builtin, context, **kwargs)
+        if ok:
+            print(f"[Coord] CLEANUP → {res}")
+        else:
+            print(f"[Coord] CLEANUP failed: {res!r}")
+
+        print("[Coord] CLEANUP → FIND_LOW (back to loop)")
+        self._spike_run_done = False
+        self._pending_eval_after_solve = False
+        self._state = "FIND_LOW"
         return {"RUNNING_MODAL"}
 
     # ---------------- Modal-Wrapper ----------------
@@ -605,37 +521,41 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if event.type != "TIMER":
                 return {"PASS_THROUGH"}
 
-            # Detect-Lock respektieren (kritische Sektion in Helper/detect.py)
             if context.scene.get(_LOCK_KEY, False):
                 return {"RUNNING_MODAL"}
 
-            # FSM
-            if self._state == "INIT":
+            # FSM switch
+            s = self._state
+            if s == "INIT":
                 return self._state_init(context)
-            elif self._state == "FIND_LOW":
+            elif s == "FIND_LOW":
                 return self._state_find_low(context)
-            elif self._state == "JUMP":
+            elif s == "JUMP":
                 return self._state_jump(context)
-            elif self._state == "DETECT":
+            elif s == "DETECT":
                 return self._state_detect(context)
-            elif self._state == "TRACK":
+            elif s == "TRACK":
                 return self._state_track(context)
-            elif self._state == "CLEAN_SHORT":
+            elif s == "CLEAN_SHORT":
                 return self._state_clean_short(context)
-            elif self._state == "SOLVE":
+            elif s == "SPIKE":
+                return self._state_spike(context)
+            elif s == "SOLVE":
                 return self._state_solve(context)
-            elif self._state == "CYCLE_CLEAN":
-                return self._state_cycle_clean(context)
-            elif self._state == "CYCLE_FIND_LOW":
-                return self._state_cycle_find_low(context)
-            elif self._state == "CYCLE_FIND_MAX":
-                return self._state_cycle_findmax(context)
-            elif self._state == "CYCLE_SPIKE":
-                return self._state_cycle_spike(context)
-            elif self._state == "FINALIZE":
+            elif s == "EVAL":
+                return self._state_eval(context)
+            elif s == "REFINE":
+                return self._state_refine(context)
+            elif s == "CLEANUP":
+                return self._state_cleanup(context)
+            elif s == "FINALIZE":
                 return self._finish(context, cancelled=False)
-            return self._finish(context, cancelled=True)
-        except Exception as ex:  # noqa: BLE001 - final guard
+
+            # Unknown state → fail-safe
+            _tco_log(f"Unknown state '{s}' → FINALIZE")
+            return self._finish(context, cancelled=False)
+
+        except Exception as ex:  # noqa: BLE001
             _tco_log(f"modal: unexpected exception: {ex!r}")
             return self._finish(context, cancelled=True)
 
