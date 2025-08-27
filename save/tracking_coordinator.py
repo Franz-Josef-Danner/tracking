@@ -8,11 +8,6 @@ Strikter FSM-Ablauf: FIND_LOW → JUMP → DETECT (nur READY/FAILED zählen) →
 - Detect läuft ggf. mehrfach (RUNNING) im selben State, bis READY/FAILED oder Timebox.
 - Nach Detect: einmaliges Clean-Short-Gate (__skip_clean_short_once) setzen, dann Bi-Track starten.
 - Erst nach Bi-Track erfolgt Clean-Short.
-
-NEU:
-- Wenn Helper/optimize_tracking_modal.py angestoßen wurde und abgeschlossen ist, wird **vor** dem nächsten
-  FIND_LOW zunächst Helper/marker_helper_main.py ausgeführt. Implementiert via Pending-Flag, das beim Start des
-  Optimizers gesetzt und beim Eintritt in FIND_LOW (einmalig) abgearbeitet wird.
 """
 
 import bpy
@@ -29,10 +24,7 @@ _BIDI_ACTIVE_KEY = "bidi_active"
 _BIDI_RESULT_KEY = "bidi_result"
 _CLEAN_SKIP_ONCE = "__skip_clean_short_once"  # vom Cleaner respektiert
 
-# Keys für Optimizer-Signal (werden von Helper/jump_to_frame.py gesetzt)
-_OPT_REQ_KEY = "__optimize_request"
-_OPT_REQ_VAL = "JUMP_REPEAT"
-_OPT_FRAME_KEY = "__optimize_frame"
+# (Optimizer removed)
 
 def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
     try:
@@ -175,29 +167,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._state = "FIND_LOW"
         return {"RUNNING_MODAL"}
 
-    def _run_post_opt_marker_if_needed(self, context) -> None:
-        """Falls der Optimizer zuvor gestartet wurde, einmalig Marker-Helper ausführen,
-        **bevor** wieder FIND_LOW arbeitet.
-        """
-        scn = context.scene
-        if not scn.get(_OPT_POST_MARKER_PENDING, False):
-            return
-        print("[Coord] POST-OPT → run marker_helper_main()")
-        try:
-            # Funktions-API bevorzugen
-            from ..Helper.marker_helper_main import run_marker_helper_main  # type: ignore
-            run_marker_helper_main(context)
-        except Exception as ex_func:
-            print(f"[Coord] marker_helper_main function failed: {ex_func!r} → try operator fallback")
-            try:
-                # Fallback: evtl. existierender Operator
-                bpy.ops.clip.marker_helper_main('INVOKE_DEFAULT')
-            except Exception as ex_op:
-                print(f"[Coord] marker_helper_main launch failed: {ex_op!r}")
-        finally:
-            scn[_OPT_POST_MARKER_PENDING] = False
-            print("[Coord] POST-OPT → done (flag cleared)")
-
     def _state_find_low(self, context):
         from ..Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
         from ..Helper.clean_error_tracks import run_clean_error_tracks        # type: ignore
@@ -278,27 +247,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {"RUNNING_MODAL"}
             print(f"[Coord] JUMP → frame={jr['frame']} repeat={jr['repeat_count']} → DETECT")
 
-            # Signal aus jump_to_frame verwerten (falls gesetzt)
-            scn = context.scene
-            opt_req = scn.get(_OPT_REQ_KEY, None)
-            opt_frame = int(scn.get(_OPT_FRAME_KEY, jr.get('frame', scn.frame_current)))
-            if jr.get("optimize_signal") or opt_req == _OPT_REQ_VAL:
-                scn.pop(_OPT_REQ_KEY, None)
-                scn[_OPT_FRAME_KEY] = opt_frame
-                try:
-                    from ..Helper.optimize_tracking_modal import start_optimization  # type: ignore
-                    if int(context.scene.frame_current) != int(opt_frame):
-                        context.scene.frame_set(int(opt_frame))
-                    start_optimization(context)
-                    print(f"[Coord] JUMP → OPTIMIZE (start_optimization, frame={opt_frame})")
-                except Exception as ex_func:
-                    print(f"[Coord] OPTIMIZE failed (function): {ex_func!r}")
-                    try:
-                        bpy.ops.clip.optimize_tracking_modal('INVOKE_DEFAULT')
-                        print(f"[Coord] JUMP → OPTIMIZE (operator fallback, frame={opt_frame})")
-                    except Exception as ex_op:
-                        print(f"[Coord] OPTIMIZE launch failed: {ex_op!r}")
-                      
+            # (Optimizer removed: no action on jump-repeat)
+
             self._jump_done = True
         self._detect_attempts = 0
         self._state = "DETECT"

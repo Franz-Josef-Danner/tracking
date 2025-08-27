@@ -6,7 +6,7 @@ Helper/__init__.py – Function + Operator Registrar (aktualisiert)
 - Registriert IMMER:
     * CLIP_OT_bidirectional_track
     * CLIP_OT_refine_high_error_modal  (neuer Modal-Operator)
-- Optionale Operatoren: optimize_tracking_modal, marker_helper_main
+- Optionale Operatoren: marker_helper_main
 """
 from __future__ import annotations
 import bpy
@@ -21,11 +21,6 @@ from .refine_high_error import CLIP_OT_refine_high_error_modal, start_refine_mod
 from .bidirectional_track import CLIP_OT_bidirectional_track
 
 # --- Optionale Operatoren ----------------------------------------------------
-try:
-    from .optimize_tracking_modal import CLIP_OT_optimize_tracking_modal  # type: ignore
-except Exception:
-    CLIP_OT_optimize_tracking_modal = None  # type: ignore
-
 try:
     from .marker_helper_main import CLIP_OT_marker_helper_main  # type: ignore
 except Exception:
@@ -48,8 +43,6 @@ _FIXED_CLASSES = [
 ]
 
 _OPTIONAL_CLASSES = []
-if CLIP_OT_optimize_tracking_modal is not None:
-    _OPTIONAL_CLASSES.append(CLIP_OT_optimize_tracking_modal)
 if CLIP_OT_marker_helper_main is not None:
     _OPTIONAL_CLASSES.append(CLIP_OT_marker_helper_main)
 
