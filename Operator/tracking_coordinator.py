@@ -16,6 +16,7 @@ from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin
 from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
 from ..Helper.spike_filter_cycle import run_spike_filter_cycle  # type: ignore
+from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # optional, aktuell ungenutzt
 
 __all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
 
@@ -35,6 +36,7 @@ _OPT_FRAME_KEY = "__optimize_frame"
 # Defaults
 _DEFAULT_SOLVE_WAIT_S = 60.0
 _DEFAULT_SPIKE_START = 100.0
+_DEFAULT_REFINE_TIMEOUT_S = 30.0
 
 
 def _tco_log(msg: str) -> None:
@@ -172,13 +174,20 @@ def trigger_spike_filter_once(value: float, *, context: bpy.types.Context | None
         scene["tco_spike_suppress_remember"] = False
 
 
+def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
+    try:
+        self.report(level, msg)
+    except Exception:
+        print(f"[Coordinator] {msg}")
+
+
 # ---------------------------------------------------------------------------
 # Operator
 # ---------------------------------------------------------------------------
 
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     """
-    Zielablauf (präzise Vorgabe):
+    Zielablauf:
 
     Tracking-Loop:
       1) FIND_LOW: Solange niedrige Marker-Frames gefunden werden:
@@ -186,12 +195,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
       2) FIND_LOW liefert NONE:
             → SPIKE_FILTER_CYCLE (einmal)
             → SOLVE
-            → if error <= error_track: FINALIZE
-            → else REFINE (modal, blocking)
-                  → SOLVE (erneut)
-                  → if error <= error_track: FINALIZE
-                  → else PROJECTION_CLEANUP
-                        → zurück in Tracking-Loop (FIND_LOW)
+            → if error ≤ error_track: FINALIZE
+            → else REFINE (modal, blocking) → SOLVE → if error ≤ error_track: FINALIZE
+            → else PROJECTION_CLEANUP → zurück zu FIND_LOW
     """
     bl_idname = "clip.tracking_coordinator"
     bl_label = "Tracking Orchestrator"
@@ -211,10 +217,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     # Solve / Evaluate book-keeping
     _pending_eval_after_solve: bool = False  # true → nach Solve steht EVAL an
+    _did_refine_this_cycle: bool = False     # true → letzter Solve kam direkt nach Refine
 
     # Spike control
     _spike_run_done: bool = False
     _spike_threshold: float = _DEFAULT_SPIKE_START
+
+    # Refine wait
+    _refine_deadline: Optional[float] = None
 
     @classmethod
     def poll(cls, context):
@@ -264,7 +274,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.25, window=context.window)
         wm.modal_handler_add(self)
-        print("[Coord] START (Detect→Bidi→CleanShort Loop; Spike→Solve→Eval→Refine→Solve→Eval→Cleanup)")
+        print("[Coord] START (Detect→Bidi→CleanShort Loop; Spike→Solve→Eval→Refine→Wait→Solve→Eval→Cleanup)")
         return {"RUNNING_MODAL"}
 
     # ---------------- Bootstrap ----------------
@@ -283,8 +293,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._bidi_started = False
 
         self._pending_eval_after_solve = False
+        self._did_refine_this_cycle = False
         self._spike_run_done = False
         self._spike_threshold = float(getattr(context.scene, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START)
+        self._refine_deadline = None
 
     # ---------------- States ----------------
 
@@ -315,6 +327,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         else:
             # NONE → gewünschte Pipeline starten
             self._spike_run_done = False
+            self._did_refine_this_cycle = False
             print("[Coord] FIND_LOW → NONE → SPIKE")
             self._state = "SPIKE"
         return {"RUNNING_MODAL"}
@@ -426,7 +439,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._state = "FIND_LOW"
         return {"RUNNING_MODAL"}
 
-    # ---------------- SPIKE → SOLVE → EVAL → (REFINE → SOLVE → EVAL) → (CLEANUP → FIND_LOW) ----------------
+    # ---------------- SPIKE → SOLVE → EVAL → (REFINE_LAUNCH → REFINE_WAIT → SOLVE → EVAL) → (CLEANUP → FIND_LOW) ----------------
 
     def _state_spike(self, context):
         if not self._spike_run_done:
@@ -455,26 +468,34 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # Zielschwelle
         target = _scene_float(context.scene, "error_track", 0.0)
         wait_s = _scene_float(context.scene, "solve_wait_timeout_s", _DEFAULT_SOLVE_WAIT_S)
+
         curr = _wait_for_valid_reconstruction(context, timeout_s=wait_s)
         curr = _current_solve_error(context) if curr is None else curr
         print(f"[Coord] EVAL → curr_error={curr if curr is not None else 'None'} target={target}")
 
         if target > 0.0 and curr is not None and curr <= target:
             print("[Coord] EVAL → OK (≤ target) → FINALIZE")
+            # Reset Cycle-Flags
             self._pending_eval_after_solve = False
+            self._did_refine_this_cycle = False
+            self._spike_run_done = False
             self._state = "FINALIZE"
         else:
-            print("[Coord] EVAL → above target → REFINE")
-            self._state = "REFINE"
+            if self._did_refine_this_cycle:
+                print("[Coord] EVAL → still above target after REFINE → CLEANUP")
+                self._state = "CLEANUP"
+            else:
+                print("[Coord] EVAL → above target → REFINE_LAUNCH")
+                self._state = "REFINE_LAUNCH"
         return {"RUNNING_MODAL"}
 
-    def _state_refine(self, context):
-        # modal refine (blocking-wait pattern)
+    def _state_refine_launch(self, context):
+        """Startet Refine modal; wechselt in REFINE_WAIT und blockiert dort bis Ende/Timeout."""
         thr = _scene_float(context.scene, "error_track", 0.0)
         if thr <= 0.0:
-            # fallback: versuche den aktuellen Error als Schwelle zu lesen
             curr = _current_solve_error(context)
             thr = float(curr) if curr is not None else 0.0
+
         try:
             res = start_refine_modal(
                 context,
@@ -485,13 +506,46 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 max_refine_calls=int(getattr(context.scene, "refine_max_calls", 20) or 20),
                 tracking_object_name=None,
             )
-            print(f"[Coord] REFINE → {res}")
+            print(f"[Coord] REFINE_LAUNCH → {res}")
         except Exception as ex:
-            print(f"[Coord] REFINE failed (ignored): {ex!r}")
+            print(f"[Coord] REFINE_LAUNCH failed (ignored): {ex!r}")
+            res = {"status": "ERROR", "reason": repr(ex)}
 
-        print("[Coord] REFINE → SOLVE (retry)")
+        status = (res or {}).get("status", "").upper()
+        timeout_s = _scene_float(context.scene, "refine_timeout_s", _DEFAULT_REFINE_TIMEOUT_S)
+        self._refine_deadline = time.monotonic() + float(timeout_s)
+
+        if status in ("STARTED", "BUSY"):
+            # BUSY: bereits aktiv → trotzdem warten
+            self._state = "REFINE_WAIT"
+            return {"RUNNING_MODAL"}
+
+        # NOT_STARTED/ERROR → kein aktiver Refine; direkt zum Re-Solve
+        print("[Coord] REFINE_LAUNCH → not active → SOLVE")
+        self._did_refine_this_cycle = False
         self._pending_eval_after_solve = True
         self._state = "SOLVE"
+        return {"RUNNING_MODAL"}
+
+    def _state_refine_wait(self, context):
+        """Wartet bis der modal Refiner fertig ist (scene['refine_active'] == False) oder Timeout."""
+        active = bool(context.scene.get("refine_active", False))
+        now = time.monotonic()
+        if not active:
+            print("[Coord] REFINE_WAIT → finished → SOLVE")
+            self._did_refine_this_cycle = True
+            self._pending_eval_after_solve = True
+            self._state = "SOLVE"
+            return {"RUNNING_MODAL"}
+
+        if self._refine_deadline is not None and now >= float(self._refine_deadline):
+            print("[Coord] REFINE_WAIT → TIMEOUT → SOLVE (fallback)")
+            self._did_refine_this_cycle = True  # wir haben versucht zu refinen
+            self._pending_eval_after_solve = True
+            self._state = "SOLVE"
+            return {"RUNNING_MODAL"}
+
+        # weiter warten
         return {"RUNNING_MODAL"}
 
     def _state_cleanup(self, context):
@@ -508,8 +562,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print(f"[Coord] CLEANUP failed: {res!r}")
 
         print("[Coord] CLEANUP → FIND_LOW (back to loop)")
+        # Reset Flags für nächsten Loop
         self._spike_run_done = False
         self._pending_eval_after_solve = False
+        self._did_refine_this_cycle = False
         self._state = "FIND_LOW"
         return {"RUNNING_MODAL"}
 
@@ -524,7 +580,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if context.scene.get(_LOCK_KEY, False):
                 return {"RUNNING_MODAL"}
 
-            # FSM switch
             s = self._state
             if s == "INIT":
                 return self._state_init(context)
@@ -544,14 +599,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return self._state_solve(context)
             elif s == "EVAL":
                 return self._state_eval(context)
-            elif s == "REFINE":
-                return self._state_refine(context)
+            elif s == "REFINE_LAUNCH":
+                return self._state_refine_launch(context)
+            elif s == "REFINE_WAIT":
+                return self._state_refine_wait(context)
             elif s == "CLEANUP":
                 return self._state_cleanup(context)
             elif s == "FINALIZE":
                 return self._finish(context, cancelled=False)
 
-            # Unknown state → fail-safe
             _tco_log(f"Unknown state '{s}' → FINALIZE")
             return self._finish(context, cancelled=False)
 
