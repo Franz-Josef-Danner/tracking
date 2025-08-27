@@ -7,7 +7,8 @@ from bpy.types import Scene
 from bpy.props import BoolProperty, FloatProperty
 from typing import Optional, Dict, Any, Callable, Tuple
 
-from ..Helper.triplet_grouping import run_triplet_grouping  # top-level import
+# Entfernt: Triplet-Grouping/Joiner aus dem Ablauf
+# from ..Helper.triplet_grouping import run_triplet_grouping  # removed
 from ..Helper.solve_camera import solve_camera_only
 from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin
 
@@ -176,7 +177,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     Zielablauf:
 
       A) FIND_LOW findet Frames:
-         → JUMP → DETECT → (Triplet) → TRACK (bidi) → CLEAN_SHORT → zurück zu FIND_LOW
+         → JUMP → DETECT → TRACK (bidi) → CLEAN_SHORT → zurück zu FIND_LOW
 
       B) FIND_LOW liefert NONE:
          → CYCLE_START
@@ -184,9 +185,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
            … bis FIND_MAX einen Frame liefert
          → SOLVE → EVAL
               → wenn OK: FINALIZE
-              → wenn nicht: REFINE (modal, echtes Warten) → SOLVE → EVAL
-                   → wenn OK: FINALIZE
-                   → sonst: CLEANUP → zurück zu FIND_LOW
+              → wenn nicht: CLEANUP → zurück zu FIND_LOW
     """
     bl_idname = "clip.tracking_coordinator"
     bl_label = "Tracking Orchestrator"
@@ -263,7 +262,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.25, window=context.window)
         wm.modal_handler_add(self)
-        print("[Coord] START (Detect/Bidi-Loop; unendlicher CYCLE: FIND_MAX↔SPIKE bis FOUND; Solve→Eval→Refine→Solve→Eval→Cleanup)")
+        print("[Coord] START (Detect/Bidi-Loop; unendlicher CYCLE: FIND_MAX↔SPIKE bis FOUND; Solve→Eval→Cleanup)")
         return {"RUNNING_MODAL"}
 
     # ---------------- Bootstrap ----------------
@@ -383,13 +382,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self._state = "TRACK"
             return {"RUNNING_MODAL"}
 
-        # Triplet-Grouping defensiv
-        ok_tg, tg = _safe_call(run_triplet_grouping, context)
-        if ok_tg:
-            print(f"[Coord] TRIPLET_GROUPING → {tg}")
-        else:
-            print(f"[Coord] TRIPLET_GROUPING failed: {tg!r}")
-
+        # Triplet-Grouping vollständig entfernt
         print(f"[Coord] DETECT → {status} → TRACK (bidi)")
         self._state = "TRACK"
         return {"RUNNING_MODAL"}
@@ -502,7 +495,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._state = "CYCLE_FIND_MAX"
         return {"RUNNING_MODAL"}
 
-    # ---------------- SOLVE → EVAL → REFINE → SOLVE → EVAL → CLEANUP ----------------
+    # ---------------- SOLVE → EVAL → CLEANUP ----------------
 
     def _state_solve(self, context):
         try:
@@ -527,52 +520,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._did_refine_this_cycle = False
             self._state = "FINALIZE"
         else:
-            print("[Coord] EVAL → above target → CLEANUP (Refine disabled)")
+            print("[Coord] EVAL → above target → CLEANUP")
             self._state = "CLEANUP"
-        return {"RUNNING_MODAL"}
-
-    def _state_refine_launch(self, context):
-        """Startet Refine modal; wechselt in REFINE_WAIT und wartet dort ohne Timeout."""
-        thr = _scene_float(context.scene, "error_track", 0.0)
-        if thr <= 0.0:
-            curr = _current_solve_error(context)
-            thr = float(curr) if curr is not None else 0.0
-
-        try:
-            res = start_refine_modal(
-                context,
-                error_track=float(thr),
-                only_selected_tracks=False,
-                wait_seconds=_DEFAULT_REFINE_POLL_S,
-                ui_sleep_s=0.04,
-                max_refine_calls=int(getattr(context.scene, "refine_max_calls", 20) or 20),
-                tracking_object_name=None,
-            )
-        except Exception as ex:
-            res = {"status": "ERROR", "reason": repr(ex)}
-
-        status = (res or {}).get("status", "").upper()
-        if status in ("STARTED", "BUSY"):
-            self._state = "REFINE_WAIT"
-            return {"RUNNING_MODAL"}
-
-        # NOT_STARTED/ERROR → kein aktiver Refine; direkt Solve
-        print("[Coord] REFINE_LAUNCH → not active → SOLVE")
-        self._did_refine_this_cycle = False
-        self._pending_eval_after_solve = True
-        self._state = "SOLVE"
-        return {"RUNNING_MODAL"}
-
-    def _state_refine_wait(self, context):
-        """Wartet bis der modal Refiner fertig ist (scene['refine_active'] == False). Kein Timeout."""
-        active = bool(context.scene.get("refine_active", False))
-        if not active:
-            print("[Coord] REFINE_WAIT → finished → SOLVE")
-            self._did_refine_this_cycle = True
-            self._pending_eval_after_solve = True
-            self._state = "SOLVE"
-            return {"RUNNING_MODAL"}
-        # weiter warten
         return {"RUNNING_MODAL"}
 
     def _state_cleanup(self, context):
