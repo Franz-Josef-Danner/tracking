@@ -134,15 +134,39 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
     solver_changes['keyframe_selection'] = keyframe_name
 
     # Refine Focal Length
-    refine_focal_name = _try_set_false(ts, ("refine_focal_length", "refine_focal", "refine_focal_length_error"))
+    refine_focal_name = _try_set_false(
+        ts,
+        (
+            "refine_intrinsics_focal_length",
+            "refine_focal_length",
+            "refine_focal",
+            "refine_focal_length_error",
+        ),
+    )
     solver_changes['refine_focal_length'] = refine_focal_name
 
     # Refine Optical center (Principal Point)
-    refine_principal_name = _try_set_false(ts, ("refine_principal_point", "refine_principal", "refine_principal_point_x"))
+    refine_principal_name = _try_set_false(
+        ts,
+        (
+            "refine_intrinsics_principal_point",
+            "refine_principal_point",
+            "refine_principal",
+            "refine_principal_point_x",
+        ),
+    )
     solver_changes['refine_principal_point'] = refine_principal_name
 
     # Refine Radial Distortion
-    refine_radial_name = _try_set_false(ts, ("refine_radial_distortion", "refine_distortion", "refine_k1"))
+    refine_radial_name = _try_set_false(
+        ts,
+        (
+            "refine_intrinsics_radial_distortion",
+            "refine_radial_distortion",
+            "refine_distortion",
+            "refine_k1",
+        ),
+    )
     solver_changes['refine_radial_distortion'] = refine_radial_name
 
     if log:
