@@ -324,7 +324,7 @@ class CLIP_OT_refine_high_error_modal(Operator):
 
                 # refine rückwärts (nur wenn noch Budget)
                 if self._ops_left > 0:
-                    with context.temp_override(**self._ovr"):
+                    with context.temp_override(**self._ovr):
                         bpy.ops.clip.refine_markers("EXEC_DEFAULT", backwards=True)
                     self._ops_left -= 1
                     with context.temp_override(**self._ovr):
