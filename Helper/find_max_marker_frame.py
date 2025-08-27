@@ -95,7 +95,7 @@ def run_find_max_marker_frame(
     return_observed_min: bool = True,
 ) -> Dict[str, Any]:
     """Sucht den **ersten** Frame im Szenenbereich, dessen aktive Markerzahl
-    unter ``threshold = scene.marker_frame * 1`` liegt.
+    unter ``threshold = scene.marker_frame * 1.1`` liegt.
 
     Zusätzlich werden (falls kein Treffer) das kleinste beobachtete ``count``
     sowie der zugehörige Frame zurückgegeben, um heuristische Entscheidungen
@@ -110,7 +110,7 @@ def run_find_max_marker_frame(
         marker_frame_val = int(getattr(scene, "marker_frame", scene.frame_current) or scene.frame_current)
     except Exception:
         marker_frame_val = int(getattr(scene, "frame_current", 0) or 0)
-    threshold = int(marker_frame_val * 1)
+    threshold = int(marker_frame_val * 1.1)
 
     tracks = _get_tracks_collection(clip)
     if tracks is None:
