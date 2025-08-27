@@ -193,8 +193,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
               → wenn nicht: CLEANUP → zurück zu FIND_LOW
 
     Hinweis: Die Iterationsbegrenzung für FIND_MAX↔SPIKE beginnt erst zu zählen,
-    wenn eine SPIKE-Iteration tatsächlich Marker entfernt hat. Solange SPIKE
-    keine Marker entfernt (removed == 0) laufen die Durchläufe unbegrenzt.
+    wenn eine SPIKE-Iteration tatsächlich Marker entfernt hat.
     """
     bl_idname = "clip.tracking_coordinator"
     bl_label = "Tracking Orchestrator"
@@ -550,6 +549,19 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # Neuer finaler Ablauf: bei erfolgreichem Solve unter Threshold: zwei Refinements ausführen
             # 1) refine_intrinsics_focal_length = True → solve_camera_only()
             # 2) refine_intrinsics_radial_distortion = True → solve_camera_only()
+
+            # Neuer Schritt: vor den finalen Intrinsics-Refinements zuerst parallax_keyframe auslösen
+            print("[Coord] EVAL → OK (≤ target) → invoking parallax_keyframe before final intrinsics refinement")
+            try:
+                from ..Helper.parallax_keyframe import run_parallax_keyframe  # type: ignore
+                ok_pk, res_pk = _safe_call(run_parallax_keyframe, context)
+                if ok_pk:
+                    print(f"[Coord] parallax_keyframe result: {res_pk}")
+                else:
+                    print(f"[Coord] parallax_keyframe failed: {res_pk!r}")
+            except Exception as ex_pk:
+                print(f"[Coord] parallax_keyframe import/call exception: {ex_pk!r}")
+
             print("[Coord] EVAL → OK (≤ target) → performing final intrinsics refinement steps")
 
             scn = context.scene
