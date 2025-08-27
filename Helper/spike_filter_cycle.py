@@ -19,6 +19,12 @@ from typing import Optional, Dict, Any, List, Tuple
 import bpy
 import math
 
+try:
+    # wenn dieses Modul innerhalb des Pakets "Helper" liegt:
+    from .clean_short_tracks import clean_short_tracks  # type: ignore
+except Exception:
+    clean_short_tracks = None  # wird später geprüft
+    
 __all__ = [
     "run_marker_spike_filter_cycle",
 ]
@@ -170,6 +176,29 @@ def _apply_marker_outlier_filter(context: bpy.types.Context, *, threshold_px: fl
 
     return affected
 
+def _run_clean_short_tracks(context: bpy.types.Context, *, min_len: int, verbose: bool = True) -> int:
+    """
+    Ruft Helper/clean_short_tracks.py auf (falls vorhanden).
+    Gibt die Anzahl bereinigter/entfernter Short-Tracks zurück, falls ermittelbar,
+    ansonsten 0. Der Helper selbst kann 'None' zurückgeben – wir handeln defensiv.
+    """
+    if clean_short_tracks is None:
+        print("[MarkerSpike] clean_short_tracks not available (import failed)")
+        return 0
+    try:
+        res = clean_short_tracks(context, min_len=int(min_len), verbose=bool(verbose))  # type: ignore[arg-type]
+        # Der Helper kann alles Mögliche zurückgeben; wir normalisieren konservativ:
+        if isinstance(res, dict):
+            # häufige Keys absichern, falls dein Helper so etwas liefert
+            for k in ("removed", "deleted", "cleaned", "count"):
+                if k in res:
+                    return int(res.get(k, 0) or 0)
+        if isinstance(res, (int, float)):
+            return int(res)
+        return 0
+    except Exception as ex:
+        print(f"[MarkerSpike] clean_short_tracks failed: {ex!r}")
+        return 0
 
 # ---------------------------------------------------------------------------
 # Öffentliche API
@@ -178,11 +207,14 @@ def _apply_marker_outlier_filter(context: bpy.types.Context, *, threshold_px: fl
 def run_marker_spike_filter_cycle(
     context: bpy.types.Context,
     *,
-    track_threshold: float = 3.0,  # Pixel/Frame
-    action: str = "MUTE",          # "MUTE" | "DELETE" | "SELECT"
+    track_threshold: float = 3.0,   # Pixel/Frame
+    action: str = "MUTE",           # "MUTE" | "DELETE" | "SELECT"
+    clean_after: bool = True,       # ⬅️ NEU: nachgelagerten Short-Track-Clean auslösen
+    clean_min_len: int | None = None,  # ⬅️ NEU: Mindestlänge (Frames); None ⇒ Szenen-Property/Fallback
 ) -> Dict[str, Any]:
     """
     Führt einen Marker-basierten Spike-Filter-Durchlauf aus (Pixel/Frame).
+    Optional: ruft im Anschluss Helper/clean_short_tracks.py auf.
     """
     if not _get_active_clip(context):
         return {"status": "FAILED", "reason": "no active MovieClip"}
@@ -193,9 +225,21 @@ def run_marker_spike_filter_cycle(
     affected = _apply_marker_outlier_filter(context, threshold_px=thr, action=act)
     print(f"[MarkerSpike] affected {affected} marker(s) with action={act}")
 
+    cleaned = 0
+    if clean_after:
+        # Mindestlänge beziehen: Param > Scene-Property > Fallback 25
+        scn = context.scene
+        min_len = int(clean_min_len) if clean_min_len is not None else int(getattr(scn, "frames_track", 25) or 25)
+        cleaned = _run_clean_short_tracks(context, min_len=min_len, verbose=True)
+        print(f"[MarkerSpike] clean_short_tracks(min_len={min_len}) → cleaned={cleaned}")
+
     next_thr = _lower_threshold(thr)
     print(f"[MarkerSpike] next threshold → {next_thr}")
 
-    # Feldname je nach Aktion, damit Logs konsistent bleiben
     key = "muted" if act == "MUTE" else ("deleted" if act == "DELETE" else "selected")
-    return {"status": "OK", key: int(affected), "next_threshold": float(next_thr)}
+    return {
+        "status": "OK",
+        key: int(affected),
+        "cleaned": int(cleaned),          # ⬅️ NEU: Info, wie viel der Short-Clean bereinigt hat
+        "next_threshold": float(next_thr)
+    }
