@@ -450,10 +450,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # ---------------- CYCLE: FIND_MAX ↔ SPIKE (mit Iterationslimit) ----------------
 
     def _state_cycle_find_max(self, context):
-        """Suche Frame mit Markeranzahl < threshold. Wenn gefunden → SOLVE; sonst → SPIKE.
-        Die Iterationsbegrenzung wird nicht hier hochgezählt — sie wird nur erhöht, wenn
-        eine vorherige SPIKE-Iteration tatsächlich Marker entfernt hat.
-        """
         if not self._cycle_active:
             print("[Coord] CYCLE_FIND_MAX reached with inactive cycle → FINALIZE")
             self._state = "FINALIZE"
@@ -493,20 +489,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_cycle_spike(self, context):
-        """Eine Spike-Iteration; danach immer zurück zu FIND_MAX. Keine Limits, ausser dem globalen Iterationslimit.
-        Die globale Iterationszählung wird nur erhöht, wenn diese SPIKE-Iteration tatsächlich Marker entfernt hat.
-        """
         if not self._cycle_active:
             print("[Coord] CYCLE_SPIKE with inactive cycle → FINALIZE")
             self._state = "FINALIZE"
             return {"RUNNING_MODAL"}
 
-        # Eine Iteration ausführen
         try:
             res = run_spike_filter_cycle(context, track_threshold=float(self._spike_threshold))
         except Exception as ex:
             print(f"[Coord] CYCLE_SPIKE failed: {ex!r}")
-            # Trotz Fehler zurück zu FIND_MAX
             self._state = "CYCLE_FIND_MAX"
             return {"RUNNING_MODAL"}
 
@@ -515,23 +506,18 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         next_thr = float(res.get("next_threshold", self._spike_threshold * 0.9))
         print(f"[Coord] CYCLE_SPIKE → status={status}, removed={removed}, next={next_thr:.2f} (curr={self._spike_threshold:.2f})")
 
-        # Threshold aktualisieren; Minimalabsicherung gegen negative Werte
         self._spike_threshold = max(next_thr, 0.0)
 
-        # Wenn diese SPIKE-Iteration tatsächlich Marker entfernt hat, zählt das als eine Iteration.
         if removed > 0:
             self._cycle_iterations += 1
             print(f"[Coord] CYCLE_SPIKE → removed>0 → incremented deletion-iterations to {self._cycle_iterations}/{_CYCLE_MAX_ITER}")
             if self._cycle_iterations > _CYCLE_MAX_ITER:
-                # Entscheidung: bei Erreichen des Limits zum Solve-Pfad wechseln
                 print(f"[Coord] CYCLE deletion-iteration limit ({_CYCLE_MAX_ITER}) reached → proceed to SOLVE")
-                # Zyklus beenden und Solve-Pfad einleiten
                 self._cycle_active = False
                 self._pending_eval_after_solve = True
                 self._state = "SOLVE"
                 return {"RUNNING_MODAL"}
 
-        # Danach wieder FIND_MAX prüfen
         self._state = "CYCLE_FIND_MAX"
         return {"RUNNING_MODAL"}
 
@@ -555,20 +541,34 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         print(f"[Coord] EVAL → curr_error={curr if curr is not None else 'None'} target={target}")
 
         if target > 0.0 and curr is not None and curr <= target:
-            # Neuer finaler Ablauf: bei erfolgreichem Solve unter Threshold: zwei Refinements ausführen
-            # 1) refine_intrinsics_focal_length = True → solve_camera_only()
-            # 2) refine_intrinsics_radial_distortion = True → solve_camera_only()
-
             # Neuer Schritt: vor den finalen Intrinsics-Refinements zuerst parallax_keyframe auslösen
             print("[Coord] EVAL → OK (≤ target) → invoking parallax_keyframe before final intrinsics refinement")
             try:
                 from ..Helper.parallax_keyframe import run_parallax_keyframe  # type: ignore
+
+                # Clip-Länge ermitteln (robust)
+                frame_len = 0
+                try:
+                    clip = getattr(getattr(context.space_data, "clip", None), "tracking", None)
+                    c = context.space_data.clip if getattr(context.space_data, "clip", None) else None
+                    frame_len = int(getattr(c, "frame_duration", 0) or 0)
+                except Exception:
+                    frame_len = 0
+
+                # Adaptive Schrittweite
+                step = 2 if frame_len <= 300 else (4 if frame_len <= 800 else 8)
+
                 ok_pk, res_pk = _safe_call(
                     run_parallax_keyframe, context,
-                    apply_best_pair=True  # <— bestes A/B setzen
+                    apply_best_pair=True,
+                    frame_step=step,
+                    min_frame_gap=35,
+                    min_common_tracks=10,
+                    top_k=5,
+                    time_budget_s=2.0,
+                    max_pairs=40000,
                 )
                 if ok_pk and isinstance(res_pk, dict) and res_pk.get("applied"):
-                    # direkt neu lösen (Pose-only), bevor Intrinsics-Refinement kommt
                     ok_resolve, _ = _safe_call(solve_camera_only, context)
                     print(f"[Coord] re-solve after parallax A/B applied: {'OK' if ok_resolve else 'FAILED'}")
                 if ok_pk:
@@ -582,11 +582,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
             scn = context.scene
             try:
-                # Set focal length refinement and run solver
                 try:
                     setattr(scn, "refine_intrinsics_focal_length", True)
                 except Exception:
-                    # fallback: set as dict item if attribute not supported
                     scn["refine_intrinsics_focal_length"] = True
 
                 ok1, res1 = _safe_call(solve_camera_only, context)
@@ -599,7 +597,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 print(f"[Coord] Final refine (focal_length) exception: {ex_ref1!r}")
 
             try:
-                # Set radial distortion refinement and run solver
                 try:
                     setattr(scn, "refine_intrinsics_radial_distortion", True)
                 except Exception:
@@ -614,7 +611,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception as ex_ref2:
                 print(f"[Coord] Final refine (radial_distortion) exception: {ex_ref2!r}")
 
-            # Nach den finalen Steps normal beenden / finalisieren
             print("[Coord] EVAL → final intrinsics refinement done → FINALIZE")
             self._pending_eval_after_solve = False
             self._did_refine_this_cycle = False
@@ -636,7 +632,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         else:
             print(f"[Coord] CLEANUP failed: {res!r}")
 
-        # Nach Cleanup zurück in den Tracking-Loop (FIND_LOW)
         print("[Coord] CLEANUP → FIND_LOW (back to loop)")
         self._pending_eval_after_solve = False
         self._did_refine_this_cycle = False
