@@ -245,8 +245,8 @@ def run_projection_cleanup_builtin(
         return {"status": "SKIPPED", "reason": "no_error", "used_error": None, "action": action,
                 "before": None, "after": None, "deleted": None, "selected": None, "disabled": None}
 
-    # Wert vor Verwendung mit Faktor 1.5 multiplizieren
-    used_error = float(used_error) * 1.5
+    # Wert vor Verwendung mit Faktor 2 multiplizieren
+    used_error = float(used_error) * 2
     print(f"[Cleanup] Starte clean_tracks mit Grenzwert {used_error:.4f}px, action={action}")
 
     # 2) Vorher-Count, Operator aufrufen, Nachher-Count/Statistiken berechnen
