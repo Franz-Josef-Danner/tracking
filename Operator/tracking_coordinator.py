@@ -541,31 +541,58 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         curr = _current_solve_error(context) if curr is None else curr
         print(f"[Coord] EVAL → curr_error={curr if curr is not None else 'None'} target={target}")
 
-        if target > 0.0 and curr is not None and curr <= target:
-            # Direkt zu den finalen Intrinsics-Refinements (parallax_keyframe entfernt)
+        if target > 0.0 and curr is not None and curr <= target:            # Direkt zu den finalen Intrinsics-Refinements (parallax_keyframe entfernt)
             print("[Coord] EVAL → OK (≤ target) → performing final intrinsics refinement steps")
 
             clip = getattr(context.space_data, "clip", None)
-            recon = None
-            if clip and clip.tracking.objects.active:
-                recon = clip.tracking.objects.active.reconstruction
-            
-            if recon:
-                try:
-                    recon.refine_intrinsics = {'FOCAL_LENGTH'}
-                    ok1, res1 = _safe_call(solve_camera_only, context)
-                    print(f"[Coord] Final refine focal_length: {'OK' if ok1 else res1!r}")
-                except Exception as ex_ref1:
-                    print(f"[Coord] Final refine (focal_length) exception: {ex_ref1!r}")
-            
-                try:
-                    recon.refine_intrinsics = {'FOCAL_LENGTH', 'RADIAL_DISTORTION'}
-                    ok2, res2 = _safe_call(solve_camera_only, context)
-                    print(f"[Coord] Final refine focal+radial: {'OK' if ok2 else res2!r}")
-                except Exception as ex_ref2:
-                    print(f"[Coord] Final refine (radial) exception: {ex_ref2!r}")
-            else:
-                print("[Coord] WARN: no active reconstruction → skipping refine")
+            ts = getattr(getattr(clip, "tracking", None), "settings", None)
+
+            def _toggle_attr(container, names, on: bool) -> str | None:
+                """Setzt das erste gefundene Attribut auf on/off und liefert den Namen zurück."""
+                if not container:
+                    return None
+                for nm in names:
+                    if hasattr(container, nm):
+                        try:
+                            setattr(container, nm, bool(on))
+                            return nm
+                        except Exception:
+                            continue
+                return None
+
+            # 1) Nur Focal-Length verfeinern
+            focal_attr = _toggle_attr(ts, (
+                "refine_intrinsics_focal_length",
+                "refine_focal_length",
+                "refine_focal",
+            ), True)
+            ok1, res1 = _safe_call(solve_camera_only, context)
+            print(f"[Coord] Final refine focal_length: {'OK' if ok1 else res1!r} (attr={focal_attr or 'n/a'})")
+
+            # 2) Focal + Radial Distortion
+            radial_attr = _toggle_attr(ts, (
+                "refine_intrinsics_radial_distortion",
+                "refine_radial_distortion",
+                "refine_distortion",
+                "refine_k1",
+            ), True)
+            ok2, res2 = _safe_call(solve_camera_only, context)
+            print(f"[Coord] Final refine focal+radial: {'OK' if ok2 else res2!r} (radial_attr={radial_attr or 'n/a'})")
+
+            # 3) Optional: Principal Point
+            principal_attr = _toggle_attr(ts, (
+                "refine_intrinsics_principal_point",
+                "refine_principal_point",
+                "refine_principal",
+            ), True)
+            if principal_attr:
+                ok3, res3 = _safe_call(solve_camera_only, context)
+                print(f"[Coord] Final refine principal: {'OK' if ok3 else res3!r} (attr={principal_attr})")
+
+            # Flags wieder ausschalten, damit Standard-Defaults beibehalten werden
+            _toggle_attr(ts, ("refine_intrinsics_principal_point","refine_principal_point","refine_principal"), False)
+            _toggle_attr(ts, ("refine_intrinsics_radial_distortion","refine_radial_distortion","refine_distortion","refine_k1"), False)
+            _toggle_attr(ts, ("refine_intrinsics_focal_length","refine_focal_length","refine_focal"), False)
 
             print("[Coord] EVAL → final intrinsics refinement done → FINALIZE")
             self._pending_eval_after_solve = False
