@@ -547,7 +547,47 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         print(f"[Coord] EVAL → curr_error={curr if curr is not None else 'None'} target={target}")
 
         if target > 0.0 and curr is not None and curr <= target:
-            print("[Coord] EVAL → OK (≤ target) → FINALIZE")
+            # Neuer finaler Ablauf: bei erfolgreichem Solve unter Threshold: zwei Refinements ausführen
+            # 1) refine_intrinsics_focal_length = True → solve_camera_only()
+            # 2) refine_intrinsics_radial_distortion = True → solve_camera_only()
+            print("[Coord] EVAL → OK (≤ target) → performing final intrinsics refinement steps")
+
+            scn = context.scene
+            try:
+                # Set focal length refinement and run solver
+                try:
+                    setattr(scn, "refine_intrinsics_focal_length", True)
+                except Exception:
+                    # fallback: set as dict item if attribute not supported
+                    scn["refine_intrinsics_focal_length"] = True
+
+                ok1, res1 = _safe_call(solve_camera_only, context)
+                if ok1:
+                    print("[Coord] Final refine: focal_length solve OK")
+                else:
+                    print(f"[Coord] Final refine: focal_length solve FAILED: {res1!r}")
+
+            except Exception as ex_ref1:
+                print(f"[Coord] Final refine (focal_length) exception: {ex_ref1!r}")
+
+            try:
+                # Set radial distortion refinement and run solver
+                try:
+                    setattr(scn, "refine_intrinsics_radial_distortion", True)
+                except Exception:
+                    scn["refine_intrinsics_radial_distortion"] = True
+
+                ok2, res2 = _safe_call(solve_camera_only, context)
+                if ok2:
+                    print("[Coord] Final refine: radial_distortion solve OK")
+                else:
+                    print(f"[Coord] Final refine: radial_distortion solve FAILED: {res2!r}")
+
+            except Exception as ex_ref2:
+                print(f"[Coord] Final refine (radial_distortion) exception: {ex_ref2!r}")
+
+            # Nach den finalen Steps normal beenden / finalisieren
+            print("[Coord] EVAL → final intrinsics refinement done → FINALIZE")
             self._pending_eval_after_solve = False
             self._did_refine_this_cycle = False
             self._state = "FINALIZE"
