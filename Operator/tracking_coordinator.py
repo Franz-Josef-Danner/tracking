@@ -30,16 +30,16 @@ _MAX_DETECT_ATTEMPTS = 8
 _BIDI_ACTIVE_KEY = "bidi_active"
 _BIDI_RESULT_KEY = "bidi_result"
 
-# (Optimizer removed)
-
 # Default-Parameter
 _DEFAULT_SOLVE_WAIT_S = 60.0
 _DEFAULT_REFINE_POLL_S = 0.05
 _DEFAULT_SPIKE_START = 100.0
 
-# Maximal erlaubte Anzahl an FIND_MAX↔SPIKE-Iterationen
-# Hinweis: Zähler beginnt erst, wenn ein Spike-Iteration tatsächlich Marker entfernt hat.
+# Maximal erlaubte Anzahl an FIND_MAX↔SPIKE-Iterationen (zählt nur echte Löschaktionen)
 _CYCLE_MAX_ITER = 5
+
+# NEU: fester Startwert für FIND_MAX
+_FIND_MAX_START_THRESHOLD = 50
 
 
 def _tco_log(msg: str) -> None:
@@ -212,7 +212,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # CYCLE (FIND_MAX ↔ SPIKE)
     _cycle_active: bool = False
     _cycle_target_frame: Optional[int] = None
-    _cycle_iterations: int = 0  # neu: Zähler für die Anzahl der Cycle-Iterationen (zählt nur echte Löschaktionen)
+    _cycle_iterations: int = 0  # zählt nur echte Löschaktionen
 
     # SPIKE
     _spike_threshold: float = _DEFAULT_SPIKE_START
@@ -290,7 +290,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # Cycle reset
         self._cycle_active = False
         self._cycle_target_frame = None
-        self._cycle_iterations = 0  # reset counter
+        self._cycle_iterations = 0
 
         # Spike reset
         self._spike_threshold = float(getattr(scn, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START)
@@ -330,7 +330,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print("[Coord] FIND_LOW → NONE → CYCLE_START (FIND_MAX↔SPIKE, max iterations: {0})".format(_CYCLE_MAX_ITER))
             self._cycle_active = True
             self._cycle_target_frame = None
-            self._cycle_iterations = 0  # reset iteration counter beim Start des Zyklus
+            self._cycle_iterations = 0  # reset iteration counter
+            # Spike-Start ggf. aus gemerktem Wert
             last = float(getattr(context.scene, "tco_spike_value", 0.0) or 0.0)
             if last > 0.0:
                 self._spike_threshold = last
@@ -340,7 +341,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     getattr(context.scene, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START
                 )
                 print(f"[Coord] CYCLE_START → use default spike start = {self._spike_threshold:.2f}")
-            
+
             self._did_refine_this_cycle = False
             self._state = "CYCLE_FIND_MAX"
         return {"RUNNING_MODAL"}
@@ -434,8 +435,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         print(f"[Coord] CYCLE_FIND_MAX → check (current deletion-iterations={self._cycle_iterations}/{_CYCLE_MAX_ITER})")
 
+        # NEU: Immer bei 50 starten, niemals Reuse, Logging aus
         try:
-            res = run_find_max_marker_frame(context)
+            res = run_find_max_marker_frame(
+                context,
+                start_threshold=float(_FIND_MAX_START_THRESHOLD),
+                reuse_last=False,
+                log_each_frame=False,
+            )
         except Exception as ex:
             print(f"[Coord] CYCLE_FIND_MAX failed: {ex!r}")
             res = {"status": "FAILED", "reason": repr(ex)}
@@ -521,7 +528,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         curr = _current_solve_error(context) if curr is None else curr
         print(f"[Coord] EVAL → curr_error={curr if curr is not None else 'None'} target={target}")
 
-        if target > 0.0 and curr is not None and curr <= target:            # Direkt zu den finalen Intrinsics-Refinements (parallax_keyframe entfernt)
+        if target > 0.0 and curr is not None and curr <= target:
             print("[Coord] EVAL → OK (≤ target) → performing final intrinsics refinement steps")
 
             clip = getattr(context.space_data, "clip", None)
@@ -569,7 +576,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 ok3, res3 = _safe_call(solve_camera_only, context)
                 print(f"[Coord] Final refine principal: {'OK' if ok3 else res3!r} (attr={principal_attr})")
 
-            # Flags wieder ausschalten, damit Standard-Defaults beibehalten werden
+            # Flags wieder ausschalten
             _toggle_attr(ts, ("refine_intrinsics_principal_point","refine_principal_point","refine_principal"), False)
             _toggle_attr(ts, ("refine_intrinsics_radial_distortion","refine_radial_distortion","refine_distortion","refine_k1"), False)
             _toggle_attr(ts, ("refine_intrinsics_focal_length","refine_focal_length","refine_focal"), False)
