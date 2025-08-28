@@ -10,36 +10,78 @@ from .mute_ops import mute_marker_path, mute_unassigned_markers
 
 _VERBOSE_SCENE_KEY = "tco_verbose_split"
 
+
 def _is_verbose(scene) -> bool:
     try:
         return bool(scene.get(_VERBOSE_SCENE_KEY, False))
     except Exception:
         return False
 
+
 def _log(scene, msg: str) -> None:
     if _is_verbose(scene):
         print(f"[SplitCleanup] {msg}")
+
 
 # ------------------------------------------------------------
 # Utilities
 # ------------------------------------------------------------
 
+def _segments_by_consecutive_frames_unmuted(track) -> List[List[int]]:
+    """
+    Robust: Segmentierung strikt nach Frame-Kontinuität (nur ungemutete Marker).
+    Jede Lücke (frame != last + 1) startet ein neues Segment.
+    Rückgabe: Liste von Frame-Listen.
+    """
+    frames = []
+    try:
+        for m in getattr(track, "markers", []):
+            if getattr(m, "mute", False):
+                continue
+            f = getattr(m, "frame", None)
+            if f is not None:
+                frames.append(int(f))
+    except Exception:
+        return []
+
+    frames = sorted(set(frames))
+    if not frames:
+        return []
+
+    segs: List[List[int]] = []
+    curr = [frames[0]]
+    for f in frames[1:]:
+        if f == curr[-1] + 1:
+            curr.append(f)
+        else:
+            segs.append(curr)
+            curr = [f]
+    if curr:
+        segs.append(curr)
+    return segs
+
+
 def _segment_lengths_unmuted(track: bpy.types.MovieTrackingTrack) -> List[int]:
     """Ermittelt Längen aller un-gemuteten, zusammenhängenden Segmente in Markeranzahl."""
     segs = list(get_track_segments(track))
-    lengths = []
+    # Fallback nutzen, falls get_track_segments zu grob ist
+    fb = _segments_by_consecutive_frames_unmuted(track)
+    if len(fb) > len(segs):
+        segs = fb
+
+    lengths: List[int] = []
     for seg in segs:
         count = 0
         for m in getattr(track, "markers", []):
             try:
-                if m.mute:
+                if getattr(m, "mute", False):
                     continue
                 f = getattr(m, "frame", None)
                 if f is None:
                     continue
                 if isinstance(seg, (list, tuple)):
                     if len(seg) and isinstance(seg[0], int):
-                        if f in seg:
+                        if int(f) in seg:
                             count += 1
                     else:
                         if m in seg:
@@ -48,6 +90,7 @@ def _segment_lengths_unmuted(track: bpy.types.MovieTrackingTrack) -> List[int]:
                 pass
         lengths.append(count)
     return lengths
+
 
 def _delete_tracks_by_max_unmuted_seg_len(
     context, tracks: Iterable[bpy.types.MovieTrackingTrack], min_len: int
@@ -74,6 +117,7 @@ def _delete_tracks_by_max_unmuted_seg_len(
     _log(scene, f"final: delete_by_unmuted_len(min_len={min_len}) → deleted={deleted}")
     return deleted
 
+
 def _rebind_tracks_by_name(clip) -> dict:
     by_name = {}
     for t in clip.tracking.tracks:
@@ -81,6 +125,7 @@ def _rebind_tracks_by_name(clip) -> dict:
         if tn:
             by_name[tn] = t
     return by_name
+
 
 def _apply_keep_only_segment(
     track: bpy.types.MovieTrackingTrack,
@@ -97,20 +142,32 @@ def _apply_keep_only_segment(
     mute_marker_path(track, int(f_start) - 1, 'backward', mute=True)
     mute_marker_path(track, int(f_end) + 1, 'forward',  mute=True)
 
+
 # ------------------------------------------------------------
 # Neuer Kern: Exakte Segment-Splittung
 # ------------------------------------------------------------
 
 def _split_track_into_exact_segments(context, area, region, space, track) -> List[bpy.types.MovieTrackingTrack]:
-    """Erzeugt für jeden Track mit N Segmenten genau N Tracks – jeweils mit EINEM aktiven Segment."""
+    """
+    Erzeugt für jeden Track mit N Segmenten genau N Tracks – jeweils mit EINEM aktiven Segment.
+    Nutzt get_track_segments(...) und fällt bei zu grober Erkennung auf die
+    Frame-Kontinuitäts-Segmente zurück.
+    """
     scene = context.scene
     clip = space.clip
+
+    # 1) Segmente bestimmen (primär API, Fallback bei „grobem“ Ergebnis)
     segs = list(get_track_segments(track))
+    fb_segs = _segments_by_consecutive_frames_unmuted(track)
+    if len(fb_segs) > len(segs):
+        segs = fb_segs
+
     if len(segs) <= 1:
         return [track]
 
     copies_needed = len(segs) - 1
 
+    # 2) Duplikate erzeugen
     with context.temp_override(area=area, region=region, space_data=space):
         try:
             for t in clip.tracking.tracks:
@@ -128,17 +185,19 @@ def _split_track_into_exact_segments(context, area, region, space, track) -> Lis
         bpy.context.view_layer.update()
         scene.frame_set(scene.frame_current)
 
+    # 3) Kopien per Name wiederfinden
     by_name = _rebind_tracks_by_name(clip)
     base = _safe_name(track)
     group = [t for n, t in by_name.items() if _safe_name(n) == base]
     if not group:
         group = [track]
 
-    group_sorted = []
+    group_sorted: List[bpy.types.MovieTrackingTrack] = []
     if track in group:
         group_sorted.append(track)
     group_sorted.extend([t for t in group if t is not track])
 
+    # 4) Pro Kopie genau ein Segment aktiv lassen, Rest muten
     k = min(len(group_sorted), len(segs))
     with context.temp_override(area=area, region=region, space_data=space):
         for i in range(k):
@@ -158,6 +217,7 @@ def _split_track_into_exact_segments(context, area, region, space, track) -> Lis
     _log(scene, f"split: '{track.name}' → segments={len(segs)} → tracks={k}")
     return group_sorted[:k]
 
+
 # ------------------------------------------------------------
 # Öffentliche Hauptfunktion
 # ------------------------------------------------------------
@@ -173,13 +233,19 @@ def recursive_split_cleanup(context, area, region, space, tracks):
     # --- Audit vor dem Split ---
     for t in tracks:
         segs = list(get_track_segments(t))
+        fb = _segments_by_consecutive_frames_unmuted(t)
+        if len(fb) > len(segs):
+            segs = fb
         print(f"[Audit-BEFORE] Track='{t.name}' segs={len(segs)} lens={[len(s) for s in segs]}")
 
-    # 1) Split
-    result_tracks = []
+    # 1) Split (mit Fallback)
+    result_tracks: List[bpy.types.MovieTrackingTrack] = []
     for t in list(tracks):
         try:
             segs = list(get_track_segments(t))
+            fb = _segments_by_consecutive_frames_unmuted(t)
+            if len(fb) > len(segs):
+                segs = fb
             if len(segs) <= 1:
                 result_tracks.append(t)
             else:
@@ -191,7 +257,36 @@ def recursive_split_cleanup(context, area, region, space, tracks):
     # --- Audit nach Split ---
     for t in result_tracks:
         segs = list(get_track_segments(t))
+        fb = _segments_by_consecutive_frames_unmuted(t)
+        if len(fb) > len(segs):
+            segs = fb
         print(f"[Audit-AFTER_SPLIT] Track='{t.name}' segs={len(segs)} lens={[len(s) for s in segs]}")
+
+    # 1b) Hard-Enforcement: falls doch noch Tracks mit >1 Segment existieren,
+    #     versuche bis zu 2 zusätzliche Split-Pässe (konservativ), um sicher zu „atomisieren“.
+    max_extra_passes = 2
+    for pass_idx in range(max_extra_passes):
+        leftovers = [t for t in (list(clip.tracking.tracks)) if
+                     (lambda _t: len(_segments_by_consecutive_frames_unmuted(_t)) > 1)(_t)]
+        if not leftovers:
+            break
+        print(f"[Enforce] extra pass {pass_idx+1}: splitting {len(leftovers)} leftover track(s)")
+        new_result: List[bpy.types.MovieTrackingTrack] = []
+        for t in leftovers:
+            try:
+                new_result.extend(_split_track_into_exact_segments(context, area, region, space, t))
+            except Exception as e:
+                print(f"[Enforce-ERROR] Split fail track={t.name}: {e}")
+                new_result.append(t)
+        result_tracks = new_result  # nur für spätere Audits relevant
+
+    # --- Audit nach Enforcement ---
+    for t in clip.tracking.tracks:
+        segs = list(get_track_segments(t))
+        fb = _segments_by_consecutive_frames_unmuted(t)
+        if len(fb) > len(segs):
+            segs = fb
+        print(f"[Audit-ENFORCED] Track='{t.name}' segs={len(segs)} lens={[len(s) for s in segs]}")
 
     # 2) Delete-Policy
     try:
@@ -202,15 +297,20 @@ def recursive_split_cleanup(context, area, region, space, tracks):
     print(f"[Audit-DELETE] deleted={deleted}")
 
     # --- Audit nach Delete ---
+    leftover_multi = 0
     for t in clip.tracking.tracks:
         segs = list(get_track_segments(t))
+        fb = _segments_by_consecutive_frames_unmuted(t)
+        if len(fb) > len(segs):
+            segs = fb
         if len(segs) > 1:
+            leftover_multi += 1
             print(f"[Audit-LEFTOVER] Track='{t.name}' segs={len(segs)} lens={[len(s) for s in segs]}")
+    if leftover_multi == 0:
+        print("[Audit-LEFTOVER] none")
 
     # 3) Safety
-    from .mute_ops import mute_unassigned_markers
     mute_unassigned_markers(clip.tracking.tracks)
 
     print("[SplitCleanup] recursive_split_cleanup: FINISHED")
     return {'FINISHED'}
-
