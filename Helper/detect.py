@@ -65,7 +65,6 @@ def _find_clip_editor_context():
 def _run_in_clip_context(op_callable, **kwargs):
     window, area, region, space = _find_clip_editor_context()
     if not (window and area and region and space):
-        print("[DetectTrace] No CLIP_EDITOR context found – running operator without override.")
         return op_callable(**kwargs)
     override = {
         "window": window,
@@ -168,10 +167,6 @@ def perform_marker_detection(
             return bpy.ops.clip.detect_features(**kw)
         except TypeError:
             return bpy.ops.clip.detect_features()
-
-    print(
-        f"[DetectTrace] detect_features: thr={threshold:.6f}, margin={margin}, min_dist={min_distance}"
-    )
     t0 = time.perf_counter()
     try:
         _run_in_clip_context(
@@ -180,12 +175,8 @@ def perform_marker_detection(
             min_distance=int(min_distance),
             threshold=float(threshold),
         )
-    except Exception as ex:
-        dt = (time.perf_counter() - t0) * 1000.0
-        print(f"[DetectError] detect_features Exception ({dt:.1f} ms): {ex}")
+    except Exception:
         raise
-    dt = (time.perf_counter() - t0) * 1000.0
-    print(f"[DetectTrace] detect_features DONE in {dt:.1f} ms")
     return sum(1 for t in tracking.tracks if getattr(t, "select", False))
 
 
@@ -259,7 +250,6 @@ def run_pattern_triplet_and_select_by_name(
             clip = c
             break
     if not clip:
-        print("[PatternTriplet] No MovieClip available.")
         return {"status": "FAILED", "reason": "no_movieclip"}
 
     tracking = clip.tracking
@@ -314,10 +304,6 @@ def run_pattern_triplet_and_select_by_name(
             settings.default_search_size = max(5, eff * 2)
         except Exception:
             pass
-        print(
-            f"[Triplet] scale={scale} pattern_o={pattern_o} -> req={new_pattern} eff={eff} "
-            f"search={getattr(settings,'default_search_size',None)}"
-        )
 
         def _op(**kw):
             return bpy.ops.clip.detect_features(**kw)
@@ -333,8 +319,8 @@ def run_pattern_triplet_and_select_by_name(
 
         try:
             _run_in_clip_context(_op, **kw)
-        except Exception as ex:
-            print(f"[PatternTriplet] detect_features Exception @scale={scale}: {ex}")
+        except Exception:
+            pass
 
         try:
             bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
@@ -386,8 +372,7 @@ def run_pattern_triplet_and_select_by_name(
                 t.select = True
         try:
             _delete_selected_tracks(confirm=True)
-        except Exception as ex:
-            print(f"[PatternTriplet] delete_track failed, fallback remove: {ex}")
+        except Exception:
             for t in list(tracking.tracks):
                 if t.as_pointer() in reject_ptrs:
                     try:
@@ -405,11 +390,6 @@ def run_pattern_triplet_and_select_by_name(
         bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
     except Exception:
         pass
-
-    print(
-        f"[PatternTriplet] DONE | pattern_o={pattern_o} | low={scale_low} -> +{created_low} | "
-        f"high={scale_high} -> +{created_high} | rejected_vs_existing={len(reject_ptrs)} | selected_triplets={selected}"
-    )
 
     return {
         "status": "READY",
@@ -456,7 +436,6 @@ def run_detect_once(
     """
     scn = context.scene
     if scn.get(_LOCK_KEY):
-        print("[DetectWarn] Reentrancy prevented – lock is held.")
         return {"status": "FAILED", "reason": "locked"}
 
     scn[_LOCK_KEY] = True
@@ -472,7 +451,6 @@ def run_detect_once(
     try:
         clip = _get_movieclip(context)
         if not clip:
-            print("[DetectError] No MovieClip available.")
             return {"status": "FAILED", "reason": "no_movieclip"}
 
         tracking = clip.tracking
@@ -482,8 +460,8 @@ def run_detect_once(
         if start_frame is not None:
             try:
                 scn.frame_set(int(start_frame))
-            except Exception as ex:
-                print(f"[DetectError] frame_set({start_frame}) Exception: {ex}")
+            except Exception:
+                pass
         frame = int(scn.frame_current)
 
         # Threshold
@@ -517,13 +495,6 @@ def run_detect_once(
 
         roi_px = _normalize_roi(roi, width, height)
 
-        print(
-            "[DetectTrace] START "
-            f"| frame={frame} | thr_in={threshold:.6f} | adapt={safe_adapt} "
-            f"| corridor=[{min_marker}..{max_marker}] | bases: margin={margin_base}, min_dist={min_distance_base} "
-            f"| roi={'none' if roi_px is None else roi_px} | selection={selection_policy} | dup={duplicate_strategy}"
-        )
-
         # Save previous selection if needed
         if selection_policy == "restore":
             prev_selection = [t.as_pointer() for t in tracking.tracks if getattr(t, "select", False)]
@@ -543,8 +514,7 @@ def run_detect_once(
         _deselect_all(tracking)
         try:
             perform_marker_detection(clip, tracking, float(threshold), int(margin_base), int(min_distance_base))
-        except Exception as ex:
-            print("[DetectError] detect_features op FAILED:", ex)
+        except Exception:
             try:
                 scn["detect_status"] = "failed"
             except Exception:
@@ -622,8 +592,7 @@ def run_detect_once(
             try:
                 if duplicate_strategy == "delete":
                     _delete_selected_tracks(confirm=True)
-            except Exception as ex:
-                print(f"[DetectError] delete_track failed, fallback remove: {ex}")
+            except Exception:
                 for t in list(tracking.tracks):
                     if getattr(t, "select", False):
                         try:
@@ -674,8 +643,7 @@ def run_detect_once(
                     t.select = True
                 try:
                     _delete_selected_tracks(confirm=True)
-                except Exception as ex:
-                    print(f"[DetectError] delete_track on corridor-miss: {ex}")
+                except Exception:
                     for t in list(cleaned):
                         try:
                             tracking.tracks.remove(t)
@@ -698,17 +666,6 @@ def run_detect_once(
             except Exception:
                 pass
 
-            print(
-                "[DetectDebug] RUNNING → new_threshold=%.6f (old=%.6f, adapt=%d) | new=%d | corridor=[%d..%d]"
-                % (
-                    float(new_threshold),
-                    float(threshold),
-                    int(marker_adapt or target),
-                    int(new_count),
-                    int(min_marker),
-                    int(max_marker),
-                )
-            )
 
             metrics = DetectMetrics(
                 frame=frame,
@@ -747,11 +704,6 @@ def run_detect_once(
         except Exception:
             pass
 
-        print(
-            "[DetectDebug] READY | new=%d in corridor [%d..%d] | threshold_keep=%.6f"
-            % (int(new_count), int(min_marker), int(max_marker), float(threshold))
-        )
-
         # ---- NEW: invoke pattern-triplet if requested ----
         triplet_result: Optional[Dict[str, Any]] = None
         if post_pattern_triplet:
@@ -776,10 +728,8 @@ def run_detect_once(
                     pre_frame=int(frame),
                     pre_size=(int(width), int(height)),
                 )
-
-                print(f"[DetectTrace] Post pattern-triplet result: {triplet_result}")
-            except Exception as ex:
-                print(f"[DetectError] pattern-triplet failed: {ex}")
+            except Exception:
+                pass
 
         metrics = DetectMetrics(
             frame=frame,
@@ -808,7 +758,6 @@ def run_detect_once(
         return result
 
     except Exception as ex:
-        print("[DetectError] FAILED:", ex)
         try:
             scn["detect_status"] = "failed"
         except Exception:
@@ -834,12 +783,9 @@ def run_detect_adaptive(
 ) -> Dict[str, Any]:
     last: Dict[str, Any] = {}
     for attempt in range(max_attempts):
-        print(f"[DetectTrace] ADAPTIVE attempt {attempt + 1}/{max_attempts}")
         last = run_detect_once(context, start_frame=start_frame, **kwargs)
         st = last.get("status")
         if st in ("READY", "FAILED"):
-            print(f"[DetectTrace] ADAPTIVE STOP status={st}")
             return last
         start_frame = last.get("frame", start_frame)
-    print("[DetectTrace] ADAPTIVE max_attempts_exceeded")
     return last or {"status": "FAILED", "reason": "max_attempts_exceeded"}
