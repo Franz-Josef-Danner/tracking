@@ -760,7 +760,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 f2 = f1 + 10  # fixer Frame-Abstand für Preflight
                 metrics = estimate_pre_solve_metrics(clip, f1, f2)
                 scn = context.scene
-                # Preflight-Werte vollständig in Scene spiegeln (für UI)
+                best = auto_find_best_pairs(clip, ransac_thresh_px=scn.error_track*2.0)
+                if not best:
+                    # Kein sinnvolles Paar → zurück in FIND_LOW
+                    self._state = "FIND_LOW"
+                    return {"RUNNING_MODAL"}
+                
+                top = best[0]
                 scn.preflight_last_frame_a = int(f1)
                 scn.preflight_last_frame_b = int(f2)
                 scn.preflight_median_sampson = float(metrics.median_sampson_px)
