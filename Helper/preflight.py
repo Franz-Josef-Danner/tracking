@@ -95,7 +95,7 @@ def scan_scene(
     clip: Optional[bpy.types.MovieClip] = None,
     *,
     step: int = 100,
-    ransac_thresh_px: float = 1.5,
+    ransac_thresh_px: float = 8,
     ransac_iters: int = 1000,
     min_track_len: int = 5,
 ) -> List[PreSolveMetrics]:
