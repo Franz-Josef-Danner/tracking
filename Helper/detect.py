@@ -637,9 +637,7 @@ def run_detect_once(
         # Corridor logic
         new_count = len(cleaned)
         if new_count < int(min_marker) or new_count > int(max_marker):
-            # 1) Sichtbarer Zwischenstand dieses Zyklus (bereinigt + selektiert)
-            _force_clip_redraw()
-        
+            # 1) Sichtbarer Zwischenstand dieses Zyklus (bereinigt + selektiert)        
             # 2) Jetzt für den nächsten Versuch aufräumen: neu hinzugefügte wieder entfernen
             if cleaned:
                 _deselect_all(tracking)
