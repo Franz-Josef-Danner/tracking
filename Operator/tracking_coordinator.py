@@ -13,6 +13,7 @@ from typing import Optional, Dict, Any, Callable, Tuple
 # from ..Helper.triplet_grouping import run_triplet_grouping  # removed
 from ..Helper.solve_camera import solve_camera_only
 from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin
+from ..Helper.projektion_spike_filter_cycle import run_projection_spike_filter_cycle  # NEW
 
 # Loop-Helpers
 from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
@@ -635,33 +636,32 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     def _state_cycle_spike(self, context):
         if not self._cycle_active:
-            print("[Coord] CYCLE_SPIKE with inactive cycle → FINALIZE")
-            self._state = "FINALIZE"
-            return {"RUNNING_MODAL"}
-    
+            ...
+        use_proj = bool(list(getattr(context.scene, "tco_proj_spike_tracks", []) or []))
         try:
-            # Bevorzugt ohne internes Segment-Cleanup; falle bei älterer Signatur zurück
-            try:
+            if use_proj:
+                res = run_projection_spike_filter_cycle(
+                    context,
+                    track_threshold=float(self._spike_threshold),
+                    run_segment_cleanup=False,
+                )
+                status = str(res.get("status","")).upper()
+                muted = int(res.get("deleted", 0) or 0)     # projektion_* meldet "deleted" Marker
+            else:
                 res = run_marker_spike_filter_cycle(
                     context,
                     track_threshold=float(self._spike_threshold),
                     action="MUTE",
                     run_segment_cleanup=False,
                 )
-            except TypeError:
-                res = run_marker_spike_filter_cycle(
-                context,
-                track_threshold=float(self._spike_threshold),
-                action="MUTE",
-            )
+                status = str(res.get("status","")).upper()
+                muted = int(res.get("muted", 0) or 0)
     
-            status = str(res.get("status", "")).upper()
-            muted = int(res.get("muted", 0) or 0)
             next_thr = float(res.get("next_threshold", self._spike_threshold * 0.9))
-    
-            print(f"[Coord] CYCLE_SPIKE → status={status}, muted={muted}, next={next_thr:.2f} (curr={self._spike_threshold:.2f})")
-    
+            print(f"[Coord] CYCLE_SPIKE → status={status}, affected={muted}, next={next_thr:.2f} (curr={self._spike_threshold:.2f})")
             self._spike_threshold = max(next_thr, 0.0)
+            ...
+
 
             # **Neu**: segmentweises Clean **nach** dem Spike-Pass (robuster, zentralisiert)
             _pause(0.5)
@@ -815,22 +815,40 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"RUNNING_MODAL"}
 
     def _state_cleanup(self, context):
-        limit = _current_solve_error(context)
-        kwargs = {"wait_for_error": False, "action": "DELETE_TRACK"}
-        if limit is not None:
-            kwargs["error_limit"] = float(limit)
-
-        ok, res = _safe_call(run_projection_cleanup_builtin, context, **kwargs)
+        # 1) Projektionsbasiert selektieren & Track-Namen in Szene persistieren lassen
+        ok, res = _safe_call(run_projection_cleanup_builtin, context)
         if ok:
-            print(f"[Coord] CLEANUP → {res}")
+            print(f"[Coord] CLEANUP(select) → {res}")
         else:
-            print(f"[Coord] CLEANUP failed: {res!r}")
-
+            print(f"[Coord] CLEANUP(select) failed: {res!r}")
+    
+        _pause(0.5)
+    
+        # 2) Spike-Filter nur auf die selektierten (schlechtesten) Tracks anwenden
+        try:
+            thr = float(getattr(context.scene, "spike_start_threshold", 20.0) or 20.0)
+        except Exception:
+            thr = 20.0
+    
+        ok2, res2 = _safe_call(
+            run_projection_spike_filter_cycle,
+            context,
+            track_threshold=thr,
+            run_segment_cleanup=True,      # falls gewünscht
+            # min_segment_len: None → nimmt Szene-Defaults / 25 Fallback im Helper
+            treat_muted_as_gap=True,
+        )
+        if ok2:
+            print(f"[Coord] CLEANUP(spike) → {res2}")
+        else:
+            print(f"[Coord] CLEANUP(spike) failed: {res2!r}")
+    
         print("[Coord] CLEANUP → FIND_LOW (back to loop)")
         self._pending_eval_after_solve = False
         self._did_refine_this_cycle = False
         self._state = "FIND_LOW"
         return {"RUNNING_MODAL"}
+
 
     # ---------------- Modal-Wrapper ----------------
     def modal(self, context, event):
