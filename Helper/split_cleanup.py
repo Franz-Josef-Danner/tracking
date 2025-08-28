@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 from __future__ import annotations
 import bpy
-from typing import Iterable, List
+from typing import Iterable, List, Tuple, Set
 
 from .naming import _safe_name
 from .segments import get_track_segments, track_has_internal_gaps
@@ -137,97 +137,162 @@ def _apply_keep_only_segment(
         mute_marker_path(track, int(f_start) - 1, 'backward', mute=True)
         mute_marker_path(track, int(f_end) + 1, 'forward',  mute=True)
 
+def _delete_all_segments_after_first(
+    track: bpy.types.MovieTrackingTrack,
+    *, area, region, space, window
+) -> None:
+    """Behält im Track nur das **erste** Segment (ungemutete Kontinuität) und
+    löscht alle Marker **nach** diesem Segment (hartes DELETE)."""
+    segs = _segments_by_consecutive_frames_unmuted(track)
+    if len(segs) <= 1:
+        return
+    keep = segs[0]
+    if not keep:
+        return
+    f_last = keep[-1]
+    with bpy.context.temp_override(
+        window=window, screen=window.screen if window else None,
+        area=area, region=region, space_data=space
+    ):
+        # alle Marker nach dem Ende des ersten Segments löschen
+        for m in list(track.markers)[::-1]:
+            try:
+                if getattr(m, "mute", False):
+                    continue
+                f = int(getattr(m, "frame", -10))
+                if f > int(f_last):
+                    track.markers.delete_frame(f)
+            except Exception:
+                pass
 
-# ------------------------------------------------------------
-# Neuer Kern: Exakte Segment-Splittung
-# ------------------------------------------------------------
+def _delete_first_segment(
+    track: bpy.types.MovieTrackingTrack,
+    *, area, region, space, window
+) -> None:
+    """Löscht das **erste** Segment (ungemutete Kontinuität) hart (Marker DELETE)."""
+    segs = _segments_by_consecutive_frames_unmuted(track)
+    if len(segs) <= 0:
+        return
+    first = segs[0]
+    if not first:
+        return
+    with bpy.context.temp_override(
+        window=window, screen=window.screen if window else None,
+        area=area, region=region, space_data=space
+    ):
+        for m in list(track.markers)[::-1]:
+            try:
+                if getattr(m, "mute", False):
+                    continue
+                f = int(getattr(m, "frame", -10))
+                if f in first:
+                    track.markers.delete_frame(f)
+            except Exception:
+                pass
 
-def _split_track_into_exact_segments(context, area, region, space, track) -> List[bpy.types.MovieTrackingTrack]:
-    """
-    Erzeugt für jeden Track mit N Segmenten genau N Tracks – jeweils mit EINEM aktiven Segment.
-    Nutzt get_track_segments(...) und fällt bei zu grober Erkennung auf die
-    Frame-Kontinuitäts-Segmente zurück.
-    """
-    scene = context.scene
+def _dup_once_with_ui(context, area, region, space, track) -> bpy.types.MovieTrackingTrack | None:
+    """Dupliziert **genau einmal** via copy/paste und liefert die neue Kopie (oder None)."""
     clip = space.clip
     window = context.window
-
-    # 1) Segmente bestimmen (primär API, Fallback bei „grobem“ Ergebnis)
-    segs = list(get_track_segments(track))
-    fb_segs = _segments_by_consecutive_frames_unmuted(track)
-    if len(fb_segs) > len(segs):
-        segs = fb_segs
-
-    if len(segs) <= 1:
-        return [track]
-
-    copies_needed = len(segs) - 1
-
-    # 2) Duplikate erzeugen (mit vollem UI-Kontext)
     with context.temp_override(
         window=window, screen=window.screen if window else None,
         area=area, region=region, space_data=space
     ):
         try:
+            # Selektion sauber setzen
             for t in clip.tracking.tracks:
                 t.select = False
             track.select = True
+            # Namen vorab merken
+            names_before = {t.name for t in clip.tracking.tracks}
+            bpy.ops.clip.copy_tracks()
+            bpy.ops.clip.paste_tracks()
+            # neue finden
+            new_track = None
+            for t in clip.tracking.tracks:
+                if t.name not in names_before:
+                    new_track = t
+                    break
+        except Exception as ex:
+            _log(context.scene, f"copy/paste failed: {ex!r}")
+            new_track = None
+        # sanft UI/Depsgraph refresh
+        try:
+            deps = context.evaluated_depsgraph_get()
+            deps.update()
+            bpy.context.view_layer.update()
+            region.tag_redraw()
         except Exception:
             pass
+        return new_track
 
-        for _ in range(copies_needed):
-            try:
-                bpy.ops.clip.copy_tracks()
-                bpy.ops.clip.paste_tracks()
-            except Exception as ex:
-                _log(scene, f"copy/paste failed: {ex!r}")
+# ------------------------------------------------------------
+# Neuer Kern: Iteratives Duplizieren & Abschälen (Schritt 1 + 2)
+# ------------------------------------------------------------
 
-        deps = context.evaluated_depsgraph_get()
-        deps.update()
-        bpy.context.view_layer.update()
-        scene.frame_set(scene.frame_current)
+def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable[bpy.types.MovieTrackingTrack]) -> None:
+    """
+    Implementiert die vom Nutzer geforderte 2-Phasen-Logik:
+      1) Startliste einfrieren, betroffene Tracks **einmal duplizieren**,
+         im **Original** alle Segmente **nach dem ersten** löschen.
+      2) Danach wiederholt:
+           - in **allen** Tracks mit >1 Segment das **erste Segment löschen**
+           - diese Tracks **einmal duplizieren**
+           - im **Original** wieder alle Segmente **nach dem ersten** löschen
+         bis keine Tracks mit >1 Segment existieren.
+    """
+    scene = context.scene
+    clip = space.clip
+    window = context.window
 
-    # 3) Kopien finden: per _safe_name() Prefix-Match (inkl. .001/.002 usw.)
-    base = _safe_name(track)
-    group: List[bpy.types.MovieTrackingTrack] = []
-    try:
-        for t in clip.tracking.tracks:
-            nm = _safe_name(t)
-            if nm and nm.startswith(base):
-                group.append(t)
-    except Exception:
-        pass
-    if not group:
-        group = [track]
+    # -------- Phase 1: Startliste einfrieren --------
+    start_list = list(seed_tracks)
+    _log(scene, f"IterSplit: phase-1 seed_count={len(start_list)}")
+    for tr in list(start_list):
+        segs = _segments_by_consecutive_frames_unmuted(tr)
+        if len(segs) > 1:
+            new_tr = _dup_once_with_ui(context, area, region, space, tr)
+            if new_tr:
+                _log(scene, f"IterSplit: dup '{tr.name}' → '{new_tr.name}' (phase-1)")
+            _delete_all_segments_after_first(tr, area=area, region=region, space=space, window=window)
 
-    # Original zuerst, Kopien danach (stabile Reihenfolge)
-    group_sorted: List[bpy.types.MovieTrackingTrack] = []
-    if track in group:
-        group_sorted.append(track)
-    group_sorted.extend([t for t in group if t is not track])
+    # -------- Phase 2: Wiederholung bis stabil --------
+    rounds = 0
+    while True:
+        rounds += 1
+        # Kandidaten: alle aktuellen Tracks mit >1 Segment
+        candidates = [t for t in list(clip.tracking.tracks)
+                      if len(_segments_by_consecutive_frames_unmuted(t)) > 1]
+        if not candidates:
+            _log(scene, f"IterSplit: converged after {rounds-1} round(s)")
+            break
 
-    # 4) Pro Kopie genau ein Segment aktiv lassen, Rest muten
-    k = min(len(group_sorted), len(segs))
-    with context.temp_override(
-        window=window, screen=window.screen if window else None,
-        area=area, region=region, space_data=space
-    ):
-        for i in range(k):
-            _apply_keep_only_segment(group_sorted[i], segs[i], area=area, region=region, space=space, window=window)
+        _log(scene, f"IterSplit: round {rounds} candidates={len(candidates)}")
 
-        for j in range(k, len(group_sorted)):
-            try:
-                clip.tracking.tracks.remove(group_sorted[j])
-            except Exception:
-                pass
+        # 2a) In allen Kandidaten zuerst das **erste Segment löschen**
+        for tr in candidates:
+            _delete_first_segment(tr, area=area, region=region, space=space, window=window)
 
-        deps = context.evaluated_depsgraph_get()
-        deps.update()
-        bpy.context.view_layer.update()
-        region.tag_redraw()
+        # 2b) Danach jeden Kandidaten **einmal duplizieren**
+        dup_map = {}
+        for tr in candidates:
+            new_tr = _dup_once_with_ui(context, area, region, space, tr)
+            if new_tr:
+                dup_map[tr] = new_tr
+                _log(scene, f"IterSplit: dup '{tr.name}' → '{new_tr.name}' (round {rounds})")
 
-    _log(scene, f"split: '{track.name}' → segments={len(segs)} → tracks={k}")
-    return group_sorted[:k]
+        # 2c) Im **Original** alles nach dem ersten Segment löschen
+        for tr in candidates:
+            _delete_all_segments_after_first(tr, area=area, region=region, space=space, window=window)
+
+        # sanfter Refresh
+        try:
+            deps = context.evaluated_depsgraph_get()
+            deps.update()
+            bpy.context.view_layer.update()
+            region.tag_redraw()
+        except Exception:
+            pass
 
 
 # ------------------------------------------------------------
@@ -250,47 +315,22 @@ def recursive_split_cleanup(context, area, region, space, tracks):
             segs = fb
         print(f"[Audit-BEFORE] Track='{t.name}' segs={len(segs)} lens={[len(s) for s in segs]}")
 
-    # 1) Split (mit Fallback)
-    result_tracks: List[bpy.types.MovieTrackingTrack] = []
-    for t in list(tracks):
-        try:
-            segs = list(get_track_segments(t))
-            fb = _segments_by_consecutive_frames_unmuted(t)
-            if len(fb) > len(segs):
-                segs = fb
-            if len(segs) <= 1:
-                result_tracks.append(t)
-            else:
-                result_tracks.extend(_split_track_into_exact_segments(context, area, region, space, t))
-        except Exception as e:
-            print(f"[Audit-ERROR] Split fail track={t.name}: {e}")
-            result_tracks.append(t)
+    # 1) Neuer Kern: Iteratives Duplizieren & Abschälen
+    try:
+        _iterative_segment_split(context, area, region, space, tracks)
+    except Exception as e:
+        print(f"[Audit-ERROR] IterSplit failed: {e}")
+        # Fallback: nichts tun, weiter mit Delete-Policy
 
     # --- Audit nach Split ---
-    for t in result_tracks:
+    for t in clip.tracking.tracks:
         segs = list(get_track_segments(t))
         fb = _segments_by_consecutive_frames_unmuted(t)
         if len(fb) > len(segs):
             segs = fb
         print(f"[Audit-AFTER_SPLIT] Track='{t.name}' segs={len(segs)} lens={[len(s) for s in segs]}")
 
-    # 1b) Hard-Enforcement: bis zu 2 zusätzliche Pässe für etwaige Reste
-    max_extra_passes = 2
-    for pass_idx in range(max_extra_passes):
-        leftovers = [t for t in list(clip.tracking.tracks)
-                     if len(_segments_by_consecutive_frames_unmuted(t)) > 1]
-        if not leftovers:
-            break
-        print(f"[Enforce] extra pass {pass_idx+1}: splitting {len(leftovers)} leftover track(s)")
-        new_result: List[bpy.types.MovieTrackingTrack] = []
-        for t in leftovers:
-            try:
-                new_result.extend(_split_track_into_exact_segments(context, area, region, space, t))
-            except Exception as e:
-                print(f"[Enforce-ERROR] Split fail track={t.name}: {e}")
-                new_result.append(t)
-        result_tracks = new_result  # für spätere Audits
-
+    # (Enforcement entfällt; die Iteration konvergiert bis keine Multi-Segments mehr da sind)
     # --- Audit nach Enforcement ---
     for t in clip.tracking.tracks:
         segs = list(get_track_segments(t))
