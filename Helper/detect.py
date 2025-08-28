@@ -395,6 +395,27 @@ def run_pattern_triplet_and_select_by_name(
 # Public: one detect pass
 # ---------------------------------------------------------------------
 
+def _force_clip_redraw():
+    try:
+        wm = bpy.context.window_manager
+        if not wm:
+            return
+        for window in wm.windows:
+            scr = window.screen
+            if not scr:
+                continue
+            for area in scr.areas:
+                if area.type == "CLIP_EDITOR":
+                    area.tag_redraw()
+        # Zusatz: globaler Fallback
+        try:
+            bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
 def run_detect_once(
     context: bpy.types.Context,
     *,
@@ -616,7 +637,10 @@ def run_detect_once(
         # Corridor logic
         new_count = len(cleaned)
         if new_count < int(min_marker) or new_count > int(max_marker):
-            # Remove what we added in this run so the next attempt starts clean
+            # 1) Sichtbarer Zwischenstand dieses Zyklus (bereinigt + selektiert)
+            _force_clip_redraw()
+        
+            # 2) Jetzt für den nächsten Versuch aufräumen: neu hinzugefügte wieder entfernen
             if cleaned:
                 _deselect_all(tracking)
                 for t in cleaned:
@@ -624,11 +648,15 @@ def run_detect_once(
                 try:
                     _delete_selected_tracks(confirm=True)
                 except Exception:
+                    # Fallback: direkte Entfernung aus dem Tracking
                     for t in list(cleaned):
                         try:
                             tracking.tracks.remove(t)
                         except Exception:
                             pass
+        
+            # ... hier geht's weiter mit Threshold-Anpassung, Metrics und RUNNING-Return
+
 
             # PID-like adjustment (P + mild I)
             target = float(max(1, int(marker_adapt or new_count)))
