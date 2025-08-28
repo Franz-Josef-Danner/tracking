@@ -224,6 +224,7 @@ def run_marker_spike_filter_cycle(
     # Clean-Policy
     min_segment_len: Optional[int] = None,  # Default aus Scene
     treat_muted_as_gap: bool = True,
+    run_segment_cleanup: bool = True,
 ) -> Dict[str, Any]:
     """
     Führt einen Marker-basierten Spike-Filter-Durchlauf aus (Pixel/Frame).
@@ -244,10 +245,12 @@ def run_marker_spike_filter_cycle(
     key = "deleted" if act == "DELETE" else ("muted" if act == "MUTE" else "selected")
     print(f"[MarkerSpike] affected {affected} marker(s) with action={act}")
 
-    # 2) Segment-Cleanup (zwingend gefordert)
+    # 2) Segment-Cleanup (optional via Flag)
     cleaned_segments = 0
     cleaned_markers = 0
-    if clean_short_segments is None:
+    if not run_segment_cleanup:
+        print("[MarkerSpike] segment cleanup skipped (run_segment_cleanup=False)")
+    elif clean_short_segments is None:
         print(f"[MarkerSpike] WARN: clean_short_segments not available ({_CSS_IMPORT_ERR!r})")
     else:
         scene = getattr(context, "scene", None)
