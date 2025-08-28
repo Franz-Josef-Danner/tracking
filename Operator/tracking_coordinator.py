@@ -6,7 +6,7 @@ import time
 import math
 import bpy
 from bpy.types import Scene
-from bpy.props import BoolProperty, FloatProperty
+from bpy.props import BoolProperty, FloatProperty, IntProperty
 from typing import Optional, Dict, Any, Callable, Tuple
 
 # Entfernt: Triplet-Grouping/Joiner aus dem Ablauf
@@ -61,6 +61,51 @@ def _pause(seconds: float = 0.5) -> None:
     except Exception:
         pass
 
+def register_preflight_props() -> None:
+    if not hasattr(Scene, "preflight_median_sampson"):
+        Scene.preflight_median_sampson = FloatProperty(
+            name="Preflight Median Sampson",
+            default=float("inf"),
+            precision=3,
+            description="Median der Sampson-Distanz des letzten Preflight-Checks",
+        )
+    if not hasattr(Scene, "preflight_inliers"):
+        Scene.preflight_inliers = IntProperty(
+            name="Preflight Inliers",
+            default=0,
+            description="Inlier-Anzahl des letzten Preflight-Checks",
+        )
+    if not hasattr(Scene, "preflight_total"):
+        Scene.preflight_total = IntProperty(
+            name="Preflight Total",
+            default=0,
+            description="Gesamtzahl geprüfter Korrespondenzen im letzten Preflight",
+        )
+    if not hasattr(Scene, "preflight_coverage"):
+        Scene.preflight_coverage = FloatProperty(
+            name="Preflight Coverage",
+            default=0.0,
+            min=0.0, max=1.0,
+            precision=3,
+            description="Abdeckungsgrad (Quadranten 0..1) des letzten Preflight",
+        )
+    if not hasattr(Scene, "preflight_degenerate"):
+        Scene.preflight_degenerate = BoolProperty(
+            name="Preflight Degenerate",
+            default=False,
+            description="True, wenn Preflight als degeneriert eingestuft wurde",
+        )
+
+def unregister_preflight_props() -> None:
+    for attr in (
+        "preflight_median_sampson",
+        "preflight_inliers",
+        "preflight_total",
+        "preflight_coverage",
+        "preflight_degenerate",
+    ):
+        if hasattr(Scene, attr):
+            delattr(Scene, attr)
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
@@ -757,6 +802,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 f1 = int(getattr(context.scene, "frame_current", 0))
                 f2 = f1 + 10  # fixer Frame-Abstand für Preflight
                 metrics = estimate_pre_solve_metrics(clip, f1, f2)
+                scn = context.scene
+                scn.preflight_median_sampson = float(metrics.median_sampson_px)
+                scn.preflight_inliers = int(metrics.inliers)
+                scn.preflight_total = int(metrics.total)
+                scn.preflight_coverage = float(metrics.coverage_quadrants)
+                scn.preflight_degenerate = bool(metrics.degenerate)
                 target = _scene_float(context.scene, "error_track", 0.0)
                 thresh = target * 2.0
                 print(
@@ -984,12 +1035,16 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
 def register():
     register_scene_state()
+    register_preflight_props()
     bpy.utils.register_class(CLIP_OT_tracking_coordinator)
+    bpy.utils.register_class(CLIP_PT_preflight_status)
 
 
 def unregister():
-    unregister_scene_state()
+    bpy.utils.unregister_class(CLIP_PT_preflight_status)
     bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
+    unregister_preflight_props()
+    unregister_scene_state()
 
 
 if __name__ == "__main__" and os.getenv("ADDON_RUN_TESTS", "0") == "1":
