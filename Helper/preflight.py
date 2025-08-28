@@ -14,7 +14,7 @@ Lizenz: MIT
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import bpy
 import numpy as np
@@ -51,11 +51,11 @@ class PreSolveMetrics:
 
     def as_dict(self) -> Dict:
         d = asdict(self)
-        # Arrays für SerDes entfernen/vereinfachen
+        # Arrays für SerDes entfernen/vereinfachen (Syntaxfix)
         if isinstance(d.get("F"), np.ndarray):
-            d["F"]] = d["F"].tolist()
+            d["F"] = d["F"].tolist()
         if isinstance(d.get("inlier_mask"), np.ndarray):
-            d["inlier_mask"]] = d["inlier_mask"].astype(bool).tolist()
+            d["inlier_mask"] = d["inlier_mask"].astype(bool).tolist()
         return d
 
 
