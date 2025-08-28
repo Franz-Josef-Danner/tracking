@@ -252,16 +252,16 @@ def _gather_tracks_for_frames(
     used_tracks: List[bpy.types.MovieTrackingTrack] = []
 
     for tr in clip.tracking.tracks:
+        if len(tr.markers) < min_length or getattr(tr, "mute", False):
+            continue
         m1 = tr.markers.find_frame(f1)
         m2 = tr.markers.find_frame(f2)
         if not m1 or not m2:
             continue
-        if len(tr.markers) < min_length:
+        if getattr(m1, "mute", False) or getattr(m2, "mute", False):
             continue
-        # Sicherstellen, dass der Track das Intervall abdeckt
-        if not (tr.markers[0].frame <= f1 <= tr.markers[-1].frame):
-            continue
-        if not (tr.markers[0].frame <= f2 <= tr.markers[-1].frame):
+        # Track muss das Intervall wirklich ABDECKEN (keine segment-Gaps)
+        if not _markers_continuous_between(tr, f1, f2):
             continue
 
         pts1.append(_to_pixels(m1.co, w, h))
@@ -270,8 +270,8 @@ def _gather_tracks_for_frames(
 
     if not pts1:
         return None, None, []
-
     return np.vstack(pts1), np.vstack(pts2), used_tracks
+
 
 
 def _normalize_points(pts: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
