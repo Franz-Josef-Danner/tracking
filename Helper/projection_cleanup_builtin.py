@@ -48,32 +48,41 @@ def _iter_tracks(clip: Optional[bpy.types.MovieClip]) -> Iterable[bpy.types.Movi
 # ---------------------------------------------------------------------
 # Kernlogik
 # ---------------------------------------------------------------------
-def _compute_track_errors(clip: bpy.types.MovieClip) -> list[tuple[str, float]]:
-    """
-    Liefert (track_name, reprojection_error) für alle Tracks, die einen numerischen Error tragen.
-    Kein has_bundle-Gate mehr; 0.0 ist zulässig.
-    """
+def _compute_track_errors(clip: bpy.types.MovieClip, scene=None) -> list[tuple[str, float]]:
+    import math, bpy
     out: list[tuple[str, float]] = []
-    if not clip:
-        return out
 
-    # Sicherstellen, dass die UI/Depsgraph frisch ist (manche Werte materialisieren erst nach Update)
+    # Depsgraph aktualisieren, damit Werte materialisieren
     try:
         bpy.context.view_layer.update()
     except Exception:
         pass
 
+    # Bevorzugt average_error; Fallbacks halten wir bereit
+    candidates = ("average_error", "reprojection_error", "error")
+
     for obj in clip.tracking.objects:
         for t in obj.tracks:
+            val = None
+            for attr in candidates:
+                if hasattr(t, attr):
+                    try:
+                        val = getattr(t, attr)
+                        break
+                    except Exception:
+                        val = None
+            if val is None:
+                continue
+
             try:
-                val = getattr(t, "reprojection_error", None)
-                if val is None:
-                    continue
                 err = float(val)
-                if math.isfinite(err) and err >= 0.0:
-                    out.append((t.name, err))
             except Exception:
                 continue
+
+            # 0.0 zulassen; nur NaNs/Inf filtern
+            if math.isfinite(err) and err >= 0.0:
+                out.append((t.name, err))
+
     return out
 
 # ---------------------------------------------------------------------
