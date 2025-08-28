@@ -586,7 +586,14 @@ def run_detect_once(
                             pass
 
         cleaned = [t for t in new_tracks_raw if t.as_pointer() not in reject_set]
+       
+        
+        try:
+            bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
+        except Exception:
+            pass
 
+        
         # Dry-run? Remove all new tracks
         if dry_run and cleaned:
             _deselect_all(tracking)
@@ -612,11 +619,6 @@ def run_detect_once(
             ptrs = set(prev)
             for t in tracking.tracks:
                 t.select = t.as_pointer() in ptrs
-
-        try:
-            bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
-        except Exception:
-            pass
 
         # Corridor logic
         new_count = len(cleaned)
