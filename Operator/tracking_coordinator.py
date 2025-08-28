@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import time
+import math
 import bpy
 from bpy.types import Scene
 from bpy.props import BoolProperty, FloatProperty
@@ -351,6 +352,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     _pending_eval_after_solve: bool = False
     _did_refine_this_cycle: bool = False
 
+    # --- NEU: Solve-Error-Merker ---
+    # Klassenattribute → existieren garantiert, auch falls _bootstrap nicht lief
+    _last_solve_error: Optional[float] = None
+    _same_error_repeat_count: int = 0
+
     @classmethod
     def poll(cls, context):
         return getattr(context.area, "type", None) == "CLIP_EDITOR"
@@ -429,6 +435,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._pending_eval_after_solve = False
         self._did_refine_this_cycle = False
 
+        # --- NEU: Solve-Error-Merker zurücksetzen ---
+        self._last_solve_error = None
+        self._same_error_repeat_count = 0
     # ---------------- States ----------------
 
     def _state_init(self, context):
@@ -754,6 +763,25 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         curr = _wait_for_valid_reconstruction(context, timeout_s=wait_s)
         curr = _current_solve_error(context) if curr is None else curr
         print(f"[Coord] EVAL → curr_error={curr if curr is not None else 'None'} target={target}")
+        # --- NEU: zweimal identischer Error → einmalig triggern ---
+        # Note: math.isclose statt exakter Gleichheit (floating point!)
+        if curr is not None:
+            if self._last_solve_error is not None and math.isclose(
+                float(curr), float(self._last_solve_error), rel_tol=1e-6, abs_tol=1e-6
+            ):
+                self._same_error_repeat_count += 1
+            else:
+                self._same_error_repeat_count = 1  # neuer Wert startet Zählung
+            self._last_solve_error = float(curr)
+
+            if self._same_error_repeat_count >= 2:
+                print(f"[Coord] EVAL → identischer Solve-Error zweimal in Folge ({curr:.6f}) → Trigger")
+                # einmalig auslösen → z. B. Cleanup anstoßen
+                self._same_error_repeat_count = 0
+                self._last_solve_error = None
+                self._state = "CLEANUP"
+                return {"RUNNING_MODAL"}
+
         # --- NEU: Check auf zweimal denselben Error hintereinander ---
         if curr is not None:
             if self._last_solve_error is not None and abs(curr - self._last_solve_error) < 1e-6:
