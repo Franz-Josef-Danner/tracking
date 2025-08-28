@@ -26,8 +26,16 @@ import numpy as np
 
 @dataclass
 class PreSolveMetrics:
-    """Ergebniscontainer für die Preflight-Messung eines Frame-Paars."""
+    """Ergebniscontainer für die Preflight-Messung eines Frame-Paars.
 
+    Neben klassischen RANSAC- und Parallaxwerten werden hier zusätzliche
+    Qualitätsmerkmale hinterlegt, um eine robustere Prognose des späteren
+    Solve-Fehlers zu ermöglichen. Alle zusätzlichen Metriken sind optional
+    und werden mit sinnvollen Defaultwerten initialisiert, um die
+    Abwärtskompatibilität zu wahren.
+    """
+
+    # Basisangaben des betrachteten Frame-Paars
     frame_a: int
     frame_b: int
 
@@ -48,6 +56,15 @@ class PreSolveMetrics:
     # Optional: für weiterführende Auswertung
     F: Optional[np.ndarray] = None
     inlier_mask: Optional[np.ndarray] = None
+
+    # Erweiterte Metriken zur Qualitätsvorhersage (alle optional)
+    inlier_ratio: Optional[float] = None  # Anteil Inlier/Total
+    track_count: Optional[int] = None  # Anzahl verwendeter Tracks
+    avg_track_length: Optional[float] = None  # Durchschnittliche Track-Länge
+    median_track_length: Optional[float] = None  # Median der Track-Längen
+    coverage_area: Optional[float] = None  # Normierte Bounding-Box-Fläche der Punkte
+    quality_score: Optional[float] = None  # 0..1; höher = bessere Geometrie
+    predicted_error: Optional[float] = None  # Grobe Schätzung des späteren Solve-Fehlers
 
     def as_dict(self) -> Dict:
         d = asdict(self)
@@ -180,15 +197,48 @@ def estimate_pre_solve_metrics(
     parallax_p95 = float(np.percentile(disp, 95))
     coverage = _quadrant_coverage(np.vstack([pts1, pts2]), *_clip_size(clip))
 
+    # Zusätzliche Metriken vorbereiten
+    # Anzahl und Länge der Tracks
+    track_count = len(tracks) if tracks is not None else 0
+    # Liste aller Track-Längen (Anzahl Marker pro Track)
+    track_lengths = []
+    if tracks:
+        for tr in tracks:
+            try:
+                track_lengths.append(len(getattr(tr, "markers", [])))
+            except Exception:
+                pass
+    # Durchschnitts- und Medianlänge
+    avg_len = float(np.mean(track_lengths)) if track_lengths else 0.0
+    med_len = float(np.median(track_lengths)) if track_lengths else 0.0
+    # Normierte Bounding-Box-Fläche der Gesamtpunkte (0..1)
+    w_img, h_img = _clip_size(clip)
+    all_pts = np.vstack([pts1, pts2]) if pts1 is not None and pts2 is not None else np.array([])
+    if all_pts.size > 0:
+        min_x, min_y = np.min(all_pts, axis=0)
+        max_x, max_y = np.max(all_pts, axis=0)
+        bb_w = max(0.0, (max_x - min_x) / float(w_img))
+        bb_h = max(0.0, (max_y - min_y) / float(h_img))
+        coverage_area = float(max(0.0, bb_w) * max(0.0, bb_h))
+    else:
+        coverage_area = 0.0
+
     # RANSAC + Refit
     F, inlier_mask = _ransac_F(pts1, pts2, iters=ransac_iters, thresh=ransac_thresh_px)
 
     if F is None or inlier_mask.sum() < 8:
+        # In diesem Fall konnte keine verlässliche Fundamentalmatrix ermittelt werden.
+        inl_cnt = 0 if inlier_mask is None else int(inlier_mask.sum())
+        tot_cnt = int(len(pts1)) if pts1 is not None else 0
+        inlier_ratio = float(inl_cnt / tot_cnt) if tot_cnt > 0 else 0.0
+        # Qualitätsabschätzung bleibt undefiniert, da das Paar degeneriert ist
+        quality_score = 0.0
+        predicted_error = float("inf")
         return PreSolveMetrics(
             frame_a=int(frame_a),
             frame_b=int(frame_b),
-            inliers=0 if inlier_mask is None else int(inlier_mask.sum()),
-            total=int(len(pts1)),
+            inliers=inl_cnt,
+            total=tot_cnt,
             median_sampson_px=float("inf"),
             mean_sampson_px=float("inf"),
             parallax_median_px=parallax_med,
@@ -197,22 +247,69 @@ def estimate_pre_solve_metrics(
             degenerate=True,
             F=F if return_F_and_mask else None,
             inlier_mask=inlier_mask if return_F_and_mask else None,
+            inlier_ratio=inlier_ratio,
+            track_count=track_count,
+            avg_track_length=avg_len,
+            median_track_length=med_len,
+            coverage_area=coverage_area,
+            quality_score=quality_score,
+            predicted_error=predicted_error,
         )
 
+    # Berechne Sampson-Distanzen der Inlier
     sampson = _sampson_dist(F, pts1[inlier_mask], pts2[inlier_mask])
+    inl_cnt = int(inlier_mask.sum())
+    tot_cnt = int(len(inlier_mask))
+    inlier_ratio = float(inl_cnt / tot_cnt) if tot_cnt > 0 else 0.0
+    median_s = float(np.median(sampson)) if sampson.size > 0 else float("inf")
+    mean_s = float(np.mean(sampson)) if sampson.size > 0 else float("inf")
+
+    # Qualitätsschätzung und erwarteter Solve-Fehler
+    # Normierung der Parallaxe anhand der Bilddiagonale
+    diag = float(np.hypot(w_img, h_img)) if (w_img and h_img) else 1.0
+    parallax_norm = parallax_med / diag if diag > 0.0 else 0.0
+    parallax_norm = max(0.0, min(parallax_norm, 1.0))
+    # Normierung der Tracklängen (typisch 50 Frames als Referenz)
+    track_len_norm = avg_len / 50.0 if avg_len > 0.0 else 0.0
+    track_len_norm = max(0.0, min(track_len_norm, 1.0))
+    # Coverage-Fläche zusätzlich mit Quadrantenabdeckung gewichten
+    coverage_score = coverage_area * coverage
+    coverage_score = max(0.0, min(coverage_score, 1.0))
+    # Weighted Sum (Anteile: Inlier=0.4, Parallax=0.3, Coverage=0.2, TrackLen=0.1)
+    quality_score = (
+        0.4 * inlier_ratio
+        + 0.3 * parallax_norm
+        + 0.2 * coverage_score
+        + 0.1 * track_len_norm
+    )
+    # Clamp to 0..1
+    quality_score = max(0.0, min(quality_score, 1.0))
+    # Schätze den Fehler als Funktion von Sampson-Fehler und Qualität
+    if quality_score > 0.0 and mean_s < float("inf"):
+        predicted_error = mean_s / (quality_score + 1e-6)
+    else:
+        predicted_error = float("inf")
+
     return PreSolveMetrics(
         frame_a=int(frame_a),
         frame_b=int(frame_b),
-        inliers=int(inlier_mask.sum()),
-        total=int(len(inlier_mask)),
-        median_sampson_px=float(np.median(sampson)),
-        mean_sampson_px=float(np.mean(sampson)),
+        inliers=inl_cnt,
+        total=tot_cnt,
+        median_sampson_px=median_s,
+        mean_sampson_px=mean_s,
         parallax_median_px=parallax_med,
         parallax_p95_px=parallax_p95,
         coverage_quadrants=coverage,
         degenerate=False,
         F=F if return_F_and_mask else None,
         inlier_mask=inlier_mask if return_F_and_mask else None,
+        inlier_ratio=inlier_ratio,
+        track_count=track_count,
+        avg_track_length=avg_len,
+        median_track_length=med_len,
+        coverage_area=coverage_area,
+        quality_score=quality_score,
+        predicted_error=predicted_error,
     )
 
 
