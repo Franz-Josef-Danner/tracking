@@ -5,8 +5,10 @@ import bpy
 from typing import Iterable, List
 
 from .naming import _safe_name
-from .segments import get_track_segments, track_has_internal_gaps
+from .segments import get_track_segments  # nur diese API ist sicher vorhanden
 from .mute_ops import mute_marker_path, mute_unassigned_markers
+
+__all__ = ("recursive_split_cleanup",)
 
 _VERBOSE_SCENE_KEY = "tco_verbose_split"
 
@@ -64,7 +66,7 @@ def _segments_by_consecutive_frames_unmuted(track) -> List[List[int]]:
 def _segment_lengths_unmuted(track: bpy.types.MovieTrackingTrack) -> List[int]:
     """Ermittelt Längen aller un-gemuteten, zusammenhängenden Segmente in Markeranzahl."""
     segs = list(get_track_segments(track))
-    # Fallback nutzen, falls get_track_segments zu grob ist
+    # Fallback: feinere Segmentierung, falls API zu grob ist
     fb = _segments_by_consecutive_frames_unmuted(track)
     if len(fb) > len(segs):
         segs = fb
@@ -131,7 +133,7 @@ def _apply_keep_only_segment(
     if f_start is None or f_end is None:
         return
     with bpy.context.temp_override(
-        window=window, screen=window.screen if window else None,
+        window=window, screen=(window.screen if window else None),
         area=area, region=region, space_data=space
     ):
         mute_marker_path(track, int(f_start) - 1, 'backward', mute=True)
@@ -163,9 +165,9 @@ def _split_track_into_exact_segments(context, area, region, space, track) -> Lis
 
     copies_needed = len(segs) - 1
 
-    # 2) Duplikate erzeugen (mit vollem UI-Kontext)
-    with context.temp_override(
-        window=window, screen=window.screen if window else None,
+    # 2) Duplikate erzeugen (mit vollem UI-Kontext für Operatoren)
+    with bpy.context.temp_override(
+        window=window, screen=(window.screen if window else None),
         area=area, region=region, space_data=space
     ):
         try:
@@ -193,7 +195,7 @@ def _split_track_into_exact_segments(context, area, region, space, track) -> Lis
     try:
         for t in clip.tracking.tracks:
             nm = _safe_name(t)
-            if nm and nm.startswith(base):
+            if nm and (nm == base or nm.startswith(base + ".")):
                 group.append(t)
     except Exception:
         pass
@@ -208,8 +210,8 @@ def _split_track_into_exact_segments(context, area, region, space, track) -> Lis
 
     # 4) Pro Kopie genau ein Segment aktiv lassen, Rest muten
     k = min(len(group_sorted), len(segs))
-    with context.temp_override(
-        window=window, screen=window.screen if window else None,
+    with bpy.context.temp_override(
+        window=window, screen=(window.screen if window else None),
         area=area, region=region, space_data=space
     ):
         for i in range(k):
