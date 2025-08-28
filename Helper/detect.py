@@ -398,23 +398,48 @@ def run_pattern_triplet_and_select_by_name(
 def _force_clip_redraw():
     try:
         wm = bpy.context.window_manager
-        if not wm:
-            return
-        for window in wm.windows:
-            scr = window.screen
-            if not scr:
-                continue
-            for area in scr.areas:
-                if area.type == "CLIP_EDITOR":
-                    area.tag_redraw()
-        # Zusatz: globaler Fallback
-        try:
-            bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
-        except Exception:
-            pass
+        if wm:
+            for win in wm.windows:
+                scr = getattr(win, "screen", None)
+                if not scr:
+                    continue
+                for area in scr.areas:
+                    if area.type == "CLIP_EDITOR":
+                        area.tag_redraw()
+        # globaler Fallback
+        bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
     except Exception:
         pass
 
+
+def _next_tick(func, *args, **kwargs):
+    """Führt func im nächsten UI-Tick aus (einmalig)."""
+    def _cb():
+        try:
+            func(*args, **kwargs)
+        except Exception:
+            pass
+        return None  # einmalig
+    try:
+        bpy.app.timers.register(_cb, first_interval=0.0)
+    except Exception:
+        pass
+
+def _delete_tracks_by_ptrs(ptrs: list[int]) -> None:
+    try:
+        clip = next(iter(bpy.data.movieclips), None)
+        if not clip:
+            return
+        tr = clip.tracking.tracks
+        tgt = set(ptrs)
+        for t in list(tr):
+            try:
+                if t.as_pointer() in tgt:
+                    tr.remove(t)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 def run_detect_once(
     context: bpy.types.Context,
@@ -637,26 +662,28 @@ def run_detect_once(
         # Corridor logic
         new_count = len(cleaned)
         if new_count < int(min_marker) or new_count > int(max_marker):
-            # 1) Sichtbarer Zwischenstand dieses Zyklus (bereinigt + selektiert)        
-            # 2) Jetzt für den nächsten Versuch aufräumen: neu hinzugefügte wieder entfernen
-            if cleaned:
-                _deselect_all(tracking)
-                for t in cleaned:
-                    t.select = True
-                try:
-                    _delete_selected_tracks(confirm=True)
-                except Exception:
-                    # Fallback: direkte Entfernung aus dem Tracking
-                    for t in list(cleaned):
-                        try:
-                            tracking.tracks.remove(t)
-                        except Exception:
-                            pass
+            # 1) Sichtbarer Zwischenstand dieses Zyklus (bereinigt + selektiert)
+            _force_clip_redraw()
         
-            # ... hier geht's weiter mit Threshold-Anpassung, Metrics und RUNNING-Return
-
-
-            # PID-like adjustment (P + mild I)
+            # 2) Delete NICHT sofort, sondern im nächsten UI-Tick ausführen
+            if cleaned:
+                try:
+                    _next_tick(_delete_tracks_by_ptrs, [t.as_pointer() for t in cleaned])
+                except Exception:
+                    # Fallback (nur wenn Timer fehlschlägt): sofort löschen
+                    _deselect_all(tracking)
+                    for t in cleaned:
+                        t.select = True
+                    try:
+                        _delete_selected_tracks(confirm=True)
+                    except Exception:
+                        for t in list(cleaned):
+                            try:
+                                tracking.tracks.remove(t)
+                            except Exception:
+                                pass
+        
+            # 3) Threshold anpassen & RUNNING zurückgeben (unverändert)
             target = float(max(1, int(marker_adapt or new_count)))
             error = (float(new_count) - target) / max(target, 1.0)
             k_p = 0.65
@@ -665,14 +692,13 @@ def run_detect_once(
             scn["__thr_i"] = acc
             scale = 1.0 + (k_p * error + k_i * acc)
             new_threshold = max(1e-4, float(threshold) * scale)
-
+        
             try:
                 scn[DETECT_LAST_THRESHOLD_KEY] = float(new_threshold)
                 scn["detect_status"] = "running"
             except Exception:
                 pass
-
-
+        
             metrics = DetectMetrics(
                 frame=frame,
                 requested_threshold=float(threshold),
@@ -686,12 +712,7 @@ def run_detect_once(
                 roi_rejected=len(roi_rejected),
                 duration_ms=0.0,
             )
-
-            try:
-                bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
-            except Exception:
-                pass
-            
+        
             return {
                 "status": "RUNNING",
                 "new_tracks": int(new_count),
@@ -699,6 +720,7 @@ def run_detect_once(
                 "frame": int(frame),
                 "metrics": metrics.__dict__,
             }
+
 
         # READY: success → remember threshold and optionally run pattern-triplet
         try:
