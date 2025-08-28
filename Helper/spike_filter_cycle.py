@@ -28,11 +28,6 @@ try:
 except Exception:
     clean_short_segments = None  # wird später geprüft
 
-try:
-    from .split_cleanup import recursive_split_cleanup
-except Exception:
-    recursive_split_cleanup = None
-
 __all__ = [
     "run_marker_spike_filter_cycle",
 ]
@@ -275,27 +270,7 @@ def run_marker_spike_filter_cycle(
             print(f"[MarkerSpike] clean_short_tracks(min_len={frames_min}) → cleaned={cleaned}")
         except Exception as ex:
             print(f"[MarkerSpike] clean_short_tracks failed: {ex!r}")
-
-    # 2b) Split-Cleanup (optional, wenn verfügbar)
-    if recursive_split_cleanup is not None:
-        try:
-            # Kontextobjekte für UI override besorgen
-            area = next((a for a in context.screen.areas if a.type == "CLIP_EDITOR"), None)
-            region = None
-            space = None
-            if area:
-                region = next((r for r in area.regions if r.type == "WINDOW"), None)
-                space = area.spaces.active if hasattr(area, "spaces") else None
-
-            if area and region and space:
-                tracks = _get_tracks_collection(_get_active_clip(context)) or []
-                recursive_split_cleanup(context, area, region, space, tracks)
-                print("[MarkerSpike] split_cleanup executed")
-            else:
-                print("[MarkerSpike] WARN: no valid CLIP_EDITOR area/region for split_cleanup")
-        except Exception as ex:
-            print(f"[MarkerSpike] split_cleanup failed: {ex!r}")
-
+            
     # 3) Next Threshold
     next_thr = _lower_threshold(thr)
     print(f"[MarkerSpike] next threshold → {next_thr}")
@@ -306,5 +281,6 @@ def run_marker_spike_filter_cycle(
         key: int(affected),
         "cleaned": int(cleaned),
         "next_threshold": float(next_thr),
+        "suggest_split_cleanup": True,  # <— NEU (optional)
     }
 
