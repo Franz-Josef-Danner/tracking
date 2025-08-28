@@ -287,7 +287,6 @@ class CLIP_OT_refine_high_error_modal(Operator):
             # Gate: nur verfeinern, wenn genügend Marker am Frame (beste Bedingungen)
             min_required = int(getattr(context.scene, "marker_frame", 25) or 25)
             if active_count < min_required:
-                print(f"[RefineModal] SKIP @scene={f_scene} (active={active_count} < required={min_required})")
                 self._target_index += 1
                 return {"RUNNING_MODAL"}
 
@@ -347,16 +346,13 @@ class CLIP_OT_refine_high_error_modal(Operator):
                                 mk.co.x, mk.co.y = x, y
                             except Exception:
                                 pass
-                    print(f"[RefineModal] ROLLBACK @scene={f_scene} (err {baseline_err:.3f}→{new_err:.3f})")
                 else:
-                    print(f"[RefineModal] KEEP @scene={f_scene} (err {baseline_err:.3f}→{new_err:.3f})")
-
+                    pass
             # nächstes Ziel
             self._target_index += 1
             return {"RUNNING_MODAL"}
 
         except Exception as ex:
-            print(f"[RefineModal] Error: {ex!r}")
             return self._finish(context, cancelled=True)
 
     # Hilfsfunktion: Ziele bestimmen (Beste Positionen + Solve-Error-Untergrenze + Mindestabstand)
@@ -396,10 +392,6 @@ class CLIP_OT_refine_high_error_modal(Operator):
                 selected.append(f)
 
         self._targets = selected
-        print(
-            f"[RefineModal] Solve-Error={thr:.6f} | frames_track={frames_track} "
-            f"→ min_spacing={min_spacing} | candidates={len(filtered)} | selected={len(self._targets)}"
-        )
 
     def _finish(self, context: Context, *, cancelled: bool):
         if self._timer:
@@ -409,7 +401,6 @@ class CLIP_OT_refine_high_error_modal(Operator):
             context.scene["refine_active"] = False
         except Exception:
             pass
-        print(f"[RefineModal] DONE ({'CANCELLED' if cancelled else 'FINISHED'})")
         return {"CANCELLED" if cancelled else "FINISHED"}
 
 

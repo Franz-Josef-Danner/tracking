@@ -185,17 +185,15 @@ def _apply_marker_outlier_filter(
                     f = int(getattr(m_curr, "frame", -10))
                     tr.markers.delete_frame(f)
                     affected += 1
-                    print(f"[MarkerSpike] DELETE '{tr.name}' @ f{frame} |dev|={dev:.3f} > thr={threshold_px:.3f}")
                 except Exception as ex:
-                    print(f"[MarkerSpike] DELETE failed '{tr.name}' @ f{frame}: {ex!r}")
+                    pass
         elif do_mute:
             for tr, m_curr, dev in to_handle:
                 try:
                     m_curr.mute = True
                     affected += 1
-                    print(f"[MarkerSpike] MUTE '{tr.name}' @ f{frame} |dev|={dev:.3f} > thr={threshold_px:.3f}")
                 except Exception as ex:
-                    print(f"[MarkerSpike] MUTE failed '{tr.name}' @ f{frame}: {ex!r}")
+                    pass
         elif do_select:
             for tr, m_curr, dev in to_handle:
                 try:
@@ -205,9 +203,8 @@ def _apply_marker_outlier_filter(
                     except Exception:
                         pass
                     affected += 1
-                    print(f"[MarkerSpike] SELECT '{tr.name}' @ f{frame} |dev|={dev:.3f} > thr={threshold_px:.3f}")
                 except Exception as ex:
-                    print(f"[MarkerSpike] SELECT failed '{tr.name}' @ f{frame}: {ex!r}")
+                    pass
 
     return affected
 
@@ -244,15 +241,14 @@ def run_marker_spike_filter_cycle(
     # 1) Marker-Filter
     affected = _apply_marker_outlier_filter(context, threshold_px=thr, action=act)
     key = "deleted" if act == "DELETE" else ("muted" if act == "MUTE" else "selected")
-    print(f"[MarkerSpike] affected {affected} marker(s) with action={act}")
 
     # 2) Segment-Cleanup (optional via Flag)
     cleaned_segments = 0
     cleaned_markers = 0
     if not run_segment_cleanup:
-        print("[MarkerSpike] segment cleanup skipped (run_segment_cleanup=False)")
+        pass
     elif clean_short_segments is None:
-        print(f"[MarkerSpike] WARN: clean_short_segments not available ({_CSS_IMPORT_ERR!r})")
+        pass
     else:
         scene = getattr(context, "scene", None)
         if min_segment_len is None:
@@ -276,11 +272,9 @@ def run_marker_spike_filter_cycle(
                 cleaned_segments = int(res.get("segments_removed", 0) or 0)
                 cleaned_markers = int(res.get("markers_removed", 0) or 0)
         except Exception as ex:
-            print(f"[MarkerSpike] clean_short_segments failed: {ex!r}")
-
+            pass
     # 3) Next Threshold (sanft senken)
     next_thr = _lower_threshold(thr)
-    print(f"[MarkerSpike] next threshold → {next_thr}")
 
     return {
         "status": "OK",

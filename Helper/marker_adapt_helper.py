@@ -19,7 +19,6 @@ def run_marker_adapt_boost(context: bpy.types.Context):
     scene["marker_adapt"] = int(new_val)
 
     msg = f"marker_adapt: {int(base_val)} → {int(new_val)}"
-    print(f"[MarkerAdapt] {msg}")
 
     # Identisches Abschlussverhalten wie ein Operator
     return {'FINISHED'}

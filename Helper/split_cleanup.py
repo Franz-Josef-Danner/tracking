@@ -20,8 +20,7 @@ def _is_verbose(scene) -> bool:
 
 def _log(scene, msg: str) -> None:
     if _is_verbose(scene):
-        print(f"[SplitCleanup] {msg}")
-
+        pass
 
 # ------------------------------------------------------------
 # Utilities
@@ -343,7 +342,6 @@ def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable
 
 def recursive_split_cleanup(context, area, region, space, tracks):
     scene = context.scene
-    print("[SplitCleanup] recursive_split_cleanup: start")
 
     clip = space.clip
     if clip is None:
@@ -355,22 +353,19 @@ def recursive_split_cleanup(context, area, region, space, tracks):
         fb = _segments_by_consecutive_frames_unmuted(t)
         if len(fb) > len(segs):
             segs = fb
-        print(f"[Audit-BEFORE] Track='{t.name}' segs={len(segs)} lens={[len(s) for s in segs]}")
 
     # 1) Neuer Kern: Iteratives Duplizieren & Abschälen
     try:
         _iterative_segment_split(context, area, region, space, tracks)
     except Exception as e:
-        print(f"[Audit-ERROR] IterSplit failed: {e}")
         # Fallback: nichts tun, weiter mit Delete-Policy
-
+        pass
     # --- Audit nach Split ---
     for t in clip.tracking.tracks:
         segs = list(get_track_segments(t))
         fb = _segments_by_consecutive_frames_unmuted(t)
         if len(fb) > len(segs):
             segs = fb
-        print(f"[Audit-AFTER_SPLIT] Track='{t.name}' segs={len(segs)} lens={[len(s) for s in segs]}")
 
     # (Enforcement entfällt; die Iteration konvergiert bis keine Multi-Segments mehr da sind)
     # --- Audit nach Enforcement ---
@@ -379,7 +374,6 @@ def recursive_split_cleanup(context, area, region, space, tracks):
         fb = _segments_by_consecutive_frames_unmuted(t)
         if len(fb) > len(segs):
             segs = fb
-        print(f"[Audit-ENFORCED] Track='{t.name}' segs={len(segs)} lens={[len(s) for s in segs]}")
 
     # 2) Delete-Policy
     try:
@@ -387,7 +381,6 @@ def recursive_split_cleanup(context, area, region, space, tracks):
     except Exception:
         min_len = 25
     deleted = _delete_tracks_by_max_unmuted_seg_len(context, clip.tracking.tracks, min_len=min_len)
-    print(f"[Audit-DELETE] deleted={deleted}")
 
     # --- Audit nach Delete ---
     leftover_multi = 0
@@ -398,12 +391,9 @@ def recursive_split_cleanup(context, area, region, space, tracks):
             segs = fb
         if len(segs) > 1:
             leftover_multi += 1
-            print(f"[Audit-LEFTOVER] Track='{t.name}' segs={len(segs)} lens={[len(s) for s in segs]}")
     if leftover_multi == 0:
-        print("[Audit-LEFTOVER] none")
-
+        pass
     # 3) Safety
     mute_unassigned_markers(clip.tracking.tracks)
 
-    print("[SplitCleanup] recursive_split_cleanup: FINISHED")
     return {'FINISHED'}

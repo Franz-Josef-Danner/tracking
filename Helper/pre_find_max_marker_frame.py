@@ -136,8 +136,7 @@ def run_find_max_marker_frame(
     for idx, c in enumerate(counts):
         f = s_start + idx
         if log_each_frame:
-            print(f"[find_max_marker_frame] frame={f} count={c} threshold={threshold}")
-
+            pass
         if observed_min is None or c < observed_min:
             observed_min = c
             observed_min_frame = f

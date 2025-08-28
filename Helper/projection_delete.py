@@ -53,7 +53,6 @@ def _get_current_solve_error_now(context) -> Optional[float]:
             require_has_bundle=require_has_bundle,
         )
         if worst is None:
-            print("[Cleanup] Kein Track mit gültigem average_error gefunden – Vorgang wird übersprungen.")
             result = {
                 "status": "SKIPPED",
                 "reason": "no_valid_track_error",
@@ -72,7 +71,6 @@ def _get_current_solve_error_now(context) -> Optional[float]:
 
         obj, track, err = worst
         name = getattr(track, "name", "<unnamed>")
-        print(f"[Cleanup] Lösche schlechtesten Track: {name} (avg_err={err:.4f}px)")
         ok = _delete_track(obj, track)
         _poke_update()
         after_count = _count_tracks(clip)
@@ -97,7 +95,6 @@ def _get_current_solve_error_now(context) -> Optional[float]:
 
         obj, track, err = worst
         name = getattr(track, "name", "<unnamed>")
-        print(f"[Cleanup] Lösche schlechtesten Track: {name} (avg_err={err:.4f}px)")
         ok = _delete_track(obj, track)
         after_count = _count_tracks(clip)
         deleted = 1 if ok and after_count == max(0, before_count - 1) else 0
@@ -125,11 +122,9 @@ def _get_current_solve_error_now(context) -> Optional[float]:
             break
 
     if used_error is None and wait_for_error:
-        print("[Cleanup] Kein Error übergeben → warte auf Solve-Error …")
         used_error = _wait_until_error(context, wait_forever=bool(wait_forever), timeout_s=float(timeout_s))
 
     if used_error is None:
-        print("[Cleanup] Kein gültiger Solve-Error verfügbar – Cleanup wird SKIPPED.")
         return {
             "status": "SKIPPED",
             "reason": "no_error",
@@ -143,12 +138,10 @@ def _get_current_solve_error_now(context) -> Optional[float]:
         }
 
     used_error = float(used_error) * 1.2
-    print(f"[Cleanup] Starte clean_tracks mit Grenzwert {used_error:.4f}px, action={action}")
 
     try:
         _invoke_clean_tracks(context, used_error=float(used_error), action=str(action if action in _allowed_actions() else "SELECT"))
     except Exception as ex:
-        print(f"[Cleanup] Fehler bei clean_tracks: {ex!r}")
         return {
             "status": "ERROR",
             "reason": repr(ex),
@@ -164,9 +157,6 @@ def _get_current_solve_error_now(context) -> Optional[float]:
     after_count = _count_tracks(clip)
     deleted = max(0, (before_count or 0) - (after_count or 0))
 
-    print(
-        f"[Cleanup] Cleanup abgeschlossen. Vorher={before_count}, nachher={after_count}, entfernt={deleted}"
-    )
 
     tco.on_projection_cleanup_finished(context=context)
 
