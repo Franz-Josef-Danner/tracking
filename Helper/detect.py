@@ -322,11 +322,6 @@ def run_pattern_triplet_and_select_by_name(
         except Exception:
             pass
 
-        try:
-            bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
-        except Exception:
-            pass
-
         new_names = _collect_new_track_names_by_pointer(tracking.tracks, before_ptrs)
         aggregated_names.update(new_names)
         return len(new_names)
@@ -385,11 +380,6 @@ def run_pattern_triplet_and_select_by_name(
     for t in tracking.tracks:
         t.select = False
     selected = _select_tracks_by_names(tracking, remaining_triplet_names)
-
-    try:
-        bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
-    except Exception:
-        pass
 
     return {
         "status": "READY",
@@ -520,11 +510,6 @@ def run_detect_once(
             except Exception:
                 pass
             return {"status": "FAILED", "reason": "detect_features_failed", "frame": int(frame)}
-
-        try:
-            bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
-        except Exception:
-            pass
 
         # Gather new tracks
         tracks_list = list(tracking.tracks)
