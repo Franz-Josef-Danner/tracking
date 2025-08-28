@@ -15,13 +15,12 @@ from typing import Optional, Dict, Any, Callable, Tuple
 from ..Helper.solve_camera import solve_camera_only
 from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin
 from ..Helper.projektion_spike_filter_cycle import run_projection_spike_filter_cycle  # NEW
-
-# Loop-Helpers
-from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
 from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
 from ..Helper.spike_filter_cycle import run_marker_spike_filter_cycle  # type: ignore
 from ..Helper.split_cleanup import recursive_split_cleanup  # type: ignore
+from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
+from ..Helper.preflight import estimate_pre_solve_metrics  # ← NEU: Preflight-Helper
 
 __all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
 
@@ -53,6 +52,7 @@ _CYCLE_MAX_ITER = 6
 
 def _tco_log(msg: str) -> None:
     print(f"[tracking_coordinator] {msg}")
+
 
 def _pause(seconds: float = 0.5) -> None:
     """Kleine, robuste Pause zwischen Schritten."""
@@ -140,6 +140,7 @@ def _wait_for_valid_reconstruction(
 
 
 # ---- Split-Cleanup Helpers (blocking) ----
+
 def _get_active_clip(context: bpy.types.Context):
     space = getattr(context, "space_data", None)
     if getattr(space, "type", None) == "CLIP_EDITOR" and getattr(space, "clip", None):
@@ -148,6 +149,7 @@ def _get_active_clip(context: bpy.types.Context):
         return bpy.data.movieclips[0] if bpy.data.movieclips else None
     except Exception:
         return None
+
 
 def _get_tracks_collection(clip):
     try:
@@ -160,6 +162,7 @@ def _get_tracks_collection(clip):
         return clip.tracking.tracks
     except Exception:
         return None
+
 
 def _resolve_clip_editor_area_triplet(context) -> Tuple[Optional[bpy.types.Area], Optional[bpy.types.Region], Optional[Any]]:
     """Findet eine CLIP_EDITOR Area/Region/Space-Triplette für Kontext-Overrides."""
@@ -178,6 +181,7 @@ def _resolve_clip_editor_area_triplet(context) -> Tuple[Optional[bpy.types.Area]
     except Exception:
         pass
     return area, region, space
+
 
 def _run_split_cleanup_blocking(context: bpy.types.Context) -> None:
     """Führt Helper/split_cleanup.py synchron aus und kehrt erst nach Abschluss zurück."""
@@ -216,6 +220,7 @@ def _run_split_cleanup_blocking(context: bpy.types.Context) -> None:
             pass
 
 # ---- NEW: Select-All-Tracks (blocking) ----
+
 def _select_all_tracks_blocking(context: bpy.types.Context) -> bool:
     """Selektiert alle Tracks im aktiven Clip (CLIP_EDITOR-Kontext)."""
     clip = _get_active_clip(context)
@@ -438,6 +443,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # --- NEU: Solve-Error-Merker zurücksetzen ---
         self._last_solve_error = None
         self._same_error_repeat_count = 0
+
     # ---------------- States ----------------
 
     def _state_init(self, context):
@@ -470,13 +476,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._cycle_active = True
             self._cycle_target_frame = None
             self._cycle_iterations = 0
-            
+
             # harter Reset für jeden neuen Cycle
             self._spike_threshold = float(
                 getattr(context.scene, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START
             )
             print(f"[Coord] CYCLE_START → reset spike start = {self._spike_threshold:.2f}")
-            
+
             self._did_refine_this_cycle = False
             self._state = "CYCLE_FIND_MAX"
         return {"RUNNING_MODAL"}
@@ -588,28 +594,28 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print("[Coord] CYCLE_FIND_MAX reached with inactive cycle → FINALIZE")
             self._state = "FINALIZE"
             return {"RUNNING_MODAL"}
-    
+
         print(f"[Coord] CYCLE_FIND_MAX → check (current deletion-iterations={self._cycle_iterations}/{_CYCLE_MAX_ITER})")
-    
+
         try:
             res = run_find_max_marker_frame(context)
         except Exception as ex:
             print(f"[Coord] CYCLE_FIND_MAX failed: {ex!r}")
             res = {"status": "FAILED", "reason": repr(ex)}
-    
+
         status = str(res.get("status", "FAILED")).upper()
         if status == "FOUND":
             frame = int(res.get("frame", getattr(context.scene, "frame_current", 0)))
             count = res.get("count", "?")
             thresh = res.get("threshold", "?")
             print(f"[Coord] CYCLE_FIND_MAX → FOUND frame={frame} (count={count} < threshold={thresh})")
-    
+
             self._cycle_target_frame = frame
             try:
                 context.scene.frame_set(frame)
             except Exception as ex_set:
                 print(f"[Coord] WARN: frame_set({frame}) failed: {ex_set!r}")
-    
+
             # Zyklus beenden → erst Split-Cleanup (blocking), dann Segment/Track-Clean, dann Solve
             self._cycle_active = False
             print("[Coord] CYCLE_FIND_MAX → SPLIT_CLEANUP (blocking)")
@@ -639,12 +645,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._pending_eval_after_solve = True
             self._state = "SOLVE"
             return {"RUNNING_MODAL"}  # ← wichtig!
-    
+
         # NONE/FAILED → SPIKE
         print(f"[Coord] CYCLE_FIND_MAX → {status} → CYCLE_SPIKE")
         self._state = "CYCLE_SPIKE"
         return {"RUNNING_MODAL"}
-
 
     def _state_cycle_spike(self, context):
         if not self._cycle_active:
@@ -668,12 +673,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 )
                 status = str(res.get("status","")).upper()
                 muted = int(res.get("muted", 0) or 0)
-    
+
             next_thr = float(res.get("next_threshold", self._spike_threshold * 0.9))
             print(f"[Coord] CYCLE_SPIKE → status={status}, affected={muted}, next={next_thr:.2f} (curr={self._spike_threshold:.2f})")
             self._spike_threshold = max(next_thr, 0.0)
             ...
-
 
             # **Neu**: segmentweises Clean **nach** dem Spike-Pass (robuster, zentralisiert)
             _pause(0.5)
@@ -716,7 +720,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         print(f"[Coord] WARN: clean_short_segments failed post-SPLIT(limit): {ex!r}")
                     _pause(0.5)
 
-                    # Clean-Short-Tracks    
+                    # Clean-Short-Tracks
                     try:
                         frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
                         clean_short_tracks(context, min_len=frames_min, verbose=True)
@@ -724,26 +728,51 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     except Exception as ex:
                         print(f"[Coord] CLEAN_SHORT (post-split) failed: {ex!r}")
                     _pause(0.5)
-    
+
                     print("[Coord] CYCLE_SPIKE → SOLVE")
                     self._pending_eval_after_solve = True
                     self._state = "SOLVE"
                     return {"RUNNING_MODAL"}  # ← wichtig!
-    
+
         except Exception as ex:
             print(f"[Coord] CYCLE_SPIKE failed: {ex!r}")
             self._state = "CYCLE_FIND_MAX"
             return {"RUNNING_MODAL"}
-    
+
         # Nächster Schritt im Cycle
         self._state = "CYCLE_FIND_MAX"
         return {"RUNNING_MODAL"}
 
-
     # ---------------- SOLVE → EVAL → CLEANUP ----------------
 
     def _state_solve(self, context):
-        # NEU: Vor jedem Solve alle Tracks selektieren
+        """Vor dem Solve wird ein schneller Preflight-Check durchgeführt.
+        Nur wenn mediane Sampson-Distanz <= scene.error_track * 2 und Setup nicht
+        degeneriert ist, wird der Solve ausgeführt. Sonst zurück zu FIND_LOW.
+        """
+        # --- Preflight-Gate ---
+        try:
+            clip = _get_active_clip(context)
+            if clip is not None:
+                f1 = int(getattr(context.scene, "frame_current", 0))
+                f2 = f1 + 10  # fixer Frame-Abstand für Preflight
+                metrics = estimate_pre_solve_metrics(clip, f1, f2)
+                target = _scene_float(context.scene, "error_track", 0.0)
+                thresh = target * 2.0
+                print(
+                    f"[Coord] SOLVE Preflight → frames=({f1},{f2}) median_sampson={metrics.median_sampson_px:.3f} "
+                    f"inliers={metrics.inliers}/{metrics.total} coverage={metrics.coverage_quadrants*100:.0f}% thresh={thresh:.3f}"
+                )
+                if metrics.degenerate or not (metrics.median_sampson_px <= thresh):
+                    print("[Coord] SOLVE → Preflight zu schlecht → zurück zu FIND_LOW")
+                    self._pending_eval_after_solve = False
+                    self._did_refine_this_cycle = False
+                    self._state = "FIND_LOW"
+                    return {"RUNNING_MODAL"}
+        except Exception as ex:
+            print(f"[Coord] SOLVE Preflight check failed (ignoriere und löse trotzdem): {ex!r}")
+
+        # --- Nur wenn Preflight OK: alle Tracks selektieren und Solve auslösen ---
         _select_all_tracks_blocking(context)
         _pause(0.05)
 
@@ -868,15 +897,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print(f"[Coord] CLEANUP(select) → {res}")
         else:
             print(f"[Coord] CLEANUP(select) failed: {res!r}")
-    
+
         _pause(0.5)
-    
+
         # 2) Spike-Filter nur auf die selektierten (schlechtesten) Tracks anwenden
         try:
             thr = float(getattr(context.scene, "spike_start_threshold", 20.0) or 20.0)
         except Exception:
             thr = 20.0
-    
+
         ok2, res2 = _safe_call(
             run_projection_spike_filter_cycle,
             context,
@@ -889,13 +918,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print(f"[Coord] CLEANUP(spike) → {res2}")
         else:
             print(f"[Coord] CLEANUP(spike) failed: {res2!r}")
-    
+
         print("[Coord] CLEANUP → FIND_LOW (back to loop)")
         self._pending_eval_after_solve = False
         self._did_refine_this_cycle = False
         self._state = "FIND_LOW"
         return {"RUNNING_MODAL"}
-
 
     # ---------------- Modal-Wrapper ----------------
     def modal(self, context, event):
