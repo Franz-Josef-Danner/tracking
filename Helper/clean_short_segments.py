@@ -1,13 +1,13 @@
+# Helper/clean_short_segments.py
 # SPDX-License-Identifier: MIT
 from __future__ import annotations
 """
-Segmentweises Clean: Entfernt nur zu kurze Marker-Segmente innerhalb eines Tracks.
+Segmentweises Clean: Entfernt zu kurze Marker-Segmente innerhalb eines Tracks.
 
 Definition:
 - Ein Segment ist eine Folge von Markern mit konsekutiven Frames (dt == 1).
-- Muted Marker können optional als "Lücke" gewertet werden (treat_muted_as_gap=True).
-- Neu: Randschutz (Head/Tail) via skip_edge_segments=True. Alternativ separater
-       Schwellenwert min_len_edge für Randsegmente.
+- Segmente, deren Länge (Anzahl Marker) < min_len ist, werden entfernt (Marker-DELETE).
+- Muted Marker können optional als "Lücke" betrachtet werden (default: True).
 
 Rückgabe (dict):
 {
@@ -15,236 +15,164 @@ Rückgabe (dict):
     "tracks_visited": int,
     "segments_removed": int,
     "markers_removed": int,
-    "tracks_emptied": int,   # wie viele Tracks durch das Entfernen leer wurden
+    "tracks_emptied": int,   # wie viele Tracks dadurch leer wurden
 }
 """
 
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List
 import bpy
-
 
 __all__ = ["clean_short_segments"]
 
 
-# ---------------------------------------------------------------------------
-# Utilities
-# ---------------------------------------------------------------------------
+# ------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------
 
-def _get_active_clip(context) -> Optional[bpy.types.MovieClip]:
-    """Finde aktiven MovieClip, bevorzugt CLIP_EDITOR; Fallback: erstes MovieClip."""
-    try:
-        space = getattr(context, "space_data", None)
-        if getattr(space, "type", None) == "CLIP_EDITOR":
-            clip = getattr(space, "clip", None)
-            if clip:
-                return clip
-    except Exception:
-        pass
-    try:
-        # weiterer Fallback über Kontext
-        clip = getattr(context, "edit_movieclip", None)
-        if clip:
-            return clip
-    except Exception:
-        pass
+def _get_active_clip(context) -> bpy.types.MovieClip | None:
+    space = getattr(context, "space_data", None)
+    if getattr(space, "type", None) == "CLIP_EDITOR" and getattr(space, "clip", None):
+        return space.clip
     try:
         return bpy.data.movieclips[0] if bpy.data.movieclips else None
     except Exception:
         return None
 
 
-def _markers_sorted(track: bpy.types.MovieTrackingTrack) -> List[bpy.types.MovieTrackingMarker]:
+def _tracks_collection(clip) -> bpy.types.bpy_prop_collection | None:
     try:
-        # Marker per Frame aufsteigend, robuster Zugriff
-        return sorted(list(track.markers), key=lambda m: int(getattr(m, "frame", 0)))
+        obj = clip.tracking.objects.active
+        if obj and getattr(obj, "tracks", None):
+            return obj.tracks
     except Exception:
-        return list(track.markers)
+        pass
+    try:
+        return clip.tracking.tracks
+    except Exception:
+        return None
 
 
-def _segmentize_markers(
+def _iter_segments(
     markers: List[bpy.types.MovieTrackingMarker],
     *,
-    treat_muted_as_gap: bool = True,
+    treat_muted_as_gap: bool
 ) -> List[List[bpy.types.MovieTrackingMarker]]:
-    """Zerlegt Marker in Listen konsekutiver Segmente (dt==1)."""
+    """Zerlegt Marker in Segmente aus konsekutiven Frames (dt==1).
+    Optional erzeugen 'mute'-Marker Lücken.
+    """
     segs: List[List[bpy.types.MovieTrackingMarker]] = []
     if not markers:
         return segs
 
-    curr: List[bpy.types.MovieTrackingMarker] = []
-    prev_f: Optional[int] = None
+    # Sicherheit: nach Frame sortieren
+    markers = sorted(markers, key=lambda m: int(getattr(m, "frame", 0)))
 
-    for m in markers:
-        f = int(getattr(m, "frame", 0))
-        if prev_f is None:
-            curr = [m]
+    curr: List[bpy.types.MovieTrackingMarker] = [markers[0]]
+    for prev, curr_m in zip(markers, markers[1:]):
+        f0 = int(getattr(prev, "frame", -10))
+        f1 = int(getattr(curr_m, "frame", -10))
+        dt = f1 - f0
+
+        # Lücke, wenn Frames nicht konsekutiv oder (optional) wenn ein Marker gemutet ist
+        gap = (dt != 1) or (
+            treat_muted_as_gap and (getattr(prev, "mute", False) or getattr(curr_m, "mute", False))
+        )
+
+        if gap:
+            segs.append(curr)
+            curr = [curr_m]
         else:
-            dt = f - prev_f
-            # Gap, wenn Frame-Sprung oder (optional) stumme Marker involviert
-            if dt != 1 or (treat_muted_as_gap and (getattr(m, "mute", False) or getattr(curr[-1], "mute", False))):
-                if curr:
-                    segs.append(curr)
-                curr = [m]
-            else:
-                curr.append(m)
-        prev_f = f
+            curr.append(curr_m)
 
     if curr:
         segs.append(curr)
     return segs
 
 
-def _delete_markers(track: bpy.types.MovieTrackingTrack, markers_to_delete: List[bpy.types.MovieTrackingMarker]) -> int:
-    """Löscht Marker sicher über rückwärtslaufende Indexliste."""
-    if not markers_to_delete:
-        return 0
-
-    # Map: Marker -> Index (einmalig erzeugen)
-    index_map = {}
-    try:
-        # Achtung: track.markers ist eine bpy_prop_collection; indices stabilisieren
-        all_markers = list(track.markers)
-        for idx, mk in enumerate(all_markers):
-            index_map[id(mk)] = idx
-    except Exception:
-        # Fallback (langsamer): jedes Mal Index suchen
-        all_markers = None
-
-    deleted = 0
-    # Indizes sammeln und rückwärts löschen
-    if all_markers is not None:
-        indices = [index_map.get(id(mk), None) for mk in markers_to_delete]
-        indices = [i for i in indices if i is not None]
-        for i in sorted(set(indices), reverse=True):
-            try:
-                track.markers.remove(track.markers[i])
-                deleted += 1
-            except Exception:
-                pass
-    else:
-        # Fallback: lineares Suchen
-        for mk in markers_to_delete:
-            try:
-                # Suche nach erstem identischen Objekt
-                for i, existing in enumerate(track.markers):
-                    if existing is mk:
-                        track.markers.remove(track.markers[i])
-                        deleted += 1
-                        break
-            except Exception:
-                pass
-    return deleted
-
-
-# ---------------------------------------------------------------------------
-# Core
-# ---------------------------------------------------------------------------
+# ------------------------------------------------------------
+# Public API
+# ------------------------------------------------------------
 
 def clean_short_segments(
-    context: bpy.types.Context = bpy.context,
+    context: bpy.types.Context,
     *,
-    min_len: int = 5,
+    min_len: int = 25,
     treat_muted_as_gap: bool = True,
-    skip_edge_segments: bool = True,
-    min_len_edge: Optional[int] = None,
     verbose: bool = True,
 ) -> Dict[str, Any]:
     """
-    Entfernt zu kurze Segmente (Marker-Folgen mit dt==1) innerhalb eines Tracks.
+    Entfernt Marker-Segmente mit Länge < min_len aus allen Tracks des aktiven Clips.
+    Es werden ausschließlich Marker der betroffenen Segmente gelöscht (Tracks bleiben bestehen).
 
-    Parameter:
-    - min_len:        Mindestlänge für *interne* Segmente.
-    - treat_muted_as_gap:  True → mute trennt Segmente (empf. für saubere Logik).
-    - skip_edge_segments:  True → Head/Tail werden *nie* gelöscht (Default = Randschutz).
-    - min_len_edge:   Optionaler separater Schwellwert für Head/Tail (nur wirksam, wenn
-                      skip_edge_segments=False). Wenn None → Head/Tail nie löschen.
-
-    Wirkung:
-    - Nur Marker der betroffenen Segmente werden gelöscht, keine Track-Merge/Join-Operationen.
-    - Leere Tracks werden nicht entfernt (werden jedoch gezählt und können anderweitig bereinigt werden).
+    Hinweis:
+    - Wenn ein Track anschließend keine Marker mehr hat, bleibt er als leerer Track erhalten.
     """
     clip = _get_active_clip(context)
     if not clip:
         if verbose:
-            print("[CleanShortSeg] WARN: Kein aktiver MovieClip.")
-        return {
-            "status": "FAILED",
-            "tracks_visited": 0,
-            "segments_removed": 0,
-            "markers_removed": 0,
-            "tracks_emptied": 0,
-        }
+            print("[CleanShortSegments] No active MovieClip.")
+        return {"status": "FAILED", "reason": "no active MovieClip"}
 
-    tracks = list(clip.tracking.tracks)
-    visited = 0
-    seg_removed = 0
-    mk_removed = 0
-    emptied = 0
+    tracks = _tracks_collection(clip) or []
+    tracks_visited = 0
+    segments_removed = 0
+    markers_removed = 0
+    tracks_emptied = 0
 
-    for track in tracks:
+    # Optional: Depsgraph für UI-Konsistenz
+    deps = context.evaluated_depsgraph_get() if hasattr(context, "evaluated_depsgraph_get") else None
+
+    for tr in list(tracks):
+        tracks_visited += 1
+        # Snapshot der Marker (wichtig, da wir währenddessen löschen)
+        markers = list(tr.markers)
+        if not markers:
+            continue
+
+        segments = _iter_segments(markers, treat_muted_as_gap=treat_muted_as_gap)
+        if verbose:
+            lens = [len(s) for s in segments]
+            print(f"[CleanShortSegments] Track='{tr.name}' segs={len(segments)} lens={lens[:10]}{'...' if len(lens) > 10 else ''}")
+
+        # Zu kurze Segmente löschen
+        for seg in segments:
+            if len(seg) < int(min_len):
+                # Marker DELETE: stabil über Frame löschen (robuster als remove(marker))
+                for m in reversed(seg):
+                    try:
+                        f = int(getattr(m, "frame", -10))
+                        tr.markers.delete_frame(f)
+                        markers_removed += 1
+                    except Exception as ex:
+                        if verbose:
+                            print(f"[CleanShortSegments] delete_frame failed @f{getattr(m,'frame', '?')}: {ex!r}")
+                segments_removed += 1
+
+        # Track leer geworden?
         try:
-            visited += 1
-            markers = _markers_sorted(track)
-            if not markers:
-                continue
+            if len(tr.markers) == 0:
+                tracks_emptied += 1
+        except Exception:
+            pass
 
-            segments = _segmentize_markers(markers, treat_muted_as_gap=treat_muted_as_gap)
-            if not segments:
-                continue
-
-            # Kandidaten bestimmen
-            to_delete: List[bpy.types.MovieTrackingMarker] = []
-            n_seg = len(segments)
-
-            for idx, seg in enumerate(segments):
-                seg_len = len(seg)
-                is_edge = (idx == 0) or (idx == n_seg - 1)
-
-                if skip_edge_segments and is_edge:
-                    # harter Rand-Schutz: nie löschen
-                    continue
-
-                # wenn Edge erlaubt, aber mit eigenem Schwellwert
-                if (not skip_edge_segments) and is_edge:
-                    if min_len_edge is None:
-                        # Kein Edge-Threshold → Edge niemals löschen
-                        continue
-                    thr = int(min_len_edge)
-                else:
-                    thr = int(min_len)
-
-                if seg_len < max(1, thr):
-                    to_delete.extend(seg)
-
-            if to_delete:
-                before_cnt = len(track.markers)
-                removed = _delete_markers(track, to_delete)
-                mk_removed += removed
-                if removed > 0:
-                    seg_removed += 1  # zählt Segmente, die *mindestens* teilweise gelöscht wurden
-                after_cnt = len(track.markers)
-                if before_cnt > 0 and after_cnt == 0:
-                    emptied += 1
-
-        except Exception as ex:
-            if verbose:
-                name = getattr(track, "name", "<unnamed>")
-                print(f"[CleanShortSeg] WARN: Track '{name}': {ex!s}")
+        # Depsgraph/UI aktualisieren
+        if deps is not None:
+            try:
+                deps.update()
+            except Exception:
+                pass
 
     if verbose:
-        edge_info = "ON (Head/Tail geschützt)" if skip_edge_segments else (
-            f"OFF (Edge-threshold={min_len_edge})" if min_len_edge is not None else "OFF (Edge nie löschen)"
-        )
         print(
-            f"[CleanShortSeg] done | tracks={visited} | seg_removed={seg_removed} | "
-            f"markers_removed={mk_removed} | emptied={emptied} | "
-            f"min_len={min_len} | muted_as_gap={treat_muted_as_gap} | edge_guard={edge_info}"
+            f"[CleanShortSegments] tracks={tracks_visited} "
+            f"seg_removed={segments_removed} markers_removed={markers_removed} "
+            f"emptied={tracks_emptied}"
         )
 
     return {
         "status": "OK",
-        "tracks_visited": visited,
-        "segments_removed": seg_removed,
-        "markers_removed": mk_removed,
-        "tracks_emptied": emptied,
+        "tracks_visited": tracks_visited,
+        "segments_removed": segments_removed,
+        "markers_removed": markers_removed,
+        "tracks_emptied": tracks_emptied,
     }
