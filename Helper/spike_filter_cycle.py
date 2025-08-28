@@ -231,7 +231,7 @@ def run_marker_spike_filter_cycle(
     context: bpy.types.Context,
     *,
     track_threshold: float = 3.0,   # Pixel/Frame
-    action: str = "MUTE",           # "MUTE" | "DELETE" | "SELECT"
+    action: str = "DELETE",           # "MUTE" | "DELETE" | "SELECT"
 ) -> Dict[str, Any]:
     """
     Führt einen Marker-basierten Spike-Filter-Durchlauf aus (Pixel/Frame)
@@ -241,7 +241,7 @@ def run_marker_spike_filter_cycle(
         return {"status": "FAILED", "reason": "no active MovieClip"}
 
     thr = float(track_threshold)
-    act = str(action or "MUTE").upper()
+    act = str(action or "DELETE").upper()
 
     # 1) Marker-Filter
     affected = _apply_marker_outlier_filter(context, threshold_px=thr, action=act)
