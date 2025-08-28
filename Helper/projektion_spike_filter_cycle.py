@@ -43,7 +43,7 @@ def _is_verbose(scene) -> bool:
 
 def _vprint(scene, msg: str) -> None:
     if _is_verbose(scene):
-        print(f"[ProjSpike] {msg}")
+        pass
 
 def _active_clip(context) -> Optional[bpy.types.MovieClip]:
     """Robuster Clip-Fallback (bevorzugt aktiven CLIP_EDITOR)."""

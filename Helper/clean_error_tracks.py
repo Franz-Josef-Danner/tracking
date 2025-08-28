@@ -86,7 +86,6 @@ def run_clean_error_tracks(context, *, show_popups: bool = False, soften: float 
                 lambda self, ctx: self.layout.label(text="Kein CLIP_EDITOR-Kontext gefunden."),
                 title="Clean Error Tracks", icon='CANCEL'
             )
-        print("[CleanError] ERROR: Kein gültiger CLIP_EDITOR-Kontext gefunden.")
         return {'CANCELLED'}
 
     # Fortschritt vorbereiten (5 Hauptschritte)
@@ -115,7 +114,6 @@ def run_clean_error_tracks(context, *, show_popups: bool = False, soften: float 
                     lambda self, ctx: self.layout.label(text="Kein aktiver Clip."),
                     title="Clean Error Tracks", icon='CANCEL'
                 )
-            print("[CleanError] ERROR: Kein aktiver Clip.")
             _status(wm, None)
             try:
                 wm.progress_end()
@@ -154,13 +152,6 @@ def run_clean_error_tracks(context, *, show_popups: bool = False, soften: float 
             grid=(6, 6), start_delta=None, min_delta=min_delta,
             outlier_q=outlier_q, hysteresis_hits=hysteresis_hits, min_cell_items=min_cell_items
         )
-        print(
-            f"[MultiScale] soften={soften:.2f} -> "
-            f"outlier_q={outlier_q} ({outlier_q_f:.2f}), "
-            f"hysteresis_hits={hysteresis_hits} ({hysteresis_f:.2f}), "
-            f"min_cell_items={min_cell_items} ({min_items_f:.2f}), "
-            f"min_delta={min_delta} ({min_delta_f:.2f}) | deleted: {deleted}"
-        )
         _deps_sync(context)
 
     # ---------- 3) GAP SPLIT + RECURSIVE ----------
@@ -180,7 +171,6 @@ def run_clean_error_tracks(context, *, show_popups: bool = False, soften: float 
 
         if not original_tracks:
             msg = "Keine Tracks mit internen Lücken – Split übersprungen."
-            print(f"[CleanError] {msg}")
             if show_popups:
                 wm.popup_menu(lambda self, ctx, m=msg: self.layout.label(text=m),
                               title="Clean Error Tracks", icon='INFO')
@@ -230,12 +220,6 @@ def run_clean_error_tracks(context, *, show_popups: bool = False, soften: float 
             (markers_after != markers_before) or
             recursive_changed
         )
-        print(
-            f"[CleanError] Changes? {made_changes} | "
-            f"tracks: {tracks_before}->{tracks_after} | "
-            f"markers: {markers_before}->{markers_after} | "
-            f"recursive_changed={recursive_changed}"
-        )
 
     # ---------- 4) SAFETY ----------
     step_update(4, "Safety Passes")
@@ -263,7 +247,6 @@ def run_clean_error_tracks(context, *, show_popups: bool = False, soften: float 
             scale = max(0.35, soften * 1.2)  # 0.5 -> 0.6 ; 0.8 -> 0.96 (nahe original)
             frames_eff = max(6, int(round(base_frames * min(scale, 1.0))))
 
-            print(f"[ShortClean] base_frames={base_frames} -> frames_eff={frames_eff} (soften={soften:.2f}, scale={scale:.2f})")
 
             _short(
                 context,
@@ -309,5 +292,4 @@ def run_clean_error_tracks(context, *, show_popups: bool = False, soften: float 
         'markers_after': int(markers_global_after),
         'soften': float(soften),
     }
-    print(f"[CleanError] SUMMARY: {result}")
     return result

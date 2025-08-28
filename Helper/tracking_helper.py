@@ -21,8 +21,7 @@ LOG_PREFIX = "[BW-Track]"
 # -----------------------------------------------------------------------------
 
 def _log(msg: str) -> None:
-    print(f"{LOG_PREFIX} {msg}")
-
+    pass
 
 def _iter_clip_areas():
     wm = bpy.context.window_manager

@@ -149,14 +149,10 @@ def run_spike_filter_cycle(
     thr = float(track_threshold)
     try:
         bpy.ops.clip.filter_tracks(track_threshold=thr)
-        print(f"[SpikeCycle] filter_tracks(track_threshold={thr})")
     except Exception as ex_ops:
-        print(f"[SpikeCycle] spike-filter step failed: {ex_ops!r}")
-
+        pass
     removed = _remove_selected_tracks(context)
-    print(f"[SpikeCycle] removed {removed} track(s) selected by filter")
 
     next_thr = _lower_threshold(thr)
-    print(f"[SpikeCycle] next track_threshold → {next_thr}")
 
     return {"status": "OK", "removed": int(removed), "next_threshold": float(next_thr)}

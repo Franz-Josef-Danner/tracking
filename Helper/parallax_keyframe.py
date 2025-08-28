@@ -203,8 +203,7 @@ def scan_pairs(clip, frame_start, frame_end, step, tracks,
                 results.append(s)
 
             if progress_log_every and (checked % int(progress_log_every) == 0):
-                print(f"[Parallax] scanned={checked} results={len(results)} fa={fa} fb={fb}")
-
+                pass
         if truncated:
             break
 
@@ -316,7 +315,6 @@ def main(context):
 
     status = res.get("status")
     if status != "OK":
-        print(f"[Parallax Helper] Abbruch: {status}")
         return
 
     clip_name = res.get("clip", "?")
@@ -332,17 +330,14 @@ def main(context):
     for i, r in enumerate(res["top"], 1):
         line = f"{i:>2}. {format_row(r)}"
         lines.append(line)
-        print(line)
 
     write_textblock("parallax_keyframe_suggestions.txt", lines)
 
     if res.get("applied"):
         best = res["top"][0]
-        print(f"[Parallax Helper] Bestes Paar gesetzt: A={best['fa']}  B={best['fb']}")
+        pass
     if res.get("truncated"):
-        print("[Parallax Helper] Hinweis: Scan wurde durch Zeit-/Mengengrenze gekappt (truncated=True).")
-    print("[Parallax Helper] Fertig.")
-
+        pass
 
 # Direkt ausführen
 if __name__ == "__main__":

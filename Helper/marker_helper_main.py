@@ -28,7 +28,5 @@ def marker_helper_main(context) -> Tuple[bool, int, Dict[str, Any]]:
     scn["resolve_error"] = float(resolve_error)
 
     # Telemetrie
-    print(f"[MarkerHelper] basis={marker_basis}, factor={factor} → adapt={marker_adapt}, "
-          f"min={marker_min}, max={marker_max} | frames_track={frames_track}, resolve_error={resolve_error}")
 
     return True, int(marker_adapt), {"FINISHED"}

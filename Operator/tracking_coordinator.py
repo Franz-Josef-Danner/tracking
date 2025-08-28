@@ -51,8 +51,7 @@ _CYCLE_MAX_ITER = 6
 
 
 def _tco_log(msg: str) -> None:
-    print(f"[tracking_coordinator] {msg}")
-
+    pass
 
 def _pause(seconds: float = 0.5) -> None:
     """Kleine, robuste Pause zwischen Schritten."""
@@ -306,8 +305,7 @@ def _safe_report(self: bpy.types.Operator, level: set, msg: str) -> None:
     try:
         self.report(level, msg)
     except Exception:
-        print(f"[Coordinator] {msg}")
-
+        pass
 
 # ---------------------------------------------------------------------------
 # Operator
@@ -376,12 +374,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             from ..Helper.tracker_settings import apply_tracker_settings  # type: ignore
             ok, res = _safe_call(apply_tracker_settings, context, log=True)
             if ok:
-                print("[Coord] BOOTSTRAP → tracker_settings OK")
+                pass
             else:
-                print(f"[Coord] BOOTSTRAP WARN: tracker_settings failed: {res!r}")
                 _safe_ops_invoke("clip.apply_tracker_settings", 'INVOKE_DEFAULT')
         except Exception as ex:
-            print(f"[Coord] BOOTSTRAP WARN: tracker_settings import failed: {ex!r}")
             _safe_ops_invoke("clip.apply_tracker_settings", 'INVOKE_DEFAULT')
 
         # marker_helper_main (defensiv)
@@ -389,11 +385,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             from ..Helper.marker_helper_main import marker_helper_main  # type: ignore
             ok, res = _safe_call(marker_helper_main, context)
             if ok:
-                print("[Coord] BOOTSTRAP → marker_helper_main OK")
+                pass
             else:
-                print(f"[Coord] BOOTSTRAP WARN: marker_helper_main failed: {res!r}")
+                pass
         except Exception as ex_func:  # noqa: BLE001
-            print(f"[Coord] BOOTSTRAP WARN: marker_helper_main import failed: {ex_func!r}")
             try:
                 bpy.ops.clip.marker_helper_main('INVOKE_DEFAULT')
             except Exception:
@@ -403,16 +398,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             try:
                 from ..Helper.apply_tracker_settings import apply_tracker_settings  # type: ignore
                 apply_tracker_settings(context)
-                print("[Coord] BOOTSTRAP → apply_tracker_settings() OK")
             except Exception as ex:
-                print(f"[Coord] BOOTSTRAP INFO: apply_tracker_settings not available/failed: {ex!r}")
+                pass
 
     def invoke(self, context: bpy.types.Context, event: bpy.types.Event):
         self._bootstrap(context)
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.25, window=context.window)
         wm.modal_handler_add(self)
-        print("[Coord] START (Detect/Bidi-Loop; unendlicher CYCLE: FIND_MAX↔SPIKE bis FOUND; Solve→Eval→Cleanup)")
         return {"RUNNING_MODAL"}
 
     # ---------------- Bootstrap ----------------
@@ -449,20 +442,16 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # ---------------- States ----------------
 
     def _state_init(self, context):
-        print("[Coord] INIT → BOOTSTRAP")
         self._run_pre_flight_helpers(context)
-        print("[Coord] BOOTSTRAP → FIND_LOW")
         self._state = "FIND_LOW"
         return {"RUNNING_MODAL"}
 
     def _state_find_low(self, context):
         if not _have_clip(context):
-            print("[Coord] FIND_LOW → no active clip → retry")
             return {"RUNNING_MODAL"}
 
         ok, result = _safe_call(run_find_low_marker_frame, context)
         if not ok or not isinstance(result, dict):
-            print(f"[Coord] FIND_LOW → FAILED (exception/invalid) → treat as NONE")
             result = {"status": "NONE", "reason": "exception-or-invalid-result"}
 
         status = str(result.get("status", "NONE")).upper()
@@ -470,11 +459,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             frame = int(result.get("frame", context.scene.frame_current))
             context.scene[_GOTO_KEY] = frame
             self._jump_done = False
-            print(f"[Coord] FIND_LOW → FOUND frame={frame} → JUMP")
             self._state = "JUMP"
         else:
             # NONE → Zyklus starten
-            print("[Coord] FIND_LOW → NONE → CYCLE_START (FIND_MAX↔SPIKE, max iterations: {0})".format(_CYCLE_MAX_ITER))
             self._cycle_active = True
             self._cycle_target_frame = None
             self._cycle_iterations = 0
@@ -483,7 +470,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._spike_threshold = float(
                 getattr(context.scene, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START
             )
-            print(f"[Coord] CYCLE_START → reset spike start = {self._spike_threshold:.2f}")
 
             self._did_refine_this_cycle = False
             self._state = "CYCLE_FIND_MAX"
@@ -497,11 +483,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             goto = int(context.scene.get(_GOTO_KEY, context.scene.frame_current))
             ok, jr = _safe_call(run_jump_to_frame, context, frame=goto, repeat_map=self._repeat_map)
             if not ok or not isinstance(jr, dict) or jr.get("status") != "OK":
-                print(f"[Coord] JUMP failed → FIND_LOW")
                 self._state = "FIND_LOW"
                 return {"RUNNING_MODAL"}
 
-            print(f"[Coord] JUMP → frame={jr['frame']} repeat={jr.get('repeat_count', 0)} → DETECT")
 
             scn = context.scene
             opt_req = scn.get(_OPT_REQ_KEY, None)
@@ -515,15 +499,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         context.scene.frame_set(int(opt_frame))
                     ok_opt, res_opt = _safe_call(start_optimization, context)
                     if ok_opt:
-                        print(f"[Coord] JUMP → OPTIMIZE (function, frame={opt_frame})")
+                        pass
                     else:
-                        print(f"[Coord] OPTIMIZE failed (function): {res_opt!r}")
                         ok_op, _ = _safe_ops_invoke("clip.optimize_tracking_modal", 'INVOKE_DEFAULT')
                         if ok_op:
-                            print(f"[Coord] JUMP → OPTIMIZE (operator, frame={opt_frame})")
+                            pass
                 except Exception as ex_func:
-                    print(f"[Coord] OPTIMIZE failed: {ex_func!r}")
-
+                    pass
             self._jump_done = True
 
         self._detect_attempts = 0
@@ -538,14 +520,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         if status == "RUNNING":
             self._detect_attempts += 1
-            print(f"[Coord] DETECT → RUNNING ({self._detect_attempts}/{_MAX_DETECT_ATTEMPTS})")
             if self._detect_attempts >= _MAX_DETECT_ATTEMPTS:
-                print("[Coord] DETECT Timebox erreicht → force TRACK")
                 self._state = "TRACK"
             return {"RUNNING_MODAL"}
 
         # Triplet-Grouping vollständig entfernt
-        print(f"[Coord] DETECT → {status} → TRACK (bidi)")
         self._state = "TRACK"
         return {"RUNNING_MODAL"}
 
@@ -554,12 +533,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         if not self._bidi_started:
             scn[_BIDI_ACTIVE_KEY] = False
-            print("[Coord] TRACK → launch clip.bidirectional_track (INVOKE_DEFAULT)")
             ok, _ = _safe_ops_invoke("clip.bidirectional_track", 'INVOKE_DEFAULT')
             if ok:
                 self._bidi_started = True
             else:
-                print("[Coord] TRACK launch failed → CLEAN_SHORT")
                 self._bidi_started = False
                 self._state = "CLEAN_SHORT"
             return {"RUNNING_MODAL"}
@@ -570,7 +547,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         result = str(scn.get(_BIDI_RESULT_KEY, "") or "").upper()
         scn[_BIDI_RESULT_KEY] = ""
         self._bidi_started = False
-        print(f"[Coord] TRACK → finished (result={result or 'NONE'}) → CLEAN_SHORT")
         self._state = "CLEAN_SHORT"
         return {"RUNNING_MODAL"}
 
@@ -578,14 +554,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         try:
             frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
             clean_short_tracks(context, min_len=frames_min, verbose=True)
-            print(f"[Coord] CLEAN_SHORT → clean_short_tracks(min_len={frames_min})")
         except TypeError:
             clean_short_tracks(context)
-            print("[Coord] CLEAN_SHORT → clean_short_tracks() fallback")
         except Exception as ex:
-            print(f"[Coord] CLEAN_SHORT failed: {ex!r}")
-
-        print("[Coord] CLEAN_SHORT → FIND_LOW")
+            pass
         self._state = "FIND_LOW"
         return {"RUNNING_MODAL"}
 
@@ -593,16 +565,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     def _state_cycle_find_max(self, context):
         if not self._cycle_active:
-            print("[Coord] CYCLE_FIND_MAX reached with inactive cycle → FINALIZE")
             self._state = "FINALIZE"
             return {"RUNNING_MODAL"}
 
-        print(f"[Coord] CYCLE_FIND_MAX → check (current deletion-iterations={self._cycle_iterations}/{_CYCLE_MAX_ITER})")
 
         try:
             res = run_find_max_marker_frame(context)
         except Exception as ex:
-            print(f"[Coord] CYCLE_FIND_MAX failed: {ex!r}")
             res = {"status": "FAILED", "reason": repr(ex)}
 
         status = str(res.get("status", "FAILED")).upper()
@@ -610,17 +579,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             frame = int(res.get("frame", getattr(context.scene, "frame_current", 0)))
             count = res.get("count", "?")
             thresh = res.get("threshold", "?")
-            print(f"[Coord] CYCLE_FIND_MAX → FOUND frame={frame} (count={count} < threshold={thresh})")
 
             self._cycle_target_frame = frame
             try:
                 context.scene.frame_set(frame)
             except Exception as ex_set:
-                print(f"[Coord] WARN: frame_set({frame}) failed: {ex_set!r}")
-
+                pass
             # Zyklus beenden → erst Split-Cleanup (blocking), dann Segment/Track-Clean, dann Solve
             self._cycle_active = False
-            print("[Coord] CYCLE_FIND_MAX → SPLIT_CLEANUP (blocking)")
             _run_split_cleanup_blocking(context)
             _pause(0.5)
 
@@ -630,26 +596,22 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 seg_min = int(getattr(context.scene, "tco_min_seg_len", 0)) \
                           or int(getattr(context.scene, "frames_track", 0)) or 25
                 css_res = clean_short_segments(context, min_len=seg_min, treat_muted_as_gap=True, verbose=True)
-                print(f"[Coord] post-SPLIT → clean_short_segments(min_len={seg_min}) → {css_res}")
             except Exception as ex:
-                print(f"[Coord] WARN: clean_short_segments failed post-SPLIT: {ex!r}")
+                pass
             _pause(0.5)
 
             try:
                 frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
                 clean_short_tracks(context, min_len=frames_min, verbose=True)
-                print(f"[Coord] CYCLE_FIND_MAX → clean_short_tracks(min_len={frames_min})")
             except Exception as ex:
-                print(f"[Coord] CLEAN_SHORT (post-split) failed: {ex!r}")
+                pass
             _pause(0.5)
 
-            print("[Coord] CYCLE_FIND_MAX → SOLVE")
             self._pending_eval_after_solve = True
             self._state = "SOLVE"
             return {"RUNNING_MODAL"}  # ← wichtig!
 
         # NONE/FAILED → SPIKE
-        print(f"[Coord] CYCLE_FIND_MAX → {status} → CYCLE_SPIKE")
         self._state = "CYCLE_SPIKE"
         return {"RUNNING_MODAL"}
 
@@ -677,7 +639,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 muted = int(res.get("muted", 0) or 0)
 
             next_thr = float(res.get("next_threshold", self._spike_threshold * 0.9))
-            print(f"[Coord] CYCLE_SPIKE → status={status}, affected={muted}, next={next_thr:.2f} (curr={self._spike_threshold:.2f})")
             self._spike_threshold = max(next_thr, 0.0)
             ...
 
@@ -688,24 +649,19 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 seg_min = int(getattr(context.scene, "tco_min_seg_len", 0)) \
                           or int(getattr(context.scene, "frames_track", 0)) or 25
                 css_res = clean_short_segments(context, min_len=seg_min, treat_muted_as_gap=True, verbose=True)
-                print(f"[Coord] CYCLE_SPIKE → clean_short_segments(min_len={seg_min}) → {css_res}")
             except Exception as ex:
-                print(f"[Coord] WARN: clean_short_segments failed post-SPIKE: {ex!r}")
+                pass
             _pause(0.5)
 
             # Optional: zu kurze **Tracks** kappen (nach Segment-Clean)
             try:
                 frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
                 clean_short_tracks(context, min_len=frames_min, verbose=True)
-                print(f"[Coord] CYCLE_SPIKE → clean_short_tracks(min_len={frames_min})")
             except Exception as ex:
-                print(f"[Coord] WARN: clean_short_tracks failed post-SPIKE: {ex!r}")
-
+                pass
             if muted > 0:
                 self._cycle_iterations += 1
-                print(f"[Coord] CYCLE_SPIKE → muted>0 → incremented deletion-iterations to {self._cycle_iterations}/{_CYCLE_MAX_ITER}")
                 if self._cycle_iterations > _CYCLE_MAX_ITER:
-                    print(f"[Coord] CYCLE deletion-iteration limit ... → SPLIT_CLEANUP (blocking)")
                     self._cycle_active = False
                     _run_split_cleanup_blocking(context)
                     _pause(0.5)
@@ -717,27 +673,23 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         seg_min = int(getattr(context.scene, "tco_min_seg_len", 0)) \
                                   or int(getattr(context.scene, "frames_track", 0)) or 25
                         css_res = clean_short_segments(context, min_len=seg_min, treat_muted_as_gap=True, verbose=True)
-                        print(f"[Coord] post-SPLIT(limit) → clean_short_segments(min_len={seg_min}) → {css_res}")
                     except Exception as ex:
-                        print(f"[Coord] WARN: clean_short_segments failed post-SPLIT(limit): {ex!r}")
+                        pass
                     _pause(0.5)
 
                     # Clean-Short-Tracks
                     try:
                         frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
                         clean_short_tracks(context, min_len=frames_min, verbose=True)
-                        print(f"[Coord] CYCLE_SPIKE → clean_short_tracks(min_len={frames_min})")
                     except Exception as ex:
-                        print(f"[Coord] CLEAN_SHORT (post-split) failed: {ex!r}")
+                        pass
                     _pause(0.5)
 
-                    print("[Coord] CYCLE_SPIKE → SOLVE")
                     self._pending_eval_after_solve = True
                     self._state = "SOLVE"
                     return {"RUNNING_MODAL"}  # ← wichtig!
 
         except Exception as ex:
-            print(f"[Coord] CYCLE_SPIKE failed: {ex!r}")
             self._state = "CYCLE_FIND_MAX"
             return {"RUNNING_MODAL"}
 
@@ -770,23 +722,18 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 scn.preflight_degenerate = bool(metrics.degenerate)
                 target = _scene_float(context.scene, "error_track", 0.0)
                 thresh = target * 2.0
-                print(
-                    f"[Coord] SOLVE Preflight → frames=({f1},{f2}) median_sampson={metrics.median_sampson_px:.3f} "
-                    f"inliers={metrics.inliers}/{metrics.total} coverage={metrics.coverage_quadrants*100:.0f}% thresh={thresh:.3f}"
-                )
                 ok = (not metrics.degenerate) and (metrics.median_sampson_px <= thresh)
                 scn.preflight_passed = bool(ok)
                 scn.preflight_note = "" if ok else (
                     "Degenerate setup erkannt" if metrics.degenerate else "Median > 2 × error_track"
                 )
                 if not ok:
-                    print("[Coord] SOLVE → Preflight zu schlecht → zurück zu FIND_LOW")
                     self._pending_eval_after_solve = False
                     self._did_refine_this_cycle = False
                     self._state = "FIND_LOW"
                     return {"RUNNING_MODAL"}
         except Exception as ex:
-            print(f"[Coord] SOLVE Preflight check failed (ignoriere und löse trotzdem): {ex!r}")
+            pass
 
         # --- Nur wenn Preflight OK: alle Tracks selektieren und Solve auslösen ---
         _select_all_tracks_blocking(context)
@@ -794,9 +741,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         try:
             _ = solve_camera_only(context)
-            print("[Coord] SOLVE invoked")
         except Exception as ex:
-            print(f"[Coord] SOLVE failed: {ex!r}")
+            pass
         _pause(0.5)
         self._state = "EVAL" if self._pending_eval_after_solve else "FINALIZE"
         return {"RUNNING_MODAL"}
@@ -807,7 +753,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         curr = _wait_for_valid_reconstruction(context, timeout_s=wait_s)
         curr = _current_solve_error(context) if curr is None else curr
-        print(f"[Coord] EVAL → curr_error={curr if curr is not None else 'None'} target={target}")
         # --- NEU: zweimal identischer Error → einmalig triggern ---
         # Note: math.isclose statt exakter Gleichheit (floating point!)
         if curr is not None:
@@ -820,7 +765,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._last_solve_error = float(curr)
 
             if self._same_error_repeat_count >= 2:
-                print(f"[Coord] EVAL → identischer Solve-Error zweimal in Folge ({curr:.6f}) → Trigger")
                 # einmalig auslösen → z. B. Cleanup anstoßen
                 self._same_error_repeat_count = 0
                 self._last_solve_error = None
@@ -837,7 +781,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._last_solve_error = curr
 
             if self._same_error_repeat_count >= 2:
-                print(f"[Coord] EVAL → ERROR {curr:.4f} wiederholt sich zweimal → Trigger ausgelöst")
                 self._same_error_repeat_count = 0  # zurücksetzen, nur einmal auslösen
                 # >>> HIER deinen gewünschten Effekt starten <<<
                 # z. B. sofort in CLEANUP wechseln:
@@ -845,7 +788,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {"RUNNING_MODAL"}
 
         if target > 0.0 and curr is not None and curr <= target:            # Direkt zu den finalen Intrinsics-Refinements (parallax_keyframe entfernt)
-            print("[Coord] EVAL → OK (≤ target) → performing final intrinsics refinement steps")
 
             clip = getattr(context.space_data, "clip", None)
             ts = getattr(getattr(clip, "tracking", None), "settings", None)
@@ -870,7 +812,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 "refine_focal",
             ), True)
             ok1, res1 = _safe_call(solve_camera_only, context)
-            print(f"[Coord] Final refine focal_length: {'OK' if ok1 else res1!r} (attr={focal_attr or 'n/a'})")
 
             # 2) Focal + Radial Distortion
             radial_attr = _toggle_attr(ts, (
@@ -880,7 +821,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 "refine_k1",
             ), True)
             ok2, res2 = _safe_call(solve_camera_only, context)
-            print(f"[Coord] Final refine focal+radial: {'OK' if ok2 else res2!r} (radial_attr={radial_attr or 'n/a'})")
 
             # 3) Optional: Principal Point
             principal_attr = _toggle_attr(ts, (
@@ -890,19 +830,16 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             ), True)
             if principal_attr:
                 ok3, res3 = _safe_call(solve_camera_only, context)
-                print(f"[Coord] Final refine principal: {'OK' if ok3 else res3!r} (attr={principal_attr})")
 
             # Flags wieder ausschalten, damit Standard-Defaults beibehalten werden
             _toggle_attr(ts, ("refine_intrinsics_principal_point","refine_principal_point","refine_principal"), False)
             _toggle_attr(ts, ("refine_intrinsics_radial_distortion","refine_radial_distortion","refine_distortion","refine_k1"), False)
             _toggle_attr(ts, ("refine_intrinsics_focal_length","refine_focal_length","refine_focal"), False)
 
-            print("[Coord] EVAL → final intrinsics refinement done → FINALIZE")
             self._pending_eval_after_solve = False
             self._did_refine_this_cycle = False
             self._state = "FINALIZE"
         else:
-            print("[Coord] EVAL → above target → CLEANUP")
             self._state = "CLEANUP"
         return {"RUNNING_MODAL"}
 
@@ -910,9 +847,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # 1) Projektionsbasiert selektieren & Track-Namen in Szene persistieren lassen
         ok, res = _safe_call(run_projection_cleanup_builtin, context)
         if ok:
-            print(f"[Coord] CLEANUP(select) → {res}")
+            pass
         else:
-            print(f"[Coord] CLEANUP(select) failed: {res!r}")
+            pass
 
         _pause(0.5)
 
@@ -931,11 +868,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         )
 
         if ok2:
-            print(f"[Coord] CLEANUP(spike) → {res2}")
+            pass
         else:
-            print(f"[Coord] CLEANUP(spike) failed: {res2!r}")
+            pass
 
-        print("[Coord] CLEANUP → FIND_LOW (back to loop)")
         self._pending_eval_after_solve = False
         self._did_refine_this_cycle = False
         self._state = "FIND_LOW"
@@ -994,7 +930,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._timer = None
         context.scene[_LOCK_KEY] = False
         msg = "CANCELLED" if cancelled else "FINISHED"
-        print(f"[Coord] DONE ({msg})")
         return {"CANCELLED" if cancelled else "FINISHED"}
 
 
@@ -1011,4 +946,4 @@ def unregister():
 
 
 if __name__ == "__main__" and os.getenv("ADDON_RUN_TESTS", "0") == "1":
-    print("[SelfTest] basic import OK")
+    pass

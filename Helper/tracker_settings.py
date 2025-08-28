@@ -75,7 +75,7 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
     clip, scene = _resolve_clip_and_scene(context, clip=clip, scene=scene)
     if clip is None or scene is None:
         if log:
-            print("[TrackerSettings] Abbruch: Kein Clip oder Scene im Kontext.")
+            pass
         return {"status": "cancelled", "reason": "no_clip_or_scene"}
 
     # Breite robust lesen
@@ -169,18 +169,12 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
     solver_changes['refine_radial_distortion'] = refine_radial_name
 
     if log:
-        print(
-            "[TrackerSettings] Defaults angewendet | "
-            f"clip={clip.name!r}, width={width}, pattern={pattern_size}, search={search_size}, "
-            f"clean_frames={ts.clean_frames}, clean_error={ts.clean_error}, "
-            f"last_detection_threshold={scene['last_detection_threshold']:.6f}"
-        )
         # Log welche Solver-Properties gesetzt wurden (falls vorhanden)
         for k, v in solver_changes.items():
             if v:
-                print(f"[TrackerSettings] Solver: gesetzt {k} -> {v} = False")
+                pass
             else:
-                print(f"[TrackerSettings] Solver: Property für {k} nicht gefunden, übersprungen")
+                pass
 
     return {
         "status": "ok",

@@ -79,7 +79,7 @@ def _group_into_triplets_by_position(
             groups.append(lst[i*3:(i+1)*3])
         rest = len(lst) % 3
         if rest:
-            print(f"[TripletGrouping] WARN: Bucket {k} Rest={rest} → nur volle 3er gespeichert.")
+            pass
     return groups
 
 
@@ -92,7 +92,6 @@ def _persist_groups(scene: bpy.types.Scene, groups: List[List[Dict[str, Any]]]) 
         scene[_TRIPLET_COUNT_KEY] = int(len(groups))
         return len(groups)
     except Exception as ex:
-        print(f"[TripletGrouping] Persist failed: {ex}")
         return 0
 
 
@@ -129,7 +128,7 @@ def run_triplet_grouping(
 
     # Eingangsmenge bestimmen
     if source != "selected":
-        print(f"[TripletGrouping] WARN: source='{source}' nicht unterstützt → fallback 'selected'")
+        pass
     items = _selected_tracks_with_pos(tracking, frame_now, width, height)
 
     # Epsilon-Heuristik (robust über Auflösung)
@@ -141,9 +140,7 @@ def run_triplet_grouping(
     # Quick-Sanity
     if stored * 3 != len(items):
         delta = len(items) - stored * 3
-        print(f"[TripletGrouping] INFO: selected={len(items)}, groups*3={stored*3}, Δ={delta}")
 
-    print(f"[TripletGrouping] STORED {stored} triplets @frame={frame_now} (eps={eps:.3f}px)")
     return {
         "status": "OK",
         "selected": int(len(items)),

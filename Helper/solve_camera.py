@@ -45,7 +45,6 @@ def solve_camera_only(context):
                 return bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
         return bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
     except Exception as e:
-        print(f"[Solve] Fehler beim Start des Solve-Operators: {e}")
         return {"CANCELLED"}
 
 
@@ -90,7 +89,6 @@ def solve_camera_only(context):
         ready = _wait_for_reconstruction(context, tries=_SOLVE_WAIT_TRIES_PER_TICK)
         if ready:
             err = _compute_solve_error(context)
-            print(f"[Coord] SOLVE_WAIT → reconstruction valid, error={err}")
     
             if err is None:
                 # Keine auswertbare Qualität → Fehlpfad
@@ -101,19 +99,16 @@ def solve_camera_only(context):
     
             # Optionaler Refine nach Solve (nur einmal)
             if (not self._post_solve_refine_done) and (err > thr):
-                print(f"[Coord] SOLVE_WAIT → error {err:.3f} > {thr:.3f} → launch REFINE")
                 self._launch_refine(context, threshold=thr)
                 return {"RUNNING_MODAL"}
     
             # Solve ok → fertig
-            print("[Coord] SOLVE_WAIT → OK → FINALIZE")
             self._state = "FINALIZE"
             return {"RUNNING_MODAL"}
     
         # Noch nicht ready → Countdown
         self._solve_wait_ticks = max(0, int(self._solve_wait_ticks) - 1)
         if self._solve_wait_ticks <= 0:
-            print("[Coord] SOLVE_WAIT → timeout → FAIL-SOLVE")
             return self._handle_failed_solve(context)
     
         return {"RUNNING_MODAL"}

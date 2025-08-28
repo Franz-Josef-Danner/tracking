@@ -18,7 +18,6 @@ def track_has_internal_gaps(track) -> bool:
             prev = f
         return False
     except Exception as e:
-        print(f"[segments] track_has_internal_gaps Safeguard: {e}")
         return False
 
 
