@@ -55,7 +55,6 @@ def _pause(seconds: float = 0.1) -> None:
         time.sleep(float(seconds))
     except Exception:
         pass
-
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
@@ -156,8 +155,14 @@ def _get_tracks_collection(clip):
     except Exception:
         return None
 
-def _resolve_clip_editor_area_triplet(context) -> Tuple[Optional[bpy.types.Area], Optional[bpy.types.Region], Optional[Any]]:
-    """Findet eine CLIP_EDITOR Area/Region/Space-Triplette für Kontext-Overrides."""
+def _run_split_cleanup_blocking(context: bpy.types.Context) -> None:
+    """Führt Helper/split_cleanup.py synchron aus und kehrt erst nach Abschluss zurück."""
+    clip = _get_active_clip(context)
+    if not clip:
+        _tco_log("split_cleanup: no active clip → skipped")
+        return
+
+    # passenden CLIP_EDITOR-Kontext finden
     area = None
     region = None
     space = None
@@ -166,22 +171,14 @@ def _resolve_clip_editor_area_triplet(context) -> Tuple[Optional[bpy.types.Area]
         for a in (screen.areas if screen else []):
             if a.type == "CLIP_EDITOR":
                 area = a
+                # bevorzugt WINDOW-Region, sonst erste verfügbare
                 region = next((r for r in a.regions if r.type == "WINDOW"), None) or (a.regions[0] if a.regions else None)
                 space = a.spaces.active if hasattr(a, "spaces") else None
                 if region and space:
                     break
     except Exception:
         pass
-    return area, region, space
 
-def _run_split_cleanup_blocking(context: bpy.types.Context) -> None:
-    """Führt Helper/split_cleanup.py synchron aus und kehrt erst nach Abschluss zurück."""
-    clip = _get_active_clip(context)
-    if not clip:
-        _tco_log("split_cleanup: no active clip → skipped")
-        return
-
-    area, region, space = _resolve_clip_editor_area_triplet(context)
     if not (area and region and space):
         _tco_log("split_cleanup: no CLIP_EDITOR area/region/space → skipped")
         return
@@ -204,50 +201,11 @@ def _run_split_cleanup_blocking(context: bpy.types.Context) -> None:
     except Exception as ex:
         _tco_log(f"split_cleanup failed: {ex!r}")
     finally:
-        # Verbose-Flag zurücksetzen
+        # Verbose-Flag auf den vorherigen Zustand zurücksetzen
         try:
             context.scene["tco_verbose_split"] = bool(prev_verbose)
         except Exception:
             pass
-
-# ---- NEW: Select-All-Tracks (blocking) ----
-def _select_all_tracks_blocking(context: bpy.types.Context) -> bool:
-    """Selektiert alle Tracks im aktiven Clip (CLIP_EDITOR-Kontext)."""
-    clip = _get_active_clip(context)
-    if not clip:
-        _tco_log("select_all_tracks: no active clip → skipped")
-        return False
-
-    area, region, space = _resolve_clip_editor_area_triplet(context)
-    if not (area and region and space):
-        _tco_log("select_all_tracks: no CLIP_EDITOR area/region/space → skipped")
-        return False
-
-    try:
-        with context.temp_override(area=area, region=region, space_data=space):
-            try:
-                if getattr(space, "clip", None) is not clip:
-                    space.clip = clip
-            except Exception:
-                pass
-
-            # Operator ist robust und UI-konform
-            ok, _ = _safe_ops_invoke("clip.select_all", action='SELECT')
-            if ok:
-                _tco_log("select_all_tracks: all tracks selected via clip.select_all(SELECT)")
-                return True
-            # Fallback: hart selektieren über API
-            tracks = _get_tracks_collection(clip) or []
-            for t in tracks:
-                try:
-                    t.select = True
-                except Exception:
-                    pass
-            _tco_log("select_all_tracks: fallback selection done")
-            return True
-    except Exception as ex:
-        _tco_log(f"select_all_tracks failed: {ex!r}")
-        return False
 
 
 # ---------------------------------------------------------------------------
@@ -731,10 +689,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # ---------------- SOLVE → EVAL → CLEANUP ----------------
 
     def _state_solve(self, context):
-        # NEU: Vor jedem Solve alle Tracks selektieren
-        _select_all_tracks_blocking(context)
-        _pause(0.05)
-
         try:
             _ = solve_camera_only(context)
             print("[Coord] SOLVE invoked")
