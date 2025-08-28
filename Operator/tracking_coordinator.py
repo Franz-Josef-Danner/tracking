@@ -49,7 +49,7 @@ _CYCLE_MAX_ITER = 10
 def _tco_log(msg: str) -> None:
     print(f"[tracking_coordinator] {msg}")
 
-def _pause(seconds: float = 0.1) -> None:
+def _pause(seconds: float = 0.5) -> None:
     """Kleine, robuste Pause zwischen Schritten."""
     try:
         time.sleep(float(seconds))
@@ -601,7 +601,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._cycle_active = False
             print("[Coord] CYCLE_FIND_MAX → SPLIT_CLEANUP (blocking)")
             _run_split_cleanup_blocking(context)
-            _pause(0.1)
+            _pause(0.5)
 
             # Nach Split: kurze Segmente entfernen (robust gegen Mutes/Lücken)
             try:
@@ -612,7 +612,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 print(f"[Coord] post-SPLIT → clean_short_segments(min_len={seg_min}) → {css_res}")
             except Exception as ex:
                 print(f"[Coord] WARN: clean_short_segments failed post-SPLIT: {ex!r}")
-            _pause(0.1)
+            _pause(0.5)
 
             try:
                 frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
@@ -620,7 +620,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 print(f"[Coord] CYCLE_FIND_MAX → clean_short_tracks(min_len={frames_min})")
             except Exception as ex:
                 print(f"[Coord] CLEAN_SHORT (post-split) failed: {ex!r}")
-            _pause(0.1)
+            _pause(0.5)
 
             print("[Coord] CYCLE_FIND_MAX → SOLVE")
             self._pending_eval_after_solve = True
@@ -664,7 +664,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._spike_threshold = max(next_thr, 0.0)
 
             # **Neu**: segmentweises Clean **nach** dem Spike-Pass (robuster, zentralisiert)
-            _pause(0.1)
+            _pause(0.5)
             try:
                 from ..Helper.clean_short_segments import clean_short_segments  # type: ignore
                 seg_min = int(getattr(context.scene, "tco_min_seg_len", 0)) \
@@ -673,7 +673,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 print(f"[Coord] CYCLE_SPIKE → clean_short_segments(min_len={seg_min}) → {css_res}")
             except Exception as ex:
                 print(f"[Coord] WARN: clean_short_segments failed post-SPIKE: {ex!r}")
-            _pause(0.1)
+            _pause(0.5)
 
             # Optional: zu kurze **Tracks** kappen (nach Segment-Clean)
             try:
@@ -690,7 +690,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     print(f"[Coord] CYCLE deletion-iteration limit ... → SPLIT_CLEANUP (blocking)")
                     self._cycle_active = False
                     _run_split_cleanup_blocking(context)
-                    _pause(0.1)
+                    _pause(0.5)
 
                     # Clean-Short-Tracks
                     # Nach Split: erst Segmente, dann Tracks, dann Solve (mit Pausen)
@@ -702,7 +702,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         print(f"[Coord] post-SPLIT(limit) → clean_short_segments(min_len={seg_min}) → {css_res}")
                     except Exception as ex:
                         print(f"[Coord] WARN: clean_short_segments failed post-SPLIT(limit): {ex!r}")
-                    _pause(0.1)
+                    _pause(0.5)
 
                     # Clean-Short-Tracks    
                     try:
@@ -711,7 +711,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         print(f"[Coord] CYCLE_SPIKE → clean_short_tracks(min_len={frames_min})")
                     except Exception as ex:
                         print(f"[Coord] CLEAN_SHORT (post-split) failed: {ex!r}")
-                    _pause(0.1)
+                    _pause(0.5)
     
                     print("[Coord] CYCLE_SPIKE → SOLVE")
                     self._pending_eval_after_solve = True
@@ -740,7 +740,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print("[Coord] SOLVE invoked")
         except Exception as ex:
             print(f"[Coord] SOLVE failed: {ex!r}")
-        _pause(0.1)
+        _pause(0.5)
         self._state = "EVAL" if self._pending_eval_after_solve else "FINALIZE"
         return {"RUNNING_MODAL"}
 
