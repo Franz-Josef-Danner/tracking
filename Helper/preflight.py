@@ -18,7 +18,145 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import bpy
 import numpy as np
+from typing import Iterable
 
+def _rank_key(m: PreSolveMetrics) -> tuple:
+    """Primär: minimaler predicted_error; sekundär: maximaler quality_score;
+    tertiär: viele Inlier; quartär: große Parallaxe."""
+    pe = float("inf") if m.predicted_error is None else float(m.predicted_error)
+    qs = -1.0 if m.quality_score is None else float(m.quality_score)
+    inl = int(m.inliers)
+    par = float(m.parallax_median_px)
+    # Achtung: predicted_error aufsteigend (kleiner besser), die anderen absteigend
+    return (pe, -qs, -inl, -par)
+
+def _valid_candidate(m: PreSolveMetrics, *,
+                     min_inliers: int,
+                     max_median_sampson: float,
+                     min_quality: float) -> bool:
+    if m.degenerate:
+        return False
+    if m.inliers < min_inliers:
+        return False
+    if not (m.median_sampson_px < float("inf")):
+        return False
+    if m.median_sampson_px > max_median_sampson:
+        return False
+    if m.quality_score is not None and m.quality_score < min_quality:
+        return False
+    return True
+
+def _gen_pairs_range(start: int, end: int, deltas: Iterable[int], stride: int) -> list[tuple[int, int]]:
+    pairs: list[tuple[int, int]] = []
+    for d in deltas:
+        f = start
+        while f + d <= end:
+            pairs.append((f, f + d))
+            f += max(1, stride)
+    return pairs
+
+def _nms_on_frames(pairs: list[tuple[int, int]], keep: int, min_sep: int) -> list[tuple[int, int]]:
+    """Einfaches NMS: sortiert nehmen, dann nahe/überlappende Paare (Frame-Abstand < min_sep in
+    beiden Indizes) verwerfen, bis 'keep' erreicht ist."""
+    selected: list[tuple[int, int]] = []
+    for a, b in pairs:
+        ok = True
+        for aa, bb in selected:
+            if abs(a - aa) < min_sep and abs(b - bb) < min_sep:
+                ok = False
+                break
+        if ok:
+            selected.append((a, b))
+        if len(selected) >= keep:
+            break
+    return selected
+
+def auto_find_best_pairs(
+    clip: bpy.types.MovieClip | None = None,
+    *,
+    # coarse→fine Sampling
+    coarse_stride: int = 50,
+    fine_stride: int = 10,
+    deltas: tuple[int, ...] = (8, 12, 16, 24, 32),  # Frame-Abstände (Baseline/Parallaxe)
+    # Qualitätsgates
+    min_inliers: int = 12,
+    max_median_sampson: float = 8.0,
+    min_quality: float = 0.2,
+    # Ranking/NMS
+    topk: int = 12,
+    nms_keep: int = 6,
+    nms_min_sep: int = 6,
+    # RANSAC
+    ransac_thresh_px: float = 4.0,
+    ransac_iters: int = 1000,
+    min_track_len: int = 5,
+) -> list[PreSolveMetrics]:
+    """
+    Durchsucht automatisch die Szene nach guten Solve-Kandidaten.
+    - Coarse Pass (grober stride) → schnelle Vorauswahl
+    - Fine  Pass (enger stride)   → lokale Verfeinerung rund um die besten Kandidaten
+    Rückgabe: sortierte Liste der besten PreSolveMetrics (bestes zuerst).
+    """
+    if clip is None:
+        clip = bpy.context.edit_movieclip
+    if clip is None:
+        return []
+
+    scn = bpy.context.scene
+    s0, s1 = int(scn.frame_start), int(scn.frame_end)
+
+    # --- Coarse Pass ---
+    pairs_coarse = _gen_pairs_range(s0, s1, deltas, coarse_stride)
+    coarse_res = scan_frame_pairs(
+        clip, pairs_coarse,
+        ransac_thresh_px=ransac_thresh_px,
+        ransac_iters=ransac_iters,
+        min_track_len=min_track_len,
+    )
+    coarse_valid = [m for m in coarse_res if _valid_candidate(
+        m, min_inliers=min_inliers,
+        max_median_sampson=max_median_sampson,
+        min_quality=min_quality
+    )]
+    coarse_valid.sort(key=_rank_key)
+
+    # Top-K Seeds für Fine-Pass (mit NMS auf Frameebene)
+    seeds = [(m.frame_a, m.frame_b) for m in coarse_valid[:topk]]
+    seeds = _nms_on_frames(seeds, keep=min(len(seeds), nms_keep), min_sep=nms_min_sep)
+
+    # --- Fine Pass um Seeds herum (±fine_stride im Start-Frame verschieben) ---
+    pairs_fine: list[tuple[int, int]] = []
+    for a, b in seeds:
+        d = b - a
+        # lokale Fensterung um 'a'
+        a0 = max(s0, a - fine_stride)
+        a1 = min(s1 - d, a + fine_stride)
+        for aa in range(a0, a1 + 1):
+            pairs_fine.append((aa, aa + d))
+
+    fine_res = scan_frame_pairs(
+        clip, pairs_fine,
+        ransac_thresh_px=ransac_thresh_px,
+        ransac_iters=ransac_iters,
+        min_track_len=min_track_len,
+    )
+    fine_valid = [m for m in fine_res if _valid_candidate(
+        m, min_inliers=min_inliers,
+        max_median_sampson=max_median_sampson,
+        min_quality=min_quality
+    )]
+    fine_valid.sort(key=_rank_key)
+
+    # Final NMS + Top-N
+    final_pairs = _nms_on_frames([(m.frame_a, m.frame_b) for m in fine_valid], keep=nms_keep, min_sep=nms_min_sep)
+    best = []
+    seen = set(final_pairs)
+    for m in fine_valid:
+        if (m.frame_a, m.frame_b) in seen:
+            best.append(m)
+            if len(best) >= nms_keep:
+                break
+    return best
 
 # =============================
 # Datenstrukturen & API
