@@ -43,185 +43,15 @@ def _active_clip(context) -> Optional[bpy.types.MovieClip]:
 
 def _get_current_solve_error_now(context) -> Optional[float]:
     clip = _active_clip(context)
-    if not clip:
-        return None
-    try:
-        recon = clip.tracking.objects.active.reconstruction
-    except Exception:
-        return None
-    if not getattr(recon, "is_valid", False):
-        return None
-
-    if hasattr(recon, "average_error"):
-        try:
-            return float(recon.average_error)
-        except Exception:
-            pass
-
-    try:
-        errs = [float(c.average_error) for c in getattr(recon, "cameras", [])]
-        if not errs:
-            return None
-        return sum(errs) / len(errs)
-    except Exception:
-        return None
-
-
-def _poke_update():
-    try:
-        bpy.context.view_layer.update()
-    except Exception:
-        pass
-
-
-def _wait_until_error(context, *, wait_forever: bool, timeout_s: float, tick_s: float = 0.25) -> Optional[float]:
-    """Wartet, bis ein gültiger Solve-Error verfügbar ist (optional endlos / mit Timeout)."""
-    deadline = time.monotonic() + float(timeout_s)
-    ticks = 0
-    while True:
-        err = _get_current_solve_error_now(context)
-        if err is not None:
-            print(f"[CleanupWait] Solve-Error verfügbar: {err:.4f}px (after {ticks} ticks)")
-            return err
-
-        _poke_update()
-        ticks += 1
-
-        if not wait_forever and time.monotonic() >= deadline:
-            print(f"[CleanupWait] Timeout nach {timeout_s:.1f}s – kein gültiger Error verfügbar.")
-            return None
-
-        try:
-            time.sleep(max(0.0, float(tick_s)))
-        except Exception:
-            pass
-
-
-# -----------------------------------------------------------------------------
-# Track-Iteration / Hilfsfunktionen
-# -----------------------------------------------------------------------------
-
-
-def _iter_tracks_with_obj(clip: Optional[bpy.types.MovieClip]) -> Iterable[tuple[bpy.types.MovieTrackingObject, bpy.types.MovieTrackingTrack]]:
-    """Iteriert alle Tracks inkl. zugehörigem Tracking-Objekt."""
-    if not clip:
-        return []
-    try:
-        for obj in clip.tracking.objects:
-            for t in obj.tracks:
-                yield obj, t
-    except Exception:
-        return []
-
-
-def _count_tracks(clip: Optional[bpy.types.MovieClip]) -> int:
-    return sum(1 for _ in _iter_tracks_with_obj(clip))
-
-
-def _clear_selection(clip: Optional[bpy.types.MovieClip]) -> None:
-    for _, t in _iter_tracks_with_obj(clip):
-        try:
-            if getattr(t, "select", False):
-                t.select = False
-        except Exception:
-            pass
-
-
-def _allowed_actions() -> set[str]:
-    try:
-        props = bpy.ops.clip.clean_tracks.get_rna_type().properties
-        return {e.identifier for e in props['action'].enum_items}
-    except Exception:
-        return {'SELECT', 'DELETE_TRACK', 'DELETE_SEGMENTS'}
-
-
-def _invoke_clean_tracks(context, *, used_error: float, action: str) -> None:
-    area, region, space = _find_clip_window(context)
-    if area and region and space:
-        override = dict(area=area, region=region, space_data=space)
-    else:
-        override = {}
-
-    try:
-        with context.temp_override(**override):
-            bpy.ops.clip.clean_tracks(clean_error=float(used_error), action=str(action))
-    except TypeError:
-        with context.temp_override(**override):
-            bpy.ops.clip.clean_tracks(error=float(used_error), action=str(action))
-
-
-# -----------------------------------------------------------------------------
-# NEU: Nur den Track mit dem höchsten (durchschnittlichen) Reprojektion-Error entfernen
-# -----------------------------------------------------------------------------
-
-
-def _safe_track_error(track: bpy.types.MovieTrackingTrack) -> float:
-    """Liest track.average_error robust (NaN/None -> -inf)."""
-    try:
-        val = float(getattr(track, "average_error", float("nan")))
-        if math.isnan(val) or math.isinf(val):
-            return float("-inf")
-        return val
-    except Exception:
-        return float("-inf")
-
-
-def _find_worst_track(clip: Optional[bpy.types.MovieClip]) -> Optional[tuple[bpy.types.MovieTrackingObject, bpy.types.MovieTrackingTrack, float]]:
-    """Gibt (obj, track, error) für den Track mit dem höchsten average_error zurück."""
-    worst: Optional[tuple[bpy.types.MovieTrackingObject, bpy.types.MovieTrackingTrack, float]] = None
-    for obj, t in _iter_tracks_with_obj(clip):
-        err = _safe_track_error(t)
-        if worst is None or err > worst[2]:
-            worst = (obj, t, err)
-    # Falls alle -inf (keine nutzbaren Errors), None zurückgeben
-    if worst and worst[2] == float("-inf"):
-        return None
-    return worst
-
-
-def _delete_track(obj: bpy.types.MovieTrackingObject, track: bpy.types.MovieTrackingTrack) -> bool:
-    """Entfernt einen Track sicher aus seinem Objekt. Liefert True bei Erfolg."""
-    try:
-        obj.tracks.remove(track)
-        return True
-    except Exception as ex:
-        print(f"[Cleanup] Konnte Track nicht löschen: {ex!r}")
-        return False
-
-
-# -----------------------------------------------------------------------------
-# Öffentliche API
-# -----------------------------------------------------------------------------
-
-
-def run_projection_cleanup_builtin(
-    context: bpy.types.Context,
-    *,
-    # Bestehende Parameter bleiben für Rückwärtskompatibilität erhalten
-    error_limit: float | None = None,
-    threshold: float | None = None,
-    max_error: float | None = None,
-    wait_for_error: bool = True,
-    wait_forever: bool = False,
-    timeout_s: float = 20.0,
-    action: str = "DELETE_SEGMENTS",
-    # NEU:
-    delete_worst_only: bool = True,
-) -> Dict[str, Any]:
-    """
-    Führt Reprojection-Cleanup aus.
-
-    Standardmodus (delete_worst_only=True):
-        - ermittelt den *einzelnen* Track mit dem höchsten ``average_error`` und löscht nur diesen.
-
-    Kompatibilitätsmodus (delete_worst_only=False):
-        - identisch zum bisherigen Verhalten: nutzt ``bpy.ops.clip.clean_tracks`` mit Schwellwert.
-    """
-    clip = _active_clip(context)
     before_count = _count_tracks(clip)
 
     if delete_worst_only:
-        worst = _find_worst_track(clip)
+        worst = _find_worst_track(
+            clip,
+            include_muted=include_muted,
+            require_min_markers=require_min_markers,
+            require_has_bundle=require_has_bundle,
+        )
         if worst is None:
             print("[Cleanup] Kein Track mit gültigem average_error gefunden – Vorgang wird übersprungen.")
             result = {
@@ -235,7 +65,34 @@ def run_projection_cleanup_builtin(
                 "selected": 0,
                 "disabled": 0,
             }
+            try:
+                tco.on_projection_cleanup_finished(context=context)
+            finally:
+                return result
+
+        obj, track, err = worst
+        name = getattr(track, "name", "<unnamed>")
+        print(f"[Cleanup] Lösche schlechtesten Track: {name} (avg_err={err:.4f}px)")
+        ok = _delete_track(obj, track)
+        _poke_update()
+        after_count = _count_tracks(clip)
+        deleted = 1 if ok and after_count == max(0, before_count - 1) else 0
+
+        result = {
+            "status": "OK" if ok else "ERROR",
+            "used_error": err,
+            "action": "DELETE_SINGLE_WORST",
+            "reason": None if ok else "remove_failed",
+            "before": before_count,
+            "after": after_count,
+            "deleted": deleted,
+            "selected": 0,
+            "disabled": 0,
+            "track_name": name,
+        }
+        try:
             tco.on_projection_cleanup_finished(context=context)
+        finally:
             return result
 
         obj, track, err = worst
