@@ -39,7 +39,7 @@ _OPT_FRAME_KEY = "__optimize_frame"
 # Default-Parameter
 _DEFAULT_SOLVE_WAIT_S = 60.0
 _DEFAULT_REFINE_POLL_S = 0.05
-_DEFAULT_SPIKE_START = 10
+_DEFAULT_SPIKE_START = 20
 
 # Maximal erlaubte Anzahl an FIND_MAX↔SPIKE-Iterationen
 # Hinweis: Zähler beginnt erst, wenn ein Spike-Iteration tatsächlich Marker entfernt hat.
