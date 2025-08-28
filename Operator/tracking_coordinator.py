@@ -48,7 +48,7 @@ _DEFAULT_SPIKE_START = 20
 
 # Maximal erlaubte Anzahl an FIND_MAX↔SPIKE-Iterationen
 # Hinweis: Zähler beginnt erst, wenn ein Spike-Iteration tatsächlich Marker entfernt hat.
-_CYCLE_MAX_ITER = 10
+_CYCLE_MAX_ITER = 6
 
 
 def _tco_log(msg: str) -> None:
