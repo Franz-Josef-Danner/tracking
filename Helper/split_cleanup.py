@@ -163,40 +163,54 @@ def _split_track_into_exact_segments(context, area, region, space, track) -> Lis
 # ------------------------------------------------------------
 
 def recursive_split_cleanup(context, area, region, space, tracks):
-    """
-    Exakte Segmentierung ohne Short-Cleanup:
-    - Tracks mit internen Gaps werden in N Einzel-Tracks mit je genau einem aktiven Segment zerlegt.
-    - Danach Policy-Delete: Entferne Tracks, deren längstes aktives Segment < tco_min_seg_len (Default 25).
-    - Safety-Pass: mute_unassigned_markers.
-    """
     scene = context.scene
-    _log(scene, "recursive_split_cleanup: start")
+    print("[SplitCleanup] recursive_split_cleanup: start")
 
     clip = space.clip
     if clip is None:
         return {'CANCELLED'}
 
-    # 1) Split pro Track exakt
-    all_input_tracks = list(tracks)
-    result_tracks: List[bpy.types.MovieTrackingTrack] = []
-    for t in all_input_tracks:
+    # --- Audit vor dem Split ---
+    for t in tracks:
+        segs = list(get_track_segments(t))
+        print(f"[Audit-BEFORE] Track='{t.name}' segs={len(segs)} lens={[len(s) for s in segs]}")
+
+    # 1) Split
+    result_tracks = []
+    for t in list(tracks):
         try:
-            if track_has_internal_gaps(t):
-                result_tracks.extend(_split_track_into_exact_segments(context, area, region, space, t))
-            else:
+            segs = list(get_track_segments(t))
+            if len(segs) <= 1:
                 result_tracks.append(t)
-        except Exception:
+            else:
+                result_tracks.extend(_split_track_into_exact_segments(context, area, region, space, t))
+        except Exception as e:
+            print(f"[Audit-ERROR] Split fail track={t.name}: {e}")
             result_tracks.append(t)
 
-    # 2) Löschung nach un-gemuteter Segmentlänge
+    # --- Audit nach Split ---
+    for t in result_tracks:
+        segs = list(get_track_segments(t))
+        print(f"[Audit-AFTER_SPLIT] Track='{t.name}' segs={len(segs)} lens={[len(s) for s in segs]}")
+
+    # 2) Delete-Policy
     try:
         min_len = int(scene.get("tco_min_seg_len", 25))
     except Exception:
         min_len = 25
-    _delete_tracks_by_max_unmuted_seg_len(context, clip.tracking.tracks, min_len=min_len)
+    deleted = _delete_tracks_by_max_unmuted_seg_len(context, clip.tracking.tracks, min_len=min_len)
+    print(f"[Audit-DELETE] deleted={deleted}")
 
-    # 3) Safety-Pass
+    # --- Audit nach Delete ---
+    for t in clip.tracking.tracks:
+        segs = list(get_track_segments(t))
+        if len(segs) > 1:
+            print(f"[Audit-LEFTOVER] Track='{t.name}' segs={len(segs)} lens={[len(s) for s in segs]}")
+
+    # 3) Safety
+    from .mute_ops import mute_unassigned_markers
     mute_unassigned_markers(clip.tracking.tracks)
 
-    _log(scene, "recursive_split_cleanup: FINISHED")
+    print("[SplitCleanup] recursive_split_cleanup: FINISHED")
     return {'FINISHED'}
+
