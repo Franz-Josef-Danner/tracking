@@ -741,6 +741,12 @@ def run_detect_once(
         if triplet_result is not None:
             result["post_pattern_triplet"] = triplet_result
 
+        # EINZIGER Redraw im READY-Pfad: finaler Markerstand dieses Zyklus
+        try:
+            bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
+        except Exception:
+            pass
+        
         return result
 
     except Exception as ex:
