@@ -19,6 +19,7 @@ from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
 from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
 from ..Helper.spike_filter_cycle import run_marker_spike_filter_cycle  # type: ignore
+from ..Helper.split_cleanup import recursive_split_cleanup  # type: ignore
 
 __all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
 
@@ -126,6 +127,62 @@ def _wait_for_valid_reconstruction(
             pass
     return None
 
+
+# ---- Split-Cleanup Helpers (blocking) ----
+def _get_active_clip(context: bpy.types.Context):
+    space = getattr(context, "space_data", None)
+    if getattr(space, "type", None) == "CLIP_EDITOR" and getattr(space, "clip", None):
+        return space.clip
+    try:
+        return bpy.data.movieclips[0] if bpy.data.movieclips else None
+    except Exception:
+        return None
+
+def _get_tracks_collection(clip):
+    try:
+        obj = clip.tracking.objects.active
+        if obj and getattr(obj, "tracks", None):
+            return obj.tracks
+    except Exception:
+        pass
+    try:
+        return clip.tracking.tracks
+    except Exception:
+        return None
+
+def _run_split_cleanup_blocking(context: bpy.types.Context) -> None:
+    """Führt Helper/split_cleanup.py synchron aus und kehrt erst nach Abschluss zurück."""
+    clip = _get_active_clip(context)
+    if not clip:
+        _tco_log("split_cleanup: no active clip → skipped")
+        return
+
+    # passenden CLIP_EDITOR-Kontext finden
+    area = None
+    region = None
+    space = None
+    try:
+        for a in context.window.screen.areas:
+            if a.type == "CLIP_EDITOR":
+                area = a
+                region = next((r for r in a.regions if r.type == "WINDOW"), None)
+                space = a.spaces.active if hasattr(a, "spaces") else None
+                if region and space and getattr(space, "clip", None):
+                    break
+    except Exception:
+        pass
+
+    if not (area and region and space):
+        _tco_log("split_cleanup: no CLIP_EDITOR area/region/space → skipped")
+        return
+
+    tracks = _get_tracks_collection(clip) or []
+    try:
+        with context.temp_override(area=area, region=region, space_data=space):
+            res = recursive_split_cleanup(context, area, region, space, tracks)
+        _tco_log(f"split_cleanup finished → {res}")
+    except Exception as ex:
+        _tco_log(f"split_cleanup failed: {ex!r}")
 
 # ---------------------------------------------------------------------------
 # (Optional) Spike-Value Memo für externe Trigger
@@ -474,8 +531,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception as ex_set:
                 print(f"[Coord] WARN: frame_set({frame}) failed: {ex_set!r}")
 
-            # Zyklus beenden → Solve-Pfad
+            # Zyklus beenden → erst Split-Cleanup (blocking), dann Solve
             self._cycle_active = False
+            print("[Coord] CYCLE_FIND_MAX → SPLIT_CLEANUP (blocking)")
+            _run_split_cleanup_blocking(context)
             print("[Coord] CYCLE_FIND_MAX → SOLVE")
             self._pending_eval_after_solve = True
             self._state = "SOLVE"
@@ -512,8 +571,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self._cycle_iterations += 1
                 print(f"[Coord] CYCLE_SPIKE → muted>0 → incremented deletion-iterations to {self._cycle_iterations}/{_CYCLE_MAX_ITER}")
                 if self._cycle_iterations > _CYCLE_MAX_ITER:
-                    print(f"[Coord] CYCLE deletion-iteration limit ({_CYCLE_MAX_ITER}) reached → proceed to SOLVE")
+                    print(f"[Coord] CYCLE deletion-iteration limit ({_CYCLE_MAX_ITER}) reached → SPLIT_CLEANUP (blocking)")
                     self._cycle_active = False
+                    _run_split_cleanup_blocking(context)
+                    print("[Coord] CYCLE_SPIKE → SOLVE")
                     self._pending_eval_after_solve = True
                     self._state = "SOLVE"
                     return {"RUNNING_MODAL"}
