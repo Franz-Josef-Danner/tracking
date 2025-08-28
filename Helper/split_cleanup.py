@@ -118,19 +118,10 @@ def _delete_tracks_by_max_unmuted_seg_len(
     return deleted
 
 
-def _rebind_tracks_by_name(clip) -> dict:
-    by_name = {}
-    for t in clip.tracking.tracks:
-        tn = _safe_name(t)
-        if tn:
-            by_name[tn] = t
-    return by_name
-
-
 def _apply_keep_only_segment(
     track: bpy.types.MovieTrackingTrack,
     seg: List[int],
-    *, area, region, space
+    *, area, region, space, window
 ) -> None:
     """Hält genau das gegebene Segment frei (vorher/nachher muten)."""
     if not seg:
@@ -139,8 +130,12 @@ def _apply_keep_only_segment(
     f_end   = seg[-1] if isinstance(seg[-1], int) else getattr(seg[-1], "frame", None)
     if f_start is None or f_end is None:
         return
-    mute_marker_path(track, int(f_start) - 1, 'backward', mute=True)
-    mute_marker_path(track, int(f_end) + 1, 'forward',  mute=True)
+    with bpy.context.temp_override(
+        window=window, screen=window.screen if window else None,
+        area=area, region=region, space_data=space
+    ):
+        mute_marker_path(track, int(f_start) - 1, 'backward', mute=True)
+        mute_marker_path(track, int(f_end) + 1, 'forward',  mute=True)
 
 
 # ------------------------------------------------------------
@@ -155,6 +150,7 @@ def _split_track_into_exact_segments(context, area, region, space, track) -> Lis
     """
     scene = context.scene
     clip = space.clip
+    window = context.window
 
     # 1) Segmente bestimmen (primär API, Fallback bei „grobem“ Ergebnis)
     segs = list(get_track_segments(track))
@@ -167,8 +163,11 @@ def _split_track_into_exact_segments(context, area, region, space, track) -> Lis
 
     copies_needed = len(segs) - 1
 
-    # 2) Duplikate erzeugen
-    with context.temp_override(area=area, region=region, space_data=space):
+    # 2) Duplikate erzeugen (mit vollem UI-Kontext)
+    with context.temp_override(
+        window=window, screen=window.screen if window else None,
+        area=area, region=region, space_data=space
+    ):
         try:
             for t in clip.tracking.tracks:
                 t.select = False
@@ -177,21 +176,31 @@ def _split_track_into_exact_segments(context, area, region, space, track) -> Lis
             pass
 
         for _ in range(copies_needed):
-            bpy.ops.clip.copy_tracks()
-            bpy.ops.clip.paste_tracks()
+            try:
+                bpy.ops.clip.copy_tracks()
+                bpy.ops.clip.paste_tracks()
+            except Exception as ex:
+                _log(scene, f"copy/paste failed: {ex!r}")
 
         deps = context.evaluated_depsgraph_get()
         deps.update()
         bpy.context.view_layer.update()
         scene.frame_set(scene.frame_current)
 
-    # 3) Kopien per Name wiederfinden
-    by_name = _rebind_tracks_by_name(clip)
+    # 3) Kopien finden: per _safe_name() Prefix-Match (inkl. .001/.002 usw.)
     base = _safe_name(track)
-    group = [t for n, t in by_name.items() if _safe_name(n) == base]
+    group: List[bpy.types.MovieTrackingTrack] = []
+    try:
+        for t in clip.tracking.tracks:
+            nm = _safe_name(t)
+            if nm and nm.startswith(base):
+                group.append(t)
+    except Exception:
+        pass
     if not group:
         group = [track]
 
+    # Original zuerst, Kopien danach (stabile Reihenfolge)
     group_sorted: List[bpy.types.MovieTrackingTrack] = []
     if track in group:
         group_sorted.append(track)
@@ -199,9 +208,12 @@ def _split_track_into_exact_segments(context, area, region, space, track) -> Lis
 
     # 4) Pro Kopie genau ein Segment aktiv lassen, Rest muten
     k = min(len(group_sorted), len(segs))
-    with context.temp_override(area=area, region=region, space_data=space):
+    with context.temp_override(
+        window=window, screen=window.screen if window else None,
+        area=area, region=region, space_data=space
+    ):
         for i in range(k):
-            _apply_keep_only_segment(group_sorted[i], segs[i], area=area, region=region, space=space)
+            _apply_keep_only_segment(group_sorted[i], segs[i], area=area, region=region, space=space, window=window)
 
         for j in range(k, len(group_sorted)):
             try:
@@ -262,12 +274,11 @@ def recursive_split_cleanup(context, area, region, space, tracks):
             segs = fb
         print(f"[Audit-AFTER_SPLIT] Track='{t.name}' segs={len(segs)} lens={[len(s) for s in segs]}")
 
-    # 1b) Hard-Enforcement: falls doch noch Tracks mit >1 Segment existieren,
-    #     versuche bis zu 2 zusätzliche Split-Pässe (konservativ), um sicher zu „atomisieren“.
+    # 1b) Hard-Enforcement: bis zu 2 zusätzliche Pässe für etwaige Reste
     max_extra_passes = 2
     for pass_idx in range(max_extra_passes):
-        leftovers = [t for t in (list(clip.tracking.tracks)) if
-                     (lambda _t: len(_segments_by_consecutive_frames_unmuted(_t)) > 1)(_t)]
+        leftovers = [t for t in list(clip.tracking.tracks)
+                     if len(_segments_by_consecutive_frames_unmuted(t)) > 1]
         if not leftovers:
             break
         print(f"[Enforce] extra pass {pass_idx+1}: splitting {len(leftovers)} leftover track(s)")
@@ -278,7 +289,7 @@ def recursive_split_cleanup(context, area, region, space, tracks):
             except Exception as e:
                 print(f"[Enforce-ERROR] Split fail track={t.name}: {e}")
                 new_result.append(t)
-        result_tracks = new_result  # nur für spätere Audits relevant
+        result_tracks = new_result  # für spätere Audits
 
     # --- Audit nach Enforcement ---
     for t in clip.tracking.tracks:
