@@ -129,12 +129,6 @@ def clean_short_segments(
         if not markers:
             continue
 
-        # Set aller vorhandenen Frames des Tracks (für Save-Gate Prüfung)
-        try:
-            frames_in_track = {int(getattr(m, "frame", -10)) for m in markers}
-        except Exception:
-            frames_in_track = set()
-
         segments = _iter_segments(markers, treat_muted_as_gap=treat_muted_as_gap)
         if verbose:
             lens = [len(s) for s in segments]
@@ -143,47 +137,16 @@ def clean_short_segments(
         # Zu kurze Segmente löschen
         for seg in segments:
             if len(seg) < int(min_len):
-                # -----------------------------
-                # SAVE-GATE (1-Frame-Abstand):
-                # Wenn direkt angrenzend zu einem anderen Segment (Frame-1 bzw. Frame+1 existiert),
-                # werden der erste und/oder letzte Marker des kurzen Segments NICHT gelöscht,
-                # um Nachbarsegmente nicht an Kopf/Tail zu "stutzen".
-                # -----------------------------
-                # Frames der Segment-Grenzen:
-                try:
-                    first_f = int(getattr(seg[0], "frame", -10))
-                    last_f  = int(getattr(seg[-1], "frame", -10))
-                except Exception:
-                    first_f = None
-                    last_f = None
-
-                # Kandidatenliste (kopiert, damit wir selektiv filtern können)
-                to_delete = list(seg)
-
-                # Head schützen, wenn (first_f - 1) existiert
-                if first_f is not None and (first_f - 1) in frames_in_track:
-                    if to_delete and to_delete[0] is seg[0]:
-                        to_delete = to_delete[1:]
-
-                # Tail schützen, wenn (last_f + 1) existiert
-                if last_f is not None and (last_f + 1) in frames_in_track:
-                    if to_delete and to_delete[-1] is seg[-1]:
-                        to_delete = to_delete[:-1]
-
-                deleted_any = False
                 # Marker DELETE: stabil über Frame löschen (robuster als remove(marker))
-                for m in reversed(to_delete):
+                for m in reversed(seg):
                     try:
                         f = int(getattr(m, "frame", -10))
                         tr.markers.delete_frame(f)
                         markers_removed += 1
-                        deleted_any = True
                     except Exception as ex:
                         if verbose:
                             print(f"[CleanShortSegments] delete_frame failed @f{getattr(m,'frame', '?')}: {ex!r}")
-
-                if deleted_any:
-                    segments_removed += 1
+                segments_removed += 1
 
         # Track leer geworden?
         try:
