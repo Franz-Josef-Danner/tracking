@@ -10,7 +10,13 @@ from __future__ import annotations
 
 import bpy
 from bpy.types import PropertyGroup, Panel
-from bpy.props import IntProperty, FloatProperty, CollectionProperty
+from bpy.props import (
+    IntProperty,
+    FloatProperty,
+    CollectionProperty,
+    BoolProperty,
+    StringProperty,
+)
 
 bl_info = {
     "name": "Kaiserlich Tracker",
@@ -62,6 +68,35 @@ class CLIP_PT_kaiserlich_panel(Panel):
         if hasattr(scene, "error_track"):
             layout.prop(scene, "error_track")
 
+        # --- Preflight-Resultate (über dem Button) ---
+        box = layout.box()
+        box.label(text="Preflight (vor Solve)")
+        # Erkennen, ob bereits ein Preflight gelaufen ist
+        ran = hasattr(scene, "preflight_last_frame_a") and scene.preflight_last_frame_a >= 0
+        if ran:
+            threshold = (scene.error_track * 2.0) if hasattr(scene, "error_track") else 0.0
+            ok = bool(getattr(scene, "preflight_passed", False))
+            deg = bool(getattr(scene, "preflight_degenerate", False))
+            med = float(getattr(scene, "preflight_median_sampson", -1.0))
+            cov = float(getattr(scene, "preflight_coverage", 0.0))
+            icon = 'CHECKMARK' if ok else ('ERROR' if (deg or (med >= 0.0 and med > threshold)) else 'INFO')
+
+            box.label(text=("OK – Solve wird zugelassen" if ok else "Blockiert – zurück zu Low Marker"), icon=icon)
+            row = box.row(align=True)
+            row.label(text=f"Frames: {scene.preflight_last_frame_a} → {scene.preflight_last_frame_b}")
+            row = box.row(align=True)
+            row.label(text=f"Median Sampson: {med:.3f}px  (Schwelle: {threshold:.3f}px)")
+            row = box.row(align=True)
+            row.label(text=f"Inliers: {int(getattr(scene,'preflight_inliers',0))}/{int(getattr(scene,'preflight_total',0))}")
+            row.label(text=f"Coverage: {int(cov * 100)}%")
+            if deg:
+                box.label(text="Hinweis: degeneriertes Setup erkannt", icon='ERROR')
+            note = getattr(scene, 'preflight_note', '')
+            if note:
+                box.label(text=f"Notiz: {note}", icon='INFO')
+        else:
+            box.label(text="Noch kein Preflight ausgeführt.", icon='INFO')
+
         # Defensiv: Operator nur anzeigen, wenn er registriert ist
         op_ok = hasattr(bpy.ops, "clip") and hasattr(bpy.ops.clip, "tracking_coordinator")
         if op_ok:
@@ -106,10 +141,74 @@ def _register_scene_props() -> None:
             default=2.0, min=0.1, max=10.0,
         )
 
+    # --- NEU: Preflight-Result-Properties für UI ---
+    if not hasattr(sc, "preflight_last_frame_a"):
+        sc.preflight_last_frame_a = IntProperty(
+            name="Preflight Frame A",
+            default=-1,
+            description="Startframe des letzten Preflights",
+        )
+    if not hasattr(sc, "preflight_last_frame_b"):
+        sc.preflight_last_frame_b = IntProperty(
+            name="Preflight Frame B",
+            default=-1,
+            description="Endframe des letzten Preflights (A+10)",
+        )
+    if not hasattr(sc, "preflight_median_sampson"):
+        sc.preflight_median_sampson = FloatProperty(
+            name="Median Sampson (px)",
+            default=-1.0, min=-1.0, soft_min=0.0,
+            description="Mediane Sampson-Distanz des Preflights in Pixeln (-1 bedeutet: nicht gesetzt)",
+            precision=3,
+        )
+    if not hasattr(sc, "preflight_inliers"):
+        sc.preflight_inliers = IntProperty(
+            name="Inliers",
+            default=0, min=0,
+            description="Anzahl Inlier im Preflight",
+        )
+    if not hasattr(sc, "preflight_total"):
+        sc.preflight_total = IntProperty(
+            name="Korrespondenzen",
+            default=0, min=0,
+            description="Gesamtanzahl getesteter Korrespondenzen",
+        )
+    if not hasattr(sc, "preflight_coverage"):
+        sc.preflight_coverage = FloatProperty(
+            name="Coverage",
+            default=0.0, min=0.0, max=1.0,
+            description="Quadrantenabdeckung (0..1)",
+            precision=3,
+        )
+    if not hasattr(sc, "preflight_degenerate"):
+        sc.preflight_degenerate = BoolProperty(
+            name="Degenerate",
+            default=False,
+            description="True, wenn Preflight degeneriertes Setup erkannte",
+        )
+    if not hasattr(sc, "preflight_passed"):
+        sc.preflight_passed = BoolProperty(
+            name="Preflight OK",
+            default=False,
+            description="True, wenn Solve-Gate (Sampson <= 2*error_track) bestanden wurde",
+        )
+    if not hasattr(sc, "preflight_note"):
+        sc.preflight_note = StringProperty(
+            name="Preflight Notiz",
+            default="",
+            description="Zusatzhinweis/Fehlermeldung aus dem Preflight",
+        )
+
 
 def _unregister_scene_props() -> None:
     sc = bpy.types.Scene
-    for name in ("repeat_frame", "marker_frame", "frames_track", "error_track"):
+    for name in (
+        "repeat_frame", "marker_frame", "frames_track", "error_track",
+        "preflight_last_frame_a", "preflight_last_frame_b",
+        "preflight_median_sampson", "preflight_inliers", "preflight_total",
+        "preflight_coverage", "preflight_degenerate", "preflight_passed",
+        "preflight_note",
+    ):
         if hasattr(sc, name):
             try:
                 delattr(sc, name)
