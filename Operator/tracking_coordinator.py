@@ -834,10 +834,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             run_projection_spike_filter_cycle,
             context,
             track_threshold=thr,
-            run_segment_cleanup=True,      # falls gewünscht
-            # min_segment_len: None → nimmt Szene-Defaults / 25 Fallback im Helper
+            run_segment_cleanup=False,   # <— von True auf False
             treat_muted_as_gap=True,
         )
+
         if ok2:
             print(f"[Coord] CLEANUP(spike) → {res2}")
         else:
