@@ -98,7 +98,7 @@ def clean_short_segments(
     *,
     min_len: int = 25,
     treat_muted_as_gap: bool = True,
-    verbose: bool = True,
+    verbose: bool = False,  # beibehalten für Kompatibilität; ohne Wirkung
 ) -> Dict[str, Any]:
     """
     Entfernt Marker-Segmente mit Länge < min_len aus allen Tracks des aktiven Clips.
@@ -109,8 +109,6 @@ def clean_short_segments(
     """
     clip = _get_active_clip(context)
     if not clip:
-        if verbose:
-            print("[CleanShortSegments] No active MovieClip.")
         return {"status": "FAILED", "reason": "no active MovieClip"}
 
     tracks = _tracks_collection(clip) or []
@@ -136,20 +134,11 @@ def clean_short_segments(
             frames_in_track = set()
 
         segments = _iter_segments(markers, treat_muted_as_gap=treat_muted_as_gap)
-        if verbose:
-            lens = [len(s) for s in segments]
-            print(f"[CleanShortSegments] Track='{tr.name}' segs={len(segments)} lens={lens[:10]}{'...' if len(lens) > 10 else ''}")
 
         # Zu kurze Segmente löschen
         for seg in segments:
             if len(seg) < int(min_len):
-                # -----------------------------
                 # SAVE-GATE (1-Frame-Abstand):
-                # Wenn direkt angrenzend zu einem anderen Segment (Frame-1 bzw. Frame+1 existiert),
-                # werden der erste und/oder letzte Marker des kurzen Segments NICHT gelöscht,
-                # um Nachbarsegmente nicht an Kopf/Tail zu "stutzen".
-                # -----------------------------
-                # Frames der Segment-Grenzen:
                 try:
                     first_f = int(getattr(seg[0], "frame", -10))
                     last_f  = int(getattr(seg[-1], "frame", -10))
@@ -157,7 +146,6 @@ def clean_short_segments(
                     first_f = None
                     last_f = None
 
-                # Kandidatenliste (kopiert, damit wir selektiv filtern können)
                 to_delete = list(seg)
 
                 # Head schützen, wenn (first_f - 1) existiert
@@ -178,9 +166,8 @@ def clean_short_segments(
                         tr.markers.delete_frame(f)
                         markers_removed += 1
                         deleted_any = True
-                    except Exception as ex:
-                        if verbose:
-                            print(f"[CleanShortSegments] delete_frame failed @f{getattr(m,'frame', '?')}: {ex!r}")
+                    except Exception:
+                        pass
 
                 if deleted_any:
                     segments_removed += 1
@@ -198,13 +185,6 @@ def clean_short_segments(
                 deps.update()
             except Exception:
                 pass
-
-    if verbose:
-        print(
-            f"[CleanShortSegments] tracks={tracks_visited} "
-            f"seg_removed={segments_removed} markers_removed={markers_removed} "
-            f"emptied={tracks_emptied}"
-        )
 
     return {
         "status": "OK",
