@@ -779,7 +779,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 scn.preflight_note = "" if ok else (
                     "Degenerate setup erkannt" if metrics.degenerate else "Median > 2 × error_track"
                 )
-                if not ok:                    print("[Coord] SOLVE → Preflight zu schlecht → zurück zu FIND_LOW")
+                if not ok:
+                    print("[Coord] SOLVE → Preflight zu schlecht → zurück zu FIND_LOW")
                     self._pending_eval_after_solve = False
                     self._did_refine_this_cycle = False
                     self._state = "FIND_LOW"
@@ -1006,7 +1007,7 @@ def register():
 def unregister():
     bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
     # Preflight-Props werden in __init__.py entfernt
-    unregister_scene_state(
+    unregister_scene_state()
 
 
 if __name__ == "__main__" and os.getenv("ADDON_RUN_TESTS", "0") == "1":
