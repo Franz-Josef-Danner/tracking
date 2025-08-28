@@ -63,6 +63,16 @@ class PreSolveMetrics:
 # Public API
 # =============================
 
+# --- NEU: Helfer für Frame-Mapping Szene -> Clip/Marker ----------------------
+def _scene_to_clip_frame(clip: bpy.types.MovieClip, f_scene: int) -> int:
+    """Mappt einen Szenen-Frame auf den Marker/Clip-Frame.
+    Nutzt clip.frame_start als Offset (Blenders MovieClip-Start im Szenenkontext).
+    Annahme: Marker starten typischerweise bei 1.
+    """
+    start = int(getattr(clip, "frame_start", 1))
+    return int(f_scene - start + 1)
+
+# --- PATCH: scan_scene erzeugt Paare in Szenen-Frames, mapped dann sauber ----
 def scan_scene(
     clip: Optional[bpy.types.MovieClip] = None,
     *,
@@ -71,7 +81,6 @@ def scan_scene(
     ransac_iters: int = 1000,
     min_track_len: int = 5,
 ) -> List[PreSolveMetrics]:
-    """Preflight über Szenenbereich, korrekt auf Clip/Marker-Frames gemappt."""
     if step <= 0:
         raise ValueError("step muss > 0 sein")
     if clip is None:
@@ -83,28 +92,22 @@ def scan_scene(
     s_start = int(scene.frame_start)
     s_end = int(scene.frame_end)
 
-    # Marker-Domäne des Clips bestimmen
-    has_tracks = [tr for tr in clip.tracking.tracks if len(tr.markers) > 0]
-    if not has_tracks:
+    # Marker-Domäne aus Tracks bestimmen (robust gegen Lücken)
+    tracks = [tr for tr in clip.tracking.tracks if len(tr.markers) > 0]
+    if not tracks:
         return []
+    c_min = min(tr.markers[0].frame for tr in tracks)
+    c_max = max(tr.markers[-1].frame for tr in tracks)
 
-    c_min = min(tr.markers[0].frame for tr in has_tracks)
-    c_max = max(tr.markers[-1].frame for tr in has_tracks)
-
-    # Heuristik: Szene→Clip abbilden, sodass s_start -> c_min (typischer Offset-Fall)
-    def scene_to_clip(f_scene: int) -> int:
-        return f_scene - s_start + c_min
-
-    # Paare in Szenenlogik erzeugen, dann in Clip-Frames mappen & auf Markerbereich clampen
     pairs: List[Tuple[int, int]] = []
     for f in range(s_start, s_end - step + 1, step):
-        a = scene_to_clip(f)
-        b = scene_to_clip(f + step)
+        a = _scene_to_clip_frame(clip, f)
+        b = _scene_to_clip_frame(clip, f + step)
         if a < c_min or b > c_max:
-            continue  # außerhalb der Marker-Domäne ignorieren
+            continue  # außerhalb der Marker-Domäne
         pairs.append((a, b))
 
-    # Fallback: Wenn die Szene nicht zur Marker-Domäne passt, laufe einfach über den Clip
+    # Fallback: Wenn Mapping nichts liefert, direkt Clip-Domäne abscannen
     if not pairs:
         pairs = [(f, f + step) for f in range(c_min, c_max - step + 1, step)]
 
@@ -116,6 +119,7 @@ def scan_scene(
         min_track_len=min_track_len,
     )
 
+# --- PATCH: estimate_pre_solve_metrics nutzt Marker-Frames -------------------
 def estimate_pre_solve_metrics(
     clip: bpy.types.MovieClip,
     frame_a: int,
@@ -126,22 +130,15 @@ def estimate_pre_solve_metrics(
     min_track_len: int = 5,
     return_F_and_mask: bool = False,
 ) -> PreSolveMetrics:
-    """Berechnet Pre-Solve-Kennzahlen für ein Frame-Paar.
+    # Szene -> Clip/Marker mappen (wichtig!)
+    fa = _scene_to_clip_frame(clip, int(frame_a))
+    fb = _scene_to_clip_frame(clip, int(frame_b))
 
-    Args:
-        clip: Aktiver MovieClip.
-        frame_a, frame_b: Frame-Indizes (Scene-Timeline, nicht Offset-bereinigt).
-        ransac_thresh_px: Sampson-Distanzschwelle in Pixeln (Inlier-Test).
-        ransac_iters: RANSAC-Iterationen.
-        min_track_len: Mindestlänge eines Tracks, damit er genutzt wird.
-        return_F_and_mask: F-Matrix und Inlier-Maske beilegen.
-
-    Returns:
-        PreSolveMetrics
-    """
     pts1, pts2, tracks = _gather_tracks_for_frames(
-        clip, frame_a, frame_b, min_length=min_track_len
+        clip, fa, fb, min_length=min_track_len
     )
+    # ... Rest unverändert ...
+
 
     if pts1 is None or len(pts1) < 8:
         return PreSolveMetrics(
