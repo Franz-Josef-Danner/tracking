@@ -63,6 +63,50 @@ class PreSolveMetrics:
 # Public API
 # =============================
 
+def scan_scene(
+    clip: Optional[bpy.types.MovieClip] = None,
+    *,
+    step: int = 10,
+    ransac_thresh_px: float = 1.5,
+    ransac_iters: int = 1000,
+    min_track_len: int = 5,
+) -> List[PreSolveMetrics]:
+    """Lässt den Preflight über die komplette Scene-Timeline laufen.
+
+    Erzeugt Frame-Paare (f, f+step) im Bereich [scene.frame_start, scene.frame_end]
+    und ruft scan_frame_pairs darauf auf. Die Frames sind Scene-Timeline-Indizes.
+
+    Args:
+        clip: MovieClip; wenn None -> bpy.context.edit_movieclip.
+        step: Abstand zwischen Frames der Paare (muss > 0 sein).
+        ransac_thresh_px, ransac_iters, min_track_len: werden durchgereicht.
+
+    Returns:
+        Liste von PreSolveMetrics (ein Eintrag pro Frame-Paar).
+    """
+    if step <= 0:
+        raise ValueError("step muss > 0 sein")
+
+    if clip is None:
+        clip = bpy.context.edit_movieclip
+    if clip is None:
+        raise RuntimeError("Kein aktiver MovieClip im Kontext.")
+
+    scene = bpy.context.scene
+    start = int(scene.frame_start)
+    end = int(scene.frame_end)
+
+    pairs: List[Tuple[int, int]] = [(f, f + step) for f in range(start, end - step + 1, step)]
+
+    return scan_frame_pairs(
+        clip,
+        pairs,
+        ransac_thresh_px=ransac_thresh_px,
+        ransac_iters=ransac_iters,
+        min_track_len=min_track_len,
+    )
+
+
 def estimate_pre_solve_metrics(
     clip: bpy.types.MovieClip,
     frame_a: int,
