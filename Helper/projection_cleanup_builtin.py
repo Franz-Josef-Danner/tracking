@@ -31,7 +31,7 @@ def _active_clip(context) -> Optional[bpy.types.MovieClip]:
     if getattr(space, "type", None) == 'CLIP_EDITOR' and getattr(space, "clip", None):
         return space.clip
     try:
-        return bpy.data.movieclips[0] if bpy.data.movieclips else None
+        return next(iter(bpy.data.movieclips), None)
     except Exception:
         return None
 
@@ -128,7 +128,7 @@ def run_projection_cleanup_builtin(
         error_basis = 1.0  # defensiver Default
 
     error_T = max(e for _, e in errs)
-    n_select = max(1, int(math.ceil(float(error_T) / float(error_basis))))
+    n_select = min(len(errs), max(1, int(math.ceil(error_T / error_basis))))
 
     errs.sort(key=lambda kv: kv[1], reverse=True)
     selected_names = [name for name, _ in errs[:n_select]]
