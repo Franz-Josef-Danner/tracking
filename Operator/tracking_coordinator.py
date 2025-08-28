@@ -29,6 +29,9 @@ _LOCK_KEY = "__detect_lock"
 _GOTO_KEY = "goto_frame"
 _MAX_DETECT_ATTEMPTS = 8
 
+_last_solve_error: Optional[float] = None
+_same_error_repeat_count: int = 0
+
 _BIDI_ACTIVE_KEY = "bidi_active"
 _BIDI_RESULT_KEY = "bidi_result"
 
@@ -751,6 +754,22 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         curr = _wait_for_valid_reconstruction(context, timeout_s=wait_s)
         curr = _current_solve_error(context) if curr is None else curr
         print(f"[Coord] EVAL → curr_error={curr if curr is not None else 'None'} target={target}")
+        # --- NEU: Check auf zweimal denselben Error hintereinander ---
+        if curr is not None:
+            if self._last_solve_error is not None and abs(curr - self._last_solve_error) < 1e-6:
+                self._same_error_repeat_count += 1
+            else:
+                self._same_error_repeat_count = 1  # reset, neuer Wert
+
+            self._last_solve_error = curr
+
+            if self._same_error_repeat_count >= 2:
+                print(f"[Coord] EVAL → ERROR {curr:.4f} wiederholt sich zweimal → Trigger ausgelöst")
+                self._same_error_repeat_count = 0  # zurücksetzen, nur einmal auslösen
+                # >>> HIER deinen gewünschten Effekt starten <<<
+                # z. B. sofort in CLEANUP wechseln:
+                self._state = "CLEANUP"
+                return {"RUNNING_MODAL"}
 
         if target > 0.0 and curr is not None and curr <= target:            # Direkt zu den finalen Intrinsics-Refinements (parallax_keyframe entfernt)
             print("[Coord] EVAL → OK (≤ target) → performing final intrinsics refinement steps")
