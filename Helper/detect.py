@@ -660,6 +660,12 @@ def run_detect_once(
                 roi_rejected=len(roi_rejected),
                 duration_ms=0.0,
             )
+
+            try:
+                bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
+            except Exception:
+                pass
+            
             return {
                 "status": "RUNNING",
                 "new_tracks": int(new_count),
@@ -734,11 +740,6 @@ def run_detect_once(
         }
         if triplet_result is not None:
             result["post_pattern_triplet"] = triplet_result
-
-        try:
-            bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
-        except Exception:
-            pass
 
         return result
 
