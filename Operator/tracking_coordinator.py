@@ -162,12 +162,14 @@ def _run_split_cleanup_blocking(context: bpy.types.Context) -> None:
     region = None
     space = None
     try:
-        for a in context.window.screen.areas:
+        screen = context.window.screen if context.window else None
+        for a in (screen.areas if screen else []):
             if a.type == "CLIP_EDITOR":
                 area = a
-                region = next((r for r in a.regions if r.type == "WINDOW"), None)
+                # bevorzugt WINDOW-Region, sonst erste verfügbare
+                region = next((r for r in a.regions if r.type == "WINDOW"), None) or (a.regions[0] if a.regions else None)
                 space = a.spaces.active if hasattr(a, "spaces") else None
-                if region and space and getattr(space, "clip", None):
+                if region and space:
                     break
     except Exception:
         pass
@@ -177,12 +179,29 @@ def _run_split_cleanup_blocking(context: bpy.types.Context) -> None:
         return
 
     tracks = _get_tracks_collection(clip) or []
+    prev_verbose = context.scene.get("tco_verbose_split", False)
+
     try:
         with context.temp_override(area=area, region=region, space_data=space):
+            # sicherstellen, dass der Space auch den gewünschten Clip zeigt
+            try:
+                if getattr(space, "clip", None) is not clip:
+                    space.clip = clip
+            except Exception:
+                pass
+
+            context.scene["tco_verbose_split"] = True
             res = recursive_split_cleanup(context, area, region, space, tracks)
         _tco_log(f"split_cleanup finished → {res}")
     except Exception as ex:
         _tco_log(f"split_cleanup failed: {ex!r}")
+    finally:
+        # Verbose-Flag auf den vorherigen Zustand zurücksetzen
+        try:
+            context.scene["tco_verbose_split"] = bool(prev_verbose)
+        except Exception:
+            pass
+
 
 # ---------------------------------------------------------------------------
 # (Optional) Spike-Value Memo für externe Trigger
