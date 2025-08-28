@@ -20,8 +20,12 @@ from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ig
 from ..Helper.spike_filter_cycle import run_marker_spike_filter_cycle  # type: ignore
 from ..Helper.split_cleanup import recursive_split_cleanup  # type: ignore
 from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
-from ..Helper.preflight import estimate_pre_solve_metrics  # ← NEU: Preflight-Helper
-
+try:
+    from ..Helper.preflight import estimate_pre_solve_metrics, auto_find_best_pairs
+except Exception:
+    # Fallback: nur die Metrik, Autosuche optional
+    from ..Helper.preflight import estimate_pre_solve_metrics
+    auto_find_best_pairs = None  # type: ignore
 __all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
 
 # Scene Keys
@@ -748,56 +752,77 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # ---------------- SOLVE → EVAL → CLEANUP ----------------
 
     def _state_solve(self, context):
-        """Vor dem Solve wird ein schneller Preflight-Check durchgeführt.
-        Nur wenn mediane Sampson-Distanz <= scene.error_track * 2 und Setup nicht
-        degeneriert ist, wird der Solve ausgeführt. Sonst zurück zu FIND_LOW.
-        """
-        # --- Preflight-Gate ---
+        """Vor dem Solve zwingend Preflight prüfen. Bei Fehlversuch oder schlechtem
+        Ergebnis KEIN Solve, sondern zurück zu FIND_LOW (fail-safe)."""
+        preflight_ok = False
         try:
             clip = _get_active_clip(context)
-            if clip is not None:
-                f1 = int(getattr(context.scene, "frame_current", 0))
-                f2 = f1 + 10  # fixer Frame-Abstand für Preflight
-                metrics = estimate_pre_solve_metrics(clip, f1, f2)
-                scn = context.scene
-                best = auto_find_best_pairs(clip, ransac_thresh_px=scn.error_track*2.0)
+            if clip is None:
+                raise RuntimeError("no active clip")
+    
+            scn = context.scene
+            target = _scene_float(scn, "error_track", 0.0)
+            thresh = target * 2.0
+    
+            # Kandidatenpaar bestimmen (Auto-Suche → Fallback auf current+10)
+            if auto_find_best_pairs:
+                best = auto_find_best_pairs(
+                    clip,
+                    ransac_thresh_px=thresh,
+                    # sinnvolle Defaults; kannst du im Helper tunen
+                    coarse_stride=50, fine_stride=10, deltas=(8, 12, 16, 24, 32),
+                    min_inliers=12, max_median_sampson=thresh, min_quality=0.2,
+                    topk=12, nms_keep=6, nms_min_sep=6,
+                    ransac_iters=1000, min_track_len=5,
+                )
                 if not best:
-                    # Kein sinnvolles Paar → zurück in FIND_LOW
-                    self._state = "FIND_LOW"
-                    return {"RUNNING_MODAL"}
-                
-                top = best[0]
-                scn.preflight_last_frame_a = int(f1)
-                scn.preflight_last_frame_b = int(f2)
-                scn.preflight_median_sampson = float(metrics.median_sampson_px)
-                scn.preflight_inliers = int(metrics.inliers)
-                scn.preflight_total = int(metrics.total)
-                scn.preflight_coverage = float(metrics.coverage_quadrants)
-                scn.preflight_degenerate = bool(metrics.degenerate)
-                target = _scene_float(context.scene, "error_track", 0.0)
-                thresh = target * 2.0
-                print(
-                    f"[Coord] SOLVE Preflight → frames=({f1},{f2}) median_sampson={metrics.median_sampson_px:.3f} "
-                    f"inliers={metrics.inliers}/{metrics.total} coverage={metrics.coverage_quadrants*100:.0f}% thresh={thresh:.3f}"
+                    raise RuntimeError("auto_find_best_pairs → no candidates")
+                f1, f2 = int(best[0].frame_a), int(best[0].frame_b)
+                metrics = best[0]
+            else:
+                f1 = int(getattr(scn, "frame_current", 0))
+                f2 = f1 + 10
+                metrics = estimate_pre_solve_metrics(
+                    clip, f1, f2, ransac_thresh_px=thresh, ransac_iters=1000, min_track_len=5
                 )
-                ok = (not metrics.degenerate) and (metrics.median_sampson_px <= thresh)
-                scn.preflight_passed = bool(ok)
-                scn.preflight_note = "" if ok else (
-                    "Degenerate setup erkannt" if metrics.degenerate else "Median > 2 × error_track"
-                )
-                if not ok:
-                    print("[Coord] SOLVE → Preflight zu schlecht → zurück zu FIND_LOW")
-                    self._pending_eval_after_solve = False
-                    self._did_refine_this_cycle = False
-                    self._state = "FIND_LOW"
-                    return {"RUNNING_MODAL"}
+    
+            # Werte ins UI spiegeln
+            scn.preflight_last_frame_a = int(f1)
+            scn.preflight_last_frame_b = int(f2)
+            scn.preflight_median_sampson = float(metrics.median_sampson_px)
+            scn.preflight_inliers = int(metrics.inliers)
+            scn.preflight_total = int(metrics.total)
+            scn.preflight_coverage = float(metrics.coverage_quadrants)
+            scn.preflight_degenerate = bool(metrics.degenerate)
+    
+            preflight_ok = (not metrics.degenerate) and (metrics.median_sampson_px <= thresh)
+            scn.preflight_passed = bool(preflight_ok)
+            scn.preflight_note = "" if preflight_ok else (
+                "Degenerate setup erkannt" if metrics.degenerate else "Median > 2 × error_track"
+            )
+    
+            print(
+                f"[Coord] SOLVE Preflight → frames=({f1},{f2}) "
+                f"median_sampson={metrics.median_sampson_px:.3f} "
+                f"inliers={metrics.inliers}/{metrics.total} "
+                f"coverage={metrics.coverage_quadrants*100:.0f}% thresh={thresh:.3f}"
+            )
+    
         except Exception as ex:
-            print(f"[Coord] SOLVE Preflight check failed (ignoriere und löse trotzdem): {ex!r}")
-
-        # --- Nur wenn Preflight OK: alle Tracks selektieren und Solve auslösen ---
+            # **WICHTIG**: Kein Solve bei Fehlern im Preflight
+            print(f"[Coord] SOLVE Preflight FAILED → abort solve: {ex!r}")
+            preflight_ok = False
+    
+        if not preflight_ok:
+            print("[Coord] SOLVE → Preflight nicht bestanden → zurück zu FIND_LOW")
+            self._pending_eval_after_solve = False
+            self._did_refine_this_cycle = False
+            self._state = "FIND_LOW"
+            return {"RUNNING_MODAL"}
+    
+        # --- Nur wenn Preflight OK → Solve ausführen ---
         _select_all_tracks_blocking(context)
         _pause(0.05)
-
         try:
             _ = solve_camera_only(context)
             print("[Coord] SOLVE invoked")
@@ -806,6 +831,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         _pause(0.5)
         self._state = "EVAL" if self._pending_eval_after_solve else "FINALIZE"
         return {"RUNNING_MODAL"}
+
 
     def _state_eval(self, context):
         target = _scene_float(context.scene, "error_track", 0.0)
