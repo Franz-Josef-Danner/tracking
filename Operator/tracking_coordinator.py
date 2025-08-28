@@ -61,51 +61,8 @@ def _pause(seconds: float = 0.5) -> None:
     except Exception:
         pass
 
-def register_preflight_props() -> None:
-    if not hasattr(Scene, "preflight_median_sampson"):
-        Scene.preflight_median_sampson = FloatProperty(
-            name="Preflight Median Sampson",
-            default=float("inf"),
-            precision=3,
-            description="Median der Sampson-Distanz des letzten Preflight-Checks",
-        )
-    if not hasattr(Scene, "preflight_inliers"):
-        Scene.preflight_inliers = IntProperty(
-            name="Preflight Inliers",
-            default=0,
-            description="Inlier-Anzahl des letzten Preflight-Checks",
-        )
-    if not hasattr(Scene, "preflight_total"):
-        Scene.preflight_total = IntProperty(
-            name="Preflight Total",
-            default=0,
-            description="Gesamtzahl geprüfter Korrespondenzen im letzten Preflight",
-        )
-    if not hasattr(Scene, "preflight_coverage"):
-        Scene.preflight_coverage = FloatProperty(
-            name="Preflight Coverage",
-            default=0.0,
-            min=0.0, max=1.0,
-            precision=3,
-            description="Abdeckungsgrad (Quadranten 0..1) des letzten Preflight",
-        )
-    if not hasattr(Scene, "preflight_degenerate"):
-        Scene.preflight_degenerate = BoolProperty(
-            name="Preflight Degenerate",
-            default=False,
-            description="True, wenn Preflight als degeneriert eingestuft wurde",
-        )
+# (Preflight-Scene-Props werden zentral in __init__.py registriert)
 
-def unregister_preflight_props() -> None:
-    for attr in (
-        "preflight_median_sampson",
-        "preflight_inliers",
-        "preflight_total",
-        "preflight_coverage",
-        "preflight_degenerate",
-    ):
-        if hasattr(Scene, attr):
-            delattr(Scene, attr)
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
@@ -803,6 +760,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 f2 = f1 + 10  # fixer Frame-Abstand für Preflight
                 metrics = estimate_pre_solve_metrics(clip, f1, f2)
                 scn = context.scene
+                # Preflight-Werte vollständig in Scene spiegeln (für UI)
+                scn.preflight_last_frame_a = int(f1)
+                scn.preflight_last_frame_b = int(f2)
                 scn.preflight_median_sampson = float(metrics.median_sampson_px)
                 scn.preflight_inliers = int(metrics.inliers)
                 scn.preflight_total = int(metrics.total)
@@ -814,8 +774,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     f"[Coord] SOLVE Preflight → frames=({f1},{f2}) median_sampson={metrics.median_sampson_px:.3f} "
                     f"inliers={metrics.inliers}/{metrics.total} coverage={metrics.coverage_quadrants*100:.0f}% thresh={thresh:.3f}"
                 )
-                if metrics.degenerate or not (metrics.median_sampson_px <= thresh):
-                    print("[Coord] SOLVE → Preflight zu schlecht → zurück zu FIND_LOW")
+                ok = (not metrics.degenerate) and (metrics.median_sampson_px <= thresh)
+                scn.preflight_passed = bool(ok)
+                scn.preflight_note = "" if ok else (
+                    "Degenerate setup erkannt" if metrics.degenerate else "Median > 2 × error_track"
+                )
+                if not ok:                    print("[Coord] SOLVE → Preflight zu schlecht → zurück zu FIND_LOW")
                     self._pending_eval_after_solve = False
                     self._did_refine_this_cycle = False
                     self._state = "FIND_LOW"
@@ -1035,16 +999,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
 def register():
     register_scene_state()
-    register_preflight_props()
+    # Preflight-Props kommen aus __init__.py
     bpy.utils.register_class(CLIP_OT_tracking_coordinator)
-    bpy.utils.register_class(CLIP_PT_preflight_status)
 
 
 def unregister():
-    bpy.utils.unregister_class(CLIP_PT_preflight_status)
     bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
-    unregister_preflight_props()
-    unregister_scene_state()
+    # Preflight-Props werden in __init__.py entfernt
+    unregister_scene_state(
 
 
 if __name__ == "__main__" and os.getenv("ADDON_RUN_TESTS", "0") == "1":
