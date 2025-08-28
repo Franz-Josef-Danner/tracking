@@ -103,6 +103,9 @@ def scan_scene(
         raise ValueError("step muss > 0 sein")
     if clip is None:
         clip = bpy.context.edit_movieclip
+        a, b = 1, 11  # dein Paar
+        pts1, pts2, tracks = _gather_tracks_for_frames(clip, a, b, min_length=5)
+        print("kandidaten =", 0 if pts1 is None else len(pts1))
     if clip is None:
         raise RuntimeError("Kein aktiver MovieClip im Kontext.")
 
