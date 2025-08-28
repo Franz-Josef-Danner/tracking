@@ -63,6 +63,24 @@ class PreSolveMetrics:
 # Public API
 # =============================
 
+def _markers_continuous_between(tr: bpy.types.MovieTrackingTrack, f1: int, f2: int) -> bool:
+    """True, wenn zwischen f1..f2 lückenlos Marker existieren (keine Gaps),
+    und weder Track noch Marker gemutet sind."""
+    if getattr(tr, "mute", False):
+        return False
+    if f2 < f1:
+        f1, f2 = f2, f1
+
+    # Map: frame -> marker (nur ungemutet)
+    m_by_frame = {m.frame: m for m in tr.markers if not getattr(m, "mute", False)}
+
+    # lückenlos?
+    for f in range(f1, f2 + 1):
+        if f not in m_by_frame:
+            return False
+    return True
+
+
 # --- NEU: Helfer für Frame-Mapping Szene -> Clip/Marker ----------------------
 def _scene_to_clip_frame(clip: bpy.types.MovieClip, f_scene: int) -> int:
     """Mappt einen Szenen-Frame auf den Marker/Clip-Frame.
@@ -92,24 +110,8 @@ def scan_scene(
     s_start = int(scene.frame_start)
     s_end = int(scene.frame_end)
 
-    # Marker-Domäne aus Tracks bestimmen (robust gegen Lücken)
-    tracks = [tr for tr in clip.tracking.tracks if len(tr.markers) > 0]
-    if not tracks:
-        return []
-    c_min = min(tr.markers[0].frame for tr in tracks)
-    c_max = max(tr.markers[-1].frame for tr in tracks)
-
-    pairs: List[Tuple[int, int]] = []
-    for f in range(s_start, s_end - step + 1, step):
-        a = _scene_to_clip_frame(clip, f)
-        b = _scene_to_clip_frame(clip, f + step)
-        if a < c_min or b > c_max:
-            continue  # außerhalb der Marker-Domäne
-        pairs.append((a, b))
-
-    # Fallback: Wenn Mapping nichts liefert, direkt Clip-Domäne abscannen
-    if not pairs:
-        pairs = [(f, f + step) for f in range(c_min, c_max - step + 1, step)]
+    # Scene-Frame-Paare erzeugen – NICHT in Clip/Marker-Frames mappen!
+    pairs: List[Tuple[int, int]] = [(f, f + step) for f in range(s_start, s_end - step + 1, step)]
 
     return scan_frame_pairs(
         clip,
@@ -118,6 +120,7 @@ def scan_scene(
         ransac_iters=ransac_iters,
         min_track_len=min_track_len,
     )
+
 
 # --- PATCH: estimate_pre_solve_metrics nutzt Marker-Frames -------------------
 def estimate_pre_solve_metrics(
