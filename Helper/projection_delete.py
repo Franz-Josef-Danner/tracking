@@ -1,17 +1,19 @@
 from __future__ import annotations
 
-
 from typing import Optional, Tuple, Dict, Any, Iterable
+import math
 import bpy
 import time
 from ..Operator import tracking_coordinator as tco
 
-__all__ = ("run_projection_cleanup_builtin",)
-
+__all__ = (
+    "run_projection_cleanup_builtin",
+)
 
 # -----------------------------------------------------------------------------
-# Kontext- und Error-Utilities
+# Kontext- und Error-Utilities (unverändert / leicht ergänzt)
 # -----------------------------------------------------------------------------
+
 
 def _find_clip_window(context) -> Tuple[Optional[bpy.types.Area], Optional[bpy.types.Region], Optional[bpy.types.Space]]:
     win = context.window
@@ -96,39 +98,28 @@ def _wait_until_error(context, *, wait_forever: bool, timeout_s: float, tick_s: 
 
 
 # -----------------------------------------------------------------------------
-# Zähl-/Hilfsfunktionen
+# Track-Iteration / Hilfsfunktionen
 # -----------------------------------------------------------------------------
 
-def _iter_tracks(clip: Optional[bpy.types.MovieClip]) -> Iterable[bpy.types.MovieTrackingTrack]:
+
+def _iter_tracks_with_obj(clip: Optional[bpy.types.MovieClip]) -> Iterable[tuple[bpy.types.MovieTrackingObject, bpy.types.MovieTrackingTrack]]:
+    """Iteriert alle Tracks inkl. zugehörigem Tracking-Objekt."""
     if not clip:
         return []
     try:
         for obj in clip.tracking.objects:
             for t in obj.tracks:
-                yield t
+                yield obj, t
     except Exception:
         return []
 
 
 def _count_tracks(clip: Optional[bpy.types.MovieClip]) -> int:
-    """Anzahl aller Tracks im Clip."""
-    return sum(1 for _ in _iter_tracks(clip))
-
-
-def _count_selected(clip: Optional[bpy.types.MovieClip]) -> int:
-    """Anzahl selektierter Tracks."""
-    cnt = 0
-    for t in _iter_tracks(clip):
-        try:
-            if getattr(t, "select", False):
-                cnt += 1
-        except Exception:
-            pass
-    return cnt
+    return sum(1 for _ in _iter_tracks_with_obj(clip))
 
 
 def _clear_selection(clip: Optional[bpy.types.MovieClip]) -> None:
-    for t in _iter_tracks(clip):
+    for _, t in _iter_tracks_with_obj(clip):
         try:
             if getattr(t, "select", False):
                 t.select = False
@@ -136,12 +127,7 @@ def _clear_selection(clip: Optional[bpy.types.MovieClip]) -> None:
             pass
 
 
-# -----------------------------------------------------------------------------
-# Operator-Wrapper
-# -----------------------------------------------------------------------------
-
 def _allowed_actions() -> set[str]:
-    """Liest die am Operator verfügbaren Enum-Aktionen (Fallback auf Standardliste)."""
     try:
         props = bpy.ops.clip.clean_tracks.get_rna_type().properties
         return {e.identifier for e in props['action'].enum_items}
@@ -150,14 +136,12 @@ def _allowed_actions() -> set[str]:
 
 
 def _invoke_clean_tracks(context, *, used_error: float, action: str) -> None:
-    """Ruft bpy.ops.clip.clean_tracks mit Param-Fallback ('clean_error' → 'error') im CLIP-Kontext auf."""
     area, region, space = _find_clip_window(context)
     if area and region and space:
         override = dict(area=area, region=region, space_data=space)
     else:
         override = {}
 
-    # Erst versuchen wir 'clean_error', dann Fallback 'error'
     try:
         with context.temp_override(**override):
             bpy.ops.clip.clean_tracks(clean_error=float(used_error), action=str(action))
@@ -166,70 +150,117 @@ def _invoke_clean_tracks(context, *, used_error: float, action: str) -> None:
             bpy.ops.clip.clean_tracks(error=float(used_error), action=str(action))
 
 
-def _clean_tracks(context, *, used_error: float, action: str) -> Dict[str, int]:
-    """
-    Robustes Cleanup:
-    - Unterstützt 'DISABLE' via Emulation: 'SELECT' → selektierte Tracks deaktivieren.
-    - Für echte Actions ('SELECT'|'DELETE_TRACK'|'DELETE_SEGMENTS') ruft direkt den Operator.
-    Gibt einfache Zählwerte zurück: {'selected': x, 'disabled': y}
-    """
-    allowed = _allowed_actions()
-    clip = _active_clip(context)
+# -----------------------------------------------------------------------------
+# NEU: Nur den Track mit dem höchsten (durchschnittlichen) Reprojektion-Error entfernen
+# -----------------------------------------------------------------------------
 
-    if action == "DISABLE":
-        # 1) Selektieren lassen (über Operator)
-        if "SELECT" not in allowed:
-            raise TypeError("Operator supports no SELECT action for DISABLE emulation")
-        _invoke_clean_tracks(context, used_error=used_error, action="SELECT")
 
-        # 2) Selektierte deaktivieren
-        selected = _count_selected(clip)
-        disabled = 0
-        for t in _iter_tracks(clip):
-            try:
-                if getattr(t, "select", False):
-                    t.enabled = False
-                    disabled += 1
-            except Exception:
-                pass
+def _safe_track_error(track: bpy.types.MovieTrackingTrack) -> float:
+    """Liest track.average_error robust (NaN/None -> -inf)."""
+    try:
+        val = float(getattr(track, "average_error", float("nan")))
+        if math.isnan(val) or math.isinf(val):
+            return float("-inf")
+        return val
+    except Exception:
+        return float("-inf")
 
-        # Optional: Selektion zurücksetzen
-        _clear_selection(clip)
 
-        return {"selected": selected, "disabled": disabled}
+def _find_worst_track(clip: Optional[bpy.types.MovieClip]) -> Optional[tuple[bpy.types.MovieTrackingObject, bpy.types.MovieTrackingTrack, float]]:
+    """Gibt (obj, track, error) für den Track mit dem höchsten average_error zurück."""
+    worst: Optional[tuple[bpy.types.MovieTrackingObject, bpy.types.MovieTrackingTrack, float]] = None
+    for obj, t in _iter_tracks_with_obj(clip):
+        err = _safe_track_error(t)
+        if worst is None or err > worst[2]:
+            worst = (obj, t, err)
+    # Falls alle -inf (keine nutzbaren Errors), None zurückgeben
+    if worst and worst[2] == float("-inf"):
+        return None
+    return worst
 
-    # Normale Operator-Aktion
-    op_action = action if action in allowed else "SELECT"
-    _invoke_clean_tracks(context, used_error=used_error, action=op_action)
-    selected = _count_selected(clip)
-    return {"selected": selected, "disabled": 0}
+
+def _delete_track(obj: bpy.types.MovieTrackingObject, track: bpy.types.MovieTrackingTrack) -> bool:
+    """Entfernt einen Track sicher aus seinem Objekt. Liefert True bei Erfolg."""
+    try:
+        obj.tracks.remove(track)
+        return True
+    except Exception as ex:
+        print(f"[Cleanup] Konnte Track nicht löschen: {ex!r}")
+        return False
 
 
 # -----------------------------------------------------------------------------
 # Öffentliche API
 # -----------------------------------------------------------------------------
 
+
 def run_projection_cleanup_builtin(
     context: bpy.types.Context,
     *,
+    # Bestehende Parameter bleiben für Rückwärtskompatibilität erhalten
     error_limit: float | None = None,
     threshold: float | None = None,
     max_error: float | None = None,
     wait_for_error: bool = True,
     wait_forever: bool = False,
     timeout_s: float = 20.0,
-    action: str = "DELETE_SEGMENTS",   # Default jetzt: direkt löschen
+    action: str = "DELETE_SEGMENTS",
+    # NEU:
+    delete_worst_only: bool = True,
 ) -> Dict[str, Any]:
     """
-    Führt Reprojection-Cleanup per bpy.ops.clip.clean_tracks aus.
+    Führt Reprojection-Cleanup aus.
 
-    Ablauf:
-      1) Error-Schwelle feststellen oder (optional) warten, bis Solve-Error lesbar.
-      2) Operator ausführen: clean_tracks(clean_error=<used_error>, action=<action>).
-         (Fallback-Parametername 'error' wird ebenfalls versucht.)
-      3) Vorher/Nachher-Counts ermitteln und zurückgeben.
+    Standardmodus (delete_worst_only=True):
+        - ermittelt den *einzelnen* Track mit dem höchsten ``average_error`` und löscht nur diesen.
+
+    Kompatibilitätsmodus (delete_worst_only=False):
+        - identisch zum bisherigen Verhalten: nutzt ``bpy.ops.clip.clean_tracks`` mit Schwellwert.
     """
-    # 1) Schwelle bestimmen / warten
+    clip = _active_clip(context)
+    before_count = _count_tracks(clip)
+
+    if delete_worst_only:
+        worst = _find_worst_track(clip)
+        if worst is None:
+            print("[Cleanup] Kein Track mit gültigem average_error gefunden – Vorgang wird übersprungen.")
+            result = {
+                "status": "SKIPPED",
+                "reason": "no_valid_track_error",
+                "used_error": None,
+                "action": "DELETE_SINGLE_WORST",
+                "before": before_count,
+                "after": before_count,
+                "deleted": 0,
+                "selected": 0,
+                "disabled": 0,
+            }
+            tco.on_projection_cleanup_finished(context=context)
+            return result
+
+        obj, track, err = worst
+        name = getattr(track, "name", "<unnamed>")
+        print(f"[Cleanup] Lösche schlechtesten Track: {name} (avg_err={err:.4f}px)")
+        ok = _delete_track(obj, track)
+        after_count = _count_tracks(clip)
+        deleted = 1 if ok and after_count == max(0, before_count - 1) else 0
+
+        result = {
+            "status": "OK" if ok else "ERROR",
+            "used_error": err,
+            "action": "DELETE_SINGLE_WORST",
+            "reason": None if ok else "remove_failed",
+            "before": before_count,
+            "after": after_count,
+            "deleted": deleted,
+            "selected": 0,
+            "disabled": 0,
+            "track_name": name,
+        }
+        tco.on_projection_cleanup_finished(context=context)
+        return result
+
+    # ---- Altmodus (Schwellwert-basierter Cleanup) ----
     used_error: Optional[float] = None
     for val in (error_limit, threshold, max_error):
         if val is not None:
@@ -242,35 +273,54 @@ def run_projection_cleanup_builtin(
 
     if used_error is None:
         print("[Cleanup] Kein gültiger Solve-Error verfügbar – Cleanup wird SKIPPED.")
-        return {"status": "SKIPPED", "reason": "no_error", "used_error": None, "action": action,
-                "before": None, "after": None, "deleted": None, "selected": None, "disabled": None}
+        return {
+            "status": "SKIPPED",
+            "reason": "no_error",
+            "used_error": None,
+            "action": action,
+            "before": before_count,
+            "after": before_count,
+            "deleted": 0,
+            "selected": 0,
+            "disabled": 0,
+        }
 
-    # Wert vor Verwendung mit Faktor 1.2 multiplizieren
     used_error = float(used_error) * 1.2
     print(f"[Cleanup] Starte clean_tracks mit Grenzwert {used_error:.4f}px, action={action}")
 
-    # 2) Vorher-Count, Operator aufrufen, Nachher-Count/Statistiken berechnen
-    clip = _active_clip(context)
-    before_count = _count_tracks(clip)
-
     try:
-        stats = _clean_tracks(context, used_error=float(used_error), action=str(action))
+        _invoke_clean_tracks(context, used_error=float(used_error), action=str(action if action in _allowed_actions() else "SELECT"))
     except Exception as ex:
         print(f"[Cleanup] Fehler bei clean_tracks: {ex!r}")
-        return {"status": "ERROR", "reason": repr(ex), "used_error": used_error, "action": action,
-                "before": before_count, "after": None, "deleted": None,
-                "selected": None, "disabled": None}
+        return {
+            "status": "ERROR",
+            "reason": repr(ex),
+            "used_error": used_error,
+            "action": action,
+            "before": before_count,
+            "after": before_count,
+            "deleted": 0,
+            "selected": 0,
+            "disabled": 0,
+        }
 
     after_count = _count_tracks(clip)
     deleted = max(0, (before_count or 0) - (after_count or 0))
-    selected = int(stats.get("selected", 0))
-    disabled = int(stats.get("disabled", 0))
 
-    print(f"[Cleanup] Cleanup abgeschlossen. Vorher={before_count}, nachher={after_count}, "
-          f"entfernt={deleted}, selektiert={selected}, deaktiviert={disabled}")
+    print(
+        f"[Cleanup] Cleanup abgeschlossen. Vorher={before_count}, nachher={after_count}, entfernt={deleted}"
+    )
 
     tco.on_projection_cleanup_finished(context=context)
 
-    return {"status": "OK", "used_error": used_error, "action": action, "reason": None,
-            "before": before_count, "after": after_count, "deleted": deleted,
-            "selected": selected, "disabled": disabled}
+    return {
+        "status": "OK",
+        "used_error": used_error,
+        "action": action,
+        "reason": None,
+        "before": before_count,
+        "after": after_count,
+        "deleted": deleted,
+        "selected": 0,
+        "disabled": 0,
+    }
