@@ -133,20 +133,32 @@ def estimate_pre_solve_metrics(
     min_track_len: int = 5,
     return_F_and_mask: bool = False,
 ) -> PreSolveMetrics:
-    # Szene -> Clip/Marker mappen (wichtig!)
-    fa = _scene_to_clip_frame(clip, int(frame_a))
-    fb = _scene_to_clip_frame(clip, int(frame_b))
+    """Berechnet Pre-Solve-Kennzahlen für ein Frame-Paar."""
 
-    pts1, pts2, tracks = _gather_tracks_for_frames(
-        clip, fa, fb, min_length=min_track_len
-    )
-    # ... Rest unverändert ...
+    def _try(fa: int, fb: int):
+        return _gather_tracks_for_frames(clip, fa, fb, min_length=min_track_len)
 
+    # 1) Direkt mit Scene-Frames versuchen
+    pts1, pts2, tracks = _try(int(frame_a), int(frame_b))
+
+    # 2) Fallback #1: Offsetting über clip.frame_start (üblich)
+    if (pts1 is None or (len(pts1) < 8)) and hasattr(clip, "frame_start"):
+        off = int(getattr(clip, "frame_start", 1)) - 1
+        pts1, pts2, tracks = _try(int(frame_a) - off, int(frame_b) - off)
+
+    # 3) Fallback #2: an Marker-Domäne der vorhandenen Tracks ausrichten
+    if pts1 is None or len(pts1) < 8:
+        all_tracks = [tr for tr in clip.tracking.tracks if len(tr.markers) > 0]
+        if all_tracks:
+            c_min = min(tr.markers[0].frame for tr in all_tracks)
+            s_start = int(bpy.context.scene.frame_start)
+            off2 = s_start - c_min
+            pts1, pts2, tracks = _try(int(frame_a) - off2, int(frame_b) - off2)
 
     if pts1 is None or len(pts1) < 8:
         return PreSolveMetrics(
-            frame_a=frame_a,
-            frame_b=frame_b,
+            frame_a=int(frame_a),
+            frame_b=int(frame_b),
             inliers=0,
             total=0 if pts1 is None else int(len(pts1)),
             median_sampson_px=float("inf"),
@@ -170,8 +182,8 @@ def estimate_pre_solve_metrics(
 
     if F is None or inlier_mask.sum() < 8:
         return PreSolveMetrics(
-            frame_a=frame_a,
-            frame_b=frame_b,
+            frame_a=int(frame_a),
+            frame_b=int(frame_b),
             inliers=0 if inlier_mask is None else int(inlier_mask.sum()),
             total=int(len(pts1)),
             median_sampson_px=float("inf"),
@@ -185,9 +197,9 @@ def estimate_pre_solve_metrics(
         )
 
     sampson = _sampson_dist(F, pts1[inlier_mask], pts2[inlier_mask])
-    metrics = PreSolveMetrics(
-        frame_a=frame_a,
-        frame_b=frame_b,
+    return PreSolveMetrics(
+        frame_a=int(frame_a),
+        frame_b=int(frame_b),
         inliers=int(inlier_mask.sum()),
         total=int(len(inlier_mask)),
         median_sampson_px=float(np.median(sampson)),
@@ -199,7 +211,7 @@ def estimate_pre_solve_metrics(
         F=F if return_F_and_mask else None,
         inlier_mask=inlier_mask if return_F_and_mask else None,
     )
-    return metrics
+
 
 
 def scan_frame_pairs(
