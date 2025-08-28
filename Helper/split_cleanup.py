@@ -140,28 +140,36 @@ def _apply_keep_only_segment(
 
 def _delete_all_segments_after_first(
     track: bpy.types.MovieTrackingTrack,
-    *, area, region, space, window
+    *, area, region, space, window,
+    gap_frames: int = 1,
 ) -> None:
     """Behält im Track nur das **erste** Segment (ungemutete Kontinuität) und
-    löscht alle Marker **nach** diesem Segment (hartes DELETE)."""
+    löscht alle Marker **mit Sicherheitsabstand** *nach* diesem Segment.
+
+    Es bleibt mindestens ``gap_frames`` Abstand nach dem letzten Frame des
+    ersten Segments bestehen. D. h. bei ``gap_frames=1`` beginnt das Löschen
+    frühestens ab ``f_last + 1``.
+    """
     segs = _segments_by_consecutive_frames_unmuted(track)
     if len(segs) <= 1:
         return
     keep = segs[0]
     if not keep:
         return
-    f_last = keep[-1]
+    f_last = int(keep[-1])
+    # Start der Löschung **hinter** dem Segment mit min. gap
+    start_cut = f_last + (gap_frames if isinstance(gap_frames, int) and gap_frames > 0 else 1)
+
     with bpy.context.temp_override(
         window=window, screen=window.screen if window else None,
         area=area, region=region, space_data=space
     ):
-        # alle Marker nach dem Ende des ersten Segments löschen
         for m in list(track.markers)[::-1]:
             try:
                 if getattr(m, "mute", False):
                     continue
                 f = int(getattr(m, "frame", -10))
-                if f > int(f_last):
+                if f >= start_cut:
                     track.markers.delete_frame(f)
             except Exception:
                 pass
@@ -169,15 +177,35 @@ def _delete_all_segments_after_first(
 
 def _delete_first_segment(
     track: bpy.types.MovieTrackingTrack,
-    *, area, region, space, window
+    *, area, region, space, window,
+    gap_frames: int = 1,
 ) -> None:
-    """Löscht das **erste** Segment (ungemutete Kontinuität) hart (Marker DELETE)."""
+    """Löscht das **erste** Segment (ungemutete Kontinuität) hart (Marker DELETE)
+    und wahrt einen Mindestabstand von ``gap_frames`` zum nächsten Segment.
+
+    Hinweis: Bei normaler Segmentierung (dt>1 zwischen Segmenten) ist der
+    Abstand ohnehin ≥ 1. Die Logik klemmt die Löschgrenze zusätzlich so,
+    dass niemals Marker des nachfolgenden Segments versehentlich entfernt werden.
+    """
     segs = _segments_by_consecutive_frames_unmuted(track)
     if len(segs) <= 0:
         return
+
     first = segs[0]
     if not first:
         return
+
+    # Standard-Löschgrenze: letztes Frame des ersten Segments
+    limit = int(first[-1])
+
+    # Falls es ein zweites Segment gibt, stelle sicher, dass wir die Frames
+    # innerhalb der Sicherheitszone **vor** dessen Start nicht überschreiten.
+    if len(segs) >= 2:
+        start2 = int(segs[1][0])
+        max_del = start2 - (gap_frames if isinstance(gap_frames, int) and gap_frames > 0 else 1) - 1
+        if max_del < limit:
+            limit = max_del
+
     with bpy.context.temp_override(
         window=window, screen=window.screen if window else None,
         area=area, region=region, space_data=space
@@ -187,7 +215,8 @@ def _delete_first_segment(
                 if getattr(m, "mute", False):
                     continue
                 f = int(getattr(m, "frame", -10))
-                if f in first:
+                # Nur Frames des ersten Segments löschen und nie über die Grenze
+                if f in first and f <= limit:
                     track.markers.delete_frame(f)
             except Exception:
                 pass
