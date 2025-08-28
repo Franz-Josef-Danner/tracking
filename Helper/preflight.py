@@ -18,145 +18,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import bpy
 import numpy as np
-from typing import Iterable
 
-def _rank_key(m: PreSolveMetrics) -> tuple:
-    """Primär: minimaler predicted_error; sekundär: maximaler quality_score;
-    tertiär: viele Inlier; quartär: große Parallaxe."""
-    pe = float("inf") if m.predicted_error is None else float(m.predicted_error)
-    qs = -1.0 if m.quality_score is None else float(m.quality_score)
-    inl = int(m.inliers)
-    par = float(m.parallax_median_px)
-    # Achtung: predicted_error aufsteigend (kleiner besser), die anderen absteigend
-    return (pe, -qs, -inl, -par)
-
-def _valid_candidate(m: PreSolveMetrics, *,
-                     min_inliers: int,
-                     max_median_sampson: float,
-                     min_quality: float) -> bool:
-    if m.degenerate:
-        return False
-    if m.inliers < min_inliers:
-        return False
-    if not (m.median_sampson_px < float("inf")):
-        return False
-    if m.median_sampson_px > max_median_sampson:
-        return False
-    if m.quality_score is not None and m.quality_score < min_quality:
-        return False
-    return True
-
-def _gen_pairs_range(start: int, end: int, deltas: Iterable[int], stride: int) -> list[tuple[int, int]]:
-    pairs: list[tuple[int, int]] = []
-    for d in deltas:
-        f = start
-        while f + d <= end:
-            pairs.append((f, f + d))
-            f += max(1, stride)
-    return pairs
-
-def _nms_on_frames(pairs: list[tuple[int, int]], keep: int, min_sep: int) -> list[tuple[int, int]]:
-    """Einfaches NMS: sortiert nehmen, dann nahe/überlappende Paare (Frame-Abstand < min_sep in
-    beiden Indizes) verwerfen, bis 'keep' erreicht ist."""
-    selected: list[tuple[int, int]] = []
-    for a, b in pairs:
-        ok = True
-        for aa, bb in selected:
-            if abs(a - aa) < min_sep and abs(b - bb) < min_sep:
-                ok = False
-                break
-        if ok:
-            selected.append((a, b))
-        if len(selected) >= keep:
-            break
-    return selected
-
-def auto_find_best_pairs(
-    clip: bpy.types.MovieClip | None = None,
-    *,
-    # coarse→fine Sampling
-    coarse_stride: int = 50,
-    fine_stride: int = 10,
-    deltas: tuple[int, ...] = (8, 12, 16, 24, 32),  # Frame-Abstände (Baseline/Parallaxe)
-    # Qualitätsgates
-    min_inliers: int = 12,
-    max_median_sampson: float = 8.0,
-    min_quality: float = 0.2,
-    # Ranking/NMS
-    topk: int = 12,
-    nms_keep: int = 6,
-    nms_min_sep: int = 6,
-    # RANSAC
-    ransac_thresh_px: float = 4.0,
-    ransac_iters: int = 1000,
-    min_track_len: int = 5,
-) -> list[PreSolveMetrics]:
-    """
-    Durchsucht automatisch die Szene nach guten Solve-Kandidaten.
-    - Coarse Pass (grober stride) → schnelle Vorauswahl
-    - Fine  Pass (enger stride)   → lokale Verfeinerung rund um die besten Kandidaten
-    Rückgabe: sortierte Liste der besten PreSolveMetrics (bestes zuerst).
-    """
-    if clip is None:
-        clip = bpy.context.edit_movieclip
-    if clip is None:
-        return []
-
-    scn = bpy.context.scene
-    s0, s1 = int(scn.frame_start), int(scn.frame_end)
-
-    # --- Coarse Pass ---
-    pairs_coarse = _gen_pairs_range(s0, s1, deltas, coarse_stride)
-    coarse_res = scan_frame_pairs(
-        clip, pairs_coarse,
-        ransac_thresh_px=ransac_thresh_px,
-        ransac_iters=ransac_iters,
-        min_track_len=min_track_len,
-    )
-    coarse_valid = [m for m in coarse_res if _valid_candidate(
-        m, min_inliers=min_inliers,
-        max_median_sampson=max_median_sampson,
-        min_quality=min_quality
-    )]
-    coarse_valid.sort(key=_rank_key)
-
-    # Top-K Seeds für Fine-Pass (mit NMS auf Frameebene)
-    seeds = [(m.frame_a, m.frame_b) for m in coarse_valid[:topk]]
-    seeds = _nms_on_frames(seeds, keep=min(len(seeds), nms_keep), min_sep=nms_min_sep)
-
-    # --- Fine Pass um Seeds herum (±fine_stride im Start-Frame verschieben) ---
-    pairs_fine: list[tuple[int, int]] = []
-    for a, b in seeds:
-        d = b - a
-        # lokale Fensterung um 'a'
-        a0 = max(s0, a - fine_stride)
-        a1 = min(s1 - d, a + fine_stride)
-        for aa in range(a0, a1 + 1):
-            pairs_fine.append((aa, aa + d))
-
-    fine_res = scan_frame_pairs(
-        clip, pairs_fine,
-        ransac_thresh_px=ransac_thresh_px,
-        ransac_iters=ransac_iters,
-        min_track_len=min_track_len,
-    )
-    fine_valid = [m for m in fine_res if _valid_candidate(
-        m, min_inliers=min_inliers,
-        max_median_sampson=max_median_sampson,
-        min_quality=min_quality
-    )]
-    fine_valid.sort(key=_rank_key)
-
-    # Final NMS + Top-N
-    final_pairs = _nms_on_frames([(m.frame_a, m.frame_b) for m in fine_valid], keep=nms_keep, min_sep=nms_min_sep)
-    best = []
-    seen = set(final_pairs)
-    for m in fine_valid:
-        if (m.frame_a, m.frame_b) in seen:
-            best.append(m)
-            if len(best) >= nms_keep:
-                break
-    return best
 
 # =============================
 # Datenstrukturen & API
@@ -203,6 +65,10 @@ class PreSolveMetrics:
     coverage_area: Optional[float] = None  # Normierte Bounding-Box-Fläche der Punkte
     quality_score: Optional[float] = None  # 0..1; höher = bessere Geometrie
     predicted_error: Optional[float] = None  # Grobe Schätzung des späteren Solve-Fehlers
+
+    # Optional: Inlier-Anzahl und Verhältnis der Homographie-Schätzung
+    hom_inliers: Optional[int] = None  # Anzahl der Homographie-Inlier
+    hom_ratio: Optional[float] = None  # Verhältnis H-Inlier/F-Inlier (1 == degeneriert)
 
     def as_dict(self) -> Dict:
         d = asdict(self)
@@ -314,6 +180,8 @@ def estimate_pre_solve_metrics(
             pts1, pts2, tracks = _try(int(frame_a) - off2, int(frame_b) - off2)
 
     if pts1 is None or len(pts1) < 8:
+        # Fallback-Paar ohne ausreichende Punkte. Setze alle Metriken auf
+        # Standardwerte, kennzeichne als degeneriert.
         return PreSolveMetrics(
             frame_a=int(frame_a),
             frame_b=int(frame_b),
@@ -327,6 +195,15 @@ def estimate_pre_solve_metrics(
             degenerate=True,
             F=None,
             inlier_mask=None,
+            inlier_ratio=0.0,
+            track_count=0,
+            avg_track_length=0.0,
+            median_track_length=0.0,
+            coverage_area=0.0,
+            quality_score=0.0,
+            predicted_error=float("inf"),
+            hom_inliers=None,
+            hom_ratio=None,
         )
 
     # Parallax & Coverage (auf allen Kandidaten)
@@ -392,6 +269,8 @@ def estimate_pre_solve_metrics(
             coverage_area=coverage_area,
             quality_score=quality_score,
             predicted_error=predicted_error,
+            hom_inliers=None,
+            hom_ratio=None,
         )
 
     # Berechne Sampson-Distanzen der Inlier
@@ -402,31 +281,162 @@ def estimate_pre_solve_metrics(
     median_s = float(np.median(sampson)) if sampson.size > 0 else float("inf")
     mean_s = float(np.mean(sampson)) if sampson.size > 0 else float("inf")
 
+    #
     # Qualitätsschätzung und erwarteter Solve-Fehler
-    # Normierung der Parallaxe anhand der Bilddiagonale
+    # ----------------------------------------------
+    # Die ursprüngliche Implementierung berechnete den ``quality_score`` als
+    # gewichtete Summe einiger normalisierter Faktoren und schätzte den
+    # ``predicted_error`` anschließend als Quotient aus dem mittleren
+    # Sampson‑Fehler und dieser Qualität. In der Praxis erwies sich dieses
+    # Verfahren als instabil: Insbesondere wenn einzelne Faktoren wie
+    # ``inlier_ratio`` sehr klein sind, dominiert der Quotient und die
+    # Fehlerschätzung geht gegen Unendlich. Um eine robustere Prognose zu
+    # erhalten, kombinieren wir jetzt mehrere Kenngrößen multiplicativ und
+    # berücksichtigen zudem die Kondition der Fundamentalmatrix als
+    # Degenerationsindikator. Durch eine sanfte Logistik‑Normalisierung
+    # verhindern wir, dass einzelne extrem schlechte Werte die gesamte
+    # Bewertung dominieren.
+
+    # 1) Normierung der Parallaxe anhand der Bilddiagonale (0..1)
     diag = float(np.hypot(w_img, h_img)) if (w_img and h_img) else 1.0
     parallax_norm = parallax_med / diag if diag > 0.0 else 0.0
     parallax_norm = max(0.0, min(parallax_norm, 1.0))
-    # Normierung der Tracklängen (typisch 50 Frames als Referenz)
+
+    # --- NEU: Parallax-Score nach Keyframe-Helper --------------------------------
+    # Berechne einen robusteren Parallax-Score als Wurzel des mittleren
+    # Quadrats der Residuen nach Abzug der Mittelverschiebung. Diese Größe
+    # korreliert mit echter räumlicher Parallaxe und ist weniger anfällig für
+    # konstante Verschiebungen (z.B. Tracking-Drift). Normalisiere auf die
+    # Bilddiagonale.
+    try:
+        # Vektoren der Punktverschiebungen (Px2)
+        vecs = (pts2[inlier_mask] - pts1[inlier_mask]) if (pts1 is not None and pts2 is not None and inlier_mask is not None) else (pts2 - pts1)
+        if vecs is not None and len(vecs) > 0:
+            mean_vec = np.mean(vecs, axis=0)
+            resid = vecs - mean_vec
+            rms = float(np.sqrt(np.mean(np.sum(resid**2, axis=1))))
+        else:
+            rms = 0.0
+    except Exception:
+        rms = 0.0
+    parallax_rms_norm = rms / diag if diag > 0.0 else 0.0
+    parallax_rms_norm = max(0.0, min(parallax_rms_norm, 1.0))
+
+    # 2) Normierung der Tracklängen. Wir gehen davon aus, dass 50 Frames
+    #     pro Track bereits sehr gut sind (typische Länge für stabile Tracks).
     track_len_norm = avg_len / 50.0 if avg_len > 0.0 else 0.0
     track_len_norm = max(0.0, min(track_len_norm, 1.0))
-    # Coverage-Fläche zusätzlich mit Quadrantenabdeckung gewichten
+
+    # 3) Coverage‑Score: kombiniere Fläche der Bounding‑Box mit quadratischer
+    #     Abdeckung. Dadurch werden Punktwolken belohnt, die sowohl großflächig
+    #     verteilt als auch gleichmäßig über die Bildquadranten verteilt sind.
     coverage_score = coverage_area * coverage
     coverage_score = max(0.0, min(coverage_score, 1.0))
-    # Weighted Sum (Anteile: Inlier=0.4, Parallax=0.3, Coverage=0.2, TrackLen=0.1)
+
+    # 4) Logistische Normalisierung des Inlier‑Anteils. Anstatt den rohen
+    #     Inlier‑Quotienten direkt zu verwenden, transformieren wir ihn mit
+    #     einer einfachen saturierenden Funktion. So steigt der Wert rasch bei
+    #     kleinen Inlier‑Quoten an, saturiert aber nahe 1.0.
+    inlier_norm = 1.0 - float(np.exp(-max(inlier_ratio, 0.0) * 5.0)) if inlier_ratio is not None else 0.0
+
+    # 5) Konditionszahl der Fundamentalmatrix als Degenerationsmaß. Eine sehr
+    #     schlecht konditionierte F (z.B. bei planaren Szenen oder nahezu
+    #     reiner Rotation) hat einen großen Quotienten zwischen den beiden
+    #     kleinsten Singularwerten. Wir normieren diesen Wert, damit er
+    #     maximal 1.0 beträgt und geben ihm als additive Strafe in die
+    #     Fehlerschätzung ein.
+    # Versuche die Konditionszahl der Fundamentalmatrix zu bestimmen. Falls dies
+    # aufgrund numerischer Instabilität fehlschlägt, nehmen wir eine hohe
+    # Penalty an, um das Paar konservativ zu behandeln.
+    cond_ratio = None  # wird nach Möglichkeit gefüllt
+    try:
+        # Singuläre Werte in absteigender Reihenfolge (s[0] >= s[1] >= s[2]).
+        _, svals, _ = np.linalg.svd(F)
+        if len(svals) >= 3:
+            cond_ratio = float(svals[1] / max(svals[2], 1e-12))
+        else:
+            cond_ratio = float('inf')
+    except Exception:
+        cond_ratio = float('inf')
+    # Normiere den Degenerationswert. Ein cond_ratio >= 50 wird als komplett
+    # degeneriert angesehen (Penalty = 1.0), darunter linear skaliert.
+    if cond_ratio and np.isfinite(cond_ratio):
+        deg_penalty = min(cond_ratio / 50.0, 1.0)
+    else:
+        deg_penalty = 1.0
+
+    # 6) Kombiniertes Qualitätsmaß. Wir multiplizieren die normalisierten
+    #     Größen und begrenzen das Ergebnis. Diese Kombination sorgt dafür,
+    #     dass ein sehr schlechter Wert (z.B. extrem geringe Parallaxe)
+    #     automatisch die Gesamtqualität senkt. Da die Werte jeweils im
+    #     Bereich 0..1 liegen, bleibt das Produkt ebenfalls in diesem Bereich.
+    combined_quality = float(inlier_norm * parallax_norm * coverage_score * track_len_norm)
+    combined_quality = max(0.0, min(combined_quality, 1.0))
+
+    # 7) Berechne die neue Qualitätssumme als gemitteltes additive Maß. Wir
+    #     erhalten so eine zusätzliche, interpretierbare Kenngröße (0..1), die
+    #     grob den Anteil guter Kriterien widerspiegelt. Die Gewichtung wurde
+    #     bewusst belassen, um Abwärtskompatibilität herzustellen.
     quality_score = (
-        0.4 * inlier_ratio
+        0.4 * max(inlier_ratio, 0.0) if inlier_ratio is not None else 0.0
         + 0.3 * parallax_norm
         + 0.2 * coverage_score
         + 0.1 * track_len_norm
     )
-    # Clamp to 0..1
     quality_score = max(0.0, min(quality_score, 1.0))
-    # Schätze den Fehler als Funktion von Sampson-Fehler und Qualität
-    if quality_score > 0.0 and mean_s < float("inf"):
-        predicted_error = mean_s / (quality_score + 1e-6)
+
+    # 8) Bestimmung der Homographie-Inlier und Fehlerschätzung.
+    #     Zusätzlich zur Fundamentalmatrix wird eine Homographie geschätzt. Das
+    #     Verhältnis der Homographie-Inlier zur Anzahl der Fundamentalmatrix-
+    #     Inlier (hom_ratio) ist ein Indikator für planare Szenen bzw. reine
+    #     Rotation. Dieser Wert fließt in die Fehlerschätzung ein: Je größer
+    #     hom_ratio, desto höher predicted_error.
+    hom_inliers = None
+    hom_ratio = None
+    try:
+        H_h, h_mask = _ransac_H(pts1, pts2, iters=ransac_iters, thresh=ransac_thresh_px)
+        if H_h is not None and h_mask is not None:
+            hom_inliers = int(np.sum(h_mask))
+            hom_ratio = float(hom_inliers) / float(max(inl_cnt, 1))
+        else:
+            hom_inliers = 0
+            hom_ratio = None
+    except Exception:
+        hom_inliers = 0
+        hom_ratio = None
+
+    # 9) Fehlerschätzung. Der mediane Sampson-Fehler wird mit zwei
+    #     Degenerationsstrafen (deg_penalty und hom_ratio) multipliziert und
+    #     anschließend durch ein Produkt aus Inlier-Anteil, Parallaxe,
+    #     Abdeckung und mittlerer Track-Länge geteilt. Eine kleine Konstante
+    #     verhindert Division durch Null. Falls median_s nicht definiert ist,
+    #     wird predicted_error unendlich.
+    if np.isfinite(median_s) and (inlier_ratio is not None):
+        denom = (
+            max(inlier_ratio, 1e-6)
+            * max(parallax_rms_norm, 1e-6)
+            * max(coverage_score, 1e-6)
+            * max(track_len_norm, 1e-6)
+        )
+        hr = 1.0 + float(hom_ratio) if (hom_ratio is not None and np.isfinite(hom_ratio)) else 1.0
+        predicted_error = (median_s * (1.0 + deg_penalty) * hr) / denom
     else:
         predicted_error = float("inf")
+
+    # 10) Degenerationsflag setzen: Zu wenig Inlier (<8), extrem geringe Parallaxe,
+    #     schlecht konditionierte Fundamentalmatrix oder hoher Homographie-Anteil.
+    degenerate_flag = False
+    try:
+        if inl_cnt < 8:
+            degenerate_flag = True
+        if parallax_norm < 0.005:
+            degenerate_flag = True
+        if cond_ratio is None or not np.isfinite(cond_ratio) or cond_ratio > 50.0:
+            degenerate_flag = True
+        if hom_ratio is not None and hom_ratio > 0.8:
+            degenerate_flag = True
+    except Exception:
+        degenerate_flag = True
 
     return PreSolveMetrics(
         frame_a=int(frame_a),
@@ -438,7 +448,7 @@ def estimate_pre_solve_metrics(
         parallax_median_px=parallax_med,
         parallax_p95_px=parallax_p95,
         coverage_quadrants=coverage,
-        degenerate=False,
+        degenerate=degenerate_flag,
         F=F if return_F_and_mask else None,
         inlier_mask=inlier_mask if return_F_and_mask else None,
         inlier_ratio=inlier_ratio,
@@ -448,6 +458,8 @@ def estimate_pre_solve_metrics(
         coverage_area=coverage_area,
         quality_score=quality_score,
         predicted_error=predicted_error,
+        hom_inliers=hom_inliers,
+        hom_ratio=hom_ratio,
     )
 
 
@@ -620,6 +632,110 @@ def _quadrant_coverage(pts: np.ndarray, w: int, h: int) -> float:
     cx, cy = w * 0.5, h * 0.5
     q = [(p[0] > cx, p[1] > cy) for p in pts]
     return len(set(q)) / 4.0
+
+# ----------------------------------------------------------------------------
+# Homography-Schätzung
+# ----------------------------------------------------------------------------
+
+def _compute_homography(p1: np.ndarray, p2: np.ndarray) -> Optional[np.ndarray]:
+    """
+    Berechnet eine Homographie H (3x3), die p1 → p2 abbildet, mittels DLT.
+
+    Args:
+        p1: (N x 2) Pixelkoordinaten der Ausgangspunkte.
+        p2: (N x 2) Pixelkoordinaten der Zielpunkte.
+
+    Returns:
+        H als 3x3-Matrix, oder None bei numerischen Fehlern.
+    """
+    n = p1.shape[0]
+    if n < 4:
+        return None
+    # Aufbau der DLT-Matrix
+    A = []
+    for i in range(n):
+        x, y = float(p1[i, 0]), float(p1[i, 1])
+        xp, yp = float(p2[i, 0]), float(p2[i, 1])
+        A.append([0.0, 0.0, 0.0, -x, -y, -1.0, yp * x, yp * y, yp])
+        A.append([x, y, 1.0, 0.0, 0.0, 0.0, -xp * x, -xp * y, -xp])
+    A = np.asarray(A, dtype=np.float64)
+    try:
+        _, _, Vt = np.linalg.svd(A)
+        h = Vt[-1, :]
+        H = h.reshape(3, 3)
+        # Normieren, sodass H[2,2] = 1 (falls möglich)
+        if abs(H[2, 2]) > 1e-12:
+            H = H / H[2, 2]
+        return H
+    except Exception:
+        return None
+
+
+def _transform_points_homography(H: np.ndarray, pts: np.ndarray) -> np.ndarray:
+    """Transformiert 2D-Punkte mittels Homographie H."""
+    pts_h = np.column_stack([pts, np.ones(len(pts))])
+    tp = (H @ pts_h.T).T
+    # homogenisieren
+    w = tp[:, 2:3]
+    w[w == 0.0] = 1e-12
+    tp = tp[:, :2] / w
+    return tp
+
+
+def _ransac_H(
+    p1: np.ndarray,
+    p2: np.ndarray,
+    *,
+    iters: int = 500,
+    thresh: float = 4.0,
+    seed: int = 42,
+) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    """
+    RANSAC-Schätzung für eine Homographie H.
+
+    Args:
+        p1: (N x 2) korrespondierende Punkte der ersten Ansicht (Pixel).
+        p2: (N x 2) korrespondierende Punkte der zweiten Ansicht (Pixel).
+        iters: Anzahl der RANSAC-Iterationen.
+        thresh: Pixel-Schwelle für Inlier.
+        seed: Zufallsstartwert.
+
+    Returns:
+        (H, inlier_mask) oder (None, None) bei Fehlschlag.
+    """
+    n = len(p1)
+    if n < 4:
+        return None, None
+    rng = np.random.default_rng(seed)
+    best_H: Optional[np.ndarray] = None
+    best_mask: Optional[np.ndarray] = None
+    best_count: int = 0
+    for _ in range(max(1, iters)):
+        try:
+            idx = rng.choice(n, 4, replace=False)
+        except Exception:
+            continue
+        H = _compute_homography(p1[idx], p2[idx])
+        if H is None:
+            continue
+        # Vorwärtsprojektion p1 → p2
+        proj = _transform_points_homography(H, p1)
+        # euklidischer Abstand
+        err = np.linalg.norm(proj - p2, axis=1)
+        mask = err < thresh
+        count = int(np.sum(mask))
+        if count > best_count:
+            best_count = count
+            best_mask = mask
+            best_H = H
+    if best_H is None or best_mask is None or best_count < 4:
+        return None, best_mask
+    # Refit Homographie mit allen Inliern
+    try:
+        H_refit = _compute_homography(p1[best_mask], p2[best_mask])
+        return H_refit, best_mask
+    except Exception:
+        return best_H, best_mask
 
 
 # =============================
