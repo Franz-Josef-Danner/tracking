@@ -80,7 +80,6 @@ def run_jump_to_frame(
     scn = context.scene
     clip, scn = _resolve_clip_and_scene(context)
     if ensure_clip and not clip:
-        print("[GotoFrame] Kein MovieClip im Kontext.")
         return {"status": "FAILED", "reason": "no_clip", "frame": None, "repeat_count": 0, "clamped": False, "area_switched": False}
 
     # Ziel-Frame bestimmen
@@ -88,7 +87,6 @@ def run_jump_to_frame(
     if target is None:
         target = scn.get("goto_frame", None)
     if target is None:
-        print("[GotoFrame] Scene-Variable 'goto_frame' nicht gesetzt.")
         return {"status": "FAILED", "reason": "no_target", "frame": None, "repeat_count": 0, "clamped": False, "area_switched": False}
 
     target = int(target)
@@ -138,7 +136,6 @@ def run_jump_to_frame(
         # --- Monitoring: Frames & Wiederholungen in die Konsole ---
     if repeat_map is not None:
         # Einzel-Info zum aktuellen Jump
-        print(f"[RepeatMon] frame={target} → count={repeat_count}")
 
         # Kleine Übersicht der „heißesten“ Frames gelegentlich ausgeben
         # (bei 5, 6 und danach alle 5 Sprünge; anpassen nach Bedarf)
@@ -146,14 +143,12 @@ def run_jump_to_frame(
             try:
                 top = sorted(repeat_map.items(), key=lambda kv: kv[1], reverse=True)[:8]
                 summary = ", ".join(f"{f}×{c}" for f, c in top)
-                print(f"[RepeatMon] top: {summary}")
             except Exception:
                 pass
 
         # Optionaler Alarm, wenn die 5er-Schwelle gerade überschritten wurde
         if repeat_count == 6:
-            print(f"[RepeatMon] ⚠ frame={target} hat die 5er-Schwelle überschritten.")
-
+            pass
     # Nach stabiler Playhead-Setzung: Wiederholungen auswerten (Optimizer-Signal entfernt)
     # (Frühere Optimizer-Request-Setzung bei repeat_count > 3 wurde entfernt.)
 
@@ -166,10 +161,8 @@ def run_jump_to_frame(
             from .marker_adapt_helper import run_marker_adapt_boost  # type: ignore
         try:
             run_marker_adapt_boost(context)
-            print(f"[JumpRepeat] run_marker_adapt_boost ausgelöst (frame={target}, repeat={repeat_count})")
         except Exception as ex:
-            print(f"[JumpRepeat] run_marker_adapt_boost Fehler: {ex}")
-
+            pass
     # Debugging & Transparenz
     try:
         scn["last_jump_frame"] = int(target)  # rein informativ; orchestrator nutzt repeat_map intern
@@ -179,7 +172,6 @@ def run_jump_to_frame(
     # Sättigungsflag für Rückgabe/Logging  ← HIER EINFÜGEN
     repeat_saturated = repeat_count >= REPEAT_SATURATION
 
-    print(f"[GotoFrame] Playhead auf Frame {target} gesetzt. (clamped={clamped}, repeat={repeat_count}, saturated={repeat_saturated})")
     return {
         "status": "OK",
         "frame": int(target),
@@ -203,7 +195,7 @@ def jump_to_frame(context):
     res = run_jump_to_frame(context, frame=None, repeat_map=None)
     ok = (res.get("status") == "OK")
     if ok:
-        print(f"[GotoFrame] Legacy OK → Frame {res.get('frame')}")
+        pass
     else:
-        print(f"[GotoFrame] Legacy FAILED → {res.get('reason','')}")
+        pass
     return ok

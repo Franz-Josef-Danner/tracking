@@ -137,7 +137,7 @@ def _load_triplet_groups_from_scene(scene: bpy.types.Scene) -> List[List[Dict[st
                 {"ptr": ptr_trip[2], "name": name_trip[2]},
             ])
     except Exception as ex:
-        print(f"[TripletJoin] WARN: Gruppen konnten nicht geladen werden: {ex}")
+        pass
     return groups
 
 
@@ -161,7 +161,6 @@ def run_triplet_join(
 
     groups = _load_triplet_groups_from_scene(context.scene)
     if not groups:
-        print("[TripletJoin] Info: Keine Triplet-Gruppen in Szene – kein Join.")
         return {"status": "OK", "joined": 0, "skipped": 0, "total": 0, "errors": []}
 
     joined_ops = 0
@@ -183,93 +182,4 @@ def run_triplet_join(
                 tr_objs.append(tr)
 
         if len(tr_objs) < 3:
-            print(f"[TripletJoin] Gruppe #{g_idx}: <3 gültige Tracks – skip.")
-            skipped += 1
             continue
-
-        # Selektion + aktiven Track setzen
-        _deselect_all(clip)
-        for t in tr_objs:
-            try:
-                t.select = True
-            except Exception:
-                pass
-
-        # Active-Policy
-        if active_policy == "last":
-            active = tr_objs[-1]
-        elif active_policy == "middle":
-            active = tr_objs[1]
-        else:
-            active = tr_objs[0]
-
-        _set_active(clip, active)
-
-        # Operator ausführen (im CLIP-Kontext)
-        def _op_join(**kw):
-            return bpy.ops.clip.join_tracks(**kw)
-
-        try:
-            ret = _run_in_clip_context(_op_join)
-            print(f"[TripletJoin] Gruppe #{g_idx}: join_tracks() -> {ret}")
-            joined_ops += 1
-        except Exception as ex:
-            msg = f"Gruppe #{g_idx}: join_tracks() fehlgeschlagen: {ex}"
-            print(f"[TripletJoin] ERROR: {msg}")
-            errors.append(msg)
-            if stop_on_error:
-                break
-
-        # UI-Refresh
-        try:
-            bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
-        except Exception:
-            pass
-
-    # Cleanup: Selektion leeren
-    _deselect_all(clip)
-
-    print(f"[TripletJoin] Zusammenfassung: joined={joined_ops}/{len(groups)} | skipped={skipped}")
-    return {
-        "status": "OK",
-        "joined": int(joined_ops),
-        "skipped": int(skipped),
-        "total": int(len(groups)),
-        "errors": errors,
-    }
-
-
-# ---------- Optionaler Operator (UI/Debug) ----------
-
-class CLIP_OT_triplet_join(bpy.types.Operator):
-    bl_idname = "clip.triplet_join"
-    bl_label = "Triplet Join (Post-Track)"
-    bl_description = "Führt join_tracks() für in der Szene gespeicherte 3er-Gruppen aus"
-
-    active_policy: bpy.props.EnumProperty(  # type: ignore
-        name="Aktiver Track",
-        items=[("first", "Erster", ""),
-               ("middle", "Mittlerer", ""),
-               ("last", "Letzter", "")],
-        default="first",
-    )
-    stop_on_error: bpy.props.BoolProperty(  # type: ignore
-        name="Stopp bei Fehler",
-        default=False,
-    )
-
-    def execute(self, context):
-        res = run_triplet_join(context, active_policy=self.active_policy, stop_on_error=self.stop_on_error)
-        if res.get("status") != "OK":
-            self.report({'ERROR'}, str(res))
-            return {'CANCELLED'}
-        self.report({'INFO'}, f"Joined {res['joined']}/{res['total']} Gruppen")
-        return {'FINISHED'}
-
-
-def register():
-    bpy.utils.register_class(CLIP_OT_triplet_join)
-
-
-def unregister():
-    bpy.utils.unregister_class(CLIP_OT_triplet_join)
