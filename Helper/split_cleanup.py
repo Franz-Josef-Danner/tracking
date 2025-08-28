@@ -293,7 +293,7 @@ def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable
     rounds = 0
     while True:
         rounds += 1
-        # Kandidaten: alle aktuellen Tracks mit >1 Segment
+        # Kandidaten: alle aktuellen Tracks mit >1 Segment (ungemutet)
         candidates = [t for t in list(clip.tracking.tracks)
                       if len(_segments_by_consecutive_frames_unmuted(t)) > 1]
         if not candidates:
@@ -306,17 +306,35 @@ def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable
         for tr in candidates:
             _delete_first_segment(tr, area=area, region=region, space=space, window=window)
 
-        # 2b) Danach jeden Kandidaten **einmal duplizieren**
+        # --- Wichtiger Zwischenschritt ---
+        # Nach dem Entfernen des ersten Segments haben einige Tracks evtl. nur noch
+        # EIN Segment oder gar keine Marker mehr. Nur solche mit weiterhin >1 Segmenten
+        # werden dupliziert und anschließend beschnitten. So vermeiden wir "leere" Duplikate
+        # und das unerwünschte Kürzen von stabilen Ein-Segment-Tracks.
+        dupe_candidates = [t for t in candidates
+                           if len(_segments_by_consecutive_frames_unmuted(t)) > 1 and len(list(t.markers)) > 0]
+        _log(scene, f"IterSplit: round {rounds} post-delete → dupe_candidates={len(dupe_candidates)}")
+
+        # 2b) Danach nur diese Kandidaten **einmal duplizieren**
         dup_map = {}
-        for tr in candidates:
+        for tr in dupe_candidates:
             new_tr = _dup_once_with_ui(context, area, region, space, tr)
             if new_tr:
                 dup_map[tr] = new_tr
                 _log(scene, f"IterSplit: dup '{tr.name}' → '{new_tr.name}' (round {rounds})")
 
-        # 2c) Im **Original** alles nach dem ersten Segment löschen
-        for tr in candidates:
+        # 2c) Im **Original** alles nach dem ersten Segment löschen (nur dort, wo >1 Segmente sind)
+        for tr in dupe_candidates:
             _delete_all_segments_after_first(tr, area=area, region=region, space=space, window=window)
+
+        # Tracks, die durch 2a leer wurden, sicher entfernen (optional, nur wenn wirklich 0 Marker)
+        for tr in candidates:
+            try:
+                if len(tr.markers) == 0:
+                    clip.tracking.tracks.remove(tr)
+                    _log(scene, f"IterSplit: removed empty track '{tr.name}'")
+            except Exception:
+                pass
 
         # sanfter Refresh
         try:
