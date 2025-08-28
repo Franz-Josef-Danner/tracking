@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-
-
 import time
 from typing import Optional, Tuple
 
@@ -36,7 +34,6 @@ def _find_clip_context() -> Tuple[Optional[bpy.types.Window],
 def _run_in_clip_context(op_callable, **kwargs):
     win, area, region, space = _find_clip_context()
     if not (win and area and region and space):
-        # Fallback: ohne Override ausführen (funktioniert oft trotzdem)
         return op_callable(**kwargs)
     override = {
         "window": win,
@@ -50,7 +47,6 @@ def _run_in_clip_context(op_callable, **kwargs):
 
 
 def _get_active_clip_fallback() -> Optional[bpy.types.MovieClip]:
-    """Versucht, einen aktiven Clip zu finden – erst UI, dann bpy.data.movieclips."""
     _, _, _, space = _find_clip_context()
     if space:
         clip = getattr(space, "clip", None)
@@ -115,27 +111,13 @@ class CLIP_OT_bidirectional_track(Operator):
     _prev_frame = -1
     _stable_count = 0
 
-    # Debug/Tracing
     _t0 = 0.0
     _tick = 0
     _t_last_action = 0.0
 
     # ---------------------------------------------------------------------
 
-    def _dbg_header(self, context, clip):
-        curf = context.scene.frame_current
-        total = _count_total_markers(clip) if clip else -1
-        on_cur = _count_tracks_with_marker_on_frame(clip, curf) if clip else -1
-        print(
-            "[BidiTrack] tick=%d | step=%d | t=%.3fs | frame=%d | "
-            "markers_total=%d | tracks@frame=%d"
-            % (self._tick, self._step, time.perf_counter() - self._t0, int(curf), int(total), int(on_cur))
-        )
-
-    # ---------------------------------------------------------------------
-
     def execute(self, context):
-        # Flags für Orchestrator setzen
         context.scene["bidi_active"] = True
         context.scene["bidi_result"] = ""
 
@@ -150,19 +132,9 @@ class CLIP_OT_bidirectional_track(Operator):
         self._tick = 0
 
         wm = context.window_manager
-        # 0.5 s Timer – UI-sichtbarer Pulsschlag
         self._timer = wm.event_timer_add(0.5, window=context.window)
         wm.modal_handler_add(self)
 
-        # Erste Umgebungsausgabe
-        clip = _get_active_clip_fallback()
-        total = _count_total_markers(clip) if clip else -1
-        on_start = _count_tracks_with_marker_on_frame(clip, self._start_frame) if clip else -1
-        print("[Tracking] Schritt: 0 (Start Bidirectional Track)")
-        print(
-            "[BidiTrack] INIT | start_frame=%d | markers_total=%d | tracks@start=%d"
-            % (int(self._start_frame), int(total), int(on_start))
-        )
         return {'RUNNING_MODAL'}
 
     # ---------------------------------------------------------------------
@@ -170,8 +142,6 @@ class CLIP_OT_bidirectional_track(Operator):
     def modal(self, context, event):
         if event.type == 'TIMER':
             self._tick += 1
-            print("[BidiTrack] TIMER tick=%d (dt=%.3fs seit Start)"
-                  % (self._tick, time.perf_counter() - self._t0))
             return self.run_tracking_step(context)
         return {'PASS_THROUGH'}
 
@@ -181,43 +151,30 @@ class CLIP_OT_bidirectional_track(Operator):
         clip = _get_active_clip_fallback()
         if clip is None:
             self.report({'ERROR'}, "Kein aktiver Clip im Tracking-Editor gefunden.")
-            print("[BidiTrack] ABORT: Kein aktiver Clip im Tracking-Editor.")
             return self._finish(context, result="FAILED")
 
-        self._dbg_header(context, clip)
-
         if self._step == 0:
-            # Vorwärts-Tracking
-            print("→ Starte Vorwärts-Tracking...")
             try:
                 bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
-            except Exception as ex:
-                print(f"[BidiTrack] EXC beim Start Vorwärts-Tracking: {ex!r}")
+            except Exception:
                 return self._finish(context, result="FAILED")
             self._t_last_action = time.perf_counter()
             self._step = 1
             return {'PASS_THROUGH'}
 
         elif self._step == 1:
-            # Zurück auf Startframe
             context.scene.frame_current = self._start_frame
             self._step = 2
-            print(f"← Frame zurückgesetzt auf {self._start_frame}")
             return {'PASS_THROUGH'}
 
         elif self._step == 2:
-            # Puffer‑Tick
-            print("→ Frame gesetzt. Warte eine Schleife, bevor Rückwärts-Tracking startet...")
             self._step = 3
             return {'PASS_THROUGH'}
 
         elif self._step == 3:
-            # Rückwärts-Tracking
-            print("→ Starte Rückwärts-Tracking...")
             try:
                 bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
-            except Exception as ex:
-                print(f"[BidiTrack] EXC beim Start Rückwärts-Tracking: {ex!r}")
+            except Exception:
                 return self._finish(context, result="FAILED")
             self._t_last_action = time.perf_counter()
             self._step = 4
@@ -231,16 +188,6 @@ class CLIP_OT_bidirectional_track(Operator):
     # ---------------------------------------------------------------------
 
     def _finish(self, context, result: str):
-        """
-        Abschlussroutine:
-        1) Timer/Cleanup stoppen
-        2) Triplet‑Join via Helper/triplet_joiner.run_triplet_join() (falls verfügbar)
-        3) Orchestrator-Flags setzen & beenden
-        """
-        total_time = time.perf_counter() - self._t0
-        print(f"[BidiTrack] FINISH (pre) result={result} | total_time={total_time:.3f}s | ticks={self._tick}")
-
-        # 1) Timer entfernen
         wm = context.window_manager
         if self._timer:
             try:
@@ -249,8 +196,6 @@ class CLIP_OT_bidirectional_track(Operator):
                 pass
             self._timer = None
 
-        # 2) Orchestrator-Flags
         context.scene["bidi_active"] = False
         context.scene["bidi_result"] = result
-        print(f"[BidiTrack] FINISH (post) result={result}")
         return {'FINISHED'}
