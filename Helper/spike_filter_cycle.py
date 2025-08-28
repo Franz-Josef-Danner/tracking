@@ -65,11 +65,11 @@ def _get_tracks_collection(clip) -> Optional[bpy.types.bpy_prop_collection]:
 
 
 def _lower_threshold(thr: float) -> float:
-    """Sanfte Absenkung (–5%); Falls numerisch ident, reduziere um 1.0; clamp ≥ 0."""
+    """Sanfte Absenkung (–5%); Falls numerisch ident, reduziere um 1.0; clamp ≥ 2.0."""
     next_thr = float(thr) * 0.95
     if abs(next_thr - float(thr)) < 1e-6 and thr > 0.0:
         next_thr = float(thr) - 1.0
-    return max(0.0, next_thr)
+    return max(2.0, next_thr)
 
 
 def _to_pixel(vec01, size_xy) -> Tuple[float, float]:
@@ -219,7 +219,7 @@ def _apply_marker_outlier_filter(
 def run_marker_spike_filter_cycle(
     context: bpy.types.Context,
     *,
-    track_threshold: float = 3.0,   # Pixel/Frame
+    track_threshold: float = 2.0,   # Pixel/Frame
     action: str = "DELETE",         # "DELETE" | "MUTE" | "SELECT"
     # Clean-Policy
     min_segment_len: Optional[int] = None,  # Default aus Scene
@@ -237,7 +237,8 @@ def run_marker_spike_filter_cycle(
     if not _get_active_clip(context):
         return {"status": "FAILED", "reason": "no active MovieClip"}
 
-    thr = float(track_threshold)
+    # **Untergrenze erzwingen**: auch wenn der Aufrufer < 2.0 übergibt
+    thr = max(2.0, float(track_threshold))
     act = str(action or "DELETE").upper().strip()
 
     # 1) Marker-Filter
