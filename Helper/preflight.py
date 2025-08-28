@@ -94,7 +94,7 @@ def _scene_to_clip_frame(clip: bpy.types.MovieClip, f_scene: int) -> int:
 def scan_scene(
     clip: Optional[bpy.types.MovieClip] = None,
     *,
-    step: int = 50,
+    step: int = 100,
     ransac_thresh_px: float = 1.5,
     ransac_iters: int = 1000,
     min_track_len: int = 5,
