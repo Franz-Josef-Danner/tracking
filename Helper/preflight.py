@@ -253,41 +253,31 @@ def _clip_size(clip: bpy.types.MovieClip) -> Tuple[int, int]:
 def _to_pixels(pt: Tuple[float, float], w: int, h: int) -> np.ndarray:
     return np.array([pt[0] * w, pt[1] * h], dtype=np.float64)
 
-
 def _gather_tracks_for_frames(
     clip: bpy.types.MovieClip,
     f1: int,
     f2: int,
     *,
     min_length: int = 5,
+    require_continuous: bool = False,  # NEU
 ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], List[bpy.types.MovieTrackingTrack]]:
     w, h = _clip_size(clip)
-    pts1: List[np.ndarray] = []
-    pts2: List[np.ndarray] = []
-    used_tracks: List[bpy.types.MovieTrackingTrack] = []
-
+    pts1, pts2, used_tracks = [], [], []
     for tr in clip.tracking.tracks:
         if len(tr.markers) < min_length or getattr(tr, "mute", False):
             continue
         m1 = tr.markers.find_frame(f1)
         m2 = tr.markers.find_frame(f2)
-        if not m1 or not m2:
+        if not m1 or not m2 or getattr(m1, "mute", False) or getattr(m2, "mute", False):
             continue
-        if getattr(m1, "mute", False) or getattr(m2, "mute", False):
+        if require_continuous and not _markers_continuous_between(tr, f1, f2):
             continue
-        # Track muss das Intervall wirklich ABDECKEN (keine segment-Gaps)
-        if not _markers_continuous_between(tr, f1, f2):
-            continue
-
         pts1.append(_to_pixels(m1.co, w, h))
         pts2.append(_to_pixels(m2.co, w, h))
         used_tracks.append(tr)
-
     if not pts1:
         return None, None, []
     return np.vstack(pts1), np.vstack(pts2), used_tracks
-
-
 
 def _normalize_points(pts: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """Hartley-Normalisierung (mean->0, mean distance->sqrt(2))."""
