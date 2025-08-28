@@ -31,7 +31,6 @@ def _find_clip_and_ui() -> Tuple[
             if region and space:
                 clip = getattr(space, "clip", None)
                 return clip, window, area, region, space
-    # Fallbacks: Context / erstes MovieClip
     clip = getattr(bpy.context, "edit_movieclip", None)
     if not clip and bpy.data.movieclips:
         clip = bpy.data.movieclips[0]
@@ -41,7 +40,6 @@ def _find_clip_and_ui() -> Tuple[
 def _get_fresh_names(scene: bpy.types.Scene) -> Set[str]:
     try:
         vals = scene.get(KEY_FRESH, [])
-        # ID-Props sind einfache Typen; sicher auf str mappen
         return {str(x) for x in (vals or [])}
     except Exception:
         return set()
@@ -56,7 +54,6 @@ def _deselect_all(tracks: Iterable[bpy.types.MovieTrackingTrack]) -> None:
 
 
 def _select_names(tracks: Iterable[bpy.types.MovieTrackingTrack], allow: Set[str]) -> int:
-    """Selektiert nur Tracks, deren Namen in allow enthalten sind; gibt Anzahl zurück."""
     n = 0
     for t in tracks:
         name = str(getattr(t, "name", ""))
@@ -70,29 +67,21 @@ def _select_names(tracks: Iterable[bpy.types.MovieTrackingTrack], allow: Set[str
 
 
 def _names_set(tracks: Iterable[bpy.types.MovieTrackingTrack]) -> Set[str]:
-    out = set()
-    for t in tracks:
-        n = str(getattr(t, "name", ""))
-        if n:
-            out.add(n)
-    return out
+    return {str(getattr(t, "name", "")) for t in tracks if getattr(t, "name", "")}
 
 
 def _is_empty_or_fully_muted(track: bpy.types.MovieTrackingTrack) -> bool:
-    """Leere Hülle oder alle Marker gemutet? (nur lesen, nichts setzen)"""
     try:
         markers = track.markers
         if len(markers) == 0:
             return True
-        # Bei manchen Builds haben Marker eine .mute-Flag – falls nicht vorhanden, ignorieren.
         has_any = False
         for m in markers:
             has_any = True
             if not getattr(m, "mute", False):
                 return False
-        return has_any  # alle gemutet
+        return has_any
     except Exception:
-        # Wenn wir nicht zuverlässig prüfen können, lieber nichts machen
         return False
 
 
@@ -104,50 +93,32 @@ def clean_short_tracks(
     min_len: Optional[int] = None,
     action: str = "DELETE_TRACK",     # 'SELECT' | 'DELETE_TRACK' | 'DELETE_SEGMENTS'
     respect_fresh: bool = True,
-    verbose: bool = True,
+    verbose: bool = False,            # bleibt für Kompatibilität, wird aber ignoriert
 ) -> Tuple[int, int]:
-    """
-    Bereinigt Short-Tracks **ausschließlich nach Länge** mit Blender-Operatoren.
-    - Schont frisch erzeugte Tracks (scene['__just_created_names']).
-    - Einmaliges Skip über scene['__skip_clean_short_once'].
-    - Vor-/Nach-Pass löscht leere bzw. komplett gemutete Hüllen.
-
-    Rückgabe: (geprüft_tracks, geändert_tracks) – geändert ~ Anzahl gelöschter Tracks (bei action='DELETE_TRACK').
-    """
     scn = context.scene
     if scn is None:
-        if verbose:
-            print("[CleanShort] WARN: Keine aktive Szene.")
         return 0, 0
 
-    # einmaliges Gate
     if scn.get(KEY_SKIP_ONCE, False):
-        if verbose:
-            print("[CleanShort] Skip (Gate __skip_clean_short_once gesetzt).")
         try:
             scn[KEY_SKIP_ONCE] = False
         except Exception:
             pass
         return 0, 0
 
-    # Parameter aus Szene ableiten (kompatibel zu deinen Defaults)
     frames = int(min_len) if min_len is not None else int(getattr(scn, "frames_track", 25) or 25)
     frames = max(frames, 1)
 
     clip, window, area, region, space = _find_clip_and_ui()
     if not clip:
-        if verbose:
-            print("[CleanShort] WARN: Kein MovieClip gefunden.")
         return 0, 0
 
     tracks = clip.tracking.tracks
     total_before = len(tracks)
     processed = total_before
 
-    # Frischliste (zum Schonung-Set)
     fresh = _get_fresh_names(scn) if respect_fresh else set()
 
-    # --------------------------- Vor-Pass: leere/fully-muted Hüllen löschen
     pre_hulls = {t for t in tracks if _is_empty_or_fully_muted(t)}
     if pre_hulls:
         _deselect_all(tracks)
@@ -161,12 +132,10 @@ def clean_short_tracks(
                     bpy.ops.clip.delete_track()
             else:
                 bpy.ops.clip.delete_track()
-        except Exception as ex:
-            if verbose:
-                print(f"[CleanShort] WARN: Pre-Delete via Operator fehlgeschlagen: {ex!s}")
+        except Exception:
+            pass
 
-    # --------------------------- Haupt-Pass: clean_tracks für alle außer “fresh”
-    names_now = _names_set(clip.tracking.tracks)  # nach Pre-Pass aktualisieren
+    names_now = _names_set(clip.tracking.tracks)
     eligible = names_now - fresh
     if eligible:
         _deselect_all(clip.tracking.tracks)
@@ -176,15 +145,12 @@ def clean_short_tracks(
                 with bpy.context.temp_override(
                     window=window, screen=window.screen, area=area, region=region, space_data=space, scene=scn
                 ):
-                    # WICHTIG: KEIN error-Parameter -> nur LÄNGE!
                     bpy.ops.clip.clean_tracks(frames=frames, action=action)
             else:
                 bpy.ops.clip.clean_tracks(frames=frames, action=action)
-        except Exception as ex:
-            if verbose:
-                print(f"[CleanShort] WARN: clean_tracks Operator fehlgeschlagen: {ex!s}")
+        except Exception:
+            pass
 
-    # --------------------------- Nach-Pass: neu entstandene Hüllen entsorgen
     post_hulls = {t for t in clip.tracking.tracks if _is_empty_or_fully_muted(t)}
     if post_hulls:
         _deselect_all(clip.tracking.tracks)
@@ -198,20 +164,12 @@ def clean_short_tracks(
                     bpy.ops.clip.delete_track()
             else:
                 bpy.ops.clip.delete_track()
-        except Exception as ex:
-            if verbose:
-                print(f"[CleanShort] WARN: Post-Delete via Operator fehlgeschlagen: {ex!s}")
+        except Exception:
+            pass
 
     total_after = len(clip.tracking.tracks)
     affected = max(0, total_before - total_after) if action == "DELETE_TRACK" else 0
 
-    if verbose:
-        print(
-            f"[CleanShort] Nur-Längenprüfung aktiv. Tracks < {frames} Frames wurden bearbeitet. "
-            f"Aktion: {action} | geprüft={processed}, geändert={affected}"
-        )
-
-    # Frischliste auf noch existierende Namen eindampfen
     if respect_fresh and fresh:
         still = _names_set(clip.tracking.tracks)
         try:
