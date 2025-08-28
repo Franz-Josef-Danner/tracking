@@ -528,41 +528,50 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print("[Coord] CYCLE_FIND_MAX reached with inactive cycle → FINALIZE")
             self._state = "FINALIZE"
             return {"RUNNING_MODAL"}
-
+    
         print(f"[Coord] CYCLE_FIND_MAX → check (current deletion-iterations={self._cycle_iterations}/{_CYCLE_MAX_ITER})")
-
+    
         try:
             res = run_find_max_marker_frame(context)
         except Exception as ex:
             print(f"[Coord] CYCLE_FIND_MAX failed: {ex!r}")
             res = {"status": "FAILED", "reason": repr(ex)}
-
+    
         status = str(res.get("status", "FAILED")).upper()
         if status == "FOUND":
             frame = int(res.get("frame", getattr(context.scene, "frame_current", 0)))
             count = res.get("count", "?")
             thresh = res.get("threshold", "?")
             print(f"[Coord] CYCLE_FIND_MAX → FOUND frame={frame} (count={count} < threshold={thresh})")
-
+    
             self._cycle_target_frame = frame
             try:
                 context.scene.frame_set(frame)
             except Exception as ex_set:
                 print(f"[Coord] WARN: frame_set({frame}) failed: {ex_set!r}")
-
-            # Zyklus beenden → erst Split-Cleanup (blocking), dann Solve
+    
+            # Zyklus beenden → erst Split-Cleanup (blocking), dann Clean-Short, dann Solve
             self._cycle_active = False
             print("[Coord] CYCLE_FIND_MAX → SPLIT_CLEANUP (blocking)")
             _run_split_cleanup_blocking(context)
+    
+            try:
+                frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
+                clean_short_tracks(context, min_len=frames_min, verbose=True)
+                print(f"[Coord] CYCLE_FIND_MAX → clean_short_tracks(min_len={frames_min})")
+            except Exception as ex:
+                print(f"[Coord] CLEAN_SHORT (post-split) failed: {ex!r}")
+    
             print("[Coord] CYCLE_FIND_MAX → SOLVE")
             self._pending_eval_after_solve = True
             self._state = "SOLVE"
-            return {"RUNNING_MODAL"}
-
+            return {"RUNNING_MODAL"}  # ← wichtig!
+    
         # NONE/FAILED → SPIKE
         print(f"[Coord] CYCLE_FIND_MAX → {status} → CYCLE_SPIKE")
         self._state = "CYCLE_SPIKE"
         return {"RUNNING_MODAL"}
+
 
     def _state_cycle_spike(self, context):
         if not self._cycle_active:
@@ -574,7 +583,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             res = run_marker_spike_filter_cycle(
                 context,
                 track_threshold=float(self._spike_threshold),
-                action="MUTE",  # "MUTE" | "DELETE" | "SELECT"
+                action="MUTE",
             )
     
             status = str(res.get("status", "")).upper()
@@ -583,20 +592,28 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     
             print(f"[Coord] CYCLE_SPIKE → status={status}, muted={muted}, next={next_thr:.2f} (curr={self._spike_threshold:.2f})")
     
-            # innerhalb DESSELBEN Cycles progressiv absenken
             self._spike_threshold = max(next_thr, 0.0)
     
             if muted > 0:
                 self._cycle_iterations += 1
                 print(f"[Coord] CYCLE_SPIKE → muted>0 → incremented deletion-iterations to {self._cycle_iterations}/{_CYCLE_MAX_ITER}")
                 if self._cycle_iterations > _CYCLE_MAX_ITER:
-                    print(f"[Coord] CYCLE deletion-iteration limit ({_CYCLE_MAX_ITER}) reached → SPLIT_CLEANUP (blocking)")
+                    print(f"[Coord] CYCLE deletion-iteration limit ... → SPLIT_CLEANUP (blocking)")
                     self._cycle_active = False
                     _run_split_cleanup_blocking(context)
+    
+                    # Clean-Short-Tracks
+                    try:
+                        frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
+                        clean_short_tracks(context, min_len=frames_min, verbose=True)
+                        print(f"[Coord] CYCLE_SPIKE → clean_short_tracks(min_len={frames_min})")
+                    except Exception as ex:
+                        print(f"[Coord] CLEAN_SHORT (post-split) failed: {ex!r}")
+    
                     print("[Coord] CYCLE_SPIKE → SOLVE")
                     self._pending_eval_after_solve = True
                     self._state = "SOLVE"
-                    return {"RUNNING_MODAL"}
+                    return {"RUNNING_MODAL"}  # ← wichtig!
     
         except Exception as ex:
             print(f"[Coord] CYCLE_SPIKE failed: {ex!r}")
@@ -607,25 +624,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._state = "CYCLE_FIND_MAX"
         return {"RUNNING_MODAL"}
 
-    
-        status = str(res.get("status", "")).upper()
-        removed = int(res.get("muted", 0) or 0)
-        print(f"[Coord] CYCLE_SPIKE → status={status}, removed={removed}, fixed-threshold=50.0")
-    
-        # self._spike_threshold wird nicht mehr auf next_thr gesetzt
-        # optional: falls du den Counter brauchst, unverändert lassen
-        if removed > 0:
-            self._cycle_iterations += 1
-            print(f"[Coord] CYCLE_SPIKE → removed>0 → incremented deletion-iterations to {self._cycle_iterations}/{_CYCLE_MAX_ITER}")
-            if self._cycle_iterations > _CYCLE_MAX_ITER:
-                print(f"[Coord] CYCLE deletion-iteration limit ({_CYCLE_MAX_ITER}) reached → proceed to SOLVE")
-                self._cycle_active = False
-                self._pending_eval_after_solve = True
-                self._state = "SOLVE"
-                return {"RUNNING_MODAL"}
-    
-        self._state = "CYCLE_FIND_MAX"
-        return {"RUNNING_MODAL"}
 
     # ---------------- SOLVE → EVAL → CLEANUP ----------------
 
