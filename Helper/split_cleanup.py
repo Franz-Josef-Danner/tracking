@@ -137,6 +137,7 @@ def _apply_keep_only_segment(
         mute_marker_path(track, int(f_start) - 1, 'backward', mute=True)
         mute_marker_path(track, int(f_end) + 1, 'forward',  mute=True)
 
+
 def _delete_all_segments_after_first(
     track: bpy.types.MovieTrackingTrack,
     *, area, region, space, window
@@ -165,6 +166,7 @@ def _delete_all_segments_after_first(
             except Exception:
                 pass
 
+
 def _delete_first_segment(
     track: bpy.types.MovieTrackingTrack,
     *, area, region, space, window
@@ -189,6 +191,7 @@ def _delete_first_segment(
                     track.markers.delete_frame(f)
             except Exception:
                 pass
+
 
 def _dup_once_with_ui(context, area, region, space, track) -> bpy.types.MovieTrackingTrack | None:
     """Dupliziert **genau einmal** via copy/paste und liefert die neue Kopie (oder None)."""
@@ -225,6 +228,7 @@ def _dup_once_with_ui(context, area, region, space, track) -> bpy.types.MovieTra
         except Exception:
             pass
         return new_track
+
 
 # ------------------------------------------------------------
 # Neuer Kern: Iteratives Duplizieren & Abschälen (Schritt 1 + 2)
