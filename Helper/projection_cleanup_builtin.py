@@ -48,26 +48,33 @@ def _iter_tracks(clip: Optional[bpy.types.MovieClip]) -> Iterable[bpy.types.Movi
 # ---------------------------------------------------------------------
 # Kernlogik
 # ---------------------------------------------------------------------
-def _compute_track_errors(clip: bpy.types.MovieClip) -> List[tuple[str, float]]:
-    """Liste (track_name, track_reprojection_error) – nur Tracks mit verwertbarem Error."""
-    out: List[tuple[str, float]] = []
-    for t in _iter_tracks(clip):
-        try:
-            err = float(getattr(t, "reprojection_error", float("nan")))
-            if math.isfinite(err) and err > 0.0:
-                out.append((t.name, err))
-        except Exception:
-            pass
-    return out
+def _compute_track_errors(clip: bpy.types.MovieClip) -> list[tuple[str, float]]:
+    """
+    Liefert (track_name, reprojection_error) für alle Tracks, die einen numerischen Error tragen.
+    Kein has_bundle-Gate mehr; 0.0 ist zulässig.
+    """
+    out: list[tuple[str, float]] = []
+    if not clip:
+        return out
 
-def _scene_error_basis(scene: Optional[bpy.types.Scene]) -> Optional[float]:
-    if not scene:
-        return None
+    # Sicherstellen, dass die UI/Depsgraph frisch ist (manche Werte materialisieren erst nach Update)
     try:
-        v = scene.get(_SCENE_ERROR_KEY, None)
-        return float(v) if v is not None else None
+        bpy.context.view_layer.update()
     except Exception:
-        return None
+        pass
+
+    for obj in clip.tracking.objects:
+        for t in obj.tracks:
+            try:
+                val = getattr(t, "reprojection_error", None)
+                if val is None:
+                    continue
+                err = float(val)
+                if math.isfinite(err) and err >= 0.0:
+                    out.append((t.name, err))
+            except Exception:
+                continue
+    return out
 
 # ---------------------------------------------------------------------
 # Öffentliche API – selektiert nur, speichert Track-Namen
