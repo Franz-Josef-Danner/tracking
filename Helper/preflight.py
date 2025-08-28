@@ -71,32 +71,42 @@ def scan_scene(
     ransac_iters: int = 1000,
     min_track_len: int = 5,
 ) -> List[PreSolveMetrics]:
-    """Lässt den Preflight über die komplette Scene-Timeline laufen.
-
-    Erzeugt Frame-Paare (f, f+step) im Bereich [scene.frame_start, scene.frame_end]
-    und ruft scan_frame_pairs darauf auf. Die Frames sind Scene-Timeline-Indizes.
-
-    Args:
-        clip: MovieClip; wenn None -> bpy.context.edit_movieclip.
-        step: Abstand zwischen Frames der Paare (muss > 0 sein).
-        ransac_thresh_px, ransac_iters, min_track_len: werden durchgereicht.
-
-    Returns:
-        Liste von PreSolveMetrics (ein Eintrag pro Frame-Paar).
-    """
+    """Preflight über Szenenbereich, korrekt auf Clip/Marker-Frames gemappt."""
     if step <= 0:
         raise ValueError("step muss > 0 sein")
-
     if clip is None:
         clip = bpy.context.edit_movieclip
     if clip is None:
         raise RuntimeError("Kein aktiver MovieClip im Kontext.")
 
     scene = bpy.context.scene
-    start = int(scene.frame_start)
-    end = int(scene.frame_end)
+    s_start = int(scene.frame_start)
+    s_end = int(scene.frame_end)
 
-    pairs: List[Tuple[int, int]] = [(f, f + step) for f in range(start, end - step + 1, step)]
+    # Marker-Domäne des Clips bestimmen
+    has_tracks = [tr for tr in clip.tracking.tracks if len(tr.markers) > 0]
+    if not has_tracks:
+        return []
+
+    c_min = min(tr.markers[0].frame for tr in has_tracks)
+    c_max = max(tr.markers[-1].frame for tr in has_tracks)
+
+    # Heuristik: Szene→Clip abbilden, sodass s_start -> c_min (typischer Offset-Fall)
+    def scene_to_clip(f_scene: int) -> int:
+        return f_scene - s_start + c_min
+
+    # Paare in Szenenlogik erzeugen, dann in Clip-Frames mappen & auf Markerbereich clampen
+    pairs: List[Tuple[int, int]] = []
+    for f in range(s_start, s_end - step + 1, step):
+        a = scene_to_clip(f)
+        b = scene_to_clip(f + step)
+        if a < c_min or b > c_max:
+            continue  # außerhalb der Marker-Domäne ignorieren
+        pairs.append((a, b))
+
+    # Fallback: Wenn die Szene nicht zur Marker-Domäne passt, laufe einfach über den Clip
+    if not pairs:
+        pairs = [(f, f + step) for f in range(c_min, c_max - step + 1, step)]
 
     return scan_frame_pairs(
         clip,
@@ -105,7 +115,6 @@ def scan_scene(
         ransac_iters=ransac_iters,
         min_track_len=min_track_len,
     )
-
 
 def estimate_pre_solve_metrics(
     clip: bpy.types.MovieClip,
