@@ -48,19 +48,28 @@ def _iter_tracks(clip: Optional[bpy.types.MovieClip]) -> Iterable[bpy.types.Movi
 # ---------------------------------------------------------------------
 # Kernlogik
 # ---------------------------------------------------------------------
-def _compute_track_errors(clip: bpy.types.MovieClip, scene=None) -> list[tuple[str, float]]:
-    import math, bpy
-    out: list[tuple[str, float]] = []
+def _scene_error_basis(scene: bpy.types.Scene | None) -> float | None:
+    """Liest scene.error_track defensiv; None wenn nicht gesetzt/ungültig."""
+    if not scene:
+        return None
+    try:
+        v = scene.get(_SCENE_ERROR_KEY, None)
+        return float(v) if v is not None else None
+    except Exception:
+        return None
 
-    # Depsgraph aktualisieren, damit Werte materialisieren
+def _compute_track_errors(clip: bpy.types.MovieClip) -> list[tuple[str, float]]:
+    """
+    Liefert (track_name, per-Track-Error). Primär 'average_error',
+    Fallbacks: 'reprojection_error', 'error'. 0.0 ist zulässig.
+    """
+    out: list[tuple[str, float]] = []
     try:
         bpy.context.view_layer.update()
     except Exception:
         pass
 
-    # Bevorzugt average_error; Fallbacks halten wir bereit
     candidates = ("average_error", "reprojection_error", "error")
-
     for obj in clip.tracking.objects:
         for t in obj.tracks:
             val = None
@@ -73,16 +82,13 @@ def _compute_track_errors(clip: bpy.types.MovieClip, scene=None) -> list[tuple[s
                         val = None
             if val is None:
                 continue
-
             try:
                 err = float(val)
             except Exception:
                 continue
-
-            # 0.0 zulassen; nur NaNs/Inf filtern
+            # nur NaN/Inf verwerfen, 0.0 zulassen
             if math.isfinite(err) and err >= 0.0:
                 out.append((t.name, err))
-
     return out
 
 # ---------------------------------------------------------------------
@@ -91,78 +97,63 @@ def _compute_track_errors(clip: bpy.types.MovieClip, scene=None) -> list[tuple[s
 def run_projection_cleanup_builtin(
     context: bpy.types.Context,
     *,
-    wait_for_error: bool = False,    # obsolet hier; behalten für API-Kompatibilität
-    timeout_s: float = 20.0,         # obsolet hier; behalten für API-Kompatibilität
+    wait_for_error: bool = False,
+    timeout_s: float = 0.0,
 ) -> Dict[str, Any]:
     """
-    Selektiert die fehlerstärksten Tracks und speichert deren Namen in scene['tco_proj_spike_tracks'].
-    Es werden **keine** Tracks/Marker gelöscht.
-
-    Anzahl-Selektion:
-        error_basis = scene['error_track']
-        error_T     = max(track.reprojection_error)
+    Selektiert die fehlerstärksten Tracks und persistiert deren Namen in
+    scene['tco_proj_spike_tracks'] gemäß Formel:
+        error_basis = scene.error_track (Fallback 1.0)
+        error_T     = max(average_error)
         n_select    = ceil(error_T / error_basis)
 
-    Rückgabe:
-        {
-          "status": "OK" | "SKIPPED",
-          "error_basis": float | None,
-          "error_T": float | None,
-          "n_total": int,
-          "n_selected": int,
-          "selected_names": List[str],
-          "store_key": "tco_proj_spike_tracks",
-        }
+    Rückgabe: {status, n_total, n_selected, error_basis, error_T, selected_names, store_key}
     """
     clip = _active_clip(context)
     if not clip:
         return {"status": "SKIPPED", "reason": "no_active_clip"}
 
-    # 1) Reprojection-Error pro Track erfassen
     errs = _compute_track_errors(clip)
-    n_total = len(errs)
-    if n_total == 0:
-        return {"status": "SKIPPED", "reason": "no_track_errors", "n_total": 0}
+    if not errs:
+        # Tieferer Hinweis, wie viele Tracks es überhaupt gibt
+        return {
+            "status": "SKIPPED",
+            "reason": "no_track_errors",
+            "n_total": sum(1 for _ in _iter_tracks(clip)),
+        }
 
-    # 2) Basis und T berechnen
     scene = getattr(context, "scene", None)
     error_basis = _scene_error_basis(scene)
-    if not (isinstance(error_basis, (int, float)) and error_basis > 0):
-        # defensiver Default: 1.0 → minimal selektieren, aber nicht explodieren
-        error_basis = 1.0
+    if not (isinstance(error_basis, (int, float)) and error_basis > 0.0):
+        error_basis = 1.0  # defensiver Default
 
     error_T = max(e for _, e in errs)
     n_select = max(1, int(math.ceil(float(error_T) / float(error_basis))))
 
-    # 3) Sortieren & Top-N wählen
     errs.sort(key=lambda kv: kv[1], reverse=True)
-    selected = errs[:n_select]
-    selected_names = [name for name, _ in selected]
+    selected_names = [name for name, _ in errs[:n_select]]
 
-    # 4) UI-Selektion setzen (optional, hilfreich fürs Debugging)
-    #    Vorher: alles deselecten
+    # UI-Selektion (optional hilfreich fürs Debugging)
     try:
+        names = set(selected_names)
         for t in _iter_tracks(clip):
-            t.select = False
-        for t in _iter_tracks(clip):
-            if t.name in selected_names:
-                t.select = True
+            t.select = t.name in names
     except Exception:
         pass
 
-    # 5) Persistenz für Folgeschritt
+    # Übergabe an den Spike-Pass
     try:
-        scene[_STORE_TRACKS_KEY] = selected_names  # Übergabe an projektion_spike_filter_cycle
+        scene[_STORE_TRACKS_KEY] = selected_names
     except Exception:
-        # Fallback: ignorieren, Rückgabe enthält trotzdem Liste
         pass
 
     return {
         "status": "OK",
+        "n_total": len(errs),
+        "n_selected": len(selected_names),
         "error_basis": float(error_basis),
         "error_T": float(error_T),
-        "n_total": int(n_total),
-        "n_selected": int(len(selected_names)),
         "selected_names": selected_names,
         "store_key": _STORE_TRACKS_KEY,
     }
+
