@@ -137,16 +137,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 continue
         return wins[0] if wins else None
 
-    def _start_timer(self, context: bpy.types.Context) -> None:
+    def _start_timer(self, context):
         wm = getattr(context, "window_manager", None) or bpy.context.window_manager
         scn = context.scene
-        self.report(
-            {'INFO'},
-            f"Timer status={ 'OK' if self._timer else 'FAILED' } paths={paths}"
-        )
         self._timer = None
-        paths = []
-
+        paths = []  # <-- zuerst initialisieren
+    
         win = self._pick_window_for_timer(context)
         if wm and win:
             try:
@@ -154,10 +150,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 paths.append("event_timer_add(window=clip_editor)")
             except Exception as ex:
                 paths.append(f"event_timer_add(window=clip_editor) FAILED: {ex}")
-
+    
         if not self._timer and wm:
             try:
-                self._timer = wm.event_timer_add(TIMER_SEC)  # global
+                self._timer = wm.event_timer_add(TIMER_SEC)
                 paths.append("event_timer_add(global)")
             except Exception as ex:
                 paths.append(f"event_timer_add(global) FAILED: {ex}")
@@ -166,18 +162,19 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     paths.append("event_timer_add(window=None)")
                 except Exception as ex2:
                     paths.append(f"event_timer_add(window=None) FAILED: {ex2}")
-
+    
         scn[K_LAST] = {"phase": "TIMER_START",
                        "status": "OK" if self._timer else "FAILED",
                        "paths": paths}
         print(f"[Coordinator] _start_timer → {scn[K_LAST]}")
-
+        self.report({'INFO'}, f"Timer status={'OK' if self._timer else 'FAILED'} paths={paths}")
+    
         if not self._timer:
-            # Sofort sichtbar machen, warum nichts weiterläuft:
             raise RuntimeError(f"Timer konnte nicht erstellt werden. paths={paths}")
-
+    
         wm.modal_handler_add(self)
         self._dbg(context, "modal_handler_add() registered")
+
 
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
