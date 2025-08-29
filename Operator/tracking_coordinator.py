@@ -277,7 +277,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {'RUNNING_MODAL'}
         
             # Zentrales Wiederholungslimit (UI/Scene-property override-bar)
-            max_attempts = int(scn.get("detect_max_attempts", 4))
+            max_attempts = int(scn.get("detect_max_attempts", 20))
         
             res = {}
             start_frame = None
