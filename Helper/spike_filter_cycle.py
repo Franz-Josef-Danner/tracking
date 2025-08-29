@@ -271,16 +271,14 @@ def run_marker_spike_filter_cycle(
             if isinstance(res, dict):
                 cleaned_segments = int(res.get("segments_removed", 0) or 0)
                 cleaned_markers = int(res.get("markers_removed", 0) or 0)
-        except Exception as ex:
+        except Exception:
             pass
-    # 3) Next Threshold (sanft senken)
-    next_thr = _lower_threshold(thr)
 
     return {
         "status": "OK",
         key: int(affected),
         "cleaned_segments": int(cleaned_segments),
         "cleaned_markers": int(cleaned_markers),
-        "next_threshold": float(next_thr),
         "suggest_split_cleanup": True,  # Hinweis an den Coordinator
     }
+
