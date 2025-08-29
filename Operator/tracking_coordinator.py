@@ -30,6 +30,12 @@ try:
 except Exception:
     from Helper.detect import run_detect_once  # type: ignore
 
+try:
+    from ..Helper.clean_short_tracks import clean_short_tracks
+except Exception:
+    from Helper.clean_short_tracks import clean_short_tracks  # type: ignore
+
+
 # ------------------------------------------------------------
 # Scene Keys & Phasen
 # ------------------------------------------------------------
@@ -315,9 +321,17 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {'RUNNING_MODAL'}
             scn[K_LAST] = {"phase": PH_BIDI_W, "bidi_result": scn.get(K_BIDI_RESULT, ""), "tick": tick}
             print(f"[Coordinator] BIDI_WAIT → done: {scn.get(K_BIDI_RESULT, '')}")
+            
+            # --- NEU: Short-Track-Cleaner nach Bidi ---
+            try:
+                processed, affected = clean_short_tracks(context)
+                print(f"[Coordinator] CLEAN_SHORT → processed={processed}, affected={affected}")
+            except Exception as ex:
+                print(f"[Coordinator] CLEAN_SHORT FAILED → {ex}")
+            
             scn[K_PHASE] = PH_FIND
             return {'RUNNING_MODAL'}
-
+            
         if phase == PH_FIN:
             print("[Coordinator] FINISH")
             return self._finish(context)
