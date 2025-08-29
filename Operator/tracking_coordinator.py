@@ -946,12 +946,22 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {"CANCELLED" if cancelled else "FINISHED"}
 
 
+
+
+# Alias-Klasse für Kompatibilität: erlaubt Aufruf über bpy.ops.CLIP_OT_tracking_coordinator
+class CLIP_OT_tracking_coordinator_alias(CLIP_OT_tracking_coordinator):
+    bl_idname = "CLIP_OT_tracking_coordinator"
+    bl_label = "Tracking Orchestrator (Alias)"
+
+
 def register():
     register_scene_state()
     bpy.utils.register_class(CLIP_OT_tracking_coordinator)
+    bpy.utils.register_class(CLIP_OT_tracking_coordinator_alias)
 
 
 def unregister():
+    bpy.utils.unregister_class(CLIP_OT_tracking_coordinator_alias)
     bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
     unregister_scene_state()
 
