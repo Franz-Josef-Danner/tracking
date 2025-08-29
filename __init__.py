@@ -6,7 +6,7 @@ Kaiserlich Tracker – Top-Level Add-on (__init__.py)
 """
 from __future__ import annotations
 import bpy
-from bpy.types import PropertyGroup, Panel, Operator
+from bpy.types import PropertyGroup, Panel, Operator as BpyOperator
 from bpy.props import IntProperty, FloatProperty, CollectionProperty
 
 # --- WICHTIG: Nur den MODALEN Operator importieren, NICHT überschreiben ---
@@ -61,7 +61,7 @@ def _unregister_scene_props() -> None:
 # ---------------------------------------------------------------------------
 # UI-Launcher: startet den MODALEN Operator per bpy.ops
 # ---------------------------------------------------------------------------
-class CLIP_OT_kaiserlich_coordinator_launcher(Operator):
+class CLIP_OT_kaiserlich_coordinator_launcher(BpyOperator):
     bl_idname = "clip.kaiserlich_coordinator_launcher"
     bl_label = "Kaiserlich Coordinator (Start)"
     bl_options = {"REGISTER", "UNDO"}
