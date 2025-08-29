@@ -177,6 +177,7 @@ def _get_tracks_collection(clip):
 
 
 
+
 def _resolve_clip_editor_area_triplet(context) -> Tuple[Optional[bpy.types.Area], Optional[bpy.types.Region], Optional[Any]]:
     """Findet eine CLIP_EDITOR Area/Region/Space-Triplette für Kontext-Overrides.
     Garantiert, dass region ein echtes bpy.types.Region-Objekt ist (kein str).
@@ -202,7 +203,9 @@ def _resolve_clip_editor_area_triplet(context) -> Tuple[Optional[bpy.types.Area]
                     break
     except Exception:
         pass
+
     return area, region, space
+
 
 
 
