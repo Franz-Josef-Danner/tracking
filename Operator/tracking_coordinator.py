@@ -445,7 +445,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         "distance": {k: v for k, v in dres.items()},
                         "count": {k: v for k, v in cres.items()},
                         "multi": {k: v for k, v in mres_safe.items()},
-                    }                    break
+                    }
+                    break
 
                 # Nicht genug / zu viel → Threshold anpassen, neue Runde
                 observed_n = int(cres.get("count", 0))
@@ -459,7 +460,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     "count": {k: v for k, v in cres.items()},
                     "adjusted_threshold": float(new_thr),
                 }
-    # nächste Iteration
+
             # Finales, kompaktes Log ohne Sets
             final_log = {"phase": PH_DETECT, "tick": int(tick)}
             for key in ("basic", "distance", "count", "multi"):
