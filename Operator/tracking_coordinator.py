@@ -353,10 +353,28 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             max_attempts = int(scn.get("detect_max_attempts", 20))
             res = {}
             start_frame = None
+
+            # --- NEU: Marker-Ziel aus Coordinator an detect.py durchreichen ---
+            # Priorität: tco_marker_target > marker_adapt > marker_basis > 20
+            marker_target = int(
+                scn.get("tco_marker_target",
+                    scn.get("marker_adapt",
+                        scn.get("marker_basis", 20)))
+            )
+            # Korridor konsistent im Coordinator vorgeben (detect respektiert explizite Werte)
+            min_marker = int(max(1, round(marker_target * 0.9)))
+            max_marker = int(max(2, round(marker_target * 1.2)))
+            # Für Debug/Transparenz im UI-Log hinterlegen
+            scn["__tco_marker_target_effective"] = int(marker_target)
+
             for attempt in range(max_attempts):
                 res = run_detect_once(
                     context,
                     start_frame=start_frame,
+                    # --- explizite Übergabe der Marker-Anzahl ---
+                    marker_adapt=int(marker_target),
+                    min_marker=int(min_marker),
+                    max_marker=int(max_marker),
                     selection_policy="only_new",
                     duplicate_strategy="delete",
                     post_pattern_triplet=True,
