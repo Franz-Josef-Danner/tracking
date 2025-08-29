@@ -572,6 +572,40 @@ def _coverage_area(all_pts: np.ndarray, w: int, h: int) -> float:
 
 def _quadrant_coverage(all_pts: np.ndarray, w: int, h: int, *, min_per_quad: int = 1) -> float:
     """
+    Anteil belegter Quadranten (2x2) in [0..1].
+    Robust gegen leere Arrays und NaNs/INFs.
+    """
+    try:
+        if all_pts is None or getattr(all_pts, "size", 0) == 0 or w <= 0 or h <= 0:
+            return 0.0
+        pts = np.asarray(all_pts, dtype=np.float64)
+        pts = pts[np.all(np.isfinite(pts), axis=1)]
+        if pts.size == 0:
+            return 0.0
+        midx, midy = float(w) * 0.5, float(h) * 0.5
+        qx = (pts[:, 0] >= midx).astype(np.int8)  # 0: links, 1: rechts
+        qy = (pts[:, 1] >= midy).astype(np.int8)  # 0: oben,  1: unten
+        qid = (qy << 1) | qx                       # 0..3
+        counts = np.bincount(qid, minlength=4)
+        filled = int(np.sum(counts >= int(min_per_quad)))
+        return float(filled) / 4.0
+    except Exception:
+        return 0.0
+
+def _is_verbose() -> bool:
+    try:
+        scn = bpy.context.scene
+        return bool(scn.get("tco_verbose", False))
+    except Exception:
+        return False
+
+def _plog(msg: str) -> None:
+    if _is_verbose():
+        print(f"[Preflight] {msg}")
+
+
+def _quadrant_coverage(all_pts: np.ndarray, w: int, h: int, *, min_per_quad: int = 1) -> float:
+    """
     Anteil belegter Bild-Quadranten (2x2) in [0..1].
     Robust gegen leere/NaN-Inputs; optional Mindestanzahl pro Quadrant.
     """
