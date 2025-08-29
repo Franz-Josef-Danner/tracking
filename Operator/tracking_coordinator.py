@@ -9,7 +9,6 @@ tracking_coordinator.py – Orchestrator-Zyklus (find → jump → detect → bi
 from __future__ import annotations
 import bpy
 from typing import Dict, Optional
-from ..Helper.bidirectional_track import CLIP_OT_bidirectional_track
 
 print(f"[Coordinator] LOADED from {__file__}")
 
@@ -30,14 +29,6 @@ try:
     from ..Helper.detect import run_detect_adaptive
 except Exception:
     from Helper.detect import run_detect_adaptive  # type: ignore
-# __init__.py (_CLASSES)
-_CLASSES = (
-    RepeatEntry,
-    CLIP_OT_tracking_coordinator,            # modal
-    CLIP_OT_kaiserlich_coordinator_launcher, # launcher
-    CLIP_OT_bidirectional_track,             # <<< WICHTIG: jetzt dabei
-    CLIP_PT_kaiserlich_panel,
-)
 
 # ------------------------------------------------------------
 # Scene Keys & Phasen
