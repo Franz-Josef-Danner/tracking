@@ -40,6 +40,10 @@ try:
 except Exception:
     from Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
 
+try:
+    from ..Helper.clean_short_segments import clean_short_segments
+except Exception:
+    from Helper.clean_short_segments import clean_short_segments  # type: ignore
 # ------------------------------------------------------------
 # Utility
 # ------------------------------------------------------------
@@ -62,7 +66,8 @@ PH_BIDI_W = "BIDI_WAIT"
 PH_FIN    = "FINISH"
 PH_SPIKE  = "SPIKE_FILTER"           # NEU: Second-Cycle Step 1
 PH_FMAX   = "FIND_MAX_MARKER"        # NEU: Second-Cycle Step 2
-
+PH_CSEG   = "CLEAN_SHORT_SEGMENTS"   # NEU: Second-Cycle Step 2 (eingeschoben)
+PH_FMAX   = "FIND_MAX_MARKER"        # NEU: Second-Cycle Step 3
 # Error-Threshold-State (für Second-Cycle)
 K_ERR_THR_BASE = "tco_err_thr_base"  # ursprünglicher Basiswert (Reset bei Rückkehr zu Cycle 1)
 K_ERR_THR_CURR = "tco_err_thr_curr"  # aktueller Arbeitswert (wird *0.9 gesenkt)
@@ -335,10 +340,36 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 scn[K_LAST] = {"phase": PH_SPIKE, "status": "FAILED", "reason": str(ex), "err_thr_used": float(curr), "tick": tick}
                 print(f"[Coordinator] SPIKE_FILTER FAILED → {ex}")
             scn[K_PHASE] = PH_FMAX
+            # NEU: Nach Spike-Filter zuerst kurze Segmente entfernen
+            scn[K_PHASE] = PH_CSEG
+            return {'RUNNING_MODAL'}
+
+        if phase == PH_CSEG:
+            # Second-Cycle Step 2: Kurzsegmente-Cleanup
+            try:
+                # Default-Min-Länge: tco_min_seg_len → frames_track → 25
+                scene = context.scene
+                try:
+                    min_len = int(scene.get("tco_min_seg_len", 0)) or int(getattr(scene, "frames_track", 0)) or 25
+                except Exception:
+                    min_len = 25
+                cres = clean_short_segments(
+                    context,
+                    min_len=int(min_len),
+                    treat_muted_as_gap=True,
+                    verbose=False,
+                )
+                scn[K_LAST] = {"phase": PH_CSEG, **(cres if isinstance(cres, dict) else {}), "tick": tick}
+                print(f"[Coordinator] CLEAN_SHORT_SEGMENTS(min_len={min_len}) → {cres}")
+            except Exception as ex:
+                scn[K_LAST] = {"phase": PH_CSEG, "status": "FAILED", "reason": str(ex), "tick": tick}
+                print(f"[Coordinator] CLEAN_SHORT_SEGMENTS FAILED → {ex}")
+            # Weiter zu Max-Marker-Analyse
+            scn[K_PHASE] = PH_FMAX
             return {'RUNNING_MODAL'}
 
         if phase == PH_FMAX:
-            # Second-Cycle Step 2: Max-Marker-Frame suchen
+            # Second-Cycle Step 3: Max-Marker-Frame suchen
             fmr = run_find_max_marker_frame(context, log_each_frame=False, return_observed_min=True)
             scn[K_LAST] = {"phase": PH_FMAX, **fmr, "tick": tick}
             print(f"[Coordinator] FIND_MAX_MARKER → {fmr}")
