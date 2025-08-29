@@ -73,6 +73,10 @@ class PreSolveMetrics:
     scale_median: Optional[float] = None
     scale_norm: Optional[float] = None
 
+    # Fallback/Variante
+    variant: Optional[str] = None  # Name oder Beschreibung der angewandten Variante
+    fallback_attempt: Optional[int] = None  # Index des Fallback-Schritts (0 = Standard)
+
     # Optional: Inlier-Anzahl und Verhältnis der Homographie-Schätzung
     hom_inliers: Optional[int] = None  # Anzahl der Homographie-Inlier
     hom_ratio: Optional[float] = None  # Verhältnis H-Inlier/F-Inlier (1 == degeneriert)
@@ -163,6 +167,8 @@ def estimate_pre_solve_metrics(
     ransac_iters: int = 1000,
     min_track_len: int = 5,
     return_F_and_mask: bool = False,
+    variant: Optional[str] = None,
+    debug: bool = False,
 ) -> PreSolveMetrics:
     """Berechnet Pre-Solve-Kennzahlen für ein Frame-Paar."""
 
@@ -189,7 +195,7 @@ def estimate_pre_solve_metrics(
     if pts1 is None or len(pts1) < 8:
         # Fallback-Paar ohne ausreichende Punkte. Setze alle Metriken auf
         # Standardwerte, kennzeichne als degeneriert.
-        return PreSolveMetrics(
+        res = PreSolveMetrics(
             frame_a=int(frame_a),
             frame_b=int(frame_b),
             inliers=0,
@@ -213,7 +219,12 @@ def estimate_pre_solve_metrics(
             hom_ratio=None,
             scale_median=None,
             scale_norm=None,
+            variant=variant,
+            fallback_attempt=None,
         )
+        if debug:
+            _print_metric_summary(res)
+        return res
 
     # Parallax & Coverage (auf allen Kandidaten)
     disp = np.linalg.norm(pts2 - pts1, axis=1)
@@ -287,7 +298,7 @@ def estimate_pre_solve_metrics(
         # Qualitätsabschätzung bleibt undefiniert, da das Paar degeneriert ist
         quality_score = 0.0
         predicted_error = float("inf")
-        return PreSolveMetrics(
+        res = PreSolveMetrics(
             frame_a=int(frame_a),
             frame_b=int(frame_b),
             inliers=inl_cnt,
@@ -311,7 +322,12 @@ def estimate_pre_solve_metrics(
             hom_ratio=None,
             scale_median=scale_median,
             scale_norm=scale_norm,
+            variant=variant,
+            fallback_attempt=None,
         )
+        if debug:
+            _print_metric_summary(res)
+        return res
 
     # Berechne Sampson-Distanzen der Inlier
     sampson = _sampson_dist(F, pts1[inlier_mask], pts2[inlier_mask])
@@ -493,7 +509,7 @@ def estimate_pre_solve_metrics(
     except Exception:
         degenerate_flag = True
 
-    return PreSolveMetrics(
+    res = PreSolveMetrics(
         frame_a=int(frame_a),
         frame_b=int(frame_b),
         inliers=inl_cnt,
@@ -517,7 +533,12 @@ def estimate_pre_solve_metrics(
         hom_ratio=hom_ratio,
         scale_median=scale_median,
         scale_norm=scale_norm,
+        variant=variant,
+        fallback_attempt=None,
     )
+    if debug:
+        _print_metric_summary(res)
+    return res
 
 
 
@@ -528,20 +549,44 @@ def scan_frame_pairs(
     ransac_thresh_px: float = 1.5,
     ransac_iters: int = 1000,
     min_track_len: int = 5,
+    use_fallback: bool = False,
+    fallback_steps: Optional[List[Dict[str, object]]] = None,
+    return_F_and_mask: bool = False,
+    debug: bool = False,
 ) -> List[PreSolveMetrics]:
-    """Batch-Auswertung mehrerer Frame-Paare."""
+    """Batch-Auswertung mehrerer Frame-Paare.
+
+    Wenn ``use_fallback`` True ist, wird für jedes Frame-Paar versucht, die
+    Qualitätsmetriken mit mehreren Parametervarianten zu berechnen (siehe
+    ``estimate_pre_solve_with_fallback``). Sonst wird der Standardweg benutzt.
+    """
     results: List[PreSolveMetrics] = []
     for a, b in pairs:
-        results.append(
-            estimate_pre_solve_metrics(
+        if use_fallback:
+            m = estimate_pre_solve_with_fallback(
+                clip,
+                a,
+                b,
+                fallback_steps=fallback_steps,
+                ransac_thresh_px=ransac_thresh_px,
+                ransac_iters=ransac_iters,
+                min_track_len=min_track_len,
+                return_F_and_mask=return_F_and_mask,
+                debug=debug,
+            )
+        else:
+            m = estimate_pre_solve_metrics(
                 clip,
                 a,
                 b,
                 ransac_thresh_px=ransac_thresh_px,
                 ransac_iters=ransac_iters,
                 min_track_len=min_track_len,
+                return_F_and_mask=return_F_and_mask,
+                variant="default",
+                debug=debug,
             )
-        )
+        results.append(m)
     return results
 
 
@@ -829,6 +874,117 @@ def worst_tracks_by_residual(
     for idx in order[:top_k]:
         out.append((tracks[idx], float(residuals[idx])))
     return out
+
+
+# =============================
+# Debug/Analyse
+# =============================
+
+def _print_metric_summary(m: PreSolveMetrics) -> None:
+    """Gibt eine zusammenfassende Zeile mit den wichtigsten Kennzahlen aus."""
+    try:
+        var = m.variant or "default"
+        qs_str = f"{m.quality_score:.3f}" if (m.quality_score is not None) else "nan"
+        scale_str = f"{m.scale_median:.3f}" if (m.scale_median is not None) else "nan"
+        hom_str = f"{m.hom_ratio:.3f}" if (m.hom_ratio is not None) else "nan"
+        err_str = (
+            f"{m.predicted_error:.3f}" if (m.predicted_error is not None and np.isfinite(m.predicted_error)) else "inf"
+        )
+        print(
+            f"[Preflight] variant={var} frames=({m.frame_a},{m.frame_b}) "
+            f"inliers={m.inliers}/{m.total} median_sampson={m.median_sampson_px:.3f} "
+            f"qual={qs_str} parallax_med={m.parallax_median_px:.3f} scale_med={scale_str} "
+            f"hom_ratio={hom_str} pred_err={err_str} deg={m.degenerate}"
+        )
+    except Exception as ex:
+        print(f"[Preflight] Fehler beim Zusammenfassen: {ex!r}")
+
+
+def estimate_pre_solve_with_fallback(
+    clip: bpy.types.MovieClip,
+    frame_a: int,
+    frame_b: int,
+    *,
+    fallback_steps: Optional[List[Dict[str, object]]] = None,
+    ransac_thresh_px: float = 1.5,
+    ransac_iters: int = 1000,
+    min_track_len: int = 5,
+    return_F_and_mask: bool = False,
+    debug: bool = False,
+) -> PreSolveMetrics:
+    """
+    Versucht, Preflight-Metriken für ein Frame-Paar mit mehreren Varianten zu berechnen.
+
+    Falls der erste Versuch (Standardparameter) scheitert bzw. die Geometrie degeneriert
+    ist, werden nacheinander alternative Parameter verwendet. Der erste nicht-
+    degenerierte Messwert wird zurückgegeben; falls alle Versuche scheitern, wird das
+    Ergebnis des letzten Versuchs zurückgegeben.
+
+    Args:
+        clip: Aktiver MovieClip.
+        frame_a, frame_b: Frames (Szenen-Indices).
+        fallback_steps: Liste mit Dictionaries, die Parameter überschreiben können.
+        ransac_thresh_px, ransac_iters, min_track_len, return_F_and_mask: Standardwerte
+            für den ersten Versuch.
+        debug: Wenn True, werden die Zusammenfassungen der einzelnen Versuche geloggt.
+
+    Returns:
+        PreSolveMetrics des ersten nicht-degenerierten Versuchs oder der letzte Versuch.
+    """
+    # Standard-Fallback-Pfade definieren, falls nicht angegeben
+    base = {
+        "ransac_thresh_px": ransac_thresh_px,
+        "ransac_iters": ransac_iters,
+        "min_track_len": min_track_len,
+        "return_F_and_mask": return_F_and_mask,
+    }
+    if fallback_steps is None:
+        fallback_steps = [
+            {"variant_name": "default"},
+            {"variant_name": "loose_thresh", "ransac_thresh_px": ransac_thresh_px * 2.0},
+            {
+                "variant_name": "loose_thresh_short_tracks",
+                "ransac_thresh_px": ransac_thresh_px * 2.0,
+                "min_track_len": max(min_track_len // 2, 3),
+            },
+        ]
+
+    last_metrics: Optional[PreSolveMetrics] = None
+    for idx, step in enumerate(fallback_steps):
+        params = base.copy()
+        params.update(step)
+        var_name = params.pop("variant_name", f"fallback-{idx}")
+        # Fallback-Param kann min_track_len oder ransac_thresh_px überschreiben
+        m = estimate_pre_solve_metrics(
+            clip,
+            frame_a,
+            frame_b,
+            ransac_thresh_px=params.get("ransac_thresh_px", ransac_thresh_px),
+            ransac_iters=params.get("ransac_iters", ransac_iters),
+            min_track_len=params.get("min_track_len", min_track_len),
+            return_F_and_mask=params.get("return_F_and_mask", return_F_and_mask),
+            variant=var_name,
+            debug=debug,
+        )
+        # Speichere Fallback-Index
+        m.fallback_attempt = idx
+        last_metrics = m
+        # Akzeptiere, wenn nicht degeneriert und eine finite Fehler-Prognose vorliegt
+        if not m.degenerate and (m.predicted_error is None or (np.isfinite(m.predicted_error))):
+            return m
+    # Wenn kein Versuch überzeugend war, gib den letzten zurück
+    return last_metrics if last_metrics is not None else estimate_pre_solve_metrics(
+        clip,
+        frame_a,
+        frame_b,
+        ransac_thresh_px=ransac_thresh_px,
+        ransac_iters=ransac_iters,
+        min_track_len=min_track_len,
+        return_F_and_mask=return_F_and_mask,
+        variant="fallback-last",
+        debug=debug,
+    )
+
 
 
 # =============================
