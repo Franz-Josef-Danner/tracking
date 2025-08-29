@@ -273,7 +273,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             res = run_detect_adaptive(
                 context,
                 start_frame=None,
-                max_attempts=4,
+                max_attempts=20,
                 selection_policy="only_new",
                 duplicate_strategy="delete",
                 post_pattern_triplet=True,
