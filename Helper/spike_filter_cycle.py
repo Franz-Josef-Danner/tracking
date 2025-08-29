@@ -1,25 +1,6 @@
 # Helper/spike_filter_cycle.py
 # SPDX-License-Identifier: MIT
 from __future__ import annotations
-"""
-Marker-basiertes Spike-Filtering in Pixeln (granular, framebasiert)
--------------------------------------------------------------------
-
-- Bewertet Marker pro Frame im Geschwindigkeitsraum (Pixel/Frame).
-- Pro Frame: v_avg = Durchschnitt aller Track-Geschwindigkeiten (px/frame).
-- Abweichung = |v_track - v_avg|; wenn > threshold_px → Marker wird behandelt.
-- **Default-Aktion: DELETE** (Marker wird hart gelöscht; keine Mutes).
-
-Nachgelagerter Schritt:
-- `clean_short_segments(...)` entfernt zu kurze Segmente (Policy-gesteuert).
-
-Rückgabe (dict):
-* status: "OK" | "FAILED"
-* deleted / muted / selected: Anzahl betroffener Marker (abhängig von action)
-* cleaned_segments: entfernte Segmente (aus clean_short_segments)
-* cleaned_markers: entfernte Marker (aus clean_short_segments)
-* next_threshold: empfohlener Schwellenwert für den nächsten Pass
-"""
 
 from typing import Optional, Dict, Any, List, Tuple
 import bpy
@@ -62,15 +43,6 @@ def _get_tracks_collection(clip) -> Optional[bpy.types.bpy_prop_collection]:
         return clip.tracking.tracks
     except Exception:
         return None
-
-
-def _lower_threshold(thr: float) -> float:
-    """Sanfte Absenkung (–5%); Falls numerisch ident, reduziere um 1.0; clamp ≥ 2.0."""
-    next_thr = float(thr) * 0.95
-    if abs(next_thr - float(thr)) < 1e-6 and thr > 0.0:
-        next_thr = float(thr) - 1.0
-    return max(2.0, next_thr)
-
 
 def _to_pixel(vec01, size_xy) -> Tuple[float, float]:
     """Koordinate [0..1] → Pixel."""
