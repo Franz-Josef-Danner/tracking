@@ -76,6 +76,7 @@ K_LAST           = "tco_last"        # letzter Step-Rückgabedatensatz (für UI/
 K_GOTO_FRAME     = "goto_frame"      # Ziel-Frame für Jump
 K_BIDI_ACTIVE    = "bidi_active"     # vom Bidi-Operator gesetzt/gelöscht
 K_BIDI_RESULT    = "bidi_result"     # vom Bidi-Operator gesetzt
+K_DETECT_LOCK    = "tco_detect_lock" # <-- FEHLT aktuell, hier ergänzen
 DETECT_LAST_THRESHOLD_KEY = "last_detection_threshold"  # aus detect.py
 
 PH_FIND   = "FIND_LOW"
