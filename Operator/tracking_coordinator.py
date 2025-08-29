@@ -20,12 +20,7 @@ from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ig
 from ..Helper.spike_filter_cycle import run_marker_spike_filter_cycle  # type: ignore
 from ..Helper.split_cleanup import recursive_split_cleanup  # type: ignore
 from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
-try:
-    from ..Helper.preflight import estimate_pre_solve_metrics, auto_find_best_pairs
-except Exception:
-    # Fallback: nur die Metrik, Autosuche optional
-    from ..Helper.preflight import estimate_pre_solve_metrics
-    auto_find_best_pairs = None  # type: ignore
+
 __all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
 
 # Scene Keys
@@ -77,8 +72,6 @@ def _pause(seconds: float = 0.5) -> None:
         time.sleep(float(seconds))
     except Exception:
         pass
-
-# (Preflight-Scene-Props werden zentral in __init__.py registriert)
 
 # ---------------------------------------------------------------------------
 # Utilities
@@ -387,7 +380,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     # ---------------- Lifecycle ----------------
 
-    def _run_pre_flight_helpers(self, context) -> None:
+    def _run_bootstrap_helpers(self, context) -> None:
+        """Nur Basishilfen – kein Preflight mehr."""
         # tracker_settings (defensiv)
         try:
             from ..Helper.tracker_settings import apply_tracker_settings  # type: ignore
@@ -459,7 +453,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._pending_eval_after_solve = False
         self._did_refine_this_cycle = False
 
-        # --- NEU: Solve-Error-Merker zurücksetzen ---
+        # --- Solve-Error-Merker zurücksetzen ---
         self._last_solve_error = None
         self._same_error_repeat_count = 0
 
@@ -467,44 +461,45 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     def _state_init(self, context):
         print("[Coord] INIT → BOOTSTRAP")
-        self._run_pre_flight_helpers(context)
+        self._run_bootstrap_helpers(context)
         print("[Coord] BOOTSTRAP → FIND_LOW")
+        self._state = "FIND_LOW")
+        return {"RUNNING_MODAL"}
+
+def _state_find_low(self, context):
+    if not _have_clip(context):
+        print("[Coord] FIND_LOW → no active clip → retry")
+        return {"RUNNING_MODAL"}
+
+    ok, result = _safe_call(run_find_low_marker_frame, context)
+    if not ok or not isinstance(result, dict):
+        print(f"[Coord] FIND_LOW → FAILED (exception/invalid) → treat as NONE")
+        result = {"status": "NONE", "reason": "exception-or-invalid-result"}
+
+    status = str(result.get("status", "NONE")).upper()
+    if status == "FOUND":
+        frame = int(result.get("frame", context.scene.frame_current))
+        context.scene[_GOTO_KEY] = frame
+        self._jump_done = False
+        print(f"[Coord] FIND_LOW → FOUND frame={frame} → JUMP")
+        self._state = "JUMP"
+    else:
+        # NEU: direkt Spike-Filter mit fixem Threshold=10 ausführen
+        print("[Coord] FIND_LOW → NONE → run_marker_spike_filter_cycle(threshold=10)")
+        ok, res = _safe_call(
+            run_marker_spike_filter_cycle,
+            context,
+            track_threshold=10.0,
+            action="DELETE",          # oder "MUTE", je nach gewünschtem Verhalten
+            run_segment_cleanup=True,
+        )
+        print(f"[Coord] SPIKE(fixed=10) → {res if ok else 'FAILED'}")
+
+        # danach zurück zu FIND_LOW
         self._state = "FIND_LOW"
-        return {"RUNNING_MODAL"}
 
-    def _state_find_low(self, context):
-        if not _have_clip(context):
-            print("[Coord] FIND_LOW → no active clip → retry")
-            return {"RUNNING_MODAL"}
+    return {"RUNNING_MODAL"}
 
-        ok, result = _safe_call(run_find_low_marker_frame, context)
-        if not ok or not isinstance(result, dict):
-            print(f"[Coord] FIND_LOW → FAILED (exception/invalid) → treat as NONE")
-            result = {"status": "NONE", "reason": "exception-or-invalid-result"}
-
-        status = str(result.get("status", "NONE")).upper()
-        if status == "FOUND":
-            frame = int(result.get("frame", context.scene.frame_current))
-            context.scene[_GOTO_KEY] = frame
-            self._jump_done = False
-            print(f"[Coord] FIND_LOW → FOUND frame={frame} → JUMP")
-            self._state = "JUMP"
-        else:
-            # NONE → Zyklus starten
-            print("[Coord] FIND_LOW → NONE → CYCLE_START (FIND_MAX↔SPIKE, max iterations: {0})".format(_CYCLE_MAX_ITER))
-            self._cycle_active = True
-            self._cycle_target_frame = None
-            self._cycle_iterations = 0
-
-            # harter Reset für jeden neuen Cycle
-            self._spike_threshold = float(
-                getattr(context.scene, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START
-            )
-            print(f"[Coord] CYCLE_START → reset spike start = {self._spike_threshold:.2f}")
-
-            self._did_refine_this_cycle = False
-            self._state = "CYCLE_FIND_MAX"
-        return {"RUNNING_MODAL"}
 
     # ---------------- JUMP/DETECT/TRACK/CLEAN_SHORT ----------------
 
@@ -780,104 +775,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # ---------------- SOLVE → EVAL → CLEANUP ----------------
 
     def _state_solve(self, context):
-        """Vor dem Solve zwingend Preflight prüfen. Bei Fehlversuch oder schlechtem
-        Ergebnis KEIN Solve, sondern zurück zu FIND_LOW (fail-safe)."""
-        preflight_ok = False
-        try:
-            clip = _get_active_clip(context)
-            if clip is None:
-                raise RuntimeError("no active clip")
-    
-            scn = context.scene
-            target = _scene_float(scn, "error_track", 0.0)
-            thresh = target * 2.0
-    
-            # Kandidatenpaar bestimmen (Auto-Suche → Fallback auf current+10)
-            if auto_find_best_pairs:
-                best = auto_find_best_pairs(
-                    clip,
-                    ransac_thresh_px=thresh,
-                    # sinnvolle Defaults; kannst du im Helper tunen
-                    coarse_stride=50, fine_stride=10, deltas=(8, 12, 16, 24, 32),
-                    min_inliers=12, max_median_sampson=thresh, min_quality=0.2,
-                    topk=12, nms_keep=6, nms_min_sep=6,
-                    ransac_iters=1000, min_track_len=5,
-                )
-                if not best:
-                    raise RuntimeError("auto_find_best_pairs → no candidates")
-                f1, f2 = int(best[0].frame_a), int(best[0].frame_b)
-                metrics = best[0]
-            else:
-                f1 = int(getattr(scn, "frame_current", 0))
-                f2 = f1 + 10
-                metrics = estimate_pre_solve_metrics(
-                    clip, f1, f2, ransac_thresh_px=thresh, ransac_iters=1000, min_track_len=5
-                )
-    
-            # Werte ins UI spiegeln
-            scn.preflight_last_frame_a = int(f1)
-            scn.preflight_last_frame_b = int(f2)
-            scn.preflight_median_sampson = float(metrics.median_sampson_px)
-            scn.preflight_inliers = int(metrics.inliers)
-            scn.preflight_total = int(metrics.total)
-            scn.preflight_coverage = float(metrics.coverage_quadrants)
-            scn.preflight_degenerate = bool(metrics.degenerate)
-    
-            ok_finite = math.isfinite(metrics.median_sampson_px)
-            min_inliers = int(getattr(scn, "preflight_min_inliers", 12))
-            preflight_ok = (
-                (not metrics.degenerate)
-                and ok_finite
-                and (metrics.inliers >= min_inliers)
-                and (metrics.median_sampson_px <= thresh)
-            )
-            scn.preflight_passed = bool(preflight_ok)
-            if preflight_ok:
-                scn.preflight_note = ""
-            else:
-                if metrics.degenerate:
-                    scn.preflight_note = "Degenerate setup erkannt"
-                elif not ok_finite:
-                    scn.preflight_note = "Median Sampson = inf/NaN"
-                elif metrics.inliers < min_inliers:
-                    scn.preflight_note = f"Zu wenige Inlier ({metrics.inliers} < {min_inliers})"
-                else:
-                    scn.preflight_note = "Median > 2 × error_track"
-    
-            med = metrics.median_sampson_px
-            med_txt = f"{med:.3f}" if isinstance(med, (int, float)) and math.isfinite(med) else str(med)
-            print(
-                f"[Coord] SOLVE Preflight → frames=({f1},{f2}) "
-                f"median_sampson={med_txt} "
-                f"inliers={metrics.inliers}/{metrics.total} "
-                f"coverage={int(metrics.coverage_quadrants*100)}% thresh={thresh:.3f}"
-            )
-            # Gate-Outcome klar sichtbar ausgeben
-            try:
-                note = getattr(scn, "preflight_note", "")
-            except Exception:
-                note = ""
-            print(f"[Coord] SOLVE Preflight Gate → passed={bool(preflight_ok)} note='{note}'")
-            if _is_verbose():
-                try:
-                    md = metrics.as_dict() if hasattr(metrics, "as_dict") else {k: getattr(metrics, k) for k in dir(metrics) if not k.startswith('_')}
-                except Exception:
-                    md = {}
-                print(f"[Coord] SOLVE Preflight detail → { _kv(md) }")
-    
-        except Exception as ex:
-            # **WICHTIG**: Kein Solve bei Fehlern im Preflight
-            print(f"[Coord] SOLVE Preflight FAILED → abort solve: {ex!r}")
-            preflight_ok = False
-    
-        if not preflight_ok:
-            print("[Coord] SOLVE → Preflight nicht bestanden → zurück zu FIND_LOW")
-            self._pending_eval_after_solve = False
-            self._did_refine_this_cycle = False
-            self._state = "FIND_LOW"
-            return {"RUNNING_MODAL"}
-    
-        # --- Nur wenn Preflight OK → Solve ausführen ---
+        """Direkter Solve ohne Preflight-Gate."""
+        print("[Coord] SOLVE → direct solve (preflight removed)")
         _select_all_tracks_blocking(context)
         _pause(0.05)
         try:
@@ -995,7 +894,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             run_projection_spike_filter_cycle,
             context,
             track_threshold=thr,
-            run_segment_cleanup=False,   # <— von True auf False
+            run_segment_cleanup=False,   # <— bewusst False
             treat_muted_as_gap=True,
         )
 
@@ -1069,13 +968,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
 def register():
     register_scene_state()
-    # Preflight-Props kommen aus __init__.py
     bpy.utils.register_class(CLIP_OT_tracking_coordinator)
 
 
 def unregister():
     bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
-    # Preflight-Props werden in __init__.py entfernt
     unregister_scene_state()
 
 
