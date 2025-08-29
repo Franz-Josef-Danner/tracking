@@ -7,8 +7,7 @@ tracking_coordinator.py – Orchestrator-Zyklus (find → jump → detect → bi
 
 from __future__ import annotations
 import bpy
-import time
-from typing import Dict, Any, Optional
+from typing import Dict
 
 # -------------------------
 # robuste Importe (Package/Flat)
@@ -28,20 +27,14 @@ try:
 except Exception:
     from Helper.detect import run_detect_adaptive  # type: ignore
 
-# CLIP_OT_bidirectional_track ist ein Operator – wir rufen ihn über bpy.ops auf.
-# (Er setzt scene["bidi_active"]/["bidi_result"] selbst.) filecite: turn0file0 
-
-# -------------------------
 # Scene Keys
-# -------------------------
 K_CYCLE_ACTIVE   = "tco_cycle_active"
 K_PHASE          = "tco_phase"
-K_LAST           = "tco_last"            # letzter Rückgabedatensatz (Dict)
-K_REPEAT_MAP     = "tco_repeat_map"      # (nur Info; echte Map lebt im Operator-Kontext)
-K_GOTO_FRAME     = "goto_frame"          # von jump_to_frame respektiert
-K_BIDI_ACTIVE    = "bidi_active"         # gesetzt von CLIP_OT_bidirectional_track
-K_BIDI_RESULT    = "bidi_result"         # gesetzt von CLIP_OT_bidirectional_track
-K_DETECT_LOCK    = "__detect_lock"       # gesetzt in Helper/detect.py :contentReference[oaicite:3]{index=3}
+K_LAST           = "tco_last"
+K_GOTO_FRAME     = "goto_frame"
+K_BIDI_ACTIVE    = "bidi_active"
+K_BIDI_RESULT    = "bidi_result"
+K_DETECT_LOCK    = "__detect_lock"
 
 PH_FIND   = "FIND_LOW"
 PH_JUMP   = "JUMP"
@@ -52,8 +45,10 @@ PH_FIN    = "FINISH"
 
 TIMER_SEC = 0.20
 
+__all__ = ("CLIP_OT_tracking_coordinator", "bootstrap")  # <-- WICHTIG
+
 # -------------------------
-# Bootstrap
+# Bootstrap (intern)
 # -------------------------
 def _bootstrap(context: bpy.types.Context) -> None:
     scn = context.scene
@@ -63,6 +58,10 @@ def _bootstrap(context: bpy.types.Context) -> None:
     scn.pop(K_GOTO_FRAME, None)
     scn.pop(K_BIDI_RESULT, None)
     scn[K_BIDI_ACTIVE] = False
+
+# Öffentlicher Wrapper für Alt-Code, der `from ... import bootstrap` nutzt
+def bootstrap(context: bpy.types.Context) -> None:
+    _bootstrap(context)
 
 # -------------------------
 # Operator
@@ -74,7 +73,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     _timer = None
-    _repeat_map: Dict[int, int] = {}  # lokale Jump-Wiederholungen
+    _repeat_map: Dict[int, int] = {}
 
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
@@ -88,10 +87,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self.report({'INFO'}, "Coordinator gestartet.")
         return {'RUNNING_MODAL'}
 
-    def cancel(self, context):
+    def cancel(self, context: bpy.types.Context):
         self._cleanup(context)
 
-    def _cleanup(self, context):
+    def _cleanup(self, context: bpy.types.Context):
         if self._timer:
             try:
                 context.window_manager.event_timer_remove(self._timer)
@@ -112,42 +111,31 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         phase = scn.get(K_PHASE, PH_FIND)
 
-        # ---- PHASE: FIND_LOW ----
+        # ---- FIND_LOW ----
         if phase == PH_FIND:
-            res = run_find_low_marker_frame(context)  # :contentReference[oaicite:4]{index=4}
+            res = run_find_low_marker_frame(context)
             scn[K_LAST] = {"phase": PH_FIND, **res}
             st = res.get("status")
             if st == "FOUND":
-                frame = int(res["frame"])
-                scn[K_GOTO_FRAME] = frame
+                scn[K_GOTO_FRAME] = int(res["frame"])
                 scn[K_PHASE] = PH_JUMP
-                return {'RUNNING_MODAL'}
             elif st == "NONE":
                 scn[K_PHASE] = PH_FIN
-                return {'RUNNING_MODAL'}
             else:
-                # FAILED → trotzdem weiter mit DETECT, um evtl. Basis zu erhöhen
-                scn[K_PHASE] = PH_DETECT
-                return {'RUNNING_MODAL'}
-
-        # ---- PHASE: JUMP ----
-        if phase == PH_JUMP:
-            # repeat_map intern führen; jump_to_frame kann eine Map annehmen
-            res = run_jump_to_frame(context, frame=scn.get(K_GOTO_FRAME), repeat_map=self._repeat_map)  # :contentReference[oaicite:5]{index=5}
-            scn[K_LAST] = {"phase": PH_JUMP, **res}
-            if res.get("status") == "OK":
-                scn[K_PHASE] = PH_DETECT
-            else:
-                # Jump fehlgeschlagen → trotzdem DETECT versuchen (robust)
                 scn[K_PHASE] = PH_DETECT
             return {'RUNNING_MODAL'}
 
-        # ---- PHASE: DETECT (synchron, aber mit internem Lock) ----
+        # ---- JUMP ----
+        if phase == PH_JUMP:
+            res = run_jump_to_frame(context, frame=scn.get(K_GOTO_FRAME), repeat_map=self._repeat_map)
+            scn[K_LAST] = {"phase": PH_JUMP, **res}
+            scn[K_PHASE] = PH_DETECT
+            return {'RUNNING_MODAL'}
+
+        # ---- DETECT ----
         if phase == PH_DETECT:
-            # Wenn detect-lock aktiv ist (asynchroner Konflikt), warten wir 1 Tick.
             if scn.get(K_DETECT_LOCK, False):
-                return {'RUNNING_MODAL'}
-            # Adaptive Detect am aktuellen Frame
+                return {'RUNNING_MODAL'}  # warten, wenn detect intern locked
             res = run_detect_adaptive(
                 context,
                 start_frame=None,
@@ -155,56 +143,43 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 selection_policy="only_new",
                 duplicate_strategy="delete",
                 post_pattern_triplet=True,
-            )  # :contentReference[oaicite:6]{index=6}
+            )
             scn[K_LAST] = {"phase": PH_DETECT, **res}
-            st = res.get("status")
-            if st == "FAILED":
-                # Bei FAIL direkt Bidi laufen lassen → evtl. schließen Tracks Lücken
-                scn[K_PHASE] = PH_BIDI_S
-            else:
-                # READY / RUNNING (RUNNING wird intern in detect adaptiert, hier ein Pass pro Tick)
-                scn[K_PHASE] = PH_BIDI_S
+            scn[K_PHASE] = PH_BIDI_S
             return {'RUNNING_MODAL'}
 
-        # ---- PHASE: BIDI_START → Operator starten, dann WAIT ----
+        # ---- BIDI_START ----
         if phase == PH_BIDI_S:
             if scn.get(K_BIDI_ACTIVE, False):
-                # Bidi läuft bereits (z. B. manuell gestartet) → warten
                 scn[K_PHASE] = PH_BIDI_W
                 return {'RUNNING_MODAL'}
-            # Operator starten (UI-Kontext wird im Operator intern gehandhabt)
             try:
-                bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')  # startet modal und setzt Flags :contentReference[oaicite:7]{index=7}
+                bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
                 scn[K_PHASE] = PH_BIDI_W
             except Exception as ex:
                 scn[K_LAST] = {"phase": PH_BIDI_S, "status": "FAILED", "reason": str(ex)}
-                # Wenn Bidi nicht startet, zur Sicherheit direkt weiter zum nächsten FIND
                 scn[K_PHASE] = PH_FIND
             return {'RUNNING_MODAL'}
 
-        # ---- PHASE: BIDI_WAIT → bis bidi_active False ----
+        # ---- BIDI_WAIT ----
         if phase == PH_BIDI_W:
             if scn.get(K_BIDI_ACTIVE, False):
-                return {'RUNNING_MODAL'}  # weiter warten
-            # Fertig → Ergebnis prüfen, dann NÄCHSTER Zyklus (FIND)
-            result = scn.get(K_BIDI_RESULT, "")
-            scn[K_LAST] = {"phase": PH_BIDI_W, "bidi_result": result}
+                return {'RUNNING_MODAL'}
+            scn[K_LAST] = {"phase": PH_BIDI_W, "bidi_result": scn.get(K_BIDI_RESULT, "")}
             scn[K_PHASE] = PH_FIND
             return {'RUNNING_MODAL'}
 
-        # ---- PHASE: FINISH ----
+        # ---- FINISH ----
         if phase == PH_FIN:
             return self._finish(context)
 
-        # Fallback
         scn[K_PHASE] = PH_FIND
         return {'RUNNING_MODAL'}
 
-    def _finish(self, context):
+    def _finish(self, context: bpy.types.Context):
         self._cleanup(context)
         self.report({'INFO'}, "Coordinator beendet.")
         return {'FINISHED'}
-
 
 # -------------------------
 # Registrierung
