@@ -27,6 +27,7 @@ _LOCK_KEY = "__detect_lock"
 _GOTO_KEY = "goto_frame"
 _MAX_DETECT_ATTEMPTS = 8
 
+_last_solve_error: Optional[float] = None
 _same_error_repeat_count: int = 0
 
 _BIDI_ACTIVE_KEY = "bidi_active"
@@ -96,6 +97,45 @@ def _scene_float(scene: bpy.types.Scene, key: str, default: float) -> float:
 def _have_clip(context: bpy.types.Context) -> bool:
     space = getattr(context, "space_data", None)
     return bool(getattr(space, "type", None) == "CLIP_EDITOR" and getattr(space, "clip", None))
+
+
+def _current_solve_error(context: bpy.types.Context) -> Optional[float]:
+    """Average-Error aus aktiver Reconstruction (oder None)."""
+    space = getattr(context, "space_data", None)
+    clip = space.clip if (getattr(space, "type", None) == "CLIP_EDITOR" and getattr(space, "clip", None)) else None
+    if clip is None:
+        try:
+            clip = bpy.data.movieclips[0] if bpy.data.movieclips else None
+        except Exception:
+            clip = None
+    if not clip:
+        return None
+    try:
+        recon = clip.tracking.objects.active.reconstruction
+        if not getattr(recon, "is_valid", False):
+            return None
+        if hasattr(recon, "average_error"):
+            return float(recon.average_error)
+    except Exception:
+        return None
+    return None
+
+
+def _wait_for_valid_reconstruction(
+    context: bpy.types.Context, *, timeout_s: float, poll_s: float = 0.05
+) -> Optional[float]:
+    """Pollt bis valide Reconstruction oder Timeout; liefert avg_error oder None."""
+    deadline = time.monotonic() + float(timeout_s)
+    while time.monotonic() < deadline:
+        err = _current_solve_error(context)
+        if err is not None:
+            return float(err)
+        try:
+            time.sleep(float(poll_s))
+        except Exception:
+            pass
+    return None
+
 
 # ---- Split-Cleanup Helpers (blocking) ----
 
@@ -312,6 +352,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     _spike_threshold: float = _DEFAULT_SPIKE_START
     _spike_floor: float = 10.0            # NEU: Ziel-Untergrenze
     _spike_floor_hit: bool = False        # NEU: wurde 10.0 bereits gefahren?
+
+    # Solve/Eval/Refine
+    _pending_eval_after_solve: bool = False
+    _did_refine_this_cycle: bool = False
+
+    # --- NEU: Solve-Error-Merker ---
+    # Klassenattribute → existieren garantiert, auch falls _bootstrap nicht lief
+    _last_solve_error: Optional[float] = None
+    _same_error_repeat_count: int = 0
 
     @classmethod
     def poll(cls, context):
@@ -544,8 +593,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     def _state_cycle_find_max(self, context):
         if not self._cycle_active:
-            print("[Coord] CYCLE_FIND_MAX reached with inactive cycle → FIND_LOW")
-            self._state = "FIND_LOW"
+            print("[Coord] CYCLE_FIND_MAX reached with inactive cycle → FINALIZE")
+            self._state = "FINALIZE"
             return {"RUNNING_MODAL"}
 
         print(f"[Coord] CYCLE_FIND_MAX → check (current deletion-iterations={self._cycle_iterations}/{_CYCLE_MAX_ITER})")
@@ -649,14 +698,14 @@ def _state_cycle_spike(self, context):
         # **NEU: Solve erst NACHDEM der Floor 10.0 mindestens einmal gefahren wurde**
         # und entweder nichts mehr betroffen ist ODER das Safeguard greift.
         if self._spike_floor_hit and (muted == 0 or self._cycle_iterations > _CYCLE_MAX_ITER):
-            print("[Coord] CYCLE_SPIKE → floor erreicht & keine weiteren Effekte (oder Limit) → SPLIT_CLEANUP → zurück zu FIND_LOW")
-            self._cycle_active = True  # Cycle bleibt aktiv, bis keine Low/Max mehr auftreten
+            print("[Coord] CYCLE_SPIKE → floor erreicht & keine weiteren Effekte (oder Limit) → SPLIT_CLEANUP → SOLVE")
+            self._cycle_active = False
             _run_split_cleanup_blocking(context)
             _pause(0.5)
 
             try:
                 from ..Helper.clean_short_segments import clean_short_segments  # type: ignore
-                seg_min = int(getattr(context.scene, "tco_min_seg_len", 0)) or int(getattr(context.scene, "frames_track", 0)) or 25
+                seg_min = int(getattr(context.scene, "tco_min_seg_len", 0))                               or int(getattr(context.scene, "frames_track", 0)) or 25
                 css_res = clean_short_segments(context, min_len=seg_min, treat_muted_as_gap=True, verbose=True)
                 print(f"[Coord] post-SPLIT(floor) → clean_short_segments(min_len={seg_min}) → {css_res}")
             except Exception as ex:
@@ -671,8 +720,9 @@ def _state_cycle_spike(self, context):
                 print(f"[Coord] CLEAN_SHORT (post-split, floor) failed: {ex!r}")
             _pause(0.5)
 
-            # NEU: statt SOLVE → zurück in den Low/Max-Loop
-            self._state = "FIND_LOW"
+            print("[Coord] CYCLE_SPIKE → SOLVE")
+            self._pending_eval_after_solve = True
+            self._state = "SOLVE"
             return {"RUNNING_MODAL"}
     except Exception as ex:
         print(f"[Coord] CYCLE_SPIKE failed: {ex!r}")
@@ -847,6 +897,8 @@ def _state_cycle_spike(self, context):
                 return self._state_cycle_find_max(context)
             elif s == "CYCLE_SPIKE":
                 return self._state_cycle_spike(context)
+            elif s == "SOLVE":
+                return self._state_solve(context)
             elif s == "EVAL":
                 return self._state_eval(context)
             elif s == "CLEANUP":
