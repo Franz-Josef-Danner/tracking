@@ -11,10 +11,12 @@ Lizenz: MIT
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple, Iterable
 
 import bpy
 import numpy as np
+
+__all__ = ["quadrant_coverage"]
 
 # =============================
 # Datenstrukturen & API
@@ -81,6 +83,42 @@ class PreSolveMetrics:
 # =============================
 # Public API
 # =============================
+def quadrant_coverage(
+    coords_px: Iterable[Tuple[float, float]],
+    width: float,
+    height: float,
+    *,
+    min_per_quadrant: int = 3
+) -> Tuple[float, Tuple[int, int, int, int]]:
+    """
+    Bewertet die räumliche Abdeckung der 2D-Punkte.
+    - Teilt das Bild in 4 Quadranten (Q1..Q4).
+    - Zählt Punkte pro Quadrant.
+    - Liefert (coverage_ratio, (n_q1, n_q2, n_q3, n_q4)),
+      wobei coverage_ratio = Anteil der Quadranten mit >= min_per_quadrant Punkten.
+    """
+    w = float(width) if width else 1.0
+    h = float(height) if height else 1.0
+    mx, my = 0.5 * w, 0.5 * h
+
+    n_q1 = n_q2 = n_q3 = n_q4 = 0  # Konvention:
+    # Q1: x>=mx, y<my (oben rechts); Q2: x<mx, y<my (oben links)
+    # Q3: x<mx, y>=my (unten links); Q4: x>=mx, y>=my (unten rechts)
+
+    for (x, y) in coords_px:
+        if x >= mx and y < my:
+            n_q1 += 1
+        elif x < mx and y < my:
+            n_q2 += 1
+        elif x < mx and y >= my:
+            n_q3 += 1
+        else:
+            n_q4 += 1
+
+    counts = (n_q1, n_q2, n_q3, n_q4)
+    covered = sum(1 for c in counts if c >= int(min_per_quadrant))
+    ratio = covered / 4.0
+    return ratio, counts
 
 def scan_frame_pairs(
     clip: bpy.types.MovieClip,
