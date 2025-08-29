@@ -463,45 +463,46 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         print("[Coord] INIT → BOOTSTRAP")
         self._run_bootstrap_helpers(context)
         print("[Coord] BOOTSTRAP → FIND_LOW")
-        self._state = "FIND_LOW")
-        return {"RUNNING_MODAL"}
-
-def _state_find_low(self, context):
-    if not _have_clip(context):
-        print("[Coord] FIND_LOW → no active clip → retry")
-        return {"RUNNING_MODAL"}
-
-    ok, result = _safe_call(run_find_low_marker_frame, context)
-    if not ok or not isinstance(result, dict):
-        print(f"[Coord] FIND_LOW → FAILED (exception/invalid) → treat as NONE")
-        result = {"status": "NONE", "reason": "exception-or-invalid-result"}
-
-    status = str(result.get("status", "NONE")).upper()
-    if status == "FOUND":
-        frame = int(result.get("frame", context.scene.frame_current))
-        context.scene[_GOTO_KEY] = frame
-        self._jump_done = False
-        print(f"[Coord] FIND_LOW → FOUND frame={frame} → JUMP")
-        self._state = "JUMP"
-    else:
-        # NEU: direkt Spike-Filter mit fixem Threshold=10 ausführen
-        print("[Coord] FIND_LOW → NONE → run_marker_spike_filter_cycle(threshold=10)")
-        ok, res = _safe_call(
-            run_marker_spike_filter_cycle,
-            context,
-            track_threshold=10.0,
-            action="DELETE",          # oder "MUTE", je nach gewünschtem Verhalten
-            run_segment_cleanup=True,
-        )
-        print(f"[Coord] SPIKE(fixed=10) → {res if ok else 'FAILED'}")
-
-        # danach zurück zu FIND_LOW
         self._state = "FIND_LOW"
+        return {"RUNNING_MODAL"}
 
-    return {"RUNNING_MODAL"}
+    def _state_find_low(self, context):
+        if not _have_clip(context):
+            print("[Coord] FIND_LOW → no active clip → retry")
+            return {"RUNNING_MODAL"}
 
+        ok, result = _safe_call(run_find_low_marker_frame, context)
+        if not ok or not isinstance(result, dict):
+            print(f"[Coord] FIND_LOW → FAILED (exception/invalid) → treat as NONE")
+            result = {"status": "NONE", "reason": "exception-or-invalid-result"}
+
+        status = str(result.get("status", "NONE")).upper()
+        if status == "FOUND":
+            frame = int(result.get("frame", context.scene.frame_current))
+            context.scene[_GOTO_KEY] = frame
+            self._jump_done = False
+            print(f"[Coord] FIND_LOW → FOUND frame={frame} → JUMP")
+            self._state = "JUMP"
+        else:
+            # NEW: Direct spike filtering with a fixed threshold of 10, then retry FIND_LOW
+            print("[Coord] FIND_LOW → NONE → spike_filter_cycle(fixed threshold=10, action=DELETE)")
+            ok_spike, res_spike = _safe_call(
+                run_marker_spike_filter_cycle,
+                context,
+                track_threshold=10.0,
+                action="DELETE",
+                run_segment_cleanup=True,
+            )
+            if ok_spike:
+                print(f"[Coord] SPIKE(fixed=10) → {res_spike}")
+            else:
+                print(f"[Coord] SPIKE(fixed=10) failed: {res_spike!r}")
+            # Immediately loop back to FIND_LOW
+            self._state = "FIND_LOW"
+        return {"RUNNING_MODAL"}
 
     # ---------------- JUMP/DETECT/TRACK/CLEAN_SHORT ----------------
+
 
     def _state_jump(self, context):
         from ..Helper.jump_to_frame import run_jump_to_frame  # type: ignore
