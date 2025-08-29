@@ -44,6 +44,11 @@ try:
     from ..Helper.clean_short_segments import clean_short_segments
 except Exception:
     from Helper.clean_short_segments import clean_short_segments  # type: ignore
+
+try:
+    from ..Helper.marker_adapt_helper import run_marker_adapt_boost
+except Exception:
+    from Helper.marker_adapt_helper import run_marker_adapt_boost  # type: ignore
 # ------------------------------------------------------------
 # Utility
 # ------------------------------------------------------------
@@ -342,6 +347,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             res = run_jump_to_frame(context, frame=scn.get(K_GOTO_FRAME), repeat_map=self._repeat_map)
             scn[K_LAST] = {"phase": PH_JUMP, **res, "tick": tick}
             print(f"[Coordinator] JUMP → {res}")
+
+            # Wenn derselbe Frame mehrfach angesprungen wird → Marker Adapt Trigger
+            if res.get("repeat_count", 0) > 1:
+                try:
+                    run_marker_adapt_boost(context)
+                    print("[Coordinator] marker_adapt_boost ausgelöst")
+                except Exception as ex:
+                    print(f"[Coordinator] marker_adapt_boost FAILED → {ex}")
+
             scn[K_PHASE] = PH_DETECT
             return {'RUNNING_MODAL'}
 
