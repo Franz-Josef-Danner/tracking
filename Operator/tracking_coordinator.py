@@ -9,6 +9,8 @@ tracking_coordinator.py – Orchestrator-Zyklus (find → jump → detect → bi
 from __future__ import annotations
 import bpy
 from typing import Dict, Optional
+from ..Helper.bidirectional_track import CLIP_OT_bidirectional_track
+
 print(f"[Coordinator] LOADED from {__file__}")
 
 # ------------------------------------------------------------
