@@ -303,7 +303,27 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if scn.get(K_DETECT_LOCK, False):
                 print("[Coordinator] DETECT locked → wait")
                 return {'RUNNING_MODAL'}
-                
+            # Zentrales Wiederholungslimit (UI/Scene-property override-bar)
+            max_attempts = int(scn.get("detect_max_attempts", 20))
+            res = {}
+            start_frame = None
+            for attempt in range(max_attempts):
+                res = run_detect_once(
+                    context,
+                    start_frame=start_frame,
+                    selection_policy="only_new",
+                    duplicate_strategy="delete",
+                    post_pattern_triplet=True,
+                )
+                st = res.get("status")
+                scn[K_LAST] = {"phase": PH_DETECT, **res, "attempt": attempt + 1, "tick": tick}
+                print(f"[Coordinator] DETECT attempt {attempt+1}/{max_attempts} → {res}")
+                if st in ("READY", "FAILED"):
+                    break
+                start_frame = res.get("frame", start_frame)
+            scn[K_PHASE] = PH_BIDI_S
+            return {'RUNNING_MODAL'}
+
         if phase == PH_SPIKE:
             # Second-Cycle Step 1: Spike-Filter mit aktuellem Threshold
             _, curr = _get_err_threshold_pair(scn)
@@ -343,30 +363,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 # → erneut Spike-Filter laufen lassen
                 scn[K_PHASE] = PH_SPIKE
             return {'RUNNING_MODAL'}
+            # (ENTFERNT) Der DETECT-Loop war hier fälschlich hinter PH_FMAX platziert und somit unerreichbar.
 
-            # Zentrales Wiederholungslimit (UI/Scene-property override-bar)
-            max_attempts = int(scn.get("detect_max_attempts", 20))
-        
-            res = {}
-            start_frame = None
-            for attempt in range(max_attempts):
-                res = run_detect_once(
-                    context,
-                    start_frame=start_frame,
-                    selection_policy="only_new",
-                    duplicate_strategy="delete",
-                    post_pattern_triplet=True,
-                )
-                st = res.get("status")
-                scn[K_LAST] = {"phase": PH_DETECT, **res, "attempt": attempt + 1, "tick": tick}
-                print(f"[Coordinator] DETECT attempt {attempt+1}/{max_attempts} → {res}")
-                if st in ("READY", "FAILED"):
-                    break
-                start_frame = res.get("frame", start_frame)
-        
-            scn[K_PHASE] = PH_BIDI_S
-            return {'RUNNING_MODAL'}
-        
         if phase == PH_BIDI_S:
             # Falls Bidi bereits aktiv ist, direkt in die Wait-Phase
             if scn.get(K_BIDI_ACTIVE, False):
@@ -401,7 +399,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 scn[K_ERR_THR_CURR] = float(scn.get(K_ERR_THR_BASE, scn.get("error_threshold_px", 100.0)))
             except Exception:
                 scn[K_ERR_THR_CURR] = float(scn.get("error_threshold_px", 100.0))
-                scn[K_PHASE] = PH_FIND
+            scn[K_PHASE] = PH_FIND
             return {'RUNNING_MODAL'}
             
         if phase == PH_FIN:
