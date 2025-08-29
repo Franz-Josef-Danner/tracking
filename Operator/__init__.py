@@ -1,6 +1,6 @@
 import bpy
 
-from .Operator.tracking_coordinator import register as _reg_coord, unregister as _unreg_coord
+from .tracking_coordinator import CLIP_OT_tracking_coordinator
 
 classes = (
     CLIP_OT_tracking_coordinator,
