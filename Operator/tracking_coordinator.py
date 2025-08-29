@@ -266,7 +266,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 # NEU: Spike-Filter aufrufen
                 try:
                     # Threshold zentral aus Scene (Fallback 4.0 px)
-                    thr = float(scn.get("error_threshold_px", 4.0))
+                    thr = float(scn.get("error_threshold_px", 100.0))
                     sres = run_marker_spike_filter_cycle(context, track_threshold=thr)
                     scn[K_LAST] = {"phase": "SPIKE_FILTER", **sres, "tick": tick}
                     print(f"[Coordinator] SPIKE_FILTER(thr={thr}) → {sres}")
