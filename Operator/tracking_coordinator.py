@@ -69,6 +69,101 @@ def _bootstrap(context: bpy.types.Context) -> None:
 def bootstrap(context: bpy.types.Context) -> None:
     _bootstrap(context)
 
+# --- NEU: Utility zum robusten Finden eines Windows (bevor _start_timer) ---
+def _pick_window_for_timer(context: bpy.types.Context) -> Optional[bpy.types.Window]:
+    wm = context.window_manager if getattr(context, "window_manager", None) else bpy.context.window_manager
+    # 1) Bevorzugt: aktuelles Window aus context
+    win = getattr(context, "window", None)
+    if win:
+        return win
+
+    # 2) Bevorzugt: Ein Window, das einen CLIP_EDITOR hat
+    wins = list(getattr(wm, "windows", [])) if wm else []
+    for w in wins:
+        try:
+            scr = w.screen
+            if not scr:
+                continue
+            for area in scr.areas:
+                if area.type == 'CLIP_EDITOR':
+                    return w
+        except Exception:
+            continue
+
+    # 3) Fallback: Irgendein Window
+    if wins:
+        return wins[0]
+
+    # 4) Nichts gefunden
+    return None
+
+
+# --- PATCH: _start_timer ersetzt ---
+def _start_timer(self, context: bpy.types.Context) -> None:
+    wm = context.window_manager if getattr(context, "window_manager", None) else bpy.context.window_manager
+    scn = context.scene
+
+    # A) Versuche gezielt ein Window mit CLIP_EDITOR zu bekommen
+    win = _pick_window_for_timer(context)
+    try_paths = []
+
+    # Pfad 1: Timer an gefundenes Window hängen
+    if wm and win:
+        try:
+            self._timer = wm.event_timer_add(TIMER_SEC, window=win)
+            try_paths.append("window=clip_editor")
+        except Exception as ex:
+            try_paths.append(f"window=clip_editor_failed:{ex}")
+
+    # Pfad 2: Timer ohne Window (global)
+    if not self._timer and wm:
+        try:
+            # manche Builds mögen das explizite keyword nicht → ohne kw probieren
+            self._timer = wm.event_timer_add(TIMER_SEC)
+            try_paths.append("window=global_no_kw")
+        except Exception as ex:
+            try_paths.append(f"global_no_kw_failed:{ex}")
+            # letzte Eskalation: explizit window=None
+            try:
+                self._timer = wm.event_timer_add(TIMER_SEC, window=None)
+                try_paths.append("window=None_kw")
+            except Exception as ex2:
+                try_paths.append(f"window=None_kw_failed:{ex2}")
+
+    # Ergebnis protokollieren
+    scn[K_LAST] = {"phase": "TIMER_START", "status": "OK" if self._timer else "FAILED", "paths": try_paths}
+
+    if not self._timer:
+        raise RuntimeError(f"event_timer_add failed via paths={try_paths}")
+
+    wm.modal_handler_add(self)
+
+
+# --- NEU: invoke() hinzufügen, damit Button-Klick den korrekten Pfad nutzt ---
+def invoke(self, context, event):
+    # Direkt hier bootstrap + timer; UI triggert üblicherweise invoke()
+    bootstrap(context)
+    self.report({'INFO'}, "Bootstrap ausgeführt (invoke)")
+    try:
+        self._start_timer(context)
+    except Exception as ex:
+        context.scene[K_LAST] = {"phase": "TIMER_START", "status": "FAILED", "reason": str(ex)}
+        self.report({'ERROR'}, f"Coordinator: Timer-Start fehlgeschlagen: {ex}")
+        return {'CANCELLED'}
+    return {'RUNNING_MODAL'}
+
+
+# --- execute() leicht anpassen, falls jemand per Script aufruft ---
+def execute(self, context):
+    bootstrap(context)
+    self.report({'INFO'}, "Bootstrap ausgeführt (execute)")
+    try:
+        self._start_timer(context)
+    except Exception as ex:
+        context.scene[K_LAST] = {"phase": "TIMER_START", "status": "FAILED", "reason": str(ex)}
+        self.report({'ERROR'}, f"Coordinator: Timer-Start fehlgeschlagen: {ex}")
+        return {'CANCELLED'}
+    return {'RUNNING_MODAL'}
 
 # ------------------------------------------------------------
 # Operator – startet Bootstrap und dann den modalen Orchestrator
