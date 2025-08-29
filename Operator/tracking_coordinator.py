@@ -27,7 +27,6 @@ _LOCK_KEY = "__detect_lock"
 _GOTO_KEY = "goto_frame"
 _MAX_DETECT_ATTEMPTS = 8
 
-_last_solve_error: Optional[float] = None
 _same_error_repeat_count: int = 0
 
 _BIDI_ACTIVE_KEY = "bidi_active"
@@ -97,45 +96,6 @@ def _scene_float(scene: bpy.types.Scene, key: str, default: float) -> float:
 def _have_clip(context: bpy.types.Context) -> bool:
     space = getattr(context, "space_data", None)
     return bool(getattr(space, "type", None) == "CLIP_EDITOR" and getattr(space, "clip", None))
-
-
-def _current_solve_error(context: bpy.types.Context) -> Optional[float]:
-    """Average-Error aus aktiver Reconstruction (oder None)."""
-    space = getattr(context, "space_data", None)
-    clip = space.clip if (getattr(space, "type", None) == "CLIP_EDITOR" and getattr(space, "clip", None)) else None
-    if clip is None:
-        try:
-            clip = bpy.data.movieclips[0] if bpy.data.movieclips else None
-        except Exception:
-            clip = None
-    if not clip:
-        return None
-    try:
-        recon = clip.tracking.objects.active.reconstruction
-        if not getattr(recon, "is_valid", False):
-            return None
-        if hasattr(recon, "average_error"):
-            return float(recon.average_error)
-    except Exception:
-        return None
-    return None
-
-
-def _wait_for_valid_reconstruction(
-    context: bpy.types.Context, *, timeout_s: float, poll_s: float = 0.05
-) -> Optional[float]:
-    """Pollt bis valide Reconstruction oder Timeout; liefert avg_error oder None."""
-    deadline = time.monotonic() + float(timeout_s)
-    while time.monotonic() < deadline:
-        err = _current_solve_error(context)
-        if err is not None:
-            return float(err)
-        try:
-            time.sleep(float(poll_s))
-        except Exception:
-            pass
-    return None
-
 
 # ---- Split-Cleanup Helpers (blocking) ----
 
