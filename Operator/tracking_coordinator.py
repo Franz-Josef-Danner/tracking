@@ -350,6 +350,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     # SPIKE
     _spike_threshold: float = _DEFAULT_SPIKE_START
+    _spike_floor: float = 10.0            # NEU: Ziel-Untergrenze
+    _spike_floor_hit: bool = False        # NEU: wurde 10.0 bereits gefahren?
 
     # Solve/Eval/Refine
     _pending_eval_after_solve: bool = False
@@ -433,6 +435,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         # Spike reset
         self._spike_threshold = float(getattr(scn, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START)
+        self._spike_floor = 10.0
+        self._spike_floor_hit = False
 
         # Solve/Eval/Refine
         self._pending_eval_after_solve = False
@@ -608,138 +612,126 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             thresh = res.get("threshold", "?")
             print(f"[Coord] CYCLE_FIND_MAX → FOUND frame={frame} (count={count} < threshold={thresh})")
 
+            # NEU: Kein Split/Solve – stattdessen Marker nachlegen:
             self._cycle_target_frame = frame
             try:
                 context.scene.frame_set(frame)
             except Exception as ex_set:
                 print(f"[Coord] WARN: frame_set({frame}) failed: {ex_set!r}")
 
-            # Zyklus beenden → erst Split-Cleanup (blocking), dann Segment/Track-Clean, dann Solve
-            self._cycle_active = False
-            print("[Coord] CYCLE_FIND_MAX → SPLIT_CLEANUP (blocking)")
-            _run_split_cleanup_blocking(context)
-            _pause(0.5)
-
-            # Nach Split: kurze Segmente entfernen (robust gegen Mutes/Lücken)
-            try:
-                from ..Helper.clean_short_segments import clean_short_segments  # type: ignore
-                seg_min = int(getattr(context.scene, "tco_min_seg_len", 0)) \
-                          or int(getattr(context.scene, "frames_track", 0)) or 25
-                css_res = clean_short_segments(context, min_len=seg_min, treat_muted_as_gap=True, verbose=True)
-                print(f"[Coord] post-SPLIT → clean_short_segments(min_len={seg_min}) → {css_res}")
-            except Exception as ex:
-                print(f"[Coord] WARN: clean_short_segments failed post-SPLIT: {ex!r}")
-            _pause(0.5)
-
-            try:
-                frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
-                clean_short_tracks(context, min_len=frames_min, verbose=True)
-                print(f"[Coord] CYCLE_FIND_MAX → clean_short_tracks(min_len={frames_min})")
-            except Exception as ex:
-                print(f"[Coord] CLEAN_SHORT (post-split) failed: {ex!r}")
-            _pause(0.5)
-
-            print("[Coord] CYCLE_FIND_MAX → SOLVE")
-            self._pending_eval_after_solve = True
-            self._state = "SOLVE"
-            return {"RUNNING_MODAL"}  # ← wichtig!
+            # Wir bleiben im Cycle, setzen aber einen gezielten JUMP, damit Detect/Track Marker nachlegt:
+            context.scene[_GOTO_KEY] = frame
+            self._jump_done = False
+            print("[Coord] CYCLE_FIND_MAX → JUMP (Marker nachlegen), danach zurück in Spike-Zyklus")
+            self._state = "JUMP"
+            return {"RUNNING_MODAL"}
 
         # NONE/FAILED → SPIKE
         print(f"[Coord] CYCLE_FIND_MAX → {status} → CYCLE_SPIKE")
         self._state = "CYCLE_SPIKE"
         return {"RUNNING_MODAL"}
 
-    def _state_cycle_spike(self, context):
-        if not self._cycle_active:
-            ...
-        use_proj = bool(list(getattr(context.scene, "tco_proj_spike_tracks", []) or []))
+
+def _state_cycle_spike(self, context):
+    if not self._cycle_active:
+        ...
+    use_proj = bool(list(getattr(context.scene, "tco_proj_spike_tracks", []) or []))
+    try:
+        if use_proj:
+            res = run_projection_spike_filter_cycle(
+                context,
+                track_threshold=float(self._spike_threshold),
+                run_segment_cleanup=False,
+            )
+            status = str(res.get("status", "")).upper()
+            muted = int(res.get("deleted", 0) or 0)  # projektion_* meldet "deleted" Marker
+        else:
+            res = run_marker_spike_filter_cycle(
+                context,
+                track_threshold=float(self._spike_threshold),
+                action="MUTE",
+                run_segment_cleanup=False,
+            )
+            status = str(res.get("status", "")).upper()
+            muted = int(res.get("muted", 0) or 0)
+
+        # Vorschlag vom Helper (kann frei sein)
+        next_proposed = float(res.get("next_threshold", self._spike_threshold * 0.9))
+
+        # NEU: deterministisch/monoton fallen, nie unter floor, nie rauf:
+        prev_thr = float(self._spike_threshold)
+        self._spike_threshold = max(min(next_proposed, prev_thr), self._spike_floor)
+
+        if self._spike_threshold <= (self._spike_floor + 1e-6):
+            self._spike_floor_hit = True
+
+        print(
+            f"[Coord] CYCLE_SPIKE → status={status}, affected={muted}, "
+            f"next_proposed={next_proposed:.2f}, "
+            f"applied_next={self._spike_threshold:.2f} (prev={prev_thr:.2f}, floor={self._spike_floor:.2f}, "
+            f"floor_hit={self._spike_floor_hit})"
+        )
+
+        # **Nachlaufende Cleanups** (unverändert)
+        _pause(0.5)
         try:
-            if use_proj:
-                res = run_projection_spike_filter_cycle(
-                    context,
-                    track_threshold=float(self._spike_threshold),
-                    run_segment_cleanup=False,
-                )
-                status = str(res.get("status","")).upper()
-                muted = int(res.get("deleted", 0) or 0)     # projektion_* meldet "deleted" Marker
-            else:
-                res = run_marker_spike_filter_cycle(
-                    context,
-                    track_threshold=float(self._spike_threshold),
-                    action="MUTE",
-                    run_segment_cleanup=False,
-                )
-                status = str(res.get("status","")).upper()
-                muted = int(res.get("muted", 0) or 0)
+            from ..Helper.clean_short_segments import clean_short_segments  # type: ignore
+            seg_min = int(getattr(context.scene, "tco_min_seg_len", 0))                           or int(getattr(context.scene, "frames_track", 0)) or 25
+            css_res = clean_short_segments(context, min_len=seg_min, treat_muted_as_gap=True, verbose=True)
+            print(f"[Coord] CYCLE_SPIKE → clean_short_segments(min_len={seg_min}) → {css_res}")
+        except Exception as ex:
+            print(f"[Coord] WARN: clean_short_segments failed post-SPIKE: {ex!r}")
+        _pause(0.5)
 
-            next_thr = float(res.get("next_threshold", self._spike_threshold * 0.9))
-            print(f"[Coord] CYCLE_SPIKE → status={status}, affected={muted}, next={next_thr:.2f} (curr={self._spike_threshold:.2f})")
-            self._spike_threshold = max(next_thr, 0.0)
-            ...
+        try:
+            frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
+            clean_short_tracks(context, min_len=frames_min, verbose=True)
+            print(f"[Coord] CYCLE_SPIKE → clean_short_tracks(min_len={frames_min})")
+        except Exception as ex:
+            print(f"[Coord] WARN: clean_short_tracks failed post-SPIKE: {ex!r}")
 
-            # **Neu**: segmentweises Clean **nach** dem Spike-Pass (robuster, zentralisiert)
+        # Iterationszählung nur, wenn etwas passiert ist:
+        if muted > 0:
+            self._cycle_iterations += 1
+            print(f"[Coord] CYCLE_SPIKE → affected>0 → deletion-iterations {self._cycle_iterations}/{_CYCLE_MAX_ITER}")
+
+        # **NEU: Solve erst NACHDEM der Floor 10.0 mindestens einmal gefahren wurde**
+        # und entweder nichts mehr betroffen ist ODER das Safeguard greift.
+        if self._spike_floor_hit and (muted == 0 or self._cycle_iterations > _CYCLE_MAX_ITER):
+            print("[Coord] CYCLE_SPIKE → floor erreicht & keine weiteren Effekte (oder Limit) → SPLIT_CLEANUP → SOLVE")
+            self._cycle_active = False
+            _run_split_cleanup_blocking(context)
             _pause(0.5)
+
             try:
                 from ..Helper.clean_short_segments import clean_short_segments  # type: ignore
-                seg_min = int(getattr(context.scene, "tco_min_seg_len", 0)) \
-                          or int(getattr(context.scene, "frames_track", 0)) or 25
+                seg_min = int(getattr(context.scene, "tco_min_seg_len", 0))                               or int(getattr(context.scene, "frames_track", 0)) or 25
                 css_res = clean_short_segments(context, min_len=seg_min, treat_muted_as_gap=True, verbose=True)
-                print(f"[Coord] CYCLE_SPIKE → clean_short_segments(min_len={seg_min}) → {css_res}")
+                print(f"[Coord] post-SPLIT(floor) → clean_short_segments(min_len={seg_min}) → {css_res}")
             except Exception as ex:
-                print(f"[Coord] WARN: clean_short_segments failed post-SPIKE: {ex!r}")
+                print(f"[Coord] WARN: clean_short_segments failed post-SPLIT(floor): {ex!r}")
             _pause(0.5)
 
-            # Optional: zu kurze **Tracks** kappen (nach Segment-Clean)
             try:
                 frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
                 clean_short_tracks(context, min_len=frames_min, verbose=True)
-                print(f"[Coord] CYCLE_SPIKE → clean_short_tracks(min_len={frames_min})")
+                print(f"[Coord] post-SPLIT(floor) → clean_short_tracks(min_len={frames_min})")
             except Exception as ex:
-                print(f"[Coord] WARN: clean_short_tracks failed post-SPIKE: {ex!r}")
+                print(f"[Coord] CLEAN_SHORT (post-split, floor) failed: {ex!r}")
+            _pause(0.5)
 
-            if muted > 0:
-                self._cycle_iterations += 1
-                print(f"[Coord] CYCLE_SPIKE → muted>0 → incremented deletion-iterations to {self._cycle_iterations}/{_CYCLE_MAX_ITER}")
-                if self._cycle_iterations > _CYCLE_MAX_ITER:
-                    print(f"[Coord] CYCLE deletion-iteration limit ... → SPLIT_CLEANUP (blocking)")
-                    self._cycle_active = False
-                    _run_split_cleanup_blocking(context)
-                    _pause(0.5)
-
-                    # Clean-Short-Tracks
-                    # Nach Split: erst Segmente, dann Tracks, dann Solve (mit Pausen)
-                    try:
-                        from ..Helper.clean_short_segments import clean_short_segments  # type: ignore
-                        seg_min = int(getattr(context.scene, "tco_min_seg_len", 0)) \
-                                  or int(getattr(context.scene, "frames_track", 0)) or 25
-                        css_res = clean_short_segments(context, min_len=seg_min, treat_muted_as_gap=True, verbose=True)
-                        print(f"[Coord] post-SPLIT(limit) → clean_short_segments(min_len={seg_min}) → {css_res}")
-                    except Exception as ex:
-                        print(f"[Coord] WARN: clean_short_segments failed post-SPLIT(limit): {ex!r}")
-                    _pause(0.5)
-
-                    # Clean-Short-Tracks
-                    try:
-                        frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
-                        clean_short_tracks(context, min_len=frames_min, verbose=True)
-                        print(f"[Coord] CYCLE_SPIKE → clean_short_tracks(min_len={frames_min})")
-                    except Exception as ex:
-                        print(f"[Coord] CLEAN_SHORT (post-split) failed: {ex!r}")
-                    _pause(0.5)
-
-                    print("[Coord] CYCLE_SPIKE → SOLVE")
-                    self._pending_eval_after_solve = True
-                    self._state = "SOLVE"
-                    return {"RUNNING_MODAL"}  # ← wichtig!
-
-        except Exception as ex:
-            print(f"[Coord] CYCLE_SPIKE failed: {ex!r}")
-            self._state = "CYCLE_FIND_MAX"
+            print("[Coord] CYCLE_SPIKE → SOLVE")
+            self._pending_eval_after_solve = True
+            self._state = "SOLVE"
             return {"RUNNING_MODAL"}
-
-        # Nächster Schritt im Cycle
+    except Exception as ex:
+        print(f"[Coord] CYCLE_SPIKE failed: {ex!r}")
         self._state = "CYCLE_FIND_MAX"
         return {"RUNNING_MODAL"}
+
+    # Nächster Schritt im Cycle: immer wieder prüfen, ob Max-Marker-Frame Unterbrechung notwendig ist
+    self._state = "CYCLE_FIND_MAX"
+    return {"RUNNING_MODAL"}
 
     # ---------------- SOLVE → EVAL → CLEANUP ----------------
 
