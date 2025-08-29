@@ -9,6 +9,7 @@ tracking_coordinator.py – Orchestrator-Zyklus (find → jump → detect → bi
 from __future__ import annotations
 import bpy
 from typing import Dict, Optional
+print(f"[Coordinator] LOADED from {__file__}")
 
 # ------------------------------------------------------------
 # Robuste Importe der Helper (funktionieren als Paket- oder Flat-Layout)
@@ -97,74 +98,6 @@ def _pick_window_for_timer(context: bpy.types.Context) -> Optional[bpy.types.Win
     # 4) Nichts gefunden
     return None
 
-
-# --- PATCH: _start_timer ersetzt ---
-def _start_timer(self, context: bpy.types.Context) -> None:
-    wm = context.window_manager if getattr(context, "window_manager", None) else bpy.context.window_manager
-    scn = context.scene
-
-    # A) Versuche gezielt ein Window mit CLIP_EDITOR zu bekommen
-    win = _pick_window_for_timer(context)
-    try_paths = []
-
-    # Pfad 1: Timer an gefundenes Window hängen
-    if wm and win:
-        try:
-            self._timer = wm.event_timer_add(TIMER_SEC, window=win)
-            try_paths.append("window=clip_editor")
-        except Exception as ex:
-            try_paths.append(f"window=clip_editor_failed:{ex}")
-
-    # Pfad 2: Timer ohne Window (global)
-    if not self._timer and wm:
-        try:
-            # manche Builds mögen das explizite keyword nicht → ohne kw probieren
-            self._timer = wm.event_timer_add(TIMER_SEC)
-            try_paths.append("window=global_no_kw")
-        except Exception as ex:
-            try_paths.append(f"global_no_kw_failed:{ex}")
-            # letzte Eskalation: explizit window=None
-            try:
-                self._timer = wm.event_timer_add(TIMER_SEC, window=None)
-                try_paths.append("window=None_kw")
-            except Exception as ex2:
-                try_paths.append(f"window=None_kw_failed:{ex2}")
-
-    # Ergebnis protokollieren
-    scn[K_LAST] = {"phase": "TIMER_START", "status": "OK" if self._timer else "FAILED", "paths": try_paths}
-
-    if not self._timer:
-        raise RuntimeError(f"event_timer_add failed via paths={try_paths}")
-
-    wm.modal_handler_add(self)
-
-
-# --- NEU: invoke() hinzufügen, damit Button-Klick den korrekten Pfad nutzt ---
-def invoke(self, context, event):
-    # Direkt hier bootstrap + timer; UI triggert üblicherweise invoke()
-    bootstrap(context)
-    self.report({'INFO'}, "Bootstrap ausgeführt (invoke)")
-    try:
-        self._start_timer(context)
-    except Exception as ex:
-        context.scene[K_LAST] = {"phase": "TIMER_START", "status": "FAILED", "reason": str(ex)}
-        self.report({'ERROR'}, f"Coordinator: Timer-Start fehlgeschlagen: {ex}")
-        return {'CANCELLED'}
-    return {'RUNNING_MODAL'}
-
-
-# --- execute() leicht anpassen, falls jemand per Script aufruft ---
-def execute(self, context):
-    bootstrap(context)
-    self.report({'INFO'}, "Bootstrap ausgeführt (execute)")
-    try:
-        self._start_timer(context)
-    except Exception as ex:
-        context.scene[K_LAST] = {"phase": "TIMER_START", "status": "FAILED", "reason": str(ex)}
-        self.report({'ERROR'}, f"Coordinator: Timer-Start fehlgeschlagen: {ex}")
-        return {'CANCELLED'}
-    return {'RUNNING_MODAL'}
-
 # ------------------------------------------------------------
 # Operator – startet Bootstrap und dann den modalen Orchestrator
 # ------------------------------------------------------------
@@ -207,6 +140,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     def _start_timer(self, context: bpy.types.Context) -> None:
         wm = getattr(context, "window_manager", None) or bpy.context.window_manager
         scn = context.scene
+        self.report(
+            {'INFO'},
+            f"Timer status={ 'OK' if self._timer else 'FAILED' } paths={paths}"
+        )
         self._timer = None
         paths = []
 
@@ -251,28 +188,26 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     def invoke(self, context, event):
         bootstrap(context)
-        self.report({'INFO'}, "Bootstrap ausgeführt (invoke)")
-        self._dbg(context, "invoke() entered")
+        self.report({'INFO'}, "Coordinator invoke → Bootstrap OK")
         try:
             self._start_timer(context)
         except Exception as ex:
             context.scene[K_LAST] = {"phase": "TIMER_START", "status": "FAILED", "reason": str(ex)}
-            self.report({'ERROR'}, f"Timer-Start fehlgeschlagen: {ex}")
-            self._dbg(context, f"invoke() → FAILED: {ex}")
+            self.report({'ERROR'}, f"Coordinator: Timer-Start FAILED: {ex}")
             return {'CANCELLED'}
+        self.report({'INFO'}, "Coordinator invoke → Timer running")
         return {'RUNNING_MODAL'}
 
-    def execute(self, context: bpy.types.Context):
+    def execute(self, context):
         bootstrap(context)
-        self.report({'INFO'}, "Bootstrap ausgeführt (execute)")
-        self._dbg(context, "execute() entered")
+        self.report({'INFO'}, "Coordinator execute → Bootstrap OK")
         try:
             self._start_timer(context)
         except Exception as ex:
             context.scene[K_LAST] = {"phase": "TIMER_START", "status": "FAILED", "reason": str(ex)}
-            self.report({'ERROR'}, f"Timer-Start fehlgeschlagen: {ex}")
-            self._dbg(context, f"execute() → FAILED: {ex}")
+            self.report({'ERROR'}, f"Coordinator: Timer-Start FAILED: {ex}")
             return {'CANCELLED'}
+        self.report({'INFO'}, "Coordinator execute → Timer running")
         return {'RUNNING_MODAL'}
 
     def cancel(self, context: bpy.types.Context):
@@ -391,8 +326,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 # ------------------------------------------------------------
 # Registrierung
 # ------------------------------------------------------------
-def register():
-    bpy.utils.register_class(CLIP_OT_tracking_coordinator)
+def unregister():
+    print(f"[Coordinator] unregister() from {__file__}")
+    bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
+
 
 def unregister():
     bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
