@@ -64,10 +64,10 @@ PH_DETECT = "DETECT"
 PH_BIDI_S = "BIDI_START"
 PH_BIDI_W = "BIDI_WAIT"
 PH_FIN    = "FINISH"
-PH_CSEG   = "CLEAN_SHORT_SEGMENTS"   # Second-Cycle Step 1
-PH_CTRK   = "CLEAN_SHORT_TRACKS"     # Second-Cycle Step 2
-PH_SPIKE  = "SPIKE_FILTER"           # Second-Cycle Step 3
-PH_FMAX   = "FIND_MAX_MARKER"        # Second-Cycle Step 4
+PH_CSEG   = "CLEAN_SHORT_SEGMENTS"   # Second-Cycle (nach SPIKE)
+PH_CTRK   = "CLEAN_SHORT_TRACKS"     # Second-Cycle (nach CSEG)
+PH_SPIKE  = "SPIKE_FILTER"           # Second-Cycle (erster Schritt)
+PH_FMAX   = "FIND_MAX_MARKER"        # Second-Cycle (nach CTRK)
 # Einmaliges Init-Flag für Zyklus 2 (Select-All am Eintritt)
 K_CYCLE2_INIT = "tco_cycle2_init_done"
 # Error-Threshold-State (für Second-Cycle)
@@ -333,7 +333,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     n_sel = _select_all_tracks(context)
                     scn[K_CYCLE2_INIT] = True
                     print(f"[Coordinator] CYCLE2_INIT → selected all tracks: {n_sel}")
-                scn[K_PHASE] = PH_CSEG
+                scn[K_PHASE] = PH_SPIKE
             else:
                 scn[K_PHASE] = PH_DETECT
             return {'RUNNING_MODAL'}
@@ -388,55 +388,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             scn[K_PHASE] = PH_BIDI_S
             return {'RUNNING_MODAL'}
 
+            # Second-Cycle: Spike-Filter (erster Schritt)
         if phase == PH_CSEG:
-            # Second-Cycle Step 1: Kurzsegmente-Cleanup
-            try:
-                scene = context.scene
-                try:
-                    min_len = int(scene.get("tco_min_seg_len", 0)) or int(getattr(scene, "frames_track", 0)) or 25
-                except Exception:
-                    min_len = 25
-                cres = clean_short_segments(
-                    context,
-                    min_len=int(min_len),
-                    treat_muted_as_gap=True,
-                    verbose=False,
-                )
-                scn[K_LAST] = {"phase": PH_CSEG, **(cres if isinstance(cres, dict) else {}), "tick": tick}
-                print(f"[Coordinator] CLEAN_SHORT_SEGMENTS(min_len={min_len}) → {cres}")
-            except Exception as ex:
-                scn[K_LAST] = {"phase": PH_CSEG, "status": "FAILED", "reason": str(ex), "tick": tick}
-                print(f"[Coordinator] CLEAN_SHORT_SEGMENTS FAILED → {ex}")
-            scn[K_PHASE] = PH_CTRK
-            return {'RUNNING_MODAL'}
-
-        if phase == PH_CTRK:
-            # Second-Cycle Step 2: Kurztracks-Cleanup
-            try:
-                processed, affected = clean_short_tracks(context)
-                scn[K_LAST] = {"phase": PH_CTRK, "status": "OK", "processed": processed, "affected": affected, "tick": tick}
-                print(f"[Coordinator] CLEAN_SHORT_TRACKS → processed={processed}, affected={affected}")
-            except Exception as ex:
-                scn[K_LAST] = {"phase": PH_CTRK, "status": "FAILED", "reason": str(ex), "tick": tick}
-                print(f"[Coordinator] CLEAN_SHORT_TRACKS FAILED → {ex}")
-            scn[K_PHASE] = PH_SPIKE
-            return {'RUNNING_MODAL'}
-
-        if phase == PH_SPIKE:
-            # Second-Cycle Step 3: Spike-Filter mit aktuellem Threshold
-            _, curr = _get_err_threshold_pair(scn)
-            try:
-                sres = run_marker_spike_filter_cycle(context, track_threshold=float(curr))
-                scn[K_LAST] = {"phase": PH_SPIKE, **sres, "err_thr_used": float(curr), "tick": tick}
-                print(f"[Coordinator] SPIKE_FILTER(thr={curr}) → {sres}")
-            except Exception as ex:
-                scn[K_LAST] = {"phase": PH_SPIKE, "status": "FAILED", "reason": str(ex), "err_thr_used": float(curr), "tick": tick}
-                print(f"[Coordinator] SPIKE_FILTER FAILED → {ex}")
-            scn[K_PHASE] = PH_FMAX
-            return {'RUNNING_MODAL'}
-
-        if phase == PH_CSEG:
-            # Second-Cycle Step 2: Kurzsegmente-Cleanup
+            # Second-Cycle: Kurzsegmente-Cleanup (nach SPIKE)
             try:
                 # Default-Min-Länge: tco_min_seg_len → frames_track → 25
                 scene = context.scene
@@ -455,7 +409,19 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception as ex:
                 scn[K_LAST] = {"phase": PH_CSEG, "status": "FAILED", "reason": str(ex), "tick": tick}
                 print(f"[Coordinator] CLEAN_SHORT_SEGMENTS FAILED → {ex}")
-            # Weiter zu Max-Marker-Analyse
+            # Weiter zu Short-Track-Cleaner
+            scn[K_PHASE] = PH_CTRK
+            return {'RUNNING_MODAL'}
+
+        if phase == PH_CTRK:
+            # Second-Cycle: Kurztracks-Cleanup (nach CSEG)
+            try:
+                processed, affected = clean_short_tracks(context)
+                scn[K_LAST] = {"phase": PH_CTRK, "status": "OK", "processed": processed, "affected": affected, "tick": tick}
+                print(f"[Coordinator] CLEAN_SHORT_TRACKS → processed={processed}, affected={affected}")
+            except Exception as ex:
+                scn[K_LAST] = {"phase": PH_CTRK, "status": "FAILED", "reason": str(ex), "tick": tick}
+                print(f"[Coordinator] CLEAN_SHORT_TRACKS FAILED → {ex}")
             scn[K_PHASE] = PH_FMAX
             return {'RUNNING_MODAL'}
 
