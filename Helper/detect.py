@@ -12,7 +12,6 @@ from mathutils.kdtree import KDTree
 __all__ = [
     "perform_marker_detection",
     "run_detect_once",
-    "run_detect_adaptive",
 ]
 
 # ---------------------------------------------------------------------
@@ -793,19 +792,3 @@ def run_detect_once(
 # ---------------------------------------------------------------------
 # Public: adaptive loop
 # ---------------------------------------------------------------------
-
-def run_detect_adaptive(
-    context: bpy.types.Context,
-    *,
-    start_frame: Optional[int] = None,
-    max_attempts: int = 8,
-    **kwargs,
-) -> Dict[str, Any]:
-    last: Dict[str, Any] = {}
-    for attempt in range(max_attempts):
-        last = run_detect_once(context, start_frame=start_frame, **kwargs)
-        st = last.get("status")
-        if st in ("READY", "FAILED"):
-            return last
-        start_frame = last.get("frame", start_frame)
-    return last or {"status": "FAILED", "reason": "max_attempts_exceeded"}
