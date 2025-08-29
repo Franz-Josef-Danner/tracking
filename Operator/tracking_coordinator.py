@@ -743,23 +743,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     # ---------------- SOLVE → EVAL → CLEANUP ----------------
 
-    def _state_solve(self, context):
-        """Nur wenn mediane Sampson-Distanz <= scene.error_track * 2 und Setup nicht
-        degeneriert ist, wird der Solve ausgeführt. Sonst zurück zu FIND_LOW.
-        """
-        
-        _select_all_tracks_blocking(context)
-        _pause(0.05)
-
-        ok, res = _safe_ops_invoke("clip.solve_camera", 'INVOKE_DEFAULT')
-        if ok:
-            print("[Coord] SOLVE invoked")
-        else:
-            print(f"[Coord] SOLVE failed: {res!r}")
-        _pause(0.5)
-        self._state = "EVAL" if self._pending_eval_after_solve else "FINALIZE"
-        return {"RUNNING_MODAL"}
-
     def _state_eval(self, context):
         target = _scene_float(context.scene, "error_track", 0.0)
         wait_s = _scene_float(context.scene, "solve_wait_timeout_s", _DEFAULT_SOLVE_WAIT_S)
@@ -828,8 +811,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 "refine_focal_length",
                 "refine_focal",
             ), True)
-            ok1, res1 = _safe_ops_invoke("clip.solve_camera", 'INVOKE_DEFAULT')
-            print(f"[Coord] Final refine focal_length: {'OK' if ok1 else res1!r} (attr={focal_attr or 'n/a'})")
+
 
             # 2) Focal + Radial Distortion
             radial_attr = _toggle_attr(ts, (
@@ -838,8 +820,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 "refine_distortion",
                 "refine_k1",
             ), True)
-            ok2, res2 = _safe_ops_invoke("clip.solve_camera", 'INVOKE_DEFAULT')
-            print(f"[Coord] Final refine focal+radial: {'OK' if ok2 else res2!r} (radial_attr={radial_attr or 'n/a'})")
 
             # 3) Optional: Principal Point
             principal_attr = _toggle_attr(ts, (
@@ -847,9 +827,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 "refine_principal_point",
                 "refine_principal",
             ), True)
-            if principal_attr:
-                ok3, res3 = _safe_ops_invoke("clip.solve_camera", 'INVOKE_DEFAULT')
-                print(f"[Coord] Final refine principal: {'OK' if ok3 else res3!r} (attr={principal_attr})")
 
             # Flags wieder ausschalten, damit Standard-Defaults beibehalten werden
             _toggle_attr(ts, ("refine_intrinsics_principal_point","refine_principal_point","refine_principal"), False)
