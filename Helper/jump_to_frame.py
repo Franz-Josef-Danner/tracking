@@ -5,7 +5,6 @@ __all__ = ("run_jump_to_frame", "jump_to_frame")  # jump_to_frame = Legacy-Wrapp
 REPEAT_SATURATION = 10  # Ab dieser Wiederholungsanzahl: Optimizer anstoßen statt Detect
 
 
-
 # -----------------------------------------------------------------------------
 # Utilities
 # -----------------------------------------------------------------------------
@@ -127,49 +126,20 @@ def run_jump_to_frame(
             scn.frame_current = target
     else:
         scn.frame_current = target
-    # Besuchszählung je Ziel-Frame (1=erster Besuch, 2=erste Wiederholung, ...)
+
+    # Besuchszählung je Ziel-Frame
     repeat_count = 1
     if repeat_map is not None:
         repeat_count = int(repeat_map.get(target, 0)) + 1
         repeat_map[target] = repeat_count
 
-        # --- Monitoring: Frames & Wiederholungen in die Konsole ---
-    if repeat_map is not None:
-        # Einzel-Info zum aktuellen Jump
-
-        # Kleine Übersicht der „heißesten“ Frames gelegentlich ausgeben
-        # (bei 5, 6 und danach alle 5 Sprünge; anpassen nach Bedarf)
-        if repeat_count in (5, 6) or (repeat_count % 5 == 0 and repeat_count >= 10):
-            try:
-                top = sorted(repeat_map.items(), key=lambda kv: kv[1], reverse=True)[:8]
-                summary = ", ".join(f"{f}×{c}" for f, c in top)
-            except Exception:
-                pass
-
-        # Optionaler Alarm, wenn die 5er-Schwelle gerade überschritten wurde
-        if repeat_count == 6:
-            pass
-    # Nach stabiler Playhead-Setzung: Wiederholungen auswerten (Optimizer-Signal entfernt)
-    # (Frühere Optimizer-Request-Setzung bei repeat_count > 3 wurde entfernt.)
-
-    # ------------------------------------------------------------------
-    if repeat_count >= 2:
-        # robust importieren (Package vs. Flat)
-        try:
-            from .marker_adapt_helper import run_marker_adapt_boost
-        except Exception:
-            from .marker_adapt_helper import run_marker_adapt_boost  # type: ignore
-        try:
-            run_marker_adapt_boost(context)
-        except Exception as ex:
-            pass
     # Debugging & Transparenz
     try:
-        scn["last_jump_frame"] = int(target)  # rein informativ; orchestrator nutzt repeat_map intern
+        scn["last_jump_frame"] = int(target)  # rein informativ
     except Exception:
         pass
 
-    # Sättigungsflag für Rückgabe/Logging  ← HIER EINFÜGEN
+    # Sättigungsflag für Rückgabe/Logging
     repeat_saturated = repeat_count >= REPEAT_SATURATION
 
     return {
@@ -181,6 +151,7 @@ def run_jump_to_frame(
         "area_switched": bool(area_switched),
     }
 
+
 # -----------------------------------------------------------------------------
 # Legacy-Wrapper (Kompatibilität)
 # -----------------------------------------------------------------------------
@@ -188,14 +159,10 @@ def run_jump_to_frame(
 def jump_to_frame(context):
     """
     Kompatibel zur alten Signatur:
-      - liest 'scene[\"goto_frame\"]'
+      - liest 'scene["goto_frame"]'
       - ruft run_jump_to_frame()
       - gibt bool zurück (True bei OK)
     """
     res = run_jump_to_frame(context, frame=None, repeat_map=None)
     ok = (res.get("status") == "OK")
-    if ok:
-        pass
-    else:
-        pass
     return ok
