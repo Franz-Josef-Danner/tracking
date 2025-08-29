@@ -270,31 +270,27 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 print("[Coordinator] DETECT locked → wait")
                 return {'RUNNING_MODAL'}
         
-            res = run_detect_once(
-                context,
-                start_frame=None,
-                max_attempts=20,
-                selection_policy="only_new",
-                duplicate_strategy="delete",
-                post_pattern_triplet=True,
-            )
-            scn[K_LAST] = {"phase": PH_DETECT, **res, "tick": tick}
-            print(f"[Coordinator] DETECT → {res}")
+            # Zentrales Wiederholungslimit (UI/Scene-property override-bar)
+            max_attempts = int(scn.get("detect_max_attempts", 4))
+        
+            res = {}
+            start_frame = None
+            for attempt in range(max_attempts):
+                res = run_detect_once(
+                    context,
+                    start_frame=start_frame,
+                    selection_policy="only_new",
+                    duplicate_strategy="delete",
+                    post_pattern_triplet=True,
+                )
+                st = res.get("status")
+                scn[K_LAST] = {"phase": PH_DETECT, **res, "attempt": attempt + 1, "tick": tick}
+                print(f"[Coordinator] DETECT attempt {attempt+1}/{max_attempts} → {res}")
+                if st in ("READY", "FAILED"):
+                    break
+                start_frame = res.get("frame", start_frame)
+        
             scn[K_PHASE] = PH_BIDI_S
-            return {'RUNNING_MODAL'}
-
-        if phase == PH_BIDI_S:
-            if scn.get(K_BIDI_ACTIVE, False):
-                scn[K_PHASE] = PH_BIDI_W
-                return {'RUNNING_MODAL'}
-            try:
-                bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
-                scn[K_PHASE] = PH_BIDI_W
-                print("[Coordinator] BIDI_START → invoked")
-            except Exception as ex:
-                scn[K_LAST] = {"phase": PH_BIDI_S, "status": "FAILED", "reason": str(ex), "tick": tick}
-                print(f"[Coordinator] BIDI_START FAILED → {ex}")
-                scn[K_PHASE] = PH_FIND
             return {'RUNNING_MODAL'}
 
         if phase == PH_BIDI_W:
@@ -319,18 +315,18 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         print("[Coordinator] FINISHED")
         return {'FINISHED'}
 
-
-
 # ------------------------------------------------------------
 # Registrierung
 # ------------------------------------------------------------
+def register():
+    bpy.utils.register_class(CLIP_OT_tracking_coordinator)
+
 def unregister():
     print(f"[Coordinator] unregister() from {__file__}")
-    bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
-
-
-def unregister():
-    bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
+    try:
+        bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     try:
