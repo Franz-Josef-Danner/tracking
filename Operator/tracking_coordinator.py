@@ -384,7 +384,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # ---------------- Lifecycle ----------------
 
     def _run_bootstrap_helpers(self, context) -> None:
-        """Nur Basishilfen – kein Preflight mehr."""
+        """Nur Basishilfen."""
         # tracker_settings (defensiv)
         try:
             from ..Helper.tracker_settings import apply_tracker_settings  # type: ignore
@@ -755,8 +755,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # ---------------- SOLVE → EVAL → CLEANUP ----------------
 
     def _state_solve(self, context):
-        """Direkter Solve ohne Preflight-Gate."""
-        print("[Coord] SOLVE → direct solve (preflight removed)")
+        """Direkter Solve."""
+        print("[Coord] SOLVE → direct solve")
         _select_all_tracks_blocking(context)
         _pause(0.05)
         try:
