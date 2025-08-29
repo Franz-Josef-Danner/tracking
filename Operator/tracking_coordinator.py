@@ -292,6 +292,23 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         
             scn[K_PHASE] = PH_BIDI_S
             return {'RUNNING_MODAL'}
+        
+        if phase == PH_BIDI_S:
+            # Falls Bidi bereits aktiv ist, direkt in die Wait-Phase
+            if scn.get(K_BIDI_ACTIVE, False):
+                scn[K_PHASE] = PH_BIDI_W
+                return {'RUNNING_MODAL'}
+            try:
+                # Start: Bidirectional Track Operator auslösen
+                bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
+                scn[K_PHASE] = PH_BIDI_W
+                print("[Coordinator] BIDI_START → invoked")
+            except Exception as ex:
+                # Fallback: zurück in FIND, wenn Operator nicht verfügbar/fehlgeschlagen
+                scn[K_LAST] = {"phase": PH_BIDI_S, "status": "FAILED", "reason": str(ex), "tick": tick}
+                print(f"[Coordinator] BIDI_START FAILED → {ex}")
+                scn[K_PHASE] = PH_FIND
+            return {'RUNNING_MODAL'}
 
         if phase == PH_BIDI_W:
             if scn.get(K_BIDI_ACTIVE, False):
