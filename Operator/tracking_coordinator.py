@@ -414,7 +414,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # Weiter im Second-Cycle
             scn[K_PHASE] = PH_CSEG
             return {'RUNNING_MODAL'}        
-            if phase == PH_CSEG:
+        if phase == PH_CSEG:
             # Second-Cycle: Kurzsegmente-Cleanup (nach SPIKE)
             try:
                 # Default-Min-Länge: tco_min_seg_len → frames_track → 25
