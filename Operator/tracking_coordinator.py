@@ -270,7 +270,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 print("[Coordinator] DETECT locked → wait")
                 return {'RUNNING_MODAL'}
         
-            res = run_detect_adaptive(
+            res = run_detect_once(
                 context,
                 start_frame=None,
                 max_attempts=20,
