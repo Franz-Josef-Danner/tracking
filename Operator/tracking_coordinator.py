@@ -415,7 +415,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     **{k: (int(v) if isinstance(v, bool) else v) for k, v in basic_safe.items() if k not in ("width","height")},  # keep it lean
                     "attempt": int(attempt),
                     "tick": int(tick),
-                }                print(f"[Coordinator] DETECT basic {attempt}/{max_attempts} → {basic}")
+                }
+                print(f"[Coordinator] DETECT basic {attempt}/{max_attempts} → {basic}")
                 if basic.get("status") == "FAILED":
                     break
 
