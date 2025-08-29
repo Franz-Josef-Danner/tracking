@@ -948,7 +948,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
 
 
-# Alias-Klasse für Kompatibilität: erlaubt Aufruf über bpy.ops.CLIP_OT_tracking_coordinator
+
+
+# ---------------------------------------------------------------------------
+# Registration
+# ---------------------------------------------------------------------------
+
+def register() -> None:
+    """Register operator and related scene state."""
+    register_scene_state()
+    bpy.utils.register_class(CLIP_OT_tracking_coordinator)
+
+
+def unregister() -> None:
+    """Unregister operator and clean up scene state."""
     bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
     unregister_scene_state()
 
