@@ -403,7 +403,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 # (Helper/spike_filter_cycle.py hat keine eigene Absenklogik mehr)
                 sres = run_marker_spike_filter_cycle(
                     context,
-                    error_threshold_px=float(curr_thr),
+                    track_threshold=float(curr_thr),
+                    # wir cleanen Segmente explizit im nächsten Step (PH_CSEG)
+                    run_segment_cleanup=False,
                 )
                 scn[K_LAST] = {"phase": PH_SPIKE, **(sres if isinstance(sres, dict) else {}), "tick": tick}
                 print(f"[Coordinator] SPIKE_FILTER(thr={curr_thr}) → {sres}")
