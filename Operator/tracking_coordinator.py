@@ -484,21 +484,45 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             print(f"[Coord] FIND_LOW → FOUND frame={frame} → JUMP")
             self._state = "JUMP"
         else:
-            # NEW: Direct spike filtering with a fixed threshold of 10, then retry FIND_LOW
+
+        else:
+            # NEW: Direct spike filtering with a fixed threshold of 10,
+            # then explicit sequence: clean_short_segments → clean_short_tracks → back to FIND_LOW
             print("[Coord] FIND_LOW → NONE → spike_filter_cycle(fixed threshold=10, action=DELETE)")
             ok_spike, res_spike = _safe_call(
                 run_marker_spike_filter_cycle,
                 context,
                 track_threshold=10.0,
                 action="DELETE",
-                run_segment_cleanup=True,
+                run_segment_cleanup=False,   # explizit: KEIN interner Segment-Clean
             )
             if ok_spike:
                 print(f"[Coord] SPIKE(fixed=10) → {res_spike}")
             else:
                 print(f"[Coord] SPIKE(fixed=10) failed: {res_spike!r}")
-            # Immediately loop back to FIND_LOW
+
+            # 1) clean_short_segments (nach Spike)
+            try:
+                from ..Helper.clean_short_segments import clean_short_segments  # type: ignore
+                seg_min = int(getattr(context.scene, "tco_min_seg_len", 0)) \
+                          or int(getattr(context.scene, "frames_track", 0)) or 25
+                css_res = clean_short_segments(context, min_len=seg_min, treat_muted_as_gap=True, verbose=True)
+                print(f"[Coord] post-SPIKE → clean_short_segments(min_len={seg_min}) → {css_res}")
+            except Exception as ex:
+                print(f"[Coord] WARN: clean_short_segments failed post-SPIKE: {ex!r}")
+            _pause(0.5)
+
+            # 2) clean_short_tracks (nach Segment-Clean)
+            try:
+                frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
+                clean_short_tracks(context, min_len=frames_min, verbose=True)
+                print(f"[Coord] post-SPIKE → clean_short_tracks(min_len={frames_min})")
+            except Exception as ex:
+                print(f"[Coord] WARN: clean_short_tracks failed post-SPIKE: {ex!r}")
+
+            # Wieder zurück zu FIND_LOW
             self._state = "FIND_LOW"
+
         return {"RUNNING_MODAL"}
 
     # ---------------- JUMP/DETECT/TRACK/CLEAN_SHORT ----------------
