@@ -313,15 +313,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     _spike_floor: float = 10.0            # NEU: Ziel-Untergrenze
     _spike_floor_hit: bool = False        # NEU: wurde 10.0 bereits gefahren?
 
-    # Solve/Eval/Refine
-    _pending_eval_after_solve: bool = False
-    _did_refine_this_cycle: bool = False
-
-    # --- NEU: Solve-Error-Merker ---
-    # Klassenattribute → existieren garantiert, auch falls _bootstrap nicht lief
-    _last_solve_error: Optional[float] = None
-    _same_error_repeat_count: int = 0
-
     @classmethod
     def poll(cls, context):
         return getattr(context.area, "type", None) == "CLIP_EDITOR"
