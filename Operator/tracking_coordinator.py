@@ -896,8 +896,6 @@ def _state_cycle_spike(self, context):
                 return self._state_cycle_find_max(context)
             elif s == "CYCLE_SPIKE":
                 return self._state_cycle_spike(context)
-            elif s == "SOLVE":
-                return self._state_solve(context)
             elif s == "EVAL":
                 return self._state_eval(context)
             elif s == "CLEANUP":
