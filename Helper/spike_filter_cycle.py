@@ -194,6 +194,7 @@ def run_marker_spike_filter_cycle(
     min_segment_len: Optional[int] = None,  # Default aus Scene
     treat_muted_as_gap: bool = True,
     run_segment_cleanup: bool = True,
+    **kwargs,
 ) -> Dict[str, Any]:
     """
     Führt einen Marker-basierten Spike-Filter-Durchlauf aus (Pixel/Frame).
@@ -206,6 +207,12 @@ def run_marker_spike_filter_cycle(
     if not _get_active_clip(context):
         return {"status": "FAILED", "reason": "no active MovieClip"}
 
+    # Alias-Unterstützung (Backward-Compat): error_threshold_px → track_threshold
+    if "error_threshold_px" in kwargs and (kwargs.get("error_threshold_px") is not None):
+        try:
+            track_threshold = float(kwargs["error_threshold_px"])
+        except Exception:
+            pass
     # **Untergrenze erzwingen**: auch wenn der Aufrufer < 2.0 übergibt
     thr = max(2.0, float(track_threshold))
     act = str(action or "DELETE").upper().strip()
