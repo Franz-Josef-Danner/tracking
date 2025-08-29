@@ -95,7 +95,7 @@ def _bootstrap(context: bpy.types.Context) -> None:
     scn[K_ERR_THR_BASE] = base
     scn[K_ERR_THR_CURR] = base
     # Hinweis im Last-Log
-    scn[K_LAST].update({"err_thr_base": base}
+    scn[K_LAST].update({"err_thr_base": base})
 
 # Öffentlicher Wrapper – falls andere Module `bootstrap(context)` importieren
 def bootstrap(context: bpy.types.Context) -> None:
