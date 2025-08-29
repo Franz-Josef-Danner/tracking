@@ -206,9 +206,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     def _dbg(self, context, msg: str):
         try:
             print(f"[Coordinator] {msg}")
-            context.scene[K_LAST] = {"phase": context.scene.get(K_PHASE, "N/A"),
-                                     "msg": msg,
-                                     "tick": int(context.scene.get("__tco_ticks", 0))}
+            # ID-Property-safe Mini-Log
+            context.scene[K_LAST] = {
+                "phase": str(context.scene.get(K_PHASE, "N/A")),
+                "msg": str(msg),
+                "tick": int(context.scene.get("__tco_ticks", 0)),
+            }
         except Exception:
             pass
 
@@ -403,8 +406,16 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             for attempt in range(1, max_attempts + 1):
                 # 1) Marker setzen (Basic)
                 basic = run_detect_basic(context, start_frame=start_frame, selection_policy="only_new")
-                scn[K_LAST] = {"phase": PH_DETECT, **basic, "attempt": attempt, "tick": tick}
-                print(f"[Coordinator] DETECT basic {attempt}/{max_attempts} → {basic}")
+                # --- ID-Property-safe Log: Sets entfernen/kompakt darstellen ---
+                basic_safe = dict(basic)
+                if "pre_ptrs" in basic_safe:
+                    basic_safe["pre_count"] = len(basic_safe.pop("pre_ptrs") or [])
+                scn[K_LAST] = {
+                    "phase": PH_DETECT,
+                    **{k: (int(v) if isinstance(v, bool) else v) for k, v in basic_safe.items() if k not in ("width","height")},  # keep it lean
+                    "attempt": int(attempt),
+                    "tick": int(tick),
+                }                print(f"[Coordinator] DETECT basic {attempt}/{max_attempts} → {basic}")
                 if basic.get("status") == "FAILED":
                     break
 
@@ -424,8 +435,16 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     mres = run_multi_pass(context, detect_threshold=float(thr_now), pre_ptrs=pre_ptrs)
                     # 5) Finaler Distanz-Cleanup auch für Triplets
                     _ = run_distance_cleanup(context, pre_ptrs=pre_ptrs, frame=frame_now, close_dist_rel=close_dist_rel)
-                    res_last = {"basic": basic, "distance": dres, "count": cres, "multi": mres}
-                    break
+                    # --- ID-Property-safe Aggregation ---
+                    mres_safe = dict(mres)
+                    if "new_ptrs" in mres_safe:
+                        mres_safe["new_count"] = len(mres_safe.pop("new_ptrs") or [])
+                    res_last = {
+                        "basic": {k: v for k, v in basic_safe.items()},
+                        "distance": {k: v for k, v in dres.items()},
+                        "count": {k: v for k, v in cres.items()},
+                        "multi": {k: v for k, v in mres_safe.items()},
+                    }                    break
 
                 # Nicht genug / zu viel → Threshold anpassen, neue Runde
                 observed_n = int(cres.get("count", 0))
@@ -433,10 +452,27 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 scn[DETECT_LAST_THRESHOLD_KEY] = float(new_thr)
                 print(f"[Coordinator] DETECT adjust threshold: {thr_now} → {new_thr} (obs={observed_n}, target={marker_target})")
                 start_frame = frame_now  # stabilisieren
-                res_last = {"basic": basic, "distance": dres, "count": cres, "adjusted_threshold": new_thr}
-                # nächste Iteration
-
-            scn[K_LAST] = {"phase": PH_DETECT, **res_last, "tick": tick}
+                res_last = {
+                    "basic": {k: v for k, v in basic_safe.items()},
+                    "distance": {k: v for k, v in dres.items()},
+                    "count": {k: v for k, v in cres.items()},
+                    "adjusted_threshold": float(new_thr),
+                }
+    # nächste Iteration
+            # Finales, kompaktes Log ohne Sets
+            final_log = {"phase": PH_DETECT, "tick": int(tick)}
+            for key in ("basic", "distance", "count", "multi"):
+                if key in res_last and isinstance(res_last[key], dict):
+                    # hart begrenzen, um ID-Prop-Overflow zu vermeiden
+                    for k, v in list(res_last[key].items())[:20]:
+                        # nur primitive Typen durchlassen
+                        if isinstance(v, (str, int, float, bool)) or v is None:
+                            final_log[f"{key}.{k}"] = v
+                elif key in res_last:
+                    final_log[key] = str(res_last[key])
+            if "adjusted_threshold" in res_last:
+                final_log["adjusted_threshold"] = float(res_last["adjusted_threshold"])
+            scn[K_LAST] = final_log
             scn[K_PHASE] = PH_BIDI_S
             return {'RUNNING_MODAL'}
 
