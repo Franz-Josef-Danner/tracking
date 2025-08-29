@@ -400,7 +400,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             try:
                 scn[K_ERR_THR_CURR] = float(scn.get(K_ERR_THR_BASE, scn.get("error_threshold_px", 100.0)))
             except Exception:
-                scn[K_ERR_THR_CURR] = float(scn.get("error_threshold_px", 100.0))            scn[K_PHASE] = PH_FIND
+                scn[K_ERR_THR_CURR] = float(scn.get("error_threshold_px", 100.0))
+                scn[K_PHASE] = PH_FIND
             return {'RUNNING_MODAL'}
             
         if phase == PH_FIN:
