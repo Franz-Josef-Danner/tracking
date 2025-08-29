@@ -66,6 +66,13 @@ class PreSolveMetrics:
     quality_score: Optional[float] = None  # 0..1; höher = bessere Geometrie
     predicted_error: Optional[float] = None  # Grobe Schätzung des späteren Solve-Fehlers
 
+    # Radiale Skalierung (bei Vorwärts-/Rückwärtsfahrt)
+    # scale_median: medianes Verhältnis der radialen Abstände (r2/r1) der Punkte zum Bildzentrum.
+    # scale_norm: normierte Skalierung 0..1 (0 = keine Skalierung, 1 = starke Skalierung). Wird bei
+    #             minimaler Parallaxe als zusätzlicher Qualitätsfaktor herangezogen.
+    scale_median: Optional[float] = None
+    scale_norm: Optional[float] = None
+
     # Optional: Inlier-Anzahl und Verhältnis der Homographie-Schätzung
     hom_inliers: Optional[int] = None  # Anzahl der Homographie-Inlier
     hom_ratio: Optional[float] = None  # Verhältnis H-Inlier/F-Inlier (1 == degeneriert)
@@ -204,6 +211,8 @@ def estimate_pre_solve_metrics(
             predicted_error=float("inf"),
             hom_inliers=None,
             hom_ratio=None,
+            scale_median=None,
+            scale_norm=None,
         )
 
     # Parallax & Coverage (auf allen Kandidaten)
@@ -211,6 +220,35 @@ def estimate_pre_solve_metrics(
     parallax_med = float(np.median(disp))
     parallax_p95 = float(np.percentile(disp, 95))
     coverage = _quadrant_coverage(np.vstack([pts1, pts2]), *_clip_size(clip))
+
+    # ----------------------------------------------
+    # Radiale Skalierung: Für reine Vorwärtsfahrt ändert sich der
+    # Abstand der Punkte zum Bildzentrum. Wir nutzen diese Skalierung
+    # zur Stabilisierung der Qualitätsbewertung bei geringer Parallaxe.
+    try:
+        w_img, h_img = _clip_size(clip)
+        cx, cy = w_img * 0.5, h_img * 0.5
+        # Abstände der Punkte zum Zentrum
+        rad1 = np.linalg.norm(pts1 - np.array([[cx, cy]]), axis=1)
+        rad2 = np.linalg.norm(pts2 - np.array([[cx, cy]]), axis=1)
+        # Verhältnisse r2/r1 (Vergrößerung >1 bei Vorwärtsfahrt)
+        # vermeide Division durch Null bzw. sehr kleine Werte
+        ratios = rad2 / np.maximum(rad1, 1e-3)
+        # Filtere ungültige Werte
+        ratios = ratios[np.isfinite(ratios)]
+        if ratios.size > 0:
+            scale_median = float(np.median(ratios))
+        else:
+            scale_median = 1.0
+        # Normierung: Abweichung vom 1.0 (keine Skalierung). Wir setzen eine
+        # Referenz von 20% Skalierung als 1.0; kleinere Skalierungen werden
+        # entsprechend linear skaliert. Negative oder zu kleine Werte werden
+        # abgeschnitten.
+        scale_norm = (scale_median - 1.0) / 0.2
+        scale_norm = float(max(0.0, min(scale_norm, 1.0)))
+    except Exception:
+        scale_median = None
+        scale_norm = 0.0
 
     # Zusätzliche Metriken vorbereiten
     # Anzahl und Länge der Tracks
@@ -271,6 +309,8 @@ def estimate_pre_solve_metrics(
             predicted_error=predicted_error,
             hom_inliers=None,
             hom_ratio=None,
+            scale_median=scale_median,
+            scale_norm=scale_norm,
         )
 
     # Berechne Sampson-Distanzen der Inlier
@@ -418,6 +458,14 @@ def estimate_pre_solve_metrics(
             * max(coverage_score, 1e-6)
             * max(track_len_norm, 1e-6)
         )
+        # Berücksichtige radiale Skalierung: bei Vorwärtsfahrt (>1) erhöht
+        # der Faktor (1 + scale_norm) das Qualitätsprodukt und senkt den
+        # predicted_error. scale_norm wird bei Berechnung oben gesetzt.
+        try:
+            scale_factor = 1.0 + float(scale_norm)
+        except Exception:
+            scale_factor = 1.0
+        denom *= max(scale_factor, 1e-3)
         hr = 1.0 + float(hom_ratio) if (hom_ratio is not None and np.isfinite(hom_ratio)) else 1.0
         predicted_error = (median_s * (1.0 + deg_penalty) * hr) / denom
     else:
@@ -429,8 +477,15 @@ def estimate_pre_solve_metrics(
     try:
         if inl_cnt < 8:
             degenerate_flag = True
+        # Bei sehr geringer Parallaxe (<0.5 % der Diagonale) prüfen wir, ob eine
+        # relevante radiale Skalierung vorliegt. Nur wenn scale_norm ebenfalls
+        # sehr klein (<0.05), gilt das Paar als degeneriert.
         if parallax_norm < 0.005:
-            degenerate_flag = True
+            try:
+                if scale_norm is None or scale_norm < 0.05:
+                    degenerate_flag = True
+            except Exception:
+                degenerate_flag = True
         if cond_ratio is None or not np.isfinite(cond_ratio) or cond_ratio > 50.0:
             degenerate_flag = True
         if hom_ratio is not None and hom_ratio > 0.8:
@@ -460,6 +515,8 @@ def estimate_pre_solve_metrics(
         predicted_error=predicted_error,
         hom_inliers=hom_inliers,
         hom_ratio=hom_ratio,
+        scale_median=scale_median,
+        scale_norm=scale_norm,
     )
 
 
