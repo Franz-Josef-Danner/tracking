@@ -21,9 +21,24 @@ except Exception:
     from Helper.jump_to_frame import run_jump_to_frame  # type: ignore
 
 try:
-    from ..Helper.detect import run_detect_once
+    from ..Helper.detect import run_detect_basic
 except Exception:
-    from Helper.detect import run_detect_once  # type: ignore
+    from Helper.detect import run_detect_basic  # type: ignore
+
+try:
+    from ..Helper.distanze import run_distance_cleanup
+except Exception:
+    from Helper.distanze import run_distance_cleanup  # type: ignore
+
+try:
+    from ..Helper.count import evaluate_marker_count
+except Exception:
+    from Helper.count import evaluate_marker_count  # type: ignore
+
+try:
+    from ..Helper.multi import run_multi_pass
+except Exception:
+    from Helper.multi import run_multi_pass  # type: ignore
 
 try:
     from ..Helper.clean_short_tracks import clean_short_tracks
@@ -61,7 +76,7 @@ K_LAST           = "tco_last"        # letzter Step-Rückgabedatensatz (für UI/
 K_GOTO_FRAME     = "goto_frame"      # Ziel-Frame für Jump
 K_BIDI_ACTIVE    = "bidi_active"     # vom Bidi-Operator gesetzt/gelöscht
 K_BIDI_RESULT    = "bidi_result"     # vom Bidi-Operator gesetzt
-K_DETECT_LOCK    = "__detect_lock"   # von detect.py intern verwendet, hier nur respektiert
+DETECT_LAST_THRESHOLD_KEY = "last_detection_threshold"  # aus detect.py
 
 PH_FIND   = "FIND_LOW"
 PH_JUMP   = "JUMP"
@@ -363,42 +378,64 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if scn.get(K_DETECT_LOCK, False):
                 print("[Coordinator] DETECT locked → wait")
                 return {'RUNNING_MODAL'}
-            # Zentrales Wiederholungslimit (UI/Scene-property override-bar)
-            max_attempts = int(scn.get("detect_max_attempts", 20))
-            res = {}
+            # Wiederholungslimit (Mini-Zyklus)
+            max_attempts = int(scn.get("detect_max_attempts", 12))
             start_frame = None
 
-            # --- NEU: Marker-Ziel aus Coordinator an detect.py durchreichen ---
-            # Priorität: tco_marker_target > marker_adapt > marker_basis > 20
-            marker_target = int(
-                scn.get("tco_marker_target",
-                    scn.get("marker_adapt",
-                        scn.get("marker_basis", 20)))
-            )
-            # Korridor konsistent im Coordinator vorgeben (detect respektiert explizite Werte)
+            # Zielkorridor
+            marker_target = int(scn.get("tco_marker_target", scn.get("marker_adapt", scn.get("marker_basis", 20))))
             min_marker = int(max(1, round(marker_target * 0.9)))
             max_marker = int(max(2, round(marker_target * 1.2)))
-            # Für Debug/Transparenz im UI-Log hinterlegen
             scn["__tco_marker_target_effective"] = int(marker_target)
+            close_dist_rel = float(scn.get("tco_close_dist_rel", 0.01))
 
-            for attempt in range(max_attempts):
-                res = run_detect_once(
-                    context,
-                    start_frame=start_frame,
-                    # --- explizite Übergabe der Marker-Anzahl ---
-                    marker_adapt=int(marker_target),
-                    min_marker=int(min_marker),
-                    max_marker=int(max_marker),
-                    selection_policy="only_new",
-                    duplicate_strategy="delete",
-                    post_pattern_triplet=True,
-                )
-                st = res.get("status")
-                scn[K_LAST] = {"phase": PH_DETECT, **res, "attempt": attempt + 1, "tick": tick}
-                print(f"[Coordinator] DETECT attempt {attempt+1}/{max_attempts} → {res}")
-                if st in ("READY", "FAILED"):
+            # PID-ähnliche Schwellensteuerung (ident zu bisherigem Verhalten)
+            def _adjust_threshold(curr_thr: float, observed: int, target: int) -> float:
+                error = (float(observed) - float(target)) / max(1.0, float(target))
+                acc = float(scn.get("__thr_i", 0.0)) + error
+                scn["__thr_i"] = acc
+                k_p, k_i = 0.65, 0.10
+                scale = 1.0 + (k_p * error + k_i * acc)
+                return max(1e-4, curr_thr * scale)
+
+            res_last = {}
+            for attempt in range(1, max_attempts + 1):
+                # 1) Marker setzen (Basic)
+                basic = run_detect_basic(context, start_frame=start_frame, selection_policy="only_new")
+                scn[K_LAST] = {"phase": PH_DETECT, **basic, "attempt": attempt, "tick": tick}
+                print(f"[Coordinator] DETECT basic {attempt}/{max_attempts} → {basic}")
+                if basic.get("status") == "FAILED":
                     break
-                start_frame = res.get("frame", start_frame)
+
+                frame_now = int(basic.get("frame", scn.frame_current))
+                pre_ptrs  = set(basic.get("pre_ptrs", set()))
+                thr_now   = float(basic.get("threshold", float(scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))))
+
+                # 2) Distanz-Cleanup (gegen pre_ptrs)
+                dres = run_distance_cleanup(context, pre_ptrs=pre_ptrs, frame=frame_now, close_dist_rel=close_dist_rel)
+                remaining_ptrs = {t.as_pointer() for t in bpy.context.edit_movieclip.tracking.tracks if t.as_pointer() not in pre_ptrs} if getattr(bpy.context, "edit_movieclip", None) else {t.as_pointer() for t in bpy.data.movieclips[0].tracking.tracks if t.as_pointer() not in pre_ptrs} if bpy.data.movieclips else set()
+
+                # 3) Count-Bewertung
+                cres = evaluate_marker_count(new_ptrs_after_cleanup=remaining_ptrs, min_marker=int(min_marker), max_marker=int(max_marker))
+                print(f"[Coordinator] DETECT count → {cres}")
+                if cres.get("status") == "ENOUGH":
+                    # 4) Multi-Pass (Triplets) mit *gleichem* threshold
+                    mres = run_multi_pass(context, detect_threshold=float(thr_now), pre_ptrs=pre_ptrs)
+                    # 5) Finaler Distanz-Cleanup auch für Triplets
+                    _ = run_distance_cleanup(context, pre_ptrs=pre_ptrs, frame=frame_now, close_dist_rel=close_dist_rel)
+                    res_last = {"basic": basic, "distance": dres, "count": cres, "multi": mres}
+                    break
+
+                # Nicht genug / zu viel → Threshold anpassen, neue Runde
+                observed_n = int(cres.get("count", 0))
+                new_thr = _adjust_threshold(float(thr_now), observed_n, int(marker_target))
+                scn[DETECT_LAST_THRESHOLD_KEY] = float(new_thr)
+                print(f"[Coordinator] DETECT adjust threshold: {thr_now} → {new_thr} (obs={observed_n}, target={marker_target})")
+                start_frame = frame_now  # stabilisieren
+                res_last = {"basic": basic, "distance": dres, "count": cres, "adjusted_threshold": new_thr}
+                # nächste Iteration
+
+            scn[K_LAST] = {"phase": PH_DETECT, **res_last, "tick": tick}
             scn[K_PHASE] = PH_BIDI_S
             return {'RUNNING_MODAL'}
 
