@@ -35,6 +35,10 @@ try:
 except Exception:
     from Helper.clean_short_tracks import clean_short_tracks  # type: ignore
 
+try:
+    from ..Helper.spike_filter_cycle import run_marker_spike_filter_cycle
+except Exception:
+    from Helper.spike_filter_cycle import run_marker_spike_filter_cycle  # type: ignore
 
 # ------------------------------------------------------------
 # Scene Keys & Phasen
@@ -259,7 +263,16 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 scn[K_GOTO_FRAME] = int(res["frame"])
                 scn[K_PHASE] = PH_JUMP
             elif st == "NONE":
-                scn[K_PHASE] = PH_FIN
+                # NEU: Spike-Filter aufrufen
+                try:
+                    sres = run_marker_spike_filter_cycle(context)
+                    scn[K_LAST] = {"phase": "SPIKE_FILTER", **sres, "tick": tick}
+                    print(f"[Coordinator] SPIKE_FILTER → {sres}")
+                except Exception as ex:
+                    scn[K_LAST] = {"phase": "SPIKE_FILTER", "status": "FAILED", "reason": str(ex), "tick": tick}
+                    print(f"[Coordinator] SPIKE_FILTER FAILED → {ex}")
+                # Danach wieder zurück in FIND, nicht direkt Finish
+                scn[K_PHASE] = PH_FIND
             else:
                 scn[K_PHASE] = PH_DETECT
             return {'RUNNING_MODAL'}
