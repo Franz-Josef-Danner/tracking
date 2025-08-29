@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """
 Kaiserlich Tracker – Top-Level Add-on (__init__.py)
-- Minimal: Scene-Properties + UI-Panel + schlanker Coordinator-Launcher
-- Kein Auto-Bootstrap beim Enable
-- Keine externen Registrare / Helper-Registrierung
+- Scene-Properties + UI-Panel + Coordinator-Launcher
+- Der MODALE Operator kommt aus Operator/tracking_coordinator.py
 """
 from __future__ import annotations
-
 import bpy
 from bpy.types import PropertyGroup, Panel, Operator
 from bpy.props import IntProperty, FloatProperty, CollectionProperty
+
+# --- WICHTIG: Nur den MODALEN Operator importieren, NICHT überschreiben ---
+from .Operator.tracking_coordinator import CLIP_OT_tracking_coordinator  # bl_idname="clip.tracking_coordinator"
 
 bl_info = {
     "name": "Kaiserlich Tracker",
@@ -17,94 +18,35 @@ bl_info = {
     "version": (1, 0, 0),
     "blender": (4, 4, 0),
     "location": "Clip Editor > Sidebar (N) > Kaiserlich",
-    "description": "Bootstrap-Launcher für Tracking-Workflow (UI-Knopf startet Coordinator)",
+    "description": "Launcher + UI für den Kaiserlich Tracking-Workflow",
     "category": "Tracking",
 }
 
 # ---------------------------------------------------------------------------
-# Datenmodelle (optional, belassen für spätere Nutzung)
+# Datenmodelle / Scene-Properties
 # ---------------------------------------------------------------------------
 class RepeatEntry(PropertyGroup):
-    frame: IntProperty(
-        name="Frame",
-        description="Frame-Index, der mehrfach zu wenige Marker hatte",
-        default=0,
-        min=0,
-    )
-    count: IntProperty(
-        name="Count",
-        description="Anzahl Wiederholungen für diesen Frame",
-        default=0,
-        min=0,
-    )
+    frame: IntProperty(name="Frame", default=0, min=0)
+    count: IntProperty(name="Count", default=0, min=0)
 
-# ---------------------------------------------------------------------------
-# Coordinator-Launcher (kein Modal): ruft ausschließlich bootstrap(context)
-# ---------------------------------------------------------------------------
-class CLIP_OT_tracking_coordinator(Operator):
-    bl_idname = "clip.tracking_coordinator"
-    bl_label = "Kaiserlich Coordinator"
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context):
-        try:
-            # Import erst beim Aufruf: harte Kopplung vermeiden
-            from .Operator.tracking_coordinator import bootstrap
-            bootstrap(context)
-            self.report({'INFO'}, "Bootstrap ausgeführt")
-            return {'FINISHED'}
-        except Exception as ex:
-            self.report({'ERROR'}, f"Bootstrap fehlgeschlagen: {ex!r}")
-            return {'CANCELLED'}
-
-# ---------------------------------------------------------------------------
-# UI-Panel (zeigt nur Properties + Start-Knopf)
-# ---------------------------------------------------------------------------
-class CLIP_PT_kaiserlich_panel(Panel):
-    bl_space_type = "CLIP_EDITOR"
-    bl_region_type = "UI"
-    bl_category = "Kaiserlich"
-    bl_label = "Kaiserlich Tracker"
-
-    def draw(self, context):
-        layout = self.layout
-        scene = context.scene
-
-        layout.label(text="Tracking Einstellungen")
-        if hasattr(scene, "marker_frame"):
-            layout.prop(scene, "marker_frame")
-        if hasattr(scene, "frames_track"):
-            layout.prop(scene, "frames_track")
-        if hasattr(scene, "error_track"):
-            layout.prop(scene, "error_track")
-
-        layout.separator()
-        layout.operator("clip.tracking_coordinator", text="Start Coordinator", icon='PLAY')
-
-# ---------------------------------------------------------------------------
-# Scene-Properties
-# ---------------------------------------------------------------------------
 def _register_scene_props() -> None:
     sc = bpy.types.Scene
     if not hasattr(sc, "repeat_frame"):
         sc.repeat_frame = CollectionProperty(type=RepeatEntry)
     if not hasattr(sc, "marker_frame"):
         sc.marker_frame = IntProperty(
-            name="Marker per Frame",
-            default=25, min=10, max=50,
+            name="Marker per Frame", default=25, min=10, max=50,
             description="Mindestanzahl Marker pro Frame",
         )
     if not hasattr(sc, "frames_track"):
         sc.frames_track = IntProperty(
-            name="Frames per Track",
-            default=25, min=5, max=100,
+            name="Frames per Track", default=25, min=5, max=100,
             description="Track-Länge in Frames",
         )
     if not hasattr(sc, "error_track"):
         sc.error_track = FloatProperty(
-            name="Error-Limit (px)",
-            description="Maximale tolerierte Reprojektion in Pixeln",
-            default=2.0, min=0.1, max=10.0,
+            name="Error-Limit (px)", default=2.0, min=0.1, max=10.0,
+            description="Maximal tolerierte Reprojektion (Pixel)",
         )
 
 def _unregister_scene_props() -> None:
@@ -117,11 +59,57 @@ def _unregister_scene_props() -> None:
                 pass
 
 # ---------------------------------------------------------------------------
+# UI-Launcher: startet den MODALEN Operator per bpy.ops
+# ---------------------------------------------------------------------------
+class CLIP_OT_kaiserlich_coordinator_launcher(Operator):
+    bl_idname = "clip.kaiserlich_coordinator_launcher"
+    bl_label = "Kaiserlich Coordinator (Start)"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        if bpy.app.background:
+            self.report({'ERROR'}, "Kein UI (Background). Blender normal starten.")
+            return {'CANCELLED'}
+        try:
+            ret = bpy.ops.clip.tracking_coordinator('INVOKE_DEFAULT')
+            if ret in ({'RUNNING_MODAL'}, {'FINISHED'}):
+                self.report({'INFO'}, f"Coordinator gestartet: {ret}")
+                return {'FINISHED'}
+            self.report({'ERROR'}, f"Coordinator nicht gestartet: {ret}")
+            return {'CANCELLED'}
+        except Exception as ex:
+            self.report({'ERROR'}, f"Start fehlgeschlagen: {ex!r}")
+            return {'CANCELLED'}
+
+# ---------------------------------------------------------------------------
+# UI-Panel: ruft den LAUNCHER auf (nicht den modalen Operator direkt)
+# ---------------------------------------------------------------------------
+class CLIP_PT_kaiserlich_panel(Panel):
+    bl_space_type = "CLIP_EDITOR"
+    bl_region_type = "UI"
+    bl_category = "Kaiserlich"
+    bl_label = "Kaiserlich Tracker"
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        layout.label(text="Tracking Einstellungen")
+        if hasattr(scene, "marker_frame"):
+            layout.prop(scene, "marker_frame")
+        if hasattr(scene, "frames_track"):
+            layout.prop(scene, "frames_track")
+        if hasattr(scene, "error_track"):
+            layout.prop(scene, "error_track")
+        layout.separator()
+        layout.operator("clip.kaiserlich_coordinator_launcher", text="Coordinator starten")
+
+# ---------------------------------------------------------------------------
 # Register/Unregister
 # ---------------------------------------------------------------------------
 _CLASSES = (
     RepeatEntry,
-    CLIP_OT_tracking_coordinator,
+    CLIP_OT_tracking_coordinator,            # MODALER Operator aus Operator/tracking_coordinator.py
+    CLIP_OT_kaiserlich_coordinator_launcher, # UI-Launcher
     CLIP_PT_kaiserlich_panel,
 )
 
@@ -129,7 +117,6 @@ def register() -> None:
     for cls in _CLASSES:
         bpy.utils.register_class(cls)
     _register_scene_props()
-    # Kein Auto-Bootstrap; Start ausschließlich via UI-Operator.
 
 def unregister() -> None:
     for cls in reversed(_CLASSES):
