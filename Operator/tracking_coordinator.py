@@ -179,9 +179,6 @@ def _get_tracks_collection(clip):
 
 
 def _resolve_clip_editor_area_triplet(context) -> Tuple[Optional[bpy.types.Area], Optional[bpy.types.Region], Optional[Any]]:
-    """Findet eine CLIP_EDITOR Area/Region/Space-Triplette für Kontext-Overrides.
-    Garantiert, dass region ein echtes bpy.types.Region-Objekt ist (kein str).
-    """
     area = None
     region = None
     space = None
@@ -189,12 +186,7 @@ def _resolve_clip_editor_area_triplet(context) -> Tuple[Optional[bpy.types.Area]
         screen = context.window.screen if context.window else None
         for a in (screen.areas if screen else []):
             if a.type == "CLIP_EDITOR":
-                # Suche nach einer WINDOW-Region (Region-Objekt, nicht String)
-                for r in a.regions:
-                    if r.type == "WINDOW":
-                        region = r
-                        break
-                # Fallback: erste Region, falls keine WINDOW gefunden wird
+                region = next((r for r in a.regions if r.type == "WINDOW"), None)
                 if not region and a.regions:
                     region = a.regions[0]
                 space = a.spaces.active if hasattr(a, "spaces") else None
@@ -205,9 +197,6 @@ def _resolve_clip_editor_area_triplet(context) -> Tuple[Optional[bpy.types.Area]
         pass
 
     return area, region, space
-
-
-
 
 def _run_split_cleanup_blocking(context: bpy.types.Context) -> None:
     """Führt Helper/split_cleanup.py synchron aus und kehrt erst nach Abschluss zurück."""
