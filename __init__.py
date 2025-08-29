@@ -1,22 +1,15 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """
 Kaiserlich Tracker – Top-Level Add-on (__init__.py)
-- UI-Panel im CLIP_EDITOR
-- Scene-Properties
-- Delegiert Registrierung an Helper + Coordinator (ohne try/except)
-- Keine optionalen/symbolischen Imports mehr
+- Minimal: Scene-Properties + optionales UI-Panel
+- Kein Operator/Helper-Register mehr
+- Ruft ausschließlich bootstrap() beim Enable
 """
 from __future__ import annotations
 
 import bpy
 from bpy.types import PropertyGroup, Panel
-from bpy.props import (
-    IntProperty,
-    FloatProperty,
-    CollectionProperty,
-    BoolProperty,
-    StringProperty,
-)
+from bpy.props import IntProperty, FloatProperty, CollectionProperty
 
 bl_info = {
     "name": "Kaiserlich Tracker",
@@ -24,13 +17,12 @@ bl_info = {
     "version": (1, 0, 0),
     "blender": (4, 4, 0),
     "location": "Clip Editor > Sidebar (N) > Kaiserlich",
-    "description": "Einfaches Panel im Clip Editor mit Eingaben für Tracking",
+    "description": "Minimaler Bootstrap-Wrapper ohne Operator-Registrierung",
     "category": "Tracking",
 }
 
-# --- Strikte, direkte Importe (fail-fast) -----------------------------------
-from .Operator.tracking_coordinator import register as _reg_coord, unregister as _unreg_coord
-from .Helper import register as _reg_helper, unregister as _unreg_helper
+# --- KEINE externen Registrare/Operatoren importieren ------------------------
+# Stattdessen nur beim Enable einmalig bootstrap() aufrufen (falls vorhanden).
 
 
 # --- Datenmodelle ------------------------------------------------------------
@@ -49,7 +41,7 @@ class RepeatEntry(PropertyGroup):
     )
 
 
-# --- UI-Panel ----------------------------------------------------------------
+# --- UI-Panel (optional, ohne Operator-Button) -------------------------------
 class CLIP_PT_kaiserlich_panel(Panel):
     bl_space_type = "CLIP_EDITOR"
     bl_region_type = "UI"
@@ -68,23 +60,11 @@ class CLIP_PT_kaiserlich_panel(Panel):
         if hasattr(scene, "error_track"):
             layout.prop(scene, "error_track")
 
-        # Defensiv: Operator nur anzeigen, wenn er registriert ist
-        op_ok = hasattr(bpy.ops, "clip") and hasattr(bpy.ops.clip, "tracking_coordinator")
-        if op_ok:
-            layout.operator("clip.tracking_coordinator", text="Track")
-        else:
-            row = layout.row()
-            row.enabled = False
-            row.operator("wm.call_menu", text="Track (Operator fehlt)").name = ""
-            # Optional: kleine Hilfe
-            layout.label(text="Hinweis: Operator noch nicht registriert.", icon='INFO')
+        # Kein Operator-Button, da kein Operator registriert wird.
+        layout.label(text="Bootstrap-only Modus aktiv", icon='INFO')
 
 
 # --- Registrierung ------------------------------------------------------------
-
-# Wichtig: Property-Klassen müssen VOR Scene-Properties registriert sein,
-# Panels aber NACH allen Operatoren (Helper+Coordinator), damit deren draw()
-# keinen 'unknown operator' verursacht.
 _CLASSES_PROPS = (RepeatEntry,)
 _CLASSES_UI = (CLIP_PT_kaiserlich_panel,)
 
@@ -115,9 +95,7 @@ def _register_scene_props() -> None:
 
 def _unregister_scene_props() -> None:
     sc = bpy.types.Scene
-    for name in (
-        "repeat_frame", "marker_frame", "frames_track", "error_track",
-    ):
+    for name in ("repeat_frame", "marker_frame", "frames_track", "error_track"):
         if hasattr(sc, name):
             try:
                 delattr(sc, name)
@@ -130,46 +108,34 @@ def register() -> None:
     for cls in _CLASSES_PROPS:
         bpy.utils.register_class(cls)
 
-    # 2) Scene-Properties (benötigen RepeatEntry)
+    # 2) Scene-Properties
     _register_scene_props()
 
-    # 3) Externe Registrare: zuerst Helper (diverse Operatoren), dann Coordinator
+    # 3) Bootstrap einmalig aufrufen (falls vorhanden)
     try:
-        _reg_helper()
-    except Exception as ex:  # noqa: BLE001
-        print(f"[Kaiserlich Tracker] helper registration failed: {ex!r}")
-    try:
-        _reg_coord()
-    except Exception as ex:  # noqa: BLE001
-        print(f"[Kaiserlich Tracker] coordinator registration failed: {ex!r}")
+        from .Operator.tracking_coordinator import bootstrap
+        if bpy.context is not None:
+            bootstrap(bpy.context)
+    except Exception as ex:  # keine harten Abbrüche im Enable
+        print(f"[Kaiserlich Tracker] bootstrap skipped/failed: {ex!r}")
 
-    # 4) UI-Panels GANZ ZUM SCHLUSS
+    # 4) UI-Panel zuletzt
     for cls in _CLASSES_UI:
         bpy.utils.register_class(cls)
 
 
 def unregister() -> None:
-    # 1) UI-Panels zuerst deregistrieren
+    # 1) UI-Panel zuerst deregistrieren
     for cls in reversed(_CLASSES_UI):
         try:
             bpy.utils.unregister_class(cls)
         except Exception:
             pass
 
-    # 2) Externe Unregister
-    try:
-        _unreg_coord()
-    except Exception as ex:  # noqa: BLE001
-        print(f"[Kaiserlich Tracker] coordinator unregister failed: {ex!r}")
-    try:
-        _unreg_helper()
-    except Exception as ex:  # noqa: BLE001
-        print(f"[Kaiserlich Tracker] helper unregister failed: {ex!r}")
-
-    # 3) Scene-Properties
+    # 2) Scene-Properties
     _unregister_scene_props()
 
-    # 4) Property-Klassen zum Schluss deregistrieren
+    # 3) Property-Klassen
     for cls in reversed(_CLASSES_PROPS):
         try:
             bpy.utils.unregister_class(cls)
