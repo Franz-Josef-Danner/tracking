@@ -30,6 +30,14 @@ try:
     from ..Helper.detect import run_detect_adaptive
 except Exception:
     from Helper.detect import run_detect_adaptive  # type: ignore
+# __init__.py (_CLASSES)
+_CLASSES = (
+    RepeatEntry,
+    CLIP_OT_tracking_coordinator,            # modal
+    CLIP_OT_kaiserlich_coordinator_launcher, # launcher
+    CLIP_OT_bidirectional_track,             # <<< WICHTIG: jetzt dabei
+    CLIP_PT_kaiserlich_panel,
+)
 
 # ------------------------------------------------------------
 # Scene Keys & Phasen
