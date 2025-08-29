@@ -473,7 +473,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         ok, result = _safe_call(run_find_low_marker_frame, context)
         if not ok or not isinstance(result, dict):
-            print(f"[Coord] FIND_LOW → FAILED (exception/invalid) → treat as NONE")
+            print("[Coord] FIND_LOW → FAILED (exception/invalid) → treat as NONE")
             result = {"status": "NONE", "reason": "exception-or-invalid-result"}
 
         status = str(result.get("status", "NONE")).upper()
@@ -483,25 +483,23 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self._jump_done = False
             print(f"[Coord] FIND_LOW → FOUND frame={frame} → JUMP")
             self._state = "JUMP"
+            return {"RUNNING_MODAL"}
         else:
-
-        else:
-            # NEW: Direct spike filtering with a fixed threshold of 10,
-            # then explicit sequence: clean_short_segments → clean_short_tracks → back to FIND_LOW
-            print("[Coord] FIND_LOW → NONE → spike_filter_cycle(fixed threshold=10, action=DELETE)")
+            # Direct Spike Filter (fixed threshold=10) → then segment & track cleanup → back to FIND_LOW
+            print("[Coord] FIND_LOW → NONE → spike_filter_cycle(threshold=10, action=DELETE)")
             ok_spike, res_spike = _safe_call(
                 run_marker_spike_filter_cycle,
                 context,
                 track_threshold=10.0,
                 action="DELETE",
-                run_segment_cleanup=False,   # explizit: KEIN interner Segment-Clean
+                run_segment_cleanup=False,
             )
             if ok_spike:
                 print(f"[Coord] SPIKE(fixed=10) → {res_spike}")
             else:
                 print(f"[Coord] SPIKE(fixed=10) failed: {res_spike!r}")
 
-            # 1) clean_short_segments (nach Spike)
+            # 1) clean_short_segments
             try:
                 from ..Helper.clean_short_segments import clean_short_segments  # type: ignore
                 seg_min = int(getattr(context.scene, "tco_min_seg_len", 0)) \
@@ -512,7 +510,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 print(f"[Coord] WARN: clean_short_segments failed post-SPIKE: {ex!r}")
             _pause(0.5)
 
-            # 2) clean_short_tracks (nach Segment-Clean)
+            # 2) clean_short_tracks
             try:
                 frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
                 clean_short_tracks(context, min_len=frames_min, verbose=True)
@@ -520,10 +518,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception as ex:
                 print(f"[Coord] WARN: clean_short_tracks failed post-SPIKE: {ex!r}")
 
-            # Wieder zurück zu FIND_LOW
+            # Loop back to FIND_LOW
             self._state = "FIND_LOW"
-
-        return {"RUNNING_MODAL"}
+            return {"RUNNING_MODAL"}
 
     # ---------------- JUMP/DETECT/TRACK/CLEAN_SHORT ----------------
 
