@@ -391,40 +391,32 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             ok, res = _safe_call(apply_tracker_settings, context, log=True)
             if ok:
                 print("[Coord] BOOTSTRAP → tracker_settings OK")
-            
-        else:
-            # Direct Spike Filter (fixed threshold=10) → dann Segment & Track-Clean → sofort beenden
-            print("[Coord] FIND_LOW → NONE → spike_filter_cycle(threshold=10, action=DELETE)")
-            ok_spike, res_spike = _safe_call(
-                run_marker_spike_filter_cycle,
-                context,
-                track_threshold=10.0,
-                action="DELETE",
-                run_segment_cleanup=False,
-            )
-            if ok_spike:
-                print(f"[Coord] SPIKE(fixed=10) → {res_spike}")
+        except Exception as ex:
+            print(f"[Coord] BOOTSTRAP tracker_settings failed: {ex!r}")
+    
+        # marker_helper_main (defensiv)
+        try:
+            from ..Helper.marker_helper_main import marker_helper_main  # type: ignore
+            ok, res = _safe_call(marker_helper_main, context)
+            if ok:
+                print("[Coord] BOOTSTRAP → marker_helper_main OK")
             else:
-                print(f"[Coord] SPIKE(fixed=10) failed: {res_spike!r}")
-
-            # 1) clean_short_segments
+                print(f"[Coord] BOOTSTRAP WARN: marker_helper_main failed: {res!r}")
+        except Exception as ex_func:
+            print(f"[Coord] BOOTSTRAP WARN: marker_helper_main import failed: {ex_func!r}")
             try:
-                from ..Helper.clean_short_segments import clean_short_segments  # type: ignore
-                seg_min = int(getattr(context.scene, "tco_min_seg_len", 0)) \
-                          or int(getattr(context.scene, "frames_track", 0)) or 25
-                css_res = clean_short_segments(context, min_len=seg_min, treat_muted_as_gap=True, verbose=True)
-                print(f"[Coord] post-SPIKE → clean_short_segments(min_len={seg_min}) → {css_res}")
-            except Exception as ex:
-                print(f"[Coord] WARN: clean_short_segments failed post-SPIKE: {ex!r}")
-            _pause(0.5)
-
-            # 2) clean_short_tracks
+                bpy.ops.clip.marker_helper_main('INVOKE_DEFAULT')
+            except Exception:
+                pass
+    
+        if self.use_apply_settings:
             try:
-                frames_min = int(getattr(context.scene, "frames_track", 25) or 25)
-                clean_short_tracks(context, min_len=frames_min, verbose=True)
-                print(f"[Coord] post-SPIKE → clean_short_tracks(min_len={frames_min})")
+                from ..Helper.apply_tracker_settings import apply_tracker_settings  # type: ignore
+                apply_tracker_settings(context)
+                print("[Coord] BOOTSTRAP → apply_tracker_settings() OK")
             except Exception as ex:
-                print(f"[Coord] WARN: clean_short_tracks failed post-SPIKE: {ex!r}")
+                print(f"[Coord] BOOTSTRAP INFO: apply_tracker_settings not available/failed: {ex!r}")
+
 
             # Direkt FINALIZE → kein Solve, kein Cleanup mehr
             print("[Coord] FINISH after spike+clean")
