@@ -681,7 +681,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 muted = int(res.get("muted", 0) or 0)
 
             next_thr = float(res.get("next_threshold", self._spike_threshold * 0.9))
-            print(f"[Coord] CYCLE_SPIKE → status={status}, affected={muted}, next={next_thr:.2f} (curr={self._spike_threshold:.2f})")
+            affected = int(muted)  # vereinheitlicht: projektion_* liefert "deleted", spike_* liefert "muted"
+            print(f"[Coord] CYCLE_SPIKE → status={status}, affected={affected}, next={next_thr:.2f} (curr={self._spike_threshold:.2f})")
             self._spike_threshold = max(next_thr, 0.0)
             ...
 
@@ -705,9 +706,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception as ex:
                 print(f"[Coord] WARN: clean_short_tracks failed post-SPIKE: {ex!r}")
 
-            if muted > 0:
+            if affected > 0:
                 self._cycle_iterations += 1
-                print(f"[Coord] CYCLE_SPIKE → muted>0 → incremented deletion-iterations to {self._cycle_iterations}/{_CYCLE_MAX_ITER}")
+                print(f"[Coord] CYCLE_SPIKE → affected>0 → incremented deletion-iterations to {self._cycle_iterations}/{_CYCLE_MAX_ITER}")
                 if self._cycle_iterations > _CYCLE_MAX_ITER:
                     print(f"[Coord] CYCLE deletion-iteration limit ... → SPLIT_CLEANUP (blocking)")
                     self._cycle_active = False
@@ -795,11 +796,26 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             scn.preflight_coverage = float(metrics.coverage_quadrants)
             scn.preflight_degenerate = bool(metrics.degenerate)
     
-            preflight_ok = (not metrics.degenerate) and (metrics.median_sampson_px <= thresh)
-            scn.preflight_passed = bool(preflight_ok)
-            scn.preflight_note = "" if preflight_ok else (
-                "Degenerate setup erkannt" if metrics.degenerate else "Median > 2 × error_track"
+            ok_finite = math.isfinite(metrics.median_sampson_px)
+            min_inliers = int(getattr(scn, "preflight_min_inliers", 12))
+            preflight_ok = (
+                (not metrics.degenerate)
+                and ok_finite
+                and (metrics.inliers >= min_inliers)
+                and (metrics.median_sampson_px <= thresh)
             )
+            scn.preflight_passed = bool(preflight_ok)
+            if preflight_ok:
+                scn.preflight_note = ""
+            else:
+                if metrics.degenerate:
+                    scn.preflight_note = "Degenerate setup erkannt"
+                elif not ok_finite:
+                    scn.preflight_note = "Median Sampson = inf/NaN"
+                elif metrics.inliers < min_inliers:
+                    scn.preflight_note = f"Zu wenige Inlier ({metrics.inliers} < {min_inliers})"
+                else:
+                    scn.preflight_note = "Median > 2 × error_track"
     
             print(
                 f"[Coord] SOLVE Preflight → frames=({f1},{f2}) "
