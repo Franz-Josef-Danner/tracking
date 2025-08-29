@@ -20,7 +20,6 @@ from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ig
 from ..Helper.spike_filter_cycle import run_marker_spike_filter_cycle  # type: ignore
 from ..Helper.split_cleanup import recursive_split_cleanup  # type: ignore
 from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
-from ..Helper.preflight import estimate_pre_solve_metrics  # ← NEU: Preflight-Helper
 
 __all__ = ("CLIP_OT_tracking_coordinator", "register", "unregister")
 
@@ -60,8 +59,6 @@ def _pause(seconds: float = 0.5) -> None:
         time.sleep(float(seconds))
     except Exception:
         pass
-
-# (Preflight-Scene-Props werden zentral in __init__.py registriert)
 
 # ---------------------------------------------------------------------------
 # Utilities
@@ -748,47 +745,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # ---------------- SOLVE → EVAL → CLEANUP ----------------
 
     def _state_solve(self, context):
-        """Vor dem Solve wird ein schneller Preflight-Check durchgeführt.
-        Nur wenn mediane Sampson-Distanz <= scene.error_track * 2 und Setup nicht
+        """Nur wenn mediane Sampson-Distanz <= scene.error_track * 2 und Setup nicht
         degeneriert ist, wird der Solve ausgeführt. Sonst zurück zu FIND_LOW.
         """
-        # --- Preflight-Gate ---
-        try:
-            clip = _get_active_clip(context)
-            if clip is not None:
-                f1 = int(getattr(context.scene, "frame_current", 0))
-                f2 = f1 + 10  # fixer Frame-Abstand für Preflight
-                metrics = estimate_pre_solve_metrics(clip, f1, f2)
-                scn = context.scene
-                # Preflight-Werte vollständig in Scene spiegeln (für UI)
-                scn.preflight_last_frame_a = int(f1)
-                scn.preflight_last_frame_b = int(f2)
-                scn.preflight_median_sampson = float(metrics.median_sampson_px)
-                scn.preflight_inliers = int(metrics.inliers)
-                scn.preflight_total = int(metrics.total)
-                scn.preflight_coverage = float(metrics.coverage_quadrants)
-                scn.preflight_degenerate = bool(metrics.degenerate)
-                target = _scene_float(context.scene, "error_track", 0.0)
-                thresh = target * 2.0
-                print(
-                    f"[Coord] SOLVE Preflight → frames=({f1},{f2}) median_sampson={metrics.median_sampson_px:.3f} "
-                    f"inliers={metrics.inliers}/{metrics.total} coverage={metrics.coverage_quadrants*100:.0f}% thresh={thresh:.3f}"
-                )
-                ok = (not metrics.degenerate) and (metrics.median_sampson_px <= thresh)
-                scn.preflight_passed = bool(ok)
-                scn.preflight_note = "" if ok else (
-                    "Degenerate setup erkannt" if metrics.degenerate else "Median > 2 × error_track"
-                )
-                if not ok:
-                    print("[Coord] SOLVE → Preflight zu schlecht → zurück zu FIND_LOW")
-                    self._pending_eval_after_solve = False
-                    self._did_refine_this_cycle = False
-                    self._state = "FIND_LOW"
-                    return {"RUNNING_MODAL"}
-        except Exception as ex:
-            print(f"[Coord] SOLVE Preflight check failed (ignoriere und löse trotzdem): {ex!r}")
-
-        # --- Nur wenn Preflight OK: alle Tracks selektieren und Solve auslösen ---
+        
         _select_all_tracks_blocking(context)
         _pause(0.05)
 
@@ -1000,13 +960,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
 def register():
     register_scene_state()
-    # Preflight-Props kommen aus __init__.py
     bpy.utils.register_class(CLIP_OT_tracking_coordinator)
 
 
 def unregister():
     bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
-    # Preflight-Props werden in __init__.py entfernt
     unregister_scene_state()
 
 
