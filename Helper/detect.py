@@ -443,6 +443,9 @@ def run_detect_once(
 ) -> Dict[str, Any]:
     """Execute one detection round with optional ROI/duplicate clean and optional
     post pattern-triplet step which aggregates names and selects them.
+
+    Marker-Ziel (Count) erhält Preferenz aus explizitem Parameter:
+      marker_adapt/min_marker/max_marker (wenn gesetzt) > Scene-Fallback.
     """
     scn = context.scene
     if scn.get(_LOCK_KEY):
@@ -485,7 +488,7 @@ def run_detect_once(
         else:
             threshold = max(1e-6, float(threshold))
 
-        # Corridor
+        # Corridor: explizite Übergabe aus Coordinator hat Vorrang
         if marker_adapt is None:
             try:
                 marker_adapt = int(scn.get("marker_adapt", scn.get("marker_basis", 20)))
