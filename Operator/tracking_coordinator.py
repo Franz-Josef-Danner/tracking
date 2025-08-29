@@ -265,9 +265,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             elif st == "NONE":
                 # NEU: Spike-Filter aufrufen
                 try:
-                    sres = run_marker_spike_filter_cycle(context)
+                    # Threshold zentral aus Scene (Fallback 4.0 px)
+                    thr = float(scn.get("error_threshold_px", 4.0))
+                    sres = run_marker_spike_filter_cycle(context, track_threshold=thr)
                     scn[K_LAST] = {"phase": "SPIKE_FILTER", **sres, "tick": tick}
-                    print(f"[Coordinator] SPIKE_FILTER → {sres}")
+                    print(f"[Coordinator] SPIKE_FILTER(thr={thr}) → {sres}")
                 except Exception as ex:
                     scn[K_LAST] = {"phase": "SPIKE_FILTER", "status": "FAILED", "reason": str(ex), "tick": tick}
                     print(f"[Coordinator] SPIKE_FILTER FAILED → {ex}")
