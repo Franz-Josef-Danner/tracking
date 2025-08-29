@@ -2,12 +2,13 @@
 """
 tracking_coordinator.py – Orchestrator-Zyklus (find → jump → detect → bidi)
 - Beim Auslösen: zuerst Bootstrap/Reset, dann modaler Ablauf bis Abschluss.
+- Timer-start robust (auch ohne context.window).
 - Konfliktfrei: es läuft immer nur eine Phase gleichzeitig.
 """
 
 from __future__ import annotations
 import bpy
-from typing import Dict
+from typing import Dict, Optional
 
 # ------------------------------------------------------------
 # Robuste Importe der Helper (funktionieren als Paket- oder Flat-Layout)
@@ -26,10 +27,6 @@ try:
     from ..Helper.detect import run_detect_adaptive
 except Exception:
     from Helper.detect import run_detect_adaptive  # type: ignore
-
-# `bidirectional_track` ist ein eigener Operator → Start via bpy.ops.clip.bidirectional_track
-# Er setzt/cleart scene["bidi_active"] und schreibt scene["bidi_result"].
-
 
 # ------------------------------------------------------------
 # Scene Keys & Phasen
@@ -62,7 +59,7 @@ def _bootstrap(context: bpy.types.Context) -> None:
     scn = context.scene
     scn[K_CYCLE_ACTIVE] = True
     scn[K_PHASE] = PH_FIND
-    scn[K_LAST] = {}
+    scn[K_LAST] = {"phase": "BOOTSTRAP", "status": "OK"}
     scn.pop(K_GOTO_FRAME, None)
     scn.pop(K_BIDI_RESULT, None)
     scn[K_BIDI_ACTIVE] = False
@@ -82,8 +79,30 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     bl_label = "Kaiserlich: Coordinator starten"
     bl_options = {"REGISTER", "UNDO"}
 
-    _timer = None
+    _timer: Optional[object] = None
     _repeat_map: Dict[int, int] = {}  # lokale Wiederholungs-Map für Jumps (optional)
+
+    # ---------- Utility: Timer robust starten ----------
+    def _start_timer(self, context: bpy.types.Context) -> None:
+        wm = context.window_manager
+        win = getattr(context, "window", None)
+
+        # Fallbacks, wenn context.window None (z. B. Aufruf aus Preferences)
+        if win is None:
+            win = getattr(bpy.context, "window", None)
+        if win is None:
+            wins = getattr(wm, "windows", None)
+            if wins and len(wins) > 0:
+                win = wins[0]
+
+        # Timer an Window binden, wenn vorhanden; sonst globaler Timer (window=None)
+        try:
+            self._timer = wm.event_timer_add(TIMER_SEC, window=win)
+        except Exception:
+            # letzte Eskalationsstufe: ohne Window
+            self._timer = wm.event_timer_add(TIMER_SEC, window=None)
+
+        wm.modal_handler_add(self)
 
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
@@ -92,13 +111,17 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     def execute(self, context: bpy.types.Context):
         # 1) Sofortiger Bootstrap/Reset
         bootstrap(context)
+        self.report({'INFO'}, "Bootstrap ausgeführt")
 
-        # 2) Modal-Zyklus starten
-        wm = context.window_manager
-        # kurzer erster Tick beschleunigt den Start der FIND-Phase
-        self._timer = wm.event_timer_add(0.05, window=context.window)
-        wm.modal_handler_add(self)
-        self.report({'INFO'}, "Coordinator gestartet (Bootstrap ausgeführt).")
+        # 2) Modal-Zyklus starten (robust, auch ohne aktives Window)
+        try:
+            self._start_timer(context)
+        except Exception as ex:
+            # Harte Absicherung: ohne Timer kein Modal → abbrechen
+            context.scene[K_LAST] = {"phase": "TIMER_START", "status": "FAILED", "reason": str(ex)}
+            self.report({'ERROR'}, f"Coordinator: Timer-Start fehlgeschlagen: {ex}")
+            return {'CANCELLED'}
+
         return {'RUNNING_MODAL'}
 
     def cancel(self, context: bpy.types.Context):
@@ -120,7 +143,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
 
-        scn = context.scene
+        scn = context.scene if context and context.scene else None
+        if not scn:
+            return self._finish(context)
+
         if not scn.get(K_CYCLE_ACTIVE, False):
             return self._finish(context)
 
@@ -140,7 +166,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             elif st == "NONE":
                 scn[K_PHASE] = PH_FIN
             else:  # "FAILED" o.ä.
-                # Robustheit: trotzdem in DETECT wechseln (kann Markerbasis erhöhen)
                 scn[K_PHASE] = PH_DETECT
             return {'RUNNING_MODAL'}
 
@@ -150,7 +175,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         if phase == PH_JUMP:
             res = run_jump_to_frame(context, frame=scn.get(K_GOTO_FRAME), repeat_map=self._repeat_map)
             scn[K_LAST] = {"phase": PH_JUMP, **res}
-            # unabhängig vom Ergebnis gehen wir weiter zu DETECT
             scn[K_PHASE] = PH_DETECT
             return {'RUNNING_MODAL'}
 
@@ -171,7 +195,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 post_pattern_triplet=True,
             )
             scn[K_LAST] = {"phase": PH_DETECT, **res}
-            # Direkt weiter zu Bidi; selbst wenn Detect "FAILED", kann Bidi Lücken schließen
             scn[K_PHASE] = PH_BIDI_S
             return {'RUNNING_MODAL'}
 
@@ -180,17 +203,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # -----------------------------
         if phase == PH_BIDI_S:
             if scn.get(K_BIDI_ACTIVE, False):
-                # läuft schon → in Wait-Phase wechseln
                 scn[K_PHASE] = PH_BIDI_W
                 return {'RUNNING_MODAL'}
-
-            # Bidi-Operator starten (modal). Er setzt selbst bidi_active/result.
             try:
                 bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
                 scn[K_PHASE] = PH_BIDI_W
             except Exception as ex:
                 scn[K_LAST] = {"phase": PH_BIDI_S, "status": "FAILED", "reason": str(ex)}
-                # Fallback: zurück zu FIND, um Zyklus nicht zu blockieren
                 scn[K_PHASE] = PH_FIND
             return {'RUNNING_MODAL'}
 
@@ -199,10 +218,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # -----------------------------
         if phase == PH_BIDI_W:
             if scn.get(K_BIDI_ACTIVE, False):
-                # Bidi läuft noch → warten
                 return {'RUNNING_MODAL'}
-
-            # Bidi fertig → Ergebnis mitschreiben, nächster Zyklus (FIND)
             scn[K_LAST] = {"phase": PH_BIDI_W, "bidi_result": scn.get(K_BIDI_RESULT, "")}
             scn[K_PHASE] = PH_FIND
             return {'RUNNING_MODAL'}
