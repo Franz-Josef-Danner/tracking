@@ -71,7 +71,6 @@ def _kv(d: Dict[str, Any]) -> str:
     except Exception:
         return str(d)
 
-
 def _pause(seconds: float = 0.5) -> None:
     """Kleine, robuste Pause zwischen Schritten."""
     try:
@@ -668,6 +667,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         # NONE/FAILED → SPIKE
         print(f"[Coord] CYCLE_FIND_MAX → {status} → CYCLE_SPIKE")
+        if _is_verbose():
+            try:
+                print(f"[Coord] CYCLE_FIND_MAX detail → {_kv(res if isinstance(res, dict) else {'result': res})}")
+            except Exception:
+                pass
         self._state = "CYCLE_SPIKE"
         return {"RUNNING_MODAL"}
 
@@ -685,6 +689,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 )
                 status = str(res.get("status","")).upper()
                 muted = int(res.get("deleted", 0) or 0)     # projektion_* meldet "deleted" Marker
+                mode = "projection"
             else:
                 res = run_marker_spike_filter_cycle(
                     context,
@@ -694,10 +699,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 )
                 status = str(res.get("status","")).upper()
                 muted = int(res.get("muted", 0) or 0)
+                mode = "marker"
             dt_ms = (time.perf_counter() - t0) * 1000.0
             next_thr = float(res.get("next_threshold", self._spike_threshold * 0.9))
             affected = int(muted)  # vereinheitlicht
-            print(f"[Coord] CYCLE_SPIKE → status={status}, affected={affected}, next={next_thr:.2f} (curr={self._spike_threshold:.2f}), time={dt_ms:.1f}ms")
+            print(f"[Coord] CYCLE_SPIKE → status={status}, mode={mode}, affected={affected}, next={next_thr:.2f} (curr={self._spike_threshold:.2f}), time={dt_ms:.1f}ms")
             if _is_verbose():
                 print(f"[Coord] CYCLE_SPIKE detail → { _kv(res if isinstance(res, dict) else {'result': res}) }")
 
@@ -846,6 +852,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 f"inliers={metrics.inliers}/{metrics.total} "
                 f"coverage={int(metrics.coverage_quadrants*100)}% thresh={thresh:.3f}"
             )
+            # Gate-Outcome klar sichtbar ausgeben
+            try:
+                note = getattr(scn, "preflight_note", "")
+            except Exception:
+                note = ""
+            print(f"[Coord] SOLVE Preflight Gate → passed={bool(preflight_ok)} note='{note}'")
             if _is_verbose():
                 try:
                     md = metrics.as_dict() if hasattr(metrics, "as_dict") else {k: getattr(metrics, k) for k in dir(metrics) if not k.startswith('_')}
