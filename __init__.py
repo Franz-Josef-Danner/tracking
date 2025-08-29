@@ -134,8 +134,14 @@ def register() -> None:
     _register_scene_props()
 
     # 3) Externe Registrare: zuerst Helper (diverse Operatoren), dann Coordinator
-    _reg_helper()
-    _reg_coord()
+    try:
+        _reg_helper()
+    except Exception as ex:  # noqa: BLE001
+        print(f"[Kaiserlich Tracker] helper registration failed: {ex!r}")
+    try:
+        _reg_coord()
+    except Exception as ex:  # noqa: BLE001
+        print(f"[Kaiserlich Tracker] coordinator registration failed: {ex!r}")
 
     # 4) UI-Panels GANZ ZUM SCHLUSS
     for cls in _CLASSES_UI:
@@ -151,8 +157,14 @@ def unregister() -> None:
             pass
 
     # 2) Externe Unregister
-    _unreg_coord()
-    _unreg_helper()
+    try:
+        _unreg_coord()
+    except Exception as ex:  # noqa: BLE001
+        print(f"[Kaiserlich Tracker] coordinator unregister failed: {ex!r}")
+    try:
+        _unreg_helper()
+    except Exception as ex:  # noqa: BLE001
+        print(f"[Kaiserlich Tracker] helper unregister failed: {ex!r}")
 
     # 3) Scene-Properties
     _unregister_scene_props()
