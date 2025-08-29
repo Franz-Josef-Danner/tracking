@@ -9,7 +9,7 @@ import bpy
 from bpy.types import PropertyGroup, Panel, Operator as BpyOperator
 from bpy.props import IntProperty, FloatProperty, CollectionProperty
 
-# --- WICHTIG: Nur den MODALEN Operator importieren, NICHT überschreiben ---
+# WICHTIG: nur Klassen importieren, kein register() von Submodulen aufrufen
 from .Operator.tracking_coordinator import CLIP_OT_tracking_coordinator
 from .Helper.bidirectional_track import CLIP_OT_bidirectional_track
 
@@ -24,7 +24,7 @@ bl_info = {
 }
 
 # ---------------------------------------------------------------------------
-# Datenmodelle / Scene-Properties
+# Scene-Properties
 # ---------------------------------------------------------------------------
 class RepeatEntry(PropertyGroup):
     frame: IntProperty(name="Frame", default=0, min=0)
@@ -60,7 +60,7 @@ def _unregister_scene_props() -> None:
                 pass
 
 # ---------------------------------------------------------------------------
-# UI-Launcher: startet den MODALEN Operator per bpy.ops
+# Launcher-Operator: startet den modalen Coordinator
 # ---------------------------------------------------------------------------
 class CLIP_OT_kaiserlich_coordinator_launcher(BpyOperator):
     bl_idname = "clip.kaiserlich_coordinator_launcher"
@@ -83,7 +83,7 @@ class CLIP_OT_kaiserlich_coordinator_launcher(BpyOperator):
             return {'CANCELLED'}
 
 # ---------------------------------------------------------------------------
-# UI-Panel: ruft den LAUNCHER auf (nicht den modalen Operator direkt)
+# Panel
 # ---------------------------------------------------------------------------
 class CLIP_PT_kaiserlich_panel(Panel):
     bl_space_type = "CLIP_EDITOR"
@@ -109,26 +109,24 @@ class CLIP_PT_kaiserlich_panel(Panel):
 # ---------------------------------------------------------------------------
 _CLASSES = (
     RepeatEntry,
-    CLIP_OT_tracking_coordinator,            # modal
-    CLIP_OT_bidirectional_track,             # bidi
-    CLIP_OT_kaiserlich_coordinator_launcher, # launcher (erbt von BpyOperator!)
-    CLIP_PT_kaiserlich_panel,
+    CLIP_OT_tracking_coordinator,            # modal coordinator
+    CLIP_OT_bidirectional_track,             # bidi helper
+    CLIP_OT_kaiserlich_coordinator_launcher, # launcher
+    CLIP_PT_kaiserlich_panel,                # ui
 )
 
 def register() -> None:
     for cls in _CLASSES:
         bpy.utils.register_class(cls)
     _register_scene_props()
-    layout.operator("clip.kaiserlich_coordinator_launcher", text="Coordinator starten")
 
 def unregister() -> None:
+    _unregister_scene_props()
     for cls in reversed(_CLASSES):
         try:
             bpy.utils.unregister_class(cls)
         except Exception:
             pass
-    layout.operator("clip.kaiserlich_coordinator_launcher", text="Coordinator starten")
-    _unregister_scene_props()
 
 if __name__ == "__main__":
     register()
