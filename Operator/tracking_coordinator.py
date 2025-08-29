@@ -12,7 +12,6 @@ from typing import Optional, Dict, Any, Callable, Tuple
 # Entfernt: Triplet-Grouping/Joiner aus dem Ablauf
 # Entfernt: parallax_keyframe (Helper/parallax_keyframe.py) vollständig aus Pipeline
 # from ..Helper.triplet_grouping import run_triplet_grouping  # removed
-from ..Helper.solve_camera import solve_camera_only
 from ..Helper.projection_cleanup_builtin import run_projection_cleanup_builtin
 from ..Helper.projektion_spike_filter_cycle import run_projection_spike_filter_cycle  # NEW
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
@@ -752,11 +751,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         _select_all_tracks_blocking(context)
         _pause(0.05)
 
-        try:
-            _ = solve_camera_only(context)
+        ok, res = _safe_ops_invoke("clip.solve_camera", 'INVOKE_DEFAULT')
+        if ok:
             print("[Coord] SOLVE invoked")
-        except Exception as ex:
-            print(f"[Coord] SOLVE failed: {ex!r}")
+        else:
+            print(f"[Coord] SOLVE failed: {res!r}")
         _pause(0.5)
         self._state = "EVAL" if self._pending_eval_after_solve else "FINALIZE"
         return {"RUNNING_MODAL"}
@@ -829,7 +828,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 "refine_focal_length",
                 "refine_focal",
             ), True)
-            ok1, res1 = _safe_call(solve_camera_only, context)
+            ok1, res1 = _safe_ops_invoke("clip.solve_camera", 'INVOKE_DEFAULT')
             print(f"[Coord] Final refine focal_length: {'OK' if ok1 else res1!r} (attr={focal_attr or 'n/a'})")
 
             # 2) Focal + Radial Distortion
@@ -839,7 +838,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 "refine_distortion",
                 "refine_k1",
             ), True)
-            ok2, res2 = _safe_call(solve_camera_only, context)
+            ok2, res2 = _safe_ops_invoke("clip.solve_camera", 'INVOKE_DEFAULT')
             print(f"[Coord] Final refine focal+radial: {'OK' if ok2 else res2!r} (radial_attr={radial_attr or 'n/a'})")
 
             # 3) Optional: Principal Point
@@ -849,7 +848,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 "refine_principal",
             ), True)
             if principal_attr:
-                ok3, res3 = _safe_call(solve_camera_only, context)
+                ok3, res3 = _safe_ops_invoke("clip.solve_camera", 'INVOKE_DEFAULT')
                 print(f"[Coord] Final refine principal: {'OK' if ok3 else res3!r} (attr={principal_attr})")
 
             # Flags wieder ausschalten, damit Standard-Defaults beibehalten werden
