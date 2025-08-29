@@ -593,8 +593,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     def _state_cycle_find_max(self, context):
         if not self._cycle_active:
-            print("[Coord] CYCLE_FIND_MAX reached with inactive cycle → FINALIZE")
-            self._state = "FINALIZE"
+            print("[Coord] CYCLE_FIND_MAX reached with inactive cycle → FIND_LOW")
+            self._state = "FIND_LOW"
             return {"RUNNING_MODAL"}
 
         print(f"[Coord] CYCLE_FIND_MAX → check (current deletion-iterations={self._cycle_iterations}/{_CYCLE_MAX_ITER})")
@@ -698,14 +698,14 @@ def _state_cycle_spike(self, context):
         # **NEU: Solve erst NACHDEM der Floor 10.0 mindestens einmal gefahren wurde**
         # und entweder nichts mehr betroffen ist ODER das Safeguard greift.
         if self._spike_floor_hit and (muted == 0 or self._cycle_iterations > _CYCLE_MAX_ITER):
-            print("[Coord] CYCLE_SPIKE → floor erreicht & keine weiteren Effekte (oder Limit) → SPLIT_CLEANUP → SOLVE")
-            self._cycle_active = False
+            print("[Coord] CYCLE_SPIKE → floor erreicht & keine weiteren Effekte (oder Limit) → SPLIT_CLEANUP → zurück zu FIND_LOW")
+            self._cycle_active = True  # Cycle bleibt aktiv, bis keine Low/Max mehr auftreten
             _run_split_cleanup_blocking(context)
             _pause(0.5)
 
             try:
                 from ..Helper.clean_short_segments import clean_short_segments  # type: ignore
-                seg_min = int(getattr(context.scene, "tco_min_seg_len", 0))                               or int(getattr(context.scene, "frames_track", 0)) or 25
+                seg_min = int(getattr(context.scene, "tco_min_seg_len", 0)) or int(getattr(context.scene, "frames_track", 0)) or 25
                 css_res = clean_short_segments(context, min_len=seg_min, treat_muted_as_gap=True, verbose=True)
                 print(f"[Coord] post-SPLIT(floor) → clean_short_segments(min_len={seg_min}) → {css_res}")
             except Exception as ex:
@@ -720,9 +720,8 @@ def _state_cycle_spike(self, context):
                 print(f"[Coord] CLEAN_SHORT (post-split, floor) failed: {ex!r}")
             _pause(0.5)
 
-            print("[Coord] CYCLE_SPIKE → SOLVE")
-            self._pending_eval_after_solve = True
-            self._state = "SOLVE"
+            # NEU: statt SOLVE → zurück in den Low/Max-Loop
+            self._state = "FIND_LOW"
             return {"RUNNING_MODAL"}
     except Exception as ex:
         print(f"[Coord] CYCLE_SPIKE failed: {ex!r}")
