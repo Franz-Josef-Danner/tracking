@@ -68,6 +68,8 @@ PH_SPIKE  = "SPIKE_FILTER"           # NEU: Second-Cycle Step 1
 PH_FMAX   = "FIND_MAX_MARKER"        # NEU: Second-Cycle Step 2
 PH_CSEG   = "CLEAN_SHORT_SEGMENTS"   # NEU: Second-Cycle Step 2 (eingeschoben)
 PH_FMAX   = "FIND_MAX_MARKER"        # NEU: Second-Cycle Step 3
+# Einmaliges Init-Flag für Zyklus 2 (Select-All am Eintritt)
+K_CYCLE2_INIT = "tco_cycle2_init_done"
 # Error-Threshold-State (für Second-Cycle)
 K_ERR_THR_BASE = "tco_err_thr_base"  # ursprünglicher Basiswert (Reset bei Rückkehr zu Cycle 1)
 K_ERR_THR_CURR = "tco_err_thr_curr"  # aktueller Arbeitswert (wird *0.9 gesenkt)
@@ -79,6 +81,40 @@ def _get_err_threshold_pair(scn: bpy.types.Scene) -> Tuple[float, float]:
 TIMER_SEC = 0.20
 
 __all__ = ("CLIP_OT_tracking_coordinator", "bootstrap")
+
+# ------------------------------------------------------------
+# Utility: Alle Tracks im aktiven Clip selektieren
+# ------------------------------------------------------------
+def _select_all_tracks(context) -> int:
+    try:
+        # Aktiven Clip bevorzugen (CLIP_EDITOR), sonst erstes MovieClip
+        space = getattr(context, "space_data", None)
+        if getattr(space, "type", None) == "CLIP_EDITOR" and getattr(space, "clip", None):
+            clip = space.clip
+        else:
+            clip = bpy.data.movieclips[0] if bpy.data.movieclips else None
+        if not clip:
+            return 0
+        # Objekt-Tracks bevorzugen, sonst globale Tracks
+        try:
+            obj = clip.tracking.objects.active
+            tracks = obj.tracks if (obj and getattr(obj, "tracks", None)) else None
+        except Exception:
+            tracks = None
+        if tracks is None:
+            tracks = getattr(clip.tracking, "tracks", None)
+        if not tracks:
+            return 0
+        n = 0
+        for tr in list(tracks):
+            try:
+                tr.select = True
+                n += 1
+            except Exception:
+                pass
+        return n
+    except Exception:
+        return 0
 
 
 # ------------------------------------------------------------
@@ -292,6 +328,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 # Hinweis: Threshold wird im Second-Cycle geführt (K_ERR_THR_CURR)
                 base, curr = _get_err_threshold_pair(scn)
                 scn[K_LAST] = {"phase": PH_FIND, "status": "NONE", "err_thr_curr": curr, "tick": tick}
+                # EINMALIG am Anfang von Zyklus 2: alle Tracks selektieren
+                if not scn.get(K_CYCLE2_INIT, False):
+                    n_sel = _select_all_tracks(context)
+                    scn[K_CYCLE2_INIT] = True
+                    print(f"[Coordinator] CYCLE2_INIT → selected all tracks: {n_sel}")
                 scn[K_PHASE] = PH_SPIKE
             else:
                 scn[K_PHASE] = PH_DETECT
@@ -376,6 +417,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if fmr.get("status") == "FOUND":
                 # → zurück in Cycle 1 und Error-Threshold resetten
                 scn[K_ERR_THR_CURR] = float(scn.get(K_ERR_THR_BASE, scn.get("error_threshold_px", 100.0)))
+                # Zyklus-2-Init-Flag zurücksetzen
+                scn.pop(K_CYCLE2_INIT, None)
                 scn[K_PHASE] = PH_FIND
                 return {'RUNNING_MODAL'}
             # Kein Frame gefunden → Threshold senken (*0.9), Floor 10 px
@@ -435,6 +478,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             
         if phase == PH_FIN:
             print("[Coordinator] FINISH")
+            # Sicherheit: Flag zurücksetzen
+            try:
+                context.scene.pop(K_CYCLE2_INIT, None)
+            except Exception:
+                pass
             return self._finish(context)
 
         scn[K_PHASE] = PH_FIND
