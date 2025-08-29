@@ -185,9 +185,11 @@ def estimate_pre_solve_metrics(
 
     # Frames direkt testen; ggf. mit Clip-Offset/Marker-Domäne nachfassen
     pts1, pts2, tracks = _gather(int(frame_a), int(frame_b))
+    _plog(f"gather start: frames=({int(frame_a)},{int(frame_b)})")
     if (pts1 is None or len(pts1) < 8) and hasattr(clip, "frame_start"):
         off = int(getattr(clip, "frame_start", 1)) - 1
         pts1, pts2, tracks = _gather(int(frame_a) - off, int(frame_b) - off)
+        _plog(f"gather fallback#1: offset={off} → pts={0 if pts1 is None else len(pts1)}")
     if pts1 is None or len(pts1) < 8:
         all_tr = [tr for tr in clip.tracking.tracks if len(tr.markers) > 0]
         if all_tr:
@@ -195,6 +197,7 @@ def estimate_pre_solve_metrics(
             s_start = int(bpy.context.scene.frame_start)
             off2 = s_start - c_min
             pts1, pts2, tracks = _gather(int(frame_a) - off2, int(frame_b) - off2)
+            _plog(f"gather fallback#2: scene_start={s_start}, c_min={c_min}, off2={off2} → pts={0 if pts1 is None else len(pts1)}")
 
     if pts1 is None or len(pts1) < 8:
         met = PreSolveMetrics(
@@ -221,6 +224,7 @@ def estimate_pre_solve_metrics(
     parallax_p95 = float(np.percentile(disp, 95))
     w_img, h_img = _clip_size(clip)
     coverage = _quadrant_coverage(np.vstack([pts1, pts2]), w_img, h_img)
+    _plog(f"preRANSAC: size=({w_img}x{h_img}) pts={len(pts1)} parallax_med={parallax_med:.2f} p95={parallax_p95:.2f} covQ={coverage:.2f}")
 
     # Radiale Skalierung (r2/r1)
     cx, cy = w_img*0.5, h_img*0.5
@@ -263,7 +267,12 @@ def estimate_pre_solve_metrics(
     sampson = _sampson_dist(F, pts1[inlier_mask], pts2[inlier_mask])
     median_s = float(np.median(sampson)) if sampson.size>0 else float('inf')
     mean_s = float(np.mean(sampson)) if sampson.size>0 else float('inf')
-
+    try:
+        med_txt = f"{median_s:.3f}" if np.isfinite(median_s) else "inf"
+        mean_txt = f"{mean_s:.3f}" if np.isfinite(mean_s) else "inf"
+    except Exception:
+        med_txt, mean_txt = "nan", "nan"
+    _plog(f"RANSAC: inliers={inl_cnt}/{tot_cnt} median_sampson={med_txt} mean_sampson={mean_txt}")
     # Zusatzmetriken
     diag = float(np.hypot(w_img, h_img)) if (w_img and h_img) else 1.0
     parallax_norm = max(0.0, min(1.0, parallax_med/diag))
@@ -271,6 +280,7 @@ def estimate_pre_solve_metrics(
     inlier_ratio = float(inl_cnt/max(tot_cnt,1))
     coverage_area = _coverage_area(np.vstack([pts1, pts2]), w_img, h_img)
     coverage_score = max(0.0, min(1.0, coverage_area * coverage))
+    _plog(f"postRANSAC: inlier_ratio={inlier_ratio:.3f} parallax_norm={parallax_norm:.3f} parallax_rms_norm={parallax_rms_norm:.3f} covArea={coverage_area:.3f} covScore={coverage_score:.3f}")
 
     # Konditionszahl
     try:
@@ -303,6 +313,7 @@ def estimate_pre_solve_metrics(
     hr = 1.0 + float(hom_ratio) if (hom_ratio is not None and np.isfinite(hom_ratio)) else 1.0
     denom = max(inlier_ratio,1e-6)*max(parallax_rms_norm,1e-6)*max(coverage_score,1e-6)*max(track_len_norm,1e-6)*(1.0+scale_norm)
     predicted_error = (median_s * (1.0 + deg_penalty) * hr) / denom if np.isfinite(median_s) else float('inf')
+    _plog(f"quality: cond_ratio={cond_ratio if np.isfinite(cond_ratio) else 'inf'} hom_ratio={hom_ratio if hom_ratio is not None else 'n/a'} scale_med={scale_median:.3f} scale_norm={scale_norm:.3f} pred_err={predicted_error if np.isfinite(predicted_error) else 'inf'}")
 
     # Root-Cause bestimmen
     root, reason = _root_cause(
@@ -569,28 +580,6 @@ def _coverage_area(all_pts: np.ndarray, w: int, h: int) -> float:
     bb_w = max(0.0, (max_x - min_x) / float(w))
     bb_h = max(0.0, (max_y - min_y) / float(h))
     return float(max(0.0, bb_w) * max(0.0, bb_h))
-
-def _quadrant_coverage(all_pts: np.ndarray, w: int, h: int, *, min_per_quad: int = 1) -> float:
-    """
-    Anteil belegter Quadranten (2x2) in [0..1].
-    Robust gegen leere Arrays und NaNs/INFs.
-    """
-    try:
-        if all_pts is None or getattr(all_pts, "size", 0) == 0 or w <= 0 or h <= 0:
-            return 0.0
-        pts = np.asarray(all_pts, dtype=np.float64)
-        pts = pts[np.all(np.isfinite(pts), axis=1)]
-        if pts.size == 0:
-            return 0.0
-        midx, midy = float(w) * 0.5, float(h) * 0.5
-        qx = (pts[:, 0] >= midx).astype(np.int8)  # 0: links, 1: rechts
-        qy = (pts[:, 1] >= midy).astype(np.int8)  # 0: oben,  1: unten
-        qid = (qy << 1) | qx                       # 0..3
-        counts = np.bincount(qid, minlength=4)
-        filled = int(np.sum(counts >= int(min_per_quad)))
-        return float(filled) / 4.0
-    except Exception:
-        return 0.0
 
 def _is_verbose() -> bool:
     try:
