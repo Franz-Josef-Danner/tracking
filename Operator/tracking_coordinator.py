@@ -57,6 +57,20 @@ _CYCLE_MAX_ITER = 6
 def _tco_log(msg: str) -> None:
     print(f"[tracking_coordinator] {msg}")
 
+def _is_verbose() -> bool:
+    try:
+        return bool(bpy.context.scene.get("tco_verbose", False))
+    except Exception:
+        return False
+
+def _kv(d: Dict[str, Any]) -> str:
+    try:
+        keys = list(d.keys())
+        keys.sort()
+        return ", ".join(f"{k}={d.get(k)!r}" for k in keys)
+    except Exception:
+        return str(d)
+
 
 def _pause(seconds: float = 0.5) -> None:
     """Kleine, robuste Pause zwischen Schritten."""
@@ -662,6 +676,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             ...
         use_proj = bool(list(getattr(context.scene, "tco_proj_spike_tracks", []) or []))
         try:
+            t0 = time.perf_counter()
             if use_proj:
                 res = run_projection_spike_filter_cycle(
                     context,
@@ -679,10 +694,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 )
                 status = str(res.get("status","")).upper()
                 muted = int(res.get("muted", 0) or 0)
-
+            dt_ms = (time.perf_counter() - t0) * 1000.0
             next_thr = float(res.get("next_threshold", self._spike_threshold * 0.9))
-            affected = int(muted)  # vereinheitlicht: projektion_* liefert "deleted", spike_* liefert "muted"
-            print(f"[Coord] CYCLE_SPIKE → status={status}, affected={affected}, next={next_thr:.2f} (curr={self._spike_threshold:.2f})")
+            affected = int(muted)  # vereinheitlicht
+            print(f"[Coord] CYCLE_SPIKE → status={status}, affected={affected}, next={next_thr:.2f} (curr={self._spike_threshold:.2f}), time={dt_ms:.1f}ms")
+            if _is_verbose():
+                print(f"[Coord] CYCLE_SPIKE detail → { _kv(res if isinstance(res, dict) else {'result': res}) }")
+
             self._spike_threshold = max(next_thr, 0.0)
             ...
 
@@ -708,11 +726,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
             if affected > 0:
                 self._cycle_iterations += 1
-                print(f"[Coord] CYCLE_SPIKE → affected>0 → incremented deletion-iterations to {self._cycle_iterations}/{_CYCLE_MAX_ITER}")
+                print(f"[Coord] CYCLE_SPIKE → affected>0 → deletion-iterations {self._cycle_iterations}/{_CYCLE_MAX_ITER}")
                 if self._cycle_iterations > _CYCLE_MAX_ITER:
                     print(f"[Coord] CYCLE deletion-iteration limit ... → SPLIT_CLEANUP (blocking)")
                     self._cycle_active = False
+                    t1 = time.perf_counter()
                     _run_split_cleanup_blocking(context)
+                    dt_split = (time.perf_counter() - t1) * 1000.0
+                    print(f"[Coord] SPLIT_CLEANUP runtime={dt_split:.1f}ms")
                     _pause(0.5)
 
                     # Clean-Short-Tracks
@@ -817,12 +838,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 else:
                     scn.preflight_note = "Median > 2 × error_track"
     
+            med = metrics.median_sampson_px
+            med_txt = f"{med:.3f}" if isinstance(med, (int, float)) and math.isfinite(med) else str(med)
             print(
                 f"[Coord] SOLVE Preflight → frames=({f1},{f2}) "
-                f"median_sampson={metrics.median_sampson_px:.3f} "
+                f"median_sampson={med_txt} "
                 f"inliers={metrics.inliers}/{metrics.total} "
-                f"coverage={metrics.coverage_quadrants*100:.0f}% thresh={thresh:.3f}"
+                f"coverage={int(metrics.coverage_quadrants*100)}% thresh={thresh:.3f}"
             )
+            if _is_verbose():
+                try:
+                    md = metrics.as_dict() if hasattr(metrics, "as_dict") else {k: getattr(metrics, k) for k in dir(metrics) if not k.startswith('_')}
+                except Exception:
+                    md = {}
+                print(f"[Coord] SOLVE Preflight detail → { _kv(md) }")
     
         except Exception as ex:
             # **WICHTIG**: Kein Solve bei Fehlern im Preflight
@@ -856,39 +885,19 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         curr = _wait_for_valid_reconstruction(context, timeout_s=wait_s)
         curr = _current_solve_error(context) if curr is None else curr
         print(f"[Coord] EVAL → curr_error={curr if curr is not None else 'None'} target={target}")
-        # --- NEU: zweimal identischer Error → einmalig triggern ---
-        # Note: math.isclose statt exakter Gleichheit (floating point!)
+        # --- identischer Error 2× in Folge → einmalig CLEANUP triggern (Duplikatlogik bereinigt) ---
         if curr is not None:
             if self._last_solve_error is not None and math.isclose(
                 float(curr), float(self._last_solve_error), rel_tol=1e-6, abs_tol=1e-6
             ):
                 self._same_error_repeat_count += 1
             else:
-                self._same_error_repeat_count = 1  # neuer Wert startet Zählung
+                self._same_error_repeat_count = 1
             self._last_solve_error = float(curr)
-
             if self._same_error_repeat_count >= 2:
-                print(f"[Coord] EVAL → identischer Solve-Error zweimal in Folge ({curr:.6f}) → Trigger")
-                # einmalig auslösen → z. B. Cleanup anstoßen
+                print(f"[Coord] EVAL → identischer Solve-Error zweimal in Folge ({float(curr):.6f}) → CLEANUP")
                 self._same_error_repeat_count = 0
                 self._last_solve_error = None
-                self._state = "CLEANUP"
-                return {"RUNNING_MODAL"}
-
-        # --- NEU: Check auf zweimal denselben Error hintereinander ---
-        if curr is not None:
-            if self._last_solve_error is not None and abs(curr - self._last_solve_error) < 1e-6:
-                self._same_error_repeat_count += 1
-            else:
-                self._same_error_repeat_count = 1  # reset, neuer Wert
-
-            self._last_solve_error = curr
-
-            if self._same_error_repeat_count >= 2:
-                print(f"[Coord] EVAL → ERROR {curr:.4f} wiederholt sich zweimal → Trigger ausgelöst")
-                self._same_error_repeat_count = 0  # zurücksetzen, nur einmal auslösen
-                # >>> HIER deinen gewünschten Effekt starten <<<
-                # z. B. sofort in CLEANUP wechseln:
                 self._state = "CLEANUP"
                 return {"RUNNING_MODAL"}
 
