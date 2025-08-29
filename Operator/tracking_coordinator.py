@@ -1,14 +1,9 @@
-# SPDX-License-Identifier: GPL-2.0-or-later
-"""
-tracking_coordinator.py – Orchestrator-Zyklus (find → jump → detect → bidi)
-- Beim Auslösen: zuerst Bootstrap/Reset, dann modaler Ablauf bis Abschluss.
-- Timer-start robust (auch ohne context.window).
-- Konfliktfrei: es läuft immer nur eine Phase gleichzeitig.
-"""
+# a/Operator/tracking_coordinator.py
+
 
 from __future__ import annotations
 import bpy
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 print(f"[Coordinator] LOADED from {__file__}")
 
@@ -40,6 +35,14 @@ try:
 except Exception:
     from Helper.spike_filter_cycle import run_marker_spike_filter_cycle  # type: ignore
 
+try:
+    from ..Helper.find_max_marker_frame import run_find_max_marker_frame
+except Exception:
+    from Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
+
+# ------------------------------------------------------------
+# Utility
+# ------------------------------------------------------------
 # ------------------------------------------------------------
 # Scene Keys & Phasen
 # ------------------------------------------------------------
@@ -57,7 +60,16 @@ PH_DETECT = "DETECT"
 PH_BIDI_S = "BIDI_START"
 PH_BIDI_W = "BIDI_WAIT"
 PH_FIN    = "FINISH"
+PH_SPIKE  = "SPIKE_FILTER"           # NEU: Second-Cycle Step 1
+PH_FMAX   = "FIND_MAX_MARKER"        # NEU: Second-Cycle Step 2
 
+# Error-Threshold-State (für Second-Cycle)
+K_ERR_THR_BASE = "tco_err_thr_base"  # ursprünglicher Basiswert (Reset bei Rückkehr zu Cycle 1)
+K_ERR_THR_CURR = "tco_err_thr_curr"  # aktueller Arbeitswert (wird *0.9 gesenkt)
+ERR_THR_FLOOR  = 10.0                # px, Abbruch-Schwelle Second-Cycle
+
+def _get_err_threshold_pair(scn: bpy.types.Scene) -> Tuple[float, float]:
+    return float(scn.get(K_ERR_THR_BASE, 0.0) or  float(scn.get("error_threshold_px", 100.0))), float(scn.get(K_ERR_THR_CURR, 0.0) or float(scn.get("error_threshold_px", 100.0)))
 # Timer-Intervall des Modal-Handlers (Sekunden)
 TIMER_SEC = 0.20
 
@@ -75,7 +87,15 @@ def _bootstrap(context: bpy.types.Context) -> None:
     scn.pop(K_GOTO_FRAME, None)
     scn.pop(K_BIDI_RESULT, None)
     scn[K_BIDI_ACTIVE] = False
-
+    # Error-Threshold-Initialisierung (Second-Cycle)
+    try:
+        base = float(scn.get("error_threshold_px", 100.0))
+    except Exception:
+        base = 100.0
+    scn[K_ERR_THR_BASE] = base
+    scn[K_ERR_THR_CURR] = base
+    # Hinweis im Last-Log
+    scn[K_LAST].update({"err_thr_base": base}
 
 # Öffentlicher Wrapper – falls andere Module `bootstrap(context)` importieren
 def bootstrap(context: bpy.types.Context) -> None:
@@ -263,18 +283,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 scn[K_GOTO_FRAME] = int(res["frame"])
                 scn[K_PHASE] = PH_JUMP
             elif st == "NONE":
-                # NEU: Spike-Filter aufrufen
-                try:
-                    # Threshold zentral aus Scene (Fallback 4.0 px)
-                    thr = float(scn.get("error_threshold_px", 100.0))
-                    sres = run_marker_spike_filter_cycle(context, track_threshold=thr)
-                    scn[K_LAST] = {"phase": "SPIKE_FILTER", **sres, "tick": tick}
-                    print(f"[Coordinator] SPIKE_FILTER(thr={thr}) → {sres}")
-                except Exception as ex:
-                    scn[K_LAST] = {"phase": "SPIKE_FILTER", "status": "FAILED", "reason": str(ex), "tick": tick}
-                    print(f"[Coordinator] SPIKE_FILTER FAILED → {ex}")
-                # Danach wieder zurück in FIND, nicht direkt Finish
-                scn[K_PHASE] = PH_FIND
+                # → Second-Cycle starten
+                # Hinweis: Threshold wird im Second-Cycle geführt (K_ERR_THR_CURR)
+                base, curr = _get_err_threshold_pair(scn)
+                scn[K_LAST] = {"phase": PH_FIND, "status": "NONE", "err_thr_curr": curr, "tick": tick}
+                scn[K_PHASE] = PH_SPIKE
             else:
                 scn[K_PHASE] = PH_DETECT
             return {'RUNNING_MODAL'}
@@ -290,7 +303,47 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if scn.get(K_DETECT_LOCK, False):
                 print("[Coordinator] DETECT locked → wait")
                 return {'RUNNING_MODAL'}
-        
+                
+        if phase == PH_SPIKE:
+            # Second-Cycle Step 1: Spike-Filter mit aktuellem Threshold
+            _, curr = _get_err_threshold_pair(scn)
+            try:
+                sres = run_marker_spike_filter_cycle(context, track_threshold=float(curr))
+                scn[K_LAST] = {"phase": PH_SPIKE, **sres, "err_thr_used": float(curr), "tick": tick}
+                print(f"[Coordinator] SPIKE_FILTER(thr={curr}) → {sres}")
+            except Exception as ex:
+                scn[K_LAST] = {"phase": PH_SPIKE, "status": "FAILED", "reason": str(ex), "err_thr_used": float(curr), "tick": tick}
+                print(f"[Coordinator] SPIKE_FILTER FAILED → {ex}")
+            scn[K_PHASE] = PH_FMAX
+            return {'RUNNING_MODAL'}
+
+        if phase == PH_FMAX:
+            # Second-Cycle Step 2: Max-Marker-Frame suchen
+            fmr = run_find_max_marker_frame(context, log_each_frame=False, return_observed_min=True)
+            scn[K_LAST] = {"phase": PH_FMAX, **fmr, "tick": tick}
+            print(f"[Coordinator] FIND_MAX_MARKER → {fmr}")
+            if fmr.get("status") == "FOUND":
+                # → zurück in Cycle 1 und Error-Threshold resetten
+                scn[K_ERR_THR_CURR] = float(scn.get(K_ERR_THR_BASE, scn.get("error_threshold_px", 100.0)))
+                scn[K_PHASE] = PH_FIND
+                return {'RUNNING_MODAL'}
+            # Kein Frame gefunden → Threshold senken (*0.9), Floor 10 px
+            try:
+                curr = float(scn.get(K_ERR_THR_CURR, scn.get("error_threshold_px", 100.0)))
+            except Exception:
+                curr = float(scn.get("error_threshold_px", 100.0))
+            next_thr = max(ERR_THR_FLOOR, curr * 0.9)
+            scn[K_ERR_THR_CURR] = float(next_thr)
+            scn[K_LAST].update({"err_thr_curr_next": float(next_thr)})
+            # Wenn Floor erreicht → Second-Cycle fertig → Gesamtprozess beenden
+            if next_thr <= ERR_THR_FLOOR + 1e-6:
+                print("[Coordinator] Second-Cycle beendet: Threshold-Floor erreicht")
+                scn[K_PHASE] = PH_FIN
+            else:
+                # → erneut Spike-Filter laufen lassen
+                scn[K_PHASE] = PH_SPIKE
+            return {'RUNNING_MODAL'}
+
             # Zentrales Wiederholungslimit (UI/Scene-property override-bar)
             max_attempts = int(scn.get("detect_max_attempts", 20))
         
@@ -343,8 +396,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 print(f"[Coordinator] CLEAN_SHORT → processed={processed}, affected={affected}")
             except Exception as ex:
                 print(f"[Coordinator] CLEAN_SHORT FAILED → {ex}")
-            
-            scn[K_PHASE] = PH_FIND
+            # **WICHTIG**: Bei Rückkehr in Cycle 1 immer Error-Threshold resetten
+            try:
+                scn[K_ERR_THR_CURR] = float(scn.get(K_ERR_THR_BASE, scn.get("error_threshold_px", 100.0)))
+            except Exception:
+                scn[K_ERR_THR_CURR] = float(scn.get("error_threshold_px", 100.0))            scn[K_PHASE] = PH_FIND
             return {'RUNNING_MODAL'}
             
         if phase == PH_FIN:
