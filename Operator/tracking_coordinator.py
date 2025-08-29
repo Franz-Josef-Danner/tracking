@@ -26,9 +26,9 @@ except Exception:
     from Helper.jump_to_frame import run_jump_to_frame  # type: ignore
 
 try:
-    from ..Helper.detect import run_detect_adaptive
+    from ..Helper.detect import run_detect_once
 except Exception:
-    from Helper.detect import run_detect_adaptive  # type: ignore
+    from Helper.detect import run_detect_once  # type: ignore
 
 # ------------------------------------------------------------
 # Scene Keys & Phasen
@@ -269,7 +269,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if scn.get(K_DETECT_LOCK, False):
                 print("[Coordinator] DETECT locked → wait")
                 return {'RUNNING_MODAL'}
-
+        
             res = run_detect_adaptive(
                 context,
                 start_frame=None,
