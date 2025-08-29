@@ -11,7 +11,8 @@ from mathutils.kdtree import KDTree
 
 __all__ = [
     "perform_marker_detection",
-    "run_detect_once",
+    "run_detect_once",      # Backward-Compat
+    "run_detect_basic",     # NEU: schlanker Detect-Pass für Mini-Zyklus
 ]
 
 # ---------------------------------------------------------------------
@@ -178,6 +179,94 @@ def perform_marker_detection(
         raise
     return sum(1 for t in tracking.tracks if getattr(t, "select", False))
 
+# ---------------------------------------------------------------------
+# Public: basic detect (nur setzen + Baseline liefern)
+# ---------------------------------------------------------------------
+def run_detect_basic(
+    context: bpy.types.Context,
+    *,
+    start_frame: Optional[int] = None,
+    threshold: Optional[float] = None,
+    margin_base: Optional[int] = None,
+    min_distance_base: Optional[int] = None,
+    selection_policy: str = "only_new",
+) -> Dict[str, Any]:
+    """
+    Minimal-Pass: setzt Marker (detect_features) mit Skalenparametern,
+    selektiert nur NEUE Marker und liefert Baseline (pre_ptrs, frame, width, height)
+    für die folgenden distanze/count/multi Schritte.
+    """
+    scn = context.scene
+    clip = _get_movieclip(context)
+    if not clip:
+        return {"status": "FAILED", "reason": "no_movieclip"}
+
+    tracking = clip.tracking
+    width, height = int(clip.size[0]), int(clip.size[1])
+
+    if start_frame is not None:
+        try:
+            scn.frame_set(int(start_frame))
+        except Exception:
+            pass
+    frame = int(scn.frame_current)
+
+    # Threshold aus Szene, falls nicht explizit gesetzt
+    if threshold is None:
+        base_thr = float(getattr(tracking.settings, "default_correlation_min", 0.75))
+        try:
+            last_thr = float(scn.get(DETECT_LAST_THRESHOLD_KEY, base_thr))
+        except Exception:
+            last_thr = base_thr
+        threshold = max(1e-6, float(last_thr))
+    else:
+        threshold = max(1e-6, float(threshold))
+
+    # Basisskalen
+    if margin_base is None:
+        margin_base = max(1, int(width * 0.025))
+    if min_distance_base is None:
+        min_distance_base = max(1, int(width * 0.05))
+
+    # Vorherige Pointer sichern
+    pre_ptrs: Set[int] = {t.as_pointer() for t in tracking.tracks}
+
+    # Detect ausführen
+    _deselect_all(tracking)
+    try:
+        perform_marker_detection(clip, tracking, float(threshold), int(margin_base), int(min_distance_base))
+    except Exception:
+        return {"status": "FAILED", "reason": "detect_features_failed", "frame": int(frame)}
+
+    # Nur NEUE markieren
+    new = [t for t in tracking.tracks if t.as_pointer() not in pre_ptrs]
+    _deselect_all(tracking)
+    if selection_policy == "only_new":
+        for t in new:
+            t.select = True
+
+    # Schwelle persistieren (für nächsten Versuch)
+    try:
+        scn[DETECT_LAST_THRESHOLD_KEY] = float(threshold)
+    except Exception:
+        pass
+
+    try:
+        bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
+    except Exception:
+        pass
+
+    return {
+        "status": "READY",
+        "frame": int(frame),
+        "threshold": float(threshold),
+        "margin_px": int(margin_base),
+        "min_distance_px": int(min_distance_base),
+        "pre_ptrs": pre_ptrs,
+        "new_count_raw": int(len(new)),
+        "width": int(width),
+        "height": int(height),
+    }
 
 # ---------------------------------------------------------------------
 # Pattern-triplet helpers & API
