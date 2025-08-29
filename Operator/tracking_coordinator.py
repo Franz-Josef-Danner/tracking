@@ -443,14 +443,21 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception:
                 curr = float(scn.get("error_threshold_px", 100.0))
             next_thr = max(ERR_THR_FLOOR, curr * 0.9)
-            scn[K_ERR_THR_CURR] = float(next_thr)
-            scn[K_LAST].update({"err_thr_curr_next": float(next_thr)})
-            # Wenn Floor erreicht → Second-Cycle fertig → Gesamtprozess beenden
+
+            # Wenn Floor erreicht, noch einen letzten Cycle ohne weitere Senkung
             if next_thr <= ERR_THR_FLOOR + 1e-6:
-                print("[Coordinator] Second-Cycle beendet: Threshold-Floor erreicht")
-                scn[K_PHASE] = PH_FIN
+                if not scn.get("tco_floor_cycle_done", False):
+                    # einmaliges Flag setzen und Cycle nochmal starten
+                    scn["tco_floor_cycle_done"] = True
+                    scn[K_ERR_THR_CURR] = float(ERR_THR_FLOOR)
+                    print("[Coordinator] Threshold-Floor erreicht → letzter Zyklus läuft")
+                    scn[K_PHASE] = PH_SPIKE
+                else:
+                    print("[Coordinator] Second-Cycle beendet: letzter Zyklus abgeschlossen")
+                    scn[K_PHASE] = PH_FIN
             else:
-                # → erneut Spike-Filter laufen lassen
+                scn[K_ERR_THR_CURR] = float(next_thr)
+                scn[K_LAST].update({"err_thr_curr_next": float(next_thr)})
                 scn[K_PHASE] = PH_SPIKE
             return {'RUNNING_MODAL'}
             # (ENTFERNT) Der DETECT-Loop war hier fälschlich hinter PH_FMAX platziert und somit unerreichbar.
