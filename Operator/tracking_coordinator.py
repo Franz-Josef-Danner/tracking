@@ -388,8 +388,32 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             scn[K_PHASE] = PH_BIDI_S
             return {'RUNNING_MODAL'}
 
-            # Second-Cycle: Spike-Filter (erster Schritt)
-        if phase == PH_CSEG:
+        # -----------------------------
+        # Second-Cycle: Spike-Filter
+        # -----------------------------
+        if phase == PH_SPIKE:
+            try:
+                # aktuellen Arbeits-Threshold holen (fällt zuvor ggf. in PH_FMAX)
+                try:
+                    curr_thr = float(scn.get(K_ERR_THR_CURR, scn.get("error_threshold_px", 100.0)))
+                except Exception:
+                    curr_thr = float(scn.get("error_threshold_px", 100.0))
+
+                # Spike-Filter ausführen – Threshold kommt *nur* vom Coordinator
+                # (Helper/spike_filter_cycle.py hat keine eigene Absenklogik mehr)
+                sres = run_marker_spike_filter_cycle(
+                    context,
+                    error_threshold_px=float(curr_thr),
+                )
+                scn[K_LAST] = {"phase": PH_SPIKE, **(sres if isinstance(sres, dict) else {}), "tick": tick}
+                print(f"[Coordinator] SPIKE_FILTER(thr={curr_thr}) → {sres}")
+            except Exception as ex:
+                scn[K_LAST] = {"phase": PH_SPIKE, "status": "FAILED", "reason": str(ex), "tick": tick}
+                print(f"[Coordinator] SPIKE_FILTER FAILED → {ex}")
+
+            # Weiter im Second-Cycle
+            scn[K_PHASE] = PH_CSEG
+            return {'RUNNING_MODAL'}        if phase == PH_CSEG:
             # Second-Cycle: Kurzsegmente-Cleanup (nach SPIKE)
             try:
                 # Default-Min-Länge: tco_min_seg_len → frames_track → 25
