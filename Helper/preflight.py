@@ -9,7 +9,16 @@ Abhängigkeiten: NumPy (Blender-bundled)
 Lizenz: MIT
 """
 from __future__ import annotations
+from typing import Iterable, Tuple
 
+# Neu: sauberer Import der Quadrantenmetrik; Fallback vermeidet NameError
+try:
+    from .preflight_metrics import quadrant_coverage as _quadrant_coverage
+except Exception:
+    def _quadrant_coverage(coords_px: Iterable[Tuple[float, float]], w: float, h: float, min_per_quadrant: int = 3):
+        # Fallback → liefert "keine Abdeckung", verhindert aber Crash
+        return 0.0, (0, 0, 0, 0)
+        
 from dataclasses import dataclass, asdict
 from typing import Dict, List, Optional, Sequence, Tuple
 
