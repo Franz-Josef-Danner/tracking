@@ -179,13 +179,17 @@ def run_detect_basic(
         default_thr = float(scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
         thr = float(threshold) if threshold is not None else default_thr
 
-        # Bei JEDEM Durchgang Werte aus der Szene ziehen und Formel anwenden
-        # margin = int(margin_base) if margin_base is not None else max(16, int(0.025 * max(width, height)))
-        # min_dist = int(min_distance_base) if min_distance_base is not None else max(8, int(0.05 * max(width, height)))
+        # Baselines aus Szene lesen (Fallback: heuristische Defaults auf Clipgröße)
         sb_margin = scn.get("margin_base", None)
         sb_min_dist = scn.get("min_distance_base", None)
-        margin = int(sb_margin) if sb_margin is not None else max(16, int(0.025 * max(width, height)))
-        min_dist = int(sb_min_dist) if sb_min_dist is not None else max(8, int(0.05 * max(width, height)))
+        base_margin = int(sb_margin) if sb_margin is not None else max(16, int(0.025 * max(width, height)))
+        base_min    = int(sb_min_dist) if sb_min_dist is not None else max(8,  int(0.05  * max(width, height)))
+
+        # Dynamische Skalierung anhand des aktuellen Thresholds (ohne Persistenz)
+        safe   = max(thr * 1e8, 1e-8)  # numerisch stabil
+        factor = math.log10(safe) / 8.0
+        margin    = max(0, int(base_margin * factor))
+        min_dist  = max(1, int(base_min    * factor))
 
         # Placement normalisieren (RNA-Enum erwartet 'FRAME' | 'INSIDE_GPENCIL' | 'OUTSIDE_GPENCIL')
         p = (placement or "FRAME").upper()
@@ -199,7 +203,7 @@ def run_detect_basic(
             min_distance_px=min_dist,
         )
 
-        # Threshold persistieren
+        # Threshold persistieren (nur Threshold, keine margin/min_dist Persistenz)
         scn[DETECT_LAST_THRESHOLD_KEY] = float(thr)
 
         return {
