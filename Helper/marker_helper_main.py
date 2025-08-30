@@ -19,13 +19,26 @@ def marker_helper_main(context) -> Tuple[bool, int, Dict[str, Any]]:
     marker_min     = int(max(1, round(marker_adapt * 0.9)))
     marker_max     = int(max(2, round(marker_adapt * 1.1)))
 
+    # Bildgröße für margin/min_dist ableiten
+    clip = getattr(scn, "clip", None)
+    if clip:
+        width  = getattr(clip, "size", (0, 0))[0]
+        height = getattr(clip, "size", (0, 0))[1]
+    else:
+        width, height = 0, 0
+
+    margin = max(16, int(0.025 * max(width, height)))
+    min_dist = max(8, int(0.05 * max(width, height)))
+
     # Persistenz
-    scn["marker_basis"]  = int(marker_basis)   # <- FIND_LOW nutzt diesen Basiswert
-    scn["marker_adapt"]  = int(marker_adapt)
-    scn["marker_min"]    = int(marker_min)
-    scn["marker_max"]    = int(marker_max)
-    scn["frames_track"]  = int(frames_track)
-    scn["resolve_error"] = float(resolve_error)
+    scn["marker_basis"]   = int(marker_basis)   # <- FIND_LOW nutzt diesen Basiswert
+    scn["marker_adapt"]   = int(marker_adapt)
+    scn["marker_min"]     = int(marker_min)
+    scn["marker_max"]     = int(marker_max)
+    scn["frames_track"]   = int(frames_track)
+    scn["resolve_error"]  = float(resolve_error)
+    scn["margin_base"]    = int(margin)
+    scn["min_distance_base"] = int(min_dist)
 
     # Telemetrie
 
