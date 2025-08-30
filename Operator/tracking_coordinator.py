@@ -175,8 +175,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # nur einmal auszulösen und anschließend auf den Abschluss zu warten.
     bidi_started: bool = False
     # Temporärer Schwellenwert für den Spike-Cycle (startet bei 100, *0.9)
-    def poll(cls, context: bpy.types.Context) -> bool:
-        return context is not None and context.scene is not None
 
     def execute(self, context: bpy.types.Context):
         # Bootstrap/Reset
