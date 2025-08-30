@@ -12,22 +12,16 @@ tracking_coordinator.py – Streng sequentieller, MODALER Orchestrator
 
 from __future__ import annotations
 import bpy
-from ..Helper.
-from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
 
-from ..Helper.split_cleanup import recursive_split_cleanup  # type: ignore
-
-from ..Helper.clean_short_segments import clean_short_segments  # type: ignore
-
-from ..Helper.spike_filter_cycle import run_marker_spike_filter_cycle  # type: ignore
-find_low_marker_frame import run_find_low_marker_frame
+# Core helpers
+from ..Helper.find_low_marker_frame import run_find_low_marker_frame
 from ..Helper.jump_to_frame import run_jump_to_frame
 from ..Helper.detect import run_detect_once
 from ..Helper.distanze import run_distance_cleanup
-# Versuche, die Auswertungsfunktion für die Markeranzahl zu importieren.
-# Diese Funktion soll nach dem Distanz-Cleanup ausgeführt werden und
-# verwendet interne Grenzwerte aus der count.py. Es werden keine
-# zusätzlichen Parameter übergeben.
+from ..Helper.tracker_settings import apply_tracker_settings
+from ..Helper.marker_helper_main import marker_helper_main
+
+# Optional/try imports
 try:
     from ..Helper.count import evaluate_marker_count  # type: ignore
 except Exception:
@@ -35,10 +29,7 @@ except Exception:
         from .count import evaluate_marker_count  # type: ignore
     except Exception:
         evaluate_marker_count = None  # type: ignore
-from ..Helper.tracker_settings import apply_tracker_settings
 
-# Optional: den Bidirectional‑Track Operator importieren. Wenn der Import
-# fehlschlägt, bleibt die Variable auf None und es erfolgt kein Aufruf.
 try:
     from ..Helper.bidirectional_track import CLIP_OT_bidirectional_track  # type: ignore
 except Exception:
@@ -47,8 +38,6 @@ except Exception:
     except Exception:
         CLIP_OT_bidirectional_track = None  # type: ignore
 
-# Optionaler Import für das Entfernen kurzer Spuren nach der Bidirectional-Phase.
-# Wenn der Import fehlschlägt, bleibt die Variable None und es erfolgt kein Cleanup.
 try:
     from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
 except Exception:
@@ -57,34 +46,55 @@ except Exception:
     except Exception:
         clean_short_tracks = None  # type: ignore
 
-# -----------------------------------------------------------------------------
-# Optionally import the multi-pass helper. This helper performs additional
-# feature detection passes with varied pattern sizes. It will be invoked when
-# the marker count evaluation reports that the number of markers lies within
-# the acceptable range ("ENOUGH").
 try:
-    # Prefer package-style import when the Helper package is available
     from ..Helper.multi import run_multi_pass  # type: ignore
 except Exception:
     try:
-        # Fallback to local import when running as a standalone module
         from .multi import run_multi_pass  # type: ignore
     except Exception:
-        # If import fails entirely, leave run_multi_pass as None
         run_multi_pass = None  # type: ignore
-from ..Helper.marker_helper_main import marker_helper_main
-# Import the detect threshold key so we can reference the last used value
+
+# Additional helpers for the spike cycle
 try:
-    # Local import when running inside the package structure
+    from ..Helper.spike_filter_cycle import run_marker_spike_filter_cycle  # type: ignore
+except Exception:
+    try:
+        from .spike_filter_cycle import run_marker_spike_filter_cycle  # type: ignore
+    except Exception:
+        run_marker_spike_filter_cycle = None  # type: ignore
+
+try:
+    from ..Helper.clean_short_segments import clean_short_segments  # type: ignore
+except Exception:
+    try:
+        from .clean_short_segments import clean_short_segments  # type: ignore
+    except Exception:
+        clean_short_segments = None  # type: ignore
+
+try:
+    from ..Helper.split_cleanup import recursive_split_cleanup  # type: ignore
+except Exception:
+    try:
+        from .split_cleanup import recursive_split_cleanup  # type: ignore
+    except Exception:
+        recursive_split_cleanup = None  # type: ignore
+
+try:
+    from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
+except Exception:
+    try:
+        from .find_max_marker_frame import run_find_max_marker_frame  # type: ignore
+    except Exception:
+        run_find_max_marker_frame = None  # type: ignore
+
+# Detect threshold scene key
+try:
     from ..Helper.detect import DETECT_LAST_THRESHOLD_KEY  # type: ignore
 except Exception:
     try:
-        # Fallback when module layout differs
         from .detect import DETECT_LAST_THRESHOLD_KEY  # type: ignore
     except Exception:
-        # Default value if import fails
         DETECT_LAST_THRESHOLD_KEY = "last_detection_threshold"  # type: ignore
-
 __all__ = ("CLIP_OT_tracking_coordinator",)
 
 # --- Orchestrator-Phasen ----------------------------------------------------
