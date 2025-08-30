@@ -4,7 +4,10 @@ from __future__ import annotations
 from typing import Optional, Dict, Any, List
 import bpy
 
-__all__ = ["run_find_max_marker_frame"]
+__all__
+
+# Scene flag set by coordinator when spike cycle is exhausted
+SPIKE_FLAG_SCENE_KEY = "tco_spike_cycle_finished" = ["run_find_max_marker_frame"]
 
 
 # ---------------------------------------------------------------------------
@@ -156,4 +159,11 @@ def run_find_max_marker_frame(
             "observed_min": int(observed_min or 0),
             "observed_min_frame": int(observed_min_frame or s_start),
         })
+    # If spike cycle is exhausted and no frame was found, log a terminal 'finish' message
+    try:
+        scn = getattr(context, 'scene', None)
+        if scn is not None and bool(scn.get(SPIKE_FLAG_SCENE_KEY, False)):
+            print('finish')
+    except Exception:
+        pass
     return out
