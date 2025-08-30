@@ -1,8 +1,8 @@
-+"""
-+tracking_coordinator.py – Streng sequentieller, MODALER Orchestrator
-+- Phasen: FIND_LOW → JUMP → DETECT → DISTANZE (hart getrennt, seriell)
-+- Jede Phase startet erst, wenn die vorherige abgeschlossen wurde.
-+"""
+"""
+tracking_coordinator.py – Streng sequentieller, MODALER Orchestrator
+- Phasen: FIND_LOW → JUMP → DETECT → DISTANZE (hart getrennt, seriell)
+- Jede Phase startet erst, wenn die vorherige abgeschlossen wurde.
+"""
 
 from __future__ import annotations
 import bpy
