@@ -10,6 +10,8 @@ import bpy
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame
 from ..Helper.jump_to_frame import run_jump_to_frame
 from ..Helper.detect import run_detect_once
+from ..Helper.distanze import run_distance_cleanup
+
 # --- Keys / Defaults (an Projekt-Konstanten anpassen, falls vorhanden) -----
 _LOCK_KEY = "tco_lock"
 _BIDI_ACTIVE_KEY = "tco_bidi_active"
@@ -20,11 +22,33 @@ _CYCLE_LOCK_KEY = "tco_cycle_lock"
 # Erste, klar definierte Phase des modularen Zyklus
 _CYCLE_PHASES = (
     "DETECT",
+    "DISTANZE",
 )
 __all__ = ("CLIP_OT_tracking_coordinator", "bootstrap")
 
 
 # --- Bootstrap: setzt Scene-Flags und interne Reset-Variablen --------------
+
+def _resolve_clip(context: bpy.types.Context):
+    """Robuster Clip-Resolver (Edit-Clip, Space-Clip, erster Clip)."""
+    clip = getattr(context, "edit_movieclip", None)
+    if not clip:
+        clip = getattr(getattr(context, "space_data", None), "clip", None)
+    if not clip and bpy.data.movieclips:
+        clip = next(iter(bpy.data.movieclips), None)
+    return clip
+
+
+def _snapshot_track_ptrs(context: bpy.types.Context) -> list[int]:
+    """Serialisierbarer Snapshot der aktuellen Track-Pointer."""
+    clip = _resolve_clip(context)
+    if not clip:
+        return []
+    try:
+        return [int(t.as_pointer()) for t in clip.tracking.tracks]
+    except Exception:
+        return []
+
 
 def _get_state(scn: bpy.types.Scene) -> dict:
     """Kurzhelper für den persistierten State-Container."""
@@ -49,10 +73,23 @@ def _cycle_begin(context: bpy.types.Context, *, target_frame: int | None) -> dic
         st["cycle_target_frame"] = int(target_frame) if target_frame is not None else int(scn.frame_current)
         st["cycle_phase_index"] = 0
         st["cycle_last_result"] = None
+        st["cycle_results"] = []
+        # WICHTIG: Snapshot der bestehenden Tracks vor DETECT – für DISTANZE
+        st["cycle_pre_ptrs"] = _snapshot_track_ptrs(context)
         scn["tco_state"] = st  # zurückschreiben
 
-        # Sofortige, synchrone Abarbeitung der ersten Phase
-        return _cycle_step(context)
+        # Sofortige, SYNCHRONE Abarbeitung ALLER Phasen (keine Modal-Nebenläufigkeit)
+        last = None
+        while True:
+            step_res = _cycle_step(context)
+            last = step_res
+            # Ende, wenn DONE/NOOP oder keine aktive Phase mehr
+            st = _get_state(scn)
+            if step_res.get("status") in {"DONE", "NOOP"}:
+                break
+            if (not st.get("cycle_active")) or int(st.get("cycle_phase_index", 0)) >= len(_CYCLE_PHASES):
+                break
+        return last or {"status": "DONE"}
     finally:
         # Lock unmittelbar wieder lösen; jede Phase läuft synchron im Operator-Kontext,
         # dadurch keine konkurrierenden modal-Handler nötig.
@@ -78,10 +115,37 @@ def _cycle_step(context: bpy.types.Context) -> dict:
     if phase == "DETECT":
         # Phase 1: Marker-Detection am Ziel-Frame (modular, separater Helper)
         res = run_detect_once(context, start_frame=st.get("cycle_target_frame"))
-        st["cycle_last_result"] = res
+        # Ergebnisbookkeeping
+        results = list(st.get("cycle_results", []))
+        results.append({"phase": "DETECT", "result": dict(res) if hasattr(res, "items") else res})
+        st["cycle_results"] = results
         st["cycle_phase_index"] = idx + 1
         scn["tco_state"] = st
-        # Bei Erweiterung: Hier könnte in Folgeschritten (BIDIR, Cleanup, usw.) weiter verzweigt werden.
+        return {"status": "OK", "phase": phase, "result": res}
+
+    if phase == "DISTANZE":
+        # Phase 2: Distanz-Cleanup für NEUE Marker relativ zu Pre-Snapshot
+        pre_ptrs = set(int(p) for p in st.get("cycle_pre_ptrs", []) if isinstance(p, int))
+        frame = int(st.get("cycle_target_frame"))
+        try:
+            res = run_distance_cleanup(
+                context,
+                pre_ptrs=pre_ptrs,
+                frame=frame,
+                # Defaults aus Helper: close_dist_rel=0.01, reselect_only_remaining=True, select_remaining_new=True
+            )
+        except Exception as e:
+            res = {"status": "FAILED", "reason": str(e)}
+        st["cycle_last_result"] = res
+        # Ergebnisbookkeeping
+        results = list(st.get("cycle_results", []))
+        results.append({"phase": "DISTANZE", "result": dict(res) if hasattr(res, "items") else res})
+        st["cycle_results"] = results
+        st["cycle_phase_index"] = idx + 1
+        # Zyklus nach letzter Phase schließen
+        if st["cycle_phase_index"] >= len(_CYCLE_PHASES):
+            st["cycle_active"] = False
+        scn["tco_state"] = st
         return {"status": "OK", "phase": phase, "result": res}
 
     # Unbekannte Phase (zukunftssicherer Fallback)
@@ -164,9 +228,18 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         cyc = _cycle_begin(context, target_frame=res_jump.get("frame"))
                         status = cyc.get("status")
                         if status in {"OK", "DONE"}:
-                            # Transparente, aber knappe Operator-Meldung
-                            last = (_get_state(context.scene).get("cycle_last_result") or {})
-                            self.report({'INFO'}, f"Cycle gestartet → Phase DETECT: {last.get('status', 'n/a')}, new_tracks={last.get('new_tracks', 0)}")
+                            st = _get_state(context.scene)
+                            results = st.get("cycle_results", [])
+                            # Kompakte KPI-Ausgabe (DETECT + DISTANZE)
+                            det = next((r for r in results if r.get("phase")=="DETECT"), {})
+                            dis = next((r for r in results if r.get("phase")=="DISTANZE"), {})
+                            det_res = det.get("result", {}) or {}
+                            dis_res = dis.get("result", {}) or {}
+                            self.report({'INFO'}, (
+                                f"Cycle fertig: "
+                                f"DETECT={det_res.get('status','n/a')} new={det_res.get('new_tracks', 0)}; "
+                                f"DISTANZE={dis_res.get('status','n/a')} removed={dis_res.get('removed', 0)}"
+                            ))
                         else:
                             self.report({'WARNING'}, f"Cycle wurde übersprungen: {cyc}")
                     except Exception as cyc_exc:
