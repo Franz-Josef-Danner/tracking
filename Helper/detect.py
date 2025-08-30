@@ -178,8 +178,14 @@ def run_detect_basic(
         height = getattr(clip, "size", (0, 0))[1]
         default_thr = float(scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
         thr = float(threshold) if threshold is not None else default_thr
-        margin = int(margin_base) if margin_base is not None else max(16, int(0.025 * max(width, height)))
-        min_dist = int(min_distance_base) if min_distance_base is not None else max(8, int(0.05 * max(width, height)))
+
+        # Bei JEDEM Durchgang Werte aus der Szene ziehen und Formel anwenden
+        # margin = int(margin_base) if margin_base is not None else max(16, int(0.025 * max(width, height)))
+        # min_dist = int(min_distance_base) if min_distance_base is not None else max(8, int(0.05 * max(width, height)))
+        sb_margin = scn.get("margin_base", None)
+        sb_min_dist = scn.get("min_distance_base", None)
+        margin = int(sb_margin) if sb_margin is not None else max(16, int(0.025 * max(width, height)))
+        min_dist = int(sb_min_dist) if sb_min_dist is not None else max(8, int(0.05 * max(width, height)))
 
         # Placement normalisieren (RNA-Enum erwartet 'FRAME' | 'INSIDE_GPENCIL' | 'OUTSIDE_GPENCIL')
         p = (placement or "FRAME").upper()
