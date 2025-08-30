@@ -22,6 +22,22 @@ except Exception:
     except Exception:
         evaluate_marker_count = None  # type: ignore
 from ..Helper.tracker_settings import apply_tracker_settings
+
+# -----------------------------------------------------------------------------
+# Optionally import the multi-pass helper. This helper performs additional
+# feature detection passes with varied pattern sizes. It will be invoked when
+# the marker count evaluation reports that the number of markers lies within
+# the acceptable range ("ENOUGH").
+try:
+    # Prefer package-style import when the Helper package is available
+    from ..Helper.multi import run_multi_pass  # type: ignore
+except Exception:
+    try:
+        # Fallback to local import when running as a standalone module
+        from .multi import run_multi_pass  # type: ignore
+    except Exception:
+        # If import fails entirely, leave run_multi_pass as None
+        run_multi_pass = None  # type: ignore
 from ..Helper.marker_helper_main import marker_helper_main
 # Import the detect threshold key so we can reference the last used value
 try:
@@ -403,6 +419,51 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     self.phase = PH_DETECT
                     return {'RUNNING_MODAL'}
 
+
+                # ENOUGH → normal beenden, aber optional Multi‑Pass ausführen
+                # Wenn die Markeranzahl innerhalb des zulässigen Bereichs liegt, kann
+                # ergänzend ein Mehrfachdurchlauf (Helper/multi.py) gestartet werden.
+                if isinstance(eval_res, dict) and str(eval_res.get("status", "")) == "ENOUGH":
+                    # Führe nur Multi‑Pass aus, wenn der Helper importiert werden konnte.
+                    if run_multi_pass is not None:
+                        try:
+                            # Snapshot der aktuellen Tracker‑Pointer als Basis für den Multi‑Pass.
+                            # Dadurch werden alle bestehenden Spuren als vorausgesetzt behandelt und
+                            # es werden nur neu generierte Marker zurückgeliefert.
+                            current_ptrs = set(_snapshot_track_ptrs(context))
+                            # Ermittelten Threshold für den Multi‑Pass verwenden. Fallback auf
+                            # einen Standardwert, falls kein Threshold bekannt ist.
+                            thr = None
+                            try:
+                                # Verwende den zuletzt genutzten Detection‑Threshold, sofern vorhanden.
+                                thr = float(self.detection_threshold) if self.detection_threshold is not None else None
+                            except Exception:
+                                thr = None
+                            if thr is None:
+                                # Fallback aus der Szene ziehen oder einen konservativen Standardwert verwenden.
+                                try:
+                                    thr = float(context.scene.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
+                                except Exception:
+                                    thr = 0.5
+                            # Multi‑Pass ausführen; scale_low/high und adjust_search bleiben Standard.
+                            mp_res = run_multi_pass(
+                                context,
+                                detect_threshold=float(thr),
+                                pre_ptrs=current_ptrs,
+                            )
+                            # Ergebnis im Szenenstatus persistieren
+                            try:
+                                context.scene["tco_last_multi_pass"] = mp_res  # type: ignore
+                            except Exception:
+                                pass
+                            # Optional loggen, damit im UI nachvollzogen werden kann.
+                            self.report({'INFO'}, f"MULTI-PASS ausgeführt: created_low={mp_res.get('created_low')}, created_high={mp_res.get('created_high')}, selected={mp_res.get('selected')}")
+                        except Exception as exc:
+                            # Bei Fehlern im Multi‑Pass nicht abbrechen, sondern warnen.
+                            self.report({'WARNING'}, f"Multi-Pass-Aufruf fehlgeschlagen ({exc})")
+                    else:
+                        # Multi‑Pass ist nicht verfügbar (Import fehlgeschlagen)
+                        self.report({'WARNING'}, "Multi-Pass nicht verfügbar – kein Aufruf durchgeführt")
                 # ENOUGH → normal beenden
                 self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res}")
                 return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
