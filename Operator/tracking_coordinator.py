@@ -14,6 +14,8 @@ from ..Helper.spike_filter_cycle import run_marker_spike_filter_cycle
 from ..Helper.clean_short_segments import clean_short_segments
 from ..Helper.clean_short_tracks import clean_short_tracks
 from ..Helper.split_cleanup import recursive_split_cleanup
+from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
+
 # Versuche, die Auswertungsfunktion für die Markeranzahl zu importieren.
 # Diese Funktion soll nach dem Distanz-Cleanup ausgeführt werden und
 # verwendet interne Grenzwerte aus der count.py. Es werden keine
