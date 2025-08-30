@@ -15,6 +15,7 @@ from ..Helper.clean_short_segments import clean_short_segments
 from ..Helper.clean_short_tracks import clean_short_tracks
 from ..Helper.split_cleanup import recursive_split_cleanup
 from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
+from ..Helper.solve_camera import solve_camera_only  # type: ignore
 
 # Versuche, die Auswertungsfunktion für die Markeranzahl zu importieren.
 # Diese Funktion soll nach dem Distanz-Cleanup ausgeführt werden und
@@ -563,12 +564,17 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # Kein Treffer
             next_thr = thr * 0.9
             if next_thr < 10.0:
-                # Terminalbedingung: Flag setzen, damit find_max 'finish' loggen kann
+                # Terminalbedingung: Spike-Cycle beendet → Kamera-Solve starten
                 try:
                     scn["tco_spike_cycle_finished"] = True
                 except Exception:
                     pass
-                return self._finish(context, info="Spike-Zyklus beendet (Threshold < 10, kein Frame gefunden).", cancelled=False)
+                try:
+                    res = solve_camera_only(context)
+                    self.report({'INFO'}, f"SolveCamera gestartet → {res}")
+                except Exception as exc:
+                    return self._finish(context, info=f"SolveCamera start fehlgeschlagen: {exc}", cancelled=True)
+                return {'RUNNING_MODAL'}
             # Weiter iterieren
             self.spike_threshold = next_thr
             return {'RUNNING_MODAL'}
