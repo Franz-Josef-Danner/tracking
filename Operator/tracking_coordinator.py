@@ -171,7 +171,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     context,
                     pre_ptrs=self.pre_ptrs,
                     frame=int(self.target_frame),
-                    # Default: normalized + min_distance=200 (Helper-Default), hier strikt getrennt
+                    distance_unit="pixel",
+                    min_distance=200.0,              # dein Härtetest
+                    require_selected_new=True,       # exakt wie gefordert
+                    include_muted_old=False,         # nur nicht gemutete alte Marker
+                    select_remaining_new=True,
+                    verbose=True,
                 )
             except Exception as exc:
                 return self._finish(context, info=f"DISTANZE FAILED → {exc}", cancelled=True)
