@@ -164,7 +164,7 @@ def _delete_selected_markers(context) -> int:
                 op_ok = False
 
         if not op_ok:
-            # 3) Fallback: manuell alle selektierten Marker aus Tracks entfernen
+            # 3) Fallback: am aktuellen Frame je selektiertem Track den Marker entfernen
             space = getattr(context, "space_data", None)
             clip = space.clip if (getattr(space, "type", None) == "CLIP_EDITOR" and getattr(space, "clip", None)) else \
                    (bpy.data.movieclips[0] if bpy.data.movieclips else None)
@@ -177,26 +177,23 @@ def _delete_selected_markers(context) -> int:
                 if tracks is None:
                     tracks = getattr(clip.tracking, "tracks", None)
                 if tracks:
+                    frame = int(getattr(context.scene, "frame_current", 0))
                     for tr in list(tracks):
                         if not getattr(tr, "select", False):
                             continue
-                        # Marker-Kopie, um während Iteration entfernen zu können
-                        ms = list(getattr(tr, "markers", []))
-                        for mk in ms:
+                        try:
                             try:
-                                if getattr(mk, "select", False):
-                                    # Es gibt keine öffentliche remove(mk), dafür setze einen "Clear" via Operator.
-                                    # Fallback-Strategie: Marker stummschalten ist hier nicht gewünscht → versuche low-level:
-                                    # Einige Builds erlauben: tr.markers.delete(mk) – wenn nicht verfügbar, überspringen.
-                                    try:
-                                        tr.markers.delete(mk)  # type: ignore[attr-defined]
-                                    except Exception:
-                                        # letzte Eskalation: setze Marker unsichtbar, damit Folgezyklen nicht beeinflusst werden
-                                        setattr(mk, "select", False)
-                                        setattr(mk, "mute", True)
-                                    removed += 1
-                            except Exception:
-                                continue
+                                mk = tr.markers.find_frame(frame, exact=True)
+                            except TypeError:
+                                mk = tr.markers.find_frame(frame)
+                            if mk:
+                                try:
+                                    tr.markers.delete(mk)  # type: ignore[attr-defined]
+                                except Exception:
+                                    setattr(mk, "mute", True)
+                                removed += 1
+                        except Exception:
+                            continue
 
         # 4) Post-Zählung (nur wenn Operator genutzt wurde; Fallback zählt schon mit)
         if op_ok:
@@ -549,7 +546,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 thr_now   = float(basic.get("threshold", float(scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))))
 
                 # 2) Distanz-Cleanup (gegen pre_ptrs)
-                dres = run_distance_cleanup(context, pre_ptrs=pre_ptrs, frame=frame_now, close_dist_rel=close_dist_rel)
+                dres = run_distance_cleanup(
+                    context,
+                    pre_ptrs=pre_ptrs,
+                    frame=frame_now,
+                    close_dist_rel=close_dist_rel,
+                    reselect_only_remaining=True,
+                    select_remaining_new=True,
+                )
                 remaining_ptrs = {t.as_pointer() for t in bpy.context.edit_movieclip.tracking.tracks if t.as_pointer() not in pre_ptrs} if getattr(bpy.context, "edit_movieclip", None) else {t.as_pointer() for t in bpy.data.movieclips[0].tracking.tracks if t.as_pointer() not in pre_ptrs} if bpy.data.movieclips else set()
 
                 # 3) Count-Bewertung
