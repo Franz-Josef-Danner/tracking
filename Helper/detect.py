@@ -16,7 +16,7 @@ __all__ = [
 # Scene keys / state
 # ---------------------------------------------------------------------
 DETECT_LAST_THRESHOLD_KEY = "last_detection_threshold"  # float
-_LOCK_KEY = "__detect_lock"
+_LOCK_KEY = "tco_detect_lock"  # Coordinator liest diesen Key ebenfalls
 
 # ---------------------------------------------------------------------
 # Context helpers
@@ -119,10 +119,16 @@ def run_detect_basic(
     KEIN Cleanup, KEINE Distanz-Logik, KEINE Triplets.
     """
     scn = context.scene
-    clip = _get_movieclip(context)
+    # atomarer Reentrancy-Schutz
+    if scn.get(_LOCK_KEY):
+        return {"status": "FAILED", "reason": "locked"}
+    scn[_LOCK_KEY] = True    clip = _get_movieclip(context)
     if not clip:
+        try:
+            scn[_LOCK_KEY] = False
+        except Exception:
+            pass
         return {"status": "FAILED", "reason": "no_movieclip"}
-
     tracking = clip.tracking
     width, height = int(clip.size[0]), int(clip.size[1])
 
@@ -160,6 +166,10 @@ def run_detect_basic(
             clip, tracking, float(threshold), int(margin_base), int(min_distance_base)
         )
     except Exception:
+        try:
+            scn[_LOCK_KEY] = False
+        except Exception:
+            pass
         return {"status": "FAILED", "reason": "detect_features_failed", "frame": int(frame)}
 
     # Nur NEUE markieren (keine weitere Logik)
@@ -180,7 +190,7 @@ def run_detect_basic(
     except Exception:
         pass
 
-    return {
+    res = {
         "status": "READY",
         "frame": int(frame),
         "threshold": float(threshold),
@@ -191,7 +201,12 @@ def run_detect_basic(
         "width": int(width),
         "height": int(height),
     }
-
+    # Lock immer lösen
+    try:
+        scn[_LOCK_KEY] = False
+    except Exception:
+        pass
+    return res
 # ---------------------------------------------------------------------
 # Backward-Compat: run_detect_once (Thin-Wrapper)
 # ---------------------------------------------------------------------
