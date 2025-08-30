@@ -545,6 +545,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 target_err = 0.6
             # 2) Istwert holen
             avg_err = get_avg_reprojection_error(context)
+            print(f"[Coordinator] Solve-Eval: target={target_err:.4f}, avg={avg_err if avg_err is not None else 'None'}")
+            self.report({'INFO'}, f"Solve-Eval target={target_err:.4f}, avg={avg_err if avg_err is not None else -1:.4f}")
             if avg_err is None:
                 self.report({'WARNING'}, "Solve-Eval: kein gültiger Durchschnittsfehler – fahre fort.")
                 self.phase = PH_FIND_LOW
@@ -561,9 +563,18 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 except Exception:
                     pass
                 try:
+                    print("[Coordinator] Solve RETRY → refine_intrinsics_focal_length=True")
+                    self.report({'INFO'}, "Solve RETRY → refine_intrinsics_focal_length=True")
+                    try:
+                        log = list(scn.get("tco_solve_log", []))
+                        log.append({"phase": "RETRY", "refine_focal": True})
+                        scn["tco_solve_log"] = log
+                    except Exception:
+                        pass
                     res_retry = solve_camera_only(context)
                     self.solve_refine_attempted = True
-                    self.report({'INFO'}, f"Solve-Retry mit refine_intrinsics_focal_length=True gestartet → {res_retry}")
+                    print(f"[Coordinator] Solve retry started → {res_retry}")
+                    self.report({'INFO'}, f"Solve-Retry gestartet → {res_retry}")
                     # Im nächsten TIMER-Tick wird der neue avg_err erneut geprüft.
                     return {'RUNNING_MODAL'}
                 except Exception as exc:
@@ -642,14 +653,22 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 except Exception:
                     pass
                 try:
-                    # Erstlauf: refine_intrinsics_focal_length explizit deaktivieren
+                    # Erstlauf: refine_intrinsics_focal_length explizit deaktivieren + LAUT loggen
+                    prev = scn.get("refine_intrinsics_focal_length", None)
+                    scn["refine_intrinsics_focal_length"] = False
+                    self.solve_refine_attempted = False
+                    print(f"[Coordinator] Solve START (first pass) → refine_intrinsics_focal_length=False (prev={prev})")
+                    self.report({'INFO'}, "Solve START (first pass) → refine_intrinsics_focal_length=False")
+                    # kleine Spur im Scene-State für spätere Forensik
                     try:
-                        scn["refine_intrinsics_focal_length"] = False
+                        log = list(scn.get("tco_solve_log", []))
+                        log.append({"phase": "START", "refine_focal": False})
+                        scn["tco_solve_log"] = log
                     except Exception:
                         pass
-                    self.solve_refine_attempted = False
                     res = solve_camera_only(context)
-                    self.report({'INFO'}, f"SolveCamera gestartet → {res}")
+                    print(f"[Coordinator] Solve started → {res}")
+                    self.report({'INFO'}, f"Solve gestartet → {res}")
                     # → direkt in die Solve-Evaluation wechseln
                     self.phase = PH_SOLVE_EVAL
                     return {'RUNNING_MODAL'}
