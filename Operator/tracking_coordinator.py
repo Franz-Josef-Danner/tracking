@@ -7,7 +7,8 @@ tracking_coordinator.py – Minimaler Coordinator mit Bootstrap-Reset
 
 from __future__ import annotations
 import bpy
-
+from ..Helper.find_low_marker_frame import run_find_low_marker_frame
+from ..Helper.jump_to_frame import run_jump_to_frame
 # --- Keys / Defaults (an Projekt-Konstanten anpassen, falls vorhanden) -----
 _LOCK_KEY = "tco_lock"
 _BIDI_ACTIVE_KEY = "tco_bidi_active"
@@ -77,6 +78,24 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self.report({'ERROR'}, f"Bootstrap failed: {exc}")
             return {'CANCELLED'}
         self.report({'INFO'}, "Coordinator bootstrap reset complete.")
+
+        # --- Direkt im Anschluss Low-Marker-Frame suchen ---
+        try:
+            res_low = run_find_low_marker_frame(context)
+            if res_low.get("status") == "FOUND":
+                frame = res_low.get("frame")
+                self.report({'INFO'}, f"Low-marker frame gefunden: {frame}")
+                # --- Playhead auf Frame setzen ---
+                res_jump = run_jump_to_frame(context, frame=frame, repeat_map={})
+                if res_jump.get("status") == "OK":
+                    self.report({'INFO'}, f"Playhead gesetzt auf Frame {res_jump.get('frame')}")
+                else:
+                    self.report({'WARNING'}, f"Jump failed: {res_jump}")
+            else:
+                self.report({'INFO'}, f"Kein Low-marker frame gefunden: {res_low}")
+        except Exception as exc:
+            self.report({'ERROR'}, f"Helper call failed: {exc}")
+
         return {'FINISHED'}
 
 
