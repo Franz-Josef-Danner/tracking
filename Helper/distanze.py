@@ -85,15 +85,15 @@ def run_distance_cleanup(
             continue
         x = m.co[0] * width
         y = m.co[1] * height
-        q = (x, y, 0.0)
+        # robuster KD-Find (seltene Edge-Cases abfangen)
         try:
-            (loc, _idx, _dist) = kd.find(q)
+            (loc, _idx, _dist) = kd.find((x, y, 0.0))
         except Exception:
-            # Fallback: treat as far away
-            continue        dx = x - loc[0]; dy = y - loc[1]
+            # keine valide Nachbarschaft → so behandeln, als wäre es weit weg
+            continue
+        dx = x - loc[0]; dy = y - loc[1]
         if (dx*dx + dy*dy) < thr2:
             reject_ptrs.add(tr.as_pointer())
-
     if reject_ptrs:
         _deselect_all(tracking)
         for t in new_tracks:
