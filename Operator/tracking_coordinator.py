@@ -10,6 +10,20 @@ from ..Helper.find_low_marker_frame import run_find_low_marker_frame
 from ..Helper.jump_to_frame import run_jump_to_frame
 from ..Helper.detect import run_detect_once
 from ..Helper.distanze import run_distance_cleanup
+# Nach dem Distanz-Cleanup soll die Marker-Anzahl bewertet werden.
+# Die Evaluierungsfunktion wird separat importiert.
+try:
+    # Versuche, die Zählfunktion aus Helper.count zu importieren.
+    from ..Helper.count import evaluate_marker_count  # type: ignore
+except Exception:
+    # Fallback für Umgebungen, in denen Helper.count möglicherweise ein direktes
+    # Modul ohne Paketstruktur ist.  In diesem Fall wird evaluiert, indem
+    # count.py im aktuellen Verzeichnis importiert wird.
+    try:
+        from .count import evaluate_marker_count  # type: ignore
+    except Exception:
+        # Wenn die Importversuche fehlschlagen, ist evaluate_marker_count nicht vorhanden.
+        evaluate_marker_count = None  # type: ignore
 from ..Helper.tracker_settings import apply_tracker_settings
 from ..Helper.marker_helper_main import marker_helper_main
 
@@ -180,7 +194,43 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 )
             except Exception as exc:
                 return self._finish(context, info=f"DISTANZE FAILED → {exc}", cancelled=True)
-            self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={dis.get('removed',0)} kept={dis.get('kept',0)}")
+            # Nach dem Distanz-Cleanup Marker-Anzahl evaluieren, falls verfügbar.
+            removed = dis.get('removed', 0)
+            kept = dis.get('kept', 0)
+            # Aktuelle Track-Pointer nach dem Cleanup ermitteln
+            try:
+                current_ptrs = set(_snapshot_track_ptrs(context))
+            except Exception:
+                current_ptrs = set()
+            # Neue Pointer sind die, die noch existieren, aber vor DETECT nicht vorhanden waren
+            new_ptrs_after_cleanup = set()
+            if isinstance(self.pre_ptrs, set) and current_ptrs:
+                new_ptrs_after_cleanup = current_ptrs.difference(self.pre_ptrs)
+            # Default-Grenzwerte festlegen; falls die Szene eigene Werte definiert,
+            # diese verwenden.  Andernfalls breite Grenzen nutzen.
+            scn = context.scene
+            try:
+                min_marker = int(scn.get('tco_min_marker', 0))
+                max_marker = int(scn.get('tco_max_marker', 10**9))
+            except Exception:
+                min_marker = 0
+                max_marker = 10**9
+            # Marker-Anzahl auswerten, sofern die Funktion importiert werden konnte
+            if evaluate_marker_count is not None:
+                try:
+                    eval_res = evaluate_marker_count(
+                        new_ptrs_after_cleanup=new_ptrs_after_cleanup,
+                        min_marker=min_marker,
+                        max_marker=max_marker,
+                    )
+                except Exception as exc:
+                    eval_res = {"status": "ERROR", "reason": str(exc), "count": len(new_ptrs_after_cleanup)}
+                # Ergebnis im Szenen-Status ablegen und loggen
+                scn["tco_last_marker_count"] = eval_res
+                self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res}")
+            else:
+                # Wenn keine Zählfunktion verfügbar ist, nur das Cleanup melden
+                self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}")
             return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
 
         # Fallback (unbekannte Phase)
