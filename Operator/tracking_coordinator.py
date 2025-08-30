@@ -1,35 +1,32 @@
-# SPDX-License-Identifier: GPL-2.0-or-later
-"""
-tracking_coordinator.py – Minimaler Coordinator mit Bootstrap-Reset
-- Stellt den Operator `CLIP_OT_tracking_coordinator` bereit (Button-Target).
-- Führt beim Ausführen ein definierte(r) Bootstrap/Reset im Scene-State aus.
-"""
++"""
++tracking_coordinator.py – Streng sequentieller, MODALER Orchestrator
++- Phasen: FIND_LOW → JUMP → DETECT → DISTANZE (hart getrennt, seriell)
++- Jede Phase startet erst, wenn die vorherige abgeschlossen wurde.
++"""
 
 from __future__ import annotations
 import bpy
-from ..Helper.tracker_settings import apply_tracker_settings
-from ..Helper.marker_helper_main import marker_helper_main
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame
 from ..Helper.jump_to_frame import run_jump_to_frame
 from ..Helper.detect import run_detect_once
 from ..Helper.distanze import run_distance_cleanup
+from ..Helper.tracker_settings import apply_tracker_settings
+from ..Helper.marker_helper_main import marker_helper_main
 
-# --- Keys / Defaults (an Projekt-Konstanten anpassen, falls vorhanden) -----
+__all__ = ("CLIP_OT_tracking_coordinator",)
+
+# --- Orchestrator-Phasen ----------------------------------------------------
+PH_FIND_LOW   = "FIND_LOW"
+PH_JUMP       = "JUMP"
+PH_DETECT     = "DETECT"
+PH_DISTANZE   = "DISTANZE"
+
+# ---- intern: State Keys / Locks -------------------------------------------
 _LOCK_KEY = "tco_lock"
-_BIDI_ACTIVE_KEY = "tco_bidi_active"
-_BIDI_RESULT_KEY = "tco_bidi_result"
-_GOTO_KEY = "tco_goto"
-_DEFAULT_SPIKE_START = 50.0
-_CYCLE_LOCK_KEY = "tco_cycle_lock"
-# Erste, klar definierte Phase des modularen Zyklus
-_CYCLE_PHASES = (
-    "DETECT",
-    "DISTANZE",
-)
-__all__ = ("CLIP_OT_tracking_coordinator", "bootstrap")
 
-
-# --- Bootstrap: setzt Scene-Flags und interne Reset-Variablen --------------
+# ----------------------------------------------------------------------------
+# Utilities
+# ----------------------------------------------------------------------------
 
 def _resolve_clip(context: bpy.types.Context):
     """Robuster Clip-Resolver (Edit-Clip, Space-Clip, erster Clip)."""
@@ -55,257 +52,131 @@ def _snapshot_track_ptrs(context: bpy.types.Context) -> list[int]:
     except Exception:
         return []
 
-
-def _get_state(scn: bpy.types.Scene) -> dict:
-    """Kurzhelper für den persistierten State-Container."""
-    return scn.get("tco_state", {})
-
-
-def _cycle_begin(context: bpy.types.Context, *, target_frame: int | None) -> dict:
-    """
-    Startet einen modularen, synchron abgearbeiteten Zyklus.
-    Reentrancy wird über _CYCLE_LOCK_KEY verhindert.
-    """
+def _bootstrap(context: bpy.types.Context) -> None:
+    """Minimaler Reset + sinnvolle Defaults; Helper initialisieren."""
     scn = context.scene
-    if scn.get(_CYCLE_LOCK_KEY, False):
-        # Bereits aktiv – nicht erneut starten
-        return {"status": "SKIPPED", "reason": "cycle_locked"}
-
-    scn[_CYCLE_LOCK_KEY] = True
+    # Tracker-Settings
     try:
-        st = _get_state(scn)
-        st["cycle_active"] = True
-        st["cycle_iterations"] = int(st.get("cycle_iterations", 0)) + 1
-        st["cycle_target_frame"] = int(target_frame) if target_frame is not None else int(scn.frame_current)
-        st["cycle_phase_index"] = 0
-        st["cycle_last_result"] = None
-        st["cycle_results"] = []
-        scn["tco_state"] = st  # zurückschreiben
-
-        # Ephemerer Kontext für 64-bit Pointer & kompakte Rückgabe
-        cycle_ctx = {
-            "pre_ptrs": set(_snapshot_track_ptrs(context)),  # 64-bit Pointer nur hier halten
-            "results": {},
-        }
-
-        # SYNCHRONE Abarbeitung ALLER Phasen (keine Modal-Nebenläufigkeit)
-        last: dict | None = None
-        while True:
-            step_res = _cycle_step(context, cycle_ctx)
-            last = step_res
-            # Ende, wenn DONE/NOOP oder keine aktive Phase mehr
-            st = _get_state(scn)
-            if step_res.get("status") in {"DONE", "NOOP"}:
-                break
-            if (not st.get("cycle_active")) or int(st.get("cycle_phase_index", 0)) >= len(_CYCLE_PHASES):
-                break
-        # Kompakte, UI-taugliche Rückgabe der Phasenresultate
-        out = dict(cycle_ctx.get("results", {}))
-        out["status"] = "DONE"
-        return out
-    finally:
-        # Lock unmittelbar wieder lösen; jede Phase läuft synchron im Operator-Kontext,
-        # dadurch keine konkurrierenden modal-Handler nötig.
-        scn[_CYCLE_LOCK_KEY] = False
-
-
-def _cycle_step(context: bpy.types.Context, cycle_ctx: dict) -> dict:
-    """Führt genau eine Phase basierend auf cycle_phase_index aus."""
-    scn = context.scene
-    st = _get_state(scn)
-    idx = int(st.get("cycle_phase_index", 0))
-
-    if not st.get("cycle_active", False):
-        return {"status": "NOOP", "reason": "cycle_not_active"}
-
-    if idx >= len(_CYCLE_PHASES):
-        # Zyklus fertig
-        st["cycle_active"] = False
-        scn["tco_state"] = st
-        return {"status": "DONE"}
-
-    phase = _CYCLE_PHASES[idx]
-    if phase == "DETECT":
-        # Phase 1: Marker-Detection am Ziel-Frame (modular, separater Helper)
-        res = run_detect_once(context, start_frame=st.get("cycle_target_frame"))
-        # Ergebnisbookkeeping
-        results = list(st.get("cycle_results", []))
-        results.append({"phase": "DETECT", "result": dict(res) if hasattr(res, "items") else res})
-        st["cycle_results"] = results
-        st["cycle_phase_index"] = idx + 1
-        scn["tco_state"] = st
-        return {"status": "OK", "phase": phase, "result": res}
-
-    if phase == "DISTANZE":
-        # Phase 2: Distanz-Cleanup für NEUE Marker relativ zu Pre-Snapshot
-        pre_ptrs = set(cycle_ctx.get("pre_ptrs") or [])
-        frame = int(st.get("cycle_target_frame"))
-        try:
-            # Defaults aus Helper: close_dist_rel=0.01, reselect_only_remaining=True, select_remaining_new=True
-            res = run_distance_cleanup(context, pre_ptrs=pre_ptrs, frame=frame)
-        except Exception as e:
-            res = {"status": "FAILED", "reason": str(e)}
-        st["cycle_last_result"] = res
-        # Ergebnisbookkeeping
-        results = list(st.get("cycle_results", []))
-        results.append({"phase": "DISTANZE", "result": dict(res) if hasattr(res, "items") else res})
-        st["cycle_results"] = results
-        st["cycle_phase_index"] = idx + 1
-        # Zyklus nach letzter Phase schließen
-        if st["cycle_phase_index"] >= len(_CYCLE_PHASES):
-            st["cycle_active"] = False
-        scn["tco_state"] = st
-        # Für unmittelbare Rückgabe zusätzlich im ephemeren Kontext ablegen
-        cycle_ctx["results"]["DISTANZE"] = res if isinstance(res, dict) else {"status": str(res)}
-        return {"status": "OK", "phase": phase, "result": res}
-
-    # Unbekannte Phase (zukunftssicherer Fallback)
-    st["cycle_phase_index"] = idx + 1
-    scn["tco_state"] = st
-    return {"status": "OK", "phase": phase, "result": None}
-
-def bootstrap(context: bpy.types.Context) -> None:
-    scn = context.scene
-    # --- Zuerst Tracker-Settings setzen ---
-    try:
-        res = apply_tracker_settings(context, scene=scn, log=True)
-        # Optional: kurzes Feedback im Scene-State persistieren
-        scn["tco_last_tracker_settings"] = dict(res)
+        scn["tco_last_tracker_settings"] = dict(apply_tracker_settings(context, scene=scn, log=True))
     except Exception as exc:
         scn["tco_last_tracker_settings"] = {"status": "FAILED", "reason": str(exc)}
-
-    # --- Danach Marker-Helper starten ---
+    # Marker-Helper
     try:
         ok, count, info = marker_helper_main(context)
-        scn["tco_last_marker_helper"] = {
-            "ok": bool(ok),
-            "count": int(count),
-            "info": dict(info) if hasattr(info, "items") else info,
-        }
+        scn["tco_last_marker_helper"] = {"ok": bool(ok), "count": int(count), "info": dict(info) if hasattr(info, "items") else info}
     except Exception as exc:
         scn["tco_last_marker_helper"] = {"status": "FAILED", "reason": str(exc)}
-
-    # Globale Scene-Flags
     scn[_LOCK_KEY] = False
-    scn[_BIDI_ACTIVE_KEY] = False
-    scn[_BIDI_RESULT_KEY] = ""
-    scn.pop(_GOTO_KEY, None)
-
-    # Interne State-Container (falls später in Scene benötigt, hier persistieren)
-    scn["tco_state"] = {
-        "state": "INIT",
-        "detect_attempts": 0,
-        "jump_done": False,
-        "repeat_map": {},          # serialisierbar halten
-        "bidi_started": False,
-
-        # Cycle
-        "cycle_active": False,
-        "cycle_target_frame": None,
-        "cycle_iterations": 0,
-
-        # Spike
-        "spike_threshold": float(
-            getattr(scn, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START
-        ),
-        "spike_floor": 10.0,
-        "spike_floor_hit": False,
-
-        # Solve/Eval/Refine
-        "pending_eval_after_solve": False,
-        "did_refine_this_cycle": False,
-
-        # Solve-Error-Merker
-        "last_solve_error": None,
-        "same_error_repeat_count": 0,
-    }
 
 
 # --- Operator: wird vom UI-Button aufgerufen -------------------------------
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
-    """Kaiserlich: Tracking Coordinator Bootstrap"""
+    """Kaiserlich: Tracking Coordinator (Modal, strikt sequenziell)"""
     bl_idname = "clip.tracking_coordinator"
-    bl_label = "Kaiserlich: Coordinator starten"
-    bl_options = {"REGISTER", "UNDO"}
+    bl_label = "Kaiserlich: Coordinator (Modal)"
+    bl_options = {"REGISTER", "UNDO", "GRAB_CURSOR_XY"}
+
+    # — Laufzeit-State (nur Operator, nicht Szene) —
+    _timer: object | None = None
+    phase: str = PH_FIND_LOW
+    target_frame: int | None = None
+    repeat_map: dict[int, int] = {}
+    pre_ptrs: set[int] | None = None
 
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-        # Optional enger machen: nur im Clip Editor erlauben
         return context is not None and context.scene is not None
 
     def execute(self, context: bpy.types.Context):
+        # Bootstrap/Reset
         try:
-            bootstrap(context)
+            _bootstrap(context)
         except Exception as exc:
             self.report({'ERROR'}, f"Bootstrap failed: {exc}")
             return {'CANCELLED'}
-        self.report({'INFO'}, "Coordinator bootstrap reset complete.")
+        self.report({'INFO'}, "Coordinator: Bootstrap OK")
 
-        # --- Status-Logging: Tracker-Settings & Marker-Helper ---
+        # Modal starten
+        self.phase = PH_FIND_LOW
+        self.target_frame = None
+        self.repeat_map = {}
+        self.pre_ptrs = None
+
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.10, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def _finish(self, context, *, info: str | None = None, cancelled: bool = False):
+        # Timer sauber entfernen
         try:
-            scn = context.scene
-            ts = dict(scn.get("tco_last_tracker_settings", {}))
-            mh = dict(scn.get("tco_last_marker_helper", {}))
+            if self._timer:
+                context.window_manager.event_timer_remove(self._timer)
+        except Exception:
+            pass
+        self._timer = None
+        if info:
+            self.report({'INFO'} if not cancelled else {'WARNING'}, info)
+        return {'CANCELLED' if cancelled else 'FINISHED'}
 
-            # Tracker-Settings: kompakt loggen
-            ts_status = ts.get("status", "ok")
-            ts_pat = ts.get("pattern_size", "?")
-            ts_srch = ts.get("search_size", "?")
-            ts_thr = ts.get("last_detection_threshold", None)
+    def modal(self, context: bpy.types.Context, event):
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+
+        # PHASE 1: FIND_LOW
+        if self.phase == PH_FIND_LOW:
+            res = run_find_low_marker_frame(context)
+            st = res.get("status")
+            if st == "FAILED":
+                return self._finish(context, info=f"FIND_LOW FAILED → {res.get('reason')}", cancelled=True)
+            if st == "NONE":
+                return self._finish(context, info="Kein Low-Marker-Frame gefunden – Sequenz endet.", cancelled=False)
+            self.target_frame = int(res.get("frame"))
+            self.report({'INFO'}, f"Low-Marker-Frame: {self.target_frame}")
+            self.phase = PH_JUMP
+            return {'RUNNING_MODAL'}
+
+        # PHASE 2: JUMP
+        if self.phase == PH_JUMP:
+            if self.target_frame is None:
+                return self._finish(context, info="JUMP: Kein Ziel-Frame gesetzt.", cancelled=True)
+            rj = run_jump_to_frame(context, frame=self.target_frame, repeat_map=self.repeat_map)
+            if rj.get("status") != "OK":
+                return self._finish(context, info=f"JUMP FAILED → {rj}", cancelled=True)
+            self.report({'INFO'}, f"Playhead gesetzt: f{rj.get('frame')} (repeat={rj.get('repeat_count')})")
+            # **WICHTIG**: Pre-Snapshot direkt vor DETECT
+            self.pre_ptrs = set(_snapshot_track_ptrs(context))
+            self.phase = PH_DETECT
+            return {'RUNNING_MODAL'}
+
+        # PHASE 3: DETECT
+        if self.phase == PH_DETECT:
+            rd = run_detect_once(context, start_frame=self.target_frame)
+            if rd.get("status") != "READY":
+                return self._finish(context, info=f"DETECT FAILED → {rd}", cancelled=True)
+            new_cnt = int(rd.get("new_tracks", 0))
+            self.report({'INFO'}, f"DETECT @f{self.target_frame}: new={new_cnt}")
+            self.phase = PH_DISTANZE
+            return {'RUNNING_MODAL'}
+
+        # PHASE 4: DISTANZE
+        if self.phase == PH_DISTANZE:
+            if self.pre_ptrs is None or self.target_frame is None:
+                return self._finish(context, info="DISTANZE: Pre-Snapshot oder Ziel-Frame fehlt.", cancelled=True)
             try:
-                ts_thr_str = f"{float(ts_thr):.3f}" if ts_thr is not None else "?"
-            except Exception:
-                ts_thr_str = "?"
-            self.report(
-                {'INFO'},
-                f"TrackerSettings → status={ts_status}, pattern={ts_pat}, search={ts_srch}, det_thr={ts_thr_str}"
-            )
+                dis = run_distance_cleanup(
+                    context,
+                    pre_ptrs=self.pre_ptrs,
+                    frame=int(self.target_frame),
+                    # Default: normalized + min_distance=200 (Helper-Default), hier strikt getrennt
+                )
+            except Exception as exc:
+                return self._finish(context, info=f"DISTANZE FAILED → {exc}", cancelled=True)
+            self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={dis.get('removed',0)} kept={dis.get('kept',0)}")
+            return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
 
-            # Marker-Helper: Ergebnis loggen
-            mh_ok = mh.get("ok", None)
-            mh_cnt = mh.get("count", None)
-            mh_status = "ok" if mh_ok is True else ("failed" if mh_ok is False else mh.get("status", "n/a"))
-            self.report(
-                {'INFO'},
-                f"MarkerHelper → status={mh_status}, count={mh_cnt if mh_cnt is not None else '?'}"
-            )
-        except Exception as log_exc:
-            self.report({'WARNING'}, f"Bootstrap status logging failed: {log_exc}")
-
-        # --- Direkt im Anschluss Low-Marker-Frame suchen ---
-        try:
-            res_low = run_find_low_marker_frame(context)
-            if res_low.get("status") == "FOUND":
-                frame = res_low.get("frame")
-                self.report({'INFO'}, f"Low-marker frame gefunden: {frame}")
-                # --- Playhead auf Frame setzen ---
-                res_jump = run_jump_to_frame(context, frame=frame, repeat_map={})
-                if res_jump.get("status") == "OK":
-                    self.report({'INFO'}, f"Playhead gesetzt auf Frame {res_jump.get('frame')}")
-                    # --- Direkt danach: modularen Zyklus starten (Phase 1 = DETECT) ---
-                    try:
-                        cyc = _cycle_begin(context, target_frame=res_jump.get("frame"))
-                        if cyc.get("status") in {"OK", "DONE", "DONE"}:
-                            # KPI direkt aus der Rückgabe (ephemer, pointer-sicher)
-                            det_res = cyc.get("DETECT", {}) or {}
-                            dis_res = cyc.get("DISTANZE", {}) or {}
-                            self.report({'INFO'}, (
-                                f"Cycle fertig: "
-                                f"DETECT={det_res.get('status','n/a')} new={det_res.get('new_tracks', 0)}; "
-                                f"DISTANZE={dis_res.get('status','n/a')} removed={dis_res.get('removed', 0)}"
-                            ))
-                        else:
-                            self.report({'WARNING'}, f"Cycle wurde übersprungen: {cyc}")
-                    except Exception as cyc_exc:
-                        self.report({'ERROR'}, f"Cycle-Start fehlgeschlagen: {cyc_exc}")
-                else:
-                    self.report({'WARNING'}, f"Jump failed: {res_jump}")
-            else:
-                self.report({'INFO'}, f"Kein Low-marker frame gefunden: {res_low}")
-        except Exception as exc:
-            self.report({'ERROR'}, f"Helper call failed: {exc}")
-
-        return {'FINISHED'}
+        # Fallback (unbekannte Phase)
+        return self._finish(context, info=f"Unbekannte Phase: {self.phase}", cancelled=True)
 
 
 # --- Registrierung ----------------------------------------------------------
