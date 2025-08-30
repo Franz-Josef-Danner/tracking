@@ -121,7 +121,7 @@ def run_distance_cleanup(
                 except TypeError:
                     m = t.markers.find_frame(int(frame))
                 if m is not None and t.as_pointer() in sel_snapshot_marker_at_f:
-                    _marker_set_select(m, t, sel_snapshot_marker_at_f[t.as_pointer()]
+                    _marker_set_select(m, t, sel_snapshot_marker_at_f[t.as_pointer()])
                 except Exception:
                     pass
         elif reselect_only_remaining:
