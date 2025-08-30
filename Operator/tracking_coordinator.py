@@ -1,3 +1,7 @@
+from __future__ import annotations
+import bpy
+from typing import Dict, Optional, Tuple
+
 __all__ = ("CLIP_OT_tracking_coordinator", "bootstrap")
  
 
