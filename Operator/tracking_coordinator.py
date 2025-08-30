@@ -458,6 +458,40 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                 pass
                             # Optional loggen, damit im UI nachvollzogen werden kann.
                             self.report({'INFO'}, f"MULTI-PASS ausgeführt: created_low={mp_res.get('created_low')}, created_high={mp_res.get('created_high')}, selected={mp_res.get('selected')}")
+
+                            # --- Nach dem Multi‑Pass eine Distanzprüfung durchführen ---
+                            # Die aktuell selektierten Marker entsprechen den neu generierten Spuren
+                            # des Multi‑Passes. Um sicherzustellen, dass keine Marker zu nah an
+                            # existierenden Spuren liegen, rufen wir nun das Distanz‑Cleanup auf.
+                            try:
+                                # Nutze den gleichen Frame wie im Hauptablauf.
+                                # Fallback: target_frame kann None sein, dann wird Distanz‑Cleanup nicht ausgeführt.
+                                cur_frame = int(self.target_frame) if self.target_frame is not None else None
+                                if cur_frame is not None:
+                                    # Führt das Distanz‑Cleanup aus. Dabei werden nur aktuell selektierte
+                                    # neue Marker (require_selected_new=True) geprüft. Alte Marker werden
+                                    # durch current_ptrs referenziert.
+                                    dist_res = run_distance_cleanup(
+                                        context,
+                                        pre_ptrs=current_ptrs,
+                                        frame=cur_frame,
+                                        min_distance=None,
+                                        distance_unit="pixel",
+                                        require_selected_new=True,
+                                        include_muted_old=False,
+                                        select_remaining_new=True,
+                                        verbose=True,
+                                    )
+                                    # Ergebnis optional im Szenenstatus persistieren
+                                    try:
+                                        context.scene["tco_last_multi_distance_cleanup"] = dist_res  # type: ignore
+                                    except Exception:
+                                        pass
+                                    # Logging zum UI
+                                    self.report({'INFO'}, f"MULTI-PASS DISTANZE: removed={dist_res.get('removed')}, kept={dist_res.get('kept')}")
+                            except Exception as exc:
+                                # Bei Fehlern im Distanz‑Cleanup warnen, aber die Sequenz weiterführen.
+                                self.report({'WARNING'}, f"Multi-Pass Distanzé-Aufruf fehlgeschlagen ({exc})")
                         except Exception as exc:
                             # Bei Fehlern im Multi‑Pass nicht abbrechen, sondern warnen.
                             self.report({'WARNING'}, f"Multi-Pass-Aufruf fehlgeschlagen ({exc})")
