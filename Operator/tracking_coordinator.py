@@ -26,17 +26,17 @@ class CLIP_OT_tracking_bootstrap_only(bpy.types.Operator):
  # ------------------------------------------------------------
  # Utility: Track-/Marker-Handling (Selektieren/Löschen)
  # ------------------------------------------------------------
- def register():
-     bpy.utils.register_class(CLIP_OT_tracking_coordinator)
-    bpy.utils.register_class(CLIP_OT_tracking_bootstrap_only)
- 
- def unregister():
-     print(f"[Coordinator] unregister() from {__file__}")
-     try:
-         bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
-     except Exception:
-         pass
+def register():
+    bpy.utils.register_class(CLIP_OT_tracking_coordinator)
+   bpy.utils.register_class(CLIP_OT_tracking_bootstrap_only)
+
+def unregister():
+    print(f"[Coordinator] unregister() from {__file__}")
     try:
-        bpy.utils.unregister_class(CLIP_OT_tracking_bootstrap_only)
+        bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
     except Exception:
         pass
+   try:
+       bpy.utils.unregister_class(CLIP_OT_tracking_bootstrap_only)
+   except Exception:
+       pass
