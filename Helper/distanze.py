@@ -213,8 +213,6 @@ def run_distance_cleanup(
                 m = t.markers.find_frame(int(frame))
             if m is not None and tptr in sel_snapshot_marker_at_f:
                 _marker_set_select(m, t, sel_snapshot_marker_at_f[tptr])
-            except Exception:
-                pass
     elif reselect_only_remaining:
         # Snapshot der neuen Tracks/Marker wiederherstellen (nicht-invasiv)
         for t in remaining:
