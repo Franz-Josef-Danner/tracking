@@ -11,13 +11,7 @@ Helper/__init__.py – Function + Operator Registrar (aktualisiert)
 from __future__ import annotations
 import bpy
 
-# --- Funktions-API -----------------------------------------------------------
-from .tracking_helper import track_to_scene_end_fn  # noqa: F401
 
-# Refine (NEU: Modal-Operator + Startfunktion)
-from .refine_high_error import CLIP_OT_refine_high_error_modal, start_refine_modal  # noqa: F401
-
-# --- Feste Operatoren --------------------------------------------------------
 from .bidirectional_track import CLIP_OT_bidirectional_track
 
 # --- Optionale Operatoren ----------------------------------------------------
@@ -28,18 +22,14 @@ except Exception:
 
 # --- Exportliste -------------------------------------------------------------
 __all__ = [
-    "track_to_scene_end_fn",
-    "start_refine_modal",
     "register",
     "unregister",
     "CLIP_OT_bidirectional_track",
-    "CLIP_OT_refine_high_error_modal",
 ]
 
 # --- Registrierlisten --------------------------------------------------------
 _FIXED_CLASSES = [
     CLIP_OT_bidirectional_track,
-    CLIP_OT_refine_high_error_modal,
 ]
 
 _OPTIONAL_CLASSES = []
@@ -74,4 +64,3 @@ def unregister() -> None:
 
 if __name__ == "__main__":
     assert callable(track_to_scene_end_fn)
-    assert callable(start_refine_modal)
