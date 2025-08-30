@@ -1,28 +1,26 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """
-Helper: distanze (direkte Konsolen-Logs, erweiterte Kandidaten-Statistik)
+Helper: distanze (Snapshot-basiert, unabhängig von Selektion)
 
-Aufgabe:
-- Finde *neue* Marker (Tracks, die nach einem Pre-Snapshot erstellt wurden)
-- Hole deren Marker am Ziel-Frame
-- Vergleiche deren Positionen mit *alten*, nicht gemuteten Markern am selben Frame
-- Lösche neue Marker, die näher als `min_distance` an einem alten Marker liegen
-- Selektiere alle übrig gebliebenen neuen Marker erneut
+Zweck laut Anforderung:
+- **Alte Marker** = Tracks, die im Pre-Snapshot (`pre_ptrs`) enthalten sind → Hole deren Marker-Position am Ziel-Frame.
+- **Neue Marker** = Tracks, die **nicht** im Snapshot waren → Hole deren Marker-Position am Ziel-Frame **auf die gleiche Weise**.
+- Vergleiche Positionen (neu vs. alt) und lösche neue Marker, die näher als `min_distance` an einem alten liegen.
+- Selektiere verbleibende neue Marker (Track + Marker) am Ende wieder.
 
-Wichtig:
-- Standardverhalten prüft **nur selektierte** neue Marker (`require_selected=True`).
-- Per Parameter kann man auch **unselektierte** neue Marker prüfen (`require_selected=False`).
+Robustheit:
+- **Frame-Flex**: Wenn am exakten Frame kein Marker existiert, nimm den *nächsten Key* innerhalb ±`frame_flex` Frames.
+- **Mute-Regel**: Alte Marker werden nur berücksichtigt, wenn **nicht gemutet**. Für neue Marker gibt es keine Mute-Filterung (explizit nicht gefordert).
+- **Keine Abhängigkeit von Selektion** (weder Track noch Marker) – beides wird nur am Ende gesetzt.
 
-Logging (per `print()`):
-- Kompakte Start-/Ergebniszeilen
-- Statistik: neue Tracks gesamt, neue mit Marker am Frame, selektierte davon
-- Detailzeilen bis `debug_max_items` (Positionen, nächster alter Marker, Distanz, Entscheidung)
+Logging (print):
+- Start/Parameter-Zusammenfassung, Anzahl alter/neuer Kandidaten, Details pro geprüftem neuen Marker (Pos/Dist/Entscheidung), Abschluss-Zeile.
 
-Koordinaten in `marker.co` sind normalisiert (Clip-Koordinaten).
+Koordinaten: `marker.co` in normalisierten Clip-Koordinaten [0..1].
 """
 from __future__ import annotations
 
-from typing import Iterable, Set, Tuple, List
+from typing import Iterable, Set, Tuple, List, Optional
 import math
 import bpy
 
@@ -53,6 +51,31 @@ def _get_marker_at_exact_frame(track: bpy.types.MovieTrackingTrack, frame: int):
     return m
 
 
+def _get_marker_flexible(track: bpy.types.MovieTrackingTrack, frame: int, flex: int) -> tuple[Optional[bpy.types.MovieTrackingMarker], Optional[int]]:
+    """Hole Marker am exakten Frame, sonst nächsten Key innerhalb ±flex.
+    Rückgabe: (marker, marker_frame) – None/None wenn keiner existiert.
+    """
+    m = _get_marker_at_exact_frame(track, frame)
+    if m:
+        return m, frame
+    if flex <= 0:
+        return None, None
+    best = None
+    best_df = 10**9
+    best_frame = None
+    try:
+        for mk in track.markers:
+            f = int(getattr(mk, "frame", 10**9))
+            df = abs(f - int(frame))
+            if df <= flex and df < best_df:
+                best = mk
+                best_df = df
+                best_frame = f
+    except Exception:
+        return None, None
+    return (best, best_frame) if best is not None else (None, None)
+
+
 def _dist2(a: Tuple[float, float], b: Tuple[float, float]) -> float:
     dx = (a[0] - b[0])
     dy = (a[1] - b[1])
@@ -65,21 +88,14 @@ def run_distance_cleanup(
     pre_ptrs: Iterable[int] | Set[int],
     frame: int,
     min_distance: float = 0.01,
+    frame_flex: int = 2,
     select_remaining_new: bool = True,
     debug_max_items: int = 50,
     verbose: bool = True,
-    require_selected: bool = False,  # Default jetzt: auch unselektierte neue Marker prüfen
 ) -> dict:
-    """Distanzbasierter Cleanup von NEUEN Markern am gegebenen Frame.
+    """Snapshot-basiertes Distanz-Cleanup am gegebenen Frame (±frame_flex).
 
-    Args:
-        pre_ptrs: Pointer-Snapshot der Tracks *vor* der Detection (64-bit ints).
-        frame: Ziel-Frame (int).
-        min_distance: Mindestabstand (normierte Clip-Koordinaten).
-        select_remaining_new: Nach Cleanup alle verbliebenen neuen Marker erneut selektieren.
-        debug_max_items: Anzahl Detailzeilen max.
-        verbose: Wenn True, direkt in die Konsole loggen.
-        require_selected: Nur selektierte neue Marker prüfen (True) oder alle (False).
+    Es werden **alle** neuen Marker geprüft – völlig unabhängig von ihrer Selektion.
     """
     clip = _resolve_clip(context)
     if not clip:
@@ -91,75 +107,46 @@ def run_distance_cleanup(
     pre_ptrs_set: Set[int] = set(int(p) for p in (pre_ptrs or []))
     tracks = list(clip.tracking.tracks)
 
-    # Sammle alte Marker am Frame (nicht gemutet)
+    if verbose:
+        _log(
+            f"Start frame={int(frame)} min_distance={float(min_distance):.6f} "
+            f"tracks_total={len(tracks)} pre_ptrs={len(pre_ptrs_set)} frame_flex=±{int(frame_flex)}"
+        )
+
+    # --- Alte Marker sammeln (nicht gemutet) ---
     old_positions: List[Tuple[float, float]] = []
     old_details = []
-
-    # Sammle neue Kandidaten (Tracks, die NICHT im Snapshot waren)
     new_tracks: List[bpy.types.MovieTrackingTrack] = []
+
     for tr in tracks:
         if int(tr.as_pointer()) in pre_ptrs_set:
-            # alter Track → ggf. old position am Frame
-            m = _get_marker_at_exact_frame(tr, frame)
+            m, mf = _get_marker_flexible(tr, frame, frame_flex)
             if m and not getattr(m, "mute", False):
                 co = tuple(m.co)
                 pos = (float(co[0]), float(co[1]))
                 old_positions.append(pos)
                 if len(old_details) < debug_max_items:
-                    old_details.append((tr.name, pos))
+                    old_details.append((tr.name, pos, mf))
         else:
-            # neuer Track-Kandidat
             new_tracks.append(tr)
 
-    # Vorab-Statistik zu neuen Kandidaten erstellen
-    new_total = len(new_tracks)
-    new_with_marker = 0
-    new_selected = 0
-    skipped_list_preview = []  # Namen/Pos für Logging, falls wir später skippen
-
-    for tr in new_tracks:
-        m = _get_marker_at_exact_frame(tr, frame)
-        if not m:
-            continue
-        new_with_marker += 1
-        if getattr(m, "select", False):
-            new_selected += 1
-        else:
-            # Position für Preview-Log sammeln
-            try:
-                pos = (float(m.co[0]), float(m.co[1]))
-                if len(skipped_list_preview) < debug_max_items:
-                    skipped_list_preview.append((tr.name, pos))
-            except Exception:
-                pass
-
     if verbose:
-        _log(
-            f"Start frame={int(frame)} min_distance={float(min_distance):.6f} "
-            f"tracks_total={len(tracks)} pre_ptrs={len(pre_ptrs_set)}"
-        )
-        _log(f"OLD markers at frame: count={len(old_positions)}")
-        for name, pos in old_details:
-            _log(f"  OLD '{name}': co=({pos[0]:.6f},{pos[1]:.6f})")
-        _log(
-            f"NEW tracks: total={new_total} with_marker_at_frame={new_with_marker} "
-            f"selected_at_frame={new_selected} (require_selected={require_selected})"
-        )
+        _log(f"OLD markers at frame±{frame_flex}: count={len(old_positions)}")
+        for name, pos, mf in old_details:
+            _log(f"  OLD '{name}': co=({pos[0]:.6f},{pos[1]:.6f}) @f{mf}")
+        _log(f"NEW tracks (by snapshot): total={len(new_tracks)}")
 
-    # --- Prüfung/Löschung durchführen ---
+    # --- Neue Marker prüfen/entscheiden ---
     removed = 0
     kept = 0
     checked = 0
-    skipped = 0
+    skipped = 0  # neue Tracks ohne Marker innerhalb Flex
 
     new_details = []
 
     for tr in new_tracks:
-        m = _get_marker_at_exact_frame(tr, frame)
+        m, mf = _get_marker_flexible(tr, frame, frame_flex)
         if not m:
-            skipped += 1
-            continue
-        if require_selected and not getattr(m, "select", False):
             skipped += 1
             continue
 
@@ -179,13 +166,13 @@ def run_distance_cleanup(
 
         if len(new_details) < debug_max_items:
             if nearest_old is not None and dist is not None:
-                new_details.append((tr.name, co_new, nearest_old, dist, too_close))
+                new_details.append((tr.name, co_new, nearest_old, dist, too_close, mf))
             else:
-                new_details.append((tr.name, co_new, None, None, too_close))
+                new_details.append((tr.name, co_new, None, None, too_close, mf))
 
         if too_close:
             try:
-                tr.markers.delete_frame(frame)
+                tr.markers.delete_frame(mf if mf is not None else frame)
                 removed += 1
                 continue
             except Exception:
@@ -199,15 +186,13 @@ def run_distance_cleanup(
                 pass
         kept += 1
 
-    # Detail-Logs
+    # Logs
     if verbose:
-        _log(
-            f"NEW markers checked: {checked} (skipped={skipped})"
-        )
-        for name, co_new, nearest_old, dist, removed_flag in new_details:
+        _log(f"NEW markers checked: {checked} (skipped_no_key_within_flex={skipped})")
+        for name, co_new, nearest_old, dist, removed_flag, mf in new_details:
             if nearest_old is not None and dist is not None:
                 _log(
-                    "  NEW '{name}': ({nx:.6f},{ny:.6f}) vs OLD ({ox:.6f},{oy:.6f}) -> "
+                    "  NEW '{name}': ({nx:.6f},{ny:.6f}) @f{mf} vs OLD ({ox:.6f},{oy:.6f}) -> "
                     "d={d:.6f} -> {decision}".format(
                         name=name,
                         nx=co_new[0], ny=co_new[1],
@@ -218,22 +203,15 @@ def run_distance_cleanup(
                 )
             else:
                 _log(
-                    "  NEW '{name}': ({nx:.6f},{ny:.6f}) -> no OLD ref found, decision={dec}".format(
-                        name=name, nx=co_new[0], ny=co_new[1], dec=("REMOVE" if removed_flag else "KEEP")
+                    "  NEW '{name}': ({nx:.6f},{ny:.6f}) @f{mf} -> no OLD ref found -> {decision}".format(
+                        name=name, nx=co_new[0], ny=co_new[1], mf=mf,
+                        decision=("REMOVE" if removed_flag else "KEEP"),
                     )
                 )
-
-    # Wenn wir alles übersprungen haben und dennoch Preview-Daten haben, logge ein paar davon
-    if verbose and checked == 0 and skipped > 0 and skipped_list_preview:
-        _log("Preview der unselektierten neuen Marker (erste {}):".format(min(len(skipped_list_preview), debug_max_items)))
-        for name, pos in skipped_list_preview[:debug_max_items]:
-            _log(f"  PREVIEW NEW '{name}': co=({pos[0]:.6f},{pos[1]:.6f}) [unselected]")
 
     if verbose:
         _log(
             f"RESULT frame={int(frame)} removed={removed} kept={kept} "
-            f"checked_new={checked} min_distance={float(min_distance):.6f}"
-        ){int(frame)} removed={removed} kept={kept} "
             f"checked_new={checked} min_distance={float(min_distance):.6f}"
         )
 
@@ -248,9 +226,8 @@ def run_distance_cleanup(
             "frame": int(frame),
             "min_distance": float(min_distance),
             "old_count": len(old_positions),
-            "new_total": new_total,
-            "new_with_marker": new_with_marker,
-            "new_selected": new_selected,
-            "require_selected": bool(require_selected),
+            "new_total": len(new_tracks),
+            "skipped_no_key_within_flex": int(skipped),
+            "frame_flex": int(frame_flex),
         },
     }
