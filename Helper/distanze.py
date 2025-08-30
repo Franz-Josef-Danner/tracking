@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """
-Helper: distanze
+Helper: distanze (mit Debug-Logs)
 
 Aufgabe:
 - Finde *neue* Marker (Tracks, die nach einem Pre-Snapshot erstellt wurden)
@@ -9,29 +9,16 @@ Aufgabe:
 - Lösche neue Marker, die näher als `min_distance` an einem alten Marker liegen
 - Selektiere alle übrig gebliebenen neuen Marker erneut
 
+Debug-Ausgabe:
+- Gibt die Anzahl alter Marker, neue geprüfte Marker und übersprungene Marker aus
+- Listet Detailinfos (Positionen, nächster alter Marker, Distanz, Entscheidung) für max. N Marker
+
 Hinweis:
 - Die Koordinaten liegen in normalisierten Clip-Koordinaten (`marker.co`).
-- Für den Pre-Snapshot wird eine Pointer-Menge (`pre_ptrs`) verwendet, wie sie der
-  Coordinator vor der Detection aufnimmt.
-
-API-Notizen (Blender):
-- `bpy.types.MovieTrackingMarker.co -> Vector((x, y))`
-- `track.markers.find_frame(frame, exact=True) -> MovieTrackingMarker | None`
-- `track.markers.delete_frame(frame)`
-
-Rückgabe (dict):
-{
-  'status': 'OK',
-  'frame': int,
-  'checked_new': int,         # Anzahl neuer Marker, die am Frame ausgewertet wurden
-  'removed': int,             # Anzahl gelöschter Marker (zu nah an alt)
-  'kept': int,                # Anzahl beibehaltene Marker
-  'min_distance': float,
-}
 """
 from __future__ import annotations
 
-from typing import Iterable, Set, Tuple, List
+from typing import Iterable, Set, Tuple, List, Dict, Any
 import math
 import bpy
 
@@ -54,8 +41,6 @@ def _get_marker_at_exact_frame(track: bpy.types.MovieTrackingTrack, frame: int):
         m = track.markers.find_frame(frame, exact=True)
     except Exception:
         return None
-    # Manche Blender-Versionen liefern ggf. Dummy/geschätzte Marker –
-    # defensiv prüfen, ob Koordinate vorhanden ist.
     if not m or not hasattr(m, "co"):
         return None
     return m
@@ -73,8 +58,9 @@ def run_distance_cleanup(
     *,
     pre_ptrs: Iterable[int] | Set[int],
     frame: int,
-    min_distance: float = 0.01,  # Default wie im Coordinator-Kommentar
+    min_distance: float = 0.01,
     select_remaining_new: bool = True,
+    debug_max_items: int = 50,
 ) -> dict:
     """Distanzbasierter Cleanup von NEUEN Markern am gegebenen Frame.
 
@@ -82,11 +68,12 @@ def run_distance_cleanup(
         context: Blender-Context.
         pre_ptrs: Pointer-Snapshot der Tracks *vor* der Detection (64-bit ints).
         frame: Ziel-Frame (int).
-        min_distance: Mindestabstand (normierte Clip-Koordinaten) zwischen neuem und altem Marker.
+        min_distance: Mindestabstand (normierte Clip-Koordinaten).
         select_remaining_new: Nach Cleanup alle verbliebenen neuen Marker erneut selektieren.
+        debug_max_items: Wie viele Detail-Einträge maximal zurückgegeben werden.
 
     Returns:
-        Dict mit Status und Kennzahlen (siehe Modul-Docstring).
+        Dict mit Status, Kennzahlen und Debug-Daten.
     """
     clip = _resolve_clip(context)
     if not clip:
@@ -97,88 +84,78 @@ def run_distance_cleanup(
 
     tracks = list(clip.tracking.tracks)
 
-    # --- Alte Marker-Positionen am Frame (nicht gemutet) sammeln ---
+    debug: Dict[str, Any] = {
+        "frame": int(frame),
+        "min_distance": float(min_distance),
+        "old": [],
+        "old_count": 0,
+        "new_checked": [],
+        "skipped_unselected": 0,
+    }
+
+    # --- Alte Marker-Positionen sammeln ---
     old_positions: List[Tuple[float, float]] = []
     for tr in tracks:
-        # Nur *alte* Tracks (Pointer bereits im Snapshot)
         if int(tr.as_pointer()) not in pre_ptrs_set:
             continue
         m = _get_marker_at_exact_frame(tr, frame)
         if not m:
             continue
-        # Marker muss *nicht* gemutet sein
         if getattr(m, "mute", False):
             continue
-        co = tuple(m.co)  # type: ignore[arg-type]
-        old_positions.append((float(co[0]), float(co[1])))
+        co = tuple(m.co)
+        pos = (float(co[0]), float(co[1]))
+        old_positions.append(pos)
+        if len(debug["old"]) < debug_max_items:
+            debug["old"].append({"track": tr.name, "co": pos})
+    debug["old_count"] = len(old_positions)
 
-    # Falls es keine alten Marker gibt, ist nichts zu löschen – nur (re-)selektieren
-    if not old_positions:
-        kept = 0
-        for tr in tracks:
-            if int(tr.as_pointer()) in pre_ptrs_set:
-                continue  # alter Track
-            m = _get_marker_at_exact_frame(tr, frame)
-            if not m:
-                continue
-            # Nur neu gesetzte *selektierte* Marker als Kandidaten werten
-            if not getattr(m, "select", False):
-                continue
-            if select_remaining_new:
-                try:
-                    m.select = True
-                    tr.select = True
-                except Exception:
-                    pass
-            kept += 1
-        return {
-            "status": "OK",
-            "frame": int(frame),
-            "checked_new": kept,
-            "removed": 0,
-            "kept": kept,
-            "min_distance": float(min_distance),
-        }
-
-    # --- Neue Marker am Frame auswerten ---
     removed = 0
     kept = 0
     checked = 0
+
     for tr in tracks:
-        # Nur *neue* Tracks (Pointer nicht im Snapshot)
         if int(tr.as_pointer()) in pre_ptrs_set:
             continue
         m = _get_marker_at_exact_frame(tr, frame)
         if not m:
             continue
-        # Nur neu gesetzte *selektierte* Marker als Kandidaten
         if not getattr(m, "select", False):
+            debug["skipped_unselected"] += 1
             continue
 
         co_new = (float(m.co[0]), float(m.co[1]))
         checked += 1
 
-        # Distanz zu *irgendeinem* alten Marker unter min_distance?
-        too_close = False
+        nearest_old = None
+        min_d2 = float("inf")
         for co_old in old_positions:
-            if _dist2(co_new, co_old) < min_dist2:
-                too_close = True
-                break
+            d2 = _dist2(co_new, co_old)
+            if d2 < min_d2:
+                min_d2 = d2
+                nearest_old = co_old
+
+        too_close = (min_d2 < min_dist2)
+
+        if len(debug["new_checked"]) < debug_max_items:
+            debug["new_checked"].append({
+                "track": tr.name,
+                "co_new": co_new,
+                "nearest_old": tuple(nearest_old) if nearest_old else None,
+                "dist": math.sqrt(min_d2) if min_d2 < float("inf") else None,
+                "removed": bool(too_close),
+            })
 
         if too_close:
-            # Marker am Frame löschen
             try:
                 tr.markers.delete_frame(frame)
                 removed += 1
                 continue
             except Exception:
-                # Wenn Löschen fehlschlägt, behalten wir ihn (robuster Fallback)
                 pass
 
-        # Behalten & ggf. erneut selektieren
         if select_remaining_new:
             try:
-                # Marker erneut selektieren (kann nach Operationen verloren gehen)
                 m.select = True
                 tr.select = True
             except Exception:
@@ -192,4 +169,5 @@ def run_distance_cleanup(
         "removed": int(removed),
         "kept": int(kept),
         "min_distance": float(min_distance),
+        "debug": debug,
     }
