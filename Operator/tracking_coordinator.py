@@ -7,6 +7,8 @@ tracking_coordinator.py – Minimaler Coordinator mit Bootstrap-Reset
 
 from __future__ import annotations
 import bpy
+from ..Helper.tracker_settings import apply_tracker_settings
+from ..Helper.marker_helper_main import marker_helper_main
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame
 from ..Helper.jump_to_frame import run_jump_to_frame
 from ..Helper.detect import run_detect_once
@@ -162,9 +164,26 @@ def _cycle_step(context: bpy.types.Context, cycle_ctx: dict) -> dict:
     scn["tco_state"] = st
     return {"status": "OK", "phase": phase, "result": None}
 
-
 def bootstrap(context: bpy.types.Context) -> None:
     scn = context.scene
+    # --- Zuerst Tracker-Settings setzen ---
+    try:
+        res = apply_tracker_settings(context, scene=scn, log=True)
+        # Optional: kurzes Feedback im Scene-State persistieren
+        scn["tco_last_tracker_settings"] = dict(res)
+    except Exception as exc:
+        scn["tco_last_tracker_settings"] = {"status": "FAILED", "reason": str(exc)}
+
+    # --- Danach Marker-Helper starten ---
+    try:
+        ok, count, info = marker_helper_main(context)
+        scn["tco_last_marker_helper"] = {
+            "ok": bool(ok),
+            "count": int(count),
+            "info": dict(info) if hasattr(info, "items") else info,
+        }
+    except Exception as exc:
+        scn["tco_last_marker_helper"] = {"status": "FAILED", "reason": str(exc)}
 
     # Globale Scene-Flags
     scn[_LOCK_KEY] = False
