@@ -57,10 +57,13 @@ def run_distance_cleanup(
     frame: int,
     close_dist_rel: float = 0.01,
     reselect_only_remaining: bool = True,
+    select_remaining_new: bool = True,
 ) -> Dict:
     """
-    Entfernt NEUE Marker, die näher als close_dist_rel * width an *vorhandene* Marker (pre_ptrs) herangerückt sind.
-    Selektiert am Ende die verbleibenden NEUEN Marker.
+    Entfernt NEUE Marker, die näher als close_dist_rel * width an *vorhandene* Marker (pre_ptrs) liegen.
+    Selektiert am Ende – falls select_remaining_new=True – die verbleibenden NEUEN Tracks/Marker
+    am gegebenen Frame (für koordinierte Folge-Operationen wie Delete).
+    Andernfalls wird – bei reselect_only_remaining=True – nur der ursprüngliche Snapshot wiederhergestellt.
     """
     scn = context.scene
     clip = getattr(context, "edit_movieclip", None) or getattr(getattr(context, "space_data", None), "clip", None)
@@ -97,12 +100,21 @@ def run_distance_cleanup(
         if m:
             sel_snapshot_marker_at_f[t.as_pointer()] = _marker_get_select(m, t)
     if not kd or not new_tracks:
-        # Nur Selektion in den *neuen* Tracks reparieren (keine globale Änderung!)
-        if reselect_only_remaining:
+        if select_remaining_new:
             for t in new_tracks:
-                # Track-Selektionsstatus zurücksetzen
+                try:
+                    t.select = True
+                    try:
+                        m = t.markers.find_frame(int(frame), exact=True)
+                    except TypeError:
+                        m = t.markers.find_frame(int(frame))
+                    if m:
+                        _marker_set_select(m, t, True)
+                except Exception:
+                    pass
+        elif reselect_only_remaining:
+            for t in new_tracks:
                 t.select = sel_snapshot_tracks.get(t.as_pointer(), False)
-                # Marker-Selektion am Frame zurücksetzen (falls Marker existiert)
                 try:
                     m = t.markers.find_frame(int(frame), exact=True)
                 except TypeError:
@@ -178,13 +190,24 @@ def run_distance_cleanup(
                     _marker_set_select(m, t, sel_snapshot_marker_at_f[tptr])
 
     remaining = [t for t in tracking.tracks if t.as_pointer() not in pre_ptrs]
-    if reselect_only_remaining:
-        # Keine globale Deselektion – nur für neue Tracks den Snapshot wiederherstellen.
+    if select_remaining_new:
+        # Explizit selektieren: neue Tracks + Marker am aktuellen Frame
+        for t in remaining:
+            try:
+                t.select = True
+                try:
+                    m = t.markers.find_frame(int(frame), exact=True)
+                except TypeError:
+                    m = t.markers.find_frame(int(frame))
+                if m:
+                    _marker_set_select(m, t, True)
+            except Exception:
+                pass
+    elif reselect_only_remaining:
+        # Snapshot der neuen Tracks/Marker wiederherstellen (nicht-invasiv)
         for t in remaining:
             tptr = t.as_pointer()
-            # Track selektieren gem. Snapshot (default False, falls neu ohne Snapshot)
             t.select = sel_snapshot_tracks.get(tptr, getattr(t, "select", False))
-            # Marker-Selektion am Frame gem. Snapshot
             try:
                 m = t.markers.find_frame(int(frame), exact=True)
             except TypeError:
