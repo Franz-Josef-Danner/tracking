@@ -525,6 +525,39 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # Wenn keine Auswertungsfunktion vorhanden ist, einfach abschließen
             self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}")
             return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
+        # PHASE: SOLVE_EVAL – Solve-Error prüfen, ggf. schlechteste Tracks löschen, dann Loop neu starten
+        if self.phase == PH_SOLVE_EVAL:
+            scn = context.scene
+            # 1) Zielwert (Fallback 0.6 px)
+            try:
+                target_err = float(scn.get("error_track", 0.6))
+                if target_err <= 0.0:
+                    target_err = 0.6
+            except Exception:
+                target_err = 0.6
+            # 2) Istwert holen
+            avg_err = get_avg_reprojection_error(context)
+            if avg_err is None:
+                self.report({'WARNING'}, "Solve-Eval: kein gültiger Durchschnittsfehler – fahre fort.")
+                self.phase = PH_FIND_LOW
+                return {'RUNNING_MODAL'}
+            # 3) Entscheidung
+            if avg_err <= target_err:
+                self.report({'INFO'}, f"Solve OK: avg={avg_err:.4f} ≤ target={target_err:.4f}")
+                return self._finish(context, info="Sequenz abgeschlossen (Solve-Ziel erreicht).", cancelled=False)
+            # 4) x = ceil(avg/target), clamp 1..5
+            import math
+            t = target_err if (target_err == target_err and target_err > 1e-8) else 0.6
+            x = max(1, min(5, int(math.ceil(avg_err / t))))
+            red = run_reduce_error_tracks(context, max_to_delete=x)
+            self.report({'INFO'}, f"ReduceErrorTracks: avg={avg_err:.4f} target={t:.4f} → delete={x} → done={red.get('deleted')} {red.get('names')}")
+            # 5) Reset & zurück zu FIND_LOW
+            self.detection_threshold = None
+            self.pre_ptrs = None
+            self.target_frame = None
+            self.repeat_map = {}
+            self.phase = PH_FIND_LOW
+            return {'RUNNING_MODAL'}
 
         # PHASE: SPIKE_CYCLE – spike_filter → clean_short_segments → clean_short_tracks → split_cleanup → find_max_marker_frame
         if self.phase == PH_SPIKE_CYCLE:
@@ -574,13 +607,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 try:
                     res = solve_camera_only(context)
                     self.report({'INFO'}, f"SolveCamera gestartet → {res}")
+                    # → direkt in die Solve-Evaluation wechseln
+                    self.phase = PH_SOLVE_EVAL
+                    return {'RUNNING_MODAL'}
                 except Exception as exc:
                     return self._finish(context, info=f"SolveCamera start fehlgeschlagen: {exc}", cancelled=True)
-                return {'RUNNING_MODAL'}
             # Weiter iterieren
             self.spike_threshold = next_thr
-            # Nach dem Solve unmittelbar in die Evaluationsphase wechseln
-            self.phase = PH_SOLVE_EVAL
             return {'RUNNING_MODAL'}
         # PHASE 5: Bidirectional-Tracking. Wird aktiviert, nachdem ein Multi-Pass
         # und Distanzé erfolgreich ausgeführt wurden und die Markeranzahl innerhalb des
@@ -623,72 +656,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         # Fallback (unbekannte Phase)
         return self._finish(context, info=f"Unbekannte Phase: {self.phase}", cancelled=True)
-
-        # (kein Code unterhalb)
-
         # --- Ende modal() ---
-
-    # Neue Phase: Auswertung Solve-Error, optional schlechteste Tracks löschen und Loop fortsetzen
-    if False:
-        pass
-
-    def modal(self, context: bpy.types.Context, event):
-        if event.type != 'TIMER':
-            return {'PASS_THROUGH'}
-        try:
-            count = int(getattr(self, "_dbg_tick_count", 0)) + 1
-            if count <= 3:
-                self.report({'INFO'}, f"TIMER tick #{count}, phase={self.phase}")
-            self._dbg_tick_count = count
-        except Exception:
-            pass
-
-        # --- SOLVE_EVAL: Prüfe Durchschnittsfehler, ggf. Tracks reduzieren, dann Schleife neu starten ---
-        if self.phase == PH_SOLVE_EVAL:
-            scn = context.scene
-            # 1) Zielwert beschaffen (default 0.6 px, falls nicht gesetzt)
-            try:
-                target_err = float(scn.get("error_track", 0.6))
-                if target_err <= 0.0:
-                    target_err = 0.6
-            except Exception:
-                target_err = 0.6
-            # 2) Ist-Wert holen
-            avg_err = get_avg_reprojection_error(context)
-            if avg_err is None:
-                # Keine valide Messung → einfach fortfahren
-                self.report({'WARNING'}, "Solve-Eval: kein gültiger Durchschnittsfehler verfügbar – fahre fort.")
-                self.phase = PH_FIND_LOW
-                return {'RUNNING_MODAL'}
-            # 3) Entscheidung
-            if avg_err <= target_err:
-                self.report({'INFO'}, f"Solve OK: avg_error={avg_err:.4f} ≤ target={target_err:.4f} → fertig.")
-                return self._finish(context, info="Sequenz abgeschlossen (Solve-Ziel erreicht).", cancelled=False)
-            # 4) Reduktionsmenge x = ceil(avg_err / target_err), Obergrenze 5
-            import math
-            # Guard gegen 0/NaN/zu kleine Zielwerte
-            try:
-                t = float(target_err)
-            except Exception:
-                t = 0.6
-            if not (t == t) or t <= 1e-8:
-                t = 0.6
-            # Berechnung und Clamping
-            ratio = avg_err / t
-            x_calc = int(math.ceil(ratio))
-            x = max(1, min(5, x_calc))
-
-            red = run_reduce_error_tracks(context, max_to_delete=x)
-            self.report({'INFO'}, f"ReduceErrorTracks: avg={avg_err:.4f} target={target_err:.4f} → delete={x} → done={red.get('deleted')} {red.get('names')}")
-            # 5) Nach dem Löschen zurück in den Low-Marker-Zyklus
-            self.detection_threshold = None
-            self.pre_ptrs = None
-            self.target_frame = None
-            self.repeat_map = {}
-            self.phase = PH_FIND_LOW
-            return {'RUNNING_MODAL'}
-
-        # (Bestehende Phasen bleiben unverändert…)
 
 # --- Registrierung ----------------------------------------------------------
 def register():
