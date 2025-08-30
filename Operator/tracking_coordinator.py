@@ -1,27 +1,19 @@
-from __future__ import annotations
-# --- Spike-cycle config (max→min) ---
-SPIKE_INITIAL_THRESHOLD = 100.0
-SPIKE_MIN_THRESHOLD = 10.0
-SPIKE_REDUCTION_FACTOR = 0.9
-SPIKE_FLAG_SCENE_KEY = "tco_spike_cycle_finished"
-
 """
 tracking_coordinator.py – Streng sequentieller, MODALER Orchestrator
 - Phasen: FIND_LOW → JUMP → DETECT → DISTANZE (hart getrennt, seriell)
 - Jede Phase startet erst, wenn die vorherige abgeschlossen wurde.
 """
 
+from __future__ import annotations
 import bpy
-
-# Core helpers
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame
 from ..Helper.jump_to_frame import run_jump_to_frame
 from ..Helper.detect import run_detect_once
 from ..Helper.distanze import run_distance_cleanup
-from ..Helper.tracker_settings import apply_tracker_settings
-from ..Helper.marker_helper_main import marker_helper_main
-
-# Optional/try imports
+# Versuche, die Auswertungsfunktion für die Markeranzahl zu importieren.
+# Diese Funktion soll nach dem Distanz-Cleanup ausgeführt werden und
+# verwendet interne Grenzwerte aus der count.py. Es werden keine
+# zusätzlichen Parameter übergeben.
 try:
     from ..Helper.count import evaluate_marker_count  # type: ignore
 except Exception:
@@ -29,7 +21,10 @@ except Exception:
         from .count import evaluate_marker_count  # type: ignore
     except Exception:
         evaluate_marker_count = None  # type: ignore
+from ..Helper.tracker_settings import apply_tracker_settings
 
+# Optional: den Bidirectional‑Track Operator importieren. Wenn der Import
+# fehlschlägt, bleibt die Variable auf None und es erfolgt kein Aufruf.
 try:
     from ..Helper.bidirectional_track import CLIP_OT_bidirectional_track  # type: ignore
 except Exception:
@@ -38,6 +33,8 @@ except Exception:
     except Exception:
         CLIP_OT_bidirectional_track = None  # type: ignore
 
+# Optionaler Import für das Entfernen kurzer Spuren nach der Bidirectional-Phase.
+# Wenn der Import fehlschlägt, bleibt die Variable None und es erfolgt kein Cleanup.
 try:
     from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
 except Exception:
@@ -46,55 +43,38 @@ except Exception:
     except Exception:
         clean_short_tracks = None  # type: ignore
 
+# -----------------------------------------------------------------------------
+# Optionally import the multi-pass helper. This helper performs additional
+# feature detection passes with varied pattern sizes. It will be invoked when
+# the marker count evaluation reports that the number of markers lies within
+# the acceptable range ("ENOUGH").
 try:
+    # Prefer package-style import when the Helper package is available
     from ..Helper.multi import run_multi_pass  # type: ignore
 except Exception:
     try:
+        # Fallback to local import when running as a standalone module
         from .multi import run_multi_pass  # type: ignore
     except Exception:
+        # If import fails entirely, leave run_multi_pass as None
         run_multi_pass = None  # type: ignore
-
-# Additional helpers for the spike cycle
+from ..Helper.marker_helper_main import marker_helper_main
+# Import the detect threshold key so we can reference the last used value
 try:
-    from ..Helper.spike_filter_cycle import run_marker_spike_filter_cycle  # type: ignore
-except Exception:
-    try:
-        from .spike_filter_cycle import run_marker_spike_filter_cycle  # type: ignore
-    except Exception:
-        run_marker_spike_filter_cycle = None  # type: ignore
-
-try:
-    from ..Helper.clean_short_segments import clean_short_segments  # type: ignore
-except Exception:
-    try:
-        from .clean_short_segments import clean_short_segments  # type: ignore
-    except Exception:
-        clean_short_segments = None  # type: ignore
-
-try:
-    from ..Helper.split_cleanup import recursive_split_cleanup  # type: ignore
-except Exception:
-    try:
-        from .split_cleanup import recursive_split_cleanup  # type: ignore
-    except Exception:
-        recursive_split_cleanup = None  # type: ignore
-
-try:
-    from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
-except Exception:
-    try:
-        from .find_max_marker_frame import run_find_max_marker_frame  # type: ignore
-    except Exception:
-        run_find_max_marker_frame = None  # type: ignore
-
-# Detect threshold scene key
-try:
+    # Local import when running inside the package structure
     from ..Helper.detect import DETECT_LAST_THRESHOLD_KEY  # type: ignore
 except Exception:
     try:
+        # Fallback when module layout differs
         from .detect import DETECT_LAST_THRESHOLD_KEY  # type: ignore
+from ..Helper.spike_filter_cycle import run_marker_spike_filter_cycle
+from ..Helper.clean_short_segments import clean_short_segments
+from ..Helper.split_cleanup import recursive_split_cleanup
+from ..Helper.find_max_marker_frame import run_find_max_marker_frame
     except Exception:
+        # Default value if import fails
         DETECT_LAST_THRESHOLD_KEY = "last_detection_threshold"  # type: ignore
+
 __all__ = ("CLIP_OT_tracking_coordinator",)
 
 # --- Orchestrator-Phasen ----------------------------------------------------
@@ -107,6 +87,12 @@ PH_DISTANZE   = "DISTANZE"
 # angestoßen. Sie startet den Bidirectional‑Track Operator und wartet
 # auf dessen Abschluss. Danach beginnt der Koordinator wieder bei PH_FIND_LOW.
 PH_BIDI       = "BIDI"
+# --- Spike cycle config ---
+SPIKE_FLAG_SCENE_KEY = "tco_spike_cycle_finished"
+SPIKE_INITIAL_THRESHOLD = 100.0
+SPIKE_MIN_THRESHOLD = 10.0
+SPIKE_REDUCTION_FACTOR = 0.9
+
 
 # ---- intern: State Keys / Locks -------------------------------------------
 _LOCK_KEY = "tco_lock"
@@ -203,9 +189,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # nur einmal auszulösen und anschließend auf den Abschluss zu warten.
     bidi_started: bool = False
 
-    # Runtime state for spike-cycle threshold
-    spike_threshold: float | None = None
-
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
         return context is not None and context.scene is not None
@@ -229,13 +212,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # Bidirectional‑Track ist noch nicht gestartet
         self.bidi_started = False
 
-
-        # reset spike-cycle state
-        self.spike_threshold = None
-        try:
-            context.scene[SPIKE_FLAG_SCENE_KEY] = False
-        except Exception:
-            pass
         wm = context.window_manager
         # --- Robust: valides Window sichern ---
         win = getattr(context, "window", None)
@@ -287,24 +263,31 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         except Exception:
             pass
 
-        # PHASE 1: FIND_LOW
-        if self.phase == PH_FIND_LOW:
-            res = run_find_low_marker_frame(context)
-            st = res.get("status")
-            if st == "FAILED":
-                return self._finish(context, info=f"FIND_LOW FAILED → {res.get('reason')}", cancelled=True)
-            if st == "NONE":
-                # Start spike cleanup cycle; on success, restart low-phase
-                if self._run_spike_cleanup_cycle(context):
-                    self.phase = PH_FIND_LOW
-                    return {'RUNNING_MODAL'}
-                # exhausted → allow find_max to log finish by scene flag and exit cleanly
-                return self._finish(context, info="Kein Low-Marker-Frame gefunden – Spike-Cycle exhausted. Log finish.", cancelled=False)
+        
+# PHASE 1: FIND_LOW
+    if self.phase == PH_FIND_LOW:
+        res = run_find_low_marker_frame(context)
+        st = res.get("status")
+        if st == "FAILED":
+            return self._finish(context, info=f"FIND_LOW FAILED → {res.get('reason')}", cancelled=True)
+        if st == "NONE":
+            # Neuer Zyklus: Spike-Filter → Segmente → Tracks → Split → Find-Max (Schwelle 100 → *0.9 → … → ≤10)
+            if self._run_spike_cycle_loop(context):
+                # Frame gefunden → erneut Low-Cycle starten
+                self.phase = PH_FIND_LOW
+                return {'RUNNING_MODAL'}
+            # erschöpft → Scene-Flag gesetzt, sauber beenden (find_max kann 'finish' loggen)
+            return self._finish(context, info="Kein Low-Marker-Frame: Spike-Cycle exhausted (Flag gesetzt).", cancelled=False)
+        self.target_frame = int(res.get("frame"))
+        self.report({'INFO'}, f"Low-Marker-Frame: {self.target_frame}")
+        self.phase = PH_JUMP
+        return {'RUNNING_MODAL'}
             self.target_frame = int(res.get("frame"))
             self.report({'INFO'}, f"Low-Marker-Frame: {self.target_frame}")
             self.phase = PH_JUMP
             return {'RUNNING_MODAL'}
-# PHASE 2: JUMP
+
+        # PHASE 2: JUMP
         if self.phase == PH_JUMP:
             if self.target_frame is None:
                 return self._finish(context, info="JUMP: Kein Ziel-Frame gesetzt.", cancelled=True)
@@ -619,81 +602,64 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return self._finish(context, info=f"Unbekannte Phase: {self.phase}", cancelled=True)
 
 
-# -------------------------------------------------------------------------
-# Internal helper: spike-filter cleanup loop
-# -------------------------------------------------------------------------
-def _run_spike_cleanup_cycle(self, context: bpy.types.Context) -> bool:
-    """
-    Runs iterative cleanup when no low-marker frame is found:
-      1) run_marker_spike_filter_cycle(track_threshold=thr)
-      2) clean_short_segments()
-      3) clean_short_tracks()
-      4) recursive_split_cleanup()
-      5) run_find_max_marker_frame()
-    Threshold thr starts at SPIKE_INITIAL_THRESHOLD and is multiplied by
-    SPIKE_REDUCTION_FACTOR until it reaches SPIKE_MIN_THRESHOLD.
-    Returns True if a frame is found; otherwise sets the scene flag and returns False.
-    """
-    thr = float(self.spike_threshold if self.spike_threshold is not None else SPIKE_INITIAL_THRESHOLD)
+# --- Registrierung ----------------------------------------------------------
+
+# ------------------------------------------------------------
+# Helper: Spike-Cycle (läuft nur, wenn FIND_LOW keinen Frame liefert)
+# Reihenfolge: spike_filter_cycle → clean_short_segments → clean_short_tracks → split_cleanup → find_max
+# Schwelle: 100 → *0.9 → … bis ≤10, dann Szene-Flag setzen
+def _run_spike_cycle_loop(self, context: bpy.types.Context) -> bool:
+    scn = context.scene
+    thr = float(SPIKE_INITIAL_THRESHOLD)
+    # Sicherheit: Flag vor Start zurücksetzen
+    try:
+        scn[SPIKE_FLAG_SCENE_KEY] = False
+    except Exception:
+        pass
     while True:
-        # 1) Spike filter
+        # 1) Spike-Filter
         try:
             run_marker_spike_filter_cycle(context, track_threshold=float(thr))
         except Exception:
             pass
-
-        # 2) Short segments
+        # 2) Clean short segments
         try:
             clean_short_segments(context)
         except Exception:
             pass
-
-        # 3) Short tracks
+        # 3) Clean short tracks
         try:
             clean_short_tracks(context)
         except Exception:
             pass
-
-        # 4) Split cleanup (UI override required)
+        # 4) Split cleanup (benötigt UI-Kontext)
         try:
             area = getattr(context, "area", None)
             region = getattr(context, "region", None)
             space = getattr(context, "space_data", None)
             clip = getattr(space, "clip", None) if space else None
             tracks = list(getattr(getattr(clip, "tracking", None), "tracks", []) or [])
-            if area and region and space:
+            if area and region and space and tracks:
                 recursive_split_cleanup(context, area, region, space, tracks)
         except Exception:
             pass
-
-        # 5) Check for new max-marker frame
+        # 5) Max-Marker-Frame suchen
         try:
             res = run_find_max_marker_frame(context)
         except Exception:
             res = None
-
-        if isinstance(res, dict) and res.get("status") == "FOUND":
-            # persist and clear flag
-            self.spike_threshold = float(thr)
-            try:
-                context.scene[SPIKE_FLAG_SCENE_KEY] = False
-            except Exception:
-                pass
+        if isinstance(res, dict) and str(res.get("status","")) == "FOUND":
+            # Erfolg → zurück in Low-Cycle
             return True
-
-        # lower threshold
+        # Schwelle reduzieren, ggf. abbrechen
         thr *= float(SPIKE_REDUCTION_FACTOR)
         if thr <= float(SPIKE_MIN_THRESHOLD):
-            # exhausted → set finish flag and stop
             try:
-                context.scene[SPIKE_FLAG_SCENE_KEY] = True
+                scn[SPIKE_FLAG_SCENE_KEY] = True
             except Exception:
                 pass
-            self.spike_threshold = float(thr)
             return False
 
-
-# --- Registrierung ----------------------------------------------------------
 def register():
     """Registriert den Tracking‑Coordinator und optional den Bidirectional‑Track Operator."""
     # Den Bidirectional‑Track Operator zuerst registrieren, falls verfügbar. Dieser
