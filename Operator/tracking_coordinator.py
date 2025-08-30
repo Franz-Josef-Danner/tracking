@@ -1,46 +1,98 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+"""
+tracking_coordinator.py – Minimaler Coordinator mit Bootstrap-Reset
+- Stellt den Operator `CLIP_OT_tracking_coordinator` bereit (Button-Target).
+- Führt beim Ausführen ein definierte(r) Bootstrap/Reset im Scene-State aus.
+"""
+
 from __future__ import annotations
 import bpy
-from typing import Dict, Optional, Tuple
+
+# --- Keys / Defaults (an Projekt-Konstanten anpassen, falls vorhanden) -----
+_LOCK_KEY = "tco_lock"
+_BIDI_ACTIVE_KEY = "tco_bidi_active"
+_BIDI_RESULT_KEY = "tco_bidi_result"
+_GOTO_KEY = "tco_goto"
+_DEFAULT_SPIKE_START = 50.0
 
 __all__ = ("CLIP_OT_tracking_coordinator", "bootstrap")
- 
 
-class CLIP_OT_tracking_bootstrap_only(bpy.types.Operator):
-    """Kaiserlich: Nur Bootstrap ausführen (kein Timer/Orchestrator)"""
-    bl_idname = "clip.tracking_bootstrap_only"
-    bl_label = "Kaiserlich: Bootstrap Only"
+
+# --- Bootstrap: setzt Scene-Flags und interne Reset-Variablen --------------
+def bootstrap(context: bpy.types.Context) -> None:
+    scn = context.scene
+
+    # Globale Scene-Flags
+    scn[_LOCK_KEY] = False
+    scn[_BIDI_ACTIVE_KEY] = False
+    scn[_BIDI_RESULT_KEY] = ""
+    scn.pop(_GOTO_KEY, None)
+
+    # Interne State-Container (falls später in Scene benötigt, hier persistieren)
+    scn["tco_state"] = {
+        "state": "INIT",
+        "detect_attempts": 0,
+        "jump_done": False,
+        "repeat_map": {},          # serialisierbar halten
+        "bidi_started": False,
+
+        # Cycle
+        "cycle_active": False,
+        "cycle_target_frame": None,
+        "cycle_iterations": 0,
+
+        # Spike
+        "spike_threshold": float(
+            getattr(scn, "spike_start_threshold", _DEFAULT_SPIKE_START) or _DEFAULT_SPIKE_START
+        ),
+        "spike_floor": 10.0,
+        "spike_floor_hit": False,
+
+        # Solve/Eval/Refine
+        "pending_eval_after_solve": False,
+        "did_refine_this_cycle": False,
+
+        # Solve-Error-Merker
+        "last_solve_error": None,
+        "same_error_repeat_count": 0,
+    }
+
+
+# --- Operator: wird vom UI-Button aufgerufen -------------------------------
+class CLIP_OT_tracking_coordinator(bpy.types.Operator):
+    """Kaiserlich: Tracking Coordinator Bootstrap"""
+    bl_idname = "clip.tracking_coordinator"
+    bl_label = "Kaiserlich: Coordinator starten"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
-        return bool(context and getattr(context, "scene", None))
+        # Optional enger machen: nur im Clip Editor erlauben
+        return context is not None and context.scene is not None
 
-    def execute(self, context):
+    def execute(self, context: bpy.types.Context):
         try:
             bootstrap(context)
-            self.report({'INFO'}, "Bootstrap ausgeführt")
-            print("[BootstrapOnly] Bootstrap erfolgreich ausgeführt")
-        except Exception as ex:
-            self.report({'ERROR'}, f"Bootstrap fehlgeschlagen: {ex}")
-            print(f"[BootstrapOnly] FAILED → {ex}")
+        except Exception as exc:
+            self.report({'ERROR'}, f"Bootstrap failed: {exc}")
             return {'CANCELLED'}
+        self.report({'INFO'}, "Coordinator bootstrap reset complete.")
         return {'FINISHED'}
 
 
- # ------------------------------------------------------------
- # Utility: Track-/Marker-Handling (Selektieren/Löschen)
- # ------------------------------------------------------------
+# --- Registrierung ----------------------------------------------------------
 def register():
     bpy.utils.register_class(CLIP_OT_tracking_coordinator)
-    bpy.utils.register_class(CLIP_OT_tracking_bootstrap_only)
+
 
 def unregister():
-    print(f"[Coordinator] unregister() from {__file__}")
+    bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
+
+
+# Optional: lokale Tests beim Direktlauf
+if __name__ == "__main__":
     try:
-        bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
+        unregister()
     except Exception:
         pass
-    try:
-        bpy.utils.unregister_class(CLIP_OT_tracking_bootstrap_only)
-    except Exception:
-        pass
+    register()
