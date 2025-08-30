@@ -383,10 +383,34 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 scale = 1.0 + (k_p * error + k_i * acc)
                 return max(1e-4, curr_thr * scale)
 
+            # --- NEU: stabiler CLIP_EDITOR-Override für Detect ---
+            win = area = region = space = None
+            wm = bpy.context.window_manager
+            if wm:
+                for w in wm.windows:
+                    scr = getattr(w, "screen", None)
+                    if not scr:
+                        continue
+                    for a in scr.areas:
+                        if a.type == 'CLIP_EDITOR':
+                            r = next((r for r in a.regions if r.type == 'WINDOW'), None)
+                            if r:
+                                win, area, region = w, a, r
+                                space = a.spaces.active if hasattr(a, "spaces") else None
+                                break
+                    if win:
+                        break
+
             res_last = {}
             for attempt in range(1, max_attempts + 1):
                 # 1) Marker setzen (Basic)
-                basic = run_detect_basic(context, start_frame=start_frame, selection_policy="only_new")
+                
+                if win and area and region and space:
+                    override = {"window": win, "area": area, "region": region, "space_data": space, "scene": scn}
+                    with bpy.context.temp_override(**override):
+                        basic = run_detect_basic(context, start_frame=start_frame, selection_policy="only_new")
+                else:
+                    basic = run_detect_basic(context, start_frame=start_frame, selection_policy="only_new")
                 # --- ID-Property-safe Log: Sets entfernen/kompakt darstellen ---
                 basic_safe = dict(basic)
                 if "pre_ptrs" in basic_safe:
@@ -456,7 +480,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if "adjusted_threshold" in res_last:
                 final_log["adjusted_threshold"] = float(res_last["adjusted_threshold"])
             scn[K_LAST] = final_log
-            scn[K_PHASE] = PH_BIDI_S
+            # --- NEU: Bidi nur bei ENOUGH, sonst zurück zu FIND_LOW ---
+            go_bidi = False
+            if isinstance(res_last, dict):
+                cnt = res_last.get("count", {})
+                go_bidi = (isinstance(cnt, dict) and cnt.get("status") == "ENOUGH")
+            scn[K_PHASE] = PH_BIDI_S if go_bidi else PH_FIND
             return {'RUNNING_MODAL'}
 
         # -----------------------------
