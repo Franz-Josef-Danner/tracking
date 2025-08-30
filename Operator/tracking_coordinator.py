@@ -243,7 +243,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {'CANCELLED' if cancelled else 'FINISHED'}
 
     def modal(self, context: bpy.types.Context, event):
-        # frühes Telemetrie-Logging beim ersten Tick hilft bei Diagnose
+        # --- ESC / Abbruch prüfen ---
+        if event.type in {'ESC'} and event.value == 'PRESS':
+            return self._finish(context, info="ESC gedrückt – Prozess abgebrochen.", cancelled=True)
+
+        # nur Timer-Events verarbeiten
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
         # Optionales Debugging: erste 3 Ticks loggen
