@@ -50,6 +50,30 @@ _LOCK_KEY = "tco_lock"
 # Utilities
 # ----------------------------------------------------------------------------
 
+def _ensure_clip_context(context: bpy.types.Context) -> dict:
+    """Finde einen CLIP_EDITOR und liefere ein temp_override-Dict für Clip-Operatoren."""
+    wm = bpy.context.window_manager
+    if not wm:
+        return {}
+    for win in wm.windows:
+        scr = getattr(win, "screen", None)
+        if not scr:
+            continue
+        for area in scr.areas:
+            if area.type != "CLIP_EDITOR":
+                continue
+            region = next((r for r in area.regions if r.type == "WINDOW"), None)
+            space = area.spaces.active if hasattr(area, "spaces") else None
+            if region and space:
+                return {
+                    "window": win,
+                    "area": area,
+                    "region": region,
+                    "space_data": space,
+                    "scene": bpy.context.scene,
+                }
+    return {}
+
 def _resolve_clip(context: bpy.types.Context):
     """Robuster Clip-Resolver (Edit-Clip, Space-Clip, erster Clip)."""
     clip = getattr(context, "edit_movieclip", None)
@@ -263,22 +287,50 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         trk = getattr(clip, "tracking", None)
                         if trk and hasattr(trk, "tracks"):
                             curf = int(self.target_frame)
-                            for t in trk.tracks:
-                                if int(t.as_pointer()) in new_ptrs_after_cleanup:
-                                    # robust: solange Marker @frame existiert, löschen
-                                    while True:
+                            # Variante 1 (bevorzugt): via Operator im CLIP-Override (robust wie UI)
+                            try:
+                                # Selektion vorbereiten
+                                target_ptrs = set(new_ptrs_after_cleanup)
+                                for t in trk.tracks:
+                                    try:
+                                        t.select = False
+                                    except Exception:
+                                        pass
+                                for t in trk.tracks:
+                                    if int(t.as_pointer()) in target_ptrs:
                                         try:
-                                            _m = None
-                                            try:
-                                                _m = t.markers.find_frame(curf, exact=True)
-                                            except TypeError:
-                                                _m = t.markers.find_frame(curf)
-                                            if not _m:
-                                                break
-                                            t.markers.delete_frame(curf)
-                                            deleted_markers += 1
+                                            t.select = True
                                         except Exception:
-                                            break
+                                            pass
+                                # Frame sicher setzen
+                                try:
+                                    scn.frame_set(curf)
+                                except Exception:
+                                    pass
+                                override = _ensure_clip_context(context)
+                                if override:
+                                    with bpy.context.temp_override(**override):
+                                        bpy.ops.clip.delete_marker(confirm=False)
+                                else:
+                                    bpy.ops.clip.delete_marker(confirm=False)
+                                deleted_markers = len(target_ptrs)
+                            except Exception:
+                                # Variante 2 (Fallback): direkte API, ggf. mehrfach löschen bis leer
+                                for t in trk.tracks:
+                                    if int(t.as_pointer()) in new_ptrs_after_cleanup:
+                                        while True:
+                                            try:
+                                                _m = None
+                                                try:
+                                                    _m = t.markers.find_frame(curf, exact=True)
+                                                except TypeError:
+                                                    _m = t.markers.find_frame(curf)
+                                                if not _m:
+                                                    break
+                                                t.markers.delete_frame(curf)
+                                                deleted_markers += 1
+                                            except Exception:
+                                                break
                             # Flush/Refresh, damit der Effekt sofort greift
                             try:
                                 bpy.context.view_layer.update()
