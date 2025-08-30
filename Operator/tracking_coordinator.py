@@ -257,14 +257,25 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if self.pre_ptrs is None or self.target_frame is None:
                 return self._finish(context, info="DISTANZE: Pre-Snapshot oder Ziel-Frame fehlt.", cancelled=True)
             try:
+                # Detect-basierten min_distance (Pixel) ableiten und durchreichen
+                import math
+                scn = context.scene
+                min_dist_base = int(scn.get("min_distance_base", 8))
+                thr = float(self.detection_threshold if self.detection_threshold is not None
+                            else scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
+                factor = math.log10(max(thr * 1e8, 1e-8)) / 8.0
+                detect_min_dist = max(1, int(min_dist_base * factor))  # Pixel
+                print(f"[Coordinator→DISTANZE] pass min_distance={detect_min_dist} px "
+                      f"(thr={thr:.6f}, factor={factor:.3f}, base={min_dist_base})")
+
                 dis = run_distance_cleanup(
                     context,
                     pre_ptrs=self.pre_ptrs,
                     frame=int(self.target_frame),
                     distance_unit="pixel",
-                    min_distance=200.0,              # dein Härtetest
-                    require_selected_new=True,       # exakt wie gefordert
-                    include_muted_old=False,         # nur nicht gemutete alte Marker
+                    min_distance=float(detect_min_dist),
+                    require_selected_new=True,
+                    include_muted_old=False,
                     select_remaining_new=True,
                     verbose=True,
                 )
