@@ -4,6 +4,29 @@ import bpy
 
 __all__ = ["run_multi_pass"]
 
+def _run_in_clip_context(op_callable, **kwargs):
+    wm = bpy.context.window_manager
+    if wm:
+        for window in wm.windows:
+            screen = window.screen
+            if not screen:
+                continue
+            for area in screen.areas:
+                if area.type == "CLIP_EDITOR":
+                    region = next((r for r in area.regions if r.type == "WINDOW"), None)
+                    space = area.spaces.active if hasattr(area, "spaces") else None
+                    if region and space:
+                        override = {
+                            "window": window,
+                            "area": area,
+                            "region": region,
+                            "space_data": space,
+                            "scene": bpy.context.scene,
+                        }
+                        with bpy.context.temp_override(**override):
+                            return op_callable(**kwargs)
+    return op_callable(**kwargs)
+
 def _set_pattern_size(tracking: bpy.types.MovieTracking, new_size: int) -> int:
     s = tracking.settings
     clamped = max(3, min(101, int(new_size)))
@@ -50,9 +73,12 @@ def run_multi_pass(
             except Exception:
                 pass
         try:
-            bpy.ops.clip.detect_features(threshold=float(detect_threshold))
-        except Exception:
-            pass
+        def _op(**kw):
+            try:
+                return bpy.ops.clip.detect_features(**kw)
+            except TypeError:
+                return bpy.ops.clip.detect_features()
+        _run_in_clip_context(_op, threshold=float(detect_threshold))
         created = [t for t in tracking.tracks if t.as_pointer() not in before]
         return len(created)
 
