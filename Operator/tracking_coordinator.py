@@ -28,7 +28,7 @@ class CLIP_OT_tracking_bootstrap_only(bpy.types.Operator):
  # ------------------------------------------------------------
 def register():
     bpy.utils.register_class(CLIP_OT_tracking_coordinator)
-   bpy.utils.register_class(CLIP_OT_tracking_bootstrap_only)
+    bpy.utils.register_class(CLIP_OT_tracking_bootstrap_only)
 
 def unregister():
     print(f"[Coordinator] unregister() from {__file__}")
@@ -36,7 +36,7 @@ def unregister():
         bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
     except Exception:
         pass
-   try:
-       bpy.utils.unregister_class(CLIP_OT_tracking_bootstrap_only)
-   except Exception:
-       pass
+    try:
+        bpy.utils.unregister_class(CLIP_OT_tracking_bootstrap_only)
+    except Exception:
+        pass
