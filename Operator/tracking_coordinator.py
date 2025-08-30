@@ -16,6 +16,7 @@ from ..Helper.clean_short_tracks import clean_short_tracks
 from ..Helper.split_cleanup import recursive_split_cleanup
 from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
 from ..Helper.solve_camera import solve_camera_only  # type: ignore
+from ..Helper.reduce_error_tracks import run_reduce_error_tracks, get_avg_reprojection_error  # type: ignore
 
 # Versuche, die Auswertungsfunktion für die Markeranzahl zu importieren.
 # Diese Funktion soll nach dem Distanz-Cleanup ausgeführt werden und
@@ -76,6 +77,7 @@ PH_JUMP       = "JUMP"
 PH_DETECT     = "DETECT"
 PH_DISTANZE   = "DISTANZE"
 PH_SPIKE_CYCLE = "SPIKE_CYCLE"
+PH_SOLVE_EVAL = "SOLVE_EVAL"
 # Erweiterte Phase: Bidirectional-Tracking. Wenn der Multi‑Pass und das
 # Distanz‑Cleanup erfolgreich durchgeführt wurden, wird diese Phase
 # angestoßen. Sie startet den Bidirectional‑Track Operator und wartet
@@ -577,8 +579,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {'RUNNING_MODAL'}
             # Weiter iterieren
             self.spike_threshold = next_thr
+            # Nach dem Solve unmittelbar in die Evaluationsphase wechseln
+            self.phase = PH_SOLVE_EVAL
             return {'RUNNING_MODAL'}
-
         # PHASE 5: Bidirectional-Tracking. Wird aktiviert, nachdem ein Multi-Pass
         # und Distanzé erfolgreich ausgeführt wurden und die Markeranzahl innerhalb des
         # gültigen Bereichs lag. Startet den Bidirectional-Track-Operator und wartet
@@ -621,6 +624,60 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # Fallback (unbekannte Phase)
         return self._finish(context, info=f"Unbekannte Phase: {self.phase}", cancelled=True)
 
+        # (kein Code unterhalb)
+
+        # --- Ende modal() ---
+
+    # Neue Phase: Auswertung Solve-Error, optional schlechteste Tracks löschen und Loop fortsetzen
+    if False:
+        pass
+
+    def modal(self, context: bpy.types.Context, event):
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+        try:
+            count = int(getattr(self, "_dbg_tick_count", 0)) + 1
+            if count <= 3:
+                self.report({'INFO'}, f"TIMER tick #{count}, phase={self.phase}")
+            self._dbg_tick_count = count
+        except Exception:
+            pass
+
+        # --- SOLVE_EVAL: Prüfe Durchschnittsfehler, ggf. Tracks reduzieren, dann Schleife neu starten ---
+        if self.phase == PH_SOLVE_EVAL:
+            scn = context.scene
+            # 1) Zielwert beschaffen (default 0.6 px, falls nicht gesetzt)
+            try:
+                target_err = float(scn.get("error_track", 0.6))
+                if target_err <= 0.0:
+                    target_err = 0.6
+            except Exception:
+                target_err = 0.6
+            # 2) Ist-Wert holen
+            avg_err = get_avg_reprojection_error(context)
+            if avg_err is None:
+                # Keine valide Messung → einfach fortfahren
+                self.report({'WARNING'}, "Solve-Eval: kein gültiger Durchschnittsfehler verfügbar – fahre fort.")
+                self.phase = PH_FIND_LOW
+                return {'RUNNING_MODAL'}
+            # 3) Entscheidung
+            if avg_err <= target_err:
+                self.report({'INFO'}, f"Solve OK: avg_error={avg_err:.4f} ≤ target={target_err:.4f} → fertig.")
+                return self._finish(context, info="Sequenz abgeschlossen (Solve-Ziel erreicht).", cancelled=False)
+            # 4) Reduktionsmenge x = ceil(avg_err / target_err), Obergrenze 5
+            import math
+            x = max(1, min(5, int(math.ceil(avg_err / target_err)))))
+            red = run_reduce_error_tracks(context, max_to_delete=x)
+            self.report({'INFO'}, f"ReduceErrorTracks: avg={avg_err:.4f} target={target_err:.4f} → delete={x} → done={red.get('deleted')} {red.get('names')}")
+            # 5) Nach dem Löschen zurück in den Low-Marker-Zyklus
+            self.detection_threshold = None
+            self.pre_ptrs = None
+            self.target_frame = None
+            self.repeat_map = {}
+            self.phase = PH_FIND_LOW
+            return {'RUNNING_MODAL'}
+
+        # (Bestehende Phasen bleiben unverändert…)
 
 # --- Registrierung ----------------------------------------------------------
 def register():
