@@ -401,6 +401,19 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         min_distance = int(min_dist_base * factor)
                         print(f"[DEBUG] thr={self.detection_threshold:.6f}, "
                               f"factor={factor:.3f}, margin={margin}, min_dist={min_distance}")
+
+                        # --- NEU: dynamische Werte in der Szene persistieren ---
+                        try:
+                            # defensiv clampen
+                            margin_eff = max(0, int(margin))
+                            min_dist_eff = max(1, int(min_distance))
+                            scn["margin_base"] = margin_eff
+                            scn["min_distance_base"] = min_dist_eff
+                            # optionales Log für Transparenz
+                            print(f"[Coordinator] scene overrides → margin_base={margin_eff}, "
+                                  f"min_distance_base={min_dist_eff}")
+                        except Exception as _exc:
+                            print(f"[Coordinator] scene override failed: {_exc}")
                     except Exception:
                         pass
 
