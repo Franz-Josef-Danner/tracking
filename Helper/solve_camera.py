@@ -1,6 +1,6 @@
 from __future__ import annotations
 import bpy
-from typing import Optional, Dict, Any
+from typing import Optional
 
 __all__ = ("solve_camera_only",)
 
@@ -26,18 +26,8 @@ def _find_clip_window(context) -> tuple[Optional[bpy.types.Area], Optional[bpy.t
 
 # -- öffentliche API ----------------------------------------------------------
 
-def _resolve_clip(context: bpy.types.Context):
-    clip = getattr(context, "edit_movieclip", None)
-    if not clip:
-        clip = getattr(getattr(context, "space_data", None), "clip", None)
-    if not clip and bpy.data.movieclips:
-        clip = next(iter(bpy.data.movieclips), None)
-    return clip
-
-def solve_camera_only(context) -> Dict[str, Any]:
-    """Löst nur den Kamera-Solve aus – kein Cleanup, kein Warten. Nutzt Scene-Flag
-    'refine_intrinsics_focal_length' → setzt/entfernt 'FOCAL_LENGTH' in tracking.settings.refine_intrinsics
-    und startet den Solve robust im CLIP_EDITOR-Override.
+def solve_camera_only(context):
+    """Löst nur den Kamera-Solve aus – kein Cleanup, kein Warten.
 
     Versucht, falls möglich, einen Kontext-Override auf einen CLIP_EDITOR zu
     setzen, damit der Operator zuverlässig läuft. Fällt ansonsten auf den
@@ -45,55 +35,18 @@ def solve_camera_only(context) -> Dict[str, Any]:
 
     Returns
     -------
-    dict
-        Status und gesetzte Refine-Params.
+    set | dict
+        Das Operator-Resultat (z. B. {'RUNNING_MODAL'} oder {'CANCELLED'}).
     """
-    scn = context.scene
-    clip = _resolve_clip(context)
-    if not clip:
-        print("[Solve] FAILED: no clip")
-        return {"status": "FAILED", "reason": "no clip"}
-
-    tr = getattr(clip, "tracking", None)
-    if not tr or not hasattr(tr, "settings"):
-        print("[Solve] FAILED: no tracking.settings")
-        return {"status": "FAILED", "reason": "no tracking.settings"}
-
-    # Scene-Flag robust lesen
-    refine_focal = bool(scn.get("refine_intrinsics_focal_length", False))
-
-    # Aktuelle Refine-Menge ermitteln und anpassen
-    try:
-        current = set(tr.settings.refine_intrinsics)
-    except Exception:
-        current = set()
-    new_refine = set(current)
-    if refine_focal:
-        new_refine.add("FOCAL_LENGTH")
-    else:
-        new_refine.discard("FOCAL_LENGTH")
-
-    # Setzen mit Fehlerfang
-    try:
-        tr.settings.refine_intrinsics = tuple(sorted(new_refine))
-    except Exception as exc:
-        print(f"[Solve] FAILED to set refine_intrinsics: {exc}")
-        return {"status": "FAILED", "reason": f"set refine_intrinsics: {exc}"}
-
-    print(f"[Solve] refine_intrinsics_focal_length={refine_focal} → refine_intrinsics={tuple(sorted(new_refine))}")
-
     area, region, space = _find_clip_window(context)
     try:
         if area and region and space:
             with context.temp_override(area=area, region=region, space_data=space):
-                op_res = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-        else:
-            op_res = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-        print(f"[Solve] OK → op_res={op_res}")
-        return {"status": "OK", "refine_focal": refine_focal, "refine_intrinsics": tuple(sorted(new_refine)), "op_res": str(op_res)}
+                return bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+        return bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
     except Exception as e:
-        print(f"[Solve] FAILED in bpy.ops.clip.solve_camera(): {e}")
-        return {"status": "FAILED", "reason": str(e)}
+        return {"CANCELLED"}
+
 
 # ----------------------------------------------------------------------------
 # HINWEIS FÜR DEN KOORDINATOR (separate Datei!):
