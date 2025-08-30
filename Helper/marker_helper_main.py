@@ -4,6 +4,31 @@ from typing import Tuple, Dict, Any
 
 __all__ = ("marker_helper_main",)
 
+def _resolve_clip(context) -> bpy.types.MovieClip | None:
+    """Robustes Clip-Resolving: Scene → Edit-Clip → Space-Clip → erster Clip."""
+    scn = context.scene
+    clip = getattr(scn, "clip", None)
+    if clip:
+        return clip
+    # Fallbacks
+    try:
+        clip = getattr(context, "edit_movieclip", None)
+        if clip:
+            return clip
+    except Exception:
+        pass
+    try:
+        clip = getattr(getattr(context, "space_data", None), "clip", None)
+        if clip:
+            return clip
+    except Exception:
+        pass
+    try:
+        return next(iter(bpy.data.movieclips), None) if bpy.data.movieclips else None
+    except Exception:
+        return None
+
+
 def marker_helper_main(context) -> Tuple[bool, int, Dict[str, Any]]:
 
     scn = context.scene
@@ -20,10 +45,12 @@ def marker_helper_main(context) -> Tuple[bool, int, Dict[str, Any]]:
     marker_max     = int(max(2, round(marker_adapt * 1.1)))
 
     # Bildgröße für margin/min_dist ableiten
-    clip = getattr(scn, "clip", None)
+    clip = _resolve_clip(context)
     if clip:
-        width  = getattr(clip, "size", (0, 0))[0]
-        height = getattr(clip, "size", (0, 0))[1]
+        try:
+            width, height = getattr(clip, "size", (0, 0))
+        except Exception:
+            width, height = 0, 0
     else:
         width, height = 0, 0
 
@@ -39,7 +66,14 @@ def marker_helper_main(context) -> Tuple[bool, int, Dict[str, Any]]:
     scn["resolve_error"]  = float(resolve_error)
     scn["margin_base"]    = int(margin)
     scn["min_distance_base"] = int(min_dist)
-
-    # Telemetrie
-
+    scn["clip_width"]     = int(width)
+    scn["clip_height"]    = int(height)
+    # Telemetrie (Konsole): Baselines ausgeben
+    try:
+        clip_name = getattr(clip, "name", "None")
+        print(f"[MarkerHelper] clip='{clip_name}' size={width}x{height} "
+              f"→ margin_base={margin}, min_distance_base={min_dist} "
+              f"(marker_adapt={marker_adapt}, range={scn['marker_min']}–{scn['marker_max']})")
+    except Exception:
+        pass
     return True, int(marker_adapt), {"FINISHED"}
