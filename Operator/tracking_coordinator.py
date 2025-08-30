@@ -180,6 +180,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # nur einmal auszulösen und anschließend auf den Abschluss zu warten.
     bidi_started: bool = False
     # Temporärer Schwellenwert für den Spike-Cycle (startet bei 100, *0.9)
+    # Solve-Retry-State: Wurde bereits mit refine_intrinsics_focal_length=True neu gelöst?
+    solve_refine_attempted: bool = False
 
     def execute(self, context: bpy.types.Context):
         # Bootstrap/Reset
@@ -199,7 +201,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self.detection_threshold = None
         # Bidirectional‑Track ist noch nicht gestartet
         self.spike_threshold = None  # Spike-Schwellenwert zurücksetzen
-
+        # Solve-Retry-State zurücksetzen
+        self.solve_refine_attempted = False
+        
         wm = context.window_manager
         # --- Robust: valides Window sichern ---
         win = getattr(context, "window", None)
@@ -545,7 +549,24 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if avg_err <= target_err:
                 self.report({'INFO'}, f"Solve OK: avg={avg_err:.4f} ≤ target={target_err:.4f}")
                 return self._finish(context, info="Sequenz abgeschlossen (Solve-Ziel erreicht).", cancelled=False)
-            # 4) x = ceil(avg/target), clamp 1..5
+            # 3b) Retry-Pfad: Einmaliger Re-Solve mit refine_intrinsics_focal_length=True,
+            #      falls noch nicht versucht und Zielwert nicht erreicht.
+            if not getattr(self, "solve_refine_attempted", False):
+                try:
+                    scn["refine_intrinsics_focal_length"] = True
+                except Exception:
+                    pass
+                try:
+                    res_retry = solve_camera_only(context)
+                    self.solve_refine_attempted = True
+                    self.report({'INFO'}, f"Solve-Retry mit refine_intrinsics_focal_length=True gestartet → {res_retry}")
+                    # Im nächsten TIMER-Tick wird der neue avg_err erneut geprüft.
+                    return {'RUNNING_MODAL'}
+                except Exception as exc:
+                    self.report({'WARNING'}, f"Solve-Retry konnte nicht gestartet werden: {exc}")
+                    # Fällt zurück auf Reduce-Error-Tracks
+
+            # 4) Reduce-Error-Tracks: x = ceil(avg/target), clamp 1..5            
             import math
             t = target_err if (target_err == target_err and target_err > 1e-8) else 0.6
             x = max(1, min(5, int(math.ceil(avg_err / t))))
@@ -556,6 +577,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self.pre_ptrs = None
             self.target_frame = None
             self.repeat_map = {}
+            self.solve_refine_attempted = False
             self.phase = PH_FIND_LOW
             return {'RUNNING_MODAL'}
 
@@ -605,6 +627,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 except Exception:
                     pass
                 try:
+                    # Erstlauf: refine_intrinsics_focal_length explizit deaktivieren
+                    try:
+                        scn["refine_intrinsics_focal_length"] = False
+                    except Exception:
+                        pass
+                    self.solve_refine_attempted = False
                     res = solve_camera_only(context)
                     self.report({'INFO'}, f"SolveCamera gestartet → {res}")
                     # → direkt in die Solve-Evaluation wechseln
