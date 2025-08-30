@@ -1,5 +1,4 @@
-
- __all__ = ("CLIP_OT_tracking_coordinator", "bootstrap")
+__all__ = ("CLIP_OT_tracking_coordinator", "bootstrap")
  
 
 class CLIP_OT_tracking_bootstrap_only(bpy.types.Operator):
