@@ -58,7 +58,6 @@ def run_distance_cleanup(
     close_dist_rel: float = 0.01,
     reselect_only_remaining: bool = True,
     select_remaining_new: bool = True,
-    select_remaining_new: bool = True,
 ) -> Dict:
     """
     Entfernt NEUE Marker, die näher als close_dist_rel * width an *vorhandene* Marker (pre_ptrs) liegen.
