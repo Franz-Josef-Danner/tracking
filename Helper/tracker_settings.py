@@ -106,12 +106,6 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
     ts.clean_frames = getattr(scene, "frames_track", 20)
     ts.clean_error = getattr(scene, "error_track", 0.5)
 
-    # Detection-Threshold aus Szene, sonst aus aktuellen Defaults
-    try:
-        default_min = float(getattr(ts, "default_correlation_min", 0.75))
-    except Exception:
-        default_min = 0.75
-
     try:
         det_thr = float(scene.get("last_detection_threshold", default_min))
     except Exception:
