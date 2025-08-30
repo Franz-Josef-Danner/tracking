@@ -156,7 +156,28 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self.detection_threshold = None
 
         wm = context.window_manager
-        self._timer = wm.event_timer_add(0.10, window=context.window)
+        # --- Robust: valides Window sichern ---
+        win = getattr(context, "window", None)
+        if not win:
+            try:
+                # aus dem Clip-Override ziehen
+                win = _ensure_clip_context(context).get("window", None)
+            except Exception:
+                win = None
+        if not win:
+            # Fallback: globaler Context
+            win = getattr(bpy.context, "window", None)
+        try:
+            # Wenn win None ist, Timer OHNE window anlegen (Blender erlaubt das)
+            self._timer = wm.event_timer_add(0.10, window=win) if win else wm.event_timer_add(0.10)
+            self.report({'INFO'}, f"Timer status=OK (window={'set' if win else 'none'})")
+        except Exception as exc:
+            self.report({'WARNING'}, f"Timer setup failed ({exc}); retry without window")
+            try:
+                self._timer = wm.event_timer_add(0.10)
+            except Exception as exc2:
+                self.report({'ERROR'}, f"Timer hard-failed: {exc2}")
+                return {'CANCELLED'}
         wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
@@ -173,8 +194,17 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {'CANCELLED' if cancelled else 'FINISHED'}
 
     def modal(self, context: bpy.types.Context, event):
+        # frühes Telemetrie-Logging beim ersten Tick hilft bei Diagnose
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
+        # Optionales Debugging: erste 3 Ticks loggen
+        try:
+            count = int(getattr(self, "_dbg_tick_count", 0)) + 1
+            if count <= 3:
+                self.report({'INFO'}, f"TIMER tick #{count}, phase={self.phase}")
+            self._dbg_tick_count = count
+        except Exception:
+            pass
 
         # PHASE 1: FIND_LOW
         if self.phase == PH_FIND_LOW:
