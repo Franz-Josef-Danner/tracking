@@ -241,6 +241,46 @@ def _delete_selected_markers(context, *, confirm: bool = True) -> int:
         pass
     return int(removed)
 
+def _delete_markers_by_name(context, names: set[str], frame: int) -> int:
+    """
+    Löscht Marker **direkt per Track-Namen** am angegebenen Frame (ohne Selection/Operator).
+    Gibt die Anzahl der entfernten Marker zurück.
+    """
+    if not names:
+        return 0
+    clip, tracks = _get_clip_and_tracks(context)
+    if not clip or not tracks:
+        return 0
+
+    removed = 0
+    # Map für schnellen Zugriff
+    try:
+        name_to_track = {tr.name: tr for tr in list(tracks)}
+    except Exception:
+        name_to_track = {}
+
+    for name in names:
+        tr = name_to_track.get(name)
+        if not tr:
+            continue
+        try:
+            # Marker am Ziel-Frame finden
+            try:
+                mk = tr.markers.find_frame(int(frame), exact=True)
+            except TypeError:
+                mk = tr.markers.find_frame(int(frame))
+            if mk:
+                try:
+                    tr.markers.delete(mk)  # direkter RNA-Delete
+                except Exception:
+                    # Fallback: Marker stummschalten statt löschen
+                    setattr(mk, "mute", True)
+                removed += 1
+        except Exception:
+            continue
+    return removed
+
+
 def _select_all_tracks(context) -> int:
     try:
         # Aktiven Clip bevorzugen (CLIP_EDITOR), sonst erstes MovieClip
@@ -643,13 +683,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 if status_now in ("TOO_FEW", "TOO_MANY"):
                     try:
                         names = set(scn.get("tco_saved_marker_names", []) or [])
-                        sel_n = _select_tracks_by_names(context, names)
-                        removed_now = _delete_selected_markers(context, confirm=True)
-                        print(f"[Coordinator] {status_now} → selected {sel_n} tracks by name, deleted {removed_now} marker(s) @frame {frame_now}")
+                        removed_now = _delete_markers_by_name(context, names, frame_now)
+                        print(f"[Coordinator] {status_now} → deleted {removed_now} marker(s) by name @frame {frame_now}")
                         # nach dem Löschen Sammlung zurücksetzen
                         scn["tco_saved_marker_names"] = []
                     except Exception as ex:
-                        print(f"[Coordinator] delete via names FAILED → {ex}")
+                        print(f"[Coordinator] delete-by-name FAILED → {ex}")
                 
                 # Nicht genug / zu viel → Threshold anpassen, neue Runde
                 observed_n = int(cres.get("count", 0))
