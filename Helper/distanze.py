@@ -68,7 +68,7 @@ def run_distance_cleanup(
     select_remaining_new: bool = True,
     debug_max_items: int = 50,
     verbose: bool = True,
-    require_selected: bool = True,  # <— Standard gem. ursprünglicher Anforderung
+    require_selected: bool = False,  # Default jetzt: auch unselektierte neue Marker prüfen
 ) -> dict:
     """Distanzbasierter Cleanup von NEUEN Markern am gegebenen Frame.
 
@@ -115,8 +115,8 @@ def run_distance_cleanup(
     new_total = len(new_tracks)
     new_with_marker = 0
     new_selected = 0
+    skipped_list_preview = []  # Namen/Pos für Logging, falls wir später skippen
 
-    # Wir zählen zunächst, ohne zu löschen
     for tr in new_tracks:
         m = _get_marker_at_exact_frame(tr, frame)
         if not m:
@@ -124,6 +124,14 @@ def run_distance_cleanup(
         new_with_marker += 1
         if getattr(m, "select", False):
             new_selected += 1
+        else:
+            # Position für Preview-Log sammeln
+            try:
+                pos = (float(m.co[0]), float(m.co[1]))
+                if len(skipped_list_preview) < debug_max_items:
+                    skipped_list_preview.append((tr.name, pos))
+            except Exception:
+                pass
 
     if verbose:
         _log(
@@ -215,9 +223,17 @@ def run_distance_cleanup(
                     )
                 )
 
+    # Wenn wir alles übersprungen haben und dennoch Preview-Daten haben, logge ein paar davon
+    if verbose and checked == 0 and skipped > 0 and skipped_list_preview:
+        _log("Preview der unselektierten neuen Marker (erste {}):".format(min(len(skipped_list_preview), debug_max_items)))
+        for name, pos in skipped_list_preview[:debug_max_items]:
+            _log(f"  PREVIEW NEW '{name}': co=({pos[0]:.6f},{pos[1]:.6f}) [unselected]")
+
     if verbose:
         _log(
             f"RESULT frame={int(frame)} removed={removed} kept={kept} "
+            f"checked_new={checked} min_distance={float(min_distance):.6f}"
+        ){int(frame)} removed={removed} kept={kept} "
             f"checked_new={checked} min_distance={float(min_distance):.6f}"
         )
 
