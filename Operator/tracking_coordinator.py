@@ -10,6 +10,10 @@ from ..Helper.find_low_marker_frame import run_find_low_marker_frame
 from ..Helper.jump_to_frame import run_jump_to_frame
 from ..Helper.detect import run_detect_once
 from ..Helper.distanze import run_distance_cleanup
+from ..Helper.spike_filter_cycle import run_marker_spike_filter_cycle
+from ..Helper.clean_short_segments import clean_short_segments
+from ..Helper.clean_short_tracks import clean_short_tracks
+from ..Helper.split_cleanup import recursive_split_cleanup
 # Versuche, die Auswertungsfunktion für die Markeranzahl zu importieren.
 # Diese Funktion soll nach dem Distanz-Cleanup ausgeführt werden und
 # verwendet interne Grenzwerte aus der count.py. Es werden keine
@@ -68,6 +72,7 @@ PH_FIND_LOW   = "FIND_LOW"
 PH_JUMP       = "JUMP"
 PH_DETECT     = "DETECT"
 PH_DISTANZE   = "DISTANZE"
+PH_SPIKE_CYCLE = "SPIKE_CYCLE"
 # Erweiterte Phase: Bidirectional-Tracking. Wenn der Multi‑Pass und das
 # Distanz‑Cleanup erfolgreich durchgeführt wurden, wird diese Phase
 # angestoßen. Sie startet den Bidirectional‑Track Operator und wartet
@@ -164,12 +169,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     pre_ptrs: set[int] | None = None
     # Aktueller Detection-Threshold; wird nach jedem Detect-Aufruf aktualisiert.
     detection_threshold: float | None = None
+    spike_threshold: float | None = None  # aktueller Spike-Filter-Schwellenwert (temporär)
     # Flag, ob der Bidirectional-Track bereits gestartet wurde. Diese
     # Instanzvariable dient dazu, den Start der Bidirectional‑Track-Phase
     # nur einmal auszulösen und anschließend auf den Abschluss zu warten.
     bidi_started: bool = False
-
-    @classmethod
+    # Temporärer Schwellenwert für den Spike-Cycle (startet bei 100, *0.9)
     def poll(cls, context: bpy.types.Context) -> bool:
         return context is not None and context.scene is not None
 
@@ -190,7 +195,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # Threshold-Zurücksetzen: beim ersten Detect-Aufruf wird der Standardwert verwendet
         self.detection_threshold = None
         # Bidirectional‑Track ist noch nicht gestartet
-        self.bidi_started = False
+        self.spike_threshold = None  # Spike-Schwellenwert zurücksetzen
 
         wm = context.window_manager
         # --- Robust: valides Window sichern ---
@@ -250,7 +255,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if st == "FAILED":
                 return self._finish(context, info=f"FIND_LOW FAILED → {res.get('reason')}", cancelled=True)
             if st == "NONE":
-                return self._finish(context, info="Kein Low-Marker-Frame gefunden – Sequenz endet.", cancelled=False)
+                # Kein Low-Marker-Frame gefunden: Starte Spike-Zyklus
+                self.phase = PH_SPIKE_CYCLE
+                self.spike_threshold = 100.0
+                return {'RUNNING_MODAL'}
             self.target_frame = int(res.get("frame"))
             self.report({'INFO'}, f"Low-Marker-Frame: {self.target_frame}")
             self.phase = PH_JUMP
@@ -514,6 +522,56 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # Wenn keine Auswertungsfunktion vorhanden ist, einfach abschließen
             self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}")
             return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
+
+        # PHASE: SPIKE_CYCLE – spike_filter → clean_short_segments → clean_short_tracks → split_cleanup → find_max_marker_frame
+        if self.phase == PH_SPIKE_CYCLE:
+            scn = context.scene
+            thr = float(self.spike_threshold or 100.0)
+            # 1) Spike-Filter
+            try:
+                run_marker_spike_filter_cycle(context, track_threshold=thr)
+            except Exception as exc:
+                return self._finish(context, info=f"SPIKE_CYCLE spike_filter failed: {exc}", cancelled=True)
+            # 2) Segment-/Track-Cleanup
+            try:
+                clean_short_segments(context, min_len=int(scn.get("tco_min_seg_len", 25)))
+            except Exception:
+                pass
+            try:
+                clean_short_tracks(context)
+            except Exception:
+                pass
+            # 3) Split-Cleanup (UI-override, falls verfügbar)
+            try:
+                override = _ensure_clip_context(context)
+                space = override.get("space_data") if override else None
+                clip = getattr(space, "clip", None) if space else None
+                tracks = clip.tracking.tracks if clip else None
+                if override and tracks:
+                    with bpy.context.temp_override(**override):
+                        recursive_split_cleanup(context, **override, tracks=tracks)
+            except Exception:
+                pass
+            # 4) Max-Marker-Frame suchen
+            rmax = run_find_max_marker_frame(context)
+            if rmax.get("status") == "FOUND":
+                # Erfolg → regulären Zyklus neu starten
+                self.spike_threshold = None
+                scn["tco_spike_cycle_finished"] = False
+                self.phase = PH_FIND_LOW
+                return {'RUNNING_MODAL'}
+            # Kein Treffer
+            next_thr = thr * 0.9
+            if next_thr < 10.0:
+                # Terminalbedingung: Flag setzen, damit find_max 'finish' loggen kann
+                try:
+                    scn["tco_spike_cycle_finished"] = True
+                except Exception:
+                    pass
+                return self._finish(context, info="Spike-Zyklus beendet (Threshold < 10, kein Frame gefunden).", cancelled=False)
+            # Weiter iterieren
+            self.spike_threshold = next_thr
+            return {'RUNNING_MODAL'}
 
         # PHASE 5: Bidirectional-Tracking. Wird aktiviert, nachdem ein Multi-Pass
         # und Distanzé erfolgreich ausgeführt wurden und die Markeranzahl innerhalb des
