@@ -26,17 +26,15 @@ def _log(scene, msg: str) -> None:
 # Utilities
 # ------------------------------------------------------------
 
-def _segments_by_consecutive_frames_unmuted(track) -> List[List[int]]:
+def _segments_by_consecutive_frames_all(track) -> List[List[int]]:
     """
-    Robust: Segmentierung strikt nach Frame-Kontinuität (nur ungemutete Marker).
-    Jede Lücke (frame != last + 1) startet ein neues Segment.
+    Segmentierung strikt nach Frame-Kontinuität über **alle** Marker.
+    Jede Lücke (frame != last + 1) startet ein neues Segment.    Jede Lücke (frame != last + 1) startet ein neues Segment.
     Rückgabe: Liste von Frame-Listen.
     """
     frames = []
     try:
         for m in getattr(track, "markers", []):
-            if getattr(m, "mute", False):
-                continue
             f = getattr(m, "frame", None)
             if f is not None:
                 frames.append(int(f))
@@ -73,8 +71,6 @@ def _segment_lengths_unmuted(track: bpy.types.MovieTrackingTrack) -> List[int]:
         count = 0
         for m in getattr(track, "markers", []):
             try:
-                if getattr(m, "mute", False):
-                    continue
                 f = getattr(m, "frame", None)
                 if f is None:
                     continue
@@ -165,8 +161,6 @@ def _delete_all_segments_after_first(
     ):
         for m in list(track.markers)[::-1]:
             try:
-                if getattr(m, "mute", False):
-                    continue
                 f = int(getattr(m, "frame", -10))
                 if f >= start_cut:
                     track.markers.delete_frame(f)
