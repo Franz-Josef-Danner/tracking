@@ -108,7 +108,7 @@ def run_distance_cleanup(
                 except TypeError:
                     m = t.markers.find_frame(int(frame))
                 if m is not None and t.as_pointer() in sel_snapshot_marker_at_f:
-                    m.select = sel_snapshot_marker_at_f[t.as_pointer()]
+                    _marker_set_select(m, t, sel_snapshot_marker_at_f[t.as_pointer()])
         return {"status": "OK", "removed": 0, "remaining": len(new_tracks)}
 
     thr_px = max(1, int(width * (close_dist_rel if close_dist_rel > 0 else 0.01)))
