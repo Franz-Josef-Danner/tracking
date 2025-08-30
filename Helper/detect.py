@@ -1,110 +1,114 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 from __future__ import annotations
 
-import math
 from typing import Any, Dict, Optional, Set, Tuple
-
 import bpy
+import math
 
 __all__ = [
     "perform_marker_detection",
-    "run_detect_basic",  # Kern: Marker setzen + Baseline
-    "run_detect_once",   # Thin-Wrapper für Backward-Compat
+    "run_detect_basic",
+    "run_detect_once",
 ]
 
-# ---------------------------------------------------------------------
-# Scene keys / state
-# ---------------------------------------------------------------------
-DETECT_LAST_THRESHOLD_KEY = "last_detection_threshold"  # float
-_LOCK_KEY = "tco_detect_lock"  # Coordinator liest diesen Key ebenfalls
+# -----------------------------
+# Scene Keys / State
+# -----------------------------
+DETECT_LAST_THRESHOLD_KEY = "last_detection_threshold"
+_LOCK_KEY = "tco_detect_lock"  # mit Coordinator konsistent
 
-# ---------------------------------------------------------------------
-# Context helpers
-# ---------------------------------------------------------------------
-def _find_clip_editor_context():
+# -----------------------------
+# Helpers
+# -----------------------------
+def _get_movieclip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
+    try:
+        area = context.area
+        if area and area.type == "CLIP_EDITOR":
+            sp = area.spaces.active
+            return getattr(sp, "clip", None)
+    except Exception:
+        pass
+    # Fallback: aktive Szene
+    try:
+        return context.scene.clip
+    except Exception:
+        return None
+
+def _ensure_clip_context(context: bpy.types.Context) -> Dict[str, Any]:
+    """Findet einen CLIP_EDITOR und baut ein temp_override-Dict."""
     wm = bpy.context.window_manager
     if not wm:
-        return None, None, None, None
-    for window in wm.windows:
-        screen = window.screen
-        if not screen:
+        return {}
+    for win in wm.windows:
+        scr = getattr(win, "screen", None)
+        if not scr:
             continue
-        for area in screen.areas:
-            if area.type == "CLIP_EDITOR":
-                region = next((r for r in area.regions if r.type == "WINDOW"), None)
-                space = area.spaces.active if hasattr(area, "spaces") else None
-                if region and space:
-                    return window, area, region, space
-    return None, None, None, None
+        for area in scr.areas:
+            if area.type != "CLIP_EDITOR":
+                continue
+            region = next((r for r in area.regions if r.type == "WINDOW"), None)
+            space = area.spaces.active if hasattr(area, "spaces") else None
+            if region and space:
+                return {
+                    "window": win,
+                    "area": area,
+                    "region": region,
+                    "space_data": space,
+                    "scene": bpy.context.scene,
+                }
+    return {}
 
-
-def _run_in_clip_context(op_callable, **kwargs):
-    window, area, region, space = _find_clip_editor_context()
-    if not (window and area and region and space):
-        return op_callable(**kwargs)
-    override = {
-        "window": window,
-        "area": area,
-        "region": region,
-        "space_data": space,
-        "scene": bpy.context.scene,
-    }
-    with bpy.context.temp_override(**override):
-        return op_callable(**kwargs)
-
-
-def _get_movieclip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
-    mc = getattr(context, "edit_movieclip", None) or getattr(context.space_data, "clip", None)
-    if mc:
-        return mc
-    for c in bpy.data.movieclips:
-        return c
-    return None
-
-# ---------------------------------------------------------------------
-# Track helpers
-# ---------------------------------------------------------------------
-def _deselect_all(tracking: bpy.types.MovieTracking) -> None:
-    for t in tracking.tracks:
-        t.select = False
-
-# ---------------------------------------------------------------------
-# Core ops
-# ---------------------------------------------------------------------
-def _scaled_params(threshold: float, margin_base: int, min_distance_base: int) -> Tuple[int, int]:
-    # Stabil: skaliert Margin/MinDistance moderat mit der Korrelation
-    factor = math.log10(max(float(threshold), 1e-6) * 1e6) / 6.0
-    margin = max(1, int(int(margin_base) * factor))
-    min_distance = max(1, int(int(min_distance_base) * factor))
-    return margin, min_distance
-
-
-def perform_marker_detection(
-    clip: bpy.types.MovieClip,
-    tracking: bpy.types.MovieTracking,
-    threshold: float,
-    margin_base: int,
-    min_distance_base: int,
-) -> int:
-    margin, min_distance = _scaled_params(float(threshold), int(margin_base), int(min_distance_base))
-
+def _detect_features(threshold: float) -> None:
+    """Robuster Aufruf von bpy.ops.clip.detect_features im CLIP-Kontext."""
     def _op(**kw):
         try:
             return bpy.ops.clip.detect_features(**kw)
         except TypeError:
             return bpy.ops.clip.detect_features()
 
-    _run_in_clip_context(
-        _op,
-        margin=int(margin),
-        min_distance=int(min_distance),
-        threshold=float(threshold),
-    )
-    return sum(1 for t in tracking.tracks if getattr(t, "select", False))
+    override = _ensure_clip_context(bpy.context)
+    if override:
+        with bpy.context.temp_override(**override):
+            _op(threshold=float(threshold))
+    else:
+        _op(threshold=float(threshold))
 
-# ---------------------------------------------------------------------
-# Public: basic detect (Marker setzen + Baseline zurückgeben)
-# ---------------------------------------------------------------------
+# -----------------------------
+# Kern: Marker-Detection
+# -----------------------------
+def perform_marker_detection(
+    clip: bpy.types.MovieClip,
+    tracking: bpy.types.MovieTracking,
+    threshold: float,
+    margin_px: int,
+    min_distance_px: int,
+) -> Tuple[Set[int], int]:
+    """Setzt Marker und gibt (pre_ptrs, new_count) zurück."""
+    settings = tracking.settings
+    try:
+        settings.default_correlation_min = float(threshold)
+    except Exception:
+        pass
+    try:
+        settings.default_margin = int(margin_px)
+    except Exception:
+        pass
+    try:
+        settings.default_minimum_distance = int(min_distance_px)
+    except Exception:
+        pass
+
+    # Vorher-Menge für Differenzbildung
+    before = {t.as_pointer() for t in tracking.tracks}
+
+    _detect_features(threshold=float(threshold))
+
+    created = [t for t in tracking.tracks if t.as_pointer() not in before]
+    return before, len(created)
+
+# -----------------------------
+# Public: Basic Detect
+# -----------------------------
 def run_detect_basic(
     context: bpy.types.Context,
     *,
@@ -112,69 +116,82 @@ def run_detect_basic(
     threshold: Optional[float] = None,
     margin_base: Optional[int] = None,
     min_distance_base: Optional[int] = None,
-    selection_policy: str = "only_new",  # "only_new" | "leave"
+    selection_policy: Optional[str] = None,  # Placeholder für spätere Varianten
 ) -> Dict[str, Any]:
-    """Setzt Marker (detect_features) mit skalierten Parametern.
-    Selektiert optional nur NEUE Marker und liefert Baseline (pre_ptrs, frame, width, height).
-    KEIN Cleanup, KEINE Distanz-Logik, KEINE Triplets.
+    """
+    Setzt Marker am aktuellen (oder angegebenen) Frame und liefert Baseline-Infos.
     """
     scn = context.scene
-    # atomarer Reentrancy-Schutz
+
+    # Reentrancy-Schutz
     if scn.get(_LOCK_KEY):
         return {"status": "FAILED", "reason": "locked"}
-    scn[_LOCK_KEY] = True    clip = _get_movieclip(context)
-    if not clip:
-        try:
-            scn[_LOCK_KEY] = False
-        except Exception:
-            pass
-        return {"status": "FAILED", "reason": "no_movieclip"}
-    tracking = clip.tracking
-    width, height = int(clip.size[0]), int(clip.size[1])
 
-    if start_frame is not None:
-        try:
-            scn.frame_set(int(start_frame))
-        except Exception:
-            pass
-    frame = int(scn.frame_current)
+    scn[_LOCK_KEY] = True  # <-- WICHTIG: eigene Zeile!
 
-    # Threshold aus Szene, falls nicht explizit gesetzt
-    if threshold is None:
-        base_thr = float(getattr(tracking.settings, "default_correlation_min", 0.75))
-        try:
-            last_thr = float(scn.get(DETECT_LAST_THRESHOLD_KEY, base_thr))
-        except Exception:
-            last_thr = base_thr
-        threshold = max(1e-6, float(last_thr))
-    else:
-        threshold = max(1e-6, float(threshold))
-
-    # Basisskalen
-    if margin_base is None:
-        margin_base = max(1, int(width * 0.025))
-    if min_distance_base is None:
-        min_distance_base = max(1, int(width * 0.05))
-
-    # Vorherige Pointer sichern (Baseline)
-    pre_ptrs: Set[int] = {t.as_pointer() for t in tracking.tracks}
-
-    # Detect ausführen
-    _deselect_all(tracking)
     try:
-        perform_marker_detection(
-            clip, tracking, float(threshold), int(margin_base), int(min_distance_base)
+        clip = _get_movieclip(context)
+        if not clip:
+            return {"status": "FAILED", "reason": "no_movieclip"}
+
+        if start_frame is not None:
+            try:
+                scn.frame_set(int(start_frame))
+            except Exception:
+                pass
+
+        tracking = clip.tracking
+        tracks = tracking.tracks
+
+        # Defaults/Persistenz
+        width = getattr(clip, "size", (0, 0))[0]
+        height = getattr(clip, "size", (0, 0))[1]
+        default_thr = float(scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
+        thr = float(threshold) if threshold is not None else default_thr
+        margin = int(margin_base) if margin_base is not None else max(16, int(0.025 * max(width, height)))
+        min_dist = int(min_distance_base) if min_distance_base is not None else max(8, int(0.05 * max(width, height)))
+
+        pre_ptrs, new_count = perform_marker_detection(
+            clip, tracking, thr, margin, min_dist
         )
-    except Exception:
+
+        # Threshold persistieren
+        scn[DETECT_LAST_THRESHOLD_KEY] = float(thr)
+
+        return {
+            "status": "READY",
+            "frame": int(scn.frame_current),
+            "threshold": float(thr),
+            "margin_px": int(margin),
+            "min_distance_px": int(min_dist),
+            "pre_ptrs": pre_ptrs,
+            "new_count_raw": int(new_count),
+            "width": int(width),
+            "height": int(height),
+        }
+
+    except Exception as ex:
+        return {"status": "FAILED", "reason": f"{type(ex).__name__}: {ex}"}
+
+    finally:
         try:
             scn[_LOCK_KEY] = False
         except Exception:
             pass
-        return {"status": "FAILED", "reason": "detect_features_failed", "frame": int(frame)}
 
-    # Nur NEUE markieren (keine weitere Logik)
-    new = [t for t in tracking.tracks if t.as_pointer() not in pre_ptrs]
-    _deselect_all(tracking)
+# -----------------------------
+# Thin Wrapper für Backward-Compat
+# -----------------------------
+def run_detect_once(context: bpy.types.Context, **kwargs) -> Dict[str, Any]:
+    res = run_detect_basic(context, **kwargs)
+    if res.get("status") != "READY":
+        return res
+    return {
+        "status": "READY",
+        "frame": int(res.get("frame", bpy.context.scene.frame_current)),
+        "threshold": float(res.get("threshold", 0.75)),
+        "new_tracks": int(res.get("new_count_raw", 0)),
+    }
     if selection_policy == "only_new":
         for t in new:
             t.select = True
