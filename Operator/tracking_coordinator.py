@@ -666,7 +666,18 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return self._finish(context, info="Sequenz abgeschlossen (Solve-Ziel erreicht).", cancelled=False)
             # 4) Reduktionsmenge x = ceil(avg_err / target_err), Obergrenze 5
             import math
-            x = max(1, min(5, int(math.ceil(avg_err / target_err)))))
+            # Guard gegen 0/NaN/zu kleine Zielwerte
+            try:
+                t = float(target_err)
+            except Exception:
+                t = 0.6
+            if not (t == t) or t <= 1e-8:
+                t = 0.6
+            # Berechnung und Clamping
+            ratio = avg_err / t
+            x_calc = int(math.ceil(ratio))
+            x = max(1, min(5, x_calc))
+
             red = run_reduce_error_tracks(context, max_to_delete=x)
             self.report({'INFO'}, f"ReduceErrorTracks: avg={avg_err:.4f} target={target_err:.4f} → delete={x} → done={red.get('deleted')} {red.get('names')}")
             # 5) Nach dem Löschen zurück in den Low-Marker-Zyklus
