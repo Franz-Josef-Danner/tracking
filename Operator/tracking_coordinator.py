@@ -585,7 +585,26 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 scn[K_PHASE] = PH_BIDI_W
                 return {'RUNNING_MODAL'}
             try:
-                # Start: Bidirectional Track Operator auslösen
+            # Start: Bidirectional Track Operator IM CLIP_EDITOR-Kontext auslösen
+            wm = bpy.context.window_manager
+            win = None; area = None; region = None; space = None
+            if wm:
+                for w in wm.windows:
+                    scr = getattr(w, "screen", None)
+                    if not scr: continue
+                    for a in scr.areas:
+                        if a.type == 'CLIP_EDITOR':
+                            r = next((r for r in a.regions if r.type == 'WINDOW'), None)
+                            if r:
+                                win, area, region = w, a, r
+                                space = a.spaces.active if hasattr(a, "spaces") else None
+                                break
+                    if win: break
+            if win and area and region and space:
+                override = {"window": win, "area": area, "region": region, "space_data": space, "scene": scn}
+                with bpy.context.temp_override(**override):
+                    bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
+            else:
                 bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
                 scn[K_PHASE] = PH_BIDI_W
                 print("[Coordinator] BIDI_START → invoked")
@@ -601,6 +620,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {'RUNNING_MODAL'}
             scn[K_LAST] = {"phase": PH_BIDI_W, "bidi_result": scn.get(K_BIDI_RESULT, ""), "tick": tick}
             print(f"[Coordinator] BIDI_WAIT → done: {scn.get(K_BIDI_RESULT, '')}")
+            # Ergebnis zurücksetzen, um stale states zu vermeiden
+            try:
+                scn.pop(K_BIDI_RESULT, None)
+            except Exception:
+                pass
             
             # --- NEU: Short-Track-Cleaner nach Bidi ---
             try:
