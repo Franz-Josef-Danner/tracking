@@ -87,7 +87,7 @@ def run_distance_cleanup(
     *,
     pre_ptrs: Iterable[int] | Set[int],
     frame: int,
-    min_distance: float = 0.01,
+    min_distance: float = 200,
     frame_flex: int = 2,
     select_remaining_new: bool = True,
     debug_max_items: int = 50,
