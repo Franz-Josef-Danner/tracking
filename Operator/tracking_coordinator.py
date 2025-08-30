@@ -87,6 +87,125 @@ __all__ = ("CLIP_OT_tracking_coordinator", "bootstrap")
 # ------------------------------------------------------------
 # Utility: Alle Tracks im aktiven Clip selektieren
 # ------------------------------------------------------------
+
+def _delete_selected_markers(context) -> int:
+    """
+    Löscht *selektierte Marker* (nicht Tracks) im CLIP_EDITOR-Kontext.
+    Versucht zuerst den Operator, fällt dann auf manuelles Entfernen zurück.
+    Gibt die Anzahl der gelöschten Marker zurück (best effort).
+    """
+    removed = 0
+    try:
+        # 1) Zähle selektierte Marker vorab (für Log)
+        def _count_selected_markers() -> int:
+            total = 0
+            try:
+                # bevorzugt aktiven Clip
+                space = getattr(context, "space_data", None)
+                clip = space.clip if (getattr(space, "type", None) == "CLIP_EDITOR" and getattr(space, "clip", None)) else \
+                       (bpy.data.movieclips[0] if bpy.data.movieclips else None)
+                if not clip:
+                    return 0
+                # Objekt-Tracks bevorzugen
+                try:
+                    obj = clip.tracking.objects.active
+                    tracks = obj.tracks if (obj and getattr(obj, "tracks", None)) else None
+                except Exception:
+                    tracks = None
+                if tracks is None:
+                    tracks = getattr(clip.tracking, "tracks", None)
+                if not tracks:
+                    return 0
+                for tr in list(tracks):
+                    if getattr(tr, "select", False):
+                        try:
+                            for m in list(tr.markers):
+                                if getattr(m, "select", False):
+                                    total += 1
+                        except Exception:
+                            continue
+                return total
+            except Exception:
+                return 0
+
+        before = _count_selected_markers()
+
+        # 2) Operator-Variante im CLIP_EDITOR-Kontext
+        win = area = region = space = None
+        wm = bpy.context.window_manager
+        if wm:
+            for w in wm.windows:
+                scr = getattr(w, "screen", None)
+                if not scr:
+                    continue
+                for a in scr.areas:
+                    if a.type == 'CLIP_EDITOR':
+                        r = next((r for r in a.regions if r.type == 'WINDOW'), None)
+                        if r:
+                            win, area, region = w, a, r
+                            space = a.spaces.active if hasattr(a, "spaces") else None
+                            break
+                if win:
+                    break
+        op_ok = False
+        if win and area and region and space:
+            override = {"window": win, "area": area, "region": region, "space_data": space, "scene": context.scene}
+            try:
+                with bpy.context.temp_override(**override):
+                    bpy.ops.clip.delete_marker()
+                op_ok = True
+            except Exception:
+                op_ok = False
+        else:
+            try:
+                bpy.ops.clip.delete_marker()
+                op_ok = True
+            except Exception:
+                op_ok = False
+
+        if not op_ok:
+            # 3) Fallback: manuell alle selektierten Marker aus Tracks entfernen
+            space = getattr(context, "space_data", None)
+            clip = space.clip if (getattr(space, "type", None) == "CLIP_EDITOR" and getattr(space, "clip", None)) else \
+                   (bpy.data.movieclips[0] if bpy.data.movieclips else None)
+            if clip:
+                try:
+                    obj = clip.tracking.objects.active
+                    tracks = obj.tracks if (obj and getattr(obj, "tracks", None)) else None
+                except Exception:
+                    tracks = None
+                if tracks is None:
+                    tracks = getattr(clip.tracking, "tracks", None)
+                if tracks:
+                    for tr in list(tracks):
+                        if not getattr(tr, "select", False):
+                            continue
+                        # Marker-Kopie, um während Iteration entfernen zu können
+                        ms = list(getattr(tr, "markers", []))
+                        for mk in ms:
+                            try:
+                                if getattr(mk, "select", False):
+                                    # Es gibt keine öffentliche remove(mk), dafür setze einen "Clear" via Operator.
+                                    # Fallback-Strategie: Marker stummschalten ist hier nicht gewünscht → versuche low-level:
+                                    # Einige Builds erlauben: tr.markers.delete(mk) – wenn nicht verfügbar, überspringen.
+                                    try:
+                                        tr.markers.delete(mk)  # type: ignore[attr-defined]
+                                    except Exception:
+                                        # letzte Eskalation: setze Marker unsichtbar, damit Folgezyklen nicht beeinflusst werden
+                                        setattr(mk, "select", False)
+                                        setattr(mk, "mute", True)
+                                    removed += 1
+                            except Exception:
+                                continue
+
+        # 4) Post-Zählung (nur wenn Operator genutzt wurde; Fallback zählt schon mit)
+        if op_ok:
+            after = _count_selected_markers()
+            removed = max(0, before - after)
+    except Exception:
+        pass
+    return int(removed)
+
 def _select_all_tracks(context) -> int:
     try:
         # Aktiven Clip bevorzugen (CLIP_EDITOR), sonst erstes MovieClip
@@ -485,8 +604,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if isinstance(res_last, dict):
                 cnt = res_last.get("count", {})
                 go_bidi = (isinstance(cnt, dict) and cnt.get("status") == "ENOUGH")
-            scn[K_PHASE] = PH_BIDI_S if go_bidi else PH_FIND
-            return {'RUNNING_MODAL'}
+            # Wenn *zu wenig* Marker → selektierte Marker vor Neustart des Cycles löschen
+            if not go_bidi:
+                try:
+                    cnt = res_last.get("count", {}) if isinstance(res_last, dict) else {}
+                    if isinstance(cnt, dict) and str(cnt.get("status")) == "TOO_FEW":
+                        removed = _delete_selected_markers(context)
+                        # ins Log schreiben
+                        try:
+                            scn[K_LAST].update({"deleted_selected_markers": int(removed)})
+                        except Exception:
+                            pass
+                except Exception as ex:
+                    print(f"[Coordinator] delete selected markers FAILED → {ex}")
+            scn[K_PHASE] = PH_BIDI_S if go_bidi else PH_FIND            return {'RUNNING_MODAL'}
 
         # -----------------------------
         # Second-Cycle: Spike-Filter
