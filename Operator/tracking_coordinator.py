@@ -381,6 +381,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         base_thr = float(self.detection_threshold if self.detection_threshold is not None
                                          else scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
                         self.detection_threshold = max(base_thr * ((anzahl_neu + 0.1) / marker_adapt), 0.0001)
+                        # --- Debug-Ausgabe für Konsole ---
+                        import math
+                        margin_base = int(scn.get("margin_base", 16))
+                        min_dist_base = int(scn.get("min_distance_base", 8))
+                        factor = math.log10(self.detection_threshold * 100000000) / 8
+                        margin = int(margin_base * factor)
+                        min_distance = int(min_dist_base * factor)
+                        print(f"[DEBUG] thr={self.detection_threshold:.6f}, "
+                              f"factor={factor:.3f}, margin={margin}, min_dist={min_distance}")
                     except Exception:
                         pass
 
