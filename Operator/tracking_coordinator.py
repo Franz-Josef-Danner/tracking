@@ -20,10 +20,10 @@ try:
 except Exception:
     from Helper.jump_to_frame import run_jump_to_frame  # type: ignore
 
-try:
-    from ..Helper.detect import run_detect_basic
-except Exception:
-    from Helper.detect import run_detect_basic  # type: ignore
+from ..Helper.detect import run_detect_basic
+from ..Helper.count import within_band as count_within_band  # falls genutzt
+from ..Helper.multi import run_multi_pass  # falls genutzt
+from ..Helper.distanze import some_fn  # falls genutzt
 
 try:
     from ..Helper.distanze import run_distance_cleanup
