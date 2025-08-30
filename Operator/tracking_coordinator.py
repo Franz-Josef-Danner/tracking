@@ -11,7 +11,7 @@ print(f"[Coordinator] LOADED from {__file__}")
 # Paketkonforme, **relative** Importe (keine absoluten Fallbacks!)
 # ------------------------------------------------------------
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame
-from ..Helper.jump_to_frame import jump_to_frame
+from ..Helper.jump_to_frame import run_jump_to_frame
 from ..Helper.detect import run_detect_basic
 from ..Helper.multi import run_multi_pass
 from ..Helper.distanze import run_distance_cleanup
