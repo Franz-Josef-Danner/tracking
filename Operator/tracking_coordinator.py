@@ -241,6 +241,37 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return {'CANCELLED'}
         self.report({'INFO'}, "Coordinator bootstrap reset complete.")
 
+        # --- Status-Logging: Tracker-Settings & Marker-Helper ---
+        try:
+            scn = context.scene
+            ts = dict(scn.get("tco_last_tracker_settings", {}))
+            mh = dict(scn.get("tco_last_marker_helper", {}))
+
+            # Tracker-Settings: kompakt loggen
+            ts_status = ts.get("status", "ok")
+            ts_pat = ts.get("pattern_size", "?")
+            ts_srch = ts.get("search_size", "?")
+            ts_thr = ts.get("last_detection_threshold", None)
+            try:
+                ts_thr_str = f"{float(ts_thr):.3f}" if ts_thr is not None else "?"
+            except Exception:
+                ts_thr_str = "?"
+            self.report(
+                {'INFO'},
+                f"TrackerSettings → status={ts_status}, pattern={ts_pat}, search={ts_srch}, det_thr={ts_thr_str}"
+            )
+
+            # Marker-Helper: Ergebnis loggen
+            mh_ok = mh.get("ok", None)
+            mh_cnt = mh.get("count", None)
+            mh_status = "ok" if mh_ok is True else ("failed" if mh_ok is False else mh.get("status", "n/a"))
+            self.report(
+                {'INFO'},
+                f"MarkerHelper → status={mh_status}, count={mh_cnt if mh_cnt is not None else '?'}"
+            )
+        except Exception as log_exc:
+            self.report({'WARNING'}, f"Bootstrap status logging failed: {log_exc}")
+
         # --- Direkt im Anschluss Low-Marker-Frame suchen ---
         try:
             res_low = run_find_low_marker_frame(context)
