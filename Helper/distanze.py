@@ -7,6 +7,14 @@ from mathutils.kdtree import KDTree
 
 __all__ = ["run_distance_cleanup"]
 
+# --- Lightweight Logging ----------------------------------------------------
+def _log(enabled: bool, msg: str) -> None:
+    if enabled:
+        try:
+            print(msg)
+        except Exception:
+            pass
+
 # Reuse-safe helpers (keine UI-Abhängigkeiten)
 def _collect_positions_at_frame(
     tracks: Iterable[bpy.types.MovieTrackingTrack], frame: int, w: int, h: int
@@ -58,6 +66,7 @@ def run_distance_cleanup(
     close_dist_rel: float = 0.01,
     reselect_only_remaining: bool = True,
     select_remaining_new: bool = True,
+    verbose: bool = True,
 ) -> Dict:
     """
     Entfernt NEUE Marker, die näher als close_dist_rel * width an *vorhandene* Marker (pre_ptrs) liegen.
@@ -66,12 +75,14 @@ def run_distance_cleanup(
     Andernfalls wird – bei reselect_only_remaining=True – nur der ursprüngliche Snapshot wiederhergestellt.
     """
     scn = context.scene
+    _log(verbose, f"[DISTANZE] Start @frame={int(frame)} close_dist_rel={close_dist_rel}")
     clip = getattr(context, "edit_movieclip", None) or getattr(getattr(context, "space_data", None), "clip", None)
     if not clip:
         for c in bpy.data.movieclips:
             clip = c
             break
     if not clip:
+        _log(verbose, "[DISTANZE] Abbruch: kein Movie Clip im Kontext")
         return {"status": "FAILED", "reason": "no_movieclip"}
 
     tracking = clip.tracking
@@ -84,9 +95,11 @@ def run_distance_cleanup(
         for i, (x, y) in enumerate(base_px):
             kd.insert((x, y, 0.0), i)
         kd.balance()
+    _log(verbose, f"[DISTANZE] Clip={width}x{height} baseline_tracks={len(base_tracks)} baseline_markers@frame={len(base_px)}")
 
     # neue Marker/Tracks = solche, die NICHT in pre_ptrs sind
     new_tracks = [t for t in tracking.tracks if t.as_pointer() not in pre_ptrs]
+    _log(verbose, f"[DISTANZE] neue_tracks={len(new_tracks)}")
 
     # --- NEU: Snapshot der Selektion nur für NEUE Tracks (minimal-invasiv) ---
     # Wir sichern sowohl die Track-Selektion als auch die Marker-Selektion am aktuellen Frame.
@@ -100,6 +113,7 @@ def run_distance_cleanup(
         if m:
             sel_snapshot_marker_at_f[t.as_pointer()] = _marker_get_select(m, t)
     if not kd or not new_tracks:
+        _log(verbose, "[DISTANZE] Skip: kein KDTree oder keine neuen Tracks – nur Selektion konsistent setzen")
         if select_remaining_new:
             for t in new_tracks:
                 try:
@@ -125,6 +139,7 @@ def run_distance_cleanup(
 
     thr_px = max(1, int(width * (close_dist_rel if close_dist_rel > 0 else 0.01)))
     thr2 = float(thr_px * thr_px)
+    _log(verbose, f"[DISTANZE] threshold={thr_px}px")
 
     reject_ptrs: Set[int] = set()
     for tr in new_tracks:
@@ -143,8 +158,12 @@ def run_distance_cleanup(
             # keine valide Nachbarschaft → so behandeln, als wäre es weit weg
             continue
         dx = x - loc[0]; dy = y - loc[1]
-        if (dx*dx + dy*dy) < thr2:
+        dist2 = (dx*dx + dy*dy)
+        if dist2 < thr2:
             reject_ptrs.add(tr.as_pointer())
+            _log(verbose, f"[DISTANZE] REJECT {tr.name} dist={dist2**0.5:.2f}px (<{thr_px})")
+        else:
+            _log(verbose, f"[DISTANZE] KEEP   {tr.name} dist={dist2**0.5:.2f}px")
     if reject_ptrs:
         # Tracks gezielt für den Operator selektieren, danach Snapshot-Selektionszustand wiederherstellen
         # 1) Alle neuen Tracks temporär deselektieren
@@ -159,8 +178,10 @@ def run_distance_cleanup(
         try:
             _delete_selected_tracks(confirm=True)
             hard_removed = reject_ptrs.copy()
+            _log(verbose, f"[DISTANZE] delete_track(): removed={len(hard_removed)} via Operator")
         except Exception:
             # Fallback: harte Entfernung per API
+            _log(verbose, f"[DISTANZE] Operator-Delete failed ({e}) → Fallback remove()")
             for t in list(tracking.tracks):
                 if t.as_pointer() in reject_ptrs:
                     try:
@@ -170,6 +191,7 @@ def run_distance_cleanup(
                         pass
         # 4) Ursprungs-Selektion für verbleibende neue Tracks wiederherstellen
         if reselect_only_remaining:
+            _log(verbose, "[DISTANZE] Restore: reselect_only_remaining")
             for t in tracking.tracks:
                 tptr = t.as_pointer()
                 if tptr in pre_ptrs:
@@ -191,6 +213,7 @@ def run_distance_cleanup(
 
     remaining = [t for t in tracking.tracks if t.as_pointer() not in pre_ptrs]
     if select_remaining_new:
+        _log(verbose, f"[DISTANZE] Select remaining new: {len(remaining)}")
         for t in remaining:
             try:
                 t.select = True
@@ -203,6 +226,7 @@ def run_distance_cleanup(
             except Exception:
                 pass
     elif reselect_only_remaining:
+        _log(verbose, "[DISTANZE] Restore snapshot for remaining new")
         for t in remaining:
             tptr = t.as_pointer()
             t.select = sel_snapshot_tracks.get(tptr, getattr(t, "select", False))
@@ -212,21 +236,12 @@ def run_distance_cleanup(
                 m = t.markers.find_frame(int(frame))
             if m is not None and tptr in sel_snapshot_marker_at_f:
                 _marker_set_select(m, t, sel_snapshot_marker_at_f[tptr])
-    elif reselect_only_remaining:
-        # Snapshot der neuen Tracks/Marker wiederherstellen (nicht-invasiv)
-        for t in remaining:
-            tptr = t.as_pointer()
-            t.select = sel_snapshot_tracks.get(tptr, getattr(t, "select", False))
-            try:
-                m = t.markers.find_frame(int(frame), exact=True)
-            except TypeError:
-                m = t.markers.find_frame(int(frame))
-            if m is not None and tptr in sel_snapshot_marker_at_f:
-                _marker_set_select(m, t, sel_snapshot_marker_at_f[tptr])
+
 
     try:
         bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
     except Exception:
         pass
 
+    _log(verbose, f"[DISTANZE] Done: removed={int(len(reject_ptrs))} remaining_new={int(len(remaining))}")
     return {"status": "OK", "removed": int(len(reject_ptrs)), "remaining": int(len(remaining))}
