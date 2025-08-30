@@ -289,27 +289,22 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         # PHASE 1: FIND_LOW
         if self.phase == PH_FIND_LOW:
-    res = run_find_low_marker_frame(context)
-    st = res.get("status")
-    if st == "FAILED":
-        return self._finish(context, info=f"FIND_LOW FAILED → {res.get('reason')}", cancelled=True)
-    if st == "NONE":
-        # Start spike cleanup cycle; on success, restart low-phase
-        if self._run_spike_cleanup_cycle(context):
-            self.phase = PH_FIND_LOW
-            return {'RUNNING_MODAL'}
-        # exhausted → allow find_max to log finish by scene flag and exit cleanly
-        return self._finish(context, info="Kein Low-Marker-Frame gefunden – Spike-Cycle exhausted. Log finish.", cancelled=False)
-    self.target_frame = int(res.get("frame"))
-    self.report({'INFO'}, f"Low-Marker-Frame: {self.target_frame}")
-    self.phase = PH_JUMP
-    return {'RUNNING_MODAL'}
+            res = run_find_low_marker_frame(context)
+            st = res.get("status")
+            if st == "FAILED":
+                return self._finish(context, info=f"FIND_LOW FAILED → {res.get('reason')}", cancelled=True)
+            if st == "NONE":
+                # Start spike cleanup cycle; on success, restart low-phase
+                if self._run_spike_cleanup_cycle(context):
+                    self.phase = PH_FIND_LOW
+                    return {'RUNNING_MODAL'}
+                # exhausted → allow find_max to log finish by scene flag and exit cleanly
+                return self._finish(context, info="Kein Low-Marker-Frame gefunden – Spike-Cycle exhausted. Log finish.", cancelled=False)
             self.target_frame = int(res.get("frame"))
             self.report({'INFO'}, f"Low-Marker-Frame: {self.target_frame}")
             self.phase = PH_JUMP
             return {'RUNNING_MODAL'}
-
-        # PHASE 2: JUMP
+# PHASE 2: JUMP
         if self.phase == PH_JUMP:
             if self.target_frame is None:
                 return self._finish(context, info="JUMP: Kein Ziel-Frame gesetzt.", cancelled=True)
