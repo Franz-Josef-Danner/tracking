@@ -575,7 +575,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         "multi": {k: v for k, v in mres_safe.items()},
                     }
                     break
-
+                # --- NEU: Sofort bereinigen, wenn dieser Attempt TOO_FEW lieferte ---
+                if cres.get("status") == "TOO_FEW":
+                    try:
+                        removed_now = _delete_selected_markers(context)
+                        print(f"[Coordinator] TOO_FEW → removed selected markers immediately: {removed_now}")
+                    except Exception as ex:
+                        print(f"[Coordinator] immediate delete on TOO_FEW FAILED → {ex}")
+                
                 # Nicht genug / zu viel → Threshold anpassen, neue Runde
                 observed_n = int(cres.get("count", 0))
                 new_thr = _adjust_threshold(float(thr_now), observed_n, int(marker_target))
@@ -608,21 +615,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if isinstance(res_last, dict):
                 cnt = res_last.get("count", {})
                 go_bidi = (isinstance(cnt, dict) and cnt.get("status") == "ENOUGH")
-            # Wenn *zu wenig* Marker → selektierte Marker vor Neustart des Cycles löschen
-            if not go_bidi:
-                try:
-                    cnt = res_last.get("count", {}) if isinstance(res_last, dict) else {}
-                    if isinstance(cnt, dict) and str(cnt.get("status")) == "TOO_FEW":
-                        removed = _delete_selected_markers(context)
-                        # ins Log schreiben
-                        try:
-                            scn[K_LAST].update({"deleted_selected_markers": int(removed)})
-                        except Exception:
-                            pass
-                except Exception as ex:
-                    print(f"[Coordinator] delete selected markers FAILED → {ex}")
-            scn[K_PHASE] = PH_BIDI_S if go_bidi else PH_FIND
-            return {'RUNNING_MODAL'}
 
         # -----------------------------
         # Second-Cycle: Spike-Filter
