@@ -33,6 +33,16 @@ except Exception:
     except Exception:
         CLIP_OT_bidirectional_track = None  # type: ignore
 
+# Optionaler Import für das Entfernen kurzer Spuren nach der Bidirectional-Phase.
+# Wenn der Import fehlschlägt, bleibt die Variable None und es erfolgt kein Cleanup.
+try:
+    from ..Helper.clean_short_tracks import clean_short_tracks  # type: ignore
+except Exception:
+    try:
+        from .clean_short_tracks import clean_short_tracks  # type: ignore
+    except Exception:
+        clean_short_tracks = None  # type: ignore
+
 # -----------------------------------------------------------------------------
 # Optionally import the multi-pass helper. This helper performs additional
 # feature detection passes with varied pattern sizes. It will be invoked when
@@ -541,7 +551,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 # Operator hat beendet. Prüfe Ergebnis.
                 if str(bidi_result) != "OK":
                     return self._finish(context, info=f"Bidirectional-Track fehlgeschlagen ({bidi_result})", cancelled=True)
-                # Erfolgreich: für die neue Runde zurücksetzen
+                # Erfolgreich: optional kurzeitig entstandene Spuren bereinigen.
+                if clean_short_tracks is not None:
+                    try:
+                        _processed, _affected = clean_short_tracks(context)
+                        # Ergebnis im Szenenstatus persistieren
+                        try:
+                            context.scene["tco_last_clean_short_tracks"] = {"processed": int(_processed), "affected": int(_affected)}  # type: ignore
+                        except Exception:
+                            pass
+                        self.report({'INFO'}, f"CLEAN-SHORT-TRACKS: processed={_processed}, affected={_affected}")
+                    except Exception as _exc:
+                        # Bei Fehlern nur warnen, den Ablauf aber fortsetzen.
+                        self.report({'WARNING'}, f"Clean-Short-Tracks-Aufruf fehlgeschlagen ({_exc})")
+                # Vorbereitung für die neue Runde: Zustände zurücksetzen
                 self.detection_threshold = None
                 self.pre_ptrs = None
                 self.target_frame = None
