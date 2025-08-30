@@ -85,8 +85,12 @@ def run_distance_cleanup(
             continue
         x = m.co[0] * width
         y = m.co[1] * height
-        (loc, _idx, _dist) = kd.find((x, y, 0.0))
-        dx = x - loc[0]; dy = y - loc[1]
+        q = (x, y, 0.0)
+        try:
+            (loc, _idx, _dist) = kd.find(q)
+        except Exception:
+            # Fallback: treat as far away
+            continue        dx = x - loc[0]; dy = y - loc[1]
         if (dx*dx + dy*dy) < thr2:
             reject_ptrs.add(tr.as_pointer())
 
