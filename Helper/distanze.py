@@ -58,6 +58,7 @@ def run_distance_cleanup(
     close_dist_rel: float = 0.01,
     reselect_only_remaining: bool = True,
     select_remaining_new: bool = True,
+    select_remaining_new: bool = True,
 ) -> Dict:
     """
     Entfernt NEUE Marker, die näher als close_dist_rel * width an *vorhandene* Marker (pre_ptrs) liegen.
@@ -110,6 +111,17 @@ def run_distance_cleanup(
                         m = t.markers.find_frame(int(frame))
                     if m:
                         _marker_set_select(m, t, True)
+                except Exception:
+                    pass
+        elif reselect_only_remaining:
+            for t in new_tracks:
+                t.select = sel_snapshot_tracks.get(t.as_pointer(), False)
+                try:
+                    m = t.markers.find_frame(int(frame), exact=True)
+                except TypeError:
+                    m = t.markers.find_frame(int(frame))
+                if m is not None and t.as_pointer() in sel_snapshot_marker_at_f:
+                    _marker_set_select(m, t, sel_snapshot_marker_at_f[t.as_pointer()]
                 except Exception:
                     pass
         elif reselect_only_remaining:
@@ -191,7 +203,6 @@ def run_distance_cleanup(
 
     remaining = [t for t in tracking.tracks if t.as_pointer() not in pre_ptrs]
     if select_remaining_new:
-        # Explizit selektieren: neue Tracks + Marker am aktuellen Frame
         for t in remaining:
             try:
                 t.select = True
@@ -201,6 +212,18 @@ def run_distance_cleanup(
                     m = t.markers.find_frame(int(frame))
                 if m:
                     _marker_set_select(m, t, True)
+            except Exception:
+                pass
+    elif reselect_only_remaining:
+        for t in remaining:
+            tptr = t.as_pointer()
+            t.select = sel_snapshot_tracks.get(tptr, getattr(t, "select", False))
+            try:
+                m = t.markers.find_frame(int(frame), exact=True)
+            except TypeError:
+                m = t.markers.find_frame(int(frame))
+            if m is not None and tptr in sel_snapshot_marker_at_f:
+                _marker_set_select(m, t, sel_snapshot_marker_at_f[tptr])
             except Exception:
                 pass
     elif reselect_only_remaining:
