@@ -181,13 +181,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # PHASE 3: DETECT
         if self.phase == PH_DETECT:
             # Beim ersten Detect-Aufruf wird kein Threshold übergeben (None → Standardwert)
-            kwargs: dict[str, object] = {}
-            # Immer den Start-Frame setzen
-            kwargs["start_frame"] = self.target_frame
+            _kwargs: dict[str, object] = {"start_frame": self.target_frame}
             # Wenn bereits ein Threshold aus vorherigen Iterationen vorliegt, diesen mitgeben
             if self.detection_threshold is not None:
-                kwargs["threshold"] = float(self.detection_threshold)
-            rd = run_detect_once(context, **kwargs)
+                _kwargs["threshold"] = float(self.detection_threshold)
+            rd = run_detect_once(context, **_kwargs)
             if rd.get("status") != "READY":
                 return self._finish(context, info=f"DETECT FAILED → {rd}", cancelled=True)
             new_cnt = int(rd.get("new_tracks", 0))
@@ -221,16 +219,23 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # Nach dem Distanz-Cleanup die aktuelle Markeranzahl bestimmen.
             removed = dis.get('removed', 0)
             kept = dis.get('kept', 0)
-            # Snapshot der aktuellen Tracks nach Cleanup
-            try:
-                current_ptrs = set(_snapshot_track_ptrs(context))
-            except Exception:
-                current_ptrs = set()
-            # Neue Pointer sind diejenigen, die nach dem Cleanup existieren, aber vor
-            # der DETECT-Phase noch nicht vorhanden waren.
-            new_ptrs_after_cleanup = set()
-            if isinstance(self.pre_ptrs, set) and current_ptrs:
-                new_ptrs_after_cleanup = current_ptrs.difference(self.pre_ptrs)
+            # NUR neue Tracks berücksichtigen, die AM target_frame einen Marker besitzen
+            new_ptrs_after_cleanup: set[int] = set()
+            clip = _resolve_clip(context)
+            if clip and isinstance(self.pre_ptrs, set):
+                trk = getattr(clip, "tracking", None)
+                if trk and hasattr(trk, "tracks"):
+                    for t in trk.tracks:
+                        ptr = int(t.as_pointer())
+                        if ptr in self.pre_ptrs:
+                            continue  # nicht neu
+                        try:
+                            m = t.markers.find_frame(int(self.target_frame), exact=True)
+                        except TypeError:
+                            # ältere Blender-Builds ohne exact-Param
+                            m = t.markers.find_frame(int(self.target_frame))
+                        if m:
+                            new_ptrs_after_cleanup.add(ptr)
             # Markeranzahl auswerten, sofern die Zählfunktion vorhanden ist.
             eval_res = None
             scn = context.scene
@@ -250,29 +255,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 status = str(eval_res.get("status", "")) if isinstance(eval_res, dict) else ""
                 # Weiterverarbeitung abhängig vom Status
                 if status in {"TOO_FEW", "TOO_MANY"}:
-                    # Neue Marker entfernen
-                    try:
-                        clip = _resolve_clip(context)
-                        tracking = getattr(clip, "tracking", None) if clip else None
-                        if tracking and hasattr(tracking, "tracks") and new_ptrs_after_cleanup:
-                            to_remove = [t for t in tracking.tracks if int(t.as_pointer()) in new_ptrs_after_cleanup]
-                            for t in to_remove:
-                                try:
-                                    # Versuche den gesamten Track zu entfernen
-                                    tracking.tracks.remove(t)
-                                except Exception:
-                                    # Fallback: Track muten falls Entfernen fehlschlägt
+                    # NEU: Nur den MARKER am aktuellen Frame löschen (Distanzé-Semantik),
+                    # keine Tracks entfernen.
+                    deleted_markers = 0
+                    if clip and new_ptrs_after_cleanup:
+                        trk = getattr(clip, "tracking", None)
+                        if trk and hasattr(trk, "tracks"):
+                            for t in trk.tracks:
+                                if int(t.as_pointer()) in new_ptrs_after_cleanup:
                                     try:
-                                        t.mute = True  # type: ignore[attr-defined]
+                                        t.markers.delete_frame(int(self.target_frame))
+                                        deleted_markers += 1
                                     except Exception:
                                         pass
-                    except Exception:
-                        pass
-                    # Alle neuen Pointer sind entfernt; aktualisiere Pre-Snapshot
-                    try:
-                        self.pre_ptrs = set(_snapshot_track_ptrs(context))
-                    except Exception:
-                        self.pre_ptrs = None
+                    # WICHTIG: pre_ptrs NICHT anfassen – „neu“ bleibt relativ zum ursprünglichen Snapshot
                     # Berechne neuen Threshold basierend auf der aktuellen Anzahl neuer Marker
                     try:
                         anzahl_neu = float(eval_res.get("count", 0))
@@ -297,7 +293,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     except Exception:
                         pass
                     # Protokolliere die Anpassung
-                    self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res}, thr→{self.detection_threshold}")
+                    self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res}, deleted_markers={deleted_markers}, thr→{self.detection_threshold}")
                     # Setze Phase zurück zu DETECT, um erneut Marker zu setzen mit neuem Threshold
                     self.phase = PH_DETECT
                     return {'RUNNING_MODAL'}
