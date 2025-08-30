@@ -216,9 +216,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 )
             except Exception as exc:
                 return self._finish(context, info=f"DISTANZE FAILED → {exc}", cancelled=True)
-            # Nach dem Distanz-Cleanup die aktuelle Markeranzahl bestimmen.
+
             removed = dis.get('removed', 0)
             kept = dis.get('kept', 0)
+
             # NUR neue Tracks berücksichtigen, die AM target_frame einen Marker besitzen
             new_ptrs_after_cleanup: set[int] = set()
             clip = _resolve_clip(context)
@@ -236,6 +237,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                             m = t.markers.find_frame(int(self.target_frame))
                         if m:
                             new_ptrs_after_cleanup.add(ptr)
+
             # Markeranzahl auswerten, sofern die Zählfunktion vorhanden ist.
             eval_res = None
             scn = context.scene
@@ -251,56 +253,64 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     scn["tco_last_marker_count"] = eval_res
                 except Exception:
                     pass
+
                 # Prüfe, ob Markeranzahl außerhalb des gültigen Bandes liegt
                 status = str(eval_res.get("status", "")) if isinstance(eval_res, dict) else ""
-                # Weiterverarbeitung abhängig vom Status
                 if status in {"TOO_FEW", "TOO_MANY"}:
-                    # NEU: Nur den MARKER am aktuellen Frame löschen (Distanzé-Semantik),
-                    # keine Tracks entfernen.
+                    # *** Distanzé-Semantik: nur den MARKER am aktuellen Frame löschen ***
                     deleted_markers = 0
                     if clip and new_ptrs_after_cleanup:
                         trk = getattr(clip, "tracking", None)
                         if trk and hasattr(trk, "tracks"):
+                            curf = int(self.target_frame)
                             for t in trk.tracks:
                                 if int(t.as_pointer()) in new_ptrs_after_cleanup:
-                                    try:
-                                        t.markers.delete_frame(int(self.target_frame))
-                                        deleted_markers += 1
-                                    except Exception:
-                                        pass
-                    # WICHTIG: pre_ptrs NICHT anfassen – „neu“ bleibt relativ zum ursprünglichen Snapshot
-                    # Berechne neuen Threshold basierend auf der aktuellen Anzahl neuer Marker
+                                    # robust: solange Marker @frame existiert, löschen
+                                    while True:
+                                        try:
+                                            _m = None
+                                            try:
+                                                _m = t.markers.find_frame(curf, exact=True)
+                                            except TypeError:
+                                                _m = t.markers.find_frame(curf)
+                                            if not _m:
+                                                break
+                                            t.markers.delete_frame(curf)
+                                            deleted_markers += 1
+                                        except Exception:
+                                            break
+                            # Flush/Refresh, damit der Effekt sofort greift
+                            try:
+                                bpy.context.view_layer.update()
+                                scn.frame_set(curf)
+                            except Exception:
+                                pass
+
+                    # Threshold neu berechnen:
+                    # threshold = max(detection_threshold * ((anzahl_neu + 0.1) / marker_adapt), 0.0001)
                     try:
                         anzahl_neu = float(eval_res.get("count", 0))
-                        # min/max aus eval_res lesen und Mittelwert bilden
                         marker_min = float(eval_res.get("min", 0))
                         marker_max = float(eval_res.get("max", 0))
-                        marker_adapt = (marker_min + marker_max) / 2.0 if (marker_min + marker_max) > 0 else 1.0
-                        # Fallback für initialen Threshold
-                        if self.detection_threshold is None:
-                            # Wenn vorher kein Threshold gesetzt wurde, versuche aus der Szene zu lesen
-                            scn = context.scene
-                            try:
-                                self.detection_threshold = float(scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
-                            except Exception:
-                                self.detection_threshold = 0.75
-                        # Berechnung entsprechend Vorgabe, immer >= 0.0001
-                        if marker_adapt > 0:
-                            new_thr = max(float(self.detection_threshold) * ((anzahl_neu + 0.1) / marker_adapt), 0.0001)
-                        else:
-                            new_thr = max(float(self.detection_threshold), 0.0001)
-                        self.detection_threshold = float(new_thr)
+                        # bevorzugt aus Szene (falls gesetzt), sonst Mittelwert
+                        marker_adapt = float(scn.get("marker_adapt", 0.0)) or ((marker_min + marker_max) / 2.0)
+                        if marker_adapt <= 0.0:
+                            marker_adapt = 1.0
+                        base_thr = float(self.detection_threshold if self.detection_threshold is not None
+                                         else scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
+                        self.detection_threshold = max(base_thr * ((anzahl_neu + 0.1) / marker_adapt), 0.0001)
                     except Exception:
                         pass
-                    # Protokolliere die Anpassung
+
                     self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res}, deleted_markers={deleted_markers}, thr→{self.detection_threshold}")
-                    # Setze Phase zurück zu DETECT, um erneut Marker zu setzen mit neuem Threshold
+                    # Zurück zu DETECT mit neuem Threshold
                     self.phase = PH_DETECT
                     return {'RUNNING_MODAL'}
-                else:
-                    # Markeranzahl im gültigen Bereich oder unbekannt → Sequenz kann beendet werden
-                    self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res}")
-                    return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
+
+                # ENOUGH → normal beenden
+                self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res}")
+                return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
+
             # Wenn keine Auswertungsfunktion vorhanden ist, einfach abschließen
             self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}")
             return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
