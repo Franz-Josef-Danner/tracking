@@ -203,6 +203,39 @@ def run_detect_basic(
             min_distance_px=min_dist,
         )
 
+        # Nach der Marker-Detection: neu erzeugte Spuren als „neu“ markieren
+        # Ermitteln Sie alle Tracks, die im Vergleich zu pre_ptrs neu sind. Diese
+        # werden als ausgewählt markiert, damit nachfolgende Distanzprüfungen
+        # (run_distance_cleanup) sie als neue Marker erkennen können. Ohne diese
+        # Selektion würden neu gesetzte Marker bei require_selected_new=True ignoriert.
+        try:
+            # Aktuellen Frame bestimmen
+            cur_frame = int(scn.frame_current)
+            created_tracks = [t for t in tracking.tracks if int(t.as_pointer()) not in pre_ptrs]
+            for tr in created_tracks:
+                # Track selektieren
+                try:
+                    tr.select = True
+                except Exception:
+                    pass
+                # Marker am aktuellen Frame selektieren (wenn vorhanden)
+                try:
+                    m = None
+                    try:
+                        m = tr.markers.find_frame(cur_frame, exact=True)
+                    except TypeError:
+                        m = tr.markers.find_frame(cur_frame)
+                    if m:
+                        try:
+                            m.select = True
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+        except Exception:
+            # Bei jedem Fehler (z.B. ältere Blender-APIs) keine Selektion durchführen
+            pass
+
         # Threshold persistieren (nur Threshold, keine margin/min_dist Persistenz)
         scn[DETECT_LAST_THRESHOLD_KEY] = float(thr)
 
