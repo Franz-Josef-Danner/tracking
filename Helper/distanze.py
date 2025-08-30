@@ -1,20 +1,24 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """
-Helper: distanze (mit direkten Konsolen-Logs)
+Helper: distanze (direkte Konsolen-Logs, erweiterte Kandidaten-Statistik)
 
 Aufgabe:
 - Finde *neue* Marker (Tracks, die nach einem Pre-Snapshot erstellt wurden)
-- Hole deren Marker am Ziel-Frame (selektierte, neu gesetzte Marker)
+- Hole deren Marker am Ziel-Frame
 - Vergleiche deren Positionen mit *alten*, nicht gemuteten Markern am selben Frame
 - Lösche neue Marker, die näher als `min_distance` an einem alten Marker liegen
 - Selektiere alle übrig gebliebenen neuen Marker erneut
 
-Logging:
-- Gibt IMMER eine kompakte Zusammenfassung per `print()` aus
-- Optional: detaillierte Zeilen (Positionen, nächster alter Marker, Distanz, Entscheidung) bis `debug_max_items`
+Wichtig:
+- Standardverhalten prüft **nur selektierte** neue Marker (`require_selected=True`).
+- Per Parameter kann man auch **unselektierte** neue Marker prüfen (`require_selected=False`).
 
-Hinweis:
-- Die Koordinaten liegen in normalisierten Clip-Koordinaten (`marker.co`).
+Logging (per `print()`):
+- Kompakte Start-/Ergebniszeilen
+- Statistik: neue Tracks gesamt, neue mit Marker am Frame, selektierte davon
+- Detailzeilen bis `debug_max_items` (Positionen, nächster alter Marker, Distanz, Entscheidung)
+
+Koordinaten in `marker.co` sind normalisiert (Clip-Koordinaten).
 """
 from __future__ import annotations
 
@@ -31,7 +35,6 @@ def _log(msg: str):
 
 
 def _resolve_clip(context: bpy.types.Context):
-    """Robuster Clip-Resolver analog zu tracking_coordinator."""
     clip = getattr(context, "edit_movieclip", None)
     if not clip:
         clip = getattr(getattr(context, "space_data", None), "clip", None)
@@ -41,9 +44,6 @@ def _resolve_clip(context: bpy.types.Context):
 
 
 def _get_marker_at_exact_frame(track: bpy.types.MovieTrackingTrack, frame: int):
-    """Sichere Abfrage des Markers am *exakten* Frame.
-    Gibt `None` zurück, wenn es keinen exakten Marker gibt.
-    """
     try:
         m = track.markers.find_frame(frame, exact=True)
     except Exception:
@@ -68,20 +68,18 @@ def run_distance_cleanup(
     select_remaining_new: bool = True,
     debug_max_items: int = 50,
     verbose: bool = True,
+    require_selected: bool = True,  # <— Standard gem. ursprünglicher Anforderung
 ) -> dict:
     """Distanzbasierter Cleanup von NEUEN Markern am gegebenen Frame.
 
     Args:
-        context: Blender-Context.
         pre_ptrs: Pointer-Snapshot der Tracks *vor* der Detection (64-bit ints).
         frame: Ziel-Frame (int).
         min_distance: Mindestabstand (normierte Clip-Koordinaten).
         select_remaining_new: Nach Cleanup alle verbliebenen neuen Marker erneut selektieren.
         debug_max_items: Anzahl Detailzeilen max.
         verbose: Wenn True, direkt in die Konsole loggen.
-
-    Returns:
-        Dict mit Status, Kennzahlen und einer Debug-Struktur.
+        require_selected: Nur selektierte neue Marker prüfen (True) oder alle (False).
     """
     clip = _resolve_clip(context)
     if not clip:
@@ -93,50 +91,68 @@ def run_distance_cleanup(
     pre_ptrs_set: Set[int] = set(int(p) for p in (pre_ptrs or []))
     tracks = list(clip.tracking.tracks)
 
+    # Sammle alte Marker am Frame (nicht gemutet)
+    old_positions: List[Tuple[float, float]] = []
+    old_details = []
+
+    # Sammle neue Kandidaten (Tracks, die NICHT im Snapshot waren)
+    new_tracks: List[bpy.types.MovieTrackingTrack] = []
+    for tr in tracks:
+        if int(tr.as_pointer()) in pre_ptrs_set:
+            # alter Track → ggf. old position am Frame
+            m = _get_marker_at_exact_frame(tr, frame)
+            if m and not getattr(m, "mute", False):
+                co = tuple(m.co)
+                pos = (float(co[0]), float(co[1]))
+                old_positions.append(pos)
+                if len(old_details) < debug_max_items:
+                    old_details.append((tr.name, pos))
+        else:
+            # neuer Track-Kandidat
+            new_tracks.append(tr)
+
+    # Vorab-Statistik zu neuen Kandidaten erstellen
+    new_total = len(new_tracks)
+    new_with_marker = 0
+    new_selected = 0
+
+    # Wir zählen zunächst, ohne zu löschen
+    for tr in new_tracks:
+        m = _get_marker_at_exact_frame(tr, frame)
+        if not m:
+            continue
+        new_with_marker += 1
+        if getattr(m, "select", False):
+            new_selected += 1
+
     if verbose:
         _log(
             f"Start frame={int(frame)} min_distance={float(min_distance):.6f} "
             f"tracks_total={len(tracks)} pre_ptrs={len(pre_ptrs_set)}"
         )
-
-    # --- Alte Marker-Positionen sammeln ---
-    old_positions: List[Tuple[float, float]] = []
-    old_details = []
-    for tr in tracks:
-        if int(tr.as_pointer()) not in pre_ptrs_set:
-            continue
-        m = _get_marker_at_exact_frame(tr, frame)
-        if not m:
-            continue
-        if getattr(m, "mute", False):
-            continue
-        co = tuple(m.co)
-        pos = (float(co[0]), float(co[1]))
-        old_positions.append(pos)
-        if len(old_details) < debug_max_items:
-            old_details.append((tr.name, pos))
-
-    if verbose:
         _log(f"OLD markers at frame: count={len(old_positions)}")
         for name, pos in old_details:
             _log(f"  OLD '{name}': co=({pos[0]:.6f},{pos[1]:.6f})")
+        _log(
+            f"NEW tracks: total={new_total} with_marker_at_frame={new_with_marker} "
+            f"selected_at_frame={new_selected} (require_selected={require_selected})"
+        )
 
-    # --- Neue Marker prüfen ---
+    # --- Prüfung/Löschung durchführen ---
     removed = 0
     kept = 0
     checked = 0
-    skipped_unselected = 0
+    skipped = 0
 
     new_details = []
 
-    for tr in tracks:
-        if int(tr.as_pointer()) in pre_ptrs_set:
-            continue
+    for tr in new_tracks:
         m = _get_marker_at_exact_frame(tr, frame)
         if not m:
+            skipped += 1
             continue
-        if not getattr(m, "select", False):
-            skipped_unselected += 1
+        if require_selected and not getattr(m, "select", False):
+            skipped += 1
             continue
 
         co_new = (float(m.co[0]), float(m.co[1]))
@@ -154,7 +170,10 @@ def run_distance_cleanup(
         dist = math.sqrt(min_d2) if min_d2 < float("inf") else None
 
         if len(new_details) < debug_max_items:
-            new_details.append((tr.name, co_new, nearest_old, dist, too_close))
+            if nearest_old is not None and dist is not None:
+                new_details.append((tr.name, co_new, nearest_old, dist, too_close))
+            else:
+                new_details.append((tr.name, co_new, None, None, too_close))
 
         if too_close:
             try:
@@ -175,7 +194,7 @@ def run_distance_cleanup(
     # Detail-Logs
     if verbose:
         _log(
-            f"NEW markers checked: {checked} (skipped_unselected={skipped_unselected})"
+            f"NEW markers checked: {checked} (skipped={skipped})"
         )
         for name, co_new, nearest_old, dist, removed_flag in new_details:
             if nearest_old is not None and dist is not None:
@@ -191,8 +210,8 @@ def run_distance_cleanup(
                 )
             else:
                 _log(
-                    "  NEW '{name}': ({nx:.6f},{ny:.6f}) -> no OLD ref found".format(
-                        name=name, nx=co_new[0], ny=co_new[1]
+                    "  NEW '{name}': ({nx:.6f},{ny:.6f}) -> no OLD ref found, decision={dec}".format(
+                        name=name, nx=co_new[0], ny=co_new[1], dec=("REMOVE" if removed_flag else "KEEP")
                     )
                 )
 
@@ -213,7 +232,9 @@ def run_distance_cleanup(
             "frame": int(frame),
             "min_distance": float(min_distance),
             "old_count": len(old_positions),
-            "skipped_unselected": int(skipped_unselected),
-            # Detaildaten verbleiben nur in Logs; Rückgabe hält kompakte Kennzahlen
+            "new_total": new_total,
+            "new_with_marker": new_with_marker,
+            "new_selected": new_selected,
+            "require_selected": bool(require_selected),
         },
     }
