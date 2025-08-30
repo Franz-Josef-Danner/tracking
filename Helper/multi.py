@@ -72,14 +72,14 @@ def run_multi_pass(
                 settings.default_search_size = max(5, eff * 2)
             except Exception:
                 pass
-        try:
-            def _op(**kw):
-                try:
-                    return bpy.ops.clip.detect_features(**kw)
-                except TypeError:
-                    return bpy.ops.clip.detect_features()
-            _run_in_clip_context(_op, threshold=float(detect_threshold))
-        
+        # Operator IM CLIP_EDITOR-Kontext ausführen (ohne nutzlosen try:)
+        def _op(**kw):
+            try:
+                return bpy.ops.clip.detect_features(**kw)
+            except TypeError:
+                return bpy.ops.clip.detect_features()
+        _run_in_clip_context(_op, threshold=float(detect_threshold))
+
         created = [t for t in tracking.tracks if t.as_pointer() not in before]
         return len(created)
 
