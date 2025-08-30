@@ -617,7 +617,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                             pass
                 except Exception as ex:
                     print(f"[Coordinator] delete selected markers FAILED → {ex}")
-            scn[K_PHASE] = PH_BIDI_S if go_bidi else PH_FIND            return {'RUNNING_MODAL'}
+            scn[K_PHASE] = PH_BIDI_S if go_bidi else PH_FIND
+            return {'RUNNING_MODAL'}
 
         # -----------------------------
         # Second-Cycle: Spike-Filter
