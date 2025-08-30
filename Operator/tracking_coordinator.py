@@ -23,6 +23,16 @@ except Exception:
         evaluate_marker_count = None  # type: ignore
 from ..Helper.tracker_settings import apply_tracker_settings
 
+# Optional: den Bidirectional‑Track Operator importieren. Wenn der Import
+# fehlschlägt, bleibt die Variable auf None und es erfolgt kein Aufruf.
+try:
+    from ..Helper.bidirectional_track import CLIP_OT_bidirectional_track  # type: ignore
+except Exception:
+    try:
+        from .bidirectional_track import CLIP_OT_bidirectional_track  # type: ignore
+    except Exception:
+        CLIP_OT_bidirectional_track = None  # type: ignore
+
 # -----------------------------------------------------------------------------
 # Optionally import the multi-pass helper. This helper performs additional
 # feature detection passes with varied pattern sizes. It will be invoked when
@@ -58,6 +68,11 @@ PH_FIND_LOW   = "FIND_LOW"
 PH_JUMP       = "JUMP"
 PH_DETECT     = "DETECT"
 PH_DISTANZE   = "DISTANZE"
+# Erweiterte Phase: Bidirectional-Tracking. Wenn der Multi‑Pass und das
+# Distanz‑Cleanup erfolgreich durchgeführt wurden, wird diese Phase
+# angestoßen. Sie startet den Bidirectional‑Track Operator und wartet
+# auf dessen Abschluss. Danach beginnt der Koordinator wieder bei PH_FIND_LOW.
+PH_BIDI       = "BIDI"
 
 # ---- intern: State Keys / Locks -------------------------------------------
 _LOCK_KEY = "tco_lock"
@@ -149,6 +164,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     pre_ptrs: set[int] | None = None
     # Aktueller Detection-Threshold; wird nach jedem Detect-Aufruf aktualisiert.
     detection_threshold: float | None = None
+    # Flag, ob der Bidirectional-Track bereits gestartet wurde. Diese
+    # Instanzvariable dient dazu, den Start der Bidirectional‑Track-Phase
+    # nur einmal auszulösen und anschließend auf den Abschluss zu warten.
+    bidi_started: bool = False
 
     @classmethod
     def poll(cls, context: bpy.types.Context) -> bool:
@@ -170,6 +189,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self.pre_ptrs = None
         # Threshold-Zurücksetzen: beim ersten Detect-Aufruf wird der Standardwert verwendet
         self.detection_threshold = None
+        # Bidirectional‑Track ist noch nicht gestartet
+        self.bidi_started = False
 
         wm = context.window_manager
         # --- Robust: valides Window sichern ---
@@ -420,57 +441,38 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     return {'RUNNING_MODAL'}
 
 
-                # ENOUGH → normal beenden, aber optional Multi‑Pass ausführen
-                # Wenn die Markeranzahl innerhalb des zulässigen Bereichs liegt, kann
-                # ergänzend ein Mehrfachdurchlauf (Helper/multi.py) gestartet werden.
+                # Markeranzahl im gültigen Bereich – optional Multi‑Pass und dann Bidirectional‑Track ausführen.
+                did_multi = False
                 if isinstance(eval_res, dict) and str(eval_res.get("status", "")) == "ENOUGH":
                     # Führe nur Multi‑Pass aus, wenn der Helper importiert werden konnte.
                     if run_multi_pass is not None:
                         try:
                             # Snapshot der aktuellen Tracker‑Pointer als Basis für den Multi‑Pass.
-                            # Dadurch werden alle bestehenden Spuren als vorausgesetzt behandelt und
-                            # es werden nur neu generierte Marker zurückgeliefert.
                             current_ptrs = set(_snapshot_track_ptrs(context))
-                            # Ermittelten Threshold für den Multi‑Pass verwenden. Fallback auf
-                            # einen Standardwert, falls kein Threshold bekannt ist.
-                            thr = None
+                            # Ermittelten Threshold für den Multi‑Pass verwenden. Fallback auf einen Standardwert.
                             try:
-                                # Verwende den zuletzt genutzten Detection‑Threshold, sofern vorhanden.
                                 thr = float(self.detection_threshold) if self.detection_threshold is not None else None
                             except Exception:
                                 thr = None
                             if thr is None:
-                                # Fallback aus der Szene ziehen oder einen konservativen Standardwert verwenden.
                                 try:
                                     thr = float(context.scene.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
                                 except Exception:
                                     thr = 0.5
-                            # Multi‑Pass ausführen; scale_low/high und adjust_search bleiben Standard.
                             mp_res = run_multi_pass(
                                 context,
                                 detect_threshold=float(thr),
                                 pre_ptrs=current_ptrs,
                             )
-                            # Ergebnis im Szenenstatus persistieren
                             try:
                                 context.scene["tco_last_multi_pass"] = mp_res  # type: ignore
                             except Exception:
                                 pass
-                            # Optional loggen, damit im UI nachvollzogen werden kann.
                             self.report({'INFO'}, f"MULTI-PASS ausgeführt: created_low={mp_res.get('created_low')}, created_high={mp_res.get('created_high')}, selected={mp_res.get('selected')}")
-
-                            # --- Nach dem Multi‑Pass eine Distanzprüfung durchführen ---
-                            # Die aktuell selektierten Marker entsprechen den neu generierten Spuren
-                            # des Multi‑Passes. Um sicherzustellen, dass keine Marker zu nah an
-                            # existierenden Spuren liegen, rufen wir nun das Distanz‑Cleanup auf.
+                            # Nach dem Multi‑Pass eine Distanzprüfung durchführen.
                             try:
-                                # Nutze den gleichen Frame wie im Hauptablauf.
-                                # Fallback: target_frame kann None sein, dann wird Distanz‑Cleanup nicht ausgeführt.
                                 cur_frame = int(self.target_frame) if self.target_frame is not None else None
                                 if cur_frame is not None:
-                                    # Führt das Distanz‑Cleanup aus. Dabei werden nur aktuell selektierte
-                                    # neue Marker (require_selected_new=True) geprüft. Alte Marker werden
-                                    # durch current_ptrs referenziert.
                                     dist_res = run_distance_cleanup(
                                         context,
                                         pre_ptrs=current_ptrs,
@@ -482,23 +484,30 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                         select_remaining_new=True,
                                         verbose=True,
                                     )
-                                    # Ergebnis optional im Szenenstatus persistieren
                                     try:
                                         context.scene["tco_last_multi_distance_cleanup"] = dist_res  # type: ignore
                                     except Exception:
                                         pass
-                                    # Logging zum UI
                                     self.report({'INFO'}, f"MULTI-PASS DISTANZE: removed={dist_res.get('removed')}, kept={dist_res.get('kept')}")
                             except Exception as exc:
-                                # Bei Fehlern im Distanz‑Cleanup warnen, aber die Sequenz weiterführen.
                                 self.report({'WARNING'}, f"Multi-Pass Distanzé-Aufruf fehlgeschlagen ({exc})")
+                            did_multi = True
                         except Exception as exc:
                             # Bei Fehlern im Multi‑Pass nicht abbrechen, sondern warnen.
                             self.report({'WARNING'}, f"Multi-Pass-Aufruf fehlgeschlagen ({exc})")
                     else:
                         # Multi‑Pass ist nicht verfügbar (Import fehlgeschlagen)
                         self.report({'WARNING'}, "Multi-Pass nicht verfügbar – kein Aufruf durchgeführt")
-                # ENOUGH → normal beenden
+                    # Wenn ein Multi‑Pass ausgeführt wurde, starte nun die Bidirectional‑Track-Phase.
+                    if did_multi:
+                        # Wechsle in die Bidirectional‑Phase. Die Bidirectional‑Track-Operation
+                        # selbst wird im Modal-Handler ausgelöst. Nach Abschluss dieser Phase
+                        # wird der Zyklus erneut bei PH_FIND_LOW beginnen.
+                        self.phase = PH_BIDI
+                        self.bidi_started = False
+                        self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res} – Starte Bidirectional-Track")
+                        return {'RUNNING_MODAL'}
+                # In allen anderen Fällen (kein ENOUGH oder kein Multi‑Pass) wird die Sequenz beendet.
                 self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res}")
                 return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
 
@@ -506,17 +515,76 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}")
             return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
 
+        # PHASE 5: Bidirectional-Tracking. Wird aktiviert, nachdem ein Multi-Pass
+        # und Distanzé erfolgreich ausgeführt wurden und die Markeranzahl innerhalb des
+        # gültigen Bereichs lag. Startet den Bidirectional-Track-Operator und wartet
+        # auf dessen Abschluss. Danach wird die Sequenz wieder bei PH_FIND_LOW fortgesetzt.
+        if self.phase == PH_BIDI:
+            scn = context.scene
+            bidi_active = bool(scn.get("bidi_active", False))
+            bidi_result = scn.get("bidi_result", "")
+            # Operator noch nicht gestartet → starten
+            if not self.bidi_started:
+                if CLIP_OT_bidirectional_track is None:
+                    return self._finish(context, info="Bidirectional-Track nicht verfügbar.", cancelled=True)
+                try:
+                    # Starte den Bidirectional‑Track mittels Operator. Das 'INVOKE_DEFAULT'
+                    # sorgt dafür, dass Blender den Operator modal ausführt.
+                    bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
+                    self.bidi_started = True
+                    self.report({'INFO'}, "Bidirectional-Track gestartet")
+                except Exception as exc:
+                    return self._finish(context, info=f"Bidirectional-Track konnte nicht gestartet werden ({exc})", cancelled=True)
+                return {'RUNNING_MODAL'}
+            # Operator läuft → abwarten
+            if not bidi_active:
+                # Operator hat beendet. Prüfe Ergebnis.
+                if str(bidi_result) != "OK":
+                    return self._finish(context, info=f"Bidirectional-Track fehlgeschlagen ({bidi_result})", cancelled=True)
+                # Erfolgreich: für die neue Runde zurücksetzen
+                self.detection_threshold = None
+                self.pre_ptrs = None
+                self.target_frame = None
+                self.repeat_map = {}
+                self.bidi_started = False
+                # Startet mit neuer Find-Low-Phase
+                self.phase = PH_FIND_LOW
+                self.report({'INFO'}, "Bidirectional-Track abgeschlossen – neuer Zyklus beginnt")
+                return {'RUNNING_MODAL'}
+            # Wenn noch aktiv → weiter warten
+            return {'RUNNING_MODAL'}
+
         # Fallback (unbekannte Phase)
         return self._finish(context, info=f"Unbekannte Phase: {self.phase}", cancelled=True)
 
 
 # --- Registrierung ----------------------------------------------------------
 def register():
+    """Registriert den Tracking‑Coordinator und optional den Bidirectional‑Track Operator."""
+    # Den Bidirectional‑Track Operator zuerst registrieren, falls verfügbar. Dieser
+    # kann aus Helper/bidirectional_track.py importiert werden. Wenn der Import
+    # fehlschlägt, bleibt die Variable None.
+    if CLIP_OT_bidirectional_track is not None:
+        try:
+            bpy.utils.register_class(CLIP_OT_bidirectional_track)
+        except Exception:
+            # Ignoriere Fehler, Operator könnte bereits registriert sein
+            pass
     bpy.utils.register_class(CLIP_OT_tracking_coordinator)
 
 
 def unregister():
-    bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
+    """Deregistriert den Tracking‑Coordinator und optional den Bidirectional‑Track Operator."""
+    try:
+        bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
+    except Exception:
+        pass
+    # Optional auch den Bidirectional‑Track Operator deregistrieren
+    if CLIP_OT_bidirectional_track is not None:
+        try:
+            bpy.utils.unregister_class(CLIP_OT_bidirectional_track)
+        except Exception:
+            pass
 
 
 # Optional: lokale Tests beim Direktlauf
