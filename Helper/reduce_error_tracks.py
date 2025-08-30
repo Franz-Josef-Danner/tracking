@@ -90,7 +90,7 @@ def run_reduce_error_tracks(context: bpy.types.Context, *, max_to_delete: int) -
     if not worst:
         return {"status": "NO_VALID_ERRORS", "deleted": 0, "names": []}
     # Begrenzen
-    k = min(int(max_to_delete), 5, len(worst))
+    k = min(int(max_to_delete), 10, len(worst))
     to_remove = worst[:k]
     names = [t.name for t in to_remove]
     # Löschen via API (robust, ohne Operator-Override)
