@@ -681,6 +681,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 if str(bidi_result) != "OK":
                     return self._finish(context, info=f"Bidirectional-Track fehlgeschlagen ({bidi_result})", cancelled=True)
                 # Erfolgreich: für die neue Runde zurücksetzen
+                try:
+                    clean_short_tracks(context)
+                    self.report({'INFO'}, "Cleanup nach Bidirectional-Track ausgeführt")
+                except Exception as exc:
+                    self.report({'WARNING'}, f"Cleanup nach Bidirectional-Track fehlgeschlagen: {exc}")
                 self.detection_threshold = None
                 self.pre_ptrs = None
                 self.target_frame = None
