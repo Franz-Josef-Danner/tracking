@@ -93,7 +93,6 @@ def perform_marker_detection(
     min_distance_px: int,
 ) -> Tuple[Set[int], int]:
     """Setzt Marker via Operator-Args; gibt (pre_ptrs, new_count) zurück."""
-    # Vorher-Menge für Differenzbildung
     before = {t.as_pointer() for t in tracking.tracks}
 
     _detect_features(
@@ -103,8 +102,38 @@ def perform_marker_detection(
         min_distance=int(min_distance_px),
     )
 
+    # --- NEU: Zustand sicher „fluschen“ ---
+    scn = bpy.context.scene
+    curf = int(scn.frame_current)
+    try:
+        bpy.context.view_layer.update()
+    except Exception:
+        pass
+    try:
+        # Frame kurz „anfassen“, damit marker-arrays intern frisch sind
+        scn.frame_set(curf)
+    except Exception:
+        pass
+
+    # --- Optional: kurze Warte-Schleife bis Keys am Frame sichtbar sind ---
+    # (max. ~0.2 s; bricht früher ab, sobald mind. 1 neuer Track einen Marker am curf hat)
+    try:
+        import time
+        deadline = time.time() + 0.2
+        while time.time() < deadline:
+            created_tracks = [t for t in tracking.tracks if t.as_pointer() not in before]
+            if any(t.markers.find_frame(curf, exact=True) for t in created_tracks):
+                break
+            # Einen kleinen Tick geben, dann erneut flushen
+            time.sleep(0.01)
+            bpy.context.view_layer.update()
+            scn.frame_set(curf)
+    except Exception:
+        pass
+
     created = [t for t in tracking.tracks if t.as_pointer() not in before]
     return before, len(created)
+
 
 # -----------------------------
 # Public: Basic Detect
