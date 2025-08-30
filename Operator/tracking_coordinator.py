@@ -40,7 +40,11 @@ def _resolve_clip(context: bpy.types.Context):
 
 
 def _snapshot_track_ptrs(context: bpy.types.Context) -> list[int]:
-    """Serialisierbarer Snapshot der aktuellen Track-Pointer."""
+    """
+    Snapshot der aktuellen Track-Pointer.
+    WICHTIG: Diese Werte NICHT in Scene/IDProperties persistieren (32-bit Limit)!
+    Nur ephemer im Python-Kontext verwenden.
+    """
     clip = _resolve_clip(context)
     if not clip:
         return []
@@ -74,14 +78,18 @@ def _cycle_begin(context: bpy.types.Context, *, target_frame: int | None) -> dic
         st["cycle_phase_index"] = 0
         st["cycle_last_result"] = None
         st["cycle_results"] = []
-        # WICHTIG: Snapshot der bestehenden Tracks vor DETECT – für DISTANZE
-        st["cycle_pre_ptrs"] = _snapshot_track_ptrs(context)
         scn["tco_state"] = st  # zurückschreiben
 
-        # Sofortige, SYNCHRONE Abarbeitung ALLER Phasen (keine Modal-Nebenläufigkeit)
-        last = None
+        # Ephemerer Kontext für 64-bit Pointer & kompakte Rückgabe
+        cycle_ctx = {
+            "pre_ptrs": set(_snapshot_track_ptrs(context)),  # 64-bit Pointer nur hier halten
+            "results": {},
+        }
+
+        # SYNCHRONE Abarbeitung ALLER Phasen (keine Modal-Nebenläufigkeit)
+        last: dict | None = None
         while True:
-            step_res = _cycle_step(context)
+            step_res = _cycle_step(context, cycle_ctx)
             last = step_res
             # Ende, wenn DONE/NOOP oder keine aktive Phase mehr
             st = _get_state(scn)
@@ -89,14 +97,17 @@ def _cycle_begin(context: bpy.types.Context, *, target_frame: int | None) -> dic
                 break
             if (not st.get("cycle_active")) or int(st.get("cycle_phase_index", 0)) >= len(_CYCLE_PHASES):
                 break
-        return last or {"status": "DONE"}
+        # Kompakte, UI-taugliche Rückgabe der Phasenresultate
+        out = dict(cycle_ctx.get("results", {}))
+        out["status"] = "DONE"
+        return out
     finally:
         # Lock unmittelbar wieder lösen; jede Phase läuft synchron im Operator-Kontext,
         # dadurch keine konkurrierenden modal-Handler nötig.
         scn[_CYCLE_LOCK_KEY] = False
 
 
-def _cycle_step(context: bpy.types.Context) -> dict:
+def _cycle_step(context: bpy.types.Context, cycle_ctx: dict) -> dict:
     """Führt genau eine Phase basierend auf cycle_phase_index aus."""
     scn = context.scene
     st = _get_state(scn)
@@ -125,15 +136,11 @@ def _cycle_step(context: bpy.types.Context) -> dict:
 
     if phase == "DISTANZE":
         # Phase 2: Distanz-Cleanup für NEUE Marker relativ zu Pre-Snapshot
-        pre_ptrs = set(int(p) for p in st.get("cycle_pre_ptrs", []) if isinstance(p, int))
+        pre_ptrs = set(cycle_ctx.get("pre_ptrs") or [])
         frame = int(st.get("cycle_target_frame"))
         try:
-            res = run_distance_cleanup(
-                context,
-                pre_ptrs=pre_ptrs,
-                frame=frame,
-                # Defaults aus Helper: close_dist_rel=0.01, reselect_only_remaining=True, select_remaining_new=True
-            )
+            # Defaults aus Helper: close_dist_rel=0.01, reselect_only_remaining=True, select_remaining_new=True
+            res = run_distance_cleanup(context, pre_ptrs=pre_ptrs, frame=frame)
         except Exception as e:
             res = {"status": "FAILED", "reason": str(e)}
         st["cycle_last_result"] = res
@@ -146,6 +153,8 @@ def _cycle_step(context: bpy.types.Context) -> dict:
         if st["cycle_phase_index"] >= len(_CYCLE_PHASES):
             st["cycle_active"] = False
         scn["tco_state"] = st
+        # Für unmittelbare Rückgabe zusätzlich im ephemeren Kontext ablegen
+        cycle_ctx["results"]["DISTANZE"] = res if isinstance(res, dict) else {"status": str(res)}
         return {"status": "OK", "phase": phase, "result": res}
 
     # Unbekannte Phase (zukunftssicherer Fallback)
@@ -226,15 +235,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     # --- Direkt danach: modularen Zyklus starten (Phase 1 = DETECT) ---
                     try:
                         cyc = _cycle_begin(context, target_frame=res_jump.get("frame"))
-                        status = cyc.get("status")
-                        if status in {"OK", "DONE"}:
-                            st = _get_state(context.scene)
-                            results = st.get("cycle_results", [])
-                            # Kompakte KPI-Ausgabe (DETECT + DISTANZE)
-                            det = next((r for r in results if r.get("phase")=="DETECT"), {})
-                            dis = next((r for r in results if r.get("phase")=="DISTANZE"), {})
-                            det_res = det.get("result", {}) or {}
-                            dis_res = dis.get("result", {}) or {}
+                        if cyc.get("status") in {"OK", "DONE", "DONE"}:
+                            # KPI direkt aus der Rückgabe (ephemer, pointer-sicher)
+                            det_res = cyc.get("DETECT", {}) or {}
+                            dis_res = cyc.get("DISTANZE", {}) or {}
                             self.report({'INFO'}, (
                                 f"Cycle fertig: "
                                 f"DETECT={det_res.get('status','n/a')} new={det_res.get('new_tracks', 0)}; "
