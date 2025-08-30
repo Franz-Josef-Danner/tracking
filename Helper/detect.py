@@ -58,20 +58,27 @@ def _ensure_clip_context(context: bpy.types.Context) -> Dict[str, Any]:
                 }
     return {}
 
-def _detect_features(threshold: float) -> None:
+def _detect_features(*, placement: str, margin: int, threshold: float, min_distance: int) -> None:
     """Robuster Aufruf von bpy.ops.clip.detect_features im CLIP-Kontext."""
     def _op(**kw):
         try:
             return bpy.ops.clip.detect_features(**kw)
         except TypeError:
-            return bpy.ops.clip.detect_features()
+            # Fallback für exotische Builds: wenigstens Threshold setzen
+            return bpy.ops.clip.detect_features(threshold=float(max(threshold, 0.0001)))
 
     override = _ensure_clip_context(bpy.context)
+    call_kwargs = dict(
+        placement=str(placement),
+        margin=int(margin),
+        threshold=float(max(threshold, 0.0001)),
+        min_distance=int(min_distance),
+    )
     if override:
         with bpy.context.temp_override(**override):
-            _op(threshold=float(threshold))
+            _op(**call_kwargs)
     else:
-        _op(threshold=float(threshold))
+        _op(**call_kwargs)
 
 # -----------------------------
 # Kern: Marker-Detection
@@ -79,29 +86,22 @@ def _detect_features(threshold: float) -> None:
 def perform_marker_detection(
     clip: bpy.types.MovieClip,
     tracking: bpy.types.MovieTracking,
+    *,
+    placement: str,
     threshold: float,
     margin_px: int,
     min_distance_px: int,
 ) -> Tuple[Set[int], int]:
-    """Setzt Marker und gibt (pre_ptrs, new_count) zurück."""
-    settings = tracking.settings
-    try:
-        settings.default_correlation_min = float(threshold)
-    except Exception:
-        pass
-    try:
-        settings.default_margin = int(margin_px)
-    except Exception:
-        pass
-    try:
-        settings.default_minimum_distance = int(min_distance_px)
-    except Exception:
-        pass
-
+    """Setzt Marker via Operator-Args; gibt (pre_ptrs, new_count) zurück."""
     # Vorher-Menge für Differenzbildung
     before = {t.as_pointer() for t in tracking.tracks}
 
-    _detect_features(threshold=float(threshold))
+    _detect_features(
+        placement=placement,
+        margin=int(margin_px),
+        threshold=float(threshold),
+        min_distance=int(min_distance_px),
+    )
 
     created = [t for t in tracking.tracks if t.as_pointer() not in before]
     return before, len(created)
@@ -116,6 +116,7 @@ def run_detect_basic(
     threshold: Optional[float] = None,
     margin_base: Optional[int] = None,
     min_distance_base: Optional[int] = None,
+    placement: Optional[str] = None,
     selection_policy: Optional[str] = None,  # Placeholder für spätere Varianten
 ) -> Dict[str, Any]:
     """
@@ -151,8 +152,16 @@ def run_detect_basic(
         margin = int(margin_base) if margin_base is not None else max(16, int(0.025 * max(width, height)))
         min_dist = int(min_distance_base) if min_distance_base is not None else max(8, int(0.05 * max(width, height)))
 
+        # Placement normalisieren (RNA-Enum erwartet 'FRAME' | 'INSIDE_GPENCIL' | 'OUTSIDE_GPENCIL')
+        p = (placement or "FRAME").upper()
+
         pre_ptrs, new_count = perform_marker_detection(
-            clip, tracking, thr, margin, min_dist
+            clip=clip,
+            tracking=tracking,
+            placement=p,
+            threshold=thr,
+            margin_px=margin,
+            min_distance_px=min_dist,
         )
 
         # Threshold persistieren
@@ -164,6 +173,7 @@ def run_detect_basic(
             "threshold": float(thr),
             "margin_px": int(margin),
             "min_distance_px": int(min_dist),
+            "placement": p,
             "pre_ptrs": pre_ptrs,
             "new_count_raw": int(new_count),
             "width": int(width),
