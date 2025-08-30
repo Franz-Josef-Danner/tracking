@@ -610,6 +610,17 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         recursive_split_cleanup(context, **override, tracks=tracks)
             except Exception:
                 pass
+            # Zweiter Split-Cleanup direkt hinterher
+            try:
+                override = _ensure_clip_context(context)
+                space = override.get("space_data") if override else None
+                clip = getattr(space, "clip", None) if space else None
+                tracks = clip.tracking.tracks if clip else None
+                if override and tracks:
+                    with bpy.context.temp_override(**override):
+                        recursive_split_cleanup(context, **override, tracks=tracks)
+            except Exception:
+                pass
             # 4) Max-Marker-Frame suchen
             rmax = run_find_max_marker_frame(context)
             if rmax.get("status") == "FOUND":
