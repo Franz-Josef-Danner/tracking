@@ -84,7 +84,7 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
     ts = clip.tracking.settings
 
     # --- Defaults setzen (Altverhalten) ---
-    ts.default_motion_model = 'LocRotScale'
+    ts.default_motion_model = 'Loc'
     ts.default_pattern_match = 'KEYFRAME'
     ts.use_default_normalization = True
     ts.default_weight = 1.0
