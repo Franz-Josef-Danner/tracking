@@ -1,3 +1,4 @@
+from __future__ import annotations
 # --- Spike-cycle config (max→min) ---
 SPIKE_INITIAL_THRESHOLD = 100.0
 SPIKE_MIN_THRESHOLD = 10.0
@@ -10,7 +11,6 @@ tracking_coordinator.py – Streng sequentieller, MODALER Orchestrator
 - Jede Phase startet erst, wenn die vorherige abgeschlossen wurde.
 """
 
-from __future__ import annotations
 import bpy
 
 # Core helpers
