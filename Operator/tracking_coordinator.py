@@ -8,25 +8,13 @@ from typing import Dict, Optional, Tuple
 print(f"[Coordinator] LOADED from {__file__}")
 
 # ------------------------------------------------------------
-# Robuste Importe der Helper (funktionieren als Paket- oder Flat-Layout)
+# Paketkonforme, **relative** Importe (keine absoluten Fallbacks!)
 # ------------------------------------------------------------
-try:
-    from ..Helper.find_low_marker_frame import run_find_low_marker_frame
-except Exception:
-    from Helper.find_low_marker_frame import run_find_low_marker_frame  # type: ignore
-
-try:
-    from ..Helper.jump_to_frame import run_jump_to_frame
-except Exception:
-    from Helper.jump_to_frame import run_jump_to_frame  # type: ignore
-
+from ..Helper.find_low_marker_frame import run_find_low_marker_frame
+from ..Helper.jump_to_frame import jump_to_frame
 from ..Helper.detect import run_detect_basic
-from ..Helper.multi import run_multi_pass  # falls genutzt
-
-try:
-    from ..Helper.distanze import run_distance_cleanup
-except Exception:
-    from Helper.distanze import run_distance_cleanup  # type: ignore
+from ..Helper.multi import run_multi_pass
+from ..Helper.distanze import run_distance_cleanup
 
 try:
     from ..Helper.count import evaluate_marker_count
