@@ -126,7 +126,8 @@ def _select_tracks_by_names(context, names:set[str]) -> int:
             pass
     return n
 
-def _delete_selected_markers(context, *, confirm: bool = True) -> int:    """
+def _delete_selected_markers(context, *, confirm: bool = True) -> int:
+    """
     Löscht *selektierte Marker* (nicht Tracks) im CLIP_EDITOR-Kontext.
     Versucht zuerst den Operator, fällt dann auf manuelles Entfernen zurück.
     Gibt die Anzahl der gelöschten Marker zurück (best effort).
