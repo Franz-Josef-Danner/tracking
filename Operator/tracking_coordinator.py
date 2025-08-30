@@ -26,7 +26,6 @@ class CLIP_OT_tracking_bootstrap_only(bpy.types.Operator):
  # ------------------------------------------------------------
  # Utility: Track-/Marker-Handling (Selektieren/Löschen)
  # ------------------------------------------------------------
-@@
  def register():
      bpy.utils.register_class(CLIP_OT_tracking_coordinator)
     bpy.utils.register_class(CLIP_OT_tracking_bootstrap_only)
