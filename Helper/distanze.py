@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import Dict, Iterable, Optional, Set, Tuple, List
 import bpy
+from typing import Any
 from mathutils.kdtree import KDTree
 
 __all__ = ["run_distance_cleanup"]
@@ -29,6 +30,25 @@ def _delete_selected_tracks(confirm: bool = True) -> None:
         bpy.ops.clip.delete_track(confirm=confirm)
     except Exception:
         pass
+
+# --- Compatibility helpers for Blender ≥ 4.4 (Marker.select entfernt) -----
+def _marker_get_select(m: Any, t: bpy.types.MovieTrackingTrack) -> bool:
+    """Best effort: Marker-Selektionsflag lesen; Fallback auf Track.select."""
+    try:
+        return bool(getattr(m, "select"))
+    except Exception:
+        return bool(getattr(t, "select", False))
+
+def _marker_set_select(m: Any, t: bpy.types.MovieTrackingTrack, value: bool) -> None:
+    """Best effort: Marker-Selektionsflag setzen; Fallback auf Track.select."""
+    try:
+        setattr(m, "select", bool(value))
+    except Exception:
+        try:
+            t.select = bool(value)
+        except Exception:
+            # Let it go – kein Crash, UI-Flag ist rein kosmetisch
+            pass
 
 def run_distance_cleanup(
     context: bpy.types.Context,
@@ -75,7 +95,7 @@ def run_distance_cleanup(
         except TypeError:
             m = t.markers.find_frame(int(frame))
         if m:
-            sel_snapshot_marker_at_f[t.as_pointer()] = bool(getattr(m, "select", False))
+            sel_snapshot_marker_at_f[t.as_pointer()] = _marker_get_select(m, t)
     if not kd or not new_tracks:
         # Nur Selektion in den *neuen* Tracks reparieren (keine globale Änderung!)
         if reselect_only_remaining:
@@ -155,7 +175,7 @@ def run_distance_cleanup(
                 except TypeError:
                     m = t.markers.find_frame(int(frame))
                 if m is not None and tptr in sel_snapshot_marker_at_f:
-                    m.select = sel_snapshot_marker_at_f[tptr]
+                    _marker_set_select(m, t, sel_snapshot_marker_at_f[tptr])
 
     remaining = [t for t in tracking.tracks if t.as_pointer() not in pre_ptrs]
     if reselect_only_remaining:
@@ -170,7 +190,7 @@ def run_distance_cleanup(
             except TypeError:
                 m = t.markers.find_frame(int(frame))
             if m is not None and tptr in sel_snapshot_marker_at_f:
-                m.select = sel_snapshot_marker_at_f[tptr]
+                _marker_set_select(m, t, sel_snapshot_marker_at_f[tptr])
 
     try:
         bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
