@@ -85,11 +85,48 @@ TIMER_SEC = 0.20
 __all__ = ("CLIP_OT_tracking_coordinator", "bootstrap")
 
 # ------------------------------------------------------------
-# Utility: Alle Tracks im aktiven Clip selektieren
+# Utility: Track-/Marker-Handling (Selektieren/Löschen)
 # ------------------------------------------------------------
 
-def _delete_selected_markers(context) -> int:
-    """
+def _get_clip_and_tracks(context):
+    """Gibt (clip, tracks) zurück, bevorzugt Objekt-Tracks im CLIP_EDITOR."""
+    space = getattr(context, "space_data", None)
+    clip = space.clip if (getattr(space, "type", None) == "CLIP_EDITOR" and getattr(space, "clip", None)) else \
+           (bpy.data.movieclips[0] if bpy.data.movieclips else None)
+    if not clip:
+        return None, None
+    try:
+        obj = clip.tracking.objects.active
+        tracks = obj.tracks if (obj and getattr(obj, "tracks", None)) else None
+    except Exception:
+        tracks = None
+    if tracks is None:
+        tracks = getattr(clip.tracking, "tracks", None)
+    return clip, tracks
+
+def _select_tracks_by_names(context, names:set[str]) -> int:
+    """Deselect all, dann selektiere Tracks deren name in 'names' ist. Liefert Anzahl selektierter Tracks."""
+    if not names:
+        return 0
+    _, tracks = _get_clip_and_tracks(context)
+    if not tracks:
+        return 0
+    n = 0
+    for tr in list(tracks):
+        try:
+            tr.select = False
+        except Exception:
+            pass
+    for tr in list(tracks):
+        try:
+            if tr.name in names:
+                tr.select = True
+                n += 1
+        except Exception:
+            pass
+    return n
+
+def _delete_selected_markers(context, *, confirm: bool = True) -> int:    """
     Löscht *selektierte Marker* (nicht Tracks) im CLIP_EDITOR-Kontext.
     Versucht zuerst den Operator, fällt dann auf manuelles Entfernen zurück.
     Gibt die Anzahl der gelöschten Marker zurück (best effort).
@@ -152,13 +189,13 @@ def _delete_selected_markers(context) -> int:
             override = {"window": win, "area": area, "region": region, "space_data": space, "scene": context.scene}
             try:
                 with bpy.context.temp_override(**override):
-                    bpy.ops.clip.delete_marker()
+                    bpy.ops.clip.delete_marker(confirm=confirm)
                 op_ok = True
             except Exception:
                 op_ok = False
         else:
             try:
-                bpy.ops.clip.delete_marker()
+                bpy.ops.clip.delete_marker(confirm=confirm)
                 op_ok = True
             except Exception:
                 op_ok = False
@@ -482,6 +519,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # Wiederholungslimit (Mini-Zyklus)
             max_attempts = int(scn.get("detect_max_attempts", 12))
             start_frame = None
+            # Gespeicherte Namen neu gesetzter Marker im aktuellen Frame (pro Detect-Zyklus)
+            scn["tco_saved_marker_names"] = []
 
             # Zielkorridor
             marker_target = int(scn.get("tco_marker_target", scn.get("marker_adapt", scn.get("marker_basis", 20))))
@@ -544,6 +583,29 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 frame_now = int(basic.get("frame", scn.frame_current))
                 pre_ptrs  = set(basic.get("pre_ptrs", set()))
                 thr_now   = float(basic.get("threshold", float(scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))))
+                # (NEU) Namen der neu entstandenen Marker/Tracks im aktuellen Frame sammeln
+                try:
+                    _, tracks_now = _get_clip_and_tracks(context)
+                    new_names = set()
+                    if tracks_now:
+                        for tr in list(tracks_now):
+                            try:
+                                if tr.as_pointer() in pre_ptrs:
+                                    continue
+                                # hat dieser Track im aktuellen Frame einen Marker?
+                                try:
+                                    mk = tr.markers.find_frame(frame_now, exact=True)
+                                except TypeError:
+                                    mk = tr.markers.find_frame(frame_now)
+                                if mk:
+                                    new_names.add(str(tr.name))
+                            except Exception:
+                                continue
+                    scn["tco_saved_marker_names"] = list(sorted(new_names))
+                    if new_names:
+                        print(f"[Coordinator] saved new marker names @frame {frame_now}: {len(new_names)}")
+                except Exception as ex:
+                    print(f"[Coordinator] failed to collect new marker names → {ex}")
 
                 # 2) Distanz-Cleanup (gegen pre_ptrs)
                 dres = run_distance_cleanup(
@@ -559,8 +621,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 # 3) Count-Bewertung
                 cres = evaluate_marker_count(new_ptrs_after_cleanup=remaining_ptrs, min_marker=int(min_marker), max_marker=int(max_marker))
                 print(f"[Coordinator] DETECT count → {cres}")
-                if cres.get("status") == "ENOUGH":
-                    # 4) Multi-Pass (Triplets) mit *gleichem* threshold
+                status_now = str(cres.get("status"))
+                if status_now == "ENOUGH":
+                # 4) Multi-Pass (Triplets) mit *gleichem* threshold
                     mres = run_multi_pass(context, detect_threshold=float(thr_now), pre_ptrs=pre_ptrs)
                     # 5) Finaler Distanz-Cleanup auch für Triplets
                     _ = run_distance_cleanup(context, pre_ptrs=pre_ptrs, frame=frame_now, close_dist_rel=close_dist_rel)
@@ -575,13 +638,17 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         "multi": {k: v for k, v in mres_safe.items()},
                     }
                     break
-                # --- NEU: Sofort bereinigen, wenn dieser Attempt TOO_FEW lieferte ---
-                if cres.get("status") == "TOO_FEW":
+                # --- NEU: Bei TOO_FEW oder TOO_MANY → gespeicherte Namen selektieren & Marker löschen
+                if status_now in ("TOO_FEW", "TOO_MANY"):
                     try:
-                        removed_now = _delete_selected_markers(context)
-                        print(f"[Coordinator] TOO_FEW → removed selected markers immediately: {removed_now}")
+                        names = set(scn.get("tco_saved_marker_names", []) or [])
+                        sel_n = _select_tracks_by_names(context, names)
+                        removed_now = _delete_selected_markers(context, confirm=True)
+                        print(f"[Coordinator] {status_now} → selected {sel_n} tracks by name, deleted {removed_now} marker(s) @frame {frame_now}")
+                        # nach dem Löschen Sammlung zurücksetzen
+                        scn["tco_saved_marker_names"] = []
                     except Exception as ex:
-                        print(f"[Coordinator] immediate delete on TOO_FEW FAILED → {ex}")
+                        print(f"[Coordinator] delete via names FAILED → {ex}")
                 
                 # Nicht genug / zu viel → Threshold anpassen, neue Runde
                 observed_n = int(cres.get("count", 0))
