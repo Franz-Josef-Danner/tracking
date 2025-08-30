@@ -74,7 +74,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     """Kaiserlich: Tracking Coordinator (Modal, strikt sequenziell)"""
     bl_idname = "clip.tracking_coordinator"
     bl_label = "Kaiserlich: Coordinator (Modal)"
-    bl_options = {"REGISTER", "UNDO", "GRAB_CURSOR_XY"}
+    # Hinweis: Blender kennt nur GRAB_CURSOR / GRAB_CURSOR_X / GRAB_CURSOR_Y.
+    # GRAB_CURSOR_XY existiert nicht → Validation-Error beim Register.
+    # Modalität kommt über modal(); Cursor-Grabbing ist nicht nötig.
+    bl_options = {"REGISTER", "UNDO"}
 
     # — Laufzeit-State (nur Operator, nicht Szene) —
     _timer: object | None = None
