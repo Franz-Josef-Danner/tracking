@@ -8,7 +8,6 @@ from __future__ import annotations
 import bpy
 from bpy.types import PropertyGroup, Panel, Operator as BpyOperator
 from bpy.props import IntProperty, FloatProperty, CollectionProperty, BoolProperty, StringProperty
-import math
 import time
 try:
     import gpu
@@ -63,16 +62,7 @@ def _tag_clip_redraw() -> None:
 
 # Öffentliche Helper-Funktion (vom Coordinator aufrufbar)
 def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) -> None:
-    """Logge einen Solve-Versuch NUR bei gültigem numerischen Wert (kein None/NaN/Inf)."""
-    # Nur numerische Endwerte zulassen
-    if value is None:
-        return
-    try:
-        v = float(value)
-    except Exception:
-        return
-    if (v != v) or math.isinf(v):  # NaN oder ±Inf
-        return
+    """Logge einen Solve-Versuch (Avg-Error oder NaN) in Scene.kaiserlich_solve_err_log."""
     scn = context.scene
     try:
         scn.kaiserlich_solve_attempts += 1
@@ -80,7 +70,7 @@ def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) ->
         scn["kaiserlich_solve_attempts"] = int(scn.get("kaiserlich_solve_attempts", 0)) + 1
     item = scn.kaiserlich_solve_err_log.add()
     item.attempt = int(scn.kaiserlich_solve_attempts)
-    item.value   = v
+    item.value   = float("nan") if (value is None) else float(value)
     item.stamp   = time.strftime("%H:%M:%S")
     # UI-Refresh (CLIP-Editor + Sidebar)
     _tag_clip_redraw()
