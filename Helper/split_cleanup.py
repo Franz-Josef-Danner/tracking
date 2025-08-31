@@ -205,9 +205,8 @@ def _delete_first_segment(
     ):
         for m in list(track.markers)[::-1]:
             try:
-                if getattr(m, "mute", False):
-                    continue
                 f = int(getattr(m, "frame", -10))
+                # Mute-Status wird bewusst ignoriert: harte Segmenttrennung gewünscht.
                 # Nur Frames des ersten Segments löschen und nie über die Grenze
                 if f in first and f <= limit:
                     track.markers.delete_frame(f)
