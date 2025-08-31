@@ -41,6 +41,24 @@ class KaiserlichSolveErrItem(PropertyGroup):
     attempt: IntProperty(name="Attempt", default=0, min=0)
     value:   FloatProperty(name="Avg Error", default=float("nan"))
     stamp:   StringProperty(name="Time", default="")
+# --- UI-Redraw Helper (CLIP-Editor) ---
+def _tag_clip_redraw() -> None:
+    try:
+        wm = bpy.context.window_manager
+        if not wm:
+            return
+        for win in wm.windows:
+            scr = getattr(win, "screen", None)
+            if not scr:
+                continue
+            for area in scr.areas:
+                if area.type != "CLIP_EDITOR":
+                    continue
+                for region in area.regions:
+                    if region.type in {"WINDOW", "UI"}:
+                        region.tag_redraw()
+    except Exception:
+        pass
 
 # Öffentliche Helper-Funktion (vom Coordinator aufrufbar)
 def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) -> None:
@@ -54,54 +72,41 @@ def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) ->
     item.attempt = int(scn.kaiserlich_solve_attempts)
     item.value   = float("nan") if (value is None) else float(value)
     item.stamp   = time.strftime("%H:%M:%S")
-    # UI-Refresh (CLIP-Editor + Sidebar), damit Overlay/Liste sofort sichtbar aktualisiert
-    try:
-        wm = bpy.context.window_manager
-        if wm:
-            for win in wm.windows:
-                scr = getattr(win, "screen", None)
-                if not scr:
-                    continue
-                for area in scr.areas:
-                    if area.type != "CLIP_EDITOR":
-                        continue
-                    for region in area.regions:
-                        if region.type in {"WINDOW", "UI"}:
-                            region.tag_redraw()
-    except Exception:
-        pass
+    # UI-Refresh (CLIP-Editor + Sidebar)
+    _tag_clip_redraw()
 # GPU-Overlay (Sparkline) – Draw Handler
 _solve_graph_handle = None
 def _draw_solve_graph():
     if gpu is None:
         return
-    # Kontext aus bpy.context beziehen; Draw-Handler liefert keine Args zuverlässig
-    ctx = bpy.context
-    if not ctx:
-        return
-    scn = getattr(ctx, "scene", None)
+    scn = getattr(bpy.context, "scene", None)
     if not scn or not getattr(scn, "kaiserlich_solve_graph_enabled", False):
         return
     items = getattr(scn, "kaiserlich_solve_err_log", [])
-    if len(items) < 2:
-        return
-    vals = [it.value for it in items if it.value == it.value]  # filter NaN
-    if len(vals) < 2:
+    # numerische Werte extrahieren (NaN ignorieren)
+    vals = [it.value for it in items if it.value == it.value]
+    if len(vals) == 0:
         return
     vmin, vmax = min(vals), max(vals)
     if abs(vmax - vmin) < 1e-12:
         vmax = vmin + 1e-12
-    region = getattr(ctx, "region", None)
-    if not region:
-        return
-    W, H = region.width, region.height
+    # Viewport-Maße robust beschaffen (Region ist nicht garantiert gesetzt)
+    try:
+        _vx, _vy, W, H = gpu.state.viewport_get()
+    except Exception:
+        region = getattr(bpy.context, "region", None)
+        if not region:
+            return
+        W, H = region.width, region.height
     pad = 16
     gw, gh = min(320, W - 2*pad), 80
     ox, oy = W - gw - pad, pad
     take = items[-200:]
+    n = len(take)
+    ln = max(1, n - 1)  # vermeidet Div/0, erlaubt 1-Punkt-Stub
     coords = []
     for i, it in enumerate(take):
-        x = ox + (i / max(1, len(take)-1)) * gw
+        x = ox + (i / ln) * gw
         y = oy if it.value != it.value else oy + ((it.value - vmin) / (vmax - vmin)) * gh
         coords.append((x, y))
     shader = gpu.shader.from_builtin('2D_UNIFORM_COLOR')
@@ -110,6 +115,9 @@ def _draw_solve_graph():
     batch = batch_for_shader(shader, 'LINE_LOOP', {"pos": box})
     shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.35)); batch.draw(shader)
     # Kurve
+    # Bei nur einem Punkt einen 1px-Stub zeichnen, damit sichtbar
+    if len(coords) == 1:
+        coords.append((coords[0][0] + 1, coords[0][1]))
     batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": coords})
     shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.9)); batch.draw(shader)
 
@@ -233,6 +241,7 @@ class KAISERLICH_OT_ClearSolveErr(BpyOperator):
         scn = context.scene
         scn.kaiserlich_solve_err_log.clear()
         scn.kaiserlich_solve_attempts = 0
+        _tag_clip_redraw()
         return {'FINISHED'}
 
 # ---------------------------------------------------------------------------
@@ -256,7 +265,6 @@ def register() -> None:
     # Draw-Handler aktivieren
     global _solve_graph_handle
     if gpu is not None and _solve_graph_handle is None:
-        # Keine Args übergeben; Callback zieht selbst den Kontext
         _solve_graph_handle = bpy.types.SpaceClipEditor.draw_handler_add(
             _draw_solve_graph, (), 'WINDOW', 'POST_PIXEL'
         )
