@@ -30,12 +30,28 @@ except Exception:
     except Exception:
         evaluate_marker_count = None  # type: ignore
 from ..Helper.tracker_settings import apply_tracker_settings
-# Solve-Log Helper aus __init__ (Top-Level) importieren
-try:
-    from .. import kaiserlich_solve_log_add  # type: ignore
-except Exception:
-    def kaiserlich_solve_log_add(_ctx, _val):  # Fallback no-op
-        return
+# ---- Solve-Logger: robust auflösen, ohne auf Paketstruktur zu vertrauen ----
+def _solve_log(context, value):
+    """Laufzeit-sicherer Aufruf von __init__.kaiserlich_solve_log_add()."""
+    try:
+        import sys, importlib
+        # 1) Root-Paket aus __package__ ableiten (z.B. "tracking")
+        root_name = (__package__ or "").split(".", 1)[0]
+        if not root_name:
+            # Fallback: Vermutung "tracking"
+            root_name = "tracking"
+        mod = sys.modules.get(root_name)
+        if mod and hasattr(mod, "kaiserlich_solve_log_add"):
+            return getattr(mod, "kaiserlich_solve_log_add")(context, value)
+        # 2) Hart nachladen, falls noch nicht importiert
+        mod = importlib.import_module(root_name)
+        fn = getattr(mod, "kaiserlich_solve_log_add", None)
+        if callable(fn):
+            return fn(context, value)
+    except Exception:
+        pass
+    # Silent: kein Crash, wenn das Log-Addon noch nicht geladen ist
+    return
 # Optional: den Bidirectional‑Track Operator importieren. Wenn der Import
 # fehlschlägt, bleibt die Variable auf None und es erfolgt kein Aufruf.
 try:
@@ -565,27 +581,19 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # 2) Istwert holen
             avg_err = get_avg_reprojection_error(context)
             # --- Logging: immer schreiben, auch wenn None (NaN in Liste) ---
-            try:
-                kaiserlich_solve_log_add(context, avg_err)
-            except Exception:
-                pass            # --- NEU: Fehlenden Error differenziert behandeln ---
+            _solve_log(context, avg_err)
             if avg_err is None:
                 # a) Retry noch nicht versucht → Retry anstoßen
                 if not getattr(self, "solve_refine_attempted", False):
-                    try:
-                        scn["refine_intrinsics_focal_length"] = True
-                    except Exception:
-                        pass
+                try: scn["refine_intrinsics_focal_length"] = True
+                except Exception: pass
                     _apply_refine_focal_flag(context, True)
                     try:
                         res_retry = solve_camera_only(context)
                         self.solve_refine_attempted = True
                         self.report({'INFO'}, f"Solve-Retry (avg=None) mit refine_intrinsics_focal_length=True gestartet → {res_retry}")
-                        # Optionales Log für den Retry-Start (keine neue Zahl, aber Zeitpunkt sichtbar)
-                        try:
-                            kaiserlich_solve_log_add(context, None)
-                        except Exception:
-                            pass
+                    # Log-Ereignis für Retry-Start (Zeitpunkt sichtbar)
+                    _solve_log(context, None)
                         return {'RUNNING_MODAL'}
                     except Exception as exc:
                         self.report({'WARNING'}, f"Solve-Retry (avg=None) konnte nicht gestartet werden: {exc}")
@@ -628,11 +636,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     res_retry = solve_camera_only(context)
                     self.solve_refine_attempted = True
                     self.report({'INFO'}, f"Solve-Retry mit refine_intrinsics_focal_length=True gestartet → {res_retry}")
-                    # Retry protokollieren (Zeitpunkt sichtbar machen)
-                    try:
-                        kaiserlich_solve_log_add(context, None)
-                    except Exception:
-                        pass
+                    # Retry-Start als Marker loggen
+                    _solve_log(context, None)
                     # Im nächsten TIMER-Tick wird der neue avg_err erneut geprüft.
                     return {'RUNNING_MODAL'}
                 except Exception as exc:
@@ -710,6 +715,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     self.solve_refine_attempted = False
                     res = solve_camera_only(context)
                     self.report({'INFO'}, f"SolveCamera gestartet → {res}")
+                    # Solve-Start markieren (n/a-Wert als Trenner)
+                    _solve_log(context, None)
                     # → direkt in die Solve-Evaluation wechseln
                     self.phase = PH_SOLVE_EVAL
                     return {'RUNNING_MODAL'}
