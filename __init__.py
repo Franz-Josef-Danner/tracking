@@ -256,11 +256,30 @@ class KAISERLICH_OT_ClearSolveErr(BpyOperator):
     bl_idname = "kaiserlich.clear_solve_err"
     bl_label = "Clear Solve Log"
     bl_options = {"INTERNAL"}
+    # optional: State für Dialoganzeige (keine Property nötig)
+    _count: int = 0
+
+    def invoke(self, context, event):
+        scn = context.scene
+        self._count = len(getattr(scn, "kaiserlich_solve_err_log", []))
+        # Fast-Path: mit Ctrl oder Shift sofort löschen, ohne Dialog
+        if event and (getattr(event, "ctrl", False) or getattr(event, "shift", False)):
+            return self.execute(context)
+        # Bestätigungsdialog anzeigen
+        return context.window_manager.invoke_props_dialog(self, width=280)
+
+    def draw(self, _context):
+        col = self.layout.column(align=True)
+        col.label(text=f"{self._count} Einträge löschen?")
+        col.label(text="Dies setzt auch den Solve-Zähler zurück.", icon="INFO")
+
     def execute(self, context):
         scn = context.scene
-        scn.kaiserlich_solve_err_log.clear()
-        scn.kaiserlich_solve_attempts = 0
-        _tag_clip_redraw()
+        try:
+            scn.kaiserlich_solve_err_log.clear()
+            scn.kaiserlich_solve_attempts = 0
+        finally:
+            _tag_clip_redraw()
         return {'FINISHED'}
 
 # ---------------------------------------------------------------------------
