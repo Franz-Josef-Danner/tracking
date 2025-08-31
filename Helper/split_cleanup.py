@@ -26,17 +26,24 @@ def _log(scene, msg: str) -> None:
 # Utilities
 # ------------------------------------------------------------
 
-def _segments_by_consecutive_frames_all(track) -> List[List[int]]:
+def _segments_by_consecutive_frames_unmuted(track) -> List[List[int]]:
     """
-    Segmentierung strikt nach Frame-Kontinuität über **alle** Marker.
-    Jede Lücke (frame != last + 1) startet ein neues Segment.    Jede Lücke (frame != last + 1) startet ein neues Segment.
-    Rückgabe: Liste von Frame-Listen.
+    Segmentierung nach Frame-Kontinuität, **nur für valide Marker**.
+    Als valide gelten Marker mit Status == 'TRACKED' und is_keyframe==True.
+    Alle anderen (estimated, disabled, interpoliert) werden ignoriert
+    und damit als Lücke interpretiert.
     """
-    frames = []
+    frames: list[int] = []
     try:
         for m in getattr(track, "markers", []):
             f = getattr(m, "frame", None)
-            if f is not None:
+            if f is None:
+                continue
+            # nur echte Tracking-Marker berücksichtigen
+            st = getattr(m, "flag", 0)  # Blender API: Flags enthalten Status
+            is_key = bool(getattr(m, "is_keyed", False) or getattr(m, "is_keyframe", False))
+            # Flag-Konstante: 1 << 0 == TRACKED, 1 << 1 == DISABLED, etc.
+            if (st & getattr(bpy.types.MovieTrackingMarker, "TRACKED", 1)) and is_key:
                 frames.append(int(f))
     except Exception:
         return []
