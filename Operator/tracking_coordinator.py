@@ -578,7 +578,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 target_err = 2.0
             # 1) messen & loggen
             avg_err = get_avg_reprojection_error(context)
-            _solve_log(context, avg_err)
+            _solve_log(context, avg_err)  # loggt nur bei gültigem numerischem Wert
             # 2) kein Wert → Retry einmalig, sonst mind. 1 Track löschen
             if avg_err is None:
                 if not getattr(self, "solve_refine_attempted", False):
@@ -589,7 +589,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         res_retry = solve_camera_only(context)
                         self.solve_refine_attempted = True
                         self.report({'INFO'}, f"Solve-Retry (avg=None) mit refine_intrinsics_focal_length=True → {res_retry}")
-                        _solve_log(context, None)  # Marker für Retry-Start
                         return {'RUNNING_MODAL'}
                     except Exception as exc:
                         self.report({'WARNING'}, f"Solve-Retry (avg=None) fehlgeschlagen: {exc}")
@@ -620,7 +619,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     res_retry = solve_camera_only(context)
                     self.solve_refine_attempted = True
                     self.report({'INFO'}, f"Solve-Retry mit refine_intrinsics_focal_length=True → {res_retry}")
-                    _solve_log(context, None)
                     return {'RUNNING_MODAL'}
                 except Exception as exc:
                     self.report({'WARNING'}, f"Solve-Retry konnte nicht gestartet werden: {exc}")
@@ -695,8 +693,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     self.solve_refine_attempted = False
                     res = solve_camera_only(context)
                     self.report({'INFO'}, f"SolveCamera gestartet → {res}")
-                    # Solve-Start markieren (n/a-Wert als Trenner)
-                    _solve_log(context, None)
                     # → direkt in die Solve-Evaluation wechseln
                     self.phase = PH_SOLVE_EVAL
                     return {'RUNNING_MODAL'}
