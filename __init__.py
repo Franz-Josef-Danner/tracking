@@ -100,12 +100,19 @@ def _draw_solve_graph():
     if not scn or not getattr(scn, "kaiserlich_solve_graph_enabled", False):
         return
     coll = getattr(scn, "kaiserlich_solve_err_log", [])
-    # Chronologische Reihenfolge erzwingen (ältester→neuester), NaN ignorieren
+    # Chronologisch (ältester→neuester), NaN ignorieren
     seq = sorted((it.attempt, it.value) for it in coll if it.value == it.value)
     if not seq:
         return
+    # --- Gleitender kumulativer Durchschnitt für das Overlay ---
     vals = [v for _, v in seq]
-    vmin, vmax = min(vals), max(vals)
+    avg_vals = []
+    s = 0.0
+    for i, v in enumerate(vals, 1):
+        s += float(v)
+        avg_vals.append(s / i)
+    # Skala aus Durchschnittswerten ableiten
+    vmin, vmax = min(avg_vals), max(avg_vals)
     if abs(vmax - vmin) < 1e-12:
         vmax = vmin + 1e-12
     # Viewport-Maße robust beschaffen (Region ist nicht garantiert gesetzt)
@@ -119,12 +126,12 @@ def _draw_solve_graph():
     pad = 16
     gw, gh = min(320, W - 2*pad), 80
     ox, oy = W - gw - pad, pad
-    # Letzte 200 Punkte (chronologisch)
-    take = seq[-200:]
-    n = len(take)
+    # Letzte 200 Punkte (chronologisch) – mit Durchschnittswerten
+    take_vals = avg_vals[-200:]
+    n = len(take_vals)
     ln = max(1, n - 1)  # vermeidet Div/0, erlaubt 1-Punkt-Stub
     coords = []
-    for i, (_att, val) in enumerate(take):
+    for i, val in enumerate(take_vals):
         x = ox + (i / ln) * gw
         y = oy + ((val - vmin) / (vmax - vmin)) * gh
         coords.append((x, y))
