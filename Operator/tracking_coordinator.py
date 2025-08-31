@@ -559,8 +559,41 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 target_err = 0.6
             # 2) Istwert holen
             avg_err = get_avg_reprojection_error(context)
+            # --- NEU: Fehlenden Error differenziert behandeln ---
             if avg_err is None:
-                self.report({'WARNING'}, "Solve-Eval: kein gültiger Durchschnittsfehler – fahre fort.")
+                # a) Retry noch nicht versucht → Retry anstoßen
+                if not getattr(self, "solve_refine_attempted", False):
+                    try:
+                        scn["refine_intrinsics_focal_length"] = True
+                    except Exception:
+                        pass
+                    _apply_refine_focal_flag(context, True)
+                    try:
+                        res_retry = solve_camera_only(context)
+                        self.solve_refine_attempted = True
+                        self.report({'INFO'}, f"Solve-Retry (avg=None) mit refine_intrinsics_focal_length=True gestartet → {res_retry}")
+                        return {'RUNNING_MODAL'}
+                    except Exception as exc:
+                        self.report({'WARNING'}, f"Solve-Retry (avg=None) konnte nicht gestartet werden: {exc}")
+                        # fällt durch zu b)
+                # b) Nach zweitem Solve-Versuch (oder Retry-Start fehlgeschlagen): mindestens 1 Track löschen
+                try:
+                    red = run_reduce_error_tracks(context, max_to_delete=1)
+                    del_cnt = int(red.get('deleted', 0))
+                    del_names = list(red.get('names', []))
+                except Exception as _exc:
+                    del_cnt, del_names = 0, []
+                    self.report({'WARNING'}, f"ReduceErrorTracks(FORCE) Fehler: {_exc}")
+                self.report(
+                    {'INFO'},
+                    f"ReduceErrorTracks(FORCE): avg=None target=n/a → delete=1 → done={del_cnt} {del_names}"
+                )
+                # Reset & zurück in den Hauptzyklus
+                self.detection_threshold = None
+                self.pre_ptrs = None
+                self.target_frame = None
+                self.repeat_map = {}
+                self.solve_refine_attempted = False
                 self.phase = PH_FIND_LOW
                 return {'RUNNING_MODAL'}
             # 3) Entscheidung
