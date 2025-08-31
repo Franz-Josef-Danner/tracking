@@ -30,6 +30,21 @@ except Exception:
     except Exception:
         evaluate_marker_count = None  # type: ignore
 from ..Helper.tracker_settings import apply_tracker_settings
+
+# ---- Solve-Logger: robust auflösen, ohne Paketstruktur-Annahme ----------------
+def _solve_log(context, value):
+    """Laufzeit-sicherer Aufruf von __init__.kaiserlich_solve_log_add()."""
+    try:
+        import sys, importlib
+        # Root-Paket aus __package__/__name__ ableiten
+        pkg = (__package__ or __name__).split(".", 1)[0]
+        mod = sys.modules.get(pkg) or importlib.import_module(pkg)
+        fn = getattr(mod, "kaiserlich_solve_log_add", None)
+        if callable(fn):
+            fn(context, value)
+    except Exception:
+        # Silent: Logging darf den Solve-Flow nicht bremsen
+        pass
 # ---- Solve-Logger: robust auflösen, ohne auf Paketstruktur zu vertrauen ----
 def _solve_log(context, value):
     """Laufzeit-sicherer Aufruf von __init__.kaiserlich_solve_log_add()."""
@@ -569,35 +584,25 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}")
             return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
         # PHASE: SOLVE_EVAL – Solve-Error prüfen, ggf. schlechteste Tracks löschen, dann Loop neu starten
-        if self.phase == PH_SOLVE_EVAL:
-            scn = context.scene
-            # 1) Zielwert (Fallback 0.6 px)
-            try:
-                target_err = float(scn.get("error_track", 0.6))
-                if target_err <= 0.0:
-                    target_err = 0.6
-            except Exception:
-                target_err = 0.6
-            # 2) Istwert holen
-            avg_err = get_avg_reprojection_error(context)
-            # --- Logging: immer schreiben, auch wenn None (NaN in Liste) ---
-            _solve_log(context, avg_err)
             if avg_err is None:
                 # a) Retry noch nicht versucht → Retry anstoßen
                 if not getattr(self, "solve_refine_attempted", False):
-                try: scn["refine_intrinsics_focal_length"] = True
-                except Exception: pass
+                    try:
+                        scn["refine_intrinsics_focal_length"] = True
+                    except Exception:
+                        pass
                     _apply_refine_focal_flag(context, True)
                     try:
                         res_retry = solve_camera_only(context)
                         self.solve_refine_attempted = True
                         self.report({'INFO'}, f"Solve-Retry (avg=None) mit refine_intrinsics_focal_length=True gestartet → {res_retry}")
-                    # Log-Ereignis für Retry-Start (Zeitpunkt sichtbar)
-                    _solve_log(context, None)
+                        # Log-Ereignis für Retry-Start (Zeitpunkt sichtbar)
+                        _solve_log(context, None)
                         return {'RUNNING_MODAL'}
                     except Exception as exc:
                         self.report({'WARNING'}, f"Solve-Retry (avg=None) konnte nicht gestartet werden: {exc}")
-                        # fällt durch zu b)
+                        # Fallback: weiter zu Reduce-Error-Tracks
+                        pass
                 # b) Nach zweitem Solve-Versuch (oder Retry-Start fehlgeschlagen): mindestens 1 Track löschen
                 try:
                     red = run_reduce_error_tracks(context, max_to_delete=1)
