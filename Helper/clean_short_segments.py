@@ -115,6 +115,8 @@ def clean_short_segments(
     min_len: int = 25,
     treat_muted_as_gap: bool = True,
     delete_estimated: bool = False,
+    verbose: bool = False,  # beibehalten für Kompatibilität; ohne Wirkung
+) -> Dict[str, Any]:
 
     clip = _get_active_clip(context)
     if not clip:
