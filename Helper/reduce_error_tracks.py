@@ -1,7 +1,7 @@
 from __future__ import annotations
 import math
 from typing import Dict, Any, List, Tuple, Optional
-
+import sys
 import bpy
 
 __all__ = ("run_reduce_error_tracks", "get_avg_reprojection_error")
@@ -71,8 +71,12 @@ def _find_clip_area_and_region(context: bpy.types.Context):
     return None, None, None
 
 
-def _clip_op_override(context: bpy.types.Context, clip) -> Dict[str, Any] | None:
-    """Baut einen Override-Kontext für Clip-Editor-Operatoren. Fällt auf None zurück, wenn nicht möglich."""
+def _clip_op_override(context: bpy.types.Context, clip, obj: Optional[bpy.types.MovieTrackingObject] = None) -> Dict[str, Any] | None:
+    """
+    Baut einen Override-Kontext für Clip-Editor-Operatoren. Setzt zusätzlich – wenn möglich –
+    das aktive Tracking-Objekt auf 'obj', damit der Operator die Selektion richtig auswertet.
+    Fällt auf None zurück, wenn nicht möglich.
+    """
     area, region, space = _find_clip_area_and_region(context)
     if not area or not region or not space:
         return None
@@ -89,6 +93,16 @@ def _clip_op_override(context: bpy.types.Context, clip) -> Dict[str, Any] | None
     try:
         space.clip = clip
     except Exception:
+        pass
+    # aktives Tracking-Objekt setzen (entscheidend für clip.delete_track)
+    try:
+        tr = clip.tracking
+        if obj is not None and hasattr(tr, "objects"):
+            # Blender erwartet für Operatoren i. d. R. das aktive Objekt
+            if tr.objects.active is not obj:
+                tr.objects.active = obj
+    except Exception:
+        # nicht fatal – Operator kann ggf. trotzdem greifen
         pass
     return override
 
@@ -246,27 +260,17 @@ def run_reduce_error_tracks(
         }
 
     # Operator-Kontext ermitteln
-    override = _clip_op_override(context, clip)
+    override = _clip_op_override(context, clip, obj)
 
     # Löschen via Operator (kontextsensitiv & undo-sicher)
+    op_failed_exc: Optional[Exception] = None
     try:
         if override:
             bpy.ops.clip.delete_track(override, confirm=False)
         else:
-            # Falls kein Override möglich, hoffen wir auf globalen Context
             bpy.ops.clip.delete_track(confirm=False)
     except Exception as ex:
-        # Operator fehlgeschlagen -> keine Löschung garantiert
-        after_cnt = len(obj.tracks)
-        return {
-            "status": f"OP_FAILED: {ex}",
-            "mode": mode,
-            "object": obj.name,
-            "deleted": 0,
-            "before": before_cnt,
-            "after": after_cnt,
-            "names": [],
-        }
+        op_failed_exc = ex
 
     # Depsgraph/UI refresh (Operator macht i. d. R. genug, wir sichern ab)
     try:
@@ -275,10 +279,38 @@ def run_reduce_error_tracks(
         pass
 
     after_cnt = len(obj.tracks)
-    deleted = max(0, before_cnt - after_cnt)  # tatsächliche Differenz
-    # Falls Blender weniger gelöscht hat als selektiert, trimmen wir die gemeldeten Namen konservativ
-    if deleted < len(names):
-        names = names[:deleted]
+    deleted = max(0, before_cnt - after_cnt)  # tatsächliche Differenz nach Operator
+
+    # --- ROBUST FALLBACK ----------------------------------------------------
+    # Wenn Operator scheitert oder kein Track gelöscht wurde, lösche direkt via API.
+    if deleted == 0:
+        # Optionales Debug für Diagnose
+        try:
+            print(f"[ReduceErrorTracks] Operator result → deleted=0; fallback=API ({'with exc' if op_failed_exc else 'no exc'})", file=sys.stderr)
+            if op_failed_exc:
+                print(f"[ReduceErrorTracks] OP_FAILED: {op_failed_exc}", file=sys.stderr)
+        except Exception:
+            pass
+        api_deleted = 0
+        # Sicherheitskopie, weil remove() die Liste invalidiert
+        for t in list(to_remove):
+            try:
+                if t in obj.tracks:
+                    obj.tracks.remove(t)
+                    api_deleted += 1
+            except Exception:
+                # continue trying others
+                pass
+        # Refresh
+        try:
+            bpy.context.view_layer.update()
+        except Exception:
+            pass
+        after_cnt = len(obj.tracks)
+        deleted = api_deleted
+        # Wenn die API weniger/länger löscht, trimmen wir Namen konservativ
+        if deleted < len(names):
+            names = names[:deleted]
 
     return {
         "status": "OK",
