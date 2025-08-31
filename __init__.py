@@ -57,10 +57,14 @@ def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) ->
 
 # GPU-Overlay (Sparkline) – Draw Handler
 _solve_graph_handle = None
-def _draw_solve_graph(_self, context):
+def _draw_solve_graph():
     if gpu is None:
         return
-    scn = getattr(context, "scene", None)
+    # Kontext aus bpy.context beziehen; Draw-Handler liefert keine Args zuverlässig
+    ctx = bpy.context
+    if not ctx:
+        return
+    scn = getattr(ctx, "scene", None)
     if not scn or not getattr(scn, "kaiserlich_solve_graph_enabled", False):
         return
     items = getattr(scn, "kaiserlich_solve_err_log", [])
@@ -72,7 +76,7 @@ def _draw_solve_graph(_self, context):
     vmin, vmax = min(vals), max(vals)
     if abs(vmax - vmin) < 1e-12:
         vmax = vmin + 1e-12
-    region = context.region
+    region = getattr(ctx, "region", None)
     if not region:
         return
     W, H = region.width, region.height
@@ -237,8 +241,9 @@ def register() -> None:
     # Draw-Handler aktivieren
     global _solve_graph_handle
     if gpu is not None and _solve_graph_handle is None:
+        # Keine Args übergeben; Callback zieht selbst den Kontext
         _solve_graph_handle = bpy.types.SpaceClipEditor.draw_handler_add(
-            _draw_solve_graph, (None,), 'WINDOW', 'POST_PIXEL'
+            _draw_solve_graph, (), 'WINDOW', 'POST_PIXEL'
         )
 
 def unregister() -> None:
