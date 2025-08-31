@@ -115,12 +115,6 @@ def clean_short_segments(
     min_len: int = 25,
     treat_muted_as_gap: bool = True,
     delete_estimated: bool = False,
-    """
-    Entfernt Marker-Segmente mit Länge < min_len aus allen Tracks des aktiven Clips.
-    Es werden ausschließlich Marker der betroffenen Segmente gelöscht (Tracks bleiben bestehen).
-
-    Hinweis:
-    - Wenn ein Track anschließend keine Marker mehr hat, bleibt er als leerer Track erhalten.
 
     clip = _get_active_clip(context)
     if not clip:
