@@ -124,6 +124,20 @@ def _resolve_clip(context: bpy.types.Context):
         clip = next(iter(bpy.data.movieclips), None)
     return clip
 
+# --- Blender 4.4: Refine-Flag direkt in Tracking-Settings spiegeln ----------
+def _apply_refine_focal_flag(context: bpy.types.Context, flag: bool) -> None:
+    """Setzt movieclip.tracking.settings.refine_intrinsics_focal_length gemäß flag."""
+    try:
+        clip = _resolve_clip(context)
+        tr = getattr(clip, "tracking", None) if clip else None
+        settings = getattr(tr, "settings", None) if tr else None
+        if settings and hasattr(settings, "refine_intrinsics_focal_length"):
+            settings.refine_intrinsics_focal_length = bool(flag)
+            print(f"[Coordinator] refine_intrinsics_focal_length → {bool(flag)}")
+        else:
+            print("[Coordinator] WARN: refine_intrinsics_focal_length nicht verfügbar")
+    except Exception as exc:
+        print(f"[Coordinator] WARN: refine-Flag konnte nicht gesetzt werden: {exc}")
 
 def _snapshot_track_ptrs(context: bpy.types.Context) -> list[int]:
     """
@@ -560,6 +574,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     scn["refine_intrinsics_focal_length"] = True
                 except Exception:
                     pass
+                # Flag unmittelbar in die Tracking-Settings spiegeln (Retry mit Refine)
+                _apply_refine_focal_flag(context, True)
                 try:
                     res_retry = solve_camera_only(context)
                     self.solve_refine_attempted = True
@@ -647,6 +663,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         scn["refine_intrinsics_focal_length"] = False
                     except Exception:
                         pass
+                    # Flag unmittelbar in die Tracking-Settings spiegeln (erster Solve ohne Refine)
+                    _apply_refine_focal_flag(context, False)
                     self.solve_refine_attempted = False
                     res = solve_camera_only(context)
                     self.report({'INFO'}, f"SolveCamera gestartet → {res}")
