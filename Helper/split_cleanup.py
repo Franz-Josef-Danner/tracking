@@ -10,6 +10,25 @@ from .mute_ops import mute_marker_path, mute_unassigned_markers
 
 _VERBOSE_SCENE_KEY = "tco_verbose_split"
 
+def _disable_estimated_markers(track: bpy.types.MovieTrackingTrack) -> None:
+    """Alle 'estimated' Marker in diesem Track hart auf 'disabled' setzen."""
+    try:
+        for m in getattr(track, "markers", []):
+            # Manche Builds haben direkt is_estimated, andere nur über Flag-Logik
+            if getattr(m, "is_estimated", False):
+                # Marker stumm/disabled setzen
+                try:
+                    m.mute = True
+                except Exception:
+                    pass
+                # Flag DISABLED zusätzlich setzen, falls vorhanden
+                try:
+                    m.flag |= getattr(bpy.types.MovieTrackingMarker, "DISABLED", 2)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
 
 def _is_verbose(scene) -> bool:
     try:
@@ -292,6 +311,8 @@ def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable
     start_list = list(seed_tracks)
     _log(scene, f"IterSplit: phase-1 seed_count={len(start_list)}")
     for tr in list(start_list):
+        # Ergänzung: zuerst alle 'estimated' Marker auf disabled setzen
+        _disable_estimated_markers(tr)
         segs = _segments_by_consecutive_frames_unmuted(tr)
         if len(segs) > 1:
             new_tr = _dup_once_with_ui(context, area, region, space, tr)
