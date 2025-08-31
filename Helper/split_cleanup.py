@@ -425,6 +425,19 @@ def recursive_split_cleanup(context, area, region, space, tracks):
             leftover_multi += 1
     if leftover_multi == 0:
         pass
+
+    # --- Debug: Verbliebene Multi-Segment-Tracks ausgeben ---
+    for t in clip.tracking.tracks:
+        segs = _segments_by_consecutive_frames_unmuted(t)
+        if len(segs) > 1:
+            print(f"[SplitCleanup-DEBUG] Track '{t.name}' hat {len(segs)} Segmente:")
+            for i, seg in enumerate(segs, start=1):
+                if not seg:
+                    continue
+                start_frame = seg[0]
+                end_frame = seg[-1]
+                print(f"    Segment {i}: Start={start_frame}, Ende={end_frame}")
+
     # 3) Safety
     mute_unassigned_markers(clip.tracking.tracks)
 
