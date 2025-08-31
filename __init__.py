@@ -7,7 +7,13 @@ Kaiserlich Tracker – Top-Level Add-on (__init__.py)
 from __future__ import annotations
 import bpy
 from bpy.types import PropertyGroup, Panel, Operator as BpyOperator
-from bpy.props import IntProperty, FloatProperty, CollectionProperty
+from bpy.props import IntProperty, FloatProperty, CollectionProperty, BoolProperty, StringProperty
+import time
+try:
+    import gpu
+    from gpu_extras.batch import batch_for_shader
+except Exception:
+    gpu = None
 
 # WICHTIG: nur Klassen importieren, kein register() von Submodulen aufrufen
 from .Operator.tracking_coordinator import CLIP_OT_tracking_coordinator
@@ -30,6 +36,64 @@ class RepeatEntry(PropertyGroup):
     frame: IntProperty(name="Frame", default=0, min=0)
     count: IntProperty(name="Count", default=0, min=0)
 
+# --- Solve-Error Log Items ---
+class KaiserlichSolveErrItem(PropertyGroup):
+    attempt: IntProperty(name="Attempt", default=0, min=0)
+    value:   FloatProperty(name="Avg Error", default=float("nan"))
+    stamp:   StringProperty(name="Time", default="")
+
+# Öffentliche Helper-Funktion (vom Coordinator aufrufbar)
+def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) -> None:
+    """Logge einen Solve-Versuch (Avg-Error oder NaN) in Scene.kaiserlich_solve_err_log."""
+    scn = context.scene
+    try:
+        scn.kaiserlich_solve_attempts += 1
+    except Exception:
+        scn["kaiserlich_solve_attempts"] = int(scn.get("kaiserlich_solve_attempts", 0)) + 1
+    item = scn.kaiserlich_solve_err_log.add()
+    item.attempt = int(scn.kaiserlich_solve_attempts)
+    item.value   = float("nan") if (value is None) else float(value)
+    item.stamp   = time.strftime("%H:%M:%S")
+
+# GPU-Overlay (Sparkline) – Draw Handler
+_solve_graph_handle = None
+def _draw_solve_graph(_self, context):
+    if gpu is None:
+        return
+    scn = getattr(context, "scene", None)
+    if not scn or not getattr(scn, "kaiserlich_solve_graph_enabled", False):
+        return
+    items = getattr(scn, "kaiserlich_solve_err_log", [])
+    if len(items) < 2:
+        return
+    vals = [it.value for it in items if it.value == it.value]  # filter NaN
+    if len(vals) < 2:
+        return
+    vmin, vmax = min(vals), max(vals)
+    if abs(vmax - vmin) < 1e-12:
+        vmax = vmin + 1e-12
+    region = context.region
+    if not region:
+        return
+    W, H = region.width, region.height
+    pad = 16
+    gw, gh = min(320, W - 2*pad), 80
+    ox, oy = W - gw - pad, pad
+    take = items[-200:]
+    coords = []
+    for i, it in enumerate(take):
+        x = ox + (i / max(1, len(take)-1)) * gw
+        y = oy if it.value != it.value else oy + ((it.value - vmin) / (vmax - vmin)) * gh
+        coords.append((x, y))
+    shader = gpu.shader.from_builtin('2D_UNIFORM_COLOR')
+    # Rahmen
+    box = [(ox, oy), (ox+gw, oy), (ox+gw, oy+gh), (ox, oy+gh)]
+    batch = batch_for_shader(shader, 'LINE_LOOP', {"pos": box})
+    shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.35)); batch.draw(shader)
+    # Kurve
+    batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": coords})
+    shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.9)); batch.draw(shader)
+
 def _register_scene_props() -> None:
     sc = bpy.types.Scene
     if not hasattr(sc, "repeat_frame"):
@@ -49,10 +113,26 @@ def _register_scene_props() -> None:
             name="Error-Limit (px)", default=2.0, min=0.1, max=10.0,
             description="Maximal tolerierte Reprojektion (Pixel)",
         )
+    # Solve-Log Properties
+    if not hasattr(sc, "kaiserlich_solve_err_log"):
+        sc.kaiserlich_solve_err_log = CollectionProperty(type=KaiserlichSolveErrItem)
+    if not hasattr(sc, "kaiserlich_solve_err_idx"):
+        sc.kaiserlich_solve_err_idx = IntProperty(name="Index", default=0, min=0)
+    if not hasattr(sc, "kaiserlich_solve_attempts"):
+        sc.kaiserlich_solve_attempts = IntProperty(name="Solve Attempts", default=0, min=0)
+    if not hasattr(sc, "kaiserlich_solve_graph_enabled"):
+        sc.kaiserlich_solve_graph_enabled = BoolProperty(
+            name="Overlay Graph", default=True,
+            description="Sparkline-Overlay des Avg-Errors im CLIP-Editor anzeigen"
+        )
 
 def _unregister_scene_props() -> None:
     sc = bpy.types.Scene
-    for name in ("repeat_frame", "marker_frame", "frames_track", "error_track"):
+    for name in (
+        "repeat_frame", "marker_frame", "frames_track", "error_track",
+        "kaiserlich_solve_err_log", "kaiserlich_solve_err_idx",
+        "kaiserlich_solve_attempts", "kaiserlich_solve_graph_enabled",
+    ):
         if hasattr(sc, name):
             try:
                 delattr(sc, name)
@@ -102,13 +182,48 @@ class CLIP_PT_kaiserlich_panel(Panel):
         if hasattr(scene, "error_track"):
             layout.prop(scene, "error_track")
         layout.separator()
+        # Solve QA – Overlay + Tabelle
+        box = layout.box()
+        row = box.row(align=True)
+        row.label(text="Solve QA")
+        row.prop(scene, "kaiserlich_solve_graph_enabled", text="Overlay")
+        box.template_list(
+            "KAISERLICH_UL_solve_err", "",  # UIList-ID
+            scene, "kaiserlich_solve_err_log",
+            scene, "kaiserlich_solve_err_idx",
+            rows=5
+        )
+        box.operator("kaiserlich.clear_solve_err", icon="TRASH", text="Clear Solve Log")
+        layout.separator()
         layout.operator("clip.kaiserlich_coordinator_launcher", text="Coordinator starten")
+# --- UIList & Operator für Solve-Log ---
+class KAISERLICH_UL_solve_err(bpy.types.UIList):
+    bl_idname = "KAISERLICH_UL_solve_err"
+    def draw_item(self, _context, layout, _data, item, _icon, _active_data, _active_propname, _index):
+        row = layout.row(align=True)
+        row.label(text=f"#{item.attempt:02d}")
+        txt = "n/a" if item.value != item.value else f"{item.value:.3f}px"
+        row.label(text=txt)
+        row.label(text=item.stamp)
+
+class KAISERLICH_OT_ClearSolveErr(BpyOperator):
+    bl_idname = "kaiserlich.clear_solve_err"
+    bl_label = "Clear Solve Log"
+    bl_options = {"INTERNAL"}
+    def execute(self, context):
+        scn = context.scene
+        scn.kaiserlich_solve_err_log.clear()
+        scn.kaiserlich_solve_attempts = 0
+        return {'FINISHED'}
 
 # ---------------------------------------------------------------------------
 # Register/Unregister
 # ---------------------------------------------------------------------------
 _CLASSES = (
     RepeatEntry,
+    KaiserlichSolveErrItem,
+    KAISERLICH_UL_solve_err,
+    KAISERLICH_OT_ClearSolveErr,
     CLIP_OT_tracking_coordinator,            # modal coordinator
     CLIP_OT_bidirectional_track,             # bidi helper
     CLIP_OT_kaiserlich_coordinator_launcher, # launcher
@@ -119,8 +234,22 @@ def register() -> None:
     for cls in _CLASSES:
         bpy.utils.register_class(cls)
     _register_scene_props()
+    # Draw-Handler aktivieren
+    global _solve_graph_handle
+    if gpu is not None and _solve_graph_handle is None:
+        _solve_graph_handle = bpy.types.SpaceClipEditor.draw_handler_add(
+            _draw_solve_graph, (None,), 'WINDOW', 'POST_PIXEL'
+        )
 
 def unregister() -> None:
+    # Draw-Handler entfernen
+    global _solve_graph_handle
+    if _solve_graph_handle is not None and gpu is not None:
+        try:
+            bpy.types.SpaceClipEditor.draw_handler_remove(_solve_graph_handle, 'WINDOW')
+        except Exception:
+            pass
+        _solve_graph_handle = None
     _unregister_scene_props()
     for cls in reversed(_CLASSES):
         try:
