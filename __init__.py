@@ -82,6 +82,13 @@ def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) ->
     item.attempt = int(scn.kaiserlich_solve_attempts)
     item.value   = v
     item.stamp   = time.strftime("%H:%M:%S")
+    # Neuester Eintrag ganz nach oben (Index 0)
+    try:
+        coll = scn.kaiserlich_solve_err_log
+        coll.move(len(coll) - 1, 0)
+        scn.kaiserlich_solve_err_idx = 0
+    except Exception:
+        pass
     # UI-Refresh (CLIP-Editor + Sidebar)
     _tag_clip_redraw()
 # GPU-Overlay (Sparkline) – Draw Handler
@@ -92,11 +99,12 @@ def _draw_solve_graph():
     scn = getattr(bpy.context, "scene", None)
     if not scn or not getattr(scn, "kaiserlich_solve_graph_enabled", False):
         return
-    items = getattr(scn, "kaiserlich_solve_err_log", [])
-    # numerische Werte extrahieren (NaN ignorieren)
-    vals = [it.value for it in items if it.value == it.value]
-    if len(vals) == 0:
+    coll = getattr(scn, "kaiserlich_solve_err_log", [])
+    # Chronologische Reihenfolge erzwingen (ältester→neuester), NaN ignorieren
+    seq = sorted((it.attempt, it.value) for it in coll if it.value == it.value)
+    if not seq:
         return
+    vals = [v for _, v in seq]
     vmin, vmax = min(vals), max(vals)
     if abs(vmax - vmin) < 1e-12:
         vmax = vmin + 1e-12
@@ -111,13 +119,14 @@ def _draw_solve_graph():
     pad = 16
     gw, gh = min(320, W - 2*pad), 80
     ox, oy = W - gw - pad, pad
-    take = items[-200:]
+    # Letzte 200 Punkte (chronologisch)
+    take = seq[-200:]
     n = len(take)
     ln = max(1, n - 1)  # vermeidet Div/0, erlaubt 1-Punkt-Stub
     coords = []
-    for i, it in enumerate(take):
+    for i, (_att, val) in enumerate(take):
         x = ox + (i / ln) * gw
-        y = oy if it.value != it.value else oy + ((it.value - vmin) / (vmax - vmin)) * gh
+        y = oy + ((val - vmin) / (vmax - vmin)) * gh
         coords.append((x, y))
     shader = gpu.shader.from_builtin('UNIFORM_COLOR')
     # Rahmen
