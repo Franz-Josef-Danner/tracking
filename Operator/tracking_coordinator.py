@@ -622,7 +622,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # 4) Reduce-Error-Tracks: x = ceil(avg/target), clamp 1..5            
             import math
             t = target_err if (target_err == target_err and target_err > 1e-8) else 0.6
-            x = max(1, min(5, int(math.ceil(avg_err / t))))
+            x = max(1, min(10, int(math.ceil(avg_err / t))))
             red = run_reduce_error_tracks(context, max_to_delete=x)
             self.report({'INFO'}, f"ReduceErrorTracks: avg={avg_err:.4f} target={t:.4f} → delete={x} → done={red.get('deleted')} {red.get('names')}")
             # 5) Reset & zurück zu FIND_LOW
