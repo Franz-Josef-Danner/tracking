@@ -47,50 +47,34 @@ def _log(scene, msg: str) -> None:
 
 def _segments_by_consecutive_frames_unmuted(track) -> List[List[int]]:
     """
-    Segmentierung nach Frame-Kontinuität, nur mit 'tracked'-Markern.
-    'estimated' Marker werden explizit als Lücke gewertet.
+    Dope-Sheet-konforme Segmentierung:
+    - Basis ausschließlich: **existierende, ungemutete Markerframes** (Keyframes in track.markers)
+    - Jede Frame-Lücke (f != last+1) erzeugt einen Segmentbruch
+    - Viewer-Status (z. B. „estimated“) ist irrelevant, weil keine Keyframes
+      → entspricht der Darstellung im Dope Sheet.
     """
-    segs: List[List[int]] = []
-    curr: List[int] = []
-
     try:
-        for m in sorted(getattr(track, "markers", []), key=lambda mm: int(mm.frame)):
-            f = int(getattr(m, "frame", -1))
-            if f < 0:
-                continue
-
-            # --- Status prüfen ---
-            # Flag (Bitmask), mute und is_estimated sind die entscheidenden Kriterien
-            flag = getattr(m, "flag", 0)
-            mute = getattr(m, "mute", False)
-            est  = bool(getattr(m, "is_estimated", False))  # manche Builds nennen es auch 'estimated'
-
-            # gültig nur, wenn Marker tracked UND nicht muted
-            is_tracked = (not mute) and not est and (flag & 1)  # Bit0 == TRACKED
-
-            if is_tracked:
-                # wenn Segment leer → neu anfangen
-                if not curr:
-                    curr = [f]
-                else:
-                    # fortlaufend?
-                    if f == curr[-1] + 1:
-                        curr.append(f)
-                    else:
-                        segs.append(curr)
-                        curr = [f]
-            else:
-                # estimated oder disabled → Segmentende erzwingen
-                if curr:
-                    segs.append(curr)
-                    curr = []
-        # nach der Schleife Rest anhängen
-        if curr:
-            segs.append(curr)
-
+        frames = sorted({
+            int(m.frame)
+            for m in getattr(track, "markers", [])
+            if hasattr(m, "frame") and m.frame is not None and not getattr(m, "mute", False)
+        })
     except Exception:
+        frames = []
+
+    if not frames:
         return []
 
+    segs: List[List[int]] = []
+    curr: List[int] = [frames[0]]
+    for f in frames[1:]:
+        if f == curr[-1] + 1:
+            curr.append(f)
+        else:
+            segs.append(curr)
+            curr = [f]
+    if curr:
+        segs.append(curr)
     return segs
 
 
@@ -225,16 +209,10 @@ def _delete_first_segment(
     if not first:
         return
 
-    # Standard-Löschgrenze: letztes Frame des ersten Segments
-    limit = int(first[-1])
-
-    # Falls es ein zweites Segment gibt, stelle sicher, dass wir die Frames
-    # innerhalb der Sicherheitszone **vor** dessen Start nicht überschreiten.
-    if len(segs) >= 2:
-        start2 = int(segs[1][0])
-        max_del = start2 - (gap_frames if isinstance(gap_frames, int) and gap_frames > 0 else 1) - 1
-        if max_del < limit:
-            limit = max_del
+    # WICHTIG:
+    # Bei back-to-back-Segmenten blieb zuvor häufig das letzte Frame des ersten Segments
+    # stehen (Limit-Clamp). Wir löschen daher **alle Frames**, die explizit zum ersten
+    # Segment gehören – ohne zusätzliche Grenzklammer.
 
     with bpy.context.temp_override(
         window=window, screen=window.screen if window else None,
@@ -244,8 +222,8 @@ def _delete_first_segment(
             try:
                 f = int(getattr(m, "frame", -10))
                 # Mute-Status wird bewusst ignoriert: harte Segmenttrennung gewünscht.
-                # Nur Frames des ersten Segments löschen und nie über die Grenze
-                if f in first and f <= limit:
+                # **Alle** Frames des ersten Segments entfernen.
+                if f in first:
                     track.markers.delete_frame(f)
             except Exception:
                 pass
