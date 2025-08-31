@@ -94,6 +94,12 @@ def _clip_op_override(context: bpy.types.Context, clip, obj: Optional[bpy.types.
         space.clip = clip
     except Exception:
         pass
+    # Space-Modus (Tracking) sicherstellen – Operatoren erwarten TRACKING
+    try:
+        if hasattr(space, "mode") and space.mode != 'TRACKING':
+            space.mode = 'TRACKING'
+    except Exception:
+        pass
     # aktives Tracking-Objekt setzen (entscheidend für clip.delete_track)
     try:
         tr = clip.tracking
@@ -264,13 +270,19 @@ def run_reduce_error_tracks(
 
     # Löschen via Operator (kontextsensitiv & undo-sicher)
     op_failed_exc: Optional[Exception] = None
-    try:
-        if override:
-            bpy.ops.clip.delete_track(override, confirm=False)
-        else:
+    if override:
+        try:
+            # KORREKT: Kontext via temp_override injizieren, Operator ohne dict-Arg aufrufen
+            with bpy.context.temp_override(**override):
+                bpy.ops.clip.delete_track(confirm=False)
+        except Exception as ex:
+            op_failed_exc = ex
+    else:
+        # Fallback: globaler Kontext (kann scheitern; API-Fallback greift dann)
+        try:
             bpy.ops.clip.delete_track(confirm=False)
-    except Exception as ex:
-        op_failed_exc = ex
+        except Exception as ex:
+            op_failed_exc = ex
 
     # Depsgraph/UI refresh (Operator macht i. d. R. genug, wir sichern ab)
     try:
