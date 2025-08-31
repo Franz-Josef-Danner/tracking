@@ -54,7 +54,22 @@ def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) ->
     item.attempt = int(scn.kaiserlich_solve_attempts)
     item.value   = float("nan") if (value is None) else float(value)
     item.stamp   = time.strftime("%H:%M:%S")
-
+    # UI-Refresh (CLIP-Editor + Sidebar), damit Overlay/Liste sofort sichtbar aktualisiert
+    try:
+        wm = bpy.context.window_manager
+        if wm:
+            for win in wm.windows:
+                scr = getattr(win, "screen", None)
+                if not scr:
+                    continue
+                for area in scr.areas:
+                    if area.type != "CLIP_EDITOR":
+                        continue
+                    for region in area.regions:
+                        if region.type in {"WINDOW", "UI"}:
+                            region.tag_redraw()
+    except Exception:
+        pass
 # GPU-Overlay (Sparkline) – Draw Handler
 _solve_graph_handle = None
 def _draw_solve_graph():
