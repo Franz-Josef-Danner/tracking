@@ -31,27 +31,13 @@ except Exception:
         evaluate_marker_count = None  # type: ignore
 from ..Helper.tracker_settings import apply_tracker_settings
 
-# ---- Solve-Logger: robust auflösen, ohne Paketstruktur-Annahme ----------------
-def _solve_log(context, value):
-    """Laufzeit-sicherer Aufruf von __init__.kaiserlich_solve_log_add()."""
-    try:
-        import sys, importlib
-        # Root-Paket aus __package__/__name__ ableiten
-        pkg = (__package__ or __name__).split(".", 1)[0]
-        mod = sys.modules.get(pkg) or importlib.import_module(pkg)
-        fn = getattr(mod, "kaiserlich_solve_log_add", None)
-        if callable(fn):
-            fn(context, value)
-    except Exception:
-        # Silent: Logging darf den Solve-Flow nicht bremsen
-        pass
 # ---- Solve-Logger: robust auflösen, ohne auf Paketstruktur zu vertrauen ----
 def _solve_log(context, value):
     """Laufzeit-sicherer Aufruf von __init__.kaiserlich_solve_log_add()."""
     try:
         import sys, importlib
-        # 1) Root-Paket aus __package__ ableiten (z.B. "tracking")
-        root_name = (__package__ or "").split(".", 1)[0]
+        # 1) Root-Paket aus __package__/__name__ ableiten
+        root_name = (__package__ or __name__).split(".", 1)[0]
         if not root_name:
             # Fallback: Vermutung "tracking"
             root_name = "tracking"
@@ -583,39 +569,37 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # Wenn keine Auswertungsfunktion vorhanden ist, einfach abschließen
             self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}")
             return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
-        # PHASE: SOLVE_EVAL – Solve-Error prüfen, ggf. schlechteste Tracks löschen, dann Loop neu starten
+        # PHASE: SOLVE_EVAL – Solve prüfen, loggen, Retry/Reduce steuern
+        if self.phase == PH_SOLVE_EVAL:
+            scn = context.scene
+            try:
+                target_err = float(scn.get("error_track", 2.0))
+            except Exception:
+                target_err = 2.0
+            # 1) messen & loggen
+            avg_err = get_avg_reprojection_error(context)
+            _solve_log(context, avg_err)
+            # 2) kein Wert → Retry einmalig, sonst mind. 1 Track löschen
             if avg_err is None:
-                # a) Retry noch nicht versucht → Retry anstoßen
                 if not getattr(self, "solve_refine_attempted", False):
-                    try:
-                        scn["refine_intrinsics_focal_length"] = True
-                    except Exception:
-                        pass
+                    try: scn["refine_intrinsics_focal_length"] = True
+                    except Exception: pass
                     _apply_refine_focal_flag(context, True)
                     try:
                         res_retry = solve_camera_only(context)
                         self.solve_refine_attempted = True
-                        self.report({'INFO'}, f"Solve-Retry (avg=None) mit refine_intrinsics_focal_length=True gestartet → {res_retry}")
-                        # Log-Ereignis für Retry-Start (Zeitpunkt sichtbar)
-                        _solve_log(context, None)
+                        self.report({'INFO'}, f"Solve-Retry (avg=None) mit refine_intrinsics_focal_length=True → {res_retry}")
+                        _solve_log(context, None)  # Marker für Retry-Start
                         return {'RUNNING_MODAL'}
                     except Exception as exc:
-                        self.report({'WARNING'}, f"Solve-Retry (avg=None) konnte nicht gestartet werden: {exc}")
-                        # Fallback: weiter zu Reduce-Error-Tracks
-                        pass
-                # b) Nach zweitem Solve-Versuch (oder Retry-Start fehlgeschlagen): mindestens 1 Track löschen
+                        self.report({'WARNING'}, f"Solve-Retry (avg=None) fehlgeschlagen: {exc}")
+                # erzwungen 1 löschen
                 try:
                     red = run_reduce_error_tracks(context, max_to_delete=1)
-                    del_cnt = int(red.get('deleted', 0))
-                    del_names = list(red.get('names', []))
+                    self.report({'INFO'}, f"ReduceErrorTracks(FORCE): delete=1 → done={red.get('deleted')} {red.get('names')}")
                 except Exception as _exc:
-                    del_cnt, del_names = 0, []
                     self.report({'WARNING'}, f"ReduceErrorTracks(FORCE) Fehler: {_exc}")
-                self.report(
-                    {'INFO'},
-                    f"ReduceErrorTracks(FORCE): avg=None target=n/a → delete=1 → done={del_cnt} {del_names}"
-                )
-                # Reset & zurück in den Hauptzyklus
+                # reset → neuer Zyklus
                 self.detection_threshold = None
                 self.pre_ptrs = None
                 self.target_frame = None
@@ -623,39 +607,30 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self.solve_refine_attempted = False
                 self.phase = PH_FIND_LOW
                 return {'RUNNING_MODAL'}
-            # 3) Entscheidung
+            # 3) Ziel erreicht?
             if avg_err <= target_err:
                 self.report({'INFO'}, f"Solve OK: avg={avg_err:.4f} ≤ target={target_err:.4f}")
-                # Abschließendes Logging ist bereits erfolgt; UI ist aktuell.
                 return self._finish(context, info="Sequenz abgeschlossen (Solve-Ziel erreicht).", cancelled=False)
-            # 3b) Retry-Pfad: Einmaliger Re-Solve mit refine_intrinsics_focal_length=True,
-            #      falls noch nicht versucht und Zielwert nicht erreicht.
+            # 4) Einmaliger Retry mit Refine, falls noch offen
             if not getattr(self, "solve_refine_attempted", False):
-                try:
-                    scn["refine_intrinsics_focal_length"] = True
-                except Exception:
-                    pass
-                # Flag unmittelbar in die Tracking-Settings spiegeln (Retry mit Refine)
+                try: scn["refine_intrinsics_focal_length"] = True
+                except Exception: pass
                 _apply_refine_focal_flag(context, True)
                 try:
                     res_retry = solve_camera_only(context)
                     self.solve_refine_attempted = True
-                    self.report({'INFO'}, f"Solve-Retry mit refine_intrinsics_focal_length=True gestartet → {res_retry}")
-                    # Retry-Start als Marker loggen
+                    self.report({'INFO'}, f"Solve-Retry mit refine_intrinsics_focal_length=True → {res_retry}")
                     _solve_log(context, None)
-                    # Im nächsten TIMER-Tick wird der neue avg_err erneut geprüft.
                     return {'RUNNING_MODAL'}
                 except Exception as exc:
                     self.report({'WARNING'}, f"Solve-Retry konnte nicht gestartet werden: {exc}")
-                    # Fällt zurück auf Reduce-Error-Tracks
-
-            # 4) Reduce-Error-Tracks: x = ceil(avg/target), clamp 1..5            
+            # 5) Reduktion: x = ceil(avg/target), clamp 1..20
             import math
             t = target_err if (target_err == target_err and target_err > 1e-8) else 0.6
             x = max(1, min(20, int(math.ceil(avg_err / t))))
             red = run_reduce_error_tracks(context, max_to_delete=x)
             self.report({'INFO'}, f"ReduceErrorTracks: avg={avg_err:.4f} target={t:.4f} → delete={x} → done={red.get('deleted')} {red.get('names')}")
-            # 5) Reset & zurück zu FIND_LOW
+            # 6) Reset & zurück in den Hauptzyklus
             self.detection_threshold = None
             self.pre_ptrs = None
             self.target_frame = None
