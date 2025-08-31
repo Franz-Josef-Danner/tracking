@@ -88,6 +88,22 @@ def _iter_segments(
         segs.append(curr)
     return segs
 
+def _is_estimated(m: bpy.types.MovieTrackingMarker) -> bool:
+    """Ein Marker gilt als 'estimated', wenn er NICHT keyframed ist.
+    Primärsignal: not is_keyed. Fallback: vorhandenes 'is_estimate' Flag.
+    """
+    try:
+        if hasattr(m, "is_keyed"):
+            return not bool(getattr(m, "is_keyed"))
+    except Exception:
+        pass
+    # Fallback – nur verwenden, wenn es existiert:
+    if hasattr(m, "is_estimate"):
+        try:
+            return bool(getattr(m, "is_estimate"))
+        except Exception:
+            return False
+    return False
 
 # ------------------------------------------------------------
 # Public API
@@ -98,15 +114,14 @@ def clean_short_segments(
     *,
     min_len: int = 25,
     treat_muted_as_gap: bool = True,
-    verbose: bool = False,  # beibehalten für Kompatibilität; ohne Wirkung
-) -> Dict[str, Any]:
+    delete_estimated: bool = False,
     """
     Entfernt Marker-Segmente mit Länge < min_len aus allen Tracks des aktiven Clips.
     Es werden ausschließlich Marker der betroffenen Segmente gelöscht (Tracks bleiben bestehen).
 
     Hinweis:
     - Wenn ein Track anschließend keine Marker mehr hat, bleibt er als leerer Track erhalten.
-    """
+
     clip = _get_active_clip(context)
     if not clip:
         return {"status": "FAILED", "reason": "no active MovieClip"}
@@ -116,6 +131,7 @@ def clean_short_segments(
     segments_removed = 0
     markers_removed = 0
     tracks_emptied = 0
+    estimated_removed = 0
 
     # Optional: Depsgraph für UI-Konsistenz
     deps = context.evaluated_depsgraph_get() if hasattr(context, "evaluated_depsgraph_get") else None
@@ -126,6 +142,40 @@ def clean_short_segments(
         markers = list(tr.markers)
         if not markers:
             continue
+
+        # 1) OPTION: Alle 'estimated' Marker unabhängig von Segmenten löschen
+        if delete_estimated:
+            deleted_any_est = False
+            # rückwärts löschen → stabil
+            for m in reversed(markers):
+                try:
+                    if _is_estimated(m):
+                        f = int(getattr(m, "frame", -10))
+                        tr.markers.delete_frame(f)
+                        markers_removed += 1
+                        estimated_removed += 1
+                        deleted_any_est = True
+                except Exception:
+                    pass
+            if deleted_any_est:
+                # Marker-Snapshot nach Löschungen erneuern
+                markers = list(tr.markers)
+                if not markers:
+                    # Track könnte leer geworden sein
+                    try:
+                        if len(tr.markers) == 0:
+                            tracks_emptied += 1
+                    except Exception:
+                        pass
+                    # Depsgraph/UI aktualisieren
+                    if deps is not None:
+                        try:
+                            deps.update()
+                        except Exception:
+                            pass
+                    # Nächster Track
+                    continue
+
 
         # Set aller vorhandenen Frames des Tracks (für Save-Gate Prüfung)
         try:
@@ -192,4 +242,6 @@ def clean_short_segments(
         "segments_removed": segments_removed,
         "markers_removed": markers_removed,
         "tracks_emptied": tracks_emptied,
+        "estimated_removed": estimated_removed,
+
     }
