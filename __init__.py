@@ -109,7 +109,7 @@ def _draw_solve_graph():
         x = ox + (i / ln) * gw
         y = oy if it.value != it.value else oy + ((it.value - vmin) / (vmax - vmin)) * gh
         coords.append((x, y))
-    shader = gpu.shader.from_builtin('2D_UNIFORM_COLOR')
+    shader = gpu.shader.from_builtin('UNIFORM_COLOR')
     # Rahmen
     box = [(ox, oy), (ox+gw, oy), (ox+gw, oy+gh), (ox, oy+gh)]
     batch = batch_for_shader(shader, 'LINE_LOOP', {"pos": box})
