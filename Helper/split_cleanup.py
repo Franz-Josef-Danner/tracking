@@ -28,41 +28,52 @@ def _log(scene, msg: str) -> None:
 
 def _segments_by_consecutive_frames_unmuted(track) -> List[List[int]]:
     """
-    Segmentierung nach Frame-Kontinuität, **nur für valide Marker**.
-    Als valide gelten Marker mit Status == 'TRACKED' und is_keyframe==True.
-    Alle anderen (estimated, disabled, interpoliert) werden ignoriert
-    und damit als Lücke interpretiert.
+    Segmentierung nach Frame-Kontinuität, nur mit 'tracked'-Markern.
+    'estimated' Marker werden explizit als Lücke gewertet.
     """
-    frames: list[int] = []
+    segs: List[List[int]] = []
+    curr: List[int] = []
+
     try:
-        for m in getattr(track, "markers", []):
-            f = getattr(m, "frame", None)
-            if f is None:
+        for m in sorted(getattr(track, "markers", []), key=lambda mm: int(mm.frame)):
+            f = int(getattr(m, "frame", -1))
+            if f < 0:
                 continue
-            # nur echte Tracking-Marker berücksichtigen
-            st = getattr(m, "flag", 0)  # Blender API: Flags enthalten Status
-            is_key = bool(getattr(m, "is_keyed", False) or getattr(m, "is_keyframe", False))
-            # Flag-Konstante: 1 << 0 == TRACKED, 1 << 1 == DISABLED, etc.
-            if (st & getattr(bpy.types.MovieTrackingMarker, "TRACKED", 1)) and is_key:
-                frames.append(int(f))
+
+            # --- Status prüfen ---
+            # Flag (Bitmask), mute und is_estimated sind die entscheidenden Kriterien
+            flag = getattr(m, "flag", 0)
+            mute = getattr(m, "mute", False)
+            est  = bool(getattr(m, "is_estimated", False))  # manche Builds nennen es auch 'estimated'
+
+            # gültig nur, wenn Marker tracked UND nicht muted
+            is_tracked = (not mute) and not est and (flag & 1)  # Bit0 == TRACKED
+
+            if is_tracked:
+                # wenn Segment leer → neu anfangen
+                if not curr:
+                    curr = [f]
+                else:
+                    # fortlaufend?
+                    if f == curr[-1] + 1:
+                        curr.append(f)
+                    else:
+                        segs.append(curr)
+                        curr = [f]
+            else:
+                # estimated oder disabled → Segmentende erzwingen
+                if curr:
+                    segs.append(curr)
+                    curr = []
+        # nach der Schleife Rest anhängen
+        if curr:
+            segs.append(curr)
+
     except Exception:
         return []
 
-    frames = sorted(set(frames))
-    if not frames:
-        return []
-
-    segs: List[List[int]] = []
-    curr = [frames[0]]
-    for f in frames[1:]:
-        if f == curr[-1] + 1:
-            curr.append(f)
-        else:
-            segs.append(curr)
-            curr = [f]
-    if curr:
-        segs.append(curr)
     return segs
+
 
 
 def _segment_lengths_unmuted(track: bpy.types.MovieTrackingTrack) -> List[int]:
