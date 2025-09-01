@@ -19,6 +19,7 @@ MOTION_MODEL_BY_COUNT = {
 
 SCENE_STATE_PROP = "tracking_state_json"  # JSON in der Szene
 
+
 @dataclass
 class FrameEntry:
     count: int = 1  # wie oft dieser Frame durchlaufen wurde (1..)
@@ -130,7 +131,7 @@ def _popup_error_report(context: bpy.types.Context, frame: int, entry: Dict[str,
 # ---------- Öffentliche API ----------
 
 def orchestrate_on_jump(context: bpy.types.Context, frame: int) -> None:
-    """Am Ende von jump_to_frame aufrufen.
+    """Am Ende von jump_to_frame aufrufen (oder direkt vom Coordinator).
     Regeln:
     - Frame erstmalig: count=1, Model=A1(Loc).
     - Bereits vorhanden: count += 1; setze Model gem. count.
@@ -161,14 +162,11 @@ def orchestrate_on_jump(context: bpy.types.Context, frame: int) -> None:
         model = MOTION_MODEL_BY_COUNT[count]
         _set_motion_model_for_all_selected_tracks(context, model)
         _set_triplet_mode_on_scene(context, None)
-
     elif 6 <= count <= 9:
         best_model = _pick_best_model_from_A1_A5(entry)
         _set_motion_model_for_all_selected_tracks(context, best_model)
         _set_triplet_mode_on_scene(context, count - 5)  # 1..4
-
     else:
-        # >10 ist durch return oben nicht erreichbar; falls doch, fix auf bestes Model + Triplet 4
         best_model = _pick_best_model_from_A1_A5(entry)
         _set_motion_model_for_all_selected_tracks(context, best_model)
         _set_triplet_mode_on_scene(context, 4)
