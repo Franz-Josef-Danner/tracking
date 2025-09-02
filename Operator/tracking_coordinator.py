@@ -1,6 +1,7 @@
 """
 tracking_coordinator.py – Streng sequentieller, MODALER Orchestrator
 - Phasen: FIND_LOW → JUMP → DETECT → DISTANZE (hart getrennt, seriell)
+- Integration von Anzahl/A₁..A₉ + Abbruch bei 10 + A_k-Schreiben in BIDI
 - Jede Phase startet erst, wenn die vorherige abgeschlossen wurde.
 """
 
@@ -30,6 +31,22 @@ except Exception:
     except Exception:
         evaluate_marker_count = None  # type: ignore
 from ..Helper.tracker_settings import apply_tracker_settings
+
+# --- Anzahl/A-Werte/State-Handling ------------------------------------------
+from ..Helper.tracking_state import (
+    orchestrate_on_jump,
+    record_bidirectional_result,
+    _get_state,          # intern genutzt, um count zu prüfen
+    _ensure_frame_entry, # intern genutzt, um Frame-Eintrag zu holen
+)
+# Fehlerwert-Funktion (Pfad ggf. anpassen)
+try:
+    from ..Helper.count import error_value  # type: ignore
+except Exception:
+    try:
+        from .count import error_value  # type: ignore
+    except Exception:
+        def error_value(_track): return 0.0  # Fallback
 
 # ---- Solve-Logger: robust auflösen, ohne auf Paketstruktur zu vertrauen ----
 def _solve_log(context, value):
@@ -146,6 +163,28 @@ def _resolve_clip(context: bpy.types.Context):
         clip = next(iter(bpy.data.movieclips), None)
     return clip
 
+def _marker_count_by_selected_track(context: bpy.types.Context) -> dict[str, int]:
+    """Anzahl Marker je *ausgewähltem* Track (Name -> Count)."""
+    clip = _resolve_clip(context)
+    out: dict[str, int] = {}
+    if not clip:
+        return out
+    trk = getattr(clip, "tracking", None)
+    if not trk:
+        return out
+    for t in trk.tracks:
+        try:
+            if getattr(t, "select", False):
+                out[t.name] = len(t.markers)
+        except Exception:
+            pass
+    return out
+
+def _delta_counts(before: dict[str, int], after: dict[str, int]) -> dict[str, int]:
+    """Delta = after - before (clamp ≥ 0)."""
+    names = set(before) | set(after)
+    return {n: max(0, int(after.get(n, 0)) - int(before.get(n, 0))) for n in names}
+
 # --- Blender 4.4: Refine-Flag direkt in Tracking-Settings spiegeln ----------
 def _apply_refine_focal_flag(context: bpy.types.Context, flag: bool) -> None:
     """Setzt movieclip.tracking.settings.refine_intrinsics_focal_length gemäß flag."""
@@ -215,6 +254,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # Instanzvariable dient dazu, den Start der Bidirectional‑Track-Phase
     # nur einmal auszulösen und anschließend auf den Abschluss zu warten.
     bidi_started: bool = False
+    bidi_before_counts: dict[str, int] | None = None  # Snapshot vor BIDI
     # Temporärer Schwellenwert für den Spike-Cycle (startet bei 100, *0.9)
     # Solve-Retry-State: Wurde bereits mit refine_intrinsics_focal_length=True neu gelöst?
     solve_refine_attempted: bool = False
@@ -239,6 +279,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self.spike_threshold = None  # Spike-Schwellenwert zurücksetzen
         # Solve-Retry-State zurücksetzen
         self.solve_refine_attempted = False
+        self.bidi_before_counts = None
         
         wm = context.window_manager
         # --- Robust: valides Window sichern ---
@@ -319,6 +360,23 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if rj.get("status") != "OK":
                 return self._finish(context, info=f"JUMP FAILED → {rj}", cancelled=True)
             self.report({'INFO'}, f"Playhead gesetzt: f{rj.get('frame')} (repeat={rj.get('repeat_count')})")
+
+            # NEU: Anzahl/Motion-Model orchestrieren und ggf. bei 10 abbrechen
+            try:
+                orchestrate_on_jump(context, int(self.target_frame))
+                # count prüfen (orchestrator zeigt bei ==10 bereits Popup)
+                _state = _get_state(context)
+                _entry, _ = _ensure_frame_entry(_state, int(self.target_frame))
+                _count = int(_entry.get("count", 1))
+                if _count >= 10:
+                    return self._finish(
+                        context,
+                        info=f"Abbruch: Frame {self.target_frame} hat 10 Durchläufe.",
+                        cancelled=True
+                    )
+            except Exception as _exc:
+                self.report({'WARNING'}, f"Orchestrate on jump warn: {str(_exc)}")
+
             # **WICHTIG**: Pre-Snapshot direkt vor DETECT
             self.pre_ptrs = set(_snapshot_track_ptrs(context))
             self.phase = PH_DETECT
@@ -714,6 +772,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 if CLIP_OT_bidirectional_track is None:
                     return self._finish(context, info="Bidirectional-Track nicht verfügbar.", cancelled=True)
                 try:
+                    # Snapshot vor Start (nur ausgewählte Tracks)
+                    self.bidi_before_counts = _marker_count_by_selected_track(context)
                     # Starte den Bidirectional‑Track mittels Operator. Das 'INVOKE_DEFAULT'
                     # sorgt dafür, dass Blender den Operator modal ausführt.
                     bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
@@ -727,6 +787,22 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 # Operator hat beendet. Prüfe Ergebnis.
                 if str(bidi_result) != "OK":
                     return self._finish(context, info=f"Bidirectional-Track fehlgeschlagen ({bidi_result})", cancelled=True)
+                # NEU: Delta je Marker berechnen und A_k speichern
+                try:
+                    before = self.bidi_before_counts or {}
+                    after = _marker_count_by_selected_track(context)
+                    per_marker_frames = _delta_counts(before, after)
+                    # Ziel-Frame bestimmen (Fallback auf aktuellen Scene-Frame)
+                    f = int(self.target_frame) if self.target_frame is not None else int(context.scene.frame_current)
+                    record_bidirectional_result(
+                        context,
+                        f,
+                        per_marker_frames=per_marker_frames,
+                        error_value_func=error_value,
+                    )
+                    self.report({'INFO'}, f"A_k gespeichert @f{f}: sumΔ={sum(per_marker_frames.values())}")
+                except Exception as _exc:
+                    self.report({'WARNING'}, f"A_k speichern fehlgeschlagen: {_exc}")
                 # Erfolgreich: für die neue Runde zurücksetzen
                 try:
                     clean_short_tracks(context)
@@ -738,6 +814,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self.target_frame = None
                 self.repeat_map = {}
                 self.bidi_started = False
+                self.bidi_before_counts = None
                 # Startet mit neuer Find-Low-Phase
                 self.phase = PH_FIND_LOW
                 self.report({'INFO'}, "Bidirectional-Track abgeschlossen – neuer Zyklus beginnt")
