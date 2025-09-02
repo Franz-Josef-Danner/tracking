@@ -1,0 +1,187 @@
+# im geklonten Repo
+git fetch origin
+git checkout -b feat/ak-weight-and-abort-10 origin/main
+
+# Patch anwenden
+git apply -p0 <<'PATCH'
+diff --git a/Operator/tracking_coordinator.py b/Operator/tracking_coordinator.py
+--- a/Operator/tracking_coordinator.py
++++ b/Operator/tracking_coordinator.py
+@@
+ import bpy
+@@
+-from ..Helper.find_low_marker_frame import run_find_low_marker_frame
++from ..Helper.find_low_marker_frame import run_find_low_marker_frame
+@@
+-from ..Helper.detect import run_detect_once
++from ..Helper.detect import run_detect_once
+@@
+-from ..Helper.distanze import run_distance_cleanup
++from ..Helper.distanze import run_distance_cleanup
+@@
+ from ..Helper.reduce_error_tracks import (
+     run_reduce_error_tracks,
+     get_avg_reprojection_error,
+ )  # type: ignore
+@@
+ from ..Helper.marker_helper_main import marker_helper_main
++
++# === NEU: State-/A-Werte-Integration (Count, A_k, Abbruch & Report) ===
++from ..Helper.tracking_state import (
++    orchestrate_on_jump,
++    record_bidirectional_result,
++    _get_state,
++    _ensure_frame_entry,
++    _popup_error_report,
++)
+@@
+ __all__ = ("CLIP_OT_tracking_coordinator",)
+@@
+ PH_BIDI = "BIDI"
+@@
+ _LOCK_KEY = "tco_lock"
+@@
+ def _resolve_clip(context: bpy.types.Context):
+     """Robuster Clip-Resolver (Edit-Clip, Space-Clip, erster Clip)."""
+     clip = getattr(context, "edit_movieclip", None)
+     if not clip:
+         clip = getattr(getattr(context, "space_data", None), "clip", None)
+     if not clip and bpy.data.movieclips:
+         clip = next(iter(bpy.data.movieclips), None)
+     return clip
++
++# --- NEU: Marker-Delta-Helfer (für A_k = Σ(frames × error)) -----------------
++def _snapshot_marker_counts(context: bpy.types.Context) -> dict[str, int]:
++    """Zählt Marker je selektiertem Track (Proxy für neu getrackte Frames)."""
++    clip = _resolve_clip(context)
++    out: dict[str, int] = {}
++    if not clip:
++        return out
++    for obj in clip.tracking.objects:
++        for tr in obj.tracks:
++            if getattr(tr, "select", False):
++                out[tr.name] = len(tr.markers)
++    return out
++
++def _delta_marker_counts(before: dict[str, int], after: dict[str, int]) -> dict[str, int]:
++    """Berechnet neue Marker je Track: after - before (clamp≥0)."""
++    out: dict[str, int] = {}
++    for name, a in after.items():
++        b = before.get(name, 0)
++        out[name] = max(0, int(a) - int(b))
++    return out
++
++def _make_error_value_adapter(context: bpy.types.Context):
++    """
++    Liefert eine Funktion error_value_func(track)->float.
++    Versucht zuerst error_value(track), fällt dann auf error_value(scene) zurück.
++    """
++    try:
++        # 1) übliche Location
++        from ..Helper.error_value import error_value  # type: ignore
++    except Exception:
++        try:
++            # 2) alternativer Ort
++            from ..metrics import error_value  # type: ignore
++        except Exception:
++            def error_value(_arg):  # type: ignore
++                return 0.0
++
++    def _fn(track) -> float:
++        try:
++            v = error_value(track)          # bevorzugt: per-Track
++            return float(v if v is not None else 0.0)
++        except Exception:
++            try:
++                v = error_value(context.scene)  # Fallback: Szene-weit
++                return float(v if v is not None else 0.0)
++            except Exception:
++                return 0.0
++    return _fn
+@@
+     def modal(self, context: bpy.types.Context, event):
+@@
+-        if self.phase == PH_JUMP:
++        if self.phase == PH_JUMP:
+             if self.target_frame is None:
+                 return self._finish(context, info="JUMP: Kein Ziel-Frame gesetzt.", cancelled=True)
+ 
+             rj = run_jump_to_frame(context, frame=self.target_frame, repeat_map=self.repeat_map)
+             if rj.get("status") != "OK":
+                 return self._finish(context, info=f"JUMP FAILED → {rj}", cancelled=True)
+ 
+             self.report({'INFO'}, f"Playhead gesetzt: f{rj.get('frame')} (repeat={rj.get('repeat_count')})")
+ 
++            # --- NEU: Count-/Model-Orchestrierung + evtl. Abbruch bei 10 ---
++            orchestrate_on_jump(context, frame=self.target_frame)
++            state = _get_state(context)
++            entry, _ = _ensure_frame_entry(state, self.target_frame)
++            if int(entry.get("count", 1)) >= 10:
++                _popup_error_report(context, self.target_frame, entry)
++                return self._finish(context, info=f"Abbruch: Frame {self.target_frame} hat 10 Durchläufe.", cancelled=True)
++
+             # **WICHTIG**: Pre-Snapshot direkt vor DETECT
+             self.pre_ptrs = set(_snapshot_track_ptrs(context))
+ 
+             self.phase = PH_DETECT
+             return {'RUNNING_MODAL'}
+@@
+-        if self.phase == PH_BIDI:
++        if self.phase == PH_BIDI:
+             scn = context.scene
+             bidi_active = bool(scn.get("bidi_active", False))
+             bidi_result = scn.get("bidi_result", "")
+@@
+-            # Operator hat beendet. Prüfe Ergebnis.
++            # Operator hat beendet. Prüfe Ergebnis.
+             if str(bidi_result) != "OK":
+                 return self._finish(context, info=f"Bidirectional-Track fehlgeschlagen ({bidi_result})", cancelled=True)
+ 
+-            # **NEU**: A_k = Σ(frames_pro_Marker × error_value(marker)) schreiben
++            # **NEU**: A_k = Σ(frames_pro_Marker × error_value(marker)) schreiben
+             try:
+-                before = self._bidi_before_counts or {}
+-                after = _snapshot_marker_counts(context)
+-                per_marker_frames = _delta_marker_counts(before, after)
+-
+-                try:
+-                    # Pfad ggf. anpassen, falls deine error_value woanders liegt
+-                    from ..metrics import error_value  # type: ignore
+-                except Exception:
+-                    try:
+-                        from ..Helper.metrics import error_value  # type: ignore
+-                    except Exception:
+-                        def error_value(_track):  # type: ignore
+-                            return 0.0
+-
+-                frame = int(self.target_frame) if self.target_frame is not None else context.scene.frame_current
+-                record_bidirectional_result(
+-                    context,
+-                    frame,
+-                    per_marker_frames=per_marker_frames,
+-                    error_value_func=error_value,
+-                )
++                before = self._bidi_before_counts or {}
++                after = _snapshot_marker_counts(context)
++                per_marker_frames = _delta_marker_counts(before, after)
++
++                # robustes Adapter-Callable: nutzt error_value(track) ODER error_value(scene)
++                ev_func = _make_error_value_adapter(context)
++
++                frame = int(self.target_frame) if self.target_frame is not None else context.scene.frame_current
++                record_bidirectional_result(
++                    context,
++                    frame,
++                    per_marker_frames=per_marker_frames,
++                    error_value_func=ev_func,
++                )
+             except Exception as exc:
+                 self.report({'WARNING'}, f"A_k-Berechnung/Schreiben fehlgeschlagen: {exc}")
+ 
+             # Cleanup nach BIDI (beibehalten)
+             try:
+                 clean_short_tracks(context)
+                 self.report({'INFO'}, "Cleanup nach Bidirectional-Track ausgeführt")
+             except Exception as exc:
+                 self.report({'WARNING'}, f"Cleanup nach Bidirectional-Track fehlgeschlagen: {exc}")
+PATCH
