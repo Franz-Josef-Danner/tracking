@@ -1,6 +1,7 @@
 from __future__ import annotations
 import bpy
-from typing import Iterable, Set
+from typing import Iterable, Set, Any
+import sys, importlib
 
 __all__ = ("reset_for_new_cycle", "CLIP_OT_reset_runtime_state")
 
@@ -28,6 +29,11 @@ RUNTIME_KEYS: Iterable[str] = (
     "kc_repeat_frame",
 )
 
+# Optional unterstützte Alias-Schlüssel (falls historisch abweichend)
+ALIAS_LIST_KEYS: Iterable[str] = (
+    "kc_solve_errors",
+)
+
 def _purge_unknown_kc_keys(scene: bpy.types.Scene, allow: Set[str]) -> int:
     """Entfernt verwaiste kc_* ID-Props, die nicht mehr in RUNTIME_KEYS gelistet sind."""
     removed = 0
@@ -43,6 +49,19 @@ def _purge_unknown_kc_keys(scene: bpy.types.Scene, allow: Set[str]) -> int:
     except Exception:
         pass
     return removed
+
+def _clear_list_in_place(container: Any, key: str) -> bool:
+    """Leert vorhandene Listen-ID-Props in-place (keine Referenzleichen)."""
+    try:
+        if key in container.keys():
+            val = container[key]
+            if isinstance(val, list):
+                val.clear()
+                container[key] = val  # Re-write sichert Speicherung
+                return True
+    except Exception:
+        pass
+    return False
 
 def _set_default(scene: bpy.types.Scene, key: str) -> None:
     """Definiert robuste Default-Werte pro Key (ID-Properties!)."""
@@ -71,7 +90,8 @@ def _set_default(scene: bpy.types.Scene, key: str) -> None:
         "kc_last_frames_checked",
         "kc_error_solves",
     }:
-        scene[key] = []         # Listen konsequent leeren
+        if not _clear_list_in_place(scene, key):
+            scene[key] = []         # Fallback: ersetzen
     elif key == "kc_repeat_frame":
         scene[key] = {}         # Wiederhol-Map (Frame -> Count)
     else:
@@ -94,8 +114,72 @@ def _wipe_clip_runtime(clip: bpy.types.MovieClip | None) -> None:
         for obj in tr.objects:
             for t in obj.tracks:
                 t.select = False
+        # Auch am Clip vorhandene kc_*-Solve-Listen konsequent leeren
+        for k in ("kc_error_solves", "kc_solve_errors", "kc_avg_error_history"):
+            try:
+                if k in clip.keys():
+                    v = clip[k]
+                    if isinstance(v, list):
+                        v.clear()
+                        clip[k] = v
+            except Exception:
+                pass
+        # Verwaiste kc_* Keys am Clip purgen (ohne Defaults zu setzen)
+        allow = set(RUNTIME_KEYS) | set(ALIAS_LIST_KEYS)
+        for k in list(clip.keys()):
+            if str(k).startswith("kc_") and k not in allow:
+                try:
+                    del clip[k]
+                except Exception:
+                    pass
     except Exception:
         pass
+
+def _reset_module_solve_log() -> int:
+    """
+    Räumt modulweite Solve-Logs auf (Root-Paket + 'tracking' Fallback).
+    - Ruft kaiserlich_solve_log_reset() auf, wenn vorhanden.
+    - Leert bekannte Container-Attribute in-place.
+    Gibt die Anzahl der bereinigten Container zurück.
+    """
+    cleared = 0
+    candidates = []
+    # Root aus __package__/__name__ ableiten (analog zum Coordinator)
+    root_name = (__package__ or __name__).split(".", 1)[0] or "tracking"
+    candidates.append(root_name)
+    if "tracking" not in candidates:
+        candidates.append("tracking")
+    seen: set[str] = set()
+    for name in candidates:
+        if name in seen:
+            continue
+        seen.add(name)
+        mod = sys.modules.get(name)
+        if not mod:
+            try:
+                mod = importlib.import_module(name)
+            except Exception:
+                mod = None
+        if not mod:
+            continue
+        # 1) Reset-Funktion
+        fn = getattr(mod, "kaiserlich_solve_log_reset", None)
+        if callable(fn):
+            try:
+                fn()
+                cleared += 1
+            except Exception:
+                pass
+        # 2) Bekannte Container leeren
+        for attr in ("kaiserlich_solve_log", "SOLVE_LOG", "solve_log"):
+            lst = getattr(mod, attr, None)
+            if isinstance(lst, list):
+                try:
+                    lst.clear()
+                    cleared += 1
+                except Exception:
+                    pass
+    return cleared
 
 def reset_for_new_cycle(context: bpy.types.Context) -> None:
     """
@@ -110,6 +194,9 @@ def reset_for_new_cycle(context: bpy.types.Context) -> None:
     # 1) Scene-Keys konsistent initialisieren/überschreiben
     for k in RUNTIME_KEYS:
         _set_default(scene, k)
+    # 1b) Aliase ebenfalls leeren (falls historisch genutzt)
+    for alias in ALIAS_LIST_KEYS:
+        _clear_list_in_place(scene, alias)
 
     # Aktiven Clip finden und temporäre Auswahlen zurücksetzen
     clip = getattr(context, "edit_movieclip", None)
@@ -118,6 +205,9 @@ def reset_for_new_cycle(context: bpy.types.Context) -> None:
     if not clip and bpy.data.movieclips:
         clip = next(iter(bpy.data.movieclips), None)
     _wipe_clip_runtime(clip)
+
+    # 2) Modulweite Solve-Logs/Caches bereinigen
+    caches_cleared = _reset_module_solve_log()
 
     # Optional: UI-Refresh, damit Panels frische Werte anzeigen
     try:
@@ -133,7 +223,16 @@ def reset_for_new_cycle(context: bpy.types.Context) -> None:
         cname = getattr(clip, "name", "<none>")
         # Anzahl aktuell gesetzter kc_* Keys
         kc_count = sum(1 for k in scene.keys() if str(k).startswith("kc_"))
-        print(f"[Reset] purged={purged} kc_count={kc_count} clip={cname}")
+        # Länge der Solve-Error-Liste reporten
+        err_len = 0
+        try:
+            err = scene.get("kc_error_solves", [])
+            err_len = len(err) if isinstance(err, list) else 0
+        except Exception:
+            pass
+        print(
+            f"[Reset] purged={purged} kc_count={kc_count} caches={caches_cleared} clip={cname} kc_error_solves_len={err_len}"
+        )
     except Exception:
         pass
 
