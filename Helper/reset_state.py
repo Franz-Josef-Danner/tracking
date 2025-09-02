@@ -181,12 +181,13 @@ def _reset_module_solve_log() -> int:
                     pass
     return cleared
 
-def reset_for_new_cycle(context: bpy.types.Context) -> None:
+def reset_for_new_cycle(context: bpy.types.Context, *, clear_solve_log: bool = False) -> None:
     """
     Zentrale Reset-Funktion für den Neustart des Ablaufs.
     - Setzt alle bekannten Runtime-Werte auf Defaults
     - Bereinigt temporäre Selektionen am aktiven Clip
     - Verändert keine persistenten Projektdaten (keine Marker-/Track-Löschungen)
+    - Optional (clear_solve_log=True): löscht das Solve-Error-Log (nur beim Bootstrap gewünscht)
     """
     scene = context.scene
     # 0) Altlasten entfernen (verwaiste kc_* Keys)
@@ -209,14 +210,15 @@ def reset_for_new_cycle(context: bpy.types.Context) -> None:
     # 2) Modulweite Solve-Logs/Caches bereinigen
     _reset_module_solve_log()
 
-    # 2b) Solve-Error Log (CollectionProperty) explizit zurücksetzen
-    try:
-        if hasattr(scene, "kaiserlich_solve_err_log"):
-            scene.kaiserlich_solve_err_log.clear()
-        if hasattr(scene, "kaiserlich_solve_attempts"):
-            scene.kaiserlich_solve_attempts = 0
-    except Exception:
-        pass
+    # 2c) Solve-Error Log (CollectionProperty) nur auf Wunsch (Bootstrap) zurücksetzen
+    if clear_solve_log:
+        try:
+            if hasattr(scene, "kaiserlich_solve_err_log"):
+                scene.kaiserlich_solve_err_log.clear()
+            if hasattr(scene, "kaiserlich_solve_attempts"):
+                scene.kaiserlich_solve_attempts = 0
+        except Exception:
+            pass
 
     # Optional: UI-Refresh, damit Panels frische Werte anzeigen
     try:
@@ -232,7 +234,7 @@ def reset_for_new_cycle(context: bpy.types.Context) -> None:
         cname = getattr(clip, "name", "<none>")
         kc_count = sum(1 for k in scene.keys() if str(k).startswith("kc_"))
         log_len = len(scene.kaiserlich_solve_err_log) if hasattr(scene, "kaiserlich_solve_err_log") else -1
-        print(f"[Reset] purged={purged} kc_count={kc_count} clip={cname} solve_log_len={log_len}")
+        print(f"[Reset] purged={purged} kc_count={kc_count} clip={cname} solve_log_len={log_len} clear_solve_log={bool(clear_solve_log)}")
     except Exception:
         pass
 

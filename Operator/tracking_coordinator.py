@@ -18,7 +18,7 @@ from ..Helper.split_cleanup import recursive_split_cleanup
 from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
 from ..Helper.solve_camera import solve_camera_only  # type: ignore
 from ..Helper.reduce_error_tracks import run_reduce_error_tracks, get_avg_reprojection_error  # type: ignore
-from ..Helper.reset_state import reset_for_new_cycle  # ← NEU: zentraler Reset
+from ..Helper.reset_state import reset_for_new_cycle  # zentraler Reset (Bootstrap/Cycle)
 
 # Versuche, die Auswertungsfunktion für die Markeranzahl zu importieren.
 # Diese Funktion soll nach dem Distanz-Cleanup ausgeführt werden und
@@ -269,8 +269,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return {'CANCELLED'}
         self.report({'INFO'}, "Coordinator: Bootstrap OK")
 
-        # Harter Neustart aller Runtime-Werte/Listen
-        reset_for_new_cycle(context)
+        # Bootstrap: harter Neustart + Solve-Error-Log leeren
+        reset_for_new_cycle(context, clear_solve_log=True)
 
         # Modal starten
         self.phase = PH_FIND_LOW
@@ -692,7 +692,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             red = run_reduce_error_tracks(context, max_to_delete=x)
             self.report({'INFO'}, f"ReduceErrorTracks: avg={avg_err:.4f} target={t:.4f} → delete={x} → done={red.get('deleted')} {red.get('names')}")
             # 6) Reset & zurück in den Hauptzyklus
-            reset_for_new_cycle(context)
+            reset_for_new_cycle(context)  # Solve-Log bleibt erhalten
             self.detection_threshold = None
             self.pre_ptrs = None
             self.target_frame = None
@@ -734,7 +734,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             rmax = run_find_max_marker_frame(context)
             if rmax.get("status") == "FOUND":
                 # Erfolg → regulären Zyklus neu starten
-                reset_for_new_cycle(context)
+                reset_for_new_cycle(context)  # Solve-Log bleibt erhalten (kein Bootstrap)
                 self.spike_threshold = None
                 scn["tco_spike_cycle_finished"] = False
                 self.phase = PH_FIND_LOW
@@ -816,7 +816,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     self.report({'INFO'}, "Cleanup nach Bidirectional-Track ausgeführt")
                 except Exception as exc:
                     self.report({'WARNING'}, f"Cleanup nach Bidirectional-Track fehlgeschlagen: {exc}")
-                reset_for_new_cycle(context)
+                reset_for_new_cycle(context)  # Solve-Log bleibt erhalten
                 self.detection_threshold = None
                 self.pre_ptrs = None
                 self.target_frame = None
