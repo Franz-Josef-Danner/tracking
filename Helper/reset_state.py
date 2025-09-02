@@ -207,7 +207,16 @@ def reset_for_new_cycle(context: bpy.types.Context) -> None:
     _wipe_clip_runtime(clip)
 
     # 2) Modulweite Solve-Logs/Caches bereinigen
-    caches_cleared = _reset_module_solve_log()
+    _reset_module_solve_log()
+
+    # 2b) Solve-Error Log (CollectionProperty) explizit zurücksetzen
+    try:
+        if hasattr(scene, "kaiserlich_solve_err_log"):
+            scene.kaiserlich_solve_err_log.clear()
+        if hasattr(scene, "kaiserlich_solve_attempts"):
+            scene.kaiserlich_solve_attempts = 0
+    except Exception:
+        pass
 
     # Optional: UI-Refresh, damit Panels frische Werte anzeigen
     try:
@@ -221,18 +230,9 @@ def reset_for_new_cycle(context: bpy.types.Context) -> None:
     try:
         clip = getattr(context, "edit_movieclip", None) or getattr(getattr(context, "space_data", None), "clip", None)
         cname = getattr(clip, "name", "<none>")
-        # Anzahl aktuell gesetzter kc_* Keys
         kc_count = sum(1 for k in scene.keys() if str(k).startswith("kc_"))
-        # Länge der Solve-Error-Liste reporten
-        err_len = 0
-        try:
-            err = scene.get("kc_error_solves", [])
-            err_len = len(err) if isinstance(err, list) else 0
-        except Exception:
-            pass
-        print(
-            f"[Reset] purged={purged} kc_count={kc_count} caches={caches_cleared} clip={cname} kc_error_solves_len={err_len}"
-        )
+        log_len = len(scene.kaiserlich_solve_err_log) if hasattr(scene, "kaiserlich_solve_err_log") else -1
+        print(f"[Reset] purged={purged} kc_count={kc_count} clip={cname} solve_log_len={log_len}")
     except Exception:
         pass
 
