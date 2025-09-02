@@ -13,6 +13,10 @@ import bpy
 
 
 from .bidirectional_track import CLIP_OT_bidirectional_track
+from .reset_state import (
+    reset_for_new_cycle,
+    CLIP_OT_reset_runtime_state,
+)  # re-export
 
 # --- Optionale Operatoren ----------------------------------------------------
 try:
@@ -25,11 +29,14 @@ __all__ = [
     "register",
     "unregister",
     "CLIP_OT_bidirectional_track",
+    "reset_for_new_cycle",
+    "CLIP_OT_reset_runtime_state",
 ]
 
 # --- Registrierlisten --------------------------------------------------------
 _FIXED_CLASSES = [
     CLIP_OT_bidirectional_track,
+    CLIP_OT_reset_runtime_state,
 ]
 
 _OPTIONAL_CLASSES = []
@@ -51,11 +58,13 @@ def register() -> None:
             pass
 
 def unregister() -> None:
+    # Zuerst optionale Klassen rückwärts abmelden
     for cls in reversed(_OPTIONAL_CLASSES):
         try:
             bpy.utils.unregister_class(cls)
         except Exception:
             pass
+    # Danach fixe Klassen rückwärts abmelden (verhindert "already registered" beim Reload)
     for cls in reversed(_FIXED_CLASSES):
         try:
             bpy.utils.unregister_class(cls)
