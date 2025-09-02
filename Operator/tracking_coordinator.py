@@ -725,22 +725,26 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 after = _snapshot_marker_counts(context)
                 per_marker_frames = _delta_marker_counts(before, after)
 
+                # KORREKT: Szene-weites error_value aus Helper/error_value.py
                 try:
-                    # Pfad ggf. anpassen, falls deine error_value woanders liegt
-                    from ..metrics import error_value  # type: ignore
+                    from ..Helper.error_value import error_value  # type: ignore
                 except Exception:
-                    try:
-                        from ..Helper.metrics import error_value  # type: ignore
-                    except Exception:
-                        def error_value(_track):  # type: ignore
-                            return 0.0
+                    def error_value(_scene):  # type: ignore
+                        return 0.0
+
+                # err einmal Szene-weit bestimmen und pro Marker als Faktor nutzen
+                try:
+                    _err_val = error_value(context.scene)
+                    _err = float(_err_val) if _err_val is not None else 0.0
+                except Exception:
+                    _err = 0.0
 
                 frame = int(self.target_frame) if self.target_frame is not None else context.scene.frame_current
                 record_bidirectional_result(
                     context,
                     frame,
                     per_marker_frames=per_marker_frames,
-                    error_value_func=error_value,
+                    error_value_func=lambda _tr: _err,
                 )
             except Exception as exc:
                 self.report({'WARNING'}, f"A_k-Berechnung/Schreiben fehlgeschlagen: {exc}")
