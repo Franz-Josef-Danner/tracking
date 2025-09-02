@@ -23,6 +23,7 @@ RUNTIME_KEYS: Iterable[str] = (
     "kc_marker_counts",
     "kc_log_rows",
     "kc_last_frames_checked",
+    "kc_error_solves",        # Liste aller Solve-Errors → beim Reset leeren
     # Mappings/Dicts
     "kc_repeat_frame",
 )
@@ -63,7 +64,13 @@ def _set_default(scene: bpy.types.Scene, key: str) -> None:
         scene[key] = 2.0        # Zielwert für avg reprojection error
     elif key == "kc_refine_intrinsics_focal_length":
         scene[key] = False      # erster Solve ohne Refine
-    elif key in {"kc_avg_error_history", "kc_marker_counts", "kc_log_rows", "kc_last_frames_checked"}:
+    elif key in {
+        "kc_avg_error_history",
+        "kc_marker_counts",
+        "kc_log_rows",
+        "kc_last_frames_checked",
+        "kc_error_solves",
+    }:
         scene[key] = []         # Listen konsequent leeren
     elif key == "kc_repeat_frame":
         scene[key] = {}         # Wiederhol-Map (Frame -> Count)
