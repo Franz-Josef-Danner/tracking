@@ -89,6 +89,10 @@ def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) ->
         scn.kaiserlich_solve_err_idx = 0
     except Exception:
         pass
+    # Ältere Werte abschneiden, nur die letzten 10 behalten
+    coll = scn.kaiserlich_solve_err_log
+    while len(coll) > 10:
+        coll.remove(len(coll) - 1)
     # UI-Refresh (CLIP-Editor + Sidebar)
     _tag_clip_redraw()
 # GPU-Overlay (Sparkline) – Draw Handler
@@ -126,8 +130,8 @@ def _draw_solve_graph():
     pad = 16
     gw, gh = min(320, W - 2*pad), 80
     ox, oy = W - gw - pad, pad
-    # Letzte 200 Punkte (chronologisch) – mit Durchschnittswerten
-    take_vals = avg_vals[-200:]
+    # Nur die letzten 10 Punkte (chronologisch) – mit Durchschnittswerten
+    take_vals = avg_vals[-10:]
     n = len(take_vals)
     ln = max(1, n - 1)  # vermeidet Div/0, erlaubt 1-Punkt-Stub
     coords = []
