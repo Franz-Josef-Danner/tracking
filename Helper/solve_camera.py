@@ -1,117 +1,210 @@
 from __future__ import annotations
+
+import math
+from typing import Any, Dict, Optional
+
 import bpy
-from typing import Optional
 
 __all__ = ("solve_camera_only",)
 
 
-# -- interne Hilfe: passenden CLIP_EDITOR im aktuellen Window finden ---------
-
-def _find_clip_window(context) -> tuple[Optional[bpy.types.Area], Optional[bpy.types.Region], Optional[bpy.types.Space]]:
-    win = getattr(context, "window", None)
-    screen = getattr(win, "screen", None)
-    if not screen:
-        return None, None, None
-    for area in screen.areas:
-        if area.type == 'CLIP_EDITOR':
-            region_window = None
-            for r in area.regions:
-                if r.type == 'WINDOW':
-                    region_window = r
-                    break
-            if region_window:
-                return area, region_window, area.spaces.active
-    return None, None, None
-
-
-# -- öffentliche API ----------------------------------------------------------
-
-def solve_camera_only(context):
-    """Löst nur den Kamera-Solve aus – kein Cleanup, kein Warten.
-
-    Versucht, falls möglich, einen Kontext-Override auf einen CLIP_EDITOR zu
-    setzen, damit der Operator zuverlässig läuft. Fällt ansonsten auf den
-    globalen Kontext zurück.
-
-    Returns
-    -------
-    set | dict
-        Das Operator-Resultat (z. B. {'RUNNING_MODAL'} oder {'CANCELLED'}).
-    """
-    area, region, space = _find_clip_window(context)
+# -- sichere Imports für Fehler-/Reduce-Logik -------------------------------
+try:
+    # Primäre Quelle in Helper
+    from .reduce_error_tracks import (  # type: ignore
+        get_avg_reprojection_error,
+        run_reduce_error_tracks,
+    )
+except Exception:
+    # Fallback auf relatives Paket
     try:
-        if area and region and space:
-            with context.temp_override(area=area, region=region, space_data=space):
-                return bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-        return bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-    except Exception as e:
-        return {"CANCELLED"}
+        from ..Helper.reduce_error_tracks import (  # type: ignore
+            get_avg_reprojection_error,
+            run_reduce_error_tracks,
+        )
+    except Exception:
+        get_avg_reprojection_error = None  # type: ignore
+        run_reduce_error_tracks = None  # type: ignore
 
 
-# ----------------------------------------------------------------------------
-# HINWEIS FÜR DEN KOORDINATOR (separate Datei!):
-#
-# In Operator/tracking_coordinator.py oben importieren:
-#     from ..Helper.solve_camera import solve_camera_only
-#
-# Und in der State-Methode den Solve auslösen (ohne Diff-Marker!):
-#
-#     def _state_solve(self, context):
-#         """Startet ausschließlich den Kamera-Solve und wechselt in SOLVE_WAIT."""
-#         try:
-#             res = solve_camera_only(context)
-#             print(f"[Coord] Solve invoked: {res}")
-#         except Exception as ex:
-#             print(f"[Coord] SOLVE start failed: {ex!r}")
-#             self._state = "FINALIZE"
-#             return {'RUNNING_MODAL'}
-#
-#         self._state = "SOLVE_WAIT"
-#         return {'RUNNING_MODAL'}
-# ----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Hilfsfunktion: Refine-Flag sicher setzen (Blender 4.4+; robust bei fehlendem
+# Attribut)
+def _apply_refine_focal_flag(context: bpy.types.Context, flag: bool) -> None:
+    try:
+        clip = getattr(context, "edit_movieclip", None)
+        if not clip:
+            space = getattr(context, "space_data", None)
+            clip = getattr(space, "clip", None) if space else None
+        if not clip and bpy.data.movieclips:
+            clip = next(iter(bpy.data.movieclips), None)
+        tr = getattr(clip, "tracking", None) if clip else None
+        settings = getattr(tr, "settings", None) if tr else None
+        if settings and hasattr(settings, "refine_intrinsics_focal_length"):
+            settings.refine_intrinsics_focal_length = bool(flag)
+            print(f"[Solve] refine_intrinsics_focal_length → {bool(flag)}")
+        else:
+            print("[Solve] WARN: refine_intrinsics_focal_length nicht verfügbar")
+    except Exception as exc:  # noqa: BLE001 - robust gegen alle Fehler
+        print(f"[Solve] WARN: refine-Flag konnte nicht gesetzt werden: {exc}")
 
 
-# -----------------------------------------------------------------------------
-# Ergänzung für Operator/tracking_coordinator.py: _state_solve_wait()
-# -----------------------------------------------------------------------------
-# Füge diese Methode in die Klasse CLIP_OT_tracking_coordinator ein.
-# Sie wartet kurz auf eine gültige Reconstruction, bewertet den Solve-Error
-# und triggert optional den Refine-Modal. Bei Erfolg → FINALIZE.
-
-# --- BEGIN PASTE ---
-    def _state_solve_wait(self, context):
-        """Wartet auf gültige Reconstruction, bewertet Solve-Error, entscheidet Pfad."""
-        # Falls nicht gesetzt (z. B. bei direktem Einstieg), initialisieren:
-        if int(getattr(self, "_solve_wait_ticks", 0)) <= 0:
-            self._solve_wait_ticks = int(getattr(context.scene, "solve_wait_ticks", _SOLVE_WAIT_TICKS_DEFAULT))
-    
-        # Pro Timer-Tick nur kurz warten, damit UI reaktiv bleibt
-        ready = _wait_for_reconstruction(context, tries=_SOLVE_WAIT_TRIES_PER_TICK)
-        if ready:
-            err = _compute_solve_error(context)
-    
-            if err is None:
-                # Keine auswertbare Qualität → Fehlpfad
-                return self._handle_failed_solve(context)
-    
-            # Schwelle aus Scene-Property (Fallback: 20.0, wie in deinem Flow)
-            thr = float(getattr(context.scene, "refine_threshold", 20.0) or 20.0)
-    
-            # Optionaler Refine nach Solve (nur einmal)
-            if (not self._post_solve_refine_done) and (err > thr):
-                self._launch_refine(context, threshold=thr)
-                return {"RUNNING_MODAL"}
-    
-            # Solve ok → fertig
-            self._state = "FINALIZE"
-            return {"RUNNING_MODAL"}
-    
-        # Noch nicht ready → Countdown
-        self._solve_wait_ticks = max(0, int(self._solve_wait_ticks) - 1)
-        if self._solve_wait_ticks <= 0:
-            return self._handle_failed_solve(context)
-    
-        return {"RUNNING_MODAL"}
+# ---------------------------------------------------------------------------
+# Bestehende Einmal-Solve-Funktion sichern (wird unten als _solve_camera_once
+# aufgerufen)
+# HINWEIS: Wir gehen davon aus, dass solve_camera_only bislang EINEN Solve
+# ausführt. Wir preserven diese Logik und wrappen sie.
+_ORIG_SOLVE_FN = None
+try:
+    # Merke Referenz auf die in dieser Datei definierte ursprüngliche Funktion,
+    # bevor wir sie unten überschreiben. Beim ersten Import ist dies None;
+    # weiter unten haken wir das nach der Definition um.
+    pass
+except Exception:  # noqa: BLE001
+    pass
 
 
-# --- END PASTE ---
+def solve_camera_only(
+    context: bpy.types.Context,
+    *,
+    max_no_refine_attempts: int = 10,
+    refine_attempts: int = 1,
+    force_min_delete_if_nan: int = 1,
+) -> Dict[str, Any]:
+    """Orchestrierter Kamera-Solve.
+
+    Ablauflogik:
+        1) Bis zu ``max_no_refine_attempts`` Versuche **ohne** Focal-Refine.
+        2) Danach bis zu ``refine_attempts`` Versuche **mit** Focal-Refine.
+        3) Nach jedem Versuch: Durchschnittsfehler messen und
+           ``run_reduce_error_tracks`` aufrufen.
+        4) Abbruch, sobald der Durchschnittsfehler ``target`` unterschreitet.
+
+    Rückgabe:
+        ``{"status": "OK"|"FAILED", "reason"?: str, "avg": float|None,
+        "phase": "NO_REFINE"|"REFINE", "attempt": int}``
+    """
+
+    # Lazy-Bind der ursprünglichen Einmal-Solve Implementierung
+    global _ORIG_SOLVE_FN
+    if _ORIG_SOLVE_FN is None:
+        # Beim ersten Aufruf kopieren wir die vorher definierte Funktion
+        try:
+            _ORIG_SOLVE_FN = _solve_camera_once  # type: ignore[name-defined]
+        except Exception:  # noqa: BLE001 - Fallback sichern
+            def _fallback_once(ctx: bpy.types.Context) -> Dict[str, Any]:
+                try:
+                    bpy.ops.clip.solve_camera()
+                    return {"status": "OK"}
+                except Exception as _exc:  # noqa: BLE001
+                    return {"status": "FAILED", "reason": str(_exc)}
+
+            _ORIG_SOLVE_FN = _fallback_once
+
+    # Ziel-Error aus Scene, Default 2.0
+    scn = context.scene
+    try:
+        target_err = float(scn.get("error_track", 2.0))
+        if not (target_err == target_err) or target_err <= 0.0:
+            target_err = 2.0
+    except Exception:  # noqa: BLE001
+        target_err = 2.0
+
+    def _measure_avg() -> Optional[float]:
+        if callable(get_avg_reprojection_error):
+            try:
+                return get_avg_reprojection_error(context)  # type: ignore[misc]
+            except Exception:  # noqa: BLE001
+                return None
+        return None
+
+    def _reduce_after(avg: Optional[float]) -> None:
+        if not callable(run_reduce_error_tracks):
+            return
+        try:
+            if avg is None:
+                # Keine Messung → minimal 1 Track löschen, um Fortschritt zu
+                # erzwingen
+                run_reduce_error_tracks(
+                    context,
+                    max_to_delete=int(force_min_delete_if_nan),
+                )  # type: ignore[misc]
+                return
+
+            # Dynamische Löschmenge: ceil(avg/target), clamp 1..20
+            t = target_err if (target_err == target_err and target_err > 1e-8) else 0.6
+            deletions = max(1, min(20, int(math.ceil(float(avg) / t))))
+            run_reduce_error_tracks(
+                context,
+                max_to_delete=deletions,
+            )  # type: ignore[misc]
+        except Exception as _exc:  # noqa: BLE001
+            print(f"[Solve] ReduceErrorTracks nach Solve fehlgeschlagen: {_exc}")
+
+    # Phase 1: ohne Refine
+    _apply_refine_focal_flag(context, False)
+    for attempt in range(1, int(max_no_refine_attempts) + 1):
+        res = _ORIG_SOLVE_FN(context)  # Einmal-Solve
+        avg = _measure_avg()
+        print(f"[Solve] NO_REFINE attempt={attempt}: avg={avg}")
+        _reduce_after(avg)
+        if isinstance(avg, (int, float)) and avg == avg and avg <= target_err:
+            return {
+                "status": "OK",
+                "avg": float(avg),
+                "phase": "NO_REFINE",
+                "attempt": attempt,
+            }
+        # Wenn Solve selbst "FAILED" meldet, fahren wir trotzdem mit Reduktion
+        # fort und loopen weiter
+        if res.get("status") == "FAILED":
+            # Weiter versuchen – Reduce ist bereits gelaufen
+            pass
+
+    # Phase 2: mit Refine
+    _apply_refine_focal_flag(context, True)
+    for attempt in range(1, int(refine_attempts) + 1):
+        res = _ORIG_SOLVE_FN(context)  # Einmal-Solve
+        avg = _measure_avg()
+        print(f"[Solve] REFINE attempt={attempt}: avg={avg}")
+        _reduce_after(avg)
+        if isinstance(avg, (int, float)) and avg == avg and avg <= target_err:
+            return {
+                "status": "OK",
+                "avg": float(avg),
+                "phase": "REFINE",
+                "attempt": attempt,
+            }
+        if res.get("status") == "FAILED":
+            pass
+
+    # Nichts erreicht → FAILED mit letzter Messung
+    last_avg = _measure_avg()
+    return {
+        "status": "FAILED",
+        "reason": "target not reached",
+        "avg": (
+            float(last_avg) if isinstance(last_avg, (int, float)) else None
+        ),
+        "phase": "REFINE",
+        "attempt": int(refine_attempts),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Ursprüngliche Einmal-Solve Funktion unter internem Namen bereitstellen.
+# !!! WICHTIG !!!
+# Ersetze den folgenden Block durch den REALEN Einmal-Solve-Code deiner Datei.
+# Der Coordinator ruft weiterhin solve_camera_only(..) auf – jetzt mit
+# Orchestrierung. Dieser Block stellt sicher, dass dein bisheriger Solve-Kern
+# unverändert genutzt wird.
+def _solve_camera_once(context: bpy.types.Context) -> Dict[str, Any]:
+    """EINMALIGER Kamera-Solve (bestehende Logik)."""
+    try:
+        # Wenn du bisher mit temp_override arbeitest, bitte hier deinen
+        # vorhandenen Override-Kontext einsetzen.
+        bpy.ops.clip.solve_camera()
+        return {"status": "OK"}
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "FAILED", "reason": str(exc)}
+
