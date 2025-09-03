@@ -39,6 +39,7 @@ from ..Helper.tracking_state import (
     record_bidirectional_result,
     _get_state,          # intern genutzt, um count zu prüfen
     _ensure_frame_entry, # intern genutzt, um Frame-Eintrag zu holen
+    reset_tracking_state,
 )
 # Fehlerwert-Funktion (Pfad ggf. anpassen)
 try:
@@ -272,6 +273,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         # Bootstrap: harter Neustart + Solve-Error-Log leeren
         reset_for_new_cycle(context, clear_solve_log=True)
+        # Zusätzlich: State von tracking_state.py zurücksetzen
+        try:
+            reset_tracking_state(context)
+            self.report({'INFO'}, "Tracking-State zurückgesetzt")
+        except Exception as exc:
+            self.report({'WARNING'}, f"Tracking-State Reset fehlgeschlagen: {exc}")
 
         # Modal starten
         self.phase = PH_FIND_LOW
