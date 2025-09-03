@@ -264,11 +264,16 @@ def _recompute_interpolations(context: bpy.types.Context, state: Dict[str, Any],
 
 def orchestrate_on_jump(context: bpy.types.Context, frame: int) -> None:
     """Am Ende von jump_to_frame aufrufen (oder direkt vom Coordinator).
-    Regeln:
-    - Frame erstmalig: count=1, Model=A1(Loc).
-    - Bereits vorhanden: count += 1; setze Model gem. count.
-    - count==6..9: bestes A1..A5 + Triplet 1..4 (nur Szene-Flag).
-    - count==10: Abbruch + Error-Report (Popup) aus JSON, keine weiteren Änderungen.
+    Regeln (aktualisiert):
+    - Frame erstmalig: count=1, Model=A1(Loc), anchor=True.
+    - Frame existiert & war INTERPOLIERT (interpolated=True, anchor=False):
+        → KEIN Increment. Der interpolierte count wird übernommen,
+          anchor=True setzen, interpolated=False setzen,
+          Model/Triplet für DEN AKTUELLEN count anwenden.
+          (Erst bei einem späteren erneuten Setzen wird erhöht.)
+    - Sonst (normaler Wiederbesuch eines Ankers oder nicht-interpolierten Frames):
+        → count += 1; Model/Triplet gem. neuem count.
+    - Abbruchschwelle gemäß ABORT_AT.
     """
     state = _get_state(context)
     entry, created = _ensure_frame_entry(state, frame)
@@ -284,11 +289,30 @@ def orchestrate_on_jump(context: bpy.types.Context, frame: int) -> None:
         _recompute_interpolations(context, state, apply_models=False)
         return
 
-    # Wiederbesuch → count erhöhen
+    # SPEZIALFALL: Erstes Betreten eines zuvor interpolierten Frames
+    if bool(entry.get("interpolated", False)) and not bool(entry.get("anchor", False)):
+        # KEIN Increment – interpolierten count übernehmen
+        count = int(entry.get("count", 1))
+        entry["anchor"] = True
+        entry["interpolated"] = False
+        # Abbruchschutz (falls Interpolation wider Erwarten über zielt)
+        if count >= ABORT_AT:
+            _set_triplet_mode_on_scene(context, None)
+            _save_state(context, state)
+            _popup_error_report(context, frame, entry)
+            return
+        # Model/Triplet für den bestehenden (interpolierten) count anwenden
+        _apply_model_triplet_for_count(context, entry)
+        _save_state(context, state)
+        # Anker gesetzt → Interpolationen neu berechnen
+        _recompute_interpolations(context, state, apply_models=False)
+        return
+
+    # Normaler Wiederbesuch (nicht-interpolierter Frame) → count erhöhen
     entry["count"] = int(entry.get("count", 1)) + 1
     count = entry["count"]
-    entry["anchor"] = True          # explizit als gesetzter Anker markieren
-    entry["interpolated"] = False   # dieser Wert ist nicht interpoliert
+    entry["anchor"] = True
+    entry["interpolated"] = False
 
     if count >= ABORT_AT:
         # Abbruchbedingung: Triplet-Flag löschen, Report zeigen, sonst nichts
