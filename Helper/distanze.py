@@ -28,10 +28,6 @@ __all__ = ("run_distance_cleanup",)
 LOG_PREFIX = "DISTANZE"
 DETECT_LAST_THRESHOLD_KEY = "last_detection_threshold"  # Fallback-Key, ohne Modulimport
 
-def _log(msg: str, *, verbose: bool):
-    if verbose:
-        print(f"{LOG_PREFIX}: {msg}")
-
 def _resolve_clip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
     scn = getattr(context, "scene", None)
     clip = getattr(context, "edit_movieclip", None)
@@ -81,10 +77,6 @@ def _compute_detect_min_distance(context: bpy.types.Context, *, verbose: bool) -
     # Clamp Faktor sinnvoll (optional, verhindert Degeneration)
     # z.B. [0.25 .. 2.00] – kann angepasst werden; hier kein harter Clamp:
     detect_min_dist = max(1, int(base_px * factor))
-    if verbose:
-        print(f"{LOG_PREFIX}: AUTO min_distance from Detect "
-              f"(thr={thr:.6f}, factor={factor:.3f}, base={base_px} px) → detect_min_dist={detect_min_dist} px")
-    return detect_min_dist, thr, factor, base_px
 
 def cleanup_new_markers_at_frame(
     context: bpy.types.Context,
