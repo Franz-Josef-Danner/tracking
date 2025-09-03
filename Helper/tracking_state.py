@@ -46,6 +46,22 @@ def _get_state(context: bpy.types.Context) -> Dict[str, Any]:
             pass
     state = {"frames": {}}  # key: str(frame) -> FrameEntry as dict
     _save_state(context, state)
+
+
+# ---------- Reset API ----------
+
+def reset_tracking_state(context: bpy.types.Context) -> None:
+    """Setzt den gesamten Tracking-State (frames, counts, A-Werte) zurück."""
+    try:
+        state = {"frames": {}}
+        _save_state(context, state)
+        if "_tracking_triplet_mode" in context.scene:
+            try:
+                del context.scene["_tracking_triplet_mode"]
+            except Exception:
+                pass
+    except Exception as exc:
+        print(f"[tracking_state] Reset fehlgeschlagen: {exc}")
     return state
 
 
