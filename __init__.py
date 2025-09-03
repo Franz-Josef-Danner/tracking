@@ -246,10 +246,9 @@ class CLIP_PT_kaiserlich_panel(Panel):
             scene, "kaiserlich_solve_err_idx",
             rows=5
         )
-        box.operator("kaiserlich.clear_solve_err", icon="TRASH", text="Clear Solve Log")
         layout.separator()
         layout.operator("clip.kaiserlich_coordinator_launcher", text="Coordinator starten")
-# --- UIList & Operator für Solve-Log ---
+# --- UIList für Solve-Log ---
 class KAISERLICH_UL_solve_err(bpy.types.UIList):
     bl_idname = "KAISERLICH_UL_solve_err"
     def draw_item(self, _context, layout, _data, item, _icon, _active_data, _active_propname, _index):
@@ -259,36 +258,6 @@ class KAISERLICH_UL_solve_err(bpy.types.UIList):
         row.label(text=txt)
         row.label(text=item.stamp)
 
-class KAISERLICH_OT_ClearSolveErr(BpyOperator):
-    bl_idname = "kaiserlich.clear_solve_err"
-    bl_label = "Clear Solve Log"
-    bl_options = {"INTERNAL"}
-    # optional: State für Dialoganzeige (keine Property nötig)
-    _count: int = 0
-
-    def invoke(self, context, event):
-        scn = context.scene
-        self._count = len(getattr(scn, "kaiserlich_solve_err_log", []))
-        # Fast-Path: mit Ctrl oder Shift sofort löschen, ohne Dialog
-        if event and (getattr(event, "ctrl", False) or getattr(event, "shift", False)):
-            return self.execute(context)
-        # Bestätigungsdialog anzeigen
-        return context.window_manager.invoke_props_dialog(self, width=280)
-
-    def draw(self, _context):
-        col = self.layout.column(align=True)
-        col.label(text=f"{self._count} Einträge löschen?")
-        col.label(text="Dies setzt auch den Solve-Zähler zurück.", icon="INFO")
-
-    def execute(self, context):
-        scn = context.scene
-        try:
-            scn.kaiserlich_solve_err_log.clear()
-            scn.kaiserlich_solve_attempts = 0
-        finally:
-            _tag_clip_redraw()
-        return {'FINISHED'}
-
 # ---------------------------------------------------------------------------
 # Register/Unregister
 # ---------------------------------------------------------------------------
@@ -296,7 +265,6 @@ _CLASSES = (
     RepeatEntry,
     KaiserlichSolveErrItem,
     KAISERLICH_UL_solve_err,
-    KAISERLICH_OT_ClearSolveErr,
     CLIP_OT_tracking_coordinator,            # modal coordinator
     CLIP_OT_bidirectional_track,             # bidi helper
     CLIP_OT_kaiserlich_coordinator_launcher, # launcher
