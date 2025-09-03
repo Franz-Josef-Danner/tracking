@@ -64,14 +64,25 @@ def _tag_clip_redraw() -> None:
 # Öffentliche Helper-Funktion (vom Coordinator aufrufbar)
 def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) -> None:
     """Logge einen Solve-Versuch NUR bei gültigem numerischen Wert (kein None/NaN/Inf)."""
+    scn = context.scene if hasattr(context, "scene") else None
+    dbg = bool(getattr(scn, "kaiserlich_debug_graph", False)) if scn else False
+    if dbg:
+        print(f"[SolveLog] incoming value={value!r}")
     # Nur numerische Endwerte zulassen
     if value is None:
+        if dbg:
+            print("[SolveLog] skipped: value is None")
         return
     try:
         v = float(value)
     except Exception:
+        if dbg:
+            print("[SolveLog] skipped: not convertible to float")
         return
     if (v != v) or math.isinf(v):  # NaN oder ±Inf
+        if dbg:
+            reason = "NaN" if (v != v) else "Inf"
+            print(f"[SolveLog] skipped: {reason}")
         return
     scn = context.scene
     try:
@@ -91,10 +102,17 @@ def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) ->
         pass
     # Ältere Werte abschneiden, nur die letzten 10 behalten
     coll = scn.kaiserlich_solve_err_log
+    if dbg:
+        print(f"[SolveLog] before trim: len={len(coll)} attempts={scn.kaiserlich_solve_attempts}")
+
     while len(coll) > 10:
         coll.remove(len(coll) - 1)
+    if dbg:
+        seq_dbg = [(it.attempt, it.value) for it in coll]
+        print(f"[SolveLog] stored (most-recent-first idx=0): len={len(coll)} data={seq_dbg}")
     # UI-Refresh (CLIP-Editor + Sidebar)
     _tag_clip_redraw()
+    
 # GPU-Overlay (Sparkline) – Draw Handler
 _solve_graph_handle = None
 def _draw_solve_graph():
@@ -104,10 +122,15 @@ def _draw_solve_graph():
     scn = getattr(bpy.context, "scene", None)
     if not scn or not getattr(scn, "kaiserlich_solve_graph_enabled", False):
         return
+    dbg = bool(getattr(scn, "kaiserlich_debug_graph", False))
+    if dbg:
+        print(f"[SolveGraph] overlay=ON region={getattr(bpy.context,'region',None)}")
     coll = getattr(scn, "kaiserlich_solve_err_log", [])
     # Chronologisch (ältester→neuester), NaN ignorieren
     seq = sorted((it.attempt, it.value) for it in coll if it.value == it.value)
     has_data = bool(seq)
+    if dbg:
+        print(f"[SolveGraph] log_len={len(coll)} filtered_len={len(seq)} has_data={has_data}")
     # Viewport-Maße robust beschaffen (Region ist nicht garantiert gesetzt)
     try:
         _vx, _vy, W, H = gpu.state.viewport_get()
@@ -116,11 +139,15 @@ def _draw_solve_graph():
         if not region:
             return
         W, H = region.width, region.height
+    if dbg:
+        print(f"[SolveGraph] viewport={W}x{H}")
     pad = 16
     gw, gh = min(320, W - 2*pad), 80
     # Platz links für Y-Achse reservieren (Achse + Labels)
     yaxis_w = 42
     ox, oy = W - gw - pad, pad
+    if dbg:
+        print(f"[SolveGraph] box gw={gw} gh={gh} ox={ox} oy={oy} yaxis_w={yaxis_w}")
     shader = gpu.shader.from_builtin('UNIFORM_COLOR')
     # Rahmen
     box = [(ox, oy), (ox+gw, oy), (ox+gw, oy+gh), (ox, oy+gh)]
@@ -136,7 +163,8 @@ def _draw_solve_graph():
         blf.draw(font_id, "Average Trend")
     except Exception:
         pass
-
+        if dbg:
+            print("[SolveGraph] no data → title+box drawn, returning early")
     # Wenn keine Daten vorliegen: Hinweis zeichnen und früh aussteigen
     if not has_data:
         try:
@@ -166,6 +194,9 @@ def _draw_solve_graph():
     vmin, vmax = (min(take_vals), max(take_vals)) if take_vals else (0.0, 1.0)
     if abs(vmax - vmin) < 1e-12:
         vmax = vmin + 1e-12
+    if dbg:
+        print(f"[SolveGraph] values(last10)={take_vals}")
+        print(f"[SolveGraph] scale vmin={vmin:.6f} vmax={vmax:.6f} span={vmax-vmin:.6f}")
     n = len(take_vals)
     ln = max(1, n - 1)  # vermeidet Div/0, erlaubt 1-Punkt-Stub
     coords = []
@@ -173,6 +204,8 @@ def _draw_solve_graph():
         x = ox + yaxis_w + (i / ln) * (gw - yaxis_w)
         y = oy + ((val - vmin) / (vmax - vmin)) * gh
         coords.append((x, y))
+    if dbg:
+        print(f"[SolveGraph] coords_count={len(coords)} ln={ln}")
     # Y-Achse mit Ticks + numerischen Labels (links)
     try:
         # "Schöne" Tick-Schrittweite berechnen (feiner)
@@ -188,6 +221,9 @@ def _draw_solve_graph():
         elif norm < 3.0: step = 1.0 * mag
         elif norm < 7.0: step = 2.0 * mag
         else:            step = 5.0 * mag
+        if dbg:
+            print(f"[SolveGraph] tick target={target} raw={raw:.6g} mag={mag:.6g} norm={norm:.3f} step={step:.6g}")
+
         # Tick-Start auf Schritt runden
         start = _m.floor(vmin / step) * step
         ticks = []
@@ -198,6 +234,8 @@ def _draw_solve_graph():
                 break
             ticks.append(t)
             t += step
+        if dbg:
+            print(f"[SolveGraph] ticks_count={len(ticks)} ticks={ticks}")
         # Achsenlinie
         yaxis_x = ox + yaxis_w
         batch = batch_for_shader(shader, 'LINES', {"pos": [(yaxis_x, oy), (yaxis_x, oy+gh)]})
@@ -213,6 +251,7 @@ def _draw_solve_graph():
             # Gridline dezent
             batch = batch_for_shader(shader, 'LINES', {"pos": [(yaxis_x, y), (ox+gw, y)]})
             shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.15)); batch.draw(shader)
+    if dbg: print("[SolveGraph] draw done")
             # Label
             lbl = f"{tv:.2f}"
             blf.position(0, ox + 4, y - 6, 0)
@@ -258,6 +297,11 @@ def _register_scene_props() -> None:
             name="Overlay Graph", default=True,
             description="Sparkline-Overlay des Avg-Errors im CLIP-Editor anzeigen"
         )
+    if not hasattr(sc, "kaiserlich_debug_graph"):
+        sc.kaiserlich_debug_graph = BoolProperty(
+            name="Debug Graph", default=False,
+            description="Konsolen-Logs für Solve-Overlay und Solve-Log aktivieren"
+        )
 
 def _unregister_scene_props() -> None:
     sc = bpy.types.Scene
@@ -265,6 +309,7 @@ def _unregister_scene_props() -> None:
         "repeat_frame", "marker_frame", "frames_track", "error_track",
         "kaiserlich_solve_err_log", "kaiserlich_solve_err_idx",
         "kaiserlich_solve_attempts", "kaiserlich_solve_graph_enabled",
+        "kaiserlich_debug_graph",
     ):
         if hasattr(sc, name):
             try:
@@ -320,6 +365,7 @@ class CLIP_PT_kaiserlich_panel(Panel):
         row = box.row(align=True)
         row.label(text="Solve QA")
         row.prop(scene, "kaiserlich_solve_graph_enabled", text="Overlay")
+        row.prop(scene, "kaiserlich_debug_graph", text="Debug")
         box.template_list(
             "KAISERLICH_UL_solve_err", "",  # UIList-ID
             scene, "kaiserlich_solve_err_log",
