@@ -23,6 +23,9 @@ SCENE_STATE_PROP = "tracking_state_json"  # JSON in der Szene
 @dataclass
 class FrameEntry:
     count: int = 1  # wie oft dieser Frame durchlaufen wurde (1..)
+    # Markierungen für Interpolations-Logik
+    anchor: bool = False          # True, wenn Playhead hier aktiv gesetzt wurde
+    interpolated: bool = False    # True, wenn count aus Interpolation stammt
     A1: float = 0.0
     A2: float = 0.0
     A3: float = 0.0
@@ -79,6 +82,23 @@ def _ensure_frame_entry(state: Dict[str, Any], frame: int) -> Tuple[Dict[str, An
 
 
 # ---------- Motion-Model / Triplet ----------
+
+def _apply_model_triplet_for_count(context: bpy.types.Context, entry: Dict[str, Any]) -> None:
+    """Setzt Motion-Model und Triplet-Flag ausgehend von entry['count'] und A1..A5."""
+    count = int(entry.get("count", 1))
+    if count == 10:
+        # Abbruch → nichts setzen
+        return
+    if 1 <= count <= 5:
+        model = MOTION_MODEL_BY_COUNT.get(count, "Loc")
+        _set_motion_model_for_all_selected_tracks(context, model)
+        _set_triplet_mode_on_scene(context, None)
+        return
+    # >=6: bestes A1..A5 plus Triplet 1..4 (abgeleitet aus count)
+    best_model = _pick_best_model_from_A1_A5(entry)
+    _set_motion_model_for_all_selected_tracks(context, best_model)
+    trip_idx = 4 if count > 9 else max(1, min(4, count - 5))
+    _set_triplet_mode_on_scene(context, trip_idx)
 
 def _set_motion_model_for_all_selected_tracks(context: bpy.types.Context, model: str) -> None:
     """Setzt Motion-Model für alle ausgewählten Tracks; Fallback auf Default, wenn keine Auswahl."""
@@ -142,6 +162,68 @@ def _popup_error_report(context: bpy.types.Context, frame: int, entry: Dict[str,
         print(title)
         for ln in lines:
             print("  ", ln)
+ 
+# ---------- Interpolation ----------
+
+def _sorted_anchor_frames(state: Dict[str, Any]) -> list[int]:
+    frames = state.get("frames", {})
+    anchors = []
+    for k, v in frames.items():
+        try:
+            if v.get("anchor", False):
+                anchors.append(int(k))
+        except Exception:
+            continue
+    anchors.sort()
+    return anchors
+
+
+def _lin_interp_int(a_x: int, a_y: int, b_x: int, b_y: int, x: int) -> int:
+    """Lineare Interpolation zwischen (a_x, a_y) und (b_x, b_y), gerundet."""
+    if b_x == a_x:
+        return int(round(a_y))
+    t = (x - a_x) / float(b_x - a_x)
+    y = a_y + t * (b_y - a_y)
+    # clamp 1..9 (10 ist Abbruchfall, wird nicht interpoliert)
+    y = max(1.0, min(9.0, y))
+    return int(round(y))
+
+
+def _recompute_interpolations(context: bpy.types.Context, state: Dict[str, Any], apply_models: bool = True) -> None:
+    """Berechnet Interpolationen der count-Werte zwischen Ankern.
+    - überschreibt KEINE Anker (anchor bleibt führend)
+    - setzt interpolierte Frames auf interpolated=True
+    - belässt vorhandene Nicht-Anker außerhalb der Spanne unverändert
+    """
+    frames: Dict[str, Any] = state.setdefault("frames", {})
+    anchors = _sorted_anchor_frames(state)
+    if len(anchors) < 2:
+        return
+
+    for i in range(len(anchors) - 1):
+        left = anchors[i]
+        right = anchors[i + 1]
+        left_entry = frames.get(str(left), {})
+        right_entry = frames.get(str(right), {})
+        left_c = int(left_entry.get("count", 1))
+        right_c = int(right_entry.get("count", 1))
+
+        # Nur zwischen benachbarten Ankern interpolieren
+        for f in range(left + 1, right):
+            key = str(f)
+            entry, _created = _ensure_frame_entry(state, f)
+            if entry.get("anchor", False):
+                # Falls in der Mitte bereits ein (später gesetzter) Anker liegt, Segment hier automatisch getrennt.
+                continue
+            # Interpolierter count
+            interp = _lin_interp_int(left, left_c, right, right_c, f)
+            entry["count"] = interp
+            entry["interpolated"] = True
+            entry["anchor"] = False
+            if apply_models:
+                _apply_model_triplet_for_count(context, entry)
+
+    _save_state(context, state)
 
 
 # ---------- Öffentliche API ----------
@@ -159,14 +241,20 @@ def orchestrate_on_jump(context: bpy.types.Context, frame: int) -> None:
 
     if created:
         # Neu: count=1 → A1 ("Loc")
-        _set_motion_model_for_all_selected_tracks(context, MOTION_MODEL_BY_COUNT[1])
-        _set_triplet_mode_on_scene(context, None)
+        entry["count"] = 1
+        entry["anchor"] = True
+        entry["interpolated"] = False
+        _apply_model_triplet_for_count(context, entry)
         _save_state(context, state)
+        # Nach neuem Anker Interpolation neu berechnen (falls davor schon ein Anker existierte)
+        _recompute_interpolations(context, state, apply_models=True)
         return
 
     # Wiederbesuch → count erhöhen
     entry["count"] = int(entry.get("count", 1)) + 1
     count = entry["count"]
+    entry["anchor"] = True          # explizit als gesetzter Anker markieren
+    entry["interpolated"] = False   # dieser Wert ist nicht interpoliert
 
     if count == 10:
         # Abbruchbedingung: Report zeigen und nichts mehr verstellen
@@ -174,21 +262,12 @@ def orchestrate_on_jump(context: bpy.types.Context, frame: int) -> None:
         _popup_error_report(context, frame, entry)
         return
 
-    if 1 <= count <= 5:
-        model = MOTION_MODEL_BY_COUNT[count]
-        _set_motion_model_for_all_selected_tracks(context, model)
-        _set_triplet_mode_on_scene(context, None)
-    elif 6 <= count <= 9:
-        best_model = _pick_best_model_from_A1_A5(entry)
-        _set_motion_model_for_all_selected_tracks(context, best_model)
-        _set_triplet_mode_on_scene(context, count - 5)  # 1..4
-    else:
-        best_model = _pick_best_model_from_A1_A5(entry)
-        _set_motion_model_for_all_selected_tracks(context, best_model)
-        _set_triplet_mode_on_scene(context, 4)
+    # Einheitliche Ableitung anwenden
+    _apply_model_triplet_for_count(context, entry)
 
     _save_state(context, state)
-
+    # Nach Änderung eines Ankers Interpolation neu berechnen
+    _recompute_interpolations(context, state, apply_models=True)
 
 def record_bidirectional_result(
     context: bpy.types.Context,
@@ -237,3 +316,17 @@ def record_bidirectional_result(
     entry[key] = float(total)
 
     _save_state(context, state)
+
+def reset_tracking_state(context: bpy.types.Context) -> None:
+    """Setzt den gesamten Tracking-State (frames, counts, A-Werte) zurück."""
+    try:
+        state = {"frames": {}}
+        _save_state(context, state)
+        if "_tracking_triplet_mode" in context.scene:
+            try:
+                del context.scene["_tracking_triplet_mode"]
+            except Exception:
+                pass
+    except Exception as exc:
+        print(f"[tracking_state] Reset fehlgeschlagen: {exc}")
+    return state
