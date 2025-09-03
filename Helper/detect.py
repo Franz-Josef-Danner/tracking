@@ -207,14 +207,32 @@ def run_detect_basic(
             rc = int(repeat_count or 0)
         except Exception:
             rc = 0
-        want_match = bool(match_search_size) or rc >= 6 or triplet_mode > 0
-        if want_match:
+        # Dynamische Margin-Anpassung je nach repeat_count
+        try:
+            ps = int(getattr(settings, "default_pattern_size", 0))
+        except Exception:
+            ps = 0
+
+        if match_search_size:
+            # Nur wenn explizit angefordert → search_size verwenden
             try:
                 ss = int(getattr(settings, "default_search_size", 0))
             except Exception:
                 ss = 0
             if ss and ss > 0:
                 margin = int(ss)
+
+        # Staffelung auf Basis repeat_count
+        if rc >= 26 and ps > 0:
+            margin = ps * 7
+        elif rc >= 21 and ps > 0:
+            margin = ps * 6
+        elif rc >= 16 and ps > 0:
+            margin = ps * 7
+        elif rc >= 11 and ps > 0:
+            margin = ps * 5
+        elif rc >= 6 and ps > 0:
+            margin = ps * 4
 
         # Placement normalisieren (RNA-Enum erwartet 'FRAME' | 'INSIDE_GPENCIL' | 'OUTSIDE_GPENCIL')
         p = (placement or "FRAME").upper()
