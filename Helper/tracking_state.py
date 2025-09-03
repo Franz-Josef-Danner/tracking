@@ -87,7 +87,8 @@ def _apply_model_triplet_for_count(context: bpy.types.Context, entry: Dict[str, 
     """Setzt Motion-Model und Triplet-Flag ausgehend von entry['count'] und A1..A5."""
     count = int(entry.get("count", 1))
     if count == 10:
-        # Abbruch → nichts setzen
+        # Abbruch → Triplet-Flag explizit löschen und nichts weiter setzen
+        _set_triplet_mode_on_scene(context, None)
         return
     if 1 <= count <= 5:
         model = MOTION_MODEL_BY_COUNT.get(count, "Loc")
@@ -258,6 +259,8 @@ def orchestrate_on_jump(context: bpy.types.Context, frame: int) -> None:
 
     if count == 10:
         # Abbruchbedingung: Report zeigen und nichts mehr verstellen
+        # Wichtig: Triplet-Flag sicher zurücksetzen, damit kein stale Zustand bleibt
+        _set_triplet_mode_on_scene(context, None)
         _save_state(context, state)
         _popup_error_report(context, frame, entry)
         return
