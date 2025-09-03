@@ -116,6 +116,7 @@ PH_FIND_LOW   = "FIND_LOW"
 PH_JUMP       = "JUMP"
 PH_DETECT     = "DETECT"
 PH_DISTANZE   = "DISTANZE"
+PH_FIND_MAX   = "FIND_MAX"
 PH_SPIKE_CYCLE = "SPIKE_CYCLE"
 PH_SOLVE_EVAL = "SOLVE_EVAL"
 # Erweiterte Phase: Bidirectional-Tracking. Wenn der Multi‑Pass und das
@@ -821,7 +822,32 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 reset_for_new_cycle(context)
                 self.phase = PH_FIND_LOW
                 return {'RUNNING_MODAL'}
-        # PHASE: SPIKE_CYCLE – spike_filter → clean_short_segments → clean_short_tracks → split_cleanup → find_max_marker_frame
+
+        # PHASE: FIND_MAX – (optional) Suche nach Frame mit zu wenigen Markern
+        if self.phase == PH_FIND_MAX:
+            try:
+                res = run_find_max_marker_frame(context, log_each_frame=False, return_observed_min=True)
+                st = str(res.get("status", "NONE"))
+                if st == "FOUND":
+                    self.target_frame = int(res.get("frame"))
+                    self.report({'INFO'}, f"FIND_MAX → FOUND @f{self.target_frame} (count={res.get('count')} thr={res.get('threshold')})")
+                    self.phase = PH_FIND_LOW
+                    return {'RUNNING_MODAL'}
+                else:
+                    self.report({'INFO'}, f"FIND_MAX → NONE (obs_min={res.get('observed_min')} @f{res.get('observed_min_frame')}); erzwinge min. 1 Löschung")
+                    # Mindestens 1 Track löschen, damit Fortschritt garantiert ist
+                    try:
+                        red = run_reduce_error_tracks(context, max_to_delete=1)
+                        self.report({'INFO'}, f"ReduceErrorTracks(FIND_MAX/NONE): delete=1 → done={red.get('deleted')} {red.get('names')}")
+                    except Exception as _exc:
+                        self.report({'WARNING'}, f"ReduceErrorTracks(FIND_MAX/NONE) Fehler: {_exc}")
+                    reset_for_new_cycle(context)
+                    self.spike_threshold = None
+                    self.phase = PH_FIND_LOW
+                    return {'RUNNING_MODAL'}
+            except Exception as exc:
+                return self._finish(context, info=f"FIND_MAX Fehler: {exc}", cancelled=True)
+        # PHASE: SPIKE_CYCLE – spike_filter → clean_short_segments → clean_short_tracks → split_cleanup
         if self.phase == PH_SPIKE_CYCLE:
             scn = context.scene
             thr = float(self.spike_threshold or 100.0)
@@ -850,39 +876,26 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         recursive_split_cleanup(context, **override, tracks=tracks)
             except Exception:
                 pass
-            # 4) Max-Marker-Frame suchen
-            rmax = run_find_max_marker_frame(context)
-            if rmax.get("status") == "FOUND":
-                # Erfolg → regulären Zyklus neu starten
-                reset_for_new_cycle(context)  # Solve-Log bleibt erhalten (kein Bootstrap)
-                self.spike_threshold = None
-                scn["tco_spike_cycle_finished"] = False
-                self.phase = PH_FIND_LOW
-                return {'RUNNING_MODAL'}
-            # Kein Treffer
             next_thr = thr * 0.9
             if next_thr < 10.0:
-                # Terminalbedingung: Spike-Cycle beendet → Kamera-Solve starten
+                # Terminal: Spike-Cycle beendet → min. 1 löschen und zurück zu FIND_LOW (kein Solve)
                 try:
                     scn["tco_spike_cycle_finished"] = True
                 except Exception:
                     pass
+                # Mindestens 1 Track löschen, um Stagnation zu vermeiden
                 try:
-                    # Solve-Zyklus initial starten (ohne Refine, Zähler wird in SOLVE_EVAL geführt)
-                    self.solve_refine_active = False
-                    try:
-                        scn["refine_intrinsics_focal_length"] = False
-                    except Exception:
-                        pass
-                    _apply_refine_focal_flag(context, False)
-                    res = solve_camera_only(context)
-                    self.report({'INFO'}, f"SolveCamera gestartet (NO_REFINE) → {res}")
-                    self.phase = PH_SOLVE_EVAL
-                    return {'RUNNING_MODAL'}
-                except Exception as exc:
-                    return self._finish(context, info=f"SolveCamera start fehlgeschlagen: {exc}", cancelled=True)
-            # Weiter iterieren
+                    red = run_reduce_error_tracks(context, max_to_delete=1)
+                    self.report({'INFO'}, f"ReduceErrorTracks(SPIKE terminal): delete=1 → done={red.get('deleted')} {red.get('names')}")
+                except Exception as _exc:
+                    self.report({'WARNING'}, f"ReduceErrorTracks(SPIKE terminal) Fehler: {_exc}")
+                reset_for_new_cycle(context)  # sauberer Zustand
+                self.spike_threshold = None
+                self.phase = PH_FIND_LOW
+                self.report({'INFO'}, "SPIKE_CYCLE beendet (<10) → zurück zu FIND_LOW (kein Solve)")
+                return {'RUNNING_MODAL'}
             self.spike_threshold = next_thr
+            self.phase = PH_FIND_MAX
             return {'RUNNING_MODAL'}
         # PHASE 5: Bidirectional-Tracking. Wird aktiviert, nachdem ein Multi-Pass
         # und Distanzé erfolgreich ausgeführt wurden und die Markeranzahl innerhalb des
