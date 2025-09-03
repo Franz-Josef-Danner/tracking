@@ -258,8 +258,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     bidi_started: bool = False
     bidi_before_counts: dict[str, int] | None = None  # Snapshot vor BIDI
     # Temporärer Schwellenwert für den Spike-Cycle (startet bei 100, *0.9)
-    # Solve-Retry-State: Wurde bereits mit refine_intrinsics_focal_length=True neu gelöst?
-    solve_refine_attempted: bool = False
+    # Solve-Versuchs-Tracking:
+    #  - pro Frame werden die fehlgeschlagenen Versuche OHNE Refine gezählt (max 10)
+    #  - danach genau EIN Versuch MIT Refine
+    solve_attempts_no_refine: dict[int, int] = {}
+    solve_refine_active: bool = False  # aktueller Solve läuft mit Refine?
+    solve_last_avg: float | None = None  # letzter gemessener avg zur Diagnose
 
     def execute(self, context: bpy.types.Context):
         # Bootstrap/Reset
@@ -283,7 +287,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # Bidirectional‑Track ist noch nicht gestartet
         self.spike_threshold = None  # Spike-Schwellenwert zurücksetzen
         # Solve-Retry-State zurücksetzen
-        self.solve_refine_attempted = False
+        self.solve_attempts_no_refine = {}
+        self.solve_refine_active = False
+        self.solve_last_avg = None
         self.bidi_before_counts = None
         
         wm = context.window_manager
@@ -664,76 +670,157 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # Wenn keine Auswertungsfunktion vorhanden ist, einfach abschließen
             self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}")
             return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
-        # PHASE: SOLVE_EVAL – Solve prüfen, loggen, Retry/Reduce steuern
+
+
+        # PHASE: SOLVE_EVAL – Solve prüfen, Reduce NACH JEDEM Solve, Anzahl prüfen,
+        #                     10x NO_REFINE, danach einmal REFINE; Rücksprünge steuern.
         if self.phase == PH_SOLVE_EVAL:
             scn = context.scene
             try:
                 target_err = float(scn.get("error_track", 2.0))
             except Exception:
                 target_err = 2.0
-            # 1) messen & loggen
+            # --- 1) avg messen & loggen (kann None sein) ---
             avg_err = get_avg_reprojection_error(context)
-            _solve_log(context, avg_err)  # loggt nur bei gültigem numerischem Wert
-            # 2) kein Wert → Retry einmalig, sonst mind. 1 Track löschen
-            if avg_err is None:
-                if not getattr(self, "solve_refine_attempted", False):
-                    try: scn["refine_intrinsics_focal_length"] = True
-                    except Exception: pass
-                    _apply_refine_focal_flag(context, True)
+            self.solve_last_avg = avg_err if isinstance(avg_err, (int, float)) else None
+            _solve_log(context, avg_err)
+
+            # --- 2) Reduce NACH JEDEM Solve ---
+            try:
+                import math
+                t = target_err if (target_err == target_err and target_err > 1e-8) else 0.6
+                # Wenn kein avg → minimal 1 löschen, sonst ceil(avg/target) clamp 1..20
+                x = 1 if (avg_err is None) else max(1, min(20, int(math.ceil(float(avg_err) / t))))
+                red = run_reduce_error_tracks(context, max_to_delete=x)
+                self.report({'INFO'}, f"Reduce after Solve: delete={x} → done={red.get('deleted')} {red.get('names')}")
+            except Exception as _exc:
+                self.report({'WARNING'}, f"Reduce after Solve Fehler: {_exc}")
+
+            # --- 3) Anzahl-Check (Marker am aktuellen Frame) ---
+            def _ptrs_with_marker_at(context: bpy.types.Context, frame: int) -> set[int]:
+                clip = _resolve_clip(context)
+                out: set[int] = set()
+                if not clip:
+                    return out
+                trk = getattr(clip, "tracking", None)
+                if not trk:
+                    return out
+                for t in trk.tracks:
                     try:
-                        res_retry = solve_camera_only(context)
-                        self.solve_refine_attempted = True
-                        self.report({'INFO'}, f"Solve-Retry (avg=None) mit refine_intrinsics_focal_length=True → {res_retry}")
-                        return {'RUNNING_MODAL'}
-                    except Exception as exc:
-                        self.report({'WARNING'}, f"Solve-Retry (avg=None) fehlgeschlagen: {exc}")
-                # erzwungen 1 löschen
+                        m = None
+                        try:
+                            m = t.markers.find_frame(frame, exact=True)
+                        except TypeError:
+                            m = t.markers.find_frame(frame)
+                        if m:
+                            out.add(int(t.as_pointer()))
+                    except Exception:
+                        pass
+                return out
+
+            enough_now = None
+            eval_snapshot = None
+            if evaluate_marker_count is not None:
                 try:
-                    red = run_reduce_error_tracks(context, max_to_delete=1)
-                    self.report({'INFO'}, f"ReduceErrorTracks(FORCE): delete=1 → done={red.get('deleted')} {red.get('names')}")
+                    curf = int(self.target_frame) if self.target_frame is not None else int(scn.frame_current)
+                    ptrs_now = _ptrs_with_marker_at(context, curf)
+                    eval_snapshot = evaluate_marker_count(new_ptrs_after_cleanup=ptrs_now)  # type: ignore
+                    enough_now = (str(eval_snapshot.get("status", "")) == "ENOUGH")  # type: ignore
                 except Exception as _exc:
-                    self.report({'WARNING'}, f"ReduceErrorTracks(FORCE) Fehler: {_exc}")
-                # reset → neuer Zyklus
+                    self.report({'WARNING'}, f"Anzahl-Check fehlgeschlagen: {_exc}")
+
+            # --- 4) Ziel erreicht? (avg <= target) → normal beenden ---
+            if isinstance(avg_err, (int, float)) and avg_err <= target_err:
+                self.report({'INFO'}, f"Solve OK: avg={avg_err:.4f} ≤ target={target_err:.4f}")
+                # Trotz Erfolg wurde bereits reduced; jetzt Ende.
+                return self._finish(context, info="Sequenz abgeschlossen (Solve-Ziel erreicht).", cancelled=False)
+
+            # --- 5) ENOUGH-Entscheidung nach Reduce ---
+            #     ENOUGH → Fehlversuche für diesen Frame reset, neuen Solve-Zyklus (ohne Refine) starten
+            #     NICHT ENOUGH → zurück zu FIND_LOW (Low-Marker-Zyklus), Fehlversuche merken
+            cur_frame = int(self.target_frame) if self.target_frame is not None else int(scn.frame_current)
+            if enough_now is True:
+                # Reset Fail-Counter & Refine-Flag
+                self.solve_attempts_no_refine[cur_frame] = 0
+                self.solve_refine_active = False
+                try:
+                    scn["refine_intrinsics_focal_length"] = False
+                except Exception:
+                    pass
+                _apply_refine_focal_flag(context, False)
+                # Sofort neuer Solve-Versuch (NO_REFINE)
+                try:
+                    res = solve_camera_only(context)
+                    self.report({'INFO'}, f"Neuer Solve-Zyklus (ENOUGH, NO_REFINE) → {res}")
+                    # im selben Phase-Loop erneut evaluieren
+                    return {'RUNNING_MODAL'}
+                except Exception as exc:
+                    self.report({'WARNING'}, f"Neustart Solve (ENOUGH) fehlgeschlagen: {exc}")
+                    # Fallback: zurück zum Low-Zyklus
+                    self.phase = PH_FIND_LOW
+                    return {'RUNNING_MODAL'}
+            elif enough_now is False:
+                # Zähler erhöhen, aber wir springen in den Low-Zyklus zurück
+                n = int(self.solve_attempts_no_refine.get(cur_frame, 0))
+                if not self.solve_refine_active:
+                    self.solve_attempts_no_refine[cur_frame] = min(10, n + 1)
+                self.report({'INFO'}, f"NICHT ENOUGH @f{cur_frame} → zurück zu FIND_LOW (no_refine_fails={self.solve_attempts_no_refine.get(cur_frame,0)})")
                 reset_for_new_cycle(context)
                 self.detection_threshold = None
                 self.pre_ptrs = None
-                self.target_frame = None
                 self.repeat_map = {}
-                self.solve_refine_attempted = False
                 self.phase = PH_FIND_LOW
                 return {'RUNNING_MODAL'}
-            # 3) Ziel erreicht?
-            if avg_err <= target_err:
-                self.report({'INFO'}, f"Solve OK: avg={avg_err:.4f} ≤ target={target_err:.4f}")
-                return self._finish(context, info="Sequenz abgeschlossen (Solve-Ziel erreicht).", cancelled=False)
-            # 4) Einmaliger Retry mit Refine, falls noch offen
-            if not getattr(self, "solve_refine_attempted", False):
-                try: scn["refine_intrinsics_focal_length"] = True
-                except Exception: pass
-                _apply_refine_focal_flag(context, True)
-                try:
-                    res_retry = solve_camera_only(context)
-                    self.solve_refine_attempted = True
-                    self.report({'INFO'}, f"Solve-Retry mit refine_intrinsics_focal_length=True → {res_retry}")
-                    return {'RUNNING_MODAL'}
-                except Exception as exc:
-                    self.report({'WARNING'}, f"Solve-Retry konnte nicht gestartet werden: {exc}")
-            # 5) Reduktion: x = ceil(avg/target), clamp 1..20
-            import math
-            t = target_err if (target_err == target_err and target_err > 1e-8) else 0.6
-            x = max(1, min(20, int(math.ceil(avg_err / t))))
-            red = run_reduce_error_tracks(context, max_to_delete=x)
-            self.report({'INFO'}, f"ReduceErrorTracks: avg={avg_err:.4f} target={t:.4f} → delete={x} → done={red.get('deleted')} {red.get('names')}")
-            # 6) Reset & zurück in den Hauptzyklus
-            reset_for_new_cycle(context)  # Solve-Log bleibt erhalten
-            self.detection_threshold = None
-            self.pre_ptrs = None
-            self.target_frame = None
-            self.repeat_map = {}
-            self.solve_refine_attempted = False
-            self.phase = PH_FIND_LOW
-            return {'RUNNING_MODAL'}
 
+            # --- 6) Falls kein Count verfügbar oder unentschieden → Solve-Zähler/Refine steuern ---
+            # Steuert 10× NO_REFINE, danach 1× REFINE.
+            if not self.solve_refine_active:
+                n = int(self.solve_attempts_no_refine.get(cur_frame, 0))
+                if n < 10:
+                    # weiteren NO_REFINE-Versuch starten
+                    self.solve_attempts_no_refine[cur_frame] = n + 1
+                    try:
+                        scn["refine_intrinsics_focal_length"] = False
+                    except Exception:
+                        pass
+                    _apply_refine_focal_flag(context, False)
+                    try:
+                        res = solve_camera_only(context)
+                        self.report({'INFO'}, f"Solve NO_REFINE attempt={self.solve_attempts_no_refine[cur_frame]} → {res}")
+                        return {'RUNNING_MODAL'}
+                    except Exception as exc:
+                        self.report({'WARNING'}, f"Solve NO_REFINE fehlgeschlagen: {exc}")
+                        # zurück zu FIND_LOW, Zähler bleibt bestehen
+                        reset_for_new_cycle(context)
+                        self.phase = PH_FIND_LOW
+                        return {'RUNNING_MODAL'}
+                else:
+                    # Schwelle erreicht → EIN Solve mit Refine
+                    self.solve_refine_active = True
+                    try:
+                        scn["refine_intrinsics_focal_length"] = True
+                    except Exception:
+                        pass
+                    _apply_refine_focal_flag(context, True)
+                    try:
+                        res = solve_camera_only(context)
+                        self.report({'INFO'}, f"Solve REFINE (after 10 NO_REFINE) → {res}")
+                        return {'RUNNING_MODAL'}
+                    except Exception as exc:
+                        self.report({'WARNING'}, f"Solve REFINE fehlgeschlagen: {exc}")
+                        # zurück zu FIND_LOW
+                        reset_for_new_cycle(context)
+                        self.phase = PH_FIND_LOW
+                        return {'RUNNING_MODAL'}
+            else:
+                # Wir haben gerade den REFINE-Solve durchgeführt:
+                # Nach Reduce & ggf. Count-Check (siehe oben) kommt hier nur an,
+                # wenn weder ENOUGH noch Fehlerpfad gegriffen hat.
+                # Policy: zurück zu FIND_LOW, Fail-Zähler beibehalten.
+                self.report({'INFO'}, "REFINE abgeschlossen → zurück zu FIND_LOW")
+                reset_for_new_cycle(context)
+                self.phase = PH_FIND_LOW
+                return {'RUNNING_MODAL'}
         # PHASE: SPIKE_CYCLE – spike_filter → clean_short_segments → clean_short_tracks → split_cleanup → find_max_marker_frame
         if self.phase == PH_SPIKE_CYCLE:
             scn = context.scene
@@ -781,17 +868,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 except Exception:
                     pass
                 try:
-                    # Erstlauf: refine_intrinsics_focal_length explizit deaktivieren
+                    # Solve-Zyklus initial starten (ohne Refine, Zähler wird in SOLVE_EVAL geführt)
+                    self.solve_refine_active = False
                     try:
                         scn["refine_intrinsics_focal_length"] = False
                     except Exception:
                         pass
-                    # Flag unmittelbar in die Tracking-Settings spiegeln (erster Solve ohne Refine)
                     _apply_refine_focal_flag(context, False)
-                    self.solve_refine_attempted = False
                     res = solve_camera_only(context)
-                    self.report({'INFO'}, f"SolveCamera gestartet → {res}")
-                    # → direkt in die Solve-Evaluation wechseln
+                    self.report({'INFO'}, f"SolveCamera gestartet (NO_REFINE) → {res}")
                     self.phase = PH_SOLVE_EVAL
                     return {'RUNNING_MODAL'}
                 except Exception as exc:
