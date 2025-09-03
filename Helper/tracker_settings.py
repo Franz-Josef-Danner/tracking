@@ -100,7 +100,7 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
     search_size = pattern_size * 2
     ts.default_pattern_size = pattern_size
     ts.default_search_size = search_size
-    ts.default_margin = search_size * 1.1
+    ts.default_margin = search_size
 
     # Cleanup-Parameter aus Szene (mit Fallbacks)
     ts.clean_frames = getattr(scene, "frames_track", 20)
