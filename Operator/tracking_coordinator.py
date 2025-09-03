@@ -674,7 +674,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # 1) messen & loggen
             avg_err = get_avg_reprojection_error(context)
             _solve_log(context, avg_err)  # loggt nur bei gültigem numerischem Wert
-            # 2) kein Wert → Retry einmalig, sonst mind. 1 Track löschen
+            # 2) kein Wert → Retry einmalig, sonst mind. 1 Track löschen (+ find_max)
             if avg_err is None:
                 if not getattr(self, "solve_refine_attempted", False):
                     try: scn["refine_intrinsics_focal_length"] = True
@@ -693,6 +693,21 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     self.report({'INFO'}, f"ReduceErrorTracks(FORCE): delete=1 → done={red.get('deleted')} {red.get('names')}")
                 except Exception as _exc:
                     self.report({'WARNING'}, f"ReduceErrorTracks(FORCE) Fehler: {_exc}")
+                # direkt im Anschluss: find_max
+                try:
+                    rmax = run_find_max_marker_frame(context)
+                    if rmax.get("status") == "FOUND":
+                        reset_for_new_cycle(context)
+                        self.detection_threshold = None
+                        self.pre_ptrs = None
+                        self.target_frame = None
+                        self.repeat_map = {}
+                        self.solve_refine_attempted = False
+                        self.phase = PH_FIND_LOW
+                        self.report({'INFO'}, "find_max: FOUND → neuer Zyklus (avg=None-Path)")
+                        return {'RUNNING_MODAL'}
+                except Exception as _exc:
+                    self.report({'WARNING'}, f"find_max nach FORCE-Reduce fehlgeschlagen: {_exc}")
                 # reset → neuer Zyklus
                 reset_for_new_cycle(context)
                 self.detection_threshold = None
@@ -706,7 +721,29 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if avg_err <= target_err:
                 self.report({'INFO'}, f"Solve OK: avg={avg_err:.4f} ≤ target={target_err:.4f}")
                 return self._finish(context, info="Sequenz abgeschlossen (Solve-Ziel erreicht).", cancelled=False)
-            # 4) Einmaliger Retry mit Refine, falls noch offen
+            # 4) Threshold NICHT erreicht → SOFORT reduzieren (immer, bei jedem Solve)
+            import math
+            t = target_err if (target_err == target_err and target_err > 1e-8) else 0.6
+            x = max(1, min(20, int(math.ceil(avg_err / t))))
+            red = run_reduce_error_tracks(context, max_to_delete=x)
+            self.report({'INFO'}, f"ReduceErrorTracks: avg={avg_err:.4f} target={t:.4f} → delete={x} → done={red.get('deleted')} {red.get('names')}")
+            # 5) Direkt danach: find_max → bei Treffer sofort in den regulären Low-Cycle
+            try:
+                rmax = run_find_max_marker_frame(context)
+                if rmax.get("status") == "FOUND":
+                    reset_for_new_cycle(context)  # Solve-Log bleibt erhalten
+                    self.detection_threshold = None
+                    self.pre_ptrs = None
+                    self.target_frame = None
+                    self.repeat_map = {}
+                    # WICHTIG: Refine-State für nächste Solve-Runde zurücksetzen
+                    self.solve_refine_attempted = False
+                    self.phase = PH_FIND_LOW
+                    self.report({'INFO'}, "find_max: FOUND → neuer Zyklus (nach Reduce)")
+                    return {'RUNNING_MODAL'}
+            except Exception as _exc:
+                self.report({'WARNING'}, f"find_max nach Reduce fehlgeschlagen: {_exc}")
+            # 6) Kein find_max-Treffer: einmaliger Retry mit Refine (falls noch offen)
             if not getattr(self, "solve_refine_attempted", False):
                 try: scn["refine_intrinsics_focal_length"] = True
                 except Exception: pass
@@ -714,17 +751,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 try:
                     res_retry = solve_camera_only(context)
                     self.solve_refine_attempted = True
-                    self.report({'INFO'}, f"Solve-Retry mit refine_intrinsics_focal_length=True → {res_retry}")
+                    self.report({'INFO'}, f"Solve-Retry (nach Reduce) mit refine_intrinsics_focal_length=True → {res_retry}")
+                    # Im gleichen State bleiben; nächste TIMER-Tick evaluiert wieder in PH_SOLVE_EVAL
                     return {'RUNNING_MODAL'}
                 except Exception as exc:
-                    self.report({'WARNING'}, f"Solve-Retry konnte nicht gestartet werden: {exc}")
-            # 5) Reduktion: x = ceil(avg/target), clamp 1..20
-            import math
-            t = target_err if (target_err == target_err and target_err > 1e-8) else 0.6
-            x = max(1, min(20, int(math.ceil(avg_err / t))))
-            red = run_reduce_error_tracks(context, max_to_delete=x)
-            self.report({'INFO'}, f"ReduceErrorTracks: avg={avg_err:.4f} target={t:.4f} → delete={x} → done={red.get('deleted')} {red.get('names')}")
-            # 6) Reset & zurück in den Hauptzyklus
+                    self.report({'WARNING'}, f"Solve-Retry (nach Reduce) konnte nicht gestartet werden: {exc}")
+            # 7) Refine bereits versucht → Cycle reset & zurück in den Hauptzyklus
             reset_for_new_cycle(context)  # Solve-Log bleibt erhalten
             self.detection_threshold = None
             self.pre_ptrs = None
