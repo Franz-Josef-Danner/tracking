@@ -190,7 +190,7 @@ def _reset_margin_to_tracker_default(context: bpy.types.Context) -> None:
         if base_margin is None:
             width = int(clip.size[0]) if clip and getattr(clip, "size", None) else 0
             pattern_size = max(1, int(width / 100)) if width > 0 else 8
-            base_margin = pattern_size * 2.1
+            base_margin = pattern_size * 4
         settings.default_margin = int(base_margin)
         print(f"[Coordinator] default_margin reset → {int(base_margin)} (skip multi)")
     except Exception as exc:
