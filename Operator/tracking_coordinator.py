@@ -232,6 +232,39 @@ def _apply_refine_focal_flag(context: bpy.types.Context, flag: bool) -> None:
     except Exception as exc:
         print(f"[Coordinator] WARN: refine-Flag konnte nicht gesetzt werden: {exc}")
 
+# --- NEU: weitere Refine-Flags spiegeln --------------------------------------
+def _apply_refine_principal_flag(context: bpy.types.Context, flag: bool) -> None:
+    """Setzt tracking.settings.refine_intrinsics_principal_point gemäß flag."""
+    try:
+        clip = _resolve_clip(context)
+        settings = getattr(getattr(clip, "tracking", None), "settings", None) if clip else None
+        if settings and hasattr(settings, "refine_intrinsics_principal_point"):
+            settings.refine_intrinsics_principal_point = bool(flag)
+            print(f"[Coordinator] refine_intrinsics_principal_point → {bool(flag)}")
+        else:
+            print("[Coordinator] WARN: refine_intrinsics_principal_point nicht verfügbar")
+    except Exception as exc:
+        print(f"[Coordinator] WARN: principal-point Flag konnte nicht gesetzt werden: {exc}")
+
+def _apply_refine_radial_flag(context: bpy.types.Context, flag: bool) -> None:
+    """Setzt tracking.settings.refine_intrinsics_radial_distortion gemäß flag."""
+    try:
+        clip = _resolve_clip(context)
+        settings = getattr(getattr(clip, "tracking", None), "settings", None) if clip else None
+        if settings and hasattr(settings, "refine_intrinsics_radial_distortion"):
+            settings.refine_intrinsics_radial_distortion = bool(flag)
+            print(f"[Coordinator] refine_intrinsics_radial_distortion → {bool(flag)}")
+        else:
+            print("[Coordinator] WARN: refine_intrinsics_radial_distortion nicht verfügbar")
+    except Exception as exc:
+        print(f"[Coordinator] WARN: radial-distortion Flag konnte nicht gesetzt werden: {exc}")
+
+def _apply_refine_flags(context: bpy.types.Context, *, focal: bool, principal: bool, radial: bool) -> None:
+    """Komfort: alle drei Refine-Flags konsistent setzen."""
+    _apply_refine_focal_flag(context, focal)
+    _apply_refine_principal_flag(context, principal)
+    _apply_refine_radial_flag(context, radial)
+    
 def _snapshot_track_ptrs(context: bpy.types.Context) -> list[int]:
     """
     Snapshot der aktuellen Track-Pointer.
@@ -290,7 +323,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     bidi_before_counts: dict[str, int] | None = None  # Snapshot vor BIDI
     # Temporärer Schwellenwert für den Spike-Cycle (startet bei 100, *0.9)
     # Solve-Retry-State: Wurde bereits mit refine_intrinsics_focal_length=True neu gelöst?
-    solve_refine_attempted: bool = False
+    # NEU: Wurde bereits die volle Intrinsics-Variante (focal+principal+radial) versucht?
+    solve_refine_full_attempted: bool = False
 
     def execute(self, context: bpy.types.Context):
         # Bootstrap/Reset
@@ -321,6 +355,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self.spike_threshold = None  # Spike-Schwellenwert zurücksetzen
         # Solve-Retry-State zurücksetzen
         self.solve_refine_attempted = False
+        self.solve_refine_full_attempted = False
         self.bidi_before_counts = None
         
         wm = context.window_manager
@@ -719,9 +754,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # 2) kein Wert → Retry einmalig, sonst mind. 1 Track löschen (+ find_max)
             if avg_err is None:
                 if not getattr(self, "solve_refine_attempted", False):
+                    # Variante 1: nur Focal
                     try: scn["refine_intrinsics_focal_length"] = True
                     except Exception: pass
-                    _apply_refine_focal_flag(context, True)
+                    _apply_refine_flags(context, focal=True, principal=False, radial=False)
                     try:
                         res_retry = solve_camera_only(context)
                         self.solve_refine_attempted = True
@@ -729,6 +765,22 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         return {'RUNNING_MODAL'}
                     except Exception as exc:
                         self.report({'WARNING'}, f"Solve-Retry (avg=None) fehlgeschlagen: {exc}")
+                elif not getattr(self, "solve_refine_full_attempted", False):
+                    # NEU – Variante 2: Focal + Principal Point + Radial
+                    try: scn["refine_intrinsics_focal_length"] = True
+                    except Exception: pass
+                    try: scn["refine_intrinsics_principal_point"] = True
+                    except Exception: pass
+                    try: scn["refine_intrinsics_radial_distortion"] = True
+                    except Exception: pass
+                    _apply_refine_flags(context, focal=True, principal=True, radial=True)
+                    try:
+                        res_retry = solve_camera_only(context)
+                        self.solve_refine_full_attempted = True
+                        self.report({'INFO'}, "Solve-Retry (avg=None) mit vollen Intrinsics (focal+principal+radial)=True → {}".format(res_retry))
+                        return {'RUNNING_MODAL'}
+                    except Exception as exc:
+                        self.report({'WARNING'}, f"Solve-Retry (avg=None, full intrinsics) fehlgeschlagen: {exc}")
                 # erzwungen 1 löschen
                 try:
                     red = run_reduce_error_tracks(context, max_to_delete=1)
@@ -757,6 +809,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self.target_frame = None
                 self.repeat_map = {}
                 self.solve_refine_attempted = False
+                self.solve_refine_full_attempted = False
                 self.phase = PH_FIND_LOW
                 return {'RUNNING_MODAL'}
             # 3) Ziel erreicht?
@@ -780,6 +833,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     self.repeat_map = {}
                     # WICHTIG: Refine-State für nächste Solve-Runde zurücksetzen
                     self.solve_refine_attempted = False
+                    self.solve_refine_full_attempted = False
                     self.phase = PH_FIND_LOW
                     self.report({'INFO'}, "find_max: FOUND → neuer Zyklus (nach Reduce)")
                     return {'RUNNING_MODAL'}
@@ -787,9 +841,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self.report({'WARNING'}, f"find_max nach Reduce fehlgeschlagen: {_exc}")
             # 6) Kein find_max-Treffer: einmaliger Retry mit Refine (falls noch offen)
             if not getattr(self, "solve_refine_attempted", False):
+                # Variante 1: nur Focal
                 try: scn["refine_intrinsics_focal_length"] = True
                 except Exception: pass
-                _apply_refine_focal_flag(context, True)
+                _apply_refine_flags(context, focal=True, principal=False, radial=False)
                 try:
                     res_retry = solve_camera_only(context)
                     self.solve_refine_attempted = True
@@ -798,6 +853,22 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     return {'RUNNING_MODAL'}
                 except Exception as exc:
                     self.report({'WARNING'}, f"Solve-Retry (nach Reduce) konnte nicht gestartet werden: {exc}")
+            elif not getattr(self, "solve_refine_full_attempted", False):
+                # NEU – Variante 2: Focal + Principal Point + Radial
+                try: scn["refine_intrinsics_focal_length"] = True
+                except Exception: pass
+                try: scn["refine_intrinsics_principal_point"] = True
+                except Exception: pass
+                try: scn["refine_intrinsics_radial_distortion"] = True
+                except Exception: pass
+                _apply_refine_flags(context, focal=True, principal=True, radial=True)
+                try:
+                    res_retry = solve_camera_only(context)
+                    self.solve_refine_full_attempted = True
+                    self.report({'INFO'}, "Solve-Retry (nach Reduce) mit vollen Intrinsics (focal+principal+radial)=True → {}".format(res_retry))
+                    return {'RUNNING_MODAL'}
+                except Exception as exc:
+                    self.report({'WARNING'}, f"Solve-Retry (nach Reduce, full intrinsics) konnte nicht gestartet werden: {exc}")
             # 7) Refine bereits versucht → Cycle reset & zurück in den Hauptzyklus
             reset_for_new_cycle(context)  # Solve-Log bleibt erhalten
             self.detection_threshold = None
@@ -805,6 +876,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self.target_frame = None
             self.repeat_map = {}
             self.solve_refine_attempted = False
+            self.solve_refine_full_attempted = False
             self.phase = PH_FIND_LOW
             return {'RUNNING_MODAL'}
 
@@ -855,14 +927,18 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 except Exception:
                     pass
                 try:
-                    # Erstlauf: refine_intrinsics_focal_length explizit deaktivieren
-                    try:
-                        scn["refine_intrinsics_focal_length"] = False
-                    except Exception:
-                        pass
-                    # Flag unmittelbar in die Tracking-Settings spiegeln (erster Solve ohne Refine)
-                    _apply_refine_focal_flag(context, False)
-                    self.solve_refine_attempted = False
+                    # Erstlauf: alle Refine-Flags explizit deaktivieren (Variante 0)
+                    try: scn["refine_intrinsics_focal_length"] = False
+                    except Exception: pass
+                    try: scn["refine_intrinsics_principal_point"] = False
+                    except Exception: pass
+                    try: scn["refine_intrinsics_radial_distortion"] = False
+                    except Exception: pass
+                    # Direkt in Settings spiegeln
+                    _apply_refine_flags(context, focal=False, principal=False, radial=False)
+                    # Retry-States zurücksetzen
+                    self.solve_refine_attempted = False          # Variante 1 (nur Focal) noch offen
+                    self.solve_refine_full_attempted = False     # Variante 2 (alle) noch offen
                     res = solve_camera_only(context)
                     self.report({'INFO'}, f"SolveCamera gestartet → {res}")
                     # → direkt in die Solve-Evaluation wechseln
