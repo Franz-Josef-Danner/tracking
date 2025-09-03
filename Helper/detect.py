@@ -192,7 +192,7 @@ def run_detect_basic(
         # Dynamische Skalierung anhand des aktuellen Thresholds (ohne Persistenz)
         safe   = max(thr * 1e8, 1e-8)  # numerisch stabil
         factor = math.log10(safe) / 8.0
-        margin    = max(0, int(base_margin * factor))
+        margin    = max(0, int((base_margin * factor)*1.1))
         min_dist  = max(1, int(base_min    * factor))
 
         # NEU: Falls Triplet/Multi aktiv (repeat_count ≥ 6) ODER Szene-Triplet-Flag > 0
@@ -224,15 +224,15 @@ def run_detect_basic(
 
         # Staffelung auf Basis repeat_count
         if rc >= 26 and ps > 0:
-            margin = ps * 12
+            margin = ps * 13
         elif rc >= 21 and ps > 0:
-            margin = ps * 10
+            margin = ps * 11
         elif rc >= 16 and ps > 0:
-            margin = ps * 8
+            margin = ps * 9
         elif rc >= 11 and ps > 0:
-            margin = ps * 6
+            margin = ps * 7
         elif rc >= 6 and ps > 0:
-            margin = ps * 4
+            margin = ps * 5
 
         # Placement normalisieren (RNA-Enum erwartet 'FRAME' | 'INSIDE_GPENCIL' | 'OUTSIDE_GPENCIL')
         p = (placement or "FRAME").upper()
