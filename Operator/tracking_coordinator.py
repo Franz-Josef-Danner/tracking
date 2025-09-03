@@ -706,18 +706,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if avg_err <= target_err:
                 self.report({'INFO'}, f"Solve OK: avg={avg_err:.4f} ≤ target={target_err:.4f}")
                 return self._finish(context, info="Sequenz abgeschlossen (Solve-Ziel erreicht).", cancelled=False)
-
-            # 4) Ziel NICHT erreicht → direkt ReduceErrorTracks aufrufen
-            import math
-            t = target_err if (target_err == target_err and target_err > 1e-8) else 0.6
-            x = max(1, min(20, int(math.ceil(avg_err / t))))
-            try:
-                red = run_reduce_error_tracks(context, max_to_delete=x)
-                self.report({'INFO'}, f"ReduceErrorTracks(NACH SOLVE): avg={avg_err:.4f} target={t:.4f} → delete={x} → done={red.get('deleted')} {red.get('names')}")
-            except Exception as exc:
-                self.report({'WARNING'}, f"ReduceErrorTracks nach Solve fehlgeschlagen: {exc}")
-
-            # Danach optional einmaliger Retry mit Refine, falls noch nicht versucht
+            # 4) Einmaliger Retry mit Refine, falls noch offen
             if not getattr(self, "solve_refine_attempted", False):
                 try: scn["refine_intrinsics_focal_length"] = True
                 except Exception: pass
@@ -725,12 +714,17 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 try:
                     res_retry = solve_camera_only(context)
                     self.solve_refine_attempted = True
-                    self.report({'INFO'}, f"Solve-Retry nach ReduceErrorTracks mit refine_intrinsics_focal_length=True → {res_retry}")
+                    self.report({'INFO'}, f"Solve-Retry mit refine_intrinsics_focal_length=True → {res_retry}")
                     return {'RUNNING_MODAL'}
                 except Exception as exc:
-                    self.report({'WARNING'}, f"Solve-Retry nach ReduceErrorTracks konnte nicht gestartet werden: {exc}")
-
-            # 5) Reset & zurück in den Hauptzyklus
+                    self.report({'WARNING'}, f"Solve-Retry konnte nicht gestartet werden: {exc}")
+            # 5) Reduktion: x = ceil(avg/target), clamp 1..20
+            import math
+            t = target_err if (target_err == target_err and target_err > 1e-8) else 0.6
+            x = max(1, min(20, int(math.ceil(avg_err / t))))
+            red = run_reduce_error_tracks(context, max_to_delete=x)
+            self.report({'INFO'}, f"ReduceErrorTracks: avg={avg_err:.4f} target={t:.4f} → delete={x} → done={red.get('deleted')} {red.get('names')}")
+            # 6) Reset & zurück in den Hauptzyklus
             reset_for_new_cycle(context)  # Solve-Log bleibt erhalten
             self.detection_threshold = None
             self.pre_ptrs = None
