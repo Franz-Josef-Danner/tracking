@@ -483,6 +483,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # Wenn bereits ein Threshold aus vorherigen Iterationen vorliegt, diesen mitgeben
             if self.detection_threshold is not None:
                 _kwargs["threshold"] = float(self.detection_threshold)
+            # NEU: Wiederholungszähler und Margin-Policy an detect.py durchreichen,
+            # damit dort margin = search_size gesetzt werden kann (Triplet/Multi).
+            try:
+                _kwargs["repeat_count"] = int(self.repeat_count_for_target or 0)
+            except Exception:
+                _kwargs["repeat_count"] = 0
+            _kwargs["match_search_size"] = True
             rd = run_detect_once(context, **_kwargs)
             if rd.get("status") != "READY":
                 return self._finish(context, info=f"DETECT FAILED → {rd}", cancelled=True)
