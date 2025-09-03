@@ -40,6 +40,7 @@ from ..Helper.tracking_state import (
     _get_state,          # intern genutzt, um count zu prüfen
     _ensure_frame_entry, # intern genutzt, um Frame-Eintrag zu holen
     reset_tracking_state,
+    ABORT_AT,
 )
 # Fehlerwert-Funktion (Pfad ggf. anpassen)
 try:
@@ -462,10 +463,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 _entry, _ = _ensure_frame_entry(_state, int(self.target_frame))
                 _count = int(_entry.get("count", 1))
                 self.repeat_count_for_target = _count
-                if _count >= 10:
+                # Abbruch erst, wenn tracking_state die globale Schwelle erreicht (inkl. +10 Verlängerung)
+                if _count >= ABORT_AT:
                     return self._finish(
                         context,
-                        info=f"Abbruch: Frame {self.target_frame} hat 10 Durchläufe.",
+                        info=f"Abbruch: Frame {self.target_frame} hat {ABORT_AT-1} Durchläufe erreicht.",
                         cancelled=True
                     )
             except Exception as _exc:
