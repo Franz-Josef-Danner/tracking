@@ -149,12 +149,27 @@ def run_multi_pass(
     # berechnen wir max_search_size = max(eff_pattern) * 2 (mind. 5).
     # Andernfalls verwenden wir den aktuellen Default (search_o).
     try:
-        if adjust_search_with_pattern and eff_pattern_sizes:
-            max_eff_pattern = max(eff_pattern_sizes.values())
-            max_search_size = max(5, int(max_eff_pattern) * 2)
-        else:
-            max_search_size = int(getattr(settings, "default_search_size", search_o))
-        settings.default_margin = int(max_search_size * 2)
+        rc = int(repeat_count or 0)
+        ps = int(getattr(settings, "default_pattern_size", 0))
+        ss = int(getattr(settings, "default_search_size", search_o))
+
+        margin = 0
+        if rc >= 26 and ps > 0:
+            margin = ps * 24
+        elif rc >= 21 and ps > 0:
+            margin = ps * 20
+        elif rc >= 16 and ps > 0:
+            margin = ps * 16
+        elif rc >= 11 and ps > 0:
+            margin = ps * 12
+        elif rc >= 6 and ps > 0:
+            margin = ps * 8
+        elif ss > 0:
+            # fallback wie detect.py bei match_search_size
+            margin = ss
+
+        if margin > 0:
+            settings.default_margin = int(margin)
     except Exception:
         pass
 
