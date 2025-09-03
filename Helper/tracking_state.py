@@ -191,7 +191,7 @@ def _lin_interp_int(a_x: int, a_y: int, b_x: int, b_y: int, x: int) -> int:
     return int(round(y))
 
 
-def _recompute_interpolations(context: bpy.types.Context, state: Dict[str, Any], apply_models: bool = True) -> None:
+def _recompute_interpolations(context: bpy.types.Context, state: Dict[str, Any], apply_models: bool = False) -> None:
     """Berechnet Interpolationen der count-Werte zwischen Ankern.
     - überschreibt KEINE Anker (anchor bleibt führend)
     - setzt interpolierte Frames auf interpolated=True
@@ -222,8 +222,13 @@ def _recompute_interpolations(context: bpy.types.Context, state: Dict[str, Any],
             entry["count"] = interp
             entry["interpolated"] = True
             entry["anchor"] = False
+            # WICHTIG:
+            # Interpolationen dürfen KEIN globales Triplet-Flag setzen.
+            # Daher während der Interpolation KEINE Modelle/Triplets anwenden.
+            # Der aktuelle Frame setzt Modell/Triplet separat in orchestrate_on_jump().
             if apply_models:
-                _apply_model_triplet_for_count(context, entry)
+                # (bewusst leer gelassen – keine Model/Triplet-Anwendung für Interpolationen)
+                pass
 
     _save_state(context, state)
 
@@ -249,7 +254,7 @@ def orchestrate_on_jump(context: bpy.types.Context, frame: int) -> None:
         _apply_model_triplet_for_count(context, entry)
         _save_state(context, state)
         # Nach neuem Anker Interpolation neu berechnen (falls davor schon ein Anker existierte)
-        _recompute_interpolations(context, state, apply_models=True)
+        _recompute_interpolations(context, state, apply_models=False)
         return
 
     # Wiederbesuch → count erhöhen
@@ -270,7 +275,7 @@ def orchestrate_on_jump(context: bpy.types.Context, frame: int) -> None:
 
     _save_state(context, state)
     # Nach Änderung eines Ankers Interpolation neu berechnen
-    _recompute_interpolations(context, state, apply_models=True)
+    _recompute_interpolations(context, state, apply_models=False)
 
 def record_bidirectional_result(
     context: bpy.types.Context,
