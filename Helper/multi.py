@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Dict, Optional, Set, List, Tuple
 import bpy
+import math
 
 __all__ = ["run_multi_pass"]
 
@@ -40,16 +41,23 @@ def _set_pattern_size(tracking: bpy.types.MovieTracking, new_size: int) -> int:
     return int(getattr(s, "default_pattern_size", clamped))
 
 
-def _detect_once(threshold: float) -> Dict:
-    """Robust einen Detect-Features-Call innerhalb/außerhalb des CLIP-Kontexts ausführen."""
+def _detect_once(*, threshold: float, margin: int, min_distance: int, placement: str = "FRAME") -> Dict:
+    """Detect-Features im CLIP-Kontext mit expliziten Operator-Args (wie in detect.py)."""
 
     def _op(**kw):
         try:
             return bpy.ops.clip.detect_features(**kw)
         except TypeError:
-            return bpy.ops.clip.detect_features()
+            # Fallback: wenigstens Threshold setzen
+            return bpy.ops.clip.detect_features(threshold=float(max(threshold, 0.0001)))
 
-    res = _run_in_clip_context(_op, threshold=float(threshold))
+    res = _run_in_clip_context(
+        _op,
+        placement=str(placement).upper(),
+        margin=int(margin),
+        threshold=float(max(threshold, 0.0001)),
+        min_distance=int(min_distance),
+    )
     return {"op": "detect_features", "result": str(res)}
 
 
@@ -132,7 +140,56 @@ def run_multi_pass(
                 settings.default_search_size = max(5, eff * 2)
             except Exception:
                 pass
-        _detect_once(threshold=float(detect_threshold))
+
+        # --- Margin/MinDist exakt wie in detect.py bestimmen (repeat-aware) ---
+        rc = int(repeat_count or 0)
+        ps = int(eff)  # effektive Pattern-Size dieses Sweeps
+        try:
+            ss = int(getattr(settings, "default_search_size", 0))
+        except Exception:
+            ss = 0
+
+        # Margin-Staffel je repeat_count (ident zu detect.py)
+        margin = 0
+        if rc >= 26 and ps > 0:
+            margin = ps * 24
+        elif rc >= 21 and ps > 0:
+            margin = ps * 20
+        elif rc >= 16 and ps > 0:
+            margin = ps * 16
+        elif rc >= 11 and ps > 0:
+            margin = ps * 12
+        elif rc >= 6 and ps > 0:
+            margin = ps * 8
+        elif ss > 0:
+            # Fallback analog "match_search_size"
+            margin = ss
+
+        # Min-Distance skaliert wie in detect.py
+        width, height = getattr(clip, "size", (0, 0))
+        base_min_scene = context.scene.get("min_distance_base", None)
+        base_min = int(base_min_scene) if base_min_scene is not None else max(8, int(0.05 * max(width, height)))
+        safe = max(float(detect_threshold) * 1e8, 1e-8)
+        factor = math.log10(safe) / 8.0
+        min_dist = max(1, int(base_min * factor))
+
+        # Debug-Logs: volle Transparenz je Sweep
+        try:
+            print(
+                f"[Multi] f={int(context.scene.frame_current)} "
+                f"scale={scale:.2f} eff_pattern={ps} search={ss} "
+                f"repeat={rc} thr={float(detect_threshold):.3f} "
+                f"→ margin={margin} min_dist={min_dist}"
+            )
+        except Exception:
+            pass
+
+        _detect_once(
+            threshold=float(detect_threshold),
+            margin=int(margin),
+            min_distance=int(min_dist),
+            placement="FRAME",
+        )
 
         created = [t for t in tracking.tracks if t.as_pointer() not in before]
         return len(created), eff
@@ -144,40 +201,6 @@ def run_multi_pass(
         c, eff_size = _sweep(float(sc))
         created_per_scale[float(sc)] = int(c)
         eff_pattern_sizes[float(sc)] = int(eff_size)
-    # NEU: Margin-Logik wie in detect.py + Debug-Logs
-    try:
-        rc = int(repeat_count or 0)
-        ps = int(getattr(settings, "default_pattern_size", 0))
-        ss = int(getattr(settings, "default_search_size", search_o))
-
-        margin = 0
-        if rc >= 26 and ps > 0:
-            margin = ps * 14
-        elif rc >= 21 and ps > 0:
-            margin = ps * 12
-        elif rc >= 16 and ps > 0:
-            margin = ps * 10
-        elif rc >= 11 and ps > 0:
-            margin = ps * 8
-        elif rc >= 6 and ps > 0:
-            margin = ps * 6
-        elif ss > 0:
-            # fallback wie detect.py bei match_search_size
-            margin = ss
-
-        if margin > 0:
-            settings.default_margin = int(margin)
-            print(f"[Multi] frame={context.scene.frame_current} "
-                  f"repeat_count={rc} pattern_size={ps} search_size={ss} "
-                  f"=> margin={margin}")
-        else:
-            print(f"[Multi] frame={context.scene.frame_current} "
-                  f"repeat_count={rc} pattern_size={ps} search_size={ss} "
-                  f"=> margin unverändert")
-    except Exception as ex:
-        print(f"[Multi] Margin-Berechnung FEHLER: {ex}")
-        pass
-
     # restore sizes
     _set_pattern_size(tracking, pattern_o)
     try:
