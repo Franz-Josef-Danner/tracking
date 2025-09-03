@@ -101,7 +101,6 @@ def _draw_solve_graph():
     if gpu is None:
         return
     import blf
-
     scn = getattr(bpy.context, "scene", None)
     if not scn or not getattr(scn, "kaiserlich_solve_graph_enabled", False):
         return
@@ -117,10 +116,6 @@ def _draw_solve_graph():
     for i, v in enumerate(vals, 1):
         s += float(v)
         avg_vals.append(s / i)
-    # Skala aus Durchschnittswerten ableiten
-    vmin, vmax = min(avg_vals), max(avg_vals)
-    if abs(vmax - vmin) < 1e-12:
-        vmax = vmin + 1e-12
     # Viewport-Maße robust beschaffen (Region ist nicht garantiert gesetzt)
     try:
         _vx, _vy, W, H = gpu.state.viewport_get()
@@ -131,14 +126,20 @@ def _draw_solve_graph():
         W, H = region.width, region.height
     pad = 16
     gw, gh = min(320, W - 2*pad), 80
+    # Platz links für Y-Achse reservieren (Achse + Labels)
+    yaxis_w = 42
     ox, oy = W - gw - pad, pad
     # Nur die letzten 10 Punkte (chronologisch) – mit Durchschnittswerten
     take_vals = avg_vals[-10:]
+    # Skala ausschließlich aus den letzten 10 Werten ableiten
+    vmin, vmax = (min(take_vals), max(take_vals)) if take_vals else (0.0, 1.0)
+    if abs(vmax - vmin) < 1e-12:
+        vmax = vmin + 1e-12
     n = len(take_vals)
     ln = max(1, n - 1)  # vermeidet Div/0, erlaubt 1-Punkt-Stub
     coords = []
     for i, val in enumerate(take_vals):
-        x = ox + (i / ln) * gw
+        x = ox + yaxis_w + (i / ln) * (gw - yaxis_w)
         y = oy + ((val - vmin) / (vmax - vmin)) * gh
         coords.append((x, y))
     shader = gpu.shader.from_builtin('UNIFORM_COLOR')
@@ -149,11 +150,59 @@ def _draw_solve_graph():
 
     # Titel über der Box
     try:
-        font_id = 0  # Standard-Font
-        blf.position(font_id, ox, oy + gh + 12, 0)
+        font_id = 0
         blf.size(font_id, 12, 72)
+        blf.position(font_id, ox, oy + gh + 12, 0)
         blf.color(font_id, 1.0, 1.0, 1.0, 1.0)
         blf.draw(font_id, "Average Trend")
+    except Exception:
+        pass
+
+    # Y-Achse mit Ticks + numerischen Labels (links)
+    try:
+        # "Schöne" Tick-Schrittweite berechnen
+        rng = vmax - vmin
+        target = 4  # ca. 4–5 Ticks
+        if rng <= 0:
+            rng = 1e-12
+        raw = rng / target
+        import math as _m
+        mag = 10 ** _m.floor(_m.log10(raw))
+        norm = raw / mag
+        if   norm < 1.5: step = 1.0 * mag
+        elif norm < 3.0: step = 2.0 * mag
+        elif norm < 7.0: step = 5.0 * mag
+        else:            step = 10.0 * mag
+        # Tick-Start auf Schritt runden
+        start = _m.floor(vmin / step) * step
+        ticks = []
+        t = start
+        # Sicherheitsbegrenzung
+        for _ in range(12):
+            if t > vmax + 1e-9:
+                break
+            ticks.append(t)
+            t += step
+        # Achsenlinie
+        yaxis_x = ox + yaxis_w
+        batch = batch_for_shader(shader, 'LINES', {"pos": [(yaxis_x, oy), (yaxis_x, oy+gh)]})
+        shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.5)); batch.draw(shader)
+        # Ticks + Labels + horizontale Gridlines
+        blf.size(0, 11, 72)
+        for tv in ticks:
+            rel = (tv - vmin) / (vmax - vmin)
+            y = oy + rel * gh
+            # Tick
+            batch = batch_for_shader(shader, 'LINES', {"pos": [(yaxis_x-6, y), (yaxis_x, y)]})
+            shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.8)); batch.draw(shader)
+            # Gridline dezent
+            batch = batch_for_shader(shader, 'LINES', {"pos": [(yaxis_x, y), (ox+gw, y)]})
+            shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.15)); batch.draw(shader)
+            # Label
+            lbl = f"{tv:.2f}"
+            blf.position(0, ox + 4, y - 6, 0)
+            blf.color(0, 1.0, 1.0, 1.0, 0.9)
+            blf.draw(0, lbl)
     except Exception:
         pass
     # Kurve
