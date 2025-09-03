@@ -224,15 +224,15 @@ def run_detect_basic(
 
         # Staffelung auf Basis repeat_count
         if rc >= 26 and ps > 0:
-            margin = ps * 13
+            margin = ps * 24
         elif rc >= 21 and ps > 0:
-            margin = ps * 11
+            margin = ps * 20
         elif rc >= 16 and ps > 0:
-            margin = ps * 9
+            margin = ps * 16
         elif rc >= 11 and ps > 0:
-            margin = ps * 7
+            margin = ps * 12
         elif rc >= 6 and ps > 0:
-            margin = ps * 5
+            margin = ps * 8
 
         # Placement normalisieren (RNA-Enum erwartet 'FRAME' | 'INSIDE_GPENCIL' | 'OUTSIDE_GPENCIL')
         p = (placement or "FRAME").upper()
