@@ -357,6 +357,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self.solve_refine_attempted = False
         self.solve_refine_full_attempted = False
         self.bidi_before_counts = None
+        self.repeat_count_for_target = None
         
         wm = context.window_manager
         # --- Robust: valides Window sichern ---
@@ -634,11 +635,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
                 # Markeranzahl im gültigen Bereich – optional Multi-Pass und dann Bidirectional-Track ausführen.
                 did_multi = False
-                # NEU: Multi standardmäßig überspringen; nur wenn
-                # tracking_state count >= 6 für diesen Frame → Multi-Pass fahren.
+                # NEU: Multi-Pass nur, wenn der *aktuelle* count (aus JSON) >= 6
                 wants_multi = False
                 try:
-                    wants_multi = (int(self.repeat_count_for_target or 0) >= 6)
+                    _state = _get_state(context)
+                    _entry, _ = _ensure_frame_entry(_state, int(self.target_frame))
+                    _cnt_now = int(_entry.get("count", 1))
+                    self.repeat_count_for_target = _cnt_now  # für Logging/UI spiegeln
+                    wants_multi = (_cnt_now >= 6)
                 except Exception:
                     wants_multi = False
                 if isinstance(eval_res, dict) and str(eval_res.get("status", "")) == "ENOUGH" and wants_multi:
@@ -798,6 +802,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         self.repeat_map = {}
                         self.solve_refine_attempted = False
                         self.solve_refine_full_attempted = False
+                        self.repeat_count_for_target = None
                         self.phase = PH_FIND_LOW
                         self.report({'INFO'}, "find_max: FOUND → neuer Zyklus (avg=None-Path)")
                         return {'RUNNING_MODAL'}
@@ -811,6 +816,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self.repeat_map = {}
                 self.solve_refine_attempted = False
                 self.solve_refine_full_attempted = False
+                self.repeat_count_for_target = None
                 self.phase = PH_FIND_LOW
                 return {'RUNNING_MODAL'}
             # 3) Ziel erreicht?
@@ -835,6 +841,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     # WICHTIG: Refine-State für nächste Solve-Runde zurücksetzen
                     self.solve_refine_attempted = False
                     self.solve_refine_full_attempted = False
+                    self.repeat_count_for_target = None
                     self.phase = PH_FIND_LOW
                     self.report({'INFO'}, "find_max: FOUND → neuer Zyklus (nach Reduce)")
                     return {'RUNNING_MODAL'}
@@ -878,6 +885,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self.repeat_map = {}
             self.solve_refine_attempted = False
             self.solve_refine_full_attempted = False
+            self.repeat_count_for_target = None
             self.phase = PH_FIND_LOW
             return {'RUNNING_MODAL'}
 
@@ -917,6 +925,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 reset_for_new_cycle(context)  # Solve-Log bleibt erhalten (kein Bootstrap)
                 self.spike_threshold = None
                 scn["tco_spike_cycle_finished"] = False
+                self.repeat_count_for_target = None
                 self.phase = PH_FIND_LOW
                 return {'RUNNING_MODAL'}
             # Kein Treffer
@@ -1007,7 +1016,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self.repeat_map = {}
                 self.bidi_started = False
                 self.bidi_before_counts = None
-                # Startet mit neuer Find-Low-Phase
+                self.repeat_count_for_target = None
                 self.phase = PH_FIND_LOW
                 self.report({'INFO'}, "Bidirectional-Track abgeschlossen – neuer Zyklus beginnt")
                 return {'RUNNING_MODAL'}
