@@ -644,8 +644,21 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                             f"eval={eval_res} – Starte Bidirectional-Track (nach Multi @rep={self.repeat_count_for_target})"
                         ))
                         return {'RUNNING_MODAL'}
-                # In allen anderen Fällen (kein ENOUGH oder kein Multi‑Pass) wird die Sequenz beendet.
-                self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res}")
+                # --- ENOUGH aber KEIN Multi-Pass (repeat < 6) → direkt BIDI starten ---
+                if isinstance(eval_res, dict) and str(eval_res.get("status", "")) == "ENOUGH" and not wants_multi:
+                    # Direkt in die Bidirectional-Phase wechseln
+                    self.phase = PH_BIDI
+                    self.bidi_started = False
+                    self.report({'INFO'}, (
+                        f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, "
+                        f"eval={eval_res} – Starte Bidirectional-Track (ohne Multi; rep={self.repeat_count_for_target})"
+                    ))
+                    return {'RUNNING_MODAL'}
+
+                # In allen anderen Fällen (kein ENOUGH) → Abschluss
+                self.report({'INFO'}, (
+                    f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res} – Sequenz abgeschlossen."
+                ))
                 return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
 
             # Wenn keine Auswertungsfunktion vorhanden ist, einfach abschließen
