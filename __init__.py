@@ -107,15 +107,7 @@ def _draw_solve_graph():
     coll = getattr(scn, "kaiserlich_solve_err_log", [])
     # Chronologisch (ältester→neuester), NaN ignorieren
     seq = sorted((it.attempt, it.value) for it in coll if it.value == it.value)
-    if not seq:
-        return
-    # --- Gleitender kumulativer Durchschnitt für das Overlay ---
-    vals = [v for _, v in seq]
-    avg_vals = []
-    s = 0.0
-    for i, v in enumerate(vals, 1):
-        s += float(v)
-        avg_vals.append(s / i)
+    has_data = bool(seq)
     # Viewport-Maße robust beschaffen (Region ist nicht garantiert gesetzt)
     try:
         _vx, _vy, W, H = gpu.state.viewport_get()
@@ -129,19 +121,6 @@ def _draw_solve_graph():
     # Platz links für Y-Achse reservieren (Achse + Labels)
     yaxis_w = 42
     ox, oy = W - gw - pad, pad
-    # Nur die letzten 10 Punkte (chronologisch) – mit Durchschnittswerten
-    take_vals = avg_vals[-10:]
-    # Skala ausschließlich aus den letzten 10 Werten ableiten
-    vmin, vmax = (min(take_vals), max(take_vals)) if take_vals else (0.0, 1.0)
-    if abs(vmax - vmin) < 1e-12:
-        vmax = vmin + 1e-12
-    n = len(take_vals)
-    ln = max(1, n - 1)  # vermeidet Div/0, erlaubt 1-Punkt-Stub
-    coords = []
-    for i, val in enumerate(take_vals):
-        x = ox + yaxis_w + (i / ln) * (gw - yaxis_w)
-        y = oy + ((val - vmin) / (vmax - vmin)) * gh
-        coords.append((x, y))
     shader = gpu.shader.from_builtin('UNIFORM_COLOR')
     # Rahmen
     box = [(ox, oy), (ox+gw, oy), (ox+gw, oy+gh), (ox, oy+gh)]
@@ -158,21 +137,57 @@ def _draw_solve_graph():
     except Exception:
         pass
 
+    # Wenn keine Daten vorliegen: Hinweis zeichnen und früh aussteigen
+    if not has_data:
+        try:
+            font_id = 0
+            blf.size(font_id, 11, 72)
+            txt = "No data yet"
+            tw, th = blf.dimensions(font_id, txt)
+            cx = ox + yaxis_w + (gw - yaxis_w - tw) * 0.5
+            cy = oy + (gh - th) * 0.5
+            blf.position(font_id, cx, cy, 0)
+            blf.color(font_id, 1.0, 1.0, 1.0, 0.7)
+            blf.draw(font_id, txt)
+        except Exception:
+            pass
+        return
+
+    # --- Gleitender kumulativer Durchschnitt für das Overlay ---
+    vals = [v for _, v in seq]
+    avg_vals = []
+    s = 0.0
+    for i, v in enumerate(vals, 1):
+        s += float(v)
+        avg_vals.append(s / i)
+    # Nur die letzten 10 Punkte (chronologisch) – mit Durchschnittswerten
+    take_vals = avg_vals[-10:]
+    # Skala ausschließlich aus den letzten 10 Werten ableiten
+    vmin, vmax = (min(take_vals), max(take_vals)) if take_vals else (0.0, 1.0)
+    if abs(vmax - vmin) < 1e-12:
+        vmax = vmin + 1e-12
+    n = len(take_vals)
+    ln = max(1, n - 1)  # vermeidet Div/0, erlaubt 1-Punkt-Stub
+    coords = []
+    for i, val in enumerate(take_vals):
+        x = ox + yaxis_w + (i / ln) * (gw - yaxis_w)
+        y = oy + ((val - vmin) / (vmax - vmin)) * gh
+        coords.append((x, y))
     # Y-Achse mit Ticks + numerischen Labels (links)
     try:
-        # "Schöne" Tick-Schrittweite berechnen
+        # "Schöne" Tick-Schrittweite berechnen (feiner)
         rng = vmax - vmin
-        target = 4  # ca. 4–5 Ticks
+        target = 8  # ca. 7–9 Ticks (feiner)
         if rng <= 0:
             rng = 1e-12
         raw = rng / target
         import math as _m
         mag = 10 ** _m.floor(_m.log10(raw))
         norm = raw / mag
-        if   norm < 1.5: step = 1.0 * mag
-        elif norm < 3.0: step = 2.0 * mag
-        elif norm < 7.0: step = 5.0 * mag
-        else:            step = 10.0 * mag
+        if   norm < 1.5: step = 0.5 * mag   # NEU: halbe Schritte zulassen
+        elif norm < 3.0: step = 1.0 * mag
+        elif norm < 7.0: step = 2.0 * mag
+        else:            step = 5.0 * mag
         # Tick-Start auf Schritt runden
         start = _m.floor(vmin / step) * step
         ticks = []
