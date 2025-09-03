@@ -89,7 +89,6 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
     ts.use_default_normalization = True
     ts.default_weight = 1.0
     ts.default_correlation_min = 0.95
-    ts.default_margin = 100
     ts.use_default_mask = False
     ts.use_default_red_channel = True
     ts.use_default_green_channel = True
@@ -101,6 +100,7 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
     search_size = pattern_size * 2
     ts.default_pattern_size = pattern_size
     ts.default_search_size = search_size
+    ts.default_margin = search_size
 
     # Cleanup-Parameter aus Szene (mit Fallbacks)
     ts.clean_frames = getattr(scene, "frames_track", 20)
