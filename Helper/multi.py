@@ -155,15 +155,15 @@ def run_multi_pass(
 
         margin = 0
         if rc >= 26 and ps > 0:
-            margin = ps * 24
+            margin = ps * 14
         elif rc >= 21 and ps > 0:
-            margin = ps * 20
-        elif rc >= 16 and ps > 0:
-            margin = ps * 16
-        elif rc >= 11 and ps > 0:
             margin = ps * 12
-        elif rc >= 6 and ps > 0:
+        elif rc >= 16 and ps > 0:
+            margin = ps * 10
+        elif rc >= 11 and ps > 0:
             margin = ps * 8
+        elif rc >= 6 and ps > 0:
+            margin = ps * 6
         elif ss > 0:
             # fallback wie detect.py bei match_search_size
             margin = ss
