@@ -49,6 +49,7 @@ def _get_state(context: bpy.types.Context) -> Dict[str, Any]:
             pass
     state = {"frames": {}}  # key: str(frame) -> FrameEntry as dict
     _save_state(context, state)
+    return state
 
 
 # ---------- Reset API ----------
@@ -87,7 +88,7 @@ def _apply_model_triplet_for_count(context: bpy.types.Context, entry: Dict[str, 
     """Setzt Motion-Model und Triplet-Flag ausgehend von entry['count'] und A1..A5."""
     count = int(entry.get("count", 1))
     if count == 10:
-        # Abbruch → Triplet-Flag explizit löschen und nichts weiter setzen
+        # Abbruch → Triplet-Flag sicher löschen
         _set_triplet_mode_on_scene(context, None)
         return
     if 1 <= count <= 5:
@@ -258,8 +259,7 @@ def orchestrate_on_jump(context: bpy.types.Context, frame: int) -> None:
     entry["interpolated"] = False   # dieser Wert ist nicht interpoliert
 
     if count == 10:
-        # Abbruchbedingung: Report zeigen und nichts mehr verstellen
-        # Wichtig: Triplet-Flag sicher zurücksetzen, damit kein stale Zustand bleibt
+        # Abbruchbedingung: Triplet-Flag löschen, Report zeigen, sonst nichts
         _set_triplet_mode_on_scene(context, None)
         _save_state(context, state)
         _popup_error_report(context, frame, entry)
