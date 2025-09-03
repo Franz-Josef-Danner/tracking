@@ -100,6 +100,8 @@ _solve_graph_handle = None
 def _draw_solve_graph():
     if gpu is None:
         return
+    import blf
+
     scn = getattr(bpy.context, "scene", None)
     if not scn or not getattr(scn, "kaiserlich_solve_graph_enabled", False):
         return
@@ -144,6 +146,16 @@ def _draw_solve_graph():
     box = [(ox, oy), (ox+gw, oy), (ox+gw, oy+gh), (ox, oy+gh)]
     batch = batch_for_shader(shader, 'LINE_LOOP', {"pos": box})
     shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.35)); batch.draw(shader)
+
+    # Titel über der Box
+    try:
+        font_id = 0  # Standard-Font
+        blf.position(font_id, ox, oy + gh + 12, 0)
+        blf.size(font_id, 12, 72)
+        blf.color(font_id, 1.0, 1.0, 1.0, 1.0)
+        blf.draw(font_id, "Average Trend")
+    except Exception:
+        pass
     # Kurve
     # Bei nur einem Punkt einen 1px-Stub zeichnen, damit sichtbar
     if len(coords) == 1:
