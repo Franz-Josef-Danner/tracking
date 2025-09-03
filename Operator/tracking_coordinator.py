@@ -797,6 +797,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         self.target_frame = None
                         self.repeat_map = {}
                         self.solve_refine_attempted = False
+                        self.solve_refine_full_attempted = False
                         self.phase = PH_FIND_LOW
                         self.report({'INFO'}, "find_max: FOUND → neuer Zyklus (avg=None-Path)")
                         return {'RUNNING_MODAL'}
