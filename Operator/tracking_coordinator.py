@@ -279,6 +279,21 @@ def _snapshot_track_ptrs(context: bpy.types.Context) -> list[int]:
     except Exception:
         return []
 
+def _bump_default_correlation_min(context: bpy.types.Context) -> None:
+    """Erhöht tracking.settings.default_correlation_min um 0.001 (max. 0.98)."""
+    try:
+        clip = _resolve_clip(context)
+        tr = getattr(clip, "tracking", None) if clip else None
+        settings = getattr(tr, "settings", None) if tr else None
+        if not settings:
+            return
+        val = float(getattr(settings, "default_correlation_min", 0.75))
+        new_val = min(0.98, val + 0.001)
+        settings.default_correlation_min = new_val
+        print(f"[Coordinator] default_correlation_min bumped → {new_val:.3f}")
+    except Exception as exc:
+        print(f"[Coordinator] WARN: correlation bump failed: {exc}")
+
 def _bootstrap(context: bpy.types.Context) -> None:
     """Minimaler Reset + sinnvolle Defaults; Helper initialisieren."""
     scn = context.scene
@@ -794,6 +809,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         self.solve_refine_attempted = False
                         self.solve_refine_full_attempted = False
                         self.repeat_count_for_target = None
+                        _bump_default_correlation_min(context)
                         self.phase = PH_FIND_LOW
                         self.report({'INFO'}, "find_max: FOUND → neuer Zyklus (avg=None-Path)")
                         return {'RUNNING_MODAL'}
@@ -808,6 +824,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self.solve_refine_attempted = False
                 self.solve_refine_full_attempted = False
                 self.repeat_count_for_target = None
+                _bump_default_correlation_min(context)
                 self.phase = PH_FIND_LOW
                 return {'RUNNING_MODAL'}
             # 3) Ziel erreicht?
@@ -833,6 +850,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     self.solve_refine_attempted = False
                     self.solve_refine_full_attempted = False
                     self.repeat_count_for_target = None
+                    _bump_default_correlation_min(context)
                     self.phase = PH_FIND_LOW
                     self.report({'INFO'}, "find_max: FOUND → neuer Zyklus (nach Reduce)")
                     return {'RUNNING_MODAL'}
@@ -877,6 +895,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self.solve_refine_attempted = False
             self.solve_refine_full_attempted = False
             self.repeat_count_for_target = None
+            _bump_default_correlation_min(context)
             self.phase = PH_FIND_LOW
             return {'RUNNING_MODAL'}
 
