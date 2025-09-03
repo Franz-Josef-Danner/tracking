@@ -192,7 +192,7 @@ def run_detect_basic(
         # Dynamische Skalierung anhand des aktuellen Thresholds (ohne Persistenz)
         safe   = max(thr * 1e8, 1e-8)  # numerisch stabil
         factor = math.log10(safe) / 8.0
-        margin    = max(0, int((base_margin * factor)*1.1))
+        margin    = max(0, int((base_margin * factor)*2))
         min_dist  = max(1, int(base_min    * factor))
 
         # NEU: Falls Triplet/Multi aktiv (repeat_count ≥ 6) ODER Szene-Triplet-Flag > 0
