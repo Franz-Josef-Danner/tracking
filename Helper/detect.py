@@ -147,6 +147,9 @@ def run_detect_basic(
     min_distance_base: Optional[int] = None,
     placement: Optional[str] = None,
     selection_policy: Optional[str] = None,  # Placeholder für spätere Varianten
+    # NEU: Wiederholungszähler & Policy für margin=search_size (Triplet/Multi)
+    repeat_count: Optional[int] = None,
+    match_search_size: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """
     Setzt Marker am aktuellen (oder angegebenen) Frame und liefert Baseline-Infos.
@@ -172,6 +175,7 @@ def run_detect_basic(
 
         tracking = clip.tracking
         tracks = tracking.tracks
+        settings = tracking.settings
 
         # Defaults/Persistenz
         width = getattr(clip, "size", (0, 0))[0]
@@ -190,6 +194,27 @@ def run_detect_basic(
         factor = math.log10(safe) / 8.0
         margin    = max(0, int(base_margin * factor))
         min_dist  = max(1, int(base_min    * factor))
+
+        # NEU: Falls Triplet/Multi aktiv (repeat_count ≥ 6) ODER Szene-Triplet-Flag > 0
+        # oder der Aufrufer explizit match_search_size=True setzt,
+        # dann margin := aktuelle search_size, damit am Rand keine nicht-trackbaren
+        # Features platziert werden.
+        try:
+            triplet_mode = int(context.scene.get("_tracking_triplet_mode", 0) or 0)
+        except Exception:
+            triplet_mode = 0
+        try:
+            rc = int(repeat_count or 0)
+        except Exception:
+            rc = 0
+        want_match = bool(match_search_size) or rc >= 6 or triplet_mode > 0
+        if want_match:
+            try:
+                ss = int(getattr(settings, "default_search_size", 0))
+            except Exception:
+                ss = 0
+            if ss and ss > 0:
+                margin = int(ss)
 
         # Placement normalisieren (RNA-Enum erwartet 'FRAME' | 'INSIDE_GPENCIL' | 'OUTSIDE_GPENCIL')
         p = (placement or "FRAME").upper()
@@ -246,6 +271,9 @@ def run_detect_basic(
             "margin_px": int(margin),
             "min_distance_px": int(min_dist),
             "placement": p,
+            # für Debug/Transparenz:
+            "repeat_count": int(rc),
+            "triplet_mode": int(triplet_mode),
             "pre_ptrs": pre_ptrs,
             "new_count_raw": int(new_count),
             "width": int(width),
@@ -265,6 +293,7 @@ def run_detect_basic(
 # Thin Wrapper für Backward-Compat
 # -----------------------------
 def run_detect_once(context: bpy.types.Context, **kwargs) -> Dict[str, Any]:
+    # kwargs kann nun repeat_count / match_search_size enthalten; wird 1:1 durchgereicht
     res = run_detect_basic(context, **kwargs)
     if res.get("status") != "READY":
         return res
@@ -273,4 +302,8 @@ def run_detect_once(context: bpy.types.Context, **kwargs) -> Dict[str, Any]:
         "frame": int(res.get("frame", bpy.context.scene.frame_current)),
         "threshold": float(res.get("threshold", 0.75)),
         "new_tracks": int(res.get("new_count_raw", 0)),
+        # Spiegeln für Telemetrie/Debugging
+        "margin_px": int(res.get("margin_px", 0)),
+        "repeat_count": int(res.get("repeat_count", 0)),
+        "triplet_mode": int(res.get("triplet_mode", 0)),
     }
