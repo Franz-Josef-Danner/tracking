@@ -237,12 +237,23 @@ def run_reduce_error_tracks(
     tracks_sorted = sorted(tracks_all, key=_err_value, reverse=True)
     worst_valid = [t for t in tracks_sorted if _err_value(t) >= 0.0]
 
-    # Fallback: Keine validen Fehler -> benutze kürzeste Tracks als Kandidaten (meist wertlos)
+    # Schwellenwert aus Scene: nur Tracks oberhalb von error_track berücksichtigen
+    error_threshold = getattr(context.scene, "error_track", 0.0)
+    worst_valid = [t for t in worst_valid if _err_value(t) >= error_threshold]
+
+    # Fallback: Keine validen Fehler oberhalb Threshold -> keine Löschung
     mode = "ERROR_BASED"
     candidates: List[bpy.types.MovieTrackingTrack]
     if not worst_valid:
-        candidates = sorted(tracks_all, key=_track_len)  # aufsteigend (kürzeste zuerst)
-        mode = "LEN_FALLBACK"
+        return {
+            "status": "NO_VALID_ERRORS",
+            "mode": mode,
+            "object": obj.name,
+            "deleted": 0,
+            "before": before_cnt,
+            "after": before_cnt,
+            "names": [],
+        }
     else:
         candidates = worst_valid
 
