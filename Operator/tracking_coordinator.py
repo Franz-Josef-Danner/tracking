@@ -612,18 +612,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                          else scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
                         self.detection_threshold = max(base_thr * ((anzahl_neu + 0.1) / marker_adapt), 0.0001)
 
-                        # --- NEU: dynamische Werte in der Szene persistieren ---
-                        try:
-                            # defensiv clampen
-                            margin_eff = max(0, int(margin))
-                            min_dist_eff = max(1, int(min_distance))
-                            scn["margin_base"] = margin_eff
-                            scn["min_distance_base"] = min_dist_eff
-                            # optionales Log für Transparenz
-                            print(f"[Coordinator] scene overrides → margin_base={margin_eff}, "
-                                  f"min_distance_base={min_dist_eff}")
-                        except Exception as _exc:
-                            print(f"[Coordinator] scene override failed: {_exc}")
+                        # (entfernt) Szene-Overrides für margin/min_distance – Variablen hier nicht definiert
                     except Exception:
                         pass
 
@@ -645,6 +634,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     wants_multi = (_cnt_now >= 6)
                 except Exception:
                     wants_multi = False
+                print(f"[Coordinator] multi gate @frame={self.target_frame} "
+                      f"count={self.repeat_count_for_target} → wants_multi={wants_multi}")
                 if isinstance(eval_res, dict) and str(eval_res.get("status", "")) == "ENOUGH" and wants_multi:
                     # Führe nur Multi‑Pass aus, wenn der Helper importiert werden konnte.
                     if run_multi_pass is not None:
