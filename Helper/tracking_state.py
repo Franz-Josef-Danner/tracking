@@ -18,7 +18,8 @@ MOTION_MODEL_BY_COUNT = {
 }
 
 SCENE_STATE_PROP = "tracking_state_json"  # JSON in der Szene
-
+MAX_STEPS = 25          # 5 Basis + 4 Triplet-Blöcke à 5 Schritte
+ABORT_AT = MAX_STEPS + 1  # Abbruch beim 26. Besuch
 
 @dataclass
 class FrameEntry:
@@ -82,24 +83,37 @@ def _ensure_frame_entry(state: Dict[str, Any], frame: int) -> Tuple[Dict[str, An
     return frames[key], False
 
 
-# ---------- Motion-Model / Triplet ----------
+# ---------- Motion-Model / Triplet (erweiterte 25-Schritt-Logik) ----------
 
 def _apply_model_triplet_for_count(context: bpy.types.Context, entry: Dict[str, Any]) -> None:
-    """Setzt Motion-Model und Triplet-Flag ausgehend von entry['count'] und A1..A5."""
+    """
+    Setzt Motion-Model und Triplet-Flag ausgehend von entry['count'].
+    Schritte:
+      1..5   → Modelle 1..5, Triplet=None
+      6..10  → Triplet=1, Modelle 1..5
+      11..15 → Triplet=2, Modelle 1..5
+      16..20 → Triplet=3, Modelle 1..5
+      21..25 → Triplet=4, Modelle 1..5
+      26     → Abbruch (Triplet-Flag löschen)
+    """
     count = int(entry.get("count", 1))
-    if count == 10:
-        # Abbruch → Triplet-Flag sicher löschen
+    if count >= ABORT_AT:
         _set_triplet_mode_on_scene(context, None)
         return
+    # Basisphase: 1..5 (kein Triplet)
     if 1 <= count <= 5:
         model = MOTION_MODEL_BY_COUNT.get(count, "Loc")
         _set_motion_model_for_all_selected_tracks(context, model)
         _set_triplet_mode_on_scene(context, None)
         return
-    # >=6: bestes A1..A5 plus Triplet 1..4 (abgeleitet aus count)
-    best_model = _pick_best_model_from_A1_A5(entry)
-    _set_motion_model_for_all_selected_tracks(context, best_model)
-    trip_idx = 4 if count > 9 else max(1, min(4, count - 5))
+    # Triplet-Phasen: Blöcke à 5 Schritte
+    # Blockindex 0..3 → Triplet 1..4 / innerhalb Block Schritt 1..5 → Modelle 1..5
+    phase = count - 6  # 0-basiert ab Schritt 6
+    block_idx = phase // 5  # 0..3
+    step_in_block = (phase % 5) + 1  # 1..5
+    trip_idx = min(4, block_idx + 1)
+    model = MOTION_MODEL_BY_COUNT.get(step_in_block, "Loc")
+    _set_motion_model_for_all_selected_tracks(context, model)
     _set_triplet_mode_on_scene(context, trip_idx)
 
 def _set_motion_model_for_all_selected_tracks(context: bpy.types.Context, model: str) -> None:
@@ -186,8 +200,8 @@ def _lin_interp_int(a_x: int, a_y: int, b_x: int, b_y: int, x: int) -> int:
         return int(round(a_y))
     t = (x - a_x) / float(b_x - a_x)
     y = a_y + t * (b_y - a_y)
-    # clamp 1..9 (10 ist Abbruchfall, wird nicht interpoliert)
-    y = max(1.0, min(9.0, y))
+    # clamp 1..MAX_STEPS (ABORT_AT wird nicht interpoliert)
+    y = max(1.0, min(float(MAX_STEPS), y))
     return int(round(y))
 
 
@@ -263,7 +277,7 @@ def orchestrate_on_jump(context: bpy.types.Context, frame: int) -> None:
     entry["anchor"] = True          # explizit als gesetzter Anker markieren
     entry["interpolated"] = False   # dieser Wert ist nicht interpoliert
 
-    if count == 10:
+    if count >= ABORT_AT:
         # Abbruchbedingung: Triplet-Flag löschen, Report zeigen, sonst nichts
         _set_triplet_mode_on_scene(context, None)
         _save_state(context, state)
@@ -319,6 +333,8 @@ def record_bidirectional_result(
             err = 0.0
         total += float(frames_tracked) * err
 
+    # A-Logging bleibt bewusst auf 1..9 gekappt: Auswahl-Logik nutzt A1..A5,
+    # spätere Triplet-Schritte benötigen keine A>9.
     idx = max(1, min(count, 9))
     key = f"A{idx}"
     entry[key] = float(total)
