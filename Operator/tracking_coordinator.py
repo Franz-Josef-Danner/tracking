@@ -358,6 +358,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 # Kein Low-Marker-Frame gefunden: Starte Spike-Zyklus
                 self.phase = PH_SPIKE_CYCLE
                 self.spike_threshold = 100.0
+                try:
+                    context.scene["tco_spike_finish_logged"] = False
+                except Exception:
+                    pass
                 return {'RUNNING_MODAL'}
             self.target_frame = int(res.get("frame"))
             self.report({'INFO'}, f"Low-Marker-Frame: {self.target_frame}")
@@ -545,19 +549,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         base_thr = float(self.detection_threshold if self.detection_threshold is not None
                                          else scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
                         self.detection_threshold = max(base_thr * ((anzahl_neu + 0.1) / marker_adapt), 0.0001)
-
-                        # --- NEU: dynamische Werte in der Szene persistieren ---
-                        try:
-                            # defensiv clampen
-                            margin_eff = max(0, int(margin))
-                            min_dist_eff = max(1, int(min_distance))
-                            scn["margin_base"] = margin_eff
-                            scn["min_distance_base"] = min_dist_eff
-                            # optionales Log für Transparenz
-                            print(f"[Coordinator] scene overrides → margin_base={margin_eff}, "
-                                  f"min_distance_base={min_dist_eff}")
-                        except Exception as _exc:
-                            print(f"[Coordinator] scene override failed: {_exc}")
                     except Exception:
                         pass
 
@@ -834,15 +825,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     self.phase = PH_FIND_LOW
                     return {'RUNNING_MODAL'}
                 else:
-                    self.report({'INFO'}, f"FIND_MAX → NONE (obs_min={res.get('observed_min')} @f{res.get('observed_min_frame')}); erzwinge min. 1 Löschung")
-                    # Mindestens 1 Track löschen, damit Fortschritt garantiert ist
-                    try:
-                        red = run_reduce_error_tracks(context, max_to_delete=1)
-                        self.report({'INFO'}, f"ReduceErrorTracks(FIND_MAX/NONE): delete=1 → done={red.get('deleted')} {red.get('names')}")
-                    except Exception as _exc:
-                        self.report({'WARNING'}, f"ReduceErrorTracks(FIND_MAX/NONE) Fehler: {_exc}")
-                    reset_for_new_cycle(context)
-                    self.spike_threshold = None
+                    self.report({'INFO'}, f"FIND_MAX → NONE (obs_min={res.get('observed_min')} @f{res.get('observed_min_frame')}) → zurück zu FIND_LOW")
+                    # Kein Hard-Reset/Reduce hier – sauberer Rücksprung in den Low-Zyklus
                     self.phase = PH_FIND_LOW
                     return {'RUNNING_MODAL'}
             except Exception as exc:
@@ -878,18 +862,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 pass
             next_thr = thr * 0.9
             if next_thr < 10.0:
-                # Terminal: Spike-Cycle beendet → min. 1 löschen und zurück zu FIND_LOW (kein Solve)
+                # Terminal: Spike-Cycle beendet → zurück zu FIND_LOW (kein Solve, kein Zwangs-Reset)
                 try:
                     scn["tco_spike_cycle_finished"] = True
                 except Exception:
                     pass
-                # Mindestens 1 Track löschen, um Stagnation zu vermeiden
-                try:
-                    red = run_reduce_error_tracks(context, max_to_delete=1)
-                    self.report({'INFO'}, f"ReduceErrorTracks(SPIKE terminal): delete=1 → done={red.get('deleted')} {red.get('names')}")
-                except Exception as _exc:
-                    self.report({'WARNING'}, f"ReduceErrorTracks(SPIKE terminal) Fehler: {_exc}")
-                reset_for_new_cycle(context)  # sauberer Zustand
                 self.spike_threshold = None
                 self.phase = PH_FIND_LOW
                 self.report({'INFO'}, "SPIKE_CYCLE beendet (<10) → zurück zu FIND_LOW (kein Solve)")

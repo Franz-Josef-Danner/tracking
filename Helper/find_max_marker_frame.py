@@ -171,11 +171,13 @@ def run_find_max_marker_frame(
             "observed_min": int(observed_min or 0),
             "observed_min_frame": int(observed_min_frame or s_start),
         })
-    # Terminal-Log, falls Spike-Zyklus als ausgereizt markiert wurde
+    # Terminal-Log, falls Spike-Zyklus als ausgereizt markiert wurde – nur einmal loggen
     try:
         scn = getattr(context, 'scene', None)
         if scn is not None and bool(scn.get(SPIKE_FLAG_SCENE_KEY, False)):
-            print('finish')
+            if not bool(scn.get("tco_spike_finish_logged", False)):
+                print('finish')
+                scn["tco_spike_finish_logged"] = True
     except Exception:
         pass
     return out
