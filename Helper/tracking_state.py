@@ -18,8 +18,13 @@ MOTION_MODEL_BY_COUNT = {
 }
 
 SCENE_STATE_PROP = "tracking_state_json"  # JSON in der Szene
-MAX_STEPS = 25          # 5 Basis + 4 Triplet-Blöcke à 5 Schritte
-ABORT_AT = MAX_STEPS + 1  # Abbruch beim 26. Besuch
+# Kern-Logik:
+# - MAX_STEPS = 25  (5 Basis + 4 Triplet-Blöcke à 5 Schritte)
+# - EXTENSION_STEPS = 10 (Zusatzläufe mit höchster Einstellung nach der letzten Stufe)
+# - Abbruch erst nach MAX_STEPS + EXTENSION_STEPS + 1
+MAX_STEPS = 25
+EXTENSION_STEPS = 10
+ABORT_AT = MAX_STEPS + EXTENSION_STEPS + 1  # = 25 + 10 + 1 → Abbruch beim 36. Besuch
 
 @dataclass
 class FrameEntry:
@@ -89,12 +94,13 @@ def _apply_model_triplet_for_count(context: bpy.types.Context, entry: Dict[str, 
     """
     Setzt Motion-Model und Triplet-Flag ausgehend von entry['count'].
     Schritte:
-      1..5   → Modelle 1..5, Triplet=None
-      6..10  → Triplet=1, Modelle 1..5
-      11..15 → Triplet=2, Modelle 1..5
-      16..20 → Triplet=3, Modelle 1..5
-      21..25 → Triplet=4, Modelle 1..5
-      26     → Abbruch (Triplet-Flag löschen)
+      1..5    → Modelle 1..5, Triplet=None
+      6..10   → Triplet=1, Modelle 1..5
+      11..15  → Triplet=2, Modelle 1..5
+      16..20  → Triplet=3, Modelle 1..5
+      21..25  → Triplet=4, Modelle 1..5
+      26..35  → (Verlängerung) Triplet=4, Modell=5 (höchste Einstellung) weiterführen
+      36      → Abbruch (Triplet-Flag löschen)
     """
     count = int(entry.get("count", 1))
     if count >= ABORT_AT:
@@ -115,6 +121,13 @@ def _apply_model_triplet_for_count(context: bpy.types.Context, entry: Dict[str, 
     model = MOTION_MODEL_BY_COUNT.get(step_in_block, "Loc")
     _set_motion_model_for_all_selected_tracks(context, model)
     _set_triplet_mode_on_scene(context, trip_idx)
+    return
+
+    # (Dead code guard – Logik endet vorher über return)
+
+    # Verlängerungsfenster nach der letzten Stufe:
+    # 26..(MAX_STEPS+EXTENSION_STEPS) → Triplet=4, Modell=Affine (A5)
+    # (Wird effektiv nicht erreicht, da oben returnt; belassen als Doku)
 
 def _set_motion_model_for_all_selected_tracks(context: bpy.types.Context, model: str) -> None:
     """Setzt Motion-Model für alle ausgewählten Tracks; Fallback auf Default, wenn keine Auswahl."""
