@@ -95,7 +95,13 @@ def run_find_max_marker_frame(
     return_observed_min: bool = True,
 ) -> Dict[str, Any]:
     """Sucht den **ersten** Frame im Szenenbereich, dessen aktive Markerzahl
-    unter ``threshold = scene.marker_frame`` liegt.
+    unter der Schwelle aus der **marker_basis**-Logik liegt.
+
+    Schwellenwert-Quelle (Priorität):
+      1) scene["marker_adapt"], wenn scene["prefer_marker_adapt"] == True
+      2) scene["marker_basis"]
+      3) Fallback: 20
+    Effektiver Vergleich: count <= (basis - 1)
 
     Zusätzlich werden (falls kein Treffer) das kleinste beobachtete ``count``
     sowie der zugehörige Frame zurückgegeben, um heuristische Entscheidungen
@@ -106,16 +112,24 @@ def run_find_max_marker_frame(
         return {"status": "FAILED", "reason": "no active MovieClip"}
 
     scene = context.scene
+    # --- Schwellenwert wie in run_find_low_marker_frame: basis bzw. adapt, Fallback 20 ---
     try:
-        marker_frame_val = int(getattr(scene, "marker_frame", scene.frame_current) or scene.frame_current)
+        prefer_adapt = bool(scene.get("prefer_marker_adapt", False))
+        if prefer_adapt and "marker_adapt" in scene:
+            _basis = int(scene["marker_adapt"])
+        elif "marker_basis" in scene:
+            _basis = int(scene["marker_basis"])
+        else:
+            _basis = 20
     except Exception:
-        marker_frame_val = int(getattr(scene, "frame_current", 0) or 0)
-    threshold = int(marker_frame_val - 1)
+        _basis = 20
+    # Effektiv: count <= (basis - 1)
+    threshold = max(0, int(_basis) - 1)
 
     tracks = _get_tracks_collection(clip)
     if tracks is None:
         # Kein Tracking-Kontext vorhanden → keine Marker → keine Treffer
-        out = {"status": "NONE", "threshold": threshold}
+        out = {"status": "NONE", "threshold": threshold, "basis": int(_basis)}
         if return_observed_min:
             out.update({"observed_min": 0, "observed_min_frame": int(getattr(scene, "frame_start", 1) or 1)})
         return out
@@ -147,10 +161,11 @@ def run_find_max_marker_frame(
                 "frame": int(f),
                 "count": int(c),
                 "threshold": int(threshold),
+                "basis": int(_basis),
             }
 
     # Kein Treffer → optional min zurückgeben
-    out: Dict[str, Any] = {"status": "NONE", "threshold": int(threshold)}
+    out: Dict[str, Any] = {"status": "NONE", "threshold": int(threshold), "basis": int(_basis)}
     if return_observed_min:
         out.update({
             "observed_min": int(observed_min or 0),
