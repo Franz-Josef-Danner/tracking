@@ -219,6 +219,10 @@ def run_detect_basic(
         # Placement normalisieren (RNA-Enum erwartet 'FRAME' | 'INSIDE_GPENCIL' | 'OUTSIDE_GPENCIL')
         p = (placement or "FRAME").upper()
 
+        # Debug-Ausgabe der berechneten Margin und Min-Distanz
+        print(f"[Detect] frame={int(scn.frame_current)} "
+              f"threshold={thr:.3f} margin_px={margin} min_distance_px={min_dist}")
+
         pre_ptrs, new_count = perform_marker_detection(
             clip=clip,
             tracking=tracking,
