@@ -144,10 +144,7 @@ def run_multi_pass(
         c, eff_size = _sweep(float(sc))
         created_per_scale[float(sc)] = int(c)
         eff_pattern_sizes[float(sc)] = int(eff_size)
-    # NEU: Margin anhand größter verwendeter Search-Size setzen
-    # Wenn Search-Size während der Sweeps aus Pattern-Size abgeleitet wurde,
-    # berechnen wir max_search_size = max(eff_pattern) * 2 (mind. 5).
-    # Andernfalls verwenden wir den aktuellen Default (search_o).
+    # NEU: Margin-Logik wie in detect.py + Debug-Logs
     try:
         rc = int(repeat_count or 0)
         ps = int(getattr(settings, "default_pattern_size", 0))
@@ -170,7 +167,15 @@ def run_multi_pass(
 
         if margin > 0:
             settings.default_margin = int(margin)
-    except Exception:
+            print(f"[Multi] frame={context.scene.frame_current} "
+                  f"repeat_count={rc} pattern_size={ps} search_size={ss} "
+                  f"=> margin={margin}")
+        else:
+            print(f"[Multi] frame={context.scene.frame_current} "
+                  f"repeat_count={rc} pattern_size={ps} search_size={ss} "
+                  f"=> margin unverändert")
+    except Exception as ex:
+        print(f"[Multi] Margin-Berechnung FEHLER: {ex}")
         pass
 
     # restore sizes
