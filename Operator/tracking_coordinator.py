@@ -248,6 +248,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     target_frame: int | None = None
     repeat_map: dict[int, int] = {}
     pre_ptrs: set[int] | None = None
+    repeat_count_for_target: int | None = None
     # Aktueller Detection-Threshold; wird nach jedem Detect-Aufruf aktualisiert.
     detection_threshold: float | None = None
     spike_threshold: float | None = None  # aktueller Spike-Filter-Schwellenwert (temporär)
@@ -372,6 +373,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 _state = _get_state(context)
                 _entry, _ = _ensure_frame_entry(_state, int(self.target_frame))
                 _count = int(_entry.get("count", 1))
+                self.repeat_count_for_target = _count
                 if _count >= 10:
                     return self._finish(
                         context,
@@ -558,9 +560,16 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     return {'RUNNING_MODAL'}
 
 
-                # Markeranzahl im gültigen Bereich – optional Multi‑Pass und dann Bidirectional‑Track ausführen.
+                # Markeranzahl im gültigen Bereich – optional Multi-Pass und dann Bidirectional-Track ausführen.
                 did_multi = False
-                if isinstance(eval_res, dict) and str(eval_res.get("status", "")) == "ENOUGH":
+                # NEU: Multi standardmäßig überspringen; nur wenn
+                # tracking_state count >= 6 für diesen Frame → Multi-Pass fahren.
+                wants_multi = False
+                try:
+                    wants_multi = (int(self.repeat_count_for_target or 0) >= 6)
+                except Exception:
+                    wants_multi = False
+                if isinstance(eval_res, dict) and str(eval_res.get("status", "")) == "ENOUGH" and wants_multi:
                     # Führe nur Multi‑Pass aus, wenn der Helper importiert werden konnte.
                     if run_multi_pass is not None:
                         try:
@@ -576,16 +585,24 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                     thr = float(context.scene.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
                                 except Exception:
                                     thr = 0.5
+                            # NEU: Wiederholungszähler an multi.py übergeben.
                             mp_res = run_multi_pass(
                                 context,
                                 detect_threshold=float(thr),
                                 pre_ptrs=current_ptrs,
+                                repeat_count=int(self.repeat_count_for_target or 0),
                             )
                             try:
                                 context.scene["tco_last_multi_pass"] = mp_res  # type: ignore
                             except Exception:
                                 pass
-                            self.report({'INFO'}, f"MULTI-PASS ausgeführt: created_low={mp_res.get('created_low')}, created_high={mp_res.get('created_high')}, selected={mp_res.get('selected')}")
+                            self.report({'INFO'}, (
+                                "MULTI-PASS ausgeführt "
+                                f"(rep={self.repeat_count_for_target}): "
+                                f"scales={mp_res.get('scales_used')}, "
+                                f"created={mp_res.get('created_per_scale')}, "
+                                f"selected={mp_res.get('selected')}"
+                            ))
                             # Nach dem Multi‑Pass eine Distanzprüfung durchführen.
                             try:
                                 cur_frame = int(self.target_frame) if self.target_frame is not None else None
@@ -622,10 +639,26 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         # wird der Zyklus erneut bei PH_FIND_LOW beginnen.
                         self.phase = PH_BIDI
                         self.bidi_started = False
-                        self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res} – Starte Bidirectional-Track")
+                        self.report({'INFO'}, (
+                            f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, "
+                            f"eval={eval_res} – Starte Bidirectional-Track (nach Multi @rep={self.repeat_count_for_target})"
+                        ))
                         return {'RUNNING_MODAL'}
-                # In allen anderen Fällen (kein ENOUGH oder kein Multi‑Pass) wird die Sequenz beendet.
-                self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res}")
+                # --- ENOUGH aber KEIN Multi-Pass (repeat < 6) → direkt BIDI starten ---
+                if isinstance(eval_res, dict) and str(eval_res.get("status", "")) == "ENOUGH" and not wants_multi:
+                    # Direkt in die Bidirectional-Phase wechseln
+                    self.phase = PH_BIDI
+                    self.bidi_started = False
+                    self.report({'INFO'}, (
+                        f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, "
+                        f"eval={eval_res} – Starte Bidirectional-Track (ohne Multi; rep={self.repeat_count_for_target})"
+                    ))
+                    return {'RUNNING_MODAL'}
+
+                # In allen anderen Fällen (kein ENOUGH) → Abschluss
+                self.report({'INFO'}, (
+                    f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res} – Sequenz abgeschlossen."
+                ))
                 return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
 
             # Wenn keine Auswertungsfunktion vorhanden ist, einfach abschließen
