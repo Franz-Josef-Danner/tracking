@@ -165,6 +165,36 @@ def _resolve_clip(context: bpy.types.Context):
         clip = next(iter(bpy.data.movieclips), None)
     return clip
 
+def _reset_margin_to_tracker_default(context: bpy.types.Context) -> None:
+    """
+    Setzt tracking.settings.default_margin zurück auf den Default aus tracker_settings.py.
+    Bevorzugt den beim Bootstrap gespeicherten search_size; fällt ansonsten auf die
+    gleiche Formel zurück (pattern_size = max(1, width/100); margin = 2*pattern).
+    """
+    try:
+        clip = _resolve_clip(context)
+        tr = getattr(clip, "tracking", None) if clip else None
+        settings = getattr(tr, "settings", None) if tr else None
+        if not settings:
+            return
+        scn = context.scene
+        base_margin = None
+        # 1) Aus Bootstrap-Info (apply_tracker_settings) lesen
+        try:
+            last = scn.get("tco_last_tracker_settings") or {}
+            base_margin = int(last.get("search_size", 0)) or None
+        except Exception:
+            base_margin = None
+        # 2) Fallback: gleiche Berechnung wie in tracker_settings.apply_tracker_settings
+        if base_margin is None:
+            width = int(clip.size[0]) if clip and getattr(clip, "size", None) else 0
+            pattern_size = max(1, int(width / 100)) if width > 0 else 8
+            base_margin = pattern_size * 2
+        settings.default_margin = int(base_margin)
+        print(f"[Coordinator] default_margin reset → {int(base_margin)} (skip multi)")
+    except Exception as exc:
+        print(f"[Coordinator] WARN: margin reset failed: {exc}")
+
 def _marker_count_by_selected_track(context: bpy.types.Context) -> dict[str, int]:
     """Anzahl Marker je *ausgewähltem* Track (Name -> Count)."""
     clip = _resolve_clip(context)
@@ -653,6 +683,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         return {'RUNNING_MODAL'}
                 # --- ENOUGH aber KEIN Multi-Pass (repeat < 6) → direkt BIDI starten ---
                 if isinstance(eval_res, dict) and str(eval_res.get("status", "")) == "ENOUGH" and not wants_multi:
+                    # Multi wird explizit ausgelassen → Margin auf Tracker-Defaults zurücksetzen
+                    try:
+                        _reset_margin_to_tracker_default(context)
+                    except Exception as _exc:
+                        self.report({'WARNING'}, f"Margin-Reset (skip multi) fehlgeschlagen: {_exc}")
                     # Direkt in die Bidirectional-Phase wechseln
                     self.phase = PH_BIDI
                     self.bidi_started = False
