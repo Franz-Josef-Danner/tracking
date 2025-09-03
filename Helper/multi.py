@@ -154,7 +154,7 @@ def run_multi_pass(
             max_search_size = max(5, int(max_eff_pattern) * 2)
         else:
             max_search_size = int(getattr(settings, "default_search_size", search_o))
-        settings.default_margin = int(max_search_size)
+        settings.default_margin = int(max_search_size * 2)
     except Exception:
         pass
 
