@@ -144,6 +144,19 @@ def run_multi_pass(
         c, eff_size = _sweep(float(sc))
         created_per_scale[float(sc)] = int(c)
         eff_pattern_sizes[float(sc)] = int(eff_size)
+    # NEU: Margin anhand größter verwendeter Search-Size setzen
+    # Wenn Search-Size während der Sweeps aus Pattern-Size abgeleitet wurde,
+    # berechnen wir max_search_size = max(eff_pattern) * 2 (mind. 5).
+    # Andernfalls verwenden wir den aktuellen Default (search_o).
+    try:
+        if adjust_search_with_pattern and eff_pattern_sizes:
+            max_eff_pattern = max(eff_pattern_sizes.values())
+            max_search_size = max(5, int(max_eff_pattern) * 2)
+        else:
+            max_search_size = int(getattr(settings, "default_search_size", search_o))
+        settings.default_margin = int(max_search_size)
+    except Exception:
+        pass
 
     # restore sizes
     _set_pattern_size(tracking, pattern_o)
