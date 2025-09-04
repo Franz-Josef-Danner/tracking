@@ -162,9 +162,8 @@ def _draw_solve_graph():
         blf.color(font_id, 1.0, 1.0, 1.0, 1.0)
         blf.draw(font_id, "Average Trend")
     except Exception:
+        # Falls Titelschrift nicht verfügbar ist o.Ä. – still bleiben
         pass
-        if dbg:
-            print("[SolveGraph] no data → title+box drawn, returning early")
     # Wenn keine Daten vorliegen: Hinweis zeichnen und früh aussteigen
     if not has_data:
         try:
@@ -251,7 +250,6 @@ def _draw_solve_graph():
             # Gridline dezent
             batch = batch_for_shader(shader, 'LINES', {"pos": [(yaxis_x, y), (ox+gw, y)]})
             shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.15)); batch.draw(shader)
-    if dbg: print("[SolveGraph] draw done")
             # Label
             lbl = f"{tv:.2f}"
             blf.position(0, ox + 4, y - 6, 0)
@@ -265,6 +263,9 @@ def _draw_solve_graph():
         coords.append((coords[0][0] + 1, coords[0][1]))
     batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": coords})
     shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.9)); batch.draw(shader)
+    # Abschluss-Log sauber außerhalb des try/except-Blocks
+    if dbg:
+        print("[SolveGraph] draw done")
 
 def _register_scene_props() -> None:
     sc = bpy.types.Scene
