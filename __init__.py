@@ -237,7 +237,7 @@ def _draw_solve_graph():
         print(f"[SolveGraph] coords_count={len(coords)} ln={ln}")
     # Y-Achse mit Ticks + numerischen Labels (links)
     try:
-        # "Schöne" Schrittweite (Ziel ~8 Ticks), vollständige Abdeckung bis vmax
+        # "Schöne" Schrittweite (Ziel ~8–10 Ticks), feiner: 1/2/2.5/5/10
         rng = vmax - vmin
         target = 8
         if rng <= 0:
@@ -245,27 +245,25 @@ def _draw_solve_graph():
         raw = rng / target
         mag = 10 ** _m.floor(_m.log10(raw))
         norm = raw / mag
-        # Round-UP auf 1/2/5/10 * mag
-        if   norm <= 1.0: nice = 1.0
-        elif norm <= 2.0: nice = 2.0
-        elif norm <= 5.0: nice = 5.0
-        else:             nice = 10.0
-        step = nice * mag
-        # Start / Ende
-        start = _m.floor(vmin / step) * step
-        end   = _m.ceil (vmax / step) * step
-        # Ticks erzeugen (keine 12er-Deckelung)
-        max_ticks = min(int(round((end - start) / step)) + 1, 64)
-        ticks = []
-        for i in range(max_ticks):
-            t = start + i * step
-            if t > end + 1e-9:
+        # Round-UP auf 1/2/2.5/5/10 * mag
+        nice = 10.0
+        for cand in (1.0, 2.0, 2.5, 5.0, 10.0):
+            if norm <= cand:
+                nice = cand
                 break
-            ticks.append(t)
+        step = nice * mag
+        # Ticks strikt im sichtbaren Datenbereich halten
+        tick0 = _m.ceil (vmin / step) * step  # erster Tick >= vmin
+        tickN = _m.floor(vmax / step) * step  # letzter Tick <= vmax
+        ticks = []
+        if tickN >= tick0:
+            count = int(_m.floor((tickN - tick0) / step)) + 1
+            count = min(count, 64)
+            ticks = [tick0 + i * step for i in range(count)]
         if dbg:
             print(f"[SolveGraph] tick target={target} raw={raw:.6g} mag={mag:.6g} "
-                  f"norm={norm:.3f} step={step:.6g} start={start:.6g} end={end:.6g}")
-            print(f"[SolveGraph] ticks_count={len(ticks)} ticks={ticks}")
+                  f"norm={norm:.3f} step={step:.6g} tick0={tick0:.6g} tickN={tickN:.6g}")
+            print(f"[SolveGraph] ticks_count(in-range)={len(ticks)} ticks={ticks}")
         # Achsenlinie
         yaxis_x = ox + yaxis_w
         batch = batch_for_shader(shader, 'LINES', {"pos": [(yaxis_x, oy), (yaxis_x, oy+gh)]})
@@ -297,8 +295,10 @@ def _draw_solve_graph():
             blf.draw(font_id, lbl)
             blf.disable(font_id, blf.SHADOW)
         if dbg and ticks:
-            print(f"[SolveGraph] first_label='{_fmt.format(ticks[0])}' pos=({ox+4},{oy + ((ticks[0]-vmin)/(vmax-vmin))*gh - 6})")
-            print(f"[SolveGraph] last_label ='{_fmt.format(ticks[-1])}' pos=({ox+4},{oy + ((ticks[-1]-vmin)/(vmax-vmin))*gh - 6})")
+            y0 = oy + ((ticks[0]-vmin)/(vmax-vmin))*gh - 6
+            y1 = oy + ((ticks[-1]-vmin)/(vmax-vmin))*gh - 6
+            print(f"[SolveGraph] first_label='{_fmt.format(ticks[0])}' pos=({ox+4},{y0})")
+            print(f"[SolveGraph] last_label ='{_fmt.format(ticks[-1])}' pos=({ox+4},{y1})")
     except Exception:
         pass
     # Kurve
@@ -306,11 +306,22 @@ def _draw_solve_graph():
     if len(coords) == 1:
         coords.append((coords[0][0] + 1, coords[0][1]))
     batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": coords})
+    # Sichtbarkeit verbessern: 2px Linienbreite (sofern verfügbar)
+    _reset_width = False
+    try:
+        gpu.state.line_width_set(2.0)
+        _reset_width = True
+    except Exception:
+        pass
     # Titel zuletzt zeichnen (oberste Ebene, nicht überdeckt)
     _draw_title()
     # Abschluss-Log sauber außerhalb des try/except-Blocks
     if dbg:
         print("[SolveGraph] draw done")
+    # Linienstärke zurücksetzen
+    if _reset_width:
+        try: gpu.state.line_width_set(1.0)
+        except Exception: pass
 
 def _register_scene_props() -> None:
     sc = bpy.types.Scene
