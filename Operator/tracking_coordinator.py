@@ -767,6 +767,37 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 ))
                 return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
 
+        # PHASE 5: BIDI – Bidirectional-Tracking ausführen und danach fortsetzen
+        if self.phase == PH_BIDI:
+            # Operator verfügbar?
+            if CLIP_OT_bidirectional_track is None:
+                self.report({'WARNING'}, "Bidirectional-Track nicht verfügbar – skip → FIND_LOW")
+                self.phase = PH_FIND_LOW
+                return {'RUNNING_MODAL'}
+
+            # Nur einmal triggern
+            if not self.bidi_started:
+                self.bidi_started = True
+                try:
+                    override = _ensure_clip_context(context)
+                    if override:
+                        with bpy.context.temp_override(**override):
+                            # Ausführen wie aus der UI – blockiert nicht hart den Modal-Loop
+                            bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
+                    else:
+                        bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
+                    self.report({'INFO'}, "Bidirectional-Track gestartet.")
+                except Exception as exc:
+                    self.report({'WARNING'}, f"Bidirectional-Track Start fehlgeschlagen: {exc}")
+                    # Bei Fehlern nicht hängen bleiben → zurück in FIND_LOW
+                    self.phase = PH_FIND_LOW
+                    return {'RUNNING_MODAL'}
+
+            # Vereinfachte Steuerung: nach dem Start sofort in den nächsten Zyklus
+            # (der BIDI-Operator arbeitet eigenständig; wir orchestrieren weiter)
+            self.phase = PH_FIND_LOW
+            return {'RUNNING_MODAL'}
+
             # Wenn keine Auswertungsfunktion vorhanden ist, einfach abschließen
             self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}")
             return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
