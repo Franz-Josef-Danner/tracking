@@ -833,6 +833,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                     self.repeat_count_for_target = None
                                 self.target_frame = worst_f
                                 self.pre_ptrs = set(_snapshot_track_ptrs(context))
+                                # WICHTIG: Baseline auf den aktuellen Solve setzen,
+                                # damit der nächste Vergleich gegen *#04* (last solve) läuft.
+                                try:
+                                    if avg_err is not None:
+                                        self.prev_solve_avg = float(avg_err)
+                                except Exception:
+                                    pass
                                 _bump_default_correlation_min(context)
                                 self.phase = PH_DETECT
                                 self.report({'INFO'}, f"Regression: avg={float(avg_err):.4f} > prev={float(prev_err):.4f} → Worst-Frame f={worst_f} → DETECT")
