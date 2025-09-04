@@ -18,6 +18,14 @@ from ..Helper.split_cleanup import recursive_split_cleanup
 from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
 from ..Helper.solve_camera import solve_camera_only  # type: ignore
 from ..Helper.reduce_error_tracks import run_reduce_error_tracks, get_avg_reprojection_error  # type: ignore
+# Worst-Error-Frame (optional vorhanden)
+try:
+    from ..Helper.find_max_error_frame import run_find_max_error_frame  # type: ignore
+except Exception:
+    try:
+        from .find_max_error_frame import run_find_max_error_frame  # type: ignore
+    except Exception:
+        run_find_max_error_frame = None  # type: ignore
 from ..Helper.reset_state import reset_for_new_cycle  # zentraler Reset (Bootstrap/Cycle)
 
 # Versuche, die Auswertungsfunktion für die Markeranzahl zu importieren.
@@ -846,7 +854,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 prev = None
             if prev is not None and prev > 0.0:
                 try:
-                    if float(avg_err) > prev * 5.0:
+                    if float(avg_err) > prev * 2.0:
                         self.report({'INFO'}, f"Solve-Regression erkannt: avg={float(avg_err):.4f} > prev*5 ({prev:.4f}*5) → zurück zu LOW")
                         # Zyklus zurücksetzen und in den Low-Marker-Pfad springen
                         reset_for_new_cycle(context)  # Solve-Log behalten
@@ -872,6 +880,58 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if avg_err <= target_err:
                 self.report({'INFO'}, f"Solve OK: avg={avg_err:.4f} ≤ target={target_err:.4f}")
                 return self._finish(context, info="Sequenz abgeschlossen (Solve-Ziel erreicht).", cancelled=False)
+            # 3b) Ziel NICHT erreicht → „Hoher Error“-Pfad:
+            # Direkt den Frame mit dem höchsten aggregierten Fehler suchen
+            # und ohne Umweg über FIND_LOW/JUMP zurück in DETECT verzweigen.
+            try:
+                too_high = (avg_err is not None) and (float(avg_err) > float(target_err))
+            except Exception:
+                too_high = False
+            if too_high and (run_find_max_error_frame is not None):
+                try:
+                    min_cov = int(scn.get("min_tracks_per_frame_for_max_error", 10))
+                except Exception:
+                    min_cov = 10
+                try:
+                    r = run_find_max_error_frame(
+                        context,
+                        include_muted=False,
+                        min_tracks_per_frame=min_cov,
+                        frame_min=None,
+                        frame_max=None,
+                        return_top_k=5,
+                        verbose=True,
+                    )
+                except Exception as _exc:
+                    r = {"status": "ERROR", "reason": str(_exc)}
+                if r.get("status") == "FOUND":
+                    worst_f = int(r.get("frame"))
+                    # Solide Zustandsübergabe: auf Frame springen (mit Repeat-Map),
+                    # Orchestrator informieren, Snapshot für DISTANZE vorbereiten.
+                    try:
+                        rj = run_jump_to_frame(context, frame=worst_f, repeat_map=self.repeat_map)
+                    except Exception as _exc:
+                        rj = {"status": "ERROR", "reason": str(_exc)}
+                    if rj.get("status") == "OK":
+                        self.target_frame = worst_f
+                        # Orchestrate/Repeat-Count spiegeln (wie in PH_JUMP)
+                        try:
+                            orchestrate_on_jump(context, int(self.target_frame))
+                            _state = _get_state(context)
+                            _entry, _ = _ensure_frame_entry(_state, int(self.target_frame))
+                            self.repeat_count_for_target = int(_entry.get("count", 1))
+                        except Exception:
+                            self.repeat_count_for_target = None
+                        # Pre-Snapshot für DISTANZE (nur Pointer, ephemer)
+                        self.pre_ptrs = set(_snapshot_track_ptrs(context))
+                        # Optional: Korrelation leicht anheben
+                        _bump_default_correlation_min(context)
+                        # Threshold hier neutral lassen → detect.py wählt Default/übergebenen Wert
+                        self.detection_threshold = None
+                        self.phase = PH_DETECT
+                        self.report({'INFO'}, f"Solve zu hoch (avg={float(avg_err):.4f} > target={float(target_err):.4f}). "
+                                              f"Worst-Frame f={worst_f} (score={r.get('score'):.3f}) → direkt zu DETECT.")
+                        return {'RUNNING_MODAL'}
             # 4) Threshold NICHT erreicht → SOFORT reduzieren (immer, bei jedem Solve)
             import math
             t = target_err if (target_err == target_err and target_err > 1e-8) else 0.6
