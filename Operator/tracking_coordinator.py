@@ -794,7 +794,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
             # Erfolgskriterium
             try:
-                if avg_err is not None and float(avg_err) < float(target_err)):
+                if (avg_err is not None) and (float(avg_err) < float(target_err)):
                     self.report({'INFO'}, f"Solve OK: avg={float(avg_err):.4f} < target={float(target_err):.4f}")
                     return self._finish(context, info="Sequenz abgeschlossen (Solve-Ziel erreicht).", cancelled=False)
             except Exception:
@@ -863,17 +863,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self.report({'INFO'}, f"Nächster Solve gestartet → {res}")
             except Exception as exc:
                 self.report({'WARNING'}, f"Nächster Solve konnte nicht gestartet werden: {exc}")
-            return {'RUNNING_MODAL'}
-            reset_for_new_cycle(context)  # Solve-Log bleibt erhalten
-            self.detection_threshold = None
-            self.pre_ptrs = None
-            self.target_frame = None
-            self.repeat_map = {}
-            self.solve_refine_attempted = False
-            self.solve_refine_full_attempted = False
-            self.repeat_count_for_target = None
-            _bump_default_correlation_min(context)
-            self.phase = PH_FIND_LOW
             return {'RUNNING_MODAL'}
 
         # PHASE: SPIKE_CYCLE – spike_filter → clean_short_segments → clean_short_tracks → split_cleanup → find_max_marker_frame
