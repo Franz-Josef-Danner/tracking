@@ -28,10 +28,12 @@ ABORT_AT = MAX_STEPS + EXTENSION_STEPS + 1  # = 25 + 10 + 1 → Abbruch beim 36.
 
 @dataclass
 class FrameEntry:
-    count: int = 1  # wie oft dieser Frame durchlaufen wurde (1..)
-    # Markierungen für Interpolations-Logik
-    anchor: bool = False          # True, wenn Playhead hier aktiv gesetzt wurde
-    interpolated: bool = False    # True, wenn count aus Interpolation stammt
+    # Kernwert für Ableitungen (Motion Model / Triplet)
+    count: int = 1
+    # Alt-Flags bleiben für Abwärtskompatibilität erhalten, werden aber nicht mehr genutzt
+    anchor: bool = False
+    interpolated: bool = False
+    # A-Log (unverändert)
     A1: float = 0.0
     A2: float = 0.0
     A3: float = 0.0
@@ -192,141 +194,77 @@ def _popup_error_report(context: bpy.types.Context, frame: int, entry: Dict[str,
         for ln in lines:
             print("  ", ln)
  
-# ---------- Interpolation ----------
+# ---------- Nachbarschafts-Fächerung (ohne Anker/Interpolation) ----------
 
-def _sorted_anchor_frames(state: Dict[str, Any]) -> list[int]:
-    frames = state.get("frames", {})
-    anchors = []
-    for k, v in frames.items():
-        try:
-            if v.get("anchor", False):
-                anchors.append(int(k))
-        except Exception:
-            continue
-    anchors.sort()
-    return anchors
+def _get_frame_value(state: Dict[str, Any], frame: int) -> int:
+    return int(state.setdefault("frames", {}).get(str(frame), {}).get("count", 0))
 
+def _set_frame_value(state: Dict[str, Any], frame: int, value: int) -> None:
+    frames = state.setdefault("frames", {})
+    entry, _created = _ensure_frame_entry(state, frame)
+    entry["count"] = max(0, int(value))
+    # Alt-Flags neutralisieren
+    entry["anchor"] = False
+    entry["interpolated"] = False
+    frames[str(frame)] = entry
 
-def _lin_interp_int(a_x: int, a_y: int, b_x: int, b_y: int, x: int) -> int:
-    """Lineare Interpolation zwischen (a_x, a_y) und (b_x, b_y), gerundet."""
-    if b_x == a_x:
-        return int(round(a_y))
-    t = (x - a_x) / float(b_x - a_x)
-    y = a_y + t * (b_y - a_y)
-    # clamp 1..MAX_STEPS (ABORT_AT wird nicht interpoliert)
-    y = max(1.0, min(float(MAX_STEPS), y))
-    return int(round(y))
-
-
-def _recompute_interpolations(context: bpy.types.Context, state: Dict[str, Any], apply_models: bool = False) -> None:
-    """Berechnet Interpolationen der count-Werte zwischen Ankern.
-    - überschreibt KEINE Anker (anchor bleibt führend)
-    - setzt interpolierte Frames auf interpolated=True
-    - belässt vorhandene Nicht-Anker außerhalb der Spanne unverändert
+def _fan_out_neighbors(state: Dict[str, Any], center_frame: int, center_value: int) -> None:
     """
-    frames: Dict[str, Any] = state.setdefault("frames", {})
-    anchors = _sorted_anchor_frames(state)
-    if len(anchors) < 2:
+    Rollt den center_value gedämpft auf Nachbarn aus:
+    f±1 := center_value-1, f±2 := center_value-2, ... bis >0.
+    Konflikthandling: arithmetisches Mittel (kaufmännisch gerundet).
+    """
+    if center_value <= 1:
         return
+    def _blend(old_v: int, new_v: int) -> int:
+        if old_v <= 0:
+            return new_v
+        return int(round((old_v + new_v) / 2.0))
 
-    for i in range(len(anchors) - 1):
-        left = anchors[i]
-        right = anchors[i + 1]
-        left_entry = frames.get(str(left), {})
-        right_entry = frames.get(str(right), {})
-        left_c = int(left_entry.get("count", 1))
-        right_c = int(right_entry.get("count", 1))
-
-        # Nur zwischen benachbarten Ankern interpolieren
-        for f in range(left + 1, right):
-            key = str(f)
-            entry, _created = _ensure_frame_entry(state, f)
-            if entry.get("anchor", False):
-                # Falls in der Mitte bereits ein (später gesetzter) Anker liegt, Segment hier automatisch getrennt.
-                continue
-            # Interpolierter count
-            interp = _lin_interp_int(left, left_c, right, right_c, f)
-            entry["count"] = interp
-            entry["interpolated"] = True
-            entry["anchor"] = False
-            # WICHTIG:
-            # Interpolationen dürfen KEIN globales Triplet-Flag setzen.
-            # Daher während der Interpolation KEINE Modelle/Triplets anwenden.
-            # Der aktuelle Frame setzt Modell/Triplet separat in orchestrate_on_jump().
-            if apply_models:
-                # (bewusst leer gelassen – keine Model/Triplet-Anwendung für Interpolationen)
-                pass
-
-    _save_state(context, state)
+    # Beide Richtungen
+    radius = center_value - 1
+    for d in range(1, radius + 1):
+        cand = center_value - d
+        if cand <= 0:
+            break
+        for neighbor in (center_frame - d, center_frame + d):
+            old = _get_frame_value(state, neighbor)
+            _set_frame_value(state, neighbor, _blend(old, cand))
 
 
 # ---------- Öffentliche API ----------
 
 def orchestrate_on_jump(context: bpy.types.Context, frame: int) -> None:
-    """Am Ende von jump_to_frame aufrufen (oder direkt vom Coordinator).
-    Regeln (aktualisiert):
-    - Frame erstmalig: count=1, Model=A1(Loc), anchor=True.
-    - Frame existiert & war INTERPOLIERT (interpolated=True, anchor=False):
-        → KEIN Increment. Der interpolierte count wird übernommen,
-          anchor=True setzen, interpolated=False setzen,
-          Model/Triplet für DEN AKTUELLEN count anwenden.
-          (Erst bei einem späteren erneuten Setzen wird erhöht.)
-    - Sonst (normaler Wiederbesuch eines Ankers oder nicht-interpolierten Frames):
-        → count += 1; Model/Triplet gem. neuem count.
-    - Abbruchschwelle gemäß ABORT_AT.
+    """
+    Anker- & Interpolationsfreie Wiederholungslogik:
+    - Erstbesuch: count := 1
+    - Wiederbesuch: count := count + 1
+    - Danach Dämpfungs-Fächerung auf Nachbarn (–1/–2/… bis >0), Konflikte werden gemittelt.
+    - ABORT_AT bleibt als Obergrenze für count aktiv.
     """
     state = _get_state(context)
-    entry, created = _ensure_frame_entry(state, frame)
-
-    if created:
-        # Neu: count=1 → A1 ("Loc")
-        entry["count"] = 1
-        entry["anchor"] = True
-        entry["interpolated"] = False
-        _apply_model_triplet_for_count(context, entry)
-        _save_state(context, state)
-        # Nach neuem Anker Interpolation neu berechnen (falls davor schon ein Anker existierte)
-        _recompute_interpolations(context, state, apply_models=False)
-        return
-
-    # SPEZIALFALL: Erstes Betreten eines zuvor interpolierten Frames
-    if bool(entry.get("interpolated", False)) and not bool(entry.get("anchor", False)):
-        # KEIN Increment – interpolierten count übernehmen
-        count = int(entry.get("count", 1))
-        entry["anchor"] = True
-        entry["interpolated"] = False
-        # Abbruchschutz (falls Interpolation wider Erwarten über zielt)
-        if count >= ABORT_AT:
-            _set_triplet_mode_on_scene(context, None)
-            _save_state(context, state)
-            _popup_error_report(context, frame, entry)
-            return
-        # Model/Triplet für den bestehenden (interpolierten) count anwenden
-        _apply_model_triplet_for_count(context, entry)
-        _save_state(context, state)
-        # Anker gesetzt → Interpolationen neu berechnen
-        _recompute_interpolations(context, state, apply_models=False)
-        return
-
-    # Normaler Wiederbesuch (nicht-interpolierter Frame) → count erhöhen
-    entry["count"] = int(entry.get("count", 1)) + 1
-    count = entry["count"]
-    entry["anchor"] = True
+    entry, _created = _ensure_frame_entry(state, frame)
+    # Zentrum hochzählen (oder initialisieren)
+    center = int(entry.get("count", 0))
+    center = 1 if center <= 0 else center + 1
+    entry["count"] = center
+    entry["anchor"] = False
     entry["interpolated"] = False
 
-    if count >= ABORT_AT:
-        # Abbruchbedingung: Triplet-Flag löschen, Report zeigen, sonst nichts
+    # Abbruchschutz
+    if center >= ABORT_AT:
         _set_triplet_mode_on_scene(context, None)
         _save_state(context, state)
         _popup_error_report(context, frame, entry)
         return
 
-    # Einheitliche Ableitung anwenden
-    _apply_model_triplet_for_count(context, entry)
+    # Nachbarn fächern
+    _set_frame_value(state, frame, center)
+    _fan_out_neighbors(state, frame, center)
 
+    # Motion-Model/Triplet aus aktuellem count ableiten (unverändert)
+    _apply_model_triplet_for_count(context, entry)
     _save_state(context, state)
-    # Nach Änderung eines Ankers Interpolation neu berechnen
-    _recompute_interpolations(context, state, apply_models=False)
 
 def record_bidirectional_result(
     context: bpy.types.Context,
