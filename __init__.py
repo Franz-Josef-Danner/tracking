@@ -154,30 +154,27 @@ def _draw_solve_graph():
     box = [(ox, oy), (ox+gw, oy), (ox+gw, oy+gh), (ox, oy+gh)]
     batch = batch_for_shader(shader, 'LINE_LOOP', {"pos": box})
     shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.35)); batch.draw(shader)
-    # --- Titel-Helper: innerhalb der Box oben links, mit Hintergrund + Shadow ---
+    # --- Titel-Helper: innerhalb der Box oben links, mit BLF-Shadow (ohne TRI_FAN) ---
     def _draw_title():
+        title = "Average Trend"
+        font_id = 0
         try:
-            title = "Average Trend"
-            font_id = 0
             blf.size(font_id, 12, 72)
             tw, th = blf.dimensions(font_id, title)
             tx, ty = ox + yaxis_w + 6, oy + gh - th - 4  # in der Box, oben links
-            # halbtransparenter Hintergrund hinter dem Titel
-            bg = [(tx-4, ty-2), (tx+tw+4, ty-2), (tx+tw+4, ty+th+2), (tx-4, ty+th+2)]
-            bgb = batch_for_shader(shader, 'TRI_FAN', {"pos": bg})
-            shader.bind(); shader.uniform_float("color", (0.0, 0.0, 0.0, 0.35)); bgb.draw(shader)
-            # Shadow
-            blf.position(font_id, tx+1, ty-1, 0)
-            blf.color(font_id, 0.0, 0.0, 0.0, 0.8)
-            blf.draw(font_id, title)
-            # Vordergrund
+            # Shadow/Outline für Lesbarkeit
+            blf.enable(font_id, blf.SHADOW)
+            blf.shadow(font_id, 3, 0, 0, 0, 255)       # weich, schwarz
+            blf.shadow_offset(font_id, 1, -1)
             blf.position(font_id, tx, ty, 0)
             blf.color(font_id, 1.0, 1.0, 1.0, 1.0)
             blf.draw(font_id, title)
+            blf.disable(font_id, blf.SHADOW)
             if dbg:
                 print(f"[SolveGraph] title pos=({tx},{ty}) size=({tw}x{th})")
-        except Exception:
-            pass
+        except Exception as ex:
+            if dbg:
+                print(f"[SolveGraph] title draw failed: {ex!r}")
     # Wenn keine Daten vorliegen: Hinweis zeichnen und früh aussteigen
     if not has_data:
         try:
@@ -189,9 +186,14 @@ def _draw_solve_graph():
             tw, th = blf.dimensions(font_id, txt)
             cx = ox + yaxis_w + (gw - yaxis_w - tw) * 0.5
             cy = oy + (gh - th) * 0.5
+            # Shadow für Lesbarkeit
+            blf.enable(font_id, blf.SHADOW)
+            blf.shadow(font_id, 3, 0, 0, 0, 255)
+            blf.shadow_offset(font_id, 1, -1)
             blf.position(font_id, cx, cy, 0)
-            blf.color(font_id, 1.0, 1.0, 1.0, 0.7)
+            blf.color(font_id, 1.0, 1.0, 1.0, 1.0)
             blf.draw(font_id, txt)
+            blf.disable(font_id, blf.SHADOW)
         except Exception:
             pass
         return
@@ -257,7 +259,8 @@ def _draw_solve_graph():
         batch = batch_for_shader(shader, 'LINES', {"pos": [(yaxis_x, oy), (yaxis_x, oy+gh)]})
         shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.5)); batch.draw(shader)
         # Ticks + Labels + horizontale Gridlines
-        blf.size(0, 11, 72)
+        font_id = 0
+        blf.size(font_id, 11, 72)
         # Label-Präzision dynamisch aus dem Schritt ableiten
         prec = 0 if step >= 10 else (1 if step >= 1 else 2)
         _fmt = f"{{:.{prec}f}}"
@@ -272,9 +275,19 @@ def _draw_solve_graph():
             shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.15)); batch.draw(shader)
             # Label
             lbl = _fmt.format(tv)
-            blf.position(0, ox + 4, y - 6, 0)
-            blf.color(0, 1.0, 1.0, 1.0, 0.9)
-            blf.draw(0, lbl)
+            lx = ox + 4
+            ly = y - 6
+            # Shadow/Outline für Lesbarkeit
+            blf.enable(font_id, blf.SHADOW)
+            blf.shadow(font_id, 3, 0, 0, 0, 255)
+            blf.shadow_offset(font_id, 1, -1)
+            blf.position(font_id, lx, ly, 0)
+            blf.color(font_id, 1.0, 1.0, 1.0, 1.0)
+            blf.draw(font_id, lbl)
+            blf.disable(font_id, blf.SHADOW)
+        if dbg and ticks:
+            print(f"[SolveGraph] first_label='{_fmt.format(ticks[0])}' pos=({ox+4},{oy + ((ticks[0]-vmin)/(vmax-vmin))*gh - 6})")
+            print(f"[SolveGraph] last_label ='{_fmt.format(ticks[-1])}' pos=({ox+4},{oy + ((ticks[-1]-vmin)/(vmax-vmin))*gh - 6})")
     except Exception:
         pass
     # Kurve
