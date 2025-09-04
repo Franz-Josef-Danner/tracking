@@ -490,6 +490,17 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         # PHASE 3: DETECT
         if self.phase == PH_DETECT:
+            # Guard: Vermeide 0.000-Threshold-Schleifen aus vorherigen Läufen.
+            # Falls detect.py den letzten Threshold in der Szene als 0.0 abgelegt hat,
+            # clampen wir hier auf einen sinnvollen Default (0.75).
+            try:
+                scn = context.scene
+                _lt = float(scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
+                if _lt <= 1e-6:
+                    scn[DETECT_LAST_THRESHOLD_KEY] = 0.75
+            except Exception:
+                pass
+
             # Beim ersten Detect-Aufruf wird kein Threshold übergeben (None → Standardwert)
             _kwargs: dict[str, object] = {"start_frame": self.target_frame}
             # Wenn bereits ein Threshold aus vorherigen Iterationen vorliegt, diesen mitgeben
@@ -850,7 +861,18 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                     self.report({'WARNING'}, f"Orchestrate on worst-frame warn: {str(_exc2)}")
 
                                 self.target_frame = int(worst_f)
+                                # **WICHTIG**: Detection-Threshold RESET, um Carry-Over (0.000) zu vermeiden
+                                self.detection_threshold = None
+                                # Falls detect.py einen 0.0-Wert persistiert hat, Default in der Szene clampen
+                                try:
+                                    _lt = float(context.scene.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
+                                    if _lt <= 1e-6:
+                                        context.scene[DETECT_LAST_THRESHOLD_KEY] = 0.75
+                                except Exception:
+                                    pass
+
                                 # **WICHTIG**: Pre-Snapshot direkt vor DETECT (konsistent zum JUMP-Pfad)
+
                                 self.pre_ptrs = set(_snapshot_track_ptrs(context))
                                 # WICHTIG: Baseline auf den aktuellen Solve setzen,
                                 # damit der nächste Vergleich gegen *#04* (last solve) läuft.
