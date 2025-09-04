@@ -121,6 +121,18 @@ def _draw_solve_graph():
     import blf
     import math as _m
     scn = getattr(bpy.context, "scene", None)
+
+    # --- BLF Compatibility: Blender 4.4 nutzt blf.size(font_id, size).
+    # Ältere Versionen akzeptieren blf.size(font_id, size, dpi).
+    def _blf_size(fid: int, sz: int) -> None:
+        try:
+            blf.size(fid, sz)             # Blender ≥ 4.4
+        except TypeError:
+            try:
+                blf.size(fid, sz, 72)     # Fallback für ältere Versionen
+            except Exception:
+                pass
+
     if not scn or not getattr(scn, "kaiserlich_solve_graph_enabled", False):
         return
     dbg = bool(getattr(scn, "kaiserlich_debug_graph", False))
@@ -159,7 +171,7 @@ def _draw_solve_graph():
         title = "Average Trend"
         font_id = 0
         try:
-            blf.size(font_id, 12, 72)
+            _blf_size(font_id, 12)
             tw, th = blf.dimensions(font_id, title)
             tx, ty = ox + yaxis_w + 6, oy + gh - th - 4  # in der Box, oben links
             # Shadow/Outline für Lesbarkeit
@@ -181,7 +193,7 @@ def _draw_solve_graph():
             # Titel trotzdem zeigen (oben links in der Box)
             _draw_title()
             font_id = 0
-            blf.size(font_id, 11, 72)
+            _blf_size(font_id, 11)
             txt = "No data yet"
             tw, th = blf.dimensions(font_id, txt)
             cx = ox + yaxis_w + (gw - yaxis_w - tw) * 0.5
@@ -259,8 +271,7 @@ def _draw_solve_graph():
         batch = batch_for_shader(shader, 'LINES', {"pos": [(yaxis_x, oy), (yaxis_x, oy+gh)]})
         shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.5)); batch.draw(shader)
         # Ticks + Labels + horizontale Gridlines
-        font_id = 0
-        blf.size(font_id, 11, 72)
+        font_id = 0; _blf_size(font_id, 11)
         # Label-Präzision dynamisch aus dem Schritt ableiten
         prec = 0 if step >= 10 else (1 if step >= 1 else 2)
         _fmt = f"{{:.{prec}f}}"
