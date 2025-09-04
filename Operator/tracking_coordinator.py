@@ -586,35 +586,86 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 # Prüfe, ob Markeranzahl außerhalb des gültigen Bandes liegt
                 status = str(eval_res.get("status", "")) if isinstance(eval_res, dict) else ""
                 if status in {"TOO_FEW", "TOO_MANY"}:
-                    # Marker am aktuellen Frame löschen (siehe bestehende Logik oben)
+                    # *** Distanzé-Semantik: nur den MARKER am aktuellen Frame löschen ***
                     deleted_markers = 0
                     if clip and new_ptrs_after_cleanup:
-                        ... (unveränderte Marker-Löschlogik) ...
-                    # Detect-Threshold adaptiv anpassen
+                        trk = getattr(clip, "tracking", None)
+                        if trk and hasattr(trk, "tracks"):
+                            curf = int(self.target_frame)
+                            # Variante 1 (bevorzugt): via Operator im CLIP-Override (robust wie UI)
+                            try:
+                                # Selektion vorbereiten
+                                target_ptrs = set(new_ptrs_after_cleanup)
+                                for t in trk.tracks:
+                                    try:
+                                        t.select = False
+                                    except Exception:
+                                        pass
+                                for t in trk.tracks:
+                                    if int(t.as_pointer()) in target_ptrs:
+                                        try:
+                                            t.select = True
+                                        except Exception:
+                                            pass
+                                # Frame sicher setzen
+                                try:
+                                    scn.frame_set(curf)
+                                except Exception:
+                                    pass
+                                override = _ensure_clip_context(context)
+                                if override:
+                                    with bpy.context.temp_override(**override):
+                                        bpy.ops.clip.delete_marker(confirm=False)
+                                else:
+                                    bpy.ops.clip.delete_marker(confirm=False)
+                                deleted_markers = len(target_ptrs)
+                            except Exception:
+                                # Variante 2 (Fallback): direkte API, ggf. mehrfach löschen bis leer
+                                for t in trk.tracks:
+                                    if int(t.as_pointer()) in new_ptrs_after_cleanup:
+                                        while True:
+                                            try:
+                                                _m = None
+                                                try:
+                                                    _m = t.markers.find_frame(curf, exact=True)
+                                                except TypeError:
+                                                    _m = t.markers.find_frame(curf)
+                                                if not _m:
+                                                    break
+                                                t.markers.delete_frame(curf)
+                                                deleted_markers += 1
+                                            except Exception:
+                                                break
+                            # Flush/Refresh, damit der Effekt sofort greift
+                            try:
+                                bpy.context.view_layer.update()
+                                scn.frame_set(curf)
+                            except Exception:
+                                pass
+
+                    # Threshold neu berechnen:
+                    # threshold = max(detection_threshold * ((anzahl_neu + 0.1) / marker_adapt), 0.0001)
                     try:
-                        ... (berechnet self.detection_threshold neu) ...
+                        anzahl_neu = float(eval_res.get("count", 0))
+                        marker_min = float(eval_res.get("min", 0))
+                        marker_max = float(eval_res.get("max", 0))
+                        # bevorzugt aus Szene (falls gesetzt), sonst Mittelwert
+                        marker_adapt = float(scn.get("marker_adapt", 0.0)) or ((marker_min + marker_max) / 2.0)
+                        if marker_adapt <= 0.0:
+                            marker_adapt = 1.0
+                        base_thr = float(self.detection_threshold if self.detection_threshold is not None
+                                         else scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
+                        self.detection_threshold = max(base_thr * ((anzahl_neu + 0.1) / marker_adapt), 0.0001)
+
+                        # (entfernt) Szene-Overrides für margin/min_distance – Variablen hier nicht definiert
                     except Exception:
                         pass
-                    # Versuchszähler für diesen Frame erhöhen
-                    self.repeat_count_for_target = int(self.repeat_count_for_target or 1) + 1
-                    if self.repeat_count_for_target >= 4:  # nach 3 erfolglosen Versuchen abbrechen
-                        self.report({'WARNING'}, 
-                            f"Frame {self.target_frame}: DETECT nach {self.repeat_count_for_target-1} Versuchen abgebrochen, Wechsel zu FIND_LOW")
-                        # Alle neuen Tracks dieses Frames entfernen (Cleanup)
-                        if clip and new_ptrs_after_cleanup:
-                            trk = clip.tracking
-                            for t in list(trk.tracks):
-                                if int(t.as_pointer()) in new_ptrs_after_cleanup:
-                                    trk.tracks.remove(t)  # Track löschen
-                        # Threshold zurücksetzen und Korrelations-Schwelle leicht erhöhen
-                        self.detection_threshold = None
-                        _bump_default_correlation_min(context)
-                        self.phase = PH_FIND_LOW
-                        return {'RUNNING_MODAL'}
-                    # Noch nicht abgebrochen: weiteren Detect-Durchlauf mit angepasstem Threshold
+
                     self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res}, deleted_markers={deleted_markers}, thr→{self.detection_threshold}")
+                    # Zurück zu DETECT mit neuem Threshold
                     self.phase = PH_DETECT
                     return {'RUNNING_MODAL'}
+
 
                 # Markeranzahl im gültigen Bereich – optional Multi-Pass und dann Bidirectional-Track ausführen.
                 did_multi = False
