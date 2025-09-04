@@ -242,21 +242,8 @@ def _draw_solve_graph():
         print(f"[SolveGraph] coords_count={len(coords)} ln={ln}")
     # Y-Achse mit Ticks + numerischen Labels (links)
     try:
-        # "Schöne" Schrittweite (Ziel ~8–10 Ticks), feiner: 1/2/2.5/5/10
-        rng = vmax - vmin
-        target = 10
-        if rng <= 0:
-            rng = 1e-12
-        raw = rng / target
-        mag = 10 ** _m.floor(_m.log10(raw))
-        norm = raw / mag
-        # Round-UP auf 1/2/2.5/5/10 * mag
-        nice = 10.0
-        for cand in (1.0, 2.0, 2.5, 5.0, 10.0):
-            if norm <= cand:
-                nice = cand
-                break
-        step = nice * mag
+        # Feste Schrittweite: 5er-Sprünge
+        step = 5.0
         # Ticks strikt im sichtbaren Datenbereich halten
         tick0 = _m.ceil (vmin / step) * step  # erster Tick >= vmin
         tickN = _m.floor(vmax / step) * step  # letzter Tick <= vmax
@@ -266,8 +253,7 @@ def _draw_solve_graph():
             count = min(count, 64)
             ticks = [tick0 + i * step for i in range(count)]
         if dbg:
-            print(f"[SolveGraph] tick target={target} raw={raw:.6g} mag={mag:.6g} "
-                  f"norm={norm:.3f} step={step:.6g} tick0={tick0:.6g} tickN={tickN:.6g}")
+            print(f"[SolveGraph] fixed step={step:.6g} tick0={tick0:.6g} tickN={tickN:.6g}")
             print(f"[SolveGraph] ticks_count(in-range)={len(ticks)} ticks={ticks}")
         # Achsenlinie
         yaxis_x = ox + yaxis_w
@@ -275,8 +261,8 @@ def _draw_solve_graph():
         shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.5)); batch.draw(shader)
         # Ticks + Labels + horizontale Gridlines
         font_id = 0; _blf_size(font_id, 11)
-        # Label-Präzision dynamisch aus dem Schritt ableiten
-        prec = 0 if step >= 10 else (1 if step >= 1 else 2)
+        # 5er-Sprünge → ganzzahlige Labels
+        prec = 0
         _fmt = f"{{:.{prec}f}}"
         for tv in ticks:
             rel = (tv - vmin) / (vmax - vmin)
