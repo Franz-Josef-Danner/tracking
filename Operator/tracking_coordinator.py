@@ -833,19 +833,19 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                     self.repeat_count_for_target = None
                                 self.target_frame = worst_f
                                 self.pre_ptrs = set(_snapshot_track_ptrs(context))
+                                _bump_default_correlation_min(context)
                                 self.phase = PH_DETECT
                                 self.report({'INFO'}, f"Regression: avg={float(avg_err):.4f} > prev={float(prev_err):.4f} → Worst-Frame f={worst_f} → DETECT")
                                 return {'RUNNING_MODAL'}
                         except Exception as _exc:
                             self.report({'WARNING'}, f"Jump/Detect-Pfad nach MaxError fehlgeschlagen: {_exc}")
-                self.phase = PH_FIND_LOW
-                # Patch 2: Baseline fortschreiben, damit das nächste Regression-Gate
                 # gegen den unmittelbar letzten Solve vergleicht.
                 try:
                     if avg_err is not None:
                         self.prev_solve_avg = float(avg_err)
                 except Exception:
                     pass
+                _bump_default_correlation_min(context)
                 self.phase = PH_FIND_LOW
                 return {'RUNNING_MODAL'}
             try:
@@ -860,6 +860,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if rmax and str(rmax.get("status")) == "FOUND":
                 if avg_err is not None:
                     self.prev_solve_avg = float(avg_err)  # Baseline fortschreiben
+                _bump_default_correlation_min(context)
                 self.phase = PH_FIND_LOW
                 self.report({'INFO'}, "Markerabdeckung ungenügend → zurück zu FIND_LOW")
                 return {'RUNNING_MODAL'}
@@ -916,7 +917,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {'RUNNING_MODAL'}
             # Kein Treffer
             next_thr = thr * 0.9
-            if next_thr < 8.0:
+            if next_thr < 7.0:
                 # Terminalbedingung: Spike-Cycle beendet → Kamera-Solve starten
                 try:
                     scn["tco_spike_cycle_finished"] = True
