@@ -839,6 +839,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         except Exception as _exc:
                             self.report({'WARNING'}, f"Jump/Detect-Pfad nach MaxError fehlgeschlagen: {_exc}")
                 self.phase = PH_FIND_LOW
+                # Patch 2: Baseline fortschreiben, damit das nächste Regression-Gate
+                # gegen den unmittelbar letzten Solve vergleicht.
+                try:
+                    if avg_err is not None:
+                        self.prev_solve_avg = float(avg_err)
+                except Exception:
+                    pass
+                self.phase = PH_FIND_LOW
                 return {'RUNNING_MODAL'}
             try:
                 red = run_reduce_error_tracks(context)
@@ -850,6 +858,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception as _exc:
                 rmax = {"status": "ERROR", "reason": str(_exc)}
             if rmax and str(rmax.get("status")) == "FOUND":
+                if avg_err is not None:
+                    self.prev_solve_avg = float(avg_err)  # Baseline fortschreiben
                 self.phase = PH_FIND_LOW
                 self.report({'INFO'}, "Markerabdeckung ungenügend → zurück zu FIND_LOW")
                 return {'RUNNING_MODAL'}
