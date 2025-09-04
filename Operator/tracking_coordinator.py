@@ -854,7 +854,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 prev = None
             if prev is not None and prev > 0.0:
                 try:
-                    if float(avg_err) > prev * 2.0:
+                    if float(avg_err) > prev:
                         self.report({'INFO'}, f"Solve-Regression erkannt: avg={float(avg_err):.4f} > prev*5 ({prev:.4f}*5) → zurück zu LOW")
                         # Zyklus zurücksetzen und in den Low-Marker-Pfad springen
                         reset_for_new_cycle(context)  # Solve-Log behalten
@@ -887,7 +887,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 too_high = (avg_err is not None) and (float(avg_err) > float(target_err))
             except Exception:
                 too_high = False
-            if too_high and (run_find_max_error_frame is not None):
+            # WICHTIG: Nur mit echter Baseline (verhindert Trigger beim allerersten Solve)
+            has_baseline = (self.prev_solve_avg is not None)
+            if too_high and has_baseline and (run_find_max_error_frame is not None):
                 try:
                     min_cov = int(scn.get("min_tracks_per_frame_for_max_error", 10))
                 except Exception:
@@ -932,6 +934,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         self.report({'INFO'}, f"Solve zu hoch (avg={float(avg_err):.4f} > target={float(target_err):.4f}). "
                                               f"Worst-Frame f={worst_f} (score={r.get('score'):.3f}) → direkt zu DETECT.")
                         return {'RUNNING_MODAL'}
+            # 3c) letzten Solve-Avg erst NACH den Baseline-abhängigen Pfaden aktualisieren
+            try:
+                self.prev_solve_avg = float(avg_err)
+            except Exception:
+                self.prev_solve_avg = None
+
             # 4) Threshold NICHT erreicht → SOFORT reduzieren (immer, bei jedem Solve)
             import math
             t = target_err if (target_err == target_err and target_err > 1e-8) else 0.6
