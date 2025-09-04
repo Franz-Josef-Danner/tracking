@@ -239,7 +239,7 @@ def _draw_solve_graph():
     try:
         # "Schöne" Schrittweite (Ziel ~8–10 Ticks), feiner: 1/2/2.5/5/10
         rng = vmax - vmin
-        target = 8
+        target = 10
         if rng <= 0:
             rng = 1e-12
         raw = rng / target
@@ -311,6 +311,13 @@ def _draw_solve_graph():
     try:
         gpu.state.line_width_set(2.0)
         _reset_width = True
+    except Exception:
+        pass
+    # >>> FEHLENDER DRAW-CALL (fix) <<<
+    try:
+        shader.bind()
+        shader.uniform_float("color", (1.0, 1.0, 1.0, 0.95))
+        batch.draw(shader)
     except Exception:
         pass
     # Titel zuletzt zeichnen (oberste Ebene, nicht überdeckt)
