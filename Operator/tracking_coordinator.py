@@ -780,6 +780,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # 1) messen & loggen
             avg_err = get_avg_reprojection_error(context)
             _solve_log(context, avg_err)  # loggt nur bei gültigem numerischem Wert
+            # Vorherigen Solve-Fehler (Baseline) lesen – wichtig für Gate-Entscheidungen
+            try:
+                prev_err = float(self.prev_solve_avg) if self.prev_solve_avg is not None else None
+            except Exception:
+                prev_err = None
+
             # 2) kein Wert → Retry einmalig, sonst mind. 1 Track löschen (+ find_max)
             if avg_err is None:
                 if not getattr(self, "solve_refine_attempted", False):
@@ -848,14 +854,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {'RUNNING_MODAL'}
 
             # 2b) Regressions-Guard: neuer Solve deutlich schlechter als vorheriger?
-            try:
-                prev = float(self.prev_solve_avg) if self.prev_solve_avg is not None else None
-            except Exception:
-                prev = None
-            if prev is not None and prev > 0.0:
+            if prev_err is not None and prev_err > 0.0:
                 try:
-                    if float(avg_err) > prev:
-                        self.report({'INFO'}, f"Solve-Regression erkannt: avg={float(avg_err):.4f} > prev*5 ({prev:.4f}*5) → zurück zu LOW")
+                    if float(avg_err) > prev_err:
+                        self.report({'INFO'}, f"Solve-Regression erkannt: avg={float(avg_err):.4f} > prev*5 ({prev_err:.4f}*5) → zurück zu LOW")
                         # Zyklus zurücksetzen und in den Low-Marker-Pfad springen
                         reset_for_new_cycle(context)  # Solve-Log behalten
                         self.detection_threshold = None
@@ -866,16 +868,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         self.solve_refine_full_attempted = False
                         self.repeat_count_for_target = None
                         _bump_default_correlation_min(context)
-                        self.prev_solve_avg = float(avg_err)  # letzten Solve-Avg aktualisieren
                         self.phase = PH_FIND_LOW
                         return {'RUNNING_MODAL'}
                 except Exception:
                     pass
-            # letzten Solve-Avg aktualisieren (für den nächsten Vergleich)
-            try:
-                self.prev_solve_avg = float(avg_err)
-            except Exception:
-                self.prev_solve_avg = None
+
             # 3) Ziel erreicht?
             if avg_err <= target_err:
                 self.report({'INFO'}, f"Solve OK: avg={avg_err:.4f} ≤ target={target_err:.4f}")
@@ -887,9 +884,16 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 too_high = (avg_err is not None) and (float(avg_err) > float(target_err))
             except Exception:
                 too_high = False
-            # WICHTIG: Nur mit echter Baseline (verhindert Trigger beim allerersten Solve)
-            has_baseline = (self.prev_solve_avg is not None)
-            if too_high and has_baseline and (run_find_max_error_frame is not None):
+            # WICHTIG: Nur mit echter Baseline und nur bei Nicht-Verbesserung (Ratio-Gate)
+            has_baseline = (prev_err is not None)
+            try:
+                ratio_gate = float(scn.get("max_error_gate_ratio", 1.0))
+            except Exception:
+                ratio_gate = 1.0
+            if ratio_gate < 1.0:
+                ratio_gate = 1.0
+            non_improving = (has_baseline and float(avg_err) >= float(prev_err) * ratio_gate)
+            if too_high and has_baseline and non_improving and (run_find_max_error_frame is not None):
                 try:
                     min_cov = int(scn.get("min_tracks_per_frame_for_max_error", 10))
                 except Exception:
@@ -934,6 +938,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         self.report({'INFO'}, f"Solve zu hoch (avg={float(avg_err):.4f} > target={float(target_err):.4f}). "
                                               f"Worst-Frame f={worst_f} (score={r.get('score'):.3f}) → direkt zu DETECT.")
                         return {'RUNNING_MODAL'}
+            elif too_high and has_baseline and not non_improving:
+                # Explizit loggen, warum kein MaxErrorFrame getriggert wurde
+                try:
+                    self.report({'INFO'}, f"MaxErrorFrame übersprungen: Verbesserung ggü. vorher "
+                                          f"(prev={float(prev_err):.4f} → avg={float(avg_err):.4f}); "
+                                          f"ratio_gate={ratio_gate:.2f}")
+                except Exception:
+                    pass
             # 3c) letzten Solve-Avg erst NACH den Baseline-abhängigen Pfaden aktualisieren
             try:
                 self.prev_solve_avg = float(avg_err)
