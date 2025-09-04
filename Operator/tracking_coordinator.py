@@ -341,7 +341,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # Solve-Retry-State: Wurde bereits mit refine_intrinsics_focal_length=True neu gelöst?
     # NEU: Wurde bereits die volle Intrinsics-Variante (focal+principal+radial) versucht?
     solve_refine_full_attempted: bool = False
-
+    # Regressionsvergleich: letzter Solve-Avg (None = noch keiner vorhanden)
+    prev_solve_avg: float | None = None
     def execute(self, context: bpy.types.Context):
         # Bootstrap/Reset
         try:
@@ -373,6 +374,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self.solve_refine_attempted = False
         self.solve_refine_full_attempted = False
         self.bidi_before_counts = None
+        self.prev_solve_avg = None
         self.repeat_count_for_target = None
         
         wm = context.window_manager
@@ -836,6 +838,36 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 _bump_default_correlation_min(context)
                 self.phase = PH_FIND_LOW
                 return {'RUNNING_MODAL'}
+
+            # 2b) Regressions-Guard: neuer Solve deutlich schlechter als vorheriger?
+            try:
+                prev = float(self.prev_solve_avg) if self.prev_solve_avg is not None else None
+            except Exception:
+                prev = None
+            if prev is not None and prev > 0.0:
+                try:
+                    if float(avg_err) > prev * 5.0:
+                        self.report({'INFO'}, f"Solve-Regression erkannt: avg={float(avg_err):.4f} > prev*5 ({prev:.4f}*5) → zurück zu LOW")
+                        # Zyklus zurücksetzen und in den Low-Marker-Pfad springen
+                        reset_for_new_cycle(context)  # Solve-Log behalten
+                        self.detection_threshold = None
+                        self.pre_ptrs = None
+                        self.target_frame = None
+                        self.repeat_map = {}
+                        self.solve_refine_attempted = False
+                        self.solve_refine_full_attempted = False
+                        self.repeat_count_for_target = None
+                        _bump_default_correlation_min(context)
+                        self.prev_solve_avg = float(avg_err)  # letzten Solve-Avg aktualisieren
+                        self.phase = PH_FIND_LOW
+                        return {'RUNNING_MODAL'}
+                except Exception:
+                    pass
+            # letzten Solve-Avg aktualisieren (für den nächsten Vergleich)
+            try:
+                self.prev_solve_avg = float(avg_err)
+            except Exception:
+                self.prev_solve_avg = None
             # 3) Ziel erreicht?
             if avg_err <= target_err:
                 self.report({'INFO'}, f"Solve OK: avg={avg_err:.4f} ≤ target={target_err:.4f}")
