@@ -773,74 +773,97 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # PHASE: SOLVE_EVAL – Solve prüfen, loggen, Retry/Reduce steuern
         if self.phase == PH_SOLVE_EVAL:
             scn = context.scene
+            # Ziel-Error (Grenzwert)
             try:
                 target_err = float(scn.get("error_track", 2.0))
             except Exception:
                 target_err = 2.0
-            # 1) messen & loggen
+
+            # Aktuellen Solve-Fehler ermitteln und loggen
             avg_err = get_avg_reprojection_error(context)
-            _solve_log(context, avg_err)  # loggt nur bei gültigem numerischem Wert
-            # Vorherigen Solve-Fehler (Baseline) lesen – wichtig für Gate-Entscheidungen
+            _solve_log(context, avg_err)
+
+            # --- Sonderfall: Kein gültiger Wert zurückbekommen ---
+            if avg_err is None:
+                # Einmaliger Retry ohne State-Wechsel, danach zurück zu FIND_LOW
+                if not getattr(self, "_retry_none_avg", False):
+                    try:
+                        res_retry = solve_camera_only(context)
+                        self._retry_none_avg = True
+                        self.report({'INFO'}, f"Solve-Retry (avg=None) → {res_retry}")
+                        return {'RUNNING_MODAL'}
+                    except Exception as exc:
+                        self.report({'WARNING'}, f"Solve-Retry (avg=None) fehlgeschlagen: {exc}")
+                # Fallback: Neuer Zyklus bei FIND_LOW
+                reset_for_new_cycle(context)  # Solve-Log behalten
+                self.detection_threshold = None
+                self.pre_ptrs = None
+                self.target_frame = None
+                self.repeat_map = {}
+                self.solve_refine_attempted = False
+                self.solve_refine_full_attempted = False
+                self.repeat_count_for_target = None
+                _bump_default_correlation_min(context)
+                self.phase = PH_FIND_LOW
+                return {'RUNNING_MODAL'}
+
+            # 1) Ziel erreicht? → Abschluss
+            if float(avg_err) < float(target_err):
+                try:
+                    self.prev_solve_avg = float(avg_err)
+                except Exception:
+                    self.prev_solve_avg = None
+                self.report({'INFO'}, f"Solve OK: avg={float(avg_err):.4f} ⇐ target={float(target_err):.4f}")
+                return self._finish(context, info="Sequenz abgeschlossen (Solve-Ziel erreicht).", cancelled=False)
+
+            # 2) Vergleich mit vorherigem Solve (falls vorhanden)
             try:
                 prev_err = float(self.prev_solve_avg) if self.prev_solve_avg is not None else None
             except Exception:
                 prev_err = None
 
-            # 2) kein Wert → Retry einmalig, sonst mind. 1 Track löschen (+ find_max)
-            if avg_err is None:
-                if not getattr(self, "solve_refine_attempted", False):
-                    # Variante 1: nur Focal
-                    try: scn["refine_intrinsics_focal_length"] = True
-                    except Exception: pass
-                    _apply_refine_flags(context, focal=True, principal=False, radial=False)
+            if prev_err is not None and float(avg_err) > float(prev_err):
+                # Regression → zuerst Worst-Error-Frame analysieren und direkt zu DETECT
+                if run_find_max_error_frame is not None:
                     try:
-                        res_retry = solve_camera_only(context)
-                        self.solve_refine_attempted = True
-                        self.report({'INFO'}, f"Solve-Retry (avg=None) mit refine_intrinsics_focal_length=True → {res_retry}")
-                        return {'RUNNING_MODAL'}
-                    except Exception as exc:
-                        self.report({'WARNING'}, f"Solve-Retry (avg=None) fehlgeschlagen: {exc}")
-                elif not getattr(self, "solve_refine_full_attempted", False):
-                    # NEU – Variante 2: Focal + Principal Point + Radial
-                    try: scn["refine_intrinsics_focal_length"] = True
-                    except Exception: pass
-                    try: scn["refine_intrinsics_principal_point"] = True
-                    except Exception: pass
-                    try: scn["refine_intrinsics_radial_distortion"] = True
-                    except Exception: pass
-                    _apply_refine_flags(context, focal=True, principal=True, radial=True)
+                        min_cov = int(scn.get("min_tracks_per_frame_for_max_error", 10))
+                    except Exception:
+                        min_cov = 10
                     try:
-                        res_retry = solve_camera_only(context)
-                        self.solve_refine_full_attempted = True
-                        self.report({'INFO'}, "Solve-Retry (avg=None) mit vollen Intrinsics (focal+principal+radial)=True → {}".format(res_retry))
-                        return {'RUNNING_MODAL'}
-                    except Exception as exc:
-                        self.report({'WARNING'}, f"Solve-Retry (avg=None, full intrinsics) fehlgeschlagen: {exc}")
-                # erzwungen 1 löschen
-                try:
-                    red = run_reduce_error_tracks(context, max_to_delete=1)
-                    self.report({'INFO'}, f"ReduceErrorTracks(FORCE): delete=1 → done={red.get('deleted')} {red.get('names')}")
-                except Exception as _exc:
-                    self.report({'WARNING'}, f"ReduceErrorTracks(FORCE) Fehler: {_exc}")
-                # direkt im Anschluss: find_max
-                try:
-                    rmax = run_find_max_marker_frame(context)
-                    if rmax.get("status") == "FOUND":
-                        reset_for_new_cycle(context)
-                        self.detection_threshold = None
-                        self.pre_ptrs = None
-                        self.target_frame = None
-                        self.repeat_map = {}
-                        self.solve_refine_attempted = False
-                        self.solve_refine_full_attempted = False
-                        self.repeat_count_for_target = None
-                        _bump_default_correlation_min(context)
-                        self.phase = PH_FIND_LOW
-                        self.report({'INFO'}, "find_max: FOUND → neuer Zyklus (avg=None-Path)")
-                        return {'RUNNING_MODAL'}
-                except Exception as _exc:
-                    self.report({'WARNING'}, f"find_max nach FORCE-Reduce fehlgeschlagen: {_exc}")
-                # reset → neuer Zyklus
+                        r = run_find_max_error_frame(
+                            context,
+                            include_muted=False,
+                            min_tracks_per_frame=min_cov,
+                            frame_min=None,
+                            frame_max=None,
+                            return_top_k=5,
+                            verbose=True,
+                        )
+                    except Exception as _exc:
+                        r = {"status": "ERROR", "reason": str(_exc)}
+                    if isinstance(r, dict) and str(r.get("status", "")).upper() == "FOUND":
+                        worst_f = int(r.get("frame"))
+                        # Jump + Orchestrate
+                        try:
+                            rj = run_jump_to_frame(context, frame=worst_f, repeat_map=self.repeat_map)
+                        except Exception as _exc:
+                            rj = {"status": "ERROR", "reason": str(_exc)}
+                        if rj.get("status") == "OK":
+                            self.target_frame = worst_f
+                            try:
+                                orchestrate_on_jump(context, int(self.target_frame))
+                                _state = _get_state(context)
+                                _entry, _ = _ensure_frame_entry(_state, int(self.target_frame))
+                                self.repeat_count_for_target = int(_entry.get("count", 1))
+                            except Exception:
+                                self.repeat_count_for_target = None
+                            self.pre_ptrs = set(_snapshot_track_ptrs(context))  # für DISTANZE
+                            _bump_default_correlation_min(context)
+                            self.detection_threshold = None
+                            self.report({'INFO'}, f"Regression: avg={float(avg_err):.4f} > prev={float(prev_err):.4f} → Worst-Frame f={worst_f} → DETECT")
+                            self.phase = PH_DETECT
+                            return {'RUNNING_MODAL'}
+                # Fallback (kein Helper/kein Treffer): zurück zu FIND_LOW
                 reset_for_new_cycle(context)
                 self.detection_threshold = None
                 self.pre_ptrs = None
@@ -853,310 +876,67 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self.phase = PH_FIND_LOW
                 return {'RUNNING_MODAL'}
 
-            # 2b) Regressions-Guard: neuer Solve deutlich schlechter als vorheriger?
-            if prev_err is not None and prev_err > 0.0:
-                try:
-                    if float(avg_err) > prev_err:
-                        self.report({'INFO'}, f"Solve-Regression erkannt: avg={float(avg_err):.4f} > prev*5 ({prev_err:.4f}*5) → zurück zu LOW")
-                        # Zyklus zurücksetzen und in den Low-Marker-Pfad springen
-                        reset_for_new_cycle(context)  # Solve-Log behalten
-                        self.detection_threshold = None
-                        self.pre_ptrs = None
-                        self.target_frame = None
-                        self.repeat_map = {}
-                        self.solve_refine_attempted = False
-                        self.solve_refine_full_attempted = False
-                        self.repeat_count_for_target = None
-                        _bump_default_correlation_min(context)
-                        self.phase = PH_FIND_LOW
-                        return {'RUNNING_MODAL'}
-                except Exception:
-                    pass
-
-            # 3) Ziel erreicht?
-            if avg_err <= target_err:
-                self.report({'INFO'}, f"Solve OK: avg={avg_err:.4f} ≤ target={target_err:.4f}")
-                return self._finish(context, info="Sequenz abgeschlossen (Solve-Ziel erreicht).", cancelled=False)
-            # 3b) Ziel NICHT erreicht → „Hoher Error“-Pfad:
-            # Direkt den Frame mit dem höchsten aggregierten Fehler suchen
-            # und ohne Umweg über FIND_LOW/JUMP zurück in DETECT verzweigen.
+            # 3) Verbesserung/keine Baseline → Marker-Coverage prüfen
+            r_cov = None
             try:
-                too_high = (avg_err is not None) and (float(avg_err) > float(target_err))
-            except Exception:
-                too_high = False
-            # WICHTIG: Nur mit echter Baseline und nur bei Nicht-Verbesserung (Ratio-Gate)
-            has_baseline = (prev_err is not None)
-            try:
-                ratio_gate = float(scn.get("max_error_gate_ratio", 1.0))
-            except Exception:
-                ratio_gate = 1.0
-            if ratio_gate < 1.0:
-                ratio_gate = 1.0
-            non_improving = (has_baseline and float(avg_err) >= float(prev_err) * ratio_gate)
-            if too_high and has_baseline and non_improving and (run_find_max_error_frame is not None):
-                try:
-                    min_cov = int(scn.get("min_tracks_per_frame_for_max_error", 10))
-                except Exception:
-                    min_cov = 10
-                try:
-                    r = run_find_max_error_frame(
-                        context,
-                        include_muted=False,
-                        min_tracks_per_frame=min_cov,
-                        frame_min=None,
-                        frame_max=None,
-                        return_top_k=5,
-                        verbose=True,
-                    )
-                except Exception as _exc:
-                    r = {"status": "ERROR", "reason": str(_exc)}
-                if r.get("status") == "FOUND":
-                    worst_f = int(r.get("frame"))
-                    # Solide Zustandsübergabe: auf Frame springen (mit Repeat-Map),
-                    # Orchestrator informieren, Snapshot für DISTANZE vorbereiten.
-                    try:
-                        rj = run_jump_to_frame(context, frame=worst_f, repeat_map=self.repeat_map)
-                    except Exception as _exc:
-                        rj = {"status": "ERROR", "reason": str(_exc)}
-                    if rj.get("status") == "OK":
-                        self.target_frame = worst_f
-                        # Orchestrate/Repeat-Count spiegeln (wie in PH_JUMP)
-                        try:
-                            orchestrate_on_jump(context, int(self.target_frame))
-                            _state = _get_state(context)
-                            _entry, _ = _ensure_frame_entry(_state, int(self.target_frame))
-                            self.repeat_count_for_target = int(_entry.get("count", 1))
-                        except Exception:
-                            self.repeat_count_for_target = None
-                        # Pre-Snapshot für DISTANZE (nur Pointer, ephemer)
-                        self.pre_ptrs = set(_snapshot_track_ptrs(context))
-                        # Optional: Korrelation leicht anheben
-                        _bump_default_correlation_min(context)
-                        # Threshold hier neutral lassen → detect.py wählt Default/übergebenen Wert
-                        self.detection_threshold = None
-                        self.phase = PH_DETECT
-                        self.report({'INFO'}, f"Solve zu hoch (avg={float(avg_err):.4f} > target={float(target_err):.4f}). "
-                                              f"Worst-Frame f={worst_f} (score={r.get('score'):.3f}) → direkt zu DETECT.")
-                        return {'RUNNING_MODAL'}
-            elif too_high and has_baseline and not non_improving:
-                # Explizit loggen, warum kein MaxErrorFrame getriggert wurde
-                try:
-                    self.report({'INFO'}, f"MaxErrorFrame übersprungen: Verbesserung ggü. vorher "
-                                          f"(prev={float(prev_err):.4f} → avg={float(avg_err):.4f}); "
-                                          f"ratio_gate={ratio_gate:.2f}")
-                except Exception:
-                    pass
-            # 3c) letzten Solve-Avg erst NACH den Baseline-abhängigen Pfaden aktualisieren
-            try:
-                self.prev_solve_avg = float(avg_err)
-            except Exception:
-                self.prev_solve_avg = None
-
-            # 4) Threshold NICHT erreicht → SOFORT reduzieren (immer, bei jedem Solve)
-            import math
-            t = target_err if (target_err == target_err and target_err > 1e-8) else 0.6
-            x = max(1, min(10, int(math.ceil(avg_err / t))))
-            red = run_reduce_error_tracks(context, max_to_delete=x)
-            self.report({'INFO'}, f"ReduceErrorTracks: avg={avg_err:.4f} target={t:.4f} → delete={x} → done={red.get('deleted')} {red.get('names')}")
-            # 5) Direkt danach: find_max → bei Treffer sofort in den regulären Low-Cycle
-            try:
-                rmax = run_find_max_marker_frame(context)
-                if rmax.get("status") == "FOUND":
-                    reset_for_new_cycle(context)  # Solve-Log bleibt erhalten
-                    self.detection_threshold = None
-                    self.pre_ptrs = None
-                    self.target_frame = None
-                    self.repeat_map = {}
-                    # WICHTIG: Refine-State für nächste Solve-Runde zurücksetzen
-                    self.solve_refine_attempted = False
-                    self.solve_refine_full_attempted = False
-                    self.repeat_count_for_target = None
-                    _bump_default_correlation_min(context)
-                    self.phase = PH_FIND_LOW
-                    self.report({'INFO'}, "find_max: FOUND → neuer Zyklus (nach Reduce)")
-                    return {'RUNNING_MODAL'}
-            except Exception as _exc:
-                self.report({'WARNING'}, f"find_max nach Reduce fehlgeschlagen: {_exc}")
-            # 6) Kein find_max-Treffer: einmaliger Retry mit Refine (falls noch offen)
-            if not getattr(self, "solve_refine_attempted", False):
-                # Variante 1: nur Focal
-                try: scn["refine_intrinsics_focal_length"] = True
-                except Exception: pass
-                _apply_refine_flags(context, focal=True, principal=False, radial=False)
-                try:
-                    res_retry = solve_camera_only(context)
-                    self.solve_refine_attempted = True
-                    self.report({'INFO'}, f"Solve-Retry (nach Reduce) mit refine_intrinsics_focal_length=True → {res_retry}")
-                    # Im gleichen State bleiben; nächste TIMER-Tick evaluiert wieder in PH_SOLVE_EVAL
-                    return {'RUNNING_MODAL'}
-                except Exception as exc:
-                    self.report({'WARNING'}, f"Solve-Retry (nach Reduce) konnte nicht gestartet werden: {exc}")
-            elif not getattr(self, "solve_refine_full_attempted", False):
-                # NEU – Variante 2: Focal + Principal Point + Radial
-                try: scn["refine_intrinsics_focal_length"] = True
-                except Exception: pass
-                try: scn["refine_intrinsics_principal_point"] = True
-                except Exception: pass
-                try: scn["refine_intrinsics_radial_distortion"] = True
-                except Exception: pass
-                _apply_refine_flags(context, focal=True, principal=True, radial=True)
-                try:
-                    res_retry = solve_camera_only(context)
-                    self.solve_refine_full_attempted = True
-                    self.report({'INFO'}, "Solve-Retry (nach Reduce) mit vollen Intrinsics (focal+principal+radial)=True → {}".format(res_retry))
-                    return {'RUNNING_MODAL'}
-                except Exception as exc:
-                    self.report({'WARNING'}, f"Solve-Retry (nach Reduce, full intrinsics) konnte nicht gestartet werden: {exc}")
-            # 7) Refine bereits versucht → Cycle reset & zurück in den Hauptzyklus
-            reset_for_new_cycle(context)  # Solve-Log bleibt erhalten
-            self.detection_threshold = None
-            self.pre_ptrs = None
-            self.target_frame = None
-            self.repeat_map = {}
-            self.solve_refine_attempted = False
-            self.solve_refine_full_attempted = False
-            self.repeat_count_for_target = None
-            _bump_default_correlation_min(context)
-            self.phase = PH_FIND_LOW
-            return {'RUNNING_MODAL'}
-
-        # PHASE: SPIKE_CYCLE – spike_filter → clean_short_segments → clean_short_tracks → split_cleanup → find_max_marker_frame
-        if self.phase == PH_SPIKE_CYCLE:
-            scn = context.scene
-            thr = float(self.spike_threshold or 100.0)
-            # 1) Spike-Filter
-            try:
-                run_marker_spike_filter_cycle(context, track_threshold=thr)
+                r_cov = run_find_max_marker_frame(context) if run_find_max_marker_frame is not None else {"status": "NA"}
             except Exception as exc:
-                return self._finish(context, info=f"SPIKE_CYCLE spike_filter failed: {exc}", cancelled=True)
-            # 2) Segment-/Track-Cleanup
-            try:
-                clean_short_segments(context, min_len=int(scn.get("tco_min_seg_len", 25)))
-            except Exception:
-                pass
-            try:
-                clean_short_tracks(context)
-            except Exception:
-                pass
-            # 3) Split-Cleanup (UI-override, falls verfügbar)
-            try:
-                override = _ensure_clip_context(context)
-                space = override.get("space_data") if override else None
-                clip = getattr(space, "clip", None) if space else None
-                tracks = clip.tracking.tracks if clip else None
-                if override and tracks:
-                    with bpy.context.temp_override(**override):
-                        recursive_split_cleanup(context, **override, tracks=tracks)
-            except Exception:
-                pass
-            # 4) Max-Marker-Frame suchen
-            rmax = run_find_max_marker_frame(context)
-            if rmax.get("status") == "FOUND":
-                # Erfolg → regulären Zyklus neu starten
-                reset_for_new_cycle(context)  # Solve-Log bleibt erhalten (kein Bootstrap)
-                self.spike_threshold = None
-                scn["tco_spike_cycle_finished"] = False
-                self.repeat_count_for_target = None
-                self.phase = PH_FIND_LOW
-                return {'RUNNING_MODAL'}
-            # Kein Treffer
-            next_thr = thr * 0.9
-            if next_thr < 8.0:
-                # Terminalbedingung: Spike-Cycle beendet → Kamera-Solve starten
-                try:
-                    scn["tco_spike_cycle_finished"] = True
-                except Exception:
-                    pass
-                try:
-                    # Erstlauf: alle Refine-Flags explizit deaktivieren (Variante 0)
-                    try: scn["refine_intrinsics_focal_length"] = False
-                    except Exception: pass
-                    try: scn["refine_intrinsics_principal_point"] = False
-                    except Exception: pass
-                    try: scn["refine_intrinsics_radial_distortion"] = False
-                    except Exception: pass
-                    # Direkt in Settings spiegeln
-                    _apply_refine_flags(context, focal=False, principal=False, radial=False)
-                    # Retry-States zurücksetzen
-                    self.solve_refine_attempted = False          # Variante 1 (nur Focal) noch offen
-                    self.solve_refine_full_attempted = False     # Variante 2 (alle) noch offen
-                    res = solve_camera_only(context)
-                    self.report({'INFO'}, f"SolveCamera gestartet → {res}")
-                    # → direkt in die Solve-Evaluation wechseln
-                    self.phase = PH_SOLVE_EVAL
-                    return {'RUNNING_MODAL'}
-                except Exception as exc:
-                    return self._finish(context, info=f"SolveCamera start fehlgeschlagen: {exc}", cancelled=True)
-            # Weiter iterieren
-            self.spike_threshold = next_thr
-            return {'RUNNING_MODAL'}
-        # PHASE 5: Bidirectional-Tracking. Wird aktiviert, nachdem ein Multi-Pass
-        # und Distanzé erfolgreich ausgeführt wurden und die Markeranzahl innerhalb des
-        # gültigen Bereichs lag. Startet den Bidirectional-Track-Operator und wartet
-        # auf dessen Abschluss. Danach wird die Sequenz wieder bei PH_FIND_LOW fortgesetzt.
-        if self.phase == PH_BIDI:
-            scn = context.scene
-            bidi_active = bool(scn.get("bidi_active", False))
-            bidi_result = scn.get("bidi_result", "")
-            # Operator noch nicht gestartet → starten
-            if not self.bidi_started:
-                if CLIP_OT_bidirectional_track is None:
-                    return self._finish(context, info="Bidirectional-Track nicht verfügbar.", cancelled=True)
-                try:
-                    # Snapshot vor Start (nur ausgewählte Tracks)
-                    self.bidi_before_counts = _marker_count_by_selected_track(context)
-                    # Starte den Bidirectional‑Track mittels Operator. Das 'INVOKE_DEFAULT'
-                    # sorgt dafür, dass Blender den Operator modal ausführt.
-                    bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
-                    self.bidi_started = True
-                    self.report({'INFO'}, "Bidirectional-Track gestartet")
-                except Exception as exc:
-                    return self._finish(context, info=f"Bidirectional-Track konnte nicht gestartet werden ({exc})", cancelled=True)
-                return {'RUNNING_MODAL'}
-            # Operator läuft → abwarten
-            if not bidi_active:
-                # Operator hat beendet. Prüfe Ergebnis.
-                if str(bidi_result) != "OK":
-                    return self._finish(context, info=f"Bidirectional-Track fehlgeschlagen ({bidi_result})", cancelled=True)
-                # NEU: Delta je Marker berechnen und A_k speichern
-                try:
-                    before = self.bidi_before_counts or {}
-                    after = _marker_count_by_selected_track(context)
-                    per_marker_frames = _delta_counts(before, after)
-                    # Ziel-Frame bestimmen (Fallback auf aktuellen Scene-Frame)
-                    f = int(self.target_frame) if self.target_frame is not None else int(context.scene.frame_current)
-                    record_bidirectional_result(
-                        context,
-                        f,
-                        per_marker_frames=per_marker_frames,
-                        error_value_func=error_value,
-                    )
-                    self.report({'INFO'}, f"A_k gespeichert @f{f}: sumΔ={sum(per_marker_frames.values())}")
-                except Exception as _exc:
-                    self.report({'WARNING'}, f"A_k speichern fehlgeschlagen: {_exc}")
-                # Erfolgreich: für die neue Runde zurücksetzen
-                try:
-                    clean_short_tracks(context)
-                    self.report({'INFO'}, "Cleanup nach Bidirectional-Track ausgeführt")
-                except Exception as exc:
-                    self.report({'WARNING'}, f"Cleanup nach Bidirectional-Track fehlgeschlagen: {exc}")
-                reset_for_new_cycle(context)  # Solve-Log bleibt erhalten
+                r_cov = {"status": "ERROR", "reason": str(exc)}
+
+            enough = False
+            if isinstance(r_cov, dict):
+                st = str(r_cov.get("status", "")).upper()
+                if st in {"OK", "ENOUGH", "ALL_GOOD"}:
+                    enough = True
+                else:
+                    # Heuristik: count >= min_required
+                    try:
+                        cnt = int(r_cov.get("count"))
+                        req = int(r_cov.get("min") or r_cov.get("min_required") or r_cov.get("min_tracks", 0))
+                        if req and cnt >= req:
+                            enough = True
+                    except Exception:
+                        pass
+
+            if not enough:
+                # Unzureichend → zurück zu FIND_LOW (+ Korrelationsbump)
+                reset_for_new_cycle(context)
                 self.detection_threshold = None
                 self.pre_ptrs = None
                 self.target_frame = None
                 self.repeat_map = {}
-                self.bidi_started = False
-                self.bidi_before_counts = None
+                self.solve_refine_attempted = False
+                self.solve_refine_full_attempted = False
                 self.repeat_count_for_target = None
+                _bump_default_correlation_min(context)
                 self.phase = PH_FIND_LOW
-                self.report({'INFO'}, "Bidirectional-Track abgeschlossen – neuer Zyklus beginnt")
+                self.report({'INFO'}, "Marker-Coverage unzureichend → zurück zu FIND_LOW")
                 return {'RUNNING_MODAL'}
-            # Wenn noch aktiv → weiter warten
-            return {'RUNNING_MODAL'}
 
-        # Fallback (unbekannte Phase)
-        return self._finish(context, info=f"Unbekannte Phase: {self.phase}", cancelled=True)
-        # --- Ende modal() ---
+            # 4) Coverage OK → nächster Solve
+            try:
+                res = solve_camera_only(context)
+                self.report({'INFO'}, f"Nächster Solve gestartet → {res}")
+                try:
+                    self.prev_solve_avg = float(avg_err)
+                except Exception:
+                    self.prev_solve_avg = None
+            except Exception as exc:
+                self.report({'WARNING'}, f"Nächster Solve konnte nicht gestartet werden: {exc}")
+                reset_for_new_cycle(context)
+                self.detection_threshold = None
+                self.pre_ptrs = None
+                self.target_frame = None
+                self.repeat_map = {}
+                self.solve_refine_attempted = False
+                self.solve_refine_full_attempted = False
+                self.repeat_count_for_target = None
+                _bump_default_correlation_min(context)
+                self.phase = PH_FIND_LOW
+                return {'RUNNING_MODAL'}
+
+            # Im gleichen State bleiben; nächster TIMER-Tick evaluiert erneut in PH_SOLVE_EVAL
+            return {'RUNNING_MODAL'}
 
 # --- Registrierung ----------------------------------------------------------
 def register():
