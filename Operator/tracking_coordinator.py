@@ -826,12 +826,31 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                             if str(rj.get("status")) != "OK":
                                 self.report({'WARNING'}, f"Jump auf Worst-Frame fehlgeschlagen: {rj}")
                             else:
+                                # NEU: Repeat/Anzahl-Logik wie im JUMP-Pfad auch hier anwenden
                                 try:
-                                    entry = _ensure_frame_entry(context, worst_f)
-                                    self.repeat_count_for_target = int(entry.get("count", 1))
-                                except Exception:
-                                    self.repeat_count_for_target = None
-                                self.target_frame = worst_f
+                                    orchestrate_on_jump(context, int(worst_f))
+                                    # count ermitteln (robust bzgl. Signatur) und ABORT prüfen
+                                    try:
+                                        _state = _get_state(context)
+                                        try:
+                                            _entry, _ = _ensure_frame_entry(_state, int(worst_f))
+                                        except TypeError:
+                                            _entry = _ensure_frame_entry(context, int(worst_f))
+                                        _count = int(_entry.get("count", 1))
+                                    except Exception:
+                                        _count = None
+                                    self.repeat_count_for_target = _count
+                                    if _count is not None and _count >= ABORT_AT:
+                                        return self._finish(
+                                            context,
+                                            info=f"Abbruch: Frame {int(worst_f)} hat {ABORT_AT-1} Durchläufe erreicht.",
+                                            cancelled=True
+                                        )
+                                except Exception as _exc2:
+                                    self.report({'WARNING'}, f"Orchestrate on worst-frame warn: {str(_exc2)}")
+
+                                self.target_frame = int(worst_f)
+                                # **WICHTIG**: Pre-Snapshot direkt vor DETECT (konsistent zum JUMP-Pfad)
                                 self.pre_ptrs = set(_snapshot_track_ptrs(context))
                                 # WICHTIG: Baseline auf den aktuellen Solve setzen,
                                 # damit der nächste Vergleich gegen *#04* (last solve) läuft.
