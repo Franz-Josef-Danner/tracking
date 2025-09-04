@@ -119,6 +119,7 @@ def _draw_solve_graph():
     if gpu is None:
         return
     import blf
+    import math as _m
     scn = getattr(bpy.context, "scene", None)
     if not scn or not getattr(scn, "kaiserlich_solve_graph_enabled", False):
         return
@@ -153,20 +154,35 @@ def _draw_solve_graph():
     box = [(ox, oy), (ox+gw, oy), (ox+gw, oy+gh), (ox, oy+gh)]
     batch = batch_for_shader(shader, 'LINE_LOOP', {"pos": box})
     shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.35)); batch.draw(shader)
-
-    # Titel über der Box
-    try:
-        font_id = 0
-        blf.size(font_id, 12, 72)
-        blf.position(font_id, ox, oy + gh + 12, 0)
-        blf.color(font_id, 1.0, 1.0, 1.0, 1.0)
-        blf.draw(font_id, "Average Trend")
-    except Exception:
-        # Falls Titelschrift nicht verfügbar ist o.Ä. – still bleiben
-        pass
+    # --- Titel-Helper: innerhalb der Box oben links, mit Hintergrund + Shadow ---
+    def _draw_title():
+        try:
+            title = "Average Trend"
+            font_id = 0
+            blf.size(font_id, 12, 72)
+            tw, th = blf.dimensions(font_id, title)
+            tx, ty = ox + yaxis_w + 6, oy + gh - th - 4  # in der Box, oben links
+            # halbtransparenter Hintergrund hinter dem Titel
+            bg = [(tx-4, ty-2), (tx+tw+4, ty-2), (tx+tw+4, ty+th+2), (tx-4, ty+th+2)]
+            bgb = batch_for_shader(shader, 'TRI_FAN', {"pos": bg})
+            shader.bind(); shader.uniform_float("color", (0.0, 0.0, 0.0, 0.35)); bgb.draw(shader)
+            # Shadow
+            blf.position(font_id, tx+1, ty-1, 0)
+            blf.color(font_id, 0.0, 0.0, 0.0, 0.8)
+            blf.draw(font_id, title)
+            # Vordergrund
+            blf.position(font_id, tx, ty, 0)
+            blf.color(font_id, 1.0, 1.0, 1.0, 1.0)
+            blf.draw(font_id, title)
+            if dbg:
+                print(f"[SolveGraph] title pos=({tx},{ty}) size=({tw}x{th})")
+        except Exception:
+            pass
     # Wenn keine Daten vorliegen: Hinweis zeichnen und früh aussteigen
     if not has_data:
         try:
+            # Titel trotzdem zeigen (oben links in der Box)
+            _draw_title()
             font_id = 0
             blf.size(font_id, 11, 72)
             txt = "No data yet"
@@ -207,33 +223,34 @@ def _draw_solve_graph():
         print(f"[SolveGraph] coords_count={len(coords)} ln={ln}")
     # Y-Achse mit Ticks + numerischen Labels (links)
     try:
-        # "Schöne" Tick-Schrittweite berechnen (feiner)
+        # "Schöne" Schrittweite (Ziel ~8 Ticks), vollständige Abdeckung bis vmax
         rng = vmax - vmin
-        target = 8  # ca. 7–9 Ticks (feiner)
+        target = 8
         if rng <= 0:
             rng = 1e-12
         raw = rng / target
-        import math as _m
         mag = 10 ** _m.floor(_m.log10(raw))
         norm = raw / mag
-        if   norm < 1.5: step = 0.5 * mag   # NEU: halbe Schritte zulassen
-        elif norm < 3.0: step = 1.0 * mag
-        elif norm < 7.0: step = 2.0 * mag
-        else:            step = 5.0 * mag
-        if dbg:
-            print(f"[SolveGraph] tick target={target} raw={raw:.6g} mag={mag:.6g} norm={norm:.3f} step={step:.6g}")
-
-        # Tick-Start auf Schritt runden
+        # Round-UP auf 1/2/5/10 * mag
+        if   norm <= 1.0: nice = 1.0
+        elif norm <= 2.0: nice = 2.0
+        elif norm <= 5.0: nice = 5.0
+        else:             nice = 10.0
+        step = nice * mag
+        # Start / Ende
         start = _m.floor(vmin / step) * step
+        end   = _m.ceil (vmax / step) * step
+        # Ticks erzeugen (keine 12er-Deckelung)
+        max_ticks = min(int(round((end - start) / step)) + 1, 64)
         ticks = []
-        t = start
-        # Sicherheitsbegrenzung
-        for _ in range(12):
-            if t > vmax + 1e-9:
+        for i in range(max_ticks):
+            t = start + i * step
+            if t > end + 1e-9:
                 break
             ticks.append(t)
-            t += step
         if dbg:
+            print(f"[SolveGraph] tick target={target} raw={raw:.6g} mag={mag:.6g} "
+                  f"norm={norm:.3f} step={step:.6g} start={start:.6g} end={end:.6g}")
             print(f"[SolveGraph] ticks_count={len(ticks)} ticks={ticks}")
         # Achsenlinie
         yaxis_x = ox + yaxis_w
@@ -241,6 +258,9 @@ def _draw_solve_graph():
         shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.5)); batch.draw(shader)
         # Ticks + Labels + horizontale Gridlines
         blf.size(0, 11, 72)
+        # Label-Präzision dynamisch aus dem Schritt ableiten
+        prec = 0 if step >= 10 else (1 if step >= 1 else 2)
+        _fmt = f"{{:.{prec}f}}"
         for tv in ticks:
             rel = (tv - vmin) / (vmax - vmin)
             y = oy + rel * gh
@@ -251,7 +271,7 @@ def _draw_solve_graph():
             batch = batch_for_shader(shader, 'LINES', {"pos": [(yaxis_x, y), (ox+gw, y)]})
             shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.15)); batch.draw(shader)
             # Label
-            lbl = f"{tv:.2f}"
+            lbl = _fmt.format(tv)
             blf.position(0, ox + 4, y - 6, 0)
             blf.color(0, 1.0, 1.0, 1.0, 0.9)
             blf.draw(0, lbl)
@@ -262,7 +282,8 @@ def _draw_solve_graph():
     if len(coords) == 1:
         coords.append((coords[0][0] + 1, coords[0][1]))
     batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": coords})
-    shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.9)); batch.draw(shader)
+    # Titel zuletzt zeichnen (oberste Ebene, nicht überdeckt)
+    _draw_title()
     # Abschluss-Log sauber außerhalb des try/except-Blocks
     if dbg:
         print("[SolveGraph] draw done")
