@@ -166,14 +166,19 @@ def _draw_solve_graph():
     box = [(ox, oy), (ox+gw, oy), (ox+gw, oy+gh), (ox, oy+gh)]
     batch = batch_for_shader(shader, 'LINE_LOOP', {"pos": box})
     shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.35)); batch.draw(shader)
-    # --- Titel-Helper: innerhalb der Box oben links, mit BLF-Shadow (ohne TRI_FAN) ---
+    # --- Titel-Helper: ÜBER der Box (links), mit BLF-Shadow ---
     def _draw_title():
         title = "Average Trend"
         font_id = 0
         try:
             _blf_size(font_id, 12)
             tw, th = blf.dimensions(font_id, title)
-            tx, ty = ox + yaxis_w + 6, oy + gh - th - 4  # in der Box, oben links
+            # Position: oberhalb der Box, linksbündig an der Y-Achse
+            tx = ox + yaxis_w
+            ty = oy + gh + 6
+            # Clipping-Schutz (nicht oberhalb des Viewports rauszeichnen)
+            ty = min(ty, H - th - 2)
+            tx = max(tx, 0)
             # Shadow/Outline für Lesbarkeit
             blf.enable(font_id, blf.SHADOW)
             blf.shadow(font_id, 3, 0, 0, 0, 255)       # weich, schwarz
