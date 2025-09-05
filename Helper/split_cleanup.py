@@ -39,7 +39,11 @@ def _segments_by_consecutive_frames_unmuted(track) -> List[List[int]]:
         frames = sorted({
             int(m.frame)
             for m in getattr(track, "markers", [])
-            if hasattr(m, "frame") and m.frame is not None and not getattr(m, "mute", False)
+            if (
+                hasattr(m, "frame") and m.frame is not None
+                and not getattr(m, "mute", False)
+                and not getattr(m, "is_estimated", False)  # NEW: Estimated als Lücke behandeln
+            )
         })
     except Exception:
         frames = []
@@ -74,6 +78,9 @@ def _segment_lengths_unmuted(track: bpy.types.MovieTrackingTrack) -> List[int]:
         count = 0
         for m in getattr(track, "markers", []):
             try:
+                # NEW: Estimated/Muted grundsätzlich nicht zählen
+                if getattr(m, "mute", False) or getattr(m, "is_estimated", False):
+                    continue
                 f = getattr(m, "frame", None)
                 if f is None:
                     continue
@@ -254,6 +261,10 @@ def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable
     rounds = 0
     while True:
         rounds += 1
+        # NEW: Sicherheit – in jeder Runde estimated Marker deaktivieren,
+        # damit sie garantiert als Lücken wirken (UI-konsistent).
+        for t in list(clip.tracking.tracks):
+            _disable_estimated_markers(t)
         candidates = [t for t in list(clip.tracking.tracks)
                       if len(_segments_by_consecutive_frames_unmuted(t)) >= 1]
         if not candidates:
