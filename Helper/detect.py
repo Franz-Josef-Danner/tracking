@@ -284,7 +284,13 @@ def run_detect_basic(
             pass
 
         # Threshold persistieren (nur Threshold, keine margin/min_dist Persistenz)
-        scn[DETECT_LAST_THRESHOLD_KEY] = float(thr)
+        thr = float(thr)
+        if thr <= 1e-6:
+            thr = 0.75
+        try:
+            bpy.context.scene[DETECT_LAST_THRESHOLD_KEY] = thr
+        except Exception:
+            pass
 
         return {
             "status": "READY",

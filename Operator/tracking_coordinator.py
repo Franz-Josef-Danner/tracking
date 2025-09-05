@@ -339,6 +339,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     repeat_count_for_target: int | None = None
     # Aktueller Detection-Threshold; wird nach jedem Detect-Aufruf aktualisiert.
     detection_threshold: float | None = None
+    detect_retry_count: int = 0
     spike_threshold: float | None = None  # aktueller Spike-Filter-Schwellenwert (temporär)
     # Flag, ob der Bidirectional-Track bereits gestartet wurde. Diese
     # Instanzvariable dient dazu, den Start der Bidirectional‑Track-Phase
@@ -378,6 +379,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self.pre_ptrs = None
         # Threshold-Zurücksetzen: beim ersten Detect-Aufruf wird der Standardwert verwendet
         self.detection_threshold = None
+        self.detect_retry_count = 0
         # Bidirectional‑Track ist noch nicht gestartet
         self.spike_threshold = None  # Spike-Schwellenwert zurücksetzen
         # Solve-Retry-State zurücksetzen
@@ -493,11 +495,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         # PHASE 3: DETECT
         if self.phase == PH_DETECT:
-            # Guard: Vermeide 0.000-Threshold-Schleifen aus vorherigen Läufen.
-            # Falls detect.py den letzten Threshold in der Szene als 0.0 abgelegt hat,
-            # clampen wir hier auf einen sinnvollen Default (0.75).
+            # Guard 1: Vermeide 0.000-Threshold-Schleifen aus vorherigen Läufen.
+            # Wenn unser interner Threshold ungültig ist, nicht weiterreichen.
             try:
                 scn = context.scene
+                if (self.detection_threshold is not None) and (float(self.detection_threshold) <= 1e-6):
+                    # internen Wert verwerfen → Szene-Default wiederherstellen
+                    self.detection_threshold = None
                 _lt = float(scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
                 if _lt <= 1e-6:
                     scn[DETECT_LAST_THRESHOLD_KEY] = 0.75
@@ -522,7 +526,33 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             new_cnt = int(rd.get("new_tracks", 0))
             # Merke den verwendeten Threshold für spätere Anpassungen
             try:
-                self.detection_threshold = float(rd.get("threshold", self.detection_threshold))
+                _ret_thr = rd.get("threshold", self.detection_threshold)
+                self.detection_threshold = float(_ret_thr) if _ret_thr is not None else self.detection_threshold
+                # Guard 2: Rückgabewert sanitisieren
+                if (self.detection_threshold is None) or (self.detection_threshold <= 1e-6):
+                    self.detection_threshold = 0.75
+                    # Spiegeln, damit detect.py beim nächsten Lauf einen sinnvollen Default sieht
+                    try:
+                        scn[DETECT_LAST_THRESHOLD_KEY] = 0.75
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            # Leichte Endlos-Bremse, falls trotz Sanitisierung nichts vorangeht
+            try:
+                self.detect_retry_count = (self.detect_retry_count or 0) + 1
+                if (
+                    self.detect_retry_count >= 6
+                    and self.detection_threshold is not None
+                    and self.detection_threshold <= 0.001
+                ):
+                    # einmalig auf robusten Default setzen und Zähler resetten
+                    self.detection_threshold = 0.75
+                    try:
+                        scn[DETECT_LAST_THRESHOLD_KEY] = 0.75
+                    except Exception:
+                        pass
+                    self.detect_retry_count = 0
             except Exception:
                 pass
             self.report({'INFO'}, f"DETECT @f{self.target_frame}: new={new_cnt}, thr={self.detection_threshold}")
@@ -666,7 +696,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
                     self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res}, deleted_markers={deleted_markers}, thr→{self.detection_threshold}")
                     # Zurück zu DETECT mit neuem Threshold
+                    # (außerdem den Retry-Zähler zurücksetzen – sonst false positive Abbrüche)
                     self.phase = PH_DETECT
+                    try:
+                        self.detect_retry_count = 0
+                    except Exception:
+                        pass
                     return {'RUNNING_MODAL'}
 
 
