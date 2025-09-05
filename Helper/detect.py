@@ -335,7 +335,11 @@ def run_detect_basic(
 # Thin Wrapper für Backward-Compat
 # -----------------------------
 def run_detect_once(context: bpy.types.Context, **kwargs) -> Dict[str, Any]:
-    # kwargs kann nun repeat_count / match_search_size enthalten; wird 1:1 durchgereicht
+    # Defensive: Unbekannte/optionale Keys aus höherer Ebene bereinigen.
+    # Coordinator liefert z.B. "pre_ptrs" als Diagnose-Baseline mit – die
+    # Basic-Funktion benötigt diesen Parameter jedoch nicht.
+    kwargs.pop("pre_ptrs", None)
+    # kwargs kann weiterhin repeat_count / match_search_size enthalten.
     res = run_detect_basic(context, **kwargs)
     if res.get("status") != "READY":
         return res
