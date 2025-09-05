@@ -351,6 +351,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     solve_refine_full_attempted: bool = False
     # Regressionsvergleich: letzter Solve-Avg (None = noch keiner vorhanden)
     prev_solve_avg: float | None = None
+    # Guard: Verhindert mehrfaches reduce_error_tracks für denselben avg_err
+    last_reduced_for_avg: float | None = None
     def execute(self, context: bpy.types.Context):
         # Bootstrap/Reset
         try:
@@ -383,6 +385,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self.solve_refine_full_attempted = False
         self.bidi_before_counts = None
         self.prev_solve_avg = None
+        self.last_reduced_for_avg = None
         self.repeat_count_for_target = None
         
         wm = context.window_manager
@@ -803,7 +806,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             avg_err = get_avg_reprojection_error(context)
             _solve_log(context, avg_err)
 
-            # Erfolgskriterium
+            # Erfolgskriterium (Eval #1): Ziel erreicht → harter Exit
             try:
                 if (avg_err is not None) and (float(avg_err) < float(target_err)):
                     self.report({'INFO'}, f"Solve OK: avg={float(avg_err):.4f} < target={float(target_err):.4f}")
@@ -814,6 +817,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 prev_err = float(self.prev_solve_avg) if self.prev_solve_avg is not None else None
             except Exception:
                 prev_err = None
+            # Eval #2: Regression ggü. letztem Solve?
             is_regression = False
             try:
                 is_regression = (prev_err is not None) and (avg_err is not None) and (float(avg_err) > float(prev_err))
@@ -900,9 +904,19 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 _bump_default_correlation_min(context)
                 self.phase = PH_FIND_LOW
                 return {'RUNNING_MODAL'}
+            # Beide Evaluierungen NICHT zutreffend → jetzt gezielt reduzieren (einmal pro avg_err)
             try:
-                red = run_reduce_error_tracks(context)
-                self.report({'INFO'}, f"ReduceErrorTracks: done={red.get('deleted')} {red.get('names')}")
+                do_reduce = True
+                try:
+                    if (avg_err is not None) and (self.last_reduced_for_avg is not None):
+                        # Reduktion nur einmal pro identischem avg_err (Float-Vergleich robust machen)
+                        do_reduce = abs(float(avg_err) - float(self.last_reduced_for_avg)) > 1e-6
+                except Exception:
+                    do_reduce = True
+                if do_reduce:
+                    red = run_reduce_error_tracks(context)
+                    self.last_reduced_for_avg = float(avg_err) if avg_err is not None else self.last_reduced_for_avg
+                    self.report({'INFO'}, f"ReduceErrorTracks: done={red.get('deleted')} {red.get('names')}")
             except Exception as _exc:
                 self.report({'WARNING'}, f"ReduceErrorTracks Fehler: {_exc}")
             try:
