@@ -1,6 +1,6 @@
 # Helper/segments.py
 def track_has_internal_gaps(track) -> bool:
-    """True, wenn im Track Frame-Lücken >1 existieren (defensiv, O(n))."""
+    """True, wenn im Track mind. eine Lücke von >=1 fehlenden Frames existiert (O(n))."""
     try:
         markers = getattr(track, "markers", None)
         if not markers:
@@ -13,7 +13,9 @@ def track_has_internal_gaps(track) -> bool:
 
         prev = frames[0]
         for f in frames[1:]:
-            if int(f) - int(prev) > 1:
+            diff = int(f) - int(prev)
+            missing = diff - 1               # Anzahl fehlender Frames zwischen prev und f
+            if missing >= 1:                 # schon 1 fehlender Frame ⇒ interne Lücke
                 return True
             prev = f
         return False
@@ -22,7 +24,8 @@ def track_has_internal_gaps(track) -> bool:
 
 
 def get_track_segments(track):
-    """Liefert zusammenhängende Frame-Segmente (defensiv)."""
+    """Liefert zusammenhängende Frame-Segmente (defensiv).
+    Segmentbruch, sobald >=1 Frame fehlt (Gap)."""
     markers = getattr(track, "markers", None)
     if not markers:
         return []
@@ -33,10 +36,12 @@ def get_track_segments(track):
 
     segments, current = [], [frames[0]]
     for i in range(1, len(frames)):
-        if frames[i] - frames[i - 1] == 1:
-            current.append(frames[i])
-        else:
+        diff = frames[i] - frames[i - 1]
+        missing = diff - 1
+        if missing >= 1:                     # ein fehlender Frame reicht für Segmentbruch
             segments.append(current)
             current = [frames[i]]
+        else:
+            current.append(frames[i])
     segments.append(current)
     return segments
