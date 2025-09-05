@@ -53,11 +53,15 @@ from ..Helper.tracking_state import (
 # Fehlerwert-Funktion (Pfad ggf. anpassen)
 try:
     from ..Helper.count import error_value  # type: ignore
+    ERROR_VALUE_SRC = "..Helper.count.error_value"
 except Exception:
     try:
         from .count import error_value  # type: ignore
+        ERROR_VALUE_SRC = ".count.error_value"
     except Exception:
         def error_value(_track): return 0.0  # Fallback
+        ERROR_VALUE_SRC = "FALLBACK_ZERO"
+
 
 # ---- Solve-Logger: robust auflösen, ohne auf Paketstruktur zu vertrauen ----
 def _solve_log(context, value):
@@ -387,6 +391,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self.prev_solve_avg = None
         self.last_reduced_for_avg = None
         self.repeat_count_for_target = None
+        # Herkunft der Fehlerfunktion einmalig ausgeben (sichtbar im UI)
+        try:
+            self.report({'INFO'}, f"error_value source: {ERROR_VALUE_SRC}")
+            if ERROR_VALUE_SRC == 'FALLBACK_ZERO':
+                self.report({'WARNING'}, 'Fallback error_value aktiv (immer 0.0) – bitte Helper/count.py installieren.')
+        except Exception:
+            pass
+
         
         wm = context.window_manager
         # --- Robust: valides Window sichern ---
