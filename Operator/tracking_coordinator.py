@@ -925,13 +925,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     if deleted > 0:
                         self.report({'INFO'}, f"ReduceErrorTracks: deleted={deleted} tracks, names={names}")
                     else:
-                        self.report(
-                            {'WARNING'},
-                            (
-                                "ReduceErrorTracks: deleted=0 (No-Op) – gleiche Avg-Error-Lage, "
-                                "fahre mit rmax/next solve fort"
-                            ),
-                        )
+                        self.report({'WARNING'}, "ReduceErrorTracks: deleted=0 (No-Op) – gleiche Avg-Error-Lage, fahre mit rmax/next solve fort")
             except Exception as _exc:
                 self.report({'WARNING'}, f"ReduceErrorTracks Fehler: {_exc}")
             try:
