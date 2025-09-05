@@ -985,7 +985,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         _avg = 0.0
                     _den = err_frame if (err_frame and err_frame > 1e-9) else target_err if target_err > 1e-9 else 1.0
                     _k_raw = round(_avg / _den)
-                    _k = max(1, min(10, int(_k_raw)))
+                    _k = max(1, min(5, int(_k_raw)))
                     print(f"[ReduceDBG] delete-k formula: avg={_avg:.4f} / err_frame={_den:.4f} -> k_raw={_k_raw} -> k={_k} (clamp 1..10)")
 
                     red = run_reduce_error_tracks(context, max_to_delete=_k)
