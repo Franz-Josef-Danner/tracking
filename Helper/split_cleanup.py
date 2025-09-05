@@ -12,6 +12,7 @@ from .mute_ops import mute_marker_path, mute_unassigned_markers
 def _disable_estimated_markers(track: bpy.types.MovieTrackingTrack) -> None:
     """Alle 'estimated' Marker in diesem Track hart auf 'disabled' setzen."""
     try:
+        cnt = 0
         for m in getattr(track, "markers", []):
             if getattr(m, "is_estimated", False):
                 try:
@@ -22,6 +23,9 @@ def _disable_estimated_markers(track: bpy.types.MovieTrackingTrack) -> None:
                     m.flag |= getattr(bpy.types.MovieTrackingMarker, "DISABLED", 2)
                 except Exception:
                     pass
+                cnt += 1
+        if bpy.context and getattr(bpy.context, "scene", None) and bpy.context.scene.get("tco_debug_split", True):
+            print(f"[SplitDBG][disable_estimated] track={track.name} estimated->muted={cnt}")
     except Exception:
         pass
 
@@ -29,6 +33,32 @@ def _disable_estimated_markers(track: bpy.types.MovieTrackingTrack) -> None:
 # ------------------------------------------------------------
 # Utilities
 # ------------------------------------------------------------
+
+def _dbg_enabled() -> bool:
+    try:
+        sc = getattr(bpy.context, "scene", None)
+        return bool(sc is None or sc.get("tco_debug_split", True))
+    except Exception:
+        return True
+
+
+def _snapshot_track(track) -> dict:
+    try:
+        markers = list(getattr(track, "markers", []))
+        frames_all = sorted({int(getattr(m, "frame", -10)) for m in markers})
+        muted = sum(1 for m in markers if getattr(m, "mute", False))
+        est = sum(1 for m in markers if getattr(m, "is_estimated", False))
+        return {
+            "markers": len(markers),
+            "frames": len(frames_all),
+            "muted": muted,
+            "estimated": est,
+            "frames_head": frames_all[:8],
+            "frames_tail": frames_all[-8:],
+        }
+    except Exception:
+        return {}
+
 
 def _segments_by_consecutive_frames_unmuted(track) -> List[List[int]]:
     """
@@ -63,6 +93,15 @@ def _segments_by_consecutive_frames_unmuted(track) -> List[List[int]]:
             curr.append(f)
     if curr:
         segs.append(curr)
+    if _dbg_enabled():
+        try:
+            print(
+                f"[SegDBG][unmuted_segments] track={track.name} "
+                f"unmuted_frames={len(frames)} segs={len(segs)} "
+                f"sample0={segs[0][:8] if segs else []}"
+            )
+        except Exception:
+            pass
     return segs
 
 
@@ -82,6 +121,12 @@ def _keep_exact_frames(
         window=window, screen=window.screen if window else None,
         area=area, region=region, space_data=space
     ):
+        if _dbg_enabled():
+            snap_before = _snapshot_track(track)
+            print(
+                f"[SplitDBG][keep_exact] track={track.name} keep={len(keep_frames)} "
+                f"keep_head={sorted(list(keep_frames))[:8]}"
+            )
         for m in list(track.markers)[::-1]:
             try:
                 f = int(getattr(m, "frame", -10))
@@ -95,6 +140,15 @@ def _keep_exact_frames(
                     m.mute = False
             except Exception:
                 pass
+        if _dbg_enabled():
+            segs_all = list(get_track_segments(track))
+            segs_unm = _segments_by_consecutive_frames_unmuted(track)
+            snap_after = _snapshot_track(track)
+            print(
+                f"[SplitDBG][keep_exact][post] track={track.name} "
+                f"segs_all={len(segs_all)} segs_unmuted={len(segs_unm)} "
+                f"snapshot_before={snap_before} snapshot_after={snap_after}"
+            )
 
 
 def _segment_lengths_unmuted(track: bpy.types.MovieTrackingTrack) -> List[int]:
@@ -193,13 +247,20 @@ def _delete_all_segments_after_first(
         window=window, screen=window.screen if window else None,
         area=area, region=region, space_data=space
     ):
+        delcnt = 0
         for m in list(track.markers)[::-1]:
             try:
                 f = int(getattr(m, "frame", -10))
                 if f >= start_cut:
                     track.markers.delete_frame(f)
+                    delcnt += 1
             except Exception:
                 pass
+        if _dbg_enabled():
+            print(
+                f"[SplitDBG][delete_after_first] track={track.name} "
+                f"first_last={f_last} start_cut={start_cut} deleted={delcnt}"
+            )
 
 
 def _trim_to_first_unmuted_segment(
@@ -221,11 +282,13 @@ def _trim_to_first_unmuted_segment(
         window=window, screen=window.screen if window else None,
         area=area, region=region, space_data=space
     ):
+        delcnt = 0
         for m in list(track.markers)[::-1]:
             try:
                 f = int(getattr(m, "frame", -10))
                 if f not in keep_frames:
                     track.markers.delete_frame(f)
+                    delcnt += 1
             except Exception:
                 pass
         # Optional: sichtbare Konsistenz – Keep-Frames unmute
@@ -235,6 +298,14 @@ def _trim_to_first_unmuted_segment(
                     m.mute = False
             except Exception:
                 pass
+        if _dbg_enabled():
+            segs_all = list(get_track_segments(track))
+            segs_unm = _segments_by_consecutive_frames_unmuted(track)
+            print(
+                f"[SplitDBG][trim_first_unmuted] track={track.name} "
+                f"keep={len(keep_frames)} deleted={delcnt} "
+                f"segs_all={len(segs_all)} segs_unmuted={len(segs_unm)}"
+            )
 
 
 def _delete_first_segment(
@@ -258,13 +329,20 @@ def _delete_first_segment(
         window=window, screen=window.screen if window else None,
         area=area, region=region, space_data=space
     ):
+        delcnt = 0
         for m in list(track.markers)[::-1]:
             try:
                 f = int(getattr(m, "frame", -10))
                 if f_start <= f <= f_end:
                     track.markers.delete_frame(f)
+                    delcnt += 1
             except Exception:
                 pass
+        if _dbg_enabled():
+            print(
+                f"[SplitDBG][delete_first_segment] track={track.name} "
+                f"range=[{f_start}..{f_end}] deleted={delcnt}"
+            )
 
 
 def _dup_once_with_ui(context, area, region, space, track) -> bpy.types.MovieTrackingTrack | None:
@@ -289,6 +367,8 @@ def _dup_once_with_ui(context, area, region, space, track) -> bpy.types.MovieTra
                     break
         except Exception:
             new_track = None
+        if _dbg_enabled():
+            print(f"[SplitDBG][dup] base={track.name} new={(new_track.name if new_track else None)}")
         try:
             deps = context.evaluated_depsgraph_get()
             deps.update()
@@ -317,6 +397,11 @@ def _split_track_by_all_segments(
     segs_all = list(get_track_segments(track))  # zählt ALLE Marker (auch muted/estimated)
     if len(segs_all) <= 1:
         return
+    if _dbg_enabled():
+        print(
+            f"[SplitDBG][split_by_all] track={track.name} segs={len(segs_all)} "
+            f"heads={[s[:3] for s in segs_all[:3]]}"
+        )
     # Duplikate erzeugen (für Segmente 1..k-1)
     dup_list: List[bpy.types.MovieTrackingTrack] = []
     for _ in range(1, len(segs_all)):
@@ -332,6 +417,11 @@ def _split_track_by_all_segments(
     # Harte Zuschnitte
     for trk, keep in targets:
         _keep_exact_frames(trk, keep, area=area, region=region, space=space, window=window)
+        if _dbg_enabled():
+            segs_now = list(get_track_segments(trk))
+            print(
+                f"[SplitDBG][split_by_all][post] track={trk.name} segs_now={len(segs_now)}"
+            )
     # Depsgraph/UI refresh (defensiv)
     try:
         deps = context.evaluated_depsgraph_get()
@@ -358,6 +448,12 @@ def recursive_split_cleanup(context, area, region, space, tracks):
         fb = _segments_by_consecutive_frames_unmuted(t)
         if len(fb) > len(segs):
             segs = fb
+        if _dbg_enabled():
+            snap = _snapshot_track(t)
+            print(
+                f"[SplitDBG][pre_audit] track={t.name} segs_all={len(get_track_segments(t))} "
+                f"segs_unmuted={len(_segments_by_consecutive_frames_unmuted(t))} snapshot={snap}"
+            )
 
     # Deterministischer One-Pass-Split pro Track
     try:
@@ -372,13 +468,20 @@ def recursive_split_cleanup(context, area, region, space, tracks):
         fb = _segments_by_consecutive_frames_unmuted(t)
         if len(fb) > len(segs):
             segs = fb
+        if _dbg_enabled():
+            print(
+                f"[SplitDBG][post_split_audit] track={t.name} segs_all={len(get_track_segments(t))} "
+                f"segs_unmuted={len(_segments_by_consecutive_frames_unmuted(t))}"
+            )
 
     # Delete-Policy
     try:
         min_len = int(scene.get("tco_min_seg_len", 25))
     except Exception:
         min_len = 25
-    _ = _delete_tracks_by_max_unmuted_seg_len(context, clip.tracking.tracks, min_len=min_len)
+    del_short = _delete_tracks_by_max_unmuted_seg_len(context, clip.tracking.tracks, min_len=min_len)
+    if _dbg_enabled():
+        print(f"[SplitDBG][delete_short] min_len={min_len} deleted={del_short}")
 
     # Audit nach Delete (intern)
     leftover_multi = 0
@@ -389,8 +492,16 @@ def recursive_split_cleanup(context, area, region, space, tracks):
             segs = fb
         if len(segs) >= 2:
             leftover_multi += 1
+        if _dbg_enabled() and len(segs) >= 2:
+            print(
+                f"[SplitDBG][leftover] track={t.name} segs_all={len(get_track_segments(t))} "
+                f"segs_unmuted={len(_segments_by_consecutive_frames_unmuted(t))}"
+            )
 
     # Optionaler Hygiene-Pass: sehr kurze Tracks entfernen und Mute-Aufräumung
     mute_unassigned_markers(clip.tracking.tracks)
+    if _dbg_enabled():
+        total = len(list(clip.tracking.tracks))
+        print(f"[SplitDBG][finish] tracks_total={total} leftover_multi={leftover_multi}")
 
     return {'FINISHED'}
