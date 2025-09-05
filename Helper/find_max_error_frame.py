@@ -86,6 +86,12 @@ def run_find_max_error_frame(
     if not tracks or len(tracks) == 0:
         return {"status": "NO_TRACKS", "reason": "Keine Tracks im Clip vorhanden."}
 
+    # Standardmäßig nur innerhalb des Szenenfensters auswerten
+    if frame_min is None:
+        frame_min = int(scn.frame_start)
+    if frame_max is None:
+        frame_max = int(scn.frame_end)
+
     frame_errors: Dict[int, List[float]] = defaultdict(list)
 
     # Mappe avg_error eines Tracks auf alle Frames, an denen der Track Marker hat
@@ -113,9 +119,9 @@ def run_find_max_error_frame(
                 continue
             if f is None:
                 continue
-            if frame_min is not None and f < frame_min:
+            if frame_min is not None and f < int(frame_min):
                 continue
-            if frame_max is not None and f > frame_max:
+            if frame_max is not None and f > int(frame_max):
                 continue
             frame_errors[f].append(avg_err)
 
@@ -148,9 +154,12 @@ def run_find_max_error_frame(
     top = stats[: max(1, int(return_top_k))]
     best_frame, best_score, best_count = top[0]
 
-    # Szene auf den „schlechtesten“ Frame setzen (bequemer Default)
+    # Szene auf den „schlechtesten“ Frame setzen (bequemer Default), aber clamped
     try:
-        scn.frame_set(int(best_frame))
+        lo = int(frame_min) if frame_min is not None else int(scn.frame_start)
+        hi = int(frame_max) if frame_max is not None else int(scn.frame_end)
+        target = max(lo, min(hi, int(best_frame)))
+        scn.frame_set(target)
     except Exception:
         pass
 

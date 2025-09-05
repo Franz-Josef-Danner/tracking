@@ -28,16 +28,16 @@ def _resolve_clip_and_scene(context, clip=None, scene=None) -> Tuple[Optional[bp
     return None, scn
 
 
-def _clip_end(clip: bpy.types.MovieClip, scn: bpy.types.Scene) -> int:
+def _clip_bounds(clip: bpy.types.MovieClip) -> Tuple[int, int]:
+    """Roh-Bounds des Clips (ohne Szene-Intersection)."""
     try:
         start = int(clip.frame_start)
         dur = int(getattr(clip, "frame_duration", 0))
         end = start + max(0, dur - 1)
     except Exception:
-        start = int(clip.frame_start) if hasattr(clip, "frame_start") else int(scn.frame_start)
+        start = int(clip.frame_start) if hasattr(clip, "frame_start") else 1
         end = start
-    # Szene darf enger sein als Clip
-    return min(int(scn.frame_end), end)
+    return start, end
 
 
 def _find_clip_area(win) -> Tuple[Optional[bpy.types.Area], Optional[bpy.types.Region]]:
@@ -65,7 +65,7 @@ def run_jump_to_frame(
 ) -> Dict[str, Any]:
     """
     Setzt den Playhead deterministisch auf 'frame' (oder scene['goto_frame']).
-    - Clamped auf Clipgrenzen
+    - Clamped auf Schnittmenge Szene × Clip
     - Optionaler CLIP_EDITOR-Override & Modus-Setzung
     - Zählt Wiederholungen NUR für per Jump gesetzte Frames via repeat_map
 
@@ -90,17 +90,23 @@ def run_jump_to_frame(
 
     target = int(target)
 
-    # Clamp an Clipgrenzen
+    # Clamp auf Schnittmenge Szene × Clip (falls Clip vorhanden)
     clamped = False
     if clip:
-        start = int(clip.frame_start)
-        end = _clip_end(clip, scn)
-        if target < start:
-            target = start
-            clamped = True
-        elif target > end:
-            target = end
-            clamped = True
+        clip_lo, clip_hi = _clip_bounds(clip)
+        scene_lo, scene_hi = int(scn.frame_start), int(scn.frame_end)
+        start = max(scene_lo, clip_lo)
+        end = min(scene_hi, clip_hi)
+    else:
+        start = int(scn.frame_start)
+        end = int(scn.frame_end)
+
+    if target < start:
+        target = start
+        clamped = True
+    elif target > end:
+        target = end
+        clamped = True
 
     # Optional: UI-Override (Area/Region) & Tracking-Mode
     area_switched = False
@@ -117,15 +123,15 @@ def run_jump_to_frame(
                                 area_switched = True
                         except Exception:
                             pass
-                    scn.frame_current = target
+                    scn.frame_set(target)
             except Exception:
                 # Fallback: ohne Override setzen
-                scn.frame_current = target
+                scn.frame_set(target)
         else:
             # Kein CLIP_EDITOR sichtbar → trotzdem setzen
-            scn.frame_current = target
+            scn.frame_set(target)
     else:
-        scn.frame_current = target
+        scn.frame_set(target)
 
     # Besuchszählung je Ziel-Frame
     repeat_count = 1
