@@ -66,6 +66,37 @@ def _segments_by_consecutive_frames_unmuted(track) -> List[List[int]]:
     return segs
 
 
+def _keep_exact_frames(
+    track: bpy.types.MovieTrackingTrack,
+    keep_frames: Set[int],
+    *, area, region, space, window
+) -> None:
+    """
+    Harter Zuschnitt auf eine exakte Frame-Menge:
+    - Löscht alle Marker, deren Frame **nicht** in keep_frames liegt.
+    - Unmutet die verbleibenden Marker zur Sichtbarkeitskonsistenz.
+    """
+    if not keep_frames:
+        return
+    with bpy.context.temp_override(
+        window=window, screen=window.screen if window else None,
+        area=area, region=region, space_data=space
+    ):
+        for m in list(track.markers)[::-1]:
+            try:
+                f = int(getattr(m, "frame", -10))
+                if f not in keep_frames:
+                    track.markers.delete_frame(f)
+            except Exception:
+                pass
+        for m in getattr(track, "markers", []):
+            try:
+                if int(getattr(m, "frame", -10)) in keep_frames:
+                    m.mute = False
+            except Exception:
+                pass
+
+
 def _segment_lengths_unmuted(track: bpy.types.MovieTrackingTrack) -> List[int]:
     """Ermittelt Längen aller un-gemuteten, zusammenhängenden Segmente in Markeranzahl."""
     segs = list(get_track_segments(track))
@@ -269,67 +300,46 @@ def _dup_once_with_ui(context, area, region, space, track) -> bpy.types.MovieTra
 
 
 # ------------------------------------------------------------
-# Iteratives Duplizieren & Abschälen
+# Deterministischer One-Pass Split pro Track
 # ------------------------------------------------------------
 
-def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable[bpy.types.MovieTrackingTrack]) -> None:
+def _split_track_by_all_segments(
+    context, area, region, space, track: bpy.types.MovieTrackingTrack
+) -> None:
     """
-    Phase 1: Startliste duplizieren; im Original alles nach dem ersten Segment löschen.
-    Phase 2: Wiederholt erstes Segment löschen, duplizieren, im Original wieder nach dem ersten Segment löschen,
-             bis keine Tracks mit >= 1 Segment existieren.
+    Nicht-iterativer, deterministischer Split:
+    - Ermittelt alle Segmente **auf Gesamtsicht** (get_track_segments).
+    - Dupliziert (k-1)× für k Segmente.
+    - Schneidet Original + Duplikate jeweils auf **exakt** ihr Zielsegment (harte Frame-Menge).
     """
     clip = space.clip
     window = context.window
-
-    # Phase 1
-    start_list = list(seed_tracks)
-    for tr in list(start_list):
-        _disable_estimated_markers(tr)
-        segs = _segments_by_consecutive_frames_unmuted(tr)
-        if len(segs) >= 1:
-            new_tr = _dup_once_with_ui(context, area, region, space, tr)
-            if new_tr:
-                # keine Logik nötig; Duplikat existiert
-                pass
-            # Wichtig: Original **hart** auf das erste unmuted Segment trimmen
-            _trim_to_first_unmuted_segment(tr, area=area, region=region, space=space, window=window)
-
-    # Phase 2
-    rounds = 0
-    while True:
-        rounds += 1
-        # NEW: Sicherheit – in jeder Runde estimated Marker deaktivieren,
-        # damit sie garantiert als Lücken wirken (UI-konsistent).
-        for t in list(clip.tracking.tracks):
-            _disable_estimated_markers(t)
-        # Kandidaten in **Gesamtsicht**: echte Multi-Segment-Tracks (auch wenn Segmente gemutet/estimated sind)
-        candidates = [t for t in list(clip.tracking.tracks)
-                      if len(get_track_segments(t)) >= 2]
-        if not candidates:
-            break
-
-        for tr in candidates:
-            _delete_first_segment(tr, area=area, region=region, space=space, window=window)
-
-        dupe_candidates = [t for t in candidates
-                           if len(get_track_segments(t)) >= 2 and len(list(t.markers)) > 0]
-
-        for tr in dupe_candidates:
-            new_tr = _dup_once_with_ui(context, area, region, space, tr)
-            if new_tr:
-                pass
-
-        for tr in dupe_candidates:
-            # Nach dem Duplizieren: Original **hart** auf das neue erste unmuted Segment trimmen
-            _trim_to_first_unmuted_segment(tr, area=area, region=region, space=space, window=window)
-
-        try:
-            deps = context.evaluated_depsgraph_get()
-            deps.update()
-            bpy.context.view_layer.update()
-            region.tag_redraw()
-        except Exception:
-            pass
+    segs_all = list(get_track_segments(track))  # zählt ALLE Marker (auch muted/estimated)
+    if len(segs_all) <= 1:
+        return
+    # Duplikate erzeugen (für Segmente 1..k-1)
+    dup_list: List[bpy.types.MovieTrackingTrack] = []
+    for _ in range(1, len(segs_all)):
+        new_tr = _dup_once_with_ui(context, area, region, space, track)
+        if new_tr:
+            dup_list.append(new_tr)
+    # Zuordnen: Original → seg[0], Duplikate → seg[1], seg[2], ...
+    targets: List[Tuple[bpy.types.MovieTrackingTrack, Set[int]]] = []
+    targets.append((track, {int(f) for f in segs_all[0]}))
+    for i, d in enumerate(dup_list, start=1):
+        if i < len(segs_all):
+            targets.append((d, {int(f) for f in segs_all[i]}))
+    # Harte Zuschnitte
+    for trk, keep in targets:
+        _keep_exact_frames(trk, keep, area=area, region=region, space=space, window=window)
+    # Depsgraph/UI refresh (defensiv)
+    try:
+        deps = context.evaluated_depsgraph_get()
+        deps.update()
+        bpy.context.view_layer.update()
+        region.tag_redraw()
+    except Exception:
+        pass
 
 
 # ------------------------------------------------------------
@@ -349,9 +359,10 @@ def recursive_split_cleanup(context, area, region, space, tracks):
         if len(fb) > len(segs):
             segs = fb
 
-    # Iteratives Duplizieren & Abschälen
+    # Deterministischer One-Pass-Split pro Track
     try:
-        _iterative_segment_split(context, area, region, space, tracks)
+        for t in list(tracks):
+            _split_track_by_all_segments(context, area, region, space, t)
     except Exception:
         pass
 
@@ -379,34 +390,7 @@ def recursive_split_cleanup(context, area, region, space, tracks):
         if len(segs) >= 2:
             leftover_multi += 1
 
-    # Safety
-    
-    # Finaler Purge: **exakt** die Frames des frühesten Segments behalten (kein Range-Cut)
-    for trk in list(clip.tracking.tracks):
-        try:
-            segs_all = get_track_segments(trk)
-            if not segs_all:
-                continue
-            keep_frames = {int(f) for f in segs_all[0]}
-            if not keep_frames:
-                continue
-            for m in list(trk.markers)[::-1]:
-                try:
-                    if int(getattr(m, "frame", -10)) not in keep_frames:
-                        trk.markers.delete_frame(int(getattr(m, "frame", -10)))
-                except Exception:
-                    pass
-            # Sichtbarkeit: Keep-Frames unmute
-            for m in getattr(trk, "markers", []):
-                try:
-                    if int(getattr(m, "frame", -10)) in keep_frames:
-                        m.mute = False
-                except Exception:
-                    pass
-
-        except Exception:
-            pass
-
+    # Optionaler Hygiene-Pass: sehr kurze Tracks entfernen und Mute-Aufräumung
     mute_unassigned_markers(clip.tracking.tracks)
 
     return {'FINISHED'}
