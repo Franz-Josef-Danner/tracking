@@ -904,7 +904,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 _bump_default_correlation_min(context)
                 self.phase = PH_FIND_LOW
                 return {'RUNNING_MODAL'}
-            # Beide Evaluierungen NICHT zutreffend → jetzt gezielt reduzieren (einmal pro avg_err)
+            # Beide Evaluierungen NICHT zutreffend → jetzt gezielt reduzieren
             try:
                 do_reduce = True
                 try:
@@ -915,8 +915,22 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     do_reduce = True
                 if do_reduce:
                     red = run_reduce_error_tracks(context)
-                    self.last_reduced_for_avg = float(avg_err) if avg_err is not None else self.last_reduced_for_avg
-                    self.report({'INFO'}, f"ReduceErrorTracks: done={red.get('deleted')} {red.get('names')}")
+                    deleted = int(red.get('deleted', 0) or 0)
+                    names = red.get('names', [])
+                    # Guard NUR setzen, wenn wirklich etwas entfernt wurde
+                    if deleted > 0 and avg_err is not None:
+                        self.last_reduced_for_avg = float(avg_err)
+                    # Transparente Telemetrie
+                    if deleted > 0:
+                        self.report({'INFO'}, f"ReduceErrorTracks: deleted={deleted} tracks, names={names}")
+                    else:
+                        self.report(
+                            {'WARNING'},
+                            (
+                                "ReduceErrorTracks: deleted=0 (No-Op) – gleiche Avg-Error-Lage, "
+                                "fahre mit rmax/next solve fort"
+                            ),
+                        )
             except Exception as _exc:
                 self.report({'WARNING'}, f"ReduceErrorTracks Fehler: {_exc}")
             try:
