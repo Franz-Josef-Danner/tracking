@@ -389,9 +389,9 @@ def recursive_split_cleanup(context, area, region, space, tracks):
 
     # 2) Delete-Policy
     try:
-        min_len = int(scene.get("tco_min_seg_len", 25))
+        min_len = int(scene.get("tco_min_seg_len", 10))
     except Exception:
-        min_len = 25
+        min_len = 10
     deleted = _delete_tracks_by_max_unmuted_seg_len(context, clip.tracking.tracks, min_len=min_len)
 
     # --- Audit nach Delete ---
