@@ -968,7 +968,27 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 except Exception as _dbg_exc:
                     print(f"[ReduceDBG] pre telemetry failed: {_dbg_exc}")
                 if do_reduce:
-                    red = run_reduce_error_tracks(context)
+                    # Löschbatch nach Vorgabe:
+                    # k = round(avg_err / error_frame), min=1, max=10
+                    scn = context.scene
+                    try:
+                        target_err = float(scn.get("error_track", 2.0))
+                    except Exception:
+                        target_err = 2.0
+                    try:
+                        err_frame = float(scn.get("error_frame", target_err))
+                    except Exception:
+                        err_frame = target_err
+                    try:
+                        _avg = float(avg_err) if avg_err is not None else 0.0
+                    except Exception:
+                        _avg = 0.0
+                    _den = err_frame if (err_frame and err_frame > 1e-9) else target_err if target_err > 1e-9 else 1.0
+                    _k_raw = round(_avg / _den)
+                    _k = max(1, min(10, int(_k_raw)))
+                    print(f"[ReduceDBG] delete-k formula: avg={_avg:.4f} / err_frame={_den:.4f} -> k_raw={_k_raw} -> k={_k} (clamp 1..10)")
+
+                    red = run_reduce_error_tracks(context, max_to_delete=_k)
                     deleted = int(red.get('deleted', 0) or 0)
                     names = red.get('names', [])
                     # Guard NUR setzen, wenn wirklich etwas entfernt wurde
@@ -976,7 +996,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         self.last_reduced_for_avg = float(avg_err)
                     # Transparente Telemetrie
                     if deleted > 0:
-                        self.report({'INFO'}, f"ReduceErrorTracks: deleted={deleted} tracks")
+                        self.report({'INFO'}, f"ReduceErrorTracks: deleted={deleted} tracks (k={_k})")
                         try:
                             print(f"[ReduceDBG] reducer result: deleted={deleted} names={names}")
                         except Exception:

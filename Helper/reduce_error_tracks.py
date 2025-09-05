@@ -7,12 +7,19 @@ logging.
 
 from __future__ import annotations
 from typing import Dict, Any, List, Tuple, Optional
+import sys
 import bpy
-
 try:
-    from .count import error_value  # robuste per-Track-Metrik
-except Exception:  # pragma: no cover
-    from ..Helper.count import error_value  # Fallback Pfad
+    # Einheitliche Fehler-Metrik wie in der Coordinator-Telemetrie
+    from .count import error_value  # type: ignore
+except Exception:
+    # Fallback: lokale, schwächere Heuristik
+    def error_value(track) -> float:
+        try:
+            v = float(getattr(track, "average_error", float("nan")))
+            return v if (v == v and v >= 0.0) else -1.0
+        except Exception:
+            return -1.0
 
 __all__ = ("run_reduce_error_tracks", "get_avg_reprojection_error")
 
@@ -26,7 +33,12 @@ def _resolve_clip(context: bpy.types.Context):
     return clip
 
 
-def run_reduce_error_tracks(context) -> Dict[str, Any]:
+def run_reduce_error_tracks(
+    context: bpy.types.Context,
+    *,
+    max_to_delete: Optional[int] = None,
+    object_name: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     Löscht oder mutet Tracks mit hohem Fehlerwert.
     Erwartet Scene-Property 'error_track' als Schwellwert.
@@ -34,6 +46,17 @@ def run_reduce_error_tracks(context) -> Dict[str, Any]:
     """
     scn = context.scene
     thr = float(scn.get("error_track", 2.0))
+    if max_to_delete is not None and max_to_delete <= 0:
+        return {
+            "deleted": 0,
+            "names": [],
+            "thr": thr,
+            "policy": {
+                "require_selected": bool(scn.get("reduce_only_selected", False)),
+                "mute_instead_delete": bool(scn.get("reduce_mute_instead_delete", False)),
+            },
+            "candidates": [],
+        }
     clip = _resolve_clip(context)
     trk = getattr(clip, "tracking", None) if clip else None
     tracks = list(getattr(trk, "tracks", [])) if trk else []
@@ -50,6 +73,11 @@ def run_reduce_error_tracks(context) -> Dict[str, Any]:
             pass
     cand.sort(key=lambda x: x[1], reverse=True)
     print(f"[ReduceDBG] reducer candidates: count={len(cand)} top10={[(n, round(e,4)) for n,e in cand[:10]]}")
+    # Dynamische Default-Batchgröße, falls nicht vorgegeben:
+    # 20 % der Kandidaten, min 5, max 50 (konservativ gegen Overkill)
+    if max_to_delete is None:
+        import math
+        max_to_delete = max(5, min(50, math.ceil(len(cand) * 0.20)))
 
     require_selected = bool(scn.get("reduce_only_selected", False))
     if require_selected:
@@ -59,11 +87,13 @@ def run_reduce_error_tracks(context) -> Dict[str, Any]:
         print(f"[ReduceDBG] reducer policy: require_selected=False")
 
     do_mute = bool(scn.get("reduce_mute_instead_delete", False))
-    print(f"[ReduceDBG] reducer action: {'MUTE' if do_mute else 'DELETE'} thr={thr}")
+    print(f"[ReduceDBG] reducer action: {'MUTE' if do_mute else 'DELETE'} thr={thr} max_to_delete={max_to_delete}")
 
     deleted_names: List[str] = []
     count = 0
-    for name, _e in cand:
+    k = min(int(max_to_delete), max(1, len(cand)))
+    to_process = cand[:k]
+    for name, _e in to_process:
         t = trk.tracks.get(name) if trk else None
         if not t:
             continue
