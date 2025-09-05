@@ -115,6 +115,7 @@ def run_reduce_error_tracks(
         print(f"[ReduceDBG] reducer policy: require_selected=False")
 
     do_mute = bool(scn.get("reduce_mute_instead_delete", False))
+    use_clean_tracks = bool(scn.get("reduce_use_clean_tracks", True)) and (not do_mute) and (not require_selected)
     print(f"[ReduceDBG] reducer action: {'MUTE' if do_mute else 'DELETE'} thr={thr} max_to_delete={max_to_delete}")
 
     deleted_names: List[str] = []
@@ -135,6 +136,47 @@ def run_reduce_error_tracks(
                 count += 1
             except Exception as _exc:
                 print(f"[ReduceDBG] reducer failed (mute) for {name}: {_exc}")
+    elif use_clean_tracks:
+        # — Variante: targeted DELETE via bpy.ops.clip.clean_tracks (ein Aufruf, kontext-sicher)
+        # Ziel: genau k Top-Error-Tracks treffen, ohne Container mehrfach umzubauen.
+        # 1) Schwelle zwischen k und k+1 (oder knapp unter err_k) berechnen
+        errs_sorted = [e for (_n, e) in to_process]  # top-k errors (desc)
+        err_k = float(errs_sorted[-1])  # kleinster der Top-K
+        has_kp1 = len(cand) > k
+        if has_kp1:
+            err_kp1 = float(cand[k][1])  # erster nach den Top-K
+            thr_clean = 0.5 * (err_k + err_kp1)  # Midpoint trennt exakt K vs. K+1 (bei !=)
+        else:
+            thr_clean = err_k - 1e-6  # knapp darunter → trifft nur Top-K
+        print(f"[ReduceDBG] clean_tracks threshold -> {thr_clean:.6f} (err_k={err_k:.6f}{' err_k+1='+str(err_kp1) if has_kp1 else ''})")
+        # 2) Operator im CLIP-Override aufrufen
+        try:
+            override = _ensure_clip_context(context)
+            if override:
+                with bpy.context.temp_override(**override):
+                    bpy.ops.clip.clean_tracks(frames=0, error=float(thr_clean), action='DELETE_TRACK')
+            else:
+                bpy.ops.clip.clean_tracks(frames=0, error=float(thr_clean), action='DELETE_TRACK')
+        except Exception as _op_exc:
+            print(f"[ReduceDBG] operator clean_tracks failed: {_op_exc}")
+        # 3) Ergebnis prüfen (Namen, Count)
+        try:
+            try:
+                bpy.context.view_layer.update()
+            except Exception:
+                pass
+            # Alle, die vorab >= thr_clean lagen (d.h. Zielmenge), als gelöscht zählen
+            goal_set = {n for (n, e) in cand if e >= thr_clean}
+            for name in list(goal_set):
+                still_there = bool(trk.tracks.get(name)) if trk else False
+                if not still_there:
+                    deleted_names.append(name)
+            count = len(deleted_names)
+        except Exception as _chk_exc:
+            print(f"[ReduceDBG] post-clean_tracks check failed: {_chk_exc}")
+        # Hinweis: Bei gleichen Fehlerwerten um err_k kann es >k werden (Tie-Case).
+        if count > k:
+            print(f"[ReduceDBG] NOTE: deleted={count} > k={k} (ties at threshold)")
     else:
         # — Variante: DELETE via Operator (kontext-sicher)
         # 1) Auswahl vorbereiten
@@ -199,6 +241,7 @@ def run_reduce_error_tracks(
         "policy": {
             "require_selected": require_selected,
             "mute_instead_delete": do_mute,
+            "use_clean_tracks": use_clean_tracks,
         },
         "candidates": cand[:50],
     }
