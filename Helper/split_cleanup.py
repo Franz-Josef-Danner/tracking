@@ -171,6 +171,41 @@ def _delete_all_segments_after_first(
                 pass
 
 
+def _trim_to_first_unmuted_segment(
+    track: bpy.types.MovieTrackingTrack,
+    *, area, region, space, window,
+) -> None:
+    """
+    Harter, idempotenter Trim:
+    - Bestimme das erste unmuted Segment (estimated gilt als Lücke)
+    - Behalte **nur** exakt dessen Frames; lösche alle anderen Frames (vorher, nachher, in-range Fremdframes)
+    """
+    segs = _segments_by_consecutive_frames_unmuted(track)
+    if not segs:
+        return
+    keep_frames = {int(f) for f in segs[0] if isinstance(f, int)}
+    if not keep_frames:
+        return
+    with bpy.context.temp_override(
+        window=window, screen=window.screen if window else None,
+        area=area, region=region, space_data=space
+    ):
+        for m in list(track.markers)[::-1]:
+            try:
+                f = int(getattr(m, "frame", -10))
+                if f not in keep_frames:
+                    track.markers.delete_frame(f)
+            except Exception:
+                pass
+        # Optional: sichtbare Konsistenz – Keep-Frames unmute
+        for m in getattr(track, "markers", []):
+            try:
+                if int(getattr(m, "frame", -10)) in keep_frames:
+                    m.mute = False
+            except Exception:
+                pass
+
+
 def _delete_first_segment(
     track: bpy.types.MovieTrackingTrack,
     *, area, region, space, window,
@@ -256,8 +291,8 @@ def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable
             if new_tr:
                 # keine Logik nötig; Duplikat existiert
                 pass
-            # Wichtig: unabhängig vom Duplikat im Original beschneiden
-            _delete_all_segments_after_first(tr, area=area, region=region, space=space, window=window)
+            # Wichtig: Original **hart** auf das erste unmuted Segment trimmen
+            _trim_to_first_unmuted_segment(tr, area=area, region=region, space=space, window=window)
 
     # Phase 2
     rounds = 0
@@ -267,6 +302,7 @@ def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable
         # damit sie garantiert als Lücken wirken (UI-konsistent).
         for t in list(clip.tracking.tracks):
             _disable_estimated_markers(t)
+        # Kandidaten in **Gesamtsicht**: echte Multi-Segment-Tracks (auch wenn Segmente gemutet/estimated sind)
         candidates = [t for t in list(clip.tracking.tracks)
                       if len(get_track_segments(t)) >= 2]
         if not candidates:
@@ -284,7 +320,8 @@ def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable
                 pass
 
         for tr in dupe_candidates:
-            _delete_all_segments_after_first(tr, area=area, region=region, space=space, window=window)
+            # Nach dem Duplizieren: Original **hart** auf das neue erste unmuted Segment trimmen
+            _trim_to_first_unmuted_segment(tr, area=area, region=region, space=space, window=window)
 
         try:
             deps = context.evaluated_depsgraph_get()
@@ -344,21 +381,29 @@ def recursive_split_cleanup(context, area, region, space, tracks):
 
     # Safety
     
-    # Finaler Purge: Marker außerhalb des Primärsegments hart löschen
+    # Finaler Purge: **exakt** die Frames des frühesten Segments behalten (kein Range-Cut)
     for trk in list(clip.tracking.tracks):
         try:
             segs_all = get_track_segments(trk)
             if not segs_all:
                 continue
-            keep = segs_all[0]  # erstes (frühestes) Segment behalten
-            fmin, fmax = int(keep[0]), int(keep[-1])
+            keep_frames = {int(f) for f in segs_all[0]}
+            if not keep_frames:
+                continue
             for m in list(trk.markers)[::-1]:
                 try:
-                    f = int(getattr(m, "frame", -10))
-                    if f < fmin or f > fmax:
-                        trk.markers.delete_frame(f)
+                    if int(getattr(m, "frame", -10)) not in keep_frames:
+                        trk.markers.delete_frame(int(getattr(m, "frame", -10)))
                 except Exception:
                     pass
+            # Sichtbarkeit: Keep-Frames unmute
+            for m in getattr(trk, "markers", []):
+                try:
+                    if int(getattr(m, "frame", -10)) in keep_frames:
+                        m.mute = False
+                except Exception:
+                    pass
+
         except Exception:
             pass
 
