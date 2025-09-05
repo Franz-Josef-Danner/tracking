@@ -68,11 +68,13 @@ def _segments_by_consecutive_frames_unmuted(track) -> List[List[int]]:
     segs: List[List[int]] = []
     curr: List[int] = [frames[0]]
     for f in frames[1:]:
-        if f == curr[-1] + 1:
-            curr.append(f)
-        else:
+        diff = int(f) - int(curr[-1])
+        missing = diff - 1
+        if missing >= 1:
             segs.append(curr)
             curr = [f]
+        else:
+            curr.append(f)
     if curr:
         segs.append(curr)
     return segs
