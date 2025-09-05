@@ -198,30 +198,12 @@ def run_marker_spike_filter_cycle(
 ) -> Dict[str, Any]:
     """
     Führt einen Marker-basierten Spike-Filter-Durchlauf aus (Pixel/Frame).
+    - **Default-Aktion: DELETE** – Ausreißer-Marker werden hart entfernt.
+    - Danach segmentweises Cleanup über `clean_short_segments(...)`.
 
-    Dieses Verfahren wurde erweitert, um iterativ zu arbeiten. Nach jedem
-    Ausreißer‑Löschvorgang wird geprüft, ob es Frames gibt, die noch deutlich
-    über dem zulässigen Marker‑Limit liegen. Das Limit berechnet sich aus
-    der Szenenvariable ``marker_frame`` multipliziert mit ``1.5``. Solange
-    mindestens ein Frame mehr aktive Marker hat als ``marker_frame * 1.5``,
-    wird der Marker‑Filter erneut ausgeführt. Dies verhindert, dass das
-    Spike‑Filter bei einem zu niedrigen Schwellwert stoppt und sorgt dafür,
-    dass weitere Ausreißer entfernt werden können.
-
-    Parameter:
-        context: Der Blender-Kontext mit aktivem Clip.
-        track_threshold: Geschwindigkeitsschwelle in Pixel pro Frame.
-        action: Wie Marker behandelt werden ("DELETE", "MUTE" oder "SELECT").
-        min_segment_len: Minimale Segmentlänge für das anschließende Cleanup.
-        treat_muted_as_gap: Ob gemutete Marker als Lücke behandelt werden.
-        run_segment_cleanup: Optionales segmentweises Cleanup ausführen.
-        **kwargs: Zusätzliche Parameter; ``error_threshold_px`` wird als Alias
-            für ``track_threshold`` unterstützt.
-
-    Rückgabe:
-        Dictionary mit Status, Anzahl betroffener Marker und Cleanup‑Informationen.
+    Scene-Defaults:
+    - min_segment_len:  `scene.get('tco_min_seg_len', 25)` oder `scene.frames_track` (falls vorhanden)
     """
-    # Sicherstellen, dass ein aktiver Clip vorhanden ist
     if not _get_active_clip(context):
         return {"status": "FAILED", "reason": "no active MovieClip"}
 
@@ -231,119 +213,33 @@ def run_marker_spike_filter_cycle(
             track_threshold = float(kwargs["error_threshold_px"])
         except Exception:
             pass
-
     # **Untergrenze erzwingen**: auch wenn der Aufrufer < 2.0 übergibt
     thr = max(2.0, float(track_threshold))
     act = str(action or "DELETE").upper().strip()
+
+    # 1) Marker-Filter
+    affected = _apply_marker_outlier_filter(context, threshold_px=thr, action=act)
     key = "deleted" if act == "DELETE" else ("muted" if act == "MUTE" else "selected")
 
-    # Gesamtsumme der betroffenen Marker über alle Durchläufe
-    total_affected = 0
-
-    # Iterativer Filter: wiederhole, solange es Frames mit zu vielen aktiven Markern gibt
-    iteration = 0
-    while True:
-        iteration += 1
-        # 1) Marker-Filter auf Basis der Geschwindigkeit anwenden
-        affected = _apply_marker_outlier_filter(context, threshold_px=thr, action=act)
-        try:
-            total_affected += int(affected)
-        except Exception:
-            # Fallback, falls affected keine Zahl ist
-            try:
-                total_affected += int(getattr(affected, "__int__", lambda: 0)())
-            except Exception:
-                pass
-
-        # Wenn keine Marker entfernt wurden, gibt es keinen Grund weiterzumachen
-        if not affected or int(affected) <= 0:
-            break
-
-        # 2) Prüfen, ob es noch Frames mit übermäßig vielen aktiven Markern gibt
-        clip = _get_active_clip(context)
-        scene = getattr(context, "scene", None)
-        # Basiswert für das erlaubte Marker‑Limit: Szene.marker_frame
-        marker_frame_value: float = 0.0
-        if scene is not None:
-            # Versuche sowohl Attribut- als auch Dictionary‑Zugriff
-            try:
-                # Zunächst Attributzugriff
-                val = getattr(scene, "marker_frame", None)
-                if val is not None:
-                    marker_frame_value = float(val)
-            except Exception:
-                pass
-            # Wenn kein Attribut verfügbar, versuche Dictionary‑Eintrag
-            if marker_frame_value <= 0.0:
-                try:
-                    val = scene.get("marker_frame", None)  # type: ignore[call-arg]
-                    if val is not None:
-                        marker_frame_value = float(val)
-                except Exception:
-                    pass
-
-        # Wenn kein valider Marker‑Frame gesetzt ist, abbrechen
-        if marker_frame_value <= 0.0 or clip is None:
-            # Es gibt keine zuverlässige Grenze → Schleife beenden
-            break
-
-        # Zähle aktive Marker pro Frame
-        frame_counts: Dict[int, int] = {}
-        try:
-            tracks = _get_tracks_collection(clip) or []
-            for tr in tracks:
-                try:
-                    markers = getattr(tr, "markers", [])
-                except Exception:
-                    markers = []
-                for m in markers:
-                    try:
-                        # ignoriere gemutete Marker
-                        if getattr(m, "mute", False):
-                            continue
-                        f = int(getattr(m, "frame", -10))
-                        frame_counts[f] = frame_counts.get(f, 0) + 1
-                    except Exception:
-                        pass
-        except Exception:
-            frame_counts = {}
-
-        # Erlaubte Höchstgrenze
-        threshold_limit = marker_frame_value * 1.5
-
-        # Prüfen, ob mindestens ein Frame die Höchstgrenze überschreitet
-        too_many = False
-        for cnt in frame_counts.values():
-            try:
-                if float(cnt) > threshold_limit:
-                    too_many = True
-                    break
-            except Exception:
-                # Bei Fehlern lieber abbrechen
-                break
-
-        # Wenn keine Frames die Grenze überschreiten → Schleife beenden
-        if not too_many:
-            break
-
-        # Ansonsten wird die Schleife fortgesetzt und der Marker‑Filter erneut angewendet
-        # Dadurch können weitere Ausreißer entfernt werden
-
-    # 3) Segment-Cleanup (optional via Flag) – wird einmal nach allen Durchläufen ausgeführt
+    # 2) Segment-Cleanup (optional via Flag)
     cleaned_segments = 0
     cleaned_markers = 0
-    if run_segment_cleanup and clean_short_segments is not None:
+    if not run_segment_cleanup:
+        pass
+    elif clean_short_segments is None:
+        pass
+    else:
         scene = getattr(context, "scene", None)
-        # Falls min_segment_len nicht übergeben wurde, aus der Szene ableiten
         if min_segment_len is None:
+            # Priorität: tco_min_seg_len → frames_track → 25
             if scene is not None:
                 try:
-                    # Priorität: tco_min_seg_len → frames_track → 25
                     min_segment_len = int(scene.get("tco_min_seg_len", 0)) or int(getattr(scene, "frames_track", 0)) or 25
                 except Exception:
                     min_segment_len = 25
             else:
                 min_segment_len = 25
+
         try:
             res = clean_short_segments(
                 context,
@@ -353,15 +249,14 @@ def run_marker_spike_filter_cycle(
             )
             if isinstance(res, dict):
                 cleaned_segments = int(res.get("segments_removed", 0) or 0)
-                cleaned_markers  = int(res.get("markers_removed", 0) or 0)
+                cleaned_markers = int(res.get("markers_removed", 0) or 0)
         except Exception:
             pass
 
     return {
         "status": "OK",
-        key: int(total_affected),
+        key: int(affected),
         "cleaned_segments": int(cleaned_segments),
         "cleaned_markers": int(cleaned_markers),
         "suggest_split_cleanup": True,  # Hinweis an den Coordinator
     }
-
