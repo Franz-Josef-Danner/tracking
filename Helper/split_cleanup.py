@@ -197,7 +197,7 @@ def _delete_first_segment(
     """Löscht das **erste** Segment (ungemutete Kontinuität) hart (Marker DELETE)
     und wahrt einen Mindestabstand von ``gap_frames`` zum nächsten Segment.
 
-    Hinweis: Bei normaler Segmentierung (dt>1 zwischen Segmenten) ist der
+    Hinweis: Bei normaler Segmentierung (dt>= 1 zwischen Segmenten) ist der
     Abstand ohnehin ≥ 1. Die Logik klemmt die Löschgrenze zusätzlich so,
     dass niemals Marker des nachfolgenden Segments versehentlich entfernt werden.
     """
@@ -276,10 +276,10 @@ def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable
       1) Startliste einfrieren, betroffene Tracks **einmal duplizieren**,
          im **Original** alle Segmente **nach dem ersten** löschen.
       2) Danach wiederholt:
-           - in **allen** Tracks mit >1 Segment das **erste Segment löschen**
+           - in **allen** Tracks mit >= 1 Segment das **erste Segment löschen**
            - diese Tracks **einmal duplizieren**
            - im **Original** wieder alle Segmente **nach dem ersten** löschen
-         bis keine Tracks mit >1 Segment existieren.
+         bis keine Tracks mit >= 1 Segment existieren.
     """
     scene = context.scene
     clip = space.clip
@@ -292,7 +292,7 @@ def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable
         # Ergänzung: zuerst alle 'estimated' Marker auf disabled setzen
         _disable_estimated_markers(tr)
         segs = _segments_by_consecutive_frames_unmuted(tr)
-        if len(segs) > 1:
+        if len(segs) >= 1:
             new_tr = _dup_once_with_ui(context, area, region, space, tr)
             if new_tr:
                 _log(scene, f"IterSplit: dup '{tr.name}' → '{new_tr.name}' (phase-1)")
@@ -302,9 +302,9 @@ def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable
     rounds = 0
     while True:
         rounds += 1
-        # Kandidaten: alle aktuellen Tracks mit >1 Segment (ungemutet)
+        # Kandidaten: alle aktuellen Tracks mit >= 1 Segment (ungemutet)
         candidates = [t for t in list(clip.tracking.tracks)
-                      if len(_segments_by_consecutive_frames_unmuted(t)) > 1]
+                      if len(_segments_by_consecutive_frames_unmuted(t)) >= 1]
         if not candidates:
             _log(scene, f"IterSplit: converged after {rounds-1} round(s)")
             break
@@ -317,11 +317,11 @@ def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable
 
         # --- Wichtiger Zwischenschritt ---
         # Nach dem Entfernen des ersten Segments haben einige Tracks evtl. nur noch
-        # EIN Segment oder gar keine Marker mehr. Nur solche mit weiterhin >1 Segmenten
+        # EIN Segment oder gar keine Marker mehr. Nur solche mit weiterhin >= 1 Segmenten
         # werden dupliziert und anschließend beschnitten. So vermeiden wir "leere" Duplikate
         # und das unerwünschte Kürzen von stabilen Ein-Segment-Tracks.
         dupe_candidates = [t for t in candidates
-                           if len(_segments_by_consecutive_frames_unmuted(t)) > 1 and len(list(t.markers)) > 0]
+                           if len(_segments_by_consecutive_frames_unmuted(t)) >= 1 and len(list(t.markers)) > 0]
         _log(scene, f"IterSplit: round {rounds} post-delete → dupe_candidates={len(dupe_candidates)}")
 
         # 2b) Danach nur diese Kandidaten **einmal duplizieren**
@@ -332,7 +332,7 @@ def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable
                 dup_map[tr] = new_tr
                 _log(scene, f"IterSplit: dup '{tr.name}' → '{new_tr.name}' (round {rounds})")
 
-        # 2c) Im **Original** alles nach dem ersten Segment löschen (nur dort, wo >1 Segmente sind)
+        # 2c) Im **Original** alles nach dem ersten Segment löschen (nur dort, wo >= 1 Segmente sind)
         for tr in dupe_candidates:
             _delete_all_segments_after_first(tr, area=area, region=region, space=space, window=window)
 
@@ -399,7 +399,7 @@ def recursive_split_cleanup(context, area, region, space, tracks):
         fb = _segments_by_consecutive_frames_unmuted(t)
         if len(fb) > len(segs):
             segs = fb
-        if len(segs) > 1:
+        if len(segs) >= 1:
             leftover_multi += 1
     if leftover_multi == 0:
         pass
@@ -407,7 +407,7 @@ def recursive_split_cleanup(context, area, region, space, tracks):
     # --- Debug: Verbliebene Multi-Segment-Tracks ausgeben ---
     for t in clip.tracking.tracks:
         segs = _segments_by_consecutive_frames_unmuted(t)
-        if len(segs) > 1:
+        if len(segs) >= 1:
             print(f"[SplitCleanup-DEBUG] Track '{t.name}' hat {len(segs)} Segmente:")
             for i, seg in enumerate(segs, start=1):
                 if not seg:
