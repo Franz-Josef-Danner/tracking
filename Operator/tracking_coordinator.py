@@ -880,59 +880,44 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                             if str(rj.get("status")) != "OK":
                                 self.report({'WARNING'}, f"Jump auf Worst-Frame fehlgeschlagen: {rj}")
                             else:
-                                # NEU: Repeat/Anzahl-Logik wie im JUMP-Pfad auch hier anwenden
+                                # Für Regression denselben Orchestrierungs‑Pfad verwenden wie bei JUMP
                                 try:
-                                    orchestrate_on_jump(context, int(worst_f))
-                                    # count ermitteln (robust bzgl. Signatur) und ABORT prüfen
-                                    try:
-                                        _state = _get_state(context)
-                                        try:
-                                            _entry, _ = _ensure_frame_entry(_state, int(worst_f))
-                                        except TypeError:
-                                            _entry = _ensure_frame_entry(context, int(worst_f))
-                                        _count = int(_entry.get("count", 1))
-                                    except Exception:
-                                        _count = None
-                                    self.repeat_count_for_target = _count
-                                    if _count is not None and _count >= ABORT_AT:
+                                    orchestrate_on_jump(context, worst_f)
+                                    state = _get_state(context)
+                                    entry, _ = _ensure_frame_entry(state, worst_f)
+                                    count = int(entry.get("count", 1))
+                                    self.repeat_count_for_target = count
+                                    # Abbruch prüfen (wie im normalen JUMP‑Pfad)
+                                    if count >= ABORT_AT:
                                         return self._finish(
                                             context,
-                                            info=f"Abbruch: Frame {int(worst_f)} hat {ABORT_AT-1} Durchläufe erreicht.",
+                                            info=f"Abbruch: Frame {worst_f} hat {ABORT_AT-1} Durchläufe erreicht.",
                                             cancelled=True
                                         )
-                                except Exception as _exc2:
-                                    self.report({'WARNING'}, f"Orchestrate on worst-frame warn: {str(_exc2)}")
-
-                                self.target_frame = int(worst_f)
-                                # **WICHTIG**: Detection-Threshold RESET, um Carry-Over (0.000) zu vermeiden
+                                except Exception as exc:
+                                    self.report({'WARNING'}, f"Orchestrate on worst-frame warn: {exc}")
+                                # Ziel‑Frame setzen
+                                self.target_frame = worst_f
+                                # Detection‑Threshold zurücksetzen, damit der erste Detect‑Pass mit Standardwert läuft
                                 self.detection_threshold = None
-                                # Falls detect.py einen 0.0-Wert persistiert hat, Default in der Szene clampen
-                                try:
-                                    _lt = float(context.scene.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
-                                    if _lt <= 1e-6:
-                                        context.scene[DETECT_LAST_THRESHOLD_KEY] = 0.75
-                                except Exception:
-                                    pass
-
-                                # **WICHTIG**: Pre-Snapshot direkt vor DETECT (konsistent zum JUMP-Pfad)
-
+                                # Pre-Snapshot nach der Orchestrierung erstellen (Marker vor DETECT sichern)
                                 self.pre_ptrs = set(_snapshot_track_ptrs(context))
-                                # WICHTIG: Baseline auf den aktuellen Solve setzen,
-                                # damit der nächste Vergleich gegen *#04* (last solve) läuft.
+                                # Baseline für den nächsten Solve-Vergleich fortschreiben
                                 try:
                                     if avg_err is not None:
                                         self.prev_solve_avg = float(avg_err)
                                 except Exception:
                                     pass
-                                # Bump nur EINMAL pro Regressions-Einstieg
+                                # Korrelation minimal erhöhen (wie bisher)
                                 if not bool(self.regression_corr_bumped):
                                     _bump_default_correlation_min(context)
                                     self.regression_corr_bumped = True
+                                # In die DETECT‑Phase wechseln
                                 self.phase = PH_DETECT
-                                self.report({'INFO'}, f"Regression: avg={float(avg_err):.4f} > prev={float(prev_err):.4f} → Worst-Frame f={worst_f} → DETECT")
+                                self.report({'INFO'}, f"Regression: avg={float(avg_err):.4f} > prev={float(prev_err):.4f} → Worst-Frame f={worst_f} → DETECT (RESET)")
                                 return {'RUNNING_MODAL'}
-                        except Exception as _exc:
-                            self.report({'WARNING'}, f"Jump/Detect-Pfad nach MaxError fehlgeschlagen: {_exc}")
+                        except Exception as exc:
+                            self.report({'WARNING'}, f"Jump/Detect-Pfad nach MaxError fehlgeschlagen: {exc}")
                 # gegen den unmittelbar letzten Solve vergleicht.
                 try:
                     if avg_err is not None:
