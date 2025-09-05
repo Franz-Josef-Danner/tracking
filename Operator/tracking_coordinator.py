@@ -7,6 +7,18 @@ tracking_coordinator.py – Streng sequentieller, MODALER Orchestrator
 
 from __future__ import annotations
 import bpy
+from typing import Dict, Optional, Set, List, Tuple
+
+# --- Leichtes Debug-Logging (gated via Scene["kt_debug"]) -------------------
+def _dbg(scn: bpy.types.Scene, *args):
+    """Gated Print – nur wenn Scene['kt_debug'] True ist."""
+    try:
+        if bool(scn.get("kt_debug", False)):
+            print("[KT]", *args)
+    except Exception:
+        # Falls Scene nicht verfügbar → schweigen
+        pass
+
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame
 from ..Helper.jump_to_frame import run_jump_to_frame
 from ..Helper.detect import run_detect_once
@@ -339,6 +351,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     repeat_count_for_target: int | None = None
     # Aktueller Detection-Threshold; wird nach jedem Detect-Aufruf aktualisiert.
     detection_threshold: float | None = None
+    detect_retry_count: int = 0
     spike_threshold: float | None = None  # aktueller Spike-Filter-Schwellenwert (temporär)
     # Flag, ob der Bidirectional-Track bereits gestartet wurde. Diese
     # Instanzvariable dient dazu, den Start der Bidirectional‑Track-Phase
@@ -378,10 +391,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self.pre_ptrs = None
         # Threshold-Zurücksetzen: beim ersten Detect-Aufruf wird der Standardwert verwendet
         self.detection_threshold = None
+        self.detect_retry_count = 0
         # Bidirectional‑Track ist noch nicht gestartet
         self.spike_threshold = None  # Spike-Schwellenwert zurücksetzen
         # Solve-Retry-State zurücksetzen
         self.solve_refine_attempted = False
+        _dbg(context.scene, "Coordinator reset: phase=PH_FIND_LOW, clear_solve_log=True")
         self.solve_refine_full_attempted = False
         self.bidi_before_counts = None
         self.prev_solve_avg = None
@@ -488,21 +503,33 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
             # **WICHTIG**: Pre-Snapshot direkt vor DETECT
             self.pre_ptrs = set(_snapshot_track_ptrs(context))
+            _dbg(context.scene, f"→ PH_DETECT enter, pre_ptrs={len(self.pre_ptrs) if self.pre_ptrs else 0}, target_frame={self.target_frame}")
             self.phase = PH_DETECT
             return {'RUNNING_MODAL'}
 
         # PHASE 3: DETECT
         if self.phase == PH_DETECT:
-            # Guard: Vermeide 0.000-Threshold-Schleifen aus vorherigen Läufen.
-            # Falls detect.py den letzten Threshold in der Szene als 0.0 abgelegt hat,
-            # clampen wir hier auf einen sinnvollen Default (0.75).
+            # **WICHTIG**: Baseline vor JEDER Detect-Runde aktualisieren,
+            # damit DISTANZE neue Marker korrekt gegen den aktuellen Stand bewertet.
+            try:
+                self.pre_ptrs = set(_snapshot_track_ptrs(context))
+                _dbg(context.scene, f"PH_DETECT baseline refreshed: pre_ptrs={len(self.pre_ptrs) if self.pre_ptrs else 0}")
+            except Exception as _exc:
+                _dbg(context.scene, f"baseline snapshot failed: {type(_exc).__name__}: {_exc}")
+
+            # Guard 1: Vermeide 0.000-Threshold-Schleifen aus vorherigen Läufen.
+            # Wenn unser interner Threshold ungültig ist, nicht weiterreichen.
             try:
                 scn = context.scene
+                if (self.detection_threshold is not None) and (float(self.detection_threshold) <= 1e-6):
+                    _dbg(scn, f"Guard1: drop internal detection_threshold={self.detection_threshold} → None")
+                    self.detection_threshold = None
                 _lt = float(scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
                 if _lt <= 1e-6:
+                    _dbg(scn, f"Guard1: scene[{DETECT_LAST_THRESHOLD_KEY}]={_lt} → 0.75")
                     scn[DETECT_LAST_THRESHOLD_KEY] = 0.75
-            except Exception:
-                pass
+            except Exception as _exc:
+                _dbg(context.scene, f"Guard1 exception: {type(_exc).__name__}: {_exc}")
 
             # Beim ersten Detect-Aufruf wird kein Threshold übergeben (None → Standardwert)
             _kwargs: dict[str, object] = {"start_frame": self.target_frame}
@@ -516,16 +543,55 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception:
                 _kwargs["repeat_count"] = 0
             _kwargs["match_search_size"] = True
+            # (optional) Baseline auch an detect.py geben – nützlich für Dedupe/Diag.
+            _kwargs["pre_ptrs"] = self.pre_ptrs
+            _dbg(context.scene, f"run_detect_once kwargs="
+                                f"start_frame={_kwargs.get('start_frame')}, "
+                                f"threshold={_kwargs.get('threshold')}, "
+                                f"repeat_count={_kwargs.get('repeat_count')}, "
+                                f"match_search_size={_kwargs.get('match_search_size')}")
             rd = run_detect_once(context, **_kwargs)
             if rd.get("status") != "READY":
+                _dbg(context.scene, f"DETECT FAILED → {rd}")
                 return self._finish(context, info=f"DETECT FAILED → {rd}", cancelled=True)
             new_cnt = int(rd.get("new_tracks", 0))
+            _dbg(context.scene, f"DETECT ret: new_tracks={new_cnt}, thr_ret={rd.get('threshold')}, "
+                                f"margin_px={rd.get('margin_px')}, min_distance_px={rd.get('min_distance_px')}")
             # Merke den verwendeten Threshold für spätere Anpassungen
             try:
-                self.detection_threshold = float(rd.get("threshold", self.detection_threshold))
-            except Exception:
-                pass
+                _ret_thr = rd.get("threshold", self.detection_threshold)
+                self.detection_threshold = float(_ret_thr) if _ret_thr is not None else self.detection_threshold
+                # Guard 2: Rückgabewert sanitisieren
+                if (self.detection_threshold is None) or (self.detection_threshold <= 1e-6):
+                    self.detection_threshold = 0.75
+                    # Spiegeln, damit detect.py beim nächsten Lauf einen sinnvollen Default sieht
+                    try:
+                        scn[DETECT_LAST_THRESHOLD_KEY] = 0.75
+                        _dbg(scn, f"Guard2: sanitize thr→0.75 (scene mirror)")
+                    except Exception:
+                        pass
+            except Exception as _exc:
+                _dbg(context.scene, f"Guard2 exception: {type(_exc).__name__}: {_exc}")
+            # Leichte Endlos-Bremse, falls trotz Sanitisierung nichts vorangeht
+            try:
+                self.detect_retry_count = (self.detect_retry_count or 0) + 1
+                if (
+                    self.detect_retry_count >= 6
+                    and self.detection_threshold is not None
+                    and self.detection_threshold <= 0.001
+                ):
+                    # einmalig auf robusten Default setzen und Zähler resetten
+                    _dbg(context.scene, f"retry_limit hit ({self.detect_retry_count}) → force thr=0.75 + reset counter")
+                    self.detection_threshold = 0.75
+                    try:
+                        scn[DETECT_LAST_THRESHOLD_KEY] = 0.75
+                    except Exception:
+                        pass
+                    self.detect_retry_count = 0
+            except Exception as _exc:
+                _dbg(context.scene, f"retry counter exception: {type(_exc).__name__}: {_exc}")
             self.report({'INFO'}, f"DETECT @f{self.target_frame}: new={new_cnt}, thr={self.detection_threshold}")
+            _dbg(context.scene, f"→ PH_DISTANZE enter")
             self.phase = PH_DISTANZE
             return {'RUNNING_MODAL'}
 
@@ -645,7 +711,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                 scn.frame_set(curf)
                             except Exception:
                                 pass
-
+                    _dbg(context.scene, f"DISTANZE: eval={eval_res}, removed={removed}, kept={kept}, deleted_markers={deleted_markers}")
                     # Threshold neu berechnen:
                     # threshold = max(detection_threshold * ((anzahl_neu + 0.1) / marker_adapt), 0.0001)
                     try:
@@ -666,7 +732,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
                     self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res}, deleted_markers={deleted_markers}, thr→{self.detection_threshold}")
                     # Zurück zu DETECT mit neuem Threshold
+                    # (außerdem den Retry-Zähler zurücksetzen – sonst false positive Abbrüche)
+                    _dbg(context.scene, "→ back to PH_DETECT (after DISTANZE); reset detect_retry_count")
                     self.phase = PH_DETECT
+                    try:
+                        self.detect_retry_count = 0
+                    except Exception:
+                        pass
                     return {'RUNNING_MODAL'}
 
 
@@ -684,6 +756,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     wants_multi = False
                 print(f"[Coordinator] multi gate @frame={self.target_frame} "
                       f"count={self.repeat_count_for_target} → wants_multi={wants_multi}")
+                _dbg(context.scene, f"multi gate: wants_multi={wants_multi}, count={self.repeat_count_for_target}")
                 if isinstance(eval_res, dict) and str(eval_res.get("status", "")) == "ENOUGH" and wants_multi:
                     # Führe nur Multi‑Pass aus, wenn der Helper importiert werden konnte.
                     if run_multi_pass is not None:

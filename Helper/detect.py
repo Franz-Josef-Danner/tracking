@@ -1,9 +1,18 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Set, Tuple
 import bpy
+from typing import Iterable, Set, Dict, Any, Optional, Tuple
 import math
+
+# --- Leichtes Debug-Logging (gated via Scene["kt_debug"]) -------------------
+def dbg(*args):
+    try:
+        scn = bpy.context.scene
+        if bool(scn.get("kt_debug", False)):
+            print("[DETECT]", *args)
+    except Exception:
+        pass
 
 __all__ = [
     "perform_marker_detection",
@@ -207,6 +216,9 @@ def run_detect_basic(
             rc = int(repeat_count or 0)
         except Exception:
             rc = 0
+        dbg(f"enter run_detect_basic: start_frame={start_frame}, "
+            f"thr_in={thr}, rc={rc}, match_search_size={match_search_size}, "
+            f"triplet_mode={triplet_mode}")
         # Dynamische Margin-Anpassung je nach repeat_count
         try:
             ps = int(getattr(settings, "default_pattern_size", 0))
@@ -238,8 +250,8 @@ def run_detect_basic(
         p = (placement or "FRAME").upper()
 
         # Debug-Ausgabe der berechneten Margin und Min-Distanz
-        print(f"[Detect] frame={int(scn.frame_current)} "
-              f"threshold={thr:.3f} margin_px={margin} min_distance_px={min_dist}")
+        dbg(f"frame={int(scn.frame_current)} "
+            f"threshold={thr:.3f} margin_px={margin} min_distance_px={min_dist}")
 
         pre_ptrs, new_count = perform_marker_detection(
             clip=clip,
@@ -249,6 +261,7 @@ def run_detect_basic(
             margin_px=margin,
             min_distance_px=min_dist,
         )
+        dbg(f"post-detect: new_count={new_count}")
 
         # Nach der Marker-Detection: neu erzeugte Spuren als „neu“ markieren
         # Ermitteln Sie alle Tracks, die im Vergleich zu pre_ptrs neu sind. Diese
@@ -284,7 +297,14 @@ def run_detect_basic(
             pass
 
         # Threshold persistieren (nur Threshold, keine margin/min_dist Persistenz)
-        scn[DETECT_LAST_THRESHOLD_KEY] = float(thr)
+        thr = float(thr)
+        if thr <= 1e-6:
+            thr = 0.75
+        dbg(f"persist threshold → {thr}")
+        try:
+            bpy.context.scene[DETECT_LAST_THRESHOLD_KEY] = thr
+        except Exception:
+            pass
 
         return {
             "status": "READY",
