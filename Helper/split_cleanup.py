@@ -178,6 +178,7 @@ def _delete_first_segment(
 ) -> None:
     """
     Löscht das **erste** Segment (hart), ohne Marker des nachfolgenden Segments zu berühren.
+    Jetzt werden Marker **im Frame-Bereich** [f_start..f_end] entfernt – unabhängig von mute/is_estimated.
     """
     segs = _segments_by_consecutive_frames_unmuted(track)
     if len(segs) <= 0:
@@ -185,7 +186,8 @@ def _delete_first_segment(
     first = segs[0]
     if not first:
         return
-
+    f_start = int(first[0])
+    f_end = int(first[-1])
     with bpy.context.temp_override(
         window=window, screen=window.screen if window else None,
         area=area, region=region, space_data=space
@@ -193,7 +195,7 @@ def _delete_first_segment(
         for m in list(track.markers)[::-1]:
             try:
                 f = int(getattr(m, "frame", -10))
-                if f in first:
+                if f_start <= f <= f_end:
                     track.markers.delete_frame(f)
             except Exception:
                 pass
@@ -266,7 +268,7 @@ def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable
         for t in list(clip.tracking.tracks):
             _disable_estimated_markers(t)
         candidates = [t for t in list(clip.tracking.tracks)
-                      if len(_segments_by_consecutive_frames_unmuted(t)) >= 1]
+                      if len(get_track_segments(t)) >= 2]
         if not candidates:
             break
 
@@ -274,7 +276,7 @@ def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable
             _delete_first_segment(tr, area=area, region=region, space=space, window=window)
 
         dupe_candidates = [t for t in candidates
-                           if len(_segments_by_consecutive_frames_unmuted(t)) >= 1 and len(list(t.markers)) > 0]
+                           if len(get_track_segments(t)) >= 2 and len(list(t.markers)) > 0]
 
         for tr in dupe_candidates:
             new_tr = _dup_once_with_ui(context, area, region, space, tr)
@@ -337,10 +339,29 @@ def recursive_split_cleanup(context, area, region, space, tracks):
         fb = _segments_by_consecutive_frames_unmuted(t)
         if len(fb) > len(segs):
             segs = fb
-        if len(segs) >= 1:
+        if len(segs) >= 2:
             leftover_multi += 1
 
     # Safety
+    
+    # Finaler Purge: Marker außerhalb des Primärsegments hart löschen
+    for trk in list(clip.tracking.tracks):
+        try:
+            segs_all = get_track_segments(trk)
+            if not segs_all:
+                continue
+            keep = segs_all[0]  # erstes (frühestes) Segment behalten
+            fmin, fmax = int(keep[0]), int(keep[-1])
+            for m in list(trk.markers)[::-1]:
+                try:
+                    f = int(getattr(m, "frame", -10))
+                    if f < fmin or f > fmax:
+                        trk.markers.delete_frame(f)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     mute_unassigned_markers(clip.tracking.tracks)
 
     return {'FINISHED'}
