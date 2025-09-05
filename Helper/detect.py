@@ -9,7 +9,7 @@ import math
 def dbg(*args):
     try:
         scn = bpy.context.scene
-        if bool(scn.get("kt_debug", False)):
+        if bool(scn.get("kt_debug", True)):
             print("[DETECT]", *args)
     except Exception:
         pass
