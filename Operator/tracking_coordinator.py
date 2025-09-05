@@ -538,7 +538,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         pass
             except Exception:
                 pass
-            # Optional: leichte Endlosschleifenbremse
+            # Leichte Endlos-Bremse, falls trotz Sanitisierung nichts vorangeht
             try:
                 self.detect_retry_count = (self.detect_retry_count or 0) + 1
                 if (
@@ -546,9 +546,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     and self.detection_threshold is not None
                     and self.detection_threshold <= 0.001
                 ):
-                    # Reset auf robusten Wert und einmalig fortfahren
+                    # einmalig auf robusten Default setzen und Zähler resetten
                     self.detection_threshold = 0.75
-                    scn[DETECT_LAST_THRESHOLD_KEY] = 0.75
+                    try:
+                        scn[DETECT_LAST_THRESHOLD_KEY] = 0.75
+                    except Exception:
+                        pass
                     self.detect_retry_count = 0
             except Exception:
                 pass
