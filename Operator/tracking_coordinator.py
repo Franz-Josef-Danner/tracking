@@ -340,6 +340,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # Aktueller Detection-Threshold; wird nach jedem Detect-Aufruf aktualisiert.
     detection_threshold: float | None = None
     spike_threshold: float | None = None  # aktueller Spike-Filter-Schwellenwert (temporär)
+    # NEU: Rein lokaler Detect-Retry-Zähler (nicht mit Repeat/Anzahl verwechseln!)
+    detect_retry_count: int = 0
+    # NEU: Steuerung, ob detect() Margin=Search-Size erzwingen soll
+    use_match_search_size: bool = True
+    # NEU: Guard, damit im Regression-Pfad der Correlation-Bump nur einmal erfolgt
+    regression_corr_bumped: bool = False
     # Flag, ob der Bidirectional-Track bereits gestartet wurde. Diese
     # Instanzvariable dient dazu, den Start der Bidirectional‑Track-Phase
     # nur einmal auszulösen und anschließend auf den Abschluss zu warten.
@@ -384,6 +390,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self.bidi_before_counts = None
         self.prev_solve_avg = None
         self.repeat_count_for_target = None
+        self.detect_retry_count = 0
+        self.use_match_search_size = True
+        self.regression_corr_bumped = False
         
         wm = context.window_manager
         # --- Robust: valides Window sichern ---
@@ -485,6 +494,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
             # **WICHTIG**: Pre-Snapshot direkt vor DETECT
             self.pre_ptrs = set(_snapshot_track_ptrs(context))
+            # Reset für diesen Frame: Retry-Zähler & match_search_size aktiv
+            self.detect_retry_count = 0
+            self.use_match_search_size = True
             self.phase = PH_DETECT
             return {'RUNNING_MODAL'}
 
@@ -512,7 +524,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 _kwargs["repeat_count"] = int(self.repeat_count_for_target or 0)
             except Exception:
                 _kwargs["repeat_count"] = 0
-            _kwargs["match_search_size"] = True
+            _kwargs["match_search_size"] = bool(self.use_match_search_size)
             rd = run_detect_once(context, **_kwargs)
             if rd.get("status") != "READY":
                 return self._finish(context, info=f"DETECT FAILED → {rd}", cancelled=True)
@@ -661,25 +673,29 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     except Exception:
                         pass
 
-                    # Versuchszähler für diesen Frame erhöhen
-                    self.repeat_count_for_target = int(self.repeat_count_for_target or 1) + 1
-                    if self.repeat_count_for_target >= 4:  # nach 3 erfolglosen Versuchen abbrechen
+                    # *** WICHTIG: Retry-Zähler getrennt von Repeat/Anzahl! ***
+                    self.detect_retry_count = int(self.detect_retry_count or 0) + 1
+                    # Nach 3 erfolglosen Versuchen: match_search_size deaktivieren + Margin reset
+                    if self.detect_retry_count >= 3:
+                        try:
+                            _reset_margin_to_tracker_default(context)  # setzt default_margin (Tracker-Default)
+                        except Exception:
+                            pass
+                        self.use_match_search_size = False
+                        # optional: Threshold konservativ anheben (leichte Selektion)
+                        try:
+                            self.detection_threshold = max(float(self.detection_threshold or 0.75) * 1.1, 0.001)
+                        except Exception:
+                            self.detection_threshold = 0.75
                         self.report({'WARNING'},
-                            f"Frame {self.target_frame}: DETECT nach {self.repeat_count_for_target-1} Versuchen abgebrochen, Wechsel zu FIND_LOW")
-                        # Alle neuen Tracks dieses Frames entfernen (Cleanup)
-                        if clip and new_ptrs_after_cleanup:
-                            trk = clip.tracking
-                            for t in list(trk.tracks):
-                                if int(t.as_pointer()) in new_ptrs_after_cleanup:
-                                    trk.tracks.remove(t)  # Track löschen
-                        # Threshold zurücksetzen und Korrelations-Schwelle leicht erhöhen
-                        self.detection_threshold = None
-                        _bump_default_correlation_min(context)
-                        self.phase = PH_FIND_LOW
-                        return {'RUNNING_MODAL'}
-
-                    # Noch nicht abgebrochen: weiteren Detect-Durchlauf mit angepasstem Threshold
-                    self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res}, deleted_markers={deleted_markers}, thr→{self.detection_threshold}")
+                            f"DISTANZE @f{self.target_frame}: {status} – 3 Fehlversuche → "
+                            f"match_search_size=OFF, default_margin reset, thr={self.detection_threshold:.3f}")
+                    else:
+                        self.report({'INFO'},
+                            f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, "
+                            f"eval={eval_res}, deleted_markers={deleted_markers}, "
+                            f"thr→{self.detection_threshold} (retry={self.detect_retry_count})")
+                    # Weiter mit DETECT (ohne repeat_count-Erhöhung → keine Margin-Explosion)
                     self.phase = PH_DETECT
                     return {'RUNNING_MODAL'}
 
@@ -768,6 +784,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         # wird der Zyklus erneut bei PH_FIND_LOW beginnen.
                         self.phase = PH_BIDI
                         self.bidi_started = False
+                        # Erfolgreiche Spur: Retry + match_search_size zurücksetzen
+                        self.detect_retry_count = 0
+                        self.use_match_search_size = True
                         self.report({'INFO'}, (
                             f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, "
                             f"eval={eval_res} – Starte Bidirectional-Track (nach Multi @rep={self.repeat_count_for_target})"
@@ -783,6 +802,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     # Direkt in die Bidirectional-Phase wechseln
                     self.phase = PH_BIDI
                     self.bidi_started = False
+                    self.detect_retry_count = 0
+                    self.use_match_search_size = True
                     self.report({'INFO'}, (
                         f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, "
                         f"eval={eval_res} – Starte Bidirectional-Track (ohne Multi; rep={self.repeat_count_for_target})"
@@ -793,10 +814,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self.report({'INFO'}, (
                     f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res} – Sequenz abgeschlossen."
                 ))
+                # Abschluss ohne BIDI/MULTI – für sauberen Neustart
+                self.detect_retry_count = 0
+                self.use_match_search_size = True
                 return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
 
             # Wenn keine Auswertungsfunktion vorhanden ist, einfach abschließen
             self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}")
+            self.detect_retry_count = 0
+            self.use_match_search_size = True
             return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
         # PHASE: SOLVE_EVAL – Solve prüfen, loggen, Retry/Reduce steuern
         if self.phase == PH_SOLVE_EVAL:
@@ -898,7 +924,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                         self.prev_solve_avg = float(avg_err)
                                 except Exception:
                                     pass
-                                _bump_default_correlation_min(context)
+                                # Bump nur EINMAL pro Regressions-Einstieg
+                                if not bool(self.regression_corr_bumped):
+                                    _bump_default_correlation_min(context)
+                                    self.regression_corr_bumped = True
                                 self.phase = PH_DETECT
                                 self.report({'INFO'}, f"Regression: avg={float(avg_err):.4f} > prev={float(prev_err):.4f} → Worst-Frame f={worst_f} → DETECT")
                                 return {'RUNNING_MODAL'}
@@ -910,7 +939,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         self.prev_solve_avg = float(avg_err)
                 except Exception:
                     pass
-                _bump_default_correlation_min(context)
+                if not bool(self.regression_corr_bumped):
+                    _bump_default_correlation_min(context)
+                    self.regression_corr_bumped = True
                 self.phase = PH_FIND_LOW
                 return {'RUNNING_MODAL'}
             try:
@@ -925,7 +956,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if rmax and str(rmax.get("status")) == "FOUND":
                 if avg_err is not None:
                     self.prev_solve_avg = float(avg_err)  # Baseline fortschreiben
-                _bump_default_correlation_min(context)
+                if not bool(self.regression_corr_bumped):
+                    _bump_default_correlation_min(context)
+                    self.regression_corr_bumped = True
                 self.phase = PH_FIND_LOW
                 self.report({'INFO'}, "Markerabdeckung ungenügend → zurück zu FIND_LOW")
                 return {'RUNNING_MODAL'}
@@ -939,6 +972,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self.report({'INFO'}, f"Nächster Solve gestartet → {res}")
             except Exception as exc:
                 self.report({'WARNING'}, f"Nächster Solve konnte nicht gestartet werden: {exc}")
+            # Bei neuem Solve: Regression-Bump-Guard zurücksetzen
+            self.regression_corr_bumped = False
             return {'RUNNING_MODAL'}
 
         # PHASE: SPIKE_CYCLE – spike_filter → clean_short_segments → clean_short_tracks → split_cleanup → find_max_marker_frame
@@ -1069,6 +1104,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self.bidi_started = False
                 self.bidi_before_counts = None
                 self.repeat_count_for_target = None
+                self.detect_retry_count = 0
+                self.use_match_search_size = True
+                self.regression_corr_bumped = False
                 self.phase = PH_FIND_LOW
                 self.report({'INFO'}, "Bidirectional-Track abgeschlossen – neuer Zyklus beginnt")
                 return {'RUNNING_MODAL'}
