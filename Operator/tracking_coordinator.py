@@ -914,6 +914,36 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         do_reduce = abs(float(avg_err) - float(self.last_reduced_for_avg)) > 1e-6
                 except Exception:
                     do_reduce = True
+                # --- PRE-TELEMETRIE: aktueller Track-Zustand + Error-Verteilung ---
+                try:
+                    clip = _resolve_clip(context)
+                    trk = getattr(clip, "tracking", None) if clip else None
+                    tracks = list(getattr(trk, "tracks", [])) if trk else []
+                    total = len(tracks)
+                    sel = sum(1 for t in tracks if getattr(t, "select", False))
+                    muted = sum(1 for t in tracks if getattr(t, "mute", False))
+                    thr_err = float(context.scene.get("error_track", 2.0))
+                    errs = []
+                    if callable(error_value) and tracks:
+                        for t in tracks:
+                            try:
+                                ev = float(error_value(t))
+                                errs.append((t.name, ev, bool(getattr(t, "mute", False))))
+                            except Exception:
+                                pass
+                    errs.sort(key=lambda x: x[1], reverse=True)
+                    above_thr = sum(1 for _, e, _ in errs if e >= thr_err)
+                    top5 = [(n, round(e, 4), "MUTED" if m else "OK") for n, e, m in errs[:5]]
+                    delta_guard = None
+                    try:
+                        delta_guard = abs(float(avg_err) - float(self.last_reduced_for_avg)) if self.last_reduced_for_avg is not None and avg_err is not None else None
+                    except Exception:
+                        delta_guard = None
+                    print(f"[ReduceDBG] gate pre: do_reduce={do_reduce} avg_err={avg_err} prev_avg={self.last_reduced_for_avg} delta={delta_guard}")
+                    print(f"[ReduceDBG] pre stats: tracks={total} selected={sel} muted={muted} error_track(thr)={thr_err} above_thr={above_thr}")
+                    print(f"[ReduceDBG] pre top5: {top5}")
+                except Exception as _dbg_exc:
+                    print(f"[ReduceDBG] pre telemetry failed: {_dbg_exc}")
                 if do_reduce:
                     red = run_reduce_error_tracks(context)
                     deleted = int(red.get('deleted', 0) or 0)
@@ -923,9 +953,40 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         self.last_reduced_for_avg = float(avg_err)
                     # Transparente Telemetrie
                     if deleted > 0:
-                        self.report({'INFO'}, f"ReduceErrorTracks: deleted={deleted} tracks, names={names}")
+                        self.report({'INFO'}, f"ReduceErrorTracks: deleted={deleted} tracks")
+                        try:
+                            print(f"[ReduceDBG] reducer result: deleted={deleted} names={names}")
+                        except Exception:
+                            pass
                     else:
                         self.report({'WARNING'}, "ReduceErrorTracks: deleted=0 (No-Op) – gleiche Avg-Error-Lage, fahre mit rmax/next solve fort")
+                        try:
+                            print(f"[ReduceDBG] reducer result: deleted=0 names={names}")
+                        except Exception:
+                            pass
+                    # --- POST-TELEMETRIE: neuer Track-Zustand + Error-Verteilung ---
+                    try:
+                        clip2 = _resolve_clip(context)
+                        trk2 = getattr(clip2, "tracking", None) if clip2 else None
+                        tracks2 = list(getattr(trk2, "tracks", [])) if trk2 else []
+                        total2 = len(tracks2)
+                        muted2 = sum(1 for t in tracks2 if getattr(t, "mute", False))
+                        thr_err2 = float(context.scene.get("error_track", 2.0))
+                        errs2 = []
+                        if callable(error_value) and tracks2:
+                            for t in tracks2:
+                                try:
+                                    ev = float(error_value(t))
+                                    errs2.append((t.name, ev, bool(getattr(t, "mute", False))))
+                                except Exception:
+                                    pass
+                        errs2.sort(key=lambda x: x[1], reverse=True)
+                        above_thr2 = sum(1 for _, e, _ in errs2 if e >= thr_err2)
+                        top5_post = [(n, round(e, 4), "MUTED" if m else "OK") for n, e, m in errs2[:5]]
+                        print(f"[ReduceDBG] post stats: tracks={total2} muted={muted2} error_track(thr)={thr_err2} above_thr={above_thr2}")
+                        print(f"[ReduceDBG] post top5: {top5_post}")
+                    except Exception as _dbg2_exc:
+                        print(f"[ReduceDBG] post telemetry failed: {_dbg2_exc}")
             except Exception as _exc:
                 self.report({'WARNING'}, f"ReduceErrorTracks Fehler: {_exc}")
             try:
