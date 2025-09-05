@@ -586,7 +586,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 # Prüfe, ob Markeranzahl außerhalb des gültigen Bandes liegt
                 status = str(eval_res.get("status", "")) if isinstance(eval_res, dict) else ""
                 if status in {"TOO_FEW", "TOO_MANY"}:
-                    # *** Distanzé-Semantik: nur den MARKER am aktuellen Frame löschen ***
+                    # Marker am aktuellen Frame löschen (siehe bestehende Logik oben)
                     deleted_markers = 0
                     if clip and new_ptrs_after_cleanup:
                         trk = getattr(clip, "tracking", None)
@@ -643,7 +643,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                             except Exception:
                                 pass
 
-                    # Threshold neu berechnen:
+                    # Detect-Threshold adaptiv anpassen
                     # threshold = max(detection_threshold * ((anzahl_neu + 0.1) / marker_adapt), 0.0001)
                     try:
                         anzahl_neu = float(eval_res.get("count", 0))
@@ -661,8 +661,25 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     except Exception:
                         pass
 
+                    # Versuchszähler für diesen Frame erhöhen
+                    self.repeat_count_for_target = int(self.repeat_count_for_target or 1) + 1
+                    if self.repeat_count_for_target >= 4:  # nach 3 erfolglosen Versuchen abbrechen
+                        self.report({'WARNING'},
+                            f"Frame {self.target_frame}: DETECT nach {self.repeat_count_for_target-1} Versuchen abgebrochen, Wechsel zu FIND_LOW")
+                        # Alle neuen Tracks dieses Frames entfernen (Cleanup)
+                        if clip and new_ptrs_after_cleanup:
+                            trk = clip.tracking
+                            for t in list(trk.tracks):
+                                if int(t.as_pointer()) in new_ptrs_after_cleanup:
+                                    trk.tracks.remove(t)  # Track löschen
+                        # Threshold zurücksetzen und Korrelations-Schwelle leicht erhöhen
+                        self.detection_threshold = None
+                        _bump_default_correlation_min(context)
+                        self.phase = PH_FIND_LOW
+                        return {'RUNNING_MODAL'}
+
+                    # Noch nicht abgebrochen: weiteren Detect-Durchlauf mit angepasstem Threshold
                     self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res}, deleted_markers={deleted_markers}, thr→{self.detection_threshold}")
-                    # Zurück zu DETECT mit neuem Threshold
                     self.phase = PH_DETECT
                     return {'RUNNING_MODAL'}
 
