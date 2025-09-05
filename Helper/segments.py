@@ -8,7 +8,7 @@ def track_has_internal_gaps(track) -> bool:
 
         # Einmalig sortierte, deduplizierte Frames (als int)
         frames = sorted({int(getattr(m, "frame", -1)) for m in markers})
-        if len(frames) < 2:  # <3 ist unnötig restriktiv
+        if len(frames) <= 1:  # <3 ist unnötig restriktiv
             return False
 
         prev = frames[0]
