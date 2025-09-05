@@ -23,6 +23,34 @@ except Exception:
 
 __all__ = ("run_reduce_error_tracks", "get_avg_reprojection_error")
 
+def _ensure_clip_context(context: bpy.types.Context) -> dict:
+    """
+    Liefert ein temp_override-Dict fuer den CLIP_EDITOR, damit bpy.ops.clip.* stabil laeuft.
+    Faellt auf leeres Dict zurueck, wenn kein gueltiges Fenster/Area gefunden wird.
+    """
+    wm = bpy.context.window_manager
+    if not wm:
+        return {}
+    for win in wm.windows:
+        scr = getattr(win, 'screen', None)
+        if not scr:
+            continue
+        for area in scr.areas:
+            if area.type != 'CLIP_EDITOR':
+                continue
+            region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+            space = area.spaces.active if hasattr(area, 'spaces') else None
+            if region and space:
+                return {
+                    'window': win,
+                    'area': area,
+                    'region': region,
+                    'space_data': space,
+                    'scene': bpy.context.scene,
+                }
+    return {}
+
+
 
 def _resolve_clip(context: bpy.types.Context):
     clip = getattr(getattr(context, "space_data", None), "clip", None)
@@ -93,23 +121,79 @@ def run_reduce_error_tracks(
     count = 0
     k = min(int(max_to_delete), max(1, len(cand)))
     to_process = cand[:k]
-    for name, _e in to_process:
-        t = trk.tracks.get(name) if trk else None
-        if not t:
-            continue
-        try:
-            if do_mute:
-                t.mute = True
-            else:
-                trk.tracks.remove(t)
-            deleted_names.append(name)
-            count += 1
-        except Exception as _exc:
-            print(f"[ReduceDBG] reducer failed for {name}: {_exc}")
+    target_names = {name for name, _e in to_process}
 
+    if do_mute:
+        # — Variante: MUTE pro Track (kein Operator nötig)
+        for name in list(target_names):
+            t = trk.tracks.get(name) if trk else None
+            if not t:
+                continue
+            try:
+                t.mute = True
+                deleted_names.append(name)
+                count += 1
+            except Exception as _exc:
+                print(f"[ReduceDBG] reducer failed (mute) for {name}: {_exc}")
+    else:
+        # — Variante: DELETE via Operator (kontext-sicher)
+        # 1) Auswahl vorbereiten
+        try:
+            for t in tracks:
+                try:
+                    t.select = False
+                except Exception:
+                    pass
+            for t in tracks:
+                if t.name in target_names:
+                    try:
+                        t.select = True
+                    except Exception:
+                        pass
+        except Exception as _sel_exc:
+            print(f"[ReduceDBG] selection prep failed: {_sel_exc}")
+        # 2) Operator aufrufen (mit Override, falls möglich)
+        op_ok = False
+        try:
+            override = _ensure_clip_context(context)
+            if override:
+                with bpy.context.temp_override(**override):
+                    bpy.ops.clip.delete_track()
+            else:
+                bpy.ops.clip.delete_track()
+            op_ok = True
+        except Exception as _op_exc:
+            print(f"[ReduceDBG] operator delete_track failed: {_op_exc}")
+        # 3) Ergebnis prüfen & zählen; ggf. Fallback auf MUTE
+        try:
+            # Layer refresh, dann Existenz prüfen
+            try:
+                bpy.context.view_layer.update()
+            except Exception:
+                pass
+            for name in list(target_names):
+                still_there = bool(trk.tracks.get(name)) if trk else False
+                if not still_there:
+                    deleted_names.append(name)
+                    count += 1
+        except Exception as _chk_exc:
+            print(f"[ReduceDBG] post-delete check failed: {_chk_exc}")
+        # Falls der Operator nichts gelöscht hat, auf MUTE ausweichen (damit der Zyklus vorankommt).
+        if count == 0:
+            print("[ReduceDBG] operator deletion had no effect -> fallback to MUTE for targets")
+            for name in list(target_names):
+                t = trk.tracks.get(name) if trk else None
+                if not t:
+                    continue
+                try:
+                    t.mute = True
+                    deleted_names.append(name)
+                    count += 1
+                except Exception as _exc:
+                    print(f"[ReduceDBG] reducer failed (mute-fallback) for {name}: {_exc}")
     print(f"[ReduceDBG] reducer summary: affected={count}")
     return {
-        "deleted": count,
+        "deleted": count,  # Anzahl betroffener Tracks (deleted oder mute-fallback)
         "names": deleted_names,
         "thr": thr,
         "policy": {
