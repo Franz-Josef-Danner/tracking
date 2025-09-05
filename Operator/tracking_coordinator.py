@@ -831,7 +831,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         min_cov = 10
                     try:
                         r = run_find_max_error_frame(context, include_muted=False, min_tracks_per_frame=min_cov,
-                                                     frame_min=None, frame_max=None, return_top_k=5, verbose=True)
+                                                     frame_min=int(scn.frame_start), frame_max=int(scn.frame_end),
+                                                     return_top_k=5, verbose=True)
                     except Exception as _exc:
                         r = {"status": "ERROR", "reason": str(_exc)}
                     if r.get("status") == "FOUND":
