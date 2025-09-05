@@ -8,8 +8,6 @@ from .naming import _safe_name
 from .segments import get_track_segments, track_has_internal_gaps
 from .mute_ops import mute_marker_path, mute_unassigned_markers
 
-_VERBOSE_SCENE_KEY = "tco_verbose_split"
-
 def _disable_estimated_markers(track: bpy.types.MovieTrackingTrack) -> None:
     """Alle 'estimated' Marker in diesem Track hart auf 'disabled' setzen."""
     try:
@@ -27,18 +25,6 @@ def _disable_estimated_markers(track: bpy.types.MovieTrackingTrack) -> None:
                 except Exception:
                     pass
     except Exception:
-        pass
-
-
-def _is_verbose(scene) -> bool:
-    try:
-        return bool(scene.get(_VERBOSE_SCENE_KEY, False))
-    except Exception:
-        return False
-
-
-def _log(scene, msg: str) -> None:
-    if _is_verbose(scene):
         pass
 
 # ------------------------------------------------------------
@@ -255,7 +241,6 @@ def _dup_once_with_ui(context, area, region, space, track) -> bpy.types.MovieTra
                     new_track = t
                     break
         except Exception as ex:
-            _log(context.scene, f"copy/paste failed: {ex!r}")
             new_track = None
         # sanft UI/Depsgraph refresh
         try:
@@ -289,7 +274,6 @@ def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable
 
     # -------- Phase 1: Startliste einfrieren --------
     start_list = list(seed_tracks)
-    _log(scene, f"IterSplit: phase-1 seed_count={len(start_list)}")
     for tr in list(start_list):
         # Ergänzung: zuerst alle 'estimated' Marker auf disabled setzen
         _disable_estimated_markers(tr)
@@ -297,7 +281,6 @@ def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable
         if len(segs) >= 1:
             new_tr = _dup_once_with_ui(context, area, region, space, tr)
             if new_tr:
-                _log(scene, f"IterSplit: dup '{tr.name}' → '{new_tr.name}' (phase-1)")
             _delete_all_segments_after_first(tr, area=area, region=region, space=space, window=window)
 
     # -------- Phase 2: Wiederholung bis stabil --------
@@ -308,10 +291,8 @@ def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable
         candidates = [t for t in list(clip.tracking.tracks)
                       if len(_segments_by_consecutive_frames_unmuted(t)) >= 1]
         if not candidates:
-            _log(scene, f"IterSplit: converged after {rounds-1} round(s)")
             break
 
-        _log(scene, f"IterSplit: round {rounds} candidates={len(candidates)}")
 
         # 2a) In allen Kandidaten zuerst das **erste Segment löschen**
         for tr in candidates:
@@ -324,7 +305,6 @@ def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable
         # und das unerwünschte Kürzen von stabilen Ein-Segment-Tracks.
         dupe_candidates = [t for t in candidates
                            if len(_segments_by_consecutive_frames_unmuted(t)) >= 1 and len(list(t.markers)) > 0]
-        _log(scene, f"IterSplit: round {rounds} post-delete → dupe_candidates={len(dupe_candidates)}")
 
         # 2b) Danach nur diese Kandidaten **einmal duplizieren**
         dup_map = {}
@@ -332,7 +312,7 @@ def _iterative_segment_split(context, area, region, space, seed_tracks: Iterable
             new_tr = _dup_once_with_ui(context, area, region, space, tr)
             if new_tr:
                 dup_map[tr] = new_tr
-                _log(scene, f"IterSplit: dup '{tr.name}' → '{new_tr.name}' (round {rounds})")
+                pass
 
         # 2c) Im **Original** alles nach dem ersten Segment löschen (nur dort, wo >= 1 Segmente sind)
         for tr in dupe_candidates:
@@ -389,9 +369,9 @@ def recursive_split_cleanup(context, area, region, space, tracks):
 
     # 2) Delete-Policy
     try:
-        min_len = int(scene.get("tco_min_seg_len", 10))
+        min_len = int(scene.get("tco_min_seg_len", 25))
     except Exception:
-        min_len = 10
+        min_len = 25
     deleted = _delete_tracks_by_max_unmuted_seg_len(context, clip.tracking.tracks, min_len=min_len)
 
     # --- Audit nach Delete ---
@@ -406,17 +386,8 @@ def recursive_split_cleanup(context, area, region, space, tracks):
     if leftover_multi == 0:
         pass
 
-    # --- Debug: Verbliebene Multi-Segment-Tracks ausgeben ---
-    for t in clip.tracking.tracks:
-        segs = _segments_by_consecutive_frames_unmuted(t)
-        if len(segs) >= 1:
-            print(f"[SplitCleanup-DEBUG] Track '{t.name}' hat {len(segs)} Segmente:")
-            for i, seg in enumerate(segs, start=1):
-                if not seg:
-                    continue
-                start_frame = seg[0]
-                end_frame = seg[-1]
-                print(f"    Segment {i}: Start={start_frame}, Ende={end_frame}")
+    # Debug-Ausgaben vollständig entfernt.
+
 
     # 3) Safety
     mute_unassigned_markers(clip.tracking.tracks)
