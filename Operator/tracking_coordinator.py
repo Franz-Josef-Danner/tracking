@@ -874,6 +874,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                 # **WICHTIG**: Pre-Snapshot direkt vor DETECT (konsistent zum JUMP-Pfad)
 
                                 self.pre_ptrs = set(_snapshot_track_ptrs(context))
+                                # WICHTIG: Detect-Pfad aus Solve → exakt wie beim Start behandeln
+                                # (sonst bleiben alte Retry-/Margin-States hängen und es kann loopen)
+                                self.detect_retry_count = 0
+                                self.use_match_search_size = True
                                 # WICHTIG: Baseline auf den aktuellen Solve setzen,
                                 # damit der nächste Vergleich gegen *#04* (last solve) läuft.
                                 try:
