@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 from __future__ import annotations
 import bpy
-from typing import Iterable, List, Tuple, Set
+from typing import Iterable, List, Tuple, Set, Dict, Any, Optional
 
 from .naming import _safe_name
 from .segments import get_track_segments, track_has_internal_gaps
@@ -436,14 +436,89 @@ def _split_track_by_all_segments(
 # Öffentliche Hauptfunktion
 # ------------------------------------------------------------
 
-def recursive_split_cleanup(context, area, region, space, tracks):
-    scene = context.scene
-    clip = space.clip
+def _find_clip_editor_override() -> Dict[str, Any]:
+    """Suche eine CLIP_EDITOR-Area und baue ein temp_override-Dict.
+    Liefert ggf. {} wenn nichts gefunden wird."""
+    wm = getattr(bpy.context, "window_manager", None)
+    if not wm:
+        return {}
+    for win in wm.windows:
+        scr = getattr(win, "screen", None)
+        if not scr:
+            continue
+        for area in scr.areas:
+            if area.type != "CLIP_EDITOR":
+                continue
+            region = next((r for r in area.regions if r.type == "WINDOW"), None)
+            space = area.spaces.active if hasattr(area, "spaces") else None
+            if region and space:
+                return {"window": win, "area": area, "region": region, "space_data": space, "scene": bpy.context.scene}
+    return {}
+
+def _resolve_clip(context: bpy.types.Context, space: Optional[Any]) -> Optional[Any]:
+    """Robuste Clip-Auflösung."""
+    clip = getattr(space, "clip", None) if space else None
+    if clip:
+        return clip
+    clip = getattr(context, "edit_movieclip", None)
+    if clip:
+        return clip
+    try:
+        # Fallback: irgendeinen existierenden Clip nehmen
+        return next(iter(bpy.data.movieclips)) if bpy.data.movieclips else None
+    except Exception:
+        return None
+
+def _to_list(value) -> list:
+    try:
+        return list(value) if value is not None else []
+    except Exception:
+        return []
+
+def recursive_split_cleanup(context,
+                            area: Optional[Any] = None,
+                            region: Optional[Any] = None,
+                            space: Optional[Any] = None,
+                            tracks: Optional[Any] = None,
+                            **kwargs):
+    """
+    Robust callable:
+      - Akzeptiert zusätzliche kwargs (z. B. window, space_data, scene) ohne TypeError.
+      - Löst fehlende area/region/space via aktivem CLIP_EDITOR oder Kontext/Fallback.
+      - Akzeptiert tracks als bpy_prop_collection oder list; None → aus clip.tracking.tracks.
+      - Führt No-Op/FINISHED aus, wenn kein Clip gefunden wird oder keine Tracks vorhanden sind.
+    """
+    # 1) space aliasieren, falls über override gekommen
+    if space is None:
+        space = kwargs.get("space_data", None)
+    # 2) area/region ggf. aus override ziehen
+    if area is None:
+        area = kwargs.get("area", None)
+    if region is None:
+        region = kwargs.get("region", None)
+    # 3) Wenn nichts vorhanden → einen Clip-Editor suchen
+    if space is None or area is None or region is None:
+        ov = _find_clip_editor_override()
+        area   = area   or ov.get("area")
+        region = region or ov.get("region")
+        space  = space  or ov.get("space_data")
+    # 4) Clip robust auflösen
+    clip = _resolve_clip(context, space)
     if clip is None:
+        # Kein Clip → sauber abbrechen
         return {'CANCELLED'}
+    # 5) Tracks normalisieren
+    if tracks is None:
+        trk = getattr(clip, "tracking", None)
+        tracks = getattr(trk, "tracks", []) if trk else []
+    tracks_list = _to_list(tracks)
+    if len(tracks_list) == 0:
+        # Nichts zu tun → OK zurück
+        return {'FINISHED'}
+    scene = context.scene
 
     # Audit vor dem Split (keine Ausgabe, nur Konsistenz)
-    for t in tracks:
+    for t in tracks_list:
         segs = list(get_track_segments(t))
         fb = _segments_by_consecutive_frames_unmuted(t)
         if len(fb) > len(segs):
@@ -457,13 +532,13 @@ def recursive_split_cleanup(context, area, region, space, tracks):
 
     # Deterministischer One-Pass-Split pro Track
     try:
-        for t in list(tracks):
+        for t in list(tracks_list):
             _split_track_by_all_segments(context, area, region, space, t)
     except Exception:
         pass
 
     # Audit nach Split
-    for t in clip.tracking.tracks:
+    for t in getattr(getattr(clip, "tracking", None), "tracks", []):
         segs = list(get_track_segments(t))
         fb = _segments_by_consecutive_frames_unmuted(t)
         if len(fb) > len(segs):
@@ -479,13 +554,14 @@ def recursive_split_cleanup(context, area, region, space, tracks):
         min_len = int(scene.get("tco_min_seg_len", 25))
     except Exception:
         min_len = 25
-    del_short = _delete_tracks_by_max_unmuted_seg_len(context, clip.tracking.tracks, min_len=min_len)
+    clip_tracks = getattr(getattr(clip, "tracking", None), "tracks", [])
+    del_short = _delete_tracks_by_max_unmuted_seg_len(context, clip_tracks, min_len=min_len)
     if _dbg_enabled():
         print(f"[SplitDBG][delete_short] min_len={min_len} deleted={del_short}")
 
     # Audit nach Delete (intern)
     leftover_multi = 0
-    for t in clip.tracking.tracks:
+    for t in clip_tracks:
         segs = list(get_track_segments(t))
         fb = _segments_by_consecutive_frames_unmuted(t)
         if len(fb) > len(segs):
@@ -499,9 +575,12 @@ def recursive_split_cleanup(context, area, region, space, tracks):
             )
 
     # Optionaler Hygiene-Pass: sehr kurze Tracks entfernen und Mute-Aufräumung
-    mute_unassigned_markers(clip.tracking.tracks)
+    try:
+        mute_unassigned_markers(clip_tracks)
+    except Exception:
+        pass
     if _dbg_enabled():
-        total = len(list(clip.tracking.tracks))
+        total = len(list(clip_tracks))
         print(f"[SplitDBG][finish] tracks_total={total} leftover_multi={leftover_multi}")
 
     return {'FINISHED'}
