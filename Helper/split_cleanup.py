@@ -8,6 +8,16 @@ from .naming import _safe_name
 from .segments import get_track_segments, track_has_internal_gaps
 from .mute_ops import mute_marker_path, mute_unassigned_markers
 
+# --------------------------------------------------------------------------
+# Console logging
+# --------------------------------------------------------------------------
+# All console outputs in this module are disabled.  To aid debugging without
+# writing to stdout, use the no-op `_log` function instead of `print`.
+def _log(*args: Any, **kwargs: Any) -> None:
+    """No-op debug logger. Replace calls to print with this to silence output."""
+    # Intentionally do nothing to suppress console output.
+    return None
+
 
 def _disable_estimated_markers(track: bpy.types.MovieTrackingTrack) -> None:
     """Alle 'estimated' Marker in diesem Track hart auf 'disabled' setzen."""
@@ -25,7 +35,8 @@ def _disable_estimated_markers(track: bpy.types.MovieTrackingTrack) -> None:
                     pass
                 cnt += 1
         if bpy.context and getattr(bpy.context, "scene", None) and bpy.context.scene.get("tco_debug_split", True):
-            print(f"[SplitDBG][disable_estimated] track={track.name} estimated->muted={cnt}")
+            # Silence console output by routing through the no-op logger.
+            _log(f"[SplitDBG][disable_estimated] track={track.name} estimated->muted={cnt}")
     except Exception:
         pass
 
@@ -95,7 +106,8 @@ def _segments_by_consecutive_frames_unmuted(track) -> List[List[int]]:
         segs.append(curr)
     if _dbg_enabled():
         try:
-            print(
+            # Silence console output via the no-op logger.
+            _log(
                 f"[SegDBG][unmuted_segments] track={track.name} "
                 f"unmuted_frames={len(frames)} segs={len(segs)} "
                 f"sample0={segs[0][:8] if segs else []}"
@@ -123,7 +135,8 @@ def _keep_exact_frames(
     ):
         if _dbg_enabled():
             snap_before = _snapshot_track(track)
-            print(
+            # Silence console output via the no-op logger.
+            _log(
                 f"[SplitDBG][keep_exact] track={track.name} keep={len(keep_frames)} "
                 f"keep_head={sorted(list(keep_frames))[:8]}"
             )
@@ -144,7 +157,8 @@ def _keep_exact_frames(
             segs_all = list(get_track_segments(track))
             segs_unm = _segments_by_consecutive_frames_unmuted(track)
             snap_after = _snapshot_track(track)
-            print(
+            # Silence console output via the no-op logger.
+            _log(
                 f"[SplitDBG][keep_exact][post] track={track.name} "
                 f"segs_all={len(segs_all)} segs_unmuted={len(segs_unm)} "
                 f"snapshot_before={snap_before} snapshot_after={snap_after}"
@@ -257,7 +271,8 @@ def _delete_all_segments_after_first(
             except Exception:
                 pass
         if _dbg_enabled():
-            print(
+            # Silence console output via the no-op logger.
+            _log(
                 f"[SplitDBG][delete_after_first] track={track.name} "
                 f"first_last={f_last} start_cut={start_cut} deleted={delcnt}"
             )
@@ -301,7 +316,8 @@ def _trim_to_first_unmuted_segment(
         if _dbg_enabled():
             segs_all = list(get_track_segments(track))
             segs_unm = _segments_by_consecutive_frames_unmuted(track)
-            print(
+            # Silence console output via the no-op logger.
+            _log(
                 f"[SplitDBG][trim_first_unmuted] track={track.name} "
                 f"keep={len(keep_frames)} deleted={delcnt} "
                 f"segs_all={len(segs_all)} segs_unmuted={len(segs_unm)}"
@@ -339,7 +355,8 @@ def _delete_first_segment(
             except Exception:
                 pass
         if _dbg_enabled():
-            print(
+            # Silence console output via the no-op logger.
+            _log(
                 f"[SplitDBG][delete_first_segment] track={track.name} "
                 f"range=[{f_start}..{f_end}] deleted={delcnt}"
             )
@@ -368,7 +385,8 @@ def _dup_once_with_ui(context, area, region, space, track) -> bpy.types.MovieTra
         except Exception:
             new_track = None
         if _dbg_enabled():
-            print(f"[SplitDBG][dup] base={track.name} new={(new_track.name if new_track else None)}")
+            # Silence console output via the no-op logger.
+            _log(f"[SplitDBG][dup] base={track.name} new={(new_track.name if new_track else None)}")
         try:
             deps = context.evaluated_depsgraph_get()
             deps.update()
@@ -398,7 +416,8 @@ def _split_track_by_all_segments(
     if len(segs_all) <= 1:
         return
     if _dbg_enabled():
-        print(
+        # Silence console output via the no-op logger.
+        _log(
             f"[SplitDBG][split_by_all] track={track.name} segs={len(segs_all)} "
             f"heads={[s[:3] for s in segs_all[:3]]}"
         )
@@ -419,7 +438,8 @@ def _split_track_by_all_segments(
         _keep_exact_frames(trk, keep, area=area, region=region, space=space, window=window)
         if _dbg_enabled():
             segs_now = list(get_track_segments(trk))
-            print(
+            # Silence console output via the no-op logger.
+            _log(
                 f"[SplitDBG][split_by_all][post] track={trk.name} segs_now={len(segs_now)}"
             )
     # Depsgraph/UI refresh (defensiv)
@@ -525,7 +545,8 @@ def recursive_split_cleanup(context,
             segs = fb
         if _dbg_enabled():
             snap = _snapshot_track(t)
-            print(
+            # Silence console output via the no-op logger.
+            _log(
                 f"[SplitDBG][pre_audit] track={t.name} segs_all={len(get_track_segments(t))} "
                 f"segs_unmuted={len(_segments_by_consecutive_frames_unmuted(t))} snapshot={snap}"
             )
@@ -544,7 +565,8 @@ def recursive_split_cleanup(context,
         if len(fb) > len(segs):
             segs = fb
         if _dbg_enabled():
-            print(
+            # Silence console output via the no-op logger.
+            _log(
                 f"[SplitDBG][post_split_audit] track={t.name} segs_all={len(get_track_segments(t))} "
                 f"segs_unmuted={len(_segments_by_consecutive_frames_unmuted(t))}"
             )
@@ -557,7 +579,8 @@ def recursive_split_cleanup(context,
     clip_tracks = getattr(getattr(clip, "tracking", None), "tracks", [])
     del_short = _delete_tracks_by_max_unmuted_seg_len(context, clip_tracks, min_len=min_len)
     if _dbg_enabled():
-        print(f"[SplitDBG][delete_short] min_len={min_len} deleted={del_short}")
+        # Silence console output via the no-op logger.
+        _log(f"[SplitDBG][delete_short] min_len={min_len} deleted={del_short}")
 
     # Audit nach Delete (intern)
     leftover_multi = 0
@@ -569,7 +592,8 @@ def recursive_split_cleanup(context,
         if len(segs) >= 2:
             leftover_multi += 1
         if _dbg_enabled() and len(segs) >= 2:
-            print(
+            # Silence console output via the no-op logger.
+            _log(
                 f"[SplitDBG][leftover] track={t.name} segs_all={len(get_track_segments(t))} "
                 f"segs_unmuted={len(_segments_by_consecutive_frames_unmuted(t))}"
             )
@@ -581,6 +605,7 @@ def recursive_split_cleanup(context,
         pass
     if _dbg_enabled():
         total = len(list(clip_tracks))
-        print(f"[SplitDBG][finish] tracks_total={total} leftover_multi={leftover_multi}")
+        # Silence console output via the no-op logger.
+        _log(f"[SplitDBG][finish] tracks_total={total} leftover_multi={leftover_multi}")
 
     return {'FINISHED'}
