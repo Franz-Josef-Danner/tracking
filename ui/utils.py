@@ -1,5 +1,6 @@
 import bpy
 
+
 def tag_clip_redraw() -> None:
     try:
         wm = bpy.context.window_manager
