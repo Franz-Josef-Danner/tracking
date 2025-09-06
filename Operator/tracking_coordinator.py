@@ -8,16 +8,8 @@ tracking_coordinator.py â€“ Streng sequentieller, MODALER Orchestrator
 from __future__ import annotations
 import bpy
 
+# (No console logger; all former no-op logging removed)
 # ---------------------------------------------------------------------------
-# Console logging
-# ---------------------------------------------------------------------------
-# To avoid cluttering the console with debug and status messages, all direct
-# calls to ``print()`` in this module have been replaced by a no-op logger.
-# The ``_log`` function can be used in place of ``print`` to completely
-# suppress output. UI messages should continue to be emitted via ``self.report``.
-def _log(*args, **kwargs):
-    """No-op logger used to suppress console output."""
-    return None
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame
 from ..Helper.jump_to_frame import run_jump_to_frame
 from ..Helper.detect import run_detect_once
@@ -215,9 +207,8 @@ def _reset_margin_to_tracker_default(context: bpy.types.Context) -> None:
             pattern_size = max(1, int(width / 100)) if width > 0 else 8
             base_margin = pattern_size * 2
         settings.default_margin = int(base_margin)
-        _log(f"[Coordinator] default_margin reset â†’ {int(base_margin)} (skip multi)")
-    except Exception as exc:
-        _log(f"[Coordinator] WARN: margin reset failed: {exc}")
+    except Exception:
+        pass
 
 def _marker_count_by_selected_track(context: bpy.types.Context) -> dict[str, int]:
     """Anzahl Marker je *ausgewÃ¤hltem* Track (Name -> Count)."""
@@ -250,11 +241,10 @@ def _apply_refine_focal_flag(context: bpy.types.Context, flag: bool) -> None:
         settings = getattr(tr, "settings", None) if tr else None
         if settings and hasattr(settings, "refine_intrinsics_focal_length"):
             settings.refine_intrinsics_focal_length = bool(flag)
-            _log(f"[Coordinator] refine_intrinsics_focal_length â†’ {bool(flag)}")
         else:
-            _log("[Coordinator] WARN: refine_intrinsics_focal_length nicht verfÃ¼gbar")
-    except Exception as exc:
-        _log(f"[Coordinator] WARN: refine-Flag konnte nicht gesetzt werden: {exc}")
+            pass
+    except Exception:
+        pass
 
 # --- NEU: weitere Refine-Flags spiegeln --------------------------------------
 def _apply_refine_principal_flag(context: bpy.types.Context, flag: bool) -> None:
@@ -264,11 +254,10 @@ def _apply_refine_principal_flag(context: bpy.types.Context, flag: bool) -> None
         settings = getattr(getattr(clip, "tracking", None), "settings", None) if clip else None
         if settings and hasattr(settings, "refine_intrinsics_principal_point"):
             settings.refine_intrinsics_principal_point = bool(flag)
-            _log(f"[Coordinator] refine_intrinsics_principal_point â†’ {bool(flag)}")
         else:
-            _log("[Coordinator] WARN: refine_intrinsics_principal_point nicht verfÃ¼gbar")
-    except Exception as exc:
-        _log(f"[Coordinator] WARN: principal-point Flag konnte nicht gesetzt werden: {exc}")
+            pass
+    except Exception:
+        pass
 
 def _apply_refine_radial_flag(context: bpy.types.Context, flag: bool) -> None:
     """Setzt tracking.settings.refine_intrinsics_radial_distortion gemÃ¤ÃŸ flag."""
@@ -277,11 +266,10 @@ def _apply_refine_radial_flag(context: bpy.types.Context, flag: bool) -> None:
         settings = getattr(getattr(clip, "tracking", None), "settings", None) if clip else None
         if settings and hasattr(settings, "refine_intrinsics_radial_distortion"):
             settings.refine_intrinsics_radial_distortion = bool(flag)
-            _log(f"[Coordinator] refine_intrinsics_radial_distortion â†’ {bool(flag)}")
         else:
-            _log("[Coordinator] WARN: refine_intrinsics_radial_distortion nicht verfÃ¼gbar")
-    except Exception as exc:
-        _log(f"[Coordinator] WARN: radial-distortion Flag konnte nicht gesetzt werden: {exc}")
+            pass
+    except Exception:
+        pass
 
 def _apply_refine_flags(context: bpy.types.Context, *, focal: bool, principal: bool, radial: bool) -> None:
     """Komfort: alle drei Refine-Flags konsistent setzen."""
@@ -314,9 +302,8 @@ def _bump_default_correlation_min(context: bpy.types.Context) -> None:
         val = float(getattr(settings, "default_correlation_min", 0.75))
         new_val = min(0.98, val + 0.001)
         settings.default_correlation_min = new_val
-        _log(f"[Coordinator] default_correlation_min bumped â†’ {new_val:.3f}")
-    except Exception as exc:
-        _log(f"[Coordinator] WARN: correlation bump failed: {exc}")
+    except Exception:
+        pass
 
 def _bootstrap(context: bpy.types.Context) -> None:
     """Minimaler Reset + sinnvolle Defaults; Helper initialisieren."""
@@ -705,8 +692,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     wants_multi = (_cnt_now >= 6)
                 except Exception:
                     wants_multi = False
-                # Suppress console output using the no-op logger
-                _log(f"[Coordinator] multi gate @frame={self.target_frame} count={self.repeat_count_for_target} â†’ wants_multi={wants_multi}")
+                # (former no-op log removed)
                 if isinstance(eval_res, dict) and str(eval_res.get("status", "")) == "ENOUGH" and wants_multi:
                     # FÃ¼hre nur Multiâ€‘Pass aus, wenn der Helper importiert werden konnte.
                     if run_multi_pass is not None:
@@ -827,7 +813,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
             # 1) aktuellen Fehler messen & loggen
             avg_err = get_avg_reprojection_error(context)
-            _solve_log(context, avg_err)
 
             # Erfolgskriterium (Eval #1): Ziel erreicht â†’ harter Exit
             try:
@@ -931,7 +916,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # Beide Evaluierungen NICHT zutreffend â†’ jetzt gezielt reduzieren
             try:
                 do_reduce = True
-                import math as _m, traceback as _tb
+                import math as _m
                 try:
                     if (avg_err is not None) and (self.last_reduced_for_avg is not None):
                         # Reduktion nur einmal pro identischem avg_err (Float-Vergleich robust machen)
@@ -963,21 +948,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     top5 = [(n, round(e, 4), "MUTED" if m else "OK") for n, e, m, _sel in errs[:5]]
                     # Selektion/Policy Sichtbarkeit
                     sel_cnt = sum(1 for _, _e, _m, s in errs if s)
-                    _log(f"[ReduceDBG] gate pre: do_reduce={do_reduce} avg_err={avg_err} prev_avg={self.last_reduced_for_avg}")
-                    _log(f"[ReduceDBG] pre stats: tracks={total} selected={sel}/{sel_cnt} muted={muted} error_track(thr)={thr_err} above_thr={above_thr}")
-                    _log(f"[ReduceDBG] pre top5: {top5}")
-                    _log(f"[ReduceDBG] candidates(>=thr, unmuted): count={len(cands)} sample20={cands20}")
                     if (above_thr == 0) and (avg_err is not None) and (float(avg_err) > float(thr_err)):
-                        _log(f"[ReduceDBG] WARNING: metric mismatch â€“ per-track errors show no candidates while avg_err={avg_err:.4f} > thr={thr_err:.4f}")
-                    # Zero/NaN Anteile (optional)
-                    try:
-                        zero_cnt = sum(1 for _, e, _m, _sel in errs if abs(float(e)) < 1e-12)
-                        nan_cnt = sum(1 for _, e, _m, _sel in errs if not _m.isfinite(float(e)))
-                        _log(f"[ReduceDBG] zeros={zero_cnt} nans={nan_cnt}")
-                    except Exception:
                         pass
                 except Exception as _dbg_exc:
-                    _log(f"[ReduceDBG] pre telemetry failed: {_dbg_exc}")
+                    pass
                 if do_reduce:
                     # LÃ¶schbatch nach Vorgabe:
                     # k = round(avg_err / error_frame), min=1, max=10
@@ -997,7 +971,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     _den = err_frame if (err_frame and err_frame > 1e-9) else target_err if target_err > 1e-9 else 1.0
                     _k_raw = round(_avg / _den)
                     _k = max(1, min(5, int(_k_raw)))
-                    _log(f"[ReduceDBG] delete-k formula: avg={_avg:.4f} / err_frame={_den:.4f} -> k_raw={_k_raw} -> k={_k} (clamp 1..10)")
 
                     red = run_reduce_error_tracks(context, max_to_delete=_k)
                     deleted = int(red.get('deleted', 0) or 0)
@@ -1008,16 +981,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     # Transparente Telemetrie
                     if deleted > 0:
                         self.report({'INFO'}, f"ReduceErrorTracks: deleted={deleted} tracks (k={_k})")
-                        try:
-                            _log(f"[ReduceDBG] reducer result: deleted={deleted} names={names}")
-                        except Exception:
-                            pass
                     else:
                         self.report({'WARNING'}, "ReduceErrorTracks: deleted=0 (No-Op) â€“ gleiche Avg-Error-Lage, fahre mit rmax/next solve fort")
-                        try:
-                            _log(f"[ReduceDBG] reducer result: deleted=0 names={names}")
-                        except Exception:
-                            pass
                     # POST Telemetrie: neue Verteilung
                     try:
                         clip2 = _resolve_clip(context)
@@ -1033,11 +998,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                 pass
                         errs2.sort(reverse=True)
                         above_thr2 = sum(1 for e in errs2 if e >= thr2)
-                        _log(f"[ReduceDBG] post above_thr={above_thr2} top5={list(map(lambda x: round(x,4), errs2[:5]))}")
                     except Exception as _dbg2_exc:
-                        _log(f"[ReduceDBG] post telemetry failed: {_dbg2_exc}")
+                        pass
             except Exception as _exc:
-                _log("[ReduceDBG] EXCEPTION in run_reduce_error_tracks:\n" + _tb.format_exc())
                 self.report({'WARNING'}, f"ReduceErrorTracks Fehler: {_exc}")
             try:
                 rmax = run_find_max_marker_frame(context)
