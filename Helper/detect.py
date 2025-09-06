@@ -5,6 +5,16 @@ from typing import Any, Dict, Optional, Set, Tuple
 import bpy
 import math
 
+# ---------------------------------------------------------------------------
+# Console logging
+# ---------------------------------------------------------------------------
+# In order to suppress debug output during marker detection, this module
+# defines a no-op logger. All direct calls to ``print`` should be routed
+# through ``_log`` to avoid writing to stdout.
+def _log(*args, **kwargs):
+    """No-op logger used to suppress console output."""
+    return None
+
 __all__ = [
     "perform_marker_detection",
     "run_detect_basic",
@@ -64,7 +74,7 @@ def _detect_features(*, placement: str, margin: int, threshold: float, min_dista
         try:
             return bpy.ops.clip.detect_features(**kw)
         except TypeError:
-            # Fallback für exotische Builds: wenigstens Threshold setzen
+            # Fallback fÃ¼r exotische Builds: wenigstens Threshold setzen
             return bpy.ops.clip.detect_features(threshold=float(max(threshold, 0.0001)))
 
     override = _ensure_clip_context(bpy.context)
@@ -92,7 +102,7 @@ def perform_marker_detection(
     margin_px: int,
     min_distance_px: int,
 ) -> Tuple[Set[int], int]:
-    """Setzt Marker via Operator-Args; gibt (pre_ptrs, new_count) zurück."""
+    """Setzt Marker via Operator-Args; gibt (pre_ptrs, new_count) zurÃ¼ck."""
     before = {t.as_pointer() for t in tracking.tracks}
 
     _detect_features(
@@ -102,7 +112,7 @@ def perform_marker_detection(
         min_distance=int(min_distance_px),
     )
 
-    # --- NEU: Zustand sicher „fluschen“ ---
+    # --- NEU: Zustand sicher â€žfluschenâ€œ ---
     scn = bpy.context.scene
     curf = int(scn.frame_current)
     try:
@@ -110,13 +120,13 @@ def perform_marker_detection(
     except Exception:
         pass
     try:
-        # Frame kurz „anfassen“, damit marker-arrays intern frisch sind
+        # Frame kurz â€žanfassenâ€œ, damit marker-arrays intern frisch sind
         scn.frame_set(curf)
     except Exception:
         pass
 
     # --- Optional: kurze Warte-Schleife bis Keys am Frame sichtbar sind ---
-    # (max. ~0.2 s; bricht früher ab, sobald mind. 1 neuer Track einen Marker am curf hat)
+    # (max. ~0.2 s; bricht frÃ¼her ab, sobald mind. 1 neuer Track einen Marker am curf hat)
     try:
         import time
         deadline = time.time() + 0.2
@@ -146,8 +156,8 @@ def run_detect_basic(
     margin_base: Optional[int] = None,
     min_distance_base: Optional[int] = None,
     placement: Optional[str] = None,
-    selection_policy: Optional[str] = None,  # Placeholder für spätere Varianten
-    # NEU: Wiederholungszähler & Policy für margin=search_size (Triplet/Multi)
+    selection_policy: Optional[str] = None,  # Placeholder fÃ¼r spÃ¤tere Varianten
+    # NEU: WiederholungszÃ¤hler & Policy fÃ¼r margin=search_size (Triplet/Multi)
     repeat_count: Optional[int] = None,
     match_search_size: Optional[bool] = None,
 ) -> Dict[str, Any]:
@@ -183,7 +193,7 @@ def run_detect_basic(
         default_thr = float(scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
         thr = float(threshold) if threshold is not None else default_thr
 
-        # Baselines aus Szene lesen (Fallback: heuristische Defaults auf Clipgröße)
+        # Baselines aus Szene lesen (Fallback: heuristische Defaults auf ClipgrÃ¶ÃŸe)
         sb_margin = scn.get("margin_base", None)
         sb_min_dist = scn.get("min_distance_base", None)
         base_margin = int(sb_margin) if sb_margin is not None else max(16, int(0.025 * max(width, height)))
@@ -195,7 +205,7 @@ def run_detect_basic(
         margin    = max(0, int((base_margin * factor)*2))
         min_dist  = max(1, int(base_min    * factor))
 
-        # NEU: Falls Triplet/Multi aktiv (repeat_count ≥ 6) ODER Szene-Triplet-Flag > 0
+        # NEU: Falls Triplet/Multi aktiv (repeat_count â‰¥ 6) ODER Szene-Triplet-Flag > 0
         # oder der Aufrufer explizit match_search_size=True setzt,
         # dann margin := aktuelle search_size, damit am Rand keine nicht-trackbaren
         # Features platziert werden.
@@ -214,7 +224,7 @@ def run_detect_basic(
             ps = 0
 
         if match_search_size:
-            # Nur wenn explizit angefordert → search_size verwenden
+            # Nur wenn explizit angefordert â†’ search_size verwenden
             try:
                 ss = int(getattr(settings, "default_search_size", 0))
             except Exception:
@@ -238,8 +248,8 @@ def run_detect_basic(
         p = (placement or "FRAME").upper()
 
         # Debug-Ausgabe der berechneten Margin und Min-Distanz
-        print(f"[Detect] frame={int(scn.frame_current)} "
-              f"threshold={thr:.3f} margin_px={margin} min_distance_px={min_dist}")
+        _log(f"[Detect] frame={int(scn.frame_current)} "
+             f"threshold={thr:.3f} margin_px={margin} min_distance_px={min_dist}")
 
         pre_ptrs, new_count = perform_marker_detection(
             clip=clip,
@@ -250,11 +260,11 @@ def run_detect_basic(
             min_distance_px=min_dist,
         )
 
-        # Nach der Marker-Detection: neu erzeugte Spuren als „neu“ markieren
+        # Nach der Marker-Detection: neu erzeugte Spuren als â€žneuâ€œ markieren
         # Ermitteln Sie alle Tracks, die im Vergleich zu pre_ptrs neu sind. Diese
-        # werden als ausgewählt markiert, damit nachfolgende Distanzprüfungen
-        # (run_distance_cleanup) sie als neue Marker erkennen können. Ohne diese
-        # Selektion würden neu gesetzte Marker bei require_selected_new=True ignoriert.
+        # werden als ausgewÃ¤hlt markiert, damit nachfolgende DistanzprÃ¼fungen
+        # (run_distance_cleanup) sie als neue Marker erkennen kÃ¶nnen. Ohne diese
+        # Selektion wÃ¼rden neu gesetzte Marker bei require_selected_new=True ignoriert.
         try:
             # Aktuellen Frame bestimmen
             cur_frame = int(scn.frame_current)
@@ -280,7 +290,7 @@ def run_detect_basic(
                 except Exception:
                     pass
         except Exception:
-            # Bei jedem Fehler (z.B. ältere Blender-APIs) keine Selektion durchführen
+            # Bei jedem Fehler (z.B. Ã¤ltere Blender-APIs) keine Selektion durchfÃ¼hren
             pass
 
         # Threshold persistieren (nur Threshold, keine margin/min_dist Persistenz)
@@ -293,7 +303,7 @@ def run_detect_basic(
             "margin_px": int(margin),
             "min_distance_px": int(min_dist),
             "placement": p,
-            # für Debug/Transparenz:
+            # fÃ¼r Debug/Transparenz:
             "repeat_count": int(rc),
             "triplet_mode": int(triplet_mode),
             "pre_ptrs": pre_ptrs,
@@ -312,7 +322,7 @@ def run_detect_basic(
             pass
 
 # -----------------------------
-# Thin Wrapper für Backward-Compat
+# Thin Wrapper fÃ¼r Backward-Compat
 # -----------------------------
 def run_detect_once(context: bpy.types.Context, **kwargs) -> Dict[str, Any]:
     # kwargs kann nun repeat_count / match_search_size enthalten; wird 1:1 durchgereicht
@@ -324,7 +334,7 @@ def run_detect_once(context: bpy.types.Context, **kwargs) -> Dict[str, Any]:
         "frame": int(res.get("frame", bpy.context.scene.frame_current)),
         "threshold": float(res.get("threshold", 0.75)),
         "new_tracks": int(res.get("new_count_raw", 0)),
-        # Spiegeln für Telemetrie/Debugging
+        # Spiegeln fÃ¼r Telemetrie/Debugging
         "margin_px": int(res.get("margin_px", 0)),
         "repeat_count": int(res.get("repeat_count", 0)),
         "triplet_mode": int(res.get("triplet_mode", 0)),
