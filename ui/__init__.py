@@ -4,7 +4,7 @@ from . import solve_log as _solve_log  # stellt nur Funktionen bereit
 from . import utils as _utils          # Hilfsfunktionen (Redraw)
 
 # Unregister-Reihenfolge: Overlay zuerst runterfahren
-_MODULES = [_overlay, _menus, _panels]
+_MODULES = [_overlay]
 
 def register():
     for m in _MODULES:
