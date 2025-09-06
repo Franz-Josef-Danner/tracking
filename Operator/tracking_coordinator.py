@@ -1,12 +1,23 @@
 """
-tracking_coordinator.py – Streng sequentieller, MODALER Orchestrator
-- Phasen: FIND_LOW → JUMP → DETECT → DISTANZE (hart getrennt, seriell)
-- Integration von Anzahl/A₁..A₉ + Abbruch bei 10 + A_k-Schreiben in BIDI
+tracking_coordinator.py â€“ Streng sequentieller, MODALER Orchestrator
+- Phasen: FIND_LOW â†’ JUMP â†’ DETECT â†’ DISTANZE (hart getrennt, seriell)
+- Integration von Anzahl/Aâ‚..Aâ‚‰ + Abbruch bei 10 + A_k-Schreiben in BIDI
 - Jede Phase startet erst, wenn die vorherige abgeschlossen wurde.
 """
 
 from __future__ import annotations
 import bpy
+
+# ---------------------------------------------------------------------------
+# Console logging
+# ---------------------------------------------------------------------------
+# To avoid cluttering the console with debug and status messages, all direct
+# calls to ``print()`` in this module have been replaced by a no-op logger.
+# The ``_log`` function can be used in place of ``print`` to completely
+# suppress output. UI messages should continue to be emitted via ``self.report``.
+def _log(*args, **kwargs):
+    """No-op logger used to suppress console output."""
+    return None
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame
 from ..Helper.jump_to_frame import run_jump_to_frame
 from ..Helper.detect import run_detect_once
@@ -28,10 +39,10 @@ except Exception:
         run_find_max_error_frame = None  # type: ignore
 from ..Helper.reset_state import reset_for_new_cycle  # zentraler Reset (Bootstrap/Cycle)
 
-# Versuche, die Auswertungsfunktion für die Markeranzahl zu importieren.
-# Diese Funktion soll nach dem Distanz-Cleanup ausgeführt werden und
+# Versuche, die Auswertungsfunktion fÃ¼r die Markeranzahl zu importieren.
+# Diese Funktion soll nach dem Distanz-Cleanup ausgefÃ¼hrt werden und
 # verwendet interne Grenzwerte aus der count.py. Es werden keine
-# zusätzlichen Parameter übergeben.
+# zusÃ¤tzlichen Parameter Ã¼bergeben.
 try:
     from ..Helper.count import evaluate_marker_count  # type: ignore
 except Exception:
@@ -45,7 +56,7 @@ from ..Helper.tracker_settings import apply_tracker_settings
 from ..Helper.tracking_state import (
     orchestrate_on_jump,
     record_bidirectional_result,
-    _get_state,          # intern genutzt, um count zu prüfen
+    _get_state,          # intern genutzt, um count zu prÃ¼fen
     _ensure_frame_entry, # intern genutzt, um Frame-Eintrag zu holen
     reset_tracking_state,
     ABORT_AT,
@@ -63,7 +74,7 @@ except Exception:
         ERROR_VALUE_SRC = "FALLBACK_ZERO"
 
 
-# ---- Solve-Logger: robust auflösen, ohne auf Paketstruktur zu vertrauen ----
+# ---- Solve-Logger: robust auflÃ¶sen, ohne auf Paketstruktur zu vertrauen ----
 def _solve_log(context, value):
     """Laufzeit-sicherer Aufruf von __init__.kaiserlich_solve_log_add()."""
     try:
@@ -85,8 +96,8 @@ def _solve_log(context, value):
         pass
     # Silent: kein Crash, wenn das Log-Addon noch nicht geladen ist
     return
-# Optional: den Bidirectional‑Track Operator importieren. Wenn der Import
-# fehlschlägt, bleibt die Variable auf None und es erfolgt kein Aufruf.
+# Optional: den Bidirectionalâ€‘Track Operator importieren. Wenn der Import
+# fehlschlÃ¤gt, bleibt die Variable auf None und es erfolgt kein Aufruf.
 try:
     from ..Helper.bidirectional_track import CLIP_OT_bidirectional_track  # type: ignore
 except Exception:
@@ -132,9 +143,9 @@ PH_DETECT     = "DETECT"
 PH_DISTANZE   = "DISTANZE"
 PH_SPIKE_CYCLE = "SPIKE_CYCLE"
 PH_SOLVE_EVAL = "SOLVE_EVAL"
-# Erweiterte Phase: Bidirectional-Tracking. Wenn der Multi‑Pass und das
-# Distanz‑Cleanup erfolgreich durchgeführt wurden, wird diese Phase
-# angestoßen. Sie startet den Bidirectional‑Track Operator und wartet
+# Erweiterte Phase: Bidirectional-Tracking. Wenn der Multiâ€‘Pass und das
+# Distanzâ€‘Cleanup erfolgreich durchgefÃ¼hrt wurden, wird diese Phase
+# angestoÃŸen. Sie startet den Bidirectionalâ€‘Track Operator und wartet
 # auf dessen Abschluss. Danach beginnt der Koordinator wieder bei PH_FIND_LOW.
 PH_BIDI       = "BIDI"
 
@@ -146,7 +157,7 @@ _LOCK_KEY = "tco_lock"
 # ----------------------------------------------------------------------------
 
 def _ensure_clip_context(context: bpy.types.Context) -> dict:
-    """Finde einen CLIP_EDITOR und liefere ein temp_override-Dict für Clip-Operatoren."""
+    """Finde einen CLIP_EDITOR und liefere ein temp_override-Dict fÃ¼r Clip-Operatoren."""
     wm = bpy.context.window_manager
     if not wm:
         return {}
@@ -180,9 +191,9 @@ def _resolve_clip(context: bpy.types.Context):
 
 def _reset_margin_to_tracker_default(context: bpy.types.Context) -> None:
     """
-    Setzt tracking.settings.default_margin zurück auf den Default aus tracker_settings.py.
-    Bevorzugt den beim Bootstrap gespeicherten search_size; fällt ansonsten auf die
-    gleiche Formel zurück (pattern_size = max(1, width/100); margin = 2*pattern).
+    Setzt tracking.settings.default_margin zurÃ¼ck auf den Default aus tracker_settings.py.
+    Bevorzugt den beim Bootstrap gespeicherten search_size; fÃ¤llt ansonsten auf die
+    gleiche Formel zurÃ¼ck (pattern_size = max(1, width/100); margin = 2*pattern).
     """
     try:
         clip = _resolve_clip(context)
@@ -204,12 +215,12 @@ def _reset_margin_to_tracker_default(context: bpy.types.Context) -> None:
             pattern_size = max(1, int(width / 100)) if width > 0 else 8
             base_margin = pattern_size * 2
         settings.default_margin = int(base_margin)
-        print(f"[Coordinator] default_margin reset → {int(base_margin)} (skip multi)")
+        _log(f"[Coordinator] default_margin reset â†’ {int(base_margin)} (skip multi)")
     except Exception as exc:
-        print(f"[Coordinator] WARN: margin reset failed: {exc}")
+        _log(f"[Coordinator] WARN: margin reset failed: {exc}")
 
 def _marker_count_by_selected_track(context: bpy.types.Context) -> dict[str, int]:
-    """Anzahl Marker je *ausgewähltem* Track (Name -> Count)."""
+    """Anzahl Marker je *ausgewÃ¤hltem* Track (Name -> Count)."""
     clip = _resolve_clip(context)
     out: dict[str, int] = {}
     if not clip:
@@ -226,51 +237,51 @@ def _marker_count_by_selected_track(context: bpy.types.Context) -> dict[str, int
     return out
 
 def _delta_counts(before: dict[str, int], after: dict[str, int]) -> dict[str, int]:
-    """Delta = after - before (clamp ≥ 0)."""
+    """Delta = after - before (clamp â‰¥ 0)."""
     names = set(before) | set(after)
     return {n: max(0, int(after.get(n, 0)) - int(before.get(n, 0))) for n in names}
 
 # --- Blender 4.4: Refine-Flag direkt in Tracking-Settings spiegeln ----------
 def _apply_refine_focal_flag(context: bpy.types.Context, flag: bool) -> None:
-    """Setzt movieclip.tracking.settings.refine_intrinsics_focal_length gemäß flag."""
+    """Setzt movieclip.tracking.settings.refine_intrinsics_focal_length gemÃ¤ÃŸ flag."""
     try:
         clip = _resolve_clip(context)
         tr = getattr(clip, "tracking", None) if clip else None
         settings = getattr(tr, "settings", None) if tr else None
         if settings and hasattr(settings, "refine_intrinsics_focal_length"):
             settings.refine_intrinsics_focal_length = bool(flag)
-            print(f"[Coordinator] refine_intrinsics_focal_length → {bool(flag)}")
+            _log(f"[Coordinator] refine_intrinsics_focal_length â†’ {bool(flag)}")
         else:
-            print("[Coordinator] WARN: refine_intrinsics_focal_length nicht verfügbar")
+            _log("[Coordinator] WARN: refine_intrinsics_focal_length nicht verfÃ¼gbar")
     except Exception as exc:
-        print(f"[Coordinator] WARN: refine-Flag konnte nicht gesetzt werden: {exc}")
+        _log(f"[Coordinator] WARN: refine-Flag konnte nicht gesetzt werden: {exc}")
 
 # --- NEU: weitere Refine-Flags spiegeln --------------------------------------
 def _apply_refine_principal_flag(context: bpy.types.Context, flag: bool) -> None:
-    """Setzt tracking.settings.refine_intrinsics_principal_point gemäß flag."""
+    """Setzt tracking.settings.refine_intrinsics_principal_point gemÃ¤ÃŸ flag."""
     try:
         clip = _resolve_clip(context)
         settings = getattr(getattr(clip, "tracking", None), "settings", None) if clip else None
         if settings and hasattr(settings, "refine_intrinsics_principal_point"):
             settings.refine_intrinsics_principal_point = bool(flag)
-            print(f"[Coordinator] refine_intrinsics_principal_point → {bool(flag)}")
+            _log(f"[Coordinator] refine_intrinsics_principal_point â†’ {bool(flag)}")
         else:
-            print("[Coordinator] WARN: refine_intrinsics_principal_point nicht verfügbar")
+            _log("[Coordinator] WARN: refine_intrinsics_principal_point nicht verfÃ¼gbar")
     except Exception as exc:
-        print(f"[Coordinator] WARN: principal-point Flag konnte nicht gesetzt werden: {exc}")
+        _log(f"[Coordinator] WARN: principal-point Flag konnte nicht gesetzt werden: {exc}")
 
 def _apply_refine_radial_flag(context: bpy.types.Context, flag: bool) -> None:
-    """Setzt tracking.settings.refine_intrinsics_radial_distortion gemäß flag."""
+    """Setzt tracking.settings.refine_intrinsics_radial_distortion gemÃ¤ÃŸ flag."""
     try:
         clip = _resolve_clip(context)
         settings = getattr(getattr(clip, "tracking", None), "settings", None) if clip else None
         if settings and hasattr(settings, "refine_intrinsics_radial_distortion"):
             settings.refine_intrinsics_radial_distortion = bool(flag)
-            print(f"[Coordinator] refine_intrinsics_radial_distortion → {bool(flag)}")
+            _log(f"[Coordinator] refine_intrinsics_radial_distortion â†’ {bool(flag)}")
         else:
-            print("[Coordinator] WARN: refine_intrinsics_radial_distortion nicht verfügbar")
+            _log("[Coordinator] WARN: refine_intrinsics_radial_distortion nicht verfÃ¼gbar")
     except Exception as exc:
-        print(f"[Coordinator] WARN: radial-distortion Flag konnte nicht gesetzt werden: {exc}")
+        _log(f"[Coordinator] WARN: radial-distortion Flag konnte nicht gesetzt werden: {exc}")
 
 def _apply_refine_flags(context: bpy.types.Context, *, focal: bool, principal: bool, radial: bool) -> None:
     """Komfort: alle drei Refine-Flags konsistent setzen."""
@@ -293,7 +304,7 @@ def _snapshot_track_ptrs(context: bpy.types.Context) -> list[int]:
         return []
 
 def _bump_default_correlation_min(context: bpy.types.Context) -> None:
-    """Erhöht tracking.settings.default_correlation_min um 0.001 (max. 0.98)."""
+    """ErhÃ¶ht tracking.settings.default_correlation_min um 0.001 (max. 0.98)."""
     try:
         clip = _resolve_clip(context)
         tr = getattr(clip, "tracking", None) if clip else None
@@ -303,9 +314,9 @@ def _bump_default_correlation_min(context: bpy.types.Context) -> None:
         val = float(getattr(settings, "default_correlation_min", 0.75))
         new_val = min(0.98, val + 0.001)
         settings.default_correlation_min = new_val
-        print(f"[Coordinator] default_correlation_min bumped → {new_val:.3f}")
+        _log(f"[Coordinator] default_correlation_min bumped â†’ {new_val:.3f}")
     except Exception as exc:
-        print(f"[Coordinator] WARN: correlation bump failed: {exc}")
+        _log(f"[Coordinator] WARN: correlation bump failed: {exc}")
 
 def _bootstrap(context: bpy.types.Context) -> None:
     """Minimaler Reset + sinnvolle Defaults; Helper initialisieren."""
@@ -330,11 +341,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     bl_idname = "clip.tracking_coordinator"
     bl_label = "Kaiserlich: Coordinator (Modal)"
     # Hinweis: Blender kennt nur GRAB_CURSOR / GRAB_CURSOR_X / GRAB_CURSOR_Y.
-    # GRAB_CURSOR_XY existiert nicht → Validation-Error beim Register.
-    # Modalität kommt über modal(); Cursor-Grabbing ist nicht nötig.
+    # GRAB_CURSOR_XY existiert nicht â†’ Validation-Error beim Register.
+    # ModalitÃ¤t kommt Ã¼ber modal(); Cursor-Grabbing ist nicht nÃ¶tig.
     bl_options = {"REGISTER", "UNDO"}
 
-    # — Laufzeit-State (nur Operator, nicht Szene) —
+    # â€” Laufzeit-State (nur Operator, nicht Szene) â€”
     _timer: object | None = None
     phase: str = PH_FIND_LOW
     target_frame: int | None = None
@@ -343,19 +354,19 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     repeat_count_for_target: int | None = None
     # Aktueller Detection-Threshold; wird nach jedem Detect-Aufruf aktualisiert.
     detection_threshold: float | None = None
-    spike_threshold: float | None = None  # aktueller Spike-Filter-Schwellenwert (temporär)
+    spike_threshold: float | None = None  # aktueller Spike-Filter-Schwellenwert (temporÃ¤r)
     # Flag, ob der Bidirectional-Track bereits gestartet wurde. Diese
-    # Instanzvariable dient dazu, den Start der Bidirectional‑Track-Phase
-    # nur einmal auszulösen und anschließend auf den Abschluss zu warten.
+    # Instanzvariable dient dazu, den Start der Bidirectionalâ€‘Track-Phase
+    # nur einmal auszulÃ¶sen und anschlieÃŸend auf den Abschluss zu warten.
     bidi_started: bool = False
     bidi_before_counts: dict[str, int] | None = None  # Snapshot vor BIDI
-    # Temporärer Schwellenwert für den Spike-Cycle (startet bei 100, *0.9)
-    # Solve-Retry-State: Wurde bereits mit refine_intrinsics_focal_length=True neu gelöst?
+    # TemporÃ¤rer Schwellenwert fÃ¼r den Spike-Cycle (startet bei 100, *0.9)
+    # Solve-Retry-State: Wurde bereits mit refine_intrinsics_focal_length=True neu gelÃ¶st?
     # NEU: Wurde bereits die volle Intrinsics-Variante (focal+principal+radial) versucht?
     solve_refine_full_attempted: bool = False
     # Regressionsvergleich: letzter Solve-Avg (None = noch keiner vorhanden)
     prev_solve_avg: float | None = None
-    # Guard: Verhindert mehrfaches reduce_error_tracks für denselben avg_err
+    # Guard: Verhindert mehrfaches reduce_error_tracks fÃ¼r denselben avg_err
     last_reduced_for_avg: float | None = None
     def execute(self, context: bpy.types.Context):
         # Bootstrap/Reset
@@ -368,10 +379,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         # Bootstrap: harter Neustart + Solve-Error-Log leeren
         reset_for_new_cycle(context, clear_solve_log=True)
-        # Zusätzlich: State von tracking_state.py zurücksetzen
+        # ZusÃ¤tzlich: State von tracking_state.py zurÃ¼cksetzen
         try:
             reset_tracking_state(context)
-            self.report({'INFO'}, "Tracking-State zurückgesetzt")
+            self.report({'INFO'}, "Tracking-State zurÃ¼ckgesetzt")
         except Exception as exc:
             self.report({'WARNING'}, f"Tracking-State Reset fehlgeschlagen: {exc}")
 
@@ -380,11 +391,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self.target_frame = None
         self.repeat_map = {}
         self.pre_ptrs = None
-        # Threshold-Zurücksetzen: beim ersten Detect-Aufruf wird der Standardwert verwendet
+        # Threshold-ZurÃ¼cksetzen: beim ersten Detect-Aufruf wird der Standardwert verwendet
         self.detection_threshold = None
-        # Bidirectional‑Track ist noch nicht gestartet
-        self.spike_threshold = None  # Spike-Schwellenwert zurücksetzen
-        # Solve-Retry-State zurücksetzen
+        # Bidirectionalâ€‘Track ist noch nicht gestartet
+        self.spike_threshold = None  # Spike-Schwellenwert zurÃ¼cksetzen
+        # Solve-Retry-State zurÃ¼cksetzen
         self.solve_refine_attempted = False
         self.solve_refine_full_attempted = False
         self.bidi_before_counts = None
@@ -395,7 +406,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         try:
             self.report({'INFO'}, f"error_value source: {ERROR_VALUE_SRC}")
             if ERROR_VALUE_SRC == 'FALLBACK_ZERO':
-                self.report({'WARNING'}, 'Fallback error_value aktiv (immer 0.0) – bitte Helper/count.py installieren.')
+                self.report({'WARNING'}, 'Fallback error_value aktiv (immer 0.0) â€“ bitte Helper/count.py installieren.')
         except Exception:
             pass
 
@@ -439,9 +450,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {'CANCELLED' if cancelled else 'FINISHED'}
 
     def modal(self, context: bpy.types.Context, event):
-        # --- ESC / Abbruch prüfen ---
+        # --- ESC / Abbruch prÃ¼fen ---
         if event.type in {'ESC'} and event.value == 'PRESS':
-            return self._finish(context, info="ESC gedrückt – Prozess abgebrochen.", cancelled=True)
+            return self._finish(context, info="ESC gedrÃ¼ckt â€“ Prozess abgebrochen.", cancelled=True)
 
         # nur Timer-Events verarbeiten
         if event.type != 'TIMER':
@@ -460,7 +471,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             res = run_find_low_marker_frame(context)
             st = res.get("status")
             if st == "FAILED":
-                return self._finish(context, info=f"FIND_LOW FAILED → {res.get('reason')}", cancelled=True)
+                return self._finish(context, info=f"FIND_LOW FAILED â†’ {res.get('reason')}", cancelled=True)
             if st == "NONE":
                 # Kein Low-Marker-Frame gefunden: Starte Spike-Zyklus
                 self.phase = PH_SPIKE_CYCLE
@@ -477,22 +488,22 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return self._finish(context, info="JUMP: Kein Ziel-Frame gesetzt.", cancelled=True)
             rj = run_jump_to_frame(context, frame=self.target_frame, repeat_map=self.repeat_map)
             if rj.get("status") != "OK":
-                return self._finish(context, info=f"JUMP FAILED → {rj}", cancelled=True)
+                return self._finish(context, info=f"JUMP FAILED â†’ {rj}", cancelled=True)
             self.report({'INFO'}, f"Playhead gesetzt: f{rj.get('frame')} (repeat={rj.get('repeat_count')})")
 
             # NEU: Anzahl/Motion-Model orchestrieren und ggf. bei 10 abbrechen
             try:
                 orchestrate_on_jump(context, int(self.target_frame))
-                # count prüfen (orchestrator zeigt bei ==10 bereits Popup)
+                # count prÃ¼fen (orchestrator zeigt bei ==10 bereits Popup)
                 _state = _get_state(context)
                 _entry, _ = _ensure_frame_entry(_state, int(self.target_frame))
                 _count = int(_entry.get("count", 1))
                 self.repeat_count_for_target = _count
-                # Abbruch erst, wenn tracking_state die globale Schwelle erreicht (inkl. +10 Verlängerung)
+                # Abbruch erst, wenn tracking_state die globale Schwelle erreicht (inkl. +10 VerlÃ¤ngerung)
                 if _count >= ABORT_AT:
                     return self._finish(
                         context,
-                        info=f"Abbruch: Frame {self.target_frame} hat {ABORT_AT-1} Durchläufe erreicht.",
+                        info=f"Abbruch: Frame {self.target_frame} hat {ABORT_AT-1} DurchlÃ¤ufe erreicht.",
                         cancelled=True
                     )
             except Exception as _exc:
@@ -505,7 +516,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         # PHASE 3: DETECT
         if self.phase == PH_DETECT:
-            # Guard: Vermeide 0.000-Threshold-Schleifen aus vorherigen Läufen.
+            # Guard: Vermeide 0.000-Threshold-Schleifen aus vorherigen LÃ¤ufen.
             # Falls detect.py den letzten Threshold in der Szene als 0.0 abgelegt hat,
             # clampen wir hier auf einen sinnvollen Default (0.75).
             try:
@@ -516,12 +527,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception:
                 pass
 
-            # Beim ersten Detect-Aufruf wird kein Threshold übergeben (None → Standardwert)
+            # Beim ersten Detect-Aufruf wird kein Threshold Ã¼bergeben (None â†’ Standardwert)
             _kwargs: dict[str, object] = {"start_frame": self.target_frame}
             # Wenn bereits ein Threshold aus vorherigen Iterationen vorliegt, diesen mitgeben
             if self.detection_threshold is not None:
                 _kwargs["threshold"] = float(self.detection_threshold)
-            # NEU: Wiederholungszähler und Margin-Policy an detect.py durchreichen,
+            # NEU: WiederholungszÃ¤hler und Margin-Policy an detect.py durchreichen,
             # damit dort margin = search_size gesetzt werden kann (Triplet/Multi).
             try:
                 _kwargs["repeat_count"] = int(self.repeat_count_for_target or 0)
@@ -530,9 +541,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             _kwargs["match_search_size"] = True
             rd = run_detect_once(context, **_kwargs)
             if rd.get("status") != "READY":
-                return self._finish(context, info=f"DETECT FAILED → {rd}", cancelled=True)
+                return self._finish(context, info=f"DETECT FAILED â†’ {rd}", cancelled=True)
             new_cnt = int(rd.get("new_tracks", 0))
-            # Merke den verwendeten Threshold für spätere Anpassungen
+            # Merke den verwendeten Threshold fÃ¼r spÃ¤tere Anpassungen
             try:
                 self.detection_threshold = float(rd.get("threshold", self.detection_threshold))
             except Exception:
@@ -550,7 +561,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     context,
                     pre_ptrs=self.pre_ptrs,
                     frame=int(self.target_frame),
-                    # min_distance=None → Auto-Ableitung in distanze.py (aus Threshold & scene-base)
+                    # min_distance=None â†’ Auto-Ableitung in distanze.py (aus Threshold & scene-base)
                     min_distance=None,
                     distance_unit="pixel",
                     require_selected_new=True,
@@ -559,12 +570,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     verbose=True,
                 )
             except Exception as exc:
-                return self._finish(context, info=f"DISTANZE FAILED → {exc}", cancelled=True)
+                return self._finish(context, info=f"DISTANZE FAILED â†’ {exc}", cancelled=True)
 
             removed = dis.get('removed', 0)
             kept = dis.get('kept', 0)
 
-            # NUR neue Tracks berücksichtigen, die AM target_frame einen Marker besitzen
+            # NUR neue Tracks berÃ¼cksichtigen, die AM target_frame einen Marker besitzen
             new_ptrs_after_cleanup: set[int] = set()
             clip = _resolve_clip(context)
             if clip and isinstance(self.pre_ptrs, set):
@@ -577,20 +588,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         try:
                             m = t.markers.find_frame(int(self.target_frame), exact=True)
                         except TypeError:
-                            # ältere Blender-Builds ohne exact-Param
+                            # Ã¤ltere Blender-Builds ohne exact-Param
                             m = t.markers.find_frame(int(self.target_frame))
                         if m:
                             new_ptrs_after_cleanup.add(ptr)
 
-            # Markeranzahl auswerten, sofern die Zählfunktion vorhanden ist.
+            # Markeranzahl auswerten, sofern die ZÃ¤hlfunktion vorhanden ist.
             eval_res = None
             scn = context.scene
             if evaluate_marker_count is not None:
                 try:
-                    # Aufruf ohne explizite Grenzwerte – count.py kennt diese selbst.
+                    # Aufruf ohne explizite Grenzwerte â€“ count.py kennt diese selbst.
                     eval_res = evaluate_marker_count(new_ptrs_after_cleanup=new_ptrs_after_cleanup)  # type: ignore
                 except Exception as exc:
-                    # Wenn der Aufruf fehlschlägt, Fehlermeldung zurückgeben.
+                    # Wenn der Aufruf fehlschlÃ¤gt, Fehlermeldung zurÃ¼ckgeben.
                     eval_res = {"status": "ERROR", "reason": str(exc), "count": len(new_ptrs_after_cleanup)}
                 # Ergebnis im Szenen-Status speichern
                 try:
@@ -598,10 +609,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 except Exception:
                     pass
 
-                # Prüfe, ob Markeranzahl außerhalb des gültigen Bandes liegt
+                # PrÃ¼fe, ob Markeranzahl auÃŸerhalb des gÃ¼ltigen Bandes liegt
                 status = str(eval_res.get("status", "")) if isinstance(eval_res, dict) else ""
                 if status in {"TOO_FEW", "TOO_MANY"}:
-                    # *** Distanzé-Semantik: nur den MARKER am aktuellen Frame löschen ***
+                    # *** DistanzÃ©-Semantik: nur den MARKER am aktuellen Frame lÃ¶schen ***
                     deleted_markers = 0
                     if clip and new_ptrs_after_cleanup:
                         trk = getattr(clip, "tracking", None)
@@ -635,7 +646,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                     bpy.ops.clip.delete_marker(confirm=False)
                                 deleted_markers = len(target_ptrs)
                             except Exception:
-                                # Variante 2 (Fallback): direkte API, ggf. mehrfach löschen bis leer
+                                # Variante 2 (Fallback): direkte API, ggf. mehrfach lÃ¶schen bis leer
                                 for t in trk.tracks:
                                     if int(t.as_pointer()) in new_ptrs_after_cleanup:
                                         while True:
@@ -672,17 +683,17 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                          else scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
                         self.detection_threshold = max(base_thr * ((anzahl_neu + 0.1) / marker_adapt), 0.0001)
 
-                        # (entfernt) Szene-Overrides für margin/min_distance – Variablen hier nicht definiert
+                        # (entfernt) Szene-Overrides fÃ¼r margin/min_distance â€“ Variablen hier nicht definiert
                     except Exception:
                         pass
 
-                    self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res}, deleted_markers={deleted_markers}, thr→{self.detection_threshold}")
-                    # Zurück zu DETECT mit neuem Threshold
+                    self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res}, deleted_markers={deleted_markers}, thrâ†’{self.detection_threshold}")
+                    # ZurÃ¼ck zu DETECT mit neuem Threshold
                     self.phase = PH_DETECT
                     return {'RUNNING_MODAL'}
 
 
-                # Markeranzahl im gültigen Bereich – optional Multi-Pass und dann Bidirectional-Track ausführen.
+                # Markeranzahl im gÃ¼ltigen Bereich â€“ optional Multi-Pass und dann Bidirectional-Track ausfÃ¼hren.
                 did_multi = False
                 # NEU: Multi-Pass nur, wenn der *aktuelle* count (aus JSON) >= 6
                 wants_multi = False
@@ -690,19 +701,19 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     _state = _get_state(context)
                     _entry, _ = _ensure_frame_entry(_state, int(self.target_frame))
                     _cnt_now = int(_entry.get("count", 1))
-                    self.repeat_count_for_target = _cnt_now  # für Logging/UI spiegeln
+                    self.repeat_count_for_target = _cnt_now  # fÃ¼r Logging/UI spiegeln
                     wants_multi = (_cnt_now >= 6)
                 except Exception:
                     wants_multi = False
-                print(f"[Coordinator] multi gate @frame={self.target_frame} "
-                      f"count={self.repeat_count_for_target} → wants_multi={wants_multi}")
+                # Suppress console output using the no-op logger
+                _log(f"[Coordinator] multi gate @frame={self.target_frame} count={self.repeat_count_for_target} â†’ wants_multi={wants_multi}")
                 if isinstance(eval_res, dict) and str(eval_res.get("status", "")) == "ENOUGH" and wants_multi:
-                    # Führe nur Multi‑Pass aus, wenn der Helper importiert werden konnte.
+                    # FÃ¼hre nur Multiâ€‘Pass aus, wenn der Helper importiert werden konnte.
                     if run_multi_pass is not None:
                         try:
-                            # Snapshot der aktuellen Tracker‑Pointer als Basis für den Multi‑Pass.
+                            # Snapshot der aktuellen Trackerâ€‘Pointer als Basis fÃ¼r den Multiâ€‘Pass.
                             current_ptrs = set(_snapshot_track_ptrs(context))
-                            # Ermittelten Threshold für den Multi‑Pass verwenden. Fallback auf einen Standardwert.
+                            # Ermittelten Threshold fÃ¼r den Multiâ€‘Pass verwenden. Fallback auf einen Standardwert.
                             try:
                                 thr = float(self.detection_threshold) if self.detection_threshold is not None else None
                             except Exception:
@@ -712,7 +723,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                     thr = float(context.scene.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
                                 except Exception:
                                     thr = 0.5
-                            # NEU: Wiederholungszähler an multi.py übergeben.
+                            # NEU: WiederholungszÃ¤hler an multi.py Ã¼bergeben.
                             mp_res = run_multi_pass(
                                 context,
                                 detect_threshold=float(thr),
@@ -724,13 +735,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                             except Exception:
                                 pass
                             self.report({'INFO'}, (
-                                "MULTI-PASS ausgeführt "
+                                "MULTI-PASS ausgefÃ¼hrt "
                                 f"(rep={self.repeat_count_for_target}): "
                                 f"scales={mp_res.get('scales_used')}, "
                                 f"created={mp_res.get('created_per_scale')}, "
                                 f"selected={mp_res.get('selected')}"
                             ))
-                            # Nach dem Multi‑Pass eine Distanzprüfung durchführen.
+                            # Nach dem Multiâ€‘Pass eine DistanzprÃ¼fung durchfÃ¼hren.
                             try:
                                 cur_frame = int(self.target_frame) if self.target_frame is not None else None
                                 if cur_frame is not None:
@@ -751,29 +762,29 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                         pass
                                     self.report({'INFO'}, f"MULTI-PASS DISTANZE: removed={dist_res.get('removed')}, kept={dist_res.get('kept')}")
                             except Exception as exc:
-                                self.report({'WARNING'}, f"Multi-Pass Distanzé-Aufruf fehlgeschlagen ({exc})")
+                                self.report({'WARNING'}, f"Multi-Pass DistanzÃ©-Aufruf fehlgeschlagen ({exc})")
                             did_multi = True
                         except Exception as exc:
-                            # Bei Fehlern im Multi‑Pass nicht abbrechen, sondern warnen.
+                            # Bei Fehlern im Multiâ€‘Pass nicht abbrechen, sondern warnen.
                             self.report({'WARNING'}, f"Multi-Pass-Aufruf fehlgeschlagen ({exc})")
                     else:
-                        # Multi‑Pass ist nicht verfügbar (Import fehlgeschlagen)
-                        self.report({'WARNING'}, "Multi-Pass nicht verfügbar – kein Aufruf durchgeführt")
-                    # Wenn ein Multi‑Pass ausgeführt wurde, starte nun die Bidirectional‑Track-Phase.
+                        # Multiâ€‘Pass ist nicht verfÃ¼gbar (Import fehlgeschlagen)
+                        self.report({'WARNING'}, "Multi-Pass nicht verfÃ¼gbar â€“ kein Aufruf durchgefÃ¼hrt")
+                    # Wenn ein Multiâ€‘Pass ausgefÃ¼hrt wurde, starte nun die Bidirectionalâ€‘Track-Phase.
                     if did_multi:
-                        # Wechsle in die Bidirectional‑Phase. Die Bidirectional‑Track-Operation
-                        # selbst wird im Modal-Handler ausgelöst. Nach Abschluss dieser Phase
+                        # Wechsle in die Bidirectionalâ€‘Phase. Die Bidirectionalâ€‘Track-Operation
+                        # selbst wird im Modal-Handler ausgelÃ¶st. Nach Abschluss dieser Phase
                         # wird der Zyklus erneut bei PH_FIND_LOW beginnen.
                         self.phase = PH_BIDI
                         self.bidi_started = False
                         self.report({'INFO'}, (
                             f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, "
-                            f"eval={eval_res} – Starte Bidirectional-Track (nach Multi @rep={self.repeat_count_for_target})"
+                            f"eval={eval_res} â€“ Starte Bidirectional-Track (nach Multi @rep={self.repeat_count_for_target})"
                         ))
                         return {'RUNNING_MODAL'}
-                # --- ENOUGH aber KEIN Multi-Pass (repeat < 6) → direkt BIDI starten ---
+                # --- ENOUGH aber KEIN Multi-Pass (repeat < 6) â†’ direkt BIDI starten ---
                 if isinstance(eval_res, dict) and str(eval_res.get("status", "")) == "ENOUGH" and not wants_multi:
-                    # Multi wird explizit ausgelassen → Margin auf Tracker-Defaults zurücksetzen
+                    # Multi wird explizit ausgelassen â†’ Margin auf Tracker-Defaults zurÃ¼cksetzen
                     try:
                         _reset_margin_to_tracker_default(context)
                     except Exception as _exc:
@@ -783,30 +794,30 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     self.bidi_started = False
                     self.report({'INFO'}, (
                         f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, "
-                        f"eval={eval_res} – Starte Bidirectional-Track (ohne Multi; rep={self.repeat_count_for_target})"
+                        f"eval={eval_res} â€“ Starte Bidirectional-Track (ohne Multi; rep={self.repeat_count_for_target})"
                     ))
                     return {'RUNNING_MODAL'}
 
-                # In allen anderen Fällen (kein ENOUGH) → Abschluss
+                # In allen anderen FÃ¤llen (kein ENOUGH) â†’ Abschluss
                 self.report({'INFO'}, (
-                    f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res} – Sequenz abgeschlossen."
+                    f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res} â€“ Sequenz abgeschlossen."
                 ))
                 return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
 
-            # Wenn keine Auswertungsfunktion vorhanden ist, einfach abschließen
+            # Wenn keine Auswertungsfunktion vorhanden ist, einfach abschlieÃŸen
             self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}")
             return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
-        # PHASE: SOLVE_EVAL – Solve prüfen, loggen, Retry/Reduce steuern
+        # PHASE: SOLVE_EVAL â€“ Solve prÃ¼fen, loggen, Retry/Reduce steuern
         if self.phase == PH_SOLVE_EVAL:
             """
-            Post-Solve-Evaluierung (vereinfachte, deterministische Logik gemäß Vorgabe):
-              1) Wenn avg_err < target_err → Erfolg, Operator beendet.
+            Post-Solve-Evaluierung (vereinfachte, deterministische Logik gemÃ¤ÃŸ Vorgabe):
+              1) Wenn avg_err < target_err â†’ Erfolg, Operator beendet.
               2) Sonst: Falls es einen vorherigen Solve gab, Vergleich avg_err vs. prev_solve_avg.
-                 3) Wenn neuer Error HÖHER → run_find_max_error_frame → run_jump_to_frame → PH_DETECT.
+                 3) Wenn neuer Error HÃ–HER â†’ run_find_max_error_frame â†’ run_jump_to_frame â†’ PH_DETECT.
                  4) Wenn neuer Error KLEINER/gleich ODER kein vorheriger Solve:
-                    run_reduce_error_tracks → run_find_max_marker_frame.
-                    5) Wenn find_max_marker_frame einen Kandidaten liefert (status=FOUND) → PH_FIND_LOW.
-                    6) Wenn NICHT → sofort nächster solve_camera_only und in SOLVE_EVAL verbleiben.
+                    run_reduce_error_tracks â†’ run_find_max_marker_frame.
+                    5) Wenn find_max_marker_frame einen Kandidaten liefert (status=FOUND) â†’ PH_FIND_LOW.
+                    6) Wenn NICHT â†’ sofort nÃ¤chster solve_camera_only und in SOLVE_EVAL verbleiben.
             """
             scn = context.scene
             try:
@@ -818,7 +829,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             avg_err = get_avg_reprojection_error(context)
             _solve_log(context, avg_err)
 
-            # Erfolgskriterium (Eval #1): Ziel erreicht → harter Exit
+            # Erfolgskriterium (Eval #1): Ziel erreicht â†’ harter Exit
             try:
                 if (avg_err is not None) and (float(avg_err) < float(target_err)):
                     self.report({'INFO'}, f"Solve OK: avg={float(avg_err):.4f} < target={float(target_err):.4f}")
@@ -829,7 +840,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 prev_err = float(self.prev_solve_avg) if self.prev_solve_avg is not None else None
             except Exception:
                 prev_err = None
-            # Eval #2: Regression ggü. letztem Solve?
+            # Eval #2: Regression ggÃ¼. letztem Solve?
             is_regression = False
             try:
                 is_regression = (prev_err is not None) and (avg_err is not None) and (float(avg_err) > float(prev_err))
@@ -857,7 +868,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                 # NEU: Repeat/Anzahl-Logik wie im JUMP-Pfad auch hier anwenden
                                 try:
                                     orchestrate_on_jump(context, int(worst_f))
-                                    # count ermitteln (robust bzgl. Signatur) und ABORT prüfen
+                                    # count ermitteln (robust bzgl. Signatur) und ABORT prÃ¼fen
                                     try:
                                         _state = _get_state(context)
                                         try:
@@ -871,7 +882,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                     if _count is not None and _count >= ABORT_AT:
                                         return self._finish(
                                             context,
-                                            info=f"Abbruch: Frame {int(worst_f)} hat {ABORT_AT-1} Durchläufe erreicht.",
+                                            info=f"Abbruch: Frame {int(worst_f)} hat {ABORT_AT-1} DurchlÃ¤ufe erreicht.",
                                             cancelled=True
                                         )
                                 except Exception as _exc2:
@@ -891,12 +902,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                 # **WICHTIG**: Pre-Snapshot direkt vor DETECT (konsistent zum JUMP-Pfad)
 
                                 self.pre_ptrs = set(_snapshot_track_ptrs(context))
-                                # WICHTIG: Detect-Pfad aus Solve → exakt wie beim Start behandeln
-                                # (sonst bleiben alte Retry-/Margin-States hängen und es kann loopen)
+                                # WICHTIG: Detect-Pfad aus Solve â†’ exakt wie beim Start behandeln
+                                # (sonst bleiben alte Retry-/Margin-States hÃ¤ngen und es kann loopen)
                                 self.detect_retry_count = 0
                                 self.use_match_search_size = True
                                 # WICHTIG: Baseline auf den aktuellen Solve setzen,
-                                # damit der nächste Vergleich gegen *#04* (last solve) läuft.
+                                # damit der nÃ¤chste Vergleich gegen *#04* (last solve) lÃ¤uft.
                                 try:
                                     if avg_err is not None:
                                         self.prev_solve_avg = float(avg_err)
@@ -904,7 +915,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                     pass
                                 _bump_default_correlation_min(context)
                                 self.phase = PH_DETECT
-                                self.report({'INFO'}, f"Regression: avg={float(avg_err):.4f} > prev={float(prev_err):.4f} → Worst-Frame f={worst_f} → DETECT")
+                                self.report({'INFO'}, f"Regression: avg={float(avg_err):.4f} > prev={float(prev_err):.4f} â†’ Worst-Frame f={worst_f} â†’ DETECT")
                                 return {'RUNNING_MODAL'}
                         except Exception as _exc:
                             self.report({'WARNING'}, f"Jump/Detect-Pfad nach MaxError fehlgeschlagen: {_exc}")
@@ -917,7 +928,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 _bump_default_correlation_min(context)
                 self.phase = PH_FIND_LOW
                 return {'RUNNING_MODAL'}
-            # Beide Evaluierungen NICHT zutreffend → jetzt gezielt reduzieren
+            # Beide Evaluierungen NICHT zutreffend â†’ jetzt gezielt reduzieren
             try:
                 do_reduce = True
                 import math as _m, traceback as _tb
@@ -952,23 +963,23 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     top5 = [(n, round(e, 4), "MUTED" if m else "OK") for n, e, m, _sel in errs[:5]]
                     # Selektion/Policy Sichtbarkeit
                     sel_cnt = sum(1 for _, _e, _m, s in errs if s)
-                    print(f"[ReduceDBG] gate pre: do_reduce={do_reduce} avg_err={avg_err} prev_avg={self.last_reduced_for_avg}")
-                    print(f"[ReduceDBG] pre stats: tracks={total} selected={sel}/{sel_cnt} muted={muted} error_track(thr)={thr_err} above_thr={above_thr}")
-                    print(f"[ReduceDBG] pre top5: {top5}")
-                    print(f"[ReduceDBG] candidates(>=thr, unmuted): count={len(cands)} sample20={cands20}")
+                    _log(f"[ReduceDBG] gate pre: do_reduce={do_reduce} avg_err={avg_err} prev_avg={self.last_reduced_for_avg}")
+                    _log(f"[ReduceDBG] pre stats: tracks={total} selected={sel}/{sel_cnt} muted={muted} error_track(thr)={thr_err} above_thr={above_thr}")
+                    _log(f"[ReduceDBG] pre top5: {top5}")
+                    _log(f"[ReduceDBG] candidates(>=thr, unmuted): count={len(cands)} sample20={cands20}")
                     if (above_thr == 0) and (avg_err is not None) and (float(avg_err) > float(thr_err)):
-                        print(f"[ReduceDBG] WARNING: metric mismatch – per-track errors show no candidates while avg_err={avg_err:.4f} > thr={thr_err:.4f}")
+                        _log(f"[ReduceDBG] WARNING: metric mismatch â€“ per-track errors show no candidates while avg_err={avg_err:.4f} > thr={thr_err:.4f}")
                     # Zero/NaN Anteile (optional)
                     try:
                         zero_cnt = sum(1 for _, e, _m, _sel in errs if abs(float(e)) < 1e-12)
                         nan_cnt = sum(1 for _, e, _m, _sel in errs if not _m.isfinite(float(e)))
-                        print(f"[ReduceDBG] zeros={zero_cnt} nans={nan_cnt}")
+                        _log(f"[ReduceDBG] zeros={zero_cnt} nans={nan_cnt}")
                     except Exception:
                         pass
                 except Exception as _dbg_exc:
-                    print(f"[ReduceDBG] pre telemetry failed: {_dbg_exc}")
+                    _log(f"[ReduceDBG] pre telemetry failed: {_dbg_exc}")
                 if do_reduce:
-                    # Löschbatch nach Vorgabe:
+                    # LÃ¶schbatch nach Vorgabe:
                     # k = round(avg_err / error_frame), min=1, max=10
                     scn = context.scene
                     try:
@@ -986,7 +997,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     _den = err_frame if (err_frame and err_frame > 1e-9) else target_err if target_err > 1e-9 else 1.0
                     _k_raw = round(_avg / _den)
                     _k = max(1, min(5, int(_k_raw)))
-                    print(f"[ReduceDBG] delete-k formula: avg={_avg:.4f} / err_frame={_den:.4f} -> k_raw={_k_raw} -> k={_k} (clamp 1..10)")
+                    _log(f"[ReduceDBG] delete-k formula: avg={_avg:.4f} / err_frame={_den:.4f} -> k_raw={_k_raw} -> k={_k} (clamp 1..10)")
 
                     red = run_reduce_error_tracks(context, max_to_delete=_k)
                     deleted = int(red.get('deleted', 0) or 0)
@@ -998,13 +1009,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     if deleted > 0:
                         self.report({'INFO'}, f"ReduceErrorTracks: deleted={deleted} tracks (k={_k})")
                         try:
-                            print(f"[ReduceDBG] reducer result: deleted={deleted} names={names}")
+                            _log(f"[ReduceDBG] reducer result: deleted={deleted} names={names}")
                         except Exception:
                             pass
                     else:
-                        self.report({'WARNING'}, "ReduceErrorTracks: deleted=0 (No-Op) – gleiche Avg-Error-Lage, fahre mit rmax/next solve fort")
+                        self.report({'WARNING'}, "ReduceErrorTracks: deleted=0 (No-Op) â€“ gleiche Avg-Error-Lage, fahre mit rmax/next solve fort")
                         try:
-                            print(f"[ReduceDBG] reducer result: deleted=0 names={names}")
+                            _log(f"[ReduceDBG] reducer result: deleted=0 names={names}")
                         except Exception:
                             pass
                     # POST Telemetrie: neue Verteilung
@@ -1022,11 +1033,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                 pass
                         errs2.sort(reverse=True)
                         above_thr2 = sum(1 for e in errs2 if e >= thr2)
-                        print(f"[ReduceDBG] post above_thr={above_thr2} top5={list(map(lambda x: round(x,4), errs2[:5]))}")
+                        _log(f"[ReduceDBG] post above_thr={above_thr2} top5={list(map(lambda x: round(x,4), errs2[:5]))}")
                     except Exception as _dbg2_exc:
-                        print(f"[ReduceDBG] post telemetry failed: {_dbg2_exc}")
+                        _log(f"[ReduceDBG] post telemetry failed: {_dbg2_exc}")
             except Exception as _exc:
-                print("[ReduceDBG] EXCEPTION in run_reduce_error_tracks:\n" + _tb.format_exc())
+                _log("[ReduceDBG] EXCEPTION in run_reduce_error_tracks:\n" + _tb.format_exc())
                 self.report({'WARNING'}, f"ReduceErrorTracks Fehler: {_exc}")
             try:
                 rmax = run_find_max_marker_frame(context)
@@ -1037,7 +1048,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     self.prev_solve_avg = float(avg_err)  # Baseline fortschreiben
                 _bump_default_correlation_min(context)
                 self.phase = PH_FIND_LOW
-                self.report({'INFO'}, "Markerabdeckung ungenügend → zurück zu FIND_LOW")
+                self.report({'INFO'}, "Markerabdeckung ungenÃ¼gend â†’ zurÃ¼ck zu FIND_LOW")
                 return {'RUNNING_MODAL'}
             try:
                 if avg_err is not None:
@@ -1046,12 +1057,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 pass
             try:
                 res = solve_camera_only(context)
-                self.report({'INFO'}, f"Nächster Solve gestartet → {res}")
+                self.report({'INFO'}, f"NÃ¤chster Solve gestartet â†’ {res}")
             except Exception as exc:
-                self.report({'WARNING'}, f"Nächster Solve konnte nicht gestartet werden: {exc}")
+                self.report({'WARNING'}, f"NÃ¤chster Solve konnte nicht gestartet werden: {exc}")
             return {'RUNNING_MODAL'}
 
-        # PHASE: SPIKE_CYCLE – spike_filter → clean_short_segments → clean_short_tracks → split_cleanup → find_max_marker_frame
+        # PHASE: SPIKE_CYCLE â€“ spike_filter â†’ clean_short_segments â†’ clean_short_tracks â†’ split_cleanup â†’ find_max_marker_frame
         if self.phase == PH_SPIKE_CYCLE:
             scn = context.scene
             thr = float(self.spike_threshold or 100.0)
@@ -1069,7 +1080,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 clean_short_tracks(context)
             except Exception:
                 pass
-            # 3) Split-Cleanup (UI-override, falls verfügbar)
+            # 3) Split-Cleanup (UI-override, falls verfÃ¼gbar)
             try:
                 override = _ensure_clip_context(context)
                 space = override.get("space_data") if override else None
@@ -1083,7 +1094,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # 4) Max-Marker-Frame suchen
             rmax = run_find_max_marker_frame(context)
             if rmax.get("status") == "FOUND":
-                # Erfolg → regulären Zyklus neu starten
+                # Erfolg â†’ regulÃ¤ren Zyklus neu starten
                 reset_for_new_cycle(context)  # Solve-Log bleibt erhalten (kein Bootstrap)
                 self.spike_threshold = None
                 scn["tco_spike_cycle_finished"] = False
@@ -1093,7 +1104,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # Kein Treffer
             next_thr = thr * 0.9
             if next_thr < 7:
-                # Terminalbedingung: Spike-Cycle beendet → Kamera-Solve starten
+                # Terminalbedingung: Spike-Cycle beendet â†’ Kamera-Solve starten
                 try:
                     scn["tco_spike_cycle_finished"] = True
                 except Exception:
@@ -1108,12 +1119,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     except Exception: pass
                     # Direkt in Settings spiegeln
                     _apply_refine_flags(context, focal=False, principal=False, radial=False)
-                    # Retry-States zurücksetzen
+                    # Retry-States zurÃ¼cksetzen
                     self.solve_refine_attempted = False          # Variante 1 (nur Focal) noch offen
                     self.solve_refine_full_attempted = False     # Variante 2 (alle) noch offen
                     res = solve_camera_only(context)
-                    self.report({'INFO'}, f"SolveCamera gestartet → {res}")
-                    # → direkt in die Solve-Evaluation wechseln
+                    self.report({'INFO'}, f"SolveCamera gestartet â†’ {res}")
+                    # â†’ direkt in die Solve-Evaluation wechseln
                     self.phase = PH_SOLVE_EVAL
                     return {'RUNNING_MODAL'}
                 except Exception as exc:
@@ -1122,31 +1133,31 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self.spike_threshold = next_thr
             return {'RUNNING_MODAL'}
         # PHASE 5: Bidirectional-Tracking. Wird aktiviert, nachdem ein Multi-Pass
-        # und Distanzé erfolgreich ausgeführt wurden und die Markeranzahl innerhalb des
-        # gültigen Bereichs lag. Startet den Bidirectional-Track-Operator und wartet
+        # und DistanzÃ© erfolgreich ausgefÃ¼hrt wurden und die Markeranzahl innerhalb des
+        # gÃ¼ltigen Bereichs lag. Startet den Bidirectional-Track-Operator und wartet
         # auf dessen Abschluss. Danach wird die Sequenz wieder bei PH_FIND_LOW fortgesetzt.
         if self.phase == PH_BIDI:
             scn = context.scene
             bidi_active = bool(scn.get("bidi_active", False))
             bidi_result = scn.get("bidi_result", "")
-            # Operator noch nicht gestartet → starten
+            # Operator noch nicht gestartet â†’ starten
             if not self.bidi_started:
                 if CLIP_OT_bidirectional_track is None:
-                    return self._finish(context, info="Bidirectional-Track nicht verfügbar.", cancelled=True)
+                    return self._finish(context, info="Bidirectional-Track nicht verfÃ¼gbar.", cancelled=True)
                 try:
-                    # Snapshot vor Start (nur ausgewählte Tracks)
+                    # Snapshot vor Start (nur ausgewÃ¤hlte Tracks)
                     self.bidi_before_counts = _marker_count_by_selected_track(context)
-                    # Starte den Bidirectional‑Track mittels Operator. Das 'INVOKE_DEFAULT'
-                    # sorgt dafür, dass Blender den Operator modal ausführt.
+                    # Starte den Bidirectionalâ€‘Track mittels Operator. Das 'INVOKE_DEFAULT'
+                    # sorgt dafÃ¼r, dass Blender den Operator modal ausfÃ¼hrt.
                     bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
                     self.bidi_started = True
                     self.report({'INFO'}, "Bidirectional-Track gestartet")
                 except Exception as exc:
                     return self._finish(context, info=f"Bidirectional-Track konnte nicht gestartet werden ({exc})", cancelled=True)
                 return {'RUNNING_MODAL'}
-            # Operator läuft → abwarten
+            # Operator lÃ¤uft â†’ abwarten
             if not bidi_active:
-                # Operator hat beendet. Prüfe Ergebnis.
+                # Operator hat beendet. PrÃ¼fe Ergebnis.
                 if str(bidi_result) != "OK":
                     return self._finish(context, info=f"Bidirectional-Track fehlgeschlagen ({bidi_result})", cancelled=True)
                 # NEU: Delta je Marker berechnen und A_k speichern
@@ -1162,13 +1173,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         per_marker_frames=per_marker_frames,
                         error_value_func=error_value,
                     )
-                    self.report({'INFO'}, f"A_k gespeichert @f{f}: sumΔ={sum(per_marker_frames.values())}")
+                    self.report({'INFO'}, f"A_k gespeichert @f{f}: sumÎ”={sum(per_marker_frames.values())}")
                 except Exception as _exc:
                     self.report({'WARNING'}, f"A_k speichern fehlgeschlagen: {_exc}")
-                # Erfolgreich: für die neue Runde zurücksetzen
+                # Erfolgreich: fÃ¼r die neue Runde zurÃ¼cksetzen
                 try:
                     clean_short_tracks(context)
-                    self.report({'INFO'}, "Cleanup nach Bidirectional-Track ausgeführt")
+                    self.report({'INFO'}, "Cleanup nach Bidirectional-Track ausgefÃ¼hrt")
                 except Exception as exc:
                     self.report({'WARNING'}, f"Cleanup nach Bidirectional-Track fehlgeschlagen: {exc}")
                 reset_for_new_cycle(context)  # Solve-Log bleibt erhalten
@@ -1180,9 +1191,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self.bidi_before_counts = None
                 self.repeat_count_for_target = None
                 self.phase = PH_FIND_LOW
-                self.report({'INFO'}, "Bidirectional-Track abgeschlossen – neuer Zyklus beginnt")
+                self.report({'INFO'}, "Bidirectional-Track abgeschlossen â€“ neuer Zyklus beginnt")
                 return {'RUNNING_MODAL'}
-            # Wenn noch aktiv → weiter warten
+            # Wenn noch aktiv â†’ weiter warten
             return {'RUNNING_MODAL'}
 
         # Fallback (unbekannte Phase)
@@ -1191,26 +1202,26 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
 # --- Registrierung ----------------------------------------------------------
 def register():
-    """Registriert den Tracking‑Coordinator und optional den Bidirectional‑Track Operator."""
-    # Den Bidirectional‑Track Operator zuerst registrieren, falls verfügbar. Dieser
+    """Registriert den Trackingâ€‘Coordinator und optional den Bidirectionalâ€‘Track Operator."""
+    # Den Bidirectionalâ€‘Track Operator zuerst registrieren, falls verfÃ¼gbar. Dieser
     # kann aus Helper/bidirectional_track.py importiert werden. Wenn der Import
-    # fehlschlägt, bleibt die Variable None.
+    # fehlschlÃ¤gt, bleibt die Variable None.
     if CLIP_OT_bidirectional_track is not None:
         try:
             bpy.utils.register_class(CLIP_OT_bidirectional_track)
         except Exception:
-            # Ignoriere Fehler, Operator könnte bereits registriert sein
+            # Ignoriere Fehler, Operator kÃ¶nnte bereits registriert sein
             pass
     bpy.utils.register_class(CLIP_OT_tracking_coordinator)
 
 
 def unregister():
-    """Deregistriert den Tracking‑Coordinator und optional den Bidirectional‑Track Operator."""
+    """Deregistriert den Trackingâ€‘Coordinator und optional den Bidirectionalâ€‘Track Operator."""
     try:
         bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
     except Exception:
         pass
-    # Optional auch den Bidirectional‑Track Operator deregistrieren
+    # Optional auch den Bidirectionalâ€‘Track Operator deregistrieren
     if CLIP_OT_bidirectional_track is not None:
         try:
             bpy.utils.unregister_class(CLIP_OT_bidirectional_track)
