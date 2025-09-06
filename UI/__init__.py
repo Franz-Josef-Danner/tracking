@@ -1,7 +1,5 @@
 import bpy
 from . import overlay as _overlay
-from . import menus as _menus
-from . import panels as _panels
 from . import solve_log as _solve_log  # stellt nur Funktionen bereit
 from . import utils as _utils          # Hilfsfunktionen (Redraw)
 
