@@ -39,7 +39,8 @@ all = ("run_distance_cleanup",)
 
 
 
-def _resolve_clip(context: bpy.types.Context): """Robust den aktiven MovieClip ermitteln.
+def _resolve_clip(context: bpy.types.Context):
+ """Robust den aktiven MovieClip ermitteln.
 
 Versucht zuerst den CLIP_EDITOR der aktuellen Area, fällt auf Szene-Clip
 bzw. erstes MovieClip-Datenbankobjekt zurück.
