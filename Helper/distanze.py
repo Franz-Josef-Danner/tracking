@@ -24,8 +24,7 @@ Es wird ein interner _solve_log()-Helper verwendet, der – falls vorhanden – 
 
 Rückgabe: Tuple[bool, dict]: (ok, info) ok   – True bei erfolgreicher Ausführung info – Strukturierte Daten zu Frame/Markerlisten (nützlich für Tests)
 
-Kompatibel mit: Blender 4.x API """
-from future import annotations
+Kompatibel mit: Blender 4.x API """ from future import annotations
 
 from typing import Any, Dict, List, Tuple
 
@@ -33,14 +32,13 @@ import bpy
 
 all = ("run_distance_cleanup",)
 
+-----------------------------------------------------------------------------
 
+Utilities
 
-# Utilities
+-----------------------------------------------------------------------------
 
-
-
-def _resolve_clip(context: bpy.types.Context):
- """Robust den aktiven MovieClip ermitteln.
+def _resolve_clip(context: bpy.types.Context): """Robust den aktiven MovieClip ermitteln.
 
 Versucht zuerst den CLIP_EDITOR der aktuellen Area, fällt auf Szene-Clip
 bzw. erstes MovieClip-Datenbankobjekt zurück.
@@ -87,11 +85,11 @@ except Exception:
 
 def _marker_pixel_pos(marker: "bpy.types.MovieTrackingMarker", width: int, height: int) -> Tuple[float, float]: """Umrechnung von Normalized- zu Pixel-Koordinaten.""" try: x = float(marker.co[0]) * float(width) y = float(marker.co[1]) * float(height) return x, y except Exception: return 0.0, 0.0
 
+-----------------------------------------------------------------------------
 
+Public API
 
-# Public API
-
-
+-----------------------------------------------------------------------------
 
 def run_distance_cleanup(context: bpy.types.Context) -> Tuple[bool, Dict[str, Any]]: """Erfasst selektierte (neu) und übrige aktive, ungemutete (alt) Marker im aktuellen Frame, berechnet Pixelpositionen und schreibt Log-Zeilen.
 
