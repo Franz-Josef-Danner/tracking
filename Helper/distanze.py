@@ -24,7 +24,8 @@ Es wird ein interner _solve_log()-Helper verwendet, der – falls vorhanden – 
 
 Rückgabe: Tuple[bool, dict]: (ok, info) ok   – True bei erfolgreicher Ausführung info – Strukturierte Daten zu Frame/Markerlisten (nützlich für Tests)
 
-Kompatibel mit: Blender 4.x API """ from future import annotations
+Kompatibel mit: Blender 4.x API """
+from future import annotations
 
 from typing import Any, Dict, List, Tuple
 
