@@ -33,11 +33,11 @@ import bpy
 
 all = ("run_distance_cleanup",)
 
------------------------------------------------------------------------------
 
-Utilities
 
------------------------------------------------------------------------------
+# Utilities
+
+
 
 def _resolve_clip(context: bpy.types.Context): """Robust den aktiven MovieClip ermitteln.
 
