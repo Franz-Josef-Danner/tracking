@@ -86,11 +86,11 @@ except Exception:
 
 def _marker_pixel_pos(marker: "bpy.types.MovieTrackingMarker", width: int, height: int) -> Tuple[float, float]: """Umrechnung von Normalized- zu Pixel-Koordinaten.""" try: x = float(marker.co[0]) * float(width) y = float(marker.co[1]) * float(height) return x, y except Exception: return 0.0, 0.0
 
------------------------------------------------------------------------------
 
-Public API
 
------------------------------------------------------------------------------
+# Public API
+
+
 
 def run_distance_cleanup(context: bpy.types.Context) -> Tuple[bool, Dict[str, Any]]: """Erfasst selektierte (neu) und übrige aktive, ungemutete (alt) Marker im aktuellen Frame, berechnet Pixelpositionen und schreibt Log-Zeilen.
 
