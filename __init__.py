@@ -182,20 +182,24 @@ _CLASSES = (
 
 def register() -> None:
     from .ui import register as _ui_register
-    _register_scene_props()
+    # 1) Klassen zuerst registrieren (damit bl_rna existiert)
     for cls in _CLASSES:
         bpy.utils.register_class(cls)
+    # 2) Dann Scene-Properties anlegen (nutzt registrierte PropertyGroups)
+    _register_scene_props()
     _ui_register()  # Panels/Menus/Overlay
 
 def unregister() -> None:
     from .ui import unregister as _ui_unregister
     _ui_unregister()
+    # 1) Scene-Properties zuerst sauber entfernen (lösen Referenzen)
+    _unregister_scene_props()
+    # 2) Dann Klassen deregistrieren
     for cls in reversed(_CLASSES):
         try:
             bpy.utils.unregister_class(cls)
         except Exception:
             pass
-    _unregister_scene_props()
 
 if __name__ == "__main__":
     register()
