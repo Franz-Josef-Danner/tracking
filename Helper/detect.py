@@ -310,6 +310,8 @@ def run_detect_basic(
             "new_count_raw": int(new_count),
             "width": int(width),
             "height": int(height),
+            # OPTIONAL DOWNSTREAM: könnte der Coordinator nutzen, falls gewünscht
+            # "created_ptrs": [int(t.as_pointer()) for t in tracking.tracks if int(t.as_pointer()) not in pre_ptrs],
         }
 
     except Exception as ex:
