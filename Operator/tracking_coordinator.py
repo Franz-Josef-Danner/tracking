@@ -173,13 +173,22 @@ def _ensure_clip_context(context: bpy.types.Context) -> dict:
     return {}
 
 def _resolve_clip(context: bpy.types.Context):
-    """Robuster Clip-Resolver (Edit-Clip, Space-Clip, erster Clip)."""
-    clip = getattr(context, "edit_movieclip", None)
-    if not clip:
-        clip = getattr(getattr(context, "space_data", None), "clip", None)
-    if not clip and bpy.data.movieclips:
-        clip = next(iter(bpy.data.movieclips), None)
-    return clip
+    """Kleiner Helper, um sicher an den aktiven Clip zu kommen."""
+    try:
+        if context.area and context.area.type == "CLIP_EDITOR":
+            sp = context.area.spaces.active
+            if getattr(sp, "clip", None):
+                return sp.clip
+    except Exception:
+        pass
+    try:
+        return context.scene.clip
+    except Exception:
+        pass
+    try:
+        return next(iter(bpy.data.movieclips), None)
+    except Exception:
+        return None
 
 def _reset_margin_to_tracker_default(context: bpy.types.Context) -> None:
     """
@@ -530,6 +539,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if rd.get("status") != "READY":
                 return self._finish(context, info=f"DETECT FAILED â†’ {rd}", cancelled=True)
             new_cnt = int(rd.get("new_tracks", 0))
+            self.new_tracks_count = new_cnt
+            try:
+                self.detect_min_distance_px = int(rd.get("min_distance_px", 0))
+            except Exception:
+                self.detect_min_distance_px = 0
             # Merke den verwendeten Threshold fÃ¼r spÃ¤tere Anpassungen
             try:
                 self.detection_threshold = float(rd.get("threshold", self.detection_threshold))
@@ -543,21 +557,29 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         if self.phase == PH_DISTANZE:
             if self.pre_ptrs is None or self.target_frame is None:
                 return self._finish(context, info="DISTANZE: Pre-Snapshot oder Ziel-Frame fehlt.", cancelled=True)
-            try:
-                dis = run_distance_cleanup(
-                    context,
-                    pre_ptrs=self.pre_ptrs,
-                    frame=int(self.target_frame),
-                    # min_distance=None â†’ Auto-Ableitung in distanze.py (aus Threshold & scene-base)
-                    min_distance=None,
-                    distance_unit="pixel",
-                    require_selected_new=True,
-                    include_muted_old=False,
-                    select_remaining_new=True,
-                    verbose=True,
-                )
-            except Exception as exc:
-                return self._finish(context, info=f"DISTANZE FAILED â†’ {exc}", cancelled=True)
+            scn = bpy.context.scene
+            f = int(getattr(scn, "frame_current", 0))
+            f_min = int(getattr(scn, "frame_start", f))
+            f_max = int(getattr(scn, "frame_end", f))
+            f = max(f_min, min(f_max, f))
+            scn.frame_current = f
+
+            min_dist_px = int(scn.get("min_distance_base", getattr(self, "detect_min_distance_px", 0) or 200))
+            dis = {"removed": 0, "kept": 0}
+            if int(getattr(self, "new_tracks_count", 0)) > 0:
+                try:
+                    dis = run_distance_cleanup(
+                        context,
+                        pre_ptrs=self.pre_ptrs,
+                        frame=f,
+                        min_distance=min_dist_px,
+                        distance_unit="pixel",
+                        require_selected_new=False,
+                        include_muted_old=False,
+                        select_remaining_new=True,
+                    )
+                except Exception as exc:
+                    return self._finish(context, info=f"DISTANZE FAILED → {exc}", cancelled=True)
 
             removed = dis.get('removed', 0)
             kept = dis.get('kept', 0)
