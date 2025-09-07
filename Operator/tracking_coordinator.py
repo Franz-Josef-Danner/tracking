@@ -813,18 +813,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
             # 1) aktuellen Fehler messen & loggen
             avg_err = get_avg_reprojection_error(context)
-            # NEU: Solve-Error in Log/Overlay schreiben (NaN/Inf werden intern gefiltert)
-            try:
-                _solve_log(context, avg_err)
-            except Exception:
-                pass
+            # Exakt EINE Log-Auslösung pro Eval-Zyklus:
+            try: _solve_log(context, avg_err)
+            except Exception: pass
 
             # Erfolgskriterium (Eval #1): Ziel erreicht â†’ harter Exit
             try:
                 if (avg_err is not None) and (float(avg_err) < float(target_err)):
-                    # Erfolg ebenfalls mitloggen (damit die Kurve den finalen Punkt enthält)
-                    try: _solve_log(context, avg_err)
-                    except Exception: pass
+                    # Kein zweites Logging hier – bereits oben geloggt.
                     self.report({'INFO'}, f"Solve OK: avg={float(avg_err):.4f} < target={float(target_err):.4f}")
                     return self._finish(context, info="Sequenz abgeschlossen (Solve-Ziel erreicht).", cancelled=False)
             except Exception:
@@ -840,9 +836,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception:
                 is_regression = False
             if is_regression:
-                # Regression protokollieren, bevor wir auf Worst-Frame springen
-                try: _solve_log(context, avg_err)
-                except Exception: pass
+                # Kein zweites Logging – bereits oben geloggt.
                 if run_find_max_error_frame is not None:
                     try:
                         min_cov = int(scn.get("min_tracks_per_frame_for_max_error", 10))
