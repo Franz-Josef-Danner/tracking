@@ -8,8 +8,16 @@ tracking_coordinator.py â€“ Streng sequentieller, MODALER Orchestrator
 from __future__ import annotations
 import bpy
 
-# (No console logger; all former no-op logging removed)
 # ---------------------------------------------------------------------------
+# Console logging
+# ---------------------------------------------------------------------------
+# To avoid cluttering the console with debug and status messages, all direct
+# calls to ``print()`` in this module have been replaced by a no-op logger.
+# The ``_log`` function can be used in place of ``print`` to completely
+# suppress output. UI messages should continue to be emitted via ``self.report``.
+def _log(*args, **kwargs):
+    """No-op logger used to suppress console output."""
+    return None
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame
 from ..Helper.jump_to_frame import run_jump_to_frame
 from ..Helper.detect import run_detect_once
@@ -31,6 +39,17 @@ except Exception:
         run_find_max_error_frame = None  # type: ignore
 from ..Helper.reset_state import reset_for_new_cycle  # zentraler Reset (Bootstrap/Cycle)
 
+# Versuche, die Auswertungsfunktion fÃ¼r die Markeranzahl zu importieren.
+# Diese Funktion soll nach dem Distanz-Cleanup ausgefÃ¼hrt werden und
+# verwendet interne Grenzwerte aus der count.py. Es werden keine
+# zusÃ¤tzlichen Parameter Ã¼bergeben.
+try:
+    from ..Helper.count import evaluate_marker_count  # type: ignore
+except Exception:
+    try:
+        from .count import evaluate_marker_count  # type: ignore
+    except Exception:
+        evaluate_marker_count = None  # type: ignore
 from ..Helper.tracker_settings import apply_tracker_settings
 
 # --- Anzahl/A-Werte/State-Handling ------------------------------------------
@@ -88,6 +107,20 @@ except Exception:
         CLIP_OT_bidirectional_track = None  # type: ignore
 
 # -----------------------------------------------------------------------------
+# Optionally import the multi-pass helper. This helper performs additional
+# feature detection passes with varied pattern sizes. It will be invoked when
+# the marker count evaluation reports that the number of markers lies within
+# the acceptable range ("ENOUGH").
+try:
+    # Prefer package-style import when the Helper package is available
+    from ..Helper.multi import run_multi_pass  # type: ignore
+except Exception:
+    try:
+        # Fallback to local import when running as a standalone module
+        from .multi import run_multi_pass  # type: ignore
+    except Exception:
+        # If import fails entirely, leave run_multi_pass as None
+        run_multi_pass = None  # type: ignore
 from ..Helper.marker_helper_main import marker_helper_main
 # Import the detect threshold key so we can reference the last used value
 try:
@@ -148,22 +181,13 @@ def _ensure_clip_context(context: bpy.types.Context) -> dict:
     return {}
 
 def _resolve_clip(context: bpy.types.Context):
-    """Kleiner Helper, um sicher an den aktiven Clip zu kommen."""
-    try:
-        if context.area and context.area.type == "CLIP_EDITOR":
-            sp = context.area.spaces.active
-            if getattr(sp, "clip", None):
-                return sp.clip
-    except Exception:
-        pass
-    try:
-        return context.scene.clip
-    except Exception:
-        pass
-    try:
-        return next(iter(bpy.data.movieclips), None)
-    except Exception:
-        return None
+    """Robuster Clip-Resolver (Edit-Clip, Space-Clip, erster Clip)."""
+    clip = getattr(context, "edit_movieclip", None)
+    if not clip:
+        clip = getattr(getattr(context, "space_data", None), "clip", None)
+    if not clip and bpy.data.movieclips:
+        clip = next(iter(bpy.data.movieclips), None)
+    return clip
 
 def _reset_margin_to_tracker_default(context: bpy.types.Context) -> None:
     """
@@ -191,8 +215,9 @@ def _reset_margin_to_tracker_default(context: bpy.types.Context) -> None:
             pattern_size = max(1, int(width / 100)) if width > 0 else 8
             base_margin = pattern_size * 2
         settings.default_margin = int(base_margin)
-    except Exception:
-        pass
+        _log(f"[Coordinator] default_margin reset â†’ {int(base_margin)} (skip multi)")
+    except Exception as exc:
+        _log(f"[Coordinator] WARN: margin reset failed: {exc}")
 
 def _marker_count_by_selected_track(context: bpy.types.Context) -> dict[str, int]:
     """Anzahl Marker je *ausgewÃ¤hltem* Track (Name -> Count)."""
@@ -225,10 +250,11 @@ def _apply_refine_focal_flag(context: bpy.types.Context, flag: bool) -> None:
         settings = getattr(tr, "settings", None) if tr else None
         if settings and hasattr(settings, "refine_intrinsics_focal_length"):
             settings.refine_intrinsics_focal_length = bool(flag)
+            _log(f"[Coordinator] refine_intrinsics_focal_length â†’ {bool(flag)}")
         else:
-            pass
-    except Exception:
-        pass
+            _log("[Coordinator] WARN: refine_intrinsics_focal_length nicht verfÃ¼gbar")
+    except Exception as exc:
+        _log(f"[Coordinator] WARN: refine-Flag konnte nicht gesetzt werden: {exc}")
 
 # --- NEU: weitere Refine-Flags spiegeln --------------------------------------
 def _apply_refine_principal_flag(context: bpy.types.Context, flag: bool) -> None:
@@ -238,10 +264,11 @@ def _apply_refine_principal_flag(context: bpy.types.Context, flag: bool) -> None
         settings = getattr(getattr(clip, "tracking", None), "settings", None) if clip else None
         if settings and hasattr(settings, "refine_intrinsics_principal_point"):
             settings.refine_intrinsics_principal_point = bool(flag)
+            _log(f"[Coordinator] refine_intrinsics_principal_point â†’ {bool(flag)}")
         else:
-            pass
-    except Exception:
-        pass
+            _log("[Coordinator] WARN: refine_intrinsics_principal_point nicht verfÃ¼gbar")
+    except Exception as exc:
+        _log(f"[Coordinator] WARN: principal-point Flag konnte nicht gesetzt werden: {exc}")
 
 def _apply_refine_radial_flag(context: bpy.types.Context, flag: bool) -> None:
     """Setzt tracking.settings.refine_intrinsics_radial_distortion gemÃ¤ÃŸ flag."""
@@ -250,10 +277,11 @@ def _apply_refine_radial_flag(context: bpy.types.Context, flag: bool) -> None:
         settings = getattr(getattr(clip, "tracking", None), "settings", None) if clip else None
         if settings and hasattr(settings, "refine_intrinsics_radial_distortion"):
             settings.refine_intrinsics_radial_distortion = bool(flag)
+            _log(f"[Coordinator] refine_intrinsics_radial_distortion â†’ {bool(flag)}")
         else:
-            pass
-    except Exception:
-        pass
+            _log("[Coordinator] WARN: refine_intrinsics_radial_distortion nicht verfÃ¼gbar")
+    except Exception as exc:
+        _log(f"[Coordinator] WARN: radial-distortion Flag konnte nicht gesetzt werden: {exc}")
 
 def _apply_refine_flags(context: bpy.types.Context, *, focal: bool, principal: bool, radial: bool) -> None:
     """Komfort: alle drei Refine-Flags konsistent setzen."""
@@ -286,8 +314,9 @@ def _bump_default_correlation_min(context: bpy.types.Context) -> None:
         val = float(getattr(settings, "default_correlation_min", 0.75))
         new_val = min(0.98, val + 0.001)
         settings.default_correlation_min = new_val
-    except Exception:
-        pass
+        _log(f"[Coordinator] default_correlation_min bumped â†’ {new_val:.3f}")
+    except Exception as exc:
+        _log(f"[Coordinator] WARN: correlation bump failed: {exc}")
 
 def _bootstrap(context: bpy.types.Context) -> None:
     """Minimaler Reset + sinnvolle Defaults; Helper initialisieren."""
@@ -514,11 +543,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if rd.get("status") != "READY":
                 return self._finish(context, info=f"DETECT FAILED â†’ {rd}", cancelled=True)
             new_cnt = int(rd.get("new_tracks", 0))
-            self.new_tracks_count = new_cnt
-            try:
-                self.detect_min_distance_px = int(rd.get("min_distance_px", 0))
-            except Exception:
-                self.detect_min_distance_px = 0
             # Merke den verwendeten Threshold fÃ¼r spÃ¤tere Anpassungen
             try:
                 self.detection_threshold = float(rd.get("threshold", self.detection_threshold))
@@ -530,29 +554,259 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         # PHASE 4: DISTANZE
         if self.phase == PH_DISTANZE:
-            # neuer Aufruf: unsere verschlankte Funktion erwartet nur den context
-            ok, info = run_distance_cleanup(context)
-
-            # optional: Logging + Status merken
+            if self.pre_ptrs is None or self.target_frame is None:
+                return self._finish(context, info="DISTANZE: Pre-Snapshot oder Ziel-Frame fehlt.", cancelled=True)
             try:
-                _solve_log(
+                dis = run_distance_cleanup(
                     context,
-                    f"[Coordinator] DISTANZE ok={ok} "
-                    f"frame={info.get('frame')} "
-                    f"new={len(info.get('new', []))} "
-                    f"old={len(info.get('old', []))}"
+                    pre_ptrs=self.pre_ptrs,
+                    frame=int(self.target_frame),
+                    # min_distance=None â†’ Auto-Ableitung in distanze.py (aus Threshold & scene-base)
+                    min_distance=None,
+                    distance_unit="pixel",
+                    require_selected_new=True,
+                    include_muted_old=False,
+                    select_remaining_new=True,
+                    verbose=True,
                 )
-                context.scene["tco_last_distanze"] = {
-                    "ok": bool(ok),
-                    "frame": int(info.get("frame", -1)),
-                    "new": len(info.get("new", [])),
-                    "old": len(info.get("old", [])),
-                }
-            except Exception:
-                pass
-            self.phase = PH_SPIKE_CYCLE
-            return {'RUNNING_MODAL'}
+            except Exception as exc:
+                return self._finish(context, info=f"DISTANZE FAILED â†’ {exc}", cancelled=True)
 
+            removed = dis.get('removed', 0)
+            kept = dis.get('kept', 0)
+
+            # NUR neue Tracks berÃ¼cksichtigen, die AM target_frame einen Marker besitzen
+            new_ptrs_after_cleanup: set[int] = set()
+            clip = _resolve_clip(context)
+            if clip and isinstance(self.pre_ptrs, set):
+                trk = getattr(clip, "tracking", None)
+                if trk and hasattr(trk, "tracks"):
+                    for t in trk.tracks:
+                        ptr = int(t.as_pointer())
+                        if ptr in self.pre_ptrs:
+                            continue  # nicht neu
+                        try:
+                            m = t.markers.find_frame(int(self.target_frame), exact=True)
+                        except TypeError:
+                            # Ã¤ltere Blender-Builds ohne exact-Param
+                            m = t.markers.find_frame(int(self.target_frame))
+                        if m:
+                            new_ptrs_after_cleanup.add(ptr)
+
+            # Markeranzahl auswerten, sofern die ZÃ¤hlfunktion vorhanden ist.
+            eval_res = None
+            scn = context.scene
+            if evaluate_marker_count is not None:
+                try:
+                    # Aufruf ohne explizite Grenzwerte â€“ count.py kennt diese selbst.
+                    eval_res = evaluate_marker_count(new_ptrs_after_cleanup=new_ptrs_after_cleanup)  # type: ignore
+                except Exception as exc:
+                    # Wenn der Aufruf fehlschlÃ¤gt, Fehlermeldung zurÃ¼ckgeben.
+                    eval_res = {"status": "ERROR", "reason": str(exc), "count": len(new_ptrs_after_cleanup)}
+                # Ergebnis im Szenen-Status speichern
+                try:
+                    scn["tco_last_marker_count"] = eval_res
+                except Exception:
+                    pass
+
+                # PrÃ¼fe, ob Markeranzahl auÃŸerhalb des gÃ¼ltigen Bandes liegt
+                status = str(eval_res.get("status", "")) if isinstance(eval_res, dict) else ""
+                if status in {"TOO_FEW", "TOO_MANY"}:
+                    # *** DistanzÃ©-Semantik: nur den MARKER am aktuellen Frame lÃ¶schen ***
+                    deleted_markers = 0
+                    if clip and new_ptrs_after_cleanup:
+                        trk = getattr(clip, "tracking", None)
+                        if trk and hasattr(trk, "tracks"):
+                            curf = int(self.target_frame)
+                            # Variante 1 (bevorzugt): via Operator im CLIP-Override (robust wie UI)
+                            try:
+                                # Selektion vorbereiten
+                                target_ptrs = set(new_ptrs_after_cleanup)
+                                for t in trk.tracks:
+                                    try:
+                                        t.select = False
+                                    except Exception:
+                                        pass
+                                for t in trk.tracks:
+                                    if int(t.as_pointer()) in target_ptrs:
+                                        try:
+                                            t.select = True
+                                        except Exception:
+                                            pass
+                                # Frame sicher setzen
+                                try:
+                                    scn.frame_set(curf)
+                                except Exception:
+                                    pass
+                                override = _ensure_clip_context(context)
+                                if override:
+                                    with bpy.context.temp_override(**override):
+                                        bpy.ops.clip.delete_marker(confirm=False)
+                                else:
+                                    bpy.ops.clip.delete_marker(confirm=False)
+                                deleted_markers = len(target_ptrs)
+                            except Exception:
+                                # Variante 2 (Fallback): direkte API, ggf. mehrfach lÃ¶schen bis leer
+                                for t in trk.tracks:
+                                    if int(t.as_pointer()) in new_ptrs_after_cleanup:
+                                        while True:
+                                            try:
+                                                _m = None
+                                                try:
+                                                    _m = t.markers.find_frame(curf, exact=True)
+                                                except TypeError:
+                                                    _m = t.markers.find_frame(curf)
+                                                if not _m:
+                                                    break
+                                                t.markers.delete_frame(curf)
+                                                deleted_markers += 1
+                                            except Exception:
+                                                break
+                            # Flush/Refresh, damit der Effekt sofort greift
+                            try:
+                                bpy.context.view_layer.update()
+                                scn.frame_set(curf)
+                            except Exception:
+                                pass
+
+                    # Threshold neu berechnen:
+                    # threshold = max(detection_threshold * ((anzahl_neu + 0.1) / marker_adapt), 0.0001)
+                    try:
+                        anzahl_neu = float(eval_res.get("count", 0))
+                        marker_min = float(eval_res.get("min", 0))
+                        marker_max = float(eval_res.get("max", 0))
+                        # bevorzugt aus Szene (falls gesetzt), sonst Mittelwert
+                        marker_adapt = float(scn.get("marker_adapt", 0.0)) or ((marker_min + marker_max) / 2.0)
+                        if marker_adapt <= 0.0:
+                            marker_adapt = 1.0
+                        base_thr = float(self.detection_threshold if self.detection_threshold is not None
+                                         else scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
+                        self.detection_threshold = max(base_thr * ((anzahl_neu + 0.1) / marker_adapt), 0.0001)
+
+                        # (entfernt) Szene-Overrides fÃ¼r margin/min_distance â€“ Variablen hier nicht definiert
+                    except Exception:
+                        pass
+
+                    self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res}, deleted_markers={deleted_markers}, thrâ†’{self.detection_threshold}")
+                    # ZurÃ¼ck zu DETECT mit neuem Threshold
+                    self.phase = PH_DETECT
+                    return {'RUNNING_MODAL'}
+
+
+                # Markeranzahl im gÃ¼ltigen Bereich â€“ optional Multi-Pass und dann Bidirectional-Track ausfÃ¼hren.
+                did_multi = False
+                # NEU: Multi-Pass nur, wenn der *aktuelle* count (aus JSON) >= 6
+                wants_multi = False
+                try:
+                    _state = _get_state(context)
+                    _entry, _ = _ensure_frame_entry(_state, int(self.target_frame))
+                    _cnt_now = int(_entry.get("count", 1))
+                    self.repeat_count_for_target = _cnt_now  # fÃ¼r Logging/UI spiegeln
+                    wants_multi = (_cnt_now >= 6)
+                except Exception:
+                    wants_multi = False
+                # Suppress console output using the no-op logger
+                _log(f"[Coordinator] multi gate @frame={self.target_frame} count={self.repeat_count_for_target} â†’ wants_multi={wants_multi}")
+                if isinstance(eval_res, dict) and str(eval_res.get("status", "")) == "ENOUGH" and wants_multi:
+                    # FÃ¼hre nur Multiâ€‘Pass aus, wenn der Helper importiert werden konnte.
+                    if run_multi_pass is not None:
+                        try:
+                            # Snapshot der aktuellen Trackerâ€‘Pointer als Basis fÃ¼r den Multiâ€‘Pass.
+                            current_ptrs = set(_snapshot_track_ptrs(context))
+                            # Ermittelten Threshold fÃ¼r den Multiâ€‘Pass verwenden. Fallback auf einen Standardwert.
+                            try:
+                                thr = float(self.detection_threshold) if self.detection_threshold is not None else None
+                            except Exception:
+                                thr = None
+                            if thr is None:
+                                try:
+                                    thr = float(context.scene.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
+                                except Exception:
+                                    thr = 0.5
+                            # NEU: WiederholungszÃ¤hler an multi.py Ã¼bergeben.
+                            mp_res = run_multi_pass(
+                                context,
+                                detect_threshold=float(thr),
+                                pre_ptrs=current_ptrs,
+                                repeat_count=int(self.repeat_count_for_target or 0),
+                            )
+                            try:
+                                context.scene["tco_last_multi_pass"] = mp_res  # type: ignore
+                            except Exception:
+                                pass
+                            self.report({'INFO'}, (
+                                "MULTI-PASS ausgefÃ¼hrt "
+                                f"(rep={self.repeat_count_for_target}): "
+                                f"scales={mp_res.get('scales_used')}, "
+                                f"created={mp_res.get('created_per_scale')}, "
+                                f"selected={mp_res.get('selected')}"
+                            ))
+                            # Nach dem Multiâ€‘Pass eine DistanzprÃ¼fung durchfÃ¼hren.
+                            try:
+                                cur_frame = int(self.target_frame) if self.target_frame is not None else None
+                                if cur_frame is not None:
+                                    dist_res = run_distance_cleanup(
+                                        context,
+                                        pre_ptrs=current_ptrs,
+                                        frame=cur_frame,
+                                        min_distance=None,
+                                        distance_unit="pixel",
+                                        require_selected_new=True,
+                                        include_muted_old=False,
+                                        select_remaining_new=True,
+                                        verbose=True,
+                                    )
+                                    try:
+                                        context.scene["tco_last_multi_distance_cleanup"] = dist_res  # type: ignore
+                                    except Exception:
+                                        pass
+                                    self.report({'INFO'}, f"MULTI-PASS DISTANZE: removed={dist_res.get('removed')}, kept={dist_res.get('kept')}")
+                            except Exception as exc:
+                                self.report({'WARNING'}, f"Multi-Pass DistanzÃ©-Aufruf fehlgeschlagen ({exc})")
+                            did_multi = True
+                        except Exception as exc:
+                            # Bei Fehlern im Multiâ€‘Pass nicht abbrechen, sondern warnen.
+                            self.report({'WARNING'}, f"Multi-Pass-Aufruf fehlgeschlagen ({exc})")
+                    else:
+                        # Multiâ€‘Pass ist nicht verfÃ¼gbar (Import fehlgeschlagen)
+                        self.report({'WARNING'}, "Multi-Pass nicht verfÃ¼gbar â€“ kein Aufruf durchgefÃ¼hrt")
+                    # Wenn ein Multiâ€‘Pass ausgefÃ¼hrt wurde, starte nun die Bidirectionalâ€‘Track-Phase.
+                    if did_multi:
+                        # Wechsle in die Bidirectionalâ€‘Phase. Die Bidirectionalâ€‘Track-Operation
+                        # selbst wird im Modal-Handler ausgelÃ¶st. Nach Abschluss dieser Phase
+                        # wird der Zyklus erneut bei PH_FIND_LOW beginnen.
+                        self.phase = PH_BIDI
+                        self.bidi_started = False
+                        self.report({'INFO'}, (
+                            f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, "
+                            f"eval={eval_res} â€“ Starte Bidirectional-Track (nach Multi @rep={self.repeat_count_for_target})"
+                        ))
+                        return {'RUNNING_MODAL'}
+                # --- ENOUGH aber KEIN Multi-Pass (repeat < 6) â†’ direkt BIDI starten ---
+                if isinstance(eval_res, dict) and str(eval_res.get("status", "")) == "ENOUGH" and not wants_multi:
+                    # Multi wird explizit ausgelassen â†’ Margin auf Tracker-Defaults zurÃ¼cksetzen
+                    try:
+                        _reset_margin_to_tracker_default(context)
+                    except Exception as _exc:
+                        self.report({'WARNING'}, f"Margin-Reset (skip multi) fehlgeschlagen: {_exc}")
+                    # Direkt in die Bidirectional-Phase wechseln
+                    self.phase = PH_BIDI
+                    self.bidi_started = False
+                    self.report({'INFO'}, (
+                        f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, "
+                        f"eval={eval_res} â€“ Starte Bidirectional-Track (ohne Multi; rep={self.repeat_count_for_target})"
+                    ))
+                    return {'RUNNING_MODAL'}
+
+                # In allen anderen FÃ¤llen (kein ENOUGH) â†’ Abschluss
+                self.report({'INFO'}, (
+                    f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res} â€“ Sequenz abgeschlossen."
+                ))
+                return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
+
+            # Wenn keine Auswertungsfunktion vorhanden ist, einfach abschlieÃŸen
+            self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}")
+            return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
         # PHASE: SOLVE_EVAL â€“ Solve prÃ¼fen, loggen, Retry/Reduce steuern
         if self.phase == PH_SOLVE_EVAL:
             """
@@ -573,14 +827,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
             # 1) aktuellen Fehler messen & loggen
             avg_err = get_avg_reprojection_error(context)
-            # Exakt EINE Log-Auslösung pro Eval-Zyklus:
-            try: _solve_log(context, avg_err)
-            except Exception: pass
+            _solve_log(context, avg_err)
 
             # Erfolgskriterium (Eval #1): Ziel erreicht â†’ harter Exit
             try:
                 if (avg_err is not None) and (float(avg_err) < float(target_err)):
-                    # Kein zweites Logging hier – bereits oben geloggt.
                     self.report({'INFO'}, f"Solve OK: avg={float(avg_err):.4f} < target={float(target_err):.4f}")
                     return self._finish(context, info="Sequenz abgeschlossen (Solve-Ziel erreicht).", cancelled=False)
             except Exception:
@@ -596,7 +847,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception:
                 is_regression = False
             if is_regression:
-                # Kein zweites Logging – bereits oben geloggt.
                 if run_find_max_error_frame is not None:
                     try:
                         min_cov = int(scn.get("min_tracks_per_frame_for_max_error", 10))
@@ -681,7 +931,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # Beide Evaluierungen NICHT zutreffend â†’ jetzt gezielt reduzieren
             try:
                 do_reduce = True
-                import math as _m
+                import math as _m, traceback as _tb
                 try:
                     if (avg_err is not None) and (self.last_reduced_for_avg is not None):
                         # Reduktion nur einmal pro identischem avg_err (Float-Vergleich robust machen)
@@ -713,10 +963,21 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     top5 = [(n, round(e, 4), "MUTED" if m else "OK") for n, e, m, _sel in errs[:5]]
                     # Selektion/Policy Sichtbarkeit
                     sel_cnt = sum(1 for _, _e, _m, s in errs if s)
+                    _log(f"[ReduceDBG] gate pre: do_reduce={do_reduce} avg_err={avg_err} prev_avg={self.last_reduced_for_avg}")
+                    _log(f"[ReduceDBG] pre stats: tracks={total} selected={sel}/{sel_cnt} muted={muted} error_track(thr)={thr_err} above_thr={above_thr}")
+                    _log(f"[ReduceDBG] pre top5: {top5}")
+                    _log(f"[ReduceDBG] candidates(>=thr, unmuted): count={len(cands)} sample20={cands20}")
                     if (above_thr == 0) and (avg_err is not None) and (float(avg_err) > float(thr_err)):
+                        _log(f"[ReduceDBG] WARNING: metric mismatch â€“ per-track errors show no candidates while avg_err={avg_err:.4f} > thr={thr_err:.4f}")
+                    # Zero/NaN Anteile (optional)
+                    try:
+                        zero_cnt = sum(1 for _, e, _m, _sel in errs if abs(float(e)) < 1e-12)
+                        nan_cnt = sum(1 for _, e, _m, _sel in errs if not _m.isfinite(float(e)))
+                        _log(f"[ReduceDBG] zeros={zero_cnt} nans={nan_cnt}")
+                    except Exception:
                         pass
                 except Exception as _dbg_exc:
-                    pass
+                    _log(f"[ReduceDBG] pre telemetry failed: {_dbg_exc}")
                 if do_reduce:
                     # LÃ¶schbatch nach Vorgabe:
                     # k = round(avg_err / error_frame), min=1, max=10
@@ -736,6 +997,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     _den = err_frame if (err_frame and err_frame > 1e-9) else target_err if target_err > 1e-9 else 1.0
                     _k_raw = round(_avg / _den)
                     _k = max(1, min(5, int(_k_raw)))
+                    _log(f"[ReduceDBG] delete-k formula: avg={_avg:.4f} / err_frame={_den:.4f} -> k_raw={_k_raw} -> k={_k} (clamp 1..10)")
 
                     red = run_reduce_error_tracks(context, max_to_delete=_k)
                     deleted = int(red.get('deleted', 0) or 0)
@@ -746,8 +1008,16 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     # Transparente Telemetrie
                     if deleted > 0:
                         self.report({'INFO'}, f"ReduceErrorTracks: deleted={deleted} tracks (k={_k})")
+                        try:
+                            _log(f"[ReduceDBG] reducer result: deleted={deleted} names={names}")
+                        except Exception:
+                            pass
                     else:
                         self.report({'WARNING'}, "ReduceErrorTracks: deleted=0 (No-Op) â€“ gleiche Avg-Error-Lage, fahre mit rmax/next solve fort")
+                        try:
+                            _log(f"[ReduceDBG] reducer result: deleted=0 names={names}")
+                        except Exception:
+                            pass
                     # POST Telemetrie: neue Verteilung
                     try:
                         clip2 = _resolve_clip(context)
@@ -763,9 +1033,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                 pass
                         errs2.sort(reverse=True)
                         above_thr2 = sum(1 for e in errs2 if e >= thr2)
+                        _log(f"[ReduceDBG] post above_thr={above_thr2} top5={list(map(lambda x: round(x,4), errs2[:5]))}")
                     except Exception as _dbg2_exc:
-                        pass
+                        _log(f"[ReduceDBG] post telemetry failed: {_dbg2_exc}")
             except Exception as _exc:
+                _log("[ReduceDBG] EXCEPTION in run_reduce_error_tracks:\n" + _tb.format_exc())
                 self.report({'WARNING'}, f"ReduceErrorTracks Fehler: {_exc}")
             try:
                 rmax = run_find_max_marker_frame(context)
