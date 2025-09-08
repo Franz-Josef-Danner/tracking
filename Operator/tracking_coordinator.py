@@ -557,7 +557,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if self.pre_ptrs is None or self.target_frame is None:
                 return self._finish(context, info="DISTANZE: Pre-Snapshot oder Ziel-Frame fehlt.", cancelled=True)
             try:
-                dis = run_distance_cleanup(
+                info = run_distance_cleanup(
                     context,
                     pre_ptrs=self.pre_ptrs,
                     frame=int(self.target_frame),
@@ -572,8 +572,23 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception as exc:
                 return self._finish(context, info=f"DISTANZE FAILED â†’ {exc}", cancelled=True)
 
-            removed = dis.get('removed', 0)
-            kept = dis.get('kept', 0)
+            ok = str(info.get("status")) == "OK"
+            _solve_log(context, {"phase": "DISTANZE", "ok": ok, "info": info})
+
+            # explizites Logging von gelÃ¶schten Markern
+            deleted = info.get("deleted") or []
+            if deleted:
+                _solve_log(
+                    context,
+                    {
+                        "phase": "DISTANZE",
+                        "deleted_count": len(deleted),
+                        "deleted_tracks": [d.get("track") for d in deleted],
+                    },
+                )
+
+            removed = info.get("removed", 0)
+            kept = info.get("kept", 0)
 
             # NUR neue Tracks berÃ¼cksichtigen, die AM target_frame einen Marker besitzen
             new_ptrs_after_cleanup: set[int] = set()

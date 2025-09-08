@@ -128,6 +128,7 @@ def cleanup_new_markers_at_frame(
     checked = 0
     skipped_no_marker = 0
     skipped_unselected = 0
+    deleted_markers: list[dict[str, Any]] = []
 
     for tr in new_tracks:
         try:
@@ -161,6 +162,7 @@ def cleanup_new_markers_at_frame(
             try:
                 tr.markers.delete_frame(int(frame))
                 removed += 1
+                deleted_markers.append({"track": getattr(tr, "name", "<unnamed>"), "frame": int(frame)})
                 print(f"[{LOG_PREFIX}] Removed marker from track {getattr(tr, 'name', '<unnamed>')} at frame {frame} (too close to existing).")
                 continue
             except Exception as exc:
@@ -191,6 +193,7 @@ def cleanup_new_markers_at_frame(
         "old_count": len(old_positions),
         "new_total": len(new_tracks),
         "auto_min_used": bool(auto_min_used),
+        "deleted": deleted_markers,
     }
 
 def run_distance_cleanup(
