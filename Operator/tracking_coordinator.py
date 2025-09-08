@@ -139,19 +139,17 @@ except Exception:
 __all__ = ("CLIP_OT_tracking_coordinator",)
 
 # --- Orchestrator-Phasen ----------------------------------------------------
-PH_FIND_LOW    = "FIND_LOW"
-PH_JUMP        = "JUMP"
-PH_DETECT      = "DETECT"
-PH_DISTANZE    = "DISTANZE"
-PH_COUNT       = "COUNT"        # (logischer Zwischenzustand)
-PH_SPLIT_CLEAN = "SPLIT_CLEAN"
+PH_FIND_LOW   = "FIND_LOW"
+PH_JUMP       = "JUMP"
+PH_DETECT     = "DETECT"
+PH_DISTANZE   = "DISTANZE"
 PH_SPIKE_CYCLE = "SPIKE_CYCLE"
-PH_SOLVE_EVAL  = "SOLVE_EVAL"
+PH_SOLVE_EVAL = "SOLVE_EVAL"
 # Erweiterte Phase: Bidirectional-Tracking. Wenn der Multiâ€‘Pass und das
 # Distanzâ€‘Cleanup erfolgreich durchgefÃ¼hrt wurden, wird diese Phase
 # angestoÃŸen. Sie startet den Bidirectionalâ€‘Track Operator und wartet
 # auf dessen Abschluss. Danach beginnt der Koordinator wieder bei PH_FIND_LOW.
-PH_BIDI        = "BIDI"
+PH_BIDI       = "BIDI"
 
 # ---- intern: State Keys / Locks -------------------------------------------
 _LOCK_KEY = "tco_lock"
@@ -561,37 +559,22 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if self.pre_ptrs is None or self.target_frame is None:
                 return self._finish(context, info="DISTANZE: Pre-Snapshot oder Ziel-Frame fehlt.", cancelled=True)
             try:
-                raw = run_distance_cleanup(
+                info = run_distance_cleanup(
                     context,
                     pre_ptrs=self.pre_ptrs,
                     frame=int(self.target_frame),
+                    # min_distance=None â†’ Auto-Ableitung in distanze.py (aus Threshold & scene-base)
                     min_distance=None,
-                    unit="pixel",
+                    distance_unit="pixel",
                     require_selected_new=True,
                     include_muted_old=False,
                     select_remaining_new=True,
                     verbose=True,
                 )
             except Exception as exc:
-                return self._finish(context, info=f"DISTANZE FAILED → {exc}", cancelled=True)
-
-            info = raw[1] if isinstance(raw, (tuple, list)) and len(raw) >= 2 else raw
-            self.pre_ptrs = info.get("new_ptrs") if isinstance(info, dict) else None
-            if not isinstance(info, dict):
-                info = {"status": "FAILED", "reason": "BAD_RESULT", "frame": int(self.target_frame)}
+                return self._finish(context, info=f"DISTANZE FAILED â†’ {exc}", cancelled=True)
 
             count_result = None
-            try:
-                # globale Marker-Selektion bei diesem Frame neutralisieren
-                clip = getattr(context, "edit_movieclip", None) or getattr(getattr(context, "space_data", None), "clip", None)
-                if clip:
-                    for t in getattr(getattr(clip, "tracking", None), "tracks", []):
-                        m = t.markers.find_frame(int(self.target_frame), exact=True) if hasattr(t.markers, "find_frame") else None
-                        if m:
-                            m.select = False
-                context.view_layer.update()
-            except Exception:
-                pass
             if run_count_tracks is not None:
                 try:
                     count_result = run_count_tracks(context, frame=int(self.target_frame))  # type: ignore

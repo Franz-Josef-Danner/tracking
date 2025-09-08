@@ -137,14 +137,13 @@ def run_distance_cleanup(
     context: bpy.types.Context,
     *,
     pre_ptrs: Optional[Set[int]] = None,
-    frame: int | None = None,
+    frame: int,
     min_distance: Optional[float] = 200,
-    unit: str = "pixel",
+    distance_unit: str = "pixel",
     require_selected_new: bool = True,
     include_muted_old: bool = False,
     select_remaining_new: bool = True,
     verbose: bool = True,
-    **kwargs,
 ) -> Dict[str, Any]:
     """
     Wenn pre_ptrs is None:
@@ -154,14 +153,9 @@ def run_distance_cleanup(
       - verhält sich wie bisher (pre_ptrs = alte Tracks; neu = alle @frame, die nicht in pre_ptrs sind).
     """
     log = print if verbose else (lambda *a, **k: None)
-    distance_unit = kwargs.pop("distance_unit", unit)
-    try:
-        frame = int(frame if frame is not None else context.scene.frame_current)
-    except Exception:
-        frame = 0
     clip = _resolve_clip(context)
     if not clip:
-        return {"status": "FAILED", "reason": "NO_CLIP", "frame": frame}
+        return {"status": "NO_CLIP", "frame": frame}
 
     # Alt/Neu bestimmen
     if pre_ptrs is None:
@@ -249,7 +243,6 @@ def run_distance_cleanup(
             "auto_min_used": False,
             "deleted": [],
             "failed_removals": 0,
-            "new_ptrs": set(new_set),
         }
 
     # Helper zur Pixel-Distanz
@@ -446,7 +439,7 @@ def run_distance_cleanup(
     log(
         f"[DISTANZE] Post-frame stats @f{frame}: markers_at_frame={marker_count_frame}, deleted_ptrs={len(deleted_ptrs)}"
     )
-    new_ptrs = {ptr for ptr in new_set if ptr not in set(deleted_ptrs)}
+
     return {
         "status": "OK",
         "frame": frame,
@@ -462,5 +455,4 @@ def run_distance_cleanup(
         "auto_min_used": False,
         "deleted": deleted_ptrs,
         "failed_removals": int(failed_removals),
-        "new_ptrs": new_ptrs,
     }
