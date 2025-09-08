@@ -144,6 +144,7 @@ def run_distance_cleanup(
     include_muted_old: bool = False,
     select_remaining_new: bool = True,
     verbose: bool = True,
+    apply_delete: bool = False,
 ) -> Dict[str, Any]:
     """
     Wenn pre_ptrs is None:
@@ -213,7 +214,7 @@ def run_distance_cleanup(
     skipped_no_marker = 0
     skipped_unselected = 0
     failed_removals = 0
-    deleted_ptrs: list[int] = []
+    deleted_ptrs: list[int] = []  # wird nur befüllt, wenn apply_delete=True
 
     # Referenz-Koordinaten (old_set) am Frame sammeln
     width = int(getattr(clip, "size", (0, 0))[0] or 0)
@@ -382,17 +383,29 @@ def run_distance_cleanup(
             name = ptr_to_name.get(ptr, getattr(tr, "name", "<noname>"))
             sel_state = f"Tsel={bool(getattr(tr,'select',False))}, Msel={bool(getattr(m_new,'select',False))}"
             if too_close:
-                ok_del, how = _delete_track_or_marker(tr, ptr, frame)
-                if ok_del:
-                    removed += 1
-                    deleted_ptrs.append(ptr)
-                    log(
-                        f"[DISTANZE]   DELETE  ptr={ptr} name='{name}' min_d={min_found:.2f}px @f{frame}  ({sel_state}) → {how}"
-                    )
+                if apply_delete:
+                    ok_del, how = _delete_track_or_marker(tr, ptr, frame)
+                    if ok_del:
+                        removed += 1
+                        deleted_ptrs.append(ptr)
+                        log(
+                            f"[DISTANZE]   DELETE  ptr={ptr} name='{name}' min_d={min_found:.2f}px @f{frame}  ({sel_state}) → {how}"
+                        )
+                    else:
+                        failed_removals += 1
+                        log(
+                            f"[DISTANZE]   FAILED  ptr={ptr} name='{name}' min_d={min_found:.2f}px @f{frame}  ({sel_state}) → could not remove"
+                        )
                 else:
-                    failed_removals += 1
+                    kept += 1
+                    try:
+                        tr.select = True
+                        if m_new:
+                            m_new.select = True
+                    except Exception:
+                        pass
                     log(
-                        f"[DISTANZE]   FAILED  ptr={ptr} name='{name}' min_d={min_found:.2f}px @f{frame}  ({sel_state}) → could not remove"
+                        f"[DISTANZE]   FLAG    ptr={ptr} name='{name}' min_d={min_found:.2f}px @f{frame}  ({sel_state})"
                     )
             else:
                 kept += 1
@@ -451,15 +464,23 @@ def run_distance_cleanup(
         f"[DISTANZE] Post-frame stats @f{frame}: markers_at_frame={marker_count_frame}, deleted_ptrs={len(deleted_ptrs)}"
     )
 
-    survivors = [ptr for ptr in new_set if ptr not in set(deleted_ptrs)]
-    deleted_struct = [
-        {"ptr": int(p), "track": ptr_to_name.get(p, None), "frame": int(frame)}
-        for p in deleted_ptrs
-    ]
+    survivors = (
+        [ptr for ptr in new_set if ptr not in set(deleted_ptrs)]
+        if apply_delete
+        else list(new_set)
+    )
+    deleted_struct = (
+        [
+            {"ptr": int(p), "track": ptr_to_name.get(p, None), "frame": int(frame)}
+            for p in deleted_ptrs
+        ]
+        if apply_delete
+        else []
+    )
     return {
         "status": "OK",
         "frame": frame,
-        "removed": int(removed),
+        "removed": int(removed) if apply_delete else 0,
         "kept": int(kept),
         "checked_new": int(checked),
         "skipped_no_marker": int(skipped_no_marker),
