@@ -182,8 +182,8 @@ def run_distance_cleanup(
                     new_set.add(ptr)
                     new_cnt_m += 1
 
-    # Hard-Code: Mindestabstand immer 200 Pixel (ignoriert Eingabewert)
-    min_distance = 200.0
+    # Mindestabstand: Param bevorzugen, Default 200
+    min_distance = float(min_distance) if min_distance is not None else 200.0
     log(
         f"[DISTANZE] run_distance_cleanup called: frame={frame}, min_distance={min_distance}, unit={distance_unit}, "
         f"require_selected_new={require_selected_new}, include_muted_old={include_muted_old}, "
@@ -393,7 +393,7 @@ def run_distance_cleanup(
             log(f"[DISTANZE]   ERROR   ptr=? exception={e}")
             continue
 
-    # Optional: Verbleibende neue selektieren (UI-Komfort)
+    # Optional: Verbleibende neue selektieren (UI-Komfort; kein Gate)
     if select_remaining_new:
         for tr in clip.tracking.tracks:
             try:
@@ -412,7 +412,7 @@ def run_distance_cleanup(
                 continue
         log(f"[DISTANZE] Reselect remaining new: done.")
 
-    # Post-Verification: existieren gelöschte Pointer noch?
+    # Post-Verification: existieren gelöschte Pointer noch? + Ist-Zustand zählen
     still_present: list[Tuple[int, str]] = []
     marker_count_frame = 0
     try:
@@ -440,6 +440,11 @@ def run_distance_cleanup(
         f"[DISTANZE] Post-frame stats @f{frame}: markers_at_frame={marker_count_frame}, deleted_ptrs={len(deleted_ptrs)}"
     )
 
+    survivors = [ptr for ptr in new_set if ptr not in set(deleted_ptrs)]
+    deleted_struct = [
+        {"ptr": int(p), "track": ptr_to_name.get(p, None), "frame": int(frame)}
+        for p in deleted_ptrs
+    ]
     return {
         "status": "OK",
         "frame": frame,
@@ -453,6 +458,8 @@ def run_distance_cleanup(
         "old_count": int(len(old_set)),
         "new_total": int(len(new_set)),
         "auto_min_used": False,
-        "deleted": deleted_ptrs,
+        "deleted": deleted_struct,
+        "new_ptrs_after_cleanup": survivors,
+        "markers_at_frame": int(marker_count_frame),
         "failed_removals": int(failed_removals),
     }

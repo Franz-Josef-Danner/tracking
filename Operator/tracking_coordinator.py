@@ -7,7 +7,6 @@ tracking_coordinator.py â€“ Streng sequentieller, MODALER Orchestrator
 
 from __future__ import annotations
 import bpy
-from typing import Any
 
 # ---------------------------------------------------------------------------
 # Console logging
@@ -574,55 +573,38 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception as exc:
                 return self._finish(context, info=f"DISTANZE FAILED â†’ {exc}", cancelled=True)
 
-            count_result = None
-            if run_count_tracks is not None:
+            if callable(run_count_tracks):
                 try:
                     count_result = run_count_tracks(context, frame=int(self.target_frame))  # type: ignore
                 except Exception as exc:
                     count_result = {"status": "ERROR", "reason": str(exc)}
+            else:
+                clip = getattr(context, "edit_movieclip", None) or getattr(getattr(context, "space_data", None), "clip", None)
+                cur = 0
+                if clip:
+                    for t in getattr(clip.tracking, "tracks", []):
+                        try:
+                            m = t.markers.find_frame(int(self.target_frame), exact=True)
+                        except TypeError:
+                            m = t.markers.find_frame(int(self.target_frame))
+                        if m and not getattr(t, "mute", False) and not getattr(m, "mute", False):
+                            cur += 1
+                count_result = {"count": cur}
 
             ok = str(info.get("status")) == "OK"
             _solve_log(context, {"phase": "DISTANZE", "ok": ok, "info": info, "count": count_result})
 
-            # explizites Logging von gelÃ¶schten Markern
-            # Robust: 'deleted' kann Liste von Dicts ODER von ints (Pointer) sein.
-            deleted_raw = info.get("deleted", []) or []
-
-            def _deleted_label(item: Any) -> str:
-                # Dict-Variante: bevorzugt Track-/Name-Felder
-                if isinstance(item, dict):
-                    name = item.get("track") or item.get("name") or item.get("track_name")
-                    if name:
-                        return str(name)
-                    # Fallback auf Pointer/ID-Felder, wenn vorhanden
-                    ptr = item.get("ptr") or item.get("id") or item.get("marker_ptr")
-                    if ptr is not None:
-                        return f"ptr:{int(ptr)}"
-                    return "unknown"
-                # Int/Float-Variante: als Pointer labeln
-                if isinstance(item, (int, float)):
-                    try:
-                        return f"ptr:{int(item)}"
-                    except Exception:
-                        return f"ptr:{item}"
-                # Sonst: stringifizieren
-                return str(item)
-
-            deleted_labels = [
-                _deleted_label(x) for x in (
-                    deleted_raw if isinstance(deleted_raw, (list, tuple)) else [deleted_raw]
-                )
-            ]
-
+            raw_deleted = info.get("deleted", []) or []
+            def _label(x):
+                if isinstance(x, dict):
+                    return x.get("track") or f"ptr:{x.get('ptr')}"
+                if isinstance(x, (int, float)):
+                    return f"ptr:{int(x)}"
+                return str(x)
+            deleted_labels = [_label(x) for x in (raw_deleted if isinstance(raw_deleted, (list, tuple)) else [raw_deleted])]
+            payload = {"deleted_tracks": deleted_labels, "deleted_count": len(deleted_labels)}
             if deleted_labels:
-                _solve_log(
-                    context,
-                    {
-                        "phase": "DISTANZE",
-                        "deleted_tracks": deleted_labels,
-                        "deleted_count": len(deleted_labels),
-                    },
-                )
+                _solve_log(context, {"phase": "DISTANZE", **payload})
 
             removed = info.get("removed", 0)
             kept = info.get("kept", 0)
