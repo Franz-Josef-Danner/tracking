@@ -179,6 +179,10 @@ def run_distance_cleanup(
             else:
                 new_set.add(ptr)
                 new_cnt_m += 1
+        log(
+            f"[DISTANZE] Classification mode=BASELINE (baseline_size={len(ptrs)}); "
+            f"old={old_cnt_m} new={len(new_set)}"
+        )
     else:
         old_set, new_set, old_cnt_m, new_cnt_m = _collect_old_new_sets(
             context,
@@ -186,6 +190,16 @@ def run_distance_cleanup(
             require_selected_new=require_selected_new,
             include_muted_old=include_muted_old,
         )
+        log(
+            f"[DISTANZE] Classification mode=SELECTION (require_selected_new={require_selected_new}); "
+            f"old={old_cnt_m} new={len(new_set)}"
+        )
+
+    skipped_new_no_marker = len(new_set) - new_cnt_m
+    log(
+        f"[DISTANZE] Frame {frame}: old_markers={old_cnt_m} "
+        f"new_markers={new_cnt_m} skipped_new_no_marker={skipped_new_no_marker}"
+    )
 
     # Mindestabstand: Wert aus Koordinator robust übernehmen (Fallback 200)
     auto_min_used = False
@@ -218,6 +232,8 @@ def run_distance_cleanup(
     skipped_no_marker = 0
     skipped_unselected = 0
     failed_removals = 0
+    zero_px_deletes = 0
+    below_thr_nonzero_deletes = 0
     deleted_ptrs: list[int] = []
 
     # Referenz-Koordinaten (old_set) am Frame sammeln
@@ -391,6 +407,10 @@ def run_distance_cleanup(
                 if ok_del:
                     removed += 1
                     deleted_ptrs.append(ptr)
+                    if abs(min_found) < 1e-6:
+                        zero_px_deletes += 1
+                    else:
+                        below_thr_nonzero_deletes += 1
                     log(
                         f"[DISTANZE]   DELETE  ptr={ptr} name='{name}' min_d={min_found:.2f}px @f{frame}  ({sel_state}) → {how}"
                     )
@@ -454,6 +474,10 @@ def run_distance_cleanup(
         )
     log(
         f"[DISTANZE] Post-frame stats @f{frame}: markers_at_frame={marker_count_frame}, deleted_ptrs={len(deleted_ptrs)}"
+    )
+    log(
+        f"[DISTANZE] Reason breakdown @f{frame}: zero_px={zero_px_deletes}, "
+        f"lt_thr_nonzero={below_thr_nonzero_deletes}, thr={min_distance}"
     )
 
     survivors = [ptr for ptr in new_set if ptr not in set(deleted_ptrs)]
