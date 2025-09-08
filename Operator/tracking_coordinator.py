@@ -7,6 +7,7 @@ tracking_coordinator.py â€“ Streng sequentieller, MODALER Orchestrator
 
 from __future__ import annotations
 import bpy
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Console logging
@@ -584,14 +585,42 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             _solve_log(context, {"phase": "DISTANZE", "ok": ok, "info": info, "count": count_result})
 
             # explizites Logging von gelÃ¶schten Markern
-            deleted = info.get("deleted") or []
-            if deleted:
+            # Robust: 'deleted' kann Liste von Dicts ODER von ints (Pointer) sein.
+            deleted_raw = info.get("deleted", []) or []
+
+            def _deleted_label(item: Any) -> str:
+                # Dict-Variante: bevorzugt Track-/Name-Felder
+                if isinstance(item, dict):
+                    name = item.get("track") or item.get("name") or item.get("track_name")
+                    if name:
+                        return str(name)
+                    # Fallback auf Pointer/ID-Felder, wenn vorhanden
+                    ptr = item.get("ptr") or item.get("id") or item.get("marker_ptr")
+                    if ptr is not None:
+                        return f"ptr:{int(ptr)}"
+                    return "unknown"
+                # Int/Float-Variante: als Pointer labeln
+                if isinstance(item, (int, float)):
+                    try:
+                        return f"ptr:{int(item)}"
+                    except Exception:
+                        return f"ptr:{item}"
+                # Sonst: stringifizieren
+                return str(item)
+
+            deleted_labels = [
+                _deleted_label(x) for x in (
+                    deleted_raw if isinstance(deleted_raw, (list, tuple)) else [deleted_raw]
+                )
+            ]
+
+            if deleted_labels:
                 _solve_log(
                     context,
                     {
                         "phase": "DISTANZE",
-                        "deleted_count": len(deleted),
-                        "deleted_tracks": [d.get("track") for d in deleted],
+                        "deleted_tracks": deleted_labels,
+                        "deleted_count": len(deleted_labels),
                     },
                 )
 
