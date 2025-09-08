@@ -4,15 +4,10 @@ Helper/__init__.py – Function + Operator Registrar (aktualisiert)
 
 - Exportiert Funktions-API (z. B. track_to_scene_end_fn, start_refine_modal).
 - Registriert IMMER:
-    * CLIP_OT_bidirectional_track
-    * CLIP_OT_refine_high_error_modal  (neuer Modal-Operator)
 - Optionale Operatoren: marker_helper_main
 """
 from __future__ import annotations
 import bpy
-
-
-from .bidirectional_track import CLIP_OT_bidirectional_track
 from .reset_state import (
     reset_for_new_cycle,
     CLIP_OT_reset_runtime_state,
@@ -28,14 +23,12 @@ except Exception:
 __all__ = [
     "register",
     "unregister",
-    "CLIP_OT_bidirectional_track",
     "reset_for_new_cycle",
     "CLIP_OT_reset_runtime_state",
 ]
 
 # --- Registrierlisten --------------------------------------------------------
 _FIXED_CLASSES = [
-    CLIP_OT_bidirectional_track,
     CLIP_OT_reset_runtime_state,
 ]
 
