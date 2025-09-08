@@ -159,16 +159,14 @@ def run_distance_cleanup(
         return {"status": "NO_CLIP", "frame": frame}
 
     # Alt/Neu bestimmen
-    if baseline_ptrs is None:
-        old_set, new_set, old_cnt_m, new_cnt_m = _collect_old_new_sets(
-            context,
-            frame,
-            require_selected_new=require_selected_new,
-            include_muted_old=include_muted_old,
-        )
-    else:
+    if baseline_ptrs is not None:
+        ptrs: Set[int] = set()
+        try:
+            ptrs = {int(p) for p in baseline_ptrs}
+        except Exception:
+            ptrs = set()
         # Strikte Alt/Neu-Trennung anhand des Snapshot-Sets
-        old_set, new_set, old_cnt_m, new_cnt_m = set(baseline_ptrs), set(), 0, 0
+        old_set, new_set, old_cnt_m, new_cnt_m = ptrs, set(), 0, 0
         for tr in clip.tracking.tracks:
             ok, m = _track_marker_at_frame(tr, frame)
             if not ok or not m:
@@ -181,6 +179,13 @@ def run_distance_cleanup(
             else:
                 new_set.add(ptr)
                 new_cnt_m += 1
+    else:
+        old_set, new_set, old_cnt_m, new_cnt_m = _collect_old_new_sets(
+            context,
+            frame,
+            require_selected_new=require_selected_new,
+            include_muted_old=include_muted_old,
+        )
 
     # Mindestabstand: Wert aus Koordinator robust übernehmen (Fallback 200)
     auto_min_used = False
