@@ -12,7 +12,7 @@ import math
 import statistics
 import bpy
 
-__all__ = ("error_value", "evaluate_marker_count")
+__all__ = ("error_value", "evaluate_marker_count", "run_count_tracks")
 
 def error_value(track) -> float:
     """
@@ -90,3 +90,29 @@ def evaluate_marker_count(*, new_ptrs_after_cleanup: Optional[Set[int]] = None) 
     else:
         st = "ENOUGH"
     return {"status": st, "count": cnt, "min": mn, "max": mx}
+
+
+def run_count_tracks(context: bpy.types.Context, *, frame: int) -> Dict[str, Any]:
+    """Zählt Tracks mit Marker auf dem angegebenen Frame."""
+    clip = getattr(context, "edit_movieclip", None)
+    if not clip:
+        clip = getattr(getattr(context, "space_data", None), "clip", None)
+    if not clip:
+        try:
+            clip = next(iter(bpy.data.movieclips))
+        except Exception:
+            clip = None
+
+    cnt = 0
+    if clip:
+        trk = getattr(clip, "tracking", None)
+        if trk:
+            for tr in getattr(trk, "tracks", []):
+                try:
+                    mk = tr.markers.find_frame(int(frame), exact=True)
+                except TypeError:
+                    mk = tr.markers.find_frame(int(frame))
+                if mk and not getattr(mk, "mute", False):
+                    cnt += 1
+
+    return {"status": "OK", "count": cnt, "frame": int(frame)}
