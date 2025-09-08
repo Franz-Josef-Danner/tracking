@@ -560,7 +560,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             try:
                 info = run_distance_cleanup(
                     context,
-                    pre_ptrs=self.pre_ptrs,
+                    baseline_ptrs=self.pre_ptrs,
                     frame=int(self.target_frame),
                     # min_distance=None â†’ Auto-Ableitung in distanze.py (aus Threshold & scene-base)
                     min_distance=None,
@@ -781,7 +781,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                 if cur_frame is not None:
                                     dist_res = run_distance_cleanup(
                                         context,
-                                        pre_ptrs=current_ptrs,
+                                        baseline_ptrs=current_ptrs,
                                         frame=cur_frame,
                                         min_distance=None,
                                         distance_unit="pixel",

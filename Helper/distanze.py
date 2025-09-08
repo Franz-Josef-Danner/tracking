@@ -136,7 +136,7 @@ def _collect_old_new_sets(
 def run_distance_cleanup(
     context: bpy.types.Context,
     *,
-    pre_ptrs: Optional[Set[int]] = None,
+    baseline_ptrs: Optional[Set[int]] = None,
     frame: int,
     min_distance: Optional[float] = 200,
     distance_unit: str = "pixel",
@@ -146,11 +146,12 @@ def run_distance_cleanup(
     verbose: bool = True,
 ) -> Dict[str, Any]:
     """
-    Wenn pre_ptrs is None:
-      - ermittelt die Funktion intern die Referenz- („alt“) und Kandidaten- („neu“) Sets
+    Wenn ``baseline_ptrs`` ``None`` ist:
+      - ermittelt die Funktion intern die Referenz- ("alt") und Kandidaten- ("neu") Sets
         basierend auf Selektion @frame und Muting-Flags.
     Andernfalls:
-      - verhält sich wie bisher (pre_ptrs = alte Tracks; neu = alle @frame, die nicht in pre_ptrs sind).
+      - verwendet ``baseline_ptrs`` als Menge der bestehenden Tracks;
+        "neu" sind strikt alle Tracks, deren Pointer nicht in ``baseline_ptrs`` enthalten sind.
     """
     log = print if verbose else (lambda *a, **k: None)
     clip = _resolve_clip(context)
@@ -158,7 +159,7 @@ def run_distance_cleanup(
         return {"status": "NO_CLIP", "frame": frame}
 
     # Alt/Neu bestimmen
-    if pre_ptrs is None:
+    if baseline_ptrs is None:
         old_set, new_set, old_cnt_m, new_cnt_m = _collect_old_new_sets(
             context,
             frame,
@@ -166,8 +167,8 @@ def run_distance_cleanup(
             include_muted_old=include_muted_old,
         )
     else:
-        # „klassischer“ Pfad: pre_ptrs = alt; neu = alle @frame, die nicht in pre_ptrs sind
-        old_set, new_set, old_cnt_m, new_cnt_m = set(pre_ptrs), set(), 0, 0
+        # Strikte Alt/Neu-Trennung anhand des Snapshot-Sets
+        old_set, new_set, old_cnt_m, new_cnt_m = set(baseline_ptrs), set(), 0, 0
         for tr in clip.tracking.tracks:
             ok, m = _track_marker_at_frame(tr, frame)
             if not ok or not m:
@@ -178,9 +179,8 @@ def run_distance_cleanup(
             if ptr in old_set:
                 old_cnt_m += 1
             else:
-                if (not require_selected_new) or bool(getattr(tr, "select", False) or getattr(m, "select", False)):
-                    new_set.add(ptr)
-                    new_cnt_m += 1
+                new_set.add(ptr)
+                new_cnt_m += 1
 
     # Mindestabstand: Wert aus Koordinator robust übernehmen (Fallback 200)
     auto_min_used = False
