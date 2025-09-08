@@ -109,7 +109,7 @@ def run_distance_cleanup(
     *,
     pre_ptrs: Optional[Set[int]] = None,
     frame: int,
-    min_distance: Optional[float] = None,
+    min_distance: Optional[float] = 200,
     distance_unit: str = "pixel",
     require_selected_new: bool = True,
     include_muted_old: bool = False,
