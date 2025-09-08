@@ -44,12 +44,13 @@ from ..Helper.reset_state import reset_for_new_cycle  # zentraler Reset (Bootstr
 # verwendet interne Grenzwerte aus der count.py. Es werden keine
 # zusÃ¤tzlichen Parameter Ã¼bergeben.
 try:
-    from ..Helper.count import evaluate_marker_count  # type: ignore
+    from ..Helper.count import evaluate_marker_count, run_count_tracks  # type: ignore
 except Exception:
     try:
-        from .count import evaluate_marker_count  # type: ignore
+        from .count import evaluate_marker_count, run_count_tracks  # type: ignore
     except Exception:
         evaluate_marker_count = None  # type: ignore
+        run_count_tracks = None  # type: ignore
 from ..Helper.tracker_settings import apply_tracker_settings
 
 # --- Anzahl/A-Werte/State-Handling ------------------------------------------
@@ -572,8 +573,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception as exc:
                 return self._finish(context, info=f"DISTANZE FAILED â†’ {exc}", cancelled=True)
 
+            count_result = None
+            if run_count_tracks is not None:
+                try:
+                    count_result = run_count_tracks(context, frame=int(self.target_frame))  # type: ignore
+                except Exception as exc:
+                    count_result = {"status": "ERROR", "reason": str(exc)}
+
             ok = str(info.get("status")) == "OK"
-            _solve_log(context, {"phase": "DISTANZE", "ok": ok, "info": info})
+            _solve_log(context, {"phase": "DISTANZE", "ok": ok, "info": info, "count": count_result})
 
             # explizites Logging von gelÃ¶schten Markern
             deleted = info.get("deleted") or []
@@ -702,7 +710,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     except Exception:
                         pass
 
-                    self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res}, deleted_markers={deleted_markers}, thrâ†’{self.detection_threshold}")
+                    self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res}, count={count_result}, deleted_markers={deleted_markers}, thrâ†’{self.detection_threshold}")
                     # ZurÃ¼ck zu DETECT mit neuem Threshold
                     self.phase = PH_DETECT
                     return {'RUNNING_MODAL'}
@@ -793,8 +801,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         self.phase = PH_BIDI
                         self.bidi_started = False
                         self.report({'INFO'}, (
-                            f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, "
-                            f"eval={eval_res} â€“ Starte Bidirectional-Track (nach Multi @rep={self.repeat_count_for_target})"
+                        f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, "
+                        f"count={count_result}, eval={eval_res} â€“ Starte Bidirectional-Track (nach Multi @rep={self.repeat_count_for_target})"
                         ))
                         return {'RUNNING_MODAL'}
                 # --- ENOUGH aber KEIN Multi-Pass (repeat < 6) â†’ direkt BIDI starten ---
@@ -809,20 +817,18 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     self.bidi_started = False
                     self.report({'INFO'}, (
                         f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, "
-                        f"eval={eval_res} â€“ Starte Bidirectional-Track (ohne Multi; rep={self.repeat_count_for_target})"
+                        f"count={count_result}, eval={eval_res} – Starte Bidirectional-Track (ohne Multi; rep={self.repeat_count_for_target})"
                     ))
                     return {'RUNNING_MODAL'}
 
-                # In allen anderen FÃ¤llen (kein ENOUGH) â†’ Abschluss
+                # In allen anderen Fällen (kein ENOUGH) → Abschluss
                 self.report({'INFO'}, (
-                    f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, eval={eval_res} â€“ Sequenz abgeschlossen."
+                    f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, count={count_result}, eval={eval_res} – Sequenz abgeschlossen."
                 ))
                 return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
-
-            # Wenn keine Auswertungsfunktion vorhanden ist, einfach abschlieÃŸen
-            self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}")
+            # Wenn keine Auswertungsfunktion vorhanden ist, einfach abschließen
+            self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, count={count_result}")
             return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
-        # PHASE: SOLVE_EVAL â€“ Solve prÃ¼fen, loggen, Retry/Reduce steuern
         if self.phase == PH_SOLVE_EVAL:
             """
             Post-Solve-Evaluierung (vereinfachte, deterministische Logik gemÃ¤ÃŸ Vorgabe):
