@@ -147,16 +147,26 @@ def run_find_max_error_frame(
     stats.sort(key=lambda x: x[1], reverse=True)
     top = stats[: max(1, int(return_top_k))]
     best_frame, best_score, best_count = top[0]
-
-    # Szene auf den „schlechtesten“ Frame setzen (bequemer Default)
+    # Szene/Clip-Grenzen ermitteln und hart clampen
     try:
-        scn.frame_set(int(best_frame))
+        clip_start = int(getattr(clip, "frame_start", int(getattr(scn, "frame_start", 1))))
+        try:
+            dur = int(getattr(clip, "frame_duration", 0))
+            clip_end = clip_start + max(0, dur - 1)
+        except Exception:
+            clip_end = int(getattr(scn, "frame_end", clip_start))
+        scene_start = int(getattr(scn, "frame_start", clip_start))
+        scene_end   = int(getattr(scn, "frame_end", clip_end))
+        lo = max(clip_start, scene_start)
+        hi = min(clip_end,   scene_end)
+        bounded = max(lo, min(int(best_frame), hi))
+        scn.frame_set(int(bounded))
     except Exception:
-        pass
-
+        bounded = int(best_frame)
     result = {
         "status": "FOUND",
-        "frame": int(best_frame),
+        "frame": int(bounded),
+        "raw_frame": int(best_frame),
         "score": float(best_score),
         "count": int(best_count),
         "top": [{"frame": int(f), "score": float(s), "count": int(c)} for (f, s, c) in top],
