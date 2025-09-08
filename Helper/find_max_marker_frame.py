@@ -110,7 +110,7 @@ def run_find_max_marker_frame(
         marker_frame_val = int(getattr(scene, "marker_frame", scene.frame_current) or scene.frame_current)
     except Exception:
         marker_frame_val = int(getattr(scene, "frame_current", 0) or 0)
-    threshold = int(marker_frame_val - 1)
+    threshold = max(0, int(marker_frame_val - 1))
 
     tracks = _get_tracks_collection(clip)
     if tracks is None:
@@ -121,8 +121,8 @@ def run_find_max_marker_frame(
         return out
 
     # Szenenbereich bestimmen (robust gegen vertauschte Grenzen)
-    s_start = int(getattr(scene, "frame_start", 1) or 1)
-    s_end = int(getattr(scene, "frame_end", s_start) or s_start)
+    s_start = max(1, int(getattr(scene, "frame_start", 1) or 1))
+    s_end   = int(getattr(scene, "frame_end", s_start) or s_start)
     if s_end < s_start:
         s_start, s_end = s_end, s_start
 
