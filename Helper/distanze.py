@@ -48,6 +48,35 @@ def _track_marker_at_frame(
         return (False, None)
 
 
+def _find_clip_editor_context(context: bpy.types.Context, clip: bpy.types.MovieClip):
+    """
+    Liefert (window, area, region, space) für einen CLIP_EDITOR, falls vorhanden.
+    Fällt ansonsten auf aktive window/screen zurück und setzt space_data pro Override.
+    """
+    win = getattr(context, "window", None)
+    scr = getattr(win, "screen", None) if win else None
+    area = None
+    region = None
+    space = None
+    try:
+        if scr:
+            for a in scr.areas:
+                if getattr(a, "type", "") == "CLIP_EDITOR":
+                    area = a
+                    # bevorzugt WINDOW-Region
+                    for r in a.regions:
+                        if getattr(r, "type", "") == "WINDOW":
+                            region = r
+                            break
+                    space = next(
+                        (s for s in a.spaces if getattr(s, "type", "") == "CLIP_EDITOR"),
+                        None,
+                    )
+                    break
+    except Exception:
+        pass
+    return win, area, region, space
+
 def _collect_old_new_sets(
     context: bpy.types.Context,
     frame: int,
@@ -222,36 +251,65 @@ def run_distance_cleanup(
         dy = (float(nco_a[1]) - float(nco_b[1])) * height
         return (dx * dx + dy * dy) ** 0.5
 
-    # Robuste Löschung mit Verifikation + Fallback
+
+    # Robuste Löschung via Operator + Verifikation; Fallback = Marker@Frame löschen
     def _delete_track_or_marker(
         tr: bpy.types.MovieTrackingTrack, ptr: int, frame_i: int
     ) -> Tuple[bool, str]:
         name = getattr(tr, "name", "<noname>")
-        # 1) Track-Remove
+        # 0) Context für CLIP_EDITOR finden
+        win, area, region, space = _find_clip_editor_context(bpy.context, clip)
+        # 1) Alles deselektieren, Ziel selektieren
         try:
-            clip.tracking.tracks.remove(tr)
-            # Verifikation: existiert Track noch?
+            for _t in clip.tracking.tracks:
+                _t.select = False
+            tr.select = True
+            ok_m, m = _track_marker_at_frame(tr, frame_i)
+            if ok_m and m:
+                try:
+                    m.select = True
+                except Exception:
+                    pass
+        except Exception as e:
+            log(f"[DISTANZE]   pre-select failed for {name} ({ptr}): {e}")
+        # 2) Operator-Aufruf mit Override
+        try:
+            override = {}
+            if win:
+                override["window"] = win
+                override["screen"] = win.screen
+            if area:
+                override["area"] = area
+            if region:
+                override["region"] = region
+            if space:
+                override["space_data"] = space
+            override["edit_movieclip"] = clip
+            with bpy.context.temp_override(**override):
+                # Löscht selektierte Tracks im aktiven Clip
+                bpy.ops.clip.delete_track()
+        except Exception as e:
+            log(f"[DISTANZE]   bpy.ops.clip.delete_track() failed for {name} ({ptr}): {e}")
+        # 3) Verifikation nach Operator
+        try:
             still = False
             for _t in clip.tracking.tracks:
-                if int(getattr(_t, "as_pointer")()) == ptr or getattr(
-                    _t, "name", ""
-                ) == name:
+                if int(getattr(_t, "as_pointer")()) == ptr or getattr(_t, "name", "") == name:
                     still = True
                     break
             if not still:
-                return True, "removed:track"
-        except Exception as e:
-            log(f"[DISTANZE]   remove(track) failed for {name} ({ptr}): {e}")
-        # 2) Marker-Delete am Frame
+                return True, "deleted:op"
+        except Exception:
+            pass
+        # 4) Fallback: nur Marker am Frame löschen (nicht den ganzen Track)
         try:
             tr.markers.delete_frame(int(frame_i))
-            # Verifikation: gibt es noch Marker @frame?
             try:
                 m_chk = tr.markers.find_frame(int(frame_i), exact=True)
             except TypeError:
                 m_chk = tr.markers.find_frame(int(frame_i))
             if not m_chk:
-                return True, "removed:marker"
+                return True, "deleted:marker"
         except Exception as e:
             log(f"[DISTANZE]   delete_frame(frame) failed for {name} ({ptr}): {e}")
         return False, "failed"
