@@ -267,8 +267,6 @@ def _run_multi_core(
             placement="FRAME",
         )
 
-        # Entfernt: kein Früh-Cleanup mehr. Neue Tracks dürfen Länge aufbauen.
-
         created = [t for t in tracking.tracks if t.as_pointer() not in before]
         return len(created), eff
 
@@ -333,8 +331,6 @@ def run_multi_pass(context: bpy.types.Context, *, frame: Optional[int] = None, *
 
     post_all_ptrs = _snapshot_all_ptrs(clip)
     new_multi_ptrs = list(post_all_ptrs.difference(pre_all_ptrs))
-
-    # Entfernt: kein Post-Pruning in MULTI
 
     _clear_selection_at_frame(clip, frame)
     _select_ptrs_at_frame(clip, frame, pre_selected_ptrs.union(new_multi_ptrs))
