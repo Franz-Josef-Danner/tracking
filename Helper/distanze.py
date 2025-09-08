@@ -182,8 +182,18 @@ def run_distance_cleanup(
                     new_set.add(ptr)
                     new_cnt_m += 1
 
-    # Mindestabstand: Param bevorzugen, Default 200
-    min_distance = float(min_distance) if min_distance is not None else 200.0
+    # Mindestabstand: Wert aus Koordinator robust übernehmen (Fallback 200)
+    auto_min_used = False
+    try:
+        md = float(min_distance) if min_distance is not None else 200.0
+        # Ungültige/negative Werte abfangen
+        if not isfinite(md) or md <= 0.0:
+            auto_min_used = (min_distance is None)
+            md = 200.0
+    except Exception:
+        auto_min_used = True
+        md = 100.0
+    min_distance = md
     log(
         f"[DISTANZE] run_distance_cleanup called: frame={frame}, min_distance={min_distance}, unit={distance_unit}, "
         f"require_selected_new={require_selected_new}, include_muted_old={include_muted_old}, "
@@ -285,8 +295,9 @@ def run_distance_cleanup(
             if space:
                 override["space_data"] = space
             override["edit_movieclip"] = clip
-            with bpy.context.temp_override(**override):
-                # Löscht selektierte Tracks im aktiven Clip
+            # bevorzugt den übergebenen Context, fällt andernfalls auf bpy.context zurück
+            _ctx = context if hasattr(context, "temp_override") else bpy.context
+            with _ctx.temp_override(**override):
                 bpy.ops.clip.delete_track()
         except Exception as e:
             log(f"[DISTANZE]   bpy.ops.clip.delete_track() failed for {name} ({ptr}): {e}")
@@ -457,7 +468,7 @@ def run_distance_cleanup(
         "distance_unit": distance_unit,
         "old_count": int(len(old_set)),
         "new_total": int(len(new_set)),
-        "auto_min_used": False,
+        "auto_min_used": bool(auto_min_used),
         "deleted": deleted_struct,
         "new_ptrs_after_cleanup": survivors,
         "markers_at_frame": int(marker_count_frame),
