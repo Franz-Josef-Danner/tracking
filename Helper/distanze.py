@@ -173,6 +173,7 @@ def run_distance_cleanup(
     checked = 0
     skipped_no_marker = 0
     skipped_unselected = 0
+    failed_removals = 0
     deleted_ptrs: list[int] = []
 
     # Referenz-Koordinaten (old_set) am Frame sammeln
@@ -212,6 +213,7 @@ def run_distance_cleanup(
             "new_total": int(len(new_set)),
             "auto_min_used": False,
             "deleted": [],
+            "failed_removals": 0,
         }
 
     # Helper zur Pixel-Distanz
@@ -219,6 +221,50 @@ def run_distance_cleanup(
         dx = (float(nco_a[0]) - float(nco_b[0])) * width
         dy = (float(nco_a[1]) - float(nco_b[1])) * height
         return (dx * dx + dy * dy) ** 0.5
+
+    # Robuste Löschung mit Verifikation + Fallback
+    def _delete_track_or_marker(
+        tr: bpy.types.MovieTrackingTrack, ptr: int, frame_i: int
+    ) -> Tuple[bool, str]:
+        name = getattr(tr, "name", "<noname>")
+        # 1) Track-Remove
+        try:
+            clip.tracking.tracks.remove(tr)
+            # Verifikation: existiert Track noch?
+            still = False
+            for _t in clip.tracking.tracks:
+                if int(getattr(_t, "as_pointer")()) == ptr or getattr(
+                    _t, "name", ""
+                ) == name:
+                    still = True
+                    break
+            if not still:
+                return True, "removed:track"
+        except Exception as e:
+            log(f"[DISTANZE]   remove(track) failed for {name} ({ptr}): {e}")
+        # 2) Marker-Delete am Frame
+        try:
+            tr.markers.delete_frame(int(frame_i))
+            # Verifikation: gibt es noch Marker @frame?
+            try:
+                m_chk = tr.markers.find_frame(int(frame_i), exact=True)
+            except TypeError:
+                m_chk = tr.markers.find_frame(int(frame_i))
+            if not m_chk:
+                return True, "removed:marker"
+        except Exception as e:
+            log(f"[DISTANZE]   delete_frame(frame) failed for {name} ({ptr}): {e}")
+        return False, "failed"
+
+    # Vorab: mapping ptr->track für stabile Namenslogs auch nach evtl. Removals
+    ptr_to_name = {}
+    for _t in clip.tracking.tracks:
+        try:
+            ptr_to_name[int(getattr(_t, "as_pointer")())] = getattr(
+                _t, "name", "<noname>"
+            )
+        except Exception:
+            pass
 
     # Iteration über neue Kandidaten
     # Achtung: Wir arbeiten über Kopie der Trackliste, da wir ggf. Tracks entfernen.
@@ -245,28 +291,40 @@ def run_distance_cleanup(
             too_close = False
             min_found = 1e12
             for rco in ref_coords:
-                d = _px_dist(nco, rco) if distance_unit == "pixel" else (( (nco[0]-rco[0])**2 + (nco[1]-rco[1])**2 ) ** 0.5)
+                d = (
+                    _px_dist(nco, rco)
+                    if distance_unit == "pixel"
+                    else ((nco[0] - rco[0]) ** 2 + (nco[1] - rco[1]) ** 2) ** 0.5
+                )
                 if d < min_found:
                     min_found = d
                 if d < float(min_distance):
                     too_close = True
                     break
 
+            name = ptr_to_name.get(ptr, getattr(tr, "name", "<noname>"))
+            sel_state = f"Tsel={bool(getattr(tr,'select',False))}, Msel={bool(getattr(m_new,'select',False))}"
             if too_close:
-                # Track entfernen (Fallback: nur Marker am Frame löschen)
-                try:
-                    clip.tracking.tracks.remove(tr)
-                except Exception:
-                    try:
-                        tr.markers.delete_frame(int(frame))
-                    except Exception:
-                        pass
-                removed += 1
-                deleted_ptrs.append(ptr)
+                ok_del, how = _delete_track_or_marker(tr, ptr, frame)
+                if ok_del:
+                    removed += 1
+                    deleted_ptrs.append(ptr)
+                    log(
+                        f"[DISTANZE]   DELETE  ptr={ptr} name='{name}' min_d={min_found:.2f}px @f{frame}  ({sel_state}) → {how}"
+                    )
+                else:
+                    failed_removals += 1
+                    log(
+                        f"[DISTANZE]   FAILED  ptr={ptr} name='{name}' min_d={min_found:.2f}px @f{frame}  ({sel_state}) → could not remove"
+                    )
             else:
                 kept += 1
-        except Exception:
+                log(
+                    f"[DISTANZE]   KEEP    ptr={ptr} name='{name}' min_d={min_found:.2f}px @f{frame}  ({sel_state})"
+                )
+        except Exception as e:
             # Defensive: Fehler pro Track nicht fatal
+            log(f"[DISTANZE]   ERROR   ptr=? exception={e}")
             continue
 
     # Optional: Verbleibende neue selektieren (UI-Komfort)
@@ -286,11 +344,36 @@ def run_distance_cleanup(
                     pass
             except Exception:
                 continue
+        log(f"[DISTANZE] Reselect remaining new: done.")
+
+    # Post-Verification: existieren gelöschte Pointer noch?
+    still_present: list[Tuple[int, str]] = []
+    marker_count_frame = 0
+    try:
+        for _t in clip.tracking.tracks:
+            try:
+                if _track_marker_at_frame(_t, frame)[0]:
+                    marker_count_frame += 1
+                p = int(getattr(_t, "as_pointer")())
+                if p in deleted_ptrs:
+                    still_present.append((p, getattr(_t, "name", "<noname>")))
+            except Exception:
+                pass
+    except Exception:
+        pass
 
     log(
         f"[DISTANZE] Cleanup complete: removed={removed}, kept={kept}, checked={checked}, "
-        f"skipped_no_marker={skipped_no_marker}, skipped_unselected={skipped_unselected}"
+        f"skipped_no_marker={skipped_no_marker}, skipped_unselected={skipped_unselected}, failed_removals={failed_removals}"
     )
+    if still_present:
+        log(
+            f"[DISTANZE] WARNING: {len(still_present)} supposed-deleted tracks still present: {still_present[:10]}{' …' if len(still_present)>10 else ''}"
+        )
+    log(
+        f"[DISTANZE] Post-frame stats @f{frame}: markers_at_frame={marker_count_frame}, deleted_ptrs={len(deleted_ptrs)}"
+    )
+
     return {
         "status": "OK",
         "frame": frame,
@@ -305,5 +388,6 @@ def run_distance_cleanup(
         "new_total": int(len(new_set)),
         "auto_min_used": False,
         "deleted": deleted_ptrs,
+        "failed_removals": int(failed_removals),
     }
 
