@@ -324,6 +324,14 @@ def run_distance_cleanup(
         except Exception:
             pass
 
+    # WICHTIG: Snapshot der "neuen" selektierten Kandidaten anlegen,
+    # damit require_selected_new NICHT vom späteren Deselektieren beeinflusst wird.
+    _new_selected_snapshot = set(new_set) if require_selected_new else set()
+    log(
+        f"[DISTANZE] Selection snapshot: size={len(_new_selected_snapshot)} "
+        f"(require_selected_new={require_selected_new})"
+    )
+
     # Iteration über neue Kandidaten
     # Achtung: Wir arbeiten über Kopie der Trackliste, da wir ggf. Tracks entfernen.
     for tr in list(clip.tracking.tracks):
@@ -337,10 +345,10 @@ def run_distance_cleanup(
                 skipped_no_marker += 1
                 continue
 
-            if require_selected_new:
-                if not (bool(getattr(tr, "select", False)) or bool(getattr(m_new, "select", False))):
-                    skipped_unselected += 1
-                    continue
+            # Gating ausschließlich gegen den Snapshot, NICHT gegen aktuellen Select-Status
+            if require_selected_new and (ptr not in _new_selected_snapshot):
+                skipped_unselected += 1
+                continue
 
             checked += 1
             nco = (float(m_new.co[0]), float(m_new.co[1]))
