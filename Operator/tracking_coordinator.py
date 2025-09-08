@@ -512,6 +512,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
             # **WICHTIG**: Pre-Snapshot direkt vor DETECT
             self.pre_ptrs = set(_snapshot_track_ptrs(context))
+            try:
+                clip = _resolve_clip(context)
+                cur_frame = self.target_frame
+                print(
+                    f"[COORD] Pre Detect/Multi: tracks={len(getattr(clip.tracking,'tracks',[]))} "
+                    f"snapshot_size={len(self.pre_ptrs)} frame={cur_frame}"
+                )
+            except Exception:
+                pass
             self.phase = PH_DETECT
             return {'RUNNING_MODAL'}
 
@@ -549,6 +558,21 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self.detection_threshold = float(rd.get("threshold", self.detection_threshold))
             except Exception:
                 pass
+            try:
+                clip = _resolve_clip(context)
+                post_tracks = list(getattr(clip.tracking, "tracks", []))
+                post_ptrs = {int(t.as_pointer()) for t in post_tracks}
+                base = self.pre_ptrs or set()
+                new_ptrs = post_ptrs - base
+                sel_new = [
+                    t for t in post_tracks if int(t.as_pointer()) in new_ptrs and getattr(t, "select", False)
+                ]
+                print(
+                    f"[COORD] Post Multi: total_tracks={len(post_tracks)} new_tracks={len(new_ptrs)} "
+                    f"selected_new={len(sel_new)} (expect selected_new≈new_tracks)"
+                )
+            except Exception:
+                pass
             self.report({'INFO'}, f"DETECT @f{self.target_frame}: new={new_cnt}, thr={self.detection_threshold}")
             self.phase = PH_DISTANZE
             return {'RUNNING_MODAL'}
@@ -558,10 +582,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if self.pre_ptrs is None or self.target_frame is None:
                 return self._finish(context, info="DISTANZE: Pre-Snapshot oder Ziel-Frame fehlt.", cancelled=True)
             try:
+                cur_frame = int(self.target_frame)
+                print(f"[COORD] Calling Distanz: frame={cur_frame}, min_distance=None")
                 info = run_distance_cleanup(
                     context,
                     baseline_ptrs=self.pre_ptrs,  # zwingt Distanz(e) auf Snapshot-Pfad (kein Selektion-Fallback)
-                    frame=int(self.target_frame),
+                    frame=cur_frame,
                     # min_distance=None â†’ Auto-Ableitung in distanze.py (aus Threshold & scene-base)
                     min_distance=None,
                     distance_unit="pixel",
@@ -747,6 +773,14 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         try:
                             # Snapshot der aktuellen Trackerâ€‘Pointer als Basis fÃ¼r den Multiâ€‘Pass.
                             current_ptrs = set(_snapshot_track_ptrs(context))
+                            try:
+                                clip = _resolve_clip(context)
+                                print(
+                                    f"[COORD] Pre Detect/Multi: tracks={len(getattr(clip.tracking,'tracks',[]))} "
+                                    f"snapshot_size={len(current_ptrs)} frame={self.target_frame}"
+                                )
+                            except Exception:
+                                pass
                             # Ermittelten Threshold fÃ¼r den Multiâ€‘Pass verwenden. Fallback auf einen Standardwert.
                             try:
                                 thr = float(self.detection_threshold) if self.detection_threshold is not None else None
@@ -765,6 +799,19 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                 repeat_count=int(self.repeat_count_for_target or 0),
                             )
                             try:
+                                post_tracks = list(getattr(clip.tracking, "tracks", []))
+                                post_ptrs = {int(t.as_pointer()) for t in post_tracks}
+                                new_ptrs = post_ptrs - current_ptrs
+                                sel_new = [
+                                    t for t in post_tracks if int(t.as_pointer()) in new_ptrs and getattr(t, "select", False)
+                                ]
+                                print(
+                                    f"[COORD] Post Multi: total_tracks={len(post_tracks)} new_tracks={len(new_ptrs)} "
+                                    f"selected_new={len(sel_new)} (expect selected_new≈new_tracks)"
+                                )
+                            except Exception:
+                                pass
+                            try:
                                 context.scene["tco_last_multi_pass"] = mp_res  # type: ignore
                             except Exception:
                                 pass
@@ -779,6 +826,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                             try:
                                 cur_frame = int(self.target_frame) if self.target_frame is not None else None
                                 if cur_frame is not None:
+                                    print(f"[COORD] Calling Distanz: frame={cur_frame}, min_distance=None")
                                     dist_res = run_distance_cleanup(
                                         context,
                                         baseline_ptrs=current_ptrs,  # zwingt Distanz(e) auf Snapshot-Pfad (kein Selektion-Fallback)
