@@ -558,7 +558,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if self.pre_ptrs is None or self.target_frame is None:
                 return self._finish(context, info="DISTANZE: Pre-Snapshot oder Ziel-Frame fehlt.", cancelled=True)
             try:
-                # Phase: DISTANZE -> harte Löschung (entfällt)
                 info = run_distance_cleanup(
                     context,
                     pre_ptrs=self.pre_ptrs,
@@ -570,7 +569,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     include_muted_old=False,
                     select_remaining_new=True,
                     verbose=True,
-                    apply_delete=False,
                 )
             except Exception as exc:
                 return self._finish(context, info=f"DISTANZE FAILED â†’ {exc}", cancelled=True)
@@ -778,7 +776,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                 f"selected={mp_res.get('selected')}"
                             ))
                             # Nach dem Multiâ€‘Pass eine DistanzprÃ¼fung durchfÃ¼hren.
-                            # Entfernt: kein Short-Pruning im MULTI-Zyklus
                             try:
                                 cur_frame = int(self.target_frame) if self.target_frame is not None else None
                                 if cur_frame is not None:
@@ -792,7 +789,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                         include_muted_old=False,
                                         select_remaining_new=True,
                                         verbose=True,
-                                        apply_delete=False,
                                     )
                                     try:
                                         context.scene["tco_last_multi_distance_cleanup"] = dist_res  # type: ignore
