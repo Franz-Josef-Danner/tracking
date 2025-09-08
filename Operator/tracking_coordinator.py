@@ -52,14 +52,50 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        # 1) Low-Marker-Frame bestimmen
+        # 1) Low-Marker-Frame bestimmen (run_find_low_marker_frame liefert ein Dict)
+        def _clip_bounds():
+            clip = _resolve_clip(context)
+            scn = context.scene
+            if not clip:
+                return int(getattr(scn, "frame_start", 1)), int(getattr(scn, "frame_end", 1))
+            try:
+                c_start = int(getattr(clip, "frame_start", scn.frame_start))
+                c_dur   = int(getattr(clip, "frame_duration", 0))
+                c_end   = c_start + max(0, c_dur - 1)
+            except Exception:
+                c_start = int(getattr(scn, "frame_start", 1))
+                c_end   = int(getattr(scn, "frame_end", c_start))
+            # Szene kann enger sein
+            c_start = max(c_start, int(getattr(scn, "frame_start", c_start)))
+            c_end   = min(c_end,   int(getattr(scn, "frame_end",   c_end)))
+            return c_start, c_end
+
+        def _fallback_frame():
+            scn = context.scene
+            start, end = _clip_bounds()
+            cur = int(getattr(scn, "frame_current", start))
+            return min(max(cur, start), end)
+
+        res_low = None
         try:
-            frame = int(run_find_low_marker_frame(context))
+            res_low = run_find_low_marker_frame(context)
         except Exception:
-            frame = None
-        if frame is None:
-            self.report({'WARNING'}, "Kein Low-Marker-Frame gefunden.")
-            return {'CANCELLED'}
+            res_low = None
+
+        frame = None
+        if isinstance(res_low, dict):
+            status = res_low.get("status")
+            if status == "FOUND":
+                frame = int(res_low.get("frame"))
+            elif status in ("NONE", "FAILED"):
+                # Kein Frame < Basis gefunden oder Fehler → robust fortfahren
+                frame = _fallback_frame()
+        else:
+            # Backward-Compat: falls alte Implementierung doch int liefert
+            try:
+                frame = int(res_low)
+            except Exception:
+                frame = _fallback_frame()
 
         # 2) Springen
         try:
@@ -78,6 +114,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # 4) Aufräumen der Margin-Defaults (keine weiteren Phasen)
         _reset_margin_to_tracker_default(context)
 
-        cnt = int(res.get("new_count", -1)) if isinstance(res, dict) else -1
+        # run_detect_once liefert 'new_tracks'
+        cnt = int(res.get("new_tracks", -1)) if isinstance(res, dict) else -1
         self.report({'INFO'}, f"Detect abgeschlossen @f{frame} (neu: {cnt if cnt>=0 else 'n/a'})")
         return {'FINISHED'}
