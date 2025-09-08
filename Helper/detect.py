@@ -260,6 +260,8 @@ def run_detect_basic(
             min_distance_px=min_dist,
         )
 
+        # Entfernt: kein sofortiges Clean nach DETECT
+
         # Nach der Marker-Detection: neu erzeugte Spuren als â€žneuâ€œ markieren
         # Ermitteln Sie alle Tracks, die im Vergleich zu pre_ptrs neu sind. Diese
         # werden als ausgewÃ¤hlt markiert, damit nachfolgende DistanzprÃ¼fungen
