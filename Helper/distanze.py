@@ -36,7 +36,7 @@ def _resolve_clip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
 
 
 def _marker_at_frame(track, frame: int):
-    """Liefert den Marker eines Tracks exakt auf 'frame' oder None (fail-safe)."""
+    """Gibt den Marker eines Tracks exakt auf 'frame' zurück oder None."""
     try:
         for mk in track.markers:
             if int(getattr(mk, "frame", -1)) == int(frame):
@@ -166,49 +166,45 @@ def run_distance_cleanup(
     if not clip:
         return {"status": "NO_CLIP", "frame": frame}
 
-    # Alt/Neu bestimmen
-    if baseline_ptrs is not None:
-        ptrs: Set[int] = set()
-        try:
-            ptrs = {int(p) for p in baseline_ptrs}
-        except Exception:
-            ptrs = set()
-        # Strikte Alt/Neu-Trennung anhand des Snapshot-Sets
-        old_set, new_set, old_cnt_m, new_cnt_m = ptrs, set(), 0, 0
-        for tr in clip.tracking.tracks:
-            ok, m = _track_marker_at_frame(tr, frame)
-            if not ok or not m:
-                continue
-            if not include_muted_old and (getattr(m, "mute", False) or getattr(tr, "mute", False)):
-                continue
-            ptr = int(tr.as_pointer())
-            if ptr in old_set:
-                old_cnt_m += 1
-            else:
-                new_set.add(ptr)
-                new_cnt_m += 1
-        classification_mode = "BASELINE"
-        log(
-            f"[DISTANZE] Classification mode={classification_mode} (baseline_size={len(ptrs)}); "
-            f"old={old_cnt_m} new={len(new_set)}"
-        )
-    else:
-        old_set, new_set, old_cnt_m, new_cnt_m = _collect_old_new_sets(
-            context,
-            frame,
-            require_selected_new=require_selected_new,
-            include_muted_old=include_muted_old,
-        )
-        classification_mode = "SELECTION_ONLY"
-        log(
-            f"[DISTANZE] Classification mode={classification_mode}; "
-            f"old={old_cnt_m} new={new_cnt_m}"
-        )
 
-    skipped_new_no_marker = len(new_set) - new_cnt_m
+    # --- NEU: Exklusiv selektionsbasierte Klassifikation (zwingend) ---------
+    # Vertrag:
+    #   neu = Track hat auf 'frame' einen Marker, der beim Funktionsstart SELECTED ist
+    #   alt = Track hat auf 'frame' einen Marker, der NICHT selected ist
+    #   (include_muted_old steuert nur, ob gemutete Alt-Tracks als Referenz zulässig sind)
+    tracking = getattr(clip, "tracking", None)
+    all_tracks = list(getattr(tracking, "tracks", []))
+
+    # Snapshot der Selektion (stabil gegenüber UI-Umschaltungen während des Laufs)
+    new_tracks = []
+    for t in all_tracks:
+        m = _marker_at_frame(t, frame)
+        if m and bool(getattr(m, "select", False)):
+            new_tracks.append(t)
+
+    old_tracks = []
+    for t in all_tracks:
+        m = _marker_at_frame(t, frame)
+        if not m:
+            continue  # kein Marker auf diesem Frame → für Distanzprüfung irrelevant
+        if not bool(getattr(m, "select", False)):
+            if include_muted_old or not bool(getattr(t, "mute", False)):
+                old_tracks.append(t)
+
+    classification_mode = "SELECTION_ONLY"
+
+    len_old_markers = len([_marker_at_frame(t, frame) for t in old_tracks])
+    len_new_markers = len([_marker_at_frame(t, frame) for t in new_tracks])
+    old_set = {int(t.as_pointer()) for t in old_tracks}
+    new_set = {int(t.as_pointer()) for t in new_tracks}
+    old_cnt_m = len_old_markers
+    new_cnt_m = len_new_markers
+    skipped_new_no_marker = 0
     log(
-        f"[DISTANZE] Frame {frame}: old_markers={old_cnt_m} "
-        f"new_markers={new_cnt_m} skipped_new_no_marker={skipped_new_no_marker}"
+        f"[DISTANZE] Classification mode={classification_mode}; old={len_old_markers} new={len_new_markers}"
+    )
+    log(
+        f"[DISTANZE] Frame {frame}: old_markers={len_old_markers} new_markers={len_new_markers} skipped_new_no_marker=0"
     )
 
     # Mindestabstand: Wert aus Koordinator robust übernehmen (Fallback 200)
@@ -229,10 +225,10 @@ def run_distance_cleanup(
         f"select_remaining_new={select_remaining_new}"
     )
     log(
-        f"[DISTANZE] Starting cleanup on frame {frame} with min_distance={min_distance} {distance_unit}; old tracks={len(old_set)}"
+        f"[DISTANZE] Starting cleanup on frame {frame} with min_distance={min_distance} {distance_unit}; old tracks={len(old_tracks)}"
     )
     log(
-        f"[DISTANZE] Found {old_cnt_m} reference markers and {len(new_set)} new tracks to inspect."
+        f"[DISTANZE] Found {len_old_markers} reference markers and {len(new_tracks)} new tracks to inspect."
     )
 
     # ======= Kern: Distanzprüfung & Löschung (new_set vs. old_set) =======
@@ -370,7 +366,7 @@ def run_distance_cleanup(
     # damit require_selected_new NICHT vom späteren Deselektieren beeinflusst wird.
     _new_selected_snapshot = set(new_set) if require_selected_new else set()
     log(
-        f"[DISTANZE] Selection snapshot: size={len(_new_selected_snapshot)} "
+        f"[DISTANZE] Selection snapshot: size={len(new_tracks)} "
         f"(require_selected_new={require_selected_new})"
     )
 
