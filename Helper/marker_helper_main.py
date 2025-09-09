@@ -55,7 +55,7 @@ def marker_helper_main(context) -> Tuple[bool, int, Dict[str, Any]]:
         width, height = 0, 0
 
     margin = max(16, int(0.025 * max(width, height)))
-    min_dist = max(8, int(0.05 * max(width, height)))
+    min_dist = max(8, int(0.025 * max(width, height)))
 
     # Persistenz
     scn["marker_basis"]   = int(marker_basis)   # <- FIND_LOW nutzt diesen Basiswert
