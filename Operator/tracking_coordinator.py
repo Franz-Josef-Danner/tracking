@@ -510,13 +510,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception as _exc:
                 self.report({'WARNING'}, f"Orchestrate on jump warn: {str(_exc)}")
 
-            # **WICHTIG**: Pre-Snapshot direkt vor DETECT
+            # --- Snapshot VOR Detect ziehen (Fix für RC#2) ---
             self.pre_ptrs = set(_snapshot_track_ptrs(context))
             try:
                 clip = _resolve_clip(context)
                 cur_frame = self.target_frame
                 print(
-                    f"[COORD] Pre Detect/Multi: tracks={len(getattr(clip.tracking,'tracks',[]))} "
+                    f"[COORD] Pre Detect: tracks={len(getattr(clip.tracking,'tracks',[]))} "
                     f"snapshot_size={len(self.pre_ptrs)} frame={cur_frame}"
                 )
             except Exception:
@@ -560,17 +560,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 pass
             try:
                 clip = _resolve_clip(context)
-                post_tracks = list(getattr(clip.tracking, "tracks", []))
-                post_ptrs = {int(t.as_pointer()) for t in post_tracks}
+                post_ptrs = {int(t.as_pointer()) for t in getattr(clip.tracking, "tracks", [])}
                 base = self.pre_ptrs or set()
-                new_ptrs = post_ptrs - base
-                sel_new = [
-                    t for t in post_tracks if int(t.as_pointer()) in new_ptrs and getattr(t, "select", False)
-                ]
-                print(
-                    f"[COORD] Post Multi: total_tracks={len(post_tracks)} new_tracks={len(new_ptrs)} "
-                    f"selected_new={len(sel_new)} (expect selected_new≈new_tracks)"
-                )
+                print(f"[COORD] Post Detect: detect_new={len(post_ptrs - base)}")
             except Exception:
                 pass
             self.report({'INFO'}, f"DETECT @f{self.target_frame}: new={new_cnt}, thr={self.detection_threshold}")
