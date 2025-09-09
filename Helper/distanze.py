@@ -36,7 +36,7 @@ def _resolve_clip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
 
 
 def _marker_at_frame(track, frame: int):
-    """Liefert den Marker eines Tracks exakt auf 'frame' oder None."""
+    """Liefert den Marker eines Tracks exakt auf 'frame' oder None (fail-safe)."""
     try:
         for mk in track.markers:
             if int(getattr(mk, "frame", -1)) == int(frame):
@@ -187,8 +187,9 @@ def run_distance_cleanup(
             else:
                 new_set.add(ptr)
                 new_cnt_m += 1
+        classification_mode = "BASELINE"
         log(
-            f"[DISTANZE] Classification mode=BASELINE (baseline_size={len(ptrs)}); "
+            f"[DISTANZE] Classification mode={classification_mode} (baseline_size={len(ptrs)}); "
             f"old={old_cnt_m} new={len(new_set)}"
         )
     else:
@@ -198,9 +199,10 @@ def run_distance_cleanup(
             require_selected_new=require_selected_new,
             include_muted_old=include_muted_old,
         )
+        classification_mode = "SELECTION_ONLY"
         log(
-            f"[DISTANZE] Classification mode=SELECTION (require_selected_new={require_selected_new}); "
-            f"old={old_cnt_m} new={len(new_set)}"
+            f"[DISTANZE] Classification mode={classification_mode}; "
+            f"old={old_cnt_m} new={new_cnt_m}"
         )
 
     skipped_new_no_marker = len(new_set) - new_cnt_m
@@ -230,7 +232,7 @@ def run_distance_cleanup(
         f"[DISTANZE] Starting cleanup on frame {frame} with min_distance={min_distance} {distance_unit}; old tracks={len(old_set)}"
     )
     log(
-        f"[DISTANZE] Found {len(old_set)} reference markers and {len(new_set)} new tracks to inspect."
+        f"[DISTANZE] Found {old_cnt_m} reference markers and {len(new_set)} new tracks to inspect."
     )
 
     # ======= Kern: Distanzprüfung & Löschung (new_set vs. old_set) =======
