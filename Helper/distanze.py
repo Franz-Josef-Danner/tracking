@@ -35,6 +35,17 @@ def _resolve_clip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
     return clip
 
 
+def _marker_at_frame(track, frame: int):
+    """Liefert den Marker eines Tracks exakt auf 'frame' oder None."""
+    try:
+        for mk in track.markers:
+            if int(getattr(mk, "frame", -1)) == int(frame):
+                return mk
+    except Exception:
+        pass
+    return None
+
+
 def _track_marker_at_frame(
     tr: bpy.types.MovieTrackingTrack, frame: int
 ) -> Tuple[bool, Optional[bpy.types.MovieTrackingMarker]]:
@@ -86,10 +97,9 @@ def _collect_old_new_sets(
 ) -> Tuple[Set[int], Set[int], int, int]:
     """
     Liefert:
-      - old_set: Pointer alter Tracks (alle Marker @frame, ggf. gemutete ausgeschlossen)
+      - old_set: Pointer alter Tracks (Marker @frame nicht selektiert; gemutete optional)
       - new_set: Pointer neuer Tracks:
-          * Wenn require_selected_new=True: Tracks, die @frame selektiert sind
-            (Track- oder Marker-Selektion genügt)
+          * Wenn require_selected_new=True: Tracks, deren Marker @frame selektiert ist
           * Sonst: Tracks mit Marker @frame, die nicht gemutet sind
       - old_count_markers: Anzahl Referenzmarker @frame (ohne gemutete, wenn include_muted_old=False)
       - new_count_markers: Anzahl Marker @frame in new_set (für Log)
@@ -103,24 +113,22 @@ def _collect_old_new_sets(
     old_cnt = 0
     new_cnt = 0
     for tr in getattr(clip.tracking, "tracks", []):
-        ok, m = _track_marker_at_frame(tr, frame)
-        if not ok or not m:
+        m = _marker_at_frame(tr, frame)
+        if not m:
             continue
-        if not include_muted_old and (getattr(m, "mute", False) or getattr(tr, "mute", False)):
-            continue
-
         ptr = int(tr.as_pointer())
-        old_set.add(ptr)
-        old_cnt += 1
-
-        # Neu-Kriterium
         if require_selected_new:
-            is_sel = bool(getattr(tr, "select", False)) or bool(getattr(m, "select", False))
-            if is_sel:
+            if bool(getattr(m, "select", False)):
                 new_set.add(ptr)
                 new_cnt += 1
+            else:
+                if include_muted_old or not bool(getattr(tr, "mute", False)):
+                    old_set.add(ptr)
+                    old_cnt += 1
         else:
-            # „Neu“ = nicht gemutet am Frame
+            if include_muted_old or not bool(getattr(tr, "mute", False)):
+                old_set.add(ptr)
+                old_cnt += 1
             if not (getattr(m, "mute", False) or getattr(tr, "mute", False)):
                 new_set.add(ptr)
                 new_cnt += 1
