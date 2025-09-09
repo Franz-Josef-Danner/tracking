@@ -23,9 +23,7 @@ def mute_marker_path(track, from_frame, direction, mute=True):
             continue
         except Exception:
             continue
-        # Debug-Logging entfernt
-    except Exception:
-        pass
+    # Debug-Logging entfernt.
 
 def mute_after_last_marker(track, scene_end):
     """Mute markers from the last valid segment end to scene_end."""
@@ -54,3 +52,4 @@ def mute_unassigned_markers(tracks):
             if f not in valid_frames or f == first_frame:
                 marker.mute = True
                 cnt += 1
+        # Debug-Logging entfernt.
