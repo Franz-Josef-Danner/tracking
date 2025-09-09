@@ -179,15 +179,23 @@ def run_distance_cleanup(
     new_tracks = []
     for t in all_tracks:
         m = _marker_at_frame(t, frame)
-        if m and bool(getattr(m, "select", False)):
+        # Neu = Marker-Selection ODER Track-Selection (Fallback für Detect)
+        if m and (
+            bool(getattr(m, "select", False))
+            or bool(getattr(t, "select", False))
+        ):
             new_tracks.append(t)
 
     old_tracks = []
     for t in all_tracks:
         m = _marker_at_frame(t, frame)
         if not m:
-            continue  # kein Marker auf diesem Frame → für Distanzprüfung irrelevant
-        if not bool(getattr(m, "select", False)):
+            continue  # kein Marker auf diesem Frame → irrelevant
+        # Alt = weder Marker-Selection noch Track-Selection
+        if not (
+            bool(getattr(m, "select", False))
+            or bool(getattr(t, "select", False))
+        ):
             if include_muted_old or not bool(getattr(t, "mute", False)):
                 old_tracks.append(t)
 
