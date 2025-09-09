@@ -161,7 +161,6 @@ def run_distance_cleanup(
       - verwendet ``baseline_ptrs`` als Menge der bestehenden Tracks;
         "neu" sind strikt alle Tracks, deren Pointer nicht in ``baseline_ptrs`` enthalten sind.
     """
-    log = print if verbose else (lambda *a, **k: None)
     clip = _resolve_clip(context)
     if not clip:
         return {"status": "NO_CLIP", "frame": frame}
