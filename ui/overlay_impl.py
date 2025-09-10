@@ -1,3 +1,22 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# (c) Kaiserlich Overlay
+
+# -----------------------------------------------------------------------------
+# Overlay-Konfiguration (einfach anpassbar)
+# -----------------------------------------------------------------------------
+# Box/Viewport-Layout
+BOX_PAD = 16          # Außenabstand zum Viewport-Rand
+BOX_W   = 320         # Box-Breite
+BOX_H   = 100          # Box-Höhe
+YAXIS_W = 42          # Platz für Y-Achsenlabels
+
+# Typografie
+TITLE_FONT_SIZE = 12
+LABEL_FONT_SIZE = 11
+
+# Linien
+LINE_WIDTH = 2.0
+
 # -----------------------------------------------------------------------------
 # Adaptive Tick-Berechnung für das Overlay
 # -----------------------------------------------------------------------------
@@ -74,9 +93,11 @@ def draw_solve_graph_impl():
             return
         W, H = region.width, region.height
 
-    pad = 16
-    gw, gh = min(320, W - 2*pad), 80
-    yaxis_w = 42
+    # Layout aus Konfiguration
+    pad = BOX_PAD
+    gw = min(BOX_W, W - 2 * pad)
+    gh = BOX_H
+    yaxis_w = YAXIS_W
     ox, oy = W - gw - pad, pad
 
     shader = gpu.shader.from_builtin('UNIFORM_COLOR')
@@ -90,7 +111,7 @@ def draw_solve_graph_impl():
         title = "Average Trend"
         font_id = 0
         try:
-            _blf_size(font_id, 12)
+            _blf_size(font_id, TITLE_FONT_SIZE)
             tw, th = blf.dimensions(font_id, title)
             tx = ox + yaxis_w
             ty = min(oy + gh + 6, H - th - 2)
@@ -109,7 +130,7 @@ def draw_solve_graph_impl():
         try:
             _draw_title()
             font_id = 0
-            _blf_size(font_id, 11)
+            _blf_size(font_id, LABEL_FONT_SIZE)
             txt = "No data yet"
             tw, th = blf.dimensions(font_id, txt)
             cx = ox + yaxis_w + (gw - yaxis_w - tw) * 0.5
@@ -156,7 +177,7 @@ def draw_solve_graph_impl():
         shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.5)); batch.draw(shader)
 
         font_id = 0
-        _blf_size(font_id, 11)
+        _blf_size(font_id, LABEL_FONT_SIZE)
         for tv in ticks:
             rel = (tv - vmin) / (vmax - vmin)
             y = oy + rel * gh
@@ -185,7 +206,7 @@ def draw_solve_graph_impl():
     batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": coords})
     _reset_width = False
     try:
-        gpu.state.line_width_set(2.0)
+        gpu.state.line_width_set(LINE_WIDTH)
         _reset_width = True
     except Exception:
         pass
