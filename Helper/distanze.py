@@ -14,6 +14,13 @@ from typing import Iterable, Set, Dict, Any, Optional, Tuple
 
 __all__ = ("run_distance_cleanup",)
 
+# --- Logger Shim: Sicherung gegen fehlende log() Definition ---
+
+try:
+    log  # type: ignore[name-defined]
+except NameError:
+    def log(*_args, **_kwargs):
+        return None
 
 # ---------------------------------------------------------------------------
 # Interne Hilfsfunktionen für Selbsterkennung (neu)
