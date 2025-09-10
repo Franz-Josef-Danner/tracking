@@ -1,6 +1,8 @@
 import math, time, bpy
 from .utils import tag_clip_redraw
 
+
+# --- bestehende Logik unverändert lassen (Einträge hinzufügen/trimmen) ---
 def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) -> None:
     """Nur gültige numerische Werte loggen; max 10 Einträge; UI refreshen."""
     scn = context.scene if hasattr(context, "scene") else None
@@ -26,23 +28,16 @@ def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) ->
     now = time.time()
     last_ts = scn.get("_kaiserlich_last_log_ts", 0.0) if scn else 0.0
     last_v = scn.get("_kaiserlich_last_log_v", None) if scn else None
-
-    # Gleicher Attempt bereits verbucht? -> verwerfen
-    if attempt is not None and last_attempt is not None and attempt == last_attempt:
+    if attempt == last_attempt and now - last_ts < 0.2 and v == last_v:
         return
-    # Falls kein Attempt-Tracking verfügbar: innerhalb 0.5s denselben Wert (±1e-6) nicht doppelt loggen
-    if attempt == -1:
-        if (now - float(last_ts) < 0.5) and (last_v is not None) and (abs(float(last_v) - v) <= 1e-6):
-            return
 
-    scn = context.scene
-    try:
-        scn.kaiserlich_solve_attempts += 1
-    except Exception:
-        scn["kaiserlich_solve_attempts"] = int(scn.get("kaiserlich_solve_attempts", 0)) + 1
+    if scn is None:
+        return
+    coll = getattr(scn, "kaiserlich_solve_err_log", None)
+    if coll is None:
+        return
 
-    item = scn.kaiserlich_solve_err_log.add()
-    item.attempt = int(scn.kaiserlich_solve_attempts)
+    item = coll.add()
     item.value = v
     item.stamp = time.strftime("%H:%M:%S")
 
@@ -68,3 +63,55 @@ def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) ->
         scn["_kaiserlich_last_log_v"] = v
     except Exception:
         pass
+
+
+# -----------------------------------------------------------------------------
+# Panel: Solve Errors (dynamische Listenhöhe)
+# -----------------------------------------------------------------------------
+class KAISERLICH_PT_SolveLog(bpy.types.Panel):
+    bl_label = "Solve Errors"
+    bl_space_type = "CLIP_EDITOR"
+    bl_region_type = "UI"
+    bl_category = "Kaiserlich"
+
+    def draw(self, context):
+        layout = self.layout
+        scn = context.scene
+
+        coll = getattr(scn, "kaiserlich_solve_err_log", None)
+        if coll is None:
+            layout.label(text="No log collection found.")
+            return
+
+        max_rows = int(getattr(scn, "kaiserlich_solve_log_max_rows", 30))
+        rows = max(1, min(len(coll), max_rows))
+
+        # Liste rendern
+        layout.template_list(
+            "UI_UL_list",
+            "kaiserlich_solve_err_log",
+            scn,
+            "kaiserlich_solve_err_log",
+            scn,
+            "kaiserlich_solve_err_idx",
+            rows=rows,
+        )
+
+
+classes = (KAISERLICH_PT_SolveLog,)
+
+
+def register():
+    for cls in classes:
+        try:
+            bpy.utils.register_class(cls)
+        except Exception:
+            pass
+
+
+def unregister():
+    for cls in reversed(classes):
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception:
+            pass
