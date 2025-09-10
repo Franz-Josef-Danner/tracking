@@ -94,6 +94,14 @@ def _register_scene_props() -> None:
             name="Debug Graph", default=False,
             description="Konsolen-Logs für Solve-Overlay und Solve-Log aktivieren"
         )
+    if not hasattr(sc, "kaiserlich_solve_log_max_rows"):
+        sc.kaiserlich_solve_log_max_rows = IntProperty(
+            name="Max Rows",
+            default=30,
+            min=1,
+            max=200,
+            description="Maximalzeilen für die Solve-Log-Liste (Panel-Höhenlimit)",
+        )
 
 def _unregister_scene_props() -> None:
     sc = bpy.types.Scene
@@ -101,7 +109,7 @@ def _unregister_scene_props() -> None:
         "repeat_frame", "marker_frame", "frames_track", "error_track",
         "kaiserlich_solve_err_log", "kaiserlich_solve_err_idx",
         "kaiserlich_solve_attempts", "kaiserlich_solve_graph_enabled",
-        "kaiserlich_debug_graph",
+        "kaiserlich_debug_graph", "kaiserlich_solve_log_max_rows",
     ):
         if hasattr(sc, name):
             try:
@@ -149,11 +157,16 @@ class CLIP_PT_kaiserlich_panel(Panel):
         row.label(text="Solve QA")
         row.prop(scene, "kaiserlich_solve_graph_enabled", text="Overlay")
         row.prop(scene, "kaiserlich_debug_graph", text="Debug")
+        coll = getattr(scene, "kaiserlich_solve_err_log", None)
+        max_rows = int(getattr(scene, "kaiserlich_solve_log_max_rows", 30))
+        rows = 1
+        if coll is not None:
+            rows = max(1, min(len(coll), max_rows))
         box.template_list(
             "KAISERLICH_UL_solve_err", "",  # UIList-ID
             scene, "kaiserlich_solve_err_log",
             scene, "kaiserlich_solve_err_idx",
-            rows=5
+            rows=rows
         )
         layout.separator()
         layout.operator("clip.kaiserlich_coordinator_launcher", text="Coordinator starten")
