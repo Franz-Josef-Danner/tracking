@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Dict, Any, List, Tuple, Optional
 import sys
 import bpy
+import time
 try:
     # Einheitliche Fehler-Metrik wie in der Coordinator-Telemetrie
     from .count import error_value  # type: ignore
@@ -22,6 +23,93 @@ except Exception:
             return -1.0
 
 __all__ = ("run_reduce_error_tracks", "get_avg_reprojection_error")
+
+def _name(tr):
+    try:
+        return getattr(tr, "name", "<noname>")
+    except Exception:
+        return "<ex>"
+
+def _has_marker_on_frame(tr, frame):
+    try:
+        return any(m.frame == frame for m in tr.markers)
+    except Exception:
+        return False
+
+def _peek_clip_context(ctx, clip):
+    win = getattr(ctx, "window", None)
+    scr = getattr(ctx, "screen", None)
+    area_ok = region_ok = space_ok = False
+    area_type = region_type = space_type = None
+    has_clip_bound = False
+    if win and scr:
+        try:
+            area = next((a for a in scr.areas if a.type == 'CLIP_EDITOR'), None)
+            if area:
+                area_ok = True
+                area_type = area.type
+                region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+                if region:
+                    region_ok = True
+                    region_type = region.type
+                space = area.spaces.active if hasattr(area, "spaces") else None
+                if space:
+                    space_ok = True
+                    space_type = getattr(space, "type", None)
+                    has_clip_bound = (getattr(space, "clip", None) == clip) and (clip is not None)
+        except Exception:
+            pass
+    print(f"[CtxDBG] window={'Y' if win else 'N'} screen={'Y' if scr else 'N'} "
+          f"area_ok={area_ok}({area_type}) region_ok={region_ok}({region_type}) "
+          f"space_ok={space_ok}({space_type}) clip_bound={'Y' if has_clip_bound else 'N'}")
+
+def _summarize_candidates(candidates, threshold_px, max_to_delete):
+    total = len(candidates) if candidates else 0
+    above = []
+    top10 = []
+    if candidates:
+        above = [(t, e) for (t, e) in candidates if e is not None and e > threshold_px]
+        try:
+            top10 = sorted(above, key=lambda x: (x[1] if x[1] is not None else -1), reverse=True)[:10]
+        except Exception:
+            top10 = above[:10]
+    print(
+        f"[ReduceDBG] preselect: total={total} thr={threshold_px:.6f} above_thr={len(above)} "
+        f"max_to_delete={max_to_delete}"
+    )
+    if top10:
+        preview = [(t, float(f"{e:.4f}") if e is not None else None) for (t, e) in top10]
+        print(f"[ReduceDBG] preselect top10={preview}")
+    return above
+
+def _count_flags(tracks, frame_hint=None):
+    sel = mut = hasf = 0
+    for t in tracks:
+        try:
+            if getattr(t, "select", False):
+                sel += 1
+            if getattr(t, "mute", False):
+                mut += 1
+            if frame_hint is not None and _has_marker_on_frame(t, frame_hint):
+                hasf += 1
+        except Exception:
+            pass
+    return sel, mut, hasf
+
+def _post_verify_exists(clip, target_names):
+    try:
+        remaining = []
+        trk = getattr(clip, "tracking", None)
+        tracks = getattr(trk, "tracks", None) if trk else None
+        for name in target_names:
+            try:
+                if tracks and tracks.get(name):
+                    remaining.append(name)
+            except Exception:
+                pass
+        return remaining
+    except Exception:
+        return []
 
 def _ensure_clip_context(context: bpy.types.Context) -> dict:
     """
@@ -101,6 +189,7 @@ def run_reduce_error_tracks(
             pass
     cand.sort(key=lambda x: x[1], reverse=True)
     print(f"[ReduceDBG] reducer candidates: count={len(cand)} top10={[(n, round(e,4)) for n,e in cand[:10]]}")
+    _summarize_candidates(cand, thr, max_to_delete if max_to_delete is not None else 0)
     # Dynamische Default-Batchgröße, falls nicht vorgegeben:
     # 20 % der Kandidaten, min 5, max 50 (konservativ gegen Overkill)
     if max_to_delete is None:
@@ -122,7 +211,19 @@ def run_reduce_error_tracks(
     count = 0
     k = min(int(max_to_delete), max(1, len(cand)))
     to_process = cand[:k]
-    target_names = {name for name, _e in to_process}
+    target_names = {name for (name, _e) in to_process}
+    target_tracks = [trk.tracks.get(name) for name in target_names if trk and trk.tracks.get(name)]
+
+    if target_names:
+        print(f"[ReduceDBG] target snapshot(count={len(target_names)}): {list(target_names)}")
+    try:
+        sel_cnt, mut_cnt, hasf_cnt = _count_flags(target_tracks, frame_hint=None)
+        print(f"[SelDBG] before-op: selected={sel_cnt} muted={mut_cnt} has_marker@frame_hint={hasf_cnt}")
+    except Exception:
+        pass
+
+    _peek_clip_context(context, clip)
+    _t0 = time.perf_counter()
 
     if do_mute:
         # — Variante: MUTE pro Track (kein Operator nötig)
@@ -181,13 +282,14 @@ def run_reduce_error_tracks(
         # — Variante: DELETE via Operator (kontext-sicher)
         # 1) Auswahl vorbereiten
         try:
-            for t in tracks:
+            for tr in tracks:
                 try:
-                    t.select = False
+                    tr.select = False
                 except Exception:
                     pass
-            for t in tracks:
-                if t.name in target_names:
+            for name in target_names:
+                t = trk.tracks.get(name) if trk else None
+                if t:
                     try:
                         t.select = True
                     except Exception:
@@ -233,6 +335,23 @@ def run_reduce_error_tracks(
                     count += 1
                 except Exception as _exc:
                     print(f"[ReduceDBG] reducer failed (mute-fallback) for {name}: {_exc}")
+
+    _t1 = time.perf_counter()
+    print(f"[TimeDBG] reduce pass wall={(_t1 - _t0) * 1000:.2f}ms")
+    try:
+        remaining = _post_verify_exists(clip, target_names)
+        kept = len(remaining)
+        removed = len(target_names) - kept
+        if target_names:
+            rem_names = remaining
+            print(
+                f"[VerifyDBG] post-op: expected_remove={len(target_names)} → removed={removed} kept={kept} kept_names={rem_names}"
+            )
+        else:
+            print("[VerifyDBG] post-op: no targets snapshot (nothing to verify)")
+    except Exception as ex:
+        print(f"[VerifyDBG] post-op verification failed: {ex!r}")
+
     print(f"[ReduceDBG] reducer summary: affected={count}")
     return {
         "deleted": count,  # Anzahl betroffener Tracks (deleted oder mute-fallback)
