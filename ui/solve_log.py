@@ -37,8 +37,27 @@ def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) ->
     if coll is None:
         return
 
+    # --- Attempt-Nummer robust bestimmen ------------------------------------
+    # Quelle A: Scene-Property (falls Coordinator sie pflegt)
+    try:
+        cur_attempt = int(getattr(scn, "kaiserlich_solve_attempts", 0))
+    except Exception:
+        cur_attempt = 0
+    # Quelle B: Max. vorhandener Wert im Log (Fallback, wenn Scene-Prop nie erhöht wurde)
+    try:
+        max_attempt_in_log = max(int(getattr(it, "attempt", 0)) for it in coll) if len(coll) else 0
+    except Exception:
+        max_attempt_in_log = 0
+    next_attempt = max(cur_attempt, max_attempt_in_log) + 1
+    # Scene-Property mitschreiben (self-healing, auch wenn der Coordinator nichts setzt)
+    try:
+        scn.kaiserlich_solve_attempts = next_attempt
+    except Exception:
+        pass
+
+    # Eintrag anlegen
     item = coll.add()
-    item.attempt = attempt
+    item.attempt = next_attempt
     item.value = v
     item.stamp = time.strftime("%H:%M:%S")
 
@@ -59,7 +78,7 @@ def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) ->
 
     # Metadaten für Dedupe aktualisieren
     try:
-        scn["_kaiserlich_last_attempt_logged"] = attempt
+        scn["_kaiserlich_last_attempt_logged"] = next_attempt
         scn["_kaiserlich_last_log_ts"] = now
         scn["_kaiserlich_last_log_v"] = v
     except Exception:
