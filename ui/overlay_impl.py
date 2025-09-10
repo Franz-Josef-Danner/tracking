@@ -32,7 +32,7 @@ def _format_tick(value: float, step: float) -> str:
     if step >= 1.0:
         return f"{value:.0f}"
     import math as _m
-    decimals = min(4, max(1, int(_m.ceil(-_m.log10(step))) + 1))
+    decimals = min(2, max(1, int(_m.ceil(-_m.log10(step))) + 1))
     fmt = f"{{:.{decimals}f}}"
     return fmt.format(value)
 
