@@ -74,7 +74,7 @@ def draw_solve_graph_impl():
             return
         W, H = region.width, region.height
 
-    pad = 20
+    pad = 2
     gw, gh = min(320, W - 2*pad), 80
     yaxis_w = 42
     ox, oy = W - gw - pad, pad
