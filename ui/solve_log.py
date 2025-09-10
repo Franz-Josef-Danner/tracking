@@ -38,6 +38,7 @@ def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) ->
         return
 
     item = coll.add()
+    item.attempt = attempt
     item.value = v
     item.stamp = time.strftime("%H:%M:%S")
 
