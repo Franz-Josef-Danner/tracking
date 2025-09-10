@@ -7,7 +7,7 @@
 # Box/Viewport-Layout
 BOX_PAD = 16          # Außenabstand zum Viewport-Rand
 BOX_W   = 320         # Box-Breite
-BOX_H   = 100          # Box-Höhe
+BOX_H   = 120          # Box-Höhe
 YAXIS_W = 42          # Platz für Y-Achsenlabels
 
 # Typografie
