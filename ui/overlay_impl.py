@@ -1,3 +1,42 @@
+# -----------------------------------------------------------------------------
+# Adaptive Tick-Berechnung für das Overlay
+# -----------------------------------------------------------------------------
+def _compute_tick_step(view_min: float, view_max: float) -> float:
+    """Tick-Abstand basierend auf dem Sichtbereich."""
+    try:
+        vrange = float(view_max) - float(view_min)
+    except Exception:
+        vrange = 0.0
+    if vrange <= 0.0:
+        return 1.0
+    return vrange / 10.0
+
+
+def _iter_ticks(view_min: float, view_max: float):
+    """Generiert Tick-Positionen innerhalb des Sichtbereichs."""
+    step = _compute_tick_step(view_min, view_max)
+    eps = step * 1e-6
+    import math as _m
+    start = _m.ceil((view_min - eps) / step) * step
+    t = start
+    max_ticks = 1000
+    count = 0
+    while t <= view_max + eps and count < max_ticks:
+        yield t
+        t += step
+        count += 1
+
+
+def _format_tick(value: float, step: float) -> str:
+    """Formatiert Labels abhängig von der Schrittweite."""
+    if step >= 1.0:
+        return f"{value:.0f}"
+    import math as _m
+    decimals = min(4, max(1, int(_m.ceil(-_m.log10(step))) + 1))
+    fmt = f"{{:.{decimals}f}}"
+    return fmt.format(value)
+
+
 def draw_solve_graph_impl():
     try:
         import bpy, math as _m, blf
@@ -107,23 +146,17 @@ def draw_solve_graph_impl():
         y = oy + ((val - vmin) / (vmax - vmin)) * gh
         coords.append((x, y))
 
-    # Y-Achse + 5er-Ticks
+    # Y-Achse adaptiv
     try:
-        step = 5.0
-        tick0 = _m.ceil(vmin / step) * step
-        tickN = _m.floor(vmax / step) * step
-        ticks = []
-        if tickN >= tick0:
-            count = int(_m.floor((tickN - tick0) / step)) + 1
-            count = min(count, 64)
-            ticks = [tick0 + i * step for i in range(count)]
+        step = _compute_tick_step(vmin, vmax)
+        ticks = list(_iter_ticks(vmin, vmax))
 
         yaxis_x = ox + yaxis_w
         batch = batch_for_shader(shader, 'LINES', {"pos": [(yaxis_x, oy), (yaxis_x, oy+gh)]})
         shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.5)); batch.draw(shader)
 
-        font_id = 0; _blf_size(font_id, 11)
-        _fmt = "{:.0f}"
+        font_id = 0
+        _blf_size(font_id, 11)
         for tv in ticks:
             rel = (tv - vmin) / (vmax - vmin)
             y = oy + rel * gh
@@ -132,7 +165,7 @@ def draw_solve_graph_impl():
             batch = batch_for_shader(shader, 'LINES', {"pos": [(yaxis_x, y), (ox+gw, y)]})
             shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.15)); batch.draw(shader)
 
-            lbl = _fmt.format(tv)
+            lbl = _format_tick(tv, step)
             lx = ox + 4
             ly = y - 6
             blf.enable(font_id, blf.SHADOW)
