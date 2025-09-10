@@ -7,7 +7,6 @@ tracking_coordinator.py â€“ Streng sequentieller, MODALER Orchestrator
 
 from __future__ import annotations
 import bpy
-import time
 
 # ---------------------------------------------------------------------------
 # Console logging
@@ -30,17 +29,6 @@ from ..Helper.split_cleanup import recursive_split_cleanup
 from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
 from ..Helper.solve_camera import solve_camera_only  # type: ignore
 from ..Helper.reduce_error_tracks import run_reduce_error_tracks, get_avg_reprojection_error  # type: ignore
-
-def _run_reducer(ctx, max_del):
-    print(f"[ReduceDBG] reducer call: max_del={max_del}")
-    _t0 = time.perf_counter()
-    res = run_reduce_error_tracks(ctx, max_to_delete=max_del)
-    _t1 = time.perf_counter()
-    try:
-        print(f"[ReduceDBG] reducer result: {res} (wall={( _t1 - _t0 )*1000:.2f}ms)")
-    except Exception:
-        print(f"[ReduceDBG] reducer result: <unprintable> (wall={( _t1 - _t0 )*1000:.2f}ms)")
-    return res
 # Worst-Error-Frame (optional vorhanden)
 try:
     from ..Helper.find_max_error_frame import run_find_max_error_frame  # type: ignore
@@ -1083,7 +1071,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     _k = max(1, min(5, int(_k_raw)))
                     _log(f"[ReduceDBG] delete-k formula: avg={_avg:.4f} / err_frame={_den:.4f} -> k_raw={_k_raw} -> k={_k} (clamp 1..10)")
 
-                    red = _run_reducer(context, _k)
+                    red = run_reduce_error_tracks(context, max_to_delete=_k)
                     deleted = int(red.get('deleted', 0) or 0)
                     names = red.get('names', [])
                     # Guard NUR setzen, wenn wirklich etwas entfernt wurde
