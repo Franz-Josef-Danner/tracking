@@ -1,6 +1,8 @@
 import math, time, bpy
 from .utils import tag_clip_redraw
 
+
+# --- bestehende Logik unverändert lassen (Einträge hinzufügen/trimmen) ---
 def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) -> None:
     """Nur gültige numerische Werte loggen; max 10 Einträge; UI refreshen."""
     scn = context.scene if hasattr(context, "scene") else None
@@ -68,3 +70,75 @@ def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) ->
         scn["_kaiserlich_last_log_v"] = v
     except Exception:
         pass
+
+
+# -----------------------------------------------------------------------------
+# Panel: Solve Errors (dynamische Höhe via rows)
+# -----------------------------------------------------------------------------
+class KAISERLICH_PT_SolveLog(bpy.types.Panel):
+    bl_label = "Solve Errors"
+    bl_space_type = "CLIP_EDITOR"
+    bl_region_type = "UI"
+    bl_category = "Kaiserlich"
+
+    def draw(self, context):
+        layout = self.layout
+        scn = context.scene
+
+        coll = getattr(scn, "kaiserlich_solve_err_log", None)
+        if coll is None:
+            layout.label(text="No log collection found.")
+            return
+
+        # Dynamische Rows-Berechnung
+        auto = bool(getattr(scn, "kaiserlich_solve_log_auto_rows", True))
+        min_rows = int(getattr(scn, "kaiserlich_solve_log_min_rows", 5))
+        max_rows = int(getattr(scn, "kaiserlich_solve_log_max_rows", 30))
+
+        if auto:
+            rows = max(min_rows, min(len(coll), max_rows))
+        else:
+            # Fallback: behalte min_rows als fixe Höhe
+            rows = min_rows
+
+        # Optional: Header mit Status
+        row = layout.row(align=True)
+        row.prop(scn, "kaiserlich_solve_log_auto_rows", text="Auto Rows")
+        if not auto:
+            row = layout.row(align=True)
+            row.prop(scn, "kaiserlich_solve_log_min_rows", text="Rows")
+        else:
+            col = layout.column(align=True)
+            sub = col.row(align=True)
+            sub.prop(scn, "kaiserlich_solve_log_min_rows", text="Min")
+            sub.prop(scn, "kaiserlich_solve_log_max_rows", text="Max")
+
+        # Liste rendern (Default-UIList reicht hier)
+        layout.template_list(
+            "UI_UL_list",
+            "kaiserlich_solve_err_log",
+            scn,
+            "kaiserlich_solve_err_log",
+            scn,
+            "kaiserlich_solve_err_idx",
+            rows=rows,
+        )
+
+
+classes = (KAISERLICH_PT_SolveLog,)
+
+
+def register():
+    for cls in classes:
+        try:
+            bpy.utils.register_class(cls)
+        except Exception:
+            pass
+
+
+def unregister():
+    for cls in reversed(classes):
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception:
+            pass
