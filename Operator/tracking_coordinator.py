@@ -372,6 +372,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         context: bpy.types.Context,
         *,
         threshold: float | None = None,
+        # optional Guard: erlaubt explizite Vorgabe für min_distance
+        min_distance: int | None = None,
         placement: str = "FRAME",
         select: bool | None = None,
         **kwargs,
