@@ -22,7 +22,8 @@ def _log(*args, **kwargs):
     return None
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame
 from ..Helper.jump_to_frame import run_jump_to_frame
-from ..Helper.detect import run_detect_once
+# Primitive importieren; Orchestrierung (Formel/Freeze) erfolgt hier.
+from ..Helper.detect import run_detect_once as _primitive_detect_once
 from ..Helper.distanze import run_distance_cleanup
 from ..Helper.spike_filter_cycle import run_marker_spike_filter_cycle
 from ..Helper.clean_short_segments import clean_short_segments
@@ -370,6 +371,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # Aktueller Detection-Threshold; wird nach jedem Detect-Aufruf aktualisiert.
     detection_threshold: float | None = None
     spike_threshold: float | None = None  # aktueller Spike-Filter-Schwellenwert (temporÃ¤r)
+    # Telemetrie (optional)
+    last_detect_new_count: int | None = None
+    last_detect_min_distance: int | None = None
+    last_detect_margin: int | None = None
     # Flag, ob der Bidirectional-Track bereits gestartet wurde. Diese
     # Instanzvariable dient dazu, den Start der Bidirectionalâ€‘Track-Phase
     # nur einmal auszulÃ¶sen und anschlieÃŸend auf den Abschluss zu warten.
@@ -400,6 +405,102 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     _tco_best: SolveMetrics | None = None
     _tco_auto_prev: bool = False
     _tco_keyframe_prev: tuple[int, int] | None = None
+    # --- Detect-Wrapper: margin freeze, Formel-Stufung, select passthrough ---
+    # Formel: f = max((anzahl_neu + 0.1) / anzahl_ziel, 0.0000001)
+    # threshold_next = max(threshold_curr * f, 0.0001)
+    # min_distance_next = max(min_distance_curr * f, 0.0001)   (nur bei Stagnation)
+    def _run_detect_with_policy(
+        self,
+        context: bpy.types.Context,
+        *,
+        threshold: float | None = None,
+        margin: int | None = None,
+        min_distance: int | None = None,
+        placement: str = "FRAME",
+        select: bool | None = None,
+        **kwargs,
+    ) -> dict:
+        scn = context.scene
+        # margin fixieren (Tracker-Default)
+        try:
+            clip = _resolve_clip(context)
+            settings = getattr(getattr(clip, "tracking", None), "settings", None)
+            fixed_margin = int(margin) if margin is not None else int(getattr(settings, "default_margin", 0))
+        except Exception:
+            fixed_margin = int(margin or 0)
+        if fixed_margin <= 0:
+            # konservativer Fallback
+            try:
+                w = int(clip.size[0])
+            except Exception:
+                w = 800
+            patt = max(8, int(w / 100))
+            fixed_margin = patt * 2
+
+        # State laden
+        curr_thr = float(scn.get("tco_detect_thr") or 0.0018)
+        if threshold is not None:
+            curr_thr = float(threshold)
+        curr_md = int(scn.get("tco_detect_min_distance") or 0)
+        if min_distance is not None:
+            curr_md = int(min_distance)
+        if curr_md <= 0:
+            # Startwert aus MarkerHelper-Ratio oder konservativ 0.235*margin
+            ratio = None
+            try:
+                info = (scn.get("tco_last_marker_helper") or {}).get("info") or {}
+                mb = float(info.get("margin_base") or 0)
+                mdb = float(info.get("min_distance_base") or 0)
+                if mb > 0 and mdb > 0:
+                    ratio = mdb / mb
+            except Exception:
+                pass
+            if ratio is None or not (0.10 <= float(ratio) <= 0.50):
+                ratio = 0.235
+            curr_md = max(4, min(int(round(fixed_margin * ratio)), int(fixed_margin * 0.5)))
+
+        last_nc = int(scn.get("tco_last_detect_new_count") or -1)
+        # Zielgröße bestimmen
+        target = 100
+        for k in ("tco_detect_target", "detect_target", "marker_target", "target_new_markers"):
+            v = scn.get(k)
+            if isinstance(v, (int, float)) and int(v) > 0:
+                target = int(v)
+                break
+
+        # Detect ausführen (select passthrough)
+        before = _marker_count_by_selected_track(context)
+        res = _primitive_detect_once(
+            context,
+            threshold=curr_thr,
+            margin=fixed_margin,
+            min_distance=curr_md,
+            placement=placement,
+            select=select,
+            **kwargs,
+        )
+        after = _marker_count_by_selected_track(context)
+        delta = _delta_counts(before, after)
+        new_count = int(sum(max(0, int(v)) for v in delta.values()))
+
+        # Formel anwenden
+        factor = max((float(new_count) + 0.1) / float(max(1, target)), 0.0000001)
+        next_thr = max(curr_thr * factor, 0.0001)
+        next_md = curr_md
+        if last_nc == new_count:
+            scaled = max(float(curr_md) * factor, 0.0001)
+            next_md = max(4, min(int(round(scaled)), int(fixed_margin * 0.5)))
+
+        # Persistieren
+        scn["tco_last_detect_new_count"] = int(new_count)
+        scn["tco_detect_thr"] = float(next_thr)
+        scn["tco_detect_min_distance"] = int(next_md)
+        scn["tco_detect_margin"] = int(fixed_margin)
+
+        _log(f"[DETECT] new={new_count} target={target} thr->{next_thr:.7f} "
+             f"md->{next_md}px (stagnation={'YES' if last_nc==new_count else 'NO'})")
+        return res
+
     def execute(self, context: bpy.types.Context):
         # Bootstrap/Reset
         try:
@@ -774,22 +875,21 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception:
                 pass
 
-            # Beim ersten Detect-Aufruf wird kein Threshold Ã¼bergeben (None â†’ Standardwert)
+            # Beim ersten Detect-Aufruf wird kein Threshold übergeben (None → Standardwert)
             _kwargs: dict[str, object] = {"start_frame": self.target_frame}
             # Wenn bereits ein Threshold aus vorherigen Iterationen vorliegt, diesen mitgeben
             if self.detection_threshold is not None:
                 _kwargs["threshold"] = float(self.detection_threshold)
-            # NEU: WiederholungszÃ¤hler und Margin-Policy an detect.py durchreichen,
-            # damit dort margin = search_size gesetzt werden kann (Triplet/Multi).
-            try:
-                _kwargs["repeat_count"] = int(self.repeat_count_for_target or 0)
-            except Exception:
-                _kwargs["repeat_count"] = 0
-            _kwargs["match_search_size"] = True
-            rd = run_detect_once(context, **_kwargs)
+            rd = self._run_detect_with_policy(context, **_kwargs)
             if rd.get("status") != "READY":
-                return self._finish(context, info=f"DETECT FAILED â†’ {rd}", cancelled=True)
+                return self._finish(context, info=f"DETECT FAILED → {rd}", cancelled=True)
             new_cnt = int(rd.get("new_tracks", 0))
+            try:
+                self.last_detect_new_count = new_cnt
+                self.last_detect_margin = int(rd.get("margin_px", 0))
+                self.last_detect_min_distance = int(rd.get("min_distance_px", 0))
+            except Exception:
+                pass
             # Merke den verwendeten Threshold fÃ¼r spÃ¤tere Anpassungen
             try:
                 self.detection_threshold = float(rd.get("threshold", self.detection_threshold))
