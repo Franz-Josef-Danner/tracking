@@ -7,6 +7,8 @@ tracking_coordinator.py â€“ Streng sequentieller, MODALER Orchestrator
 
 from __future__ import annotations
 import bpy
+import time
+from dataclasses import dataclass
 
 # ---------------------------------------------------------------------------
 # Console logging
@@ -27,7 +29,16 @@ from ..Helper.clean_short_segments import clean_short_segments
 from ..Helper.clean_short_tracks import clean_short_tracks
 from ..Helper.split_cleanup import recursive_split_cleanup
 from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
-from ..Helper.solve_eval import run_solve_eval, SolveConfig  # type: ignore
+from ..Helper.solve_camera import solve_camera_only
+from ..Helper.solve_eval import (
+    SolveConfig,
+    SolveMetrics,
+    choose_holdouts,
+    set_holdout_weights,
+    collect_metrics,
+    compute_parallax_scores,
+    score_metrics,
+)
 from ..Helper.reset_state import reset_for_new_cycle  # zentraler Reset (Bootstrap/Cycle)
 
 # Versuche, die Auswertungsfunktion fÃ¼r die Markeranzahl zu importieren.
@@ -295,6 +306,33 @@ def _snapshot_track_ptrs(context: bpy.types.Context) -> list[int]:
     except Exception:
         return []
 
+
+# -- Solve-Eval Helpers ------------------------------------------------------
+
+@dataclass(frozen=True)
+class _ReconDigest:
+    valid: bool
+    num_cams: int
+    focal: float
+    dsum: float
+    err_med: float
+
+
+def _clip_frame_range(clip):
+    fs = int(getattr(clip, "frame_start", 1))
+    fd = int(getattr(clip, "frame_duration", 0))
+    if fd > 0:
+        return fs, fs + fd - 1
+    frames = []
+    tr = clip.tracking
+    tracks = tr.objects.active.tracks if tr.objects.active else tr.tracks
+    for t in tracks:
+        frames.extend([mk.frame for mk in t.markers])
+    if frames:
+        return min(frames), max(frames)
+    scn = bpy.context.scene
+    return int(getattr(scn, "frame_start", 1)), int(getattr(scn, "frame_end", 1))
+
 def _bootstrap(context: bpy.types.Context) -> None:
     """Minimaler Reset + sinnvolle Defaults; Helper initialisieren."""
     scn = context.scene
@@ -345,6 +383,23 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     prev_solve_avg: float | None = None
     # Guard: Verhindert mehrfaches reduce_error_tracks fÃ¼r denselben avg_err
     last_reduced_for_avg: float | None = None
+    # Solve-Eval State
+    _tco_state: str | None = None
+    _tco_eval_queue: list[tuple[str, int]] | None = None
+    _tco_holdouts: dict | None = None
+    _tco_solve_digest_before: "_ReconDigest" | None = None
+    _tco_solve_started_at: float = 0.0
+    _tco_timeout_sec: float = 30.0
+    _tco_last_run_ok: bool = False
+    _tco_metrics: list[SolveMetrics] | None = None
+    _tco_cfg: SolveConfig | None = None
+    _tco_f_nom: float = 0.0
+    _tco_cam_defaults: dict[str, float] | None = None
+    _tco_current_model: str | None = None
+    _tco_current_stage: int = 0
+    _tco_best: SolveMetrics | None = None
+    _tco_auto_prev: bool = False
+    _tco_keyframe_prev: tuple[int, int] | None = None
     def execute(self, context: bpy.types.Context):
         # Bootstrap/Reset
         try:
@@ -414,6 +469,208 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
+    # -- Solve-Eval intern -------------------------------------------------
+    def _init_solve_eval(self):
+        self._tco_state = "EVAL_PREP"
+        self._tco_eval_queue = list(self._build_eval_queue())
+        self._tco_holdouts = None
+        self._tco_solve_digest_before = None
+        self._tco_solve_started_at = 0.0
+        self._tco_last_run_ok = False
+        self._tco_metrics = []
+        self._tco_cfg = SolveConfig()
+        self._tco_cam_defaults = None
+        self._tco_best = None
+
+    def _build_eval_queue(self):
+        models = ("POLYNOMIAL", "DIVISION", "BROWN")
+        stages = (1, 2)
+        for m in models:
+            for s in stages:
+                yield (m, s)
+
+    def _get_clip(self, context):
+        return _resolve_clip(context)
+
+    def _prepare_eval(self, context):
+        clip = self._get_clip(context)
+        tr = clip.tracking
+        obj = tr.objects.active or (tr.objects[0] if len(tr.objects) else None)
+        if obj is None:
+            raise RuntimeError("No MovieTrackingObject found.")
+        cfg = self._tco_cfg or SolveConfig()
+        tr_settings = tr.settings
+        scores = compute_parallax_scores(clip, delta=cfg.parallax_delta)
+        fs, fe = _clip_frame_range(clip)
+        self._tco_auto_prev = bool(tr_settings.use_keyframe_selection)
+        tr_settings.use_keyframe_selection = False
+        if scores:
+            f, _ = scores[0]
+            obj.keyframe_a = max(int(f - cfg.parallax_delta), int(fs))
+            obj.keyframe_b = min(int(f + cfg.parallax_delta), int(fe))
+        else:
+            mid = (fs + fe) // 2
+            obj.keyframe_a = max(fs, mid - cfg.parallax_delta)
+            obj.keyframe_b = min(fe, mid + cfg.parallax_delta)
+        self._tco_keyframe_prev = (obj.keyframe_a, obj.keyframe_b)
+        holdouts = choose_holdouts(
+            clip,
+            ratio=cfg.holdout_ratio,
+            grid=cfg.holdout_grid,
+            edge_boost=cfg.holdout_edge_boost,
+        )
+        self._tco_holdouts = {t: getattr(t, "weight", 1.0) for t in holdouts}
+        set_holdout_weights(holdouts, 0.0)
+        cam = tr.camera
+        self._tco_f_nom = float(getattr(cam, "focal_length", 0.0)) or 0.0
+        self._tco_cam_defaults = {
+            "distortion_model": cam.distortion_model,
+            "focal_length": float(getattr(cam, "focal_length", 0.0)),
+            "k1": float(getattr(cam, "k1", 0.0)),
+            "k2": float(getattr(cam, "k2", 0.0)),
+            "k3": float(getattr(cam, "k3", 0.0)),
+            "division_k1": float(getattr(cam, "division_k1", 0.0)),
+            "division_k2": float(getattr(cam, "division_k2", 0.0)),
+            "brown_k1": float(getattr(cam, "brown_k1", 0.0)),
+            "brown_k2": float(getattr(cam, "brown_k2", 0.0)),
+            "brown_k3": float(getattr(cam, "brown_k3", 0.0)),
+            "brown_k4": float(getattr(cam, "brown_k4", 0.0)),
+            "brown_p1": float(getattr(cam, "brown_p1", 0.0)),
+            "brown_p2": float(getattr(cam, "brown_p2", 0.0)),
+        }
+
+    def _set_refine_stage(self, tr_settings, stage: int):
+        flags = set()
+        if stage >= 1:
+            flags.update({"FOCAL_LENGTH", "RADIAL_K1"})
+        if stage >= 2:
+            flags.update({"RADIAL_K2"})
+        try:
+            tr_settings.refine_intrinsics = flags
+        except Exception:
+            pass
+
+    def _setup_model_refine(self, context, model: str, stage: int):
+        clip = self._get_clip(context)
+        tr = clip.tracking
+        cam = tr.camera
+        tr_settings = tr.settings
+        defaults = self._tco_cam_defaults or {}
+        for attr, val in defaults.items():
+            try:
+                setattr(cam, attr, val)
+            except Exception:
+                pass
+        cam.distortion_model = model
+        self._set_refine_stage(tr_settings, stage)
+        self._tco_current_model = model
+        self._tco_current_stage = stage
+
+    def _begin_solve(self, context):
+        clip = self._get_clip(context)
+        self._tco_solve_digest_before = self._recon_digest(clip)
+        self._tco_solve_started_at = time.monotonic()
+        try:
+            solve_camera_only(context)
+        except Exception:
+            bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+        self._tco_state = "WAIT_SOLVE"
+
+    def _recon_digest(self, clip) -> _ReconDigest:
+        tr = clip.tracking
+        rec = tr.reconstruction
+        cam = tr.camera
+        model = cam.distortion_model
+        if model == 'POLYNOMIAL':
+            dsum = float(getattr(cam, "k1", 0.0) + getattr(cam, "k2", 0.0) + getattr(cam, "k3", 0.0))
+        elif model == 'DIVISION':
+            dsum = float(getattr(cam, "division_k1", 0.0) + getattr(cam, "division_k2", 0.0))
+        elif model == 'BROWN':
+            dsum = float(
+                getattr(cam, "brown_k1", 0.0) + getattr(cam, "brown_k2", 0.0) +
+                getattr(cam, "brown_k3", 0.0) + getattr(cam, "brown_k4", 0.0) +
+                getattr(cam, "brown_p1", 0.0) + getattr(cam, "brown_p2", 0.0)
+            )
+        else:
+            dsum = 0.0
+        tracks = tr.objects.active.tracks if tr.objects.active else tr.tracks
+        train_errs = [t.average_error for t in tracks if getattr(t, "weight", 1.0) > 0.5 and t.average_error > 0]
+        err_med = sorted(train_errs)[len(train_errs)//2] if train_errs else 0.0
+        return _ReconDigest(
+            valid=bool(getattr(rec, "is_valid", False)),
+            num_cams=int(len(getattr(rec, "cameras", []))),
+            focal=float(getattr(cam, "focal_length", 0.0)),
+            dsum=float(dsum),
+            err_med=float(err_med),
+        )
+
+    def _solve_finished(self, context) -> tuple[bool, bool]:
+        clip = self._get_clip(context)
+        before = self._tco_solve_digest_before
+        now = self._recon_digest(clip)
+        changed = (now != before)
+        ok = (now.valid and now.num_cams > 0)
+        timed_out = (time.monotonic() - self._tco_solve_started_at) > self._tco_timeout_sec
+        done = changed or timed_out
+        return done, (ok and not timed_out)
+
+    def _collect_metrics_current_run(self, context, *, ok: bool):
+        cfg = self._tco_cfg or SolveConfig()
+        clip = self._get_clip(context)
+        cam = clip.tracking.camera
+        holdouts = set(self._tco_holdouts.keys()) if self._tco_holdouts else set()
+        if ok:
+            hold_med, hold_p95, edge_gap, persist = collect_metrics(clip, holdouts, center_box=cfg.center_box)
+        else:
+            hold_med = hold_p95 = edge_gap = 999.0
+            persist = 0.0
+        f_solved = float(getattr(cam, "focal_length", 0.0)) or self._tco_f_nom
+        fov_dev_norm = abs(f_solved - self._tco_f_nom) / self._tco_f_nom if self._tco_f_nom > 0 else 0.0
+        score = score_metrics(hold_med, hold_p95, edge_gap, persist, fov_dev_norm, cfg.score_w)
+        if self._tco_metrics is None:
+            self._tco_metrics = []
+        self._tco_metrics.append(
+            SolveMetrics(
+                model=self._tco_current_model or "POLYNOMIAL",
+                refine_stage=self._tco_current_stage,
+                holdout_med_px=hold_med,
+                holdout_p95_px=hold_p95,
+                edge_gap_px=edge_gap,
+                fov_dev_norm=fov_dev_norm,
+                persist=persist,
+                score=score,
+            )
+        )
+
+    def _pick_best_run(self):
+        if not self._tco_metrics:
+            raise RuntimeError("No solve metrics collected")
+        return min(self._tco_metrics, key=lambda m: (m.score, m.holdout_p95_px, m.edge_gap_px))
+
+    def _restore_holdouts(self, context):
+        if not self._tco_holdouts:
+            return
+        for t, w in self._tco_holdouts.items():
+            try:
+                t.weight = w
+            except Exception:
+                pass
+        clip = self._get_clip(context)
+        tr_settings = clip.tracking.settings
+        tr_settings.use_keyframe_selection = self._tco_auto_prev
+        obj = clip.tracking.objects.active or (clip.tracking.objects[0] if clip.tracking.objects else None)
+        if obj and self._tco_keyframe_prev:
+            obj.keyframe_a, obj.keyframe_b = self._tco_keyframe_prev
+        self._tco_holdouts = None
+
+    def _apply_winner_and_start_final(self, context):
+        best = self._pick_best_run()
+        self._tco_best = best
+        self._restore_holdouts(context)
+        self._setup_model_refine(context, best.model, best.refine_stage)
+        self._begin_solve(context)
+        self._tco_state = "WAIT_FINAL_SOLVE"
+
     def _finish(self, context, *, info: str | None = None, cancelled: bool = False):
         # Timer sauber entfernen
         try:
@@ -422,6 +679,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         except Exception:
             pass
         self._timer = None
+        try:
+            self._restore_holdouts(context)
+        except Exception:
+            pass
         if info:
             self.report({'INFO'} if not cancelled else {'WARNING'}, info)
         return {'CANCELLED' if cancelled else 'FINISHED'}
@@ -857,12 +1118,44 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, count={count_result}")
             return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
         if self.phase == PH_SOLVE_EVAL:
-            cfg = SolveConfig()
-            winner_model, best, all_metrics = run_solve_eval(context, cfg)
-            _solve_log(context, {"winner": winner_model, "best": best.__dict__, "all": [m.__dict__ for m in all_metrics]})
-            context.scene["tco_last_solve_eval"] = {"winner": winner_model, "best": best.__dict__}
-            self.report({'INFO'}, f'Solve-Eval: {winner_model} score={best.score:.3f}')
-            return self._finish(context, info='Sequenz abgeschlossen.', cancelled=False)
+            if self._tco_state == 'EVAL_PREP':
+                self._prepare_eval(context)
+                self._tco_state = 'EVAL_NEXT_RUN'
+                return {'RUNNING_MODAL'}
+
+            if self._tco_state == 'EVAL_NEXT_RUN':
+                if not self._tco_eval_queue:
+                    self._apply_winner_and_start_final(context)
+                    return {'RUNNING_MODAL'}
+                model, stage = self._tco_eval_queue.pop(0)
+                self._setup_model_refine(context, model, stage)
+                self._begin_solve(context)
+                return {'RUNNING_MODAL'}
+
+            if self._tco_state == 'WAIT_SOLVE':
+                done, ok = self._solve_finished(context)
+                if not done:
+                    return {'RUNNING_MODAL'}
+                self._tco_last_run_ok = ok
+                self._tco_state = 'COLLECT'
+                return {'RUNNING_MODAL'}
+
+            if self._tco_state == 'COLLECT':
+                self._collect_metrics_current_run(context, ok=self._tco_last_run_ok)
+                self._tco_state = 'EVAL_NEXT_RUN'
+                return {'RUNNING_MODAL'}
+
+            if self._tco_state == 'WAIT_FINAL_SOLVE':
+                done, ok = self._solve_finished(context)
+                if not done:
+                    return {'RUNNING_MODAL'}
+                best = self._tco_best
+                if best:
+                    _solve_log(context, {"winner": best.model, "best": best.__dict__, "all": [m.__dict__ for m in self._tco_metrics]})
+                    context.scene["tco_last_solve_eval"] = {"winner": best.model, "best": best.__dict__}
+                    self.report({'INFO'}, f'Solve-Eval: {best.model} score={best.score:.3f}')
+                return self._finish(context, info='Sequenz abgeschlossen.', cancelled=False)
+            return {'RUNNING_MODAL'}
 
         if self.phase == PH_SPIKE_CYCLE:
             scn = context.scene
@@ -924,6 +1217,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     self.solve_refine_attempted = False          # Variante 1 (nur Focal) noch offen
                     self.solve_refine_full_attempted = False     # Variante 2 (alle) noch offen
                     # â†’ direkt in die Solve-Evaluation wechseln
+                    self._init_solve_eval()
                     self.phase = PH_SOLVE_EVAL
                     return {'RUNNING_MODAL'}
                 except Exception as exc:
