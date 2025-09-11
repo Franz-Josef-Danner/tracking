@@ -364,9 +364,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     last_detect_margin: int | None = None
 
     # --- Detect-Wrapper: margin/min_distance strikt aus marker_helper_main ---
-    # Formel: f = max((anzahl_neu + 0.1) / anzahl_ziel, 0.0001)
-    # threshold_next   = max(threshold_curr   * f, 0.0001)
-    # min_distance_next= max(min_distance_curr* f, 0.0001)  (nur bei Stagnation)
+    # Formeln:
+    #  - Threshold:      f_thr = max((gm + 0.1) / za, 0.0001)
+    #                    threshold_next   = max(threshold_curr * f_thr, 0.0001)
+    #  - Min-Distance:   f_md  = 1 - ((za - gm) / (za * 2))
+    #                    min_distance_next = md * f_md        (nur bei Stagnation)
     def _run_detect_with_policy(
         self,
         context: bpy.types.Context,
@@ -435,22 +437,26 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         after = _marker_count_by_selected_track(context)
         new_count = sum(max(0, int(v)) for v in _delta_counts(before, after).values())
 
-        # 4) Formel anwenden:
-        #    threshold IMMER; min_distance NUR bei Stagnation (deine ursprüngliche Vorgabe)
-        factor = max((float(new_count) + 0.1) / float(max(1, target)), 0.0001)
-        next_thr = max(curr_thr * factor, 0.0001)
+        # 4) Formeln anwenden:
+        #    threshold IMMER; min_distance NUR bei Stagnation
+        f_thr = max((float(new_count) + 0.1) / float(target), 0.0001)
+        next_thr = max(curr_thr * f_thr, 0.0001)
 
-        # min_distance exakt nach gleicher Formel – ohne Clamps/Limits.
+        # min_distance nach neuer, glättender Formel – ohne Clamps/Limits.
         next_md = curr_md
         update_md = False
         if last_nc == new_count:
-            next_md = max(float(curr_md) * factor, 0.0001)
+            za = float(target)
+            gm = float(new_count)
+            # f_md = 1 - ((za - gm) / (za * 2))  == 0.5 + gm/(2*za)
+            f_md = 1.0 - ((za - gm) / (za * 2.0))
+            next_md = float(curr_md) * f_md
             update_md = (abs(next_md - curr_md) > 1e-12)
 
         # 5) Persistieren
         scn["tco_last_detect_new_count"] = int(new_count)
         scn["tco_detect_thr"] = float(next_thr)
-        # Nur bei Stagnation persistieren; wir speichern den Float-Wert unverändert ab.
+        # Nur bei Stagnation persistieren; Float-Wert unverändert ablegen.
         if update_md:
             scn["tco_detect_min_distance"] = float(next_md)
         scn["tco_detect_margin"] = int(fixed_margin)
