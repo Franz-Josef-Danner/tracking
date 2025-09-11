@@ -444,7 +444,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         next_md = curr_md
         update_md = False
         if last_nc == new_count:
-            next_md = float(curr_md) * 0.95
+            next_md = float(curr_md) * 0.9
             update_md = (abs(next_md - curr_md) > 1e-12)
 
         # 5) Persistieren
