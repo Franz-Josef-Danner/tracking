@@ -904,7 +904,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {'RUNNING_MODAL'}
             # Kein Treffer
             next_thr = thr * 0.9
-            if next_thr < 7:
+            if next_thr < 20:
                 # Terminalbedingung: Spike-Cycle beendet â†’ Kamera-Solve starten
                 try:
                     scn["tco_spike_cycle_finished"] = True
