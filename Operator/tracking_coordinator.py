@@ -365,8 +365,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
     # --- Detect-Wrapper: margin/min_distance strikt aus marker_helper_main ---
     # Formel: f = max((anzahl_neu + 0.1) / anzahl_ziel, 0.0001)
-    # threshold_next   = max(threshold_curr   * f, 0.0001)
-    # min_distance_next= max(min_distance_curr* f, 0.0001)  (nur bei Stagnation)
+    # threshold_next   = max(threshold_curr * f, 0.0001)
+    # min_distance_next= min_distance_curr * 0.95            (nur bei Stagnation)
     def _run_detect_with_policy(
         self,
         context: bpy.types.Context,
@@ -436,15 +436,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         new_count = sum(max(0, int(v)) for v in _delta_counts(before, after).values())
 
         # 4) Formel anwenden:
-        #    threshold IMMER; min_distance NUR bei Stagnation (deine ursprüngliche Vorgabe)
+        #    threshold IMMER; min_distance NUR bei Stagnation (jetzt: *0.95)
         factor = max((float(new_count) + 0.1) / float(max(1, target)), 0.0001)
         next_thr = max(curr_thr * factor, 0.0001)
 
-        # min_distance exakt nach gleicher Formel – ohne Clamps/Limits.
+        # min_distance: einfache Dämpfung bei Stagnation – ohne Clamps/Limits.
         next_md = curr_md
         update_md = False
         if last_nc == new_count:
-            next_md = max(float(curr_md) * factor, 0.0001)
+            next_md = float(curr_md) * 0.95
             update_md = (abs(next_md - curr_md) > 1e-12)
 
         # 5) Persistieren
