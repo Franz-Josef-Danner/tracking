@@ -74,6 +74,7 @@ def solve_eval_back_to_back(
     candidate_models: Iterable[Any],
     apply_model: Callable[[Any], None],
     do_solve: Callable[..., float],
+    rank_callable: Optional[Callable[[float, Any], float]] = None,
     time_budget_sec: float = 10.0,
     max_trials: int = 3,
     quick: bool = True,
@@ -84,12 +85,17 @@ def solve_eval_back_to_back(
     hintereinander aus – ohne jegliche Cleanups, Detect, Distanz, Mute, Split,
     Spike-Filter oder sonstige mutierende Steps.
 
-    Rückgabe: {"model": best_model, "score": best_score, "trials": N, "duration": s}
+    Optionales ``rank_callable`` kann verwendet werden, um aus ``(score, model)``
+    einen Vergleichswert abzuleiten (z. B. für custom Ranking-Logik).
+
+    Rückgabe: {"model": best_model, "score": best_score,
+               "rank_value": rank_value, "trials": N, "duration": s}
     """
 
     solve_kwargs = solve_kwargs or {}
     t0 = time.perf_counter()
-    best: Optional[Tuple[float, Any]] = None
+    # best = (rank_value, model, raw_score)
+    best: Optional[Tuple[float, Any, float]] = None
     trials = 0
     models = list(candidate_models)
 
@@ -103,13 +109,21 @@ def solve_eval_back_to_back(
             t1 = time.perf_counter()
             score = do_solve(quick=quick, **solve_kwargs)  # dein solve_camera()-Wrapper
             dt = time.perf_counter() - t1
-            print(f"[SolveEval] {model}: score={score:.6f} dur={dt:.3f}s")
-            best = (score, model) if (best is None or score < best[0]) else best
+            rank_value = rank_callable(score, model) if rank_callable else score
+            if rank_callable:
+                print(
+                    f"[SolveEval] {model}: score={score:.6f} rank={rank_value:.6f} dur={dt:.3f}s"
+                )
+            else:
+                print(f"[SolveEval] {model}: score={score:.6f} dur={dt:.3f}s")
+            if (best is None) or (rank_value < best[0]):
+                best = (rank_value, model, score)
             trials += 1
 
     return {
-        "model": best[1] if best else None,
-        "score": best[0] if best else float("inf"),
+        "model": best[1] if best else None,  # Gewinner-Modell
+        "score": best[2] if best else float("inf"),  # Roh-Score des Gewinners
+        "rank_value": best[0] if best else float("inf"),  # Vergleichswert
         "trials": trials,
         "duration": time.perf_counter() - t0,
     }
