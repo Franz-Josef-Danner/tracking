@@ -1,9 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 from __future__ import annotations
-
 from typing import Any, Dict, Optional, Set, Tuple
 import bpy
-import math
 
 # ---------------------------------------------------------------------------
 # Console logging
@@ -45,7 +43,7 @@ def _get_movieclip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
         return None
 
 def _ensure_clip_context(context: bpy.types.Context) -> Dict[str, Any]:
-    """Findet einen CLIP_EDITOR und baut ein temp_override-Dict."""
+    """""Findet einen CLIP_EDITOR und baut ein temp_override-Dict."""
     wm = bpy.context.window_manager
     if not wm:
         return {}
@@ -153,16 +151,21 @@ def run_detect_basic(
     *,
     start_frame: Optional[int] = None,
     threshold: Optional[float] = None,
+    # Direkte, unveränderte Übergabe:
+    margin: Optional[int] = None,
+    min_distance: Optional[int] = None,
+    # Legacy/Fallback (werden 1:1 übernommen – keine Skalierung):
     margin_base: Optional[int] = None,
     min_distance_base: Optional[int] = None,
     placement: Optional[str] = None,
-    selection_policy: Optional[str] = None,  # Placeholder fÃ¼r spÃ¤tere Varianten
-    # NEU: WiederholungszÃ¤hler & Policy fÃ¼r margin=search_size (Triplet/Multi)
+    selection_policy: Optional[str] = None,
+    # Legacy-Parameter (NO-OPs, nur für API-Kompatibilität):
     repeat_count: Optional[int] = None,
     match_search_size: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """
-    Setzt Marker am aktuellen (oder angegebenen) Frame und liefert Baseline-Infos.
+    Setzt Marker am aktuellen (oder angegebenen) Frame. Keine interne
+    Umrechnung/Modifikation von margin/min_distance.
     """
     scn = context.scene
 
@@ -193,71 +196,34 @@ def run_detect_basic(
         default_thr = float(scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
         thr = float(threshold) if threshold is not None else default_thr
 
-        # Baselines aus Szene lesen (Fallback: heuristische Defaults auf ClipgrÃ¶ÃŸe)
+        # Statische Baselines (keine Skalierung)
         sb_margin = scn.get("margin_base", None)
         sb_min_dist = scn.get("min_distance_base", None)
         base_margin = int(sb_margin) if sb_margin is not None else max(16, int(0.025 * max(width, height)))
-        base_min    = int(sb_min_dist) if sb_min_dist is not None else max(8,  int(0.05  * max(width, height)))
+        base_min = int(sb_min_dist) if sb_min_dist is not None else max(8, int(0.05 * max(width, height)))
 
-        # Dynamische Skalierung anhand des aktuellen Thresholds (ohne Persistenz)
-        safe   = max(thr * 1e8, 1e-8)  # numerisch stabil
-        factor = math.log10(safe) / 8.0
-        margin    = max(0, int((base_margin * factor)*2))
-        min_dist  = max(1, int(base_min    * factor))
+        # Direkte Übergabe hat Vorrang; ansonsten Baselines
+        margin_px = int(margin) if margin is not None else int(margin_base) if margin_base is not None else base_margin
+        min_distance_px = int(min_distance) if min_distance is not None else int(min_distance_base) if min_distance_base is not None else base_min
 
-        # NEU: Falls Triplet/Multi aktiv (repeat_count â‰¥ 6) ODER Szene-Triplet-Flag > 0
-        # oder der Aufrufer explizit match_search_size=True setzt,
-        # dann margin := aktuelle search_size, damit am Rand keine nicht-trackbaren
-        # Features platziert werden.
         try:
             triplet_mode = int(context.scene.get("_tracking_triplet_mode", 0) or 0)
         except Exception:
             triplet_mode = 0
-        try:
-            rc = int(repeat_count or 0)
-        except Exception:
-            rc = 0
-        # Dynamische Margin-Anpassung je nach repeat_count
-        try:
-            ps = int(getattr(settings, "default_pattern_size", 0))
-        except Exception:
-            ps = 0
+        repeat_count = int(repeat_count or 0)
 
-        if match_search_size:
-            # Nur wenn explizit angefordert â†’ search_size verwenden
-            try:
-                ss = int(getattr(settings, "default_search_size", 0))
-            except Exception:
-                ss = 0
-            if ss and ss > 0:
-                margin = int(ss)
-
-        # Staffelung auf Basis repeat_count
-        if rc >= 26 and ps > 0:
-            margin = ps * 14
-        elif rc >= 21 and ps > 0:
-            margin = ps * 12
-        elif rc >= 16 and ps > 0:
-            margin = ps * 10
-        elif rc >= 11 and ps > 0:
-            margin = ps * 8
-        elif rc >= 6 and ps > 0:
-            margin = ps * 6
-
-        # Placement normalisieren (RNA-Enum erwartet 'FRAME' | 'INSIDE_GPENCIL' | 'OUTSIDE_GPENCIL')
         p = (placement or "FRAME").upper()
 
-        # Debug-Ausgabe der berechneten Margin und Min-Distanz
         _log(f"[Detect] frame={int(scn.frame_current)} "
-             f"threshold={thr:.3f} margin_px={margin} min_distance_px={min_dist}")
+             f"threshold={thr:.6f} margin_px={int(margin_px)} min_distance_px={int(min_distance_px)}")
 
         pre_ptrs, new_count = perform_marker_detection(
             clip=clip,
             tracking=tracking,
             placement=p,
             threshold=thr,
-            margin_px=margin,
-            min_distance_px=min_dist,
+            margin_px=margin_px,
+            min_distance_px=min_distance_px,
         )
 
         # Nach der Marker-Detection: neu erzeugte Spuren als â€žneuâ€œ markieren
@@ -300,18 +266,12 @@ def run_detect_basic(
             "status": "READY",
             "frame": int(scn.frame_current),
             "threshold": float(thr),
-            "margin_px": int(margin),
-            "min_distance_px": int(min_dist),
-            "placement": p,
-            # fÃ¼r Debug/Transparenz:
-            "repeat_count": int(rc),
-            "triplet_mode": int(triplet_mode),
-            "pre_ptrs": pre_ptrs,
             "new_count_raw": int(new_count),
-            "width": int(width),
-            "height": int(height),
-            # OPTIONAL DOWNSTREAM: könnte der Coordinator nutzen, falls gewünscht
-            # "created_ptrs": [int(t.as_pointer()) for t in tracking.tracks if int(t.as_pointer()) not in pre_ptrs],
+            "margin_px": int(margin_px),
+            "min_distance_px": int(min_distance_px),
+            # Legacy-Felder bleiben bestehen (neutral):
+            "repeat_count": int(repeat_count or 0),
+            "triplet_mode": int(context.scene.get("_tracking_triplet_mode", 0) or 0),
         }
 
     except Exception as ex:
@@ -327,7 +287,7 @@ def run_detect_basic(
 # Thin Wrapper fÃ¼r Backward-Compat
 # -----------------------------
 def run_detect_once(context: bpy.types.Context, **kwargs) -> Dict[str, Any]:
-    # kwargs kann nun repeat_count / match_search_size enthalten; wird 1:1 durchgereicht
+    # Legacy-Parameter werden 1:1 durchgereicht; keine interne Skalierung.
     res = run_detect_basic(context, **kwargs)
     if res.get("status") != "READY":
         return res
@@ -336,8 +296,9 @@ def run_detect_once(context: bpy.types.Context, **kwargs) -> Dict[str, Any]:
         "frame": int(res.get("frame", bpy.context.scene.frame_current)),
         "threshold": float(res.get("threshold", 0.75)),
         "new_tracks": int(res.get("new_count_raw", 0)),
-        # Spiegeln fÃ¼r Telemetrie/Debugging
+        # Telemetrie
         "margin_px": int(res.get("margin_px", 0)),
+        "min_distance_px": int(res.get("min_distance_px", 0)),
         "repeat_count": int(res.get("repeat_count", 0)),
         "triplet_mode": int(res.get("triplet_mode", 0)),
     }

@@ -22,7 +22,8 @@ def _log(*args, **kwargs):
     return None
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame
 from ..Helper.jump_to_frame import run_jump_to_frame
-from ..Helper.detect import run_detect_once
+# Detect-Grundfunktion als Primitive importieren; Orchestrierung erfolgt lokal.
+from ..Helper.detect import run_detect_once as _primitive_detect_once
 from ..Helper.distanze import run_distance_cleanup
 from ..Helper.spike_filter_cycle import run_marker_spike_filter_cycle
 from ..Helper.clean_short_segments import clean_short_segments
@@ -138,6 +139,136 @@ except Exception:
         DETECT_LAST_THRESHOLD_KEY = "last_detection_threshold"  # type: ignore
 
 __all__ = ("CLIP_OT_tracking_coordinator",)
+
+
+def _current_default_margin(context: bpy.types.Context) -> int:
+    """Liest den aktuellen default_margin aus den Clip-Tracking-Settings."""
+    try:
+        clip = _resolve_clip(context)
+        settings = getattr(getattr(clip, "tracking", None), "settings", None)
+        return int(getattr(settings, "default_margin", 0)) if settings else 0
+    except Exception:
+        return 0
+
+
+def _derive_min_distance(context: bpy.types.Context, *, margin_px: int) -> int:
+    """
+    Startwert für min_distance aus MarkerHelper-Basiswerten (Ratio), Fallback ≈ 0.235*margin.
+    Clamp: [4 .. 0.5*margin].
+    """
+    scn = context.scene
+    ratio = None
+    try:
+        info = (scn.get("tco_last_marker_helper") or {}).get("info") or {}
+        mb = float(info.get("margin_base") or 0)
+        mdb = float(info.get("min_distance_base") or 0)
+        if mb > 0 and mdb > 0:
+            ratio = mdb / mb
+    except Exception:
+        pass
+    if ratio is None or not (0.10 <= float(ratio) <= 0.50):
+        ratio = 0.235
+    md = int(round(float(margin_px) * float(ratio)))
+    return max(4, min(md, int(margin_px * 0.5)))
+
+
+def _get_detect_target(context: bpy.types.Context) -> int:
+    """
+    Zielgröße (anzahl_ziel) ermitteln. Unterstützte Scene-Keys:
+    tco_detect_target, detect_target, marker_target, target_new_markers. Fallback 100.
+    """
+    scn = context.scene
+    for k in ("tco_detect_target", "detect_target", "marker_target", "target_new_markers"):
+        v = scn.get(k)
+        if isinstance(v, (int, float)) and int(v) > 0:
+            return int(v)
+    return 100
+
+
+def _sum_delta_counts(delta: dict[str, int]) -> int:
+    try:
+        return int(sum(max(0, int(v)) for v in delta.values()))
+    except Exception:
+        return 0
+
+
+# ---------------------------------------------------------------------------
+# Detect-Wrapper mit neuer Stufungslogik
+# - margin: konstant (Tracker-Default, explizit übergeben)
+# - threshold: IMMER per Formel fortgeschrieben
+# - min_distance: per gleicher Formel NUR bei Stagnation fortgeschrieben
+# ---------------------------------------------------------------------------
+def run_detect_once(
+    context: bpy.types.Context,
+    *,
+    threshold: float | None = None,
+    margin: int | None = None,
+    min_distance: int | None = None,
+    placement: str = "FRAME",
+    select: bool | None = None,
+    **kwargs,
+) -> dict:
+    scn = context.scene
+
+    # 1) margin fixieren (Tracker-Default, keine thr-Kopplung)
+    _reset_margin_to_tracker_default(context)
+    fixed_margin = int(margin) if margin is not None else _current_default_margin(context)
+    if fixed_margin <= 0:
+        # konservativer Fallback aus Clipbreite
+        clip = _resolve_clip(context)
+        w = int(clip.size[0]) if clip and getattr(clip, "size", None) else 0
+        patt = max(8, int((w or 800) / 100))
+        fixed_margin = patt * 2
+
+    # 2) State laden/übersteuern
+    curr_thr = float(scn.get("tco_detect_thr") or 0.0018)
+    if threshold is not None:
+        curr_thr = float(threshold)
+
+    curr_md = int(scn.get("tco_detect_min_distance") or 0)
+    if curr_md <= 0:
+        curr_md = _derive_min_distance(context, margin_px=fixed_margin)
+    if min_distance is not None:
+        curr_md = int(min_distance)
+
+    last_nc = int(scn.get("tco_last_detect_new_count") or -1)
+    target = max(1, int(_get_detect_target(context)))
+
+    # 3) Detect ausführen
+    before = _marker_count_by_selected_track(context)
+    res = _primitive_detect_once(
+        context,
+        threshold=curr_thr,
+        margin=fixed_margin,
+        min_distance=curr_md,
+        placement=placement,
+        select=select,
+        **kwargs,
+    )
+    after = _marker_count_by_selected_track(context)
+    new_count = _sum_delta_counts(_delta_counts(before, after))
+
+    # 4) Formel anwenden:
+    #    threshold immer, min_distance nur bei Stagnation (gleiches new_count wie zuvor)
+    factor = max((float(new_count) + 0.1) / float(target), 0.0000001)
+    next_thr = max(curr_thr * factor, 0.0001)
+
+    next_md = curr_md
+    if last_nc == new_count:
+        scaled = max(float(curr_md) * factor, 0.0001)
+        next_md = int(round(scaled))
+        next_md = max(4, min(next_md, int(fixed_margin * 0.5)))
+
+    # 5) Persistenz
+    scn["tco_last_detect_new_count"] = int(new_count)
+    scn["tco_detect_thr"] = float(next_thr)
+    scn["tco_detect_min_distance"] = int(next_md)
+    scn["tco_detect_margin"] = int(fixed_margin)
+
+    _log(f"[DETECT] new={new_count} target={target} thr->{next_thr:.7f} "
+         f"md->{next_md}px (stagnation={'YES' if last_nc==new_count else 'NO'})")
+    return res
+
 
 # --- Orchestrator-Phasen ----------------------------------------------------
 PH_FIND_LOW   = "FIND_LOW"
@@ -370,6 +501,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # Aktueller Detection-Threshold; wird nach jedem Detect-Aufruf aktualisiert.
     detection_threshold: float | None = None
     spike_threshold: float | None = None  # aktueller Spike-Filter-Schwellenwert (temporÃ¤r)
+    # Telemetrie (Anzeigezwecke)
+    last_detect_new_count: int | None = None
+    last_detect_min_distance: int | None = None
+    last_detect_margin: int | None = None
     # Flag, ob der Bidirectional-Track bereits gestartet wurde. Diese
     # Instanzvariable dient dazu, den Start der Bidirectionalâ€‘Track-Phase
     # nur einmal auszulÃ¶sen und anschlieÃŸend auf den Abschluss zu warten.
