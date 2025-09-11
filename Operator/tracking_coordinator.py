@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
 """
 tracking_coordinator.py â€“ Streng sequentieller, MODALER Orchestrator
 - Phasen: FIND_LOW â†’ JUMP â†’ DETECT â†’ DISTANZE (hart getrennt, seriell)
@@ -6,9 +7,126 @@ tracking_coordinator.py â€“ Streng sequentieller, MODALER Orchestrator
 """
 
 from __future__ import annotations
-import bpy
+
+import gc
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
+from typing import Any, Callable, Dict, Iterable, Optional, Tuple
+
+import bpy
+
+# ---------------------------------------------------------------------------
+# Strikter Solve-Eval-Modus: 3x Solve hintereinander, ohne mutierende Helfer
+# ---------------------------------------------------------------------------
+IN_SOLVE_EVAL: bool = False  # globales Gate: während TRUE keine Cleanups/Detect/Distanz etc.
+
+
+class phase_lock:
+    """Exklusiver Phasen-Lock; verhindert Nebenläufe in kritischen Abschnitten."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def __enter__(self) -> None:
+        print(f"[PHASE] >>> {self.name} BEGIN")
+        gc.disable()  # vermeidet GC-Spikes in Hot-Path
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        gc.enable()
+        print(f"[PHASE] <<< {self.name} END")
+
+
+@contextmanager
+def undo_off():
+    """Temporär Global-Undo aus (keine teuren Undo/Depsgraph-Sideeffects)."""
+
+    prefs = bpy.context.preferences.edit
+    old = prefs.use_global_undo
+    prefs.use_global_undo = False
+    try:
+        yield
+    finally:
+        prefs.use_global_undo = old
+
+
+@contextmanager
+def solve_eval_mode():
+    """Aktiviert harten Eval-Modus: keine mutierenden Helfer, kein Overlay-Noise."""
+
+    global IN_SOLVE_EVAL
+    IN_SOLVE_EVAL = True
+    t0 = time.perf_counter()
+    try:
+        yield
+    finally:
+        dt = time.perf_counter() - t0
+        IN_SOLVE_EVAL = False
+        print(f"[SolveEval] Dauer gesamt: {dt:.3f}s")
+
+
+# ---------------------------------------------------------------------------
+# Öffentliche Hilfsfunktion: 3x Solve-Eval back-to-back, ohne Post-Processing
+# ---------------------------------------------------------------------------
+def solve_eval_back_to_back(
+    *,
+    clip,
+    candidate_models: Iterable[Any],
+    apply_model: Callable[[Any], None],
+    do_solve: Callable[..., float],
+    rank_callable: Optional[Callable[[float, Any], float]] = None,
+    time_budget_sec: float = 10.0,
+    max_trials: int = 3,
+    quick: bool = True,
+    solve_kwargs: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Führt bis zu 3 Solve-Durchläufe (verschiedene Distortion-Modelle) direkt
+    hintereinander aus – ohne jegliche Cleanups, Detect, Distanz, Mute, Split,
+    Spike-Filter oder sonstige mutierende Steps.
+
+    Optionales ``rank_callable`` kann verwendet werden, um aus ``(score, model)``
+    einen Vergleichswert abzuleiten (z. B. für custom Ranking-Logik).
+
+    Rückgabe: {"model": best_model, "score": best_score,
+               "rank_value": rank_value, "trials": N, "duration": s}
+    """
+
+    solve_kwargs = solve_kwargs or {}
+    t0 = time.perf_counter()
+    # best = (rank_value, model, raw_score)
+    best: Optional[Tuple[float, Any, float]] = None
+    trials = 0
+    models = list(candidate_models)
+
+    with phase_lock("SOLVE_EVAL"), undo_off(), solve_eval_mode():
+        for model in models:
+            if trials >= max_trials or (time.perf_counter() - t0) > time_budget_sec:
+                print("[SolveEval] Budget erreicht – abbrechen.")
+                break
+            # WICHTIG: nur Model setzen + Solve aufrufen. Nichts anderes.
+            apply_model(model)
+            t1 = time.perf_counter()
+            score = do_solve(quick=quick, **solve_kwargs)  # dein solve_camera()-Wrapper
+            dt = time.perf_counter() - t1
+            rank_value = rank_callable(score, model) if rank_callable else score
+            if rank_callable:
+                print(
+                    f"[SolveEval] {model}: score={score:.6f} rank={rank_value:.6f} dur={dt:.3f}s"
+                )
+            else:
+                print(f"[SolveEval] {model}: score={score:.6f} dur={dt:.3f}s")
+            if (best is None) or (rank_value < best[0]):
+                best = (rank_value, model, score)
+            trials += 1
+
+    return {
+        "model": best[1] if best else None,  # Gewinner-Modell
+        "score": best[2] if best else float("inf"),  # Roh-Score des Gewinners
+        "rank_value": best[0] if best else float("inf"),  # Vergleichswert
+        "trials": trials,
+        "duration": time.perf_counter() - t0,
+    }
 
 # ---------------------------------------------------------------------------
 # Console logging
