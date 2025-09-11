@@ -379,25 +379,62 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         scn = context.scene
         # 1) Operative Baselines ausschließlich aus marker_helper_main (Scene-Keys)
         fixed_margin = int(scn.get("margin_base") or 0)
-        curr_md      = int(scn.get("min_distance_base") or 0)
-        if fixed_margin <= 0 or curr_md <= 0:
+        if fixed_margin <= 0:
             # Harter Fallback, falls MarkerHelper noch nicht gelaufen ist
             clip = _resolve_clip(context)
             w = int(getattr(clip, "size", (800, 800))[0]) if clip else 800
             patt = max(8, int(w / 100))
-            fixed_margin = fixed_margin or (patt * 2)
-            curr_md      = curr_md or max(8, int(0.025 * w))
+            fixed_margin = patt * 2
 
-        # 2) State laden
+        # 2) State laden/übersteuern
         curr_thr = float(scn.get("tco_detect_thr") or scn.get(DETECT_LAST_THRESHOLD_KEY, 0.0018))
         if threshold is not None:
             curr_thr = float(threshold)
-        last_nc  = int(scn.get("tco_last_detect_new_count") or -1)
-        target   = 100
+
+        # *** WICHTIG: min_distance NICHT jedes Mal überschreiben ***
+        # Priorität:
+        #   1) expliziter Funktionsparameter
+        #   2) zuletzt gestufter Wert aus Szene: tco_detect_min_distance
+        #   3) Basis aus marker_helper_main (scene["min_distance_base"])
+        #   4) Ratio-Fallback aus MarkerHelper-Info
+        #   5) konservativer Fallback aus margin
+        if min_distance is not None:
+            curr_md = int(min_distance)
+            md_source = "param"
+        else:
+            tco_md = scn.get("tco_detect_min_distance")
+            if isinstance(tco_md, (int, float)) and int(tco_md) > 0:
+                curr_md = int(tco_md)
+                md_source = "tco"
+            else:
+                base_md = scn.get("min_distance_base")
+                if isinstance(base_md, (int, float)) and int(base_md) > 0:
+                    curr_md = int(base_md)
+                    md_source = "base"
+                else:
+                    ratio = None
+                    try:
+                        info = (scn.get("tco_last_marker_helper") or {}).get("info") or {}
+                        mb = float(info.get("margin_base") or 0)
+                        mdb = float(info.get("min_distance_base") or 0)
+                        if mb > 0 and mdb > 0:
+                            ratio = mdb / mb
+                    except Exception:
+                        ratio = None
+                    if ratio is None or not (0.10 <= float(ratio) <= 0.50):
+                        ratio = 0.235
+                    curr_md = int(round(fixed_margin * float(ratio)))
+                    md_source = "ratio"
+        # sichere Clamps gegen Ausreißer (Pixelwerte)
+        curr_md = max(4, min(int(curr_md), int(fixed_margin * 0.5)))
+
+        last_nc = int(scn.get("tco_last_detect_new_count") or -1)
+        target = 100
         for k in ("tco_detect_target", "detect_target", "marker_target", "target_new_markers"):
             v = scn.get(k)
             if isinstance(v, (int, float)) and int(v) > 0:
-                target = int(v); break
+                target = int(v)
+                break
 
         # 3) Detect ausführen (select passthrough, KEINE Berechnung von margin/md hier)
         before = _marker_count_by_selected_track(context)
@@ -413,21 +450,33 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         after = _marker_count_by_selected_track(context)
         new_count = sum(max(0, int(v)) for v in _delta_counts(before, after).values())
 
-        # 4) Formel anwenden
-        factor   = max((float(new_count) + 0.1) / float(max(1, target)), 0.0000001)
+        # 4) Formel anwenden:
+        #    threshold IMMER, min_distance NUR bei Stagnation (gleiche new_count wie zuvor)
+        factor = max((float(new_count) + 0.1) / float(max(1, target)), 0.0000001)
         next_thr = max(curr_thr * factor, 0.0001)
-        next_md  = curr_md
+
+        # Default: md unverändert lassen (kein Überschreiben)
+        next_md = curr_md
+        update_md = False
         if last_nc == new_count:
             scaled = max(float(curr_md) * factor, 0.0001)
-            next_md = max(4, min(int(round(scaled)), int(fixed_margin * 0.5)))
+            next_md = int(round(scaled))
+            next_md = max(4, min(next_md, int(fixed_margin * 0.5)))
+            update_md = (next_md != curr_md)
 
         # 5) Persistieren
         scn["tco_last_detect_new_count"] = int(new_count)
-        scn["tco_detect_thr"]            = float(next_thr)
-        scn["tco_detect_min_distance"]   = int(next_md)
-        scn["tco_detect_margin"]         = int(fixed_margin)
+        scn["tco_detect_thr"] = float(next_thr)
+        # Nur dann persistieren, wenn wir md bewusst fortgeschrieben haben
+        if update_md:
+            scn["tco_detect_min_distance"] = int(next_md)
+        scn["tco_detect_margin"] = int(fixed_margin)
 
-        _log("[DETECT] new=%s target=%s thr->%0.7f md->%spx (stagnation=%s)" % (new_count, target, next_thr, next_md, ("YES" if last_nc==new_count else "NO")))
+        _log(
+            f"[DETECT] new={new_count} target={target} thr->{next_thr:.7f} "
+            f"md->{next_md}px src={md_source} "
+            f"(stagnation={'YES' if last_nc==new_count else 'NO'}; md_updated={'YES' if update_md else 'NO'})"
+        )
         return res
 
     # Flag, ob der Bidirectional-Track bereits gestartet wurde. Diese
