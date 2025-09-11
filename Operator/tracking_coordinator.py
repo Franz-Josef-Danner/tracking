@@ -363,15 +363,24 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     last_detect_min_distance: int | None = None
     last_detect_margin: int | None = None
 
+    # Hinweis: Für die Stufungsformeln wird ab jetzt NUR noch der Count aus
+    # Helper/count.py verwendet (post-Cleanup). Wir persistieren ihn über
+    # scene["tco_count_for_formulas"] und prüfen Stagnation über den
+    # zuletzt verwendeten Count scene["tco_last_count_for_formulas"].
+
     # --- Detect-Wrapper: margin/min_distance strikt aus marker_helper_main ---
-    # Formel: f = max((anzahl_neu + 0.1) / anzahl_ziel, 0.0000001)
-    # threshold_next   = max(threshold_curr   * f, 0.0001)
-    # min_distance_next= max(min_distance_curr* f, 0.0001)  (nur bei Stagnation)
+    # Formeln:
+    #  - Threshold:      f_thr = max((gm + 0.1) / za, 0.0001)
+    #                    threshold_next   = max(threshold_curr * f_thr, 0.0001)
+    #  - Min-Distance:   f_md  = 1 - ((za - gm) / (za * 2))
+    #                    min_distance_next = md * f_md        (nur bei Stagnation)
     def _run_detect_with_policy(
         self,
         context: bpy.types.Context,
         *,
         threshold: float | None = None,
+        # optional Guard: erlaubt explizite Vorgabe für min_distance
+        min_distance: int | None = None,
         placement: str = "FRAME",
         select: bool | None = None,
         **kwargs,
@@ -379,25 +388,44 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         scn = context.scene
         # 1) Operative Baselines ausschließlich aus marker_helper_main (Scene-Keys)
         fixed_margin = int(scn.get("margin_base") or 0)
-        curr_md      = int(scn.get("min_distance_base") or 0)
-        if fixed_margin <= 0 or curr_md <= 0:
+        if fixed_margin <= 0:
             # Harter Fallback, falls MarkerHelper noch nicht gelaufen ist
             clip = _resolve_clip(context)
             w = int(getattr(clip, "size", (800, 800))[0]) if clip else 800
             patt = max(8, int(w / 100))
-            fixed_margin = fixed_margin or (patt * 2)
-            curr_md      = curr_md or max(8, int(0.025 * w))
+            fixed_margin = patt * 2
 
-        # 2) State laden
+        # 2) State laden/übersteuern
         curr_thr = float(scn.get("tco_detect_thr") or scn.get(DETECT_LAST_THRESHOLD_KEY, 0.0018))
         if threshold is not None:
             curr_thr = float(threshold)
-        last_nc  = int(scn.get("tco_last_detect_new_count") or -1)
-        target   = 100
+
+        # *** min_distance: exakt nach Vorgabe ***
+        # Priorität NUR:
+        #   1) expliziter Funktionsparameter
+        #   2) zuletzt gestufter Wert: scene["tco_detect_min_distance"]
+        #   3) Startwert ausschließlich aus marker_helper_main: scene["min_distance_base"]
+        if min_distance is not None:
+            curr_md = float(min_distance)
+            md_source = "param"
+        else:
+            tco_md = scn.get("tco_detect_min_distance")
+            if isinstance(tco_md, (int, float)) and float(tco_md) > 0.0:
+                curr_md = float(tco_md)
+                md_source = "tco"
+            else:
+                base_md = scn.get("min_distance_base")
+                # Erwartung: marker_helper_main hat base gesetzt.
+                curr_md = float(base_md if base_md is not None else 0.0)
+                md_source = "base"
+
+        last_nc = int(scn.get("tco_last_detect_new_count") or -1)
+        target = 100
         for k in ("tco_detect_target", "detect_target", "marker_target", "target_new_markers"):
             v = scn.get(k)
             if isinstance(v, (int, float)) and int(v) > 0:
-                target = int(v); break
+                target = int(v)
+                break
 
         # 3) Detect ausführen (select passthrough, KEINE Berechnung von margin/md hier)
         before = _marker_count_by_selected_track(context)
@@ -405,7 +433,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             context,
             threshold=curr_thr,
             margin=fixed_margin,
-            min_distance=curr_md,
+            # Blender erwartet int-Pixel; die Stufung selbst bleibt float-genau.
+            min_distance=int(round(curr_md)) if curr_md is not None else 0,
             placement=placement,
             select=select,
             **kwargs,
@@ -413,21 +442,48 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         after = _marker_count_by_selected_track(context)
         new_count = sum(max(0, int(v)) for v in _delta_counts(before, after).values())
 
-        # 4) Formel anwenden
-        factor   = max((float(new_count) + 0.1) / float(max(1, target)), 0.0000001)
-        next_thr = max(curr_thr * factor, 0.0001)
-        next_md  = curr_md
-        if last_nc == new_count:
-            scaled = max(float(curr_md) * factor, 0.0001)
-            next_md = max(4, min(int(round(scaled)), int(fixed_margin * 0.5)))
+        # 4) Formeln anwenden – AB JETZT basiert beides auf dem Count aus count.py.
+        #    Dieser Wert wird nach DISTANZE via evaluate_marker_count() gesetzt.
+        #    Fallback auf new_count nur, falls noch kein Count vorliegt (erstes Pass).
+        gm_for_formulas = context.scene.get("tco_count_for_formulas")
+        try:
+            gm_for_formulas = float(gm_for_formulas) if gm_for_formulas is not None else float(new_count)
+        except Exception:
+            gm_for_formulas = float(new_count)
+
+        # Threshold IMMER stufen – mit Count aus count.py (oder Fallback)
+        f_thr = max((gm_for_formulas + 0.1) / float(max(1, target)), 0.0001)
+        next_thr = max(curr_thr * f_thr, 0.0001)
+
+        # min_distance NUR bei Stagnation – Stagnation ebenfalls vs. Count aus count.py
+        next_md = curr_md
+        update_md = False
+        last_cnt = int(context.scene.get("tco_last_count_for_formulas") or -1)
+        if last_cnt == int(gm_for_formulas):
+            za = float(target)
+            gm = float(gm_for_formulas)
+            # f_md = 1 - ((za - gm) / (za * 2))  == 0.5 + gm/(2*za)
+            f_md = 1.0 - ((za - gm) / (za * 2.0))
+            next_md = float(curr_md) * f_md
+            update_md = (abs(next_md - curr_md) > 1e-12)
 
         # 5) Persistieren
         scn["tco_last_detect_new_count"] = int(new_count)
-        scn["tco_detect_thr"]            = float(next_thr)
-        scn["tco_detect_min_distance"]   = int(next_md)
-        scn["tco_detect_margin"]         = int(fixed_margin)
+        scn["tco_detect_thr"] = float(next_thr)
+        # Nur bei Stagnation persistieren; wir speichern den Float-Wert unverändert ab.
+        if update_md:
+            scn["tco_detect_min_distance"] = float(next_md)
+        scn["tco_detect_margin"] = int(fixed_margin)
+        # WICHTIG: den Count, der für die Formeln verwendet wurde, ebenfalls persistieren
+        scn["tco_last_count_for_formulas"] = int(gm_for_formulas)
 
-        _log("[DETECT] new=%s target=%s thr->%0.7f md->%spx (stagnation=%s)" % (new_count, target, next_thr, next_md, ("YES" if last_nc==new_count else "NO")))
+        _log(
+            f"[DETECT] new={new_count} target={target} "
+            f"thr->{next_thr:.7f} "
+            f"md->{(next_md if last_cnt==int(gm_for_formulas) else curr_md):.6f} "
+            f"src={md_source} "
+            f"(stagnation={'YES' if last_cnt==int(gm_for_formulas) else 'NO'}; md_updated={'YES' if update_md else 'NO'})"
+        )
         return res
 
     # Flag, ob der Bidirectional-Track bereits gestartet wurde. Diese
@@ -944,6 +1000,19 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 except Exception as exc:
                     # Wenn der Aufruf fehlschlÃ¤gt, Fehlermeldung zurÃ¼ckgeben.
                     eval_res = {"status": "ERROR", "reason": str(exc), "count": len(new_ptrs_after_cleanup)}
+                # NEU: Count aus count.py global bereitstellen, damit die Formeln
+                # im nächsten Detect-Pass NUR diesen Wert verwenden.
+                try:
+                    bpy.context.scene["tco_count_for_formulas"] = int(eval_res.get("count", 0))
+                except Exception:
+                    bpy.context.scene["tco_count_for_formulas"] = 0
+
+                # Optional: Telemetrie für Debug/Logs
+                _log(
+                    f"[COUNT] effective={bpy.context.scene['tco_count_for_formulas']} "
+                    f"band=({eval_res.get('min')},{eval_res.get('max')}) status={eval_res.get('status')}"
+                )
+
                 # Ergebnis im Szenen-Status speichern
                 try:
                     scn["tco_last_marker_count"] = eval_res
