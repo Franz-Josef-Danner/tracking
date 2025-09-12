@@ -29,7 +29,7 @@ def ensure_repeat_overlay_props():
         )
     # Kein Zugriff auf bpy.context.scene hier – ID-Properties werden lazy im Draw/Write angelegt.
 
-def _toggle_repeat_overlay(scene: bpy.types.Scene):
+def _toggle_repeat_overlay(scene):
     from ..ui.repeat_overlay import enable_repeat_overlay, disable_repeat_overlay
     if getattr(scene, "kc_show_repeat_overlay", False):
         enable_repeat_overlay()
@@ -49,7 +49,7 @@ def _tag_redraw():
         # Während Register/Preferences kann bpy.context eingeschränkt sein.
         pass
 
-def record_repeat_count(scene: bpy.types.Scene, frame: int, value: float):
+def record_repeat_count(scene, frame, value):
     """Schreibt einen Repeat-Wert für einen absoluten Frame in die Serien-ID-Property."""
     if scene is None:
         try:
@@ -67,6 +67,9 @@ def record_repeat_count(scene: bpy.types.Scene, frame: int, value: float):
     idx = int(frame) - int(fs)
     if 0 <= idx < n:
         series = list(scene["_kc_repeat_series"])
-        series[idx] = float(max(0.0, value))
-        scene["_kc_repeat_series"] = series
+        try:
+            fval = float(value)
+        except Exception:
+            fval = 0.0
+        series[idx] = float(max(0.0, fval))        scene["_kc_repeat_series"] = series
         _tag_redraw()
