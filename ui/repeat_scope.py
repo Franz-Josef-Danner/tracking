@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Kaiserlich Repeat-Scope – robuste Handler-API + Fallback-Zeichnung
+# Kaiserlich Repeat-Scope – robuste Handler-API + Fallback-Zeichnung + Kompatibilitäts-Shim
 import bpy, gpu
 try:
     from gpu_extras.batch import batch_for_shader
@@ -90,3 +90,8 @@ def enable_repeat_scope(enable: bool = True):
             globals()["_REPEAT_SCOPE_HANDLE"] = None
         print("[RepeatScope] handler removed")
         _tag_redraw()
+
+
+def disable_repeat_scope():
+    """Kompatibilitäts-Shim für ui/__init__.py."""
+    enable_repeat_scope(False)
