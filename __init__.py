@@ -194,17 +194,40 @@ _CLASSES = (
 )
 
 def register() -> None:
-    from .ui import register as _ui_register
     # 1) Klassen zuerst registrieren (damit bl_rna existiert)
     for cls in _CLASSES:
         bpy.utils.register_class(cls)
-    # 2) Dann Scene-Properties anlegen (nutzt registrierte PropertyGroups)
+    # 2) Basis-Scene-Properties anlegen (nutzt registrierte PropertyGroups)
     _register_scene_props()
+    # 3) Repeat-Scope-Properties registrieren
+    from .Helper import properties as _props
+    _props.register()
+    # 4) UI danach
+    from .ui import register as _ui_register
     _ui_register()  # Panels/Menus/Overlay
+    # 5) Startup-Sync: Handler-Status an Scene-Toggle koppeln
+    try:
+        from .ui.repeat_scope import enable_repeat_scope, disable_repeat_scope
+        s = bpy.context.scene
+        if getattr(s, "kc_show_repeat_scope", False):
+            enable_repeat_scope(True)
+        else:
+            disable_repeat_scope()
+    except Exception as e:
+        print("[RepeatScope] bootstrap sync skipped:", e)
+
 
 def unregister() -> None:
+    # Handler sauber entfernen, dann UI & Properties deregistrieren
+    try:
+        from .ui.repeat_scope import disable_repeat_scope
+        disable_repeat_scope()
+    except Exception:
+        pass
     from .ui import unregister as _ui_unregister
     _ui_unregister()
+    from .Helper import properties as _props
+    _props.unregister()
     # 1) Scene-Properties zuerst sauber entfernen (lösen Referenzen)
     _unregister_scene_props()
     # 2) Dann Klassen deregistrieren

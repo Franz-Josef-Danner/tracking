@@ -1,58 +1,35 @@
 import bpy
-from .overlay_impl import ensure_overlay_handlers, remove_overlay_handlers
 from .repeat_scope import enable_repeat_scope, disable_repeat_scope
-class KC_OT_OverlayToggle(bpy.types.Operator):
-    bl_idname = "kc.overlay_toggle"
-    bl_label = "Standard-Overlay umschalten"
-    bl_description = "Kaiserlich Overlay ein-/ausschalten"
-
-    def execute(self, context):
-        if not remove_overlay_handlers():
-            ensure_overlay_handlers(context.scene)
-        try:
-            context.area.tag_redraw()
-        except Exception:
-            pass
-        return {'FINISHED'}
 
 
-class KC_PT_OverlayPanel(bpy.types.Panel):
-    bl_space_type = "CLIP_EDITOR"
-    bl_region_type = "UI"
-    bl_category = "Kaiserlich"
-    bl_label = "Overlay"
+# Ensure properties exist before drawing panels (failsafe)
+def _kc_props_ready():
+    s = getattr(bpy.context, "scene", None)
+    return bool(s and hasattr(s, "kc_show_repeat_scope"))
+
+
+class KAISERLICH_PT_repeat_scope(bpy.types.Panel):
+    bl_space_type = 'CLIP_EDITOR'
+    bl_region_type = 'UI'
+    bl_category = 'Kaiserlich'
+    bl_label = 'Repeat Scope'
 
     def draw(self, context):
         layout = self.layout
+        if not _kc_props_ready():
+            layout.label(text="Initialisiere Properties…")
+            return
+        s = context.scene
+        layout.prop(s, "kc_show_repeat_scope")
         col = layout.column(align=True)
-        # Legacy-Overlay-Button entfernen (Overlay ist deaktiviert)
-        # col.operator("kc.overlay_toggle", text="Standard-Overlay umschalten")
-        col.separator()
-        # Defensiv (Register-Phase in Preferences liefert eingeschränkten Kontext)
-        if hasattr(bpy.types.Scene, "kc_show_repeat_scope") and hasattr(context.scene, "kc_show_repeat_scope"):
-            col.prop(context.scene, "kc_show_repeat_scope", text="Repeat-Scope anzeigen")
-            col.prop(context.scene, "kc_repeat_scope_height", text="Höhe (px)")
-            col.prop(context.scene, "kc_repeat_scope_bottom", text="Abstand unten (px)")
-            col.prop(context.scene, "kc_repeat_scope_margin_x", text="Seitenrand (px)")
-            col.prop(context.scene, "kc_repeat_scope_show_cursor", text="Frame-Cursor")
-        else:
-            col.label(text="Scope-Props werden nach Register() initialisiert")
+        col.prop(s, "kc_repeat_scope_height")
+        col.prop(s, "kc_repeat_scope_bottom")
+        col.prop(s, "kc_repeat_scope_margin_x")
+        col.prop(s, "kc_repeat_scope_show_cursor")
 
 
 def register():
-    bpy.utils.register_class(KC_PT_OverlayPanel)
-    bpy.utils.register_class(KC_OT_OverlayToggle)
-    # Szene-Properties (nur RNAs, ohne auf bpy.context zuzugreifen)
-    from ..Helper.properties import ensure_repeat_scope_props
-    ensure_repeat_scope_props()
-    # Wenn Flag bereits aktiv ist (Default/Benutzer), Scope-Handler einschalten
-    try:
-        scn = getattr(bpy.context, "scene", None)
-        if scn and getattr(scn, "kc_show_repeat_scope", False):
-            from .repeat_scope import enable_repeat_scope
-            enable_repeat_scope()
-    except Exception:
-        pass
+    bpy.utils.register_class(KAISERLICH_PT_repeat_scope)
 
 
 def unregister():
@@ -60,5 +37,5 @@ def unregister():
         disable_repeat_scope()
     except Exception:
         pass
-    bpy.utils.unregister_class(KC_OT_OverlayToggle)
-    bpy.utils.unregister_class(KC_PT_OverlayPanel)
+    bpy.utils.unregister_class(KAISERLICH_PT_repeat_scope)
+
