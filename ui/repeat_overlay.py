@@ -1,8 +1,8 @@
-+# SPDX-License-Identifier: GPL-2.0-or-later
-+import bpy
-+from gpu.types import GPUBatch, GPUShader
-+import gpu
-+from math import isfinite
+# SPDX-License-Identifier: GPL-2.0-or-later
+import bpy
+from gpu.types import GPUBatch, GPUShader
+import gpu
+from math import isfinite
 
 _HANDLE = None
 
