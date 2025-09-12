@@ -1,6 +1,14 @@
 import bpy
 from typing import Optional, Dict, Any, Tuple
 
+# Optionaler Hook: Repeat-Werte ins Overlay spiegeln
+def _kc_record_repeat(scene: bpy.types.Scene, frame: int, repeat_value: int | float):
+    try:
+        from .properties import record_repeat_count
+        record_repeat_count(scene, frame, float(repeat_value))
+    except Exception:
+        pass
+
 __all__ = ("run_jump_to_frame", "jump_to_frame")  # jump_to_frame = Legacy-Wrapper
 REPEAT_SATURATION = 10  # Ab dieser Wiederholungsanzahl: Optimizer anstoßen statt Detect
 
@@ -34,6 +42,7 @@ def _spread_repeat_to_neighbors(repeat_map: dict[int, int], center_f: int, radiu
         cur = repeat_map.get(f, 0)
         if v > cur:
             repeat_map[f] = v
+            _kc_record_repeat(bpy.context.scene, f, v)
 
 
 def diffuse_repeat_counts(repeat_map: dict[int, int], radius: int) -> dict[int, int]:
@@ -176,6 +185,7 @@ def run_jump_to_frame(
     if repeat_map is not None:
         repeat_count = int(repeat_map.get(target, 0)) + 1
         repeat_map[target] = repeat_count
+        _kc_record_repeat(scn, target, repeat_count)
 
     # Debugging & Transparenz
     try:

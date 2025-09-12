@@ -222,3 +222,22 @@ def draw_solve_graph_impl():
     if _reset_width:
         try: gpu.state.line_width_set(1.0)
         except Exception: pass
+
+def ensure_overlay_handlers():
+    # bestehende Handler…
+    pass
+
+def remove_overlay_handlers():
+    pass
+
+def kc_overlay_post_load(scene=None):
+    import bpy
+    try:
+        from .repeat_overlay import enable_repeat_overlay, disable_repeat_overlay
+        scn = bpy.context.scene if scene is None else scene
+        if scn and getattr(scn, "kc_show_repeat_overlay", False):
+            enable_repeat_overlay()
+        else:
+            disable_repeat_overlay()
+    except Exception:
+        pass
