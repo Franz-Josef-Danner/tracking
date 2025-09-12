@@ -40,9 +40,14 @@ class KC_PT_OverlayPanel(bpy.types.Panel):
         layout = self.layout
         col = layout.column(align=True)
         col.operator("kc.overlay_toggle", text="Standard-Overlay umschalten")
-        col.separator()
-        col.prop(context.scene, "kc_show_repeat_overlay", text="Repeat-Kurve anzeigen")
-        col.prop(context.scene, "kc_repeat_overlay_height", text="Repeat-Kurvenhöhe")
+        # Defensiv: Panel wird manchmal gezeichnet, bevor RNA-Props existieren (Preferences/Register).
+        if hasattr(bpy.types.Scene, "kc_show_repeat_overlay") and hasattr(context.scene, "kc_show_repeat_overlay"):
+            col.separator()
+            col.prop(context.scene, "kc_show_repeat_overlay", text="Repeat-Kurve anzeigen")
+            col.prop(context.scene, "kc_repeat_overlay_height", text="Repeat-Kurvenhöhe")
+        else:
+            col.separator()
+            col.label(text="Repeat-Overlay initialisiert nach Register()")
 
 
 def register():
