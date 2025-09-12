@@ -1,11 +1,8 @@
-# SPDX-License-Identifier: GPL-2.0-or-later
-from __future__ import annotations
-import bpy
-from typing import List
-from bpy.types import SpaceClipEditor
-from gpu.types import GPUBatch, GPUShader
-import gpu
-from math import isfinite
++# SPDX-License-Identifier: GPL-2.0-or-later
++import bpy
++from gpu.types import GPUBatch, GPUShader
++import gpu
++from math import isfinite
 
 _HANDLE = None
 
@@ -19,11 +16,11 @@ out vec4 FragColor;
 void main() { FragColor = vec4(1.0, 1.0, 1.0, 1.0); }
 '''
 
-def _get_series(scene: bpy.types.Scene) -> List[float]:
+def _get_series(scene):
     data = scene.get("_kc_repeat_series")
     return list(data) if isinstance(data, list) else []
 
-def _ensure_series_len(scene: bpy.types.Scene) -> int:
+def _ensure_series_len(scene):
     fs, fe = scene.frame_start, scene.frame_end
     n = max(0, int(fe - fs + 1))
     series = _get_series(scene)
@@ -88,12 +85,12 @@ def draw_callback():
 def _add_handler():
     global _HANDLE
     if _HANDLE is None:
-        _HANDLE = SpaceClipEditor.draw_handler_add(draw_callback, (), 'WINDOW', 'POST_PIXEL')
+        _HANDLE = bpy.types.SpaceClipEditor.draw_handler_add(draw_callback, (), 'WINDOW', 'POST_PIXEL')
 
 def _remove_handler():
     global _HANDLE
     if _HANDLE is not None:
-        SpaceClipEditor.draw_handler_remove(_HANDLE, 'WINDOW')
+        bpy.types.SpaceClipEditor.draw_handler_remove(_HANDLE, 'WINDOW')
         _HANDLE = None
 
 def enable_repeat_overlay():
