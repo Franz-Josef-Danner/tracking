@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import gc
 import time
+import sys
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, Optional, Tuple
@@ -29,12 +30,12 @@ class phase_lock:
         self.name = name
 
     def __enter__(self) -> None:
-        print(f"[PHASE] >>> {self.name} BEGIN")
+        print(f"[PHASE] >>> {self.name} BEGIN", flush=True)
         gc.disable()  # vermeidet GC-Spikes in Hot-Path
 
     def __exit__(self, exc_type, exc, tb) -> None:
         gc.enable()
-        print(f"[PHASE] <<< {self.name} END")
+        print(f"[PHASE] <<< {self.name} END", flush=True)
 
 
 @contextmanager
@@ -62,7 +63,7 @@ def solve_eval_mode():
     finally:
         dt = time.perf_counter() - t0
         IN_SOLVE_EVAL = False
-        print(f"[SolveEval] Dauer gesamt: {dt:.3f}s")
+        print(f"[SolveEval] Dauer gesamt: {dt:.3f}s", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -98,42 +99,52 @@ def solve_eval_back_to_back(
     best: Optional[Tuple[float, Any, float]] = None
     trials = 0
     models = list(candidate_models)
-    print("[SolveEval] --- START back-to-back ---")
+    print("[SolveEval] --- START back-to-back ---", flush=True)
+    _prev_iter_end: Optional[float] = None
 
     with phase_lock("SOLVE_EVAL"), undo_off(), solve_eval_mode():
         for model in models:
-            if trials >= max_trials or (time.perf_counter() - t0) > time_budget_sec:
-                print("[SolveEval] Budget erreicht – abbrechen.")
+            now = time.perf_counter()
+            if _prev_iter_end is not None:
+                print(f"[SolveEval] gap_since_prev={now - _prev_iter_end:.3f}s", flush=True)
+            if trials >= max_trials or (now - t0) > time_budget_sec:
+                print("[SolveEval] Budget erreicht – abbrechen.", flush=True)
                 break
-            print(f"[SolveEval][#{trials+1}] Model={model} >>>")
-            # --- Apply Model
+            iter_id = trials + 1
+            print(f"[SolveEval][#{iter_id}] ENTER apply_model → model={model}", flush=True)
             t_apply0 = time.perf_counter()
             apply_model(model)
             t_apply = time.perf_counter() - t_apply0
-            print(f"[SolveEval][#{trials+1}] apply_model done in {t_apply:.3f}s")
+            print(f"[SolveEval][#{iter_id}] DONE  apply_model in {t_apply:.3f}s", flush=True)
 
-            # --- Solve
+            print(f"[SolveEval][#{iter_id}] ENTER do_solve(quick={quick})", flush=True)
             t_solve0 = time.perf_counter()
             score = do_solve(quick=quick, **solve_kwargs)  # dein solve_camera()-Wrapper
             t_solve = time.perf_counter() - t_solve0
-            print(f"[SolveEval][#{trials+1}] do_solve done in {t_solve:.3f}s → score={score:.6f}")
+            print(f"[SolveEval][#{iter_id}] DONE  do_solve in {t_solve:.3f}s → score={score:.6f}", flush=True)
 
-            # --- Ranking (optional)
-            t_rank = 0.0
             rank_value = score
+            t_rank = 0.0
             if rank_callable:
+                print(f"[SolveEval][#{iter_id}] ENTER rank_callable(score, model)", flush=True)
                 t_rank0 = time.perf_counter()
                 rank_value = rank_callable(score, model)
                 t_rank = time.perf_counter() - t_rank0
-                print(f"[SolveEval][#{trials+1}] rank_callable done in {t_rank:.3f}s → rank={rank_value:.6f}")
+                print(f"[SolveEval][#{iter_id}] DONE  rank_callable in {t_rank:.3f}s → rank={rank_value:.6f}", flush=True)
 
-            # --- Summary for iteration
-            print(f"[SolveEval][#{trials+1}] timings: apply={t_apply:.3f}s solve={t_solve:.3f}s rank={t_rank:.3f}s")
+            print(
+                f"[SolveEval][#{iter_id}] SUMMARY apply={t_apply:.3f}s solve={t_solve:.3f}s rank={t_rank:.3f}s",
+                flush=True,
+            )
             if (best is None) or (rank_value < best[0]):
                 best = (rank_value, model, score)
             trials += 1
+            _prev_iter_end = time.perf_counter()
 
-    print(f"[SolveEval] --- END back-to-back --- trials={trials}, duration={time.perf_counter() - t0:.3f}s")
+    print(
+        f"[SolveEval] --- END back-to-back --- trials={trials}, duration={time.perf_counter() - t0:.3f}s",
+        flush=True,
+    )
     return {
         "model": best[1] if best else None,  # Gewinner-Modell
         "score": best[2] if best else float("inf"),  # Roh-Score des Gewinners
@@ -196,7 +207,7 @@ def solve_final_refine(
                 refine_intrinsics_radial_distortion=True,
             ) or 0.0
         dt = time.perf_counter() - t1
-        print(f"[SolveEval][FINAL] {model}: score={score:.6f} dur={dt:.3f}s")
+        print(f"[SolveEval][FINAL] {model}: score={score:.6f} dur={dt:.3f}s", flush=True)
         return float(score)
 
 # ---------------------------------------------------------------------------
