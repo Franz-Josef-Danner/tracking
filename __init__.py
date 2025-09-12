@@ -86,8 +86,8 @@ def _register_scene_props() -> None:
         sc.kaiserlich_solve_attempts = IntProperty(name="Solve Attempts", default=0, min=0)
     if not hasattr(sc, "kaiserlich_solve_graph_enabled"):
         sc.kaiserlich_solve_graph_enabled = BoolProperty(
-            name="Overlay Graph", default=True,
-            description="Sparkline-Overlay des Avg-Errors im CLIP-Editor anzeigen"
+            name="Overlay Graph", default=False,
+            description="(Legacy) Sparkline-Overlay des Avg-Errors – standardmäßig aus"
         )
     if not hasattr(sc, "kaiserlich_debug_graph"):
         sc.kaiserlich_debug_graph = BoolProperty(

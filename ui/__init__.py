@@ -25,7 +25,8 @@ class KC_PT_OverlayPanel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         col = layout.column(align=True)
-        col.operator("kc.overlay_toggle", text="Standard-Overlay umschalten")
+        # Legacy-Overlay-Button entfernen (Overlay ist deaktiviert)
+        # col.operator("kc.overlay_toggle", text="Standard-Overlay umschalten")
         col.separator()
         # Defensiv (Register-Phase in Preferences liefert eingeschränkten Kontext)
         if hasattr(bpy.types.Scene, "kc_show_repeat_scope") and hasattr(context.scene, "kc_show_repeat_scope"):
