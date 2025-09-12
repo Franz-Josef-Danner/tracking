@@ -128,7 +128,7 @@ def solve_eval_back_to_back(
                 print(f"[SolveEval][#{trials+1}] rank_callable done in {t_rank:.3f}s → rank={rank_value:.6f}")
 
             # --- Summary for iteration
-           print(f"[SolveEval][#{trials+1}] timings: apply={t_apply:.3f}s solve={t_solve:.3f}s rank={t_rank:.3f}s")
+            print(f"[SolveEval][#{trials+1}] timings: apply={t_apply:.3f}s solve={t_solve:.3f}s rank={t_rank:.3f}s")
             if (best is None) or (rank_value < best[0]):
                 best = (rank_value, model, score)
             trials += 1
