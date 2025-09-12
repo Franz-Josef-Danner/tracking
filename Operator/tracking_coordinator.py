@@ -715,7 +715,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     _tco_state: str | None = None
     _tco_eval_queue: list[tuple[str, int]] | None = None
     _tco_holdouts: dict | None = None
-    _tco_solve_digest_before: "_ReconDigest" | None = None
+    _tco_solve_digest_before: _ReconDigest | None = None
     _tco_solve_started_at: float = 0.0
     _tco_timeout_sec: float = 30.0
     _tco_last_run_ok: bool = False
