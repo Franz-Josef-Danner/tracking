@@ -181,6 +181,48 @@ def solve_final_refine(
         return float(score)
 
 # ---------------------------------------------------------------------------
+# Kombi-Wrapper: 3×-Eval + finaler Voll-Solve (alle refine_intrinsics = True)
+# ---------------------------------------------------------------------------
+def solve_eval_with_final_refine(
+    *,
+    clip,
+    candidate_models: Iterable[Any],
+    apply_model: Callable[[Any], None],
+    do_solve_quick: Callable[..., float],
+    solve_full: Optional[Callable[..., float]] = None,
+    rank_callable: Optional[Callable[[float, Any], float]] = None,
+    time_budget_sec: float = 10.0,
+    max_trials: int = 3,
+    quick: bool = True,
+    solve_kwargs: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Führt back-to-back die Modell-Evaluierung (3× Solve) aus und danach
+    EINEN finalen Voll-Solve mit aktivierten Intrinsics-Refine-Flags.
+    Eval bleibt strikt read-only; der finale Solve ist getrennt gekapselt.
+    Rückgabe enthält Eval- und Final-Score.
+    """
+    # 1) Eval (read-only, ohne mutierende Helfer)
+    eval_result = solve_eval_back_to_back(
+        clip=clip,
+        candidate_models=candidate_models,
+        apply_model=apply_model,
+        do_solve=do_solve_quick,
+        rank_callable=rank_callable,
+        time_budget_sec=time_budget_sec,
+        max_trials=max_trials,
+        quick=quick,
+        solve_kwargs=solve_kwargs,
+    )
+    # 2) Finaler Refine-Solve (separat, mit allen Intrinsics-Flags)
+    final_score = solve_final_refine(
+        model=eval_result["model"],
+        apply_model=apply_model,
+        solve_full=solve_full,
+    )
+    return {**eval_result, "final_score": final_score}
+
+# ---------------------------------------------------------------------------
 # Console logging
 # ---------------------------------------------------------------------------
 # To avoid cluttering the console with debug and status messages, all direct
