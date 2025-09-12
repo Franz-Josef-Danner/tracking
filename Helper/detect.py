@@ -278,7 +278,7 @@ def run_detect_once(context: bpy.types.Context, **kwargs) -> Dict[str, Any]:
     kw = dict(kwargs)
 
     # Schwelle hart fixieren – kein adaptives Tuning mehr
-    kw["threshold"] = 0.001
+    kw["threshold"] = 0.0001
 
     # min_distance: falls nicht gesetzt, Scene-Key verwenden
     if "min_distance" not in kw or kw["min_distance"] is None:
