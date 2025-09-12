@@ -71,5 +71,6 @@ def record_repeat_count(scene, frame, value):
             fval = float(value)
         except Exception:
             fval = 0.0
-        series[idx] = float(max(0.0, fval))        scene["_kc_repeat_series"] = series
+        series[idx] = float(max(0.0, fval))
+        scene["_kc_repeat_series"] = series
         _tag_redraw()
