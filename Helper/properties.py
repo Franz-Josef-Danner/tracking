@@ -29,7 +29,13 @@ def ensure_repeat_scope_props():
             default=12, min=0, soft_max=200,
             update=lambda s, c: _tag_redraw(),
         )
-
+    if not hasattr(bpy.types.Scene, "kc_repeat_scope_show_cursor"):
+        bpy.types.Scene.kc_repeat_scope_show_cursor = bpy.props.BoolProperty(
+            name="Frame-Cursor im Scope",
+            description="Zeigt eine vertikale Linie für den aktuellen Frame im Scope",
+            default=True,
+            update=lambda s, c: _tag_redraw(),
+        )
 
 def _toggle_repeat_scope(scene):
     try:
