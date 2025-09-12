@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # (c) Kaiserlich Overlay
+import bpy
+
+_HANDLE = None
+
 
 # -----------------------------------------------------------------------------
 # Overlay-Konfiguration (einfach anpassbar)
@@ -222,3 +226,25 @@ def draw_solve_graph_impl():
     if _reset_width:
         try: gpu.state.line_width_set(1.0)
         except Exception: pass
+
+
+def ensure_overlay_handlers(_scene=None):
+    global _HANDLE
+    if _HANDLE is None:
+        try:
+            _HANDLE = bpy.types.SpaceClipEditor.draw_handler_add(draw_solve_graph_impl, (), 'WINDOW', 'POST_PIXEL')
+        except Exception:
+            _HANDLE = None
+    return _HANDLE
+
+
+def remove_overlay_handlers(_handle=None):
+    global _HANDLE
+    if _HANDLE is not None:
+        try:
+            bpy.types.SpaceClipEditor.draw_handler_remove(_HANDLE, 'WINDOW')
+        except Exception:
+            pass
+        _HANDLE = None
+        return True
+    return False

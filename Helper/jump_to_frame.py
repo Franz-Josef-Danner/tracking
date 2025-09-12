@@ -1,6 +1,15 @@
 import bpy
 from typing import Optional, Dict, Any, Tuple
 
+# Optionaler Hook: Repeat-Werte ins Scope spiegeln (defensiv, kein harter Import)
+def _kc_record_repeat(scene, frame, repeat_value):
+    try:
+        from .properties import record_repeat_count
+        record_repeat_count(scene, frame, float(repeat_value))
+    except Exception:
+        pass
+
+
 __all__ = ("run_jump_to_frame", "jump_to_frame")  # jump_to_frame = Legacy-Wrapper
 REPEAT_SATURATION = 10  # Ab dieser Wiederholungsanzahl: Optimizer anstoßen statt Detect
 
@@ -20,6 +29,10 @@ def _clamp(v: int, lo: int = 0, hi: int | None = None) -> int:
 
 
 def _spread_repeat_to_neighbors(repeat_map: dict[int, int], center_f: int, radius: int, base: int) -> None:
+    try:
+        scene = bpy.context.scene
+    except Exception:
+        scene = None
     # Neu: stufiger Fade: nur alle FADE_STEP_FRAMES -1
     for off in range(-radius, radius + 1):
         f = center_f + off
@@ -34,6 +47,7 @@ def _spread_repeat_to_neighbors(repeat_map: dict[int, int], center_f: int, radiu
         cur = repeat_map.get(f, 0)
         if v > cur:
             repeat_map[f] = v
+            _kc_record_repeat(scene, f, v)
 
 
 def diffuse_repeat_counts(repeat_map: dict[int, int], radius: int) -> dict[int, int]:
@@ -176,6 +190,7 @@ def run_jump_to_frame(
     if repeat_map is not None:
         repeat_count = int(repeat_map.get(target, 0)) + 1
         repeat_map[target] = repeat_count
+        _kc_record_repeat(scn, target, repeat_count)
 
     # Debugging & Transparenz
     try:
