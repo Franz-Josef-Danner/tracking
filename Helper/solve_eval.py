@@ -219,6 +219,7 @@ def run_solve_eval(context, config: SolveConfig):
     clip, tr, obj = _get_clip_and_objects(context)
     tr_settings = tr.settings
     fs, fe = _clip_frame_range(clip)
+    print(f"[SolveEval] Starting solve evaluation for clip={getattr(clip, 'name', '?')}")
 
     # 1) Parallaxe → Keyframes setzen (Auto-Select aus)
     auto_prev = bool(tr_settings.use_keyframe_selection)
@@ -270,6 +271,10 @@ def run_solve_eval(context, config: SolveConfig):
                     fov_dev_norm,
                     config.score_w,
                 )
+                print(
+                    f"[SolveEval] model={model} stage={stage} score={score:.4f} "
+                    f"hold_med={hold_med:.4f} hold_p95={hold_p95:.4f} edge_gap={edge_gap:.4f}"
+                )
                 all_metrics.append(
                     SolveMetrics(
                         model=model,
@@ -298,5 +303,8 @@ def run_solve_eval(context, config: SolveConfig):
     cam.distortion_model = best.model
     _set_refine_stage(tr_settings, best.refine_stage)
     _invoke_solve_ui(context)
-
+    print(
+        f"[SolveEval] Finished evaluation: best_model={best.model} "
+        f"stage={best.refine_stage} score={best.score:.4f}"
+    )
     return best.model, best, all_metrics
