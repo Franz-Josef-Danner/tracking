@@ -1,97 +1,107 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Kaiserlich Repeat-Scope – robuste Handler-API + Fallback-Zeichnung + Kompatibilitäts-Shim
-import bpy, gpu
-try:
-    from gpu_extras.batch import batch_for_shader
-except Exception:
-    batch_for_shader = None  # Fallback, falls gpu_extras fehlt
+"""Draw handler and API for the Kaiserlich repeat scope overlay."""
 
-# Globaler Handle (idempotent, auch bei mehrfacher Registrierung sicher)
-_REPEAT_SCOPE_HANDLE = globals().get("_REPEAT_SCOPE_HANDLE", None)
+import bpy
+import gpu
+from gpu_extras.batch import batch_for_shader
+
+# interner Handler
+_HDL = None
+
+
+def _draw_scope() -> None:
+    ctx = bpy.context
+    area, region = ctx.area, ctx.region
+    if not area or area.type != "CLIP_EDITOR" or not region or region.type != "WINDOW":
+        return
+
+    s = ctx.scene
+    w, h = region.width, region.height
+
+    # Szenen-Properties mit Defaults abholen (falls es sie noch nicht gibt)
+    height = getattr(s, "kc_repeat_scope_height", 140)
+    bottom = getattr(s, "kc_repeat_scope_bottom", 24)
+    margin_x = getattr(s, "kc_repeat_scope_margin_x", 12)
+    show_cur = getattr(s, "kc_repeat_scope_show_cursor", True)
+
+    x0, y0 = margin_x, bottom
+    x1, y1 = w - margin_x, min(h - 4, bottom + height)
+    if x1 - x0 < 20 or y1 - y0 < 20:
+        return
+
+    sh = gpu.shader.from_builtin("UNIFORM_COLOR")
+
+    # Hintergrund
+    bg = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+    batch = batch_for_shader(sh, "TRI_FAN", {"pos": bg})
+    sh.bind()
+    sh.uniform_float("color", (0, 0, 0, 0.25))
+    batch.draw(sh)
+
+    # Rahmen
+    border = [(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)]
+    batch = batch_for_shader(sh, "LINE_STRIP", {"pos": border})
+    sh.bind()
+    sh.uniform_float("color", (1, 1, 1, 0.5))
+    batch.draw(sh)
+
+    # Datenserie
+    fs, fe = s.frame_start, s.frame_end
+    seq = list(s.get("_kc_repeat_series", []))
+    n = max(1, fe - fs + 1)
+    if len(seq) != n:
+        seq = [0] * n
+    vmax = max(1, max(seq) if seq else 1)
+    width, height_px = x1 - x0, y1 - y0
+
+    pts = []
+    L = max(1, len(seq) - 1)
+    for i, v in enumerate(seq):
+        t = i / L
+        px = x0 + t * width
+        py = y0 + (v / vmax) * height_px
+        pts.append((px, py))
+    batch = batch_for_shader(sh, "LINE_STRIP", {"pos": pts})
+    sh.bind()
+    sh.uniform_float("color", (0.8, 0.9, 1.0, 1.0))
+    batch.draw(sh)
+
+    # Cursor
+    if show_cur:
+        f = s.frame_current
+        if fs <= f <= fe:
+            t = (f - fs) / max(1, (fe - fs))
+            cx = x0 + t * width
+            batch = batch_for_shader(sh, "LINE_STRIP", {"pos": [(cx, y0), (cx, y1)]})
+            sh.bind()
+            sh.uniform_float("color", (1, 1, 1, 0.5))
+            batch.draw(sh)
+
+
+def enable_repeat_scope(on: bool = True, source: str = "api") -> None:
+    """Öffentliche API – wird von UI/Props und beim Laden aufgerufen."""
+    global _HDL
+    print(f"[KC] enable_repeat_scope({on}) source={source}")
+    if on:
+        if _HDL is None:
+            _HDL = bpy.types.SpaceClipEditor.draw_handler_add(
+                _draw_scope, (), "WINDOW", "POST_PIXEL"
+            )
+    else:
+        if _HDL is not None:
+            try:
+                bpy.types.SpaceClipEditor.draw_handler_remove(_HDL, "WINDOW")
+            except Exception:
+                pass
+            _HDL = None
+
+
+def disable_repeat_scope(source: str = "api") -> None:
+    """Für Altcode, der ein explizites disable erwartet."""
+    enable_repeat_scope(False, source=source)
+
 
 def is_scope_enabled() -> bool:
-    """Gibt True zurück, wenn der Draw-Handler aktiv ist."""
-    return globals().get("_REPEAT_SCOPE_HANDLE") is not None
+    """Return True if the draw handler is currently registered."""
+    return _HDL is not None
 
-def _get_draw_fn():
-    """
-    Sucht die eigentliche Zeichenfunktion des Repeat-Scopes im Modul.
-    Nimmt die erste gefundene aus der bekannten Namensliste.
-    """
-    for name in ("_draw_callback", "draw_callback", "_repeat_scope_draw", "draw", "on_draw"):
-        fn = globals().get(name)
-        if callable(fn):
-            return fn
-    return None
-
-def _fallback_draw():
-    """Minimaler Fallback-Renderer (Box unten), falls Custom-Draw scheitert."""
-    area = bpy.context.area
-    region = bpy.context.region
-    if not area or area.type != 'CLIP_EDITOR' or not region or region.type != 'WINDOW':
-        return
-    try:
-        sh = gpu.shader.from_builtin('UNIFORM_COLOR')
-    except Exception:
-        return
-    if not batch_for_shader:
-        return
-    w, h = region.width, region.height
-    x0, y0 = 12, 24
-    x1, y1 = max(20, w - 12), min(h - 4, 24 + 140)
-    # Hintergrund
-    coords = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
-    batch = batch_for_shader(sh, 'TRI_FAN', {"pos": coords})
-    sh.bind(); sh.uniform_float("color", (0, 0, 0, 0.25)); batch.draw(sh)
-    # Rahmen
-    coords = [(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)]
-    batch = batch_for_shader(sh, 'LINE_STRIP', {"pos": coords})
-    sh.bind(); sh.uniform_float("color", (1, 1, 1, 0.5)); batch.draw(sh)
-
-def _wrapped_draw():
-    """
-    Ruft die eigentliche Zeichenroutine auf; bei Fehlern zeichnet der Fallback.
-    """
-    fn = _get_draw_fn()
-    if fn:
-        try:
-            fn()
-            return
-        except Exception as e:
-            print("[RepeatScope] draw failed – fallback used:", e)
-    _fallback_draw()
-
-def _tag_redraw():
-    win = getattr(bpy.context, "window", None)
-    scr = getattr(win, "screen", None)
-    if not scr:
-        return
-    for a in scr.areas:
-        if a.type == 'CLIP_EDITOR':
-            a.tag_redraw()
-
-def enable_repeat_scope(enable: bool = True):
-    """
-    Registriert/entfernt den Draw-Handler idempotent und triggert Redraw.
-    Diese Funktion wird vom UI-Toggle (Scene.kc_show_repeat_scope) aufgerufen.
-    """
-    global _REPEAT_SCOPE_HANDLE
-    if enable and globals().get("_REPEAT_SCOPE_HANDLE") is None:
-        _REPEAT_SCOPE_HANDLE = bpy.types.SpaceClipEditor.draw_handler_add(
-            _wrapped_draw, (), 'WINDOW', 'POST_PIXEL'
-        )
-        globals()["_REPEAT_SCOPE_HANDLE"] = _REPEAT_SCOPE_HANDLE
-        print("[RepeatScope] handler registered")
-        _tag_redraw()
-    elif (not enable) and globals().get("_REPEAT_SCOPE_HANDLE") is not None:
-        try:
-            bpy.types.SpaceClipEditor.draw_handler_remove(globals()["_REPEAT_SCOPE_HANDLE"], 'WINDOW')
-        finally:
-            globals()["_REPEAT_SCOPE_HANDLE"] = None
-        print("[RepeatScope] handler removed")
-        _tag_redraw()
-
-
-def disable_repeat_scope():
-    """Kompatibilitäts-Shim für ui/__init__.py."""
-    enable_repeat_scope(False)
