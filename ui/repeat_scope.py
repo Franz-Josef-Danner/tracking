@@ -122,6 +122,19 @@ def draw_callback():
     if len(coords) >= 2:
         gpu.state.line_width_set(1.0)
         _polyline(coords, shader, (1.0, 1.0, 1.0, 0.95))
+    # Optional: current-frame cursor inside the scope box (mapped to scene range)
+    try:
+        if getattr(scn, "kc_repeat_scope_show_cursor", True) and n >= 1:
+            fs, fe = int(scn.frame_start), int(scn.frame_end)
+            fc = int(getattr(scn, "frame_current", fs))
+            denom = max(1, fe - fs)  # avoid div/0
+            t = (fc - fs) / float(denom)
+            t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
+            cx = x0 + t * width
+            cursor = [(cx, y0), (cx, y1)]
+            _polyline(cursor, shader, (0.9, 0.8, 0.2, 0.95))
+    except Exception:
+        pass
 
     gpu.state.scissor_test_set(False)
 
