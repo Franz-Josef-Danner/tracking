@@ -23,13 +23,7 @@ def mute_marker_path(track, from_frame, direction, mute=True):
             continue
         except Exception:
             continue
-    try:
-        if bpy and getattr(bpy, "context", None):
-            sc = getattr(bpy.context, "scene", None)
-            if sc is None or sc.get("tco_debug_split", True):
-                print(f"[MuteDBG][path] track={track.name} dir={direction} from={from_frame} mute={mute} count={cnt}")
-    except Exception:
-        pass
+    # Debug-Logging entfernt.
 
 def mute_after_last_marker(track, scene_end):
     """Mute markers from the last valid segment end to scene_end."""
@@ -58,11 +52,4 @@ def mute_unassigned_markers(tracks):
             if f not in valid_frames or f == first_frame:
                 marker.mute = True
                 cnt += 1
-        try:
-            if bpy and getattr(bpy, "context", None):
-                sc = getattr(bpy.context, "scene", None)
-                if sc is None or sc.get("tco_debug_split", True):
-                    print(f"[MuteDBG][unassigned] track={track.name} muted={cnt} "
-                          f"valid_frames={len(valid_frames)} segs={len(segments)}")
-        except Exception:
-            pass
+        # Debug-Logging entfernt.

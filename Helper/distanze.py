@@ -1,186 +1,513 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """
 Helper/distanze.py
-LÃ¶scht neu gesetzte, selektierte Marker, die nÃ¤her als ein Mindestabstand zu alten (nicht gemuteten)
-Markern liegen â€“ alles am selben Frame. Verbleibende neue Marker werden wieder selektiert.
+
+Überarbeitetes Distanz-Cleanup mit optionaler Selbsterkennung der Alt-/Neu-Mengen.
 """
 
 from __future__ import annotations
-from typing import Iterable, Set, Dict, Any, Optional, Tuple
-import math
 import bpy
-from mathutils import Vector
+from math import isfinite
+from typing import Iterable, Set, Dict, Any, Optional, Tuple
+
+# bestehende Imports/Utilities bleiben unverändert …
 
 __all__ = ("run_distance_cleanup",)
 
-LOG_PREFIX = "DISTANZE"
-DETECT_LAST_THRESHOLD_KEY = "last_detection_threshold"  # Fallback-Key, ohne Modulimport
+# --- Logger Shim: Sicherung gegen fehlende log() Definition ---
 
-def _log(msg: str, *, verbose: bool):
-    """
-    Debug logger for distance cleanup. When ``verbose`` is True, messages
-    are emitted to the console with a standard prefix; otherwise they are
-    suppressed. This helper enables runtime inspection of key algorithm
-    decisions without polluting production output when verbose=False.
-    """
-    if verbose:
-        print(f"[{LOG_PREFIX}] {msg}")
+try:
+    log  # type: ignore[name-defined]
+except NameError:
+    def log(*_args, **_kwargs):
+        return None
 
+# ---------------------------------------------------------------------------
+# Interne Hilfsfunktionen für Selbsterkennung (neu)
+# ---------------------------------------------------------------------------
 def _resolve_clip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
     scn = getattr(context, "scene", None)
     clip = getattr(context, "edit_movieclip", None)
-    if clip:
-        return clip
-    space = getattr(context, "space_data", None)
-    if space and getattr(space, "type", None) == "CLIP_EDITOR":
-        clip = getattr(space, "clip", None)
-        if clip:
-            return clip
-    clip = getattr(scn, "clip", None) if scn else None
-    if clip:
-        return clip
+    if not clip:
+        space = getattr(context, "space_data", None)
+        if space and getattr(space, "type", None) == "CLIP_EDITOR":
+            clip = getattr(space, "clip", None)
+    if not clip and scn:
+        clip = getattr(scn, "clip", None)
+    if not clip:
+        try:
+            clip = next(iter(bpy.data.movieclips))
+        except Exception:
+            clip = None
+    return clip
+
+
+def _marker_at_frame(track, frame: int):
+    """Gibt den Marker eines Tracks exakt auf 'frame' zurück oder None."""
     try:
-        for c in bpy.data.movieclips:
-            return c
+        for mk in track.markers:
+            if int(getattr(mk, "frame", -1)) == int(frame):
+                return mk
     except Exception:
         pass
     return None
 
-def _dist2(a: Vector, b: Vector, *, unit: str, clip_size: Optional[Tuple[float, float]]) -> float:
-    if unit == "pixel" and clip_size:
-        w, h = clip_size
-        dx = (a.x - b.x) * w
-        dy = (a.y - b.y) * h
-        return dx * dx + dy * dy
-    dx = a.x - b.x
-    dy = a.y - b.y
-    return dx * dx + dy * dy
 
-def _compute_detect_min_distance(context: bpy.types.Context, *, verbose: bool) -> tuple[int, float, float, int]:
-    scn = context.scene
-    base_px = int(scn.get("min_distance_base", 8))
-    thr = float(scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
-    safe = max(thr * 1e8, 1e-8)
-    factor = math.log10(safe) / 8.0
-    detect_min_dist = max(1, int(base_px * factor))
-    return detect_min_dist, thr, factor, base_px
+def _track_marker_at_frame(
+    tr: bpy.types.MovieTrackingTrack, frame: int
+) -> Tuple[bool, Optional[bpy.types.MovieTrackingMarker]]:
+    try:
+        try:
+            m = tr.markers.find_frame(int(frame), exact=True)
+        except TypeError:
+            m = tr.markers.find_frame(int(frame))
+        return (m is not None), m
+    except Exception:
+        return (False, None)
 
-def cleanup_new_markers_at_frame(
+
+def _find_clip_editor_context(context: bpy.types.Context, clip: bpy.types.MovieClip):
+    """
+    Liefert (window, area, region, space) für einen CLIP_EDITOR, falls vorhanden.
+    Fällt ansonsten auf aktive window/screen zurück und setzt space_data pro Override.
+    """
+    win = getattr(context, "window", None)
+    scr = getattr(win, "screen", None) if win else None
+    area = None
+    region = None
+    space = None
+    try:
+        if scr:
+            for a in scr.areas:
+                if getattr(a, "type", "") == "CLIP_EDITOR":
+                    area = a
+                    # bevorzugt WINDOW-Region
+                    for r in a.regions:
+                        if getattr(r, "type", "") == "WINDOW":
+                            region = r
+                            break
+                    space = next(
+                        (s for s in a.spaces if getattr(s, "type", "") == "CLIP_EDITOR"),
+                        None,
+                    )
+                    break
+    except Exception:
+        pass
+    return win, area, region, space
+
+def _collect_old_new_sets(
+    context: bpy.types.Context,
+    frame: int,
+    *,
+    require_selected_new: bool,
+    include_muted_old: bool,
+) -> Tuple[Set[int], Set[int], int, int]:
+    """
+    Liefert:
+      - old_set: Pointer alter Tracks (Marker @frame nicht selektiert; gemutete optional)
+      - new_set: Pointer neuer Tracks:
+          * Wenn require_selected_new=True: Tracks, deren Marker @frame selektiert ist
+          * Sonst: Tracks mit Marker @frame, die nicht gemutet sind
+      - old_count_markers: Anzahl Referenzmarker @frame (ohne gemutete, wenn include_muted_old=False)
+      - new_count_markers: Anzahl Marker @frame in new_set (für Log)
+    """
+    clip = _resolve_clip(context)
+    if not clip:
+        return set(), set(), 0, 0
+
+    old_set: Set[int] = set()
+    new_set: Set[int] = set()
+    old_cnt = 0
+    new_cnt = 0
+    for tr in getattr(clip.tracking, "tracks", []):
+        m = _marker_at_frame(tr, frame)
+        if not m:
+            continue
+        ptr = int(tr.as_pointer())
+        if require_selected_new:
+            if bool(getattr(m, "select", False)):
+                new_set.add(ptr)
+                new_cnt += 1
+            else:
+                if include_muted_old or not bool(getattr(tr, "mute", False)):
+                    old_set.add(ptr)
+                    old_cnt += 1
+        else:
+            if include_muted_old or not bool(getattr(tr, "mute", False)):
+                old_set.add(ptr)
+                old_cnt += 1
+            if not (getattr(m, "mute", False) or getattr(tr, "mute", False)):
+                new_set.add(ptr)
+                new_cnt += 1
+
+    # Wichtig: „neu“ darf nicht gleichzeitig „alt“ sein, sonst ist die Differenz leer.
+    old_set = old_set.difference(new_set)
+    return old_set, new_set, old_cnt, new_cnt
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+def run_distance_cleanup(
     context: bpy.types.Context,
     *,
-    pre_ptrs: Iterable[int] | Set[int],
+    baseline_ptrs: Optional[Set[int]] = None,
     frame: int,
-    min_distance: float = 0.01,
+    min_distance: Optional[float] = 200,
     distance_unit: str = "pixel",
     require_selected_new: bool = True,
     include_muted_old: bool = False,
     select_remaining_new: bool = True,
     verbose: bool = True,
 ) -> Dict[str, Any]:
+    """
+    Wenn ``baseline_ptrs`` ``None`` ist:
+      - ermittelt die Funktion intern die Referenz- ("alt") und Kandidaten- ("neu") Sets
+        basierend auf Selektion @frame und Muting-Flags.
+    Andernfalls:
+      - verwendet ``baseline_ptrs`` als Menge der bestehenden Tracks;
+        "neu" sind strikt alle Tracks, deren Pointer nicht in ``baseline_ptrs`` enthalten sind.
+    """
     clip = _resolve_clip(context)
     if not clip:
-        print(f"[{LOG_PREFIX}] No active clip found â€“ aborting distance cleanup.")
-        return {"status": "FAILED", "reason": "no_clip"}
+        return {"status": "NO_CLIP", "frame": frame}
 
-    clip_size: Optional[Tuple[float, float]] = None
-    if distance_unit == "pixel":
-        try:
-            clip_size = (float(clip.size[0]), float(clip.size[1]))
-        except Exception:
-            distance_unit = "normalized"
 
+    # --- NEU: Exklusiv selektionsbasierte Klassifikation (zwingend) ---------
+    # Vertrag:
+    #   neu = Track hat auf 'frame' einen Marker, der beim Funktionsstart SELECTED ist
+    #   alt = Track hat auf 'frame' einen Marker, der NICHT selected ist
+    #   (include_muted_old steuert nur, ob gemutete Alt-Tracks als Referenz zulässig sind)
+    tracking = getattr(clip, "tracking", None)
+    all_tracks = list(getattr(tracking, "tracks", []))
+
+    # Snapshot der Selektion (stabil gegenüber UI-Umschaltungen während des Laufs)
+    new_tracks = []
+    for t in all_tracks:
+        m = _marker_at_frame(t, frame)
+        # Neu = Marker-Selection ODER Track-Selection (Fallback für Detect)
+        if m and (
+            bool(getattr(m, "select", False))
+            or bool(getattr(t, "select", False))
+        ):
+            new_tracks.append(t)
+
+    old_tracks = []
+    for t in all_tracks:
+        m = _marker_at_frame(t, frame)
+        if not m:
+            continue  # kein Marker auf diesem Frame → irrelevant
+        # Alt = weder Marker-Selection noch Track-Selection
+        if not (
+            bool(getattr(m, "select", False))
+            or bool(getattr(t, "select", False))
+        ):
+            if include_muted_old or not bool(getattr(t, "mute", False)):
+                old_tracks.append(t)
+
+    classification_mode = "SELECTION_ONLY"
+
+    len_old_markers = len([_marker_at_frame(t, frame) for t in old_tracks])
+    len_new_markers = len([_marker_at_frame(t, frame) for t in new_tracks])
+    old_set = {int(t.as_pointer()) for t in old_tracks}
+    new_set = {int(t.as_pointer()) for t in new_tracks}
+    old_cnt_m = len_old_markers
+    new_cnt_m = len_new_markers
+    skipped_new_no_marker = 0
+    log(
+        f"[DISTANZE] Classification mode={classification_mode}; old={len_old_markers} new={len_new_markers}"
+    )
+    log(
+        f"[DISTANZE] Frame {frame}: old_markers={len_old_markers} new_markers={len_new_markers} skipped_new_no_marker=0"
+    )
+
+    # Mindestabstand: Wert aus Koordinator robust übernehmen (Fallback 200)
     auto_min_used = False
-    auto_info: Dict[str, Any] = {}
-    if min_distance is None or float(min_distance) <= 0.0:
-        detect_min_px, thr, factor, base_px = _compute_detect_min_distance(context, verbose=verbose)
-        min_distance = float(detect_min_px)
-        distance_unit = "pixel"
+    try:
+        md = float(min_distance) if min_distance is not None else 200.0
+        # Ungültige/negative Werte abfangen
+        if not isfinite(md) or md <= 0.0:
+            auto_min_used = (min_distance is None)
+            md = 200.0
+    except Exception:
         auto_min_used = True
-        auto_info = {"auto_min_dist_px": int(detect_min_px), "thr": float(thr), "factor": float(factor), "base_px": int(base_px)}
-        print(f"[{LOG_PREFIX}] Using auto-derived minimum distance: {detect_min_px}px (thr={thr:.3f}, factor={factor:.4f}, base_px={base_px})")
+        md = 100.0
+    min_distance = md
+    log(
+        f"[DISTANZE] run_distance_cleanup called: frame={frame}, min_distance={min_distance}, unit={distance_unit}, "
+        f"require_selected_new={require_selected_new}, include_muted_old={include_muted_old}, "
+        f"select_remaining_new={select_remaining_new}"
+    )
+    log(
+        f"[DISTANZE] Starting cleanup on frame {frame} with min_distance={min_distance} {distance_unit}; old tracks={len(old_tracks)}"
+    )
+    log(
+        f"[DISTANZE] Found {len_old_markers} reference markers and {len(new_tracks)} new tracks to inspect."
+    )
 
-    pre_ptrs_set: Set[int] = set(int(p) for p in (pre_ptrs or []))
-    # Verbose: input summary
-    print(f"[{LOG_PREFIX}] Starting cleanup on frame {frame} with min_distance={min_distance} {distance_unit}; old tracks={len(pre_ptrs_set)}")
-    old_positions: list[Vector] = []
-    for tr in clip.tracking.tracks:
-        if int(tr.as_pointer()) in pre_ptrs_set:
-            try:
-                m = tr.markers.find_frame(int(frame), exact=True)
-            except TypeError:
-                m = tr.markers.find_frame(int(frame))
-            if not m:
-                continue
-            if not include_muted_old and getattr(m, "mute", False):
-                continue
-            co = getattr(m, "co", None)
-            if co is None:
-                continue
-            old_positions.append(co.copy())
-
-    new_tracks = [tr for tr in clip.tracking.tracks if int(tr.as_pointer()) not in pre_ptrs_set]
-
-    print(f"[{LOG_PREFIX}] Found {len(old_positions)} reference markers and {len(new_tracks)} new tracks to inspect.")
-
-    min_d2 = float(min_distance) * float(min_distance)
+    # ======= Kern: Distanzprüfung & Löschung (new_set vs. old_set) =======
     removed = 0
     kept = 0
     checked = 0
     skipped_no_marker = 0
     skipped_unselected = 0
+    failed_removals = 0
+    zero_px_deletes = 0
+    below_thr_nonzero_deletes = 0
+    deleted_ptrs: list[int] = []
 
-    for tr in new_tracks:
+    # Referenz-Koordinaten (old_set) am Frame sammeln
+    width = int(getattr(clip, "size", (0, 0))[0] or 0)
+    height = int(getattr(clip, "size", (0, 0))[1] or 0)
+    ref_coords = []
+    if width > 0 and height > 0:
+        for tr in clip.tracking.tracks:
+            try:
+                ptr = int(tr.as_pointer())
+                if ptr not in old_set:
+                    continue
+                ok, m = _track_marker_at_frame(tr, frame)
+                if not ok or not m:
+                    continue
+                if not include_muted_old and (getattr(m, "mute", False) or getattr(tr, "mute", False)):
+                    continue
+                # Marker-Koordinaten sind normalized (0..1); für Pixelabstand später mit width/height skalieren
+                ref_coords.append((float(m.co[0]), float(m.co[1])))
+            except Exception:
+                continue
+
+    # Wenn keine Referenzen vorhanden sind, gibt es nichts zu vergleichen
+    if not ref_coords or width == 0 or height == 0:
+        log("[DISTANZE] No valid reference markers or clip size unknown; nothing to clean.")
+        return {
+            "status": "OK",
+            "frame": frame,
+            "removed": 0,
+            "kept": 0,
+            "checked_new": 0,
+            "skipped_no_marker": 0,
+            "skipped_unselected": 0,
+            "min_distance": float(min_distance),
+            "distance_unit": distance_unit,
+            "old_count": int(len(old_set)),
+            "new_total": int(len(new_set)),
+            "auto_min_used": False,
+            "deleted": [],
+            "failed_removals": 0,
+        }
+
+    # Helper zur Pixel-Distanz
+    def _px_dist(nco_a, nco_b) -> float:
+        dx = (float(nco_a[0]) - float(nco_b[0])) * width
+        dy = (float(nco_a[1]) - float(nco_b[1])) * height
+        return (dx * dx + dy * dy) ** 0.5
+
+
+    # Robuste Löschung via Operator + Verifikation; Fallback = Marker@Frame löschen
+    def _delete_track_or_marker(
+        tr: bpy.types.MovieTrackingTrack, ptr: int, frame_i: int
+    ) -> Tuple[bool, str]:
+        name = getattr(tr, "name", "<noname>")
+        # 0) Context für CLIP_EDITOR finden
+        win, area, region, space = _find_clip_editor_context(bpy.context, clip)
+        # 1) Alles deselektieren, Ziel selektieren
         try:
-            m = tr.markers.find_frame(int(frame), exact=True)
-        except TypeError:
-            m = tr.markers.find_frame(int(frame))
-        if not m:
-            skipped_no_marker += 1
-            continue
-
-        if require_selected_new and not (getattr(m, "select", False) or getattr(tr, "select", False)):
-            skipped_unselected += 1
-            continue
-
-        pos = getattr(m, "co", None)
-        if pos is None:
-            skipped_no_marker += 1
-            continue
-
-        checked += 1
-
-        nearest_d2 = float("inf")
-        for old_pos in old_positions:
-            d2 = _dist2(pos, old_pos, unit=distance_unit, clip_size=clip_size)
-            if d2 < nearest_d2:
-                nearest_d2 = d2
-
-        too_close = nearest_d2 < min_d2 if old_positions else False
-
-        if too_close:
+            for _t in clip.tracking.tracks:
+                _t.select = False
+            tr.select = True
+            ok_m, m = _track_marker_at_frame(tr, frame_i)
+            if ok_m and m:
+                try:
+                    m.select = True
+                except Exception:
+                    pass
+        except Exception as e:
+            log(f"[DISTANZE]   pre-select failed for {name} ({ptr}): {e}")
+        # 2) Operator-Aufruf mit Override
+        try:
+            override = {}
+            if win:
+                override["window"] = win
+                override["screen"] = win.screen
+            if area:
+                override["area"] = area
+            if region:
+                override["region"] = region
+            if space:
+                override["space_data"] = space
+            override["edit_movieclip"] = clip
+            # bevorzugt den übergebenen Context, fällt andernfalls auf bpy.context zurück
+            _ctx = context if hasattr(context, "temp_override") else bpy.context
+            with _ctx.temp_override(**override):
+                bpy.ops.clip.delete_track()
+        except Exception as e:
+            log(f"[DISTANZE]   bpy.ops.clip.delete_track() failed for {name} ({ptr}): {e}")
+        # 3) Verifikation nach Operator
+        try:
+            still = False
+            for _t in clip.tracking.tracks:
+                if int(getattr(_t, "as_pointer")()) == ptr or getattr(_t, "name", "") == name:
+                    still = True
+                    break
+            if not still:
+                return True, "deleted:op"
+        except Exception:
+            pass
+        # 4) Fallback: nur Marker am Frame löschen (nicht den ganzen Track)
+        try:
+            tr.markers.delete_frame(int(frame_i))
             try:
-                tr.markers.delete_frame(int(frame))
-                removed += 1
-                print(f"[{LOG_PREFIX}] Removed marker from track {getattr(tr, 'name', '<unnamed>')} at frame {frame} (too close to existing).")
-                continue
-            except Exception as exc:
-                print(f"[{LOG_PREFIX}] ERROR: Failed to remove marker on track {getattr(tr, 'name', '<unnamed>')} at frame {frame}: {exc}")
+                m_chk = tr.markers.find_frame(int(frame_i), exact=True)
+            except TypeError:
+                m_chk = tr.markers.find_frame(int(frame_i))
+            if not m_chk:
+                return True, "deleted:marker"
+        except Exception as e:
+            log(f"[DISTANZE]   delete_frame(frame) failed for {name} ({ptr}): {e}")
+        return False, "failed"
+
+    # Vorab: mapping ptr->track für stabile Namenslogs auch nach evtl. Removals
+    ptr_to_name = {}
+    for _t in clip.tracking.tracks:
+        try:
+            ptr_to_name[int(getattr(_t, "as_pointer")())] = getattr(
+                _t, "name", "<noname>"
+            )
+        except Exception:
+            pass
+
+    # WICHTIG: Snapshot der "neuen" selektierten Kandidaten anlegen,
+    # damit require_selected_new NICHT vom späteren Deselektieren beeinflusst wird.
+    _new_selected_snapshot = set(new_set) if require_selected_new else set()
+    log(
+        f"[DISTANZE] Selection snapshot: size={len(new_tracks)} "
+        f"(require_selected_new={require_selected_new})"
+    )
+
+    # Iteration über neue Kandidaten
+    # Achtung: Wir arbeiten über Kopie der Trackliste, da wir ggf. Tracks entfernen.
+    for tr in list(clip.tracking.tracks):
+        try:
+            ptr = int(tr.as_pointer())
+            if ptr not in new_set:
                 continue
 
-        if select_remaining_new:
+            ok, m_new = _track_marker_at_frame(tr, frame)
+            if not ok or not m_new:
+                skipped_no_marker += 1
+                continue
+
+            # Gating ausschließlich gegen den Snapshot, NICHT gegen aktuellen Select-Status
+            if require_selected_new and (ptr not in _new_selected_snapshot):
+                skipped_unselected += 1
+                continue
+
+            checked += 1
+            nco = (float(m_new.co[0]), float(m_new.co[1]))
+
+            # Mindestabstand gegen alle Referenzen prüfen
+            too_close = False
+            min_found = 1e12
+            for rco in ref_coords:
+                d = (
+                    _px_dist(nco, rco)
+                    if distance_unit == "pixel"
+                    else ((nco[0] - rco[0]) ** 2 + (nco[1] - rco[1]) ** 2) ** 0.5
+                )
+                if d < min_found:
+                    min_found = d
+                if d < float(min_distance):
+                    too_close = True
+                    break
+
+            name = ptr_to_name.get(ptr, getattr(tr, "name", "<noname>"))
+            sel_state = f"Tsel={bool(getattr(tr,'select',False))}, Msel={bool(getattr(m_new,'select',False))}"
+            if too_close:
+                ok_del, how = _delete_track_or_marker(tr, ptr, frame)
+                if ok_del:
+                    removed += 1
+                    deleted_ptrs.append(ptr)
+                    if abs(min_found) < 1e-6:
+                        zero_px_deletes += 1
+                    else:
+                        below_thr_nonzero_deletes += 1
+                    log(
+                        f"[DISTANZE]   DELETE  ptr={ptr} name='{name}' min_d={min_found:.2f}px @f{frame}  ({sel_state}) → {how}"
+                    )
+                else:
+                    failed_removals += 1
+                    log(
+                        f"[DISTANZE]   FAILED  ptr={ptr} name='{name}' min_d={min_found:.2f}px @f{frame}  ({sel_state}) → could not remove"
+                    )
+            else:
+                kept += 1
+                log(
+                    f"[DISTANZE]   KEEP    ptr={ptr} name='{name}' min_d={min_found:.2f}px @f{frame}  ({sel_state})"
+                )
+        except Exception as e:
+            # Defensive: Fehler pro Track nicht fatal
+            log(f"[DISTANZE]   ERROR   ptr=? exception={e}")
+            continue
+
+    # Optional: Verbleibende neue selektieren (UI-Komfort; kein Gate)
+    if select_remaining_new:
+        for tr in clip.tracking.tracks:
             try:
-                m.select = True
+                ptr = int(tr.as_pointer())
+                if ptr not in new_set:
+                    continue
+                ok, m = _track_marker_at_frame(tr, frame)
+                if not ok or not m:
+                    continue
                 tr.select = True
+                try:
+                    m.select = True
+                except Exception:
+                    pass
+            except Exception:
+                continue
+        log(f"[DISTANZE] Reselect remaining new: done.")
+
+    # Post-Verification: existieren gelöschte Pointer noch? + Ist-Zustand zählen
+    still_present: list[Tuple[int, str]] = []
+    marker_count_frame = 0
+    try:
+        for _t in clip.tracking.tracks:
+            try:
+                if _track_marker_at_frame(_t, frame)[0]:
+                    marker_count_frame += 1
+                p = int(getattr(_t, "as_pointer")())
+                if p in deleted_ptrs:
+                    still_present.append((p, getattr(_t, "name", "<noname>")))
             except Exception:
                 pass
-        kept += 1
+    except Exception:
+        pass
 
-    # Summary log
-    print(f"[{LOG_PREFIX}] Cleanup complete: removed={removed}, kept={kept}, checked={checked}, skipped_no_marker={skipped_no_marker}, skipped_unselected={skipped_unselected}")
+    log(
+        f"[DISTANZE] Cleanup complete: removed={removed}, kept={kept}, checked={checked}, "
+        f"skipped_no_marker={skipped_no_marker}, skipped_unselected={skipped_unselected}, failed_removals={failed_removals}"
+    )
+    if still_present:
+        log(
+            f"[DISTANZE] WARNING: {len(still_present)} supposed-deleted tracks still present: {still_present[:10]}{' …' if len(still_present)>10 else ''}"
+        )
+    log(
+        f"[DISTANZE] Post-frame stats @f{frame}: markers_at_frame={marker_count_frame}, deleted_ptrs={len(deleted_ptrs)}"
+    )
+    log(
+        f"[DISTANZE] Reason breakdown @f{frame}: zero_px={zero_px_deletes}, "
+        f"lt_thr_nonzero={below_thr_nonzero_deletes}, thr={min_distance}"
+    )
 
+    survivors = [ptr for ptr in new_set if ptr not in set(deleted_ptrs)]
+    deleted_struct = [
+        {"ptr": int(p), "track": ptr_to_name.get(p, None), "frame": int(frame)}
+        for p in deleted_ptrs
+    ]
     return {
         "status": "OK",
-        "frame": int(frame),
+        "frame": frame,
         "removed": int(removed),
         "kept": int(kept),
         "checked_new": int(checked),
@@ -188,34 +515,11 @@ def cleanup_new_markers_at_frame(
         "skipped_unselected": int(skipped_unselected),
         "min_distance": float(min_distance),
         "distance_unit": distance_unit,
-        "old_count": len(old_positions),
-        "new_total": len(new_tracks),
+        "old_count": int(len(old_set)),
+        "new_total": int(len(new_set)),
         "auto_min_used": bool(auto_min_used),
+        "deleted": deleted_struct,
+        "new_ptrs_after_cleanup": survivors,
+        "markers_at_frame": int(marker_count_frame),
+        "failed_removals": int(failed_removals),
     }
-
-def run_distance_cleanup(
-    context: bpy.types.Context,
-    *,
-    pre_ptrs: Iterable[int] | Set[int],
-    frame: int,
-    min_distance: Optional[float] = None,
-    distance_unit: str = "pixel",
-    require_selected_new: bool = True,
-    include_muted_old: bool = False,
-    select_remaining_new: bool = True,
-    verbose: bool = True,
-) -> Dict[str, Any]:
-    print(f"[{LOG_PREFIX}] run_distance_cleanup called: frame={frame}, min_distance={min_distance}, unit={distance_unit}, require_selected_new={require_selected_new}, include_muted_old={include_muted_old}, select_remaining_new={select_remaining_new}")
-    result = cleanup_new_markers_at_frame(
-        context,
-        pre_ptrs=pre_ptrs,
-        frame=frame,
-        min_distance=min_distance if (min_distance is not None) else -1.0,
-        distance_unit=distance_unit,
-        require_selected_new=require_selected_new,
-        include_muted_old=include_muted_old,
-        select_remaining_new=select_remaining_new,
-        verbose=verbose,
-    )
-    print(f"[{LOG_PREFIX}] run_distance_cleanup result: {result}")
-    return result

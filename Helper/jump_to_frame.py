@@ -5,6 +5,50 @@ __all__ = ("run_jump_to_frame", "jump_to_frame")  # jump_to_frame = Legacy-Wrapp
 REPEAT_SATURATION = 10  # Ab dieser Wiederholungsanzahl: Optimizer anstoßen statt Detect
 
 
+# ---------------------------------------------------------------------------
+# Fade-Parameter
+# ---------------------------------------------------------------------------
+# Statt "pro Frame -1" wird nur alle N Frames um 1 dekrementiert.
+# Damit entsteht ein Plateau von N Frames pro Stufe.
+FADE_STEP_FRAMES: int = 5  # vorher effektiv: 1
+
+
+def _clamp(v: int, lo: int = 0, hi: int | None = None) -> int:
+    if hi is None:
+        return v if v >= lo else lo
+    return lo if v < lo else (hi if v > hi else v)
+
+
+def _spread_repeat_to_neighbors(repeat_map: dict[int, int], center_f: int, radius: int, base: int) -> None:
+    # Neu: stufiger Fade: nur alle FADE_STEP_FRAMES -1
+    for off in range(-radius, radius + 1):
+        f = center_f + off
+        if f < 0:
+            continue
+        # Decrement nur in 5er-Schritten: 0..4 → 0, 5..9 → 1, 10..14 → 2, ...
+        dec = abs(off) // FADE_STEP_FRAMES  # stufig (neu)
+        v = base - dec
+        if v <= 0:
+            continue
+        # nur erhöhen, nie verringern
+        cur = repeat_map.get(f, 0)
+        if v > cur:
+            repeat_map[f] = v
+
+
+def diffuse_repeat_counts(repeat_map: dict[int, int], radius: int) -> dict[int, int]:
+    """
+    Breitet Wiederholungszähler auf Nachbarframes aus, mit stufigem Fade
+    (alle FADE_STEP_FRAMES Frames -1).
+    """
+    if not repeat_map or radius <= 0:
+        return repeat_map
+    out = dict(repeat_map)
+    for center_f, base in repeat_map.items():
+        _spread_repeat_to_neighbors(out, center_f, radius, base)
+    return out
+
+
 # -----------------------------------------------------------------------------
 # Utilities
 # -----------------------------------------------------------------------------

@@ -1,9 +1,87 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+"""Multi-pass helper utilities."""
+
 from __future__ import annotations
-from typing import Dict, Optional, Set, List, Tuple
 import bpy
 import math
+from typing import Iterable, Set, Dict, Any, Optional, Tuple, List
 
 __all__ = ["run_multi_pass"]
+
+# ------------------------------------------------------------
+# Hilfen (lokal, keine Abhängigkeit vom Coordinator/Distanze)
+# ------------------------------------------------------------
+def _resolve_clip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
+    scn = getattr(context, "scene", None)
+    clip = getattr(context, "edit_movieclip", None)
+    if not clip:
+        space = getattr(context, "space_data", None)
+        if space and getattr(space, "type", None) == "CLIP_EDITOR":
+            clip = getattr(space, "clip", None)
+    if not clip and scn:
+        clip = getattr(scn, "clip", None)
+    if not clip:
+        try:
+            clip = next(iter(bpy.data.movieclips))
+        except Exception:
+            clip = None
+    return clip
+
+def _marker_at_frame(track: bpy.types.MovieTrackingTrack, frame: int):
+    try:
+        return track.markers.find_frame(int(frame), exact=True)
+    except TypeError:
+        return track.markers.find_frame(int(frame))
+
+def _snapshot_selected_ptrs(clip: bpy.types.MovieClip, frame: int) -> Set[int]:
+    out: Set[int] = set()
+    for t in getattr(clip.tracking, "tracks", []):
+        m = _marker_at_frame(t, frame)
+        if not m:
+            continue
+        if getattr(t, "select", False) or getattr(m, "select", False):
+            try:
+                out.add(int(t.as_pointer()))
+            except Exception:
+                pass
+    return out
+
+def _snapshot_all_ptrs(clip: bpy.types.MovieClip) -> Set[int]:
+    out: Set[int] = set()
+    for t in getattr(clip.tracking, "tracks", []):
+        try:
+            out.add(int(t.as_pointer()))
+        except Exception:
+            pass
+    return out
+
+def _clear_selection_at_frame(clip: bpy.types.MovieClip, frame: int) -> None:
+    for t in getattr(clip.tracking, "tracks", []):
+        try:
+            t.select = False
+            m = _marker_at_frame(t, frame)
+            if m:
+                m.select = False
+        except Exception:
+            pass
+
+def _select_ptrs_at_frame(clip: bpy.types.MovieClip, frame: int, ptrs: Iterable[int]) -> None:
+    ptrs = set(int(p) for p in ptrs)
+    for t in getattr(clip.tracking, "tracks", []):
+        try:
+            if int(t.as_pointer()) not in ptrs:
+                continue
+            m = _marker_at_frame(t, frame)
+            if not m:
+                continue
+            t.select = True
+            try:
+                m.select = True
+            except Exception:
+                pass
+        except Exception:
+            pass
 
 # Hinweis: Dieser Helper ist jetzt „repeat-aware“. Er kann anhand des
 # Wiederholungszählers (count) unterschiedliche Pattern-Scans fahren.
@@ -82,17 +160,15 @@ def _build_scales_for_repeat(repeat_count: Optional[int]) -> List[float]:
     return base
 
 
-def run_multi_pass(
+def _run_multi_core(
     context: bpy.types.Context,
     *,
     detect_threshold: float,
     pre_ptrs: Set[int],
-    # NEU: Wiederholungszähler (vom Coordinator aus tracking_state übergeben)
     repeat_count: Optional[int] = None,
-    # Fallback: wenn repeat_count nicht gesetzt ist, kann man optional eigene
-    # Skalen erzwingen. Wird ignoriert, sobald repeat_count >= 6 übergeben ist.
     pattern_scales: Optional[List[float]] = None,
     adjust_search_with_pattern: bool = True,
+    frame: Optional[int] = None,
 ) -> Dict:
     """
     Führt zusätzliche Detect-Durchläufe mit identischem threshold aus,
@@ -220,10 +296,8 @@ def run_multi_pass(
 
     return {
         "status": "READY",
-        # für Backwards-Kompatibilität: aggregierte „low/high“-Werte, falls vorhanden
         "created_low": int(created_per_scale.get(0.5, 0)),
         "created_high": int(created_per_scale.get(2.0, 0)),
-        # NEU: detaillierte Aufschlüsselung
         "created_per_scale": created_per_scale,
         "effective_pattern_sizes": eff_pattern_sizes,
         "selected": int(len(new_ptrs)),
@@ -231,3 +305,45 @@ def run_multi_pass(
         "repeat_count": int(repeat_count or 0),
         "scales_used": scales,
     }
+
+
+def run_multi_pass(context: bpy.types.Context, *, frame: Optional[int] = None, **kwargs) -> Dict[str, Any]:
+    """
+    Führt Multi aus, ohne den Detect-Cycle/Koordinator zu koppeln.
+    - Snapshot der selektierten Marker @frame
+    - Delta der neu entstandenen Tracks ermitteln
+    - Selektion @frame = (Detect-Snapshot ∪ Multi-Neuzugänge)
+    """
+    clip = _resolve_clip(context)
+    if not clip:
+        return {"status": "NO_CLIP"}
+
+    if frame is None:
+        frame = int(getattr(getattr(context, "scene", None), "frame_current", 0))
+    frame = int(frame)
+
+    pre_selected_ptrs = _snapshot_selected_ptrs(clip, frame)
+    pre_all_ptrs = _snapshot_all_ptrs(clip)
+
+    core_res: Dict[str, Any] = {}
+    if "_run_multi_core" in globals() and callable(globals()["_run_multi_core"]):
+        core_res = globals()["_run_multi_core"](context, frame=frame, **kwargs) or {}
+
+    post_all_ptrs = _snapshot_all_ptrs(clip)
+    new_multi_ptrs = list(post_all_ptrs.difference(pre_all_ptrs))
+
+    _clear_selection_at_frame(clip, frame)
+    _select_ptrs_at_frame(clip, frame, pre_selected_ptrs.union(new_multi_ptrs))
+
+    try:
+        context.view_layer.update()
+    except Exception:
+        pass
+
+    core_res.update({
+        "status": core_res.get("status", "OK"),
+        "frame": frame,
+        "multi_new_ptrs": new_multi_ptrs,
+        "restored_selected_ptrs": list(pre_selected_ptrs),
+    })
+    return core_res
