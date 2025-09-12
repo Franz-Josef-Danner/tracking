@@ -1,15 +1,12 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""
-tracking_coordinator.py â€“ Streng sequentieller, MODALER Orchestrator
-- Phasen: FIND_LOW â†’ JUMP â†’ DETECT â†’ DISTANZE (hart getrennt, seriell)
-- Integration von Anzahl/Aâ‚..Aâ‚‰ + Abbruch bei 10 + A_k-Schreiben in BIDI
-- Jede Phase startet erst, wenn die vorherige abgeschlossen wurde.
+""" tracking_coordinator.py – Streng sequentieller, MODALER Orchestrator
+    Hinweis: Typisierungen verwenden KEINE in Anführungszeichen gesetzten
+    ForwardRefs mit „| None“, um Probleme mit typing.get_type_hints zu vermeiden.
 """
 
 from __future__ import annotations
 
-import gc
-import time
+import gc, time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, Optional, Tuple
@@ -132,9 +129,7 @@ def solve_eval_back_to_back(
 # Finaler Voll-Solve mit Intrinsics-Refine (fokal/principal/radial = True)
 # ---------------------------------------------------------------------------
 def solve_final_refine(
-    *,
-    context: bpy.types.Context,
-    model: Any,
+    *, context: bpy.types.Context, model: Any,
     apply_model: Callable[[Any], None],
     solve_full: Optional[Callable[..., float]] = None,
 ) -> float:
@@ -189,8 +184,7 @@ def solve_final_refine(
 # Kombi-Wrapper: 3×-Eval + finaler Voll-Solve (alle refine_intrinsics = True)
 # ---------------------------------------------------------------------------
 def solve_eval_with_final_refine(
-    *,
-    clip,
+    *, clip,
     candidate_models: Iterable[Any],
     apply_model: Callable[[Any], None],
     do_solve_quick: Callable[..., float],
@@ -297,7 +291,7 @@ except Exception:
 
 
 # ---- Solve-Logger: robust auflÃ¶sen, ohne auf Paketstruktur zu vertrauen ----
-def _solve_log(context, value):
+def _solve_log(context: bpy.types.Context | None, value: float | None):
     """Laufzeit-sicherer Aufruf von __init__.kaiserlich_solve_log_add()."""
     try:
         import sys, importlib

@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-# (c) Kaiserlich Overlay
+# (c) Kaiserlich Overlay (legacy – deaktiviert, nur noch Utils)
 import bpy
-
 _HANDLE = None
 
 
@@ -229,22 +228,10 @@ def draw_solve_graph_impl():
 
 
 def ensure_overlay_handlers(_scene=None):
-    global _HANDLE
-    if _HANDLE is None:
-        try:
-            _HANDLE = bpy.types.SpaceClipEditor.draw_handler_add(draw_solve_graph_impl, (), 'WINDOW', 'POST_PIXEL')
-        except Exception:
-            _HANDLE = None
-    return _HANDLE
+    # Legacy-Overlay nicht mehr automatisch aktivieren
+    return None
 
 
 def remove_overlay_handlers(_handle=None):
-    global _HANDLE
-    if _HANDLE is not None:
-        try:
-            bpy.types.SpaceClipEditor.draw_handler_remove(_HANDLE, 'WINDOW')
-        except Exception:
-            pass
-        _HANDLE = None
-        return True
-    return False
+    # Nichts zu entfernen – Handler wird nicht mehr gesetzt.
+    return True
