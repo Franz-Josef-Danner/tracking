@@ -3,14 +3,14 @@ from __future__ import annotations
 import bpy
 from bpy.props import StringProperty, IntProperty
 
+
 class RepeatEntry(bpy.types.PropertyGroup):
     frame: StringProperty(name="Frame")
     count: IntProperty(name="Count")
 
+
 def ensure_repeat_overlay_props():
-    scn = bpy.context.scene
-    if scn is None:
-        return
+    """Register Scene RNA properties; do NOT touch bpy.context during register."""
     if not hasattr(bpy.types.Scene, "kc_show_repeat_overlay"):
         bpy.types.Scene.kc_show_repeat_overlay = bpy.props.BoolProperty(
             name="Repeat-Overlay",
@@ -22,12 +22,12 @@ def ensure_repeat_overlay_props():
         bpy.types.Scene.kc_repeat_overlay_height = bpy.props.IntProperty(
             name="Höhe (px)",
             description="Pixel-Höhe des Repeat-Overlays im Clip-Editor",
-            default=120, min=40, soft_max=400,
+            default=120,
+            min=40,
+            soft_max=400,
             update=lambda s, c: _tag_redraw(),
         )
-    if scn.get("_kc_repeat_series") is None:
-        scn["_kc_repeat_series"] = []
-    _tag_redraw()
+    # Kein Zugriff auf bpy.context.scene hier – ID-Properties werden lazy im Draw/Write angelegt.
 
 def _toggle_repeat_overlay(scene: bpy.types.Scene):
     from ..ui.repeat_overlay import enable_repeat_overlay, disable_repeat_overlay
@@ -38,16 +38,24 @@ def _toggle_repeat_overlay(scene: bpy.types.Scene):
     _tag_redraw()
 
 def _tag_redraw():
-    for w in bpy.context.window_manager.windows:
-        for a in w.screen.areas:
-            if a.type == 'CLIP_EDITOR':
-                for r in a.regions:
-                    if r.type == 'WINDOW':
-                        r.tag_redraw()
+    try:
+        for w in bpy.context.window_manager.windows:
+            for a in w.screen.areas:
+                if a.type == 'CLIP_EDITOR':
+                    for r in a.regions:
+                        if r.type == 'WINDOW':
+                            r.tag_redraw()
+    except Exception:
+        # Während Register/Preferences kann bpy.context eingeschränkt sein.
+        pass
 
 def record_repeat_count(scene: bpy.types.Scene, frame: int, value: float):
+    """Schreibt einen Repeat-Wert für einen absoluten Frame in die Serien-ID-Property."""
     if scene is None:
-        scene = bpy.context.scene
+        try:
+            scene = bpy.context.scene
+        except Exception:
+            return
     if scene is None:
         return
     fs, fe = scene.frame_start, scene.frame_end

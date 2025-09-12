@@ -2,7 +2,7 @@ import bpy
 from typing import Optional, Dict, Any, Tuple
 
 # Optionaler Hook: Repeat-Werte ins Overlay spiegeln
-def _kc_record_repeat(scene: bpy.types.Scene, frame: int, repeat_value: int | float):
+def _kc_record_repeat(scene: bpy.types.Scene, frame: int, repeat_value: float):
     try:
         from .properties import record_repeat_count
         record_repeat_count(scene, frame, float(repeat_value))

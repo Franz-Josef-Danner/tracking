@@ -51,16 +51,18 @@ def register():
             m.register()
     bpy.utils.register_class(KC_PT_OverlayPanel)
     bpy.utils.register_class(KC_OT_OverlayToggle)
-    # Szene-Properties
+    # Szene-Properties registrieren (ohne auf bpy.context.scene zuzugreifen)
     from ..Helper.properties import ensure_repeat_overlay_props
     ensure_repeat_overlay_props()
-    # Auto-Handler je nach Flag
-    if bpy.context.scene and bpy.context.scene.get("kc_show_repeat_overlay", False):
-        enable_repeat_overlay()
+    # Kein Auto-Enable zur Register-Zeit – Kontext ist ggf. eingeschränkt (Preferences).
 
 
 def unregister():
-    disable_repeat_overlay()
+    # Beim Unregister sauber entfernen
+    try:
+        disable_repeat_overlay()
+    except Exception:
+        pass
     bpy.utils.unregister_class(KC_OT_OverlayToggle)
     bpy.utils.unregister_class(KC_PT_OverlayPanel)
     for m in reversed(_MODULES):
