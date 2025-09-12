@@ -2,7 +2,7 @@
 from __future__ import annotations
 import bpy
 from typing import List
-from bpy.types import SpaceClip
+from bpy.types import SpaceClipEditor
 from gpu.types import GPUBatch, GPUShader
 import gpu
 from math import isfinite
@@ -88,12 +88,12 @@ def draw_callback():
 def _add_handler():
     global _HANDLE
     if _HANDLE is None:
-        _HANDLE = SpaceClip.draw_handler_add(draw_callback, (), 'WINDOW', 'POST_PIXEL')
+        _HANDLE = SpaceClipEditor.draw_handler_add(draw_callback, (), 'WINDOW', 'POST_PIXEL')
 
 def _remove_handler():
     global _HANDLE
     if _HANDLE is not None:
-        SpaceClip.draw_handler_remove(_HANDLE, 'WINDOW')
+        SpaceClipEditor.draw_handler_remove(_HANDLE, 'WINDOW')
         _HANDLE = None
 
 def enable_repeat_overlay():
