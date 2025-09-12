@@ -1,53 +1,37 @@
 import bpy
+from importlib import import_module
 
-
-# --- Repeat Scope (Viewer-Box) ---
-def ensure_repeat_scope_props():
-    """Nur RNA-Properties registrieren; kein Zugriff auf bpy.context in Register-Phase."""
-    if not hasattr(bpy.types.Scene, "kc_show_repeat_scope"):
-        bpy.types.Scene.kc_show_repeat_scope = bpy.props.BoolProperty(
-            name="Repeat-Scope",
-            description="Zeigt eine Box im Viewer mit der Wiederholungskurve über die Szenenlänge",
-            default=True,
-            update=lambda s, c: _toggle_repeat_scope(s),
-        )
-    if not hasattr(bpy.types.Scene, "kc_repeat_scope_height"):
-        bpy.types.Scene.kc_repeat_scope_height = bpy.props.IntProperty(
-            name="Scope-Höhe (px)",
-            default=140, min=50, soft_max=400,
-            update=lambda s, c: _tag_redraw(),
-        )
-    if not hasattr(bpy.types.Scene, "kc_repeat_scope_bottom"):
-        bpy.types.Scene.kc_repeat_scope_bottom = bpy.props.IntProperty(
-            name="Scope-Abstand unten (px)",
-            default=24, min=0, soft_max=400,
-            update=lambda s, c: _tag_redraw(),
-        )
-    if not hasattr(bpy.types.Scene, "kc_repeat_scope_margin_x"):
-        bpy.types.Scene.kc_repeat_scope_margin_x = bpy.props.IntProperty(
-            name="Scope-Seitenrand (px)",
-            default=12, min=0, soft_max=200,
-            update=lambda s, c: _tag_redraw(),
-        )
-    if not hasattr(bpy.types.Scene, "kc_repeat_scope_show_cursor"):
-        bpy.types.Scene.kc_repeat_scope_show_cursor = bpy.props.BoolProperty(
-            name="Frame-Cursor im Scope",
-            description="Zeigt eine vertikale Linie für den aktuellen Frame im Scope",
-            default=True,
-            update=lambda s, c: _tag_redraw(),
-        )
-
-def _toggle_repeat_scope(scene):
+def _toggle_repeat_scope(self, context):
+    """
+    UI-Update-Callback für Scene.kc_show_repeat_scope.
+    Bindet den Overlay-Handler sicher an/ab.
+    """
     try:
-        from ..ui.repeat_scope import enable_repeat_scope, disable_repeat_scope
-        if getattr(scene, "kc_show_repeat_scope", False):
-            enable_repeat_scope()
-        else:
-            disable_repeat_scope()
-    except Exception:
-        pass
-    _tag_redraw()
+        # Basis-Paket ermitteln (z.B. 'tracking' aus 'tracking.Helper')
+        base = __package__.split('.')[0] if __package__ else None
+        mod = import_module(f"{base}.ui.repeat_scope") if base else import_module("ui.repeat_scope")
+        if hasattr(mod, "enable_repeat_scope"):
+            mod.enable_repeat_scope(bool(getattr(context.scene, "kc_show_repeat_scope", False)))
+    except Exception as e:
+        print("[RepeatScope] toggle failed:", e)
 
+def ensure_repeat_scope_props():
+    s = bpy.types.Scene
+    if not hasattr(s, "kc_show_repeat_scope"):
+        s.kc_show_repeat_scope = bpy.props.BoolProperty(
+            name="Repeat-Scope anzeigen",
+            default=False,
+            update=_toggle_repeat_scope,
+            description="Zeigt das Repeat-Scope-Overlay im Movie Clip Editor an."
+        )
+    if not hasattr(s, "kc_overlay_height"):
+        s.kc_overlay_height = bpy.props.IntProperty(name="Höhe (px)", default=140, min=60, max=800)
+    if not hasattr(s, "kc_overlay_margin_bottom"):
+        s.kc_overlay_margin_bottom = bpy.props.IntProperty(name="Abstand unten (px)", default=24, min=0, max=200)
+    if not hasattr(s, "kc_overlay_margin_side"):
+        s.kc_overlay_margin_side = bpy.props.IntProperty(name="Seitenrand (px)", default=12, min=0, max=200)
+    if not hasattr(s, "kc_overlay_show_cursor"):
+        s.kc_overlay_show_cursor = bpy.props.BoolProperty(name="Frame-Cursor", default=True)
 
 def _tag_redraw():
     try:
@@ -60,7 +44,6 @@ def _tag_redraw():
     except Exception:
         # Während Register/Preferences kann bpy.context eingeschränkt sein.
         pass
-
 
 def record_repeat_count(scene, frame, value):
     """Schreibt einen Repeat-Wert für einen absoluten Frame in die Serien-ID-Property."""
