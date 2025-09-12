@@ -98,28 +98,42 @@ def solve_eval_back_to_back(
     best: Optional[Tuple[float, Any, float]] = None
     trials = 0
     models = list(candidate_models)
+    print("[SolveEval] --- START back-to-back ---")
 
     with phase_lock("SOLVE_EVAL"), undo_off(), solve_eval_mode():
         for model in models:
             if trials >= max_trials or (time.perf_counter() - t0) > time_budget_sec:
                 print("[SolveEval] Budget erreicht – abbrechen.")
                 break
-            # WICHTIG: nur Model setzen + Solve aufrufen. Nichts anderes.
+            print(f"[SolveEval][#{trials+1}] Model={model} >>>")
+            # --- Apply Model
+            t_apply0 = time.perf_counter()
             apply_model(model)
-            t1 = time.perf_counter()
+            t_apply = time.perf_counter() - t_apply0
+            print(f"[SolveEval][#{trials+1}] apply_model done in {t_apply:.3f}s")
+
+            # --- Solve
+            t_solve0 = time.perf_counter()
             score = do_solve(quick=quick, **solve_kwargs)  # dein solve_camera()-Wrapper
-            dt = time.perf_counter() - t1
-            rank_value = rank_callable(score, model) if rank_callable else score
+            t_solve = time.perf_counter() - t_solve0
+            print(f"[SolveEval][#{trials+1}] do_solve done in {t_solve:.3f}s → score={score:.6f}")
+
+            # --- Ranking (optional)
+            t_rank = 0.0
+            rank_value = score
             if rank_callable:
-                print(
-                    f"[SolveEval] {model}: score={score:.6f} rank={rank_value:.6f} dur={dt:.3f}s"
-                )
-            else:
-                print(f"[SolveEval] {model}: score={score:.6f} dur={dt:.3f}s")
+                t_rank0 = time.perf_counter()
+                rank_value = rank_callable(score, model)
+                t_rank = time.perf_counter() - t_rank0
+                print(f"[SolveEval][#{trials+1}] rank_callable done in {t_rank:.3f}s → rank={rank_value:.6f}")
+
+            # --- Summary for iteration
+           print(f"[SolveEval][#{trials+1}] timings: apply={t_apply:.3f}s solve={t_solve:.3f}s rank={t_rank:.3f}s")
             if (best is None) or (rank_value < best[0]):
                 best = (rank_value, model, score)
             trials += 1
 
+    print(f"[SolveEval] --- END back-to-back --- trials={trials}, duration={time.perf_counter() - t0:.3f}s")
     return {
         "model": best[1] if best else None,  # Gewinner-Modell
         "score": best[2] if best else float("inf"),  # Roh-Score des Gewinners
