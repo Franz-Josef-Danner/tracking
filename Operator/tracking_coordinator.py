@@ -1,10 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """ tracking_coordinator.py – Streng sequentieller, MODALER Orchestrator
-    Hinweis: Typisierungen verwenden KEINE in Anführungszeichen gesetzten
-    ForwardRefs mit „| None“, um Probleme mit typing.get_type_hints zu vermeiden.
+    Hinweis: __future__.annotations entfernt, um typing.get_type_hints()-Fehler
+    mit dem „|“-Operator zu vermeiden. Bitte Optional[...] verwenden.
 """
-
-from __future__ import annotations
 
 import gc, time
 from contextlib import contextmanager
@@ -291,7 +289,7 @@ except Exception:
 
 
 # ---- Solve-Logger: robust auflÃ¶sen, ohne auf Paketstruktur zu vertrauen ----
-def _solve_log(context: bpy.types.Context | None, value: float | None):
+def _solve_log(context: Optional[bpy.types.Context], value: Optional[float]):
     """Laufzeit-sicherer Aufruf von __init__.kaiserlich_solve_log_add()."""
     try:
         import sys, importlib

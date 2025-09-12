@@ -45,6 +45,14 @@ def register():
     # Szene-Properties (nur RNAs, ohne auf bpy.context zuzugreifen)
     from ..Helper.properties import ensure_repeat_scope_props
     ensure_repeat_scope_props()
+    # Wenn Flag bereits aktiv ist (Default/Benutzer), Scope-Handler einschalten
+    try:
+        scn = getattr(bpy.context, "scene", None)
+        if scn and getattr(scn, "kc_show_repeat_scope", False):
+            from .repeat_scope import enable_repeat_scope
+            enable_repeat_scope()
+    except Exception:
+        pass
 
 
 def unregister():
