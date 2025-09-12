@@ -129,6 +129,58 @@ def solve_eval_back_to_back(
     }
 
 # ---------------------------------------------------------------------------
+# Finaler Voll-Solve mit Intrinsics-Refine (fokal/principal/radial = True)
+# ---------------------------------------------------------------------------
+def solve_final_refine(
+    *,
+    model: Any,
+    apply_model: Callable[[Any], None],
+    solve_full: Optional[Callable[..., float]] = None,
+) -> float:
+    """
+    Führt NACH abgeschlossener Modell-Evaluierung einen letzten, vollwertigen Solve
+    mit aktivierten Intrinsics-Refine-Flags aus:
+      - refine_intrinsics_focal_length = True
+      - refine_intrinsics_principal_point = True
+      - refine_intrinsics_radial_distortion = True
+
+    Parameter:
+      model        : Sieger-Modell aus der Eval
+      apply_model  : Callable, das das Distortion-Modell setzt
+      solve_full   : Optionaler Callable, der einen Voll-Solve ausführt und einen Score liefert.
+                     Falls None, wird solve_camera_only(...) verwendet.
+
+    Rückgabe:
+      float Score des finalen Solves (falls Helper Score liefert, sonst 0.0 als Fallback).
+    """
+    from ..Helper.solve_camera import solve_camera_only  # lokal import, falls oben bereits vorhanden kein Thema
+
+    if model is None:
+        print("[SolveEval][FINAL] Kein Modell übergeben – finaler Refine-Solve wird übersprungen.")
+        return float("inf")
+
+    apply_model(model)
+    with phase_lock("SOLVE_FINAL"), undo_off():
+        t1 = time.perf_counter()
+        # bevorzugt: eigener Voll-Solve-Wrapper; Fallback: solve_camera_only(...)
+        if solve_full is not None:
+            score = solve_full(
+                refine_intrinsics_focal_length=True,
+                refine_intrinsics_principal_point=True,
+                refine_intrinsics_radial_distortion=True,
+            )
+        else:
+            # Fallback: direkter Helper-Call; liefert ggf. None → robust auf 0.0 casten
+            score = solve_camera_only(
+                refine_intrinsics_focal_length=True,
+                refine_intrinsics_principal_point=True,
+                refine_intrinsics_radial_distortion=True,
+            ) or 0.0
+        dt = time.perf_counter() - t1
+        print(f"[SolveEval][FINAL] {model}: score={score:.6f} dur={dt:.3f}s")
+        return float(score)
+
+# ---------------------------------------------------------------------------
 # Console logging
 # ---------------------------------------------------------------------------
 # To avoid cluttering the console with debug and status messages, all direct
