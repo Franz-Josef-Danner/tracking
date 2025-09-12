@@ -8,7 +8,7 @@ def ensure_repeat_scope_props():
         bpy.types.Scene.kc_show_repeat_scope = bpy.props.BoolProperty(
             name="Repeat-Scope",
             description="Zeigt eine Box im Viewer mit der Wiederholungskurve über die Szenenlänge",
-            default=False,
+            default=True,
             update=lambda s, c: _toggle_repeat_scope(s),
         )
     if not hasattr(bpy.types.Scene, "kc_repeat_scope_height"):
