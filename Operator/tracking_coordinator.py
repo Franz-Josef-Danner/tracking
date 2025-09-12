@@ -129,6 +129,106 @@ def solve_eval_back_to_back(
     }
 
 # ---------------------------------------------------------------------------
+# Finaler Voll-Solve mit Intrinsics-Refine (fokal/principal/radial = True)
+# ---------------------------------------------------------------------------
+def solve_final_refine(
+    *,
+    context: bpy.types.Context,
+    model: Any,
+    apply_model: Callable[[Any], None],
+    solve_full: Optional[Callable[..., float]] = None,
+) -> float:
+    """
+    Führt NACH abgeschlossener Modell-Evaluierung einen letzten, vollwertigen Solve
+    mit aktivierten Intrinsics-Refine-Flags aus:
+      - refine_intrinsics_focal_length = True
+      - refine_intrinsics_principal_point = True
+      - refine_intrinsics_radial_distortion = True
+
+    Parameter:
+      model        : Sieger-Modell aus der Eval
+      apply_model  : Callable, das das Distortion-Modell setzt
+      solve_full   : Optionaler Callable, der einen Voll-Solve ausführt und einen Score liefert.
+                     Falls None, wird solve_camera_only(...) verwendet.
+
+    Rückgabe:
+      float Score des finalen Solves (falls Helper Score liefert, sonst 0.0 als Fallback).
+    """
+    from ..Helper.solve_camera import solve_camera_only  # lokal import, falls oben bereits vorhanden kein Thema
+
+    if model is None:
+        print("[SolveEval][FINAL] Kein Modell übergeben – finaler Refine-Solve wird übersprungen.")
+        return float("inf")
+
+    apply_model(model)
+    # Spiegel die Flags in die Tracking-Settings (sichtbar im UI)
+    _apply_refine_flags(context, focal=True, principal=True, radial=True)
+    with phase_lock("SOLVE_FINAL"), undo_off():
+        t1 = time.perf_counter()
+        # bevorzugt: eigener Voll-Solve-Wrapper; Fallback: solve_camera_only(...)
+        if solve_full is not None:
+            score = solve_full(
+                context,
+                refine_intrinsics_focal_length=True,
+                refine_intrinsics_principal_point=True,
+                refine_intrinsics_radial_distortion=True,
+            )
+        else:
+            # Fallback: direkter Helper-Call; liefert ggf. None → robust auf 0.0 casten
+            score = solve_camera_only(
+                context,
+                refine_intrinsics_focal_length=True,
+                refine_intrinsics_principal_point=True,
+                refine_intrinsics_radial_distortion=True,
+            ) or 0.0
+        dt = time.perf_counter() - t1
+        print(f"[SolveEval][FINAL] {model}: score={score:.6f} dur={dt:.3f}s")
+        return float(score)
+
+# ---------------------------------------------------------------------------
+# Kombi-Wrapper: 3×-Eval + finaler Voll-Solve (alle refine_intrinsics = True)
+# ---------------------------------------------------------------------------
+def solve_eval_with_final_refine(
+    *,
+    clip,
+    candidate_models: Iterable[Any],
+    apply_model: Callable[[Any], None],
+    do_solve_quick: Callable[..., float],
+    solve_full: Optional[Callable[..., float]] = None,
+    rank_callable: Optional[Callable[[float, Any], float]] = None,
+    time_budget_sec: float = 10.0,
+    max_trials: int = 3,
+    quick: bool = True,
+    solve_kwargs: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Führt back-to-back die Modell-Evaluierung (3× Solve) aus und danach
+    EINEN finalen Voll-Solve mit aktivierten Intrinsics-Refine-Flags.
+    Eval bleibt strikt read-only; der finale Solve ist getrennt gekapselt.
+    Rückgabe enthält Eval- und Final-Score.
+    """
+    # 1) Eval (read-only, ohne mutierende Helfer)
+    eval_result = solve_eval_back_to_back(
+        clip=clip,
+        candidate_models=candidate_models,
+        apply_model=apply_model,
+        do_solve=do_solve_quick,
+        rank_callable=rank_callable,
+        time_budget_sec=time_budget_sec,
+        max_trials=max_trials,
+        quick=quick,
+        solve_kwargs=solve_kwargs,
+    )
+    # 2) Finaler Refine-Solve (separat, mit allen Intrinsics-Flags)
+    final_score = solve_final_refine(
+        context=clip if isinstance(clip, bpy.types.Context) else bpy.context,
+        model=eval_result["model"],
+        apply_model=apply_model,
+        solve_full=solve_full,
+    )
+    return {**eval_result, "final_score": final_score}
+
+# ---------------------------------------------------------------------------
 # Console logging
 # ---------------------------------------------------------------------------
 # To avoid cluttering the console with debug and status messages, all direct
@@ -901,8 +1001,28 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         best = self._pick_best_run()
         self._tco_best = best
         self._restore_holdouts(context)
-        self._setup_model_refine(context, best.model, best.refine_stage)
-        self._begin_solve(context)
+        # 1) Gewonnenes Distortion-Modell setzen (ohne Downranking der Flags)
+        clip = self._get_clip(context)
+        cam = clip.tracking.camera
+        try:
+            cam.distortion_model = best.model
+        except Exception:
+            pass
+        # 2) Alle drei Intrinsics-Refine-Flags aktivieren (UI + Solve-Call)
+        _apply_refine_flags(context, focal=True, principal=True, radial=True)
+        # 3) Finalen Refine-Solve starten – synchron, mit Flags
+        try:
+            solve_camera_only(
+                context,
+                refine_intrinsics_focal_length=True,
+                refine_intrinsics_principal_point=True,
+                refine_intrinsics_radial_distortion=True,
+            )
+        except Exception:
+            # Fallback auf den Operator (nimmt Flags aus tracking.settings mit)
+            bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+        # 4) State umstellen – der modal()-Loop wartet auf Abschluss
+        self._tco_solve_started_at = time.monotonic()
         self._tco_state = "WAIT_FINAL_SOLVE"
 
     def _finish(self, context, *, info: str | None = None, cancelled: bool = False):
