@@ -1,37 +1,66 @@
+"""Scene properties for Repeat Scope overlay."""
+
 import bpy
+from bpy.props import BoolProperty, IntProperty
 from importlib import import_module
 
-def _toggle_repeat_scope(self, context):
-    """
-    UI-Update-Callback für Scene.kc_show_repeat_scope.
-    Bindet den Overlay-Handler sicher an/ab.
-    """
-    try:
-        # Basis-Paket ermitteln (z.B. 'tracking' aus 'tracking.Helper')
-        base = __package__.split('.')[0] if __package__ else None
-        mod = import_module(f"{base}.ui.repeat_scope") if base else import_module("ui.repeat_scope")
-        if hasattr(mod, "enable_repeat_scope"):
-            mod.enable_repeat_scope(bool(getattr(context.scene, "kc_show_repeat_scope", False)))
-    except Exception as e:
-        print("[RepeatScope] toggle failed:", e)
 
-def ensure_repeat_scope_props():
-    s = bpy.types.Scene
-    if not hasattr(s, "kc_show_repeat_scope"):
-        s.kc_show_repeat_scope = bpy.props.BoolProperty(
-            name="Repeat-Scope anzeigen",
-            default=False,
-            update=_toggle_repeat_scope,
-            description="Zeigt das Repeat-Scope-Overlay im Movie Clip Editor an."
-        )
-    if not hasattr(s, "kc_overlay_height"):
-        s.kc_overlay_height = bpy.props.IntProperty(name="Höhe (px)", default=140, min=60, max=800)
-    if not hasattr(s, "kc_overlay_margin_bottom"):
-        s.kc_overlay_margin_bottom = bpy.props.IntProperty(name="Abstand unten (px)", default=24, min=0, max=200)
-    if not hasattr(s, "kc_overlay_margin_side"):
-        s.kc_overlay_margin_side = bpy.props.IntProperty(name="Seitenrand (px)", default=12, min=0, max=200)
-    if not hasattr(s, "kc_overlay_show_cursor"):
-        s.kc_overlay_show_cursor = bpy.props.BoolProperty(name="Frame-Cursor", default=True)
+# ---- Update-Callback: toggle handler lazily to avoid import cycles ----
+def _kc_update_repeat_scope(self, context):
+    try:
+        base = __package__.split('.')[0]  # e.g. "tracking"
+        mod = import_module(f"{base}.ui.repeat_scope")
+        mod.enable_repeat_scope(bool(getattr(self, "kc_show_repeat_scope", False)))
+    except Exception as e:
+        print("[RepeatScope] update skipped:", e)
+
+
+def register():
+    sc = bpy.types.Scene
+    sc.kc_show_repeat_scope = BoolProperty(
+        name="Repeat-Scope anzeigen",
+        description="Overlay für Repeat-Scope ein-/ausschalten",
+        default=False,
+        update=_kc_update_repeat_scope,
+    )
+    sc.kc_repeat_scope_height = IntProperty(
+        name="Höhe",
+        description="Höhe des Repeat-Scope im Viewport",
+        default=140,
+        min=80,
+        max=600,
+    )
+    sc.kc_repeat_scope_bottom = BoolProperty(
+        name="Unten andocken",
+        description="Overlay am unteren Rand andocken",
+        default=True,
+    )
+    sc.kc_repeat_scope_margin_x = IntProperty(
+        name="Rand X",
+        description="Horizontaler Innenabstand",
+        default=12,
+        min=0,
+        max=400,
+    )
+    sc.kc_repeat_scope_show_cursor = BoolProperty(
+        name="Cursorlinie",
+        description="Aktuellen Frame als Linie anzeigen",
+        default=True,
+    )
+
+
+def unregister():
+    sc = bpy.types.Scene
+    for attr in (
+        "kc_show_repeat_scope",
+        "kc_repeat_scope_height",
+        "kc_repeat_scope_bottom",
+        "kc_repeat_scope_margin_x",
+        "kc_repeat_scope_show_cursor",
+    ):
+        if hasattr(sc, attr):
+            delattr(sc, attr)
+
 
 def _tag_redraw():
     try:
@@ -45,8 +74,9 @@ def _tag_redraw():
         # Während Register/Preferences kann bpy.context eingeschränkt sein.
         pass
 
+
 def record_repeat_count(scene, frame, value):
-    """Schreibt einen Repeat-Wert für einen absoluten Frame in die Serien-ID-Property."""
+    """Store a repeat value for an absolute frame in a scene property."""
     if scene is None:
         try:
             scene = bpy.context.scene
@@ -70,3 +100,4 @@ def record_repeat_count(scene, frame, value):
         series[idx] = float(max(0.0, fval))
         scene["_kc_repeat_series"] = series
         _tag_redraw()
+
