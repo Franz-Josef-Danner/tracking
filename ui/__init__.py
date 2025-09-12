@@ -33,6 +33,7 @@ class KC_PT_OverlayPanel(bpy.types.Panel):
             col.prop(context.scene, "kc_repeat_scope_height", text="Höhe (px)")
             col.prop(context.scene, "kc_repeat_scope_bottom", text="Abstand unten (px)")
             col.prop(context.scene, "kc_repeat_scope_margin_x", text="Seitenrand (px)")
+            col.prop(context.scene, "kc_repeat_scope_show_cursor", text="Frame-Cursor")
         else:
             col.label(text="Scope-Props werden nach Register() initialisiert")
 
