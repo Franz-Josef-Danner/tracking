@@ -274,8 +274,23 @@ def run_detect_basic(
 # Thin Wrapper für Backward-Compat
 # -----------------------------
 def run_detect_once(context: bpy.types.Context, **kwargs) -> Dict[str, Any]:
-    # kwargs (inkl. select) werden 1:1 durchgereicht
-    res = run_detect_basic(context, **kwargs)
+    # kwargs kopieren, damit Aufrufer-Dict unverändert bleibt
+    kw = dict(kwargs)
+
+    # Schwelle hart fixieren – kein adaptives Tuning mehr
+    kw["threshold"] = 0.001
+
+    # min_distance: falls nicht gesetzt, Scene-Key verwenden
+    if "min_distance" not in kw or kw["min_distance"] is None:
+        kw["min_distance"] = bpy.context.scene.get("min_distance_base", None)
+
+    frame = kw.get("start_frame", bpy.context.scene.frame_current)
+    print(
+        f"[Detect] frame={int(frame)} thr={kw['threshold']:.3f} "
+        f"min_dist={kw['min_distance']}"
+    )
+
+    res = run_detect_basic(context, **kw)
     if res.get("status") != "READY":
         return res
     return {

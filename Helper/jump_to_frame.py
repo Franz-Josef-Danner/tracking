@@ -171,6 +171,20 @@ def run_jump_to_frame(
     else:
         scn.frame_current = target
 
+    # ---------------------------------------------------------------
+    # Reset der Distanzbasis nach jedem Jump:
+    # min_distance_base soll nach einem Sprung stets vom gleichen
+    # Ausgangswert starten. Heuristik: 2.5 % der Clipbreite
+    # (Fallback 150 px)
+    # ---------------------------------------------------------------
+    try:
+        width = int(getattr(clip, "size", (0, 0))[0]) if clip else 0
+        start_base = int(round(0.025 * width)) if width > 0 else 150
+        scn["min_distance_base"] = start_base
+        print(f"[Jump] Reset min_distance_base -> {start_base}px (frame={int(target)})")
+    except Exception as exc:
+        print(f"[Jump][WARN] Konnte min_distance_base nicht resetten: {exc!r}")
+
     # Besuchszählung je Ziel-Frame
     repeat_count = 1
     if repeat_map is not None:

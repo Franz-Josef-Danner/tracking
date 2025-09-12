@@ -1081,6 +1081,17 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             rj = run_jump_to_frame(context, frame=self.target_frame, repeat_map=self.repeat_map)
             if rj.get("status") != "OK":
                 return self._finish(context, info=f"JUMP FAILED â†’ {rj}", cancelled=True)
+
+            # HARDSYNC: Nach dem Jump min_distance_base immer neu initialisieren
+            try:
+                _clip = _resolve_clip(context)
+                w = int(getattr(_clip, "size", (0, 0))[0]) if _clip else 0
+                start_base = int(round(0.025 * w)) if w > 0 else 150
+                context.scene["min_distance_base"] = start_base
+                print(f"[Coordinator] Post-Jump reset min_distance_base -> {start_base}px")
+            except Exception as exc:
+                print(f"[Coordinator][WARN] Post-Jump Reset failed: {exc!r}")
+
             self.report({'INFO'}, f"Playhead gesetzt: f{rj.get('frame')} (repeat={rj.get('repeat_count')})")
 
             # NEU: Anzahl/Motion-Model orchestrieren und ggf. bei 10 abbrechen
