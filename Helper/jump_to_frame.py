@@ -10,6 +10,15 @@ def _kc_record_repeat(scene, frame, repeat_value):
         pass
 
 
+def _kc_record_repeat_bulk_map(scene, repeat_map):
+    """Optionaler Bulk-Schreibzugriff ohne harten Import."""
+    try:
+        from .properties import record_repeat_bulk_map
+        record_repeat_bulk_map(scene, repeat_map)
+    except Exception:
+        pass
+
+
 __all__ = ("run_jump_to_frame", "jump_to_frame")  # jump_to_frame = Legacy-Wrapper
 REPEAT_SATURATION = 10  # Ab dieser Wiederholungsanzahl: Optimizer anstoßen statt Detect
 
@@ -19,7 +28,15 @@ REPEAT_SATURATION = 10  # Ab dieser Wiederholungsanzahl: Optimizer anstoßen sta
 # ---------------------------------------------------------------------------
 # Statt "pro Frame -1" wird nur alle N Frames um 1 dekrementiert.
 # Damit entsteht ein Plateau von N Frames pro Stufe.
-FADE_STEP_FRAMES: int = 5  # vorher effektiv: 1
+FADE_STEP_FRAMES: int = 5  # stufiger Abfall alle 5 Frames
+
+
+def _fade_step_frames() -> int:
+    try:
+        val = int(getattr(bpy.context.scene, "kc_repeat_fade_step", FADE_STEP_FRAMES))
+        return max(1, val)
+    except Exception:
+        return FADE_STEP_FRAMES
 
 
 def _clamp(v: int, lo: int = 0, hi: int | None = None) -> int:
@@ -29,25 +46,26 @@ def _clamp(v: int, lo: int = 0, hi: int | None = None) -> int:
 
 
 def _spread_repeat_to_neighbors(repeat_map: dict[int, int], center_f: int, radius: int, base: int) -> None:
+    """5-Frame-Stufenabfall um center_f; schreibt NUR ins lokale Mapping (kein Live-Redraw)."""
+    # Szenegrenzen sauber clampen
     try:
-        scene = bpy.context.scene
+        scn = bpy.context.scene
+        fmin, fmax = int(scn.frame_start), int(scn.frame_end)
     except Exception:
-        scene = None
-    # Neu: stufiger Fade: nur alle FADE_STEP_FRAMES -1
+        fmin, fmax = -10**9, 10**9
+    if radius < 0:
+        radius = 0
     for off in range(-radius, radius + 1):
         f = center_f + off
-        if f < 0:
+        if f < fmin or f > fmax:
             continue
-        # Decrement nur in 5er-Schritten: 0..4 → 0, 5..9 → 1, 10..14 → 2, ...
-        dec = abs(off) // FADE_STEP_FRAMES  # stufig (neu)
+        # Decrement in 5er-Schritten: 0..4 → 0, 5..9 → 1, 10..14 → 2, ...
+        dec = abs(off) // _fade_step_frames()
         v = base - dec
         if v <= 0:
             continue
-        # nur erhöhen, nie verringern
-        cur = repeat_map.get(f, 0)
-        if v > cur:
+        if v > repeat_map.get(f, 0):  # nur anheben
             repeat_map[f] = v
-            _kc_record_repeat(scene, f, v)
 
 
 def diffuse_repeat_counts(repeat_map: dict[int, int], radius: int) -> dict[int, int]:
@@ -190,7 +208,23 @@ def run_jump_to_frame(
     if repeat_map is not None:
         repeat_count = int(repeat_map.get(target, 0)) + 1
         repeat_map[target] = repeat_count
-        _kc_record_repeat(scn, target, repeat_count)
+    else:
+        # Fallback: Scene-Map als Quelle, damit Overlay immer aktualisiert wird
+        try:
+            from .properties import get_repeat_map
+            cur = int(get_repeat_map(scn).get(target, 0))
+        except Exception:
+            cur = 0
+        repeat_count = cur + 1
+        repeat_map = {int(target): repeat_count}
+
+    # Center-Peak NICHT sofort ins Overlay schreiben; Bulk-Write unten vermeidet Flackern.
+    # Diffusion NUR um den aktuellen Jump, nicht global.
+    step = _fade_step_frames()
+    radius = max(0, repeat_count * step - 1)
+    expanded = dict(repeat_map)  # bestehende Peaks unverändert lassen
+    _spread_repeat_to_neighbors(expanded, target, radius, repeat_count)
+    _kc_record_repeat_bulk_map(scn, expanded)
 
     # Debugging & Transparenz
     try:
