@@ -1,45 +1,55 @@
-"""Scene properties for Repeat Scope overlay."""
+"""Scene properties + helpers for the Repeat Scope overlay."""
 
 import bpy
 from bpy.props import BoolProperty, IntProperty
 from importlib import import_module
 
+__all__ = ("register", "unregister", "record_repeat_count")
 
-# ---- Update-Callback: toggle handler lazily to avoid import cycles ----
+
+# -----------------------------------------------------------------------------
+# Update-Callback: Toggle Handler (lazy import, robust bei Bindestrichen)
+# -----------------------------------------------------------------------------
 def _kc_update_repeat_scope(self, context):
     try:
-        base = __package__.split('.')[0]  # z.B. "tracking" oder "tracking-add-scope"
-        mod = import_module(f"{base}.ui.repeat_scope")
-        mod.enable_repeat_scope(bool(getattr(self, "kc_show_repeat_scope", False)))
+        # Relativ importieren, damit ein Addon-Ordnername mit "-" nicht stört.
+        mod = import_module("..ui.repeat_scope", __package__)
+        enable = bool(getattr(self, "kc_show_repeat_scope", False))
+        mod.enable_repeat_scope(enable)
     except Exception as e:
-        # Kein hartes Fail beim Laden/Prefs; nur ausgeben.
+        # Beim Laden/Prefs nicht hart fehlschlagen.
         print("[RepeatScope] update skipped:", e)
 
 
 def register():
-    sc = bpy.types.Scene
-    sc.kc_show_repeat_scope = BoolProperty(
+    """Register Repeat-Scope Scene properties (von Addon-__init__.py aufgerufen)."""
+    Scene = bpy.types.Scene
+
+    # Sichtbarkeit / Lifecycle (mit Update-Callback)
+    Scene.kc_show_repeat_scope = BoolProperty(
         name="Repeat-Scope anzeigen",
         description="Overlay für Repeat-Scope ein-/ausschalten",
         default=False,
         update=_kc_update_repeat_scope,
     )
-    sc.kc_repeat_scope_height = IntProperty(
+
+    # Layout
+    Scene.kc_repeat_scope_height = IntProperty(
         name="Höhe",
-        description="Höhe des Repeat-Scope im Viewport",
-        default=140, min=80, max=600,
+        description="Höhe des Repeat-Scope (Pixel)",
+        default=140, min=40, max=800,
     )
-    sc.kc_repeat_scope_bottom = BoolProperty(
-        name="Unten andocken",
-        description="Overlay am unteren Rand andocken",
-        default=True,
+    Scene.kc_repeat_scope_bottom = IntProperty(
+        name="Abstand unten",
+        description="Abstand vom unteren Rand (Pixel)",
+        default=24, min=0, max=2000,
     )
-    sc.kc_repeat_scope_margin_x = IntProperty(
+    Scene.kc_repeat_scope_margin_x = IntProperty(
         name="Rand X",
-        description="Horizontaler Innenabstand",
-        default=12, min=0, max=400,
+        description="Horizontaler Innenabstand (Pixel)",
+        default=12, min=0, max=2000,
     )
-    sc.kc_repeat_scope_show_cursor = BoolProperty(
+    Scene.kc_repeat_scope_show_cursor = BoolProperty(
         name="Cursorlinie",
         description="Aktuellen Frame als Linie anzeigen",
         default=True,
@@ -47,7 +57,8 @@ def register():
 
 
 def unregister():
-    sc = bpy.types.Scene
+    """Unregister Repeat-Scope Scene properties."""
+    Scene = bpy.types.Scene
     for attr in (
         "kc_show_repeat_scope",
         "kc_repeat_scope_height",
@@ -55,12 +66,14 @@ def unregister():
         "kc_repeat_scope_margin_x",
         "kc_repeat_scope_show_cursor",
     ):
-        if hasattr(sc, attr):
-            delattr(sc, attr)
+        if hasattr(Scene, attr):
+            delattr(Scene, attr)
 
 
-# ---- Helper: Serie für Repeats (für das Overlay) ---------------------------
-def _tag_redraw():
+# -----------------------------------------------------------------------------
+# Helper: Serie für Repeats (wird von jump_to_frame.py befüllt)
+# -----------------------------------------------------------------------------
+def _tag_redraw() -> None:
     try:
         for w in bpy.context.window_manager.windows:
             for a in w.screen.areas:
@@ -73,8 +86,12 @@ def _tag_redraw():
         pass
 
 
-def record_repeat_count(scene, frame, value):
-    """Store a repeat value for an absolute frame in a scene property."""
+def record_repeat_count(scene, frame, value) -> None:
+    """Speichert den Repeat-Wert für einen absoluten Frame in Scene-ID-Props.
+
+    Die Serie liegt in scene['_kc_repeat_series'] (Float-Liste in Frame-Range).
+    Das Overlay liest diese Serie direkt und zeichnet sie.
+    """
     if scene is None:
         try:
             scene = bpy.context.scene
