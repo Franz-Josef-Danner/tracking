@@ -48,11 +48,24 @@ def _draw_scope() -> None:
 
     # Datenserie
     fs, fe = s.frame_start, s.frame_end
-    seq = list(s.get("_kc_repeat_series", []))
+    try:
+        from ..Helper.properties import get_repeat_series_map  # type: ignore
+        series_map = get_repeat_series_map(s)
+    except Exception:
+        data = s.get("_kc_repeat_series", {})
+        if isinstance(data, dict):
+            series_map = {int(k): int(v) for k, v in data.items() if isinstance(k, (int, float))}
+        else:
+            fs_fallback = int(getattr(s, "frame_start", 1))
+            series_map = {fs_fallback + i: int(v) for i, v in enumerate(data or [])}
+    if series_map:
+        vmin = 0
+        vmax = max(series_map.values())
+    else:
+        vmin = vmax = 0
     n = max(1, fe - fs + 1)
-    if len(seq) != n:
-        seq = [0] * n
-    vmax = max(1, max(seq) if seq else 1)
+    seq = [int(series_map.get(fs + i, 0)) for i in range(n)]
+    vmax = max(1, vmax)
     width, height_px = x1 - x0, y1 - y0
 
     # Quantisierung der Werte

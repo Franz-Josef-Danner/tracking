@@ -9,7 +9,9 @@ __all__ = (
     "unregister",
     "record_repeat_count",
     "record_repeat_series",
+    "record_repeat_series_bulk",
     "record_repeat_bulk_map",
+    "get_repeat_series_map",
     "ensure_repeat_scope_props",
 )
 
@@ -61,14 +63,19 @@ def register():
         description="Aktuellen Frame als Linie anzeigen",
         default=True,
     )
-    # Diffusions-Radius für die Nachbarübertragung (beeinflusst nur die Darstellung/Serie)
-    Scene.kc_repeat_scope_radius = IntProperty(
-        name="Radius (Frames)",
-        description="Wie weit die Wiederholungswerte in Nachbarframes diffundiert werden",
-        default=20,
-        min=0,
-        max=2000,
-    )
+    # Sichtbarer Radius-Parameter fürs Overlay-Fading (wenn nicht schon vorhanden)
+    if not hasattr(Scene, "kc_repeat_scope_radius"):
+        Scene.kc_repeat_scope_radius = IntProperty(
+            name="Repeat-Fade-Radius",
+            description="Ausbreitung der Wiederholungswerte in Frames f\u00fcr das Overlay",
+            default=20, min=0, soft_max=200,
+        )
+    if not hasattr(Scene, "kc_repeat_fade_step"):
+        Scene.kc_repeat_fade_step = IntProperty(
+            name="Fade-Schritt (Frames)",
+            description="Alle N Frames -1",
+            default=5, min=1, soft_max=20,
+        )
     Scene.kc_repeat_scope_levels = IntProperty(
         name="Höhenstufen",
         description="Anzahl der diskreten Höhenstufen für das Repeat-Scope (Quantisierung der Kurve)",
@@ -87,6 +94,7 @@ def unregister():
         "kc_repeat_scope_show_cursor",
         "kc_repeat_scope_radius",
         "kc_repeat_scope_levels",
+        "kc_repeat_fade_step",
     ):
         if hasattr(Scene, attr):
             delattr(Scene, attr)
@@ -142,7 +150,8 @@ def record_repeat_count(scene, frame, value) -> None:
 
 
 def record_repeat_series(scene, series, *, mode: str = "set") -> None:
-    """Schreibt eine komplette Serie in scene['_kc_repeat_series']."""
+    """Schreibt eine komplette Serie in scene['_kc_repeat_series'] (legacy List-API)."""
+    print("[RepeatScope] record_repeat_series: legacy list API")
     if scene is None:
         try:
             scene = bpy.context.scene
@@ -150,42 +159,97 @@ def record_repeat_series(scene, series, *, mode: str = "set") -> None:
             return
     if scene is None:
         return
-    fs, fe = scene.frame_start, scene.frame_end
-    n = max(0, int(fe - fs + 1))
-    if n <= 0:
-        return
-    target = [0.0] * n
-    src = list(series or [])
-    if len(src) != n:
-        src = (src + [0.0] * n)[:n]
-    if mode == "max" and scene.get("_kc_repeat_series") and len(scene["_kc_repeat_series"]) == n:
-        old = scene["_kc_repeat_series"]
-        target = [max(float(o), float(v)) for o, v in zip(old, src)]
+    fs = int(getattr(scene, "frame_start", 1))
+    fe = int(getattr(scene, "frame_end", fs))
+    mapping = {}
+    for i, v in enumerate(series or []):
+        try:
+            iv = int(v)
+        except Exception:
+            continue
+        f = fs + i
+        if fs <= f <= fe:
+            mapping[f] = iv
+    if mode == "max":
+        base = get_repeat_series_map(scene)
+        out = dict(base)
+        for f, v in mapping.items():
+            if v > out.get(f, 0):
+                out[f] = v
     else:
-        target = [float(v) for v in src]
-    scene["_kc_repeat_series"] = target
-    _tag_redraw()
+        out = mapping
+    out = {int(f): int(v) for f, v in out.items() if fs <= int(f) <= fe}
+    scene["_kc_repeat_series"] = out
+    try:
+        _tag_redraw()
+    except Exception:
+        pass
 
+def record_repeat_series_bulk(scene, mapping: dict[int, int]) -> None:
+    """Atomarer Bulk-Write der Repeat-Serie mit monotoner Erh\u00f6hung."""
+    try:
+        current = scene.get("_kc_repeat_series")
+        base = dict(current) if isinstance(current, dict) else {}
+        out = dict(base)
+        for f, v in mapping.items():
+            try:
+                fv = int(v)
+            except Exception:
+                continue
+            prev = int(out.get(f, 0))
+            if fv > prev:
+                out[f] = fv
+        fs, fe = int(scene.frame_start), int(scene.frame_end)
+        out = {int(f): int(v) for f, v in out.items() if fs <= int(f) <= fe}
+        scene["_kc_repeat_series"] = out
+    except Exception:
+        # Fallback: best effort – im Fehlerfall nichts crashen lassen
+        fs, fe = int(scene.frame_start), int(scene.frame_end)
+        scene["_kc_repeat_series"] = {
+            int(f): int(v)
+            for f, v in mapping.items()
+            if fs <= int(f) <= fe
+        }
+    try:
+        _tag_redraw()
+    except Exception:
+        pass
 
-def record_repeat_bulk_map(scene, repeat_map: dict[int, float]) -> None:
-    """Komfort-API: nimmt ein Mapping {frame_abs: value} und schreibt atomar die Serie."""
+# Neuer Name in deinem Branch:
+def record_repeat_bulk_map(scene, mapping: dict[int, int]) -> None:
+    return record_repeat_series_bulk(scene, mapping)
+
+# -----------------------------------------------------------------------------
+# Reader: vereinheitlichte Sicht auf die Serie als Dict {abs_frame: int}
+# -----------------------------------------------------------------------------
+def get_repeat_series_map(scene) -> dict[int, int]:
+    """Liefert die Repeat-Serie als Mapping {abs_frame: int}, egal ob intern als
+    Liste (frame_start-basiert) oder als Dict gespeichert."""
     if scene is None:
         try:
             scene = bpy.context.scene
         except Exception:
-            return
-    if scene is None:
-        return
-    fs, fe = scene.frame_start, scene.frame_end
-    n = max(0, int(fe - fs + 1))
-    if n <= 0:
-        return
-    series = [0.0] * n
-    for f, v in (repeat_map or {}).items():
-        idx = int(f) - int(fs)
-        if 0 <= idx < n:
-            series[idx] = max(float(series[idx]), float(v))
-    record_repeat_series(scene, series, mode="max")
+            return {}
+    data = scene.get("_kc_repeat_series")
+    if isinstance(data, dict):
+        out: dict[int, int] = {}
+        for k, v in data.items():
+            try:
+                out[int(k)] = int(v)
+            except Exception:
+                continue
+        return out
+    if isinstance(data, (list, tuple)):
+        fs = int(getattr(scene, "frame_start", 1))
+        out: dict[int, int] = {}
+        for i, v in enumerate(data):
+            try:
+                out[fs + i] = int(v)
+            except Exception:
+                continue
+        return out
+    return {}
+
 
 
 def ensure_repeat_scope_props() -> None:
