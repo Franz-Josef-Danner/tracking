@@ -1,10 +1,20 @@
 """Scene properties + helpers for the Repeat Scope overlay."""
 
 import bpy
-from bpy.props import BoolProperty, IntProperty
+from bpy.props import BoolProperty, IntProperty, FloatProperty
 from importlib import import_module
 
-__all__ = ("register", "unregister", "record_repeat_count")
+__all__ = ("register", "unregister", "record_repeat_count", "get_repeat_map")
+
+
+def _kc_request_overlay_redraw(context):
+    try:
+        mod = import_module("..ui.repeat_scope", __package__)
+        enable = bool(getattr(context.scene, "kc_show_repeat_scope", False))
+        mod.enable_repeat_scope(enable, source="prop_update")
+    except Exception:
+        # defensiv: während Startup/Prefs keine harten Fehler
+        pass
 
 
 # -----------------------------------------------------------------------------
@@ -54,6 +64,12 @@ def register():
         description="Aktuellen Frame als Linie anzeigen",
         default=True,
     )
+    Scene.kc_repeat_scope_levels = IntProperty(
+        name="Höhenstufen",
+        description="Anzahl der diskreten Höhenstufen für das Repeat-Scope (Quantisierung der Kurve)",
+        default=36, min=2, max=200,
+        update=lambda self, ctx: _kc_request_overlay_redraw(ctx),
+    )
 
 
 def unregister():
@@ -65,6 +81,7 @@ def unregister():
         "kc_repeat_scope_bottom",
         "kc_repeat_scope_margin_x",
         "kc_repeat_scope_show_cursor",
+        "kc_repeat_scope_levels",
     ):
         if hasattr(Scene, attr):
             delattr(Scene, attr)
@@ -84,6 +101,42 @@ def _tag_redraw() -> None:
     except Exception:
         # Während Register/Preferences kann bpy.context eingeschränkt sein.
         pass
+
+
+def get_repeat_map(scene=None) -> dict[int, int]:
+    """Return mapping abs frame -> repeat count (robust)."""
+    if scene is None:
+        try:
+            scene = bpy.context.scene
+        except Exception:
+            return {}
+    if scene is None:
+        return {}
+    m = scene.get("_kc_repeat_map")
+    if isinstance(m, dict):
+        out: dict[int, int] = {}
+        for k, v in m.items():
+            try:
+                ik, iv = int(k), int(v)
+            except Exception:
+                continue
+            if iv:
+                out[ik] = iv
+        return out
+    # Fallback: alte Liste
+    series = scene.get("_kc_repeat_series")
+    if isinstance(series, list):
+        fs = int(scene.frame_start)
+        out: dict[int, int] = {}
+        for i, v in enumerate(series):
+            try:
+                iv = int(v)
+            except Exception:
+                continue
+            if iv:
+                out[fs + i] = iv
+        return out
+    return {}
 
 
 def record_repeat_count(scene, frame, value) -> None:
@@ -112,7 +165,12 @@ def record_repeat_count(scene, frame, value) -> None:
             fval = float(value)
         except Exception:
             fval = 0.0
-        series[idx] = float(max(0.0, fval))
+        fval = float(max(0.0, fval))
+        series[idx] = fval
         scene["_kc_repeat_series"] = series
+        # Parallel: Map pflegen
+        m = get_repeat_map(scene)
+        m[int(frame)] = int(fval)
+        scene["_kc_repeat_map"] = m
     _tag_redraw()
 

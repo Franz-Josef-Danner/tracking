@@ -51,6 +51,7 @@ class KAISERLICH_PT_repeat_scope(bpy.types.Panel):
         col.prop(s, "kc_repeat_scope_bottom")
         col.prop(s, "kc_repeat_scope_margin_x")
         col.prop(s, "kc_repeat_scope_show_cursor")
+        col.prop(s, "kc_repeat_scope_levels", slider=True)
 
 
 # --- Registrierung ---
