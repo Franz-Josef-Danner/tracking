@@ -3,6 +3,7 @@
 
 import bpy
 import gpu
+import math
 from gpu_extras.batch import batch_for_shader
 
 # interner Handler
@@ -54,17 +55,39 @@ def _draw_scope() -> None:
     vmax = max(1, max(seq) if seq else 1)
     width, height_px = x1 - x0, y1 - y0
 
+    # Quantisierung der Werte
+    levels = max(2, int(getattr(s, "kc_repeat_scope_levels", 36)))
+    denom = float(levels - 1)
+    norm = [(v / vmax) if vmax else 0.0 for v in seq]
+    qnorm = []
+    for v in norm:
+        vn = 0.0 if v < 0.0 else (1.0 if v > 1.0 else v)
+        step = math.floor(vn * levels)
+        if step >= levels:
+            step = levels - 1
+        qnorm.append(step / denom)
+
+    # Punkt-Liste aus quantisierten Werten
     pts = []
-    L = max(1, len(seq) - 1)
-    for i, v in enumerate(seq):
-        t = i / L
+    Ln = max(1, len(qnorm) - 1)
+    for i, qv in enumerate(qnorm):
+        t = i / Ln
         px = x0 + t * width
-        py = y0 + (v / vmax) * height_px
+        py = y0 + qv * height_px
         pts.append((px, py))
     batch = batch_for_shader(sh, "LINE_STRIP", {"pos": pts})
     sh.bind()
     sh.uniform_float("color", (0.8, 0.9, 1.0, 1.0))
     batch.draw(sh)
+
+    # horizontale Hilfslinien gemäß Quantisierung
+    tick_step = max(1, int(math.ceil(levels / 10)))
+    for k in range(0, levels, tick_step):
+        y = y0 + (k / denom) * height_px
+        batch = batch_for_shader(sh, "LINES", {"pos": [(x0, y), (x1, y)]})
+        sh.bind()
+        sh.uniform_float("color", (1, 1, 1, 0.15))
+        batch.draw(sh)
 
     # Cursor
     if show_cur:

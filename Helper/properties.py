@@ -1,7 +1,7 @@
 """Scene properties + helpers for the Repeat Scope overlay."""
 
 import bpy
-from bpy.props import BoolProperty, IntProperty
+from bpy.props import BoolProperty, IntProperty, FloatProperty
 from importlib import import_module
 
 __all__ = ("register", "unregister", "record_repeat_count")
@@ -54,6 +54,11 @@ def register():
         description="Aktuellen Frame als Linie anzeigen",
         default=True,
     )
+    Scene.kc_repeat_scope_levels = IntProperty(
+        name="Höhenstufen",
+        description="Anzahl der diskreten Höhenstufen für das Repeat-Scope (Quantisierung der Kurve)",
+        default=36, min=2, max=200,
+    )
 
 
 def unregister():
@@ -65,6 +70,7 @@ def unregister():
         "kc_repeat_scope_bottom",
         "kc_repeat_scope_margin_x",
         "kc_repeat_scope_show_cursor",
+        "kc_repeat_scope_levels",
     ):
         if hasattr(Scene, attr):
             delattr(Scene, attr)
