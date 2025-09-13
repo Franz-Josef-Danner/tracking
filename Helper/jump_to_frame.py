@@ -190,7 +190,21 @@ def run_jump_to_frame(
     if repeat_map is not None:
         repeat_count = int(repeat_map.get(target, 0)) + 1
         repeat_map[target] = repeat_count
+        # 1) Lokalen Peak sofort im Map verankern
         _kc_record_repeat(scn, target, repeat_count)
+        # 2) Diffusion der Wiederholungswerte in Nachbarschaft anwenden
+        try:
+            radius = int(getattr(scn, "kc_repeat_scope_radius", 20))
+        except Exception:
+            radius = 20
+        expanded = diffuse_repeat_counts(repeat_map, radius=radius) if radius > 0 else dict(repeat_map)
+        # 3) Atomar eine vollständige Serie in die Scene schreiben (vermeidet Flackern)
+        try:
+            from .properties import record_repeat_bulk_map
+            record_repeat_bulk_map(scn, expanded)
+        except Exception:
+            # Fallback: mindestens den Peak schreiben (ist bereits passiert)
+            pass
 
     # Debugging & Transparenz
     try:
