@@ -1,253 +1,60 @@
 import bpy
-from typing import Optional, Dict, Any, Tuple
+from typing import Dict
+from .properties import (
+    get_repeat_count,
+    get_repeat_radius,
+    merge_repeat_series,
+)
 
-# Optionaler Hook: Repeat-Werte ins Scope spiegeln (defensiv, kein harter Import)
-def _kc_record_repeat(scene, frame, repeat_value):
+
+def _build_repeat_series(center_frame: int, base_count: int, radius: int) -> Dict[int, int]:
+    """
+    Erzeugt eine Frame->Count Serie mit 5-Frame-Decay:
+      - Count(center) = base_count
+      - Für Abstand d>=1: count = max(base_count - floor(d/5), 0)
+    Beispiel: base=7 ⇒ d=0:7, 1..4:7, 5..9:6, 10..14:5, ...
+    """
+    series: Dict[int, int] = {}
+    if base_count <= 0 or radius <= 0:
+        series[center_frame] = max(base_count, 0)
+        return series
+    f0 = int(center_frame)
+    # Szenegrenzen für Clamping (sicher gegen fehlenden Context)
     try:
-        from .properties import record_repeat_count
-        record_repeat_count(scene, frame, int(repeat_value))
+        scn = bpy.context.scene
+        fmin, fmax = int(scn.frame_start), int(scn.frame_end)
     except Exception:
-        pass
-
-# Fallback: komplettes Repeat-Series Mapping in Scene setzen
-def _kc_set_repeat_series(scene, mapping):
-    try:
-        scene["_kc_repeat_series"] = dict(mapping)
-    except Exception:
-        pass
-
-
-__all__ = ("run_jump_to_frame", "jump_to_frame")  # jump_to_frame = Legacy-Wrapper
-REPEAT_SATURATION = 10  # Ab dieser Wiederholungsanzahl: Optimizer anstoßen statt Detect
-
-
-def _clamp(v: int, lo: int = 0, hi: int | None = None) -> int:
-    if hi is None:
-        return v if v >= lo else lo
-    return lo if v < lo else (hi if v > hi else v)
-
-
-def _spread_repeat_to_neighbors(repeat_map: dict[int, int], center_f: int, radius: int, base: int) -> None:
-    try:
-        scene = bpy.context.scene
-    except Exception:
-        scene = None
-    fade_step = 5
-    if scene is not None:
-        try:
-            fade_step = max(1, int(getattr(scene, "kc_repeat_fade_step", 5)))
-        except Exception:
-            fade_step = 5
-    for off in range(-radius, radius + 1):
-        f = center_f + off
-        if f < 0:
+        fmin, fmax = -10**9, 10**9
+    for d in range(0, int(radius) + 1):
+        dec = d // 5  # 5-Frame-Raster
+        val = max(int(base_count) - int(dec), 0)
+        if val <= 0:
             continue
-        # Decrement nur in stufigen Schritten: 0..(fade_step-1) → 0, fade_step.. → 1, ...
-        dec = abs(off) // fade_step
-        v = base - dec
-        if v <= 0:
-            continue
-        # nur erhöhen, nie verringern
-        cur = repeat_map.get(f, 0)
-        if v > cur:
-            repeat_map[f] = v
-            _kc_record_repeat(scene, f, v)
+        left = max(fmin, min(f0 - d, fmax))
+        right = max(fmin, min(f0 + d, fmax))
+        series[left] = max(series.get(left, 0), val)
+        series[right] = max(series.get(right, 0), val)
+    return series
 
-
-def diffuse_repeat_counts(repeat_map: dict[int, int], radius: int) -> dict[int, int]:
+def record_jump_repeat_and_update_overlay(context: bpy.types.Context, target_frame: int) -> None:
     """
-    Breitet Wiederholungszähler auf Nachbarframes aus, mit stufigem Fade
-    (alle ``kc_repeat_fade_step`` Frames -1).
+    Kernroutine:
+      1) Basis-Count am Ziel-Frame inkrementieren
+      2) Serie mit 5-Frame-Decay bauen (Radius aus Scene-Property)
+      3) Atomar in Scene-Map mergen (max-Merge) und Overlay-Redraw triggern
     """
-    if not repeat_map or radius <= 0:
-        return repeat_map
-    out = dict(repeat_map)
-    for center_f, base in repeat_map.items():
-        _spread_repeat_to_neighbors(out, center_f, radius, base)
-    return out
+    scene = context.scene
+    target_frame = int(target_frame)
+    base = get_repeat_count(scene, target_frame) + 1
+    radius = get_repeat_radius(scene)
+    series = _build_repeat_series(target_frame, base, radius)
+    merge_repeat_series(scene, series)
 
 
-# -----------------------------------------------------------------------------
-# Utilities
-# -----------------------------------------------------------------------------
+def run_jump_to_frame(context: bpy.types.Context, frame: int) -> None:
+    """Beispiel-Jump-Wrapper: Setzt Frame und protokolliert Repeat-Serien."""
+    scene = context.scene
+    scene.frame_set(int(frame))
+    # Repeat-Serie erfassen und Overlay updaten
+    record_jump_repeat_and_update_overlay(context, int(frame))
 
-def _resolve_clip_and_scene(context, clip=None, scene=None) -> Tuple[Optional[bpy.types.MovieClip], bpy.types.Scene]:
-    scn = scene or context.scene
-    if clip is not None:
-        return clip, scn
-
-    # 1) Aktiver CLIP_EDITOR
-    space = getattr(context, "space_data", None)
-    if space and getattr(space, "type", None) == 'CLIP_EDITOR':
-        c = getattr(space, "clip", None)
-        if c:
-            return c, scn
-
-    # 2) Fallback: irgendein vorhandener Clip
-    for c in bpy.data.movieclips:
-        return c, scn
-
-    return None, scn
-
-
-def _clip_end(clip: bpy.types.MovieClip, scn: bpy.types.Scene) -> int:
-    try:
-        start = int(clip.frame_start)
-        dur = int(getattr(clip, "frame_duration", 0))
-        end = start + max(0, dur - 1)
-    except Exception:
-        start = int(clip.frame_start) if hasattr(clip, "frame_start") else int(scn.frame_start)
-        end = start
-    # Szene darf enger sein als Clip
-    return min(int(scn.frame_end), end)
-
-
-def _find_clip_area(win) -> Tuple[Optional[bpy.types.Area], Optional[bpy.types.Region]]:
-    if not win or not getattr(win, "screen", None):
-        return None, None
-    for area in win.screen.areas:
-        if area.type == 'CLIP_EDITOR':
-            reg = next((r for r in area.regions if r.type == 'WINDOW'), None)
-            return area, reg
-    return None, None
-
-
-# -----------------------------------------------------------------------------
-# Core
-# -----------------------------------------------------------------------------
-
-def run_jump_to_frame(
-    context,
-    *,
-    frame: Optional[int] = None,
-    ensure_clip: bool = True,
-    ensure_tracking_mode: bool = True,
-    use_ui_override: bool = True,
-    repeat_map: Optional[Dict[int, int]] = None,  # Operator-interne Wiederholungszählung
-) -> Dict[str, Any]:
-    """
-    Setzt den Playhead deterministisch auf 'frame' (oder scene['goto_frame']).
-    - Clamped auf Clipgrenzen
-    - Optionaler CLIP_EDITOR-Override & Modus-Setzung
-    - Zählt Wiederholungen NUR für per Jump gesetzte Frames via repeat_map
-
-    Returns:
-      {"status": "OK"|"FAILED",
-       "frame": int,
-       "repeat_count": int,
-       "clamped": bool,
-       "area_switched": bool}
-    """
-    scn = context.scene
-    clip, scn = _resolve_clip_and_scene(context)
-    if ensure_clip and not clip:
-        return {"status": "FAILED", "reason": "no_clip", "frame": None, "repeat_count": 0, "clamped": False, "area_switched": False}
-
-    # Ziel-Frame bestimmen
-    target = frame
-    if target is None:
-        target = scn.get("goto_frame", None)
-    if target is None:
-        return {"status": "FAILED", "reason": "no_target", "frame": None, "repeat_count": 0, "clamped": False, "area_switched": False}
-
-    target = int(target)
-
-    # Clamp an Clipgrenzen
-    clamped = False
-    if clip:
-        start = int(clip.frame_start)
-        end = _clip_end(clip, scn)
-        if target < start:
-            target = start
-            clamped = True
-        elif target > end:
-            target = end
-            clamped = True
-
-    # Optional: UI-Override (Area/Region) & Tracking-Mode
-    area_switched = False
-    if use_ui_override:
-        area, region = _find_clip_area(getattr(context, "window", None))
-        if area and region:
-            try:
-                with context.temp_override(area=area, region=region, space_data=area.spaces.active):
-                    if ensure_tracking_mode:
-                        try:
-                            sd = area.spaces.active
-                            if hasattr(sd, "mode") and sd.mode != 'TRACKING':
-                                sd.mode = 'TRACKING'
-                                area_switched = True
-                        except Exception:
-                            pass
-                    scn.frame_current = target
-            except Exception:
-                # Fallback: ohne Override setzen
-                scn.frame_current = target
-        else:
-            # Kein CLIP_EDITOR sichtbar → trotzdem setzen
-            scn.frame_current = target
-    else:
-        scn.frame_current = target
-
-    # Besuchszählung je Ziel-Frame
-    repeat_count = 1
-    if repeat_map is not None:
-        repeat_count = int(repeat_map.get(target, 0)) + 1
-        repeat_map[target] = repeat_count
-        # 1) Lokalen Peak sofort im Map verankern
-        _kc_record_repeat(scn, target, repeat_count)
-        # 2) Diffusion der Wiederholungswerte in Nachbarschaft anwenden
-        try:
-            radius = int(getattr(scn, "kc_repeat_scope_radius", 20))
-        except Exception:
-            radius = 20
-        if radius < 0:
-            radius = 0
-        expanded = diffuse_repeat_counts(repeat_map, radius=radius) if radius > 0 else dict(repeat_map)
-        # 3) Atomar eine vollständige Serie in die Scene schreiben (vermeidet Flackern)
-        try:
-            from .properties import record_repeat_bulk_map
-            record_repeat_bulk_map(scn, expanded)
-        except Exception:
-            # Fallback: komplette Serie direkt in Scene schreiben
-            _kc_set_repeat_series(scn, expanded)
-        try:
-            for win in bpy.context.window_manager.windows:
-                with bpy.context.temp_override(window=win):
-                    bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
-        except Exception:
-            pass
-
-    # Debugging & Transparenz
-    try:
-        scn["last_jump_frame"] = int(target)  # rein informativ
-    except Exception:
-        pass
-
-    # Sättigungsflag für Rückgabe/Logging
-    repeat_saturated = repeat_count >= REPEAT_SATURATION
-
-    return {
-        "status": "OK",
-        "frame": int(target),
-        "repeat_count": int(repeat_count),
-        "repeat_saturated": bool(repeat_saturated),
-        "clamped": bool(clamped),
-        "area_switched": bool(area_switched),
-    }
-
-
-# -----------------------------------------------------------------------------
-# Legacy-Wrapper (Kompatibilität)
-# -----------------------------------------------------------------------------
-
-def jump_to_frame(context):
-    """
-    Kompatibel zur alten Signatur:
-      - liest 'scene["goto_frame"]'
-      - ruft run_jump_to_frame()
-      - gibt bool zurück (True bei OK)
-    """
-    res = run_jump_to_frame(context, frame=None, repeat_map=None)
-    ok = (res.get("status") == "OK")
-    return ok

@@ -4,10 +4,31 @@
 import bpy
 import gpu
 import math
+from typing import Dict
 from gpu_extras.batch import batch_for_shader
+from ..Helper.properties import get_repeat_map
 
 # interner Handler
 _HDL = None
+
+
+def request_overlay_redraw(context: bpy.types.Context) -> None:
+    """
+    Externe Schnittstelle: Wird nach Bulk-Write der Repeat-Serie aufgerufen.
+    Ziel: Draw-Handler neu rendern (Header/Region-Redraw).
+    """
+    win = context and context.window
+    if not win:
+        return
+    for area in win.screen.areas:
+        if area.type == 'CLIP_EDITOR':
+            for region in area.regions:
+                if region.type in {'WINDOW', 'HEADER'}:
+                    region.tag_redraw()
+
+
+def _get_repeat_series_for_view(scene: bpy.types.Scene) -> Dict[int, int]:
+    return get_repeat_map(scene)
 
 
 def _draw_scope() -> None:
@@ -48,16 +69,7 @@ def _draw_scope() -> None:
 
     # Datenserie
     fs, fe = s.frame_start, s.frame_end
-    try:
-        from ..Helper.properties import get_repeat_series_map  # type: ignore
-        series_map = get_repeat_series_map(s)
-    except Exception:
-        data = s.get("_kc_repeat_series", {})
-        if isinstance(data, dict):
-            series_map = {int(k): int(v) for k, v in data.items() if isinstance(k, (int, float))}
-        else:
-            fs_fallback = int(getattr(s, "frame_start", 1))
-            series_map = {fs_fallback + i: int(v) for i, v in enumerate(data or [])}
+    series_map = _get_repeat_series_for_view(s)
     if series_map:
         vmin = 0
         vmax = max(series_map.values())

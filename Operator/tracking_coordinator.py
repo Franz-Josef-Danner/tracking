@@ -232,6 +232,7 @@ def _log(*args, **kwargs):
     return None
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame
 from ..Helper.jump_to_frame import run_jump_to_frame
+from ..Helper.properties import get_repeat_count
 # Primitive importieren; Orchestrierung (Formel/Freeze) erfolgt hier.
 from ..Helper.detect import run_detect_once as _primitive_detect_once
 from ..Helper.distanze import run_distance_cleanup
@@ -562,7 +563,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     _timer: object | None = None
     phase: str = PH_FIND_LOW
     target_frame: int | None = None
-    repeat_map: dict[int, int] = {}
     pre_ptrs: set[int] | None = None
     repeat_count_for_target: int | None = None
     # Aktueller Detection-Threshold; wird nach jedem Detect-Aufruf aktualisiert.
@@ -747,7 +747,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # Modal starten
         self.phase = PH_FIND_LOW
         self.target_frame = None
-        self.repeat_map = {}
         self.pre_ptrs = None
         # Threshold-ZurÃ¼cksetzen: beim ersten Detect-Aufruf wird der Standardwert verwendet
         self.detection_threshold = None
@@ -1070,10 +1069,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         if self.phase == PH_JUMP:
             if self.target_frame is None:
                 return self._finish(context, info="JUMP: Kein Ziel-Frame gesetzt.", cancelled=True)
-            rj = run_jump_to_frame(context, frame=self.target_frame, repeat_map=self.repeat_map)
-            if rj.get("status") != "OK":
-                return self._finish(context, info=f"JUMP FAILED â†’ {rj}", cancelled=True)
-            self.report({'INFO'}, f"Playhead gesetzt: f{rj.get('frame')} (repeat={rj.get('repeat_count')})")
+            try:
+                run_jump_to_frame(context, frame=self.target_frame)
+            except Exception as exc:
+                return self._finish(context, info=f"JUMP FAILED -> {exc}", cancelled=True)
+            repeat_count = get_repeat_count(context.scene, int(self.target_frame))
+            self.report({'INFO'}, f"Playhead gesetzt: f{self.target_frame} (repeat={repeat_count})")
 
             # NEU: Anzahl/Motion-Model orchestrieren und ggf. bei 10 abbrechen
             try:
@@ -1630,7 +1631,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self.detection_threshold = None
                 self.pre_ptrs = None
                 self.target_frame = None
-                self.repeat_map = {}
                 self.bidi_started = False
                 self.bidi_before_counts = None
                 self.repeat_count_for_target = None
