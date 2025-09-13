@@ -5,21 +5,20 @@ from typing import Optional, Dict, Any, Tuple
 def _kc_record_repeat(scene, frame, repeat_value):
     try:
         from .properties import record_repeat_count
-        record_repeat_count(scene, frame, float(repeat_value))
+        record_repeat_count(scene, frame, int(repeat_value))
+    except Exception:
+        pass
+
+# Fallback: komplettes Repeat-Series Mapping in Scene setzen
+def _kc_set_repeat_series(scene, mapping):
+    try:
+        scene["_kc_repeat_series"] = dict(mapping)
     except Exception:
         pass
 
 
 __all__ = ("run_jump_to_frame", "jump_to_frame")  # jump_to_frame = Legacy-Wrapper
 REPEAT_SATURATION = 10  # Ab dieser Wiederholungsanzahl: Optimizer anstoßen statt Detect
-
-
-# ---------------------------------------------------------------------------
-# Fade-Parameter
-# ---------------------------------------------------------------------------
-# Statt "pro Frame -1" wird nur alle N Frames um 1 dekrementiert.
-# Damit entsteht ein Plateau von N Frames pro Stufe.
-FADE_STEP_FRAMES: int = 5  # vorher effektiv: 1
 
 
 def _clamp(v: int, lo: int = 0, hi: int | None = None) -> int:
@@ -33,13 +32,18 @@ def _spread_repeat_to_neighbors(repeat_map: dict[int, int], center_f: int, radiu
         scene = bpy.context.scene
     except Exception:
         scene = None
-    # Neu: stufiger Fade: nur alle FADE_STEP_FRAMES -1
+    fade_step = 5
+    if scene is not None:
+        try:
+            fade_step = max(1, int(getattr(scene, "kc_repeat_fade_step", 5)))
+        except Exception:
+            fade_step = 5
     for off in range(-radius, radius + 1):
         f = center_f + off
         if f < 0:
             continue
-        # Decrement nur in 5er-Schritten: 0..4 → 0, 5..9 → 1, 10..14 → 2, ...
-        dec = abs(off) // FADE_STEP_FRAMES  # stufig (neu)
+        # Decrement nur in stufigen Schritten: 0..(fade_step-1) → 0, fade_step.. → 1, ...
+        dec = abs(off) // fade_step
         v = base - dec
         if v <= 0:
             continue
@@ -53,7 +57,7 @@ def _spread_repeat_to_neighbors(repeat_map: dict[int, int], center_f: int, radiu
 def diffuse_repeat_counts(repeat_map: dict[int, int], radius: int) -> dict[int, int]:
     """
     Breitet Wiederholungszähler auf Nachbarframes aus, mit stufigem Fade
-    (alle FADE_STEP_FRAMES Frames -1).
+    (alle ``kc_repeat_fade_step`` Frames -1).
     """
     if not repeat_map or radius <= 0:
         return repeat_map
@@ -197,13 +201,21 @@ def run_jump_to_frame(
             radius = int(getattr(scn, "kc_repeat_scope_radius", 20))
         except Exception:
             radius = 20
+        if radius < 0:
+            radius = 0
         expanded = diffuse_repeat_counts(repeat_map, radius=radius) if radius > 0 else dict(repeat_map)
         # 3) Atomar eine vollständige Serie in die Scene schreiben (vermeidet Flackern)
         try:
             from .properties import record_repeat_bulk_map
             record_repeat_bulk_map(scn, expanded)
         except Exception:
-            # Fallback: mindestens den Peak schreiben (ist bereits passiert)
+            # Fallback: komplette Serie direkt in Scene schreiben
+            _kc_set_repeat_series(scn, expanded)
+        try:
+            for win in bpy.context.window_manager.windows:
+                with bpy.context.temp_override(window=win):
+                    bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+        except Exception:
             pass
 
     # Debugging & Transparenz
