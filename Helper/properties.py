@@ -2,6 +2,7 @@
 import bpy
 from bpy.props import BoolProperty, IntProperty, FloatProperty
 from importlib import import_module
+from typing import Dict
 
 __all__ = (
     "register",
@@ -196,10 +197,14 @@ def record_repeat_count(scene, frame, value) -> None:
         scene["_kc_repeat_series"] = series
 
         # Parallel: Map pflegen
-        m = get_repeat_map(scene)
+        m: Dict[int, int] = get_repeat_map(scene)
         m[int(frame)] = int(fval)
-        # ID-Props verlangen STRING-Keys
+        # Blender ID-Props: Schlüssel müssen Strings sein
         scene["_kc_repeat_map"] = {str(k): int(v) for k, v in m.items()}
+        try:
+            print(f"[RepeatMap] single_write frame={int(frame)} val={int(fval)} size={len(m)}")
+        except Exception:
+            pass
         _tag_redraw()
 
 
@@ -259,14 +264,17 @@ def record_repeat_bulk_map(scene, repeat_map: dict[int, int]) -> None:
         written_frames.append(f)
 
     scene["_kc_repeat_series"] = series
-    # ID-Props verlangen STRING-Keys
+    # Blender ID-Props: Schlüssel müssen Strings sein
     scene["_kc_repeat_map"] = {str(k): int(v) for k, v in cur_map.items()}
-    print(f"[RepeatMap] stored keys={len(cur_map)} (stringified) map_ok=True")
+
     if written_frames:
         fmin, fmax = min(written_frames), max(written_frames)
         # Log-Ausgabe: Anzahl, Range, Änderungen, Max-Wert der Merge-Session
-        print(f"[RepeatMap] bulk_merge write_frames={len(written_frames)} "
-              f"range={fmin}..{fmax} changed={changed} unchanged={unchanged} vmax={vmax}")
+        print(
+            f"[RepeatMap] bulk_merge write_frames={len(written_frames)} "
+            f"range={fmin}..{fmax} changed={changed} unchanged={unchanged} vmax={vmax} "
+            f"(stored_keys={len(cur_map)})"
+        )
     else:
         print("[RepeatMap] bulk_merge had no in-range frames")
     _tag_redraw()
