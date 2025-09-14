@@ -1,7 +1,6 @@
 """Scene properties + helpers for the Repeat Scope overlay."""
 import bpy
 from bpy.props import BoolProperty, IntProperty, FloatProperty
-from importlib import import_module
 from typing import Dict
 
 __all__ = (
@@ -10,16 +9,18 @@ __all__ = (
     "record_repeat_count",
     "record_repeat_bulk_map",
     "get_repeat_map",
+    "enable_repeat_scope",
+    "set_repeat_scope_sticky",
+    "is_repeat_scope_enabled",
+    "redraw_clip_editors",
 )
 
 
 def _kc_request_overlay_redraw(context):
     try:
-        mod = import_module("..ui.repeat_scope", __package__)
         enable = bool(getattr(context.scene, "kc_show_repeat_scope", False))
-        mod.enable_repeat_scope(enable, source="prop_update")
+        enable_repeat_scope(context.scene, enable, source="prop_update")
     except Exception:
-        # defensiv: während Startup/Prefs keine harten Fehler
         pass
 
 
@@ -29,12 +30,9 @@ def _kc_request_overlay_redraw(context):
 
 def _kc_update_repeat_scope(self, context):
     try:
-        # Relativ importieren, damit ein Addon-Ordnername mit "-" nicht stört.
-        mod = import_module("..ui.repeat_scope", __package__)
         enable = bool(getattr(self, "kc_show_repeat_scope", False))
-        mod.enable_repeat_scope(enable)
+        enable_repeat_scope(context.scene, enable)
     except Exception as e:
-        # Beim Laden/Prefs nicht hart fehlschlagen.
         print("[RepeatScope] update skipped:", e)
 
 
@@ -122,6 +120,61 @@ def _tag_redraw() -> None:
     except Exception:
         # Während Register/Preferences kann bpy.context eingeschränkt sein.
         pass
+
+
+def redraw_clip_editors() -> None:
+    _tag_redraw()
+
+
+_STICKY_KEY = "_kc_repeat_scope_sticky"
+
+
+def is_repeat_scope_enabled(scn: bpy.types.Scene) -> bool:
+    return bool(getattr(scn, "kc_show_repeat_scope", False))
+
+
+def set_repeat_scope_sticky(scn: bpy.types.Scene, sticky: bool, *, source: str = "api") -> None:
+    scn[_STICKY_KEY] = bool(sticky)
+    try:
+        print(f"[KC] set_repeat_scope_sticky({bool(sticky)}) source={source}")
+    except Exception:
+        pass
+
+
+def enable_repeat_scope(
+    scn: bpy.types.Scene,
+    enabled: bool,
+    *,
+    source: str = "api",
+    sticky: bool | None = None,
+) -> None:
+    if scn is None:
+        try:
+            scn = bpy.context.scene
+        except Exception:
+            return
+    if scn is None:
+        return
+
+    if sticky is not None:
+        set_repeat_scope_sticky(scn, bool(sticky), source=source)
+
+    scn.kc_show_repeat_scope = bool(enabled)
+    print(
+        f"[KC] enable_repeat_scope({bool(enabled)}) source={source} sticky={scn.get(_STICKY_KEY)}"
+    )
+
+    try:
+        from ..ui import repeat_scope as _rs
+
+        if enabled:
+            _rs.ensure_repeat_scope_handler(scn)
+        else:
+            _rs.disable_repeat_scope_handler()
+    except Exception as e:  # noqa: BLE001
+        print(f"[KC][WARN] repeat_scope handler toggle failed: {e!r}")
+
+    _tag_redraw()
 
 
 def get_repeat_map(scene=None) -> dict[int, int]:
