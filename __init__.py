@@ -56,7 +56,7 @@ def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) ->
     from .ui.solve_log import kaiserlich_solve_log_add as _impl
     _impl(context, value)
     
-# GPU-Overlay wandert vollständig nach ui.overlay (draw handler & Zeichnung)
+# Repeat Scope overlay handled via ui.repeat_scope; legacy overlay removed
 
 def _register_scene_props() -> None:
     sc = bpy.types.Scene
