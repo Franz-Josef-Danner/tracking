@@ -13,6 +13,7 @@ import bgl
 from math import floor
 
 _HDL_KEY = "_KC_REPEAT_SCOPE_HDL"
+_NO_DATA_LOGGED = False  # einmalige "no data" Diagnose pro Session
 
 def _get_series_and_range(scn: bpy.types.Scene) -> tuple[list[float], int, int]:
     """Robust Serie + [fs, fe] ermitteln; leere Serie → []."""
@@ -135,17 +136,37 @@ def _draw_callback():
     levels = int(getattr(scn, "kc_repeat_scope_levels", 36))
 
     series, fs, fe = _get_series_and_range(scn)
-    if not series:
-        return
 
     W, H = _viewport_size()
     if W <= 0 or H <= 0:
+        # kein gültiger Viewport – nichts zu zeichnen
         return
 
     ox = max(0, margin_x)
     ow = max(1, W - 2 * margin_x)
     oy = max(0, bottom)
-    oh = max(8, min(H_px, H - oy - 4))
+    # Clamp, falls Scope außerhalb liegen würde
+    oh = max(8, min(H_px, max(8, H - oy - 4)))
+
+    # Hintergrundrahmen: immer zeichnen (auch ohne Daten)
+    try:
+        shader = gpu.shader.from_builtin('UNIFORM_COLOR')
+        box = [(ox, oy), (ox + ow, oy), (ox + ow, oy + oh), (ox, oy + oh)]
+        batch = batch_for_shader(shader, 'LINE_LOOP', {"pos": box})
+        shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.28)); batch.draw(shader)
+    except Exception:
+        pass
+
+    # Wenn keine Daten vorhanden, früh aussteigen – aber einmalig diagnostizieren
+    global _NO_DATA_LOGGED
+    if not series:
+        if not _NO_DATA_LOGGED:
+            _NO_DATA_LOGGED = True
+            try:
+                print("[Scope][Draw] no series yet – drawing frame only (enable handler OK, waiting for data)")
+            except Exception:
+                pass
+        return
 
     # Skalen
     vmax = max(series) if series else 1.0
@@ -165,14 +186,6 @@ def _draw_callback():
 
     if not coords:
         return
-
-    # Hintergrundrahmen (optional)
-    try:
-        box = [(ox, oy), (ox + ow, oy), (ox + ow, oy + oh), (ox, oy + oh)]
-        batch = batch_for_shader(shader, 'LINE_LOOP', {"pos": box})
-        shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.28)); batch.draw(shader)
-    except Exception:
-        pass
 
     # Kurve
     try:
@@ -238,6 +251,17 @@ def enable_repeat_scope(enable: bool, *, source: str = "api") -> None:
             )
             _store_handle(hdl)
             print(f"[KC] enable_repeat_scope(True) source={source}")
+            # sofortiger Redraw-Kick in allen CLIP_EDITOR Fenstern
+            try:
+                for w in bpy.context.window_manager.windows:
+                    for a in w.screen.areas:
+                        if a.type == 'CLIP_EDITOR':
+                            for r in a.regions:
+                                if r.type == 'WINDOW':
+                                    r.tag_redraw()
+                print("[KC] redraw tag propagated to CLIP_EDITOR windows")
+            except Exception:
+                pass
         except Exception as e:
             print(f"[KC] enable_repeat_scope failed: {e}")
             return
