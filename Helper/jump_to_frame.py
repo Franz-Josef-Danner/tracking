@@ -41,6 +41,7 @@ def _clamp(v: int, lo: int = 0, hi: int | None = None) -> int:
         return v if v >= lo else lo
     return lo if v < lo else (hi if v > hi else v)
 
+
 def _spread_repeat_to_neighbors(repeat_map: dict[int, int], center_f: int, radius: int, base: int) -> None:
     """5-Frame-Stufenabfall um center_f; schreibt NUR ins lokale Mapping (kein Live-Redraw)."""
     # Szenegrenzen sauber clampen
@@ -66,6 +67,7 @@ def _spread_repeat_to_neighbors(repeat_map: dict[int, int], center_f: int, radiu
         # Max-Merge: nur anheben
         if v > repeat_map.get(f, 0):
             repeat_map[f] = v
+
 
 def diffuse_repeat_counts(repeat_map: dict[int, int], radius: int) -> dict[int, int]:
     """Breitet Wiederholungszähler auf Nachbarframes aus, mit stufigem Fade."""
@@ -202,7 +204,7 @@ def run_jump_to_frame(
         repeat_count = cur + 1
         repeat_map = {int(target): repeat_count}
 
-    # Center-Peak NICHT sofort ins Overlay schreiben; Bulk-Write unten vermeidet Flackern.
+    # Center-Peak NICHT sofort einzeln schreiben; Bulk-Write vermeidet Flackern.
     # Diffusion NUR um den aktuellen Jump, nicht global.
     step = _fade_step_frames()
     radius = max(0, repeat_count * step - 1)
@@ -212,9 +214,8 @@ def run_jump_to_frame(
     # Logging vor dem Write
     try:
         keys = sorted(expanded.keys())
-        ksamp = keys[:8]
-        print(f"[JumpTo][Repeat] count={repeat_count} step={step} radius={radius} "
-              f"frames_expanded={len(keys)} keys_sample={ksamp}{'…' if len(keys) > len(ksamp) else ''}")
+        print(f"[JumpTo] target={target} repeat={repeat_count} radius={radius} step={step} "
+              f"write_frames={len(keys)} range={keys[0]}..{keys[-1]}")
     except Exception:
         pass
 
