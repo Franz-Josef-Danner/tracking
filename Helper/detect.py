@@ -70,7 +70,7 @@ def _detect_features(*, placement: str, margin: int, threshold: float, min_dista
             return bpy.ops.clip.detect_features(**kw)
         except TypeError:
             # Fallback fÃ¼r exotische Builds: wenigstens Threshold setzen
-            return bpy.ops.clip.detect_features(threshold=float(max(threshold, 0.0001)))
+            return bpy.ops.clip.detect_features(threshold=float(max(threshold, 0.00001)))
 
     override = _ensure_clip_context(bpy.context)
     call_kwargs = dict(
