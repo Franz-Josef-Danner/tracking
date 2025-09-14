@@ -1,35 +1,19 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Kaiserlich UI bootstrap – nur noch Repeat-Scope (+ optionale UI-Module), Alt-Overlay wird aktiv bereinigt.
+# UI Bootstrap – nur noch Repeat-Scope aktiv, Legacy wird proaktiv entfernt.
 import sys
-import importlib
-
-# Nur die heute genutzten UI-Module:
-try:
-    from . import repeat_scope  # Draw-Handler für Repeat-Zähler
-except Exception as e:
-    repeat_scope = None
-    print(f"[UI] repeat_scope import failed: {e!r}")
-
-try:
-    from . import solve_log  # falls vorhanden; optional
-except Exception:
-    solve_log = None
 
 
-def _purge_legacy_overlay_handlers():
-    """Räumt etwaige Alt-Overlay-Handler und Module robust ab, falls noch im Speicher."""
-    candidates = [
+def _purge_legacy_overlay_modules() -> None:
+    names = [
         f"{__package__}.overlay",
         f"{__package__}.overlay_impl",
-        # historische Varianten (zur Sicherheit):
         f"{__package__}.legacy_overlay",
     ]
-    for name in candidates:
+    for name in names:
         mod = sys.modules.get(name)
         if not mod:
             continue
-        # Mögliche Deaktivierungsfunktionen durchprobieren:
-        for attr in ("disable_overlay_handler", "disable_repeat_scope_handler", "disable_handler", "unregister", "remove_handler"):
+        for attr in ("disable_overlay_handler", "disable_handler", "unregister", "remove_handler"):
             fn = getattr(mod, attr, None)
             if callable(fn):
                 try:
@@ -37,38 +21,43 @@ def _purge_legacy_overlay_handlers():
                     print(f"[LegacyOverlay] {name}.{attr}() → OK")
                 except Exception as e:
                     print(f"[LegacyOverlay][WARN] {name}.{attr}() failed: {e!r}")
-        # Modul entfernen
         sys.modules.pop(name, None)
         print(f"[LegacyOverlay] purged module: {name}")
 
 
-def register():
-    _purge_legacy_overlay_handlers()
-    # repeat_scope ist der einzige verbleibende Overlay-Pfad
-    if repeat_scope and hasattr(repeat_scope, "register"):
-        try:
-            repeat_scope.register()
-        except Exception as e:
-            print(f"[UI] repeat_scope.register failed: {e!r}")
-    if solve_log and hasattr(solve_log, "register"):
-        try:
-            solve_log.register()
-        except Exception as e:
-            print(f"[UI] solve_log.register failed: {e!r}")
+def register() -> None:
+    from . import repeat_scope as _rs
+
+    _purge_legacy_overlay_modules()
+    try:
+        if hasattr(_rs, "register"):
+            _rs.register()
+            print("[UI] repeat_scope.register OK")
+        else:
+            try:
+                import bpy
+                from ..Helper.properties import is_repeat_scope_enabled
+
+                scn = bpy.context.scene
+                if is_repeat_scope_enabled(scn) and hasattr(_rs, "ensure_repeat_scope_handler"):
+                    _rs.ensure_repeat_scope_handler(scn)
+                    print("[UI] repeat_scope.ensure handler (fallback) OK")
+            except Exception as e:  # noqa: BLE001
+                print(f"[UI][WARN] repeat_scope fallback ensure failed: {e!r}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[UI][WARN] repeat_scope.register failed: {e!r}")
     print("[UI] registered – legacy overlay removed")
 
 
-def unregister():
-    # Reihenfolge invers
-    if solve_log and hasattr(solve_log, "unregister"):
-        try:
-            solve_log.unregister()
-        except Exception as e:
-            print(f"[UI] solve_log.unregister failed: {e!r}")
-    if repeat_scope and hasattr(repeat_scope, "unregister"):
-        try:
-            repeat_scope.unregister()
-        except Exception as e:
-            print(f"[UI] repeat_scope.unregister failed: {e!r}")
-    _purge_legacy_overlay_handlers()
+def unregister() -> None:
+    from . import repeat_scope as _rs
+
+    try:
+        if hasattr(_rs, "unregister"):
+            _rs.unregister()
+        elif hasattr(_rs, "disable_repeat_scope_handler"):
+            _rs.disable_repeat_scope_handler()
+    except Exception as e:  # noqa: BLE001
+        print(f"[UI][WARN] repeat_scope.unregister failed: {e!r}")
+    _purge_legacy_overlay_modules()
     print("[UI] unregistered – legacy overlay removed")
