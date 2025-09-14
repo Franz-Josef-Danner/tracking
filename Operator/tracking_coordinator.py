@@ -606,7 +606,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             fixed_margin = patt * 2
 
         # 2) State laden/übersteuern
-        curr_thr = float(scn.get("tco_detect_thr") or scn.get(DETECT_LAST_THRESHOLD_KEY, 0.0018))
+        curr_thr = float(scn.get("tco_detect_thr") or scn.get(DETECT_LAST_THRESHOLD_KEY, 0.0001))
         if threshold is not None:
             curr_thr = float(threshold)
 
