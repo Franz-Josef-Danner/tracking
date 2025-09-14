@@ -15,11 +15,14 @@ def _kc_record_repeat_bulk_map(scene, repeat_map):
         from .properties import record_repeat_bulk_map
         record_repeat_bulk_map(scene, repeat_map)
     except Exception:
-        pass
+        # Fallback: Einzelwerte schreiben
+        try:
+            for f, v in (repeat_map or {}).items():
+                _kc_record_repeat(scene, int(f), int(v))
+        except Exception:
+            pass
 
-__all__ = ("run_jump_to_frame", "jump_to_frame")
-
-# jump_to_frame = Legacy-Wrapper
+__all__ = ("run_jump_to_frame", "jump_to_frame")  # jump_to_frame = Legacy-Wrapper
 REPEAT_SATURATION = 10  # Ab dieser Wiederholungsanzahl: Optimizer anstoßen statt Detect
 
 # ---------------------------------------------------------------------------
@@ -186,8 +189,11 @@ def run_jump_to_frame(
     else:
         scn.frame_current = target
 
-    # Sichtbare Telemetrie
-    print(f"[JumpTo] target={int(target)} clamped={clamped} ui_override={area_switched}")
+    # Erstes Status-Log
+    try:
+        print(f"[JumpTo] target={target} clamped={clamped} ui_override={use_ui_override}")
+    except Exception:  # defensiv
+        pass
 
     # Besuchszählung je Ziel-Frame
     repeat_count = 1
@@ -211,11 +217,15 @@ def run_jump_to_frame(
     expanded = dict(repeat_map)  # bestehende Peaks unverändert lassen
     _spread_repeat_to_neighbors(expanded, target, radius, repeat_count)
 
-    # Logging vor dem Write
+    # Diagnose: Schreibumfang & Range
     try:
         keys = sorted(expanded.keys())
-        print(f"[JumpTo] target={target} repeat={repeat_count} radius={radius} step={step} "
-              f"write_frames={len(keys)} range={keys[0]}..{keys[-1]}")
+        wrange = (keys[0], keys[-1]) if keys else (target, target)
+        print(
+            f"[JumpTo] target={target} repeat={repeat_count} "
+            f"radius={radius} step={step} "
+            f"write_frames={len(expanded)} range={wrange[0]}..{wrange[1]}"
+        )
     except Exception:
         pass
 
