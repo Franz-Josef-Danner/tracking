@@ -260,6 +260,7 @@ def record_repeat_bulk_map(scene, repeat_map: dict[int, int]) -> None:
     scene["_kc_repeat_map"] = cur_map
     if written_frames:
         fmin, fmax = min(written_frames), max(written_frames)
+        # Log-Ausgabe: Anzahl, Range, Änderungen, Max-Wert der Merge-Session
         print(f"[RepeatMap] bulk_merge write_frames={len(written_frames)} "
               f"range={fmin}..{fmax} changed={changed} unchanged={unchanged} vmax={vmax}")
     else:

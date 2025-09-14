@@ -1,135 +1,199 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Draw handler and API for the Kaiserlich repeat scope overlay."""
+# Kaiserlich Repeat-Scope Overlay: Visualisiert Repeat-Zähler mit stufigem Fade-Out.
+#
+# - Liest scene['_kc_repeat_series'] (Float-Liste in Frame-Range)
+# - Zeichnet eine normalisierte Kurve (Levels-Quantisierung) am unteren Rand
+# - Cursor-Linie optional
+# - Draw-Handler on/off via enable_repeat_scope()/disable_repeat_scope()
 
+from __future__ import annotations
 import bpy
-import gpu
-import math
-from gpu_extras.batch import batch_for_shader
-from ..Helper.properties import get_repeat_map  # zentrale Datenquelle
 
-# interner Handler
-_HDL = None
+_HDL_KEY = "_KC_REPEAT_SCOPE_HDL"
 
-def _series_from_map(scene: bpy.types.Scene) -> list[int]:
-    """Konvertiert die Repeat-Map (abs. Frames) in eine dichte Liste für fs..fe."""
-    fs, fe = int(scene.frame_start), int(scene.frame_end)
-    n = max(1, fe - fs + 1)
-    m = get_repeat_map(scene)
-    return [int(m.get(fs + i, 0)) for i in range(n)]
-
-def _draw_scope() -> None:
-    ctx = bpy.context
-    area, region = ctx.area, ctx.region
-    if not area or area.type != "CLIP_EDITOR" or not region or region.type != "WINDOW":
-        return
-
-    s = ctx.scene
-    w, h = region.width, region.height
-
-    # Szenen-Properties mit Defaults abholen (falls es sie noch nicht gibt)
-    height = getattr(s, "kc_repeat_scope_height", 140)
-    bottom = getattr(s, "kc_repeat_scope_bottom", 24)
-    margin_x = getattr(s, "kc_repeat_scope_margin_x", 12)
-    show_cur = getattr(s, "kc_repeat_scope_show_cursor", True)
-
-    x0, y0 = margin_x, bottom
-    x1, y1 = w - margin_x, min(h - 4, bottom + height)
-    if x1 - x0 < 20 or y1 - y0 < 20:
-        return
-
-    sh = gpu.shader.from_builtin("UNIFORM_COLOR")
-
-    # Hintergrund
-    bg = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
-    batch = batch_for_shader(sh, "TRI_FAN", {"pos": bg})
-    sh.bind()
-    sh.uniform_float("color", (0, 0, 0, 0.25))
-    batch.draw(sh)
-
-    # Rahmen
-    border = [(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)]
-    batch = batch_for_shader(sh, "LINE_STRIP", {"pos": border})
-    sh.bind()
-    sh.uniform_float("color", (1, 1, 1, 0.5))
-    batch.draw(sh)
-
-    # Datenserie (aus Map-API)
-    fs, fe = int(s.frame_start), int(s.frame_end)
-    seq = _series_from_map(s)
-    n = max(1, fe - fs + 1)
-    vmax = max(1, max(seq) if seq else 1)
-    width, height_px = x1 - x0, y1 - y0
-
-    # Quantisierung der Werte
-    levels = max(2, int(getattr(s, "kc_repeat_scope_levels", 36)))
-    denom = float(levels - 1)
-    norm = [(v / vmax) if vmax else 0.0 for v in seq]
-    qnorm = []
-    for v in norm:
-        vn = 0.0 if v < 0.0 else (1.0 if v > 1.0 else v)
-        step = math.floor(vn * levels)
-        if step >= levels:
-            step = levels - 1
-        qnorm.append(step / denom)
-
-    # Punkt-Liste aus quantisierten Werten
-    pts = []
-    Ln = max(1, len(qnorm) - 1)
-    for i, qv in enumerate(qnorm):
-        t = i / Ln
-        px = x0 + t * width
-        py = y0 + qv * height_px
-        pts.append((px, py))
-    batch = batch_for_shader(sh, "LINE_STRIP", {"pos": pts})
-    sh.bind()
-    sh.uniform_float("color", (0.8, 0.9, 1.0, 1.0))
-    batch.draw(sh)
-
-    # horizontale Hilfslinien gemäß Quantisierung
-    tick_step = max(1, int(math.ceil(levels / 10)))
-    for k in range(0, levels, tick_step):
-        y = y0 + (k / denom) * height_px
-        batch = batch_for_shader(sh, "LINES", {"pos": [(x0, y), (x1, y)]})
-        sh.bind()
-        sh.uniform_float("color", (1, 1, 1, 0.15))
-        batch.draw(sh)
-
-    # Cursor
-    if show_cur:
-        f = s.frame_current
-        if fs <= f <= fe:
-            t = (f - fs) / max(1, (fe - fs))
-            cx = x0 + t * width
-            batch = batch_for_shader(sh, "LINE_STRIP", {"pos": [(cx, y0), (cx, y1)]})
-            sh.bind()
-            sh.uniform_float("color", (1, 1, 1, 0.5))
-            batch.draw(sh)
-
-
-def enable_repeat_scope(on: bool = True, source: str = "api") -> None:
-    """Öffentliche API – wird von UI/Props und beim Laden aufgerufen."""
-    global _HDL
-    print(f"[KC] enable_repeat_scope({on}) source={source}")
-    if on:
-        if _HDL is None:
-            _HDL = bpy.types.SpaceClipEditor.draw_handler_add(
-                _draw_scope, (), "WINDOW", "POST_PIXEL"
-            )
-    else:
-        if _HDL is not None:
+def _get_series_and_range(scn: bpy.types.Scene) -> tuple[list[float], int, int]:
+    """Robust Serie + [fs, fe] ermitteln; leere Serie → []."""
+    try:
+        fs, fe = int(scn.frame_start), int(scn.frame_end)
+        n = max(0, fe - fs + 1)
+        if n <= 0:
+            return [], fs, fe
+        series = scn.get("_kc_repeat_series") or []
+        if not isinstance(series, list) or len(series) != n:
+            return [], fs, fe
+        # Float-Cast + >=0 clamp
+        out = []
+        for v in series:
             try:
-                bpy.types.SpaceClipEditor.draw_handler_remove(_HDL, "WINDOW")
+                fv = float(v)
+            except Exception:
+                fv = 0.0
+            out.append(max(0.0, fv))
+        return out, fs, fe
+    except Exception:
+        return [], 0, 0
+
+def _viewport_size():
+    """(W,H) robust ermitteln (GPU-Viewport oder Region-Fallback)."""
+    try:
+        import gpu  # noqa
+        _vx, _vy, W, H = gpu.state.viewport_get()
+        return int(W), int(H)
+    except Exception:
+        reg = getattr(bpy.context, "region", None)
+        if reg:
+            return int(getattr(reg, "width", 0) or 0), int(getattr(reg, "height", 0) or 0)
+        return 0, 0
+
+def _quantize(v: float, vmax: float, levels: int) -> float:
+    """Quantisierung auf diskrete Levels (0..1)."""
+    if vmax <= 1e-12:
+        return 0.0
+    x = max(0.0, v) / vmax
+    if levels <= 1:
+        return min(1.0, x)
+    step = 1.0 / float(levels - 1)
+    # Runde auf nächstliegende Stufe
+    idx = round(x / step)
+    return max(0.0, min(1.0, idx * step))
+
+def _draw_callback():
+    """POST_PIXEL Draw-Handler: zeichnet Serie als LINE_STRIP."""
+    try:
+        import gpu
+        from gpu_extras.batch import batch_for_shader
+        import math as _m
+    except Exception:
+        return
+
+    scn = getattr(bpy.context, "scene", None)
+    if not scn or not bool(getattr(scn, "kc_show_repeat_scope", False)):
+        return
+
+    # Konfiguration aus Scene-Properties
+    H_px = int(getattr(scn, "kc_repeat_scope_height", 140))
+    bottom = int(getattr(scn, "kc_repeat_scope_bottom", 24))
+    margin_x = int(getattr(scn, "kc_repeat_scope_margin_x", 12))
+    show_cursor = bool(getattr(scn, "kc_repeat_scope_show_cursor", True))
+    levels = int(getattr(scn, "kc_repeat_scope_levels", 36))
+
+    series, fs, fe = _get_series_and_range(scn)
+    if not series:
+        return
+
+    W, H = _viewport_size()
+    if W <= 0 or H <= 0:
+        return
+
+    ox = max(0, margin_x)
+    ow = max(1, W - 2 * margin_x)
+    oy = max(0, bottom)
+    oh = max(8, min(H_px, H - oy - 4))
+
+    # Skalen
+    vmax = max(series) if series else 1.0
+    total = max(1, fe - fs)  # Range in Frames (min 1, um div/0 zu vermeiden)
+
+    # Punkte berechnen (LINE_STRIP über gesamte Szene)
+    coords = []
+    shader = gpu.shader.from_builtin('UNIFORM_COLOR')
+    for i, v in enumerate(series):
+        # x-Position: linear über Frames
+        rel_x = i / float(total)
+        x = ox + rel_x * ow
+        # y-Position: quantisiert
+        q = _quantize(v, vmax, levels)
+        y = oy + q * oh
+        coords.append((x, y))
+
+    if not coords:
+        return
+
+    # Hintergrundrahmen (optional)
+    try:
+        box = [(ox, oy), (ox + ow, oy), (ox + ow, oy + oh), (ox, oy + oh)]
+        batch = batch_for_shader(shader, 'LINE_LOOP', {"pos": box})
+        shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.28)); batch.draw(shader)
+    except Exception:
+        pass
+
+    # Kurve
+    try:
+        # SINGLE-POINT Edge-Case
+        if len(coords) == 1:
+            coords.append((coords[0][0] + 1, coords[0][1]))
+        batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": coords})
+        _reset = False
+        try:
+            gpu.state.line_width_set(2.0)
+            _reset = True
+        except Exception:
+            pass
+        shader.bind(); shader.uniform_float("color", (1.0, 1.0, 1.0, 0.95)); batch.draw(shader)
+        if _reset:
+            try:
+                gpu.state.line_width_set(1.0)
             except Exception:
                 pass
-            _HDL = None
+    except Exception:
+        pass
 
+    # Cursor-Linie
+    if show_cursor:
+        try:
+            cf = int(getattr(scn, "frame_current", fs))
+            cf = max(fs, min(cf, fe))
+            rel_x = (cf - fs) / float(total)
+            cx = ox + rel_x * ow
+            batch = batch_for_shader(shader, 'LINES', {"pos": [(cx, oy), (cx, oy + oh)]})
+            shader.bind(); shader.uniform_float("color", (1.0, 1.0, 1.0, 0.55)); batch.draw(shader)
+        except Exception:
+            pass
 
-def disable_repeat_scope(source: str = "api") -> None:
-    """Für Altcode, der ein explizites disable erwartet."""
-    enable_repeat_scope(False, source=source)
+def _store_handle(hdl) -> None:
+    try:
+        bpy.app.driver_namespace[_HDL_KEY] = hdl
+    except Exception:
+        pass
 
+def _load_handle():
+    try:
+        return bpy.app.driver_namespace.get(_HDL_KEY)
+    except Exception:
+        return None
 
-def is_scope_enabled() -> bool:
-    """Return True if the draw handler is currently registered."""
-    return _HDL is not None
+def enable_repeat_scope(enable: bool, *, source: str = "api") -> None:
+    """Overlay ein-/ausschalten; mehrfach-idempotent; mit Logausgabe."""
+    try:
+        scn = bpy.context.scene
+    except Exception:
+        scn = None
+
+    hdl = _load_handle()
+    has_hdl = bool(hdl)
+
+    if enable and not has_hdl:
+        try:
+            hdl = bpy.types.SpaceClipEditor.draw_handler_add(
+                _draw_callback, tuple(), 'WINDOW', 'POST_PIXEL'
+            )
+            _store_handle(hdl)
+            print(f"[KC] enable_repeat_scope(True) source={source}")
+        except Exception as e:
+            print(f"[KC] enable_repeat_scope failed: {e}")
+            return
+    elif (not enable) and has_hdl:
+        try:
+            bpy.types.SpaceClipEditor.draw_handler_remove(hdl, 'WINDOW')
+        except Exception:
+            pass
+        _store_handle(None)
+        print(f"[KC] enable_repeat_scope(False) source={source}")
+    else:
+        # Keine Veränderung – dennoch transparent loggen
+        print(f"[KC] enable_repeat_scope({bool(enable)}) source={source} (no-op)")
+
+def disable_repeat_scope(*, source: str = "api") -> None:
+    """Bequemer Alias für enable_repeat_scope(False)."""
+    return enable_repeat_scope(False, source=source)
 
