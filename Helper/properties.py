@@ -6,9 +6,9 @@ from importlib import import_module
 __all__ = (
     "register",
     "unregister",
-    "get_repeat_map",
     "record_repeat_count",
     "record_repeat_bulk_map",
+    "get_repeat_map",
 )
 
 
@@ -80,12 +80,12 @@ def register():
         min=2, max=200,
         update=lambda self, ctx: _kc_request_overlay_redraw(ctx),
     )
-    # NEU: stufiger Fade-Out Schrittweite
+    
+    # Optional: Fade-Stufe (wird von jump_to_frame.py gelesen; Default 5)
     Scene.kc_repeat_fade_step = IntProperty(
-        name="Fade-Step (Frames)",
-        description="Anzahl der Frames pro Fade-Out-Stufe für Repeat-Werte",
-        default=5,
-        min=1, max=120,
+        name="Fade-Stufe (Frames)",
+        description="In so vielen Frame-Schritten fällt der Wiederholungswert um 1",
+        default=5, min=1, max=120,
         update=lambda self, ctx: _kc_request_overlay_redraw(ctx),
     )
 
@@ -163,9 +163,9 @@ def get_repeat_map(scene=None) -> dict[int, int]:
 
 
 def record_repeat_count(scene, frame, value) -> None:
-    """Speichert den Repeat-Wert (Max-Merge) für einen absoluten Frame.
-    Serie: scene['_kc_repeat_series'] (Float-Liste in Frame-Range).
-    Overlay liest die Serie direkt.
+    """Speichert den Repeat-Wert für einen absoluten Frame in Scene-ID-Props.
+    Die Serie liegt in scene['_kc_repeat_series'] (Float-Liste in Frame-Range).
+    Das Overlay liest diese Serie direkt und zeichnet sie.
     """
     if scene is None:
         try:
@@ -191,23 +191,22 @@ def record_repeat_count(scene, frame, value) -> None:
         except Exception:
             fval = 0.0
         fval = float(max(0.0, fval))
-        old = float(series[idx]) if idx < len(series) else 0.0
-        merged = max(old, fval)
-        series[idx] = merged
+        series[idx] = fval
         scene["_kc_repeat_series"] = series
 
-    # Parallel: Map mit Max-Merge
-    m = get_repeat_map(scene)
-    oldm = int(m.get(int(frame), 0))
-    m[int(frame)] = int(max(oldm, fval))
-    scene["_kc_repeat_map"] = m
-
-    _tag_redraw()
+        # Parallel: Map pflegen
+        m = get_repeat_map(scene)
+        m[int(frame)] = int(fval)
+        scene["_kc_repeat_map"] = m
+        _tag_redraw()
 
 
-def record_repeat_bulk_map(scene, repeat_map: dict[int, int], *, clamp_to_range: bool = True) -> None:
-    """Schreibt mehrere Repeat-Werte atomar in Serie und Map.
-    Semantik: pro Frame wird max(alt, neu) übernommen (kein Absenken).
+def record_repeat_bulk_map(scene, repeat_map: dict[int, int]) -> None:
+    """Schreibt mehrere (frame -> repeat) Einträge in einem Rutsch.
+    - Clamp auf Szenenrange
+    - Pro Frame wird der MAX aus bestehendem Wert und neuem Wert übernommen
+    - Aktualisiert Serie UND Map konsistent
+    - Triggert Redraw genau einmal
     """
     if not repeat_map:
         return
@@ -220,45 +219,58 @@ def record_repeat_bulk_map(scene, repeat_map: dict[int, int], *, clamp_to_range:
         return
 
     fs, fe = int(scene.frame_start), int(scene.frame_end)
-    n = max(0, int(fe - fs + 1))
+    n = max(0, fe - fs + 1)
     if n <= 0:
         return
-    series = list(scene.get("_kc_repeat_series") or [0.0] * n)
+
+    series = list(scene.get("_kc_repeat_series") or [])
     if len(series) != n:
         series = [0.0] * n
-    m = get_repeat_map(scene)
 
-    applied = raised = skipped = 0
-    fmin = fmax = None
-    for k, v in repeat_map.items():
+    # Bestehende Map holen (robust) und kopieren
+    existing = get_repeat_map(scene)
+    updated = dict(existing)
+
+    changed = 0
+    written = 0
+    min_f = None
+    max_f = None
+
+    for f_abs, v_in in repeat_map.items():
         try:
-            f = int(k)
-            nv = int(v)
+            f = int(f_abs)
+            v = int(v_in)
         except Exception:
             continue
-        if clamp_to_range and (f < fs or f > fe):
-            skipped += 1
+        if v <= 0:
             continue
+        if f < fs or f > fe:
+            continue  # außerhalb der Szene ignorieren
+
         idx = f - fs
-        if 0 <= idx < n:
-            ov_series = float(series[idx])
-            merged = float(max(ov_series, nv))
-            if merged > ov_series:
-                series[idx] = merged
-                raised += 1
-            applied += 1
-            ov_map = int(m.get(f, 0))
-            m[f] = int(max(ov_map, nv))
-            fmin = f if fmin is None else min(fmin, f)
-            fmax = f if fmax is None else max(fmax, f)
+        cur_series = float(series[idx]) if 0 <= idx < n else 0.0
+        cur_map = int(existing.get(f, 0))
+        new_v = float(max(cur_series, v, cur_map))
+        if new_v > cur_series:
+            series[idx] = new_v
+            changed += 1
+        # Map immer auf MAX heben
+        if int(new_v) > cur_map:
+            updated[f] = int(new_v)
+        else:
+            # auch wenn Serie unverändert blieb, sicherstellen, dass Key existiert
+            updated.setdefault(f, int(new_v))
+
+        written += 1
+        min_f = f if min_f is None else min(min_f, f)
+        max_f = f if max_f is None else max(max_f, f)
 
     scene["_kc_repeat_series"] = series
-    scene["_kc_repeat_map"] = m
+    scene["_kc_repeat_map"] = updated
     _tag_redraw()
 
     # Logging
-    try:
-        print(f"[RepeatScope][WRITE] bulk frames={len(repeat_map)} applied={applied} raised={raised} "
-              f"skipped={skipped} range={[fmin, fmax] if fmin is not None else None}")
-    except Exception:
-        pass
+    print(
+        f"[RepeatScope][WRITE] bulk frames={written}, changed_series={changed}, "
+        f"range={min_f}..{max_f}, levels={getattr(scene, 'kc_repeat_scope_levels', 36)}"
+    )
