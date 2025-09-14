@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 
 import bpy
+from ..Helper.properties import get_repeat_map
+from ..Helper.jump_to_frame import run_jump_to_frame
 
 # ---------------------------------------------------------------------------
 # Strikter Solve-Eval-Modus: 3x Solve hintereinander, ohne mutierende Helfer
@@ -58,6 +60,30 @@ def solve_eval_mode():
         dt = time.perf_counter() - t0
         IN_SOLVE_EVAL = False
         print(f"[SolveEval] Dauer gesamt: {dt:.3f}s")
+
+
+def _coord_jump(context, target_frame: int) -> bool:
+    """Zentraler Jump-Wrapper mit Telemetrie und Scope-Abgleich."""
+    scn = context.scene
+    scn["goto_frame"] = int(target_frame)
+    res = run_jump_to_frame(context)
+    try:
+        fmap = get_repeat_map(scn)
+        cur = int(fmap.get(int(target_frame), 0))
+        fs, fe = scn.frame_start, scn.frame_end
+        idx = int(target_frame) - int(fs)
+        series = scn.get("_kc_repeat_series") or []
+        lo = max(0, idx - 10)
+        hi = min(len(series), idx + 11)
+        win = [int(v) for v in (series[lo:hi] if series else [])]
+        print(
+            f"[COORD][Jump] frame={int(target_frame)} "
+            f"repeat_now={cur} saturated={res.get('repeat_saturated', False)} "
+            f"window={lo+fs}..{hi+fs} vals={win}"
+        )
+    except Exception:
+        pass
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +257,6 @@ def _log(*args, **kwargs):
     """No-op logger used to suppress console output."""
     return None
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame
-from ..Helper.jump_to_frame import run_jump_to_frame
 # Primitive importieren; Orchestrierung (Formel/Freeze) erfolgt hier.
 from ..Helper.detect import run_detect_once as _primitive_detect_once
 from ..Helper.distanze import run_distance_cleanup

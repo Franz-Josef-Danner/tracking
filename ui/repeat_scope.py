@@ -8,6 +8,9 @@
 
 from __future__ import annotations
 import bpy
+import blf
+import bgl
+from math import floor
 
 _HDL_KEY = "_KC_REPEAT_SCOPE_HDL"
 
@@ -32,6 +35,60 @@ def _get_series_and_range(scn: bpy.types.Scene) -> tuple[list[float], int, int]:
         return out, fs, fe
     except Exception:
         return [], 0, 0
+
+
+def _draw_text(x: int, y: int, s: str, size: int = 14) -> None:
+    try:
+        bgl.glEnable(bgl.GL_BLEND)
+        bgl.glColor4f(1.0, 1.0, 1.0, 1.0)
+        blf.position(0, x, y, 0)
+        blf.size(0, size, 72)
+        blf.draw(0, s)
+    except Exception:
+        pass
+    finally:
+        try:
+            bgl.glDisable(bgl.GL_BLEND)
+        except Exception:
+            pass
+
+
+def _sample_window(series: list[float], center_idx: int, radius: int = 10) -> tuple[float, int, int]:
+    if not series:
+        return 0.0, 0, 0
+    lo = max(0, center_idx - radius)
+    hi = min(len(series), center_idx + radius + 1)
+    window = series[lo:hi]
+    vmax = max(window) if window else 0.0
+    return vmax, lo, hi - 1
+
+
+def _draw_cursor_value_and_log(scn: bpy.types.Scene) -> None:
+    series, fs, fe = _get_series_and_range(scn)
+    if not series:
+        return
+    cur = int(getattr(scn, "frame_current", fs))
+    if cur < fs or cur > fe:
+        return
+    idx = cur - fs
+    val = series[idx]
+    vmax, lo, hi = _sample_window(series, idx, radius=10)
+
+    bottom = getattr(scn, "kc_repeat_scope_bottom", 24)
+    margin_x = getattr(scn, "kc_repeat_scope_margin_x", 12)
+    _draw_text(
+        margin_x + 6,
+        bottom + 6,
+        f"Repeat {floor(val)}  (win max {floor(vmax)} @ {lo+fs}-{hi+fs})",
+        size=13,
+    )
+
+    last = scn.get("_kc_scope_last_logged_frame")
+    if last != cur:
+        print(
+            f"[Scope][Draw] frame={cur} val={floor(val)} window={lo+fs}..{hi+fs} vmax={floor(vmax)}"
+        )
+        scn["_kc_scope_last_logged_frame"] = cur
 
 def _viewport_size():
     """(W,H) robust ermitteln (GPU-Viewport oder Region-Fallback)."""
@@ -149,6 +206,8 @@ def _draw_callback():
             shader.bind(); shader.uniform_float("color", (1.0, 1.0, 1.0, 0.55)); batch.draw(shader)
         except Exception:
             pass
+
+    _draw_cursor_value_and_log(scn)
 
 def _store_handle(hdl) -> None:
     try:
