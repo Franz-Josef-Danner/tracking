@@ -14,9 +14,10 @@ from math import floor
 
 _HDL_KEY = "_KC_REPEAT_SCOPE_HDL"
 _NO_DATA_LOGGED = False  # einmalige "no data" Diagnose pro Session
+_DATA_READY_LOGGED = False  # einmalige Diagnose bei erstem Daten-Draw
 
 def _get_series_and_range(scn: bpy.types.Scene) -> tuple[list[float], int, int]:
-    """Robust Serie + [fs, fe] ermitteln; leere Serie → []."""
+    """Robust Serie + [fs, fe] ermitteln. Leere/inkonsistente Serie → []."""
     try:
         fs, fe = int(scn.frame_start), int(scn.frame_end)
         n = max(0, fe - fs + 1)
@@ -91,17 +92,22 @@ def _draw_cursor_value_and_log(scn: bpy.types.Scene) -> None:
         )
         scn["_kc_scope_last_logged_frame"] = cur
 
-def _viewport_size():
-    """(W,H) robust ermitteln (GPU-Viewport oder Region-Fallback)."""
+def _viewport_size() -> tuple[int, int]:
+    """Ermittelt die Größe der aktiven CLIP_EDITOR Region zuverlässig."""
+    reg = getattr(bpy.context, "region", None)
+    if reg and hasattr(reg, "width") and hasattr(reg, "height"):
+        return int(reg.width), int(reg.height)
+    # Fallback: erste CLIP_EDITOR-WINDOW Region
     try:
-        import gpu  # noqa
-        _vx, _vy, W, H = gpu.state.viewport_get()
-        return int(W), int(H)
+        for w in bpy.context.window_manager.windows:
+            for a in w.screen.areas:
+                if a.type == 'CLIP_EDITOR':
+                    r = next((rr for rr in a.regions if rr.type == 'WINDOW'), None)
+                    if r:
+                        return int(r.width), int(r.height)
     except Exception:
-        reg = getattr(bpy.context, "region", None)
-        if reg:
-            return int(getattr(reg, "width", 0) or 0), int(getattr(reg, "height", 0) or 0)
-        return 0, 0
+        pass
+    return 0, 0
 
 def _quantize(v: float, vmax: float, levels: int) -> float:
     """Quantisierung auf diskrete Levels (0..1)."""
@@ -150,15 +156,15 @@ def _draw_callback():
 
     # Hintergrundrahmen: immer zeichnen (auch ohne Daten)
     try:
-        shader = gpu.shader.from_builtin('UNIFORM_COLOR')
+        shader_box = gpu.shader.from_builtin('UNIFORM_COLOR')
         box = [(ox, oy), (ox + ow, oy), (ox + ow, oy + oh), (ox, oy + oh)]
-        batch = batch_for_shader(shader, 'LINE_LOOP', {"pos": box})
-        shader.bind(); shader.uniform_float("color", (1, 1, 1, 0.28)); batch.draw(shader)
+        batch_box = batch_for_shader(shader_box, 'LINE_LOOP', {"pos": box})
+        shader_box.bind(); shader_box.uniform_float("color", (1, 1, 1, 0.28)); batch_box.draw(shader_box)
     except Exception:
         pass
 
     # Wenn keine Daten vorhanden, früh aussteigen – aber einmalig diagnostizieren
-    global _NO_DATA_LOGGED
+    global _NO_DATA_LOGGED, _DATA_READY_LOGGED
     if not series:
         if not _NO_DATA_LOGGED:
             _NO_DATA_LOGGED = True
@@ -221,6 +227,15 @@ def _draw_callback():
             pass
 
     _draw_cursor_value_and_log(scn)
+
+    # Einmalige „ready“-Diagnose
+    if not _DATA_READY_LOGGED:
+        _DATA_READY_LOGGED = True
+        try:
+            nz = sum(1 for v in series if v)
+            print(f"[Scope][Draw] data ready: len={len(series)} nonzero={nz} viewport={W}x{H}")
+        except Exception:
+            pass
 
 def _store_handle(hdl) -> None:
     try:
