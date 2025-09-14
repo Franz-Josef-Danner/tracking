@@ -138,6 +138,7 @@ def get_repeat_map(scene=None) -> dict[int, int]:
         out: dict[int, int] = {}
         for k, v in m.items():
             try:
+                # ID-Props speichern Schlüssel als STRING -> zurück zu int
                 ik, iv = int(k), int(v)
             except Exception:
                 continue
@@ -197,7 +198,8 @@ def record_repeat_count(scene, frame, value) -> None:
         # Parallel: Map pflegen
         m = get_repeat_map(scene)
         m[int(frame)] = int(fval)
-        scene["_kc_repeat_map"] = m
+        # ID-Props verlangen STRING-Keys
+        scene["_kc_repeat_map"] = {str(k): int(v) for k, v in m.items()}
         _tag_redraw()
 
 
@@ -257,7 +259,9 @@ def record_repeat_bulk_map(scene, repeat_map: dict[int, int]) -> None:
         written_frames.append(f)
 
     scene["_kc_repeat_series"] = series
-    scene["_kc_repeat_map"] = cur_map
+    # ID-Props verlangen STRING-Keys
+    scene["_kc_repeat_map"] = {str(k): int(v) for k, v in cur_map.items()}
+    print(f"[RepeatMap] stored keys={len(cur_map)} (stringified) map_ok=True")
     if written_frames:
         fmin, fmax = min(written_frames), max(written_frames)
         # Log-Ausgabe: Anzahl, Range, Änderungen, Max-Wert der Merge-Session
