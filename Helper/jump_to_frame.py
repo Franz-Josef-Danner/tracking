@@ -236,6 +236,16 @@ def run_jump_to_frame(
 
     _kc_record_repeat_bulk_map(scn, expanded)
 
+    # Diagnose: Serie/NZ-Anteil nach Merge
+    try:
+        series = scn.get("_kc_repeat_series") or []
+        nz = sum(1 for v in series if v)
+        fs, fe = int(scn.frame_start), int(scn.frame_end)
+        n = max(0, fe - fs + 1)
+        print(f"[JumpTo][Series] len={len(series)} expected={n} nonzero={nz}")
+    except Exception:
+        pass
+
     # Debugging & Transparenz
     try:
         scn["last_jump_frame"] = int(target)  # rein informativ
