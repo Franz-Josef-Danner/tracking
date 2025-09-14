@@ -212,22 +212,21 @@ def run_jump_to_frame(
 
     # Center-Peak NICHT sofort einzeln schreiben; Bulk-Write vermeidet Flackern.
     # Diffusion NUR um den aktuellen Jump, nicht global.
-    step = _fade_step_frames()
-    radius = max(0, repeat_count * step - 1)
-    expanded = dict(repeat_map)  # bestehende Peaks unverändert lassen
-    _spread_repeat_to_neighbors(expanded, target, radius, repeat_count)
+    step = int(_fade_step_frames())
+    radius = int(max(0, int(repeat_count) * step - 1))
+    expanded: dict[int, int] = dict(repeat_map)  # bestehende Peaks unverändert lassen
+    _spread_repeat_to_neighbors(expanded, target, radius, int(repeat_count))
 
-    # Diagnose: Schreibumfang & Range
-    try:
-        keys = sorted(expanded.keys())
-        wrange = (keys[0], keys[-1]) if keys else (target, target)
-        print(
-            f"[JumpTo] target={target} repeat={repeat_count} "
-            f"radius={radius} step={step} "
-            f"write_frames={len(expanded)} range={wrange[0]}..{wrange[1]}"
-        )
-    except Exception:
-        pass
+    # Logging: wie viele Frames werden tatsächlich geschrieben und in welchem Bereich?
+    if expanded:
+        try:
+            fmin, fmax = min(expanded.keys()), max(expanded.keys())
+            print(
+                f"[JumpTo] target={int(target)} repeat={int(repeat_count)} "
+                f"radius={radius} step={step} write_frames={len(expanded)} range={fmin}..{fmax}"
+            )
+        except Exception:
+            pass
 
     _kc_record_repeat_bulk_map(scn, expanded)
 
