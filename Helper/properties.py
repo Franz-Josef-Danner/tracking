@@ -1,10 +1,15 @@
 """Scene properties + helpers for the Repeat Scope overlay."""
-
 import bpy
 from bpy.props import BoolProperty, IntProperty, FloatProperty
 from importlib import import_module
 
-__all__ = ("register", "unregister", "record_repeat_count", "get_repeat_map")
+__all__ = (
+    "register",
+    "unregister",
+    "get_repeat_map",
+    "record_repeat_count",
+    "record_repeat_bulk_map",
+)
 
 
 def _kc_request_overlay_redraw(context):
@@ -20,6 +25,7 @@ def _kc_request_overlay_redraw(context):
 # -----------------------------------------------------------------------------
 # Update-Callback: Toggle Handler (lazy import, robust bei Bindestrichen)
 # -----------------------------------------------------------------------------
+
 def _kc_update_repeat_scope(self, context):
     try:
         # Relativ importieren, damit ein Addon-Ordnername mit "-" nicht stört.
@@ -47,17 +53,20 @@ def register():
     Scene.kc_repeat_scope_height = IntProperty(
         name="Höhe",
         description="Höhe des Repeat-Scope (Pixel)",
-        default=140, min=40, max=800,
+        default=140,
+        min=40, max=800,
     )
     Scene.kc_repeat_scope_bottom = IntProperty(
         name="Abstand unten",
         description="Abstand vom unteren Rand (Pixel)",
-        default=24, min=0, max=2000,
+        default=24,
+        min=0, max=2000,
     )
     Scene.kc_repeat_scope_margin_x = IntProperty(
         name="Rand X",
         description="Horizontaler Innenabstand (Pixel)",
-        default=12, min=0, max=2000,
+        default=12,
+        min=0, max=2000,
     )
     Scene.kc_repeat_scope_show_cursor = BoolProperty(
         name="Cursorlinie",
@@ -67,7 +76,16 @@ def register():
     Scene.kc_repeat_scope_levels = IntProperty(
         name="Höhenstufen",
         description="Anzahl der diskreten Höhenstufen für das Repeat-Scope (Quantisierung der Kurve)",
-        default=36, min=2, max=200,
+        default=36,
+        min=2, max=200,
+        update=lambda self, ctx: _kc_request_overlay_redraw(ctx),
+    )
+    # NEU: stufiger Fade-Out Schrittweite
+    Scene.kc_repeat_fade_step = IntProperty(
+        name="Fade-Step (Frames)",
+        description="Anzahl der Frames pro Fade-Out-Stufe für Repeat-Werte",
+        default=5,
+        min=1, max=120,
         update=lambda self, ctx: _kc_request_overlay_redraw(ctx),
     )
 
@@ -82,6 +100,7 @@ def unregister():
         "kc_repeat_scope_margin_x",
         "kc_repeat_scope_show_cursor",
         "kc_repeat_scope_levels",
+        "kc_repeat_fade_step",
     ):
         if hasattr(Scene, attr):
             delattr(Scene, attr)
@@ -90,6 +109,7 @@ def unregister():
 # -----------------------------------------------------------------------------
 # Helper: Serie für Repeats (wird von jump_to_frame.py befüllt)
 # -----------------------------------------------------------------------------
+
 def _tag_redraw() -> None:
     try:
         for w in bpy.context.window_manager.windows:
@@ -112,6 +132,7 @@ def get_repeat_map(scene=None) -> dict[int, int]:
             return {}
     if scene is None:
         return {}
+
     m = scene.get("_kc_repeat_map")
     if isinstance(m, dict):
         out: dict[int, int] = {}
@@ -123,6 +144,7 @@ def get_repeat_map(scene=None) -> dict[int, int]:
             if iv:
                 out[ik] = iv
         return out
+
     # Fallback: alte Liste
     series = scene.get("_kc_repeat_series")
     if isinstance(series, list):
@@ -136,14 +158,14 @@ def get_repeat_map(scene=None) -> dict[int, int]:
             if iv:
                 out[fs + i] = iv
         return out
+
     return {}
 
 
 def record_repeat_count(scene, frame, value) -> None:
-    """Speichert den Repeat-Wert für einen absoluten Frame in Scene-ID-Props.
-
-    Die Serie liegt in scene['_kc_repeat_series'] (Float-Liste in Frame-Range).
-    Das Overlay liest diese Serie direkt und zeichnet sie.
+    """Speichert den Repeat-Wert (Max-Merge) für einen absoluten Frame.
+    Serie: scene['_kc_repeat_series'] (Float-Liste in Frame-Range).
+    Overlay liest die Serie direkt.
     """
     if scene is None:
         try:
@@ -152,12 +174,15 @@ def record_repeat_count(scene, frame, value) -> None:
             return
     if scene is None:
         return
+
     fs, fe = scene.frame_start, scene.frame_end
     n = max(0, int(fe - fs + 1))
     if n <= 0:
         return
+
     if scene.get("_kc_repeat_series") is None or len(scene["_kc_repeat_series"]) != n:
         scene["_kc_repeat_series"] = [0.0] * n
+
     idx = int(frame) - int(fs)
     if 0 <= idx < n:
         series = list(scene["_kc_repeat_series"])
@@ -166,11 +191,74 @@ def record_repeat_count(scene, frame, value) -> None:
         except Exception:
             fval = 0.0
         fval = float(max(0.0, fval))
-        series[idx] = fval
+        old = float(series[idx]) if idx < len(series) else 0.0
+        merged = max(old, fval)
+        series[idx] = merged
         scene["_kc_repeat_series"] = series
-        # Parallel: Map pflegen
-        m = get_repeat_map(scene)
-        m[int(frame)] = int(fval)
-        scene["_kc_repeat_map"] = m
+
+    # Parallel: Map mit Max-Merge
+    m = get_repeat_map(scene)
+    oldm = int(m.get(int(frame), 0))
+    m[int(frame)] = int(max(oldm, fval))
+    scene["_kc_repeat_map"] = m
+
     _tag_redraw()
 
+
+def record_repeat_bulk_map(scene, repeat_map: dict[int, int], *, clamp_to_range: bool = True) -> None:
+    """Schreibt mehrere Repeat-Werte atomar in Serie und Map.
+    Semantik: pro Frame wird max(alt, neu) übernommen (kein Absenken).
+    """
+    if not repeat_map:
+        return
+    if scene is None:
+        try:
+            scene = bpy.context.scene
+        except Exception:
+            return
+    if scene is None:
+        return
+
+    fs, fe = int(scene.frame_start), int(scene.frame_end)
+    n = max(0, int(fe - fs + 1))
+    if n <= 0:
+        return
+    series = list(scene.get("_kc_repeat_series") or [0.0] * n)
+    if len(series) != n:
+        series = [0.0] * n
+    m = get_repeat_map(scene)
+
+    applied = raised = skipped = 0
+    fmin = fmax = None
+    for k, v in repeat_map.items():
+        try:
+            f = int(k)
+            nv = int(v)
+        except Exception:
+            continue
+        if clamp_to_range and (f < fs or f > fe):
+            skipped += 1
+            continue
+        idx = f - fs
+        if 0 <= idx < n:
+            ov_series = float(series[idx])
+            merged = float(max(ov_series, nv))
+            if merged > ov_series:
+                series[idx] = merged
+                raised += 1
+            applied += 1
+            ov_map = int(m.get(f, 0))
+            m[f] = int(max(ov_map, nv))
+            fmin = f if fmin is None else min(fmin, f)
+            fmax = f if fmax is None else max(fmax, f)
+
+    scene["_kc_repeat_series"] = series
+    scene["_kc_repeat_map"] = m
+    _tag_redraw()
+
+    # Logging
+    try:
+        print(f"[RepeatScope][WRITE] bulk frames={len(repeat_map)} applied={applied} raised={raised} "
+              f"skipped={skipped} range={[fmin, fmax] if fmin is not None else None}")
+    except Exception:
+        pass

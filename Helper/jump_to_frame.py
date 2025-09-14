@@ -9,7 +9,6 @@ def _kc_record_repeat(scene, frame, repeat_value):
     except Exception:
         pass
 
-
 def _kc_record_repeat_bulk_map(scene, repeat_map):
     """Optionaler Bulk-Schreibzugriff ohne harten Import."""
     try:
@@ -18,10 +17,10 @@ def _kc_record_repeat_bulk_map(scene, repeat_map):
     except Exception:
         pass
 
+__all__ = ("run_jump_to_frame", "jump_to_frame")
 
-__all__ = ("run_jump_to_frame", "jump_to_frame")  # jump_to_frame = Legacy-Wrapper
+# jump_to_frame = Legacy-Wrapper
 REPEAT_SATURATION = 10  # Ab dieser Wiederholungsanzahl: Optimizer anstoßen statt Detect
-
 
 # ---------------------------------------------------------------------------
 # Fade-Parameter
@@ -30,7 +29,6 @@ REPEAT_SATURATION = 10  # Ab dieser Wiederholungsanzahl: Optimizer anstoßen sta
 # Damit entsteht ein Plateau von N Frames pro Stufe.
 FADE_STEP_FRAMES: int = 5  # stufiger Abfall alle 5 Frames
 
-
 def _fade_step_frames() -> int:
     try:
         val = int(getattr(bpy.context.scene, "kc_repeat_fade_step", FADE_STEP_FRAMES))
@@ -38,12 +36,10 @@ def _fade_step_frames() -> int:
     except Exception:
         return FADE_STEP_FRAMES
 
-
 def _clamp(v: int, lo: int = 0, hi: int | None = None) -> int:
     if hi is None:
         return v if v >= lo else lo
     return lo if v < lo else (hi if v > hi else v)
-
 
 def _spread_repeat_to_neighbors(repeat_map: dict[int, int], center_f: int, radius: int, base: int) -> None:
     """5-Frame-Stufenabfall um center_f; schreibt NUR ins lokale Mapping (kein Live-Redraw)."""
@@ -53,26 +49,26 @@ def _spread_repeat_to_neighbors(repeat_map: dict[int, int], center_f: int, radiu
         fmin, fmax = int(scn.frame_start), int(scn.frame_end)
     except Exception:
         fmin, fmax = -10**9, 10**9
+
     if radius < 0:
         radius = 0
+
+    step = _fade_step_frames()
     for off in range(-radius, radius + 1):
         f = center_f + off
         if f < fmin or f > fmax:
             continue
-        # Decrement in 5er-Schritten: 0..4 → 0, 5..9 → 1, 10..14 → 2, ...
-        dec = abs(off) // _fade_step_frames()
+        # Decrement in Stufen gemäß step: 0..(step-1) → 0, step..(2*step-1) → 1, ...
+        dec = abs(off) // step
         v = base - dec
         if v <= 0:
             continue
-        if v > repeat_map.get(f, 0):  # nur anheben
+        # Max-Merge: nur anheben
+        if v > repeat_map.get(f, 0):
             repeat_map[f] = v
 
-
 def diffuse_repeat_counts(repeat_map: dict[int, int], radius: int) -> dict[int, int]:
-    """
-    Breitet Wiederholungszähler auf Nachbarframes aus, mit stufigem Fade
-    (alle FADE_STEP_FRAMES Frames -1).
-    """
+    """Breitet Wiederholungszähler auf Nachbarframes aus, mit stufigem Fade."""
     if not repeat_map or radius <= 0:
         return repeat_map
     out = dict(repeat_map)
@@ -80,29 +76,23 @@ def diffuse_repeat_counts(repeat_map: dict[int, int], radius: int) -> dict[int, 
         _spread_repeat_to_neighbors(out, center_f, radius, base)
     return out
 
-
 # -----------------------------------------------------------------------------
 # Utilities
 # -----------------------------------------------------------------------------
-
 def _resolve_clip_and_scene(context, clip=None, scene=None) -> Tuple[Optional[bpy.types.MovieClip], bpy.types.Scene]:
     scn = scene or context.scene
     if clip is not None:
         return clip, scn
-
     # 1) Aktiver CLIP_EDITOR
     space = getattr(context, "space_data", None)
     if space and getattr(space, "type", None) == 'CLIP_EDITOR':
         c = getattr(space, "clip", None)
         if c:
             return c, scn
-
     # 2) Fallback: irgendein vorhandener Clip
     for c in bpy.data.movieclips:
         return c, scn
-
     return None, scn
-
 
 def _clip_end(clip: bpy.types.MovieClip, scn: bpy.types.Scene) -> int:
     try:
@@ -115,7 +105,6 @@ def _clip_end(clip: bpy.types.MovieClip, scn: bpy.types.Scene) -> int:
     # Szene darf enger sein als Clip
     return min(int(scn.frame_end), end)
 
-
 def _find_clip_area(win) -> Tuple[Optional[bpy.types.Area], Optional[bpy.types.Region]]:
     if not win or not getattr(win, "screen", None):
         return None, None
@@ -125,11 +114,9 @@ def _find_clip_area(win) -> Tuple[Optional[bpy.types.Area], Optional[bpy.types.R
             return area, reg
     return None, None
 
-
 # -----------------------------------------------------------------------------
 # Core
 # -----------------------------------------------------------------------------
-
 def run_jump_to_frame(
     context,
     *,
@@ -144,13 +131,7 @@ def run_jump_to_frame(
     - Clamped auf Clipgrenzen
     - Optionaler CLIP_EDITOR-Override & Modus-Setzung
     - Zählt Wiederholungen NUR für per Jump gesetzte Frames via repeat_map
-
-    Returns:
-      {"status": "OK"|"FAILED",
-       "frame": int,
-       "repeat_count": int,
-       "clamped": bool,
-       "area_switched": bool}
+    Returns: {"status": "OK"|"FAILED", "frame": int, "repeat_count": int, "clamped": bool, "area_switched": bool}
     """
     scn = context.scene
     clip, scn = _resolve_clip_and_scene(context)
@@ -161,9 +142,8 @@ def run_jump_to_frame(
     target = frame
     if target is None:
         target = scn.get("goto_frame", None)
-    if target is None:
-        return {"status": "FAILED", "reason": "no_target", "frame": None, "repeat_count": 0, "clamped": False, "area_switched": False}
-
+        if target is None:
+            return {"status": "FAILED", "reason": "no_target", "frame": None, "repeat_count": 0, "clamped": False, "area_switched": False}
     target = int(target)
 
     # Clamp an Clipgrenzen
@@ -190,18 +170,22 @@ def run_jump_to_frame(
                             sd = area.spaces.active
                             if hasattr(sd, "mode") and sd.mode != 'TRACKING':
                                 sd.mode = 'TRACKING'
-                                area_switched = True
                         except Exception:
                             pass
                     scn.frame_current = target
             except Exception:
                 # Fallback: ohne Override setzen
                 scn.frame_current = target
+            else:
+                area_switched = True
         else:
             # Kein CLIP_EDITOR sichtbar → trotzdem setzen
             scn.frame_current = target
     else:
         scn.frame_current = target
+
+    # Sichtbare Telemetrie
+    print(f"[JumpTo] target={int(target)} clamped={clamped} ui_override={area_switched}")
 
     # Besuchszählung je Ziel-Frame
     repeat_count = 1
@@ -224,6 +208,16 @@ def run_jump_to_frame(
     radius = max(0, repeat_count * step - 1)
     expanded = dict(repeat_map)  # bestehende Peaks unverändert lassen
     _spread_repeat_to_neighbors(expanded, target, radius, repeat_count)
+
+    # Logging vor dem Write
+    try:
+        keys = sorted(expanded.keys())
+        ksamp = keys[:8]
+        print(f"[JumpTo][Repeat] count={repeat_count} step={step} radius={radius} "
+              f"frames_expanded={len(keys)} keys_sample={ksamp}{'…' if len(keys) > len(ksamp) else ''}")
+    except Exception:
+        pass
+
     _kc_record_repeat_bulk_map(scn, expanded)
 
     # Debugging & Transparenz
@@ -234,6 +228,8 @@ def run_jump_to_frame(
 
     # Sättigungsflag für Rückgabe/Logging
     repeat_saturated = repeat_count >= REPEAT_SATURATION
+    if repeat_saturated:
+        print(f"[JumpTo][Repeat] saturated>= {REPEAT_SATURATION} at frame={int(target)} (repeat={int(repeat_count)})")
 
     return {
         "status": "OK",
@@ -244,17 +240,14 @@ def run_jump_to_frame(
         "area_switched": bool(area_switched),
     }
 
-
 # -----------------------------------------------------------------------------
 # Legacy-Wrapper (Kompatibilität)
 # -----------------------------------------------------------------------------
-
 def jump_to_frame(context):
-    """
-    Kompatibel zur alten Signatur:
-      - liest 'scene["goto_frame"]'
-      - ruft run_jump_to_frame()
-      - gibt bool zurück (True bei OK)
+    """Kompatibel zur alten Signatur:
+    - liest 'scene["goto_frame"]'
+    - ruft run_jump_to_frame()
+    - gibt bool zurück (True bei OK)
     """
     res = run_jump_to_frame(context, frame=None, repeat_map=None)
     ok = (res.get("status") == "OK")
