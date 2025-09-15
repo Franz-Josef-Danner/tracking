@@ -683,10 +683,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             patt = max(8, int(w / 100))
             fixed_margin = patt * 2
 
-        # 2) State laden/übersteuern
-        curr_thr = float(scn.get("tco_detect_thr") or scn.get(DETECT_LAST_THRESHOLD_KEY, 0.0018))
-        if threshold is not None:
-            curr_thr = float(threshold)
+    # 2) Threshold: harter Fixwert (Anforderung)
+    #    Kein Fallback, keine Last-Detection – immer exakt 0.0001.
+    curr_thr = 0.0001  # FIXED
 
         # *** min_distance: exakt nach Vorgabe ***
         # Priorität NUR:
@@ -739,9 +738,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         except Exception:
             gm_for_formulas = float(new_count)
 
-        # Threshold IMMER stufen – mit Count aus count.py (oder Fallback)
-        f_thr = max((gm_for_formulas + 0.1) / float(max(1, target)), 0.0001)
-        next_thr = max(curr_thr * f_thr, 0.0001)
+        # Threshold NICHT stufen – fixer Wert je Pass
+        next_thr = curr_thr  # = 0.0001
 
         # min_distance NUR bei Stagnation – Stagnation ebenfalls vs. Count aus count.py
         next_md = curr_md
@@ -767,7 +765,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
 
         _log(
             f"[DETECT] new={new_count} target={target} "
-            f"thr->{next_thr:.7f} "
+            f"thr->{next_thr:.7f} (fixed) "
             f"md->{(next_md if last_cnt==int(gm_for_formulas) else curr_md):.6f} "
             f"src={md_source} "
             f"(stagnation={'YES' if last_cnt==int(gm_for_formulas) else 'NO'}; md_updated={'YES' if update_md else 'NO'})"
