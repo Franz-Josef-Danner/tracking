@@ -258,9 +258,10 @@ def run_distance_cleanup(
         if min_distance is None:
             eff = None
             if scn is not None:
+                # 1) Direkt vom Detect publizierter Wert (Single Source of Truth)
                 eff_candidate = None
                 try:
-                    eff_candidate = scn.get("kc_min_distance_effective", None)
+                    eff_candidate = scn.get("kc_detect_min_distance_px", None)
                 except Exception:
                     eff_candidate = None
                 if eff_candidate is not None:
@@ -272,10 +273,31 @@ def run_distance_cleanup(
                         auto_min_used = True
                         try:
                             log(
-                                f"[DISTANZE] min_distance=None → scene['kc_min_distance_effective']={eff:.3f}"
+                                f"[DISTANZE] min_distance=None → scene['kc_detect_min_distance_px']={eff:.3f}"
                             )
                         except Exception:
                             pass
+                # 2) Historischer Effective-Key als Fallback
+                if eff is None:
+                    eff_candidate = None
+                    try:
+                        eff_candidate = scn.get("kc_min_distance_effective", None)
+                    except Exception:
+                        eff_candidate = None
+                    if eff_candidate is not None:
+                        try:
+                            eff = float(eff_candidate)
+                        except Exception:
+                            eff = None
+                        else:
+                            auto_min_used = True
+                            try:
+                                log(
+                                    f"[DISTANZE] min_distance=None → scene['kc_min_distance_effective']={eff:.3f}"
+                                )
+                            except Exception:
+                                pass
+                # 3) Generische Defaults
                 if eff is None:
                     eff_candidate = None
                     try:
