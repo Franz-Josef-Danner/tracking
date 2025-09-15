@@ -238,7 +238,7 @@ def record_repeat_count(scene, frame, value) -> None:
         _kc_request_overlay_redraw(bpy.context)
 
 
-def record_repeat_bulk_map(scene, repeat_map: Dict[int, int]) -> None:
+def record_repeat_bulk_map(scene, repeat_map: Dict[int, int], *, source: str = "bulk") -> None:
     """Schreibt eine Menge Frame→Wert in einem Rutsch (MAX-Merge) mit Diagnose-Logs."""
     if scene is None:
         try:
@@ -274,7 +274,7 @@ def record_repeat_bulk_map(scene, repeat_map: Dict[int, int]) -> None:
             min_f = f if min_f is None else min(min_f, f)
             max_f = f if max_f is None else max(max_f, f)
             if _dbg_enabled(scene):
-                print(f"[RepeatMap][merge] frame={f} {int(cur)}→{int(v)}")
+                print(f"[RepeatMap][merge] frame={f} {int(cur)}→{int(v)} source={source}")
 
     scene["_kc_repeat_series"] = series
     # Map parallel pflegen (nur non-zero)
@@ -286,6 +286,6 @@ def record_repeat_bulk_map(scene, repeat_map: Dict[int, int]) -> None:
     scene["_kc_repeat_map"] = out_map
     if changed:
         nz = sum(1 for v in series if v)
-        _dbg(scene, f"[RepeatMap][bulk] changed={changed} range={min_f}..{max_f} nonzero={nz} series_len={len(series)}")
+        _dbg(scene, f"[RepeatMap][bulk] changed={changed} range={min_f}..{max_f} nonzero={nz} series_len={len(series)} source={source}")
         _kc_request_overlay_redraw(bpy.context)
 
