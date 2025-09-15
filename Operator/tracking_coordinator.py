@@ -154,7 +154,6 @@ def solve_final_refine(
     Rückgabe:
       float Score des finalen Solves (falls Helper Score liefert, sonst 0.0 als Fallback).
     """
-    from ..Helper.solve_camera import solve_camera_only  # lokal import, falls oben bereits vorhanden kein Thema
 
     if model is None:
         print("[SolveEval][FINAL] Kein Modell übergeben – finaler Refine-Solve wird übersprungen.")
@@ -248,7 +247,11 @@ from ..Helper.clean_short_segments import clean_short_segments
 from ..Helper.clean_short_tracks import clean_short_tracks
 from ..Helper.split_cleanup import recursive_split_cleanup
 from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
-from ..Helper.solve_camera import solve_camera_only
+from ..Helper.solve_camera import solve_camera_only as _solve_camera_only
+from ..Helper.reduce_error_tracks import (
+    get_avg_reprojection_error,
+    run_reduce_error_tracks,
+)
 from ..Helper.solve_eval import (
     SolveConfig,
     SolveMetrics,
@@ -356,6 +359,74 @@ except Exception:
         DETECT_LAST_THRESHOLD_KEY = "last_detection_threshold"  # type: ignore
 
 __all__ = ("CLIP_OT_tracking_coordinator",)
+
+# ---------------------------------------------------------------------------
+# Post-Solve Qualitätscheck (Auto-Reduce & Neustart)
+# Policy:
+#  - Nach JEDEM Solve den avg. Reprojection-Error prüfen.
+#  - Schwellwert: Scene['solve_error_threshold'] oder Default 20.0.
+#  - Wenn Error > Threshold:
+#       • reduce_error_tracks()
+#       • reset_for_new_cycle()
+#       • run_find_low_marker_frame()
+#  - Schutz gegen Endlosschleifen: max. 5 Auto-Reduce-Versuche pro Zyklus.
+#  - Im harten Solve-Eval-Modus (IN_SOLVE_EVAL) kein Eingriff.
+# ---------------------------------------------------------------------------
+_SOLVE_ERR_DEFAULT_THR = 20.0
+
+
+def solve_camera_only(context, *args, **kwargs):
+    # Invoke original solve
+    res = _solve_camera_only(context, *args, **kwargs)
+    try:
+        # Eval-Modus: strikt read-only → kein Auto-Reduce
+        if IN_SOLVE_EVAL:
+            return res
+
+        scene = getattr(context, "scene", None)
+        if scene is None:
+            print("[SolveCheck] Kein context.scene – Check übersprungen.")
+            return res
+
+        # Kurz auf gültige Reconstruction pollen (max. ~2s)
+        ae = None
+        for _ in range(40):
+            ae = get_avg_reprojection_error(context)
+            if ae is not None and ae > 0.0:
+                break
+            time.sleep(0.05)
+
+        thr = float(
+            getattr(scene, "solve_error_threshold", _SOLVE_ERR_DEFAULT_THR)
+            or _SOLVE_ERR_DEFAULT_THR
+        )
+        if ae is None:
+            print("[SolveCheck] Keine auswertbare Reconstruction – Check übersprungen.")
+            return res
+
+        print(f"[SolveCheck] avg_error={ae:.6f} thr={thr:.6f}")
+        attempts = int(scene.get("kc_solve_attempts", 0) or 0)
+        if ae > thr and attempts < 5:
+            scene["kc_solve_attempts"] = attempts + 1
+            print(f"[SolveCheck] Über Schwellwert → reduce_error_tracks() Pass #{attempts+1}")
+            run_reduce_error_tracks(context)
+            try:
+                reset_for_new_cycle(context, clear_solve_log=False)
+            except Exception:
+                pass
+            try:
+                run_find_low_marker_frame(context)
+            except Exception:
+                pass
+        elif ae > thr:
+            print(
+                "[SolveCheck] Schwellwert überschritten, max. Auto-Reduce-Versuche erreicht – kein Auto-Restart."
+            )
+        else:
+            scene["kc_solve_attempts"] = 0
+    except Exception as ex:
+        print(f"[SolveCheck] Ausnahme im Post-Solve-Hook: {ex!r}")
+    return res
 
 # --- Orchestrator-Phasen ----------------------------------------------------
 PH_FIND_LOW   = "FIND_LOW"
