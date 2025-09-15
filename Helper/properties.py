@@ -185,22 +185,31 @@ def get_repeat_map(scene=None) -> dict[int, int]:
         return {}
 
 
-def get_repeat_value(scene, frame: int) -> int:
-    """Liest den Repeat-Wert (int) aus der Series-SSOT."""
-    if scene is None:
-        try:
-            scene = bpy.context.scene
-        except Exception:
-            return 0
+def _ensure_series(scene):
     fs = int(scene.frame_start)
     fe = int(scene.frame_end)
     n = max(0, fe - fs + 1)
     series = scene.get("_kc_repeat_series")
     if not isinstance(series, list) or len(series) != n:
-        return 0
+        series = [0.0] * n
+        scene["_kc_repeat_series"] = series
+    return series, fs, fe
+
+
+def get_repeat_value(scene, frame: int) -> int:
+    """SSOT-Read: integer Repeat-Wert eines Frames aus der Series."""
+    if scene is None:
+        try:
+            scene = bpy.context.scene
+        except Exception:
+            return 0
+    series, fs, _ = _ensure_series(scene)
     idx = int(frame) - fs
-    if 0 <= idx < n:
-        return int(series[idx])
+    if 0 <= idx < len(series):
+        try:
+            return int(series[idx])
+        except Exception:
+            return 0
     return 0
 
 
@@ -216,12 +225,8 @@ def record_repeat_count(scene, frame, value) -> None:
         return
 
     # Serie vorbereiten
-    fs = int(scene.frame_start)
-    fe = int(scene.frame_end)
-    n = max(0, fe - fs + 1)
-    series = scene.get("_kc_repeat_series")
-    if not isinstance(series, list) or len(series) != n:
-        series = [0.0] * n
+    series, fs, fe = _ensure_series(scene)
+    n = len(series)
 
     # MAX-Merge: niemals verringern
     idx = int(frame) - fs
@@ -239,7 +244,7 @@ def record_repeat_count(scene, frame, value) -> None:
 
 
 def record_repeat_bulk_map(scene, repeat_map: Dict[int, int], *, source: str = "bulk") -> None:
-    """Schreibt eine Menge Frame→Wert in einem Rutsch (MAX-Merge) mit Diagnose-Logs."""
+    """MAX-Merge von Repeat-Werten in die Series (SSOT) + optionales Map-Update."""
     if scene is None:
         try:
             scene = bpy.context.scene
@@ -248,14 +253,7 @@ def record_repeat_bulk_map(scene, repeat_map: Dict[int, int], *, source: str = "
     if scene is None:
         return
 
-    fs = int(scene.frame_start)
-    fe = int(scene.frame_end)
-    n = max(0, fe - fs + 1)
-    series = scene.get("_kc_repeat_series")
-    if not isinstance(series, list) or len(series) != n:
-        series = [0.0] * n
-
-    # MAX-Merge für jedes Element
+    series, fs, fe = _ensure_series(scene)
     changed = 0
     min_f, max_f = None, None
     for f, v in (repeat_map or {}).items():
@@ -264,9 +262,9 @@ def record_repeat_bulk_map(scene, repeat_map: Dict[int, int], *, source: str = "
             v = int(v)
         except Exception:
             continue
-        idx = f - fs
-        if not (0 <= idx < n):
+        if f < fs or f > fe:
             continue
+        idx = f - fs
         cur = float(series[idx])
         if v > cur:
             series[idx] = float(v)
