@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""
-Helper/distanze.py
-
-Überarbeitetes Distanz-Cleanup mit optionaler Selbsterkennung der Alt-/Neu-Mengen.
+"""Helper/distanze.py
+Distanz-Cleanup mit (a) Baseline-Klassifikation und (b) Schutz vor ko-lokalen Varianten.
 """
 
 from __future__ import annotations
@@ -159,53 +157,67 @@ def run_distance_cleanup(
     include_muted_old: bool = False,
     select_remaining_new: bool = True,
     verbose: bool = True,
+    # NEU: Ko-location-Schutz (0-px/≈0-px Duplikate nicht entfernen)
+    keep_zero_distance_duplicates: bool = True,
 ) -> Dict[str, Any]:
     """
-    Wenn ``baseline_ptrs`` ``None`` ist:
-      - ermittelt die Funktion intern die Referenz- ("alt") und Kandidaten- ("neu") Sets
-        basierend auf Selektion @frame und Muting-Flags.
-    Andernfalls:
-      - verwendet ``baseline_ptrs`` als Menge der bestehenden Tracks;
-        "neu" sind strikt alle Tracks, deren Pointer nicht in ``baseline_ptrs`` enthalten sind.
+    Klassifikation:
+      • Mit ``baseline_ptrs``: "alt" = Tracks aus Baseline (Pointer ∈ baseline_ptrs) mit Marker @frame;
+        "neu" = Tracks mit Marker @frame, deren Pointer nicht in ``baseline_ptrs`` enthalten sind.
+        Selektion wird dabei ignoriert. (classification_mode="BASELINE_PTRS")
+      • Ohne ``baseline_ptrs``: Selektion-basierte Klassifikation (Bestand).
+
+    Ko-lokale Varianten:
+      • Wenn ``keep_zero_distance_duplicates`` True ist, werden Kandidaten mit
+        Mindestabstand ≤ ε (ε in Pixel; per Scene['kc_colocate_epsilon_px'] übersteuerbar,
+        Default 0.75 px) nicht gelöscht.
     """
     clip = _resolve_clip(context)
     if not clip:
         return {"status": "NO_CLIP", "frame": frame}
 
 
-    # --- NEU: Exklusiv selektionsbasierte Klassifikation (zwingend) ---------
-    # Vertrag:
-    #   neu = Track hat auf 'frame' einen Marker, der beim Funktionsstart SELECTED ist
-    #   alt = Track hat auf 'frame' einen Marker, der NICHT selected ist
-    #   (include_muted_old steuert nur, ob gemutete Alt-Tracks als Referenz zulässig sind)
     tracking = getattr(clip, "tracking", None)
     all_tracks = list(getattr(tracking, "tracks", []))
 
-    # Snapshot der Selektion (stabil gegenüber UI-Umschaltungen während des Laufs)
-    new_tracks = []
-    for t in all_tracks:
-        m = _marker_at_frame(t, frame)
-        # Neu = Marker-Selection ODER Track-Selection (Fallback für Detect)
-        if m and (
-            bool(getattr(m, "select", False))
-            or bool(getattr(t, "select", False))
-        ):
-            new_tracks.append(t)
+    # --- Klassifikation: BASELINE_PTRS oder SELECTION_ONLY -------------------
+    if baseline_ptrs:
+        base_set = {int(p) for p in baseline_ptrs}
+        old_tracks = []
+        new_tracks = []
+        for t in all_tracks:
+            m = _marker_at_frame(t, frame)
+            if not m:
+                continue
+            ptr = int(getattr(t, "as_pointer")())
+            if ptr in base_set:
+                # Alt nur, wenn Marker @frame vorhanden und (optional) nicht gemutet
+                if include_muted_old or not (getattr(t, "mute", False) or getattr(m, "mute", False)):
+                    old_tracks.append(t)
+            else:
+                # Neu = nicht in Baseline, Marker @frame vorhanden (Mute egal)
+                new_tracks.append(t)
+        classification_mode = "BASELINE_PTRS"
+    else:
+        # Snapshot der Selektion (stabil gegenüber UI-Umschaltungen während des Laufs)
+        new_tracks = []
+        for t in all_tracks:
+            m = _marker_at_frame(t, frame)
+            # Neu = Marker-Selection ODER Track-Selection (Fallback für Detect)
+            if m and (bool(getattr(m, "select", False)) or bool(getattr(t, "select", False))):
+                new_tracks.append(t)
 
-    old_tracks = []
-    for t in all_tracks:
-        m = _marker_at_frame(t, frame)
-        if not m:
-            continue  # kein Marker auf diesem Frame → irrelevant
-        # Alt = weder Marker-Selection noch Track-Selection
-        if not (
-            bool(getattr(m, "select", False))
-            or bool(getattr(t, "select", False))
-        ):
-            if include_muted_old or not bool(getattr(t, "mute", False)):
-                old_tracks.append(t)
+        old_tracks = []
+        for t in all_tracks:
+            m = _marker_at_frame(t, frame)
+            if not m:
+                continue  # kein Marker auf diesem Frame → irrelevant
+            # Alt = weder Marker-Selection noch Track-Selection
+            if not (bool(getattr(m, "select", False)) or bool(getattr(t, "select", False))):
+                if include_muted_old or not bool(getattr(t, "mute", False)):
+                    old_tracks.append(t)
 
-    classification_mode = "SELECTION_ONLY"
+        classification_mode = "SELECTION_ONLY"
 
     len_old_markers = len([_marker_at_frame(t, frame) for t in old_tracks])
     len_new_markers = len([_marker_at_frame(t, frame) for t in new_tracks])
@@ -254,11 +266,20 @@ def run_distance_cleanup(
     failed_removals = 0
     zero_px_deletes = 0
     below_thr_nonzero_deletes = 0
+    kept_zero_px = 0
     deleted_ptrs: list[int] = []
 
     # Referenz-Koordinaten (old_set) am Frame sammeln
     width = int(getattr(clip, "size", (0, 0))[0] or 0)
     height = int(getattr(clip, "size", (0, 0))[1] or 0)
+
+    # ε für Ko-location (Pixel)
+    try:
+        eps_px = float(getattr(context.scene, "kc_colocate_epsilon_px", 0.75))
+        if not isfinite(eps_px) or eps_px <= 0.0:
+            eps_px = 0.75
+    except Exception:
+        eps_px = 0.75
     ref_coords = []
     if width > 0 and height > 0:
         for tr in clip.tracking.tracks:
@@ -423,22 +444,31 @@ def run_distance_cleanup(
             name = ptr_to_name.get(ptr, getattr(tr, "name", "<noname>"))
             sel_state = f"Tsel={bool(getattr(tr,'select',False))}, Msel={bool(getattr(m_new,'select',False))}"
             if too_close:
-                ok_del, how = _delete_track_or_marker(tr, ptr, frame)
-                if ok_del:
-                    removed += 1
-                    deleted_ptrs.append(ptr)
-                    if abs(min_found) < 1e-6:
-                        zero_px_deletes += 1
-                    else:
-                        below_thr_nonzero_deletes += 1
+                # --- NEU: Ko-location-Schutz -----------------------------------
+                # Kandidat liegt (nahezu) exakt auf einer Referenz → NICHT löschen.
+                if keep_zero_distance_duplicates and (min_found <= float(eps_px)):
+                    kept += 1
+                    kept_zero_px += 1
                     log(
-                        f"[DISTANZE]   DELETE  ptr={ptr} name='{name}' min_d={min_found:.2f}px @f{frame}  ({sel_state}) → {how}"
+                        f"[DISTANZE] KEEP(COLOC) ptr={ptr} name='{name}' min_d={min_found:.3f}px ≤ eps={eps_px:.3f}px @f{frame} ({sel_state})"
                     )
                 else:
-                    failed_removals += 1
-                    log(
-                        f"[DISTANZE]   FAILED  ptr={ptr} name='{name}' min_d={min_found:.2f}px @f{frame}  ({sel_state}) → could not remove"
-                    )
+                    ok_del, how = _delete_track_or_marker(tr, ptr, frame)
+                    if ok_del:
+                        removed += 1
+                        deleted_ptrs.append(ptr)
+                        if abs(min_found) < 1e-6:
+                            zero_px_deletes += 1
+                        else:
+                            below_thr_nonzero_deletes += 1
+                        log(
+                            f"[DISTANZE]   DELETE  ptr={ptr} name='{name}' min_d={min_found:.2f}px @f{frame}  ({sel_state}) → {how}"
+                        )
+                    else:
+                        failed_removals += 1
+                        log(
+                            f"[DISTANZE]   FAILED  ptr={ptr} name='{name}' min_d={min_found:.2f}px @f{frame}  ({sel_state}) → could not remove"
+                        )
             else:
                 kept += 1
                 log(
@@ -521,5 +551,6 @@ def run_distance_cleanup(
         "deleted": deleted_struct,
         "new_ptrs_after_cleanup": survivors,
         "markers_at_frame": int(marker_count_frame),
+        "kept_zero_px": int(kept_zero_px),
         "failed_removals": int(failed_removals),
     }
