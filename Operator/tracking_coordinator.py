@@ -1205,14 +1205,22 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self.detection_threshold = float(scn.get("tco_detect_thr", self.detection_threshold or 0.75))
                 self.last_detect_new_count = new_cnt
                 self.last_detect_margin = int(scn.get("tco_detect_margin", 0))
-                self.last_detect_min_distance = int(scn.get("tco_detect_min_distance", 0))
+                md_detect = int(rd.get("min_distance_px", 0))
+                if md_detect <= 0:
+                    md_detect = int(scn.get("tco_detect_min_distance", 0) or 0)
+                if md_detect <= 0:
+                    md_detect = int(scn.get("min_distance_base", 0) or 0)
+                if md_detect <= 0:
+                    md_detect = 200
+                self.last_detect_min_distance = int(md_detect)
+                scn["kc_min_distance_effective"] = int(md_detect)
             except Exception:
                 pass
             try:
                 clip = _resolve_clip(context)
                 post_ptrs = {int(t.as_pointer()) for t in getattr(clip.tracking, "tracks", [])}
                 base = self.pre_ptrs or set()
-                print(f"[COORD] Post Detect: detect_new={len(post_ptrs - base)}")
+                print(f"[COORD] Post Distanze: new_after={len(post_ptrs - base)}")
             except Exception:
                 pass
             self.report({'INFO'}, f"DETECT @f{self.target_frame}: new={new_cnt}, thr={self.detection_threshold}")
@@ -1225,13 +1233,18 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return self._finish(context, info="DISTANZE: Pre-Snapshot oder Ziel-Frame fehlt.", cancelled=True)
             try:
                 cur_frame = int(self.target_frame)
-                print(f"[COORD] Calling Distanz: frame={cur_frame}, min_distance=None")
+                scn = getattr(context, "scene", None)
+                eff_md = int(
+                    getattr(self, "last_detect_min_distance", 0)
+                    or (scn.get("kc_min_distance_effective", 0) if scn else 0)
+                    or 200
+                )
+                print(f"[COORD] Calling Distanz: frame={cur_frame}, min_distance={eff_md}")
                 info = run_distance_cleanup(
                     context,
                     baseline_ptrs=self.pre_ptrs,  # zwingt Distanz(e) auf Snapshot-Pfad (kein Selektion-Fallback)
                     frame=cur_frame,
-                    # min_distance=None â†’ Auto-Ableitung in distanze.py (aus Threshold & scene-base)
-                    min_distance=None,
+                    min_distance=int(eff_md),
                     distance_unit="pixel",
                     require_selected_new=True,
                     include_muted_old=False,
@@ -1481,12 +1494,18 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                             try:
                                 cur_frame = int(self.target_frame) if self.target_frame is not None else None
                                 if cur_frame is not None:
-                                    print(f"[COORD] Calling Distanz: frame={cur_frame}, min_distance=None")
+                                    scn = getattr(context, "scene", None)
+                                    eff_md2 = int(
+                                        getattr(self, "last_detect_min_distance", 0)
+                                        or (scn.get("kc_min_distance_effective", 0) if scn else 0)
+                                        or 200
+                                    )
+                                    print(f"[COORD] Calling Distanz: frame={cur_frame}, min_distance={eff_md2}")
                                     dist_res = run_distance_cleanup(
                                         context,
                                         baseline_ptrs=current_ptrs,  # zwingt Distanz(e) auf Snapshot-Pfad (kein Selektion-Fallback)
                                         frame=cur_frame,
-                                        min_distance=None,
+                                        min_distance=int(eff_md2),
                                         distance_unit="pixel",
                                         require_selected_new=True,
                                         include_muted_old=False,
