@@ -70,15 +70,15 @@ def solve_eval_mode():
 def _coord_jump(context, target_frame: int) -> bool:
     """Zentraler Jump-Wrapper mit Telemetrie und Scope-Abgleich."""
     scn = context.scene
-    # Sticky einschalten – kein Nebenpfad darf Overlay deaktivieren
-    enable_repeat_scope(scn, True, source="coordinator", sticky=True)
-    set_repeat_scope_sticky(scn, True, source="coordinator")
+    # Repeat-Scope sticky aktivieren – kein Nebenpfad darf das Overlay beim Zyklus abschalten
+    try:
+        enable_repeat_scope(scn, True, source="coordinator", sticky=True)
+        set_repeat_scope_sticky(scn, True, source="coordinator")
+        redraw_clip_editors()
+    except Exception as _e:
+        print(f"[COORD][Jump] sticky enable failed: {_e!r}")
     scn["goto_frame"] = int(target_frame)
     res = run_jump_to_frame(context)
-    try:
-        redraw_clip_editors()
-    except Exception:
-        pass
     try:
         fmap = get_repeat_map(scn)
         cur = int(fmap.get(int(target_frame), 0))
