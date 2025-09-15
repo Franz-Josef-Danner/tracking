@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Kaiserlich Repeat-Scope Overlay: Visualisiert Repeat-Zähler mit stufigem Fade-Out.
-#
-# - Liest scene['_kc_repeat_series'] (Float-Liste in Frame-Range)
-# - Zeichnet eine normalisierte Kurve (Levels-Quantisierung) am unteren Rand
-# - Cursor-Linie optional
-# - Draw-Handler on/off via enable_repeat_scope()/disable_repeat_scope()
+# Änderungen:
+# - Draw-Enable prüft zusätzlich auf Sticky-IDProp („_kc_repeat_scope_sticky“)
+# - Zusätzliche Diagnose-Logs für Sticky-Status und Data-Readiness
+# - UI-Autostart bleibt erhalten, nutzt aber lokale Prüfung
 
 from __future__ import annotations
 import bpy
@@ -16,6 +15,18 @@ _HANDLE = None
 _REGISTERED = False
 _NO_DATA_LOGGED = False  # einmalige "no data" Diagnose pro Session
 _DATA_READY_LOGGED = False  # einmalige Diagnose bei erstem Daten-Draw
+_STICKY_KEY = "_kc_repeat_scope_sticky"
+
+
+def _is_enabled_local(scn: "bpy.types.Scene") -> bool:
+    """Overlay gilt als aktiv, wenn entweder die UI-Property an ist
+    ODER Sticky (IDProp) explizit gesetzt wurde."""
+    try:
+        ui_flag = bool(getattr(scn, "kc_show_repeat_scope", False))
+    except Exception:
+        ui_flag = False
+    sticky = bool(scn.get(_STICKY_KEY, False))
+    return ui_flag or sticky
 
 
 def register() -> None:
@@ -24,12 +35,10 @@ def register() -> None:
     _REGISTERED = True
     print("[Scope] register()")
     try:
-        from ..Helper.properties import is_repeat_scope_enabled
-
         scn = bpy.context.scene
-        if is_repeat_scope_enabled(scn):
+        if _is_enabled_local(scn):
             ensure_repeat_scope_handler(scn)
-            print("[Scope] auto-ensure handler on register (enabled=True)")
+            print("[Scope] auto-ensure handler on register (enabled=True or sticky=True)")
     except Exception as e:  # noqa: BLE001
         print(f"[Scope][WARN] auto-ensure on register failed: {e!r}")
 
@@ -159,8 +168,19 @@ def _draw_callback():
         return
 
     scn = getattr(bpy.context, "scene", None)
-    if not scn or not bool(getattr(scn, "kc_show_repeat_scope", False)):
+    if not scn:
         return
+    ui_flag = bool(getattr(scn, "kc_show_repeat_scope", False))
+    sticky = bool(scn.get(_STICKY_KEY, False))
+    if not (ui_flag or sticky):
+        return
+    if not ui_flag and sticky:
+        # Nur einmal pro Frame loggen, um Spam zu vermeiden
+        last = scn.get("_kc_scope_last_sticky_frame")
+        curf = int(getattr(scn, "frame_current", 0))
+        if last != curf:
+            print("[Scope][Sticky] UI-Flag off, aber sticky=True → zeichne trotzdem")
+            scn["_kc_scope_last_sticky_frame"] = curf
 
     # Konfiguration aus Scene-Properties
     H_px = int(getattr(scn, "kc_repeat_scope_height", 140))

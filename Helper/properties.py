@@ -34,9 +34,13 @@ def redraw_clip_editors() -> None:
 
 def _kc_request_overlay_redraw(context):
     try:
-        redraw_clip_editors()
+        for w in bpy.context.window_manager.windows:
+            for a in w.screen.areas:
+                if a.type == 'CLIP_EDITOR':
+                    for r in a.regions:
+                        if r.type == 'WINDOW':
+                            r.tag_redraw()
     except Exception:
-        # defensiv: während Startup/Prefs keine harten Fehler
         pass
 
 
