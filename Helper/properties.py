@@ -185,31 +185,46 @@ def get_repeat_map(scene=None) -> dict[int, int]:
         return {}
 
 
-def _ensure_series(scene):
+def _ensure_series(scene, *, create: bool = False):
+    """Liefert die SSOT-Serie. Erzeugt/Resized NUR wenn create=True.
+    Wichtig: Keine Typprüfung auf list – akzeptiert auch bpy_prop_array."""
     fs = int(scene.frame_start)
     fe = int(scene.frame_end)
     n = max(0, fe - fs + 1)
     series = scene.get("_kc_repeat_series")
-    if not isinstance(series, list) or len(series) != n:
-        series = [0.0] * n
-        scene["_kc_repeat_series"] = series
+    if series is None:
+        if create:
+            series = [0.0] * n
+            scene["_kc_repeat_series"] = series
+        return series, fs, fe
+    try:
+        length = len(series)
+    except Exception:
+        length = -1
+    if length != n:
+        if create:
+            new_series = [0.0] * n
+            scene["_kc_repeat_series"] = new_series
+            series = new_series
     return series, fs, fe
 
 
 def get_repeat_value(scene, frame: int) -> int:
-    """SSOT-Read: integer Repeat-Wert eines Frames aus der Series."""
+    """SSOT-Read: integer Repeat-Wert eines Frames aus der Series (ohne Neu-Init)."""
     if scene is None:
         try:
             scene = bpy.context.scene
         except Exception:
             return 0
-    series, fs, _ = _ensure_series(scene)
-    idx = int(frame) - fs
-    if 0 <= idx < len(series):
-        try:
+    series, fs, _ = _ensure_series(scene, create=False)
+    if series is None:
+        return 0
+    try:
+        idx = int(frame) - fs
+        if 0 <= idx < len(series):
             return int(series[idx])
-        except Exception:
-            return 0
+    except Exception:
+        pass
     return 0
 
 
@@ -225,7 +240,7 @@ def record_repeat_count(scene, frame, value) -> None:
         return
 
     # Serie vorbereiten
-    series, fs, fe = _ensure_series(scene)
+    series, fs, fe = _ensure_series(scene, create=True)
     n = len(series)
 
     # MAX-Merge: niemals verringern
@@ -253,7 +268,7 @@ def record_repeat_bulk_map(scene, repeat_map: Dict[int, int], *, source: str = "
     if scene is None:
         return
 
-    series, fs, fe = _ensure_series(scene)
+    series, fs, fe = _ensure_series(scene, create=True)
     changed = 0
     min_f, max_f = None, None
     for f, v in (repeat_map or {}).items():
