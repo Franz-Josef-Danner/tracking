@@ -1,20 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""
-Kaiserlich Tracker – Top-Level Add-on (__init__.py)
-- Scene-Properties + UI-Panel + Coordinator-Launcher
-- Der MODALE Operator kommt aus Operator/tracking_coordinator.py
-"""
+"""Kaiserlich Tracker – Top-Level Add-on (__init__.py) ohne Grafik-Overlay."""
 from __future__ import annotations
 import bpy
 from bpy.types import PropertyGroup, Panel, Operator as BpyOperator
 from bpy.props import IntProperty, FloatProperty, CollectionProperty, BoolProperty, StringProperty
-import math
-import time
-try:
-    import gpu
-    from gpu_extras.batch import batch_for_shader
-except Exception:
-    gpu = None
 
 # WICHTIG: nur Klassen importieren, kein register() von Submodulen aufrufen
 from .Operator.tracking_coordinator import CLIP_OT_tracking_coordinator
@@ -26,7 +15,7 @@ bl_info = {
     "version": (1, 0, 0),
     "blender": (4, 4, 0),
     "location": "Clip Editor > Sidebar (N) > Kaiserlich",
-    "description": "Launcher + UI für den Kaiserlich Tracking-Workflow",
+    "description": "Launcher + UI für den Kaiserlich Tracking-Workflow (ohne Overlay)",
     "category": "Tracking",
 }
 
@@ -42,22 +31,11 @@ class KaiserlichSolveErrItem(PropertyGroup):
     attempt: IntProperty(name="Attempt", default=0, min=0)
     value:   FloatProperty(name="Avg Error", default=float("nan"))
     stamp:   StringProperty(name="Time", default="")
-# --- UI-Redraw Helper: künftig in ui.utils; Wrapper bleibt für Abwärtskompatibilität ---
-def _tag_clip_redraw() -> None:
-    try:
-        from .ui.utils import tag_clip_redraw as _impl
-        _impl()
-    except Exception:
-        # Fallback: no-op
-        pass
-
 # Öffentliche Helper-Funktion (vom Coordinator aufrufbar) – Wrapper in ui.solve_log
 def kaiserlich_solve_log_add(context: bpy.types.Context, value: float | None) -> None:
     from .ui.solve_log import kaiserlich_solve_log_add as _impl
     _impl(context, value)
     
-# GPU-Overlay wandert vollständig nach ui.overlay (draw handler & Zeichnung)
-
 def _register_scene_props() -> None:
     sc = bpy.types.Scene
     if not hasattr(sc, "repeat_frame"):
@@ -84,15 +62,10 @@ def _register_scene_props() -> None:
         sc.kaiserlich_solve_err_idx = IntProperty(name="Index", default=0, min=0)
     if not hasattr(sc, "kaiserlich_solve_attempts"):
         sc.kaiserlich_solve_attempts = IntProperty(name="Solve Attempts", default=0, min=0)
-    if not hasattr(sc, "kaiserlich_solve_graph_enabled"):
-        sc.kaiserlich_solve_graph_enabled = BoolProperty(
-            name="Overlay Graph", default=True,
-            description="Sparkline-Overlay des Avg-Errors im CLIP-Editor anzeigen"
-        )
     if not hasattr(sc, "kaiserlich_debug_graph"):
         sc.kaiserlich_debug_graph = BoolProperty(
             name="Debug Graph", default=False,
-            description="Konsolen-Logs für Solve-Overlay und Solve-Log aktivieren"
+            description="Konsolen-Logs für Solve-Log aktivieren"
         )
     if not hasattr(sc, "kaiserlich_solve_log_max_rows"):
         sc.kaiserlich_solve_log_max_rows = IntProperty(
@@ -108,7 +81,7 @@ def _unregister_scene_props() -> None:
     for name in (
         "repeat_frame", "marker_frame", "frames_track", "error_track",
         "kaiserlich_solve_err_log", "kaiserlich_solve_err_idx",
-        "kaiserlich_solve_attempts", "kaiserlich_solve_graph_enabled",
+        "kaiserlich_solve_attempts",
         "kaiserlich_debug_graph", "kaiserlich_solve_log_max_rows",
     ):
         if hasattr(sc, name):
@@ -151,11 +124,10 @@ class CLIP_PT_kaiserlich_panel(Panel):
         if hasattr(scene, "error_track"):
             layout.prop(scene, "error_track")
         layout.separator()
-        # Solve QA – Overlay + Tabelle
+        # Solve QA – Log
         box = layout.box()
         row = box.row(align=True)
         row.label(text="Solve QA")
-        row.prop(scene, "kaiserlich_solve_graph_enabled", text="Overlay")
         row.prop(scene, "kaiserlich_debug_graph", text="Debug")
         coll = getattr(scene, "kaiserlich_solve_err_log", None)
         max_rows = int(getattr(scene, "kaiserlich_solve_log_max_rows", 30))
@@ -187,23 +159,23 @@ _CLASSES = (
     RepeatEntry,
     KaiserlichSolveErrItem,
     KAISERLICH_UL_solve_err,
-    CLIP_OT_tracking_coordinator,            # modal coordinator
-    CLIP_OT_bidirectional_track,             # bidi helper
-    CLIP_OT_kaiserlich_coordinator_launcher, # launcher
-    CLIP_PT_kaiserlich_panel,                # ui
+    CLIP_OT_tracking_coordinator,   # modal coordinator
+    CLIP_OT_bidirectional_track,    # bidi helper
+    CLIP_OT_kaiserlich_coordinator_launcher,  # launcher
+    CLIP_PT_kaiserlich_panel,       # ui
 )
 
 def register() -> None:
-    from .ui import register as _ui_register
+    from .ui import register as _ui_register  # Stub
     # 1) Klassen zuerst registrieren (damit bl_rna existiert)
     for cls in _CLASSES:
         bpy.utils.register_class(cls)
     # 2) Dann Scene-Properties anlegen (nutzt registrierte PropertyGroups)
     _register_scene_props()
-    _ui_register()  # Panels/Menus/Overlay
+    _ui_register()  # Stub (keine Panels/Handler)
 
 def unregister() -> None:
-    from .ui import unregister as _ui_unregister
+    from .ui import unregister as _ui_unregister  # Stub
     _ui_unregister()
     # 1) Scene-Properties zuerst sauber entfernen (lösen Referenzen)
     _unregister_scene_props()
