@@ -90,11 +90,19 @@ def get_repeat_value(scene, frame: int) -> int:
     fe = int(scene.frame_end)
     n = max(0, fe - fs + 1)
     series = scene.get("_kc_repeat_series")
-    if not isinstance(series, list) or len(series) != n:
+    # WICHTIG: 'series' kann eine bpy_prop_array sein – KEIN isinstance(list)!
+    try:
+        length = len(series) if series is not None else -1
+    except Exception:
+        length = -1
+    if length != n:
         return 0
-    idx = int(frame) - fs
-    if 0 <= idx < n:
-        return int(series[idx])
+    try:
+        idx = int(frame) - fs
+        if 0 <= idx < n:
+            return int(series[idx])
+    except Exception:
+        return 0
     return 0
 
 
@@ -114,7 +122,13 @@ def record_repeat_count(scene, frame, value) -> None:
     fe = int(scene.frame_end)
     n = max(0, fe - fs + 1)
     series = scene.get("_kc_repeat_series")
-    if not isinstance(series, list) or len(series) != n:
+    # Nur neu anlegen/resize, wenn NICHT vorhanden oder Länge abweicht
+    need_init = False
+    try:
+        need_init = (series is None) or (len(series) != n)
+    except Exception:
+        need_init = True
+    if need_init:
         series = [0.0] * n
 
     # MAX-Merge: niemals verringern
@@ -145,7 +159,13 @@ def record_repeat_bulk_map(scene, repeat_map: Dict[int, int]) -> None:
     fe = int(scene.frame_end)
     n = max(0, fe - fs + 1)
     series = scene.get("_kc_repeat_series")
-    if not isinstance(series, list) or len(series) != n:
+    # Nur neu anlegen/resize, wenn NICHT vorhanden oder Länge abweicht
+    need_init = False
+    try:
+        need_init = (series is None) or (len(series) != n)
+    except Exception:
+        need_init = True
+    if need_init:
         series = [0.0] * n
 
     # MAX-Merge für jedes Element
