@@ -253,15 +253,74 @@ def run_distance_cleanup(
 
     # Mindestabstand: Wert aus Koordinator robust übernehmen (Fallback 200)
     auto_min_used = False
+    scn = getattr(context, "scene", None)
     try:
-        md = float(min_distance) if min_distance is not None else 200.0
+        if min_distance is None:
+            eff = None
+            if scn is not None:
+                eff_candidate = None
+                try:
+                    eff_candidate = scn.get("kc_min_distance_effective", None)
+                except Exception:
+                    eff_candidate = None
+                if eff_candidate is not None:
+                    try:
+                        eff = float(eff_candidate)
+                    except Exception:
+                        eff = None
+                    else:
+                        auto_min_used = True
+                        try:
+                            log(
+                                f"[DISTANZE] min_distance=None → scene['kc_min_distance_effective']={eff:.3f}"
+                            )
+                        except Exception:
+                            pass
+                if eff is None:
+                    eff_candidate = None
+                    try:
+                        eff_candidate = scn.get("min_distance_base", None)
+                    except Exception:
+                        eff_candidate = None
+                    if eff_candidate is not None:
+                        try:
+                            eff = float(eff_candidate)
+                        except Exception:
+                            eff = None
+                        else:
+                            auto_min_used = True
+                            try:
+                                log(
+                                    f"[DISTANZE] min_distance=None → scene['min_distance_base']={eff:.3f}"
+                                )
+                            except Exception:
+                                pass
+            if eff is None:
+                md = 200.0
+                auto_min_used = True
+                try:
+                    log("[DISTANZE] min_distance=None → fallback default=200.0")
+                except Exception:
+                    pass
+            else:
+                md = float(eff)
+        else:
+            md = float(min_distance)
         # Ungültige/negative Werte abfangen
         if not isfinite(md) or md <= 0.0:
-            auto_min_used = (min_distance is None)
+            auto_min_used = True
             md = 200.0
+            try:
+                log("[DISTANZE] min_distance invalid/non-positive → fallback default=200.0")
+            except Exception:
+                pass
     except Exception:
         auto_min_used = True
-        md = 100.0
+        md = 200.0
+        try:
+            log("[DISTANZE] min_distance evaluation failed → fallback default=200.0")
+        except Exception:
+            pass
     min_distance = md
     log(
         f"[DISTANZE] run_distance_cleanup called: frame={frame}, min_distance={min_distance}, unit={distance_unit}, "
@@ -345,7 +404,7 @@ def run_distance_cleanup(
             "distance_unit": distance_unit,
             "old_count": int(len(old_set)),
             "new_total": int(len(new_set)),
-            "auto_min_used": False,
+            "auto_min_used": bool(auto_min_used),
             "deleted": [],
             "failed_removals": 0,
         }

@@ -186,6 +186,27 @@ def _run_multi_core(
 
     tracking = clip.tracking
     settings = tracking.settings
+
+    # --- Effektive min_distance **einmal** je Durchlauf bestimmen -----------
+    scn = getattr(context, "scene", None)
+    try:
+        width, height = getattr(clip, "size", (0, 0))
+    except Exception:
+        width, height = 0, 0
+    base_min_scene = scn.get("min_distance_base", None) if scn else None
+    base_min = int(base_min_scene) if base_min_scene is not None else max(8, int(0.05 * max(width, height)))
+    safe = max(float(detect_threshold) * 1e8, 1e-8)
+    factor = math.log10(safe) / 8.0
+    min_dist_effective = max(1, int(base_min * factor))
+    if scn is not None:
+        try:
+            scn["kc_min_distance_effective"] = int(min_dist_effective)
+            print(
+                f"[Multi] f={int(scn.frame_current)} thr={float(detect_threshold):.6f} "
+                f"→ min_distance_effective={int(min_dist_effective)} (base={int(base_min)})"
+            )
+        except Exception:
+            pass
     pattern_o = int(getattr(settings, "default_pattern_size", 15))
     search_o  = int(getattr(settings, "default_search_size", 51))
 
@@ -241,13 +262,8 @@ def _run_multi_core(
             # Fallback analog "match_search_size"
             margin = ss
 
-        # Min-Distance skaliert wie in detect.py
-        width, height = getattr(clip, "size", (0, 0))
-        base_min_scene = context.scene.get("min_distance_base", None)
-        base_min = int(base_min_scene) if base_min_scene is not None else max(8, int(0.05 * max(width, height)))
-        safe = max(float(detect_threshold) * 1e8, 1e-8)
-        factor = math.log10(safe) / 8.0
-        min_dist = max(1, int(base_min * factor))
+        # Min-Distance: den **vorab** berechneten Wert für alle Sweeps verwenden
+        min_dist = int(min_dist_effective)
 
         # Debug-Logs: volle Transparenz je Sweep
         try:
@@ -304,6 +320,8 @@ def _run_multi_core(
         "new_ptrs": new_ptrs,
         "repeat_count": int(repeat_count or 0),
         "scales_used": scales,
+        "min_distance_effective": int(min_dist_effective),
+        "detect_threshold_used": float(detect_threshold),
     }
 
 
