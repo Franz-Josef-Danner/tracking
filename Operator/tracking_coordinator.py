@@ -276,7 +276,6 @@ from ..Helper.tracker_settings import apply_tracker_settings
 
 # --- Anzahl/A-Werte/State-Handling ------------------------------------------
 from ..Helper.tracking_state import (
-    orchestrate_on_jump,
     record_bidirectional_result,
     _get_state,          # intern genutzt, um count zu prÃ¼fen
     _ensure_frame_entry, # intern genutzt, um Frame-Eintrag zu holen
@@ -1083,15 +1082,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return self._finish(context, info=f"JUMP FAILED â†’ {rj}", cancelled=True)
             self.report({'INFO'}, f"Playhead gesetzt: f{rj.get('frame')} (repeat={rj.get('repeat_count')})")
 
-            # NEU: Anzahl/Motion-Model orchestrieren und ggf. bei 10 abbrechen
+            # NEU: Anzahl/Motion-Model aus SSOT lesen und ggf. bei 10 abbrechen
             try:
-                orchestrate_on_jump(context, int(self.target_frame))
-                # count prÃ¼fen (orchestrator zeigt bei ==10 bereits Popup)
                 _state = _get_state(context)
                 _entry, _ = _ensure_frame_entry(_state, int(self.target_frame))
                 _count = int(_entry.get("count", 1))
                 self.repeat_count_for_target = _count
-                # Abbruch erst, wenn tracking_state die globale Schwelle erreicht (inkl. +10 VerlÃ¤ngerung)
                 if _count >= ABORT_AT:
                     return self._finish(
                         context,
@@ -1099,7 +1095,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         cancelled=True
                     )
             except Exception as _exc:
-                self.report({'WARNING'}, f"Orchestrate on jump warn: {str(_exc)}")
+                self.report({'WARNING'}, f"Repeat count read warn: {str(_exc)}")
 
             # --- Snapshot VOR Detect ziehen (Fix für RC#2) ---
             self.pre_ptrs = set(_snapshot_track_ptrs(context))

@@ -251,26 +251,26 @@ def run_jump_to_frame(
     else:
         scn.frame_current = target
 
-    # Einheitlicher Zähler & Ringe per Orchestrator aktualisieren (SSOT).
+    # Einheitlicher Zähler & Ringe zentral aktualisieren (SSOT)
     try:
         from .tracking_state import orchestrate_on_jump
         orchestrate_on_jump(context, int(target))
-    except Exception as e:
-        _dbg(scn, f"[JumpTo][WARN] orchestrate_on_jump failed: {e!r}")
-    # Logging aus SSOT lesen (konsistent zu Motion-Model)
+    except Exception as e:  # noqa: BLE001
+        print(f"[JumpTo][WARN] orchestrate_on_jump failed: {e!r}")
+
+    # Logging NACH SSOT-Update: konsistenten Wert lesen
     repeat_count = 0
     try:
         from .properties import get_repeat_value
+        step = int(getattr(scn, "kc_repeat_fade_step", 5))
         k_used = int(get_repeat_value(scn, int(target)))
         repeat_count = k_used
-        step = _fade_step_frames()
-        _dbg(scn, f"[JumpTo][Count] frame={int(target)} repeat={k_used} (SSOT)")
-        # Optional: Bounds grob loggen (clamped außen ±k*step)
+        print(f"[JumpTo][Count] frame={int(target)} repeat={k_used} (SSOT)")
         fs, fe = int(scn.frame_start), int(scn.frame_end)
         left = max(fs, int(target) - k_used * step)
         right = min(fe, int(target) + k_used * step)
-        _dbg(scn, f"[JumpTo][Spread] rings={k_used} step={step} outer_radius={k_used*step} bounds≈{left}..{right}")
-    except Exception:
+        print(f"[JumpTo][Spread] rings={k_used} step={step} outer_radius={k_used*step} bounds≈{left}..{right}")
+    except Exception:  # noqa: BLE001
         pass
 
     # Debugging & Transparenz
