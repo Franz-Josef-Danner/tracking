@@ -6,15 +6,14 @@ __all__ = ("run_jump_to_frame", "jump_to_frame")
 REPEAT_SATURATION = 10  # Ab dieser Wiederholungsanzahl: Optimizer anstoßen statt Detect
 
 # ---------------------------------------------------------------------------
-# Fade-Parameter
+# Fade-/Ring-Parameter
 # ---------------------------------------------------------------------------
-# Statt "pro Frame -1" wird nur alle N Frames um 1 dekrementiert.
-# Damit entsteht ein Plateau von N Frames pro Stufe.
+# Ringbreite = 5 Frames je Seite (Zentralband umfasst damit [f-5 .. f+5]).
 FADE_STEP_FRAMES: int = 5
 
 
 def _fade_step_frames() -> int:
-    """Liest den stufigen Fade-Step aus der Scene-Property (Fallback auf Default)."""
+    """Liest den Fade-Step aus Scene-Property (kc_repeat_fade_step) oder nutzt Default."""
     try:
         scn = bpy.context.scene
         val = int(getattr(scn, "kc_repeat_fade_step", FADE_STEP_FRAMES))
@@ -43,15 +42,71 @@ def _clamp(v: int, lo: int = 0, hi: int | None = None) -> int:
         return v if v >= lo else lo
     return lo if v < lo else (hi if v > hi else v)
 
+# ---------------------------------------------------------------------------
+# Ring-Expansion nach Spezifikation
+# ---------------------------------------------------------------------------
+# Kurzlogik:
+# - Bei k-ter Wiederholung am Frame f:
+#   Ring 0  : [f-5 .. f+5]           → Wert k
+#   Ring m≥1: linke/rechte Intervalle → Wert k-m
+#             L: [f-5*(m+1) .. f-(5*m+1)]
+#             R: [f+(5*m+1) .. f+5*(m+1)]
+# - Pro Frame: MAX-Merge, Clamping auf Scene-Range.
+
+def _write_max(mapping: Dict[int, int], i: int, v: int) -> None:
+    cur = mapping.get(i, 0)
+    if v > cur:
+        mapping[i] = v
+
+
+def _expand_repeat_series_for_jump(
+    *, center_f: int, repeat_count: int, lo: int, hi: int, step: int
+) -> Dict[int, int]:
+    """
+    Baut ein lokales Mapping {frame: value} für die k-te Wiederholung am Ziel-Frame.
+    Exakte Ring-Definition gemäß Spezifikation, inklusive Clamping und MAX-Merge.
+    """
+    out: Dict[int, int] = {}
+    k = int(repeat_count)
+    if k <= 0:
+        return out
+
+    # Ring 0: [f-step .. f+step] → k
+    start0 = max(lo, center_f - step)
+    end0 = min(hi, center_f + step)
+    for i in range(start0, end0 + 1):
+        _write_max(out, i, k)
+
+    # Ringe 1..k-1: Wert (k-m) mit 5er-Ringbreite je Seite
+    for m in range(1, k):
+        val = k - m
+        # Links: [f-5*(m+1) .. f-(5*m+1)]
+        L1 = max(lo, center_f - step * (m + 1))
+        L2 = max(lo, center_f - (step * m + 1))
+        if L1 <= L2:
+            for i in range(L1, L2 + 1):
+                _write_max(out, i, val)
+        # Rechts: [f+(5*m+1) .. f+5*(m+1)]
+        R1 = min(hi, center_f + (step * m + 1))
+        R2 = min(hi, center_f + step * (m + 1))
+        if R1 <= R2:
+            for i in range(R1, R2 + 1):
+                _write_max(out, i, val)
+    return out
+
 
 def _spread_repeat_to_neighbors(repeat_map: dict[int, int], center_f: int, radius: int, base: int) -> None:
-    """Stufiger Fade-Out um 'center_f' mit MAX-Merge in das lokale Mapping."""
+    """
+    (Legacy-Helfer, weiterhin kompatibel)
+    Erzeugt stufigen Fade basierend auf 'radius' und 'base' – ohne Clamping.
+    Hinweis: Für exakte Ringspezifikation wird _expand_repeat_series_for_jump() genutzt.
+    """
     step = _fade_step_frames()
     for off in range(-radius, radius + 1):
         f = center_f + off
         if f < 0:
             continue
-        # Decrement stufig: 0..(step-1) → 0, step..(2*step-1) → 1, ...
+        # Legacy-Approx; belassen für Rückwärtskompatibilität
         dec = abs(off) // step
         v = base - dec
         if v <= 0:
@@ -136,6 +191,7 @@ def run_jump_to_frame(
     - Clamped auf Clipgrenzen
     - Optionaler CLIP_EDITOR-Override & Modus-Setzung
     - Zählt Wiederholungen NUR für per Jump gesetzte Frames via repeat_map
+    - Erzeugt eine Ring-Expansion gemäß Spezifikation (Zentralband ±5, dann 5er-Ringe)
 
     Returns:
       {"status": "OK"|"FAILED",
@@ -203,14 +259,32 @@ def run_jump_to_frame(
         repeat_map[target] = repeat_count
     _dbg(scn, f"[JumpTo][Count] frame={int(target)} repeat={int(repeat_count)}")
 
-    # Diffusion nur lokal um den aktuellen Jump, dann Bulk-Merge (verhindert Flackern)
-    step = _fade_step_frames()
-    radius = max(0, repeat_count * step - 1)
-    expanded = {int(target): int(repeat_count)}
-    _spread_repeat_to_neighbors(expanded, int(target), radius, int(repeat_count))
-    if len(expanded) > 1:
+    # Ring-Expansion exakt gemäß Spezifikation:
+    # - Zentralband ±step (Default 5) zählt zum 0. Ring (Wert = k)
+    # - Pro Wiederholung k wächst der Außenradius um +step je Seite → Gesamt ±(k*step)
+    step = _fade_step_frames()  # typ. 5
+    lo_scene = int(getattr(scn, "frame_start", 0))
+    hi_scene = int(getattr(scn, "frame_end", 0))
+    rings = int(repeat_count)  # k
+
+    # Exakte Serie bauen (inkl. Clamping + MAX-Merge)
+    expanded = _expand_repeat_series_for_jump(
+        center_f=int(target),
+        repeat_count=rings,
+        lo=lo_scene,
+        hi=hi_scene,
+        step=step,
+    )
+
+    # Diagnose/Transparenz
+    if expanded:
         keys = sorted(expanded.keys())
-        _dbg(scn, f"[JumpTo][Spread] radius={radius} step={step} write_frames={len(expanded)} range={keys[0]}..{keys[-1]}")
+        outer_radius = rings * step  # ±(k*step) Frames
+        _dbg(
+            scn,
+            "[JumpTo][Spread] rings=%d step=%d outer_radius=%d series_frames=%d bounds=%d..%d"
+            % (rings, step, outer_radius, len(expanded), keys[0], keys[-1])
+        )
     try:
         # lazy import & Bulk-Write
         from .properties import record_repeat_bulk_map
@@ -230,7 +304,10 @@ def run_jump_to_frame(
         nz = sum(1 for v in series if v)
         fs, fe = int(scn.frame_start), int(scn.frame_end)
         expected = max(0, fe - fs + 1)
-        _dbg(scn, f"[JumpTo][Series] len={len(series)} expected={expected} nonzero={nz}")
+        _dbg(
+            scn,
+            f"[JumpTo][Series] len={len(series)} expected={expected} nonzero={nz}"
+        )
     except Exception:
         pass
 
