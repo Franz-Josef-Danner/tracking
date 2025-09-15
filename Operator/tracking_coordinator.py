@@ -683,9 +683,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             patt = max(8, int(w / 100))
             fixed_margin = patt * 2
 
-    # 2) Threshold: harter Fixwert (Anforderung)
-    #    Kein Fallback, keine Last-Detection – immer exakt 0.0001.
-    curr_thr = 0.0001  # FIXED
+        # 2) Threshold: harter Fixwert (Anforderung)
+        #    Kein Fallback, keine Last-Detection – immer exakt 0.0001.
+        curr_thr = 0.0001  # FIXED
 
         # *** min_distance: exakt nach Vorgabe ***
         # Priorität NUR:
