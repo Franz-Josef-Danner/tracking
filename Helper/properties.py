@@ -152,6 +152,12 @@ def enable_repeat_scope(
         return
     if sticky is not None:
         scn[_STICKY_KEY] = bool(sticky)
+    # Sticky-Guard: Overlay darf nur durch explizite UI-Aktionen ausgeschaltet werden
+    if (not enabled) and scn.get(_STICKY_KEY):
+        # UI/Property-Update/Unregister dürfen deaktivieren; alles andere wird geblockt
+        if source not in {"ui", "prop_update", "unregister"}:
+            print(f"[KC] enable_repeat_scope(False) ignored due to sticky=True (source={source})")
+            return
     print(f"[KC] enable_repeat_scope({bool(enabled)}) source={source} sticky={scn.get(_STICKY_KEY)}")
     try:
         from ..ui import repeat_scope as _rs

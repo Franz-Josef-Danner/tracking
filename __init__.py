@@ -168,6 +168,18 @@ class CLIP_PT_kaiserlich_panel(Panel):
             scene, "kaiserlich_solve_err_idx",
             rows=rows
         )
+        # Repeat Scope – direkt im Hauptpanel integriert
+        layout.separator()
+        scope = layout.box()
+        r = scope.row(align=True)
+        r.label(text="Repeat Scope")
+        r.prop(scene, "kc_show_repeat_scope", text="Overlay aktiv")
+        c = scope.column(align=True)
+        c.prop(scene, "kc_repeat_scope_height")
+        c.prop(scene, "kc_repeat_scope_bottom")
+        c.prop(scene, "kc_repeat_scope_margin_x")
+        c.prop(scene, "kc_repeat_scope_show_cursor")
+        c.prop(scene, "kc_repeat_scope_levels", slider=True)
         layout.separator()
         layout.operator("clip.kaiserlich_coordinator_launcher", text="Coordinator starten")
 # --- UIList für Solve-Log ---
