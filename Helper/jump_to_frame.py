@@ -1,16 +1,41 @@
 import bpy
 from typing import Optional, Dict, Any, Tuple
 
-__all__ = ("run_jump_to_frame", "jump_to_frame")  # jump_to_frame = Legacy-Wrapper
+__all__ = ("run_jump_to_frame", "jump_to_frame")
+# jump_to_frame = Legacy-Wrapper
 REPEAT_SATURATION = 10  # Ab dieser Wiederholungsanzahl: Optimizer anstoßen statt Detect
-
 
 # ---------------------------------------------------------------------------
 # Fade-Parameter
 # ---------------------------------------------------------------------------
 # Statt "pro Frame -1" wird nur alle N Frames um 1 dekrementiert.
 # Damit entsteht ein Plateau von N Frames pro Stufe.
-FADE_STEP_FRAMES: int = 5  # vorher effektiv: 1
+FADE_STEP_FRAMES: int = 5
+
+
+def _fade_step_frames() -> int:
+    """Liest den stufigen Fade-Step aus der Scene-Property (Fallback auf Default)."""
+    try:
+        scn = bpy.context.scene
+        val = int(getattr(scn, "kc_repeat_fade_step", FADE_STEP_FRAMES))
+        return max(1, val)
+    except Exception:
+        return FADE_STEP_FRAMES
+
+
+def _dbg_enabled(scn) -> bool:
+    try:
+        return bool(getattr(scn, "kc_debug_repeat", True))
+    except Exception:
+        return True
+
+
+def _dbg(scn, msg: str) -> None:
+    if _dbg_enabled(scn):
+        try:
+            print(msg)
+        except Exception:
+            pass
 
 
 def _clamp(v: int, lo: int = 0, hi: int | None = None) -> int:
@@ -20,19 +45,18 @@ def _clamp(v: int, lo: int = 0, hi: int | None = None) -> int:
 
 
 def _spread_repeat_to_neighbors(repeat_map: dict[int, int], center_f: int, radius: int, base: int) -> None:
-    # Neu: stufiger Fade: nur alle FADE_STEP_FRAMES -1
+    """Stufiger Fade-Out um 'center_f' mit MAX-Merge in das lokale Mapping."""
+    step = _fade_step_frames()
     for off in range(-radius, radius + 1):
         f = center_f + off
         if f < 0:
             continue
-        # Decrement nur in 5er-Schritten: 0..4 → 0, 5..9 → 1, 10..14 → 2, ...
-        dec = abs(off) // FADE_STEP_FRAMES  # stufig (neu)
+        # Decrement stufig: 0..(step-1) → 0, step..(2*step-1) → 1, ...
+        dec = abs(off) // step
         v = base - dec
         if v <= 0:
             continue
-        # nur erhöhen, nie verringern
-        cur = repeat_map.get(f, 0)
-        if v > cur:
+        if v > repeat_map.get(f, 0):
             repeat_map[f] = v
 
 
@@ -145,6 +169,7 @@ def run_jump_to_frame(
         elif target > end:
             target = end
             clamped = True
+    _dbg(scn, f"[JumpTo] target={target} clamped={clamped} ui_override={use_ui_override}")
 
     # Optional: UI-Override (Area/Region) & Tracking-Mode
     area_switched = False
@@ -176,6 +201,38 @@ def run_jump_to_frame(
     if repeat_map is not None:
         repeat_count = int(repeat_map.get(target, 0)) + 1
         repeat_map[target] = repeat_count
+    _dbg(scn, f"[JumpTo][Count] frame={int(target)} repeat={int(repeat_count)}")
+
+    # Diffusion nur lokal um den aktuellen Jump, dann Bulk-Merge (verhindert Flackern)
+    step = _fade_step_frames()
+    radius = max(0, repeat_count * step - 1)
+    expanded = {int(target): int(repeat_count)}
+    _spread_repeat_to_neighbors(expanded, int(target), radius, int(repeat_count))
+    if len(expanded) > 1:
+        keys = sorted(expanded.keys())
+        _dbg(scn, f"[JumpTo][Spread] radius={radius} step={step} write_frames={len(expanded)} range={keys[0]}..{keys[-1]}")
+    try:
+        # lazy import & Bulk-Write
+        from .properties import record_repeat_bulk_map
+        record_repeat_bulk_map(scn, expanded)
+    except Exception as e:
+        _dbg(scn, f"[JumpTo][WARN] bulk write failed: {e!r}")
+        # Fallback: Einzelwert (minimal)
+        try:
+            from .properties import record_repeat_count
+            record_repeat_count(scn, int(target), int(repeat_count))
+        except Exception as e2:
+            _dbg(scn, f"[JumpTo][ERR] single write failed: {e2!r}")
+
+    # Diagnose: Serienstatus nach Merge
+    try:
+        series = scn.get("_kc_repeat_series") or []
+        nz = sum(1 for v in series if v)
+        fs, fe = int(scn.frame_start), int(scn.frame_end)
+        expected = max(0, fe - fs + 1)
+        _dbg(scn, f"[JumpTo][Series] len={len(series)} expected={expected} nonzero={nz}")
+    except Exception:
+        pass
 
     # Debugging & Transparenz
     try:
@@ -185,6 +242,8 @@ def run_jump_to_frame(
 
     # Sättigungsflag für Rückgabe/Logging
     repeat_saturated = repeat_count >= REPEAT_SATURATION
+    if repeat_saturated:
+        _dbg(scn, f"[JumpTo][Repeat] saturated >= {REPEAT_SATURATION} at frame={int(target)} (repeat={int(repeat_count)})")
 
     return {
         "status": "OK",
