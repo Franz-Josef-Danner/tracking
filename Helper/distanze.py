@@ -180,6 +180,16 @@ def run_distance_cleanup(
     tracking = getattr(clip, "tracking", None)
     all_tracks = list(getattr(tracking, "tracks", []))
 
+    # --- NEU: Entry-Log für schnelle Fehlerlokalisierung --------------------
+    try:
+        log(
+            f"[DISTANZE] Enter: frame={int(frame)}, verbose={bool(verbose)}, "
+            f"baseline_ptrs={0 if baseline_ptrs is None else len(baseline_ptrs)}, "
+            f"keep_zero={bool(keep_zero_distance_duplicates)}"
+        )
+    except Exception:
+        pass
+
     # --- Klassifikation: BASELINE_PTRS oder SELECTION_ONLY -------------------
     if baseline_ptrs:
         base_set = {int(p) for p in baseline_ptrs}
@@ -198,6 +208,13 @@ def run_distance_cleanup(
                 # Neu = nicht in Baseline, Marker @frame vorhanden (Mute egal)
                 new_tracks.append(t)
         classification_mode = "BASELINE_PTRS"
+        try:
+            log(
+                f"[DISTANZE] Baseline active: size={len(base_set)} "
+                f"sample={list(base_set)[:5]}"
+            )
+        except Exception:
+            pass
     else:
         # Snapshot der Selektion (stabil gegenüber UI-Umschaltungen während des Laufs)
         new_tracks = []
@@ -229,6 +246,7 @@ def run_distance_cleanup(
     log(
         f"[DISTANZE] Classification mode={classification_mode}; old={len_old_markers} new={len_new_markers}"
     )
+    log(f"[DISTANZE] NewSet/OldSet ptr sizes: new={len(new_set)} old={len(old_set)}")
     log(
         f"[DISTANZE] Frame {frame}: old_markers={len_old_markers} new_markers={len_new_markers} skipped_new_no_marker=0"
     )
@@ -250,6 +268,7 @@ def run_distance_cleanup(
         f"require_selected_new={require_selected_new}, include_muted_old={include_muted_old}, "
         f"select_remaining_new={select_remaining_new}"
     )
+    log(f"[DISTANZE] keep_zero={keep_zero_distance_duplicates}")
     log(
         f"[DISTANZE] Starting cleanup on frame {frame} with min_distance={min_distance} {distance_unit}; old tracks={len(old_tracks)}"
     )
@@ -273,6 +292,11 @@ def run_distance_cleanup(
     width = int(getattr(clip, "size", (0, 0))[0] or 0)
     height = int(getattr(clip, "size", (0, 0))[1] or 0)
 
+    try:
+        log(f"[DISTANZE] Clip size: {width}x{height} px")
+    except Exception:
+        pass
+
     # ε für Ko-location (Pixel)
     try:
         eps_px = float(getattr(context.scene, "kc_colocate_epsilon_px", 0.75))
@@ -280,6 +304,11 @@ def run_distance_cleanup(
             eps_px = 0.75
     except Exception:
         eps_px = 0.75
+
+    try:
+        log(f"[DISTANZE] Epsilon (colocate): eps_px={eps_px:.3f}")
+    except Exception:
+        pass
     ref_coords = []
     if width > 0 and height > 0:
         for tr in clip.tracking.tracks:
@@ -296,6 +325,10 @@ def run_distance_cleanup(
                 ref_coords.append((float(m.co[0]), float(m.co[1])))
             except Exception:
                 continue
+    try:
+        log(f"[DISTANZE] Reference coords collected: {len(ref_coords)}")
+    except Exception:
+        pass
 
     # Wenn keine Referenzen vorhanden sind, gibt es nichts zu vergleichen
     if not ref_coords or width == 0 or height == 0:
@@ -443,6 +476,17 @@ def run_distance_cleanup(
 
             name = ptr_to_name.get(ptr, getattr(tr, "name", "<noname>"))
             sel_state = f"Tsel={bool(getattr(tr,'select',False))}, Msel={bool(getattr(m_new,'select',False))}"
+
+            # --- NEU: Borderline-Log bei knapper Unterschreitung/Überschreitung ---
+            try:
+                near_thr = float(min_distance) + float(eps_px)
+                if (not too_close) and (min_found <= near_thr):
+                    log(
+                        f"[DISTANZE] NEAR ptr={ptr} name='{name}' d={min_found:.2f}px "
+                        f"≈ thr+eps ({float(min_distance):.2f}+{float(eps_px):.2f}) @f{frame} ({sel_state})"
+                    )
+            except Exception:
+                pass
             if too_close:
                 # --- NEU: Ko-location-Schutz -----------------------------------
                 # Kandidat liegt (nahezu) exakt auf einer Referenz → NICHT löschen.
@@ -535,7 +579,7 @@ def run_distance_cleanup(
         {"ptr": int(p), "track": ptr_to_name.get(p, None), "frame": int(frame)}
         for p in deleted_ptrs
     ]
-    return {
+    res = {
         "status": "OK",
         "frame": frame,
         "removed": int(removed),
@@ -554,3 +598,13 @@ def run_distance_cleanup(
         "kept_zero_px": int(kept_zero_px),
         "failed_removals": int(failed_removals),
     }
+    try:
+        log(
+            f"[DISTANZE] Summary @f{frame}: mode={classification_mode}, "
+            f"thr={float(min_distance):.2f}px, eps={float(eps_px):.2f}px, "
+            f"old={len(old_set)}, new={len(new_set)}, "
+            f"removed={res['removed']}, kept={res['kept']}, kept_coloc={res['kept_zero_px']}"
+        )
+    except Exception:
+        pass
+    return res
