@@ -1220,7 +1220,17 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 clip = _resolve_clip(context)
                 post_ptrs = {int(t.as_pointer()) for t in getattr(clip.tracking, "tracks", [])}
                 base = self.pre_ptrs or set()
-                print(f"[COORD] Post Distanze: new_after={len(post_ptrs - base)}")
+                # Korrektur: Das hier passiert direkt NACH dem Detect-Call.
+                print(f"[COORD] Post Detect: new_after={len(post_ptrs - base)}")
+            except Exception:
+                pass
+            try:
+                src = "rd"
+                if int(rd.get("min_distance_px", 0) or 0) <= 0:
+                    src = "tco|base"
+                print(f"[COORD] Detect result: frame={self.target_frame} "
+                      f"new={new_cnt} thr->{float(self.detection_threshold):.6f} "
+                      f"min_distance->{int(self.last_detect_min_distance)} src={src}")
             except Exception:
                 pass
             self.report({'INFO'}, f"DETECT @f{self.target_frame}: new={new_cnt}, thr={self.detection_threshold}")

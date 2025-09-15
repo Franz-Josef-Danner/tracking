@@ -220,6 +220,32 @@ def reset_for_new_cycle(context: bpy.types.Context, *, clear_solve_log: bool = F
         except Exception:
             pass
 
+    # 2d) WICHTIG: Detect-/Stufungs-IDs purgen (keine kc_* → wurden bisher NICHT entfernt)
+    # Dadurch starten wir jeden Zyklus ohne Altlasten (z. B. tco_detect_min_distance=120).
+    try:
+        stale_keys = (
+            "tco_detect_min_distance",
+            "tco_detect_thr",
+            "tco_last_count_for_formulas",
+            "tco_last_detect_new_count",
+            "tco_detect_margin",
+            "tco_count_for_formulas",
+        )
+        for k in stale_keys:
+            if k in scene.keys():
+                try:
+                    del scene[k]
+                except Exception:
+                    pass
+        # Falls vorhanden, ebenfalls zurücksetzen/entfernen:
+        if "kc_min_distance_effective" in scene.keys():
+            try:
+                del scene["kc_min_distance_effective"]
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     # Optional: UI-Refresh, damit Panels frische Werte anzeigen
     try:
         for area in context.window.screen.areas:

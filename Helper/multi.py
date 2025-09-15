@@ -186,8 +186,33 @@ def _run_multi_core(
     tracking = clip.tracking
     settings = tracking.settings
 
-    # --- Detect-Parameter 1:1 übernehmen (kein Recompute, kein Scaling) ---
     scn = getattr(context, "scene", None)
+    try:
+        width, height = getattr(clip, "size", (0, 0))
+    except Exception:
+        width, height = 0, 0
+    md_detect = None
+    if scn is not None:
+        md_detect = scn.get("kc_min_distance_effective", None)
+        if md_detect is None:
+            md_detect = scn.get("tco_detect_min_distance", None)
+    if isinstance(md_detect, (int, float)) and float(md_detect) > 0.0:
+        min_dist_effective = int(round(float(md_detect)))
+        md_src = "detect"
+    else:
+        base_min_scene = scn.get("min_distance_base", None) if scn else None
+        min_dist_effective = int(base_min_scene) if base_min_scene is not None else max(8, int(0.05 * max(width, height)))
+        md_src = "fallback"
+    try:
+        frame_val = int(getattr(getattr(context, "scene", None), "frame_current", 0))
+        print(
+            f"[Multi] f={frame_val} thr={float(detect_threshold):.6f} "
+            f"→ min_distance_effective={int(min_dist_effective)} src={md_src}"
+        )
+    except Exception:
+        pass
+
+    # --- Detect-Parameter 1:1 übernehmen (kein Recompute, kein Scaling) ---
     thr = float(detect_threshold)
     margin = 0
     min_dist = 0
@@ -212,19 +237,28 @@ def _run_multi_core(
         longest = max(int(width or 0), int(height or 0))
         min_dist = max(8, int(0.025 * longest)) if longest > 0 else 8
 
-    # Pattern/Search exakt spiegeln (falls verfügbar)
+    ps = 0
+    ss = 0
     try:
         if scn is not None:
             ps = int(scn.get("kc_detect_pattern_size", 0) or 0)
             ss = int(scn.get("kc_detect_search_size", 0) or 0)
-        else:
-            ps = ss = 0
         if ps > 0:
             _set_pattern_size(tracking, ps)
         if ss > 0:
             settings.default_search_size = ss
     except Exception:
-        pass
+        ps = 0
+        ss = 0
+
+    try:
+        margin = int(scn.get("tco_detect_margin", 0) or scn.get("margin_base", 0))
+    except Exception:
+        margin = 0
+    if margin <= 0 and ss > 0:
+        margin = int(ss)
+
+    min_dist = int(min_dist_effective)
 
     pattern_o = int(getattr(settings, "default_pattern_size", 15))
     search_o  = int(getattr(settings, "default_search_size", 51))
