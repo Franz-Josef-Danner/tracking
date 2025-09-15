@@ -184,14 +184,13 @@ def run_jump_to_frame(
     ensure_clip: bool = True,
     ensure_tracking_mode: bool = True,
     use_ui_override: bool = True,
-    repeat_map: Optional[Dict[int, int]] = None,  # Operator-interne Wiederholungszählung
+    repeat_map: Optional[Dict[int, int]] = None,  # (Kompat): wird nicht mehr genutzt
 ) -> Dict[str, Any]:
     """
     Setzt den Playhead deterministisch auf 'frame' (oder scene['goto_frame']).
     - Clamped auf Clipgrenzen
     - Optionaler CLIP_EDITOR-Override & Modus-Setzung
-    - Zählt Wiederholungen NUR für per Jump gesetzte Frames via repeat_map
-    - Erzeugt eine Ring-Expansion gemäß Spezifikation (Zentralband ±5, dann 5er-Ringe)
+    - Wiederholungszählung & Ring-Expansion erfolgen über tracking_state.orchestrate_on_jump
 
     Returns:
       {"status": "OK"|"FAILED",
@@ -252,62 +251,25 @@ def run_jump_to_frame(
     else:
         scn.frame_current = target
 
-    # Besuchszählung je Ziel-Frame
-    repeat_count = 1
-    if repeat_map is not None:
-        repeat_count = int(repeat_map.get(target, 0)) + 1
-        repeat_map[target] = repeat_count
-    _dbg(scn, f"[JumpTo][Count] frame={int(target)} repeat={int(repeat_count)}")
-
-    # Ring-Expansion exakt gemäß Spezifikation:
-    # - Zentralband ±step (Default 5) zählt zum 0. Ring (Wert = k)
-    # - Pro Wiederholung k wächst der Außenradius um +step je Seite → Gesamt ±(k*step)
-    step = _fade_step_frames()  # typ. 5
-    lo_scene = int(getattr(scn, "frame_start", 0))
-    hi_scene = int(getattr(scn, "frame_end", 0))
-    rings = int(repeat_count)  # k
-
-    # Exakte Serie bauen (inkl. Clamping + MAX-Merge)
-    expanded = _expand_repeat_series_for_jump(
-        center_f=int(target),
-        repeat_count=rings,
-        lo=lo_scene,
-        hi=hi_scene,
-        step=step,
-    )
-
-    # Diagnose/Transparenz
-    if expanded:
-        keys = sorted(expanded.keys())
-        outer_radius = rings * step  # ±(k*step) Frames
-        _dbg(
-            scn,
-            "[JumpTo][Spread] rings=%d step=%d outer_radius=%d series_frames=%d bounds=%d..%d"
-            % (rings, step, outer_radius, len(expanded), keys[0], keys[-1])
-        )
+    # Einheitlicher Zähler & Ringe per Orchestrator aktualisieren (SSOT).
     try:
-        # lazy import & Bulk-Write
-        from .properties import record_repeat_bulk_map
-        record_repeat_bulk_map(scn, expanded)
+        from .tracking_state import orchestrate_on_jump
+        orchestrate_on_jump(context, int(target))
     except Exception as e:
-        _dbg(scn, f"[JumpTo][WARN] bulk write failed: {e!r}")
-        # Fallback: Einzelwert (minimal)
-        try:
-            from .properties import record_repeat_count
-            record_repeat_count(scn, int(target), int(repeat_count))
-        except Exception as e2:
-            _dbg(scn, f"[JumpTo][ERR] single write failed: {e2!r}")
-
-    # Diagnose: Serienstatus nach Merge
+        _dbg(scn, f"[JumpTo][WARN] orchestrate_on_jump failed: {e!r}")
+    # Logging aus SSOT lesen (konsistent zu Motion-Model)
+    repeat_count = 0
     try:
-        series = scn.get("_kc_repeat_series") or []
-        nz = sum(1 for v in series if v)
+        from .properties import get_repeat_value
+        k_used = int(get_repeat_value(scn, int(target)))
+        repeat_count = k_used
+        step = _fade_step_frames()
+        _dbg(scn, f"[JumpTo][Count] frame={int(target)} repeat={k_used} (SSOT)")
+        # Optional: Bounds grob loggen (clamped außen ±k*step)
         fs, fe = int(scn.frame_start), int(scn.frame_end)
-        expected = max(0, fe - fs + 1)
-        _dbg(
-            scn,
-            f"[JumpTo][Series] len={len(series)} expected={expected} nonzero={nz}"
-        )
+        left = max(fs, int(target) - k_used * step)
+        right = min(fe, int(target) + k_used * step)
+        _dbg(scn, f"[JumpTo][Spread] rings={k_used} step={step} outer_radius={k_used*step} bounds≈{left}..{right}")
     except Exception:
         pass
 

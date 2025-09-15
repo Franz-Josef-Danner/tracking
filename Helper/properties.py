@@ -10,6 +10,7 @@ __all__ = (
     "unregister",
     "record_repeat_count",
     "record_repeat_bulk_map",
+    "get_repeat_value",
     "get_repeat_map",
     "enable_repeat_scope",
     "set_repeat_scope_sticky",
@@ -182,6 +183,25 @@ def get_repeat_map(scene=None) -> dict[int, int]:
         return {int(k): int(v) for k, v in m.items()}
     except Exception:
         return {}
+
+
+def get_repeat_value(scene, frame: int) -> int:
+    """Liest den Repeat-Wert (int) aus der Series-SSOT."""
+    if scene is None:
+        try:
+            scene = bpy.context.scene
+        except Exception:
+            return 0
+    fs = int(scene.frame_start)
+    fe = int(scene.frame_end)
+    n = max(0, fe - fs + 1)
+    series = scene.get("_kc_repeat_series")
+    if not isinstance(series, list) or len(series) != n:
+        return 0
+    idx = int(frame) - fs
+    if 0 <= idx < n:
+        return int(series[idx])
+    return 0
 
 
 def record_repeat_count(scene, frame, value) -> None:

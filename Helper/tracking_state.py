@@ -194,75 +194,54 @@ def _popup_error_report(context: bpy.types.Context, frame: int, entry: Dict[str,
         for ln in lines:
             print("  ", ln)
  
-# ---------- Nachbarschafts-Fächerung (ohne Anker/Interpolation) ----------
-
-def _get_frame_value(state: Dict[str, Any], frame: int) -> int:
-    return int(state.setdefault("frames", {}).get(str(frame), {}).get("count", 0))
-
-def _set_frame_value(state: Dict[str, Any], frame: int, value: int) -> None:
+def _sync_json_count(state: Dict[str, Any], frame: int, value: int) -> None:
+    """Spiegelt den SSOT-Zähler (value) in den JSON-State (nur für A-Werte/Reports)."""
     frames = state.setdefault("frames", {})
     entry, _created = _ensure_frame_entry(state, frame)
     entry["count"] = max(0, int(value))
-    # Alt-Flags neutralisieren
     entry["anchor"] = False
     entry["interpolated"] = False
     frames[str(frame)] = entry
-
-def _fan_out_neighbors(state: Dict[str, Any], center_frame: int, center_value: int) -> None:
-    """
-    Rollt den center_value gedämpft auf Nachbarn aus:
-    f±1 := center_value-1, f±2 := center_value-2, ... bis >0.
-    Konflikthandling: arithmetisches Mittel (kaufmännisch gerundet).
-    """
-    if center_value <= 1:
-        return
-    def _blend(old_v: int, new_v: int) -> int:
-        if old_v <= 0:
-            return new_v
-        return int(round((old_v + new_v) / 2.0))
-
-    # Beide Richtungen
-    radius = center_value - 1
-    for d in range(1, radius + 1):
-        cand = center_value - d
-        if cand <= 0:
-            break
-        for neighbor in (center_frame - d, center_frame + d):
-            old = _get_frame_value(state, neighbor)
-            _set_frame_value(state, neighbor, _blend(old, cand))
 
 
 # ---------- Öffentliche API ----------
 
 def orchestrate_on_jump(context: bpy.types.Context, frame: int) -> None:
     """
-    Anker- & Interpolationsfreie Wiederholungslogik:
-    - Erstbesuch: count := 1
-    - Wiederbesuch: count := count + 1
-    - Danach Dämpfungs-Fächerung auf Nachbarn (–1/–2/… bis >0), Konflikte werden gemittelt.
-    - ABORT_AT bleibt als Obergrenze für count aktiv.
+    Einheitlicher Zähler (SSOT):
+      1) k := SSOT(frame) + 1
+      2) 5er-Ringexpansion um 'frame' berechnen
+      3) Bulk-Merge in SSOT (MAX-Merge)
+      4) JSON-State.count := k (Spiegel), Motion-Model aus k ableiten
     """
-    state = _get_state(context)
-    entry, _created = _ensure_frame_entry(state, frame)
-    # Zentrum hochzählen (oder initialisieren)
-    center = int(entry.get("count", 0))
-    center = 1 if center <= 0 else center + 1
-    entry["count"] = center
-    entry["anchor"] = False
-    entry["interpolated"] = False
-
-    # Abbruchschutz
-    if center >= ABORT_AT:
+    scene = context.scene
+    # 1) aktuellen Zähler aus SSOT lesen
+    try:
+        from .repeat_core import get_value, get_fade_step, expand_rings
+        from .properties import record_repeat_bulk_map
+    except Exception:
+        # Fallback: sicherstellen, dass kein Crash entsteht
+        return
+    current = int(get_value(scene, int(frame)))
+    k = 1 if current <= 0 else current + 1
+    # ABORT-Guard
+    if k >= ABORT_AT:
+        state = _get_state(context)
+        entry, _ = _ensure_frame_entry(state, frame)
+        entry["count"] = k
         _set_triplet_mode_on_scene(context, None)
         _save_state(context, state)
         _popup_error_report(context, frame, entry)
         return
-
-    # Nachbarn fächern
-    _set_frame_value(state, frame, center)
-    _fan_out_neighbors(state, frame, center)
-
-    # Motion-Model/Triplet aus aktuellem count ableiten (unverändert)
+    # 2) + 3) Ringe berechnen und in SSOT mergen
+    fs, fe = int(scene.frame_start), int(scene.frame_end)
+    step = get_fade_step(scene)
+    mapping = expand_rings(int(frame), int(k), fs, fe, int(step))
+    record_repeat_bulk_map(scene, mapping)
+    # 4) JSON-State spiegeln & Motion-Model setzen
+    state = _get_state(context)
+    _sync_json_count(state, int(frame), int(k))
+    entry, _ = _ensure_frame_entry(state, int(frame))
     _apply_model_triplet_for_count(context, entry)
     _save_state(context, state)
 
