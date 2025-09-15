@@ -7,28 +7,12 @@ FADE_STEP_DEFAULT = 5
 
 
 def get_fade_step(scene: bpy.types.Scene) -> int:
+    """Liest den Fade-Step (Ringbreite) aus der Scene-Property oder nutzt Default."""
     try:
         val = int(getattr(scene, "kc_repeat_fade_step", FADE_STEP_DEFAULT))
         return max(1, val)
     except Exception:
         return FADE_STEP_DEFAULT
-
-
-def get_series(scene: bpy.types.Scene) -> list[float]:
-    fs = int(scene.frame_start)
-    fe = int(scene.frame_end)
-    n = max(0, fe - fs + 1)
-    series = scene.get("_kc_repeat_series")
-    if not isinstance(series, list) or len(series) != n:
-        return [0.0] * n
-    return series
-
-
-def get_value(scene: bpy.types.Scene, frame: int) -> int:
-    fs = int(scene.frame_start)
-    ser = get_series(scene)
-    idx = int(frame) - fs
-    return int(ser[idx]) if 0 <= idx < len(ser) else 0
 
 
 def expand_rings(center_f: int, k: int, fs: int, fe: int, step: int) -> Dict[int, int]:

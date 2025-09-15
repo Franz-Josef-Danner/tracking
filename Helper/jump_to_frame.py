@@ -184,7 +184,7 @@ def run_jump_to_frame(
     ensure_clip: bool = True,
     ensure_tracking_mode: bool = True,
     use_ui_override: bool = True,
-    repeat_map: Optional[Dict[int, int]] = None,  # (Kompat): wird nicht mehr genutzt
+    repeat_map: Optional[Dict[int, int]] = None,  # (Kompat) wird nicht mehr genutzt
 ) -> Dict[str, Any]:
     """
     Setzt den Playhead deterministisch auf 'frame' (oder scene['goto_frame']).
@@ -256,20 +256,20 @@ def run_jump_to_frame(
         from .tracking_state import orchestrate_on_jump
         orchestrate_on_jump(context, int(target))
     except Exception as e:  # noqa: BLE001
-        print(f"[JumpTo][WARN] orchestrate_on_jump failed: {e!r}")
+        _dbg(scn, f"[JumpTo][WARN] orchestrate_on_jump failed: {e!r}")
 
     # Logging NACH SSOT-Update: konsistenten Wert lesen
     repeat_count = 0
     try:
         from .properties import get_repeat_value
-        step = int(getattr(scn, "kc_repeat_fade_step", 5))
+        step = _fade_step_frames()
         k_used = int(get_repeat_value(scn, int(target)))
         repeat_count = k_used
-        print(f"[JumpTo][Count] frame={int(target)} repeat={k_used} (SSOT)")
+        _dbg(scn, f"[JumpTo][Count] frame={int(target)} repeat={k_used} (SSOT)")
         fs, fe = int(scn.frame_start), int(scn.frame_end)
         left = max(fs, int(target) - k_used * step)
         right = min(fe, int(target) + k_used * step)
-        print(f"[JumpTo][Spread] rings={k_used} step={step} outer_radius={k_used*step} bounds≈{left}..{right}")
+        _dbg(scn, f"[JumpTo][Spread] rings={k_used} step={step} outer_radius={k_used*step} bounds≈{left}..{right}")
     except Exception:  # noqa: BLE001
         pass
 

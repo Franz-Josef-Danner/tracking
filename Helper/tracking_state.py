@@ -217,12 +217,12 @@ def orchestrate_on_jump(context: bpy.types.Context, frame: int) -> None:
     scene = context.scene
     # 1) aktuellen Zähler aus SSOT lesen
     try:
-        from .repeat_core import get_value, get_fade_step, expand_rings
-        from .properties import record_repeat_bulk_map
+        from .repeat_core import get_fade_step, expand_rings
+        from .properties import get_repeat_value, record_repeat_bulk_map
     except Exception:
         # Fallback: sicherstellen, dass kein Crash entsteht
         return
-    current = int(get_value(scene, int(frame)))
+    current = int(get_repeat_value(scene, int(frame)))
     k = 1 if current <= 0 else current + 1
     # ABORT-Guard
     if k >= ABORT_AT:
@@ -237,7 +237,7 @@ def orchestrate_on_jump(context: bpy.types.Context, frame: int) -> None:
     fs, fe = int(scene.frame_start), int(scene.frame_end)
     step = get_fade_step(scene)
     mapping = expand_rings(int(frame), int(k), fs, fe, int(step))
-    record_repeat_bulk_map(scene, mapping)
+    record_repeat_bulk_map(scene, mapping, source="orchestrate")
     # 4) JSON-State spiegeln & Motion-Model setzen
     state = _get_state(context)
     _sync_json_count(state, int(frame), int(k))
