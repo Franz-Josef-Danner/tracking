@@ -661,7 +661,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     #  - Threshold:      f_thr = max((gm + 0.1) / za, 0.0001)
     #                    threshold_next   = max(threshold_curr * f_thr, 0.0001)
     #  - Min-Distance:   f_md  = 1 - ((za - gm) / (za * 2))
-    #                    min_distance_next = md * f_md        (nur bei Stagnation)
+    #                    min_distance_next = md * f_md
     def _run_detect_with_policy(
         self,
         context: bpy.types.Context,
@@ -741,34 +741,30 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # Threshold NICHT stufen – fixer Wert je Pass
         next_thr = curr_thr  # = 0.0001
 
-        # min_distance NUR bei Stagnation – Stagnation ebenfalls vs. Count aus count.py
-        next_md = curr_md
-        update_md = False
-        last_cnt = int(context.scene.get("tco_last_count_for_formulas") or -1)
-        if last_cnt == int(gm_for_formulas):
-            za = float(target)
-            gm = float(gm_for_formulas)
-            # f_md = 1 - ((za - gm) / (za * 2))  == 0.5 + gm/(2*za)
-            f_md = 1.0 - ((za - gm) / (za * 2.0))
-            next_md = float(curr_md) * f_md
-            update_md = (abs(next_md - curr_md) > 1e-12)
+        # min_distance JEDEM PASS stufen – Gate entfernt
+        za = float(target)
+        gm = float(gm_for_formulas)
+        # f_md = 1 - ((za - gm) / (za * 2))  == 0.5 + gm/(2*za)
+        f_md = 1.0 - ((za - gm) / (za * 2.0))
+        next_md = float(curr_md) * f_md
 
         # 5) Persistieren
         scn["tco_last_detect_new_count"] = int(new_count)
         scn["tco_detect_thr"] = float(next_thr)
-        # Nur bei Stagnation persistieren; wir speichern den Float-Wert unverändert ab.
-        if update_md:
-            scn["tco_detect_min_distance"] = float(next_md)
+        scn["tco_detect_min_distance"] = float(next_md)
         scn["tco_detect_margin"] = int(fixed_margin)
+        # Sofortige Sichtbarkeit für DISTANZE (liest kc_*):
+        try:
+            scn["kc_detect_min_distance_px"] = int(round(next_md))
+        except Exception:
+            pass
         # WICHTIG: den Count, der für die Formeln verwendet wurde, ebenfalls persistieren
         scn["tco_last_count_for_formulas"] = int(gm_for_formulas)
-
         _log(
             f"[DETECT] new={new_count} target={target} "
             f"thr->{next_thr:.7f} (fixed) "
-            f"md->{(next_md if last_cnt==int(gm_for_formulas) else curr_md):.6f} "
-            f"src={md_source} "
-            f"(stagnation={'YES' if last_cnt==int(gm_for_formulas) else 'NO'}; md_updated={'YES' if update_md else 'NO'})"
+            f"md_curr->{curr_md:.6f} md_next->{next_md:.6f} "
+            f"src={md_source} (gate=OFF)"
         )
         return res
 
