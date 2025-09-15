@@ -12,9 +12,37 @@ import blf
 import bgl
 from math import floor
 
-_HDL_KEY = "_KC_REPEAT_SCOPE_HDL"
+_HANDLE = None
+_REGISTERED = False
 _NO_DATA_LOGGED = False  # einmalige "no data" Diagnose pro Session
 _DATA_READY_LOGGED = False  # einmalige Diagnose bei erstem Daten-Draw
+
+
+def register() -> None:
+    """UI-Modul registrieren und ggf. Handler auto-aktivieren."""
+    global _REGISTERED
+    _REGISTERED = True
+    print("[Scope] register()")
+    try:
+        from ..Helper.properties import is_repeat_scope_enabled
+
+        scn = bpy.context.scene
+        if is_repeat_scope_enabled(scn):
+            ensure_repeat_scope_handler(scn)
+            print("[Scope] auto-ensure handler on register (enabled=True)")
+    except Exception as e:  # noqa: BLE001
+        print(f"[Scope][WARN] auto-ensure on register failed: {e!r}")
+
+
+def unregister() -> None:
+    """UI-Modul deregistrieren und Handler entfernen."""
+    global _REGISTERED
+    _REGISTERED = False
+    print("[Scope] unregister()")
+    try:
+        disable_repeat_scope_handler()
+    except Exception as e:  # noqa: BLE001
+        print(f"[Scope][WARN] handler remove on unregister failed: {e!r}")
 
 def _get_series_and_range(scn: bpy.types.Scene) -> tuple[list[float], int, int]:
     """Robust Serie + [fs, fe] ermitteln. Leere/inkonsistente Serie → []."""
@@ -237,59 +265,52 @@ def _draw_callback():
         except Exception:
             pass
 
-def _store_handle(hdl) -> None:
+
+def ensure_repeat_scope_handler(_scene=None) -> None:
+    """Sicherstellen, dass der Draw-Handler aktiv ist."""
+    global _HANDLE
+    if _HANDLE is not None:
+        return
     try:
-        bpy.app.driver_namespace[_HDL_KEY] = hdl
-    except Exception:
-        pass
-
-def _load_handle():
-    try:
-        return bpy.app.driver_namespace.get(_HDL_KEY)
-    except Exception:
-        return None
-
-def enable_repeat_scope(enable: bool, *, source: str = "api") -> None:
-    """Overlay ein-/ausschalten; mehrfach-idempotent; mit Logausgabe."""
-    try:
-        scn = bpy.context.scene
-    except Exception:
-        scn = None
-
-    hdl = _load_handle()
-    has_hdl = bool(hdl)
-
-    if enable and not has_hdl:
+        _HANDLE = bpy.types.SpaceClipEditor.draw_handler_add(
+            _draw_callback, tuple(), 'WINDOW', 'POST_PIXEL'
+        )
+        print("[Scope] handler added")
         try:
-            hdl = bpy.types.SpaceClipEditor.draw_handler_add(
-                _draw_callback, tuple(), 'WINDOW', 'POST_PIXEL'
-            )
-            _store_handle(hdl)
-            print(f"[KC] enable_repeat_scope(True) source={source}")
-            # sofortiger Redraw-Kick in allen CLIP_EDITOR Fenstern
-            try:
-                for w in bpy.context.window_manager.windows:
-                    for a in w.screen.areas:
-                        if a.type == 'CLIP_EDITOR':
-                            for r in a.regions:
-                                if r.type == 'WINDOW':
-                                    r.tag_redraw()
-                print("[KC] redraw tag propagated to CLIP_EDITOR windows")
-            except Exception:
-                pass
-        except Exception as e:
-            print(f"[KC] enable_repeat_scope failed: {e}")
-            return
-    elif (not enable) and has_hdl:
-        try:
-            bpy.types.SpaceClipEditor.draw_handler_remove(hdl, 'WINDOW')
+            for w in bpy.context.window_manager.windows:
+                for a in w.screen.areas:
+                    if a.type == 'CLIP_EDITOR':
+                        for r in a.regions:
+                            if r.type == 'WINDOW':
+                                r.tag_redraw()
+            print("[Scope] redraw tag propagated to CLIP_EDITOR windows")
         except Exception:
             pass
-        _store_handle(None)
-        print(f"[KC] enable_repeat_scope(False) source={source}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[Scope][WARN] handler add failed: {e!r}")
+
+
+def disable_repeat_scope_handler() -> None:
+    """Draw-Handler entfernen (falls aktiv)."""
+    global _HANDLE
+    if _HANDLE is None:
+        return
+    try:
+        bpy.types.SpaceClipEditor.draw_handler_remove(_HANDLE, 'WINDOW')
+        print("[Scope] handler removed")
+    except Exception as e:  # noqa: BLE001
+        print(f"[Scope][WARN] handler remove failed: {e!r}")
+    _HANDLE = None
+
+
+def enable_repeat_scope(enable: bool, *, source: str = "api") -> None:
+    """Kompatibilitäts-Wrapper für ältere Aufrufer."""
+    if enable:
+        ensure_repeat_scope_handler()
     else:
-        # Keine Veränderung – dennoch transparent loggen
-        print(f"[KC] enable_repeat_scope({bool(enable)}) source={source} (no-op)")
+        disable_repeat_scope_handler()
+    print(f"[KC] enable_repeat_scope({bool(enable)}) source={source}")
+
 
 def disable_repeat_scope(*, source: str = "api") -> None:
     """Bequemer Alias für enable_repeat_scope(False)."""
