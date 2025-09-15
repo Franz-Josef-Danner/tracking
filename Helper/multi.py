@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-"""Multi-pass helper utilities."""
+"""Multi-pass helper utilities — STRICT detect-param reuse."""
 
 from __future__ import annotations
 import bpy
-import math
 from typing import Iterable, Set, Dict, Any, Optional, Tuple, List
 
 __all__ = ["run_multi_pass"]
@@ -187,42 +186,51 @@ def _run_multi_core(
     tracking = clip.tracking
     settings = tracking.settings
 
-    # --- Effektive min_distance **einmal** je Durchlauf bestimmen -----------
+    # --- Detect-Parameter 1:1 übernehmen (kein Recompute, kein Scaling) ---
     scn = getattr(context, "scene", None)
-    try:
-        width, height = getattr(clip, "size", (0, 0))
-    except Exception:
-        width, height = 0, 0
-    base_min_scene = scn.get("min_distance_base", None) if scn else None
-    base_min = int(base_min_scene) if base_min_scene is not None else max(8, int(0.05 * max(width, height)))
-    safe = max(float(detect_threshold) * 1e8, 1e-8)
-    factor = math.log10(safe) / 8.0
-    min_dist_effective = max(1, int(base_min * factor))
+    thr = float(detect_threshold)
+    margin = 0
+    min_dist = 0
     if scn is not None:
         try:
-            scn["kc_min_distance_effective"] = int(min_dist_effective)
-            print(
-                f"[Multi] f={int(scn.frame_current)} thr={float(detect_threshold):.6f} "
-                f"→ min_distance_effective={int(min_dist_effective)} (base={int(base_min)})"
-            )
+            thr = float(scn.get("kc_detect_threshold", scn.get("last_detection_threshold", thr)))
         except Exception:
-            pass
+            thr = float(detect_threshold)
+        try:
+            margin = int(scn.get("kc_detect_margin_px", margin))
+        except Exception:
+            margin = int(margin)
+        try:
+            min_dist = int(scn.get("kc_detect_min_distance_px", scn.get("kc_min_distance_effective", min_dist)))
+        except Exception:
+            min_dist = int(min_dist)
+    if min_dist <= 0:
+        try:
+            width, height = getattr(clip, "size", (0, 0))
+        except Exception:
+            width, height = 0, 0
+        longest = max(int(width or 0), int(height or 0))
+        min_dist = max(8, int(0.025 * longest)) if longest > 0 else 8
+
+    # Pattern/Search exakt spiegeln (falls verfügbar)
+    try:
+        if scn is not None:
+            ps = int(scn.get("kc_detect_pattern_size", 0) or 0)
+            ss = int(scn.get("kc_detect_search_size", 0) or 0)
+        else:
+            ps = ss = 0
+        if ps > 0:
+            _set_pattern_size(tracking, ps)
+        if ss > 0:
+            settings.default_search_size = ss
+    except Exception:
+        pass
+
     pattern_o = int(getattr(settings, "default_pattern_size", 15))
     search_o  = int(getattr(settings, "default_search_size", 51))
 
-    # Skalen bestimmen (repeat-aware). Wenn repeat_count >= 6, hat diese
-    # Regel Priorität. Andernfalls optional pattern_scales verwenden, sonst
-    # die ursprüngliche 2-Pass-Logik (0.5, 2.0).
-    scales: List[float]
-    rep_scales = _build_scales_for_repeat(repeat_count)
-    if rep_scales:
-        scales = rep_scales
-    elif pattern_scales:
-        scales = [float(s) for s in pattern_scales if s and float(s) > 0.0]
-        if not scales:
-            scales = [0.5, 2.0]
-    else:
-        scales = [0.5, 2.0]
+    # KEINE Skalenvarianten mehr: exakt die Detect-Werte (Scale = 1.0)
+    scales: List[float] = [1.0]
 
     def _sweep(scale: float) -> Tuple[int, int]:
         """
@@ -232,54 +240,35 @@ def _run_multi_core(
         before = {t.as_pointer() for t in tracking.tracks}
         before |= set(pre_ptrs)  # pre_ptrs sicherstellen
         eff = _set_pattern_size(tracking, max(3, int(round(pattern_o * float(scale)))))
-        if adjust_search_with_pattern:
-            try:
-                settings.default_search_size = max(5, eff * 2)
-            except Exception:
-                pass
+        # Search unverändert lassen – wir spiegeln Detect-Params.
+        try:
+            settings.default_search_size = search_o
+        except Exception:
+            pass
 
-        # --- Margin/MinDist exakt wie in detect.py bestimmen (repeat-aware) ---
-        rc = int(repeat_count or 0)
-        ps = int(eff)  # effektive Pattern-Size dieses Sweeps
+        # Margin/MinDist/Threshold 1:1 aus Detect übernehmen
+        ps = int(eff)
         try:
             ss = int(getattr(settings, "default_search_size", 0))
         except Exception:
             ss = 0
+        _margin = int(margin)
+        _min_dist = int(min_dist)
+        _thr = float(thr)
 
-        # Margin-Staffel je repeat_count (ident zu detect.py)
-        margin = 0
-        if rc >= 26 and ps > 0:
-            margin = ps * 24
-        elif rc >= 21 and ps > 0:
-            margin = ps * 20
-        elif rc >= 16 and ps > 0:
-            margin = ps * 16
-        elif rc >= 11 and ps > 0:
-            margin = ps * 12
-        elif rc >= 6 and ps > 0:
-            margin = ps * 8
-        elif ss > 0:
-            # Fallback analog "match_search_size"
-            margin = ss
-
-        # Min-Distance: den **vorab** berechneten Wert für alle Sweeps verwenden
-        min_dist = int(min_dist_effective)
-
-        # Debug-Logs: volle Transparenz je Sweep
+        # Debug
         try:
             print(
-                f"[Multi] f={int(context.scene.frame_current)} "
-                f"scale={scale:.2f} eff_pattern={ps} search={ss} "
-                f"repeat={rc} thr={float(detect_threshold):.3f} "
-                f"→ margin={margin} min_dist={min_dist}"
+                f"[Multi] reuse DETECT: f={int(context.scene.frame_current)} "
+                f"ps={ps} ss={ss} thr={_thr:.6f} margin={_margin} min_dist={_min_dist}"
             )
         except Exception:
             pass
 
         _detect_once(
-            threshold=float(detect_threshold),
-            margin=int(margin),
-            min_distance=int(min_dist),
+            threshold=_thr,
+            margin=_margin,
+            min_distance=_min_dist,
             placement="FRAME",
         )
 
@@ -305,6 +294,13 @@ def _run_multi_core(
     for t in tracking.tracks:
         t.select = (t.as_pointer() in new_ptrs)
 
+    # Telemetrie: Publiziere erneut den MinDist-Wert (keine Änderung, reines Echo)
+    if scn is not None:
+        try:
+            scn["kc_min_distance_effective"] = int(min_dist)
+        except Exception:
+            pass
+
     try:
         bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
     except Exception:
@@ -320,8 +316,8 @@ def _run_multi_core(
         "new_ptrs": new_ptrs,
         "repeat_count": int(repeat_count or 0),
         "scales_used": scales,
-        "min_distance_effective": int(min_dist_effective),
-        "detect_threshold_used": float(detect_threshold),
+        "min_distance_effective": int(min_dist),
+        "detect_threshold_used": float(thr),
     }
 
 

@@ -185,6 +185,7 @@ def run_detect_basic(
                 pass
 
         tracking = clip.tracking
+        settings = tracking.settings
 
         # Defaults/Persistenz
         width = getattr(clip, "size", (0, 0))[0]
@@ -215,6 +216,26 @@ def run_detect_basic(
             margin_px=margin_px,
             min_distance_px=min_distance_px,
         )
+
+        # --- Persistente Veröffentlichung aller effektiv genutzten Parameter ---
+        try:
+            s = settings
+            scn["kc_detect_threshold"] = float(thr)
+            scn["kc_detect_margin_px"] = int(margin_px)
+            scn["kc_detect_min_distance_px"] = int(min_distance_px)
+            scn["kc_detect_pattern_size"] = int(getattr(s, "default_pattern_size", 0))
+            scn["kc_detect_search_size"] = int(getattr(s, "default_search_size", 0))
+            # Einheitliche Key-Benennung für nachgelagerte Helfer (Multi, Distanze, ...)
+            scn["kc_min_distance_effective"] = int(min_distance_px)
+            _log(
+                f"[Detect] publish: thr={scn['kc_detect_threshold']:.6f} "
+                f"margin={scn['kc_detect_margin_px']} "
+                f"min_dist={scn['kc_detect_min_distance_px']} "
+                f"pattern={scn['kc_detect_pattern_size']} "
+                f"search={scn['kc_detect_search_size']}"
+            )
+        except Exception:
+            pass
 
         # Optionale Selektion neu erzeugter Tracks/Marker (für Downstream-Annahmen)
         want_select = True if select is None else bool(select)
@@ -252,6 +273,8 @@ def run_detect_basic(
             "threshold": float(thr),
             "margin_px": int(margin_px),
             "min_distance_px": int(min_distance_px),
+            "pattern_size": int(getattr(settings, "default_pattern_size", 0)),
+            "search_size": int(getattr(settings, "default_search_size", 0)),
             "placement": p,
             # Debug/Transparenz:
             "repeat_count": int(repeat_count or 0),
