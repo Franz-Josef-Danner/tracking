@@ -51,7 +51,7 @@ def _kc_request_overlay_redraw(context):
 def _kc_update_repeat_scope(self, context):
     try:
         enable = bool(getattr(self, "kc_show_repeat_scope", False))
-        enable_repeat_scope(context.scene, enable)
+        enable_repeat_scope(context.scene, enable, source="prop_update")
     except Exception as e:  # noqa: BLE001
         # Beim Laden/Prefs nicht hart fehlschlagen.
         print("[RepeatScope] update skipped:", e)
@@ -132,7 +132,13 @@ def unregister():
 
 
 def is_repeat_scope_enabled(scn: bpy.types.Scene) -> bool:
-    return bool(getattr(scn, "kc_show_repeat_scope", False))
+    """Overlay gilt als aktiv, wenn UI-Flag ODER Sticky gesetzt ist."""
+    try:
+        ui_flag = bool(getattr(scn, "kc_show_repeat_scope", False))
+    except Exception:
+        ui_flag = False
+    sticky = bool(scn.get(_STICKY_KEY, False))
+    return ui_flag or sticky
 
 
 def set_repeat_scope_sticky(scn: bpy.types.Scene, sticky: bool, *, source: str = "api") -> None:
