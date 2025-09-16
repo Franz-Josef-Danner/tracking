@@ -8,6 +8,16 @@ from typing import Iterable, Set, Dict, Any, Optional, Tuple, List
 
 __all__ = ["run_multi_pass"]
 
+# ---------------------------------------------------------------------------
+# Lightweight logging (no side-effects). Always safe-guarded.
+# ---------------------------------------------------------------------------
+def _log(msg: str) -> None:
+    try:
+        print(msg)
+    except Exception:
+        # Never fail due to logging
+        pass
+
 # ------------------------------------------------------------
 # Hilfen (lokal, keine Abhängigkeit vom Coordinator/Distanze)
 # ------------------------------------------------------------
@@ -172,7 +182,16 @@ def _run_multi_core(
     """
     Führt zusätzliche Detect-Durchläufe mit identischem threshold aus,
     variiert Pattern(- und optional Search-)Size gemäß Wiederholungszähler
-    (count). Sammelt NUR neue Marker relativ zu pre_ptrs und selektiert diese.
+    (count).
+    Log-Punkte:
+      - Clip/Frame/Repeat/Canvasgröße
+      - Quelle und Wert von min_distance_effective
+      - Effektive Detect-Parameter (thr/margin/min_dist/pattern/search)
+      - Per-Scale-Ergebnis (created, eff_pattern_size)
+      - Auswahl-Delta (new_ptrs Count)
+      - Summary (created_per_scale, selected)
+      (Keine funktionalen Änderungen.)
+    Sammelt NUR neue Marker relativ zu pre_ptrs und selektiert diese.
     Rückgabe enthält pro Scale die erzeugte Markeranzahl.
     """
     clip = getattr(context, "edit_movieclip", None) or getattr(getattr(context, "space_data", None), "clip", None)
@@ -191,6 +210,16 @@ def _run_multi_core(
         width, height = getattr(clip, "size", (0, 0))
     except Exception:
         width, height = 0, 0
+
+    try:
+        _log(
+            f"[Multi.Core] ENTER clip={getattr(clip,'name','<unnamed>')} "
+            f"size={int(width)}x{int(height)} repeat={int(repeat_count or 0)} "
+            f"detect_threshold_in={float(detect_threshold):.6f} "
+            f"frame={getattr(getattr(context,'scene',None),'frame_current',None)}"
+        )
+    except Exception:
+        pass
     md_detect = None
     if scn is not None:
         md_detect = scn.get("kc_min_distance_effective", None)
@@ -205,8 +234,9 @@ def _run_multi_core(
         md_src = "fallback"
     try:
         frame_val = int(getattr(getattr(context, "scene", None), "frame_current", 0))
-        print(
-            f"[Multi] f={frame_val} thr={float(detect_threshold):.6f} "
+        # vorhandene Info beibehalten, aber um Prefix vereinheitlicht
+        _log(
+            f"[Multi.Core] f={frame_val} thr={float(detect_threshold):.6f} "
             f"→ min_distance_effective={int(min_dist_effective)} src={md_src}"
         )
     except Exception:
@@ -266,6 +296,16 @@ def _run_multi_core(
     # KEINE Skalenvarianten mehr: exakt die Detect-Werte (Scale = 1.0)
     scales: List[float] = [1.0]
 
+    try:
+        _log(
+            f"[Multi.Core] Params reuse (pre-sweep): "
+            f"thr={thr:.6f} margin={int(margin)} min_dist={int(min_dist)} "
+            f"pattern_o={int(pattern_o)} search_o={int(search_o)} "
+            f"scales={scales}"
+        )
+    except Exception:
+        pass
+
     def _sweep(scale: float) -> Tuple[int, int]:
         """
         Setzt Pattern/Search Size gemäß scale, triggert Detect,
@@ -290,12 +330,17 @@ def _run_multi_core(
         _min_dist = int(min_dist)
         _thr = float(thr)
 
-        # Debug
+        # Debug (bestehende Ausgabe beibehalten, Prefix vereinheitlicht)
         try:
-            print(
-                f"[Multi] reuse DETECT: f={int(context.scene.frame_current)} "
+            _log(
+                f"[Multi.Core] reuse DETECT: f={int(context.scene.frame_current)} "
                 f"ps={ps} ss={ss} thr={_thr:.6f} margin={_margin} min_dist={_min_dist}"
             )
+        except Exception:
+            pass
+
+        try:
+            _log(f"[Multi.Sweep] BEGIN scale={scale} eff_ps={ps} ss={ss}")
         except Exception:
             pass
 
@@ -307,6 +352,10 @@ def _run_multi_core(
         )
 
         created = [t for t in tracking.tracks if t.as_pointer() not in before]
+        try:
+            _log(f"[Multi.Sweep] END   scale={scale} created={len(created)} eff_ps={eff}")
+        except Exception:
+            pass
         return len(created), eff
 
     # Durchläufe gemäß Skalenliste
@@ -323,6 +372,14 @@ def _run_multi_core(
     except Exception:
         pass
 
+    try:
+        _log(
+            f"[Multi.Core] Sweep summary: created_per_scale={created_per_scale} "
+            f"eff_pattern_sizes={eff_pattern_sizes}"
+        )
+    except Exception:
+        pass
+
     # Nur NEUE (Triplets) selektieren
     new_ptrs = {t.as_pointer() for t in tracking.tracks if t.as_pointer() not in pre_ptrs}
     for t in tracking.tracks:
@@ -334,6 +391,14 @@ def _run_multi_core(
             scn["kc_min_distance_effective"] = int(min_dist)
         except Exception:
             pass
+
+    try:
+        _log(
+            f"[Multi.Core] Selected new_ptrs={len(new_ptrs)} "
+            f"repeat_count={int(repeat_count or 0)}"
+        )
+    except Exception:
+        pass
 
     try:
         bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
@@ -370,15 +435,50 @@ def run_multi_pass(context: bpy.types.Context, *, frame: Optional[int] = None, *
         frame = int(getattr(getattr(context, "scene", None), "frame_current", 0))
     frame = int(frame)
 
+    try:
+        w, h = getattr(clip, "size", (0, 0))
+    except Exception:
+        w, h = 0, 0
+    try:
+        _log(
+            f"[Multi] START frame={frame} clip={getattr(clip,'name','<unnamed>')} "
+            f"size={int(w)}x{int(h)} kwargs_keys={list(kwargs.keys())}"
+        )
+    except Exception:
+        pass
+
     pre_selected_ptrs = _snapshot_selected_ptrs(clip, frame)
     pre_all_ptrs = _snapshot_all_ptrs(clip)
+    try:
+        _log(
+            f"[Multi] Snapshot pre: selected={len(pre_selected_ptrs)} "
+            f"all={len(pre_all_ptrs)}"
+        )
+    except Exception:
+        pass
 
     core_res: Dict[str, Any] = {}
     if "_run_multi_core" in globals() and callable(globals()["_run_multi_core"]):
         core_res = globals()["_run_multi_core"](context, frame=frame, **kwargs) or {}
+    try:
+        _log(
+            f"[Multi] Core status={core_res.get('status','?')} "
+            f"created_low={core_res.get('created_low')} "
+            f"created_high={core_res.get('created_high')} "
+            f"selected={core_res.get('selected')}"
+        )
+    except Exception:
+        pass
 
     post_all_ptrs = _snapshot_all_ptrs(clip)
     new_multi_ptrs = list(post_all_ptrs.difference(pre_all_ptrs))
+    try:
+        _log(
+            f"[Multi] Snapshot post: all={len(post_all_ptrs)} "
+            f"delta_new={len(new_multi_ptrs)}"
+        )
+    except Exception:
+        pass
 
     _clear_selection_at_frame(clip, frame)
     _select_ptrs_at_frame(clip, frame, pre_selected_ptrs.union(new_multi_ptrs))
@@ -394,4 +494,12 @@ def run_multi_pass(context: bpy.types.Context, *, frame: Optional[int] = None, *
         "multi_new_ptrs": new_multi_ptrs,
         "restored_selected_ptrs": list(pre_selected_ptrs),
     })
+
+    try:
+        _log(
+            f"[Multi] END frame={frame} status={core_res.get('status')} "
+            f"delta_new={len(new_multi_ptrs)} restored_selected={len(pre_selected_ptrs)}"
+        )
+    except Exception:
+        pass
     return core_res
