@@ -796,7 +796,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # min_distance JEDEM PASS stufen – Gate entfernt
         za = float(target)
         gm = float(gm_for_formulas)
-        f_md = 1.0 - ((za - gm) / (za * max(1, 10.0 / max(1, abs(za - gm )))))
+        f_md = 1.0 - ((za - gm) / (za * max(1.5, 10.0 / max(1, abs(za - gm )))))
         next_md = float(curr_md) * f_md
 
         # 5) Persistieren
