@@ -24,7 +24,7 @@ def _clip_end_for_scene(clip: bpy.types.MovieClip, scn: bpy.types.Scene) -> int:
     return min(int(getattr(scn, "frame_end", 1)), int(c_end))
 
 def _clamp_view_to_range(context) -> None:
-    """Clamp Scene/Viewer frames auf Clip/Szenen-Ende (prä-Solve)."""
+    """Clamp Scene/Viewer auf Clip/Szenen-Ende (prä-Solve)."""
     scn  = context.scene
     clip = _resolve_clip(context)
     if not clip:
@@ -33,7 +33,6 @@ def _clamp_view_to_range(context) -> None:
     if int(scn.frame_current) > end:
         print(f"[SolveGuard] clamp scene.frame_current {int(scn.frame_current)} → {end}")
         scn.frame_current = end
-    # UI-Viewer (falls vorhanden) synchronisieren
     sp = getattr(context, "space_data", None)
     if sp and getattr(sp, "type", None) == 'CLIP_EDITOR':
         try:
@@ -43,7 +42,7 @@ def _clamp_view_to_range(context) -> None:
             pass
 
 def _clamp_to_solved_range_post(context) -> None:
-    """Nach dem Solve: auf max tatsächlich gelösten Kameraframe clampen (post-Solve)."""
+    """Nach Solve: auf max tatsächlich gelösten Kameraframe clampen."""
     scn  = context.scene
     clip = _resolve_clip(context)
     if not clip:
@@ -94,7 +93,7 @@ def solve_camera_only(context):
     """
     area, region, space = _find_clip_window(context)
     try:
-        # PRE: out-of-range Frames hart abfangen (verhindert "No camera for frame 301")
+        # PRE: out-of-range Frames hart abfangen (eliminiert "No camera for frame 301")
         _clamp_view_to_range(context)
         if area and region and space:
             with context.temp_override(area=area, region=region, space_data=space):
