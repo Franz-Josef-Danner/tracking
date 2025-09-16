@@ -160,11 +160,11 @@ def _build_scales_for_repeat(repeat_count: Optional[int]) -> List[float]:
     if not repeat_count or repeat_count < 6:
         return []
     base = [0.5, 2.0]
-    if repeat_count >= 7:
+    if repeat_count >= 12:
         base.append(3.0)
-    if repeat_count >= 8:
+    if repeat_count >= 18:
         base.append(4.0)
-    if repeat_count >= 9:
+    if repeat_count >= 24:
         base.append(5.0)
     return base
 
