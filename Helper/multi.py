@@ -293,8 +293,20 @@ def _run_multi_core(
     pattern_o = int(getattr(settings, "default_pattern_size", 15))
     search_o  = int(getattr(settings, "default_search_size", 51))
 
-    # KEINE Skalenvarianten mehr: exakt die Detect-Werte (Scale = 1.0)
+    # Skalenvarianten: aus Override oder aus Repeat-Count ableiten
     scales: List[float] = [1.0]
+    try:
+        if pattern_scales is not None:
+            scales = [float(s) for s in pattern_scales if float(s) > 0.0]
+        else:
+            auto = _build_scales_for_repeat(repeat_count)
+            scales = auto if auto else [1.0]
+    except Exception:
+        scales = [1.0]
+    try:
+        _log(f"[Multi.Core] scales={scales} (repeat={int(repeat_count or 0)})")
+    except Exception:
+        pass
 
     try:
         _log(
@@ -314,11 +326,17 @@ def _run_multi_core(
         before = {t.as_pointer() for t in tracking.tracks}
         before |= set(pre_ptrs)  # pre_ptrs sicherstellen
         eff = _set_pattern_size(tracking, max(3, int(round(pattern_o * float(scale)))))
-        # Search unverändert lassen – wir spiegeln Detect-Params.
+        # Search size proportional aus Scale ableiten (optional per Flag)
         try:
-            settings.default_search_size = search_o
+            if adjust_search_with_pattern:
+                settings.default_search_size = max(5, int(round(search_o * float(scale))))
+            else:
+                settings.default_search_size = search_o
         except Exception:
-            pass
+            try:
+                settings.default_search_size = search_o
+            except Exception:
+                pass
 
         # Margin/MinDist/Threshold 1:1 aus Detect übernehmen
         ps = int(eff)
