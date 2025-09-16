@@ -162,25 +162,42 @@ def solve_final_refine(
     apply_model(model)
     # Spiegel die Flags in die Tracking-Settings (sichtbar im UI)
     _apply_refine_flags(context, focal=True, principal=True, radial=True)
-    with phase_lock("SOLVE_FINAL"), undo_off():
-        t1 = time.perf_counter()
-        # bevorzugt: eigener Voll-Solve-Wrapper; Fallback: solve_camera_only(...)
-        if solve_full is not None:
-            score = solve_full(
-                context,
-                refine_intrinsics_focal_length=True,
-                refine_intrinsics_principal_point=True,
-                refine_intrinsics_radial_distortion=True,
-            )
-        else:
-            # Fallback: direkter Helper-Call; liefert ggf. None → robust auf 0.0 casten
-            score = solve_camera_only(
-                context,
-                refine_intrinsics_focal_length=True,
-                refine_intrinsics_principal_point=True,
-                refine_intrinsics_radial_distortion=True,
-            ) or 0.0
-        dt = time.perf_counter() - t1
+    # Beim FINALEN Refine-Solve soll der avg_error-Gate die Szenen-Variable
+    # `error_track` verwenden. Wir setzen dafür transient ein Scene-Flag,
+    # das der Post-Solve-Hook auswertet.
+    scn = getattr(context, "scene", None) or bpy.context.scene
+    _flag_key = "kc_solve_gate_use_error_track"
+    try:
+        try:
+            scn[_flag_key] = True
+        except Exception:
+            pass
+        with phase_lock("SOLVE_FINAL"), undo_off():
+            t1 = time.perf_counter()
+            # bevorzugt: eigener Voll-Solve-Wrapper; Fallback: solve_camera_only(...)
+            if solve_full is not None:
+                score = solve_full(
+                    context,
+                    refine_intrinsics_focal_length=True,
+                    refine_intrinsics_principal_point=True,
+                    refine_intrinsics_radial_distortion=True,
+                )
+            else:
+                # Fallback: direkter Helper-Call; liefert ggf. None → robust auf 0.0 casten
+                score = solve_camera_only(
+                    context,
+                    refine_intrinsics_focal_length=True,
+                    refine_intrinsics_principal_point=True,
+                    refine_intrinsics_radial_distortion=True,
+                ) or 0.0
+            dt = time.perf_counter() - t1
+    finally:
+        # Flag sauber entfernen – unabhängig vom Ergebnis
+        try:
+            if scn and _flag_key in scn:
+                del scn[_flag_key]
+        except Exception:
+            pass
         print(f"[SolveEval][FINAL] {model}: score={score:.6f} dur={dt:.3f}s")
         return float(score)
 
@@ -396,15 +413,24 @@ def solve_camera_only(context, *args, **kwargs):
                 break
             time.sleep(0.05)
 
-        thr = float(
-            getattr(scene, "solve_error_threshold", _SOLVE_ERR_DEFAULT_THR)
-            or _SOLVE_ERR_DEFAULT_THR
-        )
+        # Gate-Quelle wählen:
+        # - Standard: scene.solve_error_threshold (Default 20.0)
+        # - Finaler Refine-Solve: scene.error_track (px), getriggert über Scene-Flag
+        use_err_track = bool(scene.get("kc_solve_gate_use_error_track", False))
+        if use_err_track:
+            thr = float(getattr(scene, "error_track", 2.0) or 2.0)
+            _thr_src = "scene.error_track"
+        else:
+            thr = float(
+                getattr(scene, "solve_error_threshold", _SOLVE_ERR_DEFAULT_THR)
+                or _SOLVE_ERR_DEFAULT_THR
+            )
+            _thr_src = "scene.solve_error_threshold"
         if ae is None:
             print("[SolveCheck] Keine auswertbare Reconstruction – Check übersprungen.")
             return res
 
-        print(f"[SolveCheck] avg_error={ae:.6f} thr={thr:.6f}")
+        print(f"[SolveCheck] avg_error={ae:.6f} thr={thr:.6f} src={_thr_src}")
         attempts = int(scene.get("kc_solve_attempts", 0) or 0)
         if ae > thr and attempts < 5:
             scene["kc_solve_attempts"] = attempts + 1
