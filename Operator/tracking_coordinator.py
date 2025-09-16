@@ -271,6 +271,7 @@ from ..Helper.reduce_error_tracks import (
     get_avg_reprojection_error,
     run_reduce_error_tracks,
 )
+from ..Helper.refine_high_error import start_refine_modal
 from ..Helper.solve_eval import (
     SolveConfig,
     SolveMetrics,
@@ -394,6 +395,34 @@ __all__ = ("CLIP_OT_tracking_coordinator",)
 _SOLVE_ERR_DEFAULT_THR = 20.0
 
 
+def _schedule_restart_after_refine(context: bpy.types.Context, *, delay: float = 0.5) -> None:
+    """Wartet, bis der modal laufende refine_high_error-Operator fertig ist, dann Reset→FindLow."""
+
+    try:
+        import bpy as _bpy
+
+        scn = context.scene
+
+        def _cb():
+            try:
+                if scn.get("refine_active"):
+                    return 0.25  # weiter pollen
+                try:
+                    reset_for_new_cycle(context, clear_solve_log=False)
+                except Exception:
+                    pass
+                try:
+                    run_find_low_marker_frame(context)
+                except Exception:
+                    pass
+            finally:
+                return None  # Timer beenden
+
+        _bpy.app.timers.register(_cb, first_interval=max(0.05, float(delay)))
+    except Exception as _exc:
+        print(f"[SolveCheck] Timer-Register fehlgeschlagen: {_exc!r}")
+
+
 def solve_camera_only(context, *args, **kwargs):
     # Invoke original solve
     res = _solve_camera_only(context, *args, **kwargs)
@@ -430,7 +459,12 @@ def solve_camera_only(context, *args, **kwargs):
             _thr_src = "scene.solve_error_threshold"
         # 0.0 ist ebenfalls „invalid“ (Reconstruction noch nicht konsistent)
         if ae is None or float(ae) <= 0.0:
-            print("[SolveCheck] Keine auswertbare Reconstruction (ae<=0) – Check übersprungen.")
+            print("[SolveCheck] Keine auswertbare Reconstruction (ae<=0) – refine_high_error + Restart.")
+            try:
+                start_refine_modal(context)  # startet modal; setzt scene['refine_active']=True
+            except Exception as _ex:
+                print(f"[SolveCheck] refine_high_error start failed: {_ex!r}")
+            _schedule_restart_after_refine(context)
             return res
 
         print(f"[SolveCheck] avg_error={ae:.6f} thr={thr:.6f} src={_thr_src}")
