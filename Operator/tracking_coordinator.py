@@ -471,8 +471,14 @@ def solve_camera_only(context, *args, **kwargs):
         attempts = int(scene.get("kc_solve_attempts", 0) or 0)
         if ae > thr and attempts < 5:
             scene["kc_solve_attempts"] = attempts + 1
-            print(f"[SolveCheck] Über Schwellwert → reduce_error_tracks() Pass #{attempts+1}")
-            run_reduce_error_tracks(context)
+            # --- Empfohlener Ablauf: n_delete = max(10, avg_projection_error / error_track)
+            err_track = float(getattr(scene, "error_track", 2.0) or 2.0)
+            n_delete = max(10, int(ae / max(1e-6, err_track)))
+            print(
+                f"[SolveCheck] Über Schwellwert → reduce_error_tracks(max_to_delete={n_delete}) "
+                f"(Formel: max(10, {ae:.3f}/{err_track:.3f})) Pass #{attempts+1}"
+            )
+            run_reduce_error_tracks(context, max_to_delete=int(n_delete))
             try:
                 reset_for_new_cycle(context, clear_solve_log=False)
             except Exception:
