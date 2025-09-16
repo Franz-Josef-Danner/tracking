@@ -4,7 +4,61 @@ from typing import Optional
 
 __all__ = ("solve_camera_only",)
 
+# --- helpers ---------------------------------------------------------------
+def _resolve_clip(context) -> Optional[bpy.types.MovieClip]:
+    sp = getattr(context, "space_data", None)
+    if sp and getattr(sp, "type", None) == 'CLIP_EDITOR':
+        return getattr(sp, "clip", None)
+    try:
+        return bpy.data.movieclips[0]
+    except Exception:
+        return None
 
+def _clip_end_for_scene(clip: bpy.types.MovieClip, scn: bpy.types.Scene) -> int:
+    try:
+        start = int(getattr(clip, "frame_start", 1))
+        dur   = int(getattr(clip, "frame_duration", 0))
+        c_end = start + max(0, dur - 1)
+    except Exception:
+        c_end = int(getattr(scn, "frame_end", 1))
+    return min(int(getattr(scn, "frame_end", 1)), int(c_end))
+
+def _clamp_view_to_range(context) -> None:
+    """Clamp Scene/Viewer frames auf Clip/Szenen-Ende (prä-Solve)."""
+    scn  = context.scene
+    clip = _resolve_clip(context)
+    if not clip:
+        return
+    end = _clip_end_for_scene(clip, scn)
+    if int(scn.frame_current) > end:
+        print(f"[SolveGuard] clamp scene.frame_current {int(scn.frame_current)} → {end}")
+        scn.frame_current = end
+    # UI-Viewer (falls vorhanden) synchronisieren
+    sp = getattr(context, "space_data", None)
+    if sp and getattr(sp, "type", None) == 'CLIP_EDITOR':
+        try:
+            if int(sp.clip_user.frame_current) > end:
+                sp.clip_user.frame_current = end
+        except Exception:
+            pass
+
+def _clamp_to_solved_range_post(context) -> None:
+    """Nach dem Solve: auf max tatsächlich gelösten Kameraframe clampen (post-Solve)."""
+    scn  = context.scene
+    clip = _resolve_clip(context)
+    if not clip:
+        return
+    try:
+        recon = clip.tracking.objects.active.reconstruction
+        cams  = list(getattr(recon, "cameras", []))
+        if not cams:
+            return
+        max_cam = max(int(getattr(c, "frame", -1)) for c in cams)
+        if int(scn.frame_current) > max_cam:
+            print(f"[SolveGuard] clamp to solved max {max_cam} from {int(scn.frame_current)}")
+            scn.frame_current = max_cam
+    except Exception:
+        pass
 # -- interne Hilfe: passenden CLIP_EDITOR im aktuellen Window finden ---------
 
 def _find_clip_window(context) -> tuple[Optional[bpy.types.Area], Optional[bpy.types.Region], Optional[bpy.types.Space]]:
@@ -40,10 +94,16 @@ def solve_camera_only(context):
     """
     area, region, space = _find_clip_window(context)
     try:
+        # PRE: out-of-range Frames hart abfangen (verhindert "No camera for frame 301")
+        _clamp_view_to_range(context)
         if area and region and space:
             with context.temp_override(area=area, region=region, space_data=space):
-                return bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-        return bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+                res = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+                _clamp_to_solved_range_post(context)
+                return res
+        res = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+        _clamp_to_solved_range_post(context)
+        return res
     except Exception as e:
         return {"CANCELLED"}
 
