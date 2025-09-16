@@ -797,7 +797,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         za = float(target)
         gm = float(gm_for_formulas)
         f_md = 1.0 - (
-            (za - gm) / (za * (10.0 / max(1, min(7, abs(za - gm) / 10))))
+            (za - gm) / (za * (20.0 / max(1, min(7, abs(za - gm) / 10))))
         )
         next_md = float(curr_md) * f_md
 
