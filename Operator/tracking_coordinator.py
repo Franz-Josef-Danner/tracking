@@ -167,6 +167,8 @@ def solve_final_refine(
     # das der Post-Solve-Hook auswertet.
     scn = getattr(context, "scene", None) or bpy.context.scene
     _flag_key = "kc_solve_gate_use_error_track"
+    score = 0.0
+    dt = 0.0
     try:
         try:
             scn[_flag_key] = True
@@ -198,8 +200,8 @@ def solve_final_refine(
                 del scn[_flag_key]
         except Exception:
             pass
-        print(f"[SolveEval][FINAL] {model}: score={score:.6f} dur={dt:.3f}s")
-        return float(score)
+    print(f"[SolveEval][FINAL] {model}: score={score:.6f} dur={dt:.3f}s")
+    return float(score)
 
 # ---------------------------------------------------------------------------
 # Kombi-Wrapper: 3×-Eval + finaler Voll-Solve (alle refine_intrinsics = True)
