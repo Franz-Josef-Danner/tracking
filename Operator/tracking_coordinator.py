@@ -428,8 +428,9 @@ def solve_camera_only(context, *args, **kwargs):
                 or _SOLVE_ERR_DEFAULT_THR
             )
             _thr_src = "scene.solve_error_threshold"
-        if ae is None:
-            print("[SolveCheck] Keine auswertbare Reconstruction – Check übersprungen.")
+        # 0.0 ist ebenfalls „invalid“ (Reconstruction noch nicht konsistent)
+        if ae is None or float(ae) <= 0.0:
+            print("[SolveCheck] Keine auswertbare Reconstruction (ae<=0) – Check übersprungen.")
             return res
 
         print(f"[SolveCheck] avg_error={ae:.6f} thr={thr:.6f} src={_thr_src}")
