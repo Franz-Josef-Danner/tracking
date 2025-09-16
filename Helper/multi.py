@@ -384,6 +384,12 @@ def _run_multi_core(
     new_ptrs = {t.as_pointer() for t in tracking.tracks if t.as_pointer() not in pre_ptrs}
     for t in tracking.tracks:
         t.select = (t.as_pointer() in new_ptrs)
+    try:
+        if new_ptrs:
+            sample = list(new_ptrs)[:5]
+            _log(f"[Multi.Core] new_ptrs_sample(count={len(new_ptrs)}): {sample}")
+    except Exception:
+        pass
 
     # Telemetrie: Publiziere erneut den MinDist-Wert (keine Änderung, reines Echo)
     if scn is not None:
@@ -405,10 +411,20 @@ def _run_multi_core(
     except Exception:
         pass
 
+    created_total = int(sum(created_per_scale.values()))
+    try:
+        _log(
+            f"[Multi.Core] Summary: created_total={created_total} "
+            f"per_scale={created_per_scale} selected={len(new_ptrs)}"
+        )
+    except Exception:
+        pass
+
     return {
         "status": "READY",
         "created_low": int(created_per_scale.get(0.5, 0)),
         "created_high": int(created_per_scale.get(2.0, 0)),
+        "created_total": created_total,
         "created_per_scale": created_per_scale,
         "effective_pattern_sizes": eff_pattern_sizes,
         "selected": int(len(new_ptrs)),
@@ -465,6 +481,7 @@ def run_multi_pass(context: bpy.types.Context, *, frame: Optional[int] = None, *
             f"[Multi] Core status={core_res.get('status','?')} "
             f"created_low={core_res.get('created_low')} "
             f"created_high={core_res.get('created_high')} "
+            f"created_total={core_res.get('created_total')} "
             f"selected={core_res.get('selected')}"
         )
     except Exception:
