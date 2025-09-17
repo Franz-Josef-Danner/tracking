@@ -89,34 +89,58 @@ def _orchestrate_once(context: bpy.types.Context) -> None:
     reset_for_new_cycle(context)
     reset_tracking_state(context)
 
-    # 1) FIND_LOW (beachtet Dict-Rückgabe des Helpers)
+    # 1) FIND_LOW (robuste Auswertung der möglichen Dict-Rückgabe)
     t0 = time.time()
     low = run_find_low_marker_frame(context)
     _log(f"FindLow: result={low} dt={time.time()-t0:.3f}s")
     if isinstance(low, dict):
-        status = low.get("status")
-        if status == "FOUND":
+        st = str(low.get("status", "")).upper()
+        if st == "FOUND":
             target_frame = int(low.get("frame"))
-        elif status == "NONE":
-            # nichts unterhalb Threshold → keine Aktion erforderlich
-            return
+        elif st == "NONE":
+            return  # nichts zu tun
         else:
-            raise RuntimeError(f"FindLow failed: {low.get('reason','unbekannt')}")
+            raise RuntimeError(f"FindLow failed: {low!r}")
     else:
         if low is None:
             return
         target_frame = int(low)
     # 2) JUMP
-    run_jump_to_frame(context, target_frame)
+    try:
+        # Neue API: Keyword 'frame'
+        run_jump_to_frame(context, frame=int(target_frame))
+    except TypeError:
+        # Legacy-Fallback: Frame direkt setzen, dann Helper ohne Args
+        try:
+            (getattr(context, "scene", None) or bpy.context.scene).frame_set(int(target_frame))
+        except Exception:
+            pass
+        try:
+            run_jump_to_frame(context)
+        except Exception:
+            pass
 
     # 3) Tracker-Settings harmonisieren
     apply_tracker_settings(context)
 
-    # 4) DETECT (einmal, kontrolliert)
-    _detect_once(context, detect_threshold=None)
+    # 4) DETECT (einmal, deterministisch am Ziel-Frame; richtige Kwargs)
+    _detect_once(
+        context,
+        start_frame=int(target_frame),
+        threshold=None,     # unverändert lassen, Helper greift Szene-Default
+        select=True         # neue Marker selektieren für Distanzé-Policy
+    )
 
     # 5) DISTANZE
-    run_distance_cleanup(context)
+    run_distance_cleanup(
+        context,
+        frame=int(target_frame),
+        min_distance=None,               # Auto: aus Scene-Keys/Fallback
+        require_selected_new=True,
+        include_muted_old=False,
+        select_remaining_new=True,
+        verbose=True
+    )
 
     # 6) SPIKE_FILTER (projektion-agnostisch; rein markerbasiert)
     try:
