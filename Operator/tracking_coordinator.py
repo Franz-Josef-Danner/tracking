@@ -557,6 +557,26 @@ def _select_only_track(clip: bpy.types.MovieClip, container, trk, *, is_top_leve
         pass
 
 
+# --- Recon-Inventory ---------------------------------------------------------
+def _has_any_recon_cameras(clip: bpy.types.MovieClip) -> bool:
+    """True, wenn mindestens eine Reconstruction-Kamera (egal in welchem Objekt) existiert."""
+
+    try:
+        cams = []
+        try:
+            cams += list(getattr(getattr(clip.tracking, "reconstruction", None), "cameras", []))
+        except Exception:
+            pass
+        for obj in getattr(clip.tracking, "objects", []):
+            try:
+                cams += list(getattr(getattr(obj, "reconstruction", None), "cameras", []))
+            except Exception:
+                pass
+        return len(cams) > 0
+    except Exception:
+        return False
+
+
 def _clamp_scene_frame_to_recon(context: bpy.types.Context) -> None:
     """Falls der aktuelle Scene-Frame keine Recon-Kamera hat, auf den nächsten gültigen Frame setzen."""
 
@@ -852,6 +872,43 @@ def _purge_nonfinite_after_solve(context: bpy.types.Context) -> tuple[int, int]:
     return (del_markers, del_tracks)
 
 
+# --- Inf-Cost Backoff/Guard --------------------------------------------------
+def _infcost_should_purge(scene: bpy.types.Scene) -> bool:
+    now = time.time()
+    try:
+        cooldown_until = float(scene.get("kc_infcost_cooldown_until", 0.0))
+        if now < cooldown_until:
+            print(f"[InfCost][Guard] cooldown active for {cooldown_until - now:.1f}s – purge suppressed.")
+            return False
+    except Exception:
+        pass
+    return True
+
+
+def _infcost_on_purge(scene: bpy.types.Scene) -> str:
+    """Wird aufgerufen, wenn (mk_del+tr_del)>0. Liefert Aktion:
+    'reset' | 'reduce_reset' | 'suppress' (kein Reset, 30s Cool-down)."""
+
+    now = time.time()
+    streak = int(scene.get("kc_infcost_streak", 0))
+    last_ts = float(scene.get("kc_infcost_last_ts", 0.0))
+    if (now - last_ts) <= 10.0:
+        streak += 1
+    else:
+        streak = 1
+    scene["kc_infcost_streak"] = streak
+    scene["kc_infcost_last_ts"] = now
+    if streak == 1:
+        print("[InfCost][Guard] first hit → reset")
+        return "reset"
+    if streak == 2:
+        print("[InfCost][Guard] second hit → reduce+reset")
+        return "reduce_reset"
+    scene["kc_infcost_cooldown_until"] = now + 30.0
+    print("[InfCost][Guard] repeated hits → suppress reset (30s cooldown)")
+    return "suppress"
+
+
 def _schedule_restart_after_refine(context: bpy.types.Context, *, delay: float = 0.5) -> None:
     """Wartet, bis der modal laufende refine_high_error-Operator fertig ist, dann Reset→FindLow."""
 
@@ -897,6 +954,17 @@ def solve_camera_only(context, *args, **kwargs):
         _set_scene_frame_to_nearest_recon(context)
         # Sicherstellen, dass wir einen aktiven Clip haben (vermeidet clip=<none>)
         _ensure_scene_active_clip(context)
+        clip = getattr(scene, "active_clip", None)
+        if clip and not _has_any_recon_cameras(clip):
+            print("[SolveCheck] Keine Reconstruction-Kameras – AE-Polling übersprungen, Fallback-Pfad.")
+            _safe_run_reduce_error_tracks(context)
+            try:
+                reset_for_new_cycle(context, clear_solve_log=False)
+                run_find_low_marker_frame(context)
+            except Exception as ex0:
+                print(f"[SolveCheck] Reset/FindLow (no-recon) failed: {ex0!r}")
+            return res
+
         # Kurz auf gültige Reconstruction pollen (max. ~2s) und einen Kameraframe sichern
         ae = None
         with _with_valid_camera_frame(context):
@@ -928,24 +996,31 @@ def solve_camera_only(context, *args, **kwargs):
                 print(f"[SolveCheck] Reset/FindLow fallback failed: {ex3!r}")
             return res
 
-        # --- NEU: direkt nach erfolgreichem Solve non-finite Kosten bereinigen
+        # --- NEU: direkt nach erfolgreichem Solve non-finite Kosten bereinigen (mit Guard/Backoff)
+        mk_del, tr_del = (0, 0)
         try:
-            mk_del, tr_del = _purge_nonfinite_after_solve(context)
+            if _infcost_should_purge(scene):
+                mk_del, tr_del = _purge_nonfinite_after_solve(context)
         except Exception as ex_purge:
             print(f"[InfCost] purge failed: {ex_purge!r}")
-            mk_del, tr_del = (0, 0)
-        if (mk_del + tr_del) > 0:
-            print("[SolveCheck][InfCost] Reset→FindLow (wegen ∞/NaN-Kosten)")
-            _set_scene_frame_to_nearest_recon(context)
-            try:
-                reset_for_new_cycle(context, clear_solve_log=False)
-            except Exception as exr:
-                print(f"[SolveCheck] reset_for_new_cycle failed: {exr!r}")
-            try:
-                run_find_low_marker_frame(context)
-            except Exception as exf:
-                print(f"[SolveCheck] run_find_low_marker_frame failed: {exf!r}")
-            return res
+        total_del = mk_del + tr_del
+        if total_del > 0:
+            action = _infcost_on_purge(scene)
+            print(f"[SolveCheck][InfCost] total_deleted={total_del} action={action}")
+            if action in ("reduce_reset", "reset"):
+                if action == "reduce_reset":
+                    _safe_run_reduce_error_tracks(context)
+                _set_scene_frame_to_nearest_recon(context)
+                try:
+                    reset_for_new_cycle(context, clear_solve_log=False)
+                except Exception as exr:
+                    print(f"[SolveCheck] reset_for_new_cycle failed: {exr!r}")
+                try:
+                    run_find_low_marker_frame(context)
+                except Exception as exf:
+                    print(f"[SolveCheck] run_find_low_marker_frame failed: {exf!r}")
+                return res
+            # action == "suppress": kein Reset, Cool-down aktiv
 
         # Gate-Quelle wählen:
         # - Standard: scene.solve_error_threshold (Default 20.0)
