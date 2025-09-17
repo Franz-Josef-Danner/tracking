@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Kaiserlich Tracker – Top-Level Add-on (__init__.py), Solve-QA-UI entfernt."""
+"""Kaiserlich Tracker – Top-Level Add-on (__init__.py)"""
+
 from __future__ import annotations
+
 import bpy
 from bpy.types import PropertyGroup, Panel, Operator as BpyOperator
 from bpy.props import IntProperty, FloatProperty, CollectionProperty
@@ -20,7 +22,7 @@ bl_info = {
 }
 
 # ---------------------------------------------------------------------------
-# Scene-Properties (bereinigt: keine Solve-QA-/Debug-/Log-Props mehr)
+# Scene-Properties
 # ---------------------------------------------------------------------------
 class RepeatEntry(PropertyGroup):
     frame: IntProperty(name="Frame", default=0, min=0)
@@ -33,29 +35,27 @@ def _register_scene_props() -> None:
         sc.repeat_frame = CollectionProperty(type=RepeatEntry)
     if not hasattr(sc, "marker_frame"):
         sc.marker_frame = IntProperty(
-            name="Marker per Frame", default=25, min=10, max=50,
+            name="Marker per Frame",
+            default=25, min=10, max=50,
             description="Mindestanzahl Marker pro Frame",
         )
     if not hasattr(sc, "frames_track"):
         sc.frames_track = IntProperty(
-            name="Frames per Track", default=25, min=5, max=100,
+            name="Frames per Track",
+            default=25, min=5, max=100,
             description="Track-Länge in Frames",
         )
     if not hasattr(sc, "error_track"):
         sc.error_track = FloatProperty(
-            name="Error-Limit (px)", default=2.0, min=0.1, max=10.0,
+            name="Error-Limit (px)",
+            default=2.0, min=0.1, max=10.0,
             description="Maximal tolerierte Reprojektion (Pixel)",
         )
 
 
 def _unregister_scene_props() -> None:
     sc = bpy.types.Scene
-    for name in (
-        "repeat_frame",
-        "marker_frame",
-        "frames_track",
-        "error_track",
-    ):
+    for name in ("repeat_frame", "marker_frame", "frames_track", "error_track"):
         if hasattr(sc, name):
             try:
                 delattr(sc, name)
@@ -64,7 +64,7 @@ def _unregister_scene_props() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Launcher-Operator: startet den modalen Coordinator
+# Launcher-Operator
 # ---------------------------------------------------------------------------
 class CLIP_OT_kaiserlich_coordinator_launcher(BpyOperator):
     bl_idname = "clip.kaiserlich_coordinator_launcher"
@@ -79,7 +79,7 @@ class CLIP_OT_kaiserlich_coordinator_launcher(BpyOperator):
 
 
 # ---------------------------------------------------------------------------
-# Panel (bereinigt: nur Eingabefelder + Start-Button)
+# Panel
 # ---------------------------------------------------------------------------
 class CLIP_PT_kaiserlich_panel(Panel):
     bl_space_type = "CLIP_EDITOR"
@@ -108,24 +108,39 @@ class CLIP_PT_kaiserlich_panel(Panel):
 # ---------------------------------------------------------------------------
 _CLASSES = (
     RepeatEntry,
-    CLIP_OT_tracking_coordinator,            # modal coordinator
-    CLIP_OT_bidirectional_track,             # bidi helper
-    CLIP_OT_kaiserlich_coordinator_launcher, # launcher
-    CLIP_PT_kaiserlich_panel,                # ui
+    CLIP_OT_tracking_coordinator,
+    CLIP_OT_bidirectional_track,
+    CLIP_OT_kaiserlich_coordinator_launcher,
+    CLIP_PT_kaiserlich_panel,
 )
 
 
 def register() -> None:
-    from .ui import register as _ui_register  # weiter im separaten ui/ Ordner
+    # ui.register ist optional – defensiv kapseln
+    try:
+        from .ui import register as _ui_register
+    except Exception:
+        _ui_register = None
     for cls in _CLASSES:
         bpy.utils.register_class(cls)
     _register_scene_props()
-    _ui_register()                           # Stub ok
+    if _ui_register:
+        try:
+            _ui_register()
+        except Exception:
+            pass
 
 
 def unregister() -> None:
-    from .ui import unregister as _ui_unregister
-    _ui_unregister()
+    try:
+        from .ui import unregister as _ui_unregister
+    except Exception:
+        _ui_unregister = None
+    if _ui_unregister:
+        try:
+            _ui_unregister()
+        except Exception:
+            pass
     _unregister_scene_props()
     for cls in reversed(_CLASSES):
         try:
