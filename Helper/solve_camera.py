@@ -1,6 +1,6 @@
 from __future__ import annotations
 import bpy
-from typing import Optional
+from typing import Iterable, Optional
 
 __all__ = ("solve_camera_only",)
 
@@ -23,39 +23,94 @@ def _clip_end_for_scene(clip: bpy.types.MovieClip, scn: bpy.types.Scene) -> int:
         c_end = int(getattr(scn, "frame_end", 1))
     return min(int(getattr(scn, "frame_end", 1)), int(c_end))
 
-def _clamp_view_to_range(context) -> None:
+def _clamp_view_to_range(
+    scn: Optional[bpy.types.Scene],
+    clip: Optional[bpy.types.MovieClip],
+    *,
+    spaces: Iterable[Optional[bpy.types.Space]] = (),
+) -> None:
     """Clamp Scene/Viewer auf Clip/Szenen-Ende (prä-Solve)."""
-    scn  = context.scene
-    clip = _resolve_clip(context)
-    if not clip:
+
+    if scn is None or clip is None:
         return
-    end = _clip_end_for_scene(clip, scn)
-    if int(scn.frame_current) > end:
-        print(f"[SolveGuard] clamp scene.frame_current {int(scn.frame_current)} → {end}")
-        scn.frame_current = end
-    sp = getattr(context, "space_data", None)
-    if sp and getattr(sp, "type", None) == 'CLIP_EDITOR':
+
+    try:
+        end = _clip_end_for_scene(clip, scn)
+    except Exception:
+        return
+
+    try:
+        cur = int(getattr(scn, "frame_current", end))
+        if cur > end:
+            print(f"[SolveGuard] clamp scene.frame_current {cur} → {end}")
+            scn.frame_current = end
+    except Exception:
+        pass
+
+    for space in spaces:
+        if not space or getattr(space, "type", None) != 'CLIP_EDITOR':
+            continue
         try:
-            if int(sp.clip_user.frame_current) > end:
-                sp.clip_user.frame_current = end
+            clip_user = getattr(space, "clip_user", None)
+            if clip_user is None:
+                continue
+            cu_frame = int(getattr(clip_user, "frame_current", end))
+            if cu_frame > end:
+                clip_user.frame_current = end
         except Exception:
             pass
 
-def _clamp_to_solved_range_post(context) -> None:
+def _clamp_to_solved_range_post(
+    scn: Optional[bpy.types.Scene],
+    clip: Optional[bpy.types.MovieClip],
+    *,
+    spaces: Iterable[Optional[bpy.types.Space]] = (),
+) -> None:
     """Nach Solve: auf max tatsächlich gelösten Kameraframe clampen."""
-    scn  = context.scene
-    clip = _resolve_clip(context)
-    if not clip:
+
+    if scn is None or clip is None:
         return
+
     try:
-        recon = clip.tracking.objects.active.reconstruction
-        cams  = list(getattr(recon, "cameras", []))
-        if not cams:
+        tracking = getattr(clip, "tracking", None)
+        if tracking is None:
             return
-        max_cam = max(int(getattr(c, "frame", -1)) for c in cams)
-        if int(scn.frame_current) > max_cam:
-            print(f"[SolveGuard] clamp to solved max {max_cam} from {int(scn.frame_current)}")
+        cams = []
+        recon_main = getattr(tracking, "reconstruction", None)
+        if recon_main:
+            cams.extend(getattr(recon_main, "cameras", []) or [])
+        for obj in getattr(tracking, "objects", []):
+            recon_obj = getattr(obj, "reconstruction", None)
+            if recon_obj:
+                cams.extend(getattr(recon_obj, "cameras", []) or [])
+        frames = []
+        for cam in cams:
+            try:
+                frame = getattr(cam, "frame", None)
+                if frame is None:
+                    continue
+                frames.append(int(frame))
+            except Exception:
+                continue
+        if not frames:
+            return
+        max_cam = max(frames)
+        cur = int(getattr(scn, "frame_current", max_cam))
+        if cur > max_cam:
+            print(f"[SolveGuard] clamp to solved max {max_cam} from {cur}")
             scn.frame_current = max_cam
+        for space in spaces:
+            if not space or getattr(space, "type", None) != 'CLIP_EDITOR':
+                continue
+            try:
+                clip_user = getattr(space, "clip_user", None)
+                if clip_user is None:
+                    continue
+                cu_frame = int(getattr(clip_user, "frame_current", max_cam))
+                if cu_frame > max_cam:
+                    clip_user.frame_current = max_cam
+            except Exception:
+                pass
     except Exception:
         pass
 # -- interne Hilfe: passenden CLIP_EDITOR im aktuellen Window finden ---------
@@ -92,16 +147,24 @@ def solve_camera_only(context):
         Das Operator-Resultat (z. B. {'RUNNING_MODAL'} oder {'CANCELLED'}).
     """
     area, region, space = _find_clip_window(context)
+    scn = getattr(context, "scene", None)
+    clip = _resolve_clip(context)
+    if clip is None and space is not None:
+        clip = getattr(space, "clip", None)
+    spaces: list[Optional[bpy.types.Space]] = []
+    for candidate in (getattr(context, "space_data", None), space):
+        if candidate and getattr(candidate, "type", None) == 'CLIP_EDITOR':
+            if candidate not in spaces:
+                spaces.append(candidate)
+    _clamp_view_to_range(scn, clip, spaces=spaces)
     try:
-        # PRE: out-of-range Frames hart abfangen (eliminiert "No camera for frame 301")
-        _clamp_view_to_range(context)
         if area and region and space:
             with context.temp_override(area=area, region=region, space_data=space):
                 res = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-                _clamp_to_solved_range_post(context)
-                return res
+            _clamp_to_solved_range_post(scn, clip, spaces=spaces)
+            return res
         res = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-        _clamp_to_solved_range_post(context)
+        _clamp_to_solved_range_post(scn, clip, spaces=spaces)
         return res
     except Exception as e:
         return {"CANCELLED"}

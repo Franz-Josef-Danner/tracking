@@ -647,6 +647,43 @@ def _has_any_recon_cameras(clip: bpy.types.MovieClip) -> bool:
         return False
 
 
+def _max_recon_camera_frame(clip: bpy.types.MovieClip) -> Optional[int]:
+    """Ermittelt den höchsten Frame einer vorhandenen Recon-Kamera."""
+
+    try:
+        tracking = getattr(clip, "tracking", None)
+        if tracking is None:
+            return None
+        frames: list[int] = []
+        recon_main = getattr(tracking, "reconstruction", None)
+        if recon_main:
+            for cam in getattr(recon_main, "cameras", []) or []:
+                frame = getattr(cam, "frame", None)
+                if frame is None:
+                    continue
+                try:
+                    frames.append(int(frame))
+                except Exception:
+                    continue
+        for obj in getattr(tracking, "objects", []):
+            recon_obj = getattr(obj, "reconstruction", None)
+            if recon_obj is None:
+                continue
+            for cam in getattr(recon_obj, "cameras", []) or []:
+                frame = getattr(cam, "frame", None)
+                if frame is None:
+                    continue
+                try:
+                    frames.append(int(frame))
+                except Exception:
+                    continue
+        if not frames:
+            return None
+        return max(frames)
+    except Exception:
+        return None
+
+
 def _set_scene_frame_to_nearest_recon_or_start(context: bpy.types.Context) -> None:
     scn = getattr(context, "scene", None) or bpy.context.scene
     clip = _ensure_scene_active_clip(context)
@@ -691,16 +728,44 @@ def _with_valid_camera_frame(context: bpy.types.Context):  # temporärer Guard
     if scn is None or clip is None:
         yield
         return
-    prev = int(scn.frame_current)
+
     try:
-        target = _nearest_recon_frame(clip, prev)
-        if target is not None and target != prev:
-            scn.frame_set(target)
+        frame_start, frame_end = _clip_frame_range(clip)
+    except Exception:
+        frame_start = frame_end = int(getattr(scn, "frame_current", 0))
+    frame_start = int(frame_start)
+    frame_end = int(frame_end)
+    if frame_end < frame_start:
+        frame_end = frame_start
+
+    max_cam = _max_recon_camera_frame(clip)
+    check_end = frame_end
+    if max_cam is not None:
+        try:
+            check_end = min(frame_end, int(max_cam))
+        except Exception:
+            check_end = frame_end
+    if check_end < frame_start:
+        check_end = frame_start
+
+    prev = int(getattr(scn, "frame_current", check_end))
+    restore_frame = prev if prev <= check_end else check_end
+    if prev > check_end:
+        try:
+            scn.frame_set(int(check_end))
+        except Exception:
+            pass
+
+    try:
+        current = int(getattr(scn, "frame_current", restore_frame))
+        target = _nearest_recon_frame(clip, current)
+        if target is not None and target != current:
+            scn.frame_set(int(target))
         yield
     finally:
         try:
-            if scn.frame_current != prev:
-                scn.frame_set(prev)
+            if int(getattr(scn, "frame_current", restore_frame)) != int(restore_frame):
+                scn.frame_set(int(restore_frame))
         except Exception:
             pass
 
