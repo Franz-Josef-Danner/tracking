@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 
 import bpy
+from mathutils import Matrix, Vector
 
 # API-Doku: bpy.ops.clip.delete_track (löscht selektierte Tracks)
 
@@ -441,33 +442,31 @@ def _ensure_scene_active_clip(context: bpy.types.Context) -> Optional[bpy.types.
     return None
 
 
-def _nearest_recon_frame(clip: bpy.types.MovieClip, around: int) -> Optional[int]:
-    """Nächstgelegenen Frame mit Reconstruction-Kamera bestimmen (über ALLE Tracking-Objekte)."""
+def _nearest_recon_frame(clip: bpy.types.MovieClip, ref_frame: int) -> Optional[int]:
+    """Ermittelt den existierenden Recon-Frame, der ref_frame am nächsten liegt."""
 
-    frames = []
     try:
-        # 1) evtl. Reconstruction am Top-Level (ältere/variante Builds)
-        try:
-            cams = list(getattr(getattr(clip.tracking, "reconstruction", None), "cameras", []))
-            frames.extend(int(getattr(c, "frame", around)) for c in cams)
-        except Exception:
-            pass
-        # 2) Reconstruction aller Objekte aufsammeln
-        for obj in getattr(clip.tracking, "objects", []):
+        frames: list[int] = []
+        rec = getattr(clip.tracking, "reconstruction", None)
+        cams = list(getattr(rec, "cameras", [])) if rec else []
+        for c in cams:
             try:
-                cams = list(getattr(getattr(obj, "reconstruction", None), "cameras", []))
-                frames.extend(int(getattr(c, "frame", around)) for c in cams)
+                frames.append(int(getattr(c, "frame", None)))
             except Exception:
                 pass
+        for obj in getattr(clip.tracking, "objects", []):
+            rec_o = getattr(obj, "reconstruction", None)
+            for c in (list(getattr(rec_o, "cameras", [])) if rec_o else []):
+                try:
+                    frames.append(int(getattr(c, "frame", None)))
+                except Exception:
+                    pass
+        if not frames:
+            return None
+        # nearest by absolute distance; tie -> lower frame
+        return sorted(frames, key=lambda f: (abs(f - ref_frame), f))[0]
     except Exception:
-        frames = []
-    if not frames:
         return None
-    try:
-        around_i = int(around)
-    except Exception:
-        around_i = around
-    return min(sorted(frames), key=lambda f: abs(int(f) - around_i))
 
 
 def _has_camera_for_frame(clip: bpy.types.MovieClip, frame: int) -> bool:
@@ -580,18 +579,24 @@ def _has_any_recon_cameras(clip: bpy.types.MovieClip) -> bool:
         return False
 
 
-def _set_frame_to_clip_start_when_no_recon(context: bpy.types.Context) -> None:
-    """Wenn keine Recon vorhanden: Szene sicher auf frame_start setzen."""
-
+def _set_scene_frame_to_nearest_recon_or_start(context: bpy.types.Context) -> None:
     scn = getattr(context, "scene", None) or bpy.context.scene
     clip = _ensure_scene_active_clip(context)
     if not scn or not clip:
         return
-    if not _has_any_recon_cameras(clip):
-        try:
-            scn.frame_set(int(getattr(clip, "frame_start", scn.frame_start)))
-        except Exception:
-            pass
+    # wenn Recon existiert → nearest; sonst Clip-Start
+    if _has_any_recon_cameras(clip):
+        nr = _nearest_recon_frame(clip, int(scn.frame_current))
+        if nr is not None:
+            try:
+                scn.frame_set(int(nr))
+            except Exception:
+                pass
+            return
+    try:
+        scn.frame_set(int(getattr(clip, "frame_start", scn.frame_start)))
+    except Exception:
+        pass
 
 
 def _clamp_scene_frame_to_recon(context: bpy.types.Context) -> None:
@@ -630,6 +635,112 @@ def _with_valid_camera_frame(context: bpy.types.Context):  # temporärer Guard
                 scn.frame_set(prev)
         except Exception:
             pass
+
+
+# ---------- Recon Frame Helpers ----------
+def _bundle_co(trk) -> Optional[Vector]:
+    try:
+        if getattr(trk, "has_bundle", False):
+            b = getattr(trk, "bundle", None)
+            if b is None:
+                return None
+            # b kann Vector oder Objekt mit .co sein
+            if hasattr(b, "co"):
+                return Vector(b.co)
+            return Vector(b)
+    except Exception:
+        pass
+    return None
+
+
+def _iter_recon_cam_mats(clip) -> Iterable[Tuple[int, Matrix]]:
+    """Liefert (frame, cam_matrix) aus allen Recon-Containern; robust gegen API-Varianz."""
+
+    try:
+        rec = getattr(clip.tracking, "reconstruction", None)
+        for c in (list(getattr(rec, "cameras", [])) if rec else []):
+            f = int(getattr(c, "frame", -10**9))
+            m = getattr(c, "matrix", None)
+            if m is not None:
+                yield (f, Matrix(m))
+    except Exception:
+        pass
+    for obj in getattr(clip.tracking, "objects", []):
+        try:
+            rec_o = getattr(obj, "reconstruction", None)
+            for c in (list(getattr(rec_o, "cameras", [])) if rec_o else []):
+                f = int(getattr(c, "frame", -10**9))
+                m = getattr(c, "matrix", None)
+                if m is not None:
+                    yield (f, Matrix(m))
+        except Exception:
+            continue
+
+
+def _purge_negative_depth_bundles(
+    context: bpy.types.Context, max_deletes: int = 25
+) -> Tuple[int, int]:
+    """Entfernt Marker/Tracks, deren Bundle relativ zu ≥2 Kameras negative Tiefe hat.
+       Rückgabe: (markers_deleted, tracks_removed)."""
+
+    clip = _ensure_scene_active_clip(context)
+    if not clip or not _has_any_recon_cameras(clip):
+        return (0, 0)
+    cam_mats = list(_iter_recon_cam_mats(clip))
+    if len(cam_mats) < 2:
+        return (0, 0)
+    del_mk, del_tr = 0, 0
+    deletes_left = max(1, int(max_deletes))
+    for container, trk, is_top in _iter_all_tracks(clip):
+        if deletes_left <= 0:
+            break
+        try:
+            co = _bundle_co(trk)
+            if co is None:
+                continue
+            neg_hits = 0
+            co_h = Vector((co.x, co.y, co.z, 1.0))
+            for _, M in cam_mats[:8]:  # Limit aus Performancegründen
+                try:
+                    cam_space = M.inverted_safe() @ co_h
+                    if float(cam_space.z) <= 0.0:
+                        neg_hits += 1
+                        if neg_hits >= 2:
+                            break
+                except Exception:
+                    continue
+            if neg_hits >= 2:
+                # Primär Marker löschen; wenn praktisch leer → Track löschen
+                frames: list[int] = []
+                for m in list(getattr(trk, "markers", [])):
+                    try:
+                        frames.append(int(getattr(m, "frame", 0)))
+                    except Exception:
+                        pass
+                for fr in sorted(set(frames)):
+                    try:
+                        trk.markers.delete_frame(fr)
+                        del_mk += 1
+                    except Exception:
+                        pass
+                _select_only_track(clip, container, trk, is_top_level=is_top)
+                ov = _find_clip_editor_override(context, clip)
+                deleted = False
+                if ov:
+                    with bpy.context.temp_override(**ov):
+                        if bpy.ops.clip.delete_track(confirm=False) == {'FINISHED'}:
+                            del_tr += 1
+                            deleted = True
+                if not deleted and _delete_track_hard(
+                    container, trk, is_top_level=is_top
+                ):
+                    del_tr += 1
+                deletes_left -= 1
+        except Exception:
+            continue
+    if del_mk or del_tr:
+        print(f"[BehindCam] purged markers={del_mk} tracks={del_tr}")
+    return (del_mk, del_tr)
 
 
 # --- Safe Reduce Wrapper -----------------------------------------------------
@@ -981,7 +1092,7 @@ def solve_camera_only(context, *args, **kwargs):
 
         # Vorab: aktiven Clip setzen; ohne Recon auf Clip-Start klemmen
         clip = _ensure_scene_active_clip(context)
-        _set_frame_to_clip_start_when_no_recon(context)
+        _set_scene_frame_to_nearest_recon_or_start(context)
         # Falls gar keine Reconstruction-Kameras existieren:
         # AE-Polling & Inf-Cost-Purge überspringen → direkter Fallbackpfad.
         if clip and not _has_any_recon_cameras(clip):
@@ -990,7 +1101,7 @@ def solve_camera_only(context, *args, **kwargs):
             try:
                 reset_for_new_cycle(context, clear_solve_log=False)
                 # Nach Reset: bestmöglichen Recon-Frame setzen (falls entstanden)
-                _set_frame_to_clip_start_when_no_recon(context)
+                _set_scene_frame_to_nearest_recon_or_start(context)
                 run_find_low_marker_frame(context)
             except Exception as ex0:
                 print(f"[SolveCheck] Reset/FindLow (no-recon) failed: {ex0!r}")
@@ -1007,11 +1118,11 @@ def solve_camera_only(context, *args, **kwargs):
 
         if ae is None:
             print("[SolveCheck] Keine auswertbare Reconstruction (ae=None) – refine_high_error + Restart.")
-            _set_frame_to_clip_start_when_no_recon(context)
+            _set_scene_frame_to_nearest_recon_or_start(context)
             _safe_run_reduce_error_tracks(context)
             try:
                 reset_for_new_cycle(context, clear_solve_log=False)
-                _set_frame_to_clip_start_when_no_recon(context)
+                _set_scene_frame_to_nearest_recon_or_start(context)
                 run_find_low_marker_frame(context)
             except Exception as ex3:
                 print(f"[SolveCheck] Reset/FindLow fallback failed: {ex3!r}")
@@ -1019,17 +1130,41 @@ def solve_camera_only(context, *args, **kwargs):
 
         if ae <= 0.0:
             print("[SolveCheck] Keine auswertbare Reconstruction (ae<=0) – refine_high_error + Restart.")
-            _set_frame_to_clip_start_when_no_recon(context)
+            _set_scene_frame_to_nearest_recon_or_start(context)
             _safe_run_reduce_error_tracks(context)
             try:
                 reset_for_new_cycle(context, clear_solve_log=False)
-                _set_frame_to_clip_start_when_no_recon(context)
+                _set_scene_frame_to_nearest_recon_or_start(context)
                 run_find_low_marker_frame(context)
             except Exception as ex3:
                 print(f"[SolveCheck] Reset/FindLow fallback failed: {ex3!r}")
             return res
 
-        # --- NEU: direkt nach erfolgreichem Solve non-finite Kosten bereinigen (mit Guard/Backoff)
+        # --- Post-Solve Purges (nur mit Recon & valid AE) ---
+        # (1) Negative Tiefe / hinter Kamera
+        try:
+            bm, bt = _purge_negative_depth_bundles(context, max_deletes=25)
+            if (bm + bt) > 0:
+                action = _infcost_on_purge(scene, clip)
+                print(f"[SolveCheck][BehindCam] total_deleted={bm+bt} action={action}")
+                _set_scene_frame_to_nearest_recon_or_start(context)
+                if action in ("reduce_reset", "reset"):
+                    if action == "reduce_reset":
+                        _safe_run_reduce_error_tracks(context)
+                    try:
+                        reset_for_new_cycle(context, clear_solve_log=False)
+                    except Exception as exr_bc:
+                        print(f"[SolveCheck][BehindCam] reset_for_new_cycle failed: {exr_bc!r}")
+                    try:
+                        _set_scene_frame_to_nearest_recon_or_start(context)
+                        run_find_low_marker_frame(context)
+                    except Exception as exf_bc:
+                        print(f"[SolveCheck][BehindCam] run_find_low_marker_frame failed: {exf_bc!r}")
+                    return res
+        except Exception as ex_bc:
+            print(f"[BehindCam] purge failed: {ex_bc!r}")
+
+        # (2) Non-finite Kosten bereinigen (mit Guard/Backoff)
         mk_del = 0
         tr_del = 0
         try:
@@ -1049,13 +1184,13 @@ def solve_camera_only(context, *args, **kwargs):
             if action in ("reduce_reset", "reset"):
                 if action == "reduce_reset":
                     _safe_run_reduce_error_tracks(context)
-                _set_frame_to_clip_start_when_no_recon(context)
+                _set_scene_frame_to_nearest_recon_or_start(context)
                 try:
                     reset_for_new_cycle(context, clear_solve_log=False)
                 except Exception as exr:
                     print(f"[SolveCheck] reset_for_new_cycle failed: {exr!r}")
                 try:
-                    _set_frame_to_clip_start_when_no_recon(context)
+                    _set_scene_frame_to_nearest_recon_or_start(context)
                     run_find_low_marker_frame(context)
                 except Exception as exf:
                     print(f"[SolveCheck] run_find_low_marker_frame failed: {exf!r}")
@@ -1104,7 +1239,7 @@ def solve_camera_only(context, *args, **kwargs):
             scene["kc_solve_attempts"] = 0
         # Abschluss Solve-Phase: Recon-Frame persistieren
         try:
-            _set_frame_to_clip_start_when_no_recon(context)
+            _set_scene_frame_to_nearest_recon_or_start(context)
         except Exception:
             pass
     except Exception as ex:
