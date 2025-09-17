@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import gc
 import time
+import math
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, Optional, Tuple
@@ -395,6 +396,65 @@ __all__ = ("CLIP_OT_tracking_coordinator",)
 _SOLVE_ERR_DEFAULT_THR = 20.0
 
 
+def _purge_infinite_cost_markers(context: bpy.types.Context) -> int:
+    """Remove markers with infinite or NaN reprojection cost values."""
+
+    deleted = 0
+
+    def _read_cost(obj: Any) -> Optional[float]:
+        for key in ("cost", "reprojection_cost", "proj_cost", "reproject_cost"):
+            try:
+                value = getattr(obj, key)
+                if isinstance(value, (int, float)) and not math.isfinite(float(value)):
+                    return float(value)
+            except Exception:
+                pass
+            try:
+                value = obj.get(key)  # type: ignore[attr-defined]
+                if isinstance(value, (int, float)) and not math.isfinite(float(value)):
+                    return float(value)
+            except Exception:
+                pass
+        return None
+
+    try:
+        clips = list(getattr(bpy.data, "movieclips", []))
+        for clip in clips:
+            tracking = getattr(clip, "tracking", None)
+            if tracking is None:
+                continue
+            for obj in getattr(tracking, "objects", []):
+                for track in getattr(obj, "tracks", []):
+                    frames_to_delete = set()
+                    for marker in getattr(track, "markers", []):
+                        cost = _read_cost(marker)
+                        if cost is not None:
+                            try:
+                                frames_to_delete.add(int(getattr(marker, "frame", 0)))
+                            except Exception:
+                                pass
+                    for frame in sorted(frames_to_delete):
+                        try:
+                            track.markers.delete_frame(frame)
+                            deleted += 1
+                        except Exception:
+                            try:
+                                while True:
+                                    existing = track.markers.find_frame(frame)
+                                    if not existing:
+                                        break
+                                    track.markers.delete_frame(frame)
+                                    deleted += 1
+                            except Exception:
+                                break
+        if deleted:
+            print(f"[SolveCheck][InfCost] purged={deleted}")
+    except Exception as ex:
+        print(f"[SolveCheck][InfCost] purge failed: {ex!r}")
+
+    return deleted
+
+
 def _schedule_restart_after_refine(context: bpy.types.Context, *, delay: float = 0.5) -> None:
     """Wartet, bis der modal laufende refine_high_error-Operator fertig ist, dann Reset→FindLow."""
 
@@ -434,6 +494,20 @@ def solve_camera_only(context, *args, **kwargs):
         scene = getattr(context, "scene", None)
         if scene is None:
             print("[SolveCheck] Kein context.scene – Check übersprungen.")
+            return res
+
+        # (0) Marker mit ∞/NaN-Kosten sofort bereinigen.
+        purged = _purge_infinite_cost_markers(context)
+        if purged > 0:
+            print("[SolveCheck][InfCost] Reset→FindLow (wegen ∞-Kosten)")
+            try:
+                reset_for_new_cycle(context, clear_solve_log=False)
+            except Exception:
+                pass
+            try:
+                run_find_low_marker_frame(context)
+            except Exception:
+                pass
             return res
 
         # Kurz auf gültige Reconstruction pollen (max. ~2s)
