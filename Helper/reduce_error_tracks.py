@@ -398,3 +398,22 @@ def get_avg_reprojection_error(context: bpy.types.Context) -> Optional[float]:
     except Exception:
         pass
     return None
+
+
+# ---------------------------------------------------------------------------
+# Backcompat-Shim: alte Call-Sites casten das Ergebnis zu int(...) und
+# erwarteten früher eine Integer-Anzahl gelöschter Tracks. Die neue API gibt
+# ein Dict zurück – diese Wrapper-Funktion behält die neue Logik bei, liefert
+# aber für "int(reduce_error_tracks(...))" wieder eine Zahl.
+# ---------------------------------------------------------------------------
+def reduce_error_tracks(context: bpy.types.Context, *args, **kwargs) -> int:
+    """
+    Rückgabewert: Anzahl gelöschter/entfernter Tracks (int).
+    Nutzt intern run_reduce_error_tracks(...) und extrahiert "deleted".
+    """
+    try:
+        res = run_reduce_error_tracks(context, *args, **kwargs)
+        return int(res.get("deleted", 0))
+    except Exception as ex:
+        print(f"[SolveCheck] reduce_error_tracks unexpected failure: {ex!r}")
+        return 0

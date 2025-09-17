@@ -3,6 +3,29 @@ from typing import Optional, Dict, Any, Tuple
 
 __all__ = ("run_jump_to_frame", "jump_to_frame")
 # jump_to_frame = Legacy-Wrapper
+
+
+def _clamp_frame(context, frame: int) -> int:
+    scn = context.scene
+    start = int(getattr(scn, "frame_start", 1))
+    end = int(getattr(scn, "frame_end", start))
+
+    clip = getattr(getattr(context, "space_data", None), "clip", None)
+    if not clip:
+        clip = getattr(bpy.context, "edit_movieclip", None)
+
+    hard_end = end
+    try:
+        if clip:
+            clip_start = int(getattr(clip, "frame_start", start))
+            clip_dur = int(getattr(clip, "frame_duration", 0))
+            if clip_dur > 0:
+                hard_end = min(end, clip_start + max(0, clip_dur - 1))
+    except Exception:
+        pass
+
+    hard_end = max(start, hard_end)
+    return max(start, min(int(frame), hard_end))
 REPEAT_SATURATION = 10  # Ab dieser Wiederholungsanzahl: Optimizer anstoßen statt Detect
 
 # ---------------------------------------------------------------------------
@@ -298,13 +321,37 @@ def run_jump_to_frame(
 # Legacy-Wrapper (Kompatibilität)
 # -----------------------------------------------------------------------------
 
-def jump_to_frame(context):
+def jump_to_frame(
+    context,
+    frame: Optional[int] = None,
+    *,
+    ui_override: bool = True,
+    spread_rings: int = 1,
+    spread_step: int = 5,
+):
     """
-    Kompatibel zur alten Signatur:
-      - liest 'scene["goto_frame"]'
-      - ruft run_jump_to_frame()
-      - gibt bool zurück (True bei OK)
+    Kompatibel zur alten Signatur, erweitert um Bounds-Clamping:
+      - Optional expliziten Frame übergeben (sonst scene['goto_frame']).
+      - Clamp auf Szenen- und Clip-Grenzen, bevor run_jump_to_frame aufgerufen wird.
+      - spread_rings/spread_step werden weiterhin vom internen Helper gehandhabt.
     """
-    res = run_jump_to_frame(context, frame=None, repeat_map=None)
-    ok = (res.get("status") == "OK")
-    return ok
+
+    scn = context.scene
+    if frame is None:
+        frame = scn.get("goto_frame", scn.frame_current)
+
+    target = _clamp_frame(context, int(frame))
+    if target != int(frame):
+        print(f"[JumpTo] target={int(frame)} clamped→{target} ui_override={ui_override}")
+    else:
+        print(f"[JumpTo] target={target} clamped=False ui_override={ui_override}")
+
+    res = run_jump_to_frame(
+        context,
+        frame=int(target),
+        ensure_clip=True,
+        ensure_tracking_mode=True,
+        use_ui_override=ui_override,
+        repeat_map=None,
+    )
+    return res.get("status") == "OK"
