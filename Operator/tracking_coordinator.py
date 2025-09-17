@@ -420,17 +420,32 @@ __all__ = ("CLIP_OT_tracking_coordinator",)
 POST_SOLVE_QUALITY_POLICY = {
     "inf_cost": {"cooldown_s": 30, "max_resets": 2},
     "behind_cam": {"cooldown_s": 30, "max_resets": 2, "purge": True},
-    # Optional: falls Durchschnittsfehler akzeptabel, nichts tun;
-    # sonst einmal gezielt reduzieren (kleines Batch) und erneut versuchen.
+    # baseline für Nicht-Final-Solves: 20 px; finaler Solve -> siehe _resolve_threshold_px
     "avg_error": {"threshold_px": "scene.solve_error_threshold", "max_delete": 11},
 }
 
 
 def _resolve_threshold_px(context):
-    # Szene-Eigenschaft oder Fallback
-    scn = context.scene
+    """Ermittle den avg_error-Schwellwert.
+    Standard: scene.solve_error_threshold (Default 20.0).
+    Finaler Solve: falls Scene-Flag 'kc_solve_gate_use_error_track' gesetzt ist,
+    verwende scene.error_track (Default 2.0).
+    """
+
+    scn = getattr(context, "scene", None) or bpy.context.scene
+    # Finaler Solve → error_track
     try:
-        return float(getattr(scn, "solve_error_threshold", 20.0))
+        if bool(scn.get("kc_solve_gate_use_error_track", False)):
+            thr = float(getattr(scn, "error_track", 2.0))
+            print(f"[SolveCheck] threshold source=error_track value={thr:.3f}")
+            return thr
+    except Exception:
+        pass  # Fallback auf normalen Threshold
+    # Normale Solves → solve_error_threshold
+    try:
+        thr = float(getattr(scn, "solve_error_threshold", 20.0))
+        print(f"[SolveCheck] threshold source=solve_error_threshold value={thr:.3f}")
+        return thr
     except Exception:
         return 20.0
 
@@ -442,11 +457,19 @@ def post_solve_quality_check(context):
     Orchestrator, ob ein Reset → FindLow nötig ist.
     """
 
-    # Policy dynamisch komplettieren (threshold_px kann aus Szene kommen)
+    # Policy dynamisch komplettieren (Threshold immer numerisch einsetzen)
     policy = dict(POST_SOLVE_QUALITY_POLICY)
     avg = dict(policy.get("avg_error", {}))
-    if isinstance(avg.get("threshold_px"), str):
-        avg["threshold_px"] = _resolve_threshold_px(context)
+    avg["threshold_px"] = _resolve_threshold_px(context)
+    # Finaler Solve: Batchgröße dynamisch aus avg_error / error_track ableiten
+    try:
+        scn = getattr(context, "scene", None) or bpy.context.scene
+        if bool(scn.get("kc_solve_gate_use_error_track", False)):
+            ae = get_avg_reprojection_error(context) or 0.0
+            et = float(getattr(scn, "error_track", 2.0))
+            avg["max_delete"] = max(10, int(round(ae / max(1e-6, et))))
+    except Exception:
+        pass
     policy["avg_error"] = avg
 
     try:
