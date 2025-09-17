@@ -17,6 +17,59 @@ from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 import bpy
 from mathutils import Matrix, Vector
 
+# --- Reentrancy-Lock + Bootstrap --------------------------------------------
+# Single-run guard: prevents double-invoke while the modal is alive
+_LOCK_KEY = "kc_coordinator_lock"
+
+
+def _acquire_lock(context: bpy.types.Context) -> None:
+    scn = getattr(context, "scene", None) or bpy.context.scene
+    if not scn:
+        return
+    try:
+        if bool(scn.get(_LOCK_KEY, False)):
+            raise RuntimeError("Coordinator already running")
+        scn[_LOCK_KEY] = True
+    except RuntimeError:
+        raise
+    except Exception:
+        # never crash on lock set
+        pass
+
+
+def _release_lock(context: bpy.types.Context) -> None:
+    scn = getattr(context, "scene", None) or bpy.context.scene
+    if not scn:
+        return
+    try:
+        if _LOCK_KEY in scn.keys():
+            del scn[_LOCK_KEY]
+    except Exception:
+        pass
+
+
+def _bootstrap(context: bpy.types.Context) -> None:
+    """Minimal, side-effect-free bootstrap: set lock and validate clip context."""
+
+    _acquire_lock(context)
+
+    # Ensure there is some MovieClip bound; assign first available as best effort.
+    clip = getattr(context, "edit_movieclip", None) or getattr(
+        getattr(context, "space_data", None), "clip", None
+    )
+    if clip:
+        return
+
+    try:
+        movieclips = getattr(bpy.data, "movieclips", None)
+        if movieclips:
+            first = next(iter(movieclips), None)
+            if first and getattr(context, "space_data", None):
+                context.space_data.clip = first
+    except Exception:
+        # non-fatal
+        pass
+
 # --- optional import: error scorer ------------------------------------------
 try:
     from ..Helper.count import error_value as _error_value  # type: ignore
@@ -886,7 +939,7 @@ def _clip_frame_range(clip):
     scn = bpy.context.scene
     return int(getattr(scn, "frame_start", 1)), int(getattr(scn, "frame_end", 1))
 
-def _bootstrap(context: bpy.types.Context) -> None:
+def _initialize_helpers(context: bpy.types.Context) -> None:
     """Minimaler Reset + sinnvolle Defaults; Helper initialisieren."""
     scn = context.scene
     # Tracker-Settings
@@ -897,10 +950,13 @@ def _bootstrap(context: bpy.types.Context) -> None:
     # Marker-Helper
     try:
         ok, count, info = marker_helper_main(context)
-        scn["tco_last_marker_helper"] = {"ok": bool(ok), "count": int(count), "info": dict(info) if hasattr(info, "items") else info}
+        scn["tco_last_marker_helper"] = {
+            "ok": bool(ok),
+            "count": int(count),
+            "info": dict(info) if hasattr(info, "items") else info,
+        }
     except Exception as exc:
         scn["tco_last_marker_helper"] = {"status": "FAILED", "reason": str(exc)}
-    scn[_LOCK_KEY] = False
 
 
 # --- Operator: wird vom UI-Button aufgerufen -------------------------------
@@ -1048,11 +1104,33 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             _bootstrap(context)
         except Exception as exc:
             self.report({'ERROR'}, f"Bootstrap failed: {exc}")
+            try:
+                _release_lock(context)
+            except Exception:
+                pass
+            return {'CANCELLED'}
+
+        try:
+            _initialize_helpers(context)
+        except Exception as exc:
+            try:
+                _release_lock(context)
+            except Exception:
+                pass
+            self.report({'ERROR'}, f"Helper bootstrap failed: {exc}")
             return {'CANCELLED'}
         self.report({'INFO'}, "Coordinator: Bootstrap OK")
 
         # Bootstrap: harter Neustart + Solve-Error-Log leeren
-        reset_for_new_cycle(context, clear_solve_log=True)
+        try:
+            reset_for_new_cycle(context, clear_solve_log=True)
+        except Exception as exc:
+            try:
+                _release_lock(context)
+            except Exception:
+                pass
+            self.report({'ERROR'}, f"Reset failed: {exc}")
+            return {'CANCELLED'}
         # ZusÃ¤tzlich: State von tracking_state.py zurÃ¼cksetzen
         try:
             reset_tracking_state(context)
@@ -1102,6 +1180,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self._timer = wm.event_timer_add(0.10)
             except Exception as exc2:
                 self.report({'ERROR'}, f"Timer hard-failed: {exc2}")
+                try:
+                    _release_lock(context)
+                except Exception:
+                    pass
                 return {'CANCELLED'}
         wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}
@@ -1116,6 +1198,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self._timer = None
         try:
             self._restore_holdouts(context)
+        except Exception:
+            pass
+        # Release reentrancy lock
+        try:
+            _release_lock(context)
         except Exception:
             pass
         if info:
