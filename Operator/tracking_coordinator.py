@@ -396,6 +396,100 @@ __all__ = ("CLIP_OT_tracking_coordinator",)
 _SOLVE_ERR_DEFAULT_THR = 20.0
 
 
+def _ensure_scene_active_clip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
+    """Ensure ``scene.active_clip`` is set and return it when possible."""
+
+    try:
+        scn = getattr(context, "scene", None) or bpy.context.scene
+        clip = getattr(scn, "active_clip", None)
+        if clip:
+            return clip
+        try:
+            space_clip = getattr(getattr(context, "space_data", None), "clip", None)
+            if space_clip:
+                scn.active_clip = space_clip
+                return space_clip
+        except Exception:
+            pass
+        movieclips = getattr(bpy.data, "movieclips", None)
+        if movieclips:
+            try:
+                first_clip = movieclips[0]
+            except Exception:
+                try:
+                    first_clip = next(iter(movieclips), None)
+                except Exception:
+                    first_clip = None
+            if first_clip:
+                scn.active_clip = first_clip
+                return scn.active_clip
+    except Exception:
+        pass
+    return None
+
+
+@contextmanager
+def _with_valid_camera_frame(context: bpy.types.Context):
+    """Temporarily jump to a frame that has a reconstruction camera."""
+
+    scn = getattr(context, "scene", None) or bpy.context.scene
+    if scn is None:
+        yield
+        return
+    prev_frame = int(scn.frame_current)
+    try:
+        clip = _ensure_scene_active_clip(context)
+        cameras = []
+        if clip is not None:
+            try:
+                robj = clip.tracking.objects.active.reconstruction  # type: ignore[union-attr]
+                cameras = list(getattr(robj, "cameras", []))
+            except Exception:
+                cameras = []
+        if cameras:
+            try:
+                frames = sorted(int(getattr(cam, "frame", prev_frame)) for cam in cameras)
+                target_frame = min(frames, key=lambda f: abs(f - prev_frame)) if frames else prev_frame
+            except Exception:
+                target_frame = prev_frame
+            if target_frame != prev_frame:
+                try:
+                    scn.frame_set(target_frame)
+                except Exception:
+                    pass
+        yield
+    finally:
+        try:
+            if scn.frame_current != prev_frame:
+                scn.frame_set(prev_frame)
+        except Exception:
+            pass
+
+
+def _try_start_refine_high_error(context: bpy.types.Context) -> bool:
+    """Start the refine-high-error modal operator with robust fallbacks."""
+
+    try:
+        started = bool(start_refine_modal(context))
+        if started:
+            _schedule_restart_after_refine(context, delay=0.25)
+            print("[SolveCheck] refine_high_error modal gestartet.")
+            return True
+    except Exception as exc:
+        print(f"[SolveCheck] refine_high_error start failed: {exc!r}")
+    try:
+        run_reduce_error_tracks(context)
+    except Exception as exc2:
+        print(f"[SolveCheck] reduce_error_tracks fallback failed: {exc2!r}")
+    try:
+        _ensure_scene_active_clip(context)
+        reset_for_new_cycle(context, clear_solve_log=False)
+        run_find_low_marker_frame(context)
+    except Exception as exc3:
+        print(f"[SolveCheck] Reset/FindLow fallback failed: {exc3!r}")
+    return False
+
+
 def _purge_infinite_cost_markers(context: bpy.types.Context) -> int:
     """Remove markers with infinite or NaN reprojection cost values."""
 
@@ -510,13 +604,26 @@ def solve_camera_only(context, *args, **kwargs):
                 pass
             return res
 
-        # Kurz auf gültige Reconstruction pollen (max. ~2s)
+        # Sicherstellen, dass wir einen aktiven Clip haben (vermeidet clip=<none>)
+        _ensure_scene_active_clip(context)
+        # Kurz auf gültige Reconstruction pollen (max. ~2s) und einen Kameraframe sichern
         ae = None
-        for _ in range(40):
-            ae = get_avg_reprojection_error(context)
-            if ae is not None and ae > 0.0:
-                break
-            time.sleep(0.05)
+        with _with_valid_camera_frame(context):
+            for _ in range(40):
+                ae = get_avg_reprojection_error(context)
+                if ae is not None and ae > 0.0:
+                    break
+                time.sleep(0.05)
+
+        if ae is None:
+            print("[SolveCheck] Keine auswertbare Reconstruction (ae=None) – refine_high_error + Restart.")
+            _try_start_refine_high_error(context)
+            return res
+
+        if ae <= 0.0:
+            print("[SolveCheck] Keine auswertbare Reconstruction (ae<=0) – refine_high_error + Restart.")
+            _try_start_refine_high_error(context)
+            return res
 
         # Gate-Quelle wählen:
         # - Standard: scene.solve_error_threshold (Default 20.0)
@@ -532,15 +639,6 @@ def solve_camera_only(context, *args, **kwargs):
             )
             _thr_src = "scene.solve_error_threshold"
         # 0.0 ist ebenfalls „invalid“ (Reconstruction noch nicht konsistent)
-        if ae is None or float(ae) <= 0.0:
-            print("[SolveCheck] Keine auswertbare Reconstruction (ae<=0) – refine_high_error + Restart.")
-            try:
-                start_refine_modal(context)  # startet modal; setzt scene['refine_active']=True
-            except Exception as _ex:
-                print(f"[SolveCheck] refine_high_error start failed: {_ex!r}")
-            _schedule_restart_after_refine(context)
-            return res
-
         print(f"[SolveCheck] avg_error={ae:.6f} thr={thr:.6f} src={_thr_src}")
         attempts = int(scene.get("kc_solve_attempts", 0) or 0)
         if ae > thr and attempts < 5:
