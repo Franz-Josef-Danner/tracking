@@ -1,6 +1,8 @@
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Any, Dict, Literal, Optional, Sequence
 import bpy, statistics as st, random
+
+from .reduce_error_tracks import run_reduce_error_tracks, get_avg_reprojection_error
 
 DistModel = Literal["POLYNOMIAL", "DIVISION", "BROWN"]
 
@@ -29,7 +31,69 @@ class SolveMetrics:
     score: float
 
 
-__all__ = ("run_solve_eval", "SolveConfig", "SolveMetrics", "DistModel")
+__all__ = (
+    "run_solve_eval",
+    "SolveConfig",
+    "SolveMetrics",
+    "DistModel",
+    "trigger_post_solve_quality_check",
+)
+
+
+def trigger_post_solve_quality_check(
+    context: bpy.types.Context,
+    *,
+    policy: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Bewertet Solve-Ergebnis anhand der Policy und triggert optional einen Reset.
+
+    Aktuell umgesetzt:
+      - Durchschnittsfehler (avg_error) gegen threshold_px prüfen und bei Bedarf
+        run_reduce_error_tracks(...) auslösen.
+    """
+
+    policy = policy or {}
+    outcome: Dict[str, Any] = {"action": "continue"}
+
+    try:
+        avg_cfg = dict(policy.get("avg_error") or {})
+        thr_val = avg_cfg.get("threshold_px")
+        if thr_val is not None:
+            try:
+                thr = float(thr_val)
+            except Exception:
+                thr = None
+            if thr is not None:
+                ae = get_avg_reprojection_error(context)
+                if ae is not None and ae > thr:
+                    max_del_raw = avg_cfg.get("max_delete")
+                    try:
+                        max_delete = int(max_del_raw) if max_del_raw is not None else 0
+                    except Exception:
+                        max_delete = 0
+                    deleted = 0
+                    if max_delete > 0:
+                        try:
+                            res = run_reduce_error_tracks(context, max_to_delete=max_delete)
+                            deleted = int(res.get("deleted", 0))
+                        except Exception as ex:
+                            print(
+                                "[SolveCheck] trigger_post_solve_quality_check reduce failed: "
+                                f"{ex!r}"
+                            )
+                    outcome = {
+                        "action": "reset",
+                        "reason": "avg_error",
+                        "deleted": deleted,
+                        "avg_error": float(ae),
+                        "threshold": thr,
+                    }
+                    return outcome
+    except Exception as ex:
+        print(f"[SolveCheck] trigger_post_solve_quality_check failed: {ex!r}")
+
+    return outcome
 
 
 # --------- Clip/Objekt/Frames ----------

@@ -285,6 +285,7 @@ from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ig
 from ..Helper.solve_camera import solve_camera_only as _solve_camera_only
 from ..Helper.reduce_error_tracks import (
     get_avg_reprojection_error,
+    reduce_error_tracks,
     run_reduce_error_tracks,
 )
 from ..Helper.refine_high_error import start_refine_modal
@@ -296,6 +297,7 @@ from ..Helper.solve_eval import (
     collect_metrics,
     compute_parallax_scores,
     score_metrics,
+    trigger_post_solve_quality_check,
 )
 from ..Helper.reset_state import reset_for_new_cycle  # zentraler Reset (Bootstrap/Cycle)
 
@@ -414,6 +416,51 @@ __all__ = ("CLIP_OT_tracking_coordinator",)
 #  - Schutz gegen Endlosschleifen: max. 5 Auto-Reduce-Versuche pro Zyklus.
 #  - Im harten Solve-Eval-Modus (IN_SOLVE_EVAL) kein Eingriff.
 # ---------------------------------------------------------------------------
+# Default-Policy (konservativ, kann über Scene-Props übersteuert werden)
+POST_SOLVE_QUALITY_POLICY = {
+    "inf_cost": {"cooldown_s": 30, "max_resets": 2},
+    "behind_cam": {"cooldown_s": 30, "max_resets": 2, "purge": True},
+    # Optional: falls Durchschnittsfehler akzeptabel, nichts tun;
+    # sonst einmal gezielt reduzieren (kleines Batch) und erneut versuchen.
+    "avg_error": {"threshold_px": "scene.solve_error_threshold", "max_delete": 11},
+}
+
+
+def _resolve_threshold_px(context):
+    # Szene-Eigenschaft oder Fallback
+    scn = context.scene
+    try:
+        return float(getattr(scn, "solve_error_threshold", 20.0))
+    except Exception:
+        return 20.0
+
+
+def post_solve_quality_check(context):
+    """
+    Hook nach einem erfolgreichen Solve: prüft Solve-Log (InfCost/BehindCam),
+    löscht ggf. Marker/Tracks (mit Guards/Cooldown) und signalisiert dem
+    Orchestrator, ob ein Reset → FindLow nötig ist.
+    """
+
+    # Policy dynamisch komplettieren (threshold_px kann aus Szene kommen)
+    policy = dict(POST_SOLVE_QUALITY_POLICY)
+    avg = dict(policy.get("avg_error", {}))
+    if isinstance(avg.get("threshold_px"), str):
+        avg["threshold_px"] = _resolve_threshold_px(context)
+    policy["avg_error"] = avg
+
+    try:
+        result = trigger_post_solve_quality_check(context, policy=policy)
+        # Erwartete Struktur (Beispiel):
+        # {"action":"reset","reason":"InfCost","deleted":15} oder {"action":"continue"}
+        if isinstance(result, dict) and result.get("action") == "reset":
+            print(f"[SolveCheck] {result.get('reason', 'post-check')} → Reset to FindLow")
+            return "RESET_TO_FIND_LOW"
+    except Exception as ex:
+        print(f"[SolveCheck] post_solve_quality_check failed: {ex!r}")
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Globaler Guard-State (persistiert über Resets)
 _INFCOST_STATE: dict[str, dict[str, float | int]] = {}
@@ -1242,6 +1289,19 @@ def solve_camera_only(context, *args, **kwargs):
             _set_scene_frame_to_nearest_recon_or_start(context)
         except Exception:
             pass
+        try:
+            hook_result = post_solve_quality_check(context)
+            if hook_result == "RESET_TO_FIND_LOW":
+                try:
+                    reset_for_new_cycle(context, clear_solve_log=False)
+                except Exception as ex_reset:
+                    print(f"[SolveCheck] post-check reset failed: {ex_reset!r}")
+                try:
+                    run_find_low_marker_frame(context)
+                except Exception as ex_find:
+                    print(f"[SolveCheck] post-check FindLow failed: {ex_find!r}")
+        except Exception as ex_hook:
+            print(f"[SolveCheck] post_solve_quality_check hook error: {ex_hook!r}")
     except Exception as ex:
         print(f"[SolveCheck] Ausnahme im Post-Solve-Hook: {ex!r}")
     return res
