@@ -396,74 +396,110 @@ __all__ = ("CLIP_OT_tracking_coordinator",)
 _SOLVE_ERR_DEFAULT_THR = 20.0
 
 
+# --- Clip/Frame Utilities ----------------------------------------------------
 def _ensure_scene_active_clip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
-    """Ensure ``scene.active_clip`` is set and return it when possible."""
+    """Sichert scene.active_clip ab und liefert ihn zurück."""
 
     try:
         scn = getattr(context, "scene", None) or bpy.context.scene
         clip = getattr(scn, "active_clip", None)
         if clip:
             return clip
-        try:
-            space_clip = getattr(getattr(context, "space_data", None), "clip", None)
-            if space_clip:
-                scn.active_clip = space_clip
-                return space_clip
-        except Exception:
-            pass
-        movieclips = getattr(bpy.data, "movieclips", None)
-        if movieclips:
-            try:
-                first_clip = movieclips[0]
-            except Exception:
-                try:
-                    first_clip = next(iter(movieclips), None)
-                except Exception:
-                    first_clip = None
-            if first_clip:
-                scn.active_clip = first_clip
-                return scn.active_clip
+        sd = getattr(getattr(context, "space_data", None), "clip", None)
+        if sd:
+            scn.active_clip = sd
+            return sd
+        if getattr(bpy.data, "movieclips", None):
+            scn.active_clip = bpy.data.movieclips[0]
+            return scn.active_clip
     except Exception:
         pass
     return None
 
 
+def _nearest_recon_frame(clip: bpy.types.MovieClip, around: int) -> Optional[int]:
+    """Nächstgelegenen Frame mit Reconstruction-Kamera bestimmen."""
+
+    try:
+        robj = clip.tracking.objects.active.reconstruction  # type: ignore[union-attr]
+        cams = list(getattr(robj, "cameras", []))
+        if not cams:
+            return None
+        frames = sorted(int(getattr(c, "frame", around)) for c in cams)
+        return min(frames, key=lambda f: abs(f - int(around))) if frames else None
+    except Exception:
+        return None
+
+
 @contextmanager
 def _with_valid_camera_frame(context: bpy.types.Context):
-    """Temporarily jump to a frame that has a reconstruction camera."""
+    """Temporär auf einen Recon-Frame springen, um 'No camera for frame X' zu vermeiden."""
 
     scn = getattr(context, "scene", None) or bpy.context.scene
-    if scn is None:
+    clip = _ensure_scene_active_clip(context)
+    if scn is None or clip is None:
         yield
         return
-    prev_frame = int(scn.frame_current)
+    prev = int(scn.frame_current)
     try:
-        clip = _ensure_scene_active_clip(context)
-        cameras = []
-        if clip is not None:
-            try:
-                robj = clip.tracking.objects.active.reconstruction  # type: ignore[union-attr]
-                cameras = list(getattr(robj, "cameras", []))
-            except Exception:
-                cameras = []
-        if cameras:
-            try:
-                frames = sorted(int(getattr(cam, "frame", prev_frame)) for cam in cameras)
-                target_frame = min(frames, key=lambda f: abs(f - prev_frame)) if frames else prev_frame
-            except Exception:
-                target_frame = prev_frame
-            if target_frame != prev_frame:
-                try:
-                    scn.frame_set(target_frame)
-                except Exception:
-                    pass
+        target = _nearest_recon_frame(clip, prev)
+        if target is not None and target != prev:
+            scn.frame_set(target)
         yield
     finally:
         try:
-            if scn.frame_current != prev_frame:
-                scn.frame_set(prev_frame)
+            if scn.frame_current != prev:
+                scn.frame_set(prev)
         except Exception:
             pass
+
+
+# --- Safe Reduce Wrapper -----------------------------------------------------
+def _emergency_reduce_by_error(context: bpy.types.Context, *, max_to_delete: int = 5) -> int:
+    """Notfall-Reducer: löscht bis zu N Tracks mit höchstem error_value()."""
+
+    clip = _ensure_scene_active_clip(context)
+    if not clip:
+        return 0
+    deleted = 0
+    try:
+        # Kandidaten einsammeln
+        rows: list[tuple[float, Any, Any]] = []  # (err, obj, trk)
+        for obj in getattr(clip.tracking, "objects", []):
+            for trk in getattr(obj, "tracks", []):
+                try:
+                    err = float(error_value(trk))  # aus Helper.count importiert
+                except Exception:
+                    err = 0.0
+                rows.append((err, obj, trk))
+        if not rows:
+            print("[ReduceDBG][fallback] keine Tracks gefunden.")
+            return 0
+        rows.sort(key=lambda r: r[0], reverse=True)
+        budget = max(0, int(max_to_delete))
+        for _, obj, trk in rows[:budget]:
+            try:
+                obj.tracks.remove(trk)
+                deleted += 1
+            except Exception:
+                pass
+        print(f"[ReduceDBG][fallback] removed={deleted}/{budget}")
+    except Exception as ex:
+        print(f"[ReduceDBG][fallback] failed: {ex!r}")
+    return deleted
+
+
+def _safe_run_reduce_error_tracks(context: bpy.types.Context) -> int:
+    """Wrappt run_reduce_error_tracks; fängt IndexError ab und reduziert hart."""
+
+    try:
+        return int(run_reduce_error_tracks(context) or 0)
+    except IndexError as ex:
+        print(f"[SolveCheck] reduce_error_tracks IndexError abgefangen: {ex!r}")
+        return _emergency_reduce_by_error(context, max_to_delete=5)
+    except Exception as ex:
+        print(f"[SolveCheck] reduce_error_tracks unexpected failure: {ex!r}")
+        return 0
 
 
 def _try_start_refine_high_error(context: bpy.types.Context) -> bool:
@@ -477,10 +513,8 @@ def _try_start_refine_high_error(context: bpy.types.Context) -> bool:
             return True
     except Exception as exc:
         print(f"[SolveCheck] refine_high_error start failed: {exc!r}")
-    try:
-        run_reduce_error_tracks(context)
-    except Exception as exc2:
-        print(f"[SolveCheck] reduce_error_tracks fallback failed: {exc2!r}")
+    if _safe_run_reduce_error_tracks(context) <= 0:
+        print("[SolveCheck] reduce_error_tracks fallback lieferte 0 deletions.")
     try:
         _ensure_scene_active_clip(context)
         reset_for_new_cycle(context, clear_solve_log=False)
