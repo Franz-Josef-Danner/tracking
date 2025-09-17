@@ -761,63 +761,95 @@ def _try_start_refine_high_error(context: bpy.types.Context) -> bool:
     return False
 
 
-def _purge_infinite_cost_markers(context: bpy.types.Context) -> int:
-    """Remove markers with infinite or NaN reprojection cost values."""
+_COST_KEYS = ("reprojection_cost", "proj_cost", "reproject_cost", "cost", "error", "err", "avg_error")
 
-    deleted = 0
 
-    def _read_cost(obj: Any) -> Optional[float]:
-        for key in ("cost", "reprojection_cost", "proj_cost", "reproject_cost"):
-            try:
-                value = getattr(obj, key)
-                if isinstance(value, (int, float)) and not math.isfinite(float(value)):
-                    return float(value)
-            except Exception:
-                pass
-            try:
-                value = obj.get(key)  # type: ignore[attr-defined]
-                if isinstance(value, (int, float)) and not math.isfinite(float(value)):
-                    return float(value)
-            except Exception:
-                pass
-        return None
-
+def _is_non_finite(v) -> bool:
     try:
-        clips = list(getattr(bpy.data, "movieclips", []))
-        for clip in clips:
-            tracking = getattr(clip, "tracking", None)
-            if tracking is None:
-                continue
-            for obj in getattr(tracking, "objects", []):
-                for track in getattr(obj, "tracks", []):
-                    frames_to_delete = set()
-                    for marker in getattr(track, "markers", []):
-                        cost = _read_cost(marker)
-                        if cost is not None:
-                            try:
-                                frames_to_delete.add(int(getattr(marker, "frame", 0)))
-                            except Exception:
-                                pass
-                    for frame in sorted(frames_to_delete):
-                        try:
-                            track.markers.delete_frame(frame)
-                            deleted += 1
-                        except Exception:
-                            try:
-                                while True:
-                                    existing = track.markers.find_frame(frame)
-                                    if not existing:
-                                        break
-                                    track.markers.delete_frame(frame)
-                                    deleted += 1
-                            except Exception:
-                                break
-        if deleted:
-            print(f"[SolveCheck][InfCost] purged={deleted}")
-    except Exception as ex:
-        print(f"[SolveCheck][InfCost] purge failed: {ex!r}")
+        f = float(v)
+        return not math.isfinite(f)
+    except Exception:
+        return False
 
-    return deleted
+
+def _marker_has_nonfinite_cost(m) -> bool:
+    # IDProperties (Custom) bevorzugen
+    try:
+        for k in _COST_KEYS:
+            if k in m.keys() and _is_non_finite(m[k]):
+                return True
+    except Exception:
+        pass
+    # Fallback: nichts gefunden
+    return False
+
+
+def _track_has_nonfinite_avg(trk) -> bool:
+    for k in ("average_error", "avg_error", "error"):
+        try:
+            v = getattr(trk, k)
+            if _is_non_finite(v):
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _purge_nonfinite_after_solve(context: bpy.types.Context) -> tuple[int, int]:
+    """Löscht Marker mit ∞/NaN-Kosten und entfernt Tracks mit ∞/NaN-AvgError.
+       Rückgabe: (markers_deleted, tracks_removed)."""
+
+    clip = _ensure_scene_active_clip(context)
+    if not clip:
+        return (0, 0)
+
+    del_markers = 0
+    del_tracks = 0
+
+    # 1) Marker-Pruning je Track
+    for container, trk, is_top in _iter_all_tracks(clip):
+        try:
+            # (a) Track-Level-Precheck
+            if _track_has_nonfinite_avg(trk):
+                _select_only_track(clip, container, trk, is_top_level=is_top)
+                ov = _find_clip_editor_override(context, clip)
+                if ov:
+                    with bpy.context.temp_override(**ov):
+                        r = bpy.ops.clip.delete_track(confirm=False)
+                        if r == {'FINISHED'}:
+                            del_tracks += 1
+                            continue
+                # Fallback: Hard-Purge + Mute
+                if not _delete_track_hard(container, trk, is_top_level=is_top):
+                    try:
+                        trk.mute = True
+                    except Exception:
+                        pass
+                    print(f"[InfCost][TrackMute] name={getattr(trk,'name','?')}")
+                    continue
+                del_tracks += 1
+                continue
+            # (b) Marker-Level
+            mks = list(getattr(trk, "markers", []))
+            bad_frames = []
+            for m in mks:
+                if _marker_has_nonfinite_cost(m):
+                    try:
+                        bad_frames.append(int(getattr(m, "frame", 0)))
+                    except Exception:
+                        pass
+            for fr in sorted(set(bad_frames)):
+                try:
+                    trk.markers.delete_frame(fr)
+                    del_markers += 1
+                except Exception as ex:
+                    print(f"[InfCost][MarkerDel] frame={fr} name={getattr(trk,'name','?')} ex={ex!r}")
+        except Exception as ex:
+            print(f"[InfCost] scan failed: {ex!r}")
+
+    if del_markers or del_tracks:
+        print(f"[InfCost] purged markers={del_markers} tracks={del_tracks}")
+    return (del_markers, del_tracks)
 
 
 def _schedule_restart_after_refine(context: bpy.types.Context, *, delay: float = 0.5) -> None:
@@ -861,20 +893,6 @@ def solve_camera_only(context, *args, **kwargs):
             print("[SolveCheck] Kein context.scene – Check übersprungen.")
             return res
 
-        # (0) Marker mit ∞/NaN-Kosten sofort bereinigen.
-        purged = _purge_infinite_cost_markers(context)
-        if purged > 0:
-            print("[SolveCheck][InfCost] Reset→FindLow (wegen ∞-Kosten)")
-            try:
-                reset_for_new_cycle(context, clear_solve_log=False)
-            except Exception:
-                pass
-            try:
-                run_find_low_marker_frame(context)
-            except Exception:
-                pass
-            return res
-
         # Vorab: aktiven Clip & gültigen Recon-Frame setzen (persistierend)
         _set_scene_frame_to_nearest_recon(context)
         # Sicherstellen, dass wir einen aktiven Clip haben (vermeidet clip=<none>)
@@ -908,6 +926,25 @@ def solve_camera_only(context, *args, **kwargs):
                 run_find_low_marker_frame(context)
             except Exception as ex3:
                 print(f"[SolveCheck] Reset/FindLow fallback failed: {ex3!r}")
+            return res
+
+        # --- NEU: direkt nach erfolgreichem Solve non-finite Kosten bereinigen
+        try:
+            mk_del, tr_del = _purge_nonfinite_after_solve(context)
+        except Exception as ex_purge:
+            print(f"[InfCost] purge failed: {ex_purge!r}")
+            mk_del, tr_del = (0, 0)
+        if (mk_del + tr_del) > 0:
+            print("[SolveCheck][InfCost] Reset→FindLow (wegen ∞/NaN-Kosten)")
+            _set_scene_frame_to_nearest_recon(context)
+            try:
+                reset_for_new_cycle(context, clear_solve_log=False)
+            except Exception as exr:
+                print(f"[SolveCheck] reset_for_new_cycle failed: {exr!r}")
+            try:
+                run_find_low_marker_frame(context)
+            except Exception as exf:
+                print(f"[SolveCheck] run_find_low_marker_frame failed: {exf!r}")
             return res
 
         # Gate-Quelle wählen:
