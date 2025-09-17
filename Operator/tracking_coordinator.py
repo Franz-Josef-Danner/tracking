@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """
-tracking_coordinator.py â€“ Streng sequentieller, MODALER Orchestrator
+tracking_coordinator.py â€“ Sequentieller Orchestrator (Solve vollständig entfernt)
 - Phasen: FIND_LOW â†’ JUMP â†’ DETECT â†’ DISTANZE (hart getrennt, seriell)
-- Integration von Anzahl/Aâ‚..Aâ‚‰ + Abbruch bei 10 + A_k-Schreiben in BIDI
-- Jede Phase startet erst, wenn die vorherige abgeschlossen wurde.
+- Camera-Solve, Eval/Refine, Post-Solve-Policies: entfernt.
 """
 
 from __future__ import annotations
@@ -18,8 +17,6 @@ from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 import bpy
 from mathutils import Matrix, Vector
 
-# API-Doku: bpy.ops.clip.delete_track (löscht selektierte Tracks)
-
 # --- optional import: error scorer ------------------------------------------
 try:
     from ..Helper.count import error_value as _error_value  # type: ignore
@@ -31,12 +28,6 @@ except Exception:
             from Helper.count import error_value as _error_value  # type: ignore
         except Exception:
             _error_value = None  # type: ignore
-
-# ---------------------------------------------------------------------------
-# Strikter Solve-Eval-Modus: 3x Solve hintereinander, ohne mutierende Helfer
-# ---------------------------------------------------------------------------
-IN_SOLVE_EVAL: bool = False  # globales Gate: während TRUE keine Cleanups/Detect/Distanz etc.
-
 
 class phase_lock:
     """Exklusiver Phasen-Lock; verhindert Nebenläufe in kritischen Abschnitten."""
@@ -66,21 +57,6 @@ def undo_off():
         prefs.use_global_undo = old
 
 
-@contextmanager
-def solve_eval_mode():
-    """Aktiviert harten Eval-Modus: keine mutierenden Helfer, kein Overlay-Noise."""
-
-    global IN_SOLVE_EVAL
-    IN_SOLVE_EVAL = True
-    t0 = time.perf_counter()
-    try:
-        yield
-    finally:
-        dt = time.perf_counter() - t0
-        IN_SOLVE_EVAL = False
-        print(f"[SolveEval] Dauer gesamt: {dt:.3f}s")
-
-
 # ---------------------------------------------------------------------------
 # Öffentliche Hilfsfunktion: 3x Solve-Eval back-to-back, ohne Post-Processing
 # ---------------------------------------------------------------------------
@@ -96,53 +72,11 @@ def solve_eval_back_to_back(
     quick: bool = True,
     solve_kwargs: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """
-    Führt bis zu 3 Solve-Durchläufe (verschiedene Distortion-Modelle) direkt
-    hintereinander aus – ohne jegliche Cleanups, Detect, Distanz, Mute, Split,
-    Spike-Filter oder sonstige mutierende Steps.
+    """…(entfernt)…"""
 
-    Optionales ``rank_callable`` kann verwendet werden, um aus ``(score, model)``
-    einen Vergleichswert abzuleiten (z. B. für custom Ranking-Logik).
+    # >>> KOMPLETT ENTFERNT (Camera-Solve)
+    raise RuntimeError("Camera solve code removed")
 
-    Rückgabe: {"model": best_model, "score": best_score,
-               "rank_value": rank_value, "trials": N, "duration": s}
-    """
-
-    solve_kwargs = solve_kwargs or {}
-    t0 = time.perf_counter()
-    # best = (rank_value, model, raw_score)
-    best: Optional[Tuple[float, Any, float]] = None
-    trials = 0
-    models = list(candidate_models)
-
-    with phase_lock("SOLVE_EVAL"), undo_off(), solve_eval_mode():
-        for model in models:
-            if trials >= max_trials or (time.perf_counter() - t0) > time_budget_sec:
-                print("[SolveEval] Budget erreicht – abbrechen.")
-                break
-            # WICHTIG: nur Model setzen + Solve aufrufen. Nichts anderes.
-            apply_model(model)
-            t1 = time.perf_counter()
-            score = do_solve(quick=quick, **solve_kwargs)  # dein solve_camera()-Wrapper
-            dt = time.perf_counter() - t1
-            rank_value = rank_callable(score, model) if rank_callable else score
-            if rank_callable:
-                print(
-                    f"[SolveEval] {model}: score={score:.6f} rank={rank_value:.6f} dur={dt:.3f}s"
-                )
-            else:
-                print(f"[SolveEval] {model}: score={score:.6f} dur={dt:.3f}s")
-            if (best is None) or (rank_value < best[0]):
-                best = (rank_value, model, score)
-            trials += 1
-
-    return {
-        "model": best[1] if best else None,  # Gewinner-Modell
-        "score": best[2] if best else float("inf"),  # Roh-Score des Gewinners
-        "rank_value": best[0] if best else float("inf"),  # Vergleichswert
-        "trials": trials,
-        "duration": time.perf_counter() - t0,
-    }
 
 # ---------------------------------------------------------------------------
 # Finaler Voll-Solve mit Intrinsics-Refine (fokal/principal/radial = True)
@@ -154,65 +88,11 @@ def solve_final_refine(
     apply_model: Callable[[Any], None],
     solve_full: Optional[Callable[..., float]] = None,
 ) -> float:
-    """
-    Führt NACH abgeschlossener Modell-Evaluierung einen letzten, vollwertigen Solve
-    mit aktivierten Intrinsics-Refine-Flags aus:
-      - refine_intrinsics_focal_length = True
-      - refine_intrinsics_principal_point = True
-      - refine_intrinsics_radial_distortion = True
+    """…(entfernt)…"""
 
-    Parameter:
-      model        : Sieger-Modell aus der Eval
-      apply_model  : Callable, das das Distortion-Modell setzt
-      solve_full   : Optionaler Callable, der einen Voll-Solve ausführt und einen Score liefert.
-                     Falls None, wird solve_camera_only(...) verwendet.
+    # >>> KOMPLETT ENTFERNT (Camera-Solve)
+    raise RuntimeError("Camera solve code removed")
 
-    Rückgabe:
-      float Score des finalen Solves (falls Helper Score liefert, sonst 0.0 als Fallback).
-    """
-
-    if model is None:
-        print("[SolveEval][FINAL] Kein Modell übergeben – finaler Refine-Solve wird übersprungen.")
-        return float("inf")
-
-    apply_model(model)
-    # Spiegel die Flags in die Tracking-Settings (sichtbar im UI)
-    _apply_refine_flags(context, focal=True, principal=True, radial=True)
-    # Beim FINALEN Refine-Solve soll der avg_error-Gate die Szenen-Variable
-    # `error_track` verwenden. Wir setzen dafür transient ein Scene-Flag,
-    # das der Post-Solve-Hook auswertet.
-    scn = getattr(context, "scene", None) or bpy.context.scene
-    _flag_key = "kc_solve_gate_use_error_track"
-    score = 0.0
-    dt = 0.0
-    try:
-        try:
-            scn[_flag_key] = True
-        except Exception:
-            pass
-        with phase_lock("SOLVE_FINAL"), undo_off():
-            t1 = time.perf_counter()
-            # bevorzugt: eigener Voll-Solve-Wrapper; Fallback: solve_camera_only(...)
-            if solve_full is not None:
-                score = solve_full(
-                    context,
-                    refine_intrinsics_focal_length=True,
-                    refine_intrinsics_principal_point=True,
-                    refine_intrinsics_radial_distortion=True,
-                )
-            else:
-                # Fallback: direkter Helper-Call; liefert ggf. None → robust auf 0.0 casten
-                score = solve_camera_only(
-                    context,
-                    refine_intrinsics_focal_length=True,
-                    refine_intrinsics_principal_point=True,
-                    refine_intrinsics_radial_distortion=True,
-                ) or 0.0
-            dt = time.perf_counter() - t1
-    except Exception:
-        raise
-    print(f"[SolveEval][FINAL] {model}: score={score:.6f} dur={dt:.3f}s")
-    return float(score)
 
 # ---------------------------------------------------------------------------
 # Kombi-Wrapper: 3×-Eval + finaler Voll-Solve (alle refine_intrinsics = True)
@@ -230,32 +110,11 @@ def solve_eval_with_final_refine(
     quick: bool = True,
     solve_kwargs: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """
-    Führt back-to-back die Modell-Evaluierung (3× Solve) aus und danach
-    EINEN finalen Voll-Solve mit aktivierten Intrinsics-Refine-Flags.
-    Eval bleibt strikt read-only; der finale Solve ist getrennt gekapselt.
-    Rückgabe enthält Eval- und Final-Score.
-    """
-    # 1) Eval (read-only, ohne mutierende Helfer)
-    eval_result = solve_eval_back_to_back(
-        clip=clip,
-        candidate_models=candidate_models,
-        apply_model=apply_model,
-        do_solve=do_solve_quick,
-        rank_callable=rank_callable,
-        time_budget_sec=time_budget_sec,
-        max_trials=max_trials,
-        quick=quick,
-        solve_kwargs=solve_kwargs,
-    )
-    # 2) Finaler Refine-Solve (separat, mit allen Intrinsics-Flags)
-    final_score = solve_final_refine(
-        context=clip if isinstance(clip, bpy.types.Context) else bpy.context,
-        model=eval_result["model"],
-        apply_model=apply_model,
-        solve_full=solve_full,
-    )
-    return {**eval_result, "final_score": final_score}
+    """…(entfernt)…"""
+
+    # >>> KOMPLETT ENTFERNT (Camera-Solve)
+    raise RuntimeError("Camera solve code removed")
+
 
 # ---------------------------------------------------------------------------
 # Console logging
@@ -277,23 +136,6 @@ from ..Helper.clean_short_segments import clean_short_segments
 from ..Helper.clean_short_tracks import clean_short_tracks
 from ..Helper.split_cleanup import recursive_split_cleanup
 from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
-from ..Helper.solve_camera import solve_camera_only as _solve_camera
-from ..Helper.reduce_error_tracks import (
-    get_avg_reprojection_error,
-    reduce_error_tracks,
-    run_reduce_error_tracks,
-)
-from ..Helper.refine_high_error import start_refine_modal
-from ..Helper.solve_eval import (
-    SolveConfig,
-    SolveMetrics,
-    choose_holdouts,
-    set_holdout_weights,
-    collect_metrics,
-    compute_parallax_scores,
-    score_metrics,
-    trigger_post_solve_quality_check,
-)
 from ..Helper.reset_state import reset_for_new_cycle  # zentraler Reset (Bootstrap/Cycle)
 
 # Versuche, die Auswertungsfunktion fÃ¼r die Markeranzahl zu importieren.
@@ -399,94 +241,24 @@ except Exception:
 
 __all__ = ("CLIP_OT_tracking_coordinator",)
 
-# ---------------------------------------------------------------------------
-# Post-Solve Qualitätscheck (Auto-Reduce & Neustart)
-# Policy:
-#  - Nach JEDEM Solve den avg. Reprojection-Error prüfen.
-#  - Schwellwert: Scene['solve_error_threshold'] oder Default 20.0.
-#  - Wenn Error > Threshold:
-#       • reduce_error_tracks()
-#       • reset_for_new_cycle()
-#       • run_find_low_marker_frame()
-#  - Schutz gegen Endlosschleifen: max. 5 Auto-Reduce-Versuche pro Zyklus.
-#  - Im harten Solve-Eval-Modus (IN_SOLVE_EVAL) kein Eingriff.
-# ---------------------------------------------------------------------------
-# Default-Policy (konservativ, kann über Scene-Props übersteuert werden)
-POST_SOLVE_QUALITY_POLICY = {
-    "inf_cost": {"cooldown_s": 30, "max_resets": 2},
-    "behind_cam": {"cooldown_s": 30, "max_resets": 2, "purge": True},
-    # baseline für Nicht-Final-Solves: 20 px; finaler Solve -> siehe _resolve_threshold_px
-    "avg_error": {"threshold_px": "scene.solve_error_threshold", "max_delete": 11},
-}
+# --- Phasen-Konstanten -----------------------------------------------------
+PH_FIND_LOW = "FIND_LOW"
+PH_JUMP = "JUMP"
+PH_DETECT = "DETECT"
+PH_DISTANZE = "DISTANZE"
+PH_SPIKE_CYCLE = "SPIKE_CYCLE"
+PH_BIDI = "BIDI"
 
-
-def _resolve_threshold_px(context):
-    """Ermittle den avg_error-Schwellwert.
-    Standard: scene.solve_error_threshold (Default 20.0).
-    Finaler Solve: falls Scene-Flag 'kc_solve_gate_use_error_track' gesetzt ist,
-    verwende scene.error_track (Default 2.0).
-    """
-
-    scn = getattr(context, "scene", None) or bpy.context.scene
-    # Finaler Solve → error_track
-    try:
-        if bool(scn.get("kc_solve_gate_use_error_track", False)):
-            thr = float(getattr(scn, "error_track", 2.0))
-            print(f"[SolveCheck] threshold source=error_track value={thr:.3f}")
-            return thr
-    except Exception:
-        pass  # Fallback auf normalen Threshold
-    # Normale Solves → solve_error_threshold
-    try:
-        thr = float(getattr(scn, "solve_error_threshold", 20.0))
-        print(f"[SolveCheck] threshold source=solve_error_threshold value={thr:.3f}")
-        return thr
-    except Exception:
-        return 20.0
+# --- Solve-bezogene Policies/Hooks wurden vollständig entfernt. ---
 
 
 def post_solve_quality_check(context):
-    """
-    Hook nach einem erfolgreichen Solve: prüft Solve-Log (InfCost/BehindCam),
-    löscht ggf. Marker/Tracks (mit Guards/Cooldown) und signalisiert dem
-    Orchestrator, ob ein Reset → FindLow nötig ist.
+    """ Hook nach einem erfolgreichen Solve: prüft Solve-Log, löscht ggf. Marker,
+        und signalisiert dem Orchestrator, ob ein Reset → FindLow nötig ist.
     """
 
-    scn = getattr(context, "scene", None) or bpy.context.scene
-
-    # Policy dynamisch komplettieren (Threshold immer numerisch einsetzen)
-    policy = dict(POST_SOLVE_QUALITY_POLICY)
-    avg = dict(policy.get("avg_error", {}))
-    avg["threshold_px"] = _resolve_threshold_px(context)
-    # Finaler Solve: Batchgröße dynamisch aus avg_error / error_track ableiten
-    try:
-        if bool(scn.get("kc_solve_gate_use_error_track", False)):
-            ae = get_avg_reprojection_error(context) or 0.0
-            et = float(getattr(scn, "error_track", 2.0))
-            avg["max_delete"] = max(10, int(round(ae / max(1e-6, et))))
-    except Exception:
-        pass
-    policy["avg_error"] = avg
-
-    try:
-        result = trigger_post_solve_quality_check(context, policy=policy)
-        # Erwartete Struktur (Beispiel):
-        # {"action":"reset","reason":"InfCost","deleted":15} oder {"action":"continue"}
-        if isinstance(result, dict) and result.get("action") == "reset":
-            print(f"[SolveCheck] {result.get('reason', 'post-check')} → Reset to FindLow")
-            return "RESET_TO_FIND_LOW"
-    except Exception as ex:
-        print(f"[SolveCheck] post_solve_quality_check failed: {ex!r}")
-        return None
-    finally:
-        # Flag in der Szene zuverlässig entfernen (wirkt nur für Final-Solve)
-        try:
-            if scn and "kc_solve_gate_use_error_track" in scn:
-                del scn["kc_solve_gate_use_error_track"]
-        except Exception:
-            pass
-    return None
-
+    # >>> KOMPLETT ENTFERNT (Camera-Solve)
+    return False
 
 def _route_to_find_low(context):
     """Springt sicher zurück zur Find-Low-Phase und setzt den Playhead."""
@@ -1034,450 +806,7 @@ def _emergency_reduce_by_error(context: bpy.types.Context, *, max_to_delete: int
     return deleted
 
 
-def _reduce_error_tracks_wrapper(context: bpy.types.Context, **kwargs) -> tuple[int, dict[str, Any]]:
-    """Normalisiert die Rückgabe von run_reduce_error_tracks."""
-
-    try:
-        res = run_reduce_error_tracks(context, **kwargs)
-        if isinstance(res, dict):
-            return int(res.get("deleted", 0)), dict(res)
-        if isinstance(res, (int, float)):
-            val = int(res)
-            return val, {"deleted": val}
-        return 0, {"deleted": 0}
-    except IndexError:
-        raise
-    except Exception as ex:
-        print(f"[ReduceDBG] reduce_error_tracks unexpected failure: {ex!r}")
-        return 0, {"deleted": 0, "error": repr(ex)}
-
-
-def _safe_run_reduce_error_tracks(context: bpy.types.Context) -> int:
-    """Wrappt run_reduce_error_tracks; fängt IndexError ab und reduziert hart."""
-
-    try:
-        deleted, info = _reduce_error_tracks_wrapper(context)
-        if isinstance(info, dict) and info.get("error"):
-            print(f"[SolveCheck] reduce_error_tracks reported error: {info['error']}")
-        return int(deleted)
-    except IndexError as ex:
-        print(f"[SolveCheck] reduce_error_tracks IndexError abgefangen: {ex!r}")
-        return _emergency_reduce_by_error(context, max_to_delete=5)
-    except Exception as ex:
-        print(f"[SolveCheck] reduce_error_tracks unexpected failure: {ex!r}")
-        return 0
-
-
-def _try_start_refine_high_error(context: bpy.types.Context) -> bool:
-    """Start the refine-high-error modal operator with robust fallbacks."""
-
-    try:
-        started = bool(start_refine_modal(context))
-        if started:
-            _schedule_restart_after_refine(context, delay=0.25)
-            print("[SolveCheck] refine_high_error modal gestartet.")
-            return True
-    except Exception as exc:
-        print(f"[SolveCheck] refine_high_error start failed: {exc!r}")
-    if _safe_run_reduce_error_tracks(context) <= 0:
-        print("[SolveCheck] reduce_error_tracks fallback lieferte 0 deletions.")
-    try:
-        _ensure_scene_active_clip(context)
-        reset_for_new_cycle(context, clear_solve_log=False)
-        _route_to_find_low(context)
-    except Exception as exc3:
-        print(f"[SolveCheck] Reset/FindLow fallback failed: {exc3!r}")
-    return False
-
-
-_COST_KEYS = ("reprojection_cost", "proj_cost", "reproject_cost", "cost", "error", "err", "avg_error")
-
-
-def _is_non_finite(v) -> bool:
-    try:
-        f = float(v)
-        return not math.isfinite(f)
-    except Exception:
-        return False
-
-
-def _marker_has_nonfinite_cost(m) -> bool:
-    # IDProperties (Custom) bevorzugen
-    try:
-        for k in _COST_KEYS:
-            if k in m.keys() and _is_non_finite(m[k]):
-                return True
-    except Exception:
-        pass
-    # Fallback: nichts gefunden
-    return False
-
-
-def _track_is_deletable_without_markers(trk) -> bool:
-    """Nur als ultima ratio: Track löschen, wenn er praktisch leer ist."""
-
-    try:
-        return len(getattr(trk, "markers", [])) <= 1
-    except Exception:
-        return False
-
-
-def _purge_nonfinite_after_solve(context: bpy.types.Context) -> tuple[int, int]:
-    """Löscht Marker mit ∞/NaN-Kosten; löscht Tracks nur, wenn deren Marker ∞/NaN zeigen
-       oder der Track faktisch leer ist (≤1 Marker).
-       Rückgabe: (markers_deleted, tracks_removed)."""
-
-    clip = _ensure_scene_active_clip(context)
-    if not clip:
-        return (0, 0)
-
-    del_markers = 0
-    del_tracks = 0
-
-    for container, trk, is_top in _iter_all_tracks(clip):
-        try:
-            # (a) Marker-Level (primäre Quelle für ∞/NaN)
-            mks = list(getattr(trk, "markers", []))
-            bad_frames = []
-            for m in mks:
-                if _marker_has_nonfinite_cost(m):
-                    try:
-                        bad_frames.append(int(getattr(m, "frame", 0)))
-                    except Exception:
-                        pass
-            for fr in sorted(set(bad_frames)):
-                try:
-                    trk.markers.delete_frame(fr)
-                    del_markers += 1
-                except Exception as ex:
-                    print(f"[InfCost][MarkerDel] frame={fr} name={getattr(trk,'name','?')} ex={ex!r}")
-            # (b) Track-Level nur, wenn (a) etwas fand ODER Track leer/1 Marker
-            if bad_frames or _track_is_deletable_without_markers(trk):
-                _select_only_track(clip, container, trk, is_top_level=is_top)
-                ov = _find_clip_editor_override(context, clip)
-                if ov:
-                    with bpy.context.temp_override(**ov):
-                        r = bpy.ops.clip.delete_track(confirm=False)
-                        if r == {'FINISHED'}:
-                            del_tracks += 1
-                            continue
-                if _delete_track_hard(container, trk, is_top_level=is_top):
-                    del_tracks += 1
-                else:
-                    try:
-                        trk.mute = True
-                    except Exception:
-                        pass
-                    print(f"[InfCost][TrackMute] name={getattr(trk,'name','?')}")
-        except Exception as ex:
-            print(f"[InfCost] scan failed: {ex!r}")
-
-    if del_markers or del_tracks:
-        print(f"[InfCost] purged markers={del_markers} tracks={del_tracks}")
-    return (del_markers, del_tracks)
-
-
-# --- Inf-Cost Backoff/Guard --------------------------------------------------
-def _infcost_should_purge(
-    scene: bpy.types.Scene, clip: Optional[bpy.types.MovieClip]
-) -> bool:
-    now = time.time()
-    if not clip:
-        return True
-    key = getattr(clip, "name", "∅")
-    st = _INFCOST_STATE.get(key, {})
-    cooldown_until = float(st.get("cooldown_until", 0.0))
-    if now < cooldown_until:
-        print(
-            "[InfCost][Guard] cooldown active for "
-            f"{cooldown_until - now:.1f}s – purge suppressed (global)."
-        )
-        return False
-    return True
-
-
-def _infcost_on_purge(
-    scene: bpy.types.Scene, clip: Optional[bpy.types.MovieClip]
-) -> str:
-    """Wird aufgerufen, wenn (mk_del+tr_del)>0. Liefert Aktion:
-    'reset' | 'reduce_reset' | 'suppress' (kein Reset, 30s Cool-down)."""
-
-    now = time.time()
-    if clip is None:
-        return "reset"
-    key = getattr(clip, "name", "∅")
-    st = _INFCOST_STATE.setdefault(
-        key, {"streak": 0, "last_ts": 0.0, "cooldown_until": 0.0}
-    )
-    streak = int(st.get("streak", 0))
-    last_ts = float(st.get("last_ts", 0.0))
-    if (now - last_ts) <= 10.0:
-        streak += 1
-    else:
-        streak = 1
-    st["streak"] = streak
-    st["last_ts"] = now
-    _INFCOST_STATE[key] = st
-    if streak == 1:
-        print("[InfCost][Guard] first hit → reset")
-        return "reset"
-    if streak == 2:
-        print("[InfCost][Guard] second hit → reduce+reset")
-        return "reduce_reset"
-    st["cooldown_until"] = now + 30.0
-    _INFCOST_STATE[key] = st
-    print("[InfCost][Guard] repeated hits → suppress reset (30s cooldown, global)")
-    return "suppress"
-
-
-def _schedule_restart_after_refine(context: bpy.types.Context, *, delay: float = 0.5) -> None:
-    """Wartet, bis der modal laufende refine_high_error-Operator fertig ist, dann Reset→FindLow."""
-
-    try:
-        import bpy as _bpy
-
-        scn = context.scene
-
-        def _cb():
-            try:
-                if scn.get("refine_active"):
-                    return 0.25  # weiter pollen
-                try:
-                    reset_for_new_cycle(context, clear_solve_log=False)
-                except Exception:
-                    pass
-                _route_to_find_low(context)
-            finally:
-                return None  # Timer beenden
-
-        _bpy.app.timers.register(_cb, first_interval=max(0.05, float(delay)))
-    except Exception as _exc:
-        print(f"[SolveCheck] Timer-Register fehlgeschlagen: {_exc!r}")
-
-
-def solve_camera_only(context, *args, **kwargs):
-    # Invoke original solve
-    res = _solve_camera(context, *args, **kwargs)
-    try:
-        # Eval-Modus: strikt read-only → kein Auto-Reduce
-        if IN_SOLVE_EVAL:
-            return res
-
-        scene = getattr(context, "scene", None)
-        if scene is None:
-            print("[SolveCheck] Kein context.scene – Check übersprungen.")
-            return res
-
-        # Vorab: aktiven Clip setzen; ohne Recon auf Clip-Start klemmen
-        clip = _ensure_scene_active_clip(context)
-        _set_scene_frame_to_nearest_recon_or_start(context)
-        # Falls gar keine Reconstruction-Kameras existieren:
-        # AE-Polling & Inf-Cost-Purge überspringen → direkter Fallbackpfad.
-        if clip and not _has_any_recon_cameras(clip):
-            print("[SolveCheck] Keine Reconstruction-Kameras – AE-Polling übersprungen, Fallback-Pfad.")
-            _safe_run_reduce_error_tracks(context)
-            try:
-                reset_for_new_cycle(context, clear_solve_log=False)
-                # Nach Reset: bestmöglichen Recon-Frame setzen (falls entstanden)
-                _set_scene_frame_to_nearest_recon_or_start(context)
-                _route_to_find_low(context)
-            except Exception as ex0:
-                print(f"[SolveCheck] Reset/FindLow (no-recon) failed: {ex0!r}")
-            return res
-
-        # Kurz auf gültige Reconstruction pollen (max. ~2s) und einen Kameraframe sichern
-        ae = None
-        with _with_valid_camera_frame(context):
-            for _ in range(40):
-                ae = get_avg_reprojection_error(context)
-                if ae is not None and ae > 0.0:
-                    break
-                time.sleep(0.05)
-
-        if ae is None:
-            print("[SolveCheck] Keine auswertbare Reconstruction (ae=None) – refine_high_error + Restart.")
-            _set_scene_frame_to_nearest_recon_or_start(context)
-            _safe_run_reduce_error_tracks(context)
-            try:
-                reset_for_new_cycle(context, clear_solve_log=False)
-                _set_scene_frame_to_nearest_recon_or_start(context)
-                _route_to_find_low(context)
-            except Exception as ex3:
-                print(f"[SolveCheck] Reset/FindLow fallback failed: {ex3!r}")
-            return res
-
-        if ae <= 0.0:
-            print("[SolveCheck] Keine auswertbare Reconstruction (ae<=0) – refine_high_error + Restart.")
-            _set_scene_frame_to_nearest_recon_or_start(context)
-            _safe_run_reduce_error_tracks(context)
-            try:
-                reset_for_new_cycle(context, clear_solve_log=False)
-                _set_scene_frame_to_nearest_recon_or_start(context)
-                _route_to_find_low(context)
-            except Exception as ex3:
-                print(f"[SolveCheck] Reset/FindLow fallback failed: {ex3!r}")
-            return res
-
-        # --- Post-Solve Purges (nur mit Recon & valid AE) ---
-        # (1) Negative Tiefe / hinter Kamera
-        try:
-            bm, bt = _purge_negative_depth_bundles(context, max_deletes=25)
-            if (bm + bt) > 0:
-                action = _infcost_on_purge(scene, clip)
-                print(f"[SolveCheck][BehindCam] total_deleted={bm+bt} action={action}")
-                _set_scene_frame_to_nearest_recon_or_start(context)
-                if action in ("reduce_reset", "reset"):
-                    if action == "reduce_reset":
-                        _safe_run_reduce_error_tracks(context)
-                    try:
-                        reset_for_new_cycle(context, clear_solve_log=False)
-                    except Exception as exr_bc:
-                        print(f"[SolveCheck][BehindCam] reset_for_new_cycle failed: {exr_bc!r}")
-                    try:
-                        _set_scene_frame_to_nearest_recon_or_start(context)
-                        _route_to_find_low(context)
-                    except Exception as exf_bc:
-                        print(f"[SolveCheck][BehindCam] FindLow routing failed: {exf_bc!r}")
-                    return res
-        except Exception as ex_bc:
-            print(f"[BehindCam] purge failed: {ex_bc!r}")
-
-        # (2) Non-finite Kosten bereinigen (mit Guard/Backoff)
-        mk_del = 0
-        tr_del = 0
-        try:
-            if (
-                clip
-                and _has_any_recon_cameras(clip)
-                and (ae is not None and ae > 0.0)
-                and _infcost_should_purge(scene, clip)
-            ):
-                mk_del, tr_del = _purge_nonfinite_after_solve(context)
-        except Exception as ex_purge:
-            print(f"[InfCost] purge failed: {ex_purge!r}")
-        total_del = mk_del + tr_del
-        if total_del > 0:
-            action = _infcost_on_purge(scene, clip)
-            print(f"[SolveCheck][InfCost] total_deleted={total_del} action={action}")
-            if action in ("reduce_reset", "reset"):
-                if action == "reduce_reset":
-                    _safe_run_reduce_error_tracks(context)
-                _set_scene_frame_to_nearest_recon_or_start(context)
-                try:
-                    reset_for_new_cycle(context, clear_solve_log=False)
-                except Exception as exr:
-                    print(f"[SolveCheck] reset_for_new_cycle failed: {exr!r}")
-                try:
-                    _set_scene_frame_to_nearest_recon_or_start(context)
-                    _route_to_find_low(context)
-                except Exception as exf:
-                    print(f"[SolveCheck] FindLow routing failed: {exf!r}")
-                return res
-            # action == "suppress": kein Reset, Cool-down aktiv
-
-        # Gate-Quelle wählen:
-        # - Standard: scene.solve_error_threshold (Default 20.0)
-        # - Finaler Refine-Solve: scene.error_track (px), getriggert über Scene-Flag
-        use_err_track = bool(scene.get("kc_solve_gate_use_error_track", False))
-        if use_err_track:
-            thr = float(getattr(scene, "error_track", 2.0) or 2.0)
-            _thr_src = "scene.error_track"
-        else:
-            thr = float(
-                getattr(scene, "solve_error_threshold", _SOLVE_ERR_DEFAULT_THR)
-                or _SOLVE_ERR_DEFAULT_THR
-            )
-            _thr_src = "scene.solve_error_threshold"
-        # 0.0 ist ebenfalls „invalid“ (Reconstruction noch nicht konsistent)
-        print(f"[SolveCheck] avg_error={ae:.6f} thr={thr:.6f} src={_thr_src}")
-        attempts = int(scene.get("kc_solve_attempts", 0) or 0)
-        if ae > thr and attempts < 5:
-            scene["kc_solve_attempts"] = attempts + 1
-            # --- Empfohlener Ablauf: n_delete = max(10, avg_projection_error / error_track)
-            err_track = float(getattr(scene, "error_track", 2.0) or 2.0)
-            n_delete = max(10, int(ae / max(1e-6, err_track)))
-            print(
-                f"[SolveCheck] Über Schwellwert → reduce_error_tracks(max_to_delete={n_delete}) "
-                f"(Formel: max(10, {ae:.3f}/{err_track:.3f})) Pass #{attempts+1}"
-            )
-            deleted, info = _reduce_error_tracks_wrapper(context, max_to_delete=int(n_delete))
-            if int(deleted) <= 0:
-                print("[SolveCheck] reduce_error_tracks returned 0 deletions.")
-            if isinstance(info, dict) and info.get("error"):
-                print(f"[SolveCheck] reduce_error_tracks info: {info['error']}")
-            try:
-                reset_for_new_cycle(context, clear_solve_log=False)
-            except Exception:
-                pass
-            _route_to_find_low(context)
-        elif ae > thr:
-            print(
-                "[SolveCheck] Schwellwert überschritten, max. Auto-Reduce-Versuche erreicht – kein Auto-Restart."
-            )
-        else:
-            scene["kc_solve_attempts"] = 0
-        # Abschluss Solve-Phase: Recon-Frame persistieren
-        try:
-            _set_scene_frame_to_nearest_recon_or_start(context)
-        except Exception:
-            pass
-        try:
-            hook_result = post_solve_quality_check(context)
-            if hook_result == "RESET_TO_FIND_LOW":
-                try:
-                    reset_for_new_cycle(context, clear_solve_log=False)
-                except Exception as ex_reset:
-                    print(f"[SolveCheck] post-check reset failed: {ex_reset!r}")
-                _route_to_find_low(context)
-        except Exception as ex_hook:
-            print(f"[SolveCheck] post_solve_quality_check hook error: {ex_hook!r}")
-    except Exception as ex:
-        print(f"[SolveCheck] Ausnahme im Post-Solve-Hook: {ex!r}")
-    return res
-
-# --- Orchestrator-Phasen ----------------------------------------------------
-PH_FIND_LOW   = "FIND_LOW"
-PH_JUMP       = "JUMP"
-PH_DETECT     = "DETECT"
-PH_DISTANZE   = "DISTANZE"
-PH_SPIKE_CYCLE = "SPIKE_CYCLE"
-PH_SOLVE_EVAL = "SOLVE_EVAL"
-# Erweiterte Phase: Bidirectional-Tracking. Wenn der Multiâ€‘Pass und das
-# Distanzâ€‘Cleanup erfolgreich durchgefÃ¼hrt wurden, wird diese Phase
-# angestoÃŸen. Sie startet den Bidirectionalâ€‘Track Operator und wartet
-# auf dessen Abschluss. Danach beginnt der Koordinator wieder bei PH_FIND_LOW.
-PH_BIDI       = "BIDI"
-
-# ---- intern: State Keys / Locks -------------------------------------------
-_LOCK_KEY = "tco_lock"
-
-# ----------------------------------------------------------------------------
-# Utilities
-# ----------------------------------------------------------------------------
-
-def _ensure_clip_context(context: bpy.types.Context) -> dict:
-    """Finde einen CLIP_EDITOR und liefere ein temp_override-Dict fÃ¼r Clip-Operatoren."""
-    wm = bpy.context.window_manager
-    if not wm:
-        return {}
-    for win in wm.windows:
-        scr = getattr(win, "screen", None)
-        if not scr:
-            continue
-        for area in scr.areas:
-            if area.type != "CLIP_EDITOR":
-                continue
-            region = next((r for r in area.regions if r.type == "WINDOW"), None)
-            space = area.spaces.active if hasattr(area, "spaces") else None
-            if region and space:
-                return {
-                    "window": win,
-                    "area": area,
-                    "region": region,
-                    "space_data": space,
-                    "scene": bpy.context.scene,
-                }
-    return {}
+# --- Solve-bezogene Cleanup-Helfer entfernt. ---
 
 def _resolve_clip(context: bpy.types.Context):
     """Robuster Clip-Resolver (Edit-Clip, Space-Clip, erster Clip)."""
@@ -1527,54 +856,6 @@ def _delta_counts(before: dict[str, int], after: dict[str, int]) -> dict[str, in
     names = set(before) | set(after)
     return {n: max(0, int(after.get(n, 0)) - int(before.get(n, 0))) for n in names}
 
-# --- Blender 4.4: Refine-Flag direkt in Tracking-Settings spiegeln ----------
-def _apply_refine_focal_flag(context: bpy.types.Context, flag: bool) -> None:
-    """Setzt movieclip.tracking.settings.refine_intrinsics_focal_length gemÃ¤ÃŸ flag."""
-    try:
-        clip = _resolve_clip(context)
-        tr = getattr(clip, "tracking", None) if clip else None
-        settings = getattr(tr, "settings", None) if tr else None
-        if settings and hasattr(settings, "refine_intrinsics_focal_length"):
-            settings.refine_intrinsics_focal_length = bool(flag)
-            _log(f"[Coordinator] refine_intrinsics_focal_length â†’ {bool(flag)}")
-        else:
-            _log("[Coordinator] WARN: refine_intrinsics_focal_length nicht verfÃ¼gbar")
-    except Exception as exc:
-        _log(f"[Coordinator] WARN: refine-Flag konnte nicht gesetzt werden: {exc}")
-
-# --- NEU: weitere Refine-Flags spiegeln --------------------------------------
-def _apply_refine_principal_flag(context: bpy.types.Context, flag: bool) -> None:
-    """Setzt tracking.settings.refine_intrinsics_principal_point gemÃ¤ÃŸ flag."""
-    try:
-        clip = _resolve_clip(context)
-        settings = getattr(getattr(clip, "tracking", None), "settings", None) if clip else None
-        if settings and hasattr(settings, "refine_intrinsics_principal_point"):
-            settings.refine_intrinsics_principal_point = bool(flag)
-            _log(f"[Coordinator] refine_intrinsics_principal_point â†’ {bool(flag)}")
-        else:
-            _log("[Coordinator] WARN: refine_intrinsics_principal_point nicht verfÃ¼gbar")
-    except Exception as exc:
-        _log(f"[Coordinator] WARN: principal-point Flag konnte nicht gesetzt werden: {exc}")
-
-def _apply_refine_radial_flag(context: bpy.types.Context, flag: bool) -> None:
-    """Setzt tracking.settings.refine_intrinsics_radial_distortion gemÃ¤ÃŸ flag."""
-    try:
-        clip = _resolve_clip(context)
-        settings = getattr(getattr(clip, "tracking", None), "settings", None) if clip else None
-        if settings and hasattr(settings, "refine_intrinsics_radial_distortion"):
-            settings.refine_intrinsics_radial_distortion = bool(flag)
-            _log(f"[Coordinator] refine_intrinsics_radial_distortion â†’ {bool(flag)}")
-        else:
-            _log("[Coordinator] WARN: refine_intrinsics_radial_distortion nicht verfÃ¼gbar")
-    except Exception as exc:
-        _log(f"[Coordinator] WARN: radial-distortion Flag konnte nicht gesetzt werden: {exc}")
-
-def _apply_refine_flags(context: bpy.types.Context, *, focal: bool, principal: bool, radial: bool) -> None:
-    """Komfort: alle drei Refine-Flags konsistent setzen."""
-    _apply_refine_focal_flag(context, focal)
-    _apply_refine_principal_flag(context, principal)
-    _apply_refine_radial_flag(context, radial)
-    
 def _snapshot_track_ptrs(context: bpy.types.Context) -> list[int]:
     """
     Snapshot der aktuellen Track-Pointer.
@@ -1588,17 +869,6 @@ def _snapshot_track_ptrs(context: bpy.types.Context) -> list[int]:
         return [int(t.as_pointer()) for t in clip.tracking.tracks]
     except Exception:
         return []
-
-
-# -- Solve-Eval Helpers ------------------------------------------------------
-
-@dataclass(frozen=True)
-class _ReconDigest:
-    valid: bool
-    num_cams: int
-    focal: float
-    dsum: float
-    err_med: float
 
 
 def _clip_frame_range(clip):
@@ -1771,30 +1041,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     bidi_started: bool = False
     bidi_before_counts: dict[str, int] | None = None  # Snapshot vor BIDI
     # TemporÃ¤rer Schwellenwert fÃ¼r den Spike-Cycle (startet bei 100, *0.9)
-    # Solve-Retry-State: Wurde bereits mit refine_intrinsics_focal_length=True neu gelÃ¶st?
     # NEU: Wurde bereits die volle Intrinsics-Variante (focal+principal+radial) versucht?
-    solve_refine_full_attempted: bool = False
-    # Regressionsvergleich: letzter Solve-Avg (None = noch keiner vorhanden)
-    prev_solve_avg: float | None = None
-    # Guard: Verhindert mehrfaches reduce_error_tracks fÃ¼r denselben avg_err
-    last_reduced_for_avg: float | None = None
-    # Solve-Eval State
-    _tco_state: str | None = None
-    _tco_eval_queue: list[tuple[str, int]] | None = None
-    _tco_holdouts: dict | None = None
-    _tco_solve_digest_before: _ReconDigest | None = None
-    _tco_solve_started_at: float = 0.0
-    _tco_timeout_sec: float = 30.0
-    _tco_last_run_ok: bool = False
-    _tco_metrics: list[SolveMetrics] | None = None
-    _tco_cfg: SolveConfig | None = None
-    _tco_f_nom: float = 0.0
-    _tco_cam_defaults: dict[str, float] | None = None
-    _tco_current_model: str | None = None
-    _tco_current_stage: int = 0
-    _tco_best: SolveMetrics | None = None
-    _tco_auto_prev: bool = False
-    _tco_keyframe_prev: tuple[int, int] | None = None
     def execute(self, context: bpy.types.Context):
         # Bootstrap/Reset
         try:
@@ -1822,12 +1069,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self.detection_threshold = None
         # Bidirectionalâ€‘Track ist noch nicht gestartet
         self.spike_threshold = None  # Spike-Schwellenwert zurÃ¼cksetzen
-        # Solve-Retry-State zurÃ¼cksetzen
-        self.solve_refine_attempted = False
-        self.solve_refine_full_attempted = False
         self.bidi_before_counts = None
-        self.prev_solve_avg = None
-        self.last_reduced_for_avg = None
         self.repeat_count_for_target = None
         # Herkunft der Fehlerfunktion einmalig ausgeben (sichtbar im UI)
         try:
@@ -1863,228 +1105,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {'CANCELLED'}
         wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}
-
-    # -- Solve-Eval intern -------------------------------------------------
-    def _init_solve_eval(self):
-        self._tco_state = "EVAL_PREP"
-        self._tco_eval_queue = list(self._build_eval_queue())
-        self._tco_holdouts = None
-        self._tco_solve_digest_before = None
-        self._tco_solve_started_at = 0.0
-        self._tco_last_run_ok = False
-        self._tco_metrics = []
-        self._tco_cfg = SolveConfig()
-        self._tco_cam_defaults = None
-        self._tco_best = None
-
-    def _build_eval_queue(self):
-        models = ("POLYNOMIAL", "DIVISION", "BROWN")
-        stages = (1, 2)
-        for m in models:
-            for s in stages:
-                yield (m, s)
-
-    def _get_clip(self, context):
-        return _resolve_clip(context)
-
-    def _prepare_eval(self, context):
-        clip = self._get_clip(context)
-        tr = clip.tracking
-        obj = tr.objects.active or (tr.objects[0] if len(tr.objects) else None)
-        if obj is None:
-            raise RuntimeError("No MovieTrackingObject found.")
-        cfg = self._tco_cfg or SolveConfig()
-        tr_settings = tr.settings
-        scores = compute_parallax_scores(clip, delta=cfg.parallax_delta)
-        fs, fe = _clip_frame_range(clip)
-        self._tco_auto_prev = bool(tr_settings.use_keyframe_selection)
-        tr_settings.use_keyframe_selection = False
-        if scores:
-            f, _ = scores[0]
-            obj.keyframe_a = max(int(f - cfg.parallax_delta), int(fs))
-            obj.keyframe_b = min(int(f + cfg.parallax_delta), int(fe))
-        else:
-            mid = (fs + fe) // 2
-            obj.keyframe_a = max(fs, mid - cfg.parallax_delta)
-            obj.keyframe_b = min(fe, mid + cfg.parallax_delta)
-        self._tco_keyframe_prev = (obj.keyframe_a, obj.keyframe_b)
-        holdouts = choose_holdouts(
-            clip,
-            ratio=cfg.holdout_ratio,
-            grid=cfg.holdout_grid,
-            edge_boost=cfg.holdout_edge_boost,
-        )
-        self._tco_holdouts = {t: getattr(t, "weight", 1.0) for t in holdouts}
-        set_holdout_weights(holdouts, 0.0)
-        cam = tr.camera
-        self._tco_f_nom = float(getattr(cam, "focal_length", 0.0)) or 0.0
-        self._tco_cam_defaults = {
-            "distortion_model": cam.distortion_model,
-            "focal_length": float(getattr(cam, "focal_length", 0.0)),
-            "k1": float(getattr(cam, "k1", 0.0)),
-            "k2": float(getattr(cam, "k2", 0.0)),
-            "k3": float(getattr(cam, "k3", 0.0)),
-            "division_k1": float(getattr(cam, "division_k1", 0.0)),
-            "division_k2": float(getattr(cam, "division_k2", 0.0)),
-            "brown_k1": float(getattr(cam, "brown_k1", 0.0)),
-            "brown_k2": float(getattr(cam, "brown_k2", 0.0)),
-            "brown_k3": float(getattr(cam, "brown_k3", 0.0)),
-            "brown_k4": float(getattr(cam, "brown_k4", 0.0)),
-            "brown_p1": float(getattr(cam, "brown_p1", 0.0)),
-            "brown_p2": float(getattr(cam, "brown_p2", 0.0)),
-        }
-
-    def _set_refine_stage(self, tr_settings, stage: int):
-        flags = set()
-        if stage >= 1:
-            flags.update({"FOCAL_LENGTH", "RADIAL_K1"})
-        if stage >= 2:
-            flags.update({"RADIAL_K2"})
-        try:
-            tr_settings.refine_intrinsics = flags
-        except Exception:
-            pass
-
-    def _setup_model_refine(self, context, model: str, stage: int):
-        clip = self._get_clip(context)
-        tr = clip.tracking
-        cam = tr.camera
-        tr_settings = tr.settings
-        defaults = self._tco_cam_defaults or {}
-        for attr, val in defaults.items():
-            try:
-                setattr(cam, attr, val)
-            except Exception:
-                pass
-        cam.distortion_model = model
-        self._set_refine_stage(tr_settings, stage)
-        self._tco_current_model = model
-        self._tco_current_stage = stage
-
-    def _begin_solve(self, context):
-        clip = self._get_clip(context)
-        self._tco_solve_digest_before = self._recon_digest(clip)
-        self._tco_solve_started_at = time.monotonic()
-        try:
-            solve_camera_only(context)
-        except Exception:
-            bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-        self._tco_state = "WAIT_SOLVE"
-
-    def _recon_digest(self, clip) -> _ReconDigest:
-        tr = clip.tracking
-        rec = tr.reconstruction
-        cam = tr.camera
-        model = cam.distortion_model
-        if model == 'POLYNOMIAL':
-            dsum = float(getattr(cam, "k1", 0.0) + getattr(cam, "k2", 0.0) + getattr(cam, "k3", 0.0))
-        elif model == 'DIVISION':
-            dsum = float(getattr(cam, "division_k1", 0.0) + getattr(cam, "division_k2", 0.0))
-        elif model == 'BROWN':
-            dsum = float(
-                getattr(cam, "brown_k1", 0.0) + getattr(cam, "brown_k2", 0.0) +
-                getattr(cam, "brown_k3", 0.0) + getattr(cam, "brown_k4", 0.0) +
-                getattr(cam, "brown_p1", 0.0) + getattr(cam, "brown_p2", 0.0)
-            )
-        else:
-            dsum = 0.0
-        tracks = tr.objects.active.tracks if tr.objects.active else tr.tracks
-        train_errs = [t.average_error for t in tracks if getattr(t, "weight", 1.0) > 0.5 and t.average_error > 0]
-        err_med = sorted(train_errs)[len(train_errs)//2] if train_errs else 0.0
-        return _ReconDigest(
-            valid=bool(getattr(rec, "is_valid", False)),
-            num_cams=int(len(getattr(rec, "cameras", []))),
-            focal=float(getattr(cam, "focal_length", 0.0)),
-            dsum=float(dsum),
-            err_med=float(err_med),
-        )
-
-    def _solve_finished(self, context) -> tuple[bool, bool]:
-        clip = self._get_clip(context)
-        before = self._tco_solve_digest_before
-        now = self._recon_digest(clip)
-        changed = (now != before)
-        ok = (now.valid and now.num_cams > 0)
-        timed_out = (time.monotonic() - self._tco_solve_started_at) > self._tco_timeout_sec
-        done = changed or timed_out
-        return done, (ok and not timed_out)
-
-    def _collect_metrics_current_run(self, context, *, ok: bool):
-        cfg = self._tco_cfg or SolveConfig()
-        clip = self._get_clip(context)
-        cam = clip.tracking.camera
-        holdouts = set(self._tco_holdouts.keys()) if self._tco_holdouts else set()
-        if ok:
-            hold_med, hold_p95, edge_gap, persist = collect_metrics(clip, holdouts, center_box=cfg.center_box)
-        else:
-            hold_med = hold_p95 = edge_gap = 999.0
-            persist = 0.0
-        f_solved = float(getattr(cam, "focal_length", 0.0)) or self._tco_f_nom
-        fov_dev_norm = abs(f_solved - self._tco_f_nom) / self._tco_f_nom if self._tco_f_nom > 0 else 0.0
-        score = score_metrics(hold_med, hold_p95, edge_gap, persist, fov_dev_norm, cfg.score_w)
-        if self._tco_metrics is None:
-            self._tco_metrics = []
-        self._tco_metrics.append(
-            SolveMetrics(
-                model=self._tco_current_model or "POLYNOMIAL",
-                refine_stage=self._tco_current_stage,
-                holdout_med_px=hold_med,
-                holdout_p95_px=hold_p95,
-                edge_gap_px=edge_gap,
-                fov_dev_norm=fov_dev_norm,
-                persist=persist,
-                score=score,
-            )
-        )
-
-    def _pick_best_run(self):
-        if not self._tco_metrics:
-            raise RuntimeError("No solve metrics collected")
-        return min(self._tco_metrics, key=lambda m: (m.score, m.holdout_p95_px, m.edge_gap_px))
-
-    def _restore_holdouts(self, context):
-        if not self._tco_holdouts:
-            return
-        for t, w in self._tco_holdouts.items():
-            try:
-                t.weight = w
-            except Exception:
-                pass
-        clip = self._get_clip(context)
-        tr_settings = clip.tracking.settings
-        tr_settings.use_keyframe_selection = self._tco_auto_prev
-        obj = clip.tracking.objects.active or (clip.tracking.objects[0] if clip.tracking.objects else None)
-        if obj and self._tco_keyframe_prev:
-            obj.keyframe_a, obj.keyframe_b = self._tco_keyframe_prev
-        self._tco_holdouts = None
-
-    def _apply_winner_and_start_final(self, context):
-        best = self._pick_best_run()
-        self._tco_best = best
-        self._restore_holdouts(context)
-        # 1) Gewonnenes Distortion-Modell setzen (ohne Downranking der Flags)
-        clip = self._get_clip(context)
-        cam = clip.tracking.camera
-        try:
-            cam.distortion_model = best.model
-        except Exception:
-            pass
-        # 2) Alle drei Intrinsics-Refine-Flags aktivieren (UI + Solve-Call)
-        _apply_refine_flags(context, focal=True, principal=True, radial=True)
-        # 3) Finalen Refine-Solve starten – synchron, mit Flags
-        try:
-            solve_camera_only(
-                context,
-                refine_intrinsics_focal_length=True,
-                refine_intrinsics_principal_point=True,
-                refine_intrinsics_radial_distortion=True,
-            )
-        except Exception:
-            # Fallback auf den Operator (nimmt Flags aus tracking.settings mit)
-            bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-        # 4) State umstellen – der modal()-Loop wartet auf Abschluss
-        self._tco_solve_started_at = time.monotonic()
-        self._tco_state = "WAIT_FINAL_SOLVE"
 
     def _finish(self, context, *, info: str | None = None, cancelled: bool = False):
         # Timer sauber entfernen
@@ -2563,46 +1583,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # Wenn keine Auswertungsfunktion vorhanden ist, einfach abschließen
             self.report({'INFO'}, f"DISTANZE @f{self.target_frame}: removed={removed} kept={kept}, count={count_result}")
             return self._finish(context, info="Sequenz abgeschlossen.", cancelled=False)
-        if self.phase == PH_SOLVE_EVAL:
-            if self._tco_state == 'EVAL_PREP':
-                self._prepare_eval(context)
-                self._tco_state = 'EVAL_NEXT_RUN'
-                return {'RUNNING_MODAL'}
-
-            if self._tco_state == 'EVAL_NEXT_RUN':
-                if not self._tco_eval_queue:
-                    self._apply_winner_and_start_final(context)
-                    return {'RUNNING_MODAL'}
-                model, stage = self._tco_eval_queue.pop(0)
-                self._setup_model_refine(context, model, stage)
-                self._begin_solve(context)
-                return {'RUNNING_MODAL'}
-
-            if self._tco_state == 'WAIT_SOLVE':
-                done, ok = self._solve_finished(context)
-                if not done:
-                    return {'RUNNING_MODAL'}
-                self._tco_last_run_ok = ok
-                self._tco_state = 'COLLECT'
-                return {'RUNNING_MODAL'}
-
-            if self._tco_state == 'COLLECT':
-                self._collect_metrics_current_run(context, ok=self._tco_last_run_ok)
-                self._tco_state = 'EVAL_NEXT_RUN'
-                return {'RUNNING_MODAL'}
-
-            if self._tco_state == 'WAIT_FINAL_SOLVE':
-                done, ok = self._solve_finished(context)
-                if not done:
-                    return {'RUNNING_MODAL'}
-                best = self._tco_best
-                if best:
-                    _solve_log(context, {"winner": best.model, "best": best.__dict__, "all": [m.__dict__ for m in self._tco_metrics]})
-                    context.scene["tco_last_solve_eval"] = {"winner": best.model, "best": best.__dict__}
-                    self.report({'INFO'}, f'Solve-Eval: {best.model} score={best.score:.3f}')
-                return self._finish(context, info='Sequenz abgeschlossen.', cancelled=False)
-            return {'RUNNING_MODAL'}
-
         if self.phase == PH_SPIKE_CYCLE:
             scn = context.scene
             thr = float(self.spike_threshold or 100.0)
@@ -2644,30 +1624,17 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # Kein Treffer
             next_thr = thr * 0.9
             if next_thr < 15:
-                # Terminalbedingung: Spike-Cycle beendet â†’ Kamera-Solve starten
+                # Terminalbedingung: Spike-Cycle beendet – ohne Solve-Fallback.
                 try:
                     scn["tco_spike_cycle_finished"] = True
                 except Exception:
                     pass
-                try:
-                    # Erstlauf: alle Refine-Flags explizit deaktivieren (Variante 0)
-                    try: scn["refine_intrinsics_focal_length"] = False
-                    except Exception: pass
-                    try: scn["refine_intrinsics_principal_point"] = False
-                    except Exception: pass
-                    try: scn["refine_intrinsics_radial_distortion"] = False
-                    except Exception: pass
-                    # Direkt in Settings spiegeln
-                    _apply_refine_flags(context, focal=False, principal=False, radial=False)
-                    # Retry-States zurÃ¼cksetzen
-                    self.solve_refine_attempted = False          # Variante 1 (nur Focal) noch offen
-                    self.solve_refine_full_attempted = False     # Variante 2 (alle) noch offen
-                    # â†’ direkt in die Solve-Evaluation wechseln
-                    self._init_solve_eval()
-                    self.phase = PH_SOLVE_EVAL
-                    return {'RUNNING_MODAL'}
-                except Exception as exc:
-                    return self._finish(context, info=f"SolveEval Start fehlgeschlagen: {exc}", cancelled=True)
+                self.report({'INFO'}, 'Spike-Cycle abgeschlossen – kein Solve mehr verfügbar.')
+                return self._finish(
+                    context,
+                    info='Spike-Cycle beendet: kein Low-Marker-Frame gefunden.',
+                    cancelled=False,
+                )
             # Weiter iterieren
             self.spike_threshold = next_thr
             return {'RUNNING_MODAL'}
