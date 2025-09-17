@@ -209,13 +209,8 @@ def solve_final_refine(
                     refine_intrinsics_radial_distortion=True,
                 ) or 0.0
             dt = time.perf_counter() - t1
-    finally:
-        # Flag sauber entfernen – unabhängig vom Ergebnis
-        try:
-            if scn and _flag_key in scn:
-                del scn[_flag_key]
-        except Exception:
-            pass
+    except Exception:
+        raise
     print(f"[SolveEval][FINAL] {model}: score={score:.6f} dur={dt:.3f}s")
     return float(score)
 
@@ -457,13 +452,14 @@ def post_solve_quality_check(context):
     Orchestrator, ob ein Reset → FindLow nötig ist.
     """
 
+    scn = getattr(context, "scene", None) or bpy.context.scene
+
     # Policy dynamisch komplettieren (Threshold immer numerisch einsetzen)
     policy = dict(POST_SOLVE_QUALITY_POLICY)
     avg = dict(policy.get("avg_error", {}))
     avg["threshold_px"] = _resolve_threshold_px(context)
     # Finaler Solve: Batchgröße dynamisch aus avg_error / error_track ableiten
     try:
-        scn = getattr(context, "scene", None) or bpy.context.scene
         if bool(scn.get("kc_solve_gate_use_error_track", False)):
             ae = get_avg_reprojection_error(context) or 0.0
             et = float(getattr(scn, "error_track", 2.0))
@@ -481,6 +477,14 @@ def post_solve_quality_check(context):
             return "RESET_TO_FIND_LOW"
     except Exception as ex:
         print(f"[SolveCheck] post_solve_quality_check failed: {ex!r}")
+        return None
+    finally:
+        # Flag in der Szene zuverlässig entfernen (wirkt nur für Final-Solve)
+        try:
+            if scn and "kc_solve_gate_use_error_track" in scn:
+                del scn["kc_solve_gate_use_error_track"]
+        except Exception:
+            pass
     return None
 
 
