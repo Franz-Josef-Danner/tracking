@@ -17,6 +17,18 @@ from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 
 import bpy
 
+# --- optional import: error scorer ------------------------------------------
+try:
+    from ..Helper.count import error_value as _error_value  # type: ignore
+except Exception:
+    try:
+        from .count import error_value as _error_value  # type: ignore
+    except Exception:
+        try:
+            from Helper.count import error_value as _error_value  # type: ignore
+        except Exception:
+            _error_value = None  # type: ignore
+
 # ---------------------------------------------------------------------------
 # Strikter Solve-Eval-Modus: 3x Solve hintereinander, ohne mutierende Helfer
 # ---------------------------------------------------------------------------
@@ -310,13 +322,19 @@ from ..Helper.tracking_state import (
 try:
     from ..Helper.count import error_value  # type: ignore
     ERROR_VALUE_SRC = "..Helper.count.error_value"
+    if _error_value is None:
+        _error_value = error_value  # type: ignore[assignment]
 except Exception:
     try:
         from .count import error_value  # type: ignore
         ERROR_VALUE_SRC = ".count.error_value"
+        if _error_value is None:
+            _error_value = error_value  # type: ignore[assignment]
     except Exception:
         def error_value(_track): return 0.0  # Fallback
         ERROR_VALUE_SRC = "FALLBACK_ZERO"
+        if _error_value is None:
+            _error_value = error_value  # type: ignore[assignment]
 
 
 # ---- Solve-Logger: robust auflÃ¶sen, ohne auf Paketstruktur zu vertrauen ----
@@ -431,6 +449,30 @@ def _nearest_recon_frame(clip: bpy.types.MovieClip, around: int) -> Optional[int
         return None
 
 
+def _has_camera_for_frame(clip: bpy.types.MovieClip, frame: int) -> bool:
+    try:
+        robj = clip.tracking.objects.active.reconstruction  # type: ignore[union-attr]
+        cams = getattr(robj, "cameras", [])
+        return any(int(getattr(c, "frame", -10**9)) == int(frame) for c in cams)
+    except Exception:
+        return False
+
+
+def _clamp_scene_frame_to_recon(context: bpy.types.Context) -> None:
+    """Falls der aktuelle Scene-Frame keine Recon-Kamera hat, auf den nächsten gültigen Frame setzen."""
+
+    scn = getattr(context, "scene", None) or bpy.context.scene
+    clip = _ensure_scene_active_clip(context)
+    if not scn or not clip:
+        return
+    cur = int(scn.frame_current)
+    if _has_camera_for_frame(clip, cur):
+        return
+    tgt = _nearest_recon_frame(clip, cur)
+    if tgt is not None:
+        scn.frame_set(int(tgt))
+
+
 @contextmanager
 def _with_valid_camera_frame(context: bpy.types.Context):
     """Temporär auf einen Recon-Frame springen, um 'No camera for frame X' zu vermeiden."""
@@ -455,6 +497,44 @@ def _with_valid_camera_frame(context: bpy.types.Context):
 
 
 # --- Safe Reduce Wrapper -----------------------------------------------------
+def _iter_all_tracks(clip: bpy.types.MovieClip):
+    """Liefert (container, trk, is_top_level). container ist entweder clip.tracking (Top-Level)
+    oder ein MovieTrackingObject (Objekt-Tracks)."""
+
+    try:
+        for trk in getattr(clip.tracking, "tracks", []):
+            yield (clip.tracking, trk, True)
+    except Exception:
+        pass
+    try:
+        for obj in getattr(clip.tracking, "objects", []):
+            for trk in getattr(obj, "tracks", []):
+                yield (obj, trk, False)
+    except Exception:
+        pass
+
+
+def _track_error_estimate(trk) -> float:
+    """Bestmögliche Fehler-Schätzung je Track."""
+
+    if _error_value is not None:
+        try:
+            return float(_error_value(trk))
+        except Exception:
+            pass
+    for attr in ("average_error", "avg_error", "error"):
+        try:
+            v = getattr(trk, attr)
+            if isinstance(v, (int, float)):
+                return float(v)
+        except Exception:
+            pass
+    try:
+        return -float(len(getattr(trk, "markers", [])))
+    except Exception:
+        return 0.0
+
+
 def _emergency_reduce_by_error(context: bpy.types.Context, *, max_to_delete: int = 5) -> int:
     """Notfall-Reducer: löscht bis zu N Tracks mit höchstem error_value()."""
 
@@ -463,27 +543,22 @@ def _emergency_reduce_by_error(context: bpy.types.Context, *, max_to_delete: int
         return 0
     deleted = 0
     try:
-        # Kandidaten einsammeln
-        rows: list[tuple[float, Any, Any]] = []  # (err, obj, trk)
-        for obj in getattr(clip.tracking, "objects", []):
-            for trk in getattr(obj, "tracks", []):
-                try:
-                    err = float(error_value(trk))  # aus Helper.count importiert
-                except Exception:
-                    err = 0.0
-                rows.append((err, obj, trk))
+        rows: list[tuple[float, Any, Any, bool]] = []  # (err, container, trk, is_top_level)
+        for container, trk, is_top in _iter_all_tracks(clip):
+            err = _track_error_estimate(trk)
+            rows.append((float(err), container, trk, is_top))
         if not rows:
-            print("[ReduceDBG][fallback] keine Tracks gefunden.")
+            print("[ReduceDBG][fallback] keine Tracks gefunden (Top-Level + Obj).")
             return 0
         rows.sort(key=lambda r: r[0], reverse=True)
         budget = max(0, int(max_to_delete))
-        for _, obj, trk in rows[:budget]:
+        for _, container, trk, _ in rows[:budget]:
             try:
-                obj.tracks.remove(trk)
+                getattr(container, "tracks").remove(trk)
                 deleted += 1
             except Exception:
                 pass
-        print(f"[ReduceDBG][fallback] removed={deleted}/{budget}")
+        print(f"[ReduceDBG][fallback] candidates={len(rows)} removed={deleted}/{budget}")
     except Exception as ex:
         print(f"[ReduceDBG][fallback] failed: {ex!r}")
     return deleted
@@ -651,12 +726,24 @@ def solve_camera_only(context, *args, **kwargs):
 
         if ae is None:
             print("[SolveCheck] Keine auswertbare Reconstruction (ae=None) – refine_high_error + Restart.")
-            _try_start_refine_high_error(context)
+            _safe_run_reduce_error_tracks(context)
+            _clamp_scene_frame_to_recon(context)
+            try:
+                reset_for_new_cycle(context, clear_solve_log=False)
+                run_find_low_marker_frame(context)
+            except Exception as ex3:
+                print(f"[SolveCheck] Reset/FindLow fallback failed: {ex3!r}")
             return res
 
         if ae <= 0.0:
             print("[SolveCheck] Keine auswertbare Reconstruction (ae<=0) – refine_high_error + Restart.")
-            _try_start_refine_high_error(context)
+            _safe_run_reduce_error_tracks(context)
+            _clamp_scene_frame_to_recon(context)
+            try:
+                reset_for_new_cycle(context, clear_solve_log=False)
+                run_find_low_marker_frame(context)
+            except Exception as ex3:
+                print(f"[SolveCheck] Reset/FindLow fallback failed: {ex3!r}")
             return res
 
         # Gate-Quelle wählen:
@@ -699,6 +786,10 @@ def solve_camera_only(context, *args, **kwargs):
             )
         else:
             scene["kc_solve_attempts"] = 0
+        try:
+            _clamp_scene_frame_to_recon(context)
+        except Exception:
+            pass
     except Exception as ex:
         print(f"[SolveCheck] Ausnahme im Post-Solve-Hook: {ex!r}")
     return res
