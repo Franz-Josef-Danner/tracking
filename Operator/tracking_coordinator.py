@@ -418,6 +418,7 @@ _SOLVE_ERR_DEFAULT_THR = 20.0
 def _ensure_scene_active_clip(context: bpy.types.Context) -> Optional[bpy.types.MovieClip]:
     """Sichert scene.active_clip ab und liefert ihn zurück."""
 
+    # unverändert …
     try:
         scn = getattr(context, "scene", None) or bpy.context.scene
         clip = getattr(scn, "active_clip", None)
@@ -436,17 +437,32 @@ def _ensure_scene_active_clip(context: bpy.types.Context) -> Optional[bpy.types.
 
 
 def _nearest_recon_frame(clip: bpy.types.MovieClip, around: int) -> Optional[int]:
-    """Nächstgelegenen Frame mit Reconstruction-Kamera bestimmen."""
+    """Nächstgelegenen Frame mit Reconstruction-Kamera bestimmen (über ALLE Tracking-Objekte)."""
 
+    frames = []
     try:
-        robj = clip.tracking.objects.active.reconstruction  # type: ignore[union-attr]
-        cams = list(getattr(robj, "cameras", []))
-        if not cams:
-            return None
-        frames = sorted(int(getattr(c, "frame", around)) for c in cams)
-        return min(frames, key=lambda f: abs(f - int(around))) if frames else None
+        # 1) evtl. Reconstruction am Top-Level (ältere/variante Builds)
+        try:
+            cams = list(getattr(getattr(clip.tracking, "reconstruction", None), "cameras", []))
+            frames.extend(int(getattr(c, "frame", around)) for c in cams)
+        except Exception:
+            pass
+        # 2) Reconstruction aller Objekte aufsammeln
+        for obj in getattr(clip.tracking, "objects", []):
+            try:
+                cams = list(getattr(getattr(obj, "reconstruction", None), "cameras", []))
+                frames.extend(int(getattr(c, "frame", around)) for c in cams)
+            except Exception:
+                pass
     except Exception:
+        frames = []
+    if not frames:
         return None
+    try:
+        around_i = int(around)
+    except Exception:
+        around_i = around
+    return min(sorted(frames), key=lambda f: abs(int(f) - around_i))
 
 
 def _has_camera_for_frame(clip: bpy.types.MovieClip, frame: int) -> bool:
@@ -456,6 +472,19 @@ def _has_camera_for_frame(clip: bpy.types.MovieClip, frame: int) -> bool:
         return any(int(getattr(c, "frame", -10**9)) == int(frame) for c in cams)
     except Exception:
         return False
+
+
+def _set_scene_frame_to_nearest_recon(context: bpy.types.Context) -> None:
+    """Erzwingt einen gültigen Recon-Frame (persistiert, kein Zurücksetzen)."""
+
+    scn = getattr(context, "scene", None) or bpy.context.scene
+    clip = _ensure_scene_active_clip(context)
+    if not scn or not clip:
+        return
+    cur = int(scn.frame_current)
+    tgt = _nearest_recon_frame(clip, cur)
+    if tgt is not None and tgt != cur:
+        scn.frame_set(int(tgt))
 
 
 def _clamp_scene_frame_to_recon(context: bpy.types.Context) -> None:
@@ -474,7 +503,7 @@ def _clamp_scene_frame_to_recon(context: bpy.types.Context) -> None:
 
 
 @contextmanager
-def _with_valid_camera_frame(context: bpy.types.Context):
+def _with_valid_camera_frame(context: bpy.types.Context):  # temporärer Guard
     """Temporär auf einen Recon-Frame springen, um 'No camera for frame X' zu vermeiden."""
 
     scn = getattr(context, "scene", None) or bpy.context.scene
@@ -512,6 +541,43 @@ def _iter_all_tracks(clip: bpy.types.MovieClip):
                 yield (obj, trk, False)
     except Exception:
         pass
+
+
+def _delete_track_hard(container, trk, *, is_top_level: bool) -> bool:
+    """Entfernt Track robust:
+       1) direkter remove()
+       2) Marker vollständig löschen → remove() erneut.
+       Liefert True bei Erfolg; loggt präzise Fehlerursachen."""
+
+    # 1) direkter Remove
+    try:
+        getattr(container, "tracks").remove(trk)
+        return True
+    except Exception as ex:
+        print(
+            f"[ReduceDBG][hard] remove() failed 1st: name={getattr(trk,'name','?')} top={is_top_level} ex={ex!r}"
+        )
+    # 2) alle Marker löschen
+    try:
+        mks = list(getattr(trk, "markers", []))
+        frames = [int(getattr(m, "frame", 0)) for m in mks]
+        for fr in sorted(set(frames)):
+            try:
+                trk.markers.delete_frame(fr)
+            except Exception as ex2:
+                print(f"[ReduceDBG][hard] delete_frame({fr}) failed: {ex2!r}")
+        # erneut versuchen zu entfernen
+        try:
+            getattr(container, "tracks").remove(trk)
+            return True
+        except Exception as ex3:
+            print(
+                f"[ReduceDBG][hard] remove() failed 2nd: name={getattr(trk,'name','?')} "
+                f"markers={len(getattr(trk,'markers',[]))} ex={ex3!r}"
+            )
+    except Exception as ex:
+        print(f"[ReduceDBG][hard] marker purge failed: name={getattr(trk,'name','?')} ex={ex!r}")
+    return False
 
 
 def _track_error_estimate(trk) -> float:
@@ -552,12 +618,19 @@ def _emergency_reduce_by_error(context: bpy.types.Context, *, max_to_delete: int
             return 0
         rows.sort(key=lambda r: r[0], reverse=True)
         budget = max(0, int(max_to_delete))
-        for _, container, trk, _ in rows[:budget]:
-            try:
-                getattr(container, "tracks").remove(trk)
+        for err, container, trk, is_top in rows[:budget]:
+            ok = _delete_track_hard(container, trk, is_top_level=is_top)
+            if ok:
                 deleted += 1
-            except Exception:
-                pass
+            else:
+                # letzte Eskalation: stumm „deaktivieren“
+                try:
+                    setattr(trk, "mute", True)
+                except Exception:
+                    pass
+                print(
+                    f"[ReduceDBG][hard] could not remove → muted: name={getattr(trk,'name','?')} err={err:.3f}"
+                )
         print(f"[ReduceDBG][fallback] candidates={len(rows)} removed={deleted}/{budget}")
     except Exception as ex:
         print(f"[ReduceDBG][fallback] failed: {ex!r}")
@@ -713,6 +786,8 @@ def solve_camera_only(context, *args, **kwargs):
                 pass
             return res
 
+        # Vorab: aktiven Clip & gültigen Recon-Frame setzen (persistierend)
+        _set_scene_frame_to_nearest_recon(context)
         # Sicherstellen, dass wir einen aktiven Clip haben (vermeidet clip=<none>)
         _ensure_scene_active_clip(context)
         # Kurz auf gültige Reconstruction pollen (max. ~2s) und einen Kameraframe sichern
@@ -726,8 +801,8 @@ def solve_camera_only(context, *args, **kwargs):
 
         if ae is None:
             print("[SolveCheck] Keine auswertbare Reconstruction (ae=None) – refine_high_error + Restart.")
+            _set_scene_frame_to_nearest_recon(context)
             _safe_run_reduce_error_tracks(context)
-            _clamp_scene_frame_to_recon(context)
             try:
                 reset_for_new_cycle(context, clear_solve_log=False)
                 run_find_low_marker_frame(context)
@@ -737,8 +812,8 @@ def solve_camera_only(context, *args, **kwargs):
 
         if ae <= 0.0:
             print("[SolveCheck] Keine auswertbare Reconstruction (ae<=0) – refine_high_error + Restart.")
+            _set_scene_frame_to_nearest_recon(context)
             _safe_run_reduce_error_tracks(context)
-            _clamp_scene_frame_to_recon(context)
             try:
                 reset_for_new_cycle(context, clear_solve_log=False)
                 run_find_low_marker_frame(context)
@@ -786,8 +861,9 @@ def solve_camera_only(context, *args, **kwargs):
             )
         else:
             scene["kc_solve_attempts"] = 0
+        # Abschluss Solve-Phase: Recon-Frame persistieren
         try:
-            _clamp_scene_frame_to_recon(context)
+            _set_scene_frame_to_nearest_recon(context)
         except Exception:
             pass
     except Exception as ex:
