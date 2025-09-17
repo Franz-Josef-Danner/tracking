@@ -273,7 +273,7 @@ def _log(*args, **kwargs):
     """No-op logger used to suppress console output."""
     return None
 from ..Helper.find_low_marker_frame import run_find_low_marker_frame
-from ..Helper.jump_to_frame import run_jump_to_frame
+from ..Helper.jump_to_frame import run_jump_to_frame, jump_to_frame
 # Primitive importieren; Orchestrierung (Formel/Freeze) erfolgt hier.
 from ..Helper.detect import run_detect_once as _primitive_detect_once
 from ..Helper.distanze import run_distance_cleanup
@@ -282,7 +282,7 @@ from ..Helper.clean_short_segments import clean_short_segments
 from ..Helper.clean_short_tracks import clean_short_tracks
 from ..Helper.split_cleanup import recursive_split_cleanup
 from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
-from ..Helper.solve_camera import solve_camera_only as _solve_camera_only
+from ..Helper.solve_camera import solve_camera_only as _solve_camera
 from ..Helper.reduce_error_tracks import (
     get_avg_reprojection_error,
     reduce_error_tracks,
@@ -459,6 +459,27 @@ def post_solve_quality_check(context):
     except Exception as ex:
         print(f"[SolveCheck] post_solve_quality_check failed: {ex!r}")
     return None
+
+
+def _route_to_find_low(context):
+    """Springt sicher zurück zur Find-Low-Phase und setzt den Playhead."""
+
+    try:
+        _set_scene_frame_to_nearest_recon_or_start(context)
+    except Exception:
+        pass
+    try:
+        out = run_find_low_marker_frame(context)
+        if isinstance(out, dict) and str(out.get("status")) == "FOUND":
+            frame = int(out.get("frame", 0))
+            try:
+                jump_to_frame(context, frame=frame, ui_override=True, spread_rings=2)
+            except Exception as _jump_exc:
+                print(f"[FindLow] jump_to_frame failed: {_jump_exc!r}")
+            return "FIND_LOW"
+    except Exception as _exc:
+        print(f"[FindLow] routing failed: {_exc!r}")
+    return "CYCLE_START"
 
 
 # ---------------------------------------------------------------------------
@@ -921,11 +942,32 @@ def _emergency_reduce_by_error(context: bpy.types.Context, *, max_to_delete: int
     return deleted
 
 
+def _reduce_error_tracks_wrapper(context: bpy.types.Context, **kwargs) -> tuple[int, dict[str, Any]]:
+    """Normalisiert die Rückgabe von run_reduce_error_tracks."""
+
+    try:
+        res = run_reduce_error_tracks(context, **kwargs)
+        if isinstance(res, dict):
+            return int(res.get("deleted", 0)), dict(res)
+        if isinstance(res, (int, float)):
+            val = int(res)
+            return val, {"deleted": val}
+        return 0, {"deleted": 0}
+    except IndexError:
+        raise
+    except Exception as ex:
+        print(f"[ReduceDBG] reduce_error_tracks unexpected failure: {ex!r}")
+        return 0, {"deleted": 0, "error": repr(ex)}
+
+
 def _safe_run_reduce_error_tracks(context: bpy.types.Context) -> int:
     """Wrappt run_reduce_error_tracks; fängt IndexError ab und reduziert hart."""
 
     try:
-        return int(run_reduce_error_tracks(context) or 0)
+        deleted, info = _reduce_error_tracks_wrapper(context)
+        if isinstance(info, dict) and info.get("error"):
+            print(f"[SolveCheck] reduce_error_tracks reported error: {info['error']}")
+        return int(deleted)
     except IndexError as ex:
         print(f"[SolveCheck] reduce_error_tracks IndexError abgefangen: {ex!r}")
         return _emergency_reduce_by_error(context, max_to_delete=5)
@@ -950,7 +992,7 @@ def _try_start_refine_high_error(context: bpy.types.Context) -> bool:
     try:
         _ensure_scene_active_clip(context)
         reset_for_new_cycle(context, clear_solve_log=False)
-        run_find_low_marker_frame(context)
+        _route_to_find_low(context)
     except Exception as exc3:
         print(f"[SolveCheck] Reset/FindLow fallback failed: {exc3!r}")
     return False
@@ -1112,10 +1154,7 @@ def _schedule_restart_after_refine(context: bpy.types.Context, *, delay: float =
                     reset_for_new_cycle(context, clear_solve_log=False)
                 except Exception:
                     pass
-                try:
-                    run_find_low_marker_frame(context)
-                except Exception:
-                    pass
+                _route_to_find_low(context)
             finally:
                 return None  # Timer beenden
 
@@ -1126,7 +1165,7 @@ def _schedule_restart_after_refine(context: bpy.types.Context, *, delay: float =
 
 def solve_camera_only(context, *args, **kwargs):
     # Invoke original solve
-    res = _solve_camera_only(context, *args, **kwargs)
+    res = _solve_camera(context, *args, **kwargs)
     try:
         # Eval-Modus: strikt read-only → kein Auto-Reduce
         if IN_SOLVE_EVAL:
@@ -1149,7 +1188,7 @@ def solve_camera_only(context, *args, **kwargs):
                 reset_for_new_cycle(context, clear_solve_log=False)
                 # Nach Reset: bestmöglichen Recon-Frame setzen (falls entstanden)
                 _set_scene_frame_to_nearest_recon_or_start(context)
-                run_find_low_marker_frame(context)
+                _route_to_find_low(context)
             except Exception as ex0:
                 print(f"[SolveCheck] Reset/FindLow (no-recon) failed: {ex0!r}")
             return res
@@ -1170,7 +1209,7 @@ def solve_camera_only(context, *args, **kwargs):
             try:
                 reset_for_new_cycle(context, clear_solve_log=False)
                 _set_scene_frame_to_nearest_recon_or_start(context)
-                run_find_low_marker_frame(context)
+                _route_to_find_low(context)
             except Exception as ex3:
                 print(f"[SolveCheck] Reset/FindLow fallback failed: {ex3!r}")
             return res
@@ -1182,7 +1221,7 @@ def solve_camera_only(context, *args, **kwargs):
             try:
                 reset_for_new_cycle(context, clear_solve_log=False)
                 _set_scene_frame_to_nearest_recon_or_start(context)
-                run_find_low_marker_frame(context)
+                _route_to_find_low(context)
             except Exception as ex3:
                 print(f"[SolveCheck] Reset/FindLow fallback failed: {ex3!r}")
             return res
@@ -1204,9 +1243,9 @@ def solve_camera_only(context, *args, **kwargs):
                         print(f"[SolveCheck][BehindCam] reset_for_new_cycle failed: {exr_bc!r}")
                     try:
                         _set_scene_frame_to_nearest_recon_or_start(context)
-                        run_find_low_marker_frame(context)
+                        _route_to_find_low(context)
                     except Exception as exf_bc:
-                        print(f"[SolveCheck][BehindCam] run_find_low_marker_frame failed: {exf_bc!r}")
+                        print(f"[SolveCheck][BehindCam] FindLow routing failed: {exf_bc!r}")
                     return res
         except Exception as ex_bc:
             print(f"[BehindCam] purge failed: {ex_bc!r}")
@@ -1238,9 +1277,9 @@ def solve_camera_only(context, *args, **kwargs):
                     print(f"[SolveCheck] reset_for_new_cycle failed: {exr!r}")
                 try:
                     _set_scene_frame_to_nearest_recon_or_start(context)
-                    run_find_low_marker_frame(context)
+                    _route_to_find_low(context)
                 except Exception as exf:
-                    print(f"[SolveCheck] run_find_low_marker_frame failed: {exf!r}")
+                    print(f"[SolveCheck] FindLow routing failed: {exf!r}")
                 return res
             # action == "suppress": kein Reset, Cool-down aktiv
 
@@ -1269,15 +1308,16 @@ def solve_camera_only(context, *args, **kwargs):
                 f"[SolveCheck] Über Schwellwert → reduce_error_tracks(max_to_delete={n_delete}) "
                 f"(Formel: max(10, {ae:.3f}/{err_track:.3f})) Pass #{attempts+1}"
             )
-            run_reduce_error_tracks(context, max_to_delete=int(n_delete))
+            deleted, info = _reduce_error_tracks_wrapper(context, max_to_delete=int(n_delete))
+            if int(deleted) <= 0:
+                print("[SolveCheck] reduce_error_tracks returned 0 deletions.")
+            if isinstance(info, dict) and info.get("error"):
+                print(f"[SolveCheck] reduce_error_tracks info: {info['error']}")
             try:
                 reset_for_new_cycle(context, clear_solve_log=False)
             except Exception:
                 pass
-            try:
-                run_find_low_marker_frame(context)
-            except Exception:
-                pass
+            _route_to_find_low(context)
         elif ae > thr:
             print(
                 "[SolveCheck] Schwellwert überschritten, max. Auto-Reduce-Versuche erreicht – kein Auto-Restart."
@@ -1296,10 +1336,7 @@ def solve_camera_only(context, *args, **kwargs):
                     reset_for_new_cycle(context, clear_solve_log=False)
                 except Exception as ex_reset:
                     print(f"[SolveCheck] post-check reset failed: {ex_reset!r}")
-                try:
-                    run_find_low_marker_frame(context)
-                except Exception as ex_find:
-                    print(f"[SolveCheck] post-check FindLow failed: {ex_find!r}")
+                _route_to_find_low(context)
         except Exception as ex_hook:
             print(f"[SolveCheck] post_solve_quality_check hook error: {ex_hook!r}")
     except Exception as ex:
