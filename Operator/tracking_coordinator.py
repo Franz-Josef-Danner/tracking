@@ -17,6 +17,8 @@ from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 
 import bpy
 
+# API-Doku: bpy.ops.clip.delete_track (löscht selektierte Tracks)
+
 # --- optional import: error scorer ------------------------------------------
 try:
     from ..Helper.count import error_value as _error_value  # type: ignore
@@ -487,6 +489,74 @@ def _set_scene_frame_to_nearest_recon(context: bpy.types.Context) -> None:
         scn.frame_set(int(tgt))
 
 
+# --- UI/Context Utilities ----------------------------------------------------
+def _find_clip_editor_override(context: bpy.types.Context, clip: bpy.types.MovieClip) -> Optional[dict]:
+    """Liefert einen belastbaren Context-Override für CLIP_EDITOR + bindet den Clip."""
+
+    try:
+        for win in bpy.context.window_manager.windows:
+            scr = win.screen
+            for area in scr.areas:
+                if area.type != 'CLIP_EDITOR':
+                    continue
+                for region in area.regions:
+                    if region.type != 'WINDOW':
+                        continue
+                    space = area.spaces.active
+                    if getattr(space, "type", "") != 'CLIP_EDITOR':
+                        continue
+                    # Clip binden
+                    try:
+                        space.clip = clip
+                    except Exception:
+                        pass
+                    return {
+                        "window": win,
+                        "screen": scr,
+                        "area": area,
+                        "region": region,
+                        "space_data": space,
+                        "scene": getattr(context, "scene", None) or bpy.context.scene,
+                    }
+    except Exception:
+        pass
+    return None
+
+
+def _select_only_track(clip: bpy.types.MovieClip, container, trk, *, is_top_level: bool) -> None:
+    """Selektiert ausschließlich den angegebenen Track (Top-Level + Objektpfad werden bereinigt)."""
+
+    # alles deselektieren
+    try:
+        for t in getattr(clip.tracking, "tracks", []):
+            t.select = False
+    except Exception:
+        pass
+    try:
+        for obj in getattr(clip.tracking, "objects", []):
+            for t in getattr(obj, "tracks", []):
+                t.select = False
+    except Exception:
+        pass
+    # aktives Objekt setzen (für Objekt-Tracks) und gewünschten Track selektieren
+    try:
+        if not is_top_level and hasattr(clip.tracking, "objects"):
+            # container ist hier MovieTrackingObject
+            clip.tracking.objects.active = container
+    except Exception:
+        pass
+    try:
+        trk.select = True
+        # optional active setzen (hilft manchen Ops)
+        try:
+            getattr(container, "active_track")
+            container.active_track = trk
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
 def _clamp_scene_frame_to_recon(context: bpy.types.Context) -> None:
     """Falls der aktuelle Scene-Frame keine Recon-Kamera hat, auf den nächsten gültigen Frame setzen."""
 
@@ -619,11 +689,30 @@ def _emergency_reduce_by_error(context: bpy.types.Context, *, max_to_delete: int
         rows.sort(key=lambda r: r[0], reverse=True)
         budget = max(0, int(max_to_delete))
         for err, container, trk, is_top in rows[:budget]:
+            ok = False
+            # (A) interner Remove/Hard-Purge (für kompatible Builds)
             ok = _delete_track_hard(container, trk, is_top_level=is_top)
+            if not ok:
+                # (B) Operator-Weg: selektieren + bpy.ops.clip.delete_track(confirm=False)
+                try:
+                    _select_only_track(clip, container, trk, is_top_level=is_top)
+                    ov = _find_clip_editor_override(context, clip)
+                    if ov:
+                        with bpy.context.temp_override(**ov):
+                            r = bpy.ops.clip.delete_track(confirm=False)
+                            ok = (r == {"FINISHED"})
+                            if not ok:
+                                print(
+                                    f"[ReduceDBG][ops] delete_track returned={r} name={getattr(trk,'name','?')}"
+                                )
+                    else:
+                        print("[ReduceDBG][ops] no CLIP_EDITOR override available.")
+                except Exception as ex_ops:
+                    print(f"[ReduceDBG][ops] delete_track failed: {ex_ops!r}")
             if ok:
                 deleted += 1
             else:
-                # letzte Eskalation: stumm „deaktivieren“
+                # (C) Letzte Eskalation: muten (sichtbar loggen)
                 try:
                     setattr(trk, "mute", True)
                 except Exception:
