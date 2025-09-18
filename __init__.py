@@ -8,6 +8,12 @@ from bpy.props import IntProperty, FloatProperty, CollectionProperty
 # Nur Klassen importieren – kein register() aus Submodulen aufrufen
 from .Operator.tracking_coordinator import CLIP_OT_tracking_coordinator
 from .Helper.bidirectional_track import CLIP_OT_bidirectional_track
+# Neue delegierte Operatoren explizit importieren, damit sie in Blender registriert werden
+from .Operator.bootstrap_O import CLIP_OT_bootstrap_cycle
+from .Operator.find_frame_O import CLIP_OT_find_low_and_jump
+from .Operator.detect_O import CLIP_OT_detect_cycle
+from .Operator.clean_O import CLIP_OT_clean_cycle
+from .Operator.solve_O import CLIP_OT_solve_cycle
 
 bl_info = {
     "name": "Kaiserlich Tracker",
@@ -108,8 +114,15 @@ class CLIP_PT_kaiserlich_panel(Panel):
 # ---------------------------------------------------------------------------
 _CLASSES = (
     RepeatEntry,
+    # Helper/Support-Operatoren zuerst registrieren
+    CLIP_OT_bootstrap_cycle,
+    CLIP_OT_find_low_and_jump,
+    CLIP_OT_detect_cycle,
+    CLIP_OT_clean_cycle,
+    CLIP_OT_solve_cycle,
+    # Bidi + Coordinator + UI
+    CLIP_OT_bidirectional_track,
     CLIP_OT_tracking_coordinator,            # modal coordinator
-    CLIP_OT_bidirectional_track,             # bidi helper
     CLIP_OT_kaiserlich_coordinator_launcher, # launcher
     CLIP_PT_kaiserlich_panel,                # ui
 )
