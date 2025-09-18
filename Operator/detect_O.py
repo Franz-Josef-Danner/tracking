@@ -60,6 +60,20 @@ class CLIP_OT_detect_cycle(Operator):
                 pass
         return out
 
+    def _safe_for_scene(self, obj: Any) -> Any:
+        """Sanitisiert Werte für Scene-IDProperties (kein 64-bit Pointer-Int)."""
+        # Keine Rekursion notwendig, da wir gezielt problematische Felder vermeiden.
+        if isinstance(obj, int):
+            # Clamp auf 31-bit Range, falls nötig (Blender IDProps Limit)
+            # Besser: in String wandeln, um Informationsverlust zu vermeiden
+            if obj > 2_147_483_647 or obj < -2_147_483_648:
+                return str(obj)
+        if isinstance(obj, dict):
+            return {str(k): self._safe_for_scene(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [self._safe_for_scene(v) for v in obj]
+        return obj
+
     def execute(self, context):
         scn = context.scene
         clip = self._resolve_clip(context)
@@ -152,24 +166,28 @@ class CLIP_OT_detect_cycle(Operator):
             # Keine Löschung, nur Status zurückgeben – nächste Detect-Runde wird folgen
             pass
 
-        # Distance-Result anreichern
+        # Distance-Result anreichern (ohne 64-bit Pointer zu persistieren)
+        safe_dist = {}
         if isinstance(dist_res, dict):
-            dist_res.setdefault("deleted", [])
+            safe_dist = dict(dist_res)
+            # Nur Zähler und Label-Strings, keine Pointer-Listen
+            safe_dist.pop("new_ptrs_after_cleanup", None)
+            safe_dist.setdefault("deleted", [])
             if deleted_labels:
                 try:
-                    dist_res["deleted"] = list(dist_res.get("deleted", [])) + deleted_labels
+                    safe_dist["deleted"] = list(safe_dist.get("deleted", [])) + deleted_labels
                 except Exception:
-                    dist_res["deleted"] = deleted_labels
+                    safe_dist["deleted"] = deleted_labels
             try:
-                dist_res["removed"] = int(dist_res.get("removed", 0)) + int(removed_cnt)
+                safe_dist["removed"] = int(safe_dist.get("removed", 0)) + int(removed_cnt)
             except Exception:
-                dist_res["removed"] = int(removed_cnt)
-            dist_res["new_ptrs_after_cleanup"] = list(new_after)
+                safe_dist["removed"] = int(removed_cnt)
+            safe_dist["new_after_count"] = int(len(new_after))
+        else:
+            safe_dist = {"status": str(dist_res), "new_after_count": int(len(new_after)), "deleted": deleted_labels, "removed": int(removed_cnt)}
 
         # 5) Policy-Werte für die NÄCHSTE Runde stufen und persistieren
-        # Grundlage für Formeln: Anzahl der neuen Tracks nach Cleanup
         gm_for_formulas = float(eval_res.get("count", 0))
-        # Zielwert ermitteln
         target = 100
         for k in ("tco_detect_target", "detect_target", "marker_target", "target_new_markers"):
             v = scn.get(k)
@@ -199,16 +217,16 @@ class CLIP_OT_detect_cycle(Operator):
         except Exception:
             count_res = None
 
-        # 7) Zusammenfassen
+        # 7) Zusammenfassen – ohne große Integers in IDProps
         result = {
             "detect": detect_res,
-            "distance": dist_res,
+            "distance": safe_dist,
             "count": eval_res,
         }
         if count_res is not None:
             result["count_frame"] = count_res
 
-        scn["tco_last_detect_cycle"] = result
+        scn["tco_last_detect_cycle"] = self._safe_for_scene(result)
         self.report({'INFO'}, f"Detect-Cycle abgeschlossen: {result}")
         return {'FINISHED'}
 
