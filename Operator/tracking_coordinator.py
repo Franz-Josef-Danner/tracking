@@ -14,6 +14,17 @@ from typing import Optional
 
 import bpy
 
+# --- Global Legacy Guard -----------------------------------------------------
+# In manchen lokalen Ständen referenzieren Altpfade noch die Variable `default_min`.
+# Wir registrieren sie einmalig in den Builtins, damit *jede* streunende Referenz
+# (auch in importierten Modulen) auf None (Auto-Logik) fällt.
+try:
+    import builtins as _bi
+    if not hasattr(_bi, "default_min"):
+        setattr(_bi, "default_min", None)
+except Exception:
+    pass
+
 # --- Legacy guard & version marker ------------------------------------------
 # (Verhindert NameError, falls im lokalen Stand noch `default_min` referenziert wird)
 default_min = None
