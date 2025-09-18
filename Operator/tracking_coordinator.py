@@ -15,10 +15,9 @@ from typing import Optional
 import bpy
 
 # --- Legacy guard & version marker ------------------------------------------
-# Einige lokale ZIP-Builds referenzieren in Altpfaden noch `default_min`.
-# Der Guard neutralisiert das sicher (None == Auto-Logik in den Helpern).
-default_min: None | int = None
-COORD_VERSION = "no-solve-guard-2025-09-18"
+# (Verhindert NameError, falls im lokalen Stand noch `default_min` referenziert wird)
+default_min = None
+COORD_VERSION = "no-solve-clean-params"
 
 # --- Helper-Imports (robust) -------------------------------------------------
 try:
@@ -119,23 +118,23 @@ def _orchestrate_once(context: bpy.types.Context) -> None:
     # 3) Tracker-Settings harmonisieren
     apply_tracker_settings(context)
 
-    # 4) DETECT – am Ziel-Frame; korrekte Kwargs; kein „default_min“-Kram
+    # 4) DETECT – deterministisch am Ziel-Frame; korrekte Kwargs
     _detect_once(
         context,
         start_frame=int(target_frame),
-        threshold=None,   # SSOT: Helper/Scene-Keys
-        select=True
+        threshold=None,   # Helper zieht Szene-Defaults (DETECT_LAST_THRESHOLD_KEY)
+        select=True       # neue Marker selektieren für Distanzé-Policy
     )
 
-    # 5) DISTANZE – Pflichtarg frame setzen; min_distance automatisch
+    # 5) DISTANZE – frame ist Pflicht; min_distance automatisch ermitteln lassen
     run_distance_cleanup(
         context,
         frame=int(target_frame),
-        min_distance=None,                # Auto (kc_detect_min_distance_px → … → Fallback)
+        min_distance=None,                # Auto: kc_detect_min_distance_px → kc_min_distance_effective → … → 200
         require_selected_new=True,
         include_muted_old=False,
         select_remaining_new=True,
-        verbose=True
+        verbose=True,
     )
 
     # 6) SPIKE FILTER (tolerant)
