@@ -1,11 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-or-later
-"""
-tracking_coordinator.py â€“ Streng sequentieller, MODALER Orchestrator
-- Phasen: FIND_LOW â†’ JUMP â†’ DETECT â†’ DISTANZE (hart getrennt, seriell)
-- Integration von Anzahl/Aâ‚..Aâ‚‰ + Abbruch bei 10 + A_k-Schreiben in BIDI
-- Jede Phase startet erst, wenn die vorherige abgeschlossen wurde.
-"""
-
 from __future__ import annotations
 
 import gc
