@@ -558,8 +558,8 @@ PH_DISTANZE   = "DISTANZE"
 PH_SPIKE_CYCLE = "SPIKE_CYCLE"
 PH_SOLVE_EVAL = "SOLVE_EVAL"
 # Erweiterte Phase: Bidirectional-Tracking. Wenn der Multiâ€‘Pass und das
-# Distanzâ€‘Cleanup erfolgreich durchgefÃ¼hrt wurden, wird diese Phase
-# angestoÃŸen. Sie startet den Bidirectionalâ€‘Track Operator und wartet
+# Distanzâ€‘Cleanup erfolgreich durchgeführt wurden, wird diese Phase
+# angestoßen. Sie startet den Bidirectionalâ€‘Track Operator und wartet
 # auf dessen Abschluss. Danach beginnt der Koordinator wieder bei PH_FIND_LOW.
 PH_BIDI       = "BIDI"
 
@@ -754,11 +754,11 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     bl_idname = "clip.tracking_coordinator"
     bl_label = "Kaiserlich: Coordinator (Modal)"
     # Hinweis: Blender kennt nur GRAB_CURSOR / GRAB_CURSOR_X / GRAB_CURSOR_Y.
-    # GRAB_CURSOR_XY existiert nicht â†’ Validation-Error beim Register.
-    # ModalitÃ¤t kommt Ã¼ber modal(); Cursor-Grabbing ist nicht nÃ¶tig.
+    # GRAB_CURSOR_XY existiert nicht → Validation-Error beim Register.
+    # Modalität kommt über modal(); Cursor-Grabbing ist nicht nötig.
     bl_options = {"REGISTER", "UNDO"}
 
-    # â€” Laufzeit-State (nur Operator, nicht Szene) â€”
+    # — Laufzeit-State (nur Operator, nicht Szene) —
     _timer: object | None = None
     phase: str = PH_FIND_LOW
     target_frame: int | None = None
@@ -767,7 +767,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     repeat_count_for_target: int | None = None
     # Aktueller Detection-Threshold; wird nach jedem Detect-Aufruf aktualisiert.
     detection_threshold: float | None = None
-    spike_threshold: float | None = None  # aktueller Spike-Filter-Schwellenwert (temporÃ¤r)
+    spike_threshold: float | None = None  # aktueller Spike-Filter-Schwellenwert (temporär)
     # Telemetrie (optional)
     last_detect_new_count: int | None = None
     last_detect_min_distance: int | None = None
@@ -775,6 +775,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # Retry-Handling für Detect-Phase
     _detect_retries: int = 0
     _detect_max_retries: int = 5
+    # NEU: Start-Gate, verhindert Mehrfach-Start des Detect-Operators pro Phase
+    _detect_started: bool = False
 
     def _run_detect_with_policy(
         self,
@@ -940,6 +942,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self.prev_solve_avg = None
         self.last_reduced_for_avg = None
         self.repeat_count_for_target = None
+        # Detect-Start-Gate zurücksetzen
+        self._detect_started = False
         # Herkunft der Fehlerfunktion einmalig ausgeben (sichtbar im UI)
         try:
             self.report({'INFO'}, f"error_value source: {ERROR_VALUE_SRC}")
@@ -1266,6 +1270,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return {'RUNNING_MODAL'}
         # PHASE 3: DETECT
         if self.phase == PH_DETECT:
+            # Wenn Detect bereits läuft (Scene-Flag) oder wir ihn in dieser Phase schon gestartet haben → warten
+            try:
+                if bool(context.scene.get('tco_detect_active', False)) or self._detect_started:
+                    self.phase = PH_WAIT_DETECT
+                    return {'RUNNING_MODAL'}
+            except Exception:
+                pass
             if CLIP_OT_detect_cycle is not None:
                 _ovr = _ensure_clip_context(context)
                 self.report({'INFO'}, "Coordinator: detect_cycle starten (modal)")
@@ -1274,6 +1285,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     self.report({'WARNING'}, f"detect_cycle via operator fehlgeschlagen ({(_res or {}).get('error')}) – Fallback Inline")
                 else:
                     # Operator läuft modal → auf Scene-Flag warten
+                    self._detect_started = True
                     self.phase = PH_WAIT_DETECT
                     return {'RUNNING_MODAL'}
                 # Wenn der Start scheitert, fällt es unten in die Inline‑Logik
@@ -1342,6 +1354,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             count = res.get('count') or {}
             status = str(count.get('status', '')).upper() if isinstance(count, dict) else ''
             self.report({'INFO'}, f"Coordinator: detect_cycle beendet (status={status})")
+            # Gate für nächste Runde lösen
+            self._detect_started = False
             if status == 'ENOUGH':
                 self._detect_retries = 0
                 self.phase = PH_BIDI
@@ -1437,20 +1451,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self.report({'INFO'}, "Bidirectional-Track abgeschlossen – neuer Zyklus beginnt")
                 return {'RUNNING_MODAL'}
             # Wenn noch aktiv → weiter warten
-        # Fallback: weiter laufen
-        return {'RUNNING_MODAL'}
-def unregister():
-    """Deregistriert den Tracking‑Coordinator und optional weitere Operatoren."""
-    try:
-        bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
-    except Exception:
-        pass
-    if CLIP_OT_bidirectional_track is not None:
-        try:
-            bpy.utils.unregister_class(CLIP_OT_bidirectional_track)
-        except Exception:
-            pass
-
 
 # Optional: lokale Tests beim Direktlauf
 # Entfernt: __main__-Block mit register(), Registrierung erfolgt über __init__.py
