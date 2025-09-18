@@ -14,14 +14,29 @@ from typing import Optional
 
 import bpy
 
-# --- Global Legacy Guard -----------------------------------------------------
-# In manchen lokalen Ständen referenzieren Altpfade noch die Variable `default_min`.
-# Wir registrieren sie einmalig in den Builtins, damit *jede* streunende Referenz
-# (auch in importierten Modulen) auf None (Auto-Logik) fällt.
+# --- Legacy Guards (für lokale Alt-Referenzen) -------------------------------
+# Einige lokale ZIP-Stände referenzieren noch `default_min` (min_distance) und
+# `_try_set_false` (Flag-Setter). Wir hinterlegen no-op / Auto-Logik Guards
+# zentral in builtins, damit *jede* streunende Referenz (auch in Fremdmodulen)
+# robust abfängt.
 try:
     import builtins as _bi
+    # guard for default_min -> None (Auto-MinDistance in Helper greift)
     if not hasattr(_bi, "default_min"):
         setattr(_bi, "default_min", None)
+    # guard for _try_set_false(obj, key) -> versucht key False zu setzen, sonst no-op
+    if not hasattr(_bi, "_try_set_false"):
+        def _guard_try_set_false(obj, key):
+            try:
+                obj[key] = False
+                return True
+            except Exception:
+                try:
+                    setattr(obj, key, False)
+                    return True
+                except Exception:
+                    return False
+        setattr(_bi, "_try_set_false", _guard_try_set_false)
 except Exception:
     pass
 
