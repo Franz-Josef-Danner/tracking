@@ -392,6 +392,10 @@ except Exception:
     except Exception:
         CLIP_OT_bidirectional_track = None  # type: ignore
 try:
+    from .bootstrap_O import CLIP_OT_bootstrap_cycle  # type: ignore
+except Exception:
+    CLIP_OT_bootstrap_cycle = None  # type: ignore
+try:
     from .find_frame_O import CLIP_OT_find_low_and_jump  # type: ignore
 except Exception:
     CLIP_OT_find_low_and_jump = None  # type: ignore
@@ -911,33 +915,27 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     _tco_auto_prev: bool = False
     _tco_keyframe_prev: tuple[int, int] | None = None
     def execute(self, context: bpy.types.Context):
-        # Bootstrap/Reset
-        try:
-            _bootstrap(context)
-        except Exception as exc:
-            self.report({'ERROR'}, f"Bootstrap failed: {exc}")
+        # Bootstrap via Operator
+        if CLIP_OT_bootstrap_cycle is None:
+            self.report({'ERROR'}, "Bootstrap-Operator (clip.bootstrap_cycle) nicht verfügbar")
             return {'CANCELLED'}
-        self.report({'INFO'}, "Coordinator: Bootstrap OK")
-
-        # Bootstrap: harter Neustart + Solve-Error-Log leeren
-        reset_for_new_cycle(context, clear_solve_log=True)
-        # ZusÃ¤tzlich: State von tracking_state.py zurÃ¼cksetzen
-        try:
-            reset_tracking_state(context)
-            self.report({'INFO'}, "Tracking-State zurÃ¼ckgesetzt")
-        except Exception as exc:
-            self.report({'WARNING'}, f"Tracking-State Reset fehlgeschlagen: {exc}")
+        _ovr = _ensure_clip_context(context)
+        _res = _call_op('clip.bootstrap_cycle', context_override=_ovr)
+        if not (_res and _res.get('ok')):
+            self.report({'ERROR'}, f"Bootstrap fehlgeschlagen: {(_res or {}).get('error')}")
+            return {'CANCELLED'}
+        self.report({'INFO'}, "Coordinator: Bootstrap via Operator OK")
 
         # Modal starten
         self.phase = PH_FIND_LOW
         self.target_frame = None
         self.repeat_map = {}
         self.pre_ptrs = None
-        # Threshold-ZurÃ¼cksetzen: beim ersten Detect-Aufruf wird der Standardwert verwendet
+        # Threshold-Zurücksetzen: beim ersten Detect-Aufruf wird der Standardwert verwendet
         self.detection_threshold = None
-        # Bidirectionalâ€‘Track ist noch nicht gestartet
-        self.spike_threshold = None  # Spike-Schwellenwert zurÃ¼cksetzen
-        # Solve-Retry-State zurÃ¼cksetzen
+        # Bidirectional‑Track ist noch nicht gestartet
+        self.spike_threshold = None  # Spike-Schwellenwert zurücksetzen
+        # Solve-Retry-State zurücksetzen
         self.solve_refine_attempted = False
         self.solve_refine_full_attempted = False
         self.bidi_before_counts = None
@@ -948,11 +946,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         try:
             self.report({'INFO'}, f"error_value source: {ERROR_VALUE_SRC}")
             if ERROR_VALUE_SRC == 'FALLBACK_ZERO':
-                self.report({'WARNING'}, 'Fallback error_value aktiv (immer 0.0) â€“ bitte Helper/count.py installieren.')
+                self.report({'WARNING'}, 'Fallback error_value aktiv (immer 0.0) – bitte Helper/count.py installieren.')
         except Exception:
             pass
 
-        
         wm = context.window_manager
         # --- Robust: valides Window sichern ---
         win = getattr(context, "window", None)
@@ -1446,7 +1443,7 @@ def register():
         except Exception:
             pass
     # Neue delegierte Operatoren optional registrieren
-    for cls in (CLIP_OT_find_low_and_jump, CLIP_OT_detect_cycle, CLIP_OT_clean_cycle, CLIP_OT_solve_cycle):
+    for cls in (CLIP_OT_bootstrap_cycle, CLIP_OT_find_low_and_jump, CLIP_OT_detect_cycle, CLIP_OT_clean_cycle, CLIP_OT_solve_cycle):
         if cls is not None:
             try:
                 bpy.utils.register_class(cls)
@@ -1461,12 +1458,6 @@ def unregister():
         bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
     except Exception:
         pass
-    for cls in (CLIP_OT_find_low_and_jump, CLIP_OT_detect_cycle, CLIP_OT_clean_cycle, CLIP_OT_solve_cycle):
-        if cls is not None:
-            try:
-                bpy.utils.unregister_class(cls)
-            except Exception:
-                pass
     if CLIP_OT_bidirectional_track is not None:
         try:
             bpy.utils.unregister_class(CLIP_OT_bidirectional_track)
