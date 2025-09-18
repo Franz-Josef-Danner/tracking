@@ -2,14 +2,10 @@
 """
 tracking_coordinator.py – Sequentieller Orchestrator **ohne Camera-Solve**
 
-Phasen (final):
+Phasen:
   FIND_LOW → JUMP → DETECT → DISTANZE → SPIKE_FILTER
   → CLEAN_SHORT_SEGMENTS → CLEAN_SHORT_TRACKS → SPLIT_CLEANUP
   → (optional) MULTI → DONE
-
-WICHTIG:
-- Kein Solve, kein Eval/Refine, keine Post-Solve-Policies.
-- Operator endet nach Tracking & Cleanup mit {'FINISHED'}.
 """
 from __future__ import annotations
 
@@ -18,7 +14,7 @@ from typing import Optional
 
 import bpy
 
-# ----------------------------- robuste Helper-Imports -------------------------
+# --- Helper-Imports (robust) -------------------------------------------------
 try:
     from ..Helper.find_low_marker_frame import run_find_low_marker_frame
     from ..Helper.jump_to_frame import run_jump_to_frame
@@ -57,18 +53,14 @@ except Exception:
         from .multi import run_multi_pass  # type: ignore
     except Exception:
         run_multi_pass = None  # type: ignore
-# Wichtig: KEINE Solve-Imports, KEINE Solve-Helper, KEINE Solve-Hooks.
-
 __all__ = ("CLIP_OT_tracking_coordinator",)
 
-# --------------------------------- Utilities ----------------------------------
+# --- Utilities ---------------------------------------------------------------
 def _log(msg: str) -> None:
-    # bewusst minimal – keine laute Konsole
     print(f"[COORD] {msg}")
 
 
 def _safe_count(context: bpy.types.Context) -> Optional[int]:
-    """Ermittelt optional die Markeranzahl; None-tolerant, wenn count fehlt."""
     try:
         if run_count_tracks is None:
             return None
@@ -77,19 +69,17 @@ def _safe_count(context: bpy.types.Context) -> Optional[int]:
         return None
 
 
-# -------------------------------- Orchestrierung ------------------------------
+# --- Orchestrierung ----------------------------------------------------------
 def _orchestrate_once(context: bpy.types.Context) -> None:
-    """Eine vollständige Tracking-&-Cleanup-Sequenz ohne Solve."""
-    clip = getattr(context, "edit_movieclip", None)
-    if clip is None:
-        clip = getattr(context.space_data, "clip", None)
+    """Tracking-&-Cleanup Sequenz ohne Solve."""
+    clip = getattr(context, "edit_movieclip", None) or getattr(getattr(context, "space_data", None), "clip", None)
     if clip is None:
         raise RuntimeError("Kein aktiver Clip im CLIP_EDITOR.")
 
     reset_for_new_cycle(context)
     reset_tracking_state(context)
 
-    # 1) FIND_LOW (robuste Auswertung der möglichen Dict-Rückgabe)
+    # 1) FIND_LOW – robust gegen Dict/None
     t0 = time.time()
     low = run_find_low_marker_frame(context)
     _log(f"FindLow: result={low} dt={time.time()-t0:.3f}s")
@@ -105,12 +95,11 @@ def _orchestrate_once(context: bpy.types.Context) -> None:
         if low is None:
             return
         target_frame = int(low)
-    # 2) JUMP
+    # 2) JUMP – Keyword-Call; kein Legacy-Positionsarg
     try:
-        # Neue API: Keyword 'frame'
         run_jump_to_frame(context, frame=int(target_frame))
     except TypeError:
-        # Legacy-Fallback: Frame direkt setzen, dann Helper ohne Args
+        # Legacy-Helfer ohne frame-Param: Frame direkt setzen, dann Helper aufrufen
         try:
             (getattr(context, "scene", None) or bpy.context.scene).frame_set(int(target_frame))
         except Exception:
@@ -123,32 +112,32 @@ def _orchestrate_once(context: bpy.types.Context) -> None:
     # 3) Tracker-Settings harmonisieren
     apply_tracker_settings(context)
 
-    # 4) DETECT (einmal, deterministisch am Ziel-Frame; richtige Kwargs)
+    # 4) DETECT – am Ziel-Frame; korrekte Kwargs; kein „default_min“-Kram
     _detect_once(
         context,
         start_frame=int(target_frame),
-        threshold=None,     # unverändert lassen, Helper greift Szene-Default
-        select=True         # neue Marker selektieren für Distanzé-Policy
+        threshold=None,   # SSOT: Helper/Scene-Keys
+        select=True
     )
 
-    # 5) DISTANZE
+    # 5) DISTANZE – Pflichtarg frame setzen; min_distance automatisch
     run_distance_cleanup(
         context,
         frame=int(target_frame),
-        min_distance=None,               # Auto: aus Scene-Keys/Fallback
+        min_distance=None,                # Auto (kc_detect_min_distance_px → … → Fallback)
         require_selected_new=True,
         include_muted_old=False,
         select_remaining_new=True,
         verbose=True
     )
 
-    # 6) SPIKE_FILTER (projektion-agnostisch; rein markerbasiert)
+    # 6) SPIKE FILTER (tolerant)
     try:
         run_marker_spike_filter_cycle(context)
     except Exception:
-        pass  # tolerant – nicht kritisch
+        pass
 
-    # 7) CLEAN_SHORT_SEGMENTS / CLEAN_SHORT_TRACKS
+    # 7) CLEAN SHORTS
     try:
         clean_short_segments(context)
     except Exception:
@@ -158,29 +147,27 @@ def _orchestrate_once(context: bpy.types.Context) -> None:
     except Exception:
         pass
 
-    # 8) SPLIT_CLEANUP (rekursiv)
+    # 8) SPLIT CLEANUP
     try:
         recursive_split_cleanup(context)
     except Exception:
         pass
 
-    # 9) Optional MULTI-Pass (wenn vorhanden), nur wenn noch Budget/Bedarf
+    # 9) Optional MULTI
     try:
         if run_multi_pass is not None:
             run_multi_pass(context, repeat_count=6)
     except Exception:
         pass
 
-    # 10) Optional: Status zählen (kein Gate, reine Telemetrie)
+    # 10) Telemetrie
     cnt = _safe_count(context)
     if cnt is not None:
         _log(f"Post-Cleanup Marker Count: {cnt}")
 
-
-# ------------------------------ Operator-Definition ---------------------------
+# --- Operator ----------------------------------------------------------------
 class CLIP_OT_tracking_coordinator(bpy.types.Operator):
-    """Koordiniert Tracking & Cleanup (ohne Camera-Solve)."""
-
+    """Kaiserlich: Tracking Coordinator (No Solve)"""
     bl_idname = "clip.tracking_coordinator"
     bl_label = "Kaiserlich: Tracking Coordinator (No Solve)"
     bl_options = {'REGISTER', 'UNDO'}
@@ -191,6 +178,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         except Exception as exc:
             self.report({'ERROR'}, f"Coordinator failed: {exc}")
             return {'CANCELLED'}
-        # Keine Solve-Schleifen, keine weiteren Resets → direkt fertig.
         self.report({'INFO'}, "Tracking & Cleanup abgeschlossen (ohne Solve).")
         return {'FINISHED'}
+
+
+# Optional: lokale Registrierung (falls nicht über Operator/__init__.py)
+def register():
+    try:
+        bpy.utils.register_class(CLIP_OT_tracking_coordinator)
+    except Exception:
+        pass
+
+
+def unregister():
+    try:
+        bpy.utils.unregister_class(CLIP_OT_tracking_coordinator)
+    except Exception:
+        pass
