@@ -95,7 +95,7 @@ def _orchestrate_once(context: bpy.types.Context) -> None:
         if low is None:
             return
         target_frame = int(low)
-    # 2) JUMP – Keyword-Call; kein Legacy-Positionsarg
+    # 2) JUMP – Keyword-Arg für aktuelle Helper-API
     try:
         run_jump_to_frame(context, frame=int(target_frame))
     except TypeError:
@@ -112,11 +112,11 @@ def _orchestrate_once(context: bpy.types.Context) -> None:
     # 3) Tracker-Settings harmonisieren
     apply_tracker_settings(context)
 
-    # 4) DETECT – am Ziel-Frame; korrekte Kwargs; kein „default_min“-Kram
+    # 4) DETECT – deterministisch am Ziel-Frame; korrekte Kwargs
     _detect_once(
         context,
         start_frame=int(target_frame),
-        threshold=None,   # SSOT: Helper/Scene-Keys
+        threshold=None,   # Helper zieht Szene-Defaults
         select=True
     )
 
@@ -124,11 +124,11 @@ def _orchestrate_once(context: bpy.types.Context) -> None:
     run_distance_cleanup(
         context,
         frame=int(target_frame),
-        min_distance=None,                # Auto (kc_detect_min_distance_px → … → Fallback)
+        min_distance=None,                # Auto: kc_detect_min_distance_px → … → Fallback 200
         require_selected_new=True,
         include_muted_old=False,
         select_remaining_new=True,
-        verbose=True
+        verbose=True,
     )
 
     # 6) SPIKE FILTER (tolerant)
