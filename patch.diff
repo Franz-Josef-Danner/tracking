@@ -1,0 +1,39 @@
+*** a/Operator/tracking_coordinator.py
+--- b/Operator/tracking_coordinator.py
+@@
+-from ..Helper.refine_high_error import start_refine_modal
++# --- Refine-Helper (robuster Import + Shim) -----------------------------------
++try:
++    # Regelfall: Helper-Paket verfügbar
++    from ..Helper.refine_high_error import start_refine_modal  # type: ignore
++except Exception:
++    try:
++        # Fallback, falls Modulstruktur anders ist
++        from .refine_high_error import start_refine_modal  # type: ignore
++    except Exception:
++        # Letzter Fallback: Shim ruft ggf. einen vorhandenen bpy-Operator auf.
++        def start_refine_modal(context, **kwargs):  # type: ignore
++            """Fallback: Versuche, einen evtl. vorhandenen bpy-Operator aufzurufen.
++            Setzt/cleart Scene['refine_active'] defensiv, damit _schedule_restart_after_refine()
++            korrekt pollen kann.
++            """
++            import bpy
++            scn = getattr(context, "scene", None) or bpy.context.scene
++            try:
++                scn["refine_active"] = True
++            except Exception:
++                pass
++            try:
++                op = getattr(getattr(getattr(bpy.ops, "clip", None), "refine_high_error", None), "__call__", None)
++                if callable(op):
++                    op('INVOKE_DEFAULT')
++                else:
++                    # Kein Operator vorhanden – wir tun nichts, aber räumen Flag auf.
++                    pass
++            finally:
++                # Falls der Operator nicht modal ist / nicht existiert, Flag sofort räumen.
++                try:
++                    if "refine_active" in scn:
++                        del scn["refine_active"]
++                except Exception:
++                    pass
