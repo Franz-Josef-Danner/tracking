@@ -131,34 +131,21 @@ def solve_final_refine(
     solve_full: Optional[Callable[..., float]] = None,
 ) -> float:
     """
-    Führt NACH abgeschlossener Modell-Evaluierung einen letzten, vollwertigen Solve
-    mit aktivierten Intrinsics-Refine-Flags aus:
-      - refine_intrinsics_focal_length = True
-      - refine_intrinsics_principal_point = True
-      - refine_intrinsics_radial_distortion = True
-
-    Parameter:
-      model        : Sieger-Modell aus der Eval
-      apply_model  : Callable, das das Distortion-Modell setzt
-      solve_full   : Optionaler Callable, der einen Voll-Solve ausführt und einen Score liefert.
-                     Falls None, wird solve_camera_only(...) verwendet.
-
-    Rückgabe:
-      float Score des finalen Solves (falls Helper Score liefert, sonst 0.0 als Fallback).
+    Finaler Voll-Solve mit aktivierten Intrinsics-Refine-Flags.
+    Danach: klarer Log zum Avg. Reprojection Error.
     """
-
     if model is None:
         print("[SolveEval][FINAL] Kein Modell übergeben – finaler Refine-Solve wird übersprungen.")
         return float("inf")
 
     apply_model(model)
-    # Spiegel die Flags in die Tracking-Settings (sichtbar im UI)
+
+    # Intrinsics-Refine im UI spiegeln
     _apply_refine_flags(context, focal=True, principal=True, radial=True)
-    # Beim FINALEN Refine-Solve soll der avg_error-Gate die Szenen-Variable
-    # `error_track` verwenden. Wir setzen dafür transient ein Scene-Flag,
-    # das der Post-Solve-Hook auswertet.
+
     scn = getattr(context, "scene", None) or bpy.context.scene
     _flag_key = "kc_solve_gate_use_error_track"
+
     score = 0.0
     dt = 0.0
     try:
@@ -166,9 +153,9 @@ def solve_final_refine(
             scn[_flag_key] = True
         except Exception:
             pass
+
         with phase_lock("SOLVE_FINAL"), undo_off():
             t1 = time.perf_counter()
-            # bevorzugt: eigener Voll-Solve-Wrapper; Fallback: solve_camera_only(...)
             if solve_full is not None:
                 score = solve_full(
                     context,
@@ -177,7 +164,7 @@ def solve_final_refine(
                     refine_intrinsics_radial_distortion=True,
                 )
             else:
-                # Fallback: direkter Helper-Call; liefert ggf. None → robust auf 0.0 casten
+                # Fallback: interner Helper
                 score = solve_camera_only(
                     context,
                     refine_intrinsics_focal_length=True,
@@ -186,24 +173,26 @@ def solve_final_refine(
                 ) or 0.0
             dt = time.perf_counter() - t1
     finally:
-        # Flag sauber entfernen – unabhängig vom Ergebnis
         try:
             if scn and _flag_key in scn:
                 del scn[_flag_key]
         except Exception:
             pass
+
     print(f"[SolveEval][FINAL] {model}: score={score:.6f} dur={dt:.3f}s")
+
     # --- FINAL: Recon-Introspektion + Average-Error ---
     try:
         clip  = getattr(context, "edit_movieclip", None)
         obj   = clip.tracking.objects.active if clip and clip.tracking.objects else None
         recon = getattr(obj, "reconstruction", None)
-        is_valid = bool(getattr(recon, 'is_valid', False)) if recon else False
-        cams = getattr(recon, 'cameras_nr', 0) if recon else 0
-        pts  = getattr(recon, 'tracks_markers_nr', 0) if recon else 0
+        is_valid = bool(getattr(recon, "is_valid", False)) if recon else False
+        cams = getattr(recon, "cameras_nr", 0) if recon else 0
+        pts  = getattr(recon, "tracks_markers_nr", 0) if recon else 0
         print(f"[SolveEval][FINAL] recon_valid={is_valid} cams={cams} points={pts}")
     except Exception as _e:
         print(f"[SolveEval][FINAL][WARN] recon introspection failed: {_e!r}")
+
     try:
         ae = get_avg_reprojection_error(context)
         if ae is None or float(ae) <= 0.0:
@@ -212,11 +201,8 @@ def solve_final_refine(
             print(f"[SolveEval][FINAL] AverageError: {float(ae):.6f}")
     except Exception as _exc:
         print(f"[SolveEval][FINAL][WARN] avg_error log skipped: {_exc!r}")
-return float(score)
 
-# ---------------------------------------------------------------------------
-# Kombi-Wrapper: 3×-Eval + finaler Voll-Solve (alle refine_intrinsics = True)
-# ---------------------------------------------------------------------------
+    return float(score)
 def solve_eval_with_final_refine(
     *,
     clip,
