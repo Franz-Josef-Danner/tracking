@@ -553,6 +553,7 @@ def solve_camera_only(context, *args, **kwargs):
 PH_FIND_LOW   = "FIND_LOW"
 PH_JUMP       = "JUMP"
 PH_DETECT     = "DETECT"
+PH_WAIT_DETECT = "WAIT_DETECT"  # NEU: Warten auf modal laufenden detect_cycle
 PH_DISTANZE   = "DISTANZE"
 PH_SPIKE_CYCLE = "SPIKE_CYCLE"
 PH_SOLVE_EVAL = "SOLVE_EVAL"
@@ -1267,29 +1268,15 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         if self.phase == PH_DETECT:
             if CLIP_OT_detect_cycle is not None:
                 _ovr = _ensure_clip_context(context)
-                _res = _call_op('clip.detect_cycle', context_override=_ovr)
+                self.report({'INFO'}, "Coordinator: detect_cycle starten (modal)")
+                _res = _call_op('clip.detect_cycle', invoke=True, context_override=_ovr)
                 if not (_res and _res.get('ok')):
                     self.report({'WARNING'}, f"detect_cycle via operator fehlgeschlagen ({(_res or {}).get('error')}) – Fallback Inline")
                 else:
-                    res = context.scene.get('tco_last_detect_cycle', {}) or {}
-                    count = res.get('count') or {}
-                    status = str(count.get('status', '')).upper() if isinstance(count, dict) else ''
-                    # Simple Policy: ENOUGH → BIDI, sonst retry (max N)
-                    if status == 'ENOUGH':
-                        self._detect_retries = 0
-                        self.phase = PH_BIDI
-                        return {'RUNNING_MODAL'}
-                    # Optional: Bei TOO_FEW zuerst Clean-Cycle versuchen
-                    if status == 'TOO_FEW' and CLIP_OT_clean_cycle is not None:
-                        _clean_res = _call_op('clip.clean_cycle', context_override=_ovr)
-                        if not (_clean_res and _clean_res.get('ok')):
-                            self.report({'WARNING'}, 'clean_cycle fehlgeschlagen')
-                self._detect_retries += 1
-                if self._detect_retries >= self._detect_max_retries:
-                    return self._finish(context, info='Detect: max. Wiederholungen erreicht', cancelled=True)
-                # erneuter Detect-Versuch
-                self.phase = PH_DETECT
-                return {'RUNNING_MODAL'}
+                    # Operator läuft modal → auf Scene-Flag warten
+                    self.phase = PH_WAIT_DETECT
+                    return {'RUNNING_MODAL'}
+                # Wenn der Start scheitert, fällt es unten in die Inline‑Logik
             # Fallback: alte Inline-Logik
             try:
                 scn = context.scene
@@ -1327,7 +1314,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 clip = _resolve_clip(context)
                 post_ptrs = {int(t.as_pointer()) for t in getattr(clip.tracking, "tracks", [])}
                 base = self.pre_ptrs or set()
-                # Korrektur: Das hier passiert direkt NACH dem Detect-Call.
                 print(f"[COORD] Post Detect: new_after={len(post_ptrs - base)}")
             except Exception:
                 pass
@@ -1344,6 +1330,32 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             self.phase = PH_DISTANZE
             return {'RUNNING_MODAL'}
 
+        # NEU: Warten auf detect_cycle (modal)
+        if self.phase == PH_WAIT_DETECT:
+            scn = context.scene
+            active = bool(scn.get('tco_detect_active', False))
+            if active:
+                # weiter warten
+                return {'RUNNING_MODAL'}
+            # Detect ist fertig → Ergebnis auswerten
+            res = scn.get('tco_last_detect_cycle', {}) or {}
+            count = res.get('count') or {}
+            status = str(count.get('status', '')).upper() if isinstance(count, dict) else ''
+            self.report({'INFO'}, f"Coordinator: detect_cycle beendet (status={status})")
+            if status == 'ENOUGH':
+                self._detect_retries = 0
+                self.phase = PH_BIDI
+                return {'RUNNING_MODAL'}
+            if status == 'TOO_FEW':
+                self._detect_retries += 1
+                if self._detect_retries >= self._detect_max_retries:
+                    return self._finish(context, info='Detect: max. Wiederholungen erreicht', cancelled=True)
+                # erneuter Detect‑Durchlauf
+                self.phase = PH_DETECT
+                return {'RUNNING_MODAL'}
+            # Unbekannter Status → zurück zu DETECT als Fallback
+            self.phase = PH_DETECT
+            return {'RUNNING_MODAL'}
         # PHASE 4: DISTANZE
         if self.phase == PH_DISTANZE:
             # Delegationsmodus: Distanzé war Bestandteil des detect_cycle → direkt auslassen
@@ -1425,18 +1437,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self.report({'INFO'}, "Bidirectional-Track abgeschlossen â€“ neuer Zyklus beginnt")
                 return {'RUNNING_MODAL'}
             # Wenn noch aktiv â†’ weiter warten
-            return {'RUNNING_MODAL'}
-
-        # Fallback (unbekannte Phase)
-        return self._finish(context, info=f"Unbekannte Phase: {self.phase}", cancelled=True)
-        # --- Ende modal() ---
-
-# --- Registrierung ----------------------------------------------------------
-def register():
-    """Registriert den Tracking‑Coordinator und optional weitere Operatoren."""
-    if CLIP_OT_bidirectional_track is not None:
-        try:
-            bpy.utils.register_class(CLIP_OT_bidirectional_track)
         except Exception:
             pass
     # Neue delegierte Operatoren optional registrieren

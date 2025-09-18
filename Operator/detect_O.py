@@ -238,6 +238,11 @@ class CLIP_OT_detect_cycle(Operator):
             scn["tco_detect_active"] = True
         except Exception:
             pass
+        # Log Start
+        try:
+            self.report({'INFO'}, f"[DetectO] START f={self.frame} thr={self.curr_thr:.6f} margin={self.fixed_margin} md={int(self.curr_md)} target={self.target} repeat={self.repeat_count}")
+        except Exception:
+            pass
         # Timer
         wm = context.window_manager
         win = getattr(context, "window", None) or getattr(bpy.context, "window", None)
@@ -300,10 +305,18 @@ class CLIP_OT_detect_cycle(Operator):
         except Exception:
             pass
         self._timer = None
+        try:
+            self.report({'INFO'}, f"[DetectO] END status={self.last_eval.get('status') if isinstance(self.last_eval, dict) else '?'} count={int(self.last_eval.get('count',0)) if isinstance(self.last_eval, dict) else 0} md={int(self.curr_md)} attempts={self.attempts}")
+        except Exception:
+            pass
         return {'FINISHED' if status_ok else 'CANCELLED'}
 
     def modal(self, context, event):
         if event.type == 'ESC' and event.value == 'PRESS':
+            try:
+                self.report({'WARNING'}, "[DetectO] ESC pressed – cancel")
+            except Exception:
+                pass
             return self._finish(context, status_ok=False)
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
@@ -311,6 +324,10 @@ class CLIP_OT_detect_cycle(Operator):
         clip = self._resolve_clip(context)
         # DETECT
         if self.phase == "DETECT":
+            try:
+                self.report({'INFO'}, f"[DetectO] DETECT thr={self.curr_thr:.6f} margin={self.fixed_margin} md={int(self.curr_md)} attempt={self.attempts+1}/{self.max_attempts}")
+            except Exception:
+                pass
             _ = _primitive_detect_once(
                 context,
                 threshold=self.curr_thr,
@@ -322,6 +339,10 @@ class CLIP_OT_detect_cycle(Operator):
             return {'RUNNING_MODAL'}
         # DISTANZE
         if self.phase == "DISTANZE":
+            try:
+                self.report({'INFO'}, f"[DetectO] DISTANZE md={int(self.curr_md)} baseline={len(self.pre_ptrs or [])}")
+            except Exception:
+                pass
             self.last_dist = run_distance_cleanup(
                 context,
                 baseline_ptrs=self.pre_ptrs or set(),
@@ -344,9 +365,14 @@ class CLIP_OT_detect_cycle(Operator):
                 new_after = {p for p in post_ptrs if p not in base}
             self.last_eval = evaluate_marker_count(new_ptrs_after_cleanup=new_after)
             status = str(self.last_eval.get("status", "")).upper()
+            try:
+                self.report({'INFO'}, f"[DetectO] COUNT status={status} count={int(self.last_eval.get('count',0))} band=[{int(self.last_eval.get('min',0))}..{int(self.last_eval.get('max',0))}]")
+            except Exception:
+                pass
             # TOO_MANY: kürzen
             if status == "TOO_MANY":
                 over = max(0, int(self.last_eval.get("count", 0)) - int(self.last_eval.get("max", 0)))
+                removed = 0
                 if over > 0:
                     ptr_map = self._tracks_by_ptr(context)
                     cand_tracks = [ptr_map[p] for p in new_after if p in ptr_map]
@@ -354,7 +380,6 @@ class CLIP_OT_detect_cycle(Operator):
                         cand_tracks.sort(key=lambda t: float(error_value(t)), reverse=True)
                     except Exception:
                         pass
-                    removed = 0
                     for t in cand_tracks[:over]:
                         ok, _how = self._delete_track_or_marker(context, clip, t, self.frame)
                         if ok:
@@ -370,10 +395,14 @@ class CLIP_OT_detect_cycle(Operator):
                         "min": int(self.last_eval.get("min", 0)),
                         "max": int(self.last_eval.get("max", 0)),
                     }
-                # Abschließen
+                try:
+                    self.report({'INFO'}, f"[DetectO] TRIM too_many removed={removed}")
+                except Exception:
+                    pass
                 return self._finish(context, status_ok=True)
             # TOO_FEW: alle neuen löschen, md stufen, retry falls Budget da
             if status == "TOO_FEW" and self.attempts + 1 < self.max_attempts:
+                removed = 0
                 ptr_map = self._tracks_by_ptr(context)
                 for p in list(new_after):
                     t = ptr_map.get(p)
@@ -382,7 +411,7 @@ class CLIP_OT_detect_cycle(Operator):
                     ok, _how = self._delete_track_or_marker(context, clip, t, self.frame)
                     if ok:
                         (self.deleted_labels_total or []).append(self._safe_name(t))
-                # min_distance stufen (Formel)
+                        removed += 1
                 za = float(self.target)
                 gm = 0.0
                 f_md = 1.0 - ((za - gm) / (za * (20.0 / max(1, min(7, abs(za - gm) / 10)))))
@@ -394,11 +423,18 @@ class CLIP_OT_detect_cycle(Operator):
                 except Exception:
                     pass
                 self.attempts += 1
-                # Zurück zu DETECT
+                try:
+                    self.report({'INFO'}, f"[DetectO] RETRY too_few removed={removed} md_next={int(self.curr_md)} attempt={self.attempts}/{self.max_attempts}")
+                except Exception:
+                    pass
                 self.phase = "DETECT"
                 return {'RUNNING_MODAL'}
-            # ENOUGH: optional Multi bei hohem Repeat
+            # ENOUGH: optional Multi
             if status == "ENOUGH" and run_multi_pass is not None and self.repeat_count >= self.multi_gate:
+                try:
+                    self.report({'INFO'}, f"[DetectO] MULTI start repeat={self.repeat_count} gate={self.multi_gate}")
+                except Exception:
+                    pass
                 try:
                     _ = run_multi_pass(
                         context,
@@ -409,10 +445,12 @@ class CLIP_OT_detect_cycle(Operator):
                     )
                 except Exception:
                     pass
-                # Nach Multi: noch einmal Distanzé+Count finalisieren
                 self.phase = "DISTANZE"
                 return {'RUNNING_MODAL'}
-            # ENOUGH (ohne Multi): abschließen
+            try:
+                self.report({'INFO'}, "[DetectO] DONE (ENOUGH)")
+            except Exception:
+                pass
             return self._finish(context, status_ok=True)
 
         # Fallback
