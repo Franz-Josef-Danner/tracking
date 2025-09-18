@@ -369,32 +369,50 @@ def run_reduce_error_tracks(
     }
 
 
-def get_avg_reprojection_error(context: bpy.types.Context) -> Optional[float]:
-    clip = _resolve_clip(context)
-    if not clip:
+def get_avg_reprojection_error(context):
+    """
+    Durchschnittlicher Reprojektion-Error nur über Frames mit vorhandener Kamera.
+    Gibt None zurück, wenn keine gültige Rekonstruktion oder keine Punkte.
+    """
+    clip = getattr(context, "edit_movieclip", None)
+    if not clip or not getattr(clip, "tracking", None):
         return None
-    trk = getattr(clip, "tracking", None)
-    obj = getattr(getattr(trk, "objects", None), "active", None) if trk else None
+    obj   = clip.tracking.objects.active if clip.tracking.objects else None
+    recon = getattr(obj, "reconstruction", None)
+    if not recon or not getattr(recon, "is_valid", False):
+        return None
+
+    cam_frames = set()
     try:
-        if obj and obj.reconstruction and getattr(obj.reconstruction, "is_valid", False):
-            ae = float(getattr(obj.reconstruction, "average_error", float("nan")))
-            if ae == ae and ae > 0.0:
-                return ae
-    except Exception:
-        pass
-    try:
-        if not obj:
-            return None
-        vals: List[float] = []
-        for t in obj.tracks:
+        for cam in getattr(recon, "cameras", []):
             try:
-                v = float(error_value(t))
-                if v >= 0.0:
-                    vals.append(v)
+                cam_frames.add(int(getattr(cam, "frame", -1)))
             except Exception:
                 pass
-        if vals:
-            return sum(vals) / len(vals)
     except Exception:
-        pass
-    return None
+        return None
+    if not cam_frames:
+        return None
+
+    fmin, fmax = min(cam_frames), max(cam_frames)
+    total_err = 0.0
+    total_cnt = 0
+
+    try:
+        tracks = clip.tracking.tracks
+        for tr in tracks:
+            for mk in getattr(tr, "markers", []):
+                f = int(getattr(mk, "frame", -1))
+                if f < fmin or f > fmax or f not in cam_frames:
+                    continue
+                err = getattr(mk, "reprojection_error", None)
+                if err is None:
+                    continue
+                total_err += float(err)
+                total_cnt += 1
+    except Exception:
+        return None
+
+    if total_cnt == 0:
+        return None
+    return total_err / total_cnt
