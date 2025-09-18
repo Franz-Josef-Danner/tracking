@@ -1238,20 +1238,22 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         if self.phase == PH_FIND_LOW:
             # Delegiere an den neuen Operator (find_low + jump in einem Schritt)
             if CLIP_OT_find_low_and_jump is not None:
-                ok = _call_op('clip.find_low_and_jump')
-                if not ok:
-                    return self._finish(context, info='find_low_and_jump fehlgeschlagen', cancelled=True)
-                # Ergebnis lesen (optional)
-                info = context.scene.get('tco_last_findlowjump', {})
-                self.target_frame = int(info.get('frame') or context.scene.frame_current)
-                self.report({'INFO'}, f"FindLow+Jump OK → f{self.target_frame}")
-                self.phase = PH_DETECT
-                return {'RUNNING_MODAL'}
+                _ovr = _ensure_clip_context(context)
+                _res = _call_op('clip.find_low_and_jump', context_override=_ovr)
+                if _res and _res.get('ok'):
+                    # Ergebnis lesen (optional)
+                    info = context.scene.get('tco_last_findlowjump', {})
+                    self.target_frame = int(info.get('frame') or context.scene.frame_current)
+                    self.report({'INFO'}, f"FindLow+Jump OK → f{self.target_frame}")
+                    self.phase = PH_DETECT
+                    return {'RUNNING_MODAL'}
+                else:
+                    self.report({'WARNING'}, f"find_low_and_jump via operator fehlgeschlagen ({(_res or {}).get('error')}) – Fallback Inline")
             # Fallback: alte Inline-Logik
             res = run_find_low_marker_frame(context)
             st = res.get("status")
             if st == "FAILED":
-                return self._finish(context, info=f"FIND_LOW FAILED â†’ {res.get('reason')}", cancelled=True)
+                return self._finish(context, info=f"FIND_LOW FAILED → {res.get('reason')}", cancelled=True)
             if st == "NONE":
                 # Kein Low-Marker-Frame gefunden: Starte Spike-Zyklus
                 self.phase = PH_SPIKE_CYCLE
@@ -1270,20 +1272,24 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         # PHASE 3: DETECT
         if self.phase == PH_DETECT:
             if CLIP_OT_detect_cycle is not None:
-                ok = _call_op('clip.detect_cycle')
-                if not ok:
-                    return self._finish(context, info='detect_cycle fehlgeschlagen', cancelled=True)
-                res = context.scene.get('tco_last_detect_cycle', {}) or {}
-                count = res.get('count') or {}
-                status = str(count.get('status', '')).upper() if isinstance(count, dict) else ''
-                # Simple Policy: ENOUGH → BIDI, sonst retry (max N)
-                if status == 'ENOUGH':
-                    self._detect_retries = 0
-                    self.phase = PH_BIDI
-                    return {'RUNNING_MODAL'}
-                # Optional: Bei TOO_FEW zuerst Clean-Cycle versuchen
-                if status == 'TOO_FEW' and CLIP_OT_clean_cycle is not None:
-                    _call_op('clip.clean_cycle')
+                _ovr = _ensure_clip_context(context)
+                _res = _call_op('clip.detect_cycle', context_override=_ovr)
+                if not (_res and _res.get('ok')):
+                    self.report({'WARNING'}, f"detect_cycle via operator fehlgeschlagen ({(_res or {}).get('error')}) – Fallback Inline")
+                else:
+                    res = context.scene.get('tco_last_detect_cycle', {}) or {}
+                    count = res.get('count') or {}
+                    status = str(count.get('status', '')).upper() if isinstance(count, dict) else ''
+                    # Simple Policy: ENOUGH → BIDI, sonst retry (max N)
+                    if status == 'ENOUGH':
+                        self._detect_retries = 0
+                        self.phase = PH_BIDI
+                        return {'RUNNING_MODAL'}
+                    # Optional: Bei TOO_FEW zuerst Clean-Cycle versuchen
+                    if status == 'TOO_FEW' and CLIP_OT_clean_cycle is not None:
+                        _clean_res = _call_op('clip.clean_cycle', context_override=_ovr)
+                        if not (_clean_res and _clean_res.get('ok')):
+                            self.report({'WARNING'}, 'clean_cycle fehlgeschlagen')
                 self._detect_retries += 1
                 if self._detect_retries >= self._detect_max_retries:
                     return self._finish(context, info='Detect: max. Wiederholungen erreicht', cancelled=True)
