@@ -92,8 +92,10 @@ class CLIP_OT_detect_cycle(Operator):
         else:
             base_md = scn.get("min_distance_base")
             curr_md = float(base_md if base_md is not None else 200.0)
+        # Publiziere gültige Werte für Downstream-Helper (SSOT)
         try:
             scn["kc_detect_min_distance_px"] = int(round(curr_md))
+            scn["kc_min_distance_effective"] = int(round(curr_md))
         except Exception:
             pass
 
@@ -106,8 +108,13 @@ class CLIP_OT_detect_cycle(Operator):
             placement="FRAME",
         )
 
-        # 2) Distance-Cleanup mit Baseline (min_distance=None → interne Scene-Werte nutzen)
-        dist_res = run_distance_cleanup(context, baseline_ptrs=pre_ptrs, frame=frame, min_distance=None)
+        # 2) Distance-Cleanup mit Baseline und EXPLIZITEM min_distance (spiegelt Alt-Verhalten)
+        dist_res = run_distance_cleanup(
+            context,
+            baseline_ptrs=pre_ptrs,
+            frame=frame,
+            min_distance=float(curr_md),
+        )
 
         # 3) Neue Tracks nach Cleanup bestimmen
         new_after: Set[int]
@@ -153,6 +160,28 @@ class CLIP_OT_detect_cycle(Operator):
                     "min": int(eval_res.get("min", 0)),
                     "max": int(eval_res.get("max", 0)),
                 }
+        elif eval_res.get("status") == "TOO_FEW":
+            # Wie im alten Coordinator: alle neu gesetzten Tracks wieder entfernen,
+            # damit der nächste Detect‑Durchlauf mit neuem min_distance auf sauberem Zustand aufsetzt.
+            ptr_map = self._tracks_by_ptr(context)
+            for p in list(new_after):
+                t = ptr_map.get(p)
+                if not t:
+                    continue
+                try:
+                    deleted_labels.append(getattr(t, "name", "<unnamed>"))
+                    getattr(clip.tracking.tracks, "remove")(t)
+                    removed_cnt += 1
+                except Exception:
+                    pass
+            new_after.clear()
+            # eval_res bleibt "TOO_FEW" mit ursprünglichen min/max – Count jetzt 0 für Protokoll
+            eval_res = {
+                "status": "TOO_FEW",
+                "count": 0,
+                "min": int(eval_res.get("min", 0)),
+                "max": int(eval_res.get("max", 0)),
+            }
 
         # Distance-Result anreichern (ohne 64-bit Pointer zu persistieren)
         safe_dist = {}
