@@ -20,7 +20,7 @@ def _call_op(
     Ruft einen Blender-Operator auf.
     op: "clip.solve_camera" oder bereits aufgelöster bpy.ops Aufruf.
     invoke: True → 'INVOKE_DEFAULT', sonst 'EXEC_DEFAULT'.
-    context_override: optionaler Context-Override für Poll und Call.
+    context_override: optionaler Context-Override (wird via temp_override gesetzt).
     Rückgabe: {'ok': bool, 'result': set(...)|None, 'error': str|None}
     """
     # Operator auflösen
@@ -33,20 +33,17 @@ def _call_op(
     except Exception as exc:
         return {'ok': False, 'result': None, 'error': f'op_resolve: {exc}'}
 
-    # Poll prüfen (falls verfügbar)
-    try:
-        can_run = op_callable.poll(context_override) if context_override else op_callable.poll()
-        if can_run is False:
-            return {'ok': False, 'result': None, 'error': 'poll_failed'}
-    except Exception:
-        # Manche Operatoren haben kein poll() oder benötigen keinen speziellen Context
-        pass
+    mode = 'INVOKE_DEFAULT' if invoke else 'EXEC_DEFAULT'
 
-    # Operator ausführen
+    # Operator ausführen (mit robustem Context-Override via temp_override)
     try:
-        mode = 'INVOKE_DEFAULT' if invoke else 'EXEC_DEFAULT'
         if context_override:
-            res = op_callable(context_override, mode, **kwargs)
+            try:
+                with bpy.context.temp_override(**context_override):
+                    res = op_callable(mode, **kwargs)
+            except TypeError:
+                # Fallback, falls temp_override nicht alle Keys akzeptiert
+                res = op_callable(mode, **kwargs)
         else:
             res = op_callable(mode, **kwargs)
         res_set = set(res) if not isinstance(res, set) else res
