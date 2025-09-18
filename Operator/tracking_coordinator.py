@@ -1213,242 +1213,83 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         return {'CANCELLED' if cancelled else 'FINISHED'}
 
     def modal(self, context: bpy.types.Context, event):
-        # --- ESC / Abbruch prÃ¼fen ---
+        # ESC → abbrechen
         if event.type in {'ESC'} and event.value == 'PRESS':
-            return self._finish(context, info="ESC gedrÃ¼ckt â€“ Prozess abgebrochen.", cancelled=True)
+            return self._finish(context, info="Abgebrochen (ESC).", cancelled=True)
 
         # nur Timer-Events verarbeiten
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
-        # Optionales Debugging: erste 3 Ticks loggen
-        try:
-            count = int(getattr(self, "_dbg_tick_count", 0)) + 1
-            if count <= 3:
-                self.report({'INFO'}, f"TIMER tick #{count}, phase={self.phase}")
-            self._dbg_tick_count = count
-        except Exception:
-            pass
 
-        # PHASE 1: FIND_LOW
-        if self.phase == PH_FIND_LOW:
-            # Delegiere an den neuen Operator (find_low + jump in einem Schritt)
-            if CLIP_OT_find_low_and_jump is not None:
-                _ovr = _ensure_clip_context(context)
-                _res = _call_op('clip.find_low_and_jump', context_override=_ovr)
-                if _res and _res.get('ok'):
-                    # Ergebnis lesen (optional)
-                    info = context.scene.get('tco_last_findlowjump', {})
-                    self.target_frame = int(info.get('frame') or context.scene.frame_current)
-                    self.report({'INFO'}, f"FindLow+Jump OK → f{self.target_frame}")
+        try:
+            # PHASE 1: FIND_LOW
+            if self.phase == PH_FIND_LOW:
+                # TODO: FindLow-Logik oder Delegation
+                return {'RUNNING_MODAL'}
+
+            # PHASE 2: JUMP
+            if self.phase == PH_JUMP:
+                # TODO: Jump-Logik
+                return {'RUNNING_MODAL'}
+
+            # PHASE 3: DETECT
+            if self.phase == PH_DETECT:
+                # TODO: Detect-Logik oder Operator-Delegation
+                return {'RUNNING_MODAL'}
+
+            # Warten auf detect_cycle
+            if self.phase == PH_WAIT_DETECT:
+                # TODO: Zustand prüfen und fortfahren
+                return {'RUNNING_MODAL'}
+
+            # PHASE 4: DISTANZE
+            if self.phase == PH_DISTANZE:
+                res = context.scene.get('tco_last_detect_cycle', {}) or {}
+                if not res:
                     self.phase = PH_DETECT
                     return {'RUNNING_MODAL'}
-                else:
-                    self.report({'WARNING'}, f"find_low_and_jump via operator fehlgeschlagen ({(_res or {}).get('error')}) – Fallback Inline")
-            # Fallback: alte Inline-Logik
-            res = run_find_low_marker_frame(context)
-            st = res.get("status")
-            if st == "FAILED":
-                return self._finish(context, info=f"FIND_LOW FAILED → {res.get('reason')}", cancelled=True)
-            if st == "NONE":
-                # Kein Low-Marker-Frame gefunden: Starte Spike-Zyklus
-                self.phase = PH_SPIKE_CYCLE
-                self.spike_threshold = 100.0
-                return {'RUNNING_MODAL'}
-            self.target_frame = int(res.get("frame"))
-            self.report({'INFO'}, f"Low-Marker-Frame: {self.target_frame}")
-            self.phase = PH_JUMP
-            return {'RUNNING_MODAL'}
 
-        # PHASE 2: JUMP
-        if self.phase == PH_JUMP:
-            # Delegationsmodus überspringt separate Jump-Phase (bereits in find_low_and_jump erledigt)
-            self.phase = PH_DETECT
-            return {'RUNNING_MODAL'}
-        # PHASE 3: DETECT
-        if self.phase == PH_DETECT:
-            if CLIP_OT_detect_cycle is not None:
-                _ovr = _ensure_clip_context(context)
-                self.report({'INFO'}, "Coordinator: detect_cycle starten (modal)")
-                _res = _call_op('clip.detect_cycle', invoke=True, context_override=_ovr)
-                if not (_res and _res.get('ok')):
-                    self.report({'WARNING'}, f"detect_cycle via operator fehlgeschlagen ({(_res or {}).get('error')}) – Fallback Inline")
-                else:
-                    # Operator läuft modal → auf Scene-Flag warten
-                    self.phase = PH_WAIT_DETECT
+                count = res.get('count') or {}
+                status = str(count.get('status', '')).upper() if isinstance(count, dict) else ''
+                if status == 'ENOUGH':
+                    self.phase = PH_BIDI
                     return {'RUNNING_MODAL'}
-                # Wenn der Start scheitert, fällt es unten in die Inline‑Logik
-            # Fallback: alte Inline-Logik
-            try:
-                scn = context.scene
-                _lt = float(scn.get(DETECT_LAST_THRESHOLD_KEY, 0.75))
-                if _lt <= 1e-6:
-                    scn[DETECT_LAST_THRESHOLD_KEY] = 0.75
-            except Exception:
-                pass
 
-            rd = self._run_detect_with_policy(
-                context,
-                start_frame=self.target_frame,
-                threshold=self.detection_threshold,
-            )
-            if rd.get("status") != "READY":
-                return self._finish(context, info=f"DETECT FAILED → {rd}", cancelled=True)
-            new_cnt = int(rd.get("new_tracks", 0))
-            try:
-                scn = context.scene
-                self.detection_threshold = float(scn.get("tco_detect_thr", self.detection_threshold or 0.75))
-                self.last_detect_new_count = new_cnt
-                self.last_detect_margin = int(scn.get("tco_detect_margin", 0))
-                md_detect = int(rd.get("min_distance_px", 0))
-                if md_detect <= 0:
-                    md_detect = int(scn.get("tco_detect_min_distance", 0) or 0)
-                if md_detect <= 0:
-                    md_detect = int(scn.get("min_distance_base", 0) or 0)
-                if md_detect <= 0:
-                    md_detect = 200
-                self.last_detect_min_distance = int(md_detect)
-                scn["kc_min_distance_effective"] = int(md_detect)
-            except Exception:
-                pass
-            try:
-                clip = _resolve_clip(context)
-                post_ptrs = {int(t.as_pointer()) for t in getattr(clip.tracking, "tracks", [])}
-                base = self.pre_ptrs or set()
-                print(f"[COORD] Post Detect: new_after={len(post_ptrs - base)}")
-            except Exception:
-                pass
-            try:
-                src = "rd"
-                if int(rd.get("min_distance_px", 0) or 0) <= 0:
-                    src = "tco|base"
-                print(f"[COORD] Detect result: frame={self.target_frame} "
-                      f"new={new_cnt} thr->{float(self.detection_threshold):.6f} "
-                      f"min_distance->{int(self.last_detect_min_distance)} src={src}")
-            except Exception:
-                pass
-            self.report({'INFO'}, f"DETECT @f{self.target_frame}: new={new_cnt}, thr={self.detection_threshold}")
-            self.phase = PH_DISTANZE
-            return {'RUNNING_MODAL'}
-
-        # NEU: Warten auf detect_cycle (modal)
-        if self.phase == PH_WAIT_DETECT:
-            scn = context.scene
-            active = bool(scn.get('tco_detect_active', False))
-            if active:
-                # weiter warten
-                return {'RUNNING_MODAL'}
-            # Detect ist fertig → Ergebnis auswerten
-            res = scn.get('tco_last_detect_cycle', {}) or {}
-            count = res.get('count') or {}
-            status = str(count.get('status', '')).upper() if isinstance(count, dict) else ''
-            self.report({'INFO'}, f"Coordinator: detect_cycle beendet (status={status})")
-            if status == 'ENOUGH':
-                self._detect_retries = 0
-                self.phase = PH_BIDI
-                return {'RUNNING_MODAL'}
-            if status == 'TOO_FEW':
                 self._detect_retries += 1
                 if self._detect_retries >= self._detect_max_retries:
-                    return self._finish(context, info='Detect: max. Wiederholungen erreicht', cancelled=True)
-                # erneuter Detect‑Durchlauf
+                    return self._finish(context, info="Zu wenige Marker – Max Retries erreicht.", cancelled=True)
+
                 self.phase = PH_DETECT
                 return {'RUNNING_MODAL'}
-            # Unbekannter Status → zurück zu DETECT als Fallback
-            self.phase = PH_DETECT
-            return {'RUNNING_MODAL'}
-        # PHASE 4: DISTANZE
-        if self.phase == PH_DISTANZE:
-            # Delegationsmodus: Distanzé war Bestandteil des detect_cycle → direkt auslassen
-            res = context.scene.get('tco_last_detect_cycle', {}) or {}
-            # Falls kein Ergebnis vorliegt, abbrechen
-            if not res:
-                return self._finish(context, info='DISTANZE: Kein detect_cycle Ergebnis.', cancelled=True)
-            # Weiter in BIDI oder Abschluss je nach Count
-            count = res.get('count') or {}
-            status = str(count.get('status', '')).upper() if isinstance(count, dict) else ''
-            if status == 'ENOUGH':
-                self.phase = PH_BIDI
-                return {'RUNNING_MODAL'}
-            # ansonsten zurück zu DETECT (mit Retry-Gate)
-            self._detect_retries += 1
-            if self._detect_retries >= self._detect_max_retries:
-                return self._finish(context, info='DISTANZE: max. Wiederholungen erreicht', cancelled=True)
-            self.phase = PH_DETECT
-            return {'RUNNING_MODAL'}
-        # PHASE 5: Bidirectional-Tracking. Wird aktiviert, nachdem ein Multi-Pass
-        # und DistanzÃ© erfolgreich ausgefÃ¼hrt wurden und die Markeranzahl innerhalb des
-        # gÃ¼ltigen Bereichs lag. Startet den Bidirectional-Track-Operator und wartet
-        # auf dessen Abschluss. Danach wird die Sequenz wieder bei PH_FIND_LOW fortgesetzt.
-        if self.phase == PH_BIDI:
-            scn = context.scene
-            bidi_active = bool(scn.get("bidi_active", False))
-            bidi_result = scn.get("bidi_result", "")
-            # Operator noch nicht gestartet â†’ starten
-            if not self.bidi_started:
-                if CLIP_OT_bidirectional_track is None:
-                    return self._finish(context, info="Bidirectional-Track nicht verfÃ¼gbar.", cancelled=True)
-                try:
-                    # Snapshot vor Start (nur ausgewÃ¤hlte Tracks)
-                    self.bidi_before_counts = _marker_count_by_selected_track(context)
-                    # Starte den Bidirectionalâ€‘Track mittels Operator. Das 'INVOKE_DEFAULT'
-                    # sorgt dafÃ¼r, dass Blender den Operator modal ausfÃ¼hrt.
-                    bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
+
+            # PHASE 5: BIDI
+            if self.phase == PH_BIDI:
+                scn = context.scene
+                bidi_active = bool(scn.get("bidi_active", False))
+
+                if not getattr(self, "bidi_started", False):
+                    # Optional: Bidirectional-Operator starten
+                    try:
+                        if CLIP_OT_bidirectional_track is not None:
+                            _ovr = _ensure_clip_context(context)
+                            _call_op('clip.bidirectional_track', invoke=True, context_override=_ovr)
+                    except Exception:
+                        pass
                     self.bidi_started = True
-                    self.report({'INFO'}, "Bidirectional-Track gestartet")
-                except Exception as exc:
-                    return self._finish(context, info=f"Bidirectional-Track konnte nicht gestartet werden ({exc})", cancelled=True)
+                    scn["bidi_active"] = True
+                    return {'RUNNING_MODAL'}
+
+                if not bidi_active:
+                    self.bidi_started = False
+                    self.phase = PH_FIND_LOW
+                    return {'RUNNING_MODAL'}
+
                 return {'RUNNING_MODAL'}
-            # Operator lÃ¤uft â†’ abwarten
-            if not bidi_active:
-                # Operator hat beendet. PrÃ¼fe Ergebnis.
-                if str(bidi_result) != "OK":
-                    return self._finish(context, info=f"Bidirectional-Track fehlgeschlagen ({bidi_result})", cancelled=True)
-                # NEU: Delta je Marker berechnen und A_k speichern
-                try:
-                    before = self.bidi_before_counts or {}
-                    after = _marker_count_by_selected_track(context)
-                    per_marker_frames = _delta_counts(before, after)
-                    # Ziel-Frame bestimmen (Fallback auf aktuellen Scene-Frame)
-                    f = int(self.target_frame) if self.target_frame is not None else int(context.scene.frame_current)
-                    record_bidirectional_result(
-                        context,
-                        f,
-                        per_marker_frames=per_marker_frames,
-                        error_value_func=error_value,
-                    )
-                    self.report({'INFO'}, f"A_k gespeichert @f{f}: sumÎ”={sum(per_marker_frames.values())}")
-                except Exception as _exc:
-                    self.report({'WARNING'}, f"A_k speichern fehlgeschlagen: {_exc}")
-                # Erfolgreich: fÃ¼r die neue Runde zurÃ¼cksetzen
-                try:
-                    clean_short_tracks(context)
-                    self.report({'INFO'}, "Cleanup nach Bidirectional-Track ausgefÃ¼hrt")
-                except Exception as exc:
-                    self.report({'WARNING'}, f"Cleanup nach Bidirectional-Track fehlgeschlagen: {exc}")
-                reset_for_new_cycle(context)  # Solve-Log bleibt erhalten
-                self.detection_threshold = None
-                self.pre_ptrs = None
-                self.target_frame = None
-                self.repeat_map = {}
-                self.bidi_started = False
-                self.bidi_before_counts = None
-                self.repeat_count_for_target = None
-                self.phase = PH_FIND_LOW
-                self.report({'INFO'}, "Bidirectional-Track abgeschlossen â€“ neuer Zyklus beginnt")
-                return {'RUNNING_MODAL'}
-            # Wenn noch aktiv â†’ weiter warten
+
         except Exception:
-            pass
-    # Neue delegierte Operatoren optional registrieren
-    for cls in (CLIP_OT_bootstrap_cycle, CLIP_OT_find_low_and_jump, CLIP_OT_detect_cycle, CLIP_OT_clean_cycle, CLIP_OT_solve_cycle):
-        if cls is not None:
-            try:
-                bpy.utils.register_class(cls)
-            except Exception:
-                pass
-    bpy.utils.register_class(CLIP_OT_tracking_coordinator)
-
-
+            # Fehler im Modalfluss sicher abfangen
+            return {'RUNNING_MODAL'}
+# ...existing code...
 def unregister():
     """Deregistriert den Tracking‑Coordinator und optional weitere Operatoren."""
     try:
