@@ -71,6 +71,27 @@ class CLIP_OT_detect_cycle(Operator):
             return [self._safe_for_scene(v) for v in obj]
         return obj
 
+    def _safe_name(self, obj: Any) -> str:
+        """Gibt einen robusten, UTF-8-sicheren Namen zurück."""
+        try:
+            n = getattr(obj, "name", None)
+            if isinstance(n, bytes):
+                try:
+                    return n.decode("utf-8", "replace")
+                except Exception:
+                    return "<unnamed>"
+            s = str(n) if n is not None else "<unnamed>"
+            try:
+                s.encode("utf-8", "strict")
+                return s
+            except Exception:
+                try:
+                    return s.encode("utf-8", "replace").decode("utf-8", "replace")
+                except Exception:
+                    return "<unnamed>"
+        except Exception:
+            return "<unnamed>"
+
     def _find_clip_editor_override(self, clip) -> Dict[str, Any]:
         """Sucht einen CLIP_EDITOR für Operator-Aufrufe."""
         wm = bpy.context.window_manager
@@ -98,7 +119,7 @@ class CLIP_OT_detect_cycle(Operator):
 
     def _delete_track_or_marker(self, context, clip, tr, frame: int) -> Tuple[bool, str]:
         """Versuche Track zu löschen; Fallback: Marker @frame löschen. Liefert (ok, reason)."""
-        name = getattr(tr, "name", "<noname>")
+        name = self._safe_name(tr)
         ptr = int(getattr(tr, "as_pointer")())
         # Pre-Select
         try:
@@ -129,7 +150,7 @@ class CLIP_OT_detect_cycle(Operator):
         # Verifikation
         try:
             for _t in clip.tracking.tracks:
-                if int(getattr(_t, "as_pointer")()) == ptr or getattr(_t, "name", "") == name:
+                if int(getattr(_t, "as_pointer")()) == ptr or self._safe_name(_t) == name:
                     break
             else:
                 # nicht mehr vorhanden
@@ -232,7 +253,7 @@ class CLIP_OT_detect_cycle(Operator):
                 for t in cand_tracks[:to_delete]:
                     ok, how = self._delete_track_or_marker(context, clip, t, frame)
                     if ok:
-                        deleted_labels.append(getattr(t, "name", "<unnamed>"))
+                        deleted_labels.append(self._safe_name(t))
                         removed_cnt += 1
                         try:
                             new_after.discard(int(t.as_pointer()))
@@ -253,7 +274,7 @@ class CLIP_OT_detect_cycle(Operator):
                     continue
                 ok, how = self._delete_track_or_marker(context, clip, t, frame)
                 if ok:
-                    deleted_labels.append(getattr(t, "name", "<unnamed>"))
+                    deleted_labels.append(self._safe_name(t))
                     removed_cnt += 1
             new_after.clear()
             eval_res = {
