@@ -193,6 +193,28 @@ def solve_final_refine(
         except Exception:
             pass
     print(f"[SolveEval][FINAL] {model}: score={score:.6f} dur={dt:.3f}s")
+    # --- Average Reprojection Error nach dem finalen Solve loggen ---
+    try:
+        ae = get_avg_reprojection_error(context)  # Helper ist im File bereits importiert
+        if ae is None or float(ae) <= 0.0:
+            print("[SolveEval][FINAL] AverageError: not available (ae<=0)")
+        else:
+            print(f"[SolveEval][FINAL] AverageError: {float(ae):.6f}")
+    except Exception as _exc:
+        # rein informativ – kein Hard-Fail auf Logging-Fehlern
+        print(f"[SolveEval][FINAL][WARN] avg_error log skipped: {_exc!r}")
+
+    # --- Average Reprojection Error nach dem finalen Solve loggen ---
+    try:
+        ae = get_avg_reprojection_error(context)
+        if ae is None or float(ae) <= 0.0:
+            print("[SolveEval][FINAL] AverageError: not available (ae<=0)")
+        else:
+            print(f"[SolveEval][FINAL] AverageError: {float(ae):.6f}")
+    except Exception as _exc:
+        # rein informativ – kein Hard-Fail auf Logging-Fehlern
+        print(f"[SolveEval][FINAL][WARN] avg_error log skipped: {_exc!r}")
+
     return float(score)
 
 # ---------------------------------------------------------------------------
