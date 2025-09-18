@@ -193,18 +193,17 @@ def solve_final_refine(
         except Exception:
             pass
     print(f"[SolveEval][FINAL] {model}: score={score:.6f} dur={dt:.3f}s")
-    # --- Average Reprojection Error nach dem finalen Solve loggen ---
+    # --- FINAL: Recon-Introspektion + Average-Error ---
     try:
-        ae = get_avg_reprojection_error(context)  # Helper ist im File bereits importiert
-        if ae is None or float(ae) <= 0.0:
-            print("[SolveEval][FINAL] AverageError: not available (ae<=0)")
-        else:
-            print(f"[SolveEval][FINAL] AverageError: {float(ae):.6f}")
-    except Exception as _exc:
-        # rein informativ – kein Hard-Fail auf Logging-Fehlern
-        print(f"[SolveEval][FINAL][WARN] avg_error log skipped: {_exc!r}")
-
-    # --- Average Reprojection Error nach dem finalen Solve loggen ---
+        clip  = getattr(context, "edit_movieclip", None)
+        obj   = clip.tracking.objects.active if clip and clip.tracking.objects else None
+        recon = getattr(obj, "reconstruction", None)
+        is_valid = bool(getattr(recon, 'is_valid', False)) if recon else False
+        cams = getattr(recon, 'cameras_nr', 0) if recon else 0
+        pts  = getattr(recon, 'tracks_markers_nr', 0) if recon else 0
+        print(f"[SolveEval][FINAL] recon_valid={is_valid} cams={cams} points={pts}")
+    except Exception as _e:
+        print(f"[SolveEval][FINAL][WARN] recon introspection failed: {_e!r}")
     try:
         ae = get_avg_reprojection_error(context)
         if ae is None or float(ae) <= 0.0:
@@ -212,10 +211,8 @@ def solve_final_refine(
         else:
             print(f"[SolveEval][FINAL] AverageError: {float(ae):.6f}")
     except Exception as _exc:
-        # rein informativ – kein Hard-Fail auf Logging-Fehlern
         print(f"[SolveEval][FINAL][WARN] avg_error log skipped: {_exc!r}")
-
-    return float(score)
+return float(score)
 
 # ---------------------------------------------------------------------------
 # Kombi-Wrapper: 3×-Eval + finaler Voll-Solve (alle refine_intrinsics = True)
