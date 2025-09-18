@@ -1,0 +1,44 @@
+*** a/Operator/tracking_coordinator.py
+--- b/Operator/tracking_coordinator.py
+@@
+-from ..Helper.marker_helper_main import marker_helper_main
++try:
++    from ..Helper.marker_helper_main import marker_helper_main  # type: ignore
++except Exception:
++    try:
++        from .marker_helper_main import marker_helper_main  # type: ignore
++    except Exception:
++        marker_helper_main = None  # type: ignore
+@@
+-# Helper: Finalen Average Reprojection Error robust auslesen und loggen
++# Helper: Finalen Average Reprojection Error robust auslesen und loggen
++# (Achte darauf, dass Optional und get_avg_reprojection_error importiert sind.)
++from typing import Optional  # falls noch nicht vorhanden
++try:
++    # bevorzugter Import, wenn Helper-Struktur vorhanden
++    from ..Helper.solve_eval import get_avg_reprojection_error  # type: ignore
++except Exception:
++    try:
++        from .solve_eval import get_avg_reprojection_error  # type: ignore
++    except Exception:
++        get_avg_reprojection_error = None  # type: ignore
+@@
+-def _log_final_avg_error(context: bpy.types.Context) -> Optional[float]:
++def _log_final_avg_error(context: bpy.types.Context) -> Optional[float]:
+     """
+     Liest den aktuellen Average Reprojection Error aus und loggt ihn klar.
+     Verwendet den bereits importierten Helper get_avg_reprojection_error(context).
+     Return: float|None (None, falls nicht verfügbar).
+     """
+     try:
+-        ae = get_avg_reprojection_error(context)
++        if get_avg_reprojection_error is None:
++            print("[SolveEval][FINAL] AverageError: helper not available")
++            return None
++        ae = get_avg_reprojection_error(context)
+         if ae is None or float(ae) <= 0.0:
+             print("[SolveEval][FINAL] AverageError: not available (ae<=0)")
+             return None
+         val = float(ae)
+         print(f"[SolveEval][FINAL] AverageError: {val:.6f}")
+         return val
