@@ -1,6 +1,6 @@
 import bpy
 from bpy.types import Operator
-from typing import List, Set, Dict, Any
+from typing import List, Set, Dict, Any, Optional, Tuple
 
 from ..Helper.detect import run_detect_once as _primitive_detect_once
 from ..Helper.distanze import run_distance_cleanup
@@ -70,6 +70,92 @@ class CLIP_OT_detect_cycle(Operator):
         if isinstance(obj, (list, tuple)):
             return [self._safe_for_scene(v) for v in obj]
         return obj
+
+    def _find_clip_editor_override(self, clip) -> Dict[str, Any]:
+        """Sucht einen CLIP_EDITOR für Operator-Aufrufe."""
+        wm = bpy.context.window_manager
+        if not wm:
+            return {}
+        for win in wm.windows:
+            scr = getattr(win, "screen", None)
+            if not scr:
+                continue
+            for area in scr.areas:
+                if getattr(area, "type", "") != "CLIP_EDITOR":
+                    continue
+                region = next((r for r in area.regions if r.type == "WINDOW"), None)
+                space = area.spaces.active if hasattr(area, "spaces") else None
+                if region and space:
+                    return {
+                        "window": win,
+                        "area": area,
+                        "region": region,
+                        "space_data": space,
+                        "edit_movieclip": clip,
+                        "scene": bpy.context.scene,
+                    }
+        return {}
+
+    def _delete_track_or_marker(self, context, clip, tr, frame: int) -> Tuple[bool, str]:
+        """Versuche Track zu löschen; Fallback: Marker @frame löschen. Liefert (ok, reason)."""
+        name = getattr(tr, "name", "<noname>")
+        ptr = int(getattr(tr, "as_pointer")())
+        # Pre-Select
+        try:
+            for _t in clip.tracking.tracks:
+                _t.select = False
+            tr.select = True
+            try:
+                mk = tr.markers.find_frame(int(frame), exact=True)
+            except TypeError:
+                mk = tr.markers.find_frame(int(frame))
+            if mk:
+                try:
+                    mk.select = True
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Operator mit Override
+        ovr = self._find_clip_editor_override(clip)
+        try:
+            if ovr:
+                with bpy.context.temp_override(**ovr):
+                    bpy.ops.clip.delete_track()
+            else:
+                bpy.ops.clip.delete_track()
+        except Exception:
+            pass
+        # Verifikation
+        try:
+            for _t in clip.tracking.tracks:
+                if int(getattr(_t, "as_pointer")()) == ptr or getattr(_t, "name", "") == name:
+                    break
+            else:
+                # nicht mehr vorhanden
+                try:
+                    bpy.context.view_layer.update()
+                except Exception:
+                    pass
+                return True, "track"
+        except Exception:
+            pass
+        # Fallback: nur Marker @frame löschen
+        try:
+            tr.markers.delete_frame(int(frame))
+            try:
+                chk = tr.markers.find_frame(int(frame), exact=True)
+            except TypeError:
+                chk = tr.markers.find_frame(int(frame))
+            if not chk:
+                try:
+                    bpy.context.view_layer.update()
+                except Exception:
+                    pass
+                return True, "marker"
+        except Exception:
+            pass
+        return False, "failed"
 
     def execute(self, context):
         scn = context.scene
@@ -144,16 +230,14 @@ class CLIP_OT_detect_cycle(Operator):
                 except Exception:
                     pass
                 for t in cand_tracks[:to_delete]:
-                    try:
+                    ok, how = self._delete_track_or_marker(context, clip, t, frame)
+                    if ok:
                         deleted_labels.append(getattr(t, "name", "<unnamed>"))
-                        getattr(clip.tracking.tracks, "remove")(t)
                         removed_cnt += 1
                         try:
                             new_after.discard(int(t.as_pointer()))
                         except Exception:
                             pass
-                    except Exception:
-                        pass
                 eval_res = {
                     "status": "ENOUGH",
                     "count": int(len(new_after)),
@@ -161,21 +245,17 @@ class CLIP_OT_detect_cycle(Operator):
                     "max": int(eval_res.get("max", 0)),
                 }
         elif eval_res.get("status") == "TOO_FEW":
-            # Wie im alten Coordinator: alle neu gesetzten Tracks wieder entfernen,
-            # damit der nächste Detect‑Durchlauf mit neuem min_distance auf sauberem Zustand aufsetzt.
+            # Alle neu gesetzten Tracks/Marker entfernen für sauberen Neustart
             ptr_map = self._tracks_by_ptr(context)
             for p in list(new_after):
                 t = ptr_map.get(p)
                 if not t:
                     continue
-                try:
+                ok, how = self._delete_track_or_marker(context, clip, t, frame)
+                if ok:
                     deleted_labels.append(getattr(t, "name", "<unnamed>"))
-                    getattr(clip.tracking.tracks, "remove")(t)
                     removed_cnt += 1
-                except Exception:
-                    pass
             new_after.clear()
-            # eval_res bleibt "TOO_FEW" mit ursprünglichen min/max – Count jetzt 0 für Protokoll
             eval_res = {
                 "status": "TOO_FEW",
                 "count": 0,
