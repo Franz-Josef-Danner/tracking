@@ -14,6 +14,12 @@ from typing import Optional
 
 import bpy
 
+# --- Legacy guard & version marker ------------------------------------------
+# Einige lokale ZIP-Builds referenzieren in Altpfaden noch `default_min`.
+# Der Guard neutralisiert das sicher (None == Auto-Logik in den Helpern).
+default_min: None | int = None
+COORD_VERSION = "no-solve-guard-2025-09-18"
+
 # --- Helper-Imports (robust) -------------------------------------------------
 try:
     from ..Helper.find_low_marker_frame import run_find_low_marker_frame
@@ -72,6 +78,7 @@ def _safe_count(context: bpy.types.Context) -> Optional[int]:
 # --- Orchestrierung ----------------------------------------------------------
 def _orchestrate_once(context: bpy.types.Context) -> None:
     """Tracking-&-Cleanup Sequenz ohne Solve."""
+    _log(f"[CoordinatorFile] {__file__} v={COORD_VERSION}")
     clip = getattr(context, "edit_movieclip", None) or getattr(getattr(context, "space_data", None), "clip", None)
     if clip is None:
         raise RuntimeError("Kein aktiver Clip im CLIP_EDITOR.")
