@@ -772,6 +772,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             # Operator noch nicht gestartet → starten
             if not self.bidi_started:
                 if CLIP_OT_bidirectional_track is None:
+                    print("[COORD][BIDI] Bidirectional-Track nicht verfügbar!")
                     return self._finish(context, info="Bidirectional-Track nicht verfügbar.", cancelled=True)
                 try:
                     # Snapshot vor Start (nur ausgewählte Tracks)
@@ -780,40 +781,46 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         last_res = scn.get('tco_last_detect_cycle', {}) or {}
                         last_cnt = (last_res.get('count') or {}).get('count')
                         last_frm = (last_res.get('detect') or {}).get('frame')
+                        print(f"[COORD][BIDI] Transition DETECT→BIDI @f{last_frm} count={last_cnt}")
                         self.report({'INFO'}, f"Coordinator: Transition DETECT→BIDI @f{last_frm} count={last_cnt}")
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        print(f"[COORD][BIDI] Fehler beim Loggen des letzten Detect-Status: {exc}")
                     # Initialisiere Scene-Flags für aktiven Lauf
                     try:
                         scn["bidi_active"] = True
                         scn["bidi_result"] = ""
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        print(f"[COORD][BIDI] Fehler beim Setzen der Scene-Flags: {exc}")
                     # Starte den Bidirectional‑Track mittels Operator. Das 'INVOKE_DEFAULT'
                     # sorgt dafür, dass Blender den Operator modal ausführt.
+                    print("[COORD][BIDI] Starte Bidirectional-Track Operator…")
                     bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
                     self.bidi_started = True
                     self.report({'INFO'}, "Bidirectional-Track gestartet")
                 except Exception as exc:
+                    print(f"[COORD][BIDI] Fehler beim Starten des Bidirectional-Track Operators: {exc}")
                     return self._finish(context, info=f"Bidirectional-Track konnte nicht gestartet werden ({exc})", cancelled=True)
                 return {'RUNNING_MODAL'}
             # Operator läuft → abwarten
             if bidi_active:
-                # Noch aktiv, weiter warten
+                print("[COORD][BIDI] Operator läuft noch, warte auf Abschluss…")
                 return {'RUNNING_MODAL'}
             # Operator hat beendet. Prüfe Ergebnis.
             if not bidi_result:
+                print("[COORD][BIDI] Operator inaktiv aber kein Ergebnis – warte weiter…")
                 try:
                     self.report({'INFO'}, "Coordinator: BIDI inactive aber kein Ergebnis – warte…")
                 except Exception:
                     pass
                 return {'RUNNING_MODAL'}
             if str(bidi_result) != "OK":
+                print(f"[COORD][BIDI] Bidirectional-Track fehlgeschlagen: {bidi_result}")
                 try:
                     self.report({'WARNING'}, f"Bidirectional-Track fehlgeschlagen ({bidi_result})")
                 except Exception:
                     pass
                 return self._finish(context, info="Bidirectional-Track fehlgeschlagen", cancelled=True)
+            print("[COORD][BIDI] Bidirectional-Track erfolgreich – Übergang zu PH_FIND_LOW")
             try:
                 self.report({'INFO'}, "Bidirectional-Track erfolgreich – weiter mit PH_FIND_LOW")
             except Exception:
@@ -836,8 +843,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                 pass
                         frame_counts.append((f, cnt))
                     print(f"[COORD][BIDI] Marker pro Frame nach BIDI: " + ", ".join([f"f{f}:{c}" for f,c in frame_counts]))
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f"[COORD][BIDI] Fehler beim Marker-Log nach BIDI: {exc}")
+            print(f"[COORD][BIDI] Phasewechsel: BIDI → FIND_LOW")
             self.bidi_started = False
             self.phase = PH_FIND_LOW
             return {'RUNNING_MODAL'}
