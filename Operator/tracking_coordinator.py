@@ -1485,43 +1485,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     return {'RUNNING_MODAL'}
                 # Operator hat beendet. Prüfe Ergebnis.
                 if str(bidi_result) != "OK":
-                    return self._finish(context, info=f"Bidirectional-Track fehlgeschlagen ({bidi_result})", cancelled=True)
-                # NEU: Delta je Marker berechnen und A_k speichern
-                try:
-                    before = self.bidi_before_counts or {}
-                    after = _marker_count_by_selected_track(context)
-                    per_marker_frames = _delta_counts(before, after)
-                    # Ziel-Frame bestimmen (Fallback auf aktuellen Scene-Frame)
-                    f = int(self.target_frame) if self.target_frame is not None else int(context.scene.frame_current)
-                    record_bidirectional_result(
-                        context,
-                        f,
-                        per_marker_frames=per_marker_frames,
-                        error_value_func=error_value,
-                    )
-                    self.report({'INFO'}, f"A_k gespeichert @f{f}: sumΔ={sum(per_marker_frames.values())}")
-                except Exception as _exc:
-                    self.report({'WARNING'}, f"A_k speichern fehlgeschlagen: {_exc}")
-                # Erfolgreich: für die neue Runde zurücksetzen
-                try:
-                    clean_short_tracks(context)
-                    self.report({'INFO'}, "Cleanup nach Bidirectional-Track ausgeführt")
-                except Exception as exc:
-                    self.report({'WARNING'}, f"Cleanup nach Bidirectional-Track fehlgeschlagen: {exc}")
-                reset_for_new_cycle(context)  # Solve-Log bleibt erhalten
-                self.detection_threshold = None
-                self.pre_ptrs = None
-                self.target_frame = None
-                self.repeat_map = {}
-                self.bidi_started = False
-                self.bidi_before_counts = None
-                self.repeat_count_for_target = None
-                self.phase = PH_FIND_LOW
-                self.report({'INFO'}, "Bidirectional-Track abgeschlossen – neuer Zyklus beginnt")
-                return {'RUNNING_MODAL'}
-            # Wenn noch aktiv → weiter warten
-            try:
-                self.report({'INFO'}, "Coordinator: BIDI läuft …")
-            except Exception:
-                pass
-            return {'RUNNING_MODAL'}
+                    try:
+                        self.report({'WARNING'}, f"Bidirectional-Track fehlgeschlagen ({bidi_result})")
+                    except Exception:
+                        pass
+                    return self._finish(context, info="Bidirectional-Track fehlgeschlagen", cancelled=True)
