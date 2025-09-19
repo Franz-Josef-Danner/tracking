@@ -155,6 +155,10 @@ class CLIP_OT_bidirectional_track(Operator):
 
     def run_tracking_step(self, context):
         clip = _get_active_clip_fallback()
+        print(f"[BIDI][Step={self._step}] Frame={context.scene.frame_current}")
+        if clip:
+            print(f"[BIDI][Step={self._step}] Marker gesamt: { _count_total_markers(clip) }")
+            print(f"[BIDI][Step={self._step}] Marker pro Frame: " + ", ".join([f"f{f}:{_count_tracks_with_marker_on_frame(clip, f)}" for f in range(int(context.scene.frame_start), int(context.scene.frame_end)+1)]))
         if clip is None:
             print("[BIDI] Kein aktiver Clip im Tracking-Editor gefunden!")
             self.report({'ERROR'}, "Kein aktiver Clip im Tracking-Editor gefunden.")

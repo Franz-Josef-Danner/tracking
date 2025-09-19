@@ -173,16 +173,20 @@ def run_detect_basic(
 
     scn[_LOCK_KEY] = True  # <-- WICHTIG: eigene Zeile!
 
+
     try:
         clip = _get_movieclip(context)
+        print(f"[DETECT] Starte run_detect_basic auf Frame {scn.frame_current}")
         if not clip:
+            print("[DETECT] Kein MovieClip gefunden!")
             return {"status": "FAILED", "reason": "no_movieclip"}
 
         if start_frame is not None:
             try:
                 scn.frame_set(int(start_frame))
-            except Exception:
-                pass
+                print(f"[DETECT] Setze Frame auf {start_frame}")
+            except Exception as exc:
+                print(f"[DETECT] Fehler beim Setzen des Start-Frames: {exc}")
 
         tracking = clip.tracking
         settings = tracking.settings
@@ -205,8 +209,11 @@ def run_detect_basic(
 
         # Placement normalisieren (RNA-Enum erwartet 'FRAME' | 'INSIDE_GPENCIL' | 'OUTSIDE_GPENCIL')
         p = (placement or "FRAME").upper()
-        _log(f"[Detect] frame={int(scn.frame_current)} "
-             f"threshold={thr:.6f} margin_px={int(margin_px)} min_distance_px={int(min_distance_px)}")
+        print(f"[DETECT] Parameter: threshold={thr:.6f} margin_px={int(margin_px)} min_distance_px={int(min_distance_px)} placement={p}")
+        # Marker vor Detect
+        if clip:
+            print(f"[DETECT] Marker vor Detect: {sum(len(t.markers) for t in clip.tracking.tracks)}")
+            print(f"[DETECT] Marker pro Frame vor Detect: " + ", ".join([f"f{f}:{sum(1 for t in clip.tracking.tracks if t.markers.find_frame(f))}" for f in range(int(scn.frame_start), int(scn.frame_end)+1)]))
 
         pre_ptrs, new_count = perform_marker_detection(
             clip=clip,
@@ -216,6 +223,10 @@ def run_detect_basic(
             margin_px=margin_px,
             min_distance_px=min_distance_px,
         )
+        # Marker nach Detect
+        if clip:
+            print(f"[DETECT] Marker nach Detect: {sum(len(t.markers) for t in clip.tracking.tracks)} (neu: {new_count})")
+            print(f"[DETECT] Marker pro Frame nach Detect: " + ", ".join([f"f{f}:{sum(1 for t in clip.tracking.tracks if t.markers.find_frame(f))}" for f in range(int(scn.frame_start), int(scn.frame_end)+1)]))
 
         # --- Persistente Veröffentlichung aller effektiv genutzten Parameter ---
         try:
