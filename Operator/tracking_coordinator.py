@@ -1243,7 +1243,28 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     # Ergebnis lesen (optional)
                     info = context.scene.get('tco_last_findlowjump', {})
                     self.target_frame = int(info.get('frame') or context.scene.frame_current)
-                    self.report({'INFO'}, f"FindLow+Jump OK → f{self.target_frame}")
+                    marker_basis = None
+                    marker_count = None
+                    try:
+                        marker_basis = context.scene.get('marker_basis', None)
+                        if marker_basis is None:
+                            marker_basis = context.scene.get('marker_adapt', None)
+                        if marker_basis is None:
+                            marker_basis = 20
+                        # Markeranzahl im gefundenen Frame bestimmen
+                        clip = _resolve_clip(context)
+                        marker_count = 0
+                        if clip and self.target_frame:
+                            for tr in getattr(clip.tracking, "tracks", []):
+                                try:
+                                    m = tr.markers.find_frame(self.target_frame)
+                                    if m and not getattr(m, "mute", False) and not getattr(tr, "mute", False):
+                                        marker_count += 1
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+                    self.report({'INFO'}, f"FindLow+Jump OK → f{self.target_frame} | marker_basis={marker_basis} | marker_count={marker_count}")
                     self.phase = PH_DETECT
                     return {'RUNNING_MODAL'}
                 else:
