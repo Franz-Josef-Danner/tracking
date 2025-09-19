@@ -1462,5 +1462,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {'RUNNING_MODAL'}
             # Wenn noch aktiv → weiter warten
 
+        # Allgemeiner Fallback: weiter laufen
+        return {'RUNNING_MODAL'}
+
 # Optional: lokale Tests beim Direktlauf
 # Entfernt: __main__-Block mit register(), Registrierung erfolgt über __init__.py
