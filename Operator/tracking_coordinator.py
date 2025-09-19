@@ -757,81 +757,82 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # GRAB_CURSOR_XY existiert nicht → Validation-Error beim Register.
     # Modalität kommt über modal(); Cursor-Grabbing ist nicht nötig.
     bl_options = {"REGISTER", "UNDO"}
-
-    # — Laufzeit-State (nur Operator, nicht Szene) —
-    _timer: object | None = None
-    phase: str = PH_FIND_LOW
-    target_frame: int | None = None
-    repeat_map: dict[int, int] = {}
-    pre_ptrs: set[int] | None = None
-    repeat_count_for_target: int | None = None
-    # Aktueller Detection-Threshold; wird nach jedem Detect-Aufruf aktualisiert.
-    detection_threshold: float | None = None
-    spike_threshold: float | None = None  # aktueller Spike-Filter-Schwellenwert (temporär)
-    # Telemetrie (optional)
-    last_detect_new_count: int | None = None
-    last_detect_min_distance: int | None = None
-    last_detect_margin: int | None = None
-    # Retry-Handling für Detect-Phase
-    _detect_retries: int = 0
-    _detect_max_retries: int = 5
-    # NEU: Start-Gate, verhindert Mehrfach-Start des Detect-Operators pro Phase
-    _detect_started: bool = False
-
-    def _run_detect_with_policy(
-        self,
-        context: bpy.types.Context,
-        *,
-        threshold: float | None = None,
-        # optional Guard: erlaubt explizite Vorgabe für min_distance
-        min_distance: int | None = None,
-        placement: str = "FRAME",
-        select: bool | None = None,
-        **kwargs,
-    ) -> dict:
-        scn = context.scene
-        # 1) Operative Baselines ausschließlich aus marker_helper_main (Scene-Keys)
-        fixed_margin = int(scn.get("margin_base") or 0)
-        if fixed_margin <= 0:
-            # Harter Fallback, falls MarkerHelper noch nicht gelaufen ist
-            clip = _resolve_clip(context)
-            w = int(getattr(clip, "size", (800, 800))[0]) if clip else 800
-            patt = max(8, int(w / 100))
-            fixed_margin = patt * 2
-
-        # 2) Threshold: harter Fixwert (Anforderung)
-        #    Kein Fallback, keine Last-Detection – immer exakt 0.0001.
-        curr_thr = 0.0001  # FIXED
-
-        # *** min_distance: exakt nach Vorgabe ***
-        # Priorität NUR:
-        #   1) expliziter Funktionsparameter
-        #   2) zuletzt gestufter Wert: scene["tco_detect_min_distance"]
-        #   3) Startwert ausschließlich aus marker_helper_main: scene["min_distance_base"]
-        if min_distance is not None:
-            curr_md = float(min_distance)
-            md_source = "param"
-        else:
-            tco_md = scn.get("tco_detect_min_distance")
-            if isinstance(tco_md, (int, float)) and float(tco_md) > 0.0:
-                curr_md = float(tco_md)
-                md_source = "tco"
-            else:
-                base_md = scn.get("min_distance_base")
-                # Erwartung: marker_helper_main hat base gesetzt.
-                curr_md = float(base_md if base_md is not None else 0.0)
-                md_source = "base"
-
-        last_nc = int(scn.get("tco_last_detect_new_count") or -1)
-        target = 100
-        for k in ("tco_detect_target", "detect_target", "marker_target", "target_new_markers"):
-            v = scn.get(k)
-            if isinstance(v, (int, float)) and int(v) > 0:
-                target = int(v)
-                break
-
-        # 3) Detect ausführen (select passthrough, KEINE Berechnung von margin/md hier)
-        before = _marker_count_by_selected_track(context)
+        if self.phase == PH_BIDI:
+            scn = context.scene
+            bidi_active = bool(scn.get("bidi_active", False))
+            bidi_result = scn.get("bidi_result", "")
+            # Operator noch nicht gestartet → starten
+            if not self.bidi_started:
+                if CLIP_OT_bidirectional_track is None:
+                    return self._finish(context, info="Bidirectional-Track nicht verfügbar.", cancelled=True)
+                try:
+                    # Snapshot vor Start (nur ausgewählte Tracks)
+                    self.bidi_before_counts = _marker_count_by_selected_track(context)
+                    try:
+                        last_res = scn.get('tco_last_detect_cycle', {}) or {}
+                        last_cnt = (last_res.get('count') or {}).get('count')
+                        last_frm = (last_res.get('detect') or {}).get('frame')
+                        self.report({'INFO'}, f"Coordinator: Transition DETECT→BIDI @f{last_frm} count={last_cnt}")
+                    except Exception:
+                        pass
+                    # Initialisiere Scene-Flags für aktiven Lauf
+                    try:
+                        scn["bidi_active"] = True
+                        scn["bidi_result"] = ""
+                    except Exception:
+                        pass
+                    # Starte den Bidirectional‑Track mittels Operator. Das 'INVOKE_DEFAULT'
+                    # sorgt dafür, dass Blender den Operator modal ausführt.
+                    bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
+                    self.bidi_started = True
+                    self.report({'INFO'}, "Bidirectional-Track gestartet")
+                except Exception as exc:
+                    return self._finish(context, info=f"Bidirectional-Track konnte nicht gestartet werden ({exc})", cancelled=True)
+                return {'RUNNING_MODAL'}
+            # Operator läuft → abwarten
+            if bidi_active:
+                # Noch aktiv, weiter warten
+                return {'RUNNING_MODAL'}
+            # Operator hat beendet. Prüfe Ergebnis.
+            if not bidi_result:
+                try:
+                    self.report({'INFO'}, "Coordinator: BIDI inactive aber kein Ergebnis – warte…")
+                except Exception:
+                    pass
+                return {'RUNNING_MODAL'}
+            if str(bidi_result) != "OK":
+                try:
+                    self.report({'WARNING'}, f"Bidirectional-Track fehlgeschlagen ({bidi_result})")
+                except Exception:
+                    pass
+                return self._finish(context, info="Bidirectional-Track fehlgeschlagen", cancelled=True)
+            try:
+                self.report({'INFO'}, "Bidirectional-Track erfolgreich – weiter mit PH_FIND_LOW")
+            except Exception:
+                pass
+            # Nach jedem BIDI: Marker-Status für alle Frames loggen
+            try:
+                clip = _resolve_clip(context)
+                if clip:
+                    fs = int(context.scene.frame_start)
+                    fe = int(context.scene.frame_end)
+                    frame_counts = []
+                    for f in range(fs, fe+1):
+                        cnt = 0
+                        for tr in getattr(clip.tracking, "tracks", []):
+                            try:
+                                m = tr.markers.find_frame(f)
+                                if m and not getattr(m, "mute", False) and not getattr(tr, "mute", False):
+                                    cnt += 1
+                            except Exception:
+                                pass
+                        frame_counts.append((f, cnt))
+                    print(f"[COORD][BIDI] Marker pro Frame nach BIDI: " + ", ".join([f"f{f}:{c}" for f,c in frame_counts]))
+            except Exception:
+                pass
+            self.bidi_started = False
+            self.phase = PH_FIND_LOW
+            return {'RUNNING_MODAL'}
         res = _primitive_detect_once(
             context,
             threshold=curr_thr,
