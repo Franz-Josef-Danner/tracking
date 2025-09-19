@@ -1402,9 +1402,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception:
                 pass
             self.report({'INFO'}, f"DETECT @f{self.target_frame}: new={new_cnt}, thr={self.detection_threshold}")
-            # Debug: Track/Marker-Dump nach Detect
+            # Debug: Track/Marker-Dump nach Detect + Clip-Objekt-Log
             try:
                 clip = _resolve_clip(context)
+                print(f"[COORD][DetectO] Clip-Objekt: {repr(clip)} id={id(clip) if clip else None}")
                 if clip:
                     track_infos = []
                     for tr in getattr(clip.tracking, "tracks", []):

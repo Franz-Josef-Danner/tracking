@@ -50,6 +50,7 @@ class CLIP_OT_detect_cycle(Operator):
                 clip = next(iter(bpy.data.movieclips))
             except Exception:
                 clip = None
+        print(f"[DETECT_O] Clip-Objekt: {repr(clip)} id={id(clip) if clip else None}")
         return clip
 
     def _snapshot_ptrs(self, context) -> Set[int]:
