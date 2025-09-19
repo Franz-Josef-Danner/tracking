@@ -348,6 +348,12 @@ class CLIP_OT_detect_cycle(Operator):
                 baseline_ptrs=self.pre_ptrs or set(),
                 frame=self.frame,
                 min_distance=float(self.curr_md),
+                # Wichtig: Neue Tracks nach Cleanup selektiert lassen
+                distance_unit="pixel",
+                require_selected_new=True,
+                include_muted_old=False,
+                select_remaining_new=True,
+                verbose=True,
             )
             self.phase = "COUNT"
             return {'RUNNING_MODAL'}
@@ -389,6 +395,19 @@ class CLIP_OT_detect_cycle(Operator):
                                 new_after.discard(int(t.as_pointer()))
                             except Exception:
                                 pass
+                    # Nach dem Trimmen: verbleibende NEUE Tracks wieder selektieren
+                    try:
+                        ptrs_left = set(new_after)
+                        clip2 = self._resolve_clip(context)
+                        trk2 = getattr(clip2, "tracking", None) if clip2 else None
+                        if trk2 and hasattr(trk2, "tracks"):
+                            for _t in trk2.tracks:
+                                try:
+                                    _t.select = (int(_t.as_pointer()) in ptrs_left)
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
                     self.last_eval = {
                         "status": "ENOUGH",
                         "count": int(len(new_after)),
