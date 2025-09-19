@@ -118,6 +118,7 @@ class CLIP_OT_bidirectional_track(Operator):
     # ---------------------------------------------------------------------
 
     def execute(self, context):
+        print("[BIDI] Starte Bidirectional-Track Operator")
         context.scene["bidi_active"] = True
         context.scene["bidi_result"] = ""
 
@@ -130,6 +131,11 @@ class CLIP_OT_bidirectional_track(Operator):
         self._t0 = time.perf_counter()
         self._t_last_action = self._t0
         self._tick = 0
+
+        clip = _get_active_clip_fallback()
+        if clip:
+            print(f"[BIDI] Marker zu Beginn: { _count_total_markers(clip) }")
+            print(f"[BIDI] Marker pro Frame zu Beginn: " + ", ".join([f"f{f}:{_count_tracks_with_marker_on_frame(clip, f)}" for f in range(int(context.scene.frame_start), int(context.scene.frame_end)+1)]))
 
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.5, window=context.window)
@@ -150,13 +156,16 @@ class CLIP_OT_bidirectional_track(Operator):
     def run_tracking_step(self, context):
         clip = _get_active_clip_fallback()
         if clip is None:
+            print("[BIDI] Kein aktiver Clip im Tracking-Editor gefunden!")
             self.report({'ERROR'}, "Kein aktiver Clip im Tracking-Editor gefunden.")
             return self._finish(context, result="FAILED")
 
         if self._step == 0:
+            print("[BIDI] Starte Vorwärts-Tracking…")
             try:
                 bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=False, sequence=True)
-            except Exception:
+            except Exception as exc:
+                print(f"[BIDI] Fehler beim Vorwärts-Tracking: {exc}")
                 return self._finish(context, result="FAILED")
             self._t_last_action = time.perf_counter()
             self._step = 1
@@ -164,23 +173,31 @@ class CLIP_OT_bidirectional_track(Operator):
 
         elif self._step == 1:
             context.scene.frame_current = self._start_frame
+            print(f"[BIDI] Playhead zurück auf Start-Frame: {self._start_frame}")
             self._step = 2
             return {'PASS_THROUGH'}
 
         elif self._step == 2:
+            print("[BIDI] Vorbereitung Rückwärts-Tracking…")
             self._step = 3
             return {'PASS_THROUGH'}
 
         elif self._step == 3:
+            print("[BIDI] Starte Rückwärts-Tracking…")
             try:
                 bpy.ops.clip.track_markers('INVOKE_DEFAULT', backwards=True, sequence=True)
-            except Exception:
+            except Exception as exc:
+                print(f"[BIDI] Fehler beim Rückwärts-Tracking: {exc}")
                 return self._finish(context, result="FAILED")
             self._t_last_action = time.perf_counter()
             self._step = 4
             return {'PASS_THROUGH'}
 
         elif self._step == 4:
+            print("[BIDI] Tracking abgeschlossen. Marker-Status nach BIDI:")
+            if clip:
+                print(f"[BIDI] Marker gesamt: { _count_total_markers(clip) }")
+                print(f"[BIDI] Marker pro Frame: " + ", ".join([f"f{f}:{_count_tracks_with_marker_on_frame(clip, f)}" for f in range(int(context.scene.frame_start), int(context.scene.frame_end)+1)]))
             return self._finish(context, result="OK")
 
         return {'PASS_THROUGH'}
@@ -188,6 +205,7 @@ class CLIP_OT_bidirectional_track(Operator):
     # ---------------------------------------------------------------------
 
     def _finish(self, context, result: str):
+        print(f"[BIDI] Beende Bidirectional-Track Operator mit Result: {result}")
         wm = context.window_manager
         if self._timer:
             try:
