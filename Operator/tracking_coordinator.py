@@ -1460,6 +1460,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         self.report({'INFO'}, f"Coordinator: Transition DETECT→BIDI @f{last_frm} count={last_cnt}")
                     except Exception:
                         pass
+                    # Initialisiere Scene-Flags für aktiven Lauf
+                    try:
+                        scn["bidi_active"] = True
+                        scn["bidi_result"] = ""
+                    except Exception:
+                        pass
                     # Starte den Bidirectional‑Track mittels Operator. Das 'INVOKE_DEFAULT'
                     # sorgt dafür, dass Blender den Operator modal ausführt.
                     bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
@@ -1470,6 +1476,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {'RUNNING_MODAL'}
             # Operator läuft → abwarten
             if not bidi_active:
+                # Falls Ergebnis noch nicht gesetzt wurde, weiter warten
+                if not bidi_result:
+                    try:
+                        self.report({'INFO'}, "Coordinator: BIDI inactive aber kein Ergebnis – warte…")
+                    except Exception:
+                        pass
+                    return {'RUNNING_MODAL'}
                 # Operator hat beendet. Prüfe Ergebnis.
                 if str(bidi_result) != "OK":
                     return self._finish(context, info=f"Bidirectional-Track fehlgeschlagen ({bidi_result})", cancelled=True)
@@ -1489,7 +1502,26 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     self.report({'INFO'}, f"A_k gespeichert @f{f}: sumΔ={sum(per_marker_frames.values())}")
                 except Exception as _exc:
                     self.report({'WARNING'}, f"A_k speichern fehlgeschlagen: {_exc}")
-        return {'RUNNING_MODAL'}
-
-# Optional: lokale Tests beim Direktlauf
-# Entfernt: __main__-Block mit register(), Registrierung erfolgt über __init__.py
+                # Erfolgreich: für die neue Runde zurücksetzen
+                try:
+                    clean_short_tracks(context)
+                    self.report({'INFO'}, "Cleanup nach Bidirectional-Track ausgeführt")
+                except Exception as exc:
+                    self.report({'WARNING'}, f"Cleanup nach Bidirectional-Track fehlgeschlagen: {exc}")
+                reset_for_new_cycle(context)  # Solve-Log bleibt erhalten
+                self.detection_threshold = None
+                self.pre_ptrs = None
+                self.target_frame = None
+                self.repeat_map = {}
+                self.bidi_started = False
+                self.bidi_before_counts = None
+                self.repeat_count_for_target = None
+                self.phase = PH_FIND_LOW
+                self.report({'INFO'}, "Bidirectional-Track abgeschlossen – neuer Zyklus beginnt")
+                return {'RUNNING_MODAL'}
+            # Wenn noch aktiv → weiter warten
+            try:
+                self.report({'INFO'}, "Coordinator: BIDI läuft …")
+            except Exception:
+                pass
+            return {'RUNNING_MODAL'}
