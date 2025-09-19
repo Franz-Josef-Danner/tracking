@@ -775,7 +775,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # Retry-Handling für Detect-Phase
     _detect_retries: int = 0
     _detect_max_retries: int = 5
-    # Guard: wurde der detect_cycle bereits gestartet (zur Tick-Zeit)?
+    # NEU: Start-Gate, verhindert Mehrfach-Start des Detect-Operators pro Phase
     _detect_started: bool = False
 
     def _run_detect_with_policy(
@@ -942,7 +942,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         self.prev_solve_avg = None
         self.last_reduced_for_avg = None
         self.repeat_count_for_target = None
-        # Detect‑Guard zurücksetzen
+        # Detect-Start-Gate zurücksetzen
         self._detect_started = False
         # Herkunft der Fehlerfunktion einmalig ausgeben (sichtbar im UI)
         try:
@@ -1274,6 +1274,19 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             if bool(context.scene.get('tco_detect_active', False)) or getattr(self, '_detect_started', False):
                 self.phase = PH_WAIT_DETECT
                 return {'RUNNING_MODAL'}
+            # Failsafe: Wenn letztes Ergebnis bereits ENOUGH für diesen Frame ist → direkt weiter zu BIDI
+            try:
+                _res = context.scene.get('tco_last_detect_cycle', {}) or {}
+                _det = _res.get('detect') or {}
+                _cnt = _res.get('count') or {}
+                if int(_det.get('frame', -9999)) == int(self.target_frame or context.scene.frame_current) and str(_cnt.get('status','')).upper() == 'ENOUGH':
+                    self._detect_retries = 0
+                    self._detect_started = False
+                    self.report({'INFO'}, 'Coordinator: Detect bereits ENOUGH – weiter zu BIDI')
+                    self.phase = PH_BIDI
+                    return {'RUNNING_MODAL'}
+            except Exception:
+                pass
             if CLIP_OT_detect_cycle is not None:
                 _ovr = _ensure_clip_context(context)
                 self.report({'INFO'}, "Coordinator: detect_cycle starten (modal)")
@@ -1294,6 +1307,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     scn[DETECT_LAST_THRESHOLD_KEY] = 0.75
             except Exception:
                 pass
+
             rd = self._run_detect_with_policy(
                 context,
                 start_frame=self.target_frame,
