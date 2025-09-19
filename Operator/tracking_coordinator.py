@@ -757,6 +757,8 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     # GRAB_CURSOR_XY existiert nicht → Validation-Error beim Register.
     # Modalität kommt über modal(); Cursor-Grabbing ist nicht nötig.
     bl_options = {"REGISTER", "UNDO"}
+    def modal(self, context: bpy.types.Context, event):
+        # ...existing code...
         if self.phase == PH_BIDI:
             scn = context.scene
             bidi_active = bool(scn.get("bidi_active", False))
