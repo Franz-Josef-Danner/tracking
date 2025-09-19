@@ -1272,21 +1272,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         if self.phase == PH_DETECT:
             # Wenn Detect bereits läuft (Scene-Flag) oder wir ihn in dieser Phase schon gestartet haben → warten
             if bool(context.scene.get('tco_detect_active', False)) or getattr(self, '_detect_started', False):
+                try:
+                    self.report({'INFO'}, "Coordinator: detect bereits aktiv → PH_WAIT_DETECT")
+                except Exception:
+                    pass
                 self.phase = PH_WAIT_DETECT
                 return {'RUNNING_MODAL'}
-            # Failsafe: Wenn letztes Ergebnis bereits ENOUGH für diesen Frame ist → direkt weiter zu BIDI
-            try:
-                _res = context.scene.get('tco_last_detect_cycle', {}) or {}
-                _det = _res.get('detect') or {}
-                _cnt = _res.get('count') or {}
-                if int(_det.get('frame', -9999)) == int(self.target_frame or context.scene.frame_current) and str(_cnt.get('status','')).upper() == 'ENOUGH':
-                    self._detect_retries = 0
-                    self._detect_started = False
-                    self.report({'INFO'}, 'Coordinator: Detect bereits ENOUGH – weiter zu BIDI')
-                    self.phase = PH_BIDI
-                    return {'RUNNING_MODAL'}
-            except Exception:
-                pass
             if CLIP_OT_detect_cycle is not None:
                 _ovr = _ensure_clip_context(context)
                 self.report({'INFO'}, "Coordinator: detect_cycle starten (modal)")
@@ -1296,6 +1287,10 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 else:
                     # Operator läuft modal → auf Scene-Flag warten
                     self._detect_started = True
+                    try:
+                        self.report({'INFO'}, f"Coordinator: detect_cycle RUNNING_MODAL result={list((_res or {}).get('result', []))}")
+                    except Exception:
+                        pass
                     self.phase = PH_WAIT_DETECT
                     return {'RUNNING_MODAL'}
                 # Wenn der Start scheitert, fällt es unten in die Inline‑Logik
@@ -1358,26 +1353,50 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             active = bool(scn.get('tco_detect_active', False))
             if active:
                 # weiter warten
+                try:
+                    self.report({'INFO'}, "Coordinator: waiting for detect_cycle to finish …")
+                except Exception:
+                    pass
                 return {'RUNNING_MODAL'}
             # Detect ist fertig → Ergebnis auswerten
             res = scn.get('tco_last_detect_cycle', {}) or {}
+            detect_info = res.get('detect') or {}
             count = res.get('count') or {}
             status = str(count.get('status', '')).upper() if isinstance(count, dict) else ''
-            self.report({'INFO'}, f"Coordinator: detect_cycle beendet (status={status})")
+            try:
+                self.report({'INFO'}, (
+                    f"Coordinator: detect_cycle beendet (status={status}) "
+                    f"detect={{frame={detect_info.get('frame')}, new={detect_info.get('new_tracks')}, md={detect_info.get('min_distance_px')}}} "
+                    f"count={{count={count.get('count')}, band=[{count.get('min')}..{count.get('max')}]}}"
+                ))
+            except Exception:
+                pass
             # Gate für nächste Runde lösen
             self._detect_started = False
             if status == 'ENOUGH':
                 self._detect_retries = 0
+                try:
+                    self.report({'INFO'}, "Coordinator: ENOUGH → Wechsel zu PH_BIDI")
+                except Exception:
+                    pass
                 self.phase = PH_BIDI
                 return {'RUNNING_MODAL'}
             if status == 'TOO_FEW':
                 self._detect_retries += 1
+                try:
+                    self.report({'INFO'}, f"Coordinator: TOO_FEW → Retry {self._detect_retries}/{self._detect_max_retries}")
+                except Exception:
+                    pass
                 if self._detect_retries >= self._detect_max_retries:
                     return self._finish(context, info='Detect: max. Wiederholungen erreicht', cancelled=True)
                 # erneuter Detect‑Durchlauf
                 self.phase = PH_DETECT
                 return {'RUNNING_MODAL'}
             # Unbekannter Status → zurück zu DETECT als Fallback
+            try:
+                self.report({'WARNING'}, f"Coordinator: unbekannter Detect-Status → zurück zu DETECT (status={status})")
+            except Exception:
+                pass
             self.phase = PH_DETECT
             return {'RUNNING_MODAL'}
         # PHASE 4: DISTANZE
@@ -1414,6 +1433,13 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 try:
                     # Snapshot vor Start (nur ausgewählte Tracks)
                     self.bidi_before_counts = _marker_count_by_selected_track(context)
+                    try:
+                        last_res = scn.get('tco_last_detect_cycle', {}) or {}
+                        last_cnt = (last_res.get('count') or {}).get('count')
+                        last_frm = (last_res.get('detect') or {}).get('frame')
+                        self.report({'INFO'}, f"Coordinator: Transition DETECT→BIDI @f{last_frm} count={last_cnt}")
+                    except Exception:
+                        pass
                     # Starte den Bidirectional‑Track mittels Operator. Das 'INVOKE_DEFAULT'
                     # sorgt dafür, dass Blender den Operator modal ausführt.
                     bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
