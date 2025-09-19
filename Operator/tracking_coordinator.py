@@ -1402,6 +1402,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception:
                 pass
             self.report({'INFO'}, f"DETECT @f{self.target_frame}: new={new_cnt}, thr={self.detection_threshold}")
+            # Debug: Track/Marker-Dump nach Detect
+            try:
+                clip = _resolve_clip(context)
+                if clip:
+                    track_infos = []
+                    for tr in getattr(clip.tracking, "tracks", []):
+                        try:
+                            n = len(tr.markers)
+                            track_infos.append(f"{tr.name}({n})")
+                        except Exception:
+                            track_infos.append(f"{tr.name}(ERR)")
+                    print(f"[COORD][DetectO] Tracks nach Detect: {', '.join(track_infos)}")
+            except Exception as exc:
+                print(f"[COORD][DetectO] Track/Marker-Dump Fehler: {exc}")
             self.phase = PH_DISTANZE
             return {'RUNNING_MODAL'}
 
