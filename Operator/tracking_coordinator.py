@@ -760,6 +760,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     def modal(self, context: bpy.types.Context, event):
         # ...existing code...
         if self.phase == PH_BIDI:
+            # Debug: Status-Log für BIDI-Phase
+            try:
+                scn = context.scene
+                print(f"[COORD][BIDI] phase={self.phase} bidi_started={self.bidi_started} scn['bidi_active']={scn.get('bidi_active', None)} scn['bidi_result']={scn.get('bidi_result', None)}")
+            except Exception as exc:
+                print(f"[COORD][BIDI] Status-Log Fehler: {exc}")
             scn = context.scene
             bidi_active = bool(scn.get("bidi_active", False))
             bidi_result = scn.get("bidi_result", "")
