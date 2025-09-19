@@ -1405,6 +1405,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             except Exception:
                 pass
             self.report({'INFO'}, f"DETECT @f{self.target_frame}: new={new_cnt}, thr={self.detection_threshold}")
+            # Playhead explizit auf target_frame setzen (wie im alten Coordinator)
+            try:
+                context.scene.frame_current = self.target_frame
+                print(f"[COORD] Setze Playhead nach Detect auf Frame {self.target_frame}")
+            except Exception as exc:
+                print(f"[COORD] Fehler beim Setzen von frame_current: {exc}")
             # Debug: Track/Marker-Dump nach Detect + Clip-Objekt-Log
             try:
                 clip = _resolve_clip(context)
@@ -1507,6 +1513,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 if CLIP_OT_bidirectional_track is None:
                     return self._finish(context, info="Bidirectional-Track nicht verfügbar.", cancelled=True)
                 try:
+                    # Playhead explizit auf target_frame setzen (wie im alten Coordinator)
+                    try:
+                        context.scene.frame_current = self.target_frame
+                        print(f"[COORD] Setze Playhead vor BIDI auf Frame {self.target_frame}")
+                    except Exception as exc:
+                        print(f"[COORD] Fehler beim Setzen von frame_current vor BIDI: {exc}")
                     # Snapshot vor Start (nur ausgewählte Tracks)
                     self.bidi_before_counts = _marker_count_by_selected_track(context)
                     try:
