@@ -1499,7 +1499,44 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self.phase = PH_FIND_LOW
                 return {'RUNNING_MODAL'}
 
-        # ...weitere Phasen wie SPIKE_CYCLE etc...
+
+        # PHASE 6: SPIKE_CYCLE
+        if self.phase == PH_SPIKE_CYCLE:
+            try:
+                self.report({'INFO'}, f"Starte Spike-Filter-Cycle mit Schwelle {self.spike_threshold}")
+            except Exception:
+                pass
+            try:
+                # Führe Spike-Filter aus (importiert oben)
+                run_marker_spike_filter_cycle(context, threshold=self.spike_threshold or 100.0)
+            except Exception as exc:
+                try:
+                    self.report({'WARNING'}, f"Spike-Filter-Cycle Fehler: {exc}")
+                except Exception:
+                    pass
+            # Nach Spike-Filter: weiter zu SOLVE
+            self.phase = "PH_SOLVE"
+            return {'RUNNING_MODAL'}
+
+        # PHASE 7: SOLVE
+        if self.phase == "PH_SOLVE":
+            try:
+                self.report({'INFO'}, "Starte Solve-Operator")
+            except Exception:
+                pass
+            try:
+                # Starte Solve-Operator (sofern vorhanden)
+                if hasattr(bpy.ops.clip, 'solve_cycle'):
+                    bpy.ops.clip.solve_cycle('INVOKE_DEFAULT')
+                else:
+                    bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+            except Exception as exc:
+                try:
+                    self.report({'WARNING'}, f"Solve-Operator Fehler: {exc}")
+                except Exception:
+                    pass
+            # Nach Solve: Beende Modal-Loop
+            return self._finish(context, info="Solve abgeschlossen.", cancelled=False)
 
         # Fallback: Sollte nie erreicht werden
         try:
