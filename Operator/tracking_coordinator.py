@@ -1245,6 +1245,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     self.target_frame = int(info.get('frame') or context.scene.frame_current)
                     marker_basis = None
                     marker_count = None
+                    all_frame_counts = []
                     try:
                         marker_basis = context.scene.get('marker_basis', None)
                         if marker_basis is None:
@@ -1262,8 +1263,24 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                                         marker_count += 1
                                 except Exception:
                                     pass
+                        # Für Debug: Markeranzahl für alle Frames im Bereich
+                        if clip:
+                            fs = int(context.scene.frame_start)
+                            fe = int(context.scene.frame_end)
+                            for f in range(fs, fe+1):
+                                cnt = 0
+                                for tr in getattr(clip.tracking, "tracks", []):
+                                    try:
+                                        m = tr.markers.find_frame(f)
+                                        if m and not getattr(m, "mute", False) and not getattr(tr, "mute", False):
+                                            cnt += 1
+                                    except Exception:
+                                        pass
+                                all_frame_counts.append((f, cnt))
                     except Exception:
                         pass
+                    print(f"[COORD][FindLow] marker_basis={marker_basis} target_frame={self.target_frame} marker_count={marker_count}")
+                    print(f"[COORD][FindLow] Marker pro Frame: " + ", ".join([f"f{f}:{c}" for f,c in all_frame_counts]))
                     self.report({'INFO'}, f"FindLow+Jump OK → f{self.target_frame} | marker_basis={marker_basis} | marker_count={marker_count}")
                     self.phase = PH_DETECT
                     return {'RUNNING_MODAL'}
@@ -1514,6 +1531,26 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 # Erfolgreich: weiter kursieren
                 try:
                     self.report({'INFO'}, "Bidirectional-Track erfolgreich – weiter mit PH_FIND_LOW")
+                except Exception:
+                    pass
+                # Nach jedem BIDI: Marker-Status für alle Frames loggen
+                try:
+                    clip = _resolve_clip(context)
+                    if clip:
+                        fs = int(context.scene.frame_start)
+                        fe = int(context.scene.frame_end)
+                        frame_counts = []
+                        for f in range(fs, fe+1):
+                            cnt = 0
+                            for tr in getattr(clip.tracking, "tracks", []):
+                                try:
+                                    m = tr.markers.find_frame(f)
+                                    if m and not getattr(m, "mute", False) and not getattr(tr, "mute", False):
+                                        cnt += 1
+                                except Exception:
+                                    pass
+                            frame_counts.append((f, cnt))
+                        print(f"[COORD][BIDI] Marker pro Frame nach BIDI: " + ", ".join([f"f{f}:{c}" for f,c in frame_counts]))
                 except Exception:
                     pass
                 self.bidi_started = False
