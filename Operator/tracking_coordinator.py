@@ -1490,3 +1490,20 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     except Exception:
                         pass
                     return self._finish(context, info="Bidirectional-Track fehlgeschlagen", cancelled=True)
+                # Erfolgreich: weiter kursieren
+                try:
+                    self.report({'INFO'}, "Bidirectional-Track erfolgreich – weiter mit PH_FIND_LOW")
+                except Exception:
+                    pass
+                self.bidi_started = False
+                self.phase = PH_FIND_LOW
+                return {'RUNNING_MODAL'}
+
+        # ...weitere Phasen wie SPIKE_CYCLE etc...
+
+        # Fallback: Sollte nie erreicht werden
+        try:
+            self.report({'WARNING'}, f"modal(): Unerwarteter Zustand! phase={getattr(self, 'phase', None)}")
+        except Exception:
+            pass
+        return {'CANCELLED'}
