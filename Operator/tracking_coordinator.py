@@ -1270,8 +1270,28 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             return {'RUNNING_MODAL'}
         # PHASE 3: DETECT
         if self.phase == PH_DETECT:
+            scn = context.scene
+            # Failsafe: Wenn das letzte detect_cycle Ergebnis bereits ENOUGH für diesen Frame ist → direkt zu BIDI
+            try:
+                _res = scn.get('tco_last_detect_cycle', {}) or {}
+                _det = _res.get('detect') or {}
+                _cnt = _res.get('count') or {}
+                _frm = int(_det.get('frame', -9999))
+                _status = str(_cnt.get('status', '')).upper()
+                _tgt = int(self.target_frame or scn.frame_current)
+                if _frm == _tgt and _status == 'ENOUGH':
+                    self._detect_retries = 0
+                    self._detect_started = False
+                    try:
+                        self.report({'INFO'}, f"Coordinator: ENOUGH bereits vorhanden @f{_frm} → PH_BIDI")
+                    except Exception:
+                        pass
+                    self.phase = PH_BIDI
+                    return {'RUNNING_MODAL'}
+            except Exception:
+                pass
             # Wenn Detect bereits läuft (Scene-Flag) oder wir ihn in dieser Phase schon gestartet haben → warten
-            if bool(context.scene.get('tco_detect_active', False)) or getattr(self, '_detect_started', False):
+            if bool(scn.get('tco_detect_active', False)) or getattr(self, '_detect_started', False):
                 try:
                     self.report({'INFO'}, "Coordinator: detect bereits aktiv → PH_WAIT_DETECT")
                 except Exception:
@@ -1469,26 +1489,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                     self.report({'INFO'}, f"A_k gespeichert @f{f}: sumΔ={sum(per_marker_frames.values())}")
                 except Exception as _exc:
                     self.report({'WARNING'}, f"A_k speichern fehlgeschlagen: {_exc}")
-                # Erfolgreich: für die neue Runde zurücksetzen
-                try:
-                    clean_short_tracks(context)
-                    self.report({'INFO'}, "Cleanup nach Bidirectional-Track ausgeführt")
-                except Exception as exc:
-                    self.report({'WARNING'}, f"Cleanup nach Bidirectional-Track fehlgeschlagen: {exc}")
-                reset_for_new_cycle(context)  # Solve-Log bleibt erhalten
-                self.detection_threshold = None
-                self.pre_ptrs = None
-                self.target_frame = None
-                self.repeat_map = {}
-                self.bidi_started = False
-                self.bidi_before_counts = None
-                self.repeat_count_for_target = None
-                self.phase = PH_FIND_LOW
-                self.report({'INFO'}, "Bidirectional-Track abgeschlossen – neuer Zyklus beginnt")
-                return {'RUNNING_MODAL'}
-            # Wenn noch aktiv → weiter warten
-
-        # Allgemeiner Fallback: weiter laufen
         return {'RUNNING_MODAL'}
 
 # Optional: lokale Tests beim Direktlauf
