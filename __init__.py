@@ -6,7 +6,7 @@ from bpy.types import PropertyGroup, Panel, Operator as BpyOperator
 from bpy.props import IntProperty, FloatProperty, CollectionProperty
 
 # Nur Klassen importieren – kein register() aus Submodulen aufrufen
-from .Operator.tracking_coordinator import CLIP_OT_tracking_coordinator
+from .Operator.camera_tracking_coordinator import CLIP_OT_camera_tracking_coordinator
 from .Helper.bidirectional_track import CLIP_OT_bidirectional_track
 # Neue delegierte Operatoren explizit importieren, damit sie in Blender registriert werden
 from .Operator.bootstrap_O import CLIP_OT_bootstrap_cycle
@@ -81,7 +81,7 @@ class CLIP_OT_kaiserlich_coordinator_launcher(BpyOperator):
         if bpy.app.background:
             self.report({'ERROR'}, "Kein UI (Background).")
             return {'CANCELLED'}
-        return bpy.ops.clip.tracking_coordinator('INVOKE_DEFAULT')
+        return bpy.ops.clip.camera_tracking_coordinator('INVOKE_DEFAULT')
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +122,7 @@ _CLASSES = (
     CLIP_OT_solve_cycle,
     # Bidi + Coordinator + UI
     CLIP_OT_bidirectional_track,
-    CLIP_OT_tracking_coordinator,            # modal coordinator
+    CLIP_OT_camera_tracking_coordinator,            # modal coordinator
     CLIP_OT_kaiserlich_coordinator_launcher, # launcher
     CLIP_PT_kaiserlich_panel,                # ui
 )

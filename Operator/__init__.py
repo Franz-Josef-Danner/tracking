@@ -1,6 +1,6 @@
 import bpy
 
-from .tracking_coordinator import CLIP_OT_tracking_coordinator
+from .camera_tracking_coordinator import CLIP_OT_camera_tracking_coordinator
 from .bootstrap_O import CLIP_OT_bootstrap_cycle
 from .find_frame_O import CLIP_OT_find_low_and_jump
 from .detect_O import CLIP_OT_detect_cycle
@@ -13,7 +13,7 @@ classes = (
     CLIP_OT_detect_cycle,
     CLIP_OT_clean_cycle,
     CLIP_OT_solve_cycle,
-    CLIP_OT_tracking_coordinator,
+    CLIP_OT_camera_tracking_coordinator,
 )
 
 def register():
