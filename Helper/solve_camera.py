@@ -92,28 +92,19 @@ def solve_camera_only(context):
         Das Operator-Resultat (z. B. {'RUNNING_MODAL'} oder {'CANCELLED'}).
     """
     area, region, space = _find_clip_window(context)
-    # Refine-Flags temporär deaktivieren
-    tr_settings, snap = _snapshot_and_disable_refine(context)
     try:
-        try:
-            # PRE: out-of-range Frames hart abfangen (eliminiert "No camera for frame 301")
-            _clamp_view_to_range(context)
-            if area and region and space:
-                with context.temp_override(area=area, region=region, space_data=space):
-                    res = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-                    _clamp_to_solved_range_post(context)
-                    return res
-            res = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
-            _clamp_to_solved_range_post(context)
-            return res
-        except Exception as e:
-            return {"CANCELLED"}
-    finally:
-        # Ursprungszustand der Refine-Checkboxen wiederherstellen
-        try:
-            _restore_refine(tr_settings, snap)
-        except Exception:
-            pass
+        # PRE: out-of-range Frames hart abfangen (eliminiert "No camera for frame 301")
+        _clamp_view_to_range(context)
+        if area and region and space:
+            with context.temp_override(area=area, region=region, space_data=space):
+                res = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+                _clamp_to_solved_range_post(context)
+                return res
+        res = bpy.ops.clip.solve_camera('INVOKE_DEFAULT')
+        _clamp_to_solved_range_post(context)
+        return res
+    except Exception as e:
+        return {"CANCELLED"}
 
 
 # ----------------------------------------------------------------------------
@@ -183,60 +174,3 @@ def solve_camera_only(context):
 
 
 # --- END PASTE ---
-
-def _snapshot_and_disable_refine(context):
-    """Refine-Flags/Checkboxen temporär deaktivieren und Snapshot zurückgeben."""
-    clip = _resolve_clip(context)
-    if not clip or not getattr(clip, "tracking", None):
-        return None, None
-    try:
-        tr_settings = clip.tracking.settings
-    except Exception:
-        return None, None
-    snap: dict = {}
-    # Enum-Flags sichern und leeren
-    try:
-        flags = getattr(tr_settings, "refine_intrinsics", set())
-        snap["refine_intrinsics"] = set(flags) if isinstance(flags, (set, list, tuple)) else set()
-        try:
-            tr_settings.refine_intrinsics = set()
-        except Exception:
-            pass
-    except Exception:
-        pass
-    # Mögliche Einzel-Checkboxen robust auf False setzen
-    for name in (
-        "refine_focal_length",
-        "refine_principal_point",
-        "refine_tangential",
-        "refine_k1", "refine_k2", "refine_k3", "refine_k4", "refine_k5", "refine_k6",
-    ):
-        try:
-            if hasattr(tr_settings, name):
-                snap[name] = bool(getattr(tr_settings, name))
-                setattr(tr_settings, name, False)
-        except Exception:
-            pass
-    return tr_settings, snap
-
-
-def _restore_refine(tr_settings, snap) -> None:
-    """Refine-Flags/Checkboxen aus Snapshot wiederherstellen."""
-    if not tr_settings or not isinstance(snap, dict):
-        return
-    try:
-        if "refine_intrinsics" in snap:
-            try:
-                tr_settings.refine_intrinsics = set(snap["refine_intrinsics"]) or set()
-            except Exception:
-                pass
-    except Exception:
-        pass
-    for k, v in snap.items():
-        if k == "refine_intrinsics":
-            continue
-        try:
-            if hasattr(tr_settings, k):
-                setattr(tr_settings, k, bool(v))
-        except Exception:
-            pass
