@@ -208,6 +208,12 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                 except Exception:
                     pass
             if restart:
+                # Optional: direkt FindLow triggern, dann in FIND-Phase weiterlaufen
+                try:
+                    bpy.ops.clip.find_low_and_jump()
+                    print(f"[Coord] find_low_and_jump triggered after model switch; result={scn.get('tco_last_findlowjump')}")
+                except Exception as exc:
+                    print(f"[Coord] find_low_and_jump failed after solve_test: {exc}")
                 self.phase = "FIND"
                 self.detect_started = False
                 self.track_started = False
