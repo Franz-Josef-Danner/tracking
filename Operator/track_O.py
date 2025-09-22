@@ -28,6 +28,16 @@ class CLIP_OT_track_cycle(Operator):
         except Exception:
             thr = 2.0
         exceeds = (avg_error is not None) and (float(avg_error) > float(thr))
+        # LOG: Vergleich ausgeben
+        try:
+            if avg_error is None:
+                print(f"[SolveCheck] avg_error=None threshold={float(thr):.3f}")
+            else:
+                ae = float(avg_error)
+                comp = ">" if ae > float(thr) else "<="
+                print(f"[SolveCheck] avg_error={ae:.3f} {comp} threshold={float(thr):.3f} -> exceeds={ae > float(thr)}")
+        except Exception:
+            pass
         # 3. Zusammenfassen
         result = {
             "status": "OK",
