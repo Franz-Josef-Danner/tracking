@@ -434,12 +434,22 @@ def _split_track_by_all_segments(
             f"[SplitDBG][split_by_all] track={track.name} segs={len(segs_all)} "
             f"heads={[s[:3] for s in segs_all[:3]]}"
         )
+    if _dbg_enabled_global():
+        try:
+            print(f"[Split] dup track={track.name} segs={len(segs_all)}")
+        except Exception:
+            pass
     # Duplikate erzeugen (für Segmente 1..k-1)
     dup_list: List[bpy.types.MovieTrackingTrack] = []
     for _ in range(1, len(segs_all)):
         new_tr = _dup_once_with_ui(context, area, region, space, track)
         if new_tr:
             dup_list.append(new_tr)
+    if _dbg_enabled_global():
+        try:
+            print(f"[Split] created_dups={len(dup_list)} for {track.name}")
+        except Exception:
+            pass
     # Zuordnen: Original → seg[0], Duplikate → seg[1], seg[2], ...
     targets: List[Tuple[bpy.types.MovieTrackingTrack, Set[int]]] = []
     targets.append((track, {int(f) for f in segs_all[0]}))
@@ -553,7 +563,15 @@ def recursive_split_cleanup(context,
     # Audit vor dem Split (keine Ausgabe, nur Konsistenz)
     if _dbg_enabled_global():
         try:
-            print(f"[Split] start tracks={len(tracks_list)} min_len={int(scene.get('tco_min_seg_len', 25)) if scene else 25}")
+            tracks_total_pre = len(tracks_list)
+            multi_pre = 0
+            for _t in tracks_list:
+                try:
+                    if len(list(get_track_segments(_t))) >= 2:
+                        multi_pre += 1
+                except Exception:
+                    pass
+            print(f"[Split] start tracks={tracks_total_pre} multi_pre={multi_pre} min_len={int(scene.get('tco_min_seg_len', 25)) if scene else 25}")
         except Exception:
             pass
     for t in tracks_list:
@@ -571,6 +589,13 @@ def recursive_split_cleanup(context,
     # Deterministischer One-Pass-Split pro Track
     try:
         for t in list(tracks_list):
+            if _dbg_enabled_global():
+                try:
+                    segs_all_cnt = len(list(get_track_segments(t)))
+                    if segs_all_cnt >= 2:
+                        print(f"[Split] split track={t.name} segs={segs_all_cnt}")
+                except Exception:
+                    pass
             _split_track_by_all_segments(context, area, region, space, t)
     except Exception:
         pass
@@ -595,6 +620,19 @@ def recursive_split_cleanup(context,
         min_len = 25
     clip_tracks = getattr(getattr(clip, "tracking", None), "tracks", [])
     del_short = _delete_tracks_by_max_unmuted_seg_len(context, clip_tracks, min_len=min_len, clip=clip)
+    if _dbg_enabled_global():
+        try:
+            tracks_total_post = len(list(clip_tracks))
+            multi_post = 0
+            for _t in clip_tracks:
+                try:
+                    if len(list(get_track_segments(_t))) >= 2:
+                        multi_post += 1
+                except Exception:
+                    pass
+            print(f"[Split] delete_short={del_short} tracks_post={tracks_total_post} multi_post={multi_post}")
+        except Exception:
+            pass
     if _dbg_enabled():
         # Silence console output via the no-op logger.
         _log(f"[SplitDBG][delete_short] min_len={min_len} deleted={del_short}")
@@ -620,10 +658,12 @@ def recursive_split_cleanup(context,
         mute_unassigned_markers(clip_tracks)
     except Exception:
         pass
-    if _dbg_enabled():
-        total = len(list(clip_tracks))
-        # Silence console output via the no-op logger.
-        _log(f"[SplitDBG][finish] tracks_total={total} leftover_multi={leftover_multi}")
+    if _dbg_enabled_global():
+        try:
+            total = len(list(clip_tracks))
+            print(f"[Split] finished tracks_total={total} leftover_multi={leftover_multi}")
+        except Exception:
+            pass
 
     if _dbg_enabled_global():
         try:
