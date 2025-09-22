@@ -1,5 +1,6 @@
 import bpy
 from bpy.types import Operator
+import math
 
 # Optionaler Direktimport für Fallback (Bootstrap)
 try:
@@ -172,12 +173,17 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                     self.track_started = False
                     self.report({'INFO'}, "Refine-Solve: Reduce ausgeführt → zurück zu FIND")
                     return {'RUNNING_MODAL'}
-                # Ursprüngliches Verhalten: Solve-Test nur wenn Refine-Error vorhanden und > threshold
+                # Robuste Entscheidung: None/NaN gilt NICHT als Abbruch → Solve-Test starten
                 try:
                     ae_val = float(ae_ref) if ae_ref is not None else None
                 except Exception:
                     ae_val = None
-                if (ae_val is not None) and (ae_val > thr_scene):
+                ae_is_valid = (ae_val is not None) and math.isfinite(ae_val)
+                try:
+                    print(f"[Coord] refine result ae_ref={ae_ref} valid={ae_is_valid} thr={thr_scene}")
+                except Exception:
+                    pass
+                if (not ae_is_valid) or (ae_val > thr_scene):
                     try:
                         bpy.ops.clip.solve_test('INVOKE_DEFAULT')
                         self.phase = "SOLVE_TEST_WAIT"
@@ -187,7 +193,7 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                         # Falls Test nicht startbar: dennoch zurück zu FIND, um den Zyklus fortzusetzen
                         self.phase = "FIND"
                         return {'RUNNING_MODAL'}
-                # Refine hat genügt oder kein Wert → Coordinator beenden
+                # Refine hat genügt → Coordinator beenden
                 return self._finish(context, "Refine-Solve abgeschlossen – Coordinator beendet.")
             return {'RUNNING_MODAL'}
 
