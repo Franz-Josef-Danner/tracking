@@ -7,11 +7,20 @@ try:
 except Exception:
     CLIP_OT_bootstrap_cycle = None  # type: ignore
 
+# Optional: Bidirectional-Track aus Helper registrieren/nutzen
+try:
+    from ..Helper.bidirectional_track import CLIP_OT_bidirectional_track  # type: ignore
+except Exception:
+    try:
+        from .bidirectional_track import CLIP_OT_bidirectional_track  # type: ignore
+    except Exception:
+        CLIP_OT_bidirectional_track = None  # type: ignore
+
 __all__ = ("CLIP_OT_camera_tracking_coordinator",)
 
 
 class CLIP_OT_camera_tracking_coordinator(Operator):
-    """Modaler Ablauf: FIND → DETECT; Wiederholen bis FIND nichts mehr findet."""
+    """Modaler Ablauf: FIND → DETECT → TRACK; Wiederholen bis FIND nichts mehr findet."""
 
     bl_idname = "clip.camera_tracking_coordinator"
     bl_label = "Camera Tracking Coordinator"
@@ -21,6 +30,7 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
     _timer: object | None = None
     phase: str = "FIND"
     detect_started: bool = False
+    track_started: bool = False
 
     def _finish(self, context, msg: str = "", cancel: bool = False):
         try:
@@ -57,6 +67,7 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
         # 2) Modal‑Loop initialisieren
         self.phase = "FIND"
         self.detect_started = False
+        self.track_started = False
         wm = context.window_manager
         win = getattr(context, "window", None) or getattr(bpy.context, "window", None)
         try:
@@ -86,6 +97,7 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                 # Frame gefunden → weiter zu DETECT
                 self.phase = "DETECT"
                 self.detect_started = False
+                self.track_started = False
                 return {'RUNNING_MODAL'}
             if status in {"NONE", ""}:
                 # Nichts mehr zu finden → fertig
@@ -114,7 +126,45 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
             res = scn.get("tco_last_detect_cycle") or {}
             count_info = res.get("count") or {}
             status = str(count_info.get("status", "")).upper()
-            # ENOUGH → wieder FIND; sonst auch FIND (nächsten Low‑Frame suchen)
+            if status == "ENOUGH":
+                # weiter zu TRACK
+                self.phase = "TRACK"
+                self.track_started = False
+                return {'RUNNING_MODAL'}
+            # Nicht genug → zurück zu FIND und erneut versuchen
+            self.phase = "FIND"
+            return {'RUNNING_MODAL'}
+
+        # PHASE 3: TRACK (Bidirectional-Track)
+        if self.phase == "TRACK":
+            if CLIP_OT_bidirectional_track is None:
+                # Helper nicht verfügbar → direkt zurück zu FIND
+                self.report({'WARNING'}, "Bidirectional-Track nicht verfügbar – übersprungen")
+                self.phase = "FIND"
+                return {'RUNNING_MODAL'}
+            if not self.track_started:
+                # sicherstellen, dass der Operator registriert ist
+                try:
+                    bpy.utils.register_class(CLIP_OT_bidirectional_track)
+                except Exception:
+                    pass
+                try:
+                    bpy.ops.clip.bidirectional_track('INVOKE_DEFAULT')
+                    self.track_started = True
+                    self.report({'INFO'}, "Track gestartet")
+                except Exception as exc:
+                    self.report({'WARNING'}, f"Track konnte nicht gestartet werden: {exc}")
+                    self.phase = "FIND"
+                return {'RUNNING_MODAL'}
+            # warten bis Track beendet ist
+            if bool(scn.get("bidi_active", False)):
+                return {'RUNNING_MODAL'}
+            # abgeschlossen → Ergebnis optional melden und zurück zu FIND
+            result = str(scn.get("bidi_result", ""))
+            if result and result != "OK":
+                self.report({'WARNING'}, f"Track Ergebnis: {result}")
+            else:
+                self.report({'INFO'}, "Track abgeschlossen")
             self.phase = "FIND"
             return {'RUNNING_MODAL'}
 
@@ -123,6 +173,12 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
 
 
 def register():
+    # Optional Helper-Operator zuerst registrieren
+    if CLIP_OT_bidirectional_track is not None:
+        try:
+            bpy.utils.register_class(CLIP_OT_bidirectional_track)
+        except Exception:
+            pass
     bpy.utils.register_class(CLIP_OT_camera_tracking_coordinator)
 
 
@@ -131,3 +187,8 @@ def unregister():
         bpy.utils.unregister_class(CLIP_OT_camera_tracking_coordinator)
     except Exception:
         pass
+    if CLIP_OT_bidirectional_track is not None:
+        try:
+            bpy.utils.unregister_class(CLIP_OT_bidirectional_track)
+        except Exception:
+            pass
