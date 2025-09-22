@@ -338,6 +338,8 @@ def run_reduce_error_tracks(
                     count = len(deleted_names)
                 except Exception:
                     pass
+            except Exception as _fb_exc:
+                print(f"[ReduceDBG] fallback delete_track sequence failed (outer): {_fb_exc}")
         # Hinweis: Bei gleichen Fehlerwerten kann es >k werden (Tie-Case).
         if count > k:
             print(f"[ReduceDBG] NOTE: deleted={count} > k={k} (ties at threshold)")
