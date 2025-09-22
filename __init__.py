@@ -13,7 +13,7 @@ from .Operator.bootstrap_O import CLIP_OT_bootstrap_cycle
 from .Operator.find_frame_O import CLIP_OT_find_low_and_jump
 from .Operator.detect_O import CLIP_OT_detect_cycle
 from .Operator.clean_O import CLIP_OT_clean_cycle
-from .Operator.solve_O import CLIP_OT_solve_camera_modal
+from .Operator.solve_clean_O import CLIP_OT_solve_camera_modal
 
 bl_info = {
     "name": "Kaiserlich Tracker",
