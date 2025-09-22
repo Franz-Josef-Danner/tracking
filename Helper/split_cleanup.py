@@ -206,11 +206,15 @@ def _segment_lengths_unmuted(track: bpy.types.MovieTrackingTrack) -> List[int]:
 
 
 def _delete_tracks_by_max_unmuted_seg_len(
-    context, tracks: Iterable[bpy.types.MovieTrackingTrack], min_len: int
+    context, tracks: Iterable[bpy.types.MovieTrackingTrack], min_len: int, clip: Optional[bpy.types.MovieClip] = None
 ) -> int:
-    """Löscht Tracks, deren längstes un-gemutetes Segment < min_len ist."""
-    clip = getattr(getattr(context, "space_data", None), "clip", None)
-    if clip is None:
+    """Löscht Tracks, deren längstes un-gemutetes Segment < min_len ist.
+    Optional kann `clip` explizit übergeben werden, falls kein CLIP_EDITOR im Kontext aktiv ist."""
+    # Bevorzugt: explizit übergebener Clip
+    _clip = clip
+    if _clip is None:
+        _clip = getattr(getattr(context, "space_data", None), "clip", None)
+    if _clip is None:
         return 0
 
     deleted = 0
@@ -219,7 +223,7 @@ def _delete_tracks_by_max_unmuted_seg_len(
         try:
             max_len = max(_segment_lengths_unmuted(t)) if t else 0
             if max_len < int(min_len):
-                clip.tracking.tracks.remove(t)
+                _clip.tracking.tracks.remove(t)
                 deleted += 1
             else:
                 survivors.append(t)
@@ -590,7 +594,7 @@ def recursive_split_cleanup(context,
     except Exception:
         min_len = 25
     clip_tracks = getattr(getattr(clip, "tracking", None), "tracks", [])
-    del_short = _delete_tracks_by_max_unmuted_seg_len(context, clip_tracks, min_len=min_len)
+    del_short = _delete_tracks_by_max_unmuted_seg_len(context, clip_tracks, min_len=min_len, clip=clip)
     if _dbg_enabled():
         # Silence console output via the no-op logger.
         _log(f"[SplitDBG][delete_short] min_len={min_len} deleted={del_short}")
