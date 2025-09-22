@@ -16,6 +16,12 @@ except Exception:
     except Exception:
         CLIP_OT_bidirectional_track = None  # type: ignore
 
+# Optional: Reducer für hohe Fehlerwerte
+try:
+    from ..Helper.reduce_error_tracks import run_reduce_error_tracks  # type: ignore
+except Exception:
+    run_reduce_error_tracks = None  # type: ignore
+
 __all__ = ("CLIP_OT_camera_tracking_coordinator",)
 
 
@@ -129,7 +135,7 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                     restart = False
                 # Entscheidungslogik:
                 # 1) Wenn Restart gewünscht ODER Marker gelöscht wurden → zurück zu FIND
-                # 2) Wenn nichts gelöscht wurde UND find_max == NONE → Solve starten; wenn Solve Tracks gelöscht hat → zurück zu FIND, sonst beenden
+                # 2) Wenn nichts gelöscht wurde UND find_max == NONE → Solve starten; wenn Solve Tracks gelöscht hat → zurück zu FIND, sonst ggf. Reducer, sonst beenden
                 if not restart and int(deleted_total) == 0 and str(fm_status).upper() in {"NONE", ""}:
                     try:
                         bpy.ops.clip.solve_cycle()
@@ -146,7 +152,50 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                             self.track_started = False
                             self.report({'INFO'}, f"Solve: {deleted_after_solve} Tracks gelöscht → zurück zu FIND")
                             return {'RUNNING_MODAL'}
-                        # keine Löschungen → Coordinator beenden
+                        # Keine Löschungen → ggf. Reduce-Phase, falls avg_error > error_track
+                        try:
+                            res_solve = scn.get("tco_last_solve_cycle") or {}
+                            ae = res_solve.get("avg_error", None)
+                            try:
+                                avg_err = float(ae)
+                            except Exception:
+                                avg_err = None
+                            thr_scene = float(scn.get("error_track", 2.0))
+                        except Exception:
+                            avg_err = None
+                            thr_scene = 2.0
+                        if (avg_err is not None) and (avg_err > thr_scene) and (run_reduce_error_tracks is not None):
+                            # Threshold temporär auf 10.0 setzen
+                            old_thr = scn.get("error_track", None)
+                            try:
+                                scn["error_track"] = 10.0
+                            except Exception:
+                                pass
+                            try:
+                                res_red = run_reduce_error_tracks(context)
+                                # optional Telemetrie ablegen
+                                try:
+                                    scn["tco_last_reduce_error_tracks"] = res_red
+                                except Exception:
+                                    pass
+                                self.report({'INFO'}, f"Reduce-Error-Tracks ausgeführt (thr=10): deleted={int(res_red.get('deleted',0))}")
+                            except Exception as _rex:
+                                self.report({'WARNING'}, f"Reduce-Error-Tracks Fehler: {_rex}")
+                            finally:
+                                # ursprünglichen Threshold wiederherstellen
+                                try:
+                                    if old_thr is None:
+                                        del scn["error_track"]
+                                    else:
+                                        scn["error_track"] = old_thr
+                                except Exception:
+                                    pass
+                            # zurück zu FIND
+                            self.phase = "FIND"
+                            self.detect_started = False
+                            self.track_started = False
+                            return {'RUNNING_MODAL'}
+                        # keine Löschungen und kein Reducer nötig → Coordinator beenden
                         return self._finish(context, "Solve-Cycle abgeschlossen – Coordinator beendet.")
                     except Exception as exc:
                         return self._finish(context, f"Solve-Cycle konnte nicht gestartet/ausgeführt werden: {exc}", cancel=True)
