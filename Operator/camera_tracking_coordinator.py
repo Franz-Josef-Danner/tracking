@@ -129,28 +129,43 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
 
         # PHASE: SOLVE_WAIT – warte auf Flags aus solve_O
         if self.phase == "SOLVE_WAIT":
+            scn = context.scene
             active = bool(scn.get("tco_solve_active", False))
             done = bool(scn.get("tco_solve_done", False))
             if active and not done:
                 return {'RUNNING_MODAL'}
             if done:
                 reduce_executed = bool(scn.get("tco_reduce_executed", False))
-                # Flags optional bereinigen
+                ae = scn.get("tco_solve_avg_error", None)
+                try:
+                    thr_scene = float(scn.get("error_track", 2.0))
+                except Exception:
+                    thr_scene = 2.0
+                # Flags optional bereinigen (lassen avg_error stehen zur Info)
                 for k in ("tco_solve_active", "tco_solve_done", "tco_reduce_executed"):
                     try:
                         del scn[k]
                     except Exception:
                         pass
                 if reduce_executed:
-                    # zurück zu FIND
                     self.phase = "FIND"
                     self.detect_started = False
                     self.track_started = False
                     self.report({'INFO'}, "Solve: Reduce ausgeführt → zurück zu FIND")
                     return {'RUNNING_MODAL'}
-                # kein Reduce → Coordinator beenden
+                # Kein Reduce: ggf. solve_test ausführen, wenn  error_track < ae <= 10
+                try:
+                    ae_val = float(ae) if ae is not None else None
+                except Exception:
+                    ae_val = None
+                if (ae_val is not None) and (ae_val > thr_scene) and (ae_val <= 10.0):
+                    try:
+                        bpy.ops.clip.solve_test()
+                        self.report({'INFO'}, f"Solve-Test ausgeführt (ae={ae_val:.3f} > thr={thr_scene:.3f} ≤ 10)")
+                    except Exception as exc:
+                        self.report({'WARNING'}, f"Solve-Test konnte nicht gestartet werden: {exc}")
+                # Abschluss nach Solve/Solve-Test
                 return self._finish(context, "Solve abgeschlossen – Coordinator beendet.")
-            # weder active noch done → kurze Warte
             return {'RUNNING_MODAL'}
 
         # PHASE 2: DETECT (modaler Operator, wir warten auf Scene‑Flag)
