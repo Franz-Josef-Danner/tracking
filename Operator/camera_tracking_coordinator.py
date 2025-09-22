@@ -154,23 +154,40 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                 return {'RUNNING_MODAL'}
             if bool(scn.get("tco_refine_done", False)):
                 reduce_executed = bool(scn.get("tco_reduce_executed", False))
-                # Flags bereinigen
-                for k in ("tco_refine_active", "tco_refine_done", "tco_reduce_executed"):
+                ae_ref = scn.get("tco_refine_avg_error", None)
+                try:
+                    thr_scene = float(scn.get("error_track", 2.0))
+                except Exception:
+                    thr_scene = 2.0
+                # Flags bereinigen (avg_error kann bleiben, wird unten gelesen)
+                for k in ("tco_refine_active", "tco_refine_done", "tco_reduce_exexecuted"):
                     try:
                         del scn[k]
                     except Exception:
                         pass
                 if reduce_executed:
-                    # Wenn in Refine Reduce lief → Solve-Test (Modelwechsel) und dann zurück zu FIND
+                    # (Derzeit nicht genutzt) – zurück zu FIND
+                    self.phase = "FIND"
+                    self.detect_started = False
+                    self.track_started = False
+                    self.report({'INFO'}, "Refine-Solve: Reduce ausgeführt → zurück zu FIND")
+                    return {'RUNNING_MODAL'}
+                # Wenn Refine-Error weiterhin > threshold → Solve-Test starten, sonst beenden
+                try:
+                    ae_val = float(ae_ref) if ae_ref is not None else None
+                except Exception:
+                    ae_val = None
+                if (ae_val is not None) and (ae_val > thr_scene):
                     try:
                         bpy.ops.clip.solve_test('INVOKE_DEFAULT')
                         self.phase = "SOLVE_TEST_WAIT"
                         return {'RUNNING_MODAL'}
                     except Exception as exc:
                         self.report({'WARNING'}, f"Solve-Test konnte nicht gestartet werden: {exc}")
+                        # Falls Test nicht startbar: dennoch zurück zu FIND, um den Zyklus fortzusetzen
                         self.phase = "FIND"
                         return {'RUNNING_MODAL'}
-                # Kein Reduce in Refine → fertig
+                # Refine hat genügt → Coordinator beenden
                 return self._finish(context, "Refine-Solve abgeschlossen – Coordinator beendet.")
             return {'RUNNING_MODAL'}
 
