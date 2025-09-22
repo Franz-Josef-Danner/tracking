@@ -172,12 +172,12 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                     self.track_started = False
                     self.report({'INFO'}, "Refine-Solve: Reduce ausgeführt → zurück zu FIND")
                     return {'RUNNING_MODAL'}
-                # Wenn Refine-Error None ODER weiterhin > threshold → Solve-Test starten, sonst beenden
+                # Ursprüngliches Verhalten: Solve-Test nur wenn Refine-Error vorhanden und > threshold
                 try:
                     ae_val = float(ae_ref) if ae_ref is not None else None
                 except Exception:
                     ae_val = None
-                if (ae_val is None) or (ae_val > thr_scene):
+                if (ae_val is not None) and (ae_val > thr_scene):
                     try:
                         bpy.ops.clip.solve_test('INVOKE_DEFAULT')
                         self.phase = "SOLVE_TEST_WAIT"
@@ -187,7 +187,7 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                         # Falls Test nicht startbar: dennoch zurück zu FIND, um den Zyklus fortzusetzen
                         self.phase = "FIND"
                         return {'RUNNING_MODAL'}
-                # Refine hat genügt → Coordinator beenden
+                # Refine hat genügt oder kein Wert → Coordinator beenden
                 return self._finish(context, "Refine-Solve abgeschlossen – Coordinator beendet.")
             return {'RUNNING_MODAL'}
 
