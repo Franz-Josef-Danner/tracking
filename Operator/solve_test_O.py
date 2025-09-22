@@ -190,6 +190,7 @@ class CLIP_OT_solve_test(Operator):
         self._last_reduce = None
         try:
             context.scene["tco_solve_test_active"] = True
+            context.scene["tco_restart_find"] = False
         except Exception:
             pass
         return {"RUNNING_MODAL"}
@@ -200,6 +201,12 @@ class CLIP_OT_solve_test(Operator):
     def _finish(self, context, payload: Dict[str, Any]):
         # Keine Wiederherstellung der Refine-Flags mehr (dauerhaft aus)
         scn = context.scene
+        # Restart-Flag setzen je nach Payload
+        try:
+            restart = bool(payload.get("restart_find", False) or payload.get("status") == "MODEL_SWITCH")
+            scn["tco_restart_find"] = restart
+        except Exception:
+            pass
         try:
             payload["loops"] = self._loops
             payload["last_reduce"] = self._last_reduce
@@ -252,7 +259,7 @@ class CLIP_OT_solve_test(Operator):
             self._ae = float(ae) if isinstance(ae, (int, float)) else None
             if self._ae is not None and self._ae <= thr:
                 # fertig: error klein genug
-                return self._finish(context, {"status": "OK", "avg_error": self._ae, "stage": "ok"})
+                return self._finish(context, {"status": "OK", "avg_error": self._ae, "stage": "ok", "restart_find": False})
             # > thr → Reduce 1 Track und find_max
             self._state = "REDUCE"
             return {"RUNNING_MODAL"}
@@ -276,7 +283,7 @@ class CLIP_OT_solve_test(Operator):
                 self._find_result = {"status": "ERROR", "reason": str(ex)}
             status = str((self._find_result or {}).get("status", "")).upper()
             if status == "FOUND":
-                # Model wechseln und fertig – Coordinator geht zurück zu FIND
+                # Model wechseln und fertig – Coordinator setzt via Flag zurück zu FIND
                 current = str(getattr(clip.tracking.camera, "distortion_model", "POLYNOMIAL"))
                 nxt = _next_model(current)
                 payload: Dict[str, Any] = {
@@ -284,6 +291,7 @@ class CLIP_OT_solve_test(Operator):
                     "avg_error": self._ae,
                     "previous_model": current,
                     "next_model": nxt,
+                    "restart_find": True,
                 }
                 try:
                     clip.tracking.camera.distortion_model = nxt
@@ -294,6 +302,19 @@ class CLIP_OT_solve_test(Operator):
             self._loops += 1
             self._state = "SOLVE"
             return {"RUNNING_MODAL"}
+
+        # In WAIT-Zweigen bei OK-Fall explizit restart_find=False
+        if self._state == "WAIT":
+            # ...existing code calculating self._ae and comparing thr...
+            if self._ae is not None and self._ae <= thr:
+                return self._finish(context, {"status": "OK", "avg_error": self._ae, "stage": "ok", "restart_find": False})
+            # ...existing code...
+
+        if self._state == "WAIT2":
+            # ...existing code computing payload...
+            payload: Dict[str, Any] = {"status": "OK", "avg_error": self._ae, "stage": "solve2", "find_max": self._find_result, "restart_find": False}
+            # Wenn find_max FOUND → oben behandelt; sonst normaler Abschluss
+            return self._finish(context, payload)
 
         return {"RUNNING_MODAL"}
 
