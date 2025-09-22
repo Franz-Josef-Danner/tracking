@@ -181,7 +181,12 @@ def run_reduce_error_tracks(
         }
     clip = _resolve_clip(context)
     trk = getattr(clip, "tracking", None) if clip else None
-    tracks = list(getattr(trk, "tracks", [])) if trk else []
+    # Kandidaten aus aktivem Objekt bevorzugen (Operator arbeitet auf active object)
+    try:
+        tob = trk.objects.active if trk and getattr(trk, "objects", None) else None
+    except Exception:
+        tob = None
+    tracks = list(getattr(tob, "tracks", [])) if tob else list(getattr(trk, "tracks", []))
 
     cand: List[Tuple[str, float]] = []
     for t in tracks:
@@ -246,16 +251,11 @@ def run_reduce_error_tracks(
     elif use_clean_tracks:
         # — Variante: targeted DELETE via bpy.ops.clip.clean_tracks (ein Aufruf, kontext-sicher)
         # Ziel: genau k Top-Error-Tracks treffen, ohne Container mehrfach umzubauen.
-        # 1) Schwelle zwischen k und k+1 (oder knapp unter err_k) berechnen
+        # 1) Schwelle knapp unter err_k berechnen (robust gegen Operator-Metrik)
         errs_sorted = [e for (_n, e) in to_process]  # top-k errors (desc)
         err_k = float(errs_sorted[-1])  # kleinster der Top-K
-        has_kp1 = len(cand) > k
-        if has_kp1:
-            err_kp1 = float(cand[k][1])  # erster nach den Top-K
-            thr_clean = 0.5 * (err_k + err_kp1)  # Midpoint trennt exakt K vs. K+1 (bei !=)
-        else:
-            thr_clean = err_k - 1e-6  # knapp darunter → trifft nur Top-K
-        print(f"[ReduceDBG] clean_tracks threshold -> {thr_clean:.6f} (err_k={err_k:.6f}{' err_k+1='+str(err_kp1) if has_kp1 else ''})")
+        thr_clean = max(0.0, err_k - 1e-6)
+        print(f"[ReduceDBG] clean_tracks threshold -> {thr_clean:.6f} (err_k={err_k:.6f})")
         # 2) Operator im CLIP-Override aufrufen
         try:
             override = _ensure_clip_context(context)
@@ -272,16 +272,73 @@ def run_reduce_error_tracks(
                 bpy.context.view_layer.update()
             except Exception:
                 pass
-            # Alle, die vorab >= thr_clean lagen (d.h. Zielmenge), als gelöscht zählen
             goal_set = {n for (n, e) in cand if e >= thr_clean}
             for name in list(goal_set):
-                still_there = bool(trk.tracks.get(name)) if trk else False
+                still_there = False
+                try:
+                    # Aktivem Objekt den Vorrang geben
+                    if tob and getattr(tob, "tracks", None):
+                        still_there = bool(tob.tracks.get(name))
+                    else:
+                        still_there = bool(trk.tracks.get(name)) if trk else False
+                except Exception:
+                    still_there = False
                 if not still_there:
                     deleted_names.append(name)
             count = len(deleted_names)
         except Exception as _chk_exc:
             print(f"[ReduceDBG] post-clean_tracks check failed: {_chk_exc}")
-        # Hinweis: Bei gleichen Fehlerwerten um err_k kann es >k werden (Tie-Case).
+        # Fallback: wenn der Operator nichts gelöscht hat, direkter delete_track auf Zielmenge
+        if count == 0:
+            print("[ReduceDBG] clean_tracks deleted=0 -> fallback to direct delete_track")
+            try:
+                # Auswahl vorbereiten
+                try:
+                    if tob and getattr(tob, "tracks", None):
+                        for t in tob.tracks:
+                            try:
+                                t.select = False
+                            except Exception:
+                                pass
+                        for name in list(goal_set):
+                            tt = tob.tracks.get(name)
+                            if tt:
+                                tt.select = True
+                    else:
+                        for t in tracks:
+                            try:
+                                t.select = False
+                            except Exception:
+                                pass
+                        for t in tracks:
+                            if t.name in goal_set:
+                                try:
+                                    t.select = True
+                                except Exception:
+                                    pass
+                except Exception as _sel_exc:
+                    print(f"[ReduceDBG] selection prep (fallback) failed: {_sel_exc}")
+                # Operator löschen
+                override = _ensure_clip_context(context)
+                try:
+                    if override:
+                        with bpy.context.temp_override(**override):
+                            bpy.ops.clip.delete_track()
+                    else:
+                        bpy.ops.clip.delete_track()
+                except Exception as _op2_exc:
+                    print(f"[ReduceDBG] operator delete_track (fallback) failed: {_op2_exc}")
+                # prüfen
+                try:
+                    if tob and getattr(tob, "tracks", None):
+                        remaining = [n for n in list(goal_set) if tob.tracks.get(n)]
+                    else:
+                        remaining = [n for n in list(goal_set) if trk and trk.tracks.get(n)]
+                    deleted_names.extend([n for n in list(goal_set) if n not in remaining])
+                    count = len(deleted_names)
+                except Exception:
+                    pass
+        # Hinweis: Bei gleichen Fehlerwerten kann es >k werden (Tie-Case).
         if count > k:
             print(f"[ReduceDBG] NOTE: deleted={count} > k={k} (ties at threshold)")
     else:
