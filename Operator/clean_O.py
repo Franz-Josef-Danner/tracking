@@ -125,8 +125,41 @@ class CLIP_OT_clean_cycle(Operator):
             try:
                 clip = _get_active_clip(context)
                 before_markers = _count_total_markers(clip) if clip else 0
-                # Falls der Helper einen Override benötigt, sollte dies intern gehandhabt werden
-                recursive_split_cleanup(context)
+                # Versuche, wie im alten Koordinator, mit UI-Override zu arbeiten
+                def _find_clip_editor_override():
+                    wm = getattr(bpy.context, "window_manager", None)
+                    if not wm:
+                        return {}
+                    for win in wm.windows:
+                        scr = getattr(win, "screen", None)
+                        if not scr:
+                            continue
+                        for area in scr.areas:
+                            if getattr(area, "type", "") != "CLIP_EDITOR":
+                                continue
+                            region = next((r for r in area.regions if r.type == "WINDOW"), None)
+                            space = area.spaces.active if hasattr(area, "spaces") else None
+                            if region and space:
+                                return {
+                                    "window": win,
+                                    "area": area,
+                                    "region": region,
+                                    "space_data": space,
+                                    "scene": bpy.context.scene,
+                                }
+                    return {}
+                override = _find_clip_editor_override()
+                tracks = getattr(getattr(clip, "tracking", None), "tracks", None) if clip else None
+                if override and tracks:
+                    # Wie im coordinator_alt: im UI-Override ausführen und override+tracks übergeben
+                    with bpy.context.temp_override(**override):
+                        recursive_split_cleanup(context, **override, tracks=tracks)
+                else:
+                    # Fallback: ohne Override (headless)
+                    if tracks is not None:
+                        recursive_split_cleanup(context, tracks=tracks)
+                    else:
+                        recursive_split_cleanup(context)
                 after_markers = _count_total_markers(clip) if clip else 0
                 delta = max(0, int(before_markers) - int(after_markers))
                 total_markers_deleted += int(delta)
