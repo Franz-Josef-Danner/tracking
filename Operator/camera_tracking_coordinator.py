@@ -16,7 +16,7 @@ except Exception:
     except Exception:
         CLIP_OT_bidirectional_track = None  # type: ignore
 
-# Solve‑Error Abfrage (Reduce jetzt in solve_O)
+# Solve‑Error Abfrage (Reduce jetzt in solve_clean_O)
 try:
     from ..Helper.reduce_error_tracks import wait_for_solve_average_error, get_solve_average_error  # type: ignore
 except Exception:
@@ -29,9 +29,7 @@ __all__ = ("CLIP_OT_camera_tracking_coordinator",)
 
 
 class CLIP_OT_camera_tracking_coordinator(Operator):
-    """Modaler Ablauf: FIND → DETECT → TRACK; Wiederholen bis FIND nichts mehr findet.
-    Wenn FIND nichts mehr findet: Clean-Cycle ausführen und Solve starten; danach ggf. zurück zu FIND.
-    """
+    """Modaler Ablauf: FIND → DETECT → TRACK; Wenn nichts zu finden: Clean → Solve → ggf. Solve-Test → Refine-Solve → zurück zu FIND bei Reduce."""
 
     bl_idname = "clip.camera_tracking_coordinator"
     bl_label = "Camera Tracking Coordinator"
@@ -127,9 +125,8 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
             # Fehlerfall
             return self._finish(context, f"FindLow fehlgeschlagen: {data}", cancel=True)
 
-        # PHASE: SOLVE_WAIT – warte auf Flags aus solve_O
+        # PHASE: SOLVE_WAIT – warte auf Flags aus solve_clean_O
         if self.phase == "SOLVE_WAIT":
-            scn = context.scene
             active = bool(scn.get("tco_solve_active", False))
             done = bool(scn.get("tco_solve_done", False))
             if active and not done:
@@ -148,6 +145,7 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                     except Exception:
                         pass
                 if reduce_executed:
+                    # zurück zu FIND
                     self.phase = "FIND"
                     self.detect_started = False
                     self.track_started = False
@@ -160,15 +158,51 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                     ae_val = None
                 if (ae_val is not None) and (ae_val > thr_scene) and (ae_val <= 10.0):
                     try:
-                        bpy.ops.clip.solve_test()
-                        self.report({'INFO'}, f"Solve-Test ausgeführt (ae={ae_val:.3f} > thr={thr_scene:.3f} ≤ 10)")
+                        bpy.ops.clip.solve_test('INVOKE_DEFAULT')
+                        self.phase = "SOLVE_TEST_WAIT"
+                        return {'RUNNING_MODAL'}
                     except Exception as exc:
                         self.report({'WARNING'}, f"Solve-Test konnte nicht gestartet werden: {exc}")
-                # Abschluss nach Solve/Solve-Test
+                        return self._finish(context, "Solve abgeschlossen – Coordinator beendet.")
+                # Abschluss nach Solve
                 return self._finish(context, "Solve abgeschlossen – Coordinator beendet.")
             return {'RUNNING_MODAL'}
 
-        # PHASE 2: DETECT (modaler Operator, wir warten auf Scene‑Flag)
+        # PHASE: SOLVE_TEST_WAIT – warte auf Ende des Solve-Tests, starte dann Refine-Solve
+        if self.phase == "SOLVE_TEST_WAIT":
+            if bool(scn.get("tco_solve_test_active", False)):
+                return {'RUNNING_MODAL'}
+            # Test ist fertig → Refine-Solve starten
+            try:
+                bpy.ops.clip.refine_solve_modal('INVOKE_DEFAULT')
+                self.phase = "REFINE_WAIT"
+                return {'RUNNING_MODAL'}
+            except Exception as exc:
+                self.report({'WARNING'}, f"Refine-Solve konnte nicht gestartet werden: {exc}")
+                return self._finish(context, "Solve-Test abgeschlossen – Coordinator beendet.")
+
+        # PHASE: REFINE_WAIT – warte auf Flags aus refine_solve_O
+        if self.phase == "REFINE_WAIT":
+            if bool(scn.get("tco_refine_active", False)) and not bool(scn.get("tco_refine_done", False)):
+                return {'RUNNING_MODAL'}
+            if bool(scn.get("tco_refine_done", False)):
+                reduce_executed = bool(scn.get("tco_reduce_executed", False))
+                # Flags bereinigen
+                for k in ("tco_refine_active", "tco_refine_done", "tco_reduce_executed"):
+                    try:
+                        del scn[k]
+                    except Exception:
+                        pass
+                if reduce_executed:
+                    self.phase = "FIND"
+                    self.detect_started = False
+                    self.track_started = False
+                    self.report({'INFO'}, "Refine-Solve: Reduce ausgeführt → zurück zu FIND")
+                    return {'RUNNING_MODAL'}
+                return self._finish(context, "Refine-Solve abgeschlossen – Coordinator beendet.")
+            return {'RUNNING_MODAL'}
+
+        # PHASE 2: DETECT
         if self.phase == "DETECT":
             if not self.detect_started:
                 try:
