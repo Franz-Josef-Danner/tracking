@@ -138,7 +138,7 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                 # 2) Wenn nichts gelöscht wurde UND find_max == NONE → Solve starten; wenn Solve Tracks gelöscht hat → zurück zu FIND, sonst ggf. Reducer, sonst beenden
                 if not restart and int(deleted_total) == 0 and str(fm_status).upper() in {"NONE", ""}:
                     try:
-                        bpy.ops.clip.solve_cycle()
+                        bpy.ops.clip.track_cycle()
                         # Prüfen, ob nach dem Solve unreconstructed Tracks entfernt wurden
                         cleanup = scn.get("tco_last_unreconstructed_cleanup") or {}
                         try:

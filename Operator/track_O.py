@@ -3,9 +3,9 @@ from bpy.types import Operator
 from ..Helper.solve_camera import solve_camera_only
 from ..Helper.reduce_error_tracks import get_avg_reprojection_error
 
-class CLIP_OT_solve_cycle(Operator):
-    bl_idname = "clip.solve_cycle"
-    bl_label = "Solve Cycle (1x Solve)"
+class CLIP_OT_track_cycle(Operator):
+    bl_idname = "clip.track_cycle"
+    bl_label = "Track Cycle (1x Solve)"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -33,7 +33,7 @@ class CLIP_OT_solve_cycle(Operator):
         return {'FINISHED'}
 
 def register():
-    bpy.utils.register_class(CLIP_OT_solve_cycle)
+    bpy.utils.register_class(CLIP_OT_track_cycle)
 
 def unregister():
-    bpy.utils.unregister_class(CLIP_OT_solve_cycle)
+    bpy.utils.unregister_class(CLIP_OT_track_cycle)
