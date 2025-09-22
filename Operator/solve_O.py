@@ -45,7 +45,7 @@ def _disable_solve_refine_flags(context) -> None:
         # Keyframe-Selection aus
         try:
             if hasattr(tr, "settings") and hasattr(tr.settings, "use_keyframe_selection"):
-                tr.settings.use_keyframe_selection = False
+                tr.settings.use_keyframe_selection = True
         except Exception:
             pass
         # Refine‑Flags aus
