@@ -195,11 +195,26 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
         if self.phase == "SOLVE_TEST_WAIT":
             if bool(scn.get("tco_solve_test_active", False)):
                 return {'RUNNING_MODAL'}
-            self.phase = "FIND"
-            self.detect_started = False
-            self.track_started = False
-            self.report({'INFO'}, "Solve-Test abgeschlossen → zurück zu FIND")
-            return {'RUNNING_MODAL'}
+            # Entscheidung anhand des Restart-Flags aus solve_test
+            restart = bool(scn.get("tco_restart_find", False))
+            try:
+                print(f"[Coord] solve_test finished: restart_find={restart} payload={scn.get('tco_solve_test')}")
+            except Exception:
+                pass
+            # Flags bereinigen
+            for k in ("tco_restart_find",):
+                try:
+                    del scn[k]
+                except Exception:
+                    pass
+            if restart:
+                self.phase = "FIND"
+                self.detect_started = False
+                self.track_started = False
+                self.report({'INFO'}, "Solve-Test: Restart-Flag gesetzt → zurück zu FIND")
+                return {'RUNNING_MODAL'}
+            # Kein Restart gewünscht → Coordinator beenden
+            return self._finish(context, "Solve-Test abgeschlossen – Coordinator beendet.")
 
         # PHASE 2: DETECT
         if self.phase == "DETECT":
