@@ -160,7 +160,7 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                 except Exception:
                     thr_scene = 2.0
                 # Flags bereinigen (avg_error kann bleiben, wird unten gelesen)
-                for k in ("tco_refine_active", "tco_refine_done", "tco_reduce_exexecuted"):
+                for k in ("tco_refine_active", "tco_refine_done", "tco_reduce_executed"):
                     try:
                         del scn[k]
                     except Exception:
@@ -172,12 +172,12 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                     self.track_started = False
                     self.report({'INFO'}, "Refine-Solve: Reduce ausgeführt → zurück zu FIND")
                     return {'RUNNING_MODAL'}
-                # Wenn Refine-Error weiterhin > threshold → Solve-Test starten, sonst beenden
+                # Wenn Refine-Error None ODER weiterhin > threshold → Solve-Test starten, sonst beenden
                 try:
                     ae_val = float(ae_ref) if ae_ref is not None else None
                 except Exception:
                     ae_val = None
-                if (ae_val is not None) and (ae_val > thr_scene):
+                if (ae_val is None) or (ae_val > thr_scene):
                     try:
                         bpy.ops.clip.solve_test('INVOKE_DEFAULT')
                         self.phase = "SOLVE_TEST_WAIT"
