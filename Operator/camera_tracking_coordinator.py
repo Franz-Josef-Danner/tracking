@@ -129,13 +129,27 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                     restart = False
                 # Entscheidungslogik:
                 # 1) Wenn Restart gewünscht ODER Marker gelöscht wurden → zurück zu FIND
-                # 2) Wenn nichts gelöscht wurde UND find_max == NONE → Solve starten und Koordinator beenden
+                # 2) Wenn nichts gelöscht wurde UND find_max == NONE → Solve starten; wenn Solve Tracks gelöscht hat → zurück zu FIND, sonst beenden
                 if not restart and int(deleted_total) == 0 and str(fm_status).upper() in {"NONE", ""}:
                     try:
                         bpy.ops.clip.solve_cycle()
-                        return self._finish(context, "Solve-Cycle gestartet – Coordinator beendet.")
+                        # Prüfen, ob nach dem Solve unreconstructed Tracks entfernt wurden
+                        cleanup = scn.get("tco_last_unreconstructed_cleanup") or {}
+                        try:
+                            deleted_after_solve = int((cleanup.get("deleted", 0) or 0))
+                        except Exception:
+                            deleted_after_solve = 0
+                        if deleted_after_solve > 0:
+                            # zurück zu FIND
+                            self.phase = "FIND"
+                            self.detect_started = False
+                            self.track_started = False
+                            self.report({'INFO'}, f"Solve: {deleted_after_solve} Tracks gelöscht → zurück zu FIND")
+                            return {'RUNNING_MODAL'}
+                        # keine Löschungen → Coordinator beenden
+                        return self._finish(context, "Solve-Cycle abgeschlossen – Coordinator beendet.")
                     except Exception as exc:
-                        return self._finish(context, f"Solve-Cycle konnte nicht gestartet werden: {exc}", cancel=True)
+                        return self._finish(context, f"Solve-Cycle konnte nicht gestartet/ausgeführt werden: {exc}", cancel=True)
                 # ansonsten zurück zu FIND
                 self.phase = "FIND"
                 self.detect_started = False
