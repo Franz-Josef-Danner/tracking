@@ -1,7 +1,6 @@
 import bpy
 from bpy.types import Operator
 from ..Helper.solve_camera import solve_camera_only
-from ..Helper.reduce_error_tracks import get_avg_reprojection_error
 import time
 
 
@@ -166,6 +165,48 @@ def _delete_unreconstructed_tracks(context) -> dict:
     return {"deleted": int(deleted), "names": names}
 
 
+def _resolve_clip(context):
+    clip = getattr(context, "edit_movieclip", None)
+    if not clip:
+        clip = getattr(getattr(context, "space_data", None), "clip", None)
+    if not clip and bpy.data.movieclips:
+        try:
+            clip = bpy.data.movieclips[0]
+        except Exception:
+            clip = None
+    return clip
+
+
+def _compute_avg_track_error(context) -> float | None:
+    """Bildet den Mittelwert über alle Track.average_error (nur gültige, >=0, endlich).
+    Bevorzugt das aktive Tracking-Objekt; fällt auf globale Tracks zurück.
+    """
+    clip = _resolve_clip(context)
+    if not clip or not getattr(clip, "tracking", None):
+        return None
+    tr = clip.tracking
+    try:
+        obj = tr.objects.active or (tr.objects[0] if len(tr.objects) else None)
+    except Exception:
+        obj = None
+    tracks = list(getattr(obj, "tracks", [])) if obj and getattr(obj, "tracks", None) else list(getattr(tr, "tracks", []))
+    s = 0.0
+    n = 0
+    for t in tracks:
+        try:
+            if getattr(t, "mute", False):
+                continue
+            ev = float(getattr(t, "average_error", float("nan")))
+            if ev == ev and ev >= 0.0 and ev != float("inf") and ev != float("-inf"):
+                s += ev
+                n += 1
+        except Exception:
+            pass
+    if n == 0:
+        return None
+    return s / n
+
+
 class CLIP_OT_solve_cycle(Operator):
     bl_idname = "clip.solve_cycle"
     bl_label = "Solve Cycle (1x Solve, modal)"
@@ -272,21 +313,8 @@ class CLIP_OT_solve_cycle(Operator):
             bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
         except Exception:
             pass
-        # Avg-Error mit CLIP_EDITOR-Override ermitteln
-        avg_error = None
-        try:
-            override = _find_clip_editor_override()
-            if override:
-                with bpy.context.temp_override(**override):
-                    try:
-                        bpy.context.view_layer.update()
-                    except Exception:
-                        pass
-                    avg_error = get_avg_reprojection_error(bpy.context)
-            else:
-                avg_error = get_avg_reprojection_error(bpy.context)
-        except Exception:
-            avg_error = None
+        # Avg-Error aus Track.average_error bilden
+        avg_error = _compute_avg_track_error(context)
         elapsed = time.perf_counter() - self._t0
         if isinstance(avg_error, (int, float)):
             self._last_avg_error = float(avg_error)
@@ -295,7 +323,7 @@ class CLIP_OT_solve_cycle(Operator):
             self.report({'INFO'}, f"Unreconstructed cleanup: deleted={int(del_info.get('deleted',0))}")
             return self._finish(context, "OK", avg_error_val=self._last_avg_error, del_info=del_info)
         if elapsed >= self._timeout:
-            # Timeout: wenn jemals ein Wert gesehen wurde, den verwenden; sonst 0.0
+            # Timeout: letzten gültigen Wert verwenden, sonst 0.0
             final_err = float(self._last_avg_error) if isinstance(self._last_avg_error, (int, float)) else 0.0
             if not isinstance(self._last_avg_error, (int, float)):
                 self.report({'WARNING'}, "Avg-Error-Observe Timeout – fahre fort")
