@@ -11,7 +11,7 @@ __all__ = ("CLIP_OT_camera_tracking_coordinator",)
 
 
 class CLIP_OT_camera_tracking_coordinator(Operator):
-    """Modaler 3er‑Ablauf: FIND → DETECT → TRACK; Wiederholen bis FIND nichts mehr findet."""
+    """Modaler Ablauf: FIND → DETECT; Wiederholen bis FIND nichts mehr findet."""
 
     bl_idname = "clip.camera_tracking_coordinator"
     bl_label = "Camera Tracking Coordinator"
@@ -114,20 +114,7 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
             res = scn.get("tco_last_detect_cycle") or {}
             count_info = res.get("count") or {}
             status = str(count_info.get("status", "")).upper()
-            if status == "ENOUGH":
-                self.phase = "TRACK"
-                return {'RUNNING_MODAL'}
-            # Nicht genug → zurück zu FIND und erneut versuchen
-            self.phase = "FIND"
-            return {'RUNNING_MODAL'}
-
-        # PHASE 3: TRACK (Solve einmal ausführen)
-        if self.phase == "TRACK":
-            try:
-                bpy.ops.clip.solve_cycle()
-            except Exception as exc:
-                self.report({'WARNING'}, f"Solve fehlgeschlagen: {exc}")
-            # Danach wieder von vorne
+            # ENOUGH → wieder FIND; sonst auch FIND (nächsten Low‑Frame suchen)
             self.phase = "FIND"
             return {'RUNNING_MODAL'}
 
