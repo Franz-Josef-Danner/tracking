@@ -1,7 +1,7 @@
 import bpy
 from bpy.types import Operator
 from ..Helper.solve_camera import solve_camera_only
-from ..Helper.reduce_error_tracks import get_avg_reprojection_error, run_reduce_error_tracks
+from ..Helper.reduce_error_tracks import get_avg_reprojection_error
 import time
 
 
@@ -32,7 +32,7 @@ def _safe_for_scene(obj):
 
 
 def _disable_solve_refine_flags(context) -> None:
-    """Deaktiviert explizit alle Solve‑Refine‑Checkboxen und Keyframe‑Selektion."""
+    """Deaktiviert Refine‑Checkboxen; Keyframe‑Selektion bleibt explizit AN (True)."""
     try:
         clip = getattr(context, "edit_movieclip", None)
         if not clip:
@@ -43,13 +43,13 @@ def _disable_solve_refine_flags(context) -> None:
         settings = getattr(tr, "settings", None) if tr else None
         if not settings:
             return
-        # Keyframe-Selection aus
+        # Keyframe-Selection an (beibehalten wie gewünscht)
         try:
             if hasattr(tr, "settings") and hasattr(tr.settings, "use_keyframe_selection"):
                 tr.settings.use_keyframe_selection = True
         except Exception:
             pass
-        # Refine‑Flags aus
+        # Refine‑Flags AUS
         for attr in (
             "refine_intrinsics_focal_length",
             "refine_intrinsics_principal_point",
@@ -69,6 +69,92 @@ def _disable_solve_refine_flags(context) -> None:
         pass
 
 
+def _find_clip_editor_override():
+    wm = getattr(bpy.context, "window_manager", None)
+    if not wm:
+        return {}
+    for win in wm.windows:
+        scr = getattr(win, "screen", None)
+        if not scr:
+            continue
+        for area in scr.areas:
+            if getattr(area, "type", "") != "CLIP_EDITOR":
+                continue
+            region = next((r for r in area.regions if r.type == "WINDOW"), None)
+            space = area.spaces.active if hasattr(area, "spaces") else None
+            if region and space:
+                return {
+                    "window": win,
+                    "area": area,
+                    "region": region,
+                    "space_data": space,
+                    "scene": bpy.context.scene,
+                }
+    return {}
+
+
+def _delete_unreconstructed_tracks(context) -> dict:
+    """Löscht alle Tracks ohne rekonstruierte 3D‑Position (has_bundle=False)."""
+    clip = getattr(context, "edit_movieclip", None)
+    if not clip:
+        clip = getattr(getattr(context, "space_data", None), "clip", None)
+    if not clip and bpy.data.movieclips:
+        try:
+            clip = bpy.data.movieclips[0]
+        except Exception:
+            clip = None
+    if not clip or not getattr(clip, "tracking", None):
+        return {"deleted": 0, "names": []}
+    tracks = list(getattr(clip.tracking, "tracks", []))
+    victims = [t for t in tracks if not bool(getattr(t, "has_bundle", False))]
+    if not victims:
+        return {"deleted": 0, "names": []}
+    # Auswahl setzen
+    try:
+        for t in tracks:
+            try:
+                t.select = False
+            except Exception:
+                pass
+        for t in victims:
+            try:
+                t.select = True
+            except Exception:
+                pass
+    except Exception:
+        pass
+    deleted = 0
+    names = [getattr(t, "name", "<noname>") for t in victims]
+    # Operator mit Override ausführen
+    try:
+        override = _find_clip_editor_override()
+        if override:
+            with bpy.context.temp_override(**override):
+                bpy.ops.clip.delete_track()
+        else:
+            bpy.ops.clip.delete_track()
+        try:
+            bpy.context.view_layer.update()
+        except Exception:
+            pass
+        # zählen, welche weg sind
+        for n in names:
+            try:
+                if not clip.tracking.tracks.get(n):
+                    deleted += 1
+            except Exception:
+                pass
+    except Exception:
+        # Fallback: direkte API
+        for t in victims:
+            try:
+                clip.tracking.tracks.remove(t)
+                deleted += 1
+            except Exception:
+                pass
+    return {"deleted": int(deleted), "names": names}
+
+
 class CLIP_OT_solve_cycle(Operator):
     bl_idname = "clip.solve_cycle"
     bl_label = "Solve Cycle (1x Solve)"
@@ -76,7 +162,7 @@ class CLIP_OT_solve_cycle(Operator):
 
     def execute(self, context):
         scn = context.scene
-        # 0. Refine/Keyframe deaktivieren
+        # 0. Refine aus, Keyframe an
         _disable_solve_refine_flags(context)
         # 1. Kamera-Solve ausführen
         try:
@@ -98,31 +184,13 @@ class CLIP_OT_solve_cycle(Operator):
             except Exception:
                 pass
             time.sleep(0.05)
-        # 3. Ggf. Cleanup anstoßen (avg_error > error_track)
+        # 3. Nicht rekonstruierte Tracks löschen
+        del_info = _delete_unreconstructed_tracks(context)
         try:
-            thr = float(getattr(scn, "error_track", 2.0) or 2.0)
+            scn["tco_last_unreconstructed_cleanup"] = _safe_for_scene(del_info)
         except Exception:
-            thr = 2.0
-        reduce_info = None
-        if isinstance(avg_error, (int, float)) and float(avg_error) > float(thr):
-            try:
-                max_del = max(1, int(round(float(avg_error) * 2.0)))
-            except Exception:
-                max_del = 1
-            try:
-                reduce_info = run_reduce_error_tracks(context, max_to_delete=int(max_del))
-                try:
-                    scn["tco_last_reduce_pass"] = _safe_for_scene({
-                        "avg_error": float(avg_error),
-                        "threshold": float(thr),
-                        "max_to_delete": int(max_del),
-                        "result": reduce_info,
-                    })
-                except Exception:
-                    pass
-                self.report({'INFO'}, f"ReduceErrorTracks: avg_error={avg_error:.3f} thr={thr:.3f} max_del={int(max_del)} deleted={int(reduce_info.get('deleted',0) if isinstance(reduce_info, dict) else 0)}")
-            except Exception as exc:
-                self.report({'WARNING'}, f"ReduceErrorTracks failed: {exc}")
+            pass
+        self.report({'INFO'}, f"Unreconstructed cleanup: deleted={int(del_info.get('deleted',0))}")
         # 4. Zusammenfassen (robust säubern)
         result = {
             "status": "OK",
