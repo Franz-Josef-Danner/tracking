@@ -70,29 +70,74 @@ def _restore_refine(ts, snap) -> None:
             pass
 
 
+def _try_set(container, names, value):
+    """Wie in tracker_settings: setzt erstes vorhandenes Attr (oder .solver.attr) auf value."""
+    for name in names:
+        if hasattr(container, name):
+            try:
+                setattr(container, name, value)
+                return name
+            except Exception:
+                continue
+    sub = getattr(container, "solver", None)
+    if sub:
+        for name in names:
+            if hasattr(sub, name):
+                try:
+                    setattr(sub, name, value)
+                    return f"solver.{name}"
+                except Exception:
+                    continue
+    return None
+
+
 def _apply_refine_set(ts, flags: Set[str]) -> None:
-    """Versucht primär ts.refine_intrinsics zu setzen; fällt auf Einzel‑Checkboxen zurück."""
+    """Setzt Refine so, wie es die UI kennt.
+    flags enthält UI‑Items: 'FOCAL_LENGTH', 'PRINCIPAL_POINT', 'RADIAL_DISTORTION'.
+    """
     if not ts:
         return
-    # Versuche Set auf refine_intrinsics
+    # 1) Enum‑Set, wenn verfügbar
     try:
         if hasattr(ts, "refine_intrinsics"):
             ts.refine_intrinsics = set(flags)
-            return
     except Exception:
         pass
-    # Fallback: Einzel‑Checkboxen
-    try:
-        if hasattr(ts, "refine_focal_length"):
-            ts.refine_focal_length = ("FOCAL_LENGTH" in flags)
-        if hasattr(ts, "refine_principal_point"):
-            ts.refine_principal_point = ("PRINCIPAL_POINT" in flags)
-        if hasattr(ts, "refine_radial_distortion"):
-            ts.refine_radial_distortion = ("RADIAL_K1" in flags)
-        if hasattr(ts, "refine_k1"):
-            ts.refine_k1 = ("RADIAL_K1" in flags)
-    except Exception:
-        pass
+    # 2) Fallbacks je Flag (True/False je nach Mitgliedschaft)
+    # Focal Length
+    _ = _try_set(
+        ts,
+        (
+            "refine_intrinsics_focal_length",
+            "refine_focal_length",
+            "refine_focal",
+            "refine_focal_length_error",
+        ),
+        bool("FOCAL_LENGTH" in flags),
+    )
+    # Principal Point (Optical Center)
+    _ = _try_set(
+        ts,
+        (
+            "refine_intrinsics_principal_point",
+            "refine_principal_point",
+            "refine_principal",
+            "refine_principal_point_x",
+        ),
+        bool("PRINCIPAL_POINT" in flags),
+    )
+    # Radial Distortion (inkl. K1 als Fallback)
+    _ = _try_set(
+        ts,
+        (
+            "refine_intrinsics_radial_distortion",
+            "refine_radial_distortion",
+            "refine_distortion",
+            "refine_k1",
+        ),
+        bool("RADIAL_DISTORTION" in flags),
+    )
+    # Tangential lassen wir unberührt
 
 
 class CLIP_OT_refine_solve_modal(Operator):
@@ -138,12 +183,12 @@ class CLIP_OT_refine_solve_modal(Operator):
         return self.invoke(context, None)
 
     def _current_flags(self) -> Set[str]:
-        # Stufen: 0 -> {FOCAL}, 1 -> {FOCAL, PRINCIPAL}, 2 -> {FOCAL, PRINCIPAL, RADIAL_K1}
+        # Stufen: 0 -> {FOCAL_LENGTH}, 1 -> {FOCAL_LENGTH, PRINCIPAL_POINT}, 2 -> + RADIAL_DISTORTION
         if self._stage <= 0:
             return {"FOCAL_LENGTH"}
         if self._stage == 1:
             return {"FOCAL_LENGTH", "PRINCIPAL_POINT"}
-        return {"FOCAL_LENGTH", "PRINCIPAL_POINT", "RADIAL_K1"}
+        return {"FOCAL_LENGTH", "PRINCIPAL_POINT", "RADIAL_DISTORTION"}
 
     def _finish(self, context, reduce_executed: bool = False):
         try:
