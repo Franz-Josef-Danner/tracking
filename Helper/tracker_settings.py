@@ -3,6 +3,8 @@ import bpy
 
 __all__ = ("apply_tracker_settings",)
 
+DEFAULT_DET_MIN = 0.75
+
 
 def _resolve_clip_and_scene(context, clip=None, scene=None):
     """Robuste Auflösung von clip/scene aus Context – ohne UI-Seiteneffekte."""
@@ -58,6 +60,13 @@ def _try_set(container, names, value):
                     continue
     return None
 
+
+def _try_set_false(container, names):
+    """Kurzform: setzt das erste existierende Attribut aus names robust auf False.
+    Gibt den tatsächlich gesetzten Namen zurück oder None."""
+    return _try_set(container, names, False)
+
+
 def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) -> dict:
     """
     Setzt vordefinierte Tracking-Defaults abhängig von der Clip-Auflösung
@@ -71,6 +80,7 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
       - Refine Focal Length
       - Refine Optical center (Principal Point)
       - Refine Radial Distortion
+      - Refine Tangential Distortion
     """
     clip, scene = _resolve_clip_and_scene(context, clip=clip, scene=scene)
     if clip is None or scene is None:
@@ -107,9 +117,9 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
     ts.clean_error = getattr(scene, "error_track", 0.5)
 
     try:
-        det_thr = float(scene.get("last_detection_threshold", default_min))
+        det_thr = float(scene.get("last_detection_threshold", DEFAULT_DET_MIN))
     except Exception:
-        det_thr = default_min
+        det_thr = DEFAULT_DET_MIN
 
     det_thr = _clamp01(det_thr)
     scene["last_detection_threshold"] = float(det_thr)
@@ -117,15 +127,26 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
     # --- Solver-Einstellungen: robuste Versuche mehrere mögliche Property-Namen ---
     solver_changes = {}
 
-    # Tripod Motion
+    # Tripod Motion -> False
     tripod_name = _try_set(ts, ("use_tripod_motion", "use_tripod_solver", "use_tripod"), False)
     solver_changes['tripod'] = tripod_name
 
-    # Keyframe Selection
+    # Keyframe Selection -> True
     keyframe_name = _try_set(ts, ("use_keyframe_selection", "use_keyframes", "use_keyframe_selection_mode"), True)
     solver_changes['keyframe_selection'] = keyframe_name
 
-    # Refine Focal Length
+    # Refine: Intrinsics-Flag-Set leeren (deaktiviert alle Refine-Checkboxen im UI)
+    try:
+        if hasattr(ts, "refine_intrinsics"):
+            try:
+                ts.refine_intrinsics = set()
+                solver_changes['refine_intrinsics'] = 'refine_intrinsics'
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # Refine Focal Length -> False (zusätzliche Backwards-Kompatibilität)
     refine_focal_name = _try_set(
         ts,
         (
@@ -138,7 +159,7 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
     )
     solver_changes['refine_focal_length'] = refine_focal_name
 
-    # Refine Optical center (Principal Point)
+    # Refine Optical center (Principal Point) -> False
     refine_principal_name = _try_set_false(
         ts,
         (
@@ -150,7 +171,7 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
     )
     solver_changes['refine_principal_point'] = refine_principal_name
 
-    # Refine Radial Distortion
+    # Refine Radial Distortion -> False
     refine_radial_name = _try_set_false(
         ts,
         (
@@ -161,6 +182,17 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
         ),
     )
     solver_changes['refine_radial_distortion'] = refine_radial_name
+
+    # Refine Tangential Distortion -> False
+    refine_tangential_name = _try_set_false(
+        ts,
+        (
+            "refine_tangential",
+            "refine_intrinsics_tangential_distortion",
+            "refine_tangential_distortion",
+        ),
+    )
+    solver_changes['refine_tangential_distortion'] = refine_tangential_name
 
     if log:
         # Log welche Solver-Properties gesetzt wurden (falls vorhanden)
