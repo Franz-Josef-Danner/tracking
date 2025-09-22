@@ -30,7 +30,7 @@ __all__ = ("CLIP_OT_camera_tracking_coordinator",)
 
 class CLIP_OT_camera_tracking_coordinator(Operator):
     """Modaler Ablauf: FIND → DETECT → TRACK; Wiederholen bis FIND nichts mehr findet.
-    Wenn FIND nichts mehr findet: Clean-Cycle ausführen und beenden.
+    Wenn FIND nichts mehr findet: Clean-Cycle ausführen und Solve starten; danach ggf. zurück zu FIND.
     """
 
     bl_idname = "clip.camera_tracking_coordinator"
@@ -111,34 +111,47 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                 self.track_started = False
                 return {'RUNNING_MODAL'}
             if status in {"NONE", ""}:
-                # Nichts mehr zu finden → Clean-Cycle ausführen und dann Solve + Bewertung
+                # Nichts mehr zu finden → Clean-Cycle ausführen und dann Solve starten
                 try:
                     bpy.ops.clip.clean_cycle()
                     self.report({'INFO'}, "Clean-Cycle ausgeführt")
                 except Exception as exc:
                     self.report({'WARNING'}, f"Clean-Cycle konnte nicht gestartet werden: {exc}")
-                # Direkt Solve starten (modal) und auf Error warten
+                # Solve (modal) starten und in SOLVE_WAIT wechseln
                 try:
                     bpy.ops.clip.solve_camera_modal('INVOKE_DEFAULT')
+                    self.phase = "SOLVE_WAIT"
+                    return {'RUNNING_MODAL'}
                 except Exception as exc:
                     return self._finish(context, f"Solve konnte nicht gestartet werden: {exc}", cancel=True)
-                # optional: unreconstructed cleanup info lesen (falls verfügbar)
-                try:
-                    cleanup = scn.get("tco_last_unreconstructed_cleanup") or {}
-                    deleted_after_solve = int((cleanup.get("deleted", 0) or 0))
-                except Exception:
-                    deleted_after_solve = 0
-                if deleted_after_solve > 0:
+            # Fehlerfall
+            return self._finish(context, f"FindLow fehlgeschlagen: {data}", cancel=True)
+
+        # PHASE: SOLVE_WAIT – warte auf Flags aus solve_O
+        if self.phase == "SOLVE_WAIT":
+            active = bool(scn.get("tco_solve_active", False))
+            done = bool(scn.get("tco_solve_done", False))
+            if active and not done:
+                return {'RUNNING_MODAL'}
+            if done:
+                reduce_executed = bool(scn.get("tco_reduce_executed", False))
+                # Flags optional bereinigen
+                for k in ("tco_solve_active", "tco_solve_done", "tco_reduce_executed"):
+                    try:
+                        del scn[k]
+                    except Exception:
+                        pass
+                if reduce_executed:
                     # zurück zu FIND
                     self.phase = "FIND"
                     self.detect_started = False
                     self.track_started = False
-                    self.report({'INFO'}, f"Solve: {deleted_after_solve} Tracks gelöscht → zurück zu FIND")
+                    self.report({'INFO'}, "Solve: Reduce ausgeführt → zurück zu FIND")
                     return {'RUNNING_MODAL'}
-                # Ansonsten Coordinator beenden – Reduce findet in solve_O statt
+                # kein Reduce → Coordinator beenden
                 return self._finish(context, "Solve abgeschlossen – Coordinator beendet.")
-            # Fehlerfall
-            return self._finish(context, f"FindLow fehlgeschlagen: {data}", cancel=True)
+            # weder active noch done → kurze Warte
+            return {'RUNNING_MODAL'}
 
         # PHASE 2: DETECT (modaler Operator, wir warten auf Scene‑Flag)
         if self.phase == "DETECT":
