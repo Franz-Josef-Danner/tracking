@@ -13,6 +13,15 @@ from .mute_ops import mute_marker_path, mute_unassigned_markers
 # --------------------------------------------------------------------------
 # All console outputs in this module are disabled.  To aid debugging without
 # writing to stdout, use the no-op `_log` function instead of `print`.
+
+def _dbg_enabled_global() -> bool:
+    try:
+        sc = getattr(bpy.context, "scene", None)
+        return bool(sc and sc.get("tco_debug_split", False))
+    except Exception:
+        return False
+
+
 def _log(*args: Any, **kwargs: Any) -> None:
     """No-op debug logger. Replace calls to print with this to silence output."""
     # Intentionally do nothing to suppress console output.
@@ -538,6 +547,11 @@ def recursive_split_cleanup(context,
     scene = context.scene
 
     # Audit vor dem Split (keine Ausgabe, nur Konsistenz)
+    if _dbg_enabled_global():
+        try:
+            print(f"[Split] start tracks={len(tracks_list)} min_len={int(scene.get('tco_min_seg_len', 25)) if scene else 25}")
+        except Exception:
+            pass
     for t in tracks_list:
         segs = list(get_track_segments(t))
         fb = _segments_by_consecutive_frames_unmuted(t)
@@ -545,7 +559,6 @@ def recursive_split_cleanup(context,
             segs = fb
         if _dbg_enabled():
             snap = _snapshot_track(t)
-            # Silence console output via the no-op logger.
             _log(
                 f"[SplitDBG][pre_audit] track={t.name} segs_all={len(get_track_segments(t))} "
                 f"segs_unmuted={len(_segments_by_consecutive_frames_unmuted(t))} snapshot={snap}"
@@ -607,5 +620,11 @@ def recursive_split_cleanup(context,
         total = len(list(clip_tracks))
         # Silence console output via the no-op logger.
         _log(f"[SplitDBG][finish] tracks_total={total} leftover_multi={leftover_multi}")
+
+    if _dbg_enabled_global():
+        try:
+            print("[Split] finished")
+        except Exception:
+            pass
 
     return {'FINISHED'}
