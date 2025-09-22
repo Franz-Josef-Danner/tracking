@@ -102,12 +102,40 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                 self.track_started = False
                 return {'RUNNING_MODAL'}
             if status in {"NONE", ""}:
-                # Nichts mehr zu finden → Clean-Cycle ausführen und dann erneut versuchen
+                # Nichts mehr zu finden → Clean-Cycle ausführen und dann erneut prüfen
                 try:
                     bpy.ops.clip.clean_cycle()
                     self.report({'INFO'}, "Clean-Cycle ausgeführt")
                 except Exception as exc:
                     self.report({'WARNING'}, f"Clean-Cycle konnte nicht gestartet werden: {exc}")
+                # Auswertung des Clean-Resultats
+                restart = False
+                deleted_total = 0
+                fm_status = ""
+                try:
+                    res_clean = scn.get("tco_last_clean_cycle") or {}
+                    restart = bool(res_clean.get("restart", False))
+                    deleted_total = int(res_clean.get("markers_deleted_total", 0) or 0)
+                    steps = res_clean.get("steps") or []
+                    if isinstance(steps, (list, tuple)):
+                        for s in steps:
+                            try:
+                                if str(s.get("step", "")) == "find_max_marker_frame":
+                                    fm_status = str(s.get("status", ""))
+                                    break
+                            except Exception:
+                                pass
+                except Exception:
+                    restart = False
+                # Entscheidungslogik:
+                # 1) Wenn Restart gewünscht ODER Marker gelöscht wurden → zurück zu FIND
+                # 2) Wenn nichts gelöscht wurde UND find_max == NONE → Solve starten
+                if not restart and int(deleted_total) == 0 and str(fm_status).upper() in {"NONE", ""}:
+                    try:
+                        bpy.ops.clip.solve_cycle()
+                        self.report({'INFO'}, "Solve-Cycle gestartet (nach Clean & find_max=NONE)")
+                    except Exception as exc:
+                        self.report({'WARNING'}, f"Solve-Cycle konnte nicht gestartet werden: {exc}")
                 # zurück zu FIND
                 self.phase = "FIND"
                 self.detect_started = False
