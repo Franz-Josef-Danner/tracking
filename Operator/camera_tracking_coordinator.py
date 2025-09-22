@@ -16,11 +16,18 @@ except Exception:
     except Exception:
         CLIP_OT_bidirectional_track = None  # type: ignore
 
-# Optional: Reducer für hohe Fehlerwerte
+# Optional: Reducer für hohe Fehlerwerte + Solve-Error Abfrage
 try:
-    from ..Helper.reduce_error_tracks import run_reduce_error_tracks  # type: ignore
+    from ..Helper.reduce_error_tracks import run_reduce_error_tracks, wait_for_solve_average_error, get_solve_average_error  # type: ignore
 except Exception:
-    run_reduce_error_tracks = None  # type: ignore
+    try:
+        from ..Helper.reduce_error_tracks import run_reduce_error_tracks  # type: ignore
+    except Exception:
+        run_reduce_error_tracks = None  # type: ignore
+    def wait_for_solve_average_error(context, timeout=None, interval=0.05):  # type: ignore
+        return None
+    def get_solve_average_error(context):  # type: ignore
+        return None
 
 __all__ = ("CLIP_OT_camera_tracking_coordinator",)
 
@@ -108,102 +115,72 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                 self.track_started = False
                 return {'RUNNING_MODAL'}
             if status in {"NONE", ""}:
-                # Nichts mehr zu finden → Clean-Cycle ausführen und dann erneut prüfen
+                # Nichts mehr zu finden → Clean-Cycle ausführen und dann Solve + Bewertung
                 try:
                     bpy.ops.clip.clean_cycle()
                     self.report({'INFO'}, "Clean-Cycle ausgeführt")
                 except Exception as exc:
                     self.report({'WARNING'}, f"Clean-Cycle konnte nicht gestartet werden: {exc}")
-                # Auswertung des Clean-Resultats
-                restart = False
-                deleted_total = 0
-                fm_status = ""
+                # Direkt Solve starten (modal) und auf Error warten
                 try:
-                    res_clean = scn.get("tco_last_clean_cycle") or {}
-                    restart = bool(res_clean.get("restart", False))
-                    deleted_total = int(res_clean.get("markers_deleted_total", 0) or 0)
-                    steps = res_clean.get("steps") or []
-                    if isinstance(steps, (list, tuple)):
-                        for s in steps:
-                            try:
-                                if str(s.get("step", "")) == "find_max_marker_frame":
-                                    fm_status = str(s.get("status", ""))
-                                    break
-                            except Exception:
-                                pass
+                    bpy.ops.clip.solve_camera_modal('INVOKE_DEFAULT')
+                except Exception as exc:
+                    return self._finish(context, f"Solve konnte nicht gestartet werden: {exc}", cancel=True)
+                # optional: unreconstructed cleanup info lesen (falls verfügbar)
+                try:
+                    cleanup = scn.get("tco_last_unreconstructed_cleanup") or {}
+                    deleted_after_solve = int((cleanup.get("deleted", 0) or 0))
                 except Exception:
-                    restart = False
-                # Entscheidungslogik:
-                # 1) Wenn Restart gewünscht ODER Marker gelöscht wurden → zurück zu FIND
-                # 2) Wenn nichts gelöscht wurde UND find_max == NONE → Solve starten; wenn Solve Tracks gelöscht hat → zurück zu FIND, sonst ggf. Reducer, sonst beenden
-                if not restart and int(deleted_total) == 0 and str(fm_status).upper() in {"NONE", ""}:
+                    deleted_after_solve = 0
+                if deleted_after_solve > 0:
+                    # zurück zu FIND
+                    self.phase = "FIND"
+                    self.detect_started = False
+                    self.track_started = False
+                    self.report({'INFO'}, f"Solve: {deleted_after_solve} Tracks gelöscht → zurück zu FIND")
+                    return {'RUNNING_MODAL'}
+                # Keine Löschungen → ggf. Reduce-Phase, falls avg_error > error_track
+                try:
+                    ae = wait_for_solve_average_error(context, timeout=3.0, interval=0.05)
+                    if ae is None:
+                        ae = get_solve_average_error(context)
+                except Exception:
+                    ae = None
+                try:
+                    thr_scene = float(scn.get("error_track", 2.0))
+                except Exception:
+                    thr_scene = 2.0
+                if (ae is not None) and (ae > thr_scene) and (run_reduce_error_tracks is not None):
+                    # Threshold temporär auf 10.0 setzen
+                    old_thr = scn.get("error_track", None)
                     try:
-                        bpy.ops.clip.track_cycle()
-                        # Prüfen, ob nach dem Solve unreconstructed Tracks entfernt wurden
-                        cleanup = scn.get("tco_last_unreconstructed_cleanup") or {}
+                        scn["error_track"] = 10.0
+                    except Exception:
+                        pass
+                    try:
+                        res_red = run_reduce_error_tracks(context)
                         try:
-                            deleted_after_solve = int((cleanup.get("deleted", 0) or 0))
+                            scn["tco_last_reduce_error_tracks"] = res_red
                         except Exception:
-                            deleted_after_solve = 0
-                        if deleted_after_solve > 0:
-                            # zurück zu FIND
-                            self.phase = "FIND"
-                            self.detect_started = False
-                            self.track_started = False
-                            self.report({'INFO'}, f"Solve: {deleted_after_solve} Tracks gelöscht → zurück zu FIND")
-                            return {'RUNNING_MODAL'}
-                        # Keine Löschungen → ggf. Reduce-Phase, falls avg_error > error_track
+                            pass
+                        self.report({'INFO'}, f"Reduce-Error-Tracks ausgeführt (thr=10): deleted={int(res_red.get('deleted',0))}")
+                    except Exception as _rex:
+                        self.report({'WARNING'}, f"Reduce-Error-Tracks Fehler: {_rex}")
+                    finally:
                         try:
-                            res_solve = scn.get("tco_last_solve_cycle") or {}
-                            ae = res_solve.get("avg_error", None)
-                            try:
-                                avg_err = float(ae)
-                            except Exception:
-                                avg_err = None
-                            thr_scene = float(scn.get("error_track", 2.0))
+                            if old_thr is None:
+                                del scn["error_track"]
+                            else:
+                                scn["error_track"] = old_thr
                         except Exception:
-                            avg_err = None
-                            thr_scene = 2.0
-                        if (avg_err is not None) and (avg_err > thr_scene) and (run_reduce_error_tracks is not None):
-                            # Threshold temporär auf 10.0 setzen
-                            old_thr = scn.get("error_track", None)
-                            try:
-                                scn["error_track"] = 10.0
-                            except Exception:
-                                pass
-                            try:
-                                res_red = run_reduce_error_tracks(context)
-                                # optional Telemetrie ablegen
-                                try:
-                                    scn["tco_last_reduce_error_tracks"] = res_red
-                                except Exception:
-                                    pass
-                                self.report({'INFO'}, f"Reduce-Error-Tracks ausgeführt (thr=10): deleted={int(res_red.get('deleted',0))}")
-                            except Exception as _rex:
-                                self.report({'WARNING'}, f"Reduce-Error-Tracks Fehler: {_rex}")
-                            finally:
-                                # ursprünglichen Threshold wiederherstellen
-                                try:
-                                    if old_thr is None:
-                                        del scn["error_track"]
-                                    else:
-                                        scn["error_track"] = old_thr
-                                except Exception:
-                                    pass
-                            # zurück zu FIND
-                            self.phase = "FIND"
-                            self.detect_started = False
-                            self.track_started = False
-                            return {'RUNNING_MODAL'}
-                        # keine Löschungen und kein Reducer nötig → Coordinator beenden
-                        return self._finish(context, "Solve-Cycle abgeschlossen – Coordinator beendet.")
-                    except Exception as exc:
-                        return self._finish(context, f"Solve-Cycle konnte nicht gestartet/ausgeführt werden: {exc}", cancel=True)
-                # ansonsten zurück zu FIND
-                self.phase = "FIND"
-                self.detect_started = False
-                self.track_started = False
-                return {'RUNNING_MODAL'}
+                            pass
+                    # zurück zu FIND
+                    self.phase = "FIND"
+                    self.detect_started = False
+                    self.track_started = False
+                    return {'RUNNING_MODAL'}
+                # keine Löschungen und kein Reducer nötig → Coordinator beenden
+                return self._finish(context, "Solve abgeschlossen – Coordinator beendet.")
             # Fehlerfall
             return self._finish(context, f"FindLow fehlgeschlagen: {data}", cancel=True)
 

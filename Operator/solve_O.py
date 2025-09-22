@@ -1,7 +1,7 @@
 import bpy
 from bpy.types import Operator
 from ..Helper.solve_camera import solve_camera_only
-from ..Helper.reduce_error_tracks import get_avg_reprojection_error, wait_for_avg_reprojection_error
+from ..Helper.reduce_error_tracks import get_solve_average_error, wait_for_solve_average_error
 
 
 class CLIP_OT_solve_camera_modal(Operator):
@@ -53,10 +53,10 @@ class CLIP_OT_solve_camera_modal(Operator):
             scn = context.scene
             try:
                 # Bis zu 3s auf stabilen avg_error warten
-                avg_error = wait_for_avg_reprojection_error(context, timeout=3.0, interval=0.05)
+                avg_error = wait_for_solve_average_error(context, timeout=3.0, interval=0.05)
                 if avg_error is None:
                     try:
-                        avg_error = get_avg_reprojection_error(context)
+                        avg_error = get_solve_average_error(context)
                     except Exception:
                         avg_error = None
                 try:

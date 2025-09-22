@@ -438,3 +438,52 @@ def wait_for_avg_reprojection_error(context, timeout: Optional[float] = None, in
         if timeout is not None and (time.perf_counter() - t0) >= timeout:
             return None
         time.sleep(max(0.0, float(interval)))
+
+
+def get_solve_average_error(context) -> Optional[float]:
+    """Liest den von Blender gemeldeten Solve-Avg-Error aus der Reconstruction,
+    falls verfügbar. Fallback auf get_avg_reprojection_error.
+    """
+    clip = getattr(context, "edit_movieclip", None)
+    try:
+        if not clip:
+            clip = getattr(bpy.context, "edit_movieclip", None)
+    except Exception:
+        pass
+    if not clip or not getattr(clip, "tracking", None):
+        return None
+    try:
+        obj = clip.tracking.objects.active if clip.tracking.objects else None
+        recon = getattr(obj, "reconstruction", None)
+        if not recon or not getattr(recon, "is_valid", False):
+            return None
+        for attr in ("error", "average_error", "average_reprojection_error"):
+            try:
+                val = getattr(recon, attr, None)
+                if isinstance(val, (int, float)) and float(val) >= 0.0:
+                    return float(val)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    # Fallback: eigenes Reprojektion-Mittel berechnen
+    return get_avg_reprojection_error(context)
+
+
+def wait_for_solve_average_error(context, timeout: Optional[float] = None, interval: float = 0.05) -> Optional[float]:
+    """Wie wait_for_avg_reprojection_error, aber nutzt bevorzugt Reconstruction.error."""
+    t0 = time.perf_counter()
+    while True:
+        try:
+            try:
+                context.view_layer.update()
+            except Exception:
+                pass
+            val = get_solve_average_error(context)
+            if isinstance(val, (int, float)):
+                return float(val)
+        except Exception:
+            pass
+        if timeout is not None and (time.perf_counter() - t0) >= timeout:
+            return None
+        time.sleep(max(0.0, float(interval)))
