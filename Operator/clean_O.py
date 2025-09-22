@@ -33,7 +33,7 @@ class CLIP_OT_clean_cycle(Operator):
         steps: list[dict] = []
 
         # 1) Spike-Filter
-        thr = float(scn.get("tco_clean_track_threshold", scn.get("tco_spike_threshold", 100.0)) or 100.0)
+        thr = float(scn.get("tco_clean_track_threshold", scn.get("tco_spike_threshold", 15.0)) or 15.0)
         if run_marker_spike_filter_cycle is not None:
             try:
                 run_marker_spike_filter_cycle(context, track_threshold=thr)
