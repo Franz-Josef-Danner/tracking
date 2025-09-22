@@ -1,6 +1,7 @@
 import bpy
 from bpy.types import Operator
 from ..Helper.solve_camera import solve_camera_only
+from ..Helper.reduce_error_tracks import get_avg_reprojection_error
 
 
 class CLIP_OT_solve_camera_modal(Operator):
@@ -48,10 +49,42 @@ class CLIP_OT_solve_camera_modal(Operator):
                 self.report({"ERROR"}, f"Solve fehlgeschlagen: {exc}")
                 return {"CANCELLED"}
 
+            # Vergleich avg_error vs. error_track in die Konsole loggen
+            scn = context.scene
+            try:
+                avg_error = None
+                try:
+                    # Kurzes Update, damit Reconstruction/Errors frisch sind
+                    try:
+                        context.view_layer.update()
+                    except Exception:
+                        pass
+                    avg_error = get_avg_reprojection_error(context)
+                except Exception:
+                    avg_error = None
+                try:
+                    thr = float(getattr(scn, "error_track", 2.0))
+                except Exception:
+                    thr = 2.0
+                if avg_error is None:
+                    print(f"[SolveCheck] avg_error=None threshold={float(thr):.3f}")
+                    self.report({'INFO'}, "Solve gestartet (avg_error unbekannt)")
+                else:
+                    ae = float(avg_error)
+                    comp = ">" if ae > float(thr) else "<="
+                    exceeds = ae > float(thr)
+                    print(f"[SolveCheck] avg_error={ae:.3f} {comp} threshold={float(thr):.3f} -> exceeds={exceeds}")
+                    if exceeds:
+                        self.report({'WARNING'}, f"Solve: avg_error={ae:.3f} > threshold={float(thr):.3f}")
+                    else:
+                        self.report({'INFO'}, f"Solve: avg_error={ae:.3f} <= threshold={float(thr):.3f}")
+            except Exception:
+                # Logging darf nie den Flow brechen
+                pass
+
             # Für jetzt: nach dem Auslösen direkt beenden.
             # (Spätere Erweiterungen können hier warten/prüfen.)
             self._cleanup(context)
-            self.report({"INFO"}, f"Solve gestartet: {self._result}")
             return {"FINISHED"}
 
         return {"RUNNING_MODAL"}
