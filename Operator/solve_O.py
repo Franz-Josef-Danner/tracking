@@ -1,7 +1,7 @@
 import bpy
 from bpy.types import Operator
 from ..Helper.solve_camera import solve_camera_only
-from ..Helper.reduce_error_tracks import get_avg_reprojection_error
+from ..Helper.reduce_error_tracks import get_avg_reprojection_error, wait_for_avg_reprojection_error
 
 
 class CLIP_OT_solve_camera_modal(Operator):
@@ -49,31 +49,29 @@ class CLIP_OT_solve_camera_modal(Operator):
                 self.report({"ERROR"}, f"Solve fehlgeschlagen: {exc}")
                 return {"CANCELLED"}
 
-            # Vergleich avg_error vs. error_track in die Konsole loggen
+            # Vergleich avg_error vs. error_track – warte kurz, damit Blender seine Logs zuerst schreibt
             scn = context.scene
             try:
-                avg_error = None
-                try:
-                    # Kurzes Update, damit Reconstruction/Errors frisch sind
+                # Bis zu 3s auf stabilen avg_error warten
+                avg_error = wait_for_avg_reprojection_error(context, timeout=3.0, interval=0.05)
+                if avg_error is None:
                     try:
-                        context.view_layer.update()
+                        avg_error = get_avg_reprojection_error(context)
                     except Exception:
-                        pass
-                    avg_error = get_avg_reprojection_error(context)
-                except Exception:
-                    avg_error = None
+                        avg_error = None
                 try:
                     thr = float(getattr(scn, "error_track", 2.0))
                 except Exception:
                     thr = 2.0
                 if avg_error is None:
-                    print(f"[SolveCheck] avg_error=None threshold={float(thr):.3f}")
+                    print(f"[SolveSummary] avg_error=None threshold={float(thr):.3f} exceeds=False", flush=True)
                     self.report({'INFO'}, "Solve gestartet (avg_error unbekannt)")
                 else:
                     ae = float(avg_error)
                     comp = ">" if ae > float(thr) else "<="
                     exceeds = ae > float(thr)
-                    print(f"[SolveCheck] avg_error={ae:.3f} {comp} threshold={float(thr):.3f} -> exceeds={exceeds}")
+                    # Finale Summary-Zeile mit flush – sollte nach Blender-"Info: Average re-projection error" erscheinen
+                    print(f"[SolveSummary] avg_error={ae:.3f} {comp} threshold={float(thr):.3f} exceeds={exceeds}", flush=True)
                     if exceeds:
                         self.report({'WARNING'}, f"Solve: avg_error={ae:.3f} > threshold={float(thr):.3f}")
                     else:
