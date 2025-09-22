@@ -185,16 +185,22 @@ class CLIP_OT_solve_cycle(Operator):
             except Exception:
                 pass
             return {'CANCELLED'}
-        # 2. Reprojection Error abfragen – kurz auf gültige Rekonstruktion warten
+        # 2. Reprojection Error abfragen – warten, bis ein numerischer Wert (auch 0.0) verfügbar ist
         avg_error = None
-        for _ in range(40):  # ~2s
+        for _ in range(200):  # ~10s
             try:
+                try:
+                    context.view_layer.update()
+                except Exception:
+                    pass
                 avg_error = get_avg_reprojection_error(context)
-                if isinstance(avg_error, (int, float)) and avg_error > 0.0:
+                if isinstance(avg_error, (int, float)):
                     break
             except Exception:
                 pass
             time.sleep(0.05)
+        if not isinstance(avg_error, (int, float)):
+            avg_error = 0.0
         # 3. Nicht rekonstruierte Tracks löschen
         del_info = _delete_unreconstructed_tracks(context)
         try:
