@@ -1,7 +1,7 @@
 import bpy
 from bpy.types import Operator
 
-# Optionaler Direktimport für Fallback
+# Optionaler Direktimport für Fallback (Bootstrap)
 try:
     from .bootstrap_O import CLIP_OT_bootstrap_cycle  # type: ignore
 except Exception:
@@ -20,7 +20,9 @@ __all__ = ("CLIP_OT_camera_tracking_coordinator",)
 
 
 class CLIP_OT_camera_tracking_coordinator(Operator):
-    """Modaler Ablauf: FIND → DETECT → TRACK; Wiederholen bis FIND nichts mehr findet."""
+    """Modaler Ablauf: FIND → DETECT → TRACK; Wiederholen bis FIND nichts mehr findet.
+    Wenn FIND nichts mehr findet: Clean-Cycle ausführen und beenden.
+    """
 
     bl_idname = "clip.camera_tracking_coordinator"
     bl_label = "Camera Tracking Coordinator"
@@ -100,8 +102,13 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                 self.track_started = False
                 return {'RUNNING_MODAL'}
             if status in {"NONE", ""}:
-                # Nichts mehr zu finden → fertig
-                return self._finish(context, "Kein Low‑Marker‑Frame mehr gefunden – fertig.")
+                # Nichts mehr zu finden → Clean-Cycle ausführen und beenden
+                try:
+                    bpy.ops.clip.clean_cycle()
+                    self.report({'INFO'}, "Clean-Cycle ausgeführt")
+                except Exception as exc:
+                    self.report({'WARNING'}, f"Clean-Cycle konnte nicht gestartet werden: {exc}")
+                return self._finish(context, "FIND fertig – Clean durchgeführt.")
             # Fehlerfall
             return self._finish(context, f"FindLow fehlgeschlagen: {data}", cancel=True)
 
