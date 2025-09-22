@@ -205,6 +205,7 @@ class CLIP_OT_solve_test(Operator):
         try:
             restart = bool(payload.get("restart_find", False) or payload.get("status") == "MODEL_SWITCH")
             scn["tco_restart_find"] = restart
+            print(f"[SolveTest] finish payload={payload} restart_find={restart}")
         except Exception:
             pass
         try:
@@ -257,8 +258,11 @@ class CLIP_OT_solve_test(Operator):
             if not isinstance(ae, (int, float)) and time.perf_counter() < self._deadline:
                 return {"RUNNING_MODAL"}
             self._ae = float(ae) if isinstance(ae, (int, float)) else None
+            try:
+                print(f"[SolveTest] loop={self._loops} avg_error={self._ae} thr={thr}")
+            except Exception:
+                pass
             if self._ae is not None and self._ae <= thr:
-                # fertig: error klein genug
                 return self._finish(context, {"status": "OK", "avg_error": self._ae, "stage": "ok", "restart_find": False})
             # > thr → Reduce 1 Track und find_max
             self._state = "REDUCE"
@@ -271,8 +275,16 @@ class CLIP_OT_solve_test(Operator):
                     scn["tco_last_reduce_error_tracks"] = self._last_reduce
                 except Exception:
                     pass
+                try:
+                    print(f"[SolveTest] reduce_result deleted={self._last_reduce.get('deleted')} names={self._last_reduce.get('names')}")
+                except Exception:
+                    pass
             except Exception as ex:
                 self._last_reduce = {"status": "ERROR", "reason": str(ex)}
+                try:
+                    print(f"[SolveTest] reduce_error {ex}")
+                except Exception:
+                    pass
             self._state = "FINDMAX"
             return {"RUNNING_MODAL"}
 
@@ -281,6 +293,10 @@ class CLIP_OT_solve_test(Operator):
                 self._find_result = run_find_max_marker_frame(context)
             except Exception as ex:
                 self._find_result = {"status": "ERROR", "reason": str(ex)}
+            try:
+                print(f"[SolveTest] find_max status={str((self._find_result or {}).get('status'))} result={self._find_result}")
+            except Exception:
+                pass
             status = str((self._find_result or {}).get("status", "")).upper()
             if status == "FOUND":
                 # Model wechseln und fertig – Coordinator setzt via Flag zurück zu FIND
@@ -295,11 +311,13 @@ class CLIP_OT_solve_test(Operator):
                 }
                 try:
                     clip.tracking.camera.distortion_model = nxt
+                    print(f"[SolveTest] model_switch {current} -> {nxt}")
                 except Exception as exc:
                     payload["model_switch_error"] = str(exc)
                 return self._finish(context, payload)
             # nicht gefunden → neue Runde
             self._loops += 1
+            print("[SolveTest] find_max NONE -> next loop")
             self._state = "SOLVE"
             return {"RUNNING_MODAL"}
 
