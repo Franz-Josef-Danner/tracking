@@ -32,6 +32,15 @@ class CLIP_OT_solve_camera_modal(Operator):
         self._waiting = False
         self._result = None
         self._wait_deadline = time.perf_counter() + 10.0  # max 10s warten
+        # Flags initialisieren
+        scn = context.scene
+        try:
+            scn["tco_solve_active"] = True
+            scn["tco_solve_done"] = False
+            scn["tco_reduce_executed"] = False
+            scn["tco_solve_avg_error"] = None
+        except Exception:
+            pass
         return {"RUNNING_MODAL"}
 
     def execute(self, context):
@@ -66,6 +75,13 @@ class CLIP_OT_solve_camera_modal(Operator):
             except Exception as exc:
                 self._cleanup(context)
                 self.report({"ERROR"}, f"Solve fehlgeschlagen: {exc}")
+                # Flags beenden
+                try:
+                    scn = context.scene
+                    scn["tco_solve_active"] = False
+                    scn["tco_solve_done"] = True
+                except Exception:
+                    pass
                 return {"CANCELLED"}
 
         # 2) Auf gültigen avg_error warten (nicht-blockierend)
@@ -75,13 +91,15 @@ class CLIP_OT_solve_camera_modal(Operator):
                 if time.perf_counter() < self._wait_deadline:
                     return {"RUNNING_MODAL"}
                 # Timeout → trotzdem fortfahren mit None
-            else:
-                # 3) Entscheidung / Aktionen
-                scn = context.scene
-                try:
-                    thr = float(getattr(scn, "error_track", 2.0))
-                except Exception:
-                    thr = 2.0
+
+            # 3) Entscheidung / Aktionen
+            scn = context.scene
+            reduce_executed = False
+            try:
+                thr = float(getattr(scn, "error_track", 2.0))
+            except Exception:
+                thr = 2.0
+            if isinstance(ae, (int, float)):
                 comp = ">" if ae > thr else "<="
                 print(f"[SolveSummary] avg_error={ae:.3f} {comp} threshold={thr:.3f} exceeds={ae > thr}", flush=True)
                 if ae > 10.0 and run_reduce_error_tracks is not None:
@@ -98,6 +116,7 @@ class CLIP_OT_solve_camera_modal(Operator):
                             pass
                         self.report({'INFO'}, f"Reduce-Error-Tracks ausgeführt (thr=10): deleted={int(res_red.get('deleted',0))}")
                         print(f"[SolveDecision] Reducer executed: deleted={int(res_red.get('deleted',0))}", flush=True)
+                        reduce_executed = True
                     except Exception as _rex:
                         self.report({'WARNING'}, f"Reduce-Error-Tracks Fehler: {_rex}")
                     finally:
@@ -108,18 +127,21 @@ class CLIP_OT_solve_camera_modal(Operator):
                                 scn["error_track"] = old_thr
                         except Exception:
                             pass
-                elif ae > thr:
-                    print(f"[SolveDecision] avg_error ({ae:.3f}) > error_track ({thr:.3f}) → (next modal step TBD)", flush=True)
-                else:
-                    self.report({'INFO'}, f"Solve: avg_error={ae:.3f} <= threshold={thr:.3f}")
+            else:
+                print("[SolveSummary] avg_error=None (timeout)", flush=True)
 
-                # Abschluss
-                self._waiting = False
-                self._cleanup(context)
-                return {"FINISHED"}
+            # Flags setzen und abschließen
+            try:
+                scn["tco_solve_avg_error"] = float(ae) if isinstance(ae, (int, float)) else None
+                scn["tco_reduce_executed"] = bool(reduce_executed)
+                scn["tco_solve_done"] = True
+                scn["tco_solve_active"] = False
+            except Exception:
+                pass
 
-            # Keine Entscheidung möglich (None + Timeout noch nicht erreicht)
-            return {"RUNNING_MODAL"}
+            self._waiting = False
+            self._cleanup(context)
+            return {"FINISHED"}
 
         # Fallback
         self._cleanup(context)
