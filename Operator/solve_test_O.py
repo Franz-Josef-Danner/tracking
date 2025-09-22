@@ -87,6 +87,72 @@ def _restore_refine(ts, snap) -> None:
             pass
 
 
+def _try_set(container, names, value):
+    for name in names:
+        if hasattr(container, name):
+            try:
+                setattr(container, name, value)
+                return name
+            except Exception:
+                continue
+    sub = getattr(container, "solver", None)
+    if sub:
+        for name in names:
+            if hasattr(sub, name):
+                try:
+                    setattr(sub, name, value)
+                    return f"solver.{name}"
+                except Exception:
+                    continue
+    return None
+
+
+def _force_disable_refine(context) -> bool:
+    clip, cam = _get_clip_and_camera(context)
+    if not clip or not getattr(clip, "tracking", None):
+        return False
+    ts = clip.tracking.settings
+    changed = False
+    # Enum-Set leeren
+    try:
+        if hasattr(ts, "refine_intrinsics"):
+            ts.refine_intrinsics = set()
+            changed = True
+    except Exception:
+        pass
+    # Einzel-/alternative Properties robust abschalten
+    groups = [
+        ("FOCAL_LENGTH", (
+            "refine_intrinsics_focal_length",
+            "refine_focal_length",
+            "refine_focal",
+            "refine_focal_length_error",
+        )),
+        ("PRINCIPAL_POINT", (
+            "refine_intrinsics_principal_point",
+            "refine_principal_point",
+            "refine_principal",
+            "refine_principal_point_x",
+        )),
+        ("RADIAL_DISTORTION", (
+            "refine_intrinsics_radial_distortion",
+            "refine_radial_distortion",
+            "refine_distortion",
+            "refine_k1",
+        )),
+        ("TANGENTIAL", (
+            "refine_tangential",
+            "refine_intrinsics_tangential_distortion",
+            "refine_tangential_distortion",
+        )),
+    ]
+    for _flag, names in groups:
+        name_set = _try_set(ts, names, False)
+        if name_set:
+            changed = True
+    return changed
+
+
 class CLIP_OT_solve_test(Operator):
     bl_idname = "clip.solve_test"
     bl_label = "Solve Test (Modal Loop)"
@@ -158,8 +224,8 @@ class CLIP_OT_solve_test(Operator):
             return self._finish(context, {"status": "NO_CLIP_OR_CAMERA"})
 
         if self._state == "INIT":
-            # Refine ausschalten (nur einmal)
-            self._ts, self._snap = _snapshot_disable_refine(context)
+            # Refine dauerhaft ausschalten (robust)
+            _force_disable_refine(context)
             self._state = "SOLVE"
             return {"RUNNING_MODAL"}
 
