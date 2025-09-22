@@ -6,7 +6,6 @@ from typing import Optional, Set
 from ..Helper.solve_camera import solve_camera_only
 from ..Helper.reduce_error_tracks import (
     get_solve_average_error,
-    run_reduce_error_tracks,
 )
 
 
@@ -151,6 +150,7 @@ class CLIP_OT_refine_solve_modal(Operator):
     _wait_deadline: float
     _ts = None
     _snap = None
+    _last_ae: Optional[float] = None
 
     def _cleanup(self, context):
         if self._timer:
@@ -169,12 +169,14 @@ class CLIP_OT_refine_solve_modal(Operator):
         self._wait_deadline = 0.0
         self._ts = _get_tracking_settings(context)
         self._snap = _snapshot_refine(self._ts)
-        # Koordinator‑Flags initialisieren (optional)
+        self._last_ae = None
+        # Koordinator‑Flags initialisieren
         scn = context.scene
         try:
             scn["tco_refine_active"] = True
             scn["tco_refine_done"] = False
-            scn["tco_reduce_executed"] = False
+            scn["tco_reduce_executed"] = False  # bleibt hier immer False
+            scn["tco_refine_avg_error"] = None
         except Exception:
             pass
         return {"RUNNING_MODAL"}
@@ -183,23 +185,23 @@ class CLIP_OT_refine_solve_modal(Operator):
         return self.invoke(context, None)
 
     def _current_flags(self) -> Set[str]:
-        # Stufen: 0 -> {FOCAL_LENGTH}, 1 -> {FOCAL_LENGTH, PRINCIPAL_POINT}, 2 -> + RADIAL_DISTORTION
         if self._stage <= 0:
             return {"FOCAL_LENGTH"}
         if self._stage == 1:
             return {"FOCAL_LENGTH", "PRINCIPAL_POINT"}
         return {"FOCAL_LENGTH", "PRINCIPAL_POINT", "RADIAL_DISTORTION"}
 
-    def _finish(self, context, reduce_executed: bool = False):
+    def _finish(self, context):
         try:
             _restore_refine(self._ts, self._snap)
         except Exception:
             pass
         try:
             scn = context.scene
+            scn["tco_refine_avg_error"] = float(self._last_ae) if isinstance(self._last_ae, (int, float)) else None
             scn["tco_refine_done"] = True
             scn["tco_refine_active"] = False
-            scn["tco_reduce_executed"] = bool(reduce_executed)
+            scn["tco_reduce_executed"] = False
         except Exception:
             pass
         self._cleanup(context)
@@ -215,13 +217,11 @@ class CLIP_OT_refine_solve_modal(Operator):
         except Exception:
             thr = 2.0
 
-        # Phase: Flags setzen
         if self._phase == "SET":
             _apply_refine_set(self._ts, self._current_flags())
             self._phase = "SOLVE"
             return {"RUNNING_MODAL"}
 
-        # Phase: Solve starten
         if self._phase == "SOLVE":
             try:
                 solve_camera_only(context)
@@ -231,7 +231,6 @@ class CLIP_OT_refine_solve_modal(Operator):
             self._wait_deadline = time.perf_counter() + 10.0
             return {"RUNNING_MODAL"}
 
-        # Phase: Auf avg_error warten und entscheiden
         if self._phase == "WAIT":
             try:
                 try:
@@ -241,31 +240,18 @@ class CLIP_OT_refine_solve_modal(Operator):
                 ae = get_solve_average_error(context)
             except Exception:
                 ae = None
-            if not isinstance(ae, (int, float)):
-                if time.perf_counter() < self._wait_deadline:
-                    return {"RUNNING_MODAL"}
-                # Timeout → weiter
-                ae = None
-            # Entscheidung
-            if isinstance(ae, (int, float)) and (float(ae) <= thr):
-                print(f"[RefineSolve] stage={self._stage} OK: avg_error={float(ae):.3f} <= thr={thr:.3f}", flush=True)
-                return self._finish(context, reduce_executed=False)
-            # sonst zur nächsten Stufe
+            if not isinstance(ae, (int, float)) and time.perf_counter() < self._wait_deadline:
+                return {"RUNNING_MODAL"}
+            self._last_ae = float(ae) if isinstance(ae, (int, float)) else None
+            if isinstance(self._last_ae, float) and self._last_ae <= thr:
+                print(f"[RefineSolve] stage={self._stage} OK: avg_error={self._last_ae:.3f} <= thr={thr:.3f}", flush=True)
+                return self._finish(context)
+            # nächste Stufe oder Ende
             self._stage += 1
             if self._stage >= 3:
-                # Reduce Top‑5 und Flag setzen
-                print("[RefineSolve] Reduce (Top5) gestartet…", flush=True)
-                try:
-                    res = run_reduce_error_tracks(context, max_to_delete=5)
-                    try:
-                        scn["tco_last_reduce_error_tracks"] = res
-                    except Exception:
-                        pass
-                    self.report({'INFO'}, f"Reduce-Error-Tracks: deleted={int(res.get('deleted',0))}")
-                except Exception as ex:
-                    self.report({'WARNING'}, f"Reduce-Error-Tracks Fehler: {ex}")
-                return self._finish(context, reduce_executed=True)
-            # nächste Stufe fortsetzen
+                # Stufen erschöpft → Ende (kein Reduce mehr hier)
+                print(f"[RefineSolve] finished: avg_error={self._last_ae}", flush=True)
+                return self._finish(context)
             self._phase = "SET"
             return {"RUNNING_MODAL"}
 

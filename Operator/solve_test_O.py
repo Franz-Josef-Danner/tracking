@@ -1,6 +1,11 @@
 import bpy
+import time
 from bpy.types import Operator
-from typing import List
+from typing import List, Dict, Any, Optional
+
+from ..Helper.solve_camera import solve_camera_only
+from ..Helper.reduce_error_tracks import get_solve_average_error, run_reduce_error_tracks
+from ..Helper.find_max_marker_frame import run_find_max_marker_frame
 
 DISTORTION_MODELS: List[str] = ["POLYNOMIAL", "DIVISION", "BROWN"]  # NUKE ausgelassen
 
@@ -28,12 +33,74 @@ def _next_model(current: str) -> str:
     return DISTORTION_MODELS[(idx + 1) % len(DISTORTION_MODELS)]
 
 
+def _snapshot_disable_refine(context):
+    clip, cam = _get_clip_and_camera(context)
+    if not clip or not getattr(clip, "tracking", None):
+        return None, None
+    ts = clip.tracking.settings
+    snap: Dict[str, Any] = {}
+    # Enum-Flags sichern und leeren
+    try:
+        flags = getattr(ts, "refine_intrinsics", set())
+        snap["refine_intrinsics"] = set(flags) if isinstance(flags, (set, list, tuple)) else set()
+        try:
+            ts.refine_intrinsics = set()
+        except Exception:
+            pass
+    except Exception:
+        pass
+    # Einzel-Checkboxen robust auf False setzen
+    for name in (
+        "refine_focal_length",
+        "refine_principal_point",
+        "refine_tangential",
+        "refine_radial_distortion",
+        "refine_k1", "refine_k2", "refine_k3", "refine_k4", "refine_k5", "refine_k6",
+    ):
+        try:
+            if hasattr(ts, name):
+                snap[name] = bool(getattr(ts, name))
+                setattr(ts, name, False)
+        except Exception:
+            pass
+    return ts, snap
+
+
+def _restore_refine(ts, snap) -> None:
+    if not ts or not isinstance(snap, dict):
+        return
+    try:
+        if "refine_intrinsics" in snap:
+            try:
+                ts.refine_intrinsics = set(snap["refine_intrinsics"]) or set()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    for k, v in snap.items():
+        if k == "refine_intrinsics":
+            continue
+        try:
+            if hasattr(ts, k):
+                setattr(ts, k, bool(v))
+        except Exception:
+            pass
+
+
 class CLIP_OT_solve_test(Operator):
     bl_idname = "clip.solve_test"
-    bl_label = "Solve Test (Next Model)"
+    bl_label = "Solve Test (Modal Loop)"
     bl_options = {"REGISTER", "UNDO"}
 
     _timer = None
+    _state: str
+    _deadline: float
+    _ae: Optional[float]
+    _ts = None
+    _snap = None
+    _find_result: Optional[Dict[str, Any]]
+    _loops: int
+    _last_reduce: Optional[Dict[str, Any]]
 
     def _cleanup(self, context):
         if self._timer:
@@ -45,8 +112,16 @@ class CLIP_OT_solve_test(Operator):
 
     def invoke(self, context, event):
         wm = context.window_manager
-        self._timer = wm.event_timer_add(0.05, window=context.window)
+        self._timer = wm.event_timer_add(0.10, window=context.window)
         wm.modal_handler_add(self)
+        self._state = "INIT"
+        self._deadline = 0.0
+        self._ae = None
+        self._ts = None
+        self._snap = None
+        self._find_result = None
+        self._loops = 0
+        self._last_reduce = None
         try:
             context.scene["tco_solve_test_active"] = True
         except Exception:
@@ -56,34 +131,110 @@ class CLIP_OT_solve_test(Operator):
     def execute(self, context):
         return self.invoke(context, None)
 
-    def modal(self, context, event):
-        if event.type != 'TIMER':
-            return {"RUNNING_MODAL"}
-        clip, cam = _get_clip_and_camera(context)
-        if not clip or not cam:
-            try:
-                context.scene["tco_solve_test"] = {"status": "NO_CLIP_OR_CAMERA"}
-                context.scene["tco_solve_test_active"] = False
-            except Exception:
-                pass
-            self.report({'WARNING'}, "Solve-Test: kein Clip/Kamera – Modell unverändert")
-            self._cleanup(context)
-            return {"FINISHED"}
-        current = str(getattr(clip.tracking.camera, "distortion_model", "POLYNOMIAL"))
-        nxt = _next_model(current)
+    def _finish(self, context, payload: Dict[str, Any]):
+        # Restore refine
         try:
-            clip.tracking.camera.distortion_model = nxt
-            self.report({'INFO'}, f"Solve-Test: Model gewechselt {current} → {nxt}")
-        except Exception as exc:
-            self.report({'WARNING'}, f"Solve-Test: Modelwechsel fehlgeschlagen: {exc}")
-        # Flags/Payload
+            _restore_refine(self._ts, self._snap)
+        except Exception:
+            pass
+        # Flags
+        scn = context.scene
         try:
-            context.scene["tco_solve_test"] = {"status": "OK", "previous": current, "next": nxt}
-            context.scene["tco_solve_test_active"] = False
+            payload["loops"] = self._loops
+            payload["last_reduce"] = self._last_reduce
+            payload["find_max"] = self._find_result
+            scn["tco_solve_test"] = payload
+            scn["tco_solve_test_active"] = False
         except Exception:
             pass
         self._cleanup(context)
         return {"FINISHED"}
+
+    def modal(self, context, event):
+        if event.type != 'TIMER':
+            return {"RUNNING_MODAL"}
+        scn = context.scene
+        try:
+            thr = float(getattr(scn, "error_track", 2.0))
+        except Exception:
+            thr = 2.0
+        clip, cam = _get_clip_and_camera(context)
+        if not clip or not cam:
+            return self._finish(context, {"status": "NO_CLIP_OR_CAMERA"})
+
+        if self._state == "INIT":
+            # Refine ausschalten (nur einmal)
+            self._ts, self._snap = _snapshot_disable_refine(context)
+            self._state = "SOLVE"
+            return {"RUNNING_MODAL"}
+
+        if self._state == "SOLVE":
+            try:
+                solve_camera_only(context)
+            except Exception:
+                pass
+            self._deadline = time.perf_counter() + 10.0
+            self._state = "WAIT"
+            return {"RUNNING_MODAL"}
+
+        if self._state == "WAIT":
+            try:
+                try:
+                    context.view_layer.update()
+                except Exception:
+                    pass
+                ae = get_solve_average_error(context)
+            except Exception:
+                ae = None
+            if not isinstance(ae, (int, float)) and time.perf_counter() < self._deadline:
+                return {"RUNNING_MODAL"}
+            self._ae = float(ae) if isinstance(ae, (int, float)) else None
+            if self._ae is not None and self._ae <= thr:
+                # fertig: error klein genug
+                return self._finish(context, {"status": "OK", "avg_error": self._ae, "stage": "ok"})
+            # > thr → Reduce 1 Track und find_max
+            self._state = "REDUCE"
+            return {"RUNNING_MODAL"}
+
+        if self._state == "REDUCE":
+            try:
+                self._last_reduce = run_reduce_error_tracks(context, max_to_delete=1)
+                try:
+                    scn["tco_last_reduce_error_tracks"] = self._last_reduce
+                except Exception:
+                    pass
+            except Exception as ex:
+                self._last_reduce = {"status": "ERROR", "reason": str(ex)}
+            self._state = "FINDMAX"
+            return {"RUNNING_MODAL"}
+
+        if self._state == "FINDMAX":
+            try:
+                self._find_result = run_find_max_marker_frame(context)
+            except Exception as ex:
+                self._find_result = {"status": "ERROR", "reason": str(ex)}
+            status = str((self._find_result or {}).get("status", "")).upper()
+            if status == "FOUND":
+                # Model wechseln und fertig – Coordinator geht zurück zu FIND
+                current = str(getattr(clip.tracking.camera, "distortion_model", "POLYNOMIAL"))
+                nxt = _next_model(current)
+                payload: Dict[str, Any] = {
+                    "status": "MODEL_SWITCH",
+                    "avg_error": self._ae,
+                    "previous_model": current,
+                    "next_model": nxt,
+                }
+                try:
+                    clip.tracking.camera.distortion_model = nxt
+                except Exception as exc:
+                    payload["model_switch_error"] = str(exc)
+                return self._finish(context, payload)
+            # nicht gefunden → neue Runde
+            self._loops += 1
+            self._state = "SOLVE"
+            return {"RUNNING_MODAL"}
+
+        return {"RUNNING_MODAL"}
 
 
 def register():
