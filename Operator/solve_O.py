@@ -175,6 +175,7 @@ class CLIP_OT_solve_cycle(Operator):
     _t0: float = 0.0
     _timeout: float = 20.0
     _score: object = None
+    _last_avg_error: float | None = None
 
     def _stop_timer(self, context):
         try:
@@ -262,29 +263,45 @@ class CLIP_OT_solve_cycle(Operator):
     def modal(self, context, event):
         if event.type != 'TIMER':
             return {'PASS_THROUGH'}
-        # UI/Deps aktualisieren
+        # UI/Deps aktualisieren + UI redraw pulse
         try:
             context.view_layer.update()
         except Exception:
             pass
-        # Prüfe avg_error
+        try:
+            bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+        except Exception:
+            pass
+        # Avg-Error mit CLIP_EDITOR-Override ermitteln
         avg_error = None
         try:
-            avg_error = get_avg_reprojection_error(context)
+            override = _find_clip_editor_override()
+            if override:
+                with bpy.context.temp_override(**override):
+                    try:
+                        bpy.context.view_layer.update()
+                    except Exception:
+                        pass
+                    avg_error = get_avg_reprojection_error(bpy.context)
+            else:
+                avg_error = get_avg_reprojection_error(bpy.context)
         except Exception:
             avg_error = None
         elapsed = time.perf_counter() - self._t0
         if isinstance(avg_error, (int, float)):
+            self._last_avg_error = float(avg_error)
             # Cleanup unreconstructed und Abschluss
             del_info = _delete_unreconstructed_tracks(context)
             self.report({'INFO'}, f"Unreconstructed cleanup: deleted={int(del_info.get('deleted',0))}")
-            return self._finish(context, "OK", avg_error_val=float(avg_error), del_info=del_info)
+            return self._finish(context, "OK", avg_error_val=self._last_avg_error, del_info=del_info)
         if elapsed >= self._timeout:
-            # Timeout: mit 0.0 abschließen
-            self.report({'WARNING'}, "Avg-Error-Observe Timeout – fahre fort")
+            # Timeout: wenn jemals ein Wert gesehen wurde, den verwenden; sonst 0.0
+            final_err = float(self._last_avg_error) if isinstance(self._last_avg_error, (int, float)) else 0.0
+            if not isinstance(self._last_avg_error, (int, float)):
+                self.report({'WARNING'}, "Avg-Error-Observe Timeout – fahre fort")
             del_info = _delete_unreconstructed_tracks(context)
             self.report({'INFO'}, f"Unreconstructed cleanup: deleted={int(del_info.get('deleted',0))}")
-            return self._finish(context, "OK", avg_error_val=0.0, del_info=del_info)
+            return self._finish(context, "OK", avg_error_val=final_err, del_info=del_info)
         return {'RUNNING_MODAL'}
 
 
