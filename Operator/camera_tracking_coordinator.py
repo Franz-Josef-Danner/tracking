@@ -102,13 +102,17 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                 self.track_started = False
                 return {'RUNNING_MODAL'}
             if status in {"NONE", ""}:
-                # Nichts mehr zu finden → Clean-Cycle ausführen und beenden
+                # Nichts mehr zu finden → Clean-Cycle ausführen und dann erneut versuchen
                 try:
                     bpy.ops.clip.clean_cycle()
                     self.report({'INFO'}, "Clean-Cycle ausgeführt")
                 except Exception as exc:
                     self.report({'WARNING'}, f"Clean-Cycle konnte nicht gestartet werden: {exc}")
-                return self._finish(context, "FIND fertig – Clean durchgeführt.")
+                # zurück zu FIND
+                self.phase = "FIND"
+                self.detect_started = False
+                self.track_started = False
+                return {'RUNNING_MODAL'}
             # Fehlerfall
             return self._finish(context, f"FindLow fehlgeschlagen: {data}", cancel=True)
 
