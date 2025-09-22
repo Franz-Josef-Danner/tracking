@@ -28,14 +28,14 @@ class CLIP_OT_track_cycle(Operator):
         except Exception:
             thr = 2.0
         exceeds = (avg_error is not None) and (float(avg_error) > float(thr))
-        # LOG: Vergleich ausgeben
+        # LOG: Vergleich ausgeben (mit flush)
         try:
             if avg_error is None:
-                print(f"[SolveCheck] avg_error=None threshold={float(thr):.3f}")
+                print(f"[SolveCheck] avg_error=None threshold={float(thr):.3f}", flush=True)
             else:
                 ae = float(avg_error)
                 comp = ">" if ae > float(thr) else "<="
-                print(f"[SolveCheck] avg_error={ae:.3f} {comp} threshold={float(thr):.3f} -> exceeds={ae > float(thr)}")
+                print(f"[SolveCheck] avg_error={ae:.3f} {comp} threshold={float(thr):.3f} -> exceeds={ae > float(thr)}", flush=True)
         except Exception:
             pass
         # 3. Zusammenfassen
@@ -47,6 +47,12 @@ class CLIP_OT_track_cycle(Operator):
             "exceeds_threshold": bool(exceeds),
         }
         scn["tco_last_solve_cycle"] = result
+        # 3b. Finale Zusammenfassung ins Log
+        try:
+            ae_str = "None" if avg_error is None else f"{float(avg_error):.3f}"
+            print(f"[SolveSummary] avg_error={ae_str} threshold={float(thr):.3f} exceeds={bool(exceeds)}", flush=True)
+        except Exception:
+            pass
         # 4. Meldung
         if avg_error is None:
             self.report({'INFO'}, "Solve-Cycle abgeschlossen (avg_error unbekannt)")
