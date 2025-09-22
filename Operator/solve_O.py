@@ -1,7 +1,7 @@
 import bpy
 from bpy.types import Operator
 from ..Helper.solve_camera import solve_camera_only
-from ..Helper.reduce_error_tracks import get_avg_reprojection_error, wait_for_avg_reprojection_error
+from ..Helper.reduce_error_tracks import get_avg_reprojection_error
 import time
 
 
@@ -168,42 +168,34 @@ def _delete_unreconstructed_tracks(context) -> dict:
 
 class CLIP_OT_solve_cycle(Operator):
     bl_idname = "clip.solve_cycle"
-    bl_label = "Solve Cycle (1x Solve)"
+    bl_label = "Solve Cycle (1x Solve, modal)"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context):
-        scn = context.scene
-        # 0. Refine aus, Keyframe an
-        _disable_solve_refine_flags(context)
-        # 1. Kamera-Solve ausführen
+    _timer = None
+    _t0: float = 0.0
+    _timeout: float = 20.0
+    _score: object = None
+
+    def _stop_timer(self, context):
         try:
-            score = solve_camera_only(context)
-        except Exception as exc:
-            self.report({'ERROR'}, f"Solve fehlgeschlagen: {exc}")
-            try:
-                scn["tco_last_solve_cycle"] = _safe_for_scene({"status": "ERROR", "reason": str(exc)})
-            except Exception:
-                pass
-            return {'CANCELLED'}
-        # 2. Reprojection Error: Beobachten, bis numerischer Wert vorliegt (kein Fallback auf 0.0)
-        avg_error = wait_for_avg_reprojection_error(context, timeout=None, interval=0.05)
-        # 3. Nicht rekonstruierte Tracks löschen
-        del_info = _delete_unreconstructed_tracks(context)
-        try:
-            scn["tco_last_unreconstructed_cleanup"] = _safe_for_scene(del_info)
+            if self._timer:
+                context.window_manager.event_timer_remove(self._timer)
         except Exception:
             pass
-        self.report({'INFO'}, f"Unreconstructed cleanup: deleted={int(del_info.get('deleted',0))}")
-        # 4. Zusammenfassen (robust säubern)
+        self._timer = None
+
+    def _finish(self, context, status: str, avg_error_val, del_info: dict):
+        scn = context.scene
+        # Telemetrie schreiben
         result = {
-            "status": "OK",
-            "score": score if isinstance(score, (int, float)) else _safe_for_scene(score),
-            "avg_error": avg_error if isinstance(avg_error, (int, float)) else _safe_for_scene(avg_error),
+            "status": status,
+            "score": self._score if isinstance(self._score, (int, float)) else _safe_for_scene(self._score),
+            "avg_error": avg_error_val if isinstance(avg_error_val, (int, float)) else _safe_for_scene(avg_error_val),
         }
         try:
             scn["tco_last_solve_cycle"] = _safe_for_scene(result)
         except Exception:
-            # Als Fallback einzelne Primitive setzen
+            # Fallback-Primitive
             try:
                 scn["tco_last_solve_status"] = str(result.get("status"))
             except Exception:
@@ -217,8 +209,83 @@ class CLIP_OT_solve_cycle(Operator):
                 scn["tco_last_solve_avg_error"] = float(ae) if isinstance(ae, (int, float)) else 0.0
             except Exception:
                 pass
-        self.report({'INFO'}, f"Solve-Cycle abgeschlossen: status=OK score={result['score']} avg_error={result['avg_error']}")
-        return {'FINISHED'}
+        try:
+            scn["tco_last_unreconstructed_cleanup"] = _safe_for_scene(del_info or {})
+        except Exception:
+            pass
+        # Active-Flag auf False und Done-Zeitstempel setzen
+        try:
+            scn["tco_solve_active"] = False
+            scn["tco_solve_done_ts"] = float(time.time())
+        except Exception:
+            pass
+        self.report({'INFO'}, f"Solve-Cycle abgeschlossen: status={status} score={result['score']} avg_error={result['avg_error']}")
+        self._stop_timer(context)
+        return {'FINISHED'} if status == 'OK' else {'CANCELLED'}
+
+    def invoke(self, context, event):
+        scn = context.scene
+        # Flags setzen
+        try:
+            scn["tco_solve_active"] = True
+        except Exception:
+            pass
+        # Refine aus, Keyframe an
+        _disable_solve_refine_flags(context)
+        # Timeout laden
+        try:
+            self._timeout = float(scn.get("tco_solve_wait_timeout", 20.0))
+        except Exception:
+            self._timeout = 20.0
+        # Solve starten (modal, UI‑Feedback via Blender)
+        try:
+            self._score = solve_camera_only(context)
+        except Exception as exc:
+            self.report({'ERROR'}, f"Solve fehlgeschlagen: {exc}")
+            return self._finish(context, "ERROR", avg_error_val=0.0, del_info={})
+        # Timer starten und in Modal wechseln
+        wm = context.window_manager
+        win = getattr(context, "window", None) or getattr(bpy.context, "window", None)
+        try:
+            self._timer = wm.event_timer_add(0.10, window=win) if win else wm.event_timer_add(0.10)
+        except Exception:
+            self._timer = wm.event_timer_add(0.10)
+        self._t0 = time.perf_counter()
+        wm.modal_handler_add(self)
+        self.report({'INFO'}, "Solve gestartet – warte auf Rekonstruktion/Avg-Error …")
+        return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        # Falls EXEC_DEFAULT ausgelöst wird, verhalte dich wie INVOKE_DEFAULT
+        return self.invoke(context, None)
+
+    def modal(self, context, event):
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+        # UI/Deps aktualisieren
+        try:
+            context.view_layer.update()
+        except Exception:
+            pass
+        # Prüfe avg_error
+        avg_error = None
+        try:
+            avg_error = get_avg_reprojection_error(context)
+        except Exception:
+            avg_error = None
+        elapsed = time.perf_counter() - self._t0
+        if isinstance(avg_error, (int, float)):
+            # Cleanup unreconstructed und Abschluss
+            del_info = _delete_unreconstructed_tracks(context)
+            self.report({'INFO'}, f"Unreconstructed cleanup: deleted={int(del_info.get('deleted',0))}")
+            return self._finish(context, "OK", avg_error_val=float(avg_error), del_info=del_info)
+        if elapsed >= self._timeout:
+            # Timeout: mit 0.0 abschließen
+            self.report({'WARNING'}, "Avg-Error-Observe Timeout – fahre fort")
+            del_info = _delete_unreconstructed_tracks(context)
+            self.report({'INFO'}, f"Unreconstructed cleanup: deleted={int(del_info.get('deleted',0))}")
+            return self._finish(context, "OK", avg_error_val=0.0, del_info=del_info)
+        return {'RUNNING_MODAL'}
 
 
 def register():
