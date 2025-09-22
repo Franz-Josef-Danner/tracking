@@ -139,7 +139,7 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                     self.track_started = False
                     self.report({'INFO'}, f"Solve: {deleted_after_solve} Tracks gelöscht → zurück zu FIND")
                     return {'RUNNING_MODAL'}
-                # Keine Löschungen → ggf. Reduce-Phase, falls avg_error > error_track
+                # Keine Löschungen → ggf. Reduce-Phase, falls avg_error > error_track UND > 10.0
                 try:
                     ae = wait_for_solve_average_error(context, timeout=3.0, interval=0.05)
                     if ae is None:
@@ -150,36 +150,39 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                     thr_scene = float(scn.get("error_track", 2.0))
                 except Exception:
                     thr_scene = 2.0
-                if (ae is not None) and (ae > thr_scene) and (run_reduce_error_tracks is not None):
-                    # Threshold temporär auf 10.0 setzen
-                    old_thr = scn.get("error_track", None)
-                    try:
-                        scn["error_track"] = 10.0
-                    except Exception:
-                        pass
-                    try:
-                        res_red = run_reduce_error_tracks(context)
+                if (ae is not None) and (ae > thr_scene):
+                    if (ae > 10.0) and (run_reduce_error_tracks is not None):
+                        # Threshold temporär auf 10.0 setzen
+                        old_thr = scn.get("error_track", None)
                         try:
-                            scn["tco_last_reduce_error_tracks"] = res_red
+                            scn["error_track"] = 10.0
                         except Exception:
                             pass
-                        self.report({'INFO'}, f"Reduce-Error-Tracks ausgeführt (thr=10): deleted={int(res_red.get('deleted',0))}")
-                    except Exception as _rex:
-                        self.report({'WARNING'}, f"Reduce-Error-Tracks Fehler: {_rex}")
-                    finally:
                         try:
-                            if old_thr is None:
-                                del scn["error_track"]
-                            else:
-                                scn["error_track"] = old_thr
-                        except Exception:
-                            pass
-                    # zurück zu FIND
-                    self.phase = "FIND"
-                    self.detect_started = False
-                    self.track_started = False
-                    return {'RUNNING_MODAL'}
-                # keine Löschungen und kein Reducer nötig → Coordinator beenden
+                            res_red = run_reduce_error_tracks(context)
+                            try:
+                                scn["tco_last_reduce_error_tracks"] = res_red
+                            except Exception:
+                                pass
+                            self.report({'INFO'}, f"Reduce-Error-Tracks ausgeführt (thr=10): deleted={int(res_red.get('deleted',0))}")
+                        except Exception as _rex:
+                            self.report({'WARNING'}, f"Reduce-Error-Tracks Fehler: {_rex}")
+                        finally:
+                            try:
+                                if old_thr is None:
+                                    del scn["error_track"]
+                                else:
+                                    scn["error_track"] = old_thr
+                            except Exception:
+                                pass
+                        # zurück zu FIND
+                        self.phase = "FIND"
+                        self.detect_started = False
+                        self.track_started = False
+                        return {'RUNNING_MODAL'}
+                    # ae > thr_scene aber <= 10.0 → Solve-Zyklus fertig
+                    return self._finish(context, "Solve abgeschlossen – Coordinator beendet.")
+                # ae <= thr_scene oder None → Coordinator beenden
                 return self._finish(context, "Solve abgeschlossen – Coordinator beendet.")
             # Fehlerfall
             return self._finish(context, f"FindLow fehlgeschlagen: {data}", cancel=True)
