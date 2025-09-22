@@ -2,6 +2,7 @@ import bpy
 from bpy.types import Operator
 from ..Helper.solve_camera import solve_camera_only
 from ..Helper.reduce_error_tracks import get_avg_reprojection_error, run_reduce_error_tracks
+import time
 
 
 def _safe_for_scene(obj):
@@ -30,6 +31,44 @@ def _safe_for_scene(obj):
         return "<unsupported>"
 
 
+def _disable_solve_refine_flags(context) -> None:
+    """Deaktiviert explizit alle Solve‑Refine‑Checkboxen und Keyframe‑Selektion."""
+    try:
+        clip = getattr(context, "edit_movieclip", None)
+        if not clip:
+            clip = getattr(getattr(context, "space_data", None), "clip", None)
+        if not clip and bpy.data.movieclips:
+            clip = bpy.data.movieclips[0]
+        tr = getattr(clip, "tracking", None) if clip else None
+        settings = getattr(tr, "settings", None) if tr else None
+        if not settings:
+            return
+        # Keyframe-Selection aus
+        try:
+            if hasattr(tr, "settings") and hasattr(tr.settings, "use_keyframe_selection"):
+                tr.settings.use_keyframe_selection = False
+        except Exception:
+            pass
+        # Refine‑Flags aus
+        for attr in (
+            "refine_intrinsics_focal_length",
+            "refine_intrinsics_principal_point",
+            "refine_intrinsics_radial_distortion",
+            "refine_intrinsics_tangential_distortion",
+        ):
+            try:
+                if hasattr(settings, attr):
+                    setattr(settings, attr, False)
+            except Exception:
+                pass
+        try:
+            context.view_layer.update()
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
 class CLIP_OT_solve_cycle(Operator):
     bl_idname = "clip.solve_cycle"
     bl_label = "Solve Cycle (1x Solve)"
@@ -38,11 +77,7 @@ class CLIP_OT_solve_cycle(Operator):
     def execute(self, context):
         scn = context.scene
         # 0. Refine/Keyframe deaktivieren
-        try:
-            from .solve_O import _disable_solve_refine_flags  # type: ignore
-            _disable_solve_refine_flags(context)
-        except Exception:
-            pass
+        _disable_solve_refine_flags(context)
         # 1. Kamera-Solve ausführen
         try:
             score = solve_camera_only(context)
@@ -53,11 +88,16 @@ class CLIP_OT_solve_cycle(Operator):
             except Exception:
                 pass
             return {'CANCELLED'}
-        # 2. Reprojection Error abfragen
-        try:
-            avg_error = get_avg_reprojection_error(context)
-        except Exception:
-            avg_error = None
+        # 2. Reprojection Error abfragen – kurz auf gültige Rekonstruktion warten
+        avg_error = None
+        for _ in range(40):  # ~2s
+            try:
+                avg_error = get_avg_reprojection_error(context)
+                if isinstance(avg_error, (int, float)) and avg_error > 0.0:
+                    break
+            except Exception:
+                pass
+            time.sleep(0.05)
         # 3. Ggf. Cleanup anstoßen (avg_error > error_track)
         try:
             thr = float(getattr(scn, "error_track", 2.0) or 2.0)
@@ -109,8 +149,10 @@ class CLIP_OT_solve_cycle(Operator):
         self.report({'INFO'}, f"Solve-Cycle abgeschlossen: status=OK score={result['score']} avg_error={result['avg_error']}")
         return {'FINISHED'}
 
+
 def register():
     bpy.utils.register_class(CLIP_OT_solve_cycle)
+
 
 def unregister():
     bpy.utils.unregister_class(CLIP_OT_solve_cycle)
