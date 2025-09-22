@@ -105,7 +105,14 @@ def _delete_unreconstructed_tracks(context) -> dict:
             clip = None
     if not clip or not getattr(clip, "tracking", None):
         return {"deleted": 0, "names": []}
-    tracks = list(getattr(clip.tracking, "tracks", []))
+    tr = clip.tracking
+    obj = None
+    try:
+        obj = tr.objects.active or (tr.objects[0] if len(tr.objects) else None)
+    except Exception:
+        obj = None
+    tracks_col = obj.tracks if obj and getattr(obj, "tracks", None) else getattr(tr, "tracks", [])
+    tracks = list(tracks_col)
     victims = [t for t in tracks if not bool(getattr(t, "has_bundle", False))]
     if not victims:
         return {"deleted": 0, "names": []}
@@ -126,6 +133,7 @@ def _delete_unreconstructed_tracks(context) -> dict:
     deleted = 0
     names = [getattr(t, "name", "<noname>") for t in victims]
     # Operator mit Override ausführen
+    op_deleted = 0
     try:
         override = _find_clip_editor_override()
         if override:
@@ -140,15 +148,18 @@ def _delete_unreconstructed_tracks(context) -> dict:
         # zählen, welche weg sind
         for n in names:
             try:
-                if not clip.tracking.tracks.get(n):
-                    deleted += 1
+                if not tracks_col.get(n):
+                    op_deleted += 1
             except Exception:
                 pass
     except Exception:
-        # Fallback: direkte API
+        op_deleted = 0
+    deleted = op_deleted
+    # Wenn der Operator nichts gelöscht hat, direkte API verwenden
+    if deleted == 0:
         for t in victims:
             try:
-                clip.tracking.tracks.remove(t)
+                tracks_col.remove(t)
                 deleted += 1
             except Exception:
                 pass
