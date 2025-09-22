@@ -30,6 +30,45 @@ def _safe_for_scene(obj):
         return "<unsupported>"
 
 
+def _disable_solve_refine_flags(context) -> None:
+    """Deaktiviert explizit alle Solve‑Refine‑Checkboxen und Keyframe‑Selektion."""
+    try:
+        clip = getattr(context, "edit_movieclip", None)
+        if not clip:
+            clip = getattr(getattr(context, "space_data", None), "clip", None)
+        if not clip and bpy.data.movieclips:
+            clip = bpy.data.movieclips[0]
+        tr = getattr(clip, "tracking", None) if clip else None
+        settings = getattr(tr, "settings", None) if tr else None
+        if not settings:
+            return
+        # Keyframe-Selection aus
+        try:
+            if hasattr(tr, "settings") and hasattr(tr.settings, "use_keyframe_selection"):
+                tr.settings.use_keyframe_selection = False
+        except Exception:
+            pass
+        # Refine‑Flags aus
+        for attr in (
+            "refine_intrinsics_focal_length",
+            "refine_intrinsics_principal_point",
+            "refine_intrinsics_radial_distortion",
+            "refine_intrinsics_tangential_distortion",
+        ):
+            try:
+                if hasattr(settings, attr):
+                    setattr(settings, attr, False)
+            except Exception:
+                pass
+        # UI/Depsgraph refresh (best effort)
+        try:
+            context.view_layer.update()
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
 class CLIP_OT_solve_cycle(Operator):
     bl_idname = "clip.solve_cycle"
     bl_label = "Solve Cycle (1x Solve)"
@@ -37,6 +76,8 @@ class CLIP_OT_solve_cycle(Operator):
 
     def execute(self, context):
         scn = context.scene
+        # 0. Refine/Keyframe deaktivieren
+        _disable_solve_refine_flags(context)
         # 1. Kamera-Solve ausführen
         try:
             score = solve_camera_only(context)
