@@ -129,14 +129,14 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                     restart = False
                 # Entscheidungslogik:
                 # 1) Wenn Restart gewünscht ODER Marker gelöscht wurden → zurück zu FIND
-                # 2) Wenn nichts gelöscht wurde UND find_max == NONE → Solve starten
+                # 2) Wenn nichts gelöscht wurde UND find_max == NONE → Solve starten und Koordinator beenden
                 if not restart and int(deleted_total) == 0 and str(fm_status).upper() in {"NONE", ""}:
                     try:
                         bpy.ops.clip.solve_cycle()
-                        self.report({'INFO'}, "Solve-Cycle gestartet (nach Clean & find_max=NONE)")
+                        return self._finish(context, "Solve-Cycle gestartet – Coordinator beendet.")
                     except Exception as exc:
-                        self.report({'WARNING'}, f"Solve-Cycle konnte nicht gestartet werden: {exc}")
-                # zurück zu FIND
+                        return self._finish(context, f"Solve-Cycle konnte nicht gestartet werden: {exc}", cancel=True)
+                # ansonsten zurück zu FIND
                 self.phase = "FIND"
                 self.detect_started = False
                 self.track_started = False
