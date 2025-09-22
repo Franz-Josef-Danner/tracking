@@ -1,7 +1,7 @@
 import bpy
 from bpy.types import Operator
 from ..Helper.solve_camera import solve_camera_only
-from ..Helper.reduce_error_tracks import get_solve_average_error, wait_for_solve_average_error
+from ..Helper.reduce_error_tracks import get_solve_average_error, wait_for_solve_average_error, run_reduce_error_tracks
 
 
 class CLIP_OT_solve_camera_modal(Operator):
@@ -34,6 +34,15 @@ class CLIP_OT_solve_camera_modal(Operator):
         # Fallback: via Execute ebenfalls modal starten
         return self.invoke(context, None)
 
+    def _find_low_and_jump_inline(self, context):
+        """Mini-Flow: FindLow+Jump direkt ausführen (ohne Coordinator)."""
+        try:
+            # Wir verwenden den Operator, da er bereits Scene-State/Reports handhabt
+            bpy.ops.clip.find_low_and_jump()
+            self.report({'INFO'}, "FindLow+Jump ausgeführt (nach Reduce)")
+        except Exception as exc:
+            self.report({'WARNING'}, f"FindLow+Jump konnte nicht ausgeführt werden: {exc}")
+
     def modal(self, context, event):
         # Nur auf Timer-Ticks reagieren
         if event.type != "TIMER":
@@ -49,7 +58,7 @@ class CLIP_OT_solve_camera_modal(Operator):
                 self.report({"ERROR"}, f"Solve fehlgeschlagen: {exc}")
                 return {"CANCELLED"}
 
-            # Vergleich avg_error vs. error_track – warte kurz, damit Blender seine Logs zuerst schreibt
+            # Vergleich avg_error vs. Thresholds – warte kurz, damit Blender seine Logs zuerst schreibt
             scn = context.scene
             try:
                 # Bis zu 3s auf stabilen avg_error warten
@@ -70,10 +79,36 @@ class CLIP_OT_solve_camera_modal(Operator):
                     ae = float(avg_error)
                     comp = ">" if ae > float(thr) else "<="
                     exceeds = ae > float(thr)
-                    # Finale Summary-Zeile mit flush – sollte nach Blender-"Info: Average re-projection error" erscheinen
                     print(f"[SolveSummary] avg_error={ae:.3f} {comp} threshold={float(thr):.3f} exceeds={exceeds}", flush=True)
-                    if exceeds:
-                        self.report({'WARNING'}, f"Solve: avg_error={ae:.3f} > threshold={float(thr):.3f}")
+                    # Entscheidungslogik: 1) Wenn >10 → Reducer laufen lassen + direkt FindLow+Jump; 2) sonst wenn >error_track → (später weiterer Modal), aktuell nur Log
+                    if ae > 10.0 and run_reduce_error_tracks is not None:
+                        old_thr = scn.get("error_track", None)
+                        try:
+                            scn["error_track"] = 10.0
+                        except Exception:
+                            pass
+                        try:
+                            res_red = run_reduce_error_tracks(context)
+                            try:
+                                scn["tco_last_reduce_error_tracks"] = res_red
+                            except Exception:
+                                pass
+                            self.report({'INFO'}, f"Reduce-Error-Tracks ausgeführt (thr=10): deleted={int(res_red.get('deleted',0))}")
+                            print(f"[SolveDecision] Reducer executed: deleted={int(res_red.get('deleted',0))}", flush=True)
+                        except Exception as _rex:
+                            self.report({'WARNING'}, f"Reduce-Error-Tracks Fehler: {_rex}")
+                        finally:
+                            try:
+                                if old_thr is None:
+                                    del scn["error_track"]
+                                else:
+                                    scn["error_track"] = old_thr
+                            except Exception:
+                                pass
+                        # Direkt zurück zu FIND: Low+Jump ausführen
+                        self._find_low_and_jump_inline(context)
+                    elif ae > float(thr):
+                        print(f"[SolveDecision] avg_error ({ae:.3f}) > error_track ({float(thr):.3f}) → (next modal step TBD)", flush=True)
                     else:
                         self.report({'INFO'}, f"Solve: avg_error={ae:.3f} <= threshold={float(thr):.3f}")
             except Exception:
@@ -81,7 +116,6 @@ class CLIP_OT_solve_camera_modal(Operator):
                 pass
 
             # Für jetzt: nach dem Auslösen direkt beenden.
-            # (Spätere Erweiterungen können hier warten/prüfen.)
             self._cleanup(context)
             return {"FINISHED"}
 

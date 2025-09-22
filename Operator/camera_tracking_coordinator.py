@@ -16,14 +16,10 @@ except Exception:
     except Exception:
         CLIP_OT_bidirectional_track = None  # type: ignore
 
-# Optional: Reducer für hohe Fehlerwerte + Solve-Error Abfrage
+# Solve‑Error Abfrage (Reduce jetzt in solve_O)
 try:
-    from ..Helper.reduce_error_tracks import run_reduce_error_tracks, wait_for_solve_average_error, get_solve_average_error  # type: ignore
+    from ..Helper.reduce_error_tracks import wait_for_solve_average_error, get_solve_average_error  # type: ignore
 except Exception:
-    try:
-        from ..Helper.reduce_error_tracks import run_reduce_error_tracks  # type: ignore
-    except Exception:
-        run_reduce_error_tracks = None  # type: ignore
     def wait_for_solve_average_error(context, timeout=None, interval=0.05):  # type: ignore
         return None
     def get_solve_average_error(context):  # type: ignore
@@ -139,50 +135,7 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                     self.track_started = False
                     self.report({'INFO'}, f"Solve: {deleted_after_solve} Tracks gelöscht → zurück zu FIND")
                     return {'RUNNING_MODAL'}
-                # Keine Löschungen → ggf. Reduce-Phase, falls avg_error > error_track UND > 10.0
-                try:
-                    ae = wait_for_solve_average_error(context, timeout=3.0, interval=0.05)
-                    if ae is None:
-                        ae = get_solve_average_error(context)
-                except Exception:
-                    ae = None
-                try:
-                    thr_scene = float(scn.get("error_track", 2.0))
-                except Exception:
-                    thr_scene = 2.0
-                if (ae is not None) and (ae > thr_scene):
-                    if (ae > 10.0) and (run_reduce_error_tracks is not None):
-                        # Threshold temporär auf 10.0 setzen
-                        old_thr = scn.get("error_track", None)
-                        try:
-                            scn["error_track"] = 10.0
-                        except Exception:
-                            pass
-                        try:
-                            res_red = run_reduce_error_tracks(context)
-                            try:
-                                scn["tco_last_reduce_error_tracks"] = res_red
-                            except Exception:
-                                pass
-                            self.report({'INFO'}, f"Reduce-Error-Tracks ausgeführt (thr=10): deleted={int(res_red.get('deleted',0))}")
-                        except Exception as _rex:
-                            self.report({'WARNING'}, f"Reduce-Error-Tracks Fehler: {_rex}")
-                        finally:
-                            try:
-                                if old_thr is None:
-                                    del scn["error_track"]
-                                else:
-                                    scn["error_track"] = old_thr
-                            except Exception:
-                                pass
-                        # zurück zu FIND
-                        self.phase = "FIND"
-                        self.detect_started = False
-                        self.track_started = False
-                        return {'RUNNING_MODAL'}
-                    # ae > thr_scene aber <= 10.0 → Solve-Zyklus fertig
-                    return self._finish(context, "Solve abgeschlossen – Coordinator beendet.")
-                # ae <= thr_scene oder None → Coordinator beenden
+                # Ansonsten Coordinator beenden – Reduce findet in solve_O statt
                 return self._finish(context, "Solve abgeschlossen – Coordinator beendet.")
             # Fehlerfall
             return self._finish(context, f"FindLow fehlgeschlagen: {data}", cancel=True)
