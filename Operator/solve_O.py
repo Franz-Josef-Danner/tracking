@@ -1,7 +1,7 @@
 import bpy
 from bpy.types import Operator
 from ..Helper.solve_camera import solve_camera_only
-from ..Helper.reduce_error_tracks import get_avg_reprojection_error
+from ..Helper.reduce_error_tracks import get_avg_reprojection_error, wait_for_avg_reprojection_error
 import time
 
 
@@ -185,22 +185,8 @@ class CLIP_OT_solve_cycle(Operator):
             except Exception:
                 pass
             return {'CANCELLED'}
-        # 2. Reprojection Error abfragen – warten, bis ein numerischer Wert (auch 0.0) verfügbar ist
-        avg_error = None
-        for _ in range(200):  # ~10s
-            try:
-                try:
-                    context.view_layer.update()
-                except Exception:
-                    pass
-                avg_error = get_avg_reprojection_error(context)
-                if isinstance(avg_error, (int, float)):
-                    break
-            except Exception:
-                pass
-            time.sleep(0.05)
-        if not isinstance(avg_error, (int, float)):
-            avg_error = 0.0
+        # 2. Reprojection Error: Beobachten, bis numerischer Wert vorliegt (kein Fallback auf 0.0)
+        avg_error = wait_for_avg_reprojection_error(context, timeout=None, interval=0.05)
         # 3. Nicht rekonstruierte Tracks löschen
         del_info = _delete_unreconstructed_tracks(context)
         try:

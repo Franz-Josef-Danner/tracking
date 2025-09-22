@@ -22,7 +22,7 @@ except Exception:
         except Exception:
             return -1.0
 
-__all__ = ("run_reduce_error_tracks", "get_avg_reprojection_error")
+__all__ = ("run_reduce_error_tracks", "get_avg_reprojection_error", "wait_for_avg_reprojection_error")
 
 
 def _name(tr):
@@ -416,3 +416,25 @@ def get_avg_reprojection_error(context):
     if total_cnt == 0:
         return None
     return total_err / total_cnt
+
+
+def wait_for_avg_reprojection_error(context, timeout: Optional[float] = None, interval: float = 0.05) -> Optional[float]:
+    """Wartet, bis get_avg_reprojection_error(context) einen numerischen Wert liefert (inkl. 0.0).
+    - timeout=None: wartet unbegrenzt
+    - timeout in Sekunden: gibt None zurück, wenn kein Wert innerhalb der Zeit verfügbar
+    """
+    t0 = time.perf_counter()
+    while True:
+        try:
+            try:
+                context.view_layer.update()
+            except Exception:
+                pass
+            val = get_avg_reprojection_error(context)
+            if isinstance(val, (int, float)):
+                return float(val)
+        except Exception:
+            pass
+        if timeout is not None and (time.perf_counter() - t0) >= timeout:
+            return None
+        time.sleep(max(0.0, float(interval)))
