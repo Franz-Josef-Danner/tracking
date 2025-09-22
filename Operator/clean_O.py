@@ -22,6 +22,17 @@ try:
 except Exception:
     recursive_split_cleanup = None  # type: ignore
 
+# NEU: Nach-Pass Logik (find_max & Reset)
+try:
+    from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
+except Exception:
+    run_find_max_marker_frame = None  # type: ignore
+
+try:
+    from ..Helper.reset_state import reset_for_new_cycle  # type: ignore
+except Exception:
+    reset_for_new_cycle = None  # type: ignore
+
 
 def _get_active_clip(context):
     space = getattr(context, "space_data", None)
@@ -131,11 +142,37 @@ class CLIP_OT_clean_cycle(Operator):
         else:
             steps.append({"step": "split_cleanup", "status": "SKIPPED", "reason": "helper missing"})
 
+        # 5) NEU: Nach dem Pass Max-Marker-Frame suchen; bei FOUND → Reset & Status
+        restart = False
+        max_info = None
+        if run_find_max_marker_frame is not None:
+            try:
+                max_info = run_find_max_marker_frame(context)
+                try:
+                    f = int(max_info.get("frame", -1)) if isinstance(max_info, dict) else None
+                except Exception:
+                    f = None
+                steps.append({
+                    "step": "find_max_marker_frame",
+                    "status": str((max_info or {}).get("status", "UNKNOWN")),
+                    "frame": f,
+                })
+                if isinstance(max_info, dict) and str(max_info.get("status", "")) == "FOUND":
+                    restart = True
+                    if reset_for_new_cycle is not None:
+                        try:
+                            reset_for_new_cycle(context)
+                        except Exception:
+                            pass
+            except Exception as exc:
+                steps.append({"step": "find_max_marker_frame", "status": "ERROR", "reason": str(exc)})
+
         result = {
-            "status": "OK" if all(s.get("status") in {"OK", "SKIPPED"} for s in steps) else "WARN",
+            "status": ("RESTART" if restart else ("OK" if all(s.get("status") in {"OK", "SKIPPED"} for s in steps) else "WARN")),
             "threshold": float(thr),
             "min_seg_len": int(min_len),
             "markers_deleted_total": int(total_markers_deleted),
+            "restart": bool(restart),
             "steps": steps,
         }
         try:
@@ -145,6 +182,8 @@ class CLIP_OT_clean_cycle(Operator):
             try: scn["tco_last_clean_status"] = str(result.get("status"))
             except Exception: pass
             try: scn["tco_last_clean_markers_deleted_total"] = int(result.get("markers_deleted_total", 0) or 0)
+            except Exception: pass
+            try: scn["tco_last_clean_restart"] = bool(result.get("restart", False))
             except Exception: pass
         self.report({'INFO'}, f"Clean-Cycle abgeschlossen: {result}")
         return {'FINISHED'}
