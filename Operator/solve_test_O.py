@@ -132,12 +132,7 @@ class CLIP_OT_solve_test(Operator):
         return self.invoke(context, None)
 
     def _finish(self, context, payload: Dict[str, Any]):
-        # Restore refine
-        try:
-            _restore_refine(self._ts, self._snap)
-        except Exception:
-            pass
-        # Flags
+        # Keine Wiederherstellung der Refine-Flags mehr (dauerhaft aus)
         scn = context.scene
         try:
             payload["loops"] = self._loops
