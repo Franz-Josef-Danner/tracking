@@ -22,14 +22,28 @@ class CLIP_OT_track_cycle(Operator):
             avg_error = get_avg_reprojection_error(context)
         except Exception:
             avg_error = None
+        # 2b. Schwelle aus Szene lesen und vergleichen
+        try:
+            thr = float(getattr(scn, "error_track", 2.0))
+        except Exception:
+            thr = 2.0
+        exceeds = (avg_error is not None) and (float(avg_error) > float(thr))
         # 3. Zusammenfassen
         result = {
             "status": "OK",
             "score": score,
             "avg_error": avg_error,
+            "error_threshold": thr,
+            "exceeds_threshold": bool(exceeds),
         }
         scn["tco_last_solve_cycle"] = result
-        self.report({'INFO'}, f"Solve-Cycle abgeschlossen: {result}")
+        # 4. Meldung
+        if avg_error is None:
+            self.report({'INFO'}, "Solve-Cycle abgeschlossen (avg_error unbekannt)")
+        elif exceeds:
+            self.report({'WARNING'}, f"Solve-Cycle: avg_error={float(avg_error):.3f} > threshold={float(thr):.3f}")
+        else:
+            self.report({'INFO'}, f"Solve-Cycle: avg_error={float(avg_error):.3f} <= threshold={float(thr):.3f}")
         return {'FINISHED'}
 
 def register():
