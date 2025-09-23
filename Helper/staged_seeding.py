@@ -94,6 +94,26 @@ def _detect_candidates_blender(context, clip, threshold: float, min_distance_px:
                 out.append({"x": x, "y": y, "corr": 1.0})
             except Exception:
                 continue
+        # Wichtig: neu angelegte Tracks wieder entfernen, damit die Szene nicht vollläuft
+        try:
+            tr_coll = getattr(getattr(clip, "tracking", None), "tracks", None)
+            if tr_coll is not None:
+                for t in new_tracks:
+                    try:
+                        tr_coll.remove(t)
+                    except Exception:
+                        try:
+                            # Fallback über Operator (benötigt evtl. gültigen UI-Kontext)
+                            t.select = True
+                        except Exception:
+                            pass
+                try:
+                    import bpy as _bpy  # type: ignore
+                    _bpy.ops.clip.delete_track()
+                except Exception:
+                    pass
+        except Exception:
+            pass
         return out
     except Exception:
         return []
