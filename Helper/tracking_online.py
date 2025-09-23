@@ -1,0 +1,1 @@
+# Frameweise α-Adjust + gated Pattern-Wechsel (apply-next)

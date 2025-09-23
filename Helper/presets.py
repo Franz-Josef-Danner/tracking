@@ -1,0 +1,1 @@
+# Dünne Koordination der Helper (keine Heavy-Logik)
