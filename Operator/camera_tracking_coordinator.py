@@ -144,7 +144,7 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
             self.track_started = False
             return {'RUNNING_MODAL'}
 
-        # PHASE: SOLVE_WAIT – nach solve_clean_O direkt Refine starten
+        # PHASE: SOLVE_WAIT – nach solve_clean_O auswerten und verzweigen
         if self.phase == "SOLVE_WAIT":
             active = bool(scn.get("tco_solve_active", False))
             done = bool(scn.get("tco_solve_done", False))
@@ -152,7 +152,56 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                 print(f"[Coord] SOLVE_WAIT flags active={active} done={done}")
             except Exception:
                 pass
-            # ...existing code...
+            if active and not done:
+                return {'RUNNING_MODAL'}
+            if done:
+                # Werte VOR Bereinigung lesen
+                ae_solve = scn.get("tco_solve_avg_error", None)
+                reduced = bool(scn.get("tco_reduce_executed", False))
+                try:
+                    thr_scene = float(scn.get("error_track", 2.0))
+                except Exception:
+                    thr_scene = 2.0
+                try:
+                    print(f"[Coord] SOLVE_WAIT evaluate: ae={ae_solve} reduced={reduced} thr_scene={thr_scene}")
+                except Exception:
+                    pass
+                # Flags bereinigen
+                for k in ("tco_solve_active", "tco_solve_done", "tco_reduce_executed", "tco_solve_avg_error"):
+                    try:
+                        del scn[k]
+                    except Exception:
+                        pass
+                # Branching laut Vorgabe:
+                # 1) Wenn Reduce lief ODER ae > 10 (oder ae nicht messbar) → zurück zu FIND
+                ae_val = None
+                try:
+                    ae_val = float(ae_solve) if ae_solve is not None else None
+                except Exception:
+                    ae_val = None
+                if reduced or (ae_val is None) or (ae_val > 10.0):
+                    try:
+                        bpy.ops.clip.find_low_and_jump()
+                        print(f"[Coord] after solve_clean: restart FIND; find_low result={scn.get('tco_last_findlowjump')}")
+                    except Exception as exc:
+                        print(f"[Coord] after solve_clean: find_low failed: {exc}")
+                    self.phase = "FIND"
+                    self.detect_started = False
+                    self.track_started = False
+                    return {'RUNNING_MODAL'}
+                # 2) ae <= 10 und > error_track → Refine starten
+                if (ae_val is not None) and (ae_val > thr_scene):
+                    try:
+                        bpy.ops.clip.refine_solve_modal('INVOKE_DEFAULT')
+                        self.phase = "REFINE_WAIT"
+                        return {'RUNNING_MODAL'}
+                    except Exception as exc:
+                        self.report({'WARNING'}, f"Refine-Solve konnte nicht gestartet werden: {exc}")
+                        self.phase = "FIND"
+                        return {'RUNNING_MODAL'}
+                # 3) ae <= error_track → Ende
+                return self._finish(context, "Solve abgeschlossen – Coordinator beendet.")
+            return {'RUNNING_MODAL'}
 
         # PHASE: REFINE_WAIT – einzige Validierung: avg_error > error_track → weiter
         if self.phase == "REFINE_WAIT":
