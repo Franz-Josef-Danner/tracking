@@ -177,6 +177,7 @@ class CLIP_OT_solve_test(Operator):
             self._timer = None
 
     def invoke(self, context, event):
+        print("[SolveTest] invoke start")
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.10, window=context.window)
         wm.modal_handler_add(self)
@@ -193,9 +194,11 @@ class CLIP_OT_solve_test(Operator):
             context.scene["tco_restart_find"] = False
         except Exception:
             pass
+        print("[SolveTest] invoke done -> RUNNING_MODAL")
         return {"RUNNING_MODAL"}
 
     def execute(self, context):
+        print("[SolveTest] execute -> invoke")
         return self.invoke(context, None)
 
     def _finish(self, context, payload: Dict[str, Any]):

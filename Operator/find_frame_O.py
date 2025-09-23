@@ -21,26 +21,34 @@ class CLIP_OT_find_low_and_jump(Operator):
         scn = context.scene
         result = {"status": "FAILED"}
         try:
+            print("[FindLow] start")
             # 1) Low‑Marker‑Frame suchen
             r_find = run_find_low_marker_frame(context)
+            print(f"[FindLow] result find={r_find}")
             status = str(r_find.get("status", ""))
             if status != "FOUND":
                 result = {"status": status or "NONE", "find": r_find}
                 scn["tco_last_findlowjump"] = result  # type: ignore
+                print(f"[FindLow] store scene.tco_last_findlowjump={result}")
                 if status == "NONE":
                     self.report({'INFO'}, "Kein Low‑Marker‑Frame gefunden")
+                    print("[FindLow] finished (NONE)")
                     return {'FINISHED'}
                 self.report({'WARNING'}, f"FindLow fehlgeschlagen: {r_find}")
+                print("[FindLow] cancelled (FAILED)")
                 return {'CANCELLED'}
 
             frame = int(r_find.get("frame", 1))
 
             # 2) Sprung durchführen
             r_jump = run_jump_to_frame(context, frame=frame, repeat_map={})
+            print(f"[FindLow] result jump={r_jump}")
             if str(r_jump.get("status", "")) != "OK":
                 result = {"status": "JUMP_FAILED", "find": r_find, "jump": r_jump}
                 scn["tco_last_findlowjump"] = result  # type: ignore
+                print(f"[FindLow] store scene.tco_last_findlowjump={result}")
                 self.report({'WARNING'}, f"Jump fehlgeschlagen: {r_jump}")
+                print("[FindLow] cancelled (JUMP_FAILED)")
                 return {'CANCELLED'}
 
             result = {
@@ -51,15 +59,19 @@ class CLIP_OT_find_low_and_jump(Operator):
                 "jump": r_jump,
             }
             scn["tco_last_findlowjump"] = result  # type: ignore
+            print(f"[FindLow] store scene.tco_last_findlowjump={result}")
             self.report({'INFO'}, f"FindLow+Jump: f{frame} (repeat={result['repeat_count']})")
+            print("[FindLow] finished (OK)")
             return {'FINISHED'}
         except Exception as exc:
             result = {"status": "EXCEPTION", "error": str(exc)}
             try:
                 scn["tco_last_findlowjump"] = result  # type: ignore
+                print(f"[FindLow] store scene.tco_last_findlowjump={result}")
             except Exception:
                 pass
             self.report({'ERROR'}, f"FindLow+Jump Ausnahme: {exc}")
+            print("[FindLow] cancelled (EXCEPTION)")
             return {'CANCELLED'}
 
 

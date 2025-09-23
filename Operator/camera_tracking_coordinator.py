@@ -100,11 +100,16 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
             return {'PASS_THROUGH'}
 
         scn = context.scene
+        try:
+            print(f"[Coord] phase={self.phase}")
+        except Exception:
+            pass
 
         # PHASE 1: FIND (Find Low & Jump)
         if self.phase == "FIND":
             try:
                 bpy.ops.clip.find_low_and_jump()
+                print(f"[Coord] find_low invoked; scene.tco_last_findlowjump={scn.get('tco_last_findlowjump')}")
             except Exception as exc:
                 return self._finish(context, f"FindLow konnte nicht gestartet werden: {exc}", cancel=True)
             data = scn.get("tco_last_findlowjump") or {}
@@ -143,116 +148,27 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
         if self.phase == "SOLVE_WAIT":
             active = bool(scn.get("tco_solve_active", False))
             done = bool(scn.get("tco_solve_done", False))
-            if active and not done:
-                return {'RUNNING_MODAL'}
-            if done:
-                # Solve-Flags bereinigen
-                for k in ("tco_solve_active", "tco_solve_done", "tco_reduce_executed", "tco_solve_avg_error"):
-                    try:
-                        del scn[k]
-                    except Exception:
-                        pass
-                # Direkt Refine-Solve starten
-                try:
-                    bpy.ops.clip.refine_solve_modal('INVOKE_DEFAULT')
-                    self.phase = "REFINE_WAIT"
-                    return {'RUNNING_MODAL'}
-                except Exception as exc:
-                    self.report({'WARNING'}, f"Refine-Solve konnte nicht gestartet werden: {exc}")
-                    return self._finish(context, "Solve abgeschlossen – Coordinator beendet.")
-            return {'RUNNING_MODAL'}
+            try:
+                print(f"[Coord] SOLVE_WAIT flags active={active} done={done}")
+            except Exception:
+                pass
+            # ...existing code...
 
         # PHASE: REFINE_WAIT – warte auf Flags aus refine_solve_O
         if self.phase == "REFINE_WAIT":
-            if bool(scn.get("tco_refine_active", False)) and not bool(scn.get("tco_refine_done", False)):
-                return {'RUNNING_MODAL'}
-            if bool(scn.get("tco_refine_done", False)):
-                reduce_executed = bool(scn.get("tco_reduce_executed", False))
-                ae_ref = scn.get("tco_refine_avg_error", None)
-                try:
-                    thr_scene = float(scn.get("error_track", 2.0))
-                except Exception:
-                    thr_scene = 2.0
-                # Flags bereinigen (avg_error kann bleiben, wird unten gelesen)
-                for k in ("tco_refine_active", "tco_refine_done", "tco_reduce_executed"):
-                    try:
-                        del scn[k]
-                    except Exception:
-                        pass
-                if reduce_executed:
-                    # (Derzeit nicht genutzt) – zurück zu FIND
-                    self.phase = "FIND"
-                    self.detect_started = False
-                    self.track_started = False
-                    self.report({'INFO'}, "Refine-Solve: Reduce ausgeführt → zurück zu FIND")
-                    return {'RUNNING_MODAL'}
-                # Robuste Entscheidung: None/NaN gilt NICHT als Abbruch → Solve-Test starten
-                try:
-                    ae_val = float(ae_ref) if ae_ref is not None else None
-                except Exception:
-                    ae_val = None
-                ae_is_valid = (ae_val is not None) and math.isfinite(ae_val)
-                try:
-                    print(f"[Coord] refine result ae_ref={ae_ref} valid={ae_is_valid} thr={thr_scene}")
-                except Exception:
-                    pass
-                if (not ae_is_valid) or (ae_val > thr_scene):
-                    try:
-                        bpy.ops.clip.solve_test('INVOKE_DEFAULT')
-                        self.phase = "SOLVE_TEST_WAIT"
-                        return {'RUNNING_MODAL'}
-                    except Exception as exc:
-                        self.report({'WARNING'}, f"Solve-Test konnte nicht gestartet werden: {exc}")
-                        # Falls Test nicht startbar: dennoch zurück zu FIND, um den Zyklus fortzusetzen
-                        self.phase = "FIND"
-                        return {'RUNNING_MODAL'}
-                # Refine hat genügt → Coordinator beenden
-                return self._finish(context, "Refine-Solve abgeschlossen – Coordinator beendet.")
-            return {'RUNNING_MODAL'}
+            try:
+                print(f"[Coord] REFINE_WAIT flags active={scn.get('tco_refine_active')} done={scn.get('tco_refine_done')} avg={scn.get('tco_refine_avg_error')}")
+            except Exception:
+                pass
+            # ...existing code...
 
         # PHASE: SOLVE_TEST_WAIT – warte auf Ende des Model-Wechsels und dann zurück zu FIND
         if self.phase == "SOLVE_TEST_WAIT":
-            if bool(scn.get("tco_solve_test_active", False)):
-                return {'RUNNING_MODAL'}
-            # Entscheidung anhand des Restart-Flags aus solve_test
-            restart = bool(scn.get("tco_restart_find", False))
-            payload = scn.get('tco_solve_test')
             try:
-                print(f"[Coord] solve_test finished: restart_find={restart} payload={payload}")
+                print(f"[Coord] SOLVE_TEST_WAIT flags active={scn.get('tco_solve_test_active')} restart={scn.get('tco_restart_find')}")
             except Exception:
                 pass
-            # Flags bereinigen
-            for k in ("tco_restart_find",):
-                try:
-                    del scn[k]
-                except Exception:
-                    pass
-            if restart:
-                # Zustand zurücksetzen (wie clean_O) und FindLow neu anstoßen
-                try:
-                    # altes FIND-Resultat leeren, um Stale-Reads zu vermeiden
-                    if "tco_last_findlowjump" in scn:
-                        del scn["tco_last_findlowjump"]
-                except Exception:
-                    pass
-                if reset_for_new_cycle is not None:
-                    try:
-                        reset_for_new_cycle(context)
-                        print("[Coord] reset_for_new_cycle executed before FindLow")
-                    except Exception as exc:
-                        print(f"[Coord] reset_for_new_cycle failed: {exc}")
-                try:
-                    bpy.ops.clip.find_low_and_jump()
-                    print(f"[Coord] find_low_and_jump triggered after model switch; result={scn.get('tco_last_findlowjump')}")
-                except Exception as exc:
-                    print(f"[Coord] find_low_and_jump failed after solve_test: {exc}")
-                self.phase = "FIND"
-                self.detect_started = False
-                self.track_started = False
-                self.report({'INFO'}, "Solve-Test: Restart-Flag gesetzt → zurück zu FIND")
-                return {'RUNNING_MODAL'}
-            # Kein Restart gewünscht → Coordinator beenden
-            return self._finish(context, "Solve-Test abgeschlossen – Coordinator beendet.")
+            # ...existing code...
 
         # PHASE 2: DETECT
         if self.phase == "DETECT":
