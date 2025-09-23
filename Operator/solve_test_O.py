@@ -443,7 +443,7 @@ class CLIP_OT_solve_test(Operator):
                     ratio = float(self._ae) / max(1e-9, float(thr)) if self._ae is not None else 1.0
                 except Exception:
                     ratio = 1.0
-                n_delete = int(max(1, min(10, ratio)))
+                n_delete = int(max(1, min(20, ratio)))
                 print(f"[SolveTest] reduce n={n_delete} (ratio={ratio:.3f})")
                 try:
                     self._last_reduce = run_reduce_error_tracks(context, max_to_delete=int(n_delete))
