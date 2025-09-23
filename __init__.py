@@ -11,7 +11,6 @@ from .Operator.bootstrap_O import CLIP_OT_bootstrap_cycle
 from .Operator.find_frame_O import CLIP_OT_find_low_and_jump
 from .Operator.detect_O import CLIP_OT_detect_cycle
 from .Operator.clean_O import CLIP_OT_clean_cycle
-from .Operator.solve_test_O import CLIP_OT_solve_test
 
 bl_info = {
     "name": "Kaiserlich Tracker",
@@ -87,7 +86,7 @@ _CLASSES = [
     CLIP_OT_find_low_and_jump,
     CLIP_OT_detect_cycle,
     CLIP_OT_clean_cycle,
-    CLIP_OT_solve_test,
+    # CLIP_OT_solve_test removed
     # Bidi + Coordinator + Launcher
     CLIP_OT_bidirectional_track,
     CLIP_OT_camera_tracking_coordinator,

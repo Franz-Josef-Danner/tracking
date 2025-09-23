@@ -5,14 +5,13 @@ from .bootstrap_O import CLIP_OT_bootstrap_cycle
 from .find_frame_O import CLIP_OT_find_low_and_jump
 from .detect_O import CLIP_OT_detect_cycle
 from .clean_O import CLIP_OT_clean_cycle
-from .solve_test_O import CLIP_OT_solve_test
 
 classes = (
     CLIP_OT_bootstrap_cycle,
     CLIP_OT_find_low_and_jump,
     CLIP_OT_detect_cycle,
     CLIP_OT_clean_cycle,
-    CLIP_OT_solve_test,
+    # CLIP_OT_solve_test removed
     CLIP_OT_camera_tracking_coordinator,
 )
 

@@ -11,6 +11,19 @@ except Exception:
 # Optional: Bidirectional-Track aus Helper registrieren/nutzen
 try:
     from ..Helper.bidirectional_track import CLIP_OT_bidirectional_track  # type: ignore
+import bpy
+from bpy.types import Operator
+import math
+
+# Optionaler Direktimport für Fallback (Bootstrap)
+try:
+    from .bootstrap_O import CLIP_OT_bootstrap_cycle  # type: ignore
+except Exception:
+    CLIP_OT_bootstrap_cycle = None  # type: ignore
+
+# Optional: Bidirectional-Track aus Helper registrieren/nutzen
+try:
+    from ..Helper.bidirectional_track import CLIP_OT_bidirectional_track  # type: ignore
 except Exception:
     try:
         from .bidirectional_track import CLIP_OT_bidirectional_track  # type: ignore
@@ -27,7 +40,7 @@ __all__ = ("CLIP_OT_camera_tracking_coordinator",)
 
 
 class CLIP_OT_camera_tracking_coordinator(Operator):
-    """Modaler Ablauf: FIND → DETECT → TRACK; Wenn nichts zu finden: Solve-Test → ggf. Neustart bei FIND."""
+    """Modaler Ablauf: FIND → DETECT → TRACK; Solve-Test entfernt."""
 
     bl_idname = "clip.camera_tracking_coordinator"
     bl_label = "Camera Tracking Coordinator"
@@ -37,7 +50,7 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
     phase: str = "FIND"
     detect_started: bool = False
     track_started: bool = False
-    # NEU: Clean vor Solve einmalig nach einem TRACK-Durchlauf
+    # Clean vor dem nächsten Find einplanen nach einem Track-Durchlauf
     needs_clean_before_solve: bool = False
 
     def _finish(self, context, msg: str = "", cancel: bool = False):
@@ -114,13 +127,13 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                 self.track_started = False
                 return {'RUNNING_MODAL'}
             if status in {"NONE", ""}:
-                # NEU: Falls zuvor ein TRACK abgeschlossen wurde → zuerst CLEAN ausführen, dann erneut FIND versuchen
+                # Falls zuvor ein TRACK abgeschlossen wurde → zuerst CLEAN ausführen, dann erneut FIND versuchen
                 if self.needs_clean_before_solve:
                     try:
                         bpy.ops.clip.clean_cycle('INVOKE_DEFAULT')
-                        print("[Coord] Clean cycle executed before Solve-Test")
+                        print("[Coord] Clean cycle executed before next Find")
                     except Exception as exc:
-                        self.report({'WARNING'}, f"Clean vor Solve fehlgeschlagen: {exc}")
+                        self.report({'WARNING'}, f"Clean fehlgeschlagen: {exc}")
                     self.needs_clean_before_solve = False
                     try:
                         if "tco_last_findlowjump" in scn:
@@ -130,57 +143,12 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                     # Nach Clean erneut FIND probieren
                     self.phase = "FIND"
                     return {'RUNNING_MODAL'}
-                # Statt Clean/Solve → direkt Solve-Test starten
-                try:
-                    bpy.ops.clip.solve_test('INVOKE_DEFAULT')
-                    self.phase = "SOLVE_TEST_WAIT"
-                    return {'RUNNING_MODAL'}
-                except Exception as exc:
-                    self.report({'WARNING'}, f"Solve-Test konnte nicht gestartet werden: {exc}")
-                    # Fallback: zurück zu FIND erneut versuchen
-                    self.phase = "FIND"
-                    return {'RUNNING_MODAL'}
+                # Kein Solve-Test: einfach erneut FIND versuchen
+                self.phase = "FIND"
+                return {'RUNNING_MODAL'}
             # Unerwarteter Status → erneut versuchen
             self.report({'WARNING'}, f"FindLow unerwarteter Status: {status} data={data}")
             self.phase = "FIND"
-            return {'RUNNING_MODAL'}
-
-        # PHASE: SOLVE_TEST_WAIT – warte auf Ende des Test-Solve; ggf. Neustart
-        if self.phase == "SOLVE_TEST_WAIT":
-            scn = context.scene
-            active = bool(scn.get("tco_solve_test_active", False))
-            restart = bool(scn.get("tco_restart_find", False))
-            payload = scn.get("tco_solve_test", {})
-            print(f"[Coord] SOLVE_TEST_WAIT flags active={active} restart={restart}")
-
-            if restart:
-                # Restart-Fall: zu FIND zurück
-                scn["tco_restart_find"] = False
-                try:
-                    # optional: Reset falls nötig
-                    # reset_for_new_cycle(context)
-                    bpy.ops.clip.find_low_and_jump('INVOKE_DEFAULT')
-                    print("[Coord] find_low_and_jump triggered after model switch")
-                except Exception as ex:
-                    print(f"[Coord] find_low_and_jump error: {ex}")
-                self.phase = "FIND"
-                return {'RUNNING_MODAL'}
-
-            if not active:
-                # Test ist fertig: Wenn OK → beenden, sonst vorsorglich zu FIND
-                ae = (payload or {}).get("avg_error", None)
-                if (payload or {}).get("status") == "OK":
-                    return self._finish(context, f"Solve-Test OK (avg_error={ae})")
-                # Fallback: weiter in FIND, um nicht hängen zu bleiben
-                try:
-                    bpy.ops.clip.find_low_and_jump('INVOKE_DEFAULT')
-                    print("[Coord] find_low_and_jump after SolveTest finish (no restart)")
-                except Exception as ex:
-                    print(f"[Coord] find_low_and_jump error: {ex}")
-                self.phase = "FIND"
-                return {'RUNNING_MODAL'}
-
-            # noch aktiv → weiter warten
             return {'RUNNING_MODAL'}
 
         # PHASE: DETECT
@@ -235,7 +203,7 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                 self.report({'WARNING'}, f"Track Ergebnis: {result}")
             else:
                 self.report({'INFO'}, "Track abgeschlossen")
-            # Nach TRACK: Clean vor dem nächsten Solve-Test einplanen
+            # Nach TRACK: Clean vor dem nächsten Find einplanen
             self.needs_clean_before_solve = True
             self.phase = "FIND"
             return {'RUNNING_MODAL'}
