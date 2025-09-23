@@ -128,21 +128,32 @@ _CLASSES = (
 )
 
 
-# Klassen-Registrierungsliste erweitern
+# Panel-Import jetzt aus UI statt Operator
 try:
-    from .Operator.ui_focal_panel import CLIP_PT_focal_control
+    from .UI.ui_focal_panel import CLIP_PT_focal_control
 except Exception:
     CLIP_PT_focal_control = None
 
+_CLASSES = [
+    RepeatEntry,
+    # Helper/Support-Operatoren zuerst registrieren
+    CLIP_OT_bootstrap_cycle,
+    CLIP_OT_find_low_and_jump,
+    CLIP_OT_detect_cycle,
+    CLIP_OT_clean_cycle,
+    CLIP_OT_solve_test,
+    # Bidi + Coordinator + UI
+    CLIP_OT_bidirectional_track,
+    CLIP_OT_camera_tracking_coordinator,            # modal coordinator
+    CLIP_OT_kaiserlich_coordinator_launcher, # launcher
+    CLIP_PT_kaiserlich_panel,                # ui
+]
 if CLIP_PT_focal_control:
     _CLASSES.append(CLIP_PT_focal_control)
 
 
 def register() -> None:
     from .ui import register as _ui_register  # weiter im separaten ui/ Ordner
-    for cls in _CLASSES:
-        bpy.utils.register_class(cls)
-    _register_scene_props()
     bpy.types.Scene.tco_use_auto_focal = BoolProperty(
         name="Auto-Brennweite (Refine)",
         description="Wenn aktiv, wird die Brennweite durch Refine automatisch bestimmt. "
@@ -158,6 +169,12 @@ def register() -> None:
         max=5000.0,
         precision=3,
     )
+    for c in _CLASSES:
+        try:
+            bpy.utils.register_class(c)
+        except Exception:
+            pass
+    _register_scene_props()
     _ui_register()                           # Stub ok
 
 
@@ -165,9 +182,9 @@ def unregister() -> None:
     from .ui import unregister as _ui_unregister
     _ui_unregister()
     _unregister_scene_props()
-    for cls in reversed(_CLASSES):
+    for c in reversed(_CLASSES):
         try:
-            bpy.utils.unregister_class(cls)
+            bpy.utils.unregister_class(c)
         except Exception:
             pass
     if hasattr(bpy.types.Scene, "tco_use_auto_focal"):
