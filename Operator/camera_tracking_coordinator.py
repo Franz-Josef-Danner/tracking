@@ -11,19 +11,6 @@ except Exception:
 # Optional: Bidirectional-Track aus Helper registrieren/nutzen
 try:
     from ..Helper.bidirectional_track import CLIP_OT_bidirectional_track  # type: ignore
-import bpy
-from bpy.types import Operator
-import math
-
-# Optionaler Direktimport für Fallback (Bootstrap)
-try:
-    from .bootstrap_O import CLIP_OT_bootstrap_cycle  # type: ignore
-except Exception:
-    CLIP_OT_bootstrap_cycle = None  # type: ignore
-
-# Optional: Bidirectional-Track aus Helper registrieren/nutzen
-try:
-    from ..Helper.bidirectional_track import CLIP_OT_bidirectional_track  # type: ignore
 except Exception:
     try:
         from .bidirectional_track import CLIP_OT_bidirectional_track  # type: ignore
