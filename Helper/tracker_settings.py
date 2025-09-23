@@ -124,6 +124,26 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
     det_thr = _clamp01(det_thr)
     scene["last_detection_threshold"] = float(det_thr)
 
+    # --- Marker-Budget pro Detect-Stufe (/5-Logik) ---
+    # Gesamtziel der zu setzenden Marker aus Szene lesen (Fallback 100).
+    # Das Ziel wird auf 5 Stufen verteilt; pro Stufe gilt ein ±10%-Band,
+    # das von der Seeding-Logik via min_distance-Regelung bedient wird.
+    try:
+        total_markers = int(scene.get("marker_target", 100))
+    except Exception:
+        total_markers = 100
+    if total_markers < 0:
+        total_markers = 0
+
+    per_stage = max(1, total_markers // 5) if total_markers > 0 else 0
+    stage_lo = int(per_stage * 0.9) if per_stage > 0 else 0
+    stage_hi = int(per_stage * 1.1) if per_stage > 0 else 0
+
+    # In Szene persistieren, damit Seeding/Detect-Operatoren darauf zugreifen können
+    scene["marker_stage_target"] = int(per_stage)
+    scene["marker_stage_lo"] = int(stage_lo)
+    scene["marker_stage_hi"] = int(stage_hi)
+
     # --- Solver-Einstellungen: robuste Versuche mehrere mögliche Property-Namen ---
     solver_changes = {}
 
@@ -211,5 +231,9 @@ def apply_tracker_settings(context, *, clip=None, scene=None, log: bool = True) 
         "clean_frames": int(ts.clean_frames),
         "clean_error": float(ts.clean_error),
         "last_detection_threshold": float(scene["last_detection_threshold"]),
+        "marker_target_total": int(scene.get("marker_target", 100)),
+        "marker_stage_target": int(scene.get("marker_stage_target", 0)),
+        "marker_stage_lo": int(scene.get("marker_stage_lo", 0)),
+        "marker_stage_hi": int(scene.get("marker_stage_hi", 0)),
         "solver_changes": solver_changes,
     }
