@@ -299,24 +299,42 @@ class CLIP_OT_solve_test(Operator):
         print("[SolveTest] execute -> invoke")
         return self.invoke(context, None)
 
-    def _finish(self, context, payload: Dict[str, Any]):
-        scn = context.scene
+    def _finish(self, context, payload: dict):
+        # Flags/Payload sicher schreiben und Timer abbauen
         try:
-            restart = bool(payload.get("restart_find", False))
-            scn["tco_restart_find"] = restart
-            print(f"[SolveTest] finish payload={payload} restart_find={restart}")
-        except Exception:
-            pass
-        try:
-            payload["loops"] = self._loops
-            payload["last_reduce"] = self._last_reduce
-            payload["find_max"] = self._find_result
-            scn["tco_solve_test"] = payload
+            scn = context.scene
+            scn["tco_solve_test"] = payload or {}
+            scn["tco_restart_find"] = bool((payload or {}).get("restart_find", False))
             scn["tco_solve_test_active"] = False
+            print(f"[SolveTest] finish payload={payload} restart_find={scn['tco_restart_find']}")
+        except Exception as ex:
+            print(f"[SolveTest] finish flag error: {ex}")
+        wm = context.window_manager
+        if getattr(self, "_timer", None):
+            try:
+                wm.event_timer_remove(self._timer)
+            except Exception:
+                pass
+            self._timer = None
+        return {'FINISHED'}
+
+    def cancel(self, context):
+        # Bei Abbruch ebenfalls Flags zurücksetzen
+        try:
+            scn = context.scene
+            scn["tco_solve_test_active"] = False
+            scn["tco_restart_find"] = False
         except Exception:
             pass
-        self._cleanup(context)
-        return {"FINISHED"}
+        wm = context.window_manager
+        if getattr(self, "_timer", None):
+            try:
+                wm.event_timer_remove(self._timer)
+            except Exception:
+                pass
+            self._timer = None
+        print("[SolveTest] cancel")
+        return {'CANCELLED'}
 
     def modal(self, context, event):
         if event.type != 'TIMER':
