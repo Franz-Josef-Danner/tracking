@@ -8,7 +8,7 @@ from ..Helper.solve_camera import solve_camera_only
 from ..Helper.reduce_error_tracks import get_solve_average_error, run_reduce_error_tracks
 from ..Helper.find_max_marker_frame import run_find_max_marker_frame
 
-ALLOWED_MODELS: Tuple[str, ...] = ("POLYNOMIAL", "DIVISION", "BROWN")
+ALLOWED_MODELS: Tuple[str, ...] = ("POLYNOMIAL", "DIVISION", "BROWN")  # NUKE bewusst ausgelassen
 
 
 def _get_clip_and_camera(context):
@@ -78,13 +78,14 @@ def _get_distortion_model(ts) -> Optional[str]:
             try:
                 v = getattr(ts, name)
                 if isinstance(v, str) and v:
-                    return v
+                    return v.upper()
             except Exception:
                 pass
     return None
 
 
 def _set_distortion_model(ts, value: str) -> Optional[str]:
+    value = str(value).upper()
     for name in ("distortion_model", "distortion"):
         if hasattr(ts, name):
             try:
@@ -96,15 +97,13 @@ def _set_distortion_model(ts, value: str) -> Optional[str]:
 
 
 def _cycle_distortion_model(context) -> Tuple[Optional[str], Optional[str]]:
-    """Schaltet das Distortion-Model auf das nächste in ALLOWED_MODELS.
-    Gibt (previous, next) zurück oder (None, None) bei Fehler."""
+    """Schaltet das Distortion-Model auf das nächste in ALLOWED_MODELS."""
     clip, _ = _get_clip_and_camera(context)
     ts = getattr(getattr(clip, "tracking", None), "settings", None) if clip else None
     if not ts:
         return (None, None)
     cur = _get_distortion_model(ts)
     if cur not in ALLOWED_MODELS:
-        # Unbekanntes Modell → auf erstes erlaubtes setzen
         nxt = ALLOWED_MODELS[0]
         name = _set_distortion_model(ts, nxt)
         print(f"[SolveTest] model_switch {cur} -> {nxt} via {name} (fallback)")
