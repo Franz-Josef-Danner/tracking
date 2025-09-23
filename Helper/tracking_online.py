@@ -22,6 +22,28 @@ def _roi_state(roi_id: int) -> Dict[str, Any]:
     return s
 
 
+def set_initial_params(roi_id: int, *, pattern: Optional[int] = None, alpha: Optional[int] = None, frame: Optional[int] = None) -> None:
+    """Setze Startwerte für Online-Tracking-Zustand (z. B. nach Seeding)."""
+    s = _roi_state(int(roi_id))
+    if pattern is not None:
+        try:
+            p = int(pattern)
+            s["pattern"] = max(9, min(41, p))
+        except Exception:
+            pass
+    if alpha is not None:
+        try:
+            a = int(alpha)
+            s["alpha"] = max(2, min(4, a))
+        except Exception:
+            pass
+    if frame is not None:
+        try:
+            s["frame"] = int(frame)
+        except Exception:
+            pass
+
+
 def track_one_frame(roi_id, frame: Optional[int] = None) -> dict:
     """1-Step-Tracking für alle Marker im ROI; return Telemetrie-Aggregate.
 

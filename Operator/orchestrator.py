@@ -14,6 +14,7 @@ from ..Helper.tracking_online import (
     schedule_param_changes,
     apply_scheduled_next_frame,
     get_online_state,
+    set_initial_params,
 )
 from ..Helper.motion_model import cluster_fit_models, select_apply_motion_models
 from ..Helper.cleanup_pass import periodic_cleanup
@@ -260,6 +261,16 @@ def run_autotrack(context, clip) -> dict:
     )
 
     log_step("orchestrator.post_seeding", summary)
+
+    # Online-Startwerte mit letzter Seeding-Stage synchronisieren
+    try:
+        stages = summary.get("stages", []) if isinstance(summary, dict) else []
+        last = stages[-1] if stages else {}
+        p_init = int(last.get("pattern", pattern)) if isinstance(last, dict) else pattern
+        a_init = int(last.get("alpha", alpha)) if isinstance(last, dict) else alpha
+        set_initial_params(roi_id, pattern=p_init, alpha=a_init)
+    except Exception:
+        pass
 
     # Peer-Refresh Hook (leichtgewichtig)
     try:
