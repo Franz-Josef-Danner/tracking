@@ -114,25 +114,10 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                 self.track_started = False
                 return {'RUNNING_MODAL'}
             if status in {"NONE", ""}:
-                # Falls zuvor ein TRACK abgeschlossen wurde → zuerst CLEAN ausführen, dann erneut FIND versuchen
-                if self.needs_clean_before_solve:
-                    try:
-                        bpy.ops.clip.clean_cycle('INVOKE_DEFAULT')
-                        print("[Coord] Clean cycle executed before next Find")
-                    except Exception as exc:
-                        self.report({'WARNING'}, f"Clean fehlgeschlagen: {exc}")
-                    self.needs_clean_before_solve = False
-                    try:
-                        if "tco_last_findlowjump" in scn:
-                            del scn["tco_last_findlowjump"]
-                    except Exception:
-                        pass
-                    # Nach Clean erneut FIND probieren
-                    self.phase = "FIND"
-                    return {'RUNNING_MODAL'}
-                # Kein Solve-Test: einfach erneut FIND versuchen
-                self.phase = "FIND"
-                return {'RUNNING_MODAL'}
+                # Kein weiterer Low‑Marker‑Frame → Coordinator sauber beenden
+                info = "Kein weiterer Low‑Marker‑Frame gefunden. Coordinator beendet."
+                print(f"[Coord] {info}")
+                return self._finish(context, info, cancel=False)
             # Unerwarteter Status → erneut versuchen
             self.report({'WARNING'}, f"FindLow unerwarteter Status: {status} data={data}")
             self.phase = "FIND"
