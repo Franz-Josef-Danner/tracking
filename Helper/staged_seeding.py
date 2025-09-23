@@ -90,12 +90,12 @@ def _detect_candidates_blender(context, clip, threshold: float, min_distance_px:
         return []
 
 
-def _detect_candidates_placeholder(roi_id, threshold: float, levels: int, max_features: int, nms_window_px: int, channel: str | None = None, *, context=None, clip=None, pattern: int | None = None, search_px: int | None = None) -> List[dict]:
+def _detect_candidates_placeholder(roi_id, *, context=None, clip=None, threshold: float, min_distance_px: int, max_features: int, nms_window_px: int, channel: str | None = None, pattern: int | None = None, search_px: int | None = None) -> List[dict]:
     """Platzhalter für echte Detektion. Versucht Blender-Operator zu nutzen; sonst leer.
     Struktur je Kandidat (Beispiel): {'x': float, 'y': float, 'score': float}
     """
     # Blender-Integration (wenn verfügbar)
-    cands = _detect_candidates_blender(context, clip, threshold, nms_window_px if nms_window_px else 0, max_features, nms_window_px, pattern=pattern, search_px=search_px)
+    cands = _detect_candidates_blender(context, clip, threshold, min_distance_px, max_features, nms_window_px, pattern=pattern, search_px=search_px)
     if cands:
         return cands
     # TODO: hier alternativen Detector einhängen (z. B. OpenCV)
@@ -139,13 +139,13 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
         placed_this = 0
         cands = _detect_candidates_placeholder(
             roi_id=roi_id,
+            context=context,
+            clip=clip,
             threshold=thr,
-            levels=levels,
+            min_distance_px=int(round(min_dist)),
             max_features=max_features,
             nms_window_px=nms_win,
             channel=(scene or {}).get("channel") if isinstance(scene, dict) else None,
-            context=context,
-            clip=clip,
             pattern=pattern,
             search_px=search_px,
         )
