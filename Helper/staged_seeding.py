@@ -355,6 +355,16 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
 
         kept = []
         for c in cands:
+            # Budget-Check auch innerhalb der Kandidaten-Schleife
+            if isinstance(scene, dict):
+                tb = scene.get("time_budget_hit", False)
+                try:
+                    if callable(tb) and tb():
+                        break
+                except Exception:
+                    pass
+                if bool(tb):
+                    break
             if keep_if_far_enough(c, index, min_dist):
                 kept.append(c)
                 accepted.append(c)
@@ -401,10 +411,36 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
                 pass
             if bool(scene.get("coverage_ok", False)):
                 break
-            # time_budget bereits oben geprüft
+            # time_budget wird zu Beginn der nächsten Stufe erneut geprüft
 
     # Refill-Pass, falls nach 5 Stufen das Ziel noch nicht erreicht ist
     if total_placed < int(total_target):
+        # Vor dem Refill das Budget prüfen – ggf. überspringen
+        if isinstance(scene, dict):
+            tb = scene.get("time_budget_hit", False)
+            skip_refill = False
+            try:
+                if callable(tb) and tb():
+                    skip_refill = True
+            except Exception:
+                pass
+            if bool(tb):
+                skip_refill = True
+            if skip_refill:
+                stages_info.append({
+                    "stage": 6,
+                    "skipped": "time_budget",
+                    "threshold": thr_stages[-1],
+                })
+                # Keine weitere Arbeit, gebe bisherigen Stand zurück
+                summary = {
+                    "placed": len(accepted_final),
+                    "persisted": 0,
+                    "stages": stages_info,
+                    "time_ms": int(round((time.time() - t0) * 1000.0)),
+                }
+                return summary
+
         remaining = int(total_target) - int(total_placed)
         # Nutze letzte Stufen-Parameter (konservativ): p, search, levels=3, edge=True, thr=letzte
         p_r, a_r, search_r, _edge_r = stage_params(5, int(pattern), int(alpha))
@@ -426,6 +462,16 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
         placed_refill = 0
         kept = []
         for c in cands:
+            # Budget-Check innerhalb Refill-Kandidaten
+            if isinstance(scene, dict):
+                tb = scene.get("time_budget_hit", False)
+                try:
+                    if callable(tb) and tb():
+                        break
+                except Exception:
+                    pass
+                if bool(tb):
+                    break
             if keep_if_far_enough(c, index, min_dist):
                 kept.append(c)
                 accepted.append(c)
