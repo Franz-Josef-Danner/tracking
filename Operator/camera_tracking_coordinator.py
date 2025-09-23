@@ -23,11 +23,22 @@ try:
 except Exception:
     reset_for_new_cycle = None  # type: ignore
 
+# NEU: Orchestrator-Ablauf (STRM → Init → Autotune/Seeding → Online → Models → Cleanup → KPI/Preset)
+try:
+    from ..Helper.orchestrator import run_full_cycle  # type: ignore
+except Exception:
+    run_full_cycle = None  # type: ignore
+
 __all__ = ("CLIP_OT_camera_tracking_coordinator",)
 
 
 class CLIP_OT_camera_tracking_coordinator(Operator):
-    """Modaler Ablauf: FIND → DETECT → TRACK; Solve-Test entfernt."""
+    """Modaler Ablauf: FIND → DETECT → TRACK; Solve-Test entfernt.
+
+    Moduswahl über Scene['kc_coord_mode']:
+      - 'classic' (Default): alter Modal-Flow FIND→DETECT→TRACK
+      - 'orchestrator': neuer, kompakter STRM-basierten Ablauf (einmalig)
+    """
 
     bl_idname = "clip.camera_tracking_coordinator"
     bl_label = "Camera Tracking Coordinator"
@@ -51,7 +62,35 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
             self.report({'WARNING' if cancel else 'INFO'}, msg)
         return {'CANCELLED' if cancel else 'FINISHED'}
 
+    def _run_orchestrator_once(self, context):
+        scn = context.scene
+        if run_full_cycle is None:
+            return self._finish(context, "Orchestrator nicht verfügbar", cancel=True)
+        try:
+            # Optional: Bootstrap für saubere Defaults
+            try:
+                bpy.ops.clip.bootstrap_cycle()
+            except Exception:
+                if CLIP_OT_bootstrap_cycle is not None:
+                    try:
+                        bpy.utils.register_class(CLIP_OT_bootstrap_cycle)
+                    except Exception:
+                        pass
+                    CLIP_OT_bootstrap_cycle().execute(context)
+            # Orchestrator ausführen (synchron)
+            res = run_full_cycle(context, tiles=(4, 6), markers_total=int(scn.get("marker_target", 250)))
+            scn["kc_last_orchestrator"] = res
+            self.report({'INFO'}, "Orchestrator abgeschlossen")
+        except Exception as exc:
+            return self._finish(context, f"Orchestrator-Fehler: {exc}", cancel=True)
+        return {'FINISHED'}
+
     def execute(self, context):
+        # Moduswahl: orchestrator (neuer Ablauf) oder classic (bestehender Modal-Flow)
+        mode = str(context.scene.get("kc_coord_mode", "classic")).lower()
+        if mode == "orchestrator":
+            return self._run_orchestrator_once(context)
+
         # 1) Bootstrap immer zuerst ausführen
         try:
             bpy.ops.clip.bootstrap_cycle()
