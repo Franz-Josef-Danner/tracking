@@ -24,14 +24,43 @@ def _get_scene_focal_prefs(context):
     return use_auto, focal_val
 
 
+def _get_focal_value(cam) -> Optional[float]:
+    for name in ("focal_length", "focal", "lens"):
+        try:
+            v = getattr(cam, name)
+        except Exception:
+            continue
+        if isinstance(v, (int, float)) and v > 0:
+            return float(v)
+    return None
+
+
+def _set_focal_value(cam, val: float) -> Optional[str]:
+    for name in ("focal_length", "focal", "lens"):
+        if hasattr(cam, name):
+            try:
+                setattr(cam, float(val))
+                return name
+            except Exception:
+                # falls ein Name nicht setzbar ist → nächsten probieren
+                continue
+    return None
+
+
 def _enforce_focal_override(context, focal_val: float):
-    clip, cam = _get_clip_and_camera(context)
+    """Setzt die Brennweite exakt auf focal_val. Keine Änderung an Refine-Flags."""
+    clip = getattr(context.space_data, "clip", None)
+    cam = getattr(getattr(clip, "tracking", None), "camera", None) if clip else None
     if not cam:
         return None
-    name = _set_focal_value(cam, focal_val)
-    if name:
-        print(f"[SolveTest] enforce focal {focal_val:.6f} via {name}")
-    return name
+    try:
+        name = _set_focal_value(cam, focal_val)
+        if name:
+            print(f"[SolveTest] enforce focal {focal_val:.6f} via {name}")
+        return name
+    except Exception as ex:
+        print(f"[SolveTest] enforce focal error: {ex}")
+        return None
 
 
 def _get_distortion_model(ts) -> Optional[str]:
@@ -361,14 +390,19 @@ class CLIP_OT_solve_test(Operator):
                 print("[SolveTest] PASS1 (refine ALL)")
             # Wenn fix: sofort auf Vorgabewert setzen (für beide Pässe)
             if not use_auto and focal_val > 0:
-                _enforce_focal_override(context, focal_val)
+                try:
+                    _enforce_focal_override(context, focal_val)
+                except Exception as ex:
+                    print(f"[SolveTest] enforce focal (INIT) error: {ex}")
             self._state = "SOLVE"
             return {"RUNNING_MODAL"}
 
         if self._state == "SOLVE":
-            # falls fix: vor Solve sicherstellen
             if not use_auto and focal_val > 0:
-                _enforce_focal_override(context, focal_val)
+                try:
+                    _enforce_focal_override(context, focal_val)
+                except Exception as ex:
+                    print(f"[SolveTest] enforce focal (SOLVE) error: {ex}")
             try:
                 solve_camera_only(context)
             except Exception:
