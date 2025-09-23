@@ -154,13 +154,46 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                 pass
             # ...existing code...
 
-        # PHASE: REFINE_WAIT – warte auf Flags aus refine_solve_O
+        # PHASE: REFINE_WAIT – einzige Validierung: avg_error > error_track → weiter
         if self.phase == "REFINE_WAIT":
             try:
                 print(f"[Coord] REFINE_WAIT flags active={scn.get('tco_refine_active')} done={scn.get('tco_refine_done')} avg={scn.get('tco_refine_avg_error')}")
             except Exception:
                 pass
-            # ...existing code...
+            if bool(scn.get("tco_refine_active", False)) and not bool(scn.get("tco_refine_done", False)):
+                return {'RUNNING_MODAL'}
+            if bool(scn.get("tco_refine_done", False)):
+                ae_ref = scn.get("tco_refine_avg_error", None)
+                try:
+                    thr_scene = float(scn.get("error_track", 2.0))
+                except Exception:
+                    thr_scene = 2.0
+                # Flags bereinigen
+                for k in ("tco_refine_active", "tco_refine_done", "tco_reduce_executed"):
+                    try:
+                        del scn[k]
+                    except Exception:
+                        pass
+                # Einzige Validierung: avg_error > error_track → solve_test, sonst beenden
+                try:
+                    ae_val = float(ae_ref) if ae_ref is not None else None
+                except Exception:
+                    ae_val = None
+                try:
+                    print(f"[Coord] refine check: ae_ref={ae_val} thr={thr_scene}")
+                except Exception:
+                    pass
+                if (ae_val is not None) and (ae_val > thr_scene):
+                    try:
+                        bpy.ops.clip.solve_test('INVOKE_DEFAULT')
+                        self.phase = "SOLVE_TEST_WAIT"
+                        return {'RUNNING_MODAL'}
+                    except Exception as exc:
+                        self.report({'WARNING'}, f"Solve-Test konnte nicht gestartet werden: {exc}")
+                        self.phase = "FIND"
+                        return {'RUNNING_MODAL'}
+                return self._finish(context, "Refine-Solve abgeschlossen – Coordinator beendet.")
+            return {'RUNNING_MODAL'}
 
         # PHASE: SOLVE_TEST_WAIT – warte auf Ende des Model-Wechsels und dann zurück zu FIND
         if self.phase == "SOLVE_TEST_WAIT":
@@ -168,7 +201,11 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                 print(f"[Coord] SOLVE_TEST_WAIT flags active={scn.get('tco_solve_test_active')} restart={scn.get('tco_restart_find')}")
             except Exception:
                 pass
-            # ...existing code...
+            if bool(scn.get("tco_solve_test_active", False)):
+                return {'RUNNING_MODAL'}
+            # Model-Wechsel abgeschlossen → zurück zu FIND
+            self.phase = "FIND"
+            return {'RUNNING_MODAL'}
 
         # PHASE 2: DETECT
         if self.phase == "DETECT":
