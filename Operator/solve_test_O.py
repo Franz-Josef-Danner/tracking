@@ -1,28 +1,66 @@
 import bpy
 import time
 from bpy.types import Operator
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 from ..Helper.solve_camera import solve_camera_only
 from ..Helper.reduce_error_tracks import get_solve_average_error, run_reduce_error_tracks
 from ..Helper.find_max_marker_frame import run_find_max_marker_frame
 
-DISTORTION_MODELS: List[str] = ["POLYNOMIAL", "DIVISION", "BROWN"]  # NUKE ausgelassen
+ALLOWED_MODELS: Tuple[str, ...] = ("POLYNOMIAL", "DIVISION", "BROWN")
 
 
 def _get_clip_and_camera(context):
-    clip = (
-        getattr(context, "edit_movieclip", None)
-        or getattr(getattr(context, "space_data", None), "clip", None)
-        or getattr(bpy.context, "edit_movieclip", None)
-    )
-    if not clip:
-        try:
-            clip = bpy.data.movieclips[0]
-        except Exception:
-            clip = None
-    cam = clip.tracking.camera if clip and getattr(clip, "tracking", None) else None
+    # robustes Holen von Clip und Camera aus dem CLIP-Editor
+    clip = getattr(context.space_data, "clip", None)
+    cam = getattr(getattr(getattr(clip, "tracking", None), "camera", None), "", None)
+    # camera direkt aus tracking
+    cam = getattr(getattr(clip, "tracking", None), "camera", None) if clip else None
     return clip, cam
+
+
+def _get_distortion_model(ts) -> Optional[str]:
+    for name in ("distortion_model", "distortion"):
+        if hasattr(ts, name):
+            try:
+                v = getattr(ts, name)
+                if isinstance(v, str) and v:
+                    return v
+            except Exception:
+                pass
+    return None
+
+
+def _set_distortion_model(ts, value: str) -> Optional[str]:
+    for name in ("distortion_model", "distortion"):
+        if hasattr(ts, name):
+            try:
+                setattr(ts, name, value)
+                return name
+            except Exception:
+                continue
+    return None
+
+
+def _cycle_distortion_model(context) -> Tuple[Optional[str], Optional[str]]:
+    """Schaltet das Distortion-Model auf das nächste in ALLOWED_MODELS.
+    Gibt (previous, next) zurück oder (None, None) bei Fehler."""
+    clip, _ = _get_clip_and_camera(context)
+    ts = getattr(getattr(clip, "tracking", None), "settings", None) if clip else None
+    if not ts:
+        return (None, None)
+    cur = _get_distortion_model(ts)
+    if cur not in ALLOWED_MODELS:
+        # Unbekanntes Modell → auf erstes erlaubtes setzen
+        nxt = ALLOWED_MODELS[0]
+        name = _set_distortion_model(ts, nxt)
+        print(f"[SolveTest] model_switch {cur} -> {nxt} via {name} (fallback)")
+        return (cur, nxt)
+    i = ALLOWED_MODELS.index(cur)
+    nxt = ALLOWED_MODELS[(i + 1) % len(ALLOWED_MODELS)]
+    name = _set_distortion_model(ts, nxt)
+    print(f"[SolveTest] model_switch {cur} -> {nxt} via {name}")
+    return (cur, nxt)
 
 
 def _next_model(current: str) -> str:
@@ -337,21 +375,32 @@ class CLIP_OT_solve_test(Operator):
             return {"RUNNING_MODAL"}
 
         if self._state == "FINDMAX":
+            # Max-Marker suchen
             try:
                 self._find_result = run_find_max_marker_frame(context)
             except Exception as ex:
-                self._find_result = {"status": "ERROR", "reason": str(ex)}
-            status = str((self._find_result or {}).get("status", "")).upper()
+                self._find_result = {"status": "ERROR", "error": str(ex)}
+            status = (self._find_result or {}).get("status")
             print(f"[SolveTest] find_max status={status} result={self._find_result}")
             if status == "FOUND":
-                # Flag setzen und Coordinator zu FIND zurückschicken
-                return self._finish(context, {"status": "RESTART_FIND", "avg_error": self._ae, "restart_find": True})
-            # nicht gefunden → zum nächsten Pass / Loop
+                prev, nxt = _cycle_distortion_model(context)
+                payload = {
+                    "status": "MODEL_SWITCH",
+                    "avg_error": self._ae,
+                    "previous_model": prev,
+                    "next_model": nxt,
+                    "restart_find": True,
+                    "find_max": self._find_result,
+                }
+                return self._finish(context, payload)
+            # nichts gefunden → nächster Schritt
             if self._pass == 0:
+                # weiter zu Pass 1 (alle Refines an)
                 self._pass = 1
                 self._state = "INIT"
                 return {"RUNNING_MODAL"}
             else:
+                # nach Pass 1 wieder von vorne (Pass 0)
                 self._pass = 0
                 self._loops += 1
                 self._state = "INIT"
