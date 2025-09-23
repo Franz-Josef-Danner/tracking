@@ -20,6 +20,8 @@ from ..Helper.cleanup_pass import periodic_cleanup
 # Neu: Presets & Zielscore
 from ..Helper.presets import load_preset, save_preset, write_presets
 from ..Helper.telemetry import compute_target_score
+# Limits erneut anwenden nach Preset
+from ..Helper.init_params import enforce_limits
 
 
 def _clip_size(clip: Any) -> tuple[int, int]:
@@ -119,6 +121,38 @@ def _roi_signature(clip: Any, roi_info: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _sanitize_detect_profile(profile: dict | None) -> dict:
+    """Erzwinge gültige Typen/Werte, ersetze None durch Defaults."""
+    p = dict(profile or {})
+    def _coerce(val, default):
+        try:
+            if isinstance(default, float):
+                return float(val)
+            if isinstance(default, int):
+                return int(val)
+            if isinstance(default, bool):
+                return bool(val)
+            return val if val is not None else default
+        except Exception:
+            return default
+    thr = _coerce(p.get("threshold", None), 1e-3)
+    thr = max(1e-5, min(1e-2, float(thr)))
+    levels = int(max(1, min(3, _coerce(p.get("levels", None), 1))))
+    edge = bool(_coerce(p.get("edge_suppr", None), False))
+    maxf = int(max(100, min(5000, _coerce(p.get("max_features", None), 500))))
+    mindf = float(max(2.0, min(4.0, _coerce(p.get("min_distance_factor", None), 2.5))))
+    nmsf = float(max(0.5, min(2.0, _coerce(p.get("nms_window_factor", None), 1.0))))
+    p.update({
+        "threshold": float(thr),
+        "levels": int(levels),
+        "edge_suppr": bool(edge),
+        "max_features": int(maxf),
+        "min_distance_factor": float(mindf),
+        "nms_window_factor": float(nmsf),
+    })
+    return p
+
+
 def run_autotrack(context, clip) -> dict:
     """
     Dünne, lauffähige Orchestrierung des Minimalpfads:
@@ -160,15 +194,19 @@ def run_autotrack(context, clip) -> dict:
     # Evtl. Preset anwenden (teilweise)
     if isinstance(preset, dict):
         params = preset.get("params", preset)
-        pattern = int(params.get("pattern", pattern))
-        alpha = int(params.get("alpha", alpha))
-        search = int(params.get("search", search))
+        pattern = int(params.get("pattern", pattern) or pattern)
+        alpha = int(params.get("alpha", alpha) or alpha)
+        search = int(params.get("search", search) or search)
+    # Nach Preset-Anwendung Grenzwerte sicherstellen
+    pattern, alpha, search = enforce_limits(pattern, alpha, width, height)
 
     # Channel-Selektion (kurz)
     channel = select_channel(roi_id, pattern, alpha)
     if isinstance(preset, dict):
         params = preset.get("params", preset)
-        channel = str(params.get("channel", channel))
+        ch = params.get("channel", channel)
+        channel = str(ch) if ch else "Y"
+    channel = channel or "Y"
 
     # Detect-Profil via Wrapper
     profile = autotune_detect(roi_id, roi_info={"texture": texture, "motion": motion}, kpis={"texture": texture})
@@ -180,6 +218,8 @@ def run_autotrack(context, clip) -> dict:
             if k in params:
                 p2[k] = params[k]
         profile = p2
+    # Profil sanity check
+    profile = _sanitize_detect_profile(profile)
 
     # Zeitbudget für Seeding (z. B. 50 ms oder 2x Marker-Frame in ms)
     seeding_budget_ms = int(getattr(scn, "seeding_budget_ms", 50)) if scn else 50
