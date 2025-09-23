@@ -173,18 +173,23 @@ def run_detect_basic(
 
     scn[_LOCK_KEY] = True  # <-- WICHTIG: eigene Zeile!
 
+
     try:
         clip = _get_movieclip(context)
+        print(f"[DETECT] Starte run_detect_basic auf Frame {scn.frame_current}")
         if not clip:
+            print("[DETECT] Kein MovieClip gefunden!")
             return {"status": "FAILED", "reason": "no_movieclip"}
 
         if start_frame is not None:
             try:
                 scn.frame_set(int(start_frame))
-            except Exception:
-                pass
+                print(f"[DETECT] Setze Frame auf {start_frame}")
+            except Exception as exc:
+                print(f"[DETECT] Fehler beim Setzen des Start-Frames: {exc}")
 
         tracking = clip.tracking
+        settings = tracking.settings
 
         # Defaults/Persistenz
         width = getattr(clip, "size", (0, 0))[0]
@@ -204,8 +209,11 @@ def run_detect_basic(
 
         # Placement normalisieren (RNA-Enum erwartet 'FRAME' | 'INSIDE_GPENCIL' | 'OUTSIDE_GPENCIL')
         p = (placement or "FRAME").upper()
-        _log(f"[Detect] frame={int(scn.frame_current)} "
-             f"threshold={thr:.6f} margin_px={int(margin_px)} min_distance_px={int(min_distance_px)}")
+        print(f"[DETECT] Parameter: threshold={thr:.6f} margin_px={int(margin_px)} min_distance_px={int(min_distance_px)} placement={p}")
+        # Marker vor Detect
+        if clip:
+            print(f"[DETECT] Marker vor Detect: {sum(len(t.markers) for t in clip.tracking.tracks)}")
+            print(f"[DETECT] Marker pro Frame vor Detect: " + ", ".join([f"f{f}:{sum(1 for t in clip.tracking.tracks if t.markers.find_frame(f))}" for f in range(int(scn.frame_start), int(scn.frame_end)+1)]))
 
         pre_ptrs, new_count = perform_marker_detection(
             clip=clip,
@@ -215,6 +223,30 @@ def run_detect_basic(
             margin_px=margin_px,
             min_distance_px=min_distance_px,
         )
+        # Marker nach Detect
+        if clip:
+            print(f"[DETECT] Marker nach Detect: {sum(len(t.markers) for t in clip.tracking.tracks)} (neu: {new_count})")
+            print(f"[DETECT] Marker pro Frame nach Detect: " + ", ".join([f"f{f}:{sum(1 for t in clip.tracking.tracks if t.markers.find_frame(f))}" for f in range(int(scn.frame_start), int(scn.frame_end)+1)]))
+
+        # --- Persistente Veröffentlichung aller effektiv genutzten Parameter ---
+        try:
+            s = settings
+            scn["kc_detect_threshold"] = float(thr)
+            scn["kc_detect_margin_px"] = int(margin_px)
+            scn["kc_detect_min_distance_px"] = int(min_distance_px)
+            scn["kc_detect_pattern_size"] = int(getattr(s, "default_pattern_size", 0))
+            scn["kc_detect_search_size"] = int(getattr(s, "default_search_size", 0))
+            # Einheitliche Key-Benennung für nachgelagerte Helfer (Multi, Distanze, ...)
+            scn["kc_min_distance_effective"] = int(min_distance_px)
+            _log(
+                f"[Detect] publish: thr={scn['kc_detect_threshold']:.6f} "
+                f"margin={scn['kc_detect_margin_px']} "
+                f"min_dist={scn['kc_detect_min_distance_px']} "
+                f"pattern={scn['kc_detect_pattern_size']} "
+                f"search={scn['kc_detect_search_size']}"
+            )
+        except Exception:
+            pass
 
         # Optionale Selektion neu erzeugter Tracks/Marker (für Downstream-Annahmen)
         want_select = True if select is None else bool(select)
@@ -252,6 +284,8 @@ def run_detect_basic(
             "threshold": float(thr),
             "margin_px": int(margin_px),
             "min_distance_px": int(min_distance_px),
+            "pattern_size": int(getattr(settings, "default_pattern_size", 0)),
+            "search_size": int(getattr(settings, "default_search_size", 0)),
             "placement": p,
             # Debug/Transparenz:
             "repeat_count": int(repeat_count or 0),

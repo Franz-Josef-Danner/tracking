@@ -17,6 +17,20 @@ else:
 
 __all__ = ["run_marker_spike_filter_cycle"]
 
+# Debugging (stumm, außer wenn Szene-Flag gesetzt)
+def _dbg_enabled() -> bool:
+    try:
+        scn = bpy.context.scene
+        return bool(scn and scn.get("tco_debug_spike", False))
+    except Exception:
+        return False
+
+def _log(msg: str) -> None:
+    if _dbg_enabled():
+        try:
+            print(f"[Spike] {msg}")
+        except Exception:
+            pass
 
 # ---------------------------------------------------------------------------
 # Interna / Utilities
@@ -237,6 +251,8 @@ def run_marker_spike_filter_cycle(
     act = str(action or "DELETE").upper().strip()
     key = "deleted" if act == "DELETE" else ("muted" if act == "MUTE" else "selected")
 
+    _log(f"start thr={thr:.3f} action={act}")
+
     # Gesamtsumme der betroffenen Marker über alle Durchläufe
     total_affected = 0
 
@@ -254,9 +270,11 @@ def run_marker_spike_filter_cycle(
                 total_affected += int(getattr(affected, "__int__", lambda: 0)())
             except Exception:
                 pass
+        _log(f"iter={iteration} affected={int(affected or 0)} total={total_affected}")
 
         # Wenn keine Marker entfernt wurden, gibt es keinen Grund weiterzumachen
         if not affected or int(affected) <= 0:
+            _log("no more affected → break")
             break
 
         # 2) Prüfen, ob es noch Frames mit übermäßig vielen aktiven Markern gibt
@@ -281,10 +299,11 @@ def run_marker_spike_filter_cycle(
                         marker_frame_value = float(val)
                 except Exception:
                     pass
+        _log(f"marker_frame={marker_frame_value:.3f}")
 
         # Wenn kein valider Marker‑Frame gesetzt ist, abbrechen
         if marker_frame_value <= 0.0 or clip is None:
-            # Es gibt keine zuverlässige Grenze → Schleife beenden
+            _log("no valid marker_frame or clip → stop loop")
             break
 
         # Zähle aktive Marker pro Frame
@@ -310,6 +329,11 @@ def run_marker_spike_filter_cycle(
 
         # Erlaubte Höchstgrenze
         threshold_limit = marker_frame_value * 1.5
+        max_count = 0
+        try:
+            max_count = max(frame_counts.values()) if frame_counts else 0
+        except Exception:
+            max_count = 0
 
         # Prüfen, ob mindestens ein Frame die Höchstgrenze überschreitet
         too_many = False
@@ -321,13 +345,14 @@ def run_marker_spike_filter_cycle(
             except Exception:
                 # Bei Fehlern lieber abbrechen
                 break
+        _log(f"limit={threshold_limit:.2f} max_frame_count={max_count} too_many={too_many}")
 
         # Wenn keine Frames die Grenze überschreiten → Schleife beenden
         if not too_many:
+            _log("within limit → break loop")
             break
 
-        # Ansonsten wird die Schleife fortgesetzt und der Marker‑Filter erneut angewendet
-        # Dadurch können weitere Ausreißer entfernt werden
+        # Ansonsten wird die Schleife fortgesetzt
 
     # 3) Segment-Cleanup (optional via Flag) – wird einmal nach allen Durchläufen ausgeführt
     cleaned_segments = 0
@@ -356,6 +381,7 @@ def run_marker_spike_filter_cycle(
                 cleaned_markers  = int(res.get("markers_removed", 0) or 0)
         except Exception:
             pass
+    _log(f"done total_affected={total_affected} cleaned_segments={cleaned_segments} cleaned_markers={cleaned_markers}")
 
     return {
         "status": "OK",

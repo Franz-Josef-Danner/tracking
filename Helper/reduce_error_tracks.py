@@ -22,7 +22,7 @@ except Exception:
         except Exception:
             return -1.0
 
-__all__ = ("run_reduce_error_tracks", "get_avg_reprojection_error")
+__all__ = ("run_reduce_error_tracks", "get_avg_reprojection_error", "wait_for_avg_reprojection_error")
 
 
 def _name(tr):
@@ -181,7 +181,12 @@ def run_reduce_error_tracks(
         }
     clip = _resolve_clip(context)
     trk = getattr(clip, "tracking", None) if clip else None
-    tracks = list(getattr(trk, "tracks", [])) if trk else []
+    # Kandidaten aus aktivem Objekt bevorzugen (Operator arbeitet auf active object)
+    try:
+        tob = trk.objects.active if trk and getattr(trk, "objects", None) else None
+    except Exception:
+        tob = None
+    tracks = list(getattr(tob, "tracks", [])) if tob else list(getattr(trk, "tracks", []))
 
     cand: List[Tuple[str, float]] = []
     for t in tracks:
@@ -246,16 +251,11 @@ def run_reduce_error_tracks(
     elif use_clean_tracks:
         # — Variante: targeted DELETE via bpy.ops.clip.clean_tracks (ein Aufruf, kontext-sicher)
         # Ziel: genau k Top-Error-Tracks treffen, ohne Container mehrfach umzubauen.
-        # 1) Schwelle zwischen k und k+1 (oder knapp unter err_k) berechnen
+        # 1) Schwelle knapp unter err_k berechnen (robust gegen Operator-Metrik)
         errs_sorted = [e for (_n, e) in to_process]  # top-k errors (desc)
         err_k = float(errs_sorted[-1])  # kleinster der Top-K
-        has_kp1 = len(cand) > k
-        if has_kp1:
-            err_kp1 = float(cand[k][1])  # erster nach den Top-K
-            thr_clean = 0.5 * (err_k + err_kp1)  # Midpoint trennt exakt K vs. K+1 (bei !=)
-        else:
-            thr_clean = err_k - 1e-6  # knapp darunter → trifft nur Top-K
-        print(f"[ReduceDBG] clean_tracks threshold -> {thr_clean:.6f} (err_k={err_k:.6f}{' err_k+1='+str(err_kp1) if has_kp1 else ''})")
+        thr_clean = max(0.0, err_k - 1e-6)
+        print(f"[ReduceDBG] clean_tracks threshold -> {thr_clean:.6f} (err_k={err_k:.6f})")
         # 2) Operator im CLIP-Override aufrufen
         try:
             override = _ensure_clip_context(context)
@@ -272,16 +272,75 @@ def run_reduce_error_tracks(
                 bpy.context.view_layer.update()
             except Exception:
                 pass
-            # Alle, die vorab >= thr_clean lagen (d.h. Zielmenge), als gelöscht zählen
             goal_set = {n for (n, e) in cand if e >= thr_clean}
             for name in list(goal_set):
-                still_there = bool(trk.tracks.get(name)) if trk else False
+                still_there = False
+                try:
+                    # Aktivem Objekt den Vorrang geben
+                    if tob and getattr(tob, "tracks", None):
+                        still_there = bool(tob.tracks.get(name))
+                    else:
+                        still_there = bool(trk.tracks.get(name)) if trk else False
+                except Exception:
+                    still_there = False
                 if not still_there:
                     deleted_names.append(name)
             count = len(deleted_names)
         except Exception as _chk_exc:
             print(f"[ReduceDBG] post-clean_tracks check failed: {_chk_exc}")
-        # Hinweis: Bei gleichen Fehlerwerten um err_k kann es >k werden (Tie-Case).
+        # Fallback: wenn der Operator nichts gelöscht hat, direkter delete_track auf Zielmenge
+        if count == 0:
+            print("[ReduceDBG] clean_tracks deleted=0 -> fallback to direct delete_track")
+            try:
+                # Auswahl vorbereiten
+                try:
+                    if tob and getattr(tob, "tracks", None):
+                        for t in tob.tracks:
+                            try:
+                                t.select = False
+                            except Exception:
+                                pass
+                        for name in list(goal_set):
+                            tt = tob.tracks.get(name)
+                            if tt:
+                                tt.select = True
+                    else:
+                        for t in tracks:
+                            try:
+                                t.select = False
+                            except Exception:
+                                pass
+                        for t in tracks:
+                            if t.name in goal_set:
+                                try:
+                                    t.select = True
+                                except Exception:
+                                    pass
+                except Exception as _sel_exc:
+                    print(f"[ReduceDBG] selection prep (fallback) failed: {_sel_exc}")
+                # Operator löschen
+                override = _ensure_clip_context(context)
+                try:
+                    if override:
+                        with bpy.context.temp_override(**override):
+                            bpy.ops.clip.delete_track()
+                    else:
+                        bpy.ops.clip.delete_track()
+                except Exception as _op2_exc:
+                    print(f"[ReduceDBG] operator delete_track (fallback) failed: {_op2_exc}")
+                # prüfen
+                try:
+                    if tob and getattr(tob, "tracks", None):
+                        remaining = [n for n in list(goal_set) if tob.tracks.get(n)]
+                    else:
+                        remaining = [n for n in list(goal_set) if trk and trk.tracks.get(n)]
+                    deleted_names.extend([n for n in list(goal_set) if n not in remaining])
+                    count = len(deleted_names)
+                except Exception:
+                    pass
+            except Exception as _fb_exc:
+                print(f"[ReduceDBG] fallback delete_track sequence failed (outer): {_fb_exc}")
+        # Hinweis: Bei gleichen Fehlerwerten kann es >k werden (Tie-Case).
         if count > k:
             print(f"[ReduceDBG] NOTE: deleted={count} > k={k} (ties at threshold)")
     else:
@@ -369,32 +428,121 @@ def run_reduce_error_tracks(
     }
 
 
-def get_avg_reprojection_error(context: bpy.types.Context) -> Optional[float]:
-    clip = _resolve_clip(context)
-    if not clip:
+def get_avg_reprojection_error(context):
+    """
+    Durchschnittlicher Reprojektion-Error nur über Frames mit vorhandener Kamera.
+    Gibt None zurück, wenn keine gültige Rekonstruktion oder keine Punkte.
+    """
+    clip = getattr(context, "edit_movieclip", None)
+    if not clip or not getattr(clip, "tracking", None):
         return None
-    trk = getattr(clip, "tracking", None)
-    obj = getattr(getattr(trk, "objects", None), "active", None) if trk else None
+    obj   = clip.tracking.objects.active if clip.tracking.objects else None
+    recon = getattr(obj, "reconstruction", None)
+    if not recon or not getattr(recon, "is_valid", False):
+        return None
+
+    cam_frames = set()
     try:
-        if obj and obj.reconstruction and getattr(obj.reconstruction, "is_valid", False):
-            ae = float(getattr(obj.reconstruction, "average_error", float("nan")))
-            if ae == ae and ae > 0.0:
-                return ae
-    except Exception:
-        pass
-    try:
-        if not obj:
-            return None
-        vals: List[float] = []
-        for t in obj.tracks:
+        for cam in getattr(recon, "cameras", []):
             try:
-                v = float(error_value(t))
-                if v >= 0.0:
-                    vals.append(v)
+                cam_frames.add(int(getattr(cam, "frame", -1)))
             except Exception:
                 pass
-        if vals:
-            return sum(vals) / len(vals)
+    except Exception:
+        return None
+    if not cam_frames:
+        return None
+
+    fmin, fmax = min(cam_frames), max(cam_frames)
+    total_err = 0.0
+    total_cnt = 0
+
+    try:
+        tracks = clip.tracking.tracks
+        for tr in tracks:
+            for mk in getattr(tr, "markers", []):
+                f = int(getattr(mk, "frame", -1))
+                if f < fmin or f > fmax or f not in cam_frames:
+                    continue
+                err = getattr(mk, "reprojection_error", None)
+                if err is None:
+                    continue
+                total_err += float(err)
+                total_cnt += 1
+    except Exception:
+        return None
+
+    if total_cnt == 0:
+        return None
+    return total_err / total_cnt
+
+
+def wait_for_avg_reprojection_error(context, timeout: Optional[float] = None, interval: float = 0.05) -> Optional[float]:
+    """Wartet, bis get_avg_reprojection_error(context) einen numerischen Wert liefert (inkl. 0.0).
+    - timeout=None: wartet unbegrenzt
+    - timeout in Sekunden: gibt None zurück, wenn kein Wert innerhalb der Zeit verfügbar
+    """
+    t0 = time.perf_counter()
+    while True:
+        try:
+            try:
+                context.view_layer.update()
+            except Exception:
+                pass
+            val = get_avg_reprojection_error(context)
+            if isinstance(val, (int, float)):
+                return float(val)
+        except Exception:
+            pass
+        if timeout is not None and (time.perf_counter() - t0) >= timeout:
+            return None
+        time.sleep(max(0.0, float(interval)))
+
+
+def get_solve_average_error(context) -> Optional[float]:
+    """Liest den von Blender gemeldeten Solve-Avg-Error aus der Reconstruction,
+    falls verfügbar. Fallback auf get_avg_reprojection_error.
+    """
+    clip = getattr(context, "edit_movieclip", None)
+    try:
+        if not clip:
+            clip = getattr(bpy.context, "edit_movieclip", None)
     except Exception:
         pass
-    return None
+    if not clip or not getattr(clip, "tracking", None):
+        return None
+    try:
+        obj = clip.tracking.objects.active if clip.tracking.objects else None
+        recon = getattr(obj, "reconstruction", None)
+        if not recon or not getattr(recon, "is_valid", False):
+            return None
+        for attr in ("error", "average_error", "average_reprojection_error"):
+            try:
+                val = getattr(recon, attr, None)
+                if isinstance(val, (int, float)) and float(val) >= 0.0:
+                    return float(val)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    # Fallback: eigenes Reprojektion-Mittel berechnen
+    return get_avg_reprojection_error(context)
+
+
+def wait_for_solve_average_error(context, timeout: Optional[float] = None, interval: float = 0.05) -> Optional[float]:
+    """Wie wait_for_avg_reprojection_error, aber nutzt bevorzugt Reconstruction.error."""
+    t0 = time.perf_counter()
+    while True:
+        try:
+            try:
+                context.view_layer.update()
+            except Exception:
+                pass
+            val = get_solve_average_error(context)
+            if isinstance(val, (int, float)):
+                return float(val)
+        except Exception:
+            pass
+        if timeout is not None and (time.perf_counter() - t0) >= timeout:
+            return None
+        time.sleep(max(0.0, float(interval)))

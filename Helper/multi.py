@@ -1,13 +1,22 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-"""Multi-pass helper utilities."""
+"""Multi-pass helper utilities — STRICT detect-param reuse."""
 
 from __future__ import annotations
 import bpy
-import math
 from typing import Iterable, Set, Dict, Any, Optional, Tuple, List
 
 __all__ = ["run_multi_pass"]
+
+# ---------------------------------------------------------------------------
+# Lightweight logging (no side-effects). Always safe-guarded.
+# ---------------------------------------------------------------------------
+def _log(msg: str) -> None:
+    try:
+        print(msg)
+    except Exception:
+        # Never fail due to logging
+        pass
 
 # ------------------------------------------------------------
 # Hilfen (lokal, keine Abhängigkeit vom Coordinator/Distanze)
@@ -151,11 +160,11 @@ def _build_scales_for_repeat(repeat_count: Optional[int]) -> List[float]:
     if not repeat_count or repeat_count < 6:
         return []
     base = [0.5, 2.0]
-    if repeat_count >= 7:
+    if repeat_count >= 12:
         base.append(3.0)
-    if repeat_count >= 8:
+    if repeat_count >= 18:
         base.append(4.0)
-    if repeat_count >= 9:
+    if repeat_count >= 24:
         base.append(5.0)
     return base
 
@@ -173,7 +182,16 @@ def _run_multi_core(
     """
     Führt zusätzliche Detect-Durchläufe mit identischem threshold aus,
     variiert Pattern(- und optional Search-)Size gemäß Wiederholungszähler
-    (count). Sammelt NUR neue Marker relativ zu pre_ptrs und selektiert diese.
+    (count).
+    Log-Punkte:
+      - Clip/Frame/Repeat/Canvasgröße
+      - Quelle und Wert von min_distance_effective
+      - Effektive Detect-Parameter (thr/margin/min_dist/pattern/search)
+      - Per-Scale-Ergebnis (created, eff_pattern_size)
+      - Auswahl-Delta (new_ptrs Count)
+      - Summary (created_per_scale, selected)
+      (Keine funktionalen Änderungen.)
+    Sammelt NUR neue Marker relativ zu pre_ptrs und selektiert diese.
     Rückgabe enthält pro Scale die erzeugte Markeranzahl.
     """
     clip = getattr(context, "edit_movieclip", None) or getattr(getattr(context, "space_data", None), "clip", None)
@@ -186,22 +204,119 @@ def _run_multi_core(
 
     tracking = clip.tracking
     settings = tracking.settings
+
+    scn = getattr(context, "scene", None)
+    try:
+        width, height = getattr(clip, "size", (0, 0))
+    except Exception:
+        width, height = 0, 0
+
+    try:
+        _log(
+            f"[Multi.Core] ENTER clip={getattr(clip,'name','<unnamed>')} "
+            f"size={int(width)}x{int(height)} repeat={int(repeat_count or 0)} "
+            f"detect_threshold_in={float(detect_threshold):.6f} "
+            f"frame={getattr(getattr(context,'scene',None),'frame_current',None)}"
+        )
+    except Exception:
+        pass
+    md_detect = None
+    if scn is not None:
+        md_detect = scn.get("kc_min_distance_effective", None)
+        if md_detect is None:
+            md_detect = scn.get("tco_detect_min_distance", None)
+    if isinstance(md_detect, (int, float)) and float(md_detect) > 0.0:
+        min_dist_effective = int(round(float(md_detect)))
+        md_src = "detect"
+    else:
+        base_min_scene = scn.get("min_distance_base", None) if scn else None
+        min_dist_effective = int(base_min_scene) if base_min_scene is not None else max(8, int(0.05 * max(width, height)))
+        md_src = "fallback"
+    try:
+        frame_val = int(getattr(getattr(context, "scene", None), "frame_current", 0))
+        # vorhandene Info beibehalten, aber um Prefix vereinheitlicht
+        _log(
+            f"[Multi.Core] f={frame_val} thr={float(detect_threshold):.6f} "
+            f"→ min_distance_effective={int(min_dist_effective)} src={md_src}"
+        )
+    except Exception:
+        pass
+
+    # --- Detect-Parameter 1:1 übernehmen (kein Recompute, kein Scaling) ---
+    thr = float(detect_threshold)
+    margin = 0
+    min_dist = 0
+    if scn is not None:
+        try:
+            thr = float(scn.get("kc_detect_threshold", scn.get("last_detection_threshold", thr)))
+        except Exception:
+            thr = float(detect_threshold)
+        try:
+            margin = int(scn.get("kc_detect_margin_px", margin))
+        except Exception:
+            margin = int(margin)
+        try:
+            min_dist = int(scn.get("kc_detect_min_distance_px", scn.get("kc_min_distance_effective", min_dist)))
+        except Exception:
+            min_dist = int(min_dist)
+    if min_dist <= 0:
+        try:
+            width, height = getattr(clip, "size", (0, 0))
+        except Exception:
+            width, height = 0, 0
+        longest = max(int(width or 0), int(height or 0))
+        min_dist = max(8, int(0.025 * longest)) if longest > 0 else 8
+
+    ps = 0
+    ss = 0
+    try:
+        if scn is not None:
+            ps = int(scn.get("kc_detect_pattern_size", 0) or 0)
+            ss = int(scn.get("kc_detect_search_size", 0) or 0)
+        if ps > 0:
+            _set_pattern_size(tracking, ps)
+        if ss > 0:
+            settings.default_search_size = ss
+    except Exception:
+        ps = 0
+        ss = 0
+
+    try:
+        margin = int(scn.get("tco_detect_margin", 0) or scn.get("margin_base", 0))
+    except Exception:
+        margin = 0
+    if margin <= 0 and ss > 0:
+        margin = int(ss)
+
+    min_dist = int(min_dist_effective)
+
     pattern_o = int(getattr(settings, "default_pattern_size", 15))
     search_o  = int(getattr(settings, "default_search_size", 51))
 
-    # Skalen bestimmen (repeat-aware). Wenn repeat_count >= 6, hat diese
-    # Regel Priorität. Andernfalls optional pattern_scales verwenden, sonst
-    # die ursprüngliche 2-Pass-Logik (0.5, 2.0).
-    scales: List[float]
-    rep_scales = _build_scales_for_repeat(repeat_count)
-    if rep_scales:
-        scales = rep_scales
-    elif pattern_scales:
-        scales = [float(s) for s in pattern_scales if s and float(s) > 0.0]
-        if not scales:
-            scales = [0.5, 2.0]
-    else:
-        scales = [0.5, 2.0]
+    # Skalenvarianten: aus Override oder aus Repeat-Count ableiten
+    scales: List[float] = [1.0]
+    try:
+        if pattern_scales is not None:
+            scales = [float(s) for s in pattern_scales if float(s) > 0.0]
+        else:
+            auto = _build_scales_for_repeat(repeat_count)
+            scales = auto if auto else [1.0]
+    except Exception:
+        scales = [1.0]
+    try:
+        _log(f"[Multi.Core] scales={scales} (repeat={int(repeat_count or 0)})")
+    except Exception:
+        pass
+
+    try:
+        _log(
+            f"[Multi.Core] Params reuse (pre-sweep): "
+            f"thr={thr:.6f} margin={int(margin)} min_dist={int(min_dist)} "
+            f"pattern_o={int(pattern_o)} search_o={int(search_o)} "
+            f"scales={scales}"
+        )
+    except Exception:
+        pass
 
     def _sweep(scale: float) -> Tuple[int, int]:
         """
@@ -211,63 +326,54 @@ def _run_multi_core(
         before = {t.as_pointer() for t in tracking.tracks}
         before |= set(pre_ptrs)  # pre_ptrs sicherstellen
         eff = _set_pattern_size(tracking, max(3, int(round(pattern_o * float(scale)))))
-        if adjust_search_with_pattern:
+        # Search size proportional aus Scale ableiten (optional per Flag)
+        try:
+            if adjust_search_with_pattern:
+                settings.default_search_size = max(5, int(round(search_o * float(scale))))
+            else:
+                settings.default_search_size = search_o
+        except Exception:
             try:
-                settings.default_search_size = max(5, eff * 2)
+                settings.default_search_size = search_o
             except Exception:
                 pass
 
-        # --- Margin/MinDist exakt wie in detect.py bestimmen (repeat-aware) ---
-        rc = int(repeat_count or 0)
-        ps = int(eff)  # effektive Pattern-Size dieses Sweeps
+        # Margin/MinDist/Threshold 1:1 aus Detect übernehmen
+        ps = int(eff)
         try:
             ss = int(getattr(settings, "default_search_size", 0))
         except Exception:
             ss = 0
+        _margin = int(margin)
+        _min_dist = int(min_dist)
+        _thr = float(thr)
 
-        # Margin-Staffel je repeat_count (ident zu detect.py)
-        margin = 0
-        if rc >= 26 and ps > 0:
-            margin = ps * 24
-        elif rc >= 21 and ps > 0:
-            margin = ps * 20
-        elif rc >= 16 and ps > 0:
-            margin = ps * 16
-        elif rc >= 11 and ps > 0:
-            margin = ps * 12
-        elif rc >= 6 and ps > 0:
-            margin = ps * 8
-        elif ss > 0:
-            # Fallback analog "match_search_size"
-            margin = ss
-
-        # Min-Distance skaliert wie in detect.py
-        width, height = getattr(clip, "size", (0, 0))
-        base_min_scene = context.scene.get("min_distance_base", None)
-        base_min = int(base_min_scene) if base_min_scene is not None else max(8, int(0.05 * max(width, height)))
-        safe = max(float(detect_threshold) * 1e8, 1e-8)
-        factor = math.log10(safe) / 8.0
-        min_dist = max(1, int(base_min * factor))
-
-        # Debug-Logs: volle Transparenz je Sweep
+        # Debug (bestehende Ausgabe beibehalten, Prefix vereinheitlicht)
         try:
-            print(
-                f"[Multi] f={int(context.scene.frame_current)} "
-                f"scale={scale:.2f} eff_pattern={ps} search={ss} "
-                f"repeat={rc} thr={float(detect_threshold):.3f} "
-                f"→ margin={margin} min_dist={min_dist}"
+            _log(
+                f"[Multi.Core] reuse DETECT: f={int(context.scene.frame_current)} "
+                f"ps={ps} ss={ss} thr={_thr:.6f} margin={_margin} min_dist={_min_dist}"
             )
         except Exception:
             pass
 
+        try:
+            _log(f"[Multi.Sweep] BEGIN scale={scale} eff_ps={ps} ss={ss}")
+        except Exception:
+            pass
+
         _detect_once(
-            threshold=float(detect_threshold),
-            margin=int(margin),
-            min_distance=int(min_dist),
+            threshold=_thr,
+            margin=_margin,
+            min_distance=_min_dist,
             placement="FRAME",
         )
 
         created = [t for t in tracking.tracks if t.as_pointer() not in before]
+        try:
+            _log(f"[Multi.Sweep] END   scale={scale} created={len(created)} eff_ps={eff}")
+        except Exception:
+            pass
         return len(created), eff
 
     # Durchläufe gemäß Skalenliste
@@ -284,13 +390,51 @@ def _run_multi_core(
     except Exception:
         pass
 
+    try:
+        _log(
+            f"[Multi.Core] Sweep summary: created_per_scale={created_per_scale} "
+            f"eff_pattern_sizes={eff_pattern_sizes}"
+        )
+    except Exception:
+        pass
+
     # Nur NEUE (Triplets) selektieren
     new_ptrs = {t.as_pointer() for t in tracking.tracks if t.as_pointer() not in pre_ptrs}
     for t in tracking.tracks:
         t.select = (t.as_pointer() in new_ptrs)
+    try:
+        if new_ptrs:
+            sample = list(new_ptrs)[:5]
+            _log(f"[Multi.Core] new_ptrs_sample(count={len(new_ptrs)}): {sample}")
+    except Exception:
+        pass
+
+    # Telemetrie: Publiziere erneut den MinDist-Wert (keine Änderung, reines Echo)
+    if scn is not None:
+        try:
+            scn["kc_min_distance_effective"] = int(min_dist)
+        except Exception:
+            pass
+
+    try:
+        _log(
+            f"[Multi.Core] Selected new_ptrs={len(new_ptrs)} "
+            f"repeat_count={int(repeat_count or 0)}"
+        )
+    except Exception:
+        pass
 
     try:
         bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
+    except Exception:
+        pass
+
+    created_total = int(sum(created_per_scale.values()))
+    try:
+        _log(
+            f"[Multi.Core] Summary: created_total={created_total} "
+            f"per_scale={created_per_scale} selected={len(new_ptrs)}"
+        )
     except Exception:
         pass
 
@@ -298,12 +442,15 @@ def _run_multi_core(
         "status": "READY",
         "created_low": int(created_per_scale.get(0.5, 0)),
         "created_high": int(created_per_scale.get(2.0, 0)),
+        "created_total": created_total,
         "created_per_scale": created_per_scale,
         "effective_pattern_sizes": eff_pattern_sizes,
         "selected": int(len(new_ptrs)),
         "new_ptrs": new_ptrs,
         "repeat_count": int(repeat_count or 0),
         "scales_used": scales,
+        "min_distance_effective": int(min_dist),
+        "detect_threshold_used": float(thr),
     }
 
 
@@ -322,15 +469,51 @@ def run_multi_pass(context: bpy.types.Context, *, frame: Optional[int] = None, *
         frame = int(getattr(getattr(context, "scene", None), "frame_current", 0))
     frame = int(frame)
 
+    try:
+        w, h = getattr(clip, "size", (0, 0))
+    except Exception:
+        w, h = 0, 0
+    try:
+        _log(
+            f"[Multi] START frame={frame} clip={getattr(clip,'name','<unnamed>')} "
+            f"size={int(w)}x{int(h)} kwargs_keys={list(kwargs.keys())}"
+        )
+    except Exception:
+        pass
+
     pre_selected_ptrs = _snapshot_selected_ptrs(clip, frame)
     pre_all_ptrs = _snapshot_all_ptrs(clip)
+    try:
+        _log(
+            f"[Multi] Snapshot pre: selected={len(pre_selected_ptrs)} "
+            f"all={len(pre_all_ptrs)}"
+        )
+    except Exception:
+        pass
 
     core_res: Dict[str, Any] = {}
     if "_run_multi_core" in globals() and callable(globals()["_run_multi_core"]):
         core_res = globals()["_run_multi_core"](context, frame=frame, **kwargs) or {}
+    try:
+        _log(
+            f"[Multi] Core status={core_res.get('status','?')} "
+            f"created_low={core_res.get('created_low')} "
+            f"created_high={core_res.get('created_high')} "
+            f"created_total={core_res.get('created_total')} "
+            f"selected={core_res.get('selected')}"
+        )
+    except Exception:
+        pass
 
     post_all_ptrs = _snapshot_all_ptrs(clip)
     new_multi_ptrs = list(post_all_ptrs.difference(pre_all_ptrs))
+    try:
+        _log(
+            f"[Multi] Snapshot post: all={len(post_all_ptrs)} "
+            f"delta_new={len(new_multi_ptrs)}"
+        )
+    except Exception:
+        pass
 
     _clear_selection_at_frame(clip, frame)
     _select_ptrs_at_frame(clip, frame, pre_selected_ptrs.union(new_multi_ptrs))
@@ -346,4 +529,12 @@ def run_multi_pass(context: bpy.types.Context, *, frame: Optional[int] = None, *
         "multi_new_ptrs": new_multi_ptrs,
         "restored_selected_ptrs": list(pre_selected_ptrs),
     })
+
+    try:
+        _log(
+            f"[Multi] END frame={frame} status={core_res.get('status')} "
+            f"delta_new={len(new_multi_ptrs)} restored_selected={len(pre_selected_ptrs)}"
+        )
+    except Exception:
+        pass
     return core_res

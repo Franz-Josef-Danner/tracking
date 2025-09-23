@@ -154,7 +154,6 @@ def solve_final_refine(
     Rückgabe:
       float Score des finalen Solves (falls Helper Score liefert, sonst 0.0 als Fallback).
     """
-    from ..Helper.solve_camera import solve_camera_only  # lokal import, falls oben bereits vorhanden kein Thema
 
     if model is None:
         print("[SolveEval][FINAL] Kein Modell übergeben – finaler Refine-Solve wird übersprungen.")
@@ -163,27 +162,46 @@ def solve_final_refine(
     apply_model(model)
     # Spiegel die Flags in die Tracking-Settings (sichtbar im UI)
     _apply_refine_flags(context, focal=True, principal=True, radial=True)
-    with phase_lock("SOLVE_FINAL"), undo_off():
-        t1 = time.perf_counter()
-        # bevorzugt: eigener Voll-Solve-Wrapper; Fallback: solve_camera_only(...)
-        if solve_full is not None:
-            score = solve_full(
-                context,
-                refine_intrinsics_focal_length=True,
-                refine_intrinsics_principal_point=True,
-                refine_intrinsics_radial_distortion=True,
-            )
-        else:
-            # Fallback: direkter Helper-Call; liefert ggf. None → robust auf 0.0 casten
-            score = solve_camera_only(
-                context,
-                refine_intrinsics_focal_length=True,
-                refine_intrinsics_principal_point=True,
-                refine_intrinsics_radial_distortion=True,
-            ) or 0.0
-        dt = time.perf_counter() - t1
-        print(f"[SolveEval][FINAL] {model}: score={score:.6f} dur={dt:.3f}s")
-        return float(score)
+    # Beim FINALEN Refine-Solve soll der avg_error-Gate die Szenen-Variable
+    # `error_track` verwenden. Wir setzen dafür transient ein Scene-Flag,
+    # das der Post-Solve-Hook auswertet.
+    scn = getattr(context, "scene", None) or bpy.context.scene
+    _flag_key = "kc_solve_gate_use_error_track"
+    score = 0.0
+    dt = 0.0
+    try:
+        try:
+            scn[_flag_key] = True
+        except Exception:
+            pass
+        with phase_lock("SOLVE_FINAL"), undo_off():
+            t1 = time.perf_counter()
+            # bevorzugt: eigener Voll-Solve-Wrapper; Fallback: solve_camera_only(...)
+            if solve_full is not None:
+                score = solve_full(
+                    context,
+                    refine_intrinsics_focal_length=True,
+                    refine_intrinsics_principal_point=True,
+                    refine_intrinsics_radial_distortion=True,
+                )
+            else:
+                # Fallback: direkter Helper-Call; liefert ggf. None → robust auf 0.0 casten
+                score = solve_camera_only(
+                    context,
+                    refine_intrinsics_focal_length=True,
+                    refine_intrinsics_principal_point=True,
+                    refine_intrinsics_radial_distortion=True,
+                ) or 0.0
+            dt = time.perf_counter() - t1
+    finally:
+        # Flag sauber entfernen – unabhängig vom Ergebnis
+        try:
+            if scn and _flag_key in scn:
+                del scn[_flag_key]
+        except Exception:
+            pass
+    print(f"[SolveEval][FINAL] {model}: score={score:.6f} dur={dt:.3f}s")
+    return float(score)
 
 # ---------------------------------------------------------------------------
 # Kombi-Wrapper: 3×-Eval + finaler Voll-Solve (alle refine_intrinsics = True)
@@ -248,7 +266,12 @@ from ..Helper.clean_short_segments import clean_short_segments
 from ..Helper.clean_short_tracks import clean_short_tracks
 from ..Helper.split_cleanup import recursive_split_cleanup
 from ..Helper.find_max_marker_frame import run_find_max_marker_frame  # type: ignore
-from ..Helper.solve_camera import solve_camera_only
+from ..Helper.solve_camera import solve_camera_only as _solve_camera_only
+from ..Helper.reduce_error_tracks import (
+    get_avg_reprojection_error,
+    run_reduce_error_tracks,
+)
+from ..Helper.refine_high_error import start_refine_modal
 from ..Helper.solve_eval import (
     SolveConfig,
     SolveMetrics,
@@ -276,7 +299,6 @@ from ..Helper.tracker_settings import apply_tracker_settings
 
 # --- Anzahl/A-Werte/State-Handling ------------------------------------------
 from ..Helper.tracking_state import (
-    orchestrate_on_jump,
     record_bidirectional_result,
     _get_state,          # intern genutzt, um count zu prÃ¼fen
     _ensure_frame_entry, # intern genutzt, um Frame-Eintrag zu holen
@@ -357,6 +379,123 @@ except Exception:
         DETECT_LAST_THRESHOLD_KEY = "last_detection_threshold"  # type: ignore
 
 __all__ = ("CLIP_OT_tracking_coordinator",)
+
+# ---------------------------------------------------------------------------
+# Post-Solve Qualitätscheck (Auto-Reduce & Neustart)
+# Policy:
+#  - Nach JEDEM Solve den avg. Reprojection-Error prüfen.
+#  - Schwellwert: Scene['solve_error_threshold'] oder Default 20.0.
+#  - Wenn Error > Threshold:
+#       • reduce_error_tracks()
+#       • reset_for_new_cycle()
+#       • run_find_low_marker_frame()
+#  - Schutz gegen Endlosschleifen: max. 5 Auto-Reduce-Versuche pro Zyklus.
+#  - Im harten Solve-Eval-Modus (IN_SOLVE_EVAL) kein Eingriff.
+# ---------------------------------------------------------------------------
+_SOLVE_ERR_DEFAULT_THR = 20.0
+
+
+def _schedule_restart_after_refine(context: bpy.types.Context, *, delay: float = 0.5) -> None:
+    """Wartet, bis der modal laufende refine_high_error-Operator fertig ist, dann Reset→FindLow."""
+
+    try:
+        import bpy as _bpy
+
+        scn = context.scene
+
+        def _cb():
+            try:
+                if scn.get("refine_active"):
+                    return 0.25  # weiter pollen
+                try:
+                    reset_for_new_cycle(context, clear_solve_log=False)
+                except Exception:
+                    pass
+                try:
+                    run_find_low_marker_frame(context)
+                except Exception:
+                    pass
+            finally:
+                return None  # Timer beenden
+
+        _bpy.app.timers.register(_cb, first_interval=max(0.05, float(delay)))
+    except Exception as _exc:
+        print(f"[SolveCheck] Timer-Register fehlgeschlagen: {_exc!r}")
+
+
+def solve_camera_only(context, *args, **kwargs):
+    # Invoke original solve
+    res = _solve_camera_only(context, *args, **kwargs)
+    try:
+        # Eval-Modus: strikt read-only → kein Auto-Reduce
+        if IN_SOLVE_EVAL:
+            return res
+
+        scene = getattr(context, "scene", None)
+        if scene is None:
+            print("[SolveCheck] Kein context.scene – Check übersprungen.")
+            return res
+
+        # Kurz auf gültige Reconstruction pollen (max. ~2s)
+        ae = None
+        for _ in range(40):
+            ae = get_avg_reprojection_error(context)
+            if ae is not None and ae > 0.0:
+                break
+            time.sleep(0.05)
+
+        # Gate-Quelle wählen:
+        # - Standard: scene.solve_error_threshold (Default 20.0)
+        # - Finaler Refine-Solve: scene.error_track (px), getriggert über Scene-Flag
+        use_err_track = bool(scene.get("kc_solve_gate_use_error_track", False))
+        if use_err_track:
+            thr = float(getattr(scene, "error_track", 2.0) or 2.0)
+            _thr_src = "scene.error_track"
+        else:
+            thr = float(
+                getattr(scene, "solve_error_threshold", _SOLVE_ERR_DEFAULT_THR)
+                or _SOLVE_ERR_DEFAULT_THR
+            )
+            _thr_src = "scene.solve_error_threshold"
+        # 0.0 ist ebenfalls „invalid“ (Reconstruction noch nicht konsistent)
+        if ae is None or float(ae) <= 0.0:
+            print("[SolveCheck] Keine auswertbare Reconstruction (ae<=0) – refine_high_error + Restart.")
+            try:
+                start_refine_modal(context)  # startet modal; setzt scene['refine_active']=True
+            except Exception as _ex:
+                print(f"[SolveCheck] refine_high_error start failed: {_ex!r}")
+            _schedule_restart_after_refine(context)
+            return res
+
+        print(f"[SolveCheck] avg_error={ae:.6f} thr={thr:.6f} src={_thr_src}")
+        attempts = int(scene.get("kc_solve_attempts", 0) or 0)
+        if ae > thr and attempts < 5:
+            scene["kc_solve_attempts"] = attempts + 1
+            # --- Empfohlener Ablauf: n_delete = max(10, avg_projection_error / error_track)
+            err_track = float(getattr(scene, "error_track", 2.0) or 2.0)
+            n_delete = max(10, int(ae / max(1e-6, err_track)))
+            print(
+                f"[SolveCheck] Über Schwellwert → reduce_error_tracks(max_to_delete={n_delete}) "
+                f"(Formel: max(10, {ae:.3f}/{err_track:.3f})) Pass #{attempts+1}"
+            )
+            run_reduce_error_tracks(context, max_to_delete=int(n_delete))
+            try:
+                reset_for_new_cycle(context, clear_solve_log=False)
+            except Exception:
+                pass
+            try:
+                run_find_low_marker_frame(context)
+            except Exception:
+                pass
+        elif ae > thr:
+            print(
+                "[SolveCheck] Schwellwert überschritten, max. Auto-Reduce-Versuche erreicht – kein Auto-Restart."
+            )
+        else:
+            scene["kc_solve_attempts"] = 0
+    except Exception as ex:
+        print(f"[SolveCheck] Ausnahme im Post-Solve-Hook: {ex!r}")
+    return res
 
 # --- Orchestrator-Phasen ----------------------------------------------------
 PH_FIND_LOW   = "FIND_LOW"
@@ -581,17 +720,6 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     last_detect_min_distance: int | None = None
     last_detect_margin: int | None = None
 
-    # Hinweis: Für die Stufungsformeln wird ab jetzt NUR noch der Count aus
-    # Helper/count.py verwendet (post-Cleanup). Wir persistieren ihn über
-    # scene["tco_count_for_formulas"] und prüfen Stagnation über den
-    # zuletzt verwendeten Count scene["tco_last_count_for_formulas"].
-
-    # --- Detect-Wrapper: margin/min_distance strikt aus marker_helper_main ---
-    # Formeln:
-    #  - Threshold:      f_thr = max((gm + 0.1) / za, 0.0001)
-    #                    threshold_next   = max(threshold_curr * f_thr, 0.0001)
-    #  - Min-Distance:   f_md  = 1 - ((za - gm) / (za * 2))
-    #                    min_distance_next = md * f_md        (nur bei Stagnation)
     def _run_detect_with_policy(
         self,
         context: bpy.types.Context,
@@ -613,10 +741,9 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
             patt = max(8, int(w / 100))
             fixed_margin = patt * 2
 
-        # 2) State laden/übersteuern
-        curr_thr = float(scn.get("tco_detect_thr") or scn.get(DETECT_LAST_THRESHOLD_KEY, 0.0018))
-        if threshold is not None:
-            curr_thr = float(threshold)
+        # 2) Threshold: harter Fixwert (Anforderung)
+        #    Kein Fallback, keine Last-Detection – immer exakt 0.0001.
+        curr_thr = 0.0001  # FIXED
 
         # *** min_distance: exakt nach Vorgabe ***
         # Priorität NUR:
@@ -669,38 +796,34 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
         except Exception:
             gm_for_formulas = float(new_count)
 
-        # Threshold IMMER stufen – mit Count aus count.py (oder Fallback)
-        f_thr = max((gm_for_formulas + 0.1) / float(max(1, target)), 0.0001)
-        next_thr = max(curr_thr * f_thr, 0.0001)
+        # Threshold NICHT stufen – fixer Wert je Pass
+        next_thr = curr_thr  # = 0.0001
 
-        # min_distance NUR bei Stagnation – Stagnation ebenfalls vs. Count aus count.py
-        next_md = curr_md
-        update_md = False
-        last_cnt = int(context.scene.get("tco_last_count_for_formulas") or -1)
-        if last_cnt == int(gm_for_formulas):
-            za = float(target)
-            gm = float(gm_for_formulas)
-            # f_md = 1 - ((za - gm) / (za * 2))  == 0.5 + gm/(2*za)
-            f_md = 1.0 - ((za - gm) / (za * 2.0))
-            next_md = float(curr_md) * f_md
-            update_md = (abs(next_md - curr_md) > 1e-12)
+        # min_distance JEDEM PASS stufen – Gate entfernt
+        za = float(target)
+        gm = float(gm_for_formulas)
+        f_md = 1.0 - (
+            (za - gm) / (za * (20.0 / max(1, min(7, abs(za - gm) / 10))))
+        )
+        next_md = float(curr_md) * f_md
 
         # 5) Persistieren
         scn["tco_last_detect_new_count"] = int(new_count)
         scn["tco_detect_thr"] = float(next_thr)
-        # Nur bei Stagnation persistieren; wir speichern den Float-Wert unverändert ab.
-        if update_md:
-            scn["tco_detect_min_distance"] = float(next_md)
+        scn["tco_detect_min_distance"] = float(next_md)
         scn["tco_detect_margin"] = int(fixed_margin)
+        # Sofortige Sichtbarkeit für DISTANZE (liest kc_*):
+        try:
+            scn["kc_detect_min_distance_px"] = int(round(next_md))
+        except Exception:
+            pass
         # WICHTIG: den Count, der für die Formeln verwendet wurde, ebenfalls persistieren
         scn["tco_last_count_for_formulas"] = int(gm_for_formulas)
-
         _log(
             f"[DETECT] new={new_count} target={target} "
-            f"thr->{next_thr:.7f} "
-            f"md->{(next_md if last_cnt==int(gm_for_formulas) else curr_md):.6f} "
-            f"src={md_source} "
-            f"(stagnation={'YES' if last_cnt==int(gm_for_formulas) else 'NO'}; md_updated={'YES' if update_md else 'NO'})"
+            f"thr->{next_thr:.7f} (fixed) "
+            f"md_curr->{curr_md:.6f} md_next->{next_md:.6f} "
+            f"src={md_source} (gate=OFF)"
         )
         return res
 
@@ -721,7 +844,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
     _tco_state: str | None = None
     _tco_eval_queue: list[tuple[str, int]] | None = None
     _tco_holdouts: dict | None = None
-    _tco_solve_digest_before: "_ReconDigest" | None = None
+    _tco_solve_digest_before: _ReconDigest | None = None
     _tco_solve_started_at: float = 0.0
     _tco_timeout_sec: float = 30.0
     _tco_last_run_ok: bool = False
@@ -1083,15 +1206,12 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return self._finish(context, info=f"JUMP FAILED â†’ {rj}", cancelled=True)
             self.report({'INFO'}, f"Playhead gesetzt: f{rj.get('frame')} (repeat={rj.get('repeat_count')})")
 
-            # NEU: Anzahl/Motion-Model orchestrieren und ggf. bei 10 abbrechen
+            # NEU: Anzahl/Motion-Model aus SSOT lesen und ggf. bei 10 abbrechen
             try:
-                orchestrate_on_jump(context, int(self.target_frame))
-                # count prÃ¼fen (orchestrator zeigt bei ==10 bereits Popup)
                 _state = _get_state(context)
                 _entry, _ = _ensure_frame_entry(_state, int(self.target_frame))
                 _count = int(_entry.get("count", 1))
                 self.repeat_count_for_target = _count
-                # Abbruch erst, wenn tracking_state die globale Schwelle erreicht (inkl. +10 VerlÃ¤ngerung)
                 if _count >= ABORT_AT:
                     return self._finish(
                         context,
@@ -1099,7 +1219,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                         cancelled=True
                     )
             except Exception as _exc:
-                self.report({'WARNING'}, f"Orchestrate on jump warn: {str(_exc)}")
+                self.report({'WARNING'}, f"Repeat count read warn: {str(_exc)}")
 
             # --- Snapshot VOR Detect ziehen (Fix für RC#2) ---
             self.pre_ptrs = set(_snapshot_track_ptrs(context))
@@ -1138,14 +1258,32 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 self.detection_threshold = float(scn.get("tco_detect_thr", self.detection_threshold or 0.75))
                 self.last_detect_new_count = new_cnt
                 self.last_detect_margin = int(scn.get("tco_detect_margin", 0))
-                self.last_detect_min_distance = int(scn.get("tco_detect_min_distance", 0))
+                md_detect = int(rd.get("min_distance_px", 0))
+                if md_detect <= 0:
+                    md_detect = int(scn.get("tco_detect_min_distance", 0) or 0)
+                if md_detect <= 0:
+                    md_detect = int(scn.get("min_distance_base", 0) or 0)
+                if md_detect <= 0:
+                    md_detect = 200
+                self.last_detect_min_distance = int(md_detect)
+                scn["kc_min_distance_effective"] = int(md_detect)
             except Exception:
                 pass
             try:
                 clip = _resolve_clip(context)
                 post_ptrs = {int(t.as_pointer()) for t in getattr(clip.tracking, "tracks", [])}
                 base = self.pre_ptrs or set()
-                print(f"[COORD] Post Detect: detect_new={len(post_ptrs - base)}")
+                # Korrektur: Das hier passiert direkt NACH dem Detect-Call.
+                print(f"[COORD] Post Detect: new_after={len(post_ptrs - base)}")
+            except Exception:
+                pass
+            try:
+                src = "rd"
+                if int(rd.get("min_distance_px", 0) or 0) <= 0:
+                    src = "tco|base"
+                print(f"[COORD] Detect result: frame={self.target_frame} "
+                      f"new={new_cnt} thr->{float(self.detection_threshold):.6f} "
+                      f"min_distance->{int(self.last_detect_min_distance)} src={src}")
             except Exception:
                 pass
             self.report({'INFO'}, f"DETECT @f{self.target_frame}: new={new_cnt}, thr={self.detection_threshold}")
@@ -1158,13 +1296,18 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return self._finish(context, info="DISTANZE: Pre-Snapshot oder Ziel-Frame fehlt.", cancelled=True)
             try:
                 cur_frame = int(self.target_frame)
-                print(f"[COORD] Calling Distanz: frame={cur_frame}, min_distance=None")
+                scn = getattr(context, "scene", None)
+                eff_md = int(
+                    getattr(self, "last_detect_min_distance", 0)
+                    or (scn.get("kc_min_distance_effective", 0) if scn else 0)
+                    or 200
+                )
+                print(f"[COORD] Calling Distanz: frame={cur_frame}, min_distance={eff_md}")
                 info = run_distance_cleanup(
                     context,
                     baseline_ptrs=self.pre_ptrs,  # zwingt Distanz(e) auf Snapshot-Pfad (kein Selektion-Fallback)
                     frame=cur_frame,
-                    # min_distance=None â†’ Auto-Ableitung in distanze.py (aus Threshold & scene-base)
-                    min_distance=None,
+                    min_distance=int(eff_md),
                     distance_unit="pixel",
                     require_selected_new=True,
                     include_muted_old=False,
@@ -1414,12 +1557,18 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                             try:
                                 cur_frame = int(self.target_frame) if self.target_frame is not None else None
                                 if cur_frame is not None:
-                                    print(f"[COORD] Calling Distanz: frame={cur_frame}, min_distance=None")
+                                    scn = getattr(context, "scene", None)
+                                    eff_md2 = int(
+                                        getattr(self, "last_detect_min_distance", 0)
+                                        or (scn.get("kc_min_distance_effective", 0) if scn else 0)
+                                        or 200
+                                    )
+                                    print(f"[COORD] Calling Distanz: frame={cur_frame}, min_distance={eff_md2}")
                                     dist_res = run_distance_cleanup(
                                         context,
                                         baseline_ptrs=current_ptrs,  # zwingt Distanz(e) auf Snapshot-Pfad (kein Selektion-Fallback)
                                         frame=cur_frame,
-                                        min_distance=None,
+                                        min_distance=int(eff_md2),
                                         distance_unit="pixel",
                                         require_selected_new=True,
                                         include_muted_old=False,
@@ -1556,7 +1705,7 @@ class CLIP_OT_tracking_coordinator(bpy.types.Operator):
                 return {'RUNNING_MODAL'}
             # Kein Treffer
             next_thr = thr * 0.9
-            if next_thr < 10:
+            if next_thr < 15:
                 # Terminalbedingung: Spike-Cycle beendet â†’ Kamera-Solve starten
                 try:
                     scn["tco_spike_cycle_finished"] = True

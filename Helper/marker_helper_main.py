@@ -1,4 +1,5 @@
 # Helper/marker_helper_main.py
+from __future__ import annotations
 import bpy
 from typing import Tuple, Dict, Any
 
@@ -68,6 +69,16 @@ def marker_helper_main(context) -> Tuple[bool, int, Dict[str, Any]]:
     scn["min_distance_base"] = int(min_dist)
     scn["clip_width"]     = int(width)
     scn["clip_height"]    = int(height)
+
+    # NEU: Detect-Startwerte deterministisch initialisieren.
+    # Damit wird jeder Cycle garantiert mit den Baselines (aus Clipgröße) gefahren –
+    # und NICHT mit ggf. veralteten tco_* Werten aus einer früheren Session.
+    try:
+        scn["tco_detect_min_distance"] = float(min_dist)
+        scn["kc_min_distance_effective"] = int(min_dist)
+        scn["tco_detect_margin"] = int(margin)
+    except Exception:
+        pass
     # Telemetrie (Konsole): Baselines ausgeben
     try:
         clip_name = getattr(clip, "name", "None")

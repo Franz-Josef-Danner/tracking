@@ -1,16 +1,40 @@
 import bpy
 from typing import Optional, Dict, Any, Tuple
 
-__all__ = ("run_jump_to_frame", "jump_to_frame")  # jump_to_frame = Legacy-Wrapper
+__all__ = ("run_jump_to_frame", "jump_to_frame")
+# jump_to_frame = Legacy-Wrapper
 REPEAT_SATURATION = 10  # Ab dieser Wiederholungsanzahl: Optimizer anstoßen statt Detect
 
+# ---------------------------------------------------------------------------
+# Fade-/Ring-Parameter
+# ---------------------------------------------------------------------------
+# Ringbreite = 5 Frames je Seite (Zentralband umfasst damit [f-5 .. f+5]).
+FADE_STEP_FRAMES: int = 5
 
-# ---------------------------------------------------------------------------
-# Fade-Parameter
-# ---------------------------------------------------------------------------
-# Statt "pro Frame -1" wird nur alle N Frames um 1 dekrementiert.
-# Damit entsteht ein Plateau von N Frames pro Stufe.
-FADE_STEP_FRAMES: int = 5  # vorher effektiv: 1
+
+def _fade_step_frames() -> int:
+    """Liest den Fade-Step aus Scene-Property (kc_repeat_fade_step) oder nutzt Default."""
+    try:
+        scn = bpy.context.scene
+        val = int(getattr(scn, "kc_repeat_fade_step", FADE_STEP_FRAMES))
+        return max(1, val)
+    except Exception:
+        return FADE_STEP_FRAMES
+
+
+def _dbg_enabled(scn) -> bool:
+    try:
+        return bool(getattr(scn, "kc_debug_repeat", True))
+    except Exception:
+        return True
+
+
+def _dbg(scn, msg: str) -> None:
+    if _dbg_enabled(scn):
+        try:
+            print(msg)
+        except Exception:
+            pass
 
 
 def _clamp(v: int, lo: int = 0, hi: int | None = None) -> int:
@@ -18,21 +42,76 @@ def _clamp(v: int, lo: int = 0, hi: int | None = None) -> int:
         return v if v >= lo else lo
     return lo if v < lo else (hi if v > hi else v)
 
+# ---------------------------------------------------------------------------
+# Ring-Expansion nach Spezifikation
+# ---------------------------------------------------------------------------
+# Kurzlogik:
+# - Bei k-ter Wiederholung am Frame f:
+#   Ring 0  : [f-5 .. f+5]           → Wert k
+#   Ring m≥1: linke/rechte Intervalle → Wert k-m
+#             L: [f-5*(m+1) .. f-(5*m+1)]
+#             R: [f+(5*m+1) .. f+5*(m+1)]
+# - Pro Frame: MAX-Merge, Clamping auf Scene-Range.
+
+def _write_max(mapping: Dict[int, int], i: int, v: int) -> None:
+    cur = mapping.get(i, 0)
+    if v > cur:
+        mapping[i] = v
+
+
+def _expand_repeat_series_for_jump(
+    *, center_f: int, repeat_count: int, lo: int, hi: int, step: int
+) -> Dict[int, int]:
+    """
+    Baut ein lokales Mapping {frame: value} für die k-te Wiederholung am Ziel-Frame.
+    Exakte Ring-Definition gemäß Spezifikation, inklusive Clamping und MAX-Merge.
+    """
+    out: Dict[int, int] = {}
+    k = int(repeat_count)
+    if k <= 0:
+        return out
+
+    # Ring 0: [f-step .. f+step] → k
+    start0 = max(lo, center_f - step)
+    end0 = min(hi, center_f + step)
+    for i in range(start0, end0 + 1):
+        _write_max(out, i, k)
+
+    # Ringe 1..k-1: Wert (k-m) mit 5er-Ringbreite je Seite
+    for m in range(1, k):
+        val = k - m
+        # Links: [f-5*(m+1) .. f-(5*m+1)]
+        L1 = max(lo, center_f - step * (m + 1))
+        L2 = max(lo, center_f - (step * m + 1))
+        if L1 <= L2:
+            for i in range(L1, L2 + 1):
+                _write_max(out, i, val)
+        # Rechts: [f+(5*m+1) .. f+5*(m+1)]
+        R1 = min(hi, center_f + (step * m + 1))
+        R2 = min(hi, center_f + step * (m + 1))
+        if R1 <= R2:
+            for i in range(R1, R2 + 1):
+                _write_max(out, i, val)
+    return out
+
 
 def _spread_repeat_to_neighbors(repeat_map: dict[int, int], center_f: int, radius: int, base: int) -> None:
-    # Neu: stufiger Fade: nur alle FADE_STEP_FRAMES -1
+    """
+    (Legacy-Helfer, weiterhin kompatibel)
+    Erzeugt stufigen Fade basierend auf 'radius' und 'base' – ohne Clamping.
+    Hinweis: Für exakte Ringspezifikation wird _expand_repeat_series_for_jump() genutzt.
+    """
+    step = _fade_step_frames()
     for off in range(-radius, radius + 1):
         f = center_f + off
         if f < 0:
             continue
-        # Decrement nur in 5er-Schritten: 0..4 → 0, 5..9 → 1, 10..14 → 2, ...
-        dec = abs(off) // FADE_STEP_FRAMES  # stufig (neu)
+        # Legacy-Approx; belassen für Rückwärtskompatibilität
+        dec = abs(off) // step
         v = base - dec
         if v <= 0:
             continue
-        # nur erhöhen, nie verringern
-        cur = repeat_map.get(f, 0)
-        if v > cur:
+        if v > repeat_map.get(f, 0):
             repeat_map[f] = v
 
 
@@ -105,13 +184,13 @@ def run_jump_to_frame(
     ensure_clip: bool = True,
     ensure_tracking_mode: bool = True,
     use_ui_override: bool = True,
-    repeat_map: Optional[Dict[int, int]] = None,  # Operator-interne Wiederholungszählung
+    repeat_map: Optional[Dict[int, int]] = None,  # (Kompat) wird nicht mehr genutzt
 ) -> Dict[str, Any]:
     """
     Setzt den Playhead deterministisch auf 'frame' (oder scene['goto_frame']).
     - Clamped auf Clipgrenzen
     - Optionaler CLIP_EDITOR-Override & Modus-Setzung
-    - Zählt Wiederholungen NUR für per Jump gesetzte Frames via repeat_map
+    - Wiederholungszählung & Ring-Expansion erfolgen über tracking_state.orchestrate_on_jump
 
     Returns:
       {"status": "OK"|"FAILED",
@@ -145,6 +224,7 @@ def run_jump_to_frame(
         elif target > end:
             target = end
             clamped = True
+    _dbg(scn, f"[JumpTo] target={target} clamped={clamped} ui_override={use_ui_override}")
 
     # Optional: UI-Override (Area/Region) & Tracking-Mode
     area_switched = False
@@ -171,11 +251,27 @@ def run_jump_to_frame(
     else:
         scn.frame_current = target
 
-    # Besuchszählung je Ziel-Frame
-    repeat_count = 1
-    if repeat_map is not None:
-        repeat_count = int(repeat_map.get(target, 0)) + 1
-        repeat_map[target] = repeat_count
+    # Einheitlicher Zähler & Ringe zentral aktualisieren (SSOT)
+    try:
+        from .tracking_state import orchestrate_on_jump
+        orchestrate_on_jump(context, int(target))
+    except Exception as e:  # noqa: BLE001
+        _dbg(scn, f"[JumpTo][WARN] orchestrate_on_jump failed: {e!r}")
+
+    # Logging NACH SSOT-Update: konsistenten Wert lesen
+    repeat_count = 0
+    try:
+        from .properties import get_repeat_value
+        step = _fade_step_frames()
+        k_used = int(get_repeat_value(scn, int(target)))
+        repeat_count = k_used
+        _dbg(scn, f"[JumpTo][Count] frame={int(target)} repeat={k_used} (SSOT)")
+        fs, fe = int(scn.frame_start), int(scn.frame_end)
+        left = max(fs, int(target) - k_used * step)
+        right = min(fe, int(target) + k_used * step)
+        _dbg(scn, f"[JumpTo][Spread] rings={k_used} step={step} outer_radius={k_used*step} bounds≈{left}..{right}")
+    except Exception:  # noqa: BLE001
+        pass
 
     # Debugging & Transparenz
     try:
@@ -185,6 +281,8 @@ def run_jump_to_frame(
 
     # Sättigungsflag für Rückgabe/Logging
     repeat_saturated = repeat_count >= REPEAT_SATURATION
+    if repeat_saturated:
+        _dbg(scn, f"[JumpTo][Repeat] saturated >= {REPEAT_SATURATION} at frame={int(target)} (repeat={int(repeat_count)})")
 
     return {
         "status": "OK",

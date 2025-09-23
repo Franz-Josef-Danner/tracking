@@ -1,28 +1,45 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+"""UI stub – Grafik-Overlay wurde vollständig entfernt."""
+
+# UI-Paket (klein geschrieben). Registriert Panels + UI-Scene-Properties.
 import bpy
-from . import overlay as _overlay
-from . import solve_log as _solve_log  # stellt nur Funktionen bereit
-from . import utils as _utils          # Hilfsfunktionen (Redraw)
+from bpy.props import BoolProperty, FloatProperty
 
+from .panel_main import CLIP_PT_kaiserlich_panel
 
-# Unregister-Reihenfolge: Overlay zuerst runterfahren
-_MODULES = [_overlay]
-
-# ---- EXPORTS FÜR ANDERE MODULE --------------------------------------------
-# Damit tracking_coordinator._solve_log(context, v) das Root-Modul findet:
-# __init__.kaiserlich_solve_log_add -> solve_log.kaiserlich_solve_log_add
-kaiserlich_solve_log_add = _solve_log.kaiserlich_solve_log_add
-
+_UI_CLASSES = [
+    CLIP_PT_kaiserlich_panel,
+]
 
 def register():
-    for m in _MODULES:
-        if hasattr(m, "register"):
-            m.register()
-
+    # UI-Properties (Focal-Steuerung)
+    bpy.types.Scene.tco_use_auto_focal = BoolProperty(
+        name="Auto-Brennweite (Refine)",
+        description="Wenn aktiv, wird die Brennweite automatisch bestimmt; "
+                    "die 10%-Klammer wird aufgehoben.",
+        default=True,
+    )
+    bpy.types.Scene.tco_focal_override = FloatProperty(
+        name="Fixe Brennweite (mm)",
+        description="Wenn Auto-Brennweite aus ist, wird dieser Wert als fixe Brennweite verwendet.",
+        default=35.0,
+        min=0.1,
+        max=5000.0,
+        precision=3,
+    )
+    for c in _UI_CLASSES:
+        try:
+            bpy.utils.register_class(c)
+        except Exception:
+            pass
 
 def unregister():
-    for m in reversed(_MODULES):
-        if hasattr(m, "unregister"):
-            try:
-                m.unregister()
-            except Exception:
-                pass
+    for c in reversed(_UI_CLASSES):
+        try:
+            bpy.utils.unregister_class(c)
+        except Exception:
+            pass
+    if hasattr(bpy.types.Scene, "tco_use_auto_focal"):
+        del bpy.types.Scene.tco_use_auto_focal
+    if hasattr(bpy.types.Scene, "tco_focal_override"):
+        del bpy.types.Scene.tco_focal_override
