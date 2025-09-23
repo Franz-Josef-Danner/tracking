@@ -153,20 +153,66 @@ def _force_disable_refine(context) -> bool:
     return changed
 
 
+def _force_enable_refine_all(context) -> bool:
+    """Aktiviere alle Refine-Optionen (Focal, Principal, Radial, optional Tangential)."""
+    clip, cam = _get_clip_and_camera(context)
+    if not clip or not getattr(clip, "tracking", None):
+        return False
+    ts = clip.tracking.settings
+    changed = False
+    # Enum-Set setzen
+    try:
+        if hasattr(ts, "refine_intrinsics"):
+            ts.refine_intrinsics = {"FOCAL_LENGTH", "PRINCIPAL_POINT", "RADIAL_DISTORTION"}
+            changed = True
+    except Exception:
+        pass
+    # Einzel-/alternative Properties robust einschalten
+    groups_true = [
+        ("FOCAL_LENGTH", (
+            "refine_intrinsics_focal_length",
+            "refine_focal_length",
+            "refine_focal",
+            "refine_focal_length_error",
+        )),
+        ("PRINCIPAL_POINT", (
+            "refine_intrinsics_principal_point",
+            "refine_principal_point",
+            "refine_principal",
+            "refine_principal_point_x",
+        )),
+        ("RADIAL_DISTORTION", (
+            "refine_intrinsics_radial_distortion",
+            "refine_radial_distortion",
+            "refine_distortion",
+            "refine_k1",
+        )),
+        ("TANGENTIAL", (
+            "refine_tangential",
+            "refine_intrinsics_tangential_distortion",
+            "refine_tangential_distortion",
+        )),
+    ]
+    for _flag, names in groups_true:
+        name_set = _try_set(ts, names, True)
+        if name_set:
+            changed = True
+    return changed
+
+
 class CLIP_OT_solve_test(Operator):
     bl_idname = "clip.solve_test"
-    bl_label = "Solve Test (Modal Loop)"
+    bl_label = "Solve Test (2-Pass Modal)"
     bl_options = {"REGISTER", "UNDO"}
 
     _timer = None
     _state: str
     _deadline: float
     _ae: Optional[float]
-    _ts = None
-    _snap = None
     _find_result: Optional[Dict[str, Any]]
     _loops: int
     _last_reduce: Optional[Dict[str, Any]]
+    _pass: int  # 0: no refine, 1: all refine
 
     def _cleanup(self, context):
         if self._timer:
@@ -184,11 +230,10 @@ class CLIP_OT_solve_test(Operator):
         self._state = "INIT"
         self._deadline = 0.0
         self._ae = None
-        self._ts = None
-        self._snap = None
         self._find_result = None
         self._loops = 0
         self._last_reduce = None
+        self._pass = 0
         try:
             context.scene["tco_solve_test_active"] = True
             context.scene["tco_restart_find"] = False
@@ -202,11 +247,9 @@ class CLIP_OT_solve_test(Operator):
         return self.invoke(context, None)
 
     def _finish(self, context, payload: Dict[str, Any]):
-        # Keine Wiederherstellung der Refine-Flags mehr (dauerhaft aus)
         scn = context.scene
-        # Restart-Flag setzen je nach Payload
         try:
-            restart = bool(payload.get("restart_find", False) or payload.get("status") == "MODEL_SWITCH")
+            restart = bool(payload.get("restart_find", False))
             scn["tco_restart_find"] = restart
             print(f"[SolveTest] finish payload={payload} restart_find={restart}")
         except Exception:
@@ -235,8 +278,13 @@ class CLIP_OT_solve_test(Operator):
             return self._finish(context, {"status": "NO_CLIP_OR_CAMERA"})
 
         if self._state == "INIT":
-            # Refine dauerhaft ausschalten (robust)
-            _force_disable_refine(context)
+            # Pass 0: Refine AUS, Pass 1: Refine AN
+            if self._pass == 0:
+                _force_disable_refine(context)
+                print("[SolveTest] PASS0 (refine OFF)")
+            else:
+                _force_enable_refine_all(context)
+                print("[SolveTest] PASS1 (refine ALL)")
             self._state = "SOLVE"
             return {"RUNNING_MODAL"}
 
@@ -261,33 +309,30 @@ class CLIP_OT_solve_test(Operator):
             if not isinstance(ae, (int, float)) and time.perf_counter() < self._deadline:
                 return {"RUNNING_MODAL"}
             self._ae = float(ae) if isinstance(ae, (int, float)) else None
-            try:
-                print(f"[SolveTest] loop={self._loops} avg_error={self._ae} thr={thr}")
-            except Exception:
-                pass
-            if self._ae is not None and self._ae <= thr:
-                return self._finish(context, {"status": "OK", "avg_error": self._ae, "stage": "ok", "restart_find": False})
-            # > thr → Reduce 1 Track und find_max
+            print(f"[SolveTest] pass={self._pass} loop={self._loops} avg_error={self._ae} thr={thr}")
+            if (self._ae is not None) and (self._ae <= thr):
+                return self._finish(context, {"status": "OK", "avg_error": self._ae, "stage": ("pass0" if self._pass == 0 else "pass1"), "restart_find": False})
             self._state = "REDUCE"
             return {"RUNNING_MODAL"}
 
         if self._state == "REDUCE":
+            # Dynamische Anzahl: n = max(1, min(10, ae/thr))
             try:
-                self._last_reduce = run_reduce_error_tracks(context, max_to_delete=1)
+                ratio = float(self._ae) / max(1e-9, float(thr)) if self._ae is not None else 1.0
+            except Exception:
+                ratio = 1.0
+            n_delete = int(max(1, min(10, ratio)))
+            print(f"[SolveTest] reduce n={n_delete} (ratio={ratio:.3f})")
+            try:
+                self._last_reduce = run_reduce_error_tracks(context, max_to_delete=int(n_delete))
                 try:
                     scn["tco_last_reduce_error_tracks"] = self._last_reduce
                 except Exception:
                     pass
-                try:
-                    print(f"[SolveTest] reduce_result deleted={self._last_reduce.get('deleted')} names={self._last_reduce.get('names')}")
-                except Exception:
-                    pass
+                print(f"[SolveTest] reduce_result deleted={self._last_reduce.get('deleted')} names={self._last_reduce.get('names')}")
             except Exception as ex:
                 self._last_reduce = {"status": "ERROR", "reason": str(ex)}
-                try:
-                    print(f"[SolveTest] reduce_error {ex}")
-                except Exception:
-                    pass
+                print(f"[SolveTest] reduce_error {ex}")
             self._state = "FINDMAX"
             return {"RUNNING_MODAL"}
 
@@ -296,46 +341,21 @@ class CLIP_OT_solve_test(Operator):
                 self._find_result = run_find_max_marker_frame(context)
             except Exception as ex:
                 self._find_result = {"status": "ERROR", "reason": str(ex)}
-            try:
-                print(f"[SolveTest] find_max status={str((self._find_result or {}).get('status'))} result={self._find_result}")
-            except Exception:
-                pass
             status = str((self._find_result or {}).get("status", "")).upper()
+            print(f"[SolveTest] find_max status={status} result={self._find_result}")
             if status == "FOUND":
-                # Model wechseln und fertig – Coordinator setzt via Flag zurück zu FIND
-                current = str(getattr(clip.tracking.camera, "distortion_model", "POLYNOMIAL"))
-                nxt = _next_model(current)
-                payload: Dict[str, Any] = {
-                    "status": "MODEL_SWITCH",
-                    "avg_error": self._ae,
-                    "previous_model": current,
-                    "next_model": nxt,
-                    "restart_find": True,
-                }
-                try:
-                    clip.tracking.camera.distortion_model = nxt
-                    print(f"[SolveTest] model_switch {current} -> {nxt}")
-                except Exception as exc:
-                    payload["model_switch_error"] = str(exc)
-                return self._finish(context, payload)
-            # nicht gefunden → neue Runde
-            self._loops += 1
-            print("[SolveTest] find_max NONE -> next loop")
-            self._state = "SOLVE"
-            return {"RUNNING_MODAL"}
-
-        # In WAIT-Zweigen bei OK-Fall explizit restart_find=False
-        if self._state == "WAIT":
-            # ...existing code calculating self._ae and comparing thr...
-            if self._ae is not None and self._ae <= thr:
-                return self._finish(context, {"status": "OK", "avg_error": self._ae, "stage": "ok", "restart_find": False})
-            # ...existing code...
-
-        if self._state == "WAIT2":
-            # ...existing code computing payload...
-            payload: Dict[str, Any] = {"status": "OK", "avg_error": self._ae, "stage": "solve2", "find_max": self._find_result, "restart_find": False}
-            # Wenn find_max FOUND → oben behandelt; sonst normaler Abschluss
-            return self._finish(context, payload)
+                # Flag setzen und Coordinator zu FIND zurückschicken
+                return self._finish(context, {"status": "RESTART_FIND", "avg_error": self._ae, "restart_find": True})
+            # nicht gefunden → zum nächsten Pass / Loop
+            if self._pass == 0:
+                self._pass = 1
+                self._state = "INIT"
+                return {"RUNNING_MODAL"}
+            else:
+                self._pass = 0
+                self._loops += 1
+                self._state = "INIT"
+                return {"RUNNING_MODAL"}
 
         return {"RUNNING_MODAL"}
 
