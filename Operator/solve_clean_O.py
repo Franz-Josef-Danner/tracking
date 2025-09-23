@@ -103,18 +103,24 @@ class CLIP_OT_solve_camera_modal(Operator):
                 comp = ">" if ae > thr else "<="
                 print(f"[SolveSummary] avg_error={ae:.3f} {comp} threshold={thr:.3f} exceeds={ae > thr}", flush=True)
                 if ae > 10.0 and run_reduce_error_tracks is not None:
+                    # dynamische Anzahl zu löschender Tracks nach Formel: max(1, min(10, ae/thr))
+                    try:
+                        n_delete = int(max(1, min(10, float(ae) / max(1e-9, float(thr)))))
+                    except Exception:
+                        n_delete = 1
+                    print(f"[SolveDecision] dynamic reduce count n={n_delete} (ae/thr={float(ae)/max(1e-9,float(thr)):.3f})")
                     old_thr = scn.get("error_track", None)
                     try:
                         scn["error_track"] = 10.0
                     except Exception:
                         pass
                     try:
-                        res_red = run_reduce_error_tracks(context)
+                        res_red = run_reduce_error_tracks(context, max_to_delete=int(n_delete))
                         try:
                             scn["tco_last_reduce_error_tracks"] = res_red
                         except Exception:
                             pass
-                        self.report({'INFO'}, f"Reduce-Error-Tracks ausgeführt (thr=10): deleted={int(res_red.get('deleted',0))}")
+                        self.report({'INFO'}, f"Reduce-Error-Tracks ausgeführt (thr=10, n={n_delete}): deleted={int(res_red.get('deleted',0))}")
                         print(f"[SolveDecision] Reducer executed: deleted={int(res_red.get('deleted',0))}", flush=True)
                         reduce_executed = True
                     except Exception as _rex:
