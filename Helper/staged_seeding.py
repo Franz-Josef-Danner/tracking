@@ -16,6 +16,68 @@ def _clip_size(clip) -> tuple[int, int]:
         return 0, 0
 
 
+def _persist_markers(context, clip, markers: list[dict]) -> int:
+    """Lege für gegebene Pixelpositionen neue Tracks an (normierte Koordinaten).
+    Gibt die Anzahl erfolgreich angelegter Tracks zurück.
+    """
+    try:
+        import bpy  # type: ignore
+    except Exception:
+        return 0
+    if not clip or not markers:
+        return 0
+    try:
+        w, h = getattr(clip, "size", (0, 0))
+        if not w or not h:
+            return 0
+        tr_coll = getattr(getattr(clip, "tracking", None), "tracks", None)
+        if tr_coll is None:
+            return 0
+        frame = int(getattr(getattr(context, "scene", None), "frame_current", 1))
+        ok = 0
+        for i, m in enumerate(markers):
+            try:
+                x = float(m.get("x", 0.0))
+                y = float(m.get("y", 0.0))
+                co = (max(0.0, min(1.0, x / float(w))), max(0.0, min(1.0, y / float(h))))
+                # Versuch 1: direktes Anlegen eines Tracks
+                try:
+                    t = tr_coll.new(name=f"KI_{int(x)}_{int(y)}")
+                except Exception:
+                    t = tr_coll.new() if hasattr(tr_coll, "new") else None
+                if t is not None:
+                    try:
+                        mk = None
+                        if hasattr(t.markers, "insert"):
+                            mk = t.markers.insert(frame)
+                        elif hasattr(t.markers, "new"):
+                            mk = t.markers.new(frame)
+                        if mk is None:
+                            # Fallback: existierenden Marker für Frame suchen
+                            if hasattr(t.markers, "find_frame"):
+                                mk = t.markers.find_frame(frame)
+                            else:
+                                mk = t.markers[-1] if len(t.markers) > 0 else None
+                        if mk is not None:
+                            mk.co = co
+                            ok += 1
+                            continue
+                    except Exception:
+                        pass
+                # Versuch 2: Operator (kann UI-Kontext verlangen)
+                try:
+                    bpy.ops.clip.add_marker(location=co, frame=frame)
+                    ok += 1
+                    continue
+                except Exception:
+                    pass
+            except Exception:
+                continue
+        return ok
+    except Exception:
+        return 0
+
+
 def _detect_candidates_blender(context, clip, threshold: float, min_distance_px: int, max_features: int, nms_window_px: int, pattern: int | None = None, search_px: int | None = None) -> List[dict]:
     """Versuche Blender-intern Features zu detektieren und liefere Marker-Kandidaten zurück.
     Gibt eine Liste von Dicts mit Pixel-Koordinaten zurück: {'x': px, 'y': px}.
@@ -185,6 +247,7 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
 
     min_dist: float | None = None
     total_placed = 0
+    accepted_final: List[dict] = []
 
     for i, thr in enumerate(thr_stages, start=1):
         # Stufen-Parameter ermitteln
@@ -245,6 +308,8 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
         kept = validate_markers(kept, frames=10, corr_min=0.60, jump_guard=True)
         if len(kept) > hi_current:
             kept = trim_to_band(kept, hi_current)
+        # final akzeptierte der Stufe sammeln
+        accepted_final.extend(kept)
 
         stages_info.append({
             "stage": i,
@@ -311,6 +376,7 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
                     break
         min_dist = feedback_min_distance(min_dist, placed_refill, remaining, p_r)
         kept = validate_markers(kept, frames=10, corr_min=0.60, jump_guard=True)
+        accepted_final.extend(kept)
         stages_info.append({
             "stage": 6,
             "threshold": thr_stages[-1],
@@ -329,8 +395,16 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
             "refill": True,
         })
 
+    # Final-Trim auf exaktes Gesamtziel, wenn zu viel
+    if len(accepted_final) > int(total_target):
+        accepted_final = trim_to_band(accepted_final, int(total_target))
+
+    # Persistiere final akzeptierte Marker als Tracks
+    persisted = _persist_markers(context, clip, accepted_final)
+
     summary = {
-        "placed": len(accepted),
+        "placed": len(accepted_final),
+        "persisted": int(persisted),
         "stages": stages_info,
         "time_ms": int(round((time.time() - t0) * 1000.0)),
     }
