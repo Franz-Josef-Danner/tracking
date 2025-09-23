@@ -5,6 +5,15 @@ import time
 
 from .dedup import build_index, keep_if_far_enough, feedback_min_distance
 from .micro_validate import validate_markers, trim_to_band
+from .init_params import enforce_limits
+
+
+def _clip_size(clip) -> tuple[int, int]:
+    try:
+        w, h = getattr(clip, "size", (0, 0))
+        return int(w or 0), int(h or 0)
+    except Exception:
+        return 0, 0
 
 
 def _detect_candidates_blender(context, clip, threshold: float, min_distance_px: int, max_features: int, nms_window_px: int, pattern: int | None = None, search_px: int | None = None) -> List[dict]:
@@ -90,12 +99,12 @@ def _detect_candidates_blender(context, clip, threshold: float, min_distance_px:
         return []
 
 
-def _detect_candidates_placeholder(roi_id, threshold: float, levels: int, max_features: int, nms_window_px: int, channel: str | None = None, *, context=None, clip=None, pattern: int | None = None, search_px: int | None = None) -> List[dict]:
+def _detect_candidates_placeholder(roi_id, threshold: float, *, min_distance_px: int, levels: int, max_features: int, nms_window_px: int, channel: str | None = None, context=None, clip=None, pattern: int | None = None, search_px: int | None = None) -> List[dict]:
     """Platzhalter für echte Detektion. Versucht Blender-Operator zu nutzen; sonst leer.
     Struktur je Kandidat (Beispiel): {'x': float, 'y': float, 'score': float}
     """
     # Blender-Integration (wenn verfügbar)
-    cands = _detect_candidates_blender(context, clip, threshold, nms_window_px if nms_window_px else 0, max_features, nms_window_px, pattern=pattern, search_px=search_px)
+    cands = _detect_candidates_blender(context, clip, threshold, int(min_distance_px), max_features, nms_window_px, pattern=pattern, search_px=search_px)
     if cands:
         return cands
     # TODO: hier alternativen Detector einhängen (z. B. OpenCV)
@@ -109,6 +118,8 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
       - per_stage=scene['marker_stage_target'] ±10% (lo/hi)
       - Micro-Validation (10f)
       - trim/refill nach Band
+      - stufenspezifischem (pattern, alpha, search, levels, edge_suppression)
+      - Early-Stop bei Zielerfüllung/Abbruchsignal
     Return Summary {placed, stages, time_ms}.
     """
     t0 = time.time()
@@ -120,9 +131,31 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
     profile = (scene or {}).get("detect_profile", {}) if isinstance(scene, dict) else {}
     thr_stages = [1.0, 0.1, 0.01, 0.001, 0.0001]
 
-    min_dist = float(profile.get("min_distance_factor", 2.5)) * float(pattern)
-    nms_win = int(round(float(profile.get("nms_window_factor", 1.0)) * float(pattern)))
-    levels = int(profile.get("levels", 1))
+    # optionale Blender-Kontexte
+    context = (scene or {}).get("context") if isinstance(scene, dict) else None
+    clip = (scene or {}).get("clip") if isinstance(scene, dict) else None
+    chan = (scene or {}).get("channel") if isinstance(scene, dict) else None
+    width, height = _clip_size(clip)
+
+    # Stage-Schedule für (pattern, alpha, levels, edge)
+    def stage_params(stage_idx: int, p0: int, a0: int) -> tuple[int, int, int, bool]:
+        # 1..5
+        if stage_idx == 1:
+            p, a, lv, edge = p0 - 4, 2, 1, False
+        elif stage_idx == 2:
+            p, a, lv, edge = p0, 3, 1, False
+        elif stage_idx == 3:
+            p, a, lv, edge = p0 + 4, 3, 2, False
+        elif stage_idx == 4:
+            p, a, lv, edge = p0 + 8, 4, 3, True
+        else:
+            p, a, lv, edge = p0 + 10, 4, 3, True
+        # clamp & search via enforce_limits
+        p_c, a_c, s_c = enforce_limits(p, a, width, height)
+        return p_c, a_c, s_c, edge
+
+    # Faktoren (Pattern-bezogen)
+    nms_factor = float(profile.get("nms_window_factor", 1.0))
     max_features = int(profile.get("max_features", 500))
 
     accepted: List[dict] = []
@@ -130,24 +163,36 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
     index = build_index(existing)
     stages_info: List[Dict] = []
 
-    # optionale Blender-Kontexte
-    context = (scene or {}).get("context") if isinstance(scene, dict) else None
-    clip = (scene or {}).get("clip") if isinstance(scene, dict) else None
-    search_px = (scene or {}).get("search") if isinstance(scene, dict) else None
+    min_dist: float | None = None
+    total_placed = 0
 
     for i, thr in enumerate(thr_stages, start=1):
+        # Stufen-Parameter ermitteln
+        p_i, a_i, search_i, edge_i = stage_params(i, int(pattern), int(alpha))
+        levels_i = 1 if i <= 2 else (2 if i == 3 else 3)
+        nms_win = int(round(nms_factor * float(p_i)))
+
+        # Start-Min-Dist (Stufe 1 etwas niedriger), sonst alte Distanz in neue Klammern mappen
+        lo_clamp = 2.0 * float(p_i)
+        hi_clamp = 3.5 * float(p_i)
+        if min_dist is None:
+            min_dist = max(lo_clamp, min(hi_clamp, 2.3 * float(p_i)))
+        else:
+            min_dist = max(lo_clamp, min(hi_clamp, float(min_dist)))
+
         placed_this = 0
         cands = _detect_candidates_placeholder(
             roi_id=roi_id,
             threshold=thr,
-            levels=levels,
+            min_distance_px=int(round(min_dist)),
+            levels=levels_i,
             max_features=max_features,
             nms_window_px=nms_win,
-            channel=(scene or {}).get("channel") if isinstance(scene, dict) else None,
+            channel=chan,
             context=context,
             clip=clip,
-            pattern=pattern,
-            search_px=search_px,
+            pattern=p_i,
+            search_px=search_i,
         )
 
         kept = []
@@ -157,10 +202,12 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
                 accepted.append(c)
                 index["points"].append((float(c.get("x", 0.0)), float(c.get("y", 0.0))))
                 placed_this += 1
+                total_placed += 1
                 if placed_this >= hi:
                     break
 
-        min_dist = feedback_min_distance(min_dist, placed_this, per_stage, pattern)
+        # Feedback-Update der Distanz für nächste Entscheidungen in dieser/folgenden Stufen
+        min_dist = feedback_min_distance(min_dist, placed_this, per_stage, p_i)
         kept = validate_markers(kept, frames=10, corr_min=0.60, jump_guard=True)
         if len(kept) > hi:
             kept = trim_to_band(kept, hi)
@@ -171,14 +218,28 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
             "attempted": len(cands),
             "kept": len(kept),
             "placed": placed_this,
+            "pattern": int(p_i),
+            "alpha": int(a_i),
+            "search": int(search_i),
+            "levels": int(levels_i),
+            "edge_suppr": bool(edge_i),
             "min_distance_px": float(min_dist),
         })
 
-        if placed_this >= lo:
-            pass
-
-        if isinstance(scene, dict) and scene.get("time_budget_hit", False):
+        # Early-Stop-Bedingungen
+        if total_placed >= int(total_target):
             break
+        if isinstance(scene, dict):
+            cov_ok = scene.get("coverage_ok", False)
+            try:
+                if callable(cov_ok) and cov_ok():
+                    break
+            except Exception:
+                pass
+            if bool(scene.get("coverage_ok", False)):
+                break
+            if bool(scene.get("time_budget_hit", False)):
+                break
 
     summary = {
         "placed": len(accepted),
