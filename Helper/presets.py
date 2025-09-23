@@ -59,3 +59,13 @@ def save_preset(clip_id: str, roi_signature: dict, params: dict, score: float) -
     if best is None or float(score) < float(best):
         store[key] = {"params": params or {}, "score": float(score)}
         _save_all(_DEF_PATH, store)
+
+
+def write_presets() -> bool:
+    """Persistenz ist immediate; diese Funktion dient als Schnittstellen-Hook.
+    Gibt True zurück, wenn eine Preset-Datei existiert.
+    """
+    try:
+        return bool(_load_all(_DEF_PATH))
+    except Exception:
+        return False

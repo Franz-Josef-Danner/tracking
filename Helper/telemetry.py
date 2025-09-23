@@ -39,5 +39,9 @@ def aggregate_kpis() -> dict:
     return {"events": total, "by_scope": by_scope}
 
 
+def finalize_metrics() -> dict:
+    return aggregate_kpis()
+
+
 def time_budget_hit(roi_id) -> bool:
     return False
