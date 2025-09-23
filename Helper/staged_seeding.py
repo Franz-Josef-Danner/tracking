@@ -18,6 +18,24 @@ def _clip_size(clip) -> tuple[int, int]:
         return 0, 0
 
 
+def _coerce_float(val, default: float) -> float:
+    try:
+        if val is None:
+            return float(default)
+        return float(val)
+    except Exception:
+        return float(default)
+
+
+def _coerce_int(val, default: int) -> int:
+    try:
+        if val is None:
+            return int(default)
+        return int(val)
+    except Exception:
+        return int(default)
+
+
 def _persist_markers(context, clip, markers: list[dict]) -> int:
     """Lege für gegebene Pixelpositionen neue Tracks an (normierte Koordinaten).
     Gibt die Anzahl erfolgreich angelegter Tracks zurück.
@@ -198,9 +216,9 @@ def _detect_candidates_opencv(clip, threshold: float, min_distance_px: int, max_
         if img.ndim == 3:
             img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         # GFTT-Parameter
-        quality = float(threshold)
-        min_dist = int(min_distance_px)
-        max_feat = int(max_features)
+        quality = _coerce_float(threshold, 0.01)
+        min_dist = _coerce_int(min_distance_px, 8)
+        max_feat = _coerce_int(max_features, 500)
         corners = cv2.goodFeaturesToTrack(img, maxCorners=max_feat, qualityLevel=quality, minDistance=min_dist)
         out = []
         if corners is not None:
@@ -269,8 +287,8 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
         return p_c, a_c, s_c, edge
 
     # Faktoren (Pattern-bezogen)
-    nms_factor = float(profile.get("nms_window_factor", 1.0))
-    max_features = int(profile.get("max_features", 500))
+    nms_factor = _coerce_float(profile.get("nms_window_factor", 1.0), 1.0)
+    max_features = _coerce_int(profile.get("max_features", 500), 500)
 
     accepted: List[dict] = []
     existing = list((scene or {}).get("existing_markers", [])) if isinstance(scene, dict) else []

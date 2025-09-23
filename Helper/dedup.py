@@ -13,9 +13,15 @@ def build_index(existing_markers: list) -> object:
     pts: List[Point] = []
     for m in existing_markers or []:
         if isinstance(m, dict):
-            x, y = float(m.get("x", 0.0)), float(m.get("y", 0.0))
+            try:
+                x, y = float(m.get("x", 0.0) if m.get("x", 0.0) is not None else 0.0), float(m.get("y", 0.0) if m.get("y", 0.0) is not None else 0.0)
+            except Exception:
+                x, y = 0.0, 0.0
         elif isinstance(m, (tuple, list)) and len(m) >= 2:
-            x, y = float(m[0]), float(m[1])
+            try:
+                x, y = float(m[0] if m[0] is not None else 0.0), float(m[1] if m[1] is not None else 0.0)
+            except Exception:
+                x, y = 0.0, 0.0
         else:
             continue
         pts.append((x, y))
@@ -34,12 +40,23 @@ def keep_if_far_enough(candidate, index, min_dist: float) -> bool:
         return True
     pts: List[Point] = index.get("points", [])
     if isinstance(candidate, dict):
-        c = (float(candidate.get("x", 0.0)), float(candidate.get("y", 0.0)))
+        try:
+            cx = float(candidate.get("x", 0.0) if candidate.get("x", 0.0) is not None else 0.0)
+            cy = float(candidate.get("y", 0.0) if candidate.get("y", 0.0) is not None else 0.0)
+            c = (cx, cy)
+        except Exception:
+            c = (0.0, 0.0)
     elif isinstance(candidate, (tuple, list)) and len(candidate) >= 2:
-        c = (float(candidate[0]), float(candidate[1]))
+        try:
+            c = (float(candidate[0] if candidate[0] is not None else 0.0), float(candidate[1] if candidate[1] is not None else 0.0))
+        except Exception:
+            c = (0.0, 0.0)
     else:
         return False
-    r2 = float(min_dist) * float(min_dist)
+    try:
+        r2 = float(min_dist) * float(min_dist)
+    except Exception:
+        r2 = 0.0
     for p in pts:
         if _dist2(c, p) < r2:
             return False

@@ -26,6 +26,15 @@ def _complexity(name: str) -> int:
     return 99
 
 
+def _safe_float(v, default: float = 0.0) -> float:
+    try:
+        if v is None:
+            return float(default)
+        return float(v)
+    except Exception:
+        return float(default)
+
+
 def _infer_feats(cluster: dict | None) -> Dict[str, float]:
     """Leite einfache Merkmale ab; falls keine Infos vorhanden, konservative Defaults.
     Verfügbare Felder (optional):
@@ -33,14 +42,36 @@ def _infer_feats(cluster: dict | None) -> Dict[str, float]:
     """
     c = cluster or {}
     s = c.get("stats", {}) if isinstance(c, dict) else {}
+    # Bevorzugt Werte aus stats, sonst aus Cluster; None → Default 0.0/12/1.0
+    sigma_rot = s.get("sigma_rot") if isinstance(s, dict) else None
+    if sigma_rot is None:
+        sigma_rot = c.get("sigma_rot") if isinstance(c, dict) else None
+    sigma_scale = s.get("sigma_scale") if isinstance(s, dict) else None
+    if sigma_scale is None:
+        sigma_scale = c.get("sigma_scale") if isinstance(c, dict) else None
+    phi_shear = s.get("phi_shear") if isinstance(s, dict) else None
+    if phi_shear is None:
+        phi_shear = c.get("phi_shear") if isinstance(c, dict) else None
+    parallax = s.get("parallax") if isinstance(s, dict) else None
+    if parallax is None:
+        parallax = c.get("parallax") if isinstance(c, dict) else None
+    inliers = s.get("inliers") if isinstance(s, dict) else None
+    if inliers is None:
+        inliers = c.get("inliers") if isinstance(c, dict) else None
+    rms_base = s.get("rms") if isinstance(s, dict) else None
+    if rms_base is None:
+        rms_base = c.get("rms") if isinstance(c, dict) else None
+    outliers = s.get("outliers") if isinstance(s, dict) else None
+    if outliers is None:
+        outliers = c.get("outliers") if isinstance(c, dict) else None
     return {
-        "sigma_rot": float(s.get("sigma_rot", c.get("sigma_rot", 0.0) or 0.0)),
-        "sigma_scale": float(s.get("sigma_scale", c.get("sigma_scale", 0.0) or 0.0)),
-        "phi_shear": float(s.get("phi_shear", c.get("phi_shear", 0.0) or 0.0)),
-        "parallax": float(s.get("parallax", c.get("parallax", 0.0) or 0.0)),
-        "inliers": float(s.get("inliers", c.get("inliers", 12) or 12)),
-        "rms_base": float(s.get("rms", c.get("rms", 1.0) or 1.0)),
-        "outliers": float(s.get("outliers", c.get("outliers", 0.0) or 0.0)),
+        "sigma_rot": _safe_float(sigma_rot, 0.0),
+        "sigma_scale": _safe_float(sigma_scale, 0.0),
+        "phi_shear": _safe_float(phi_shear, 0.0),
+        "parallax": _safe_float(parallax, 0.0),
+        "inliers": _safe_float(inliers, 12.0),
+        "rms_base": _safe_float(rms_base, 1.0),
+        "outliers": _safe_float(outliers, 0.0),
     }
 
 

@@ -50,6 +50,15 @@ def time_budget_hit(roi_id) -> bool:
 
 # ———————————— Governance / KPI Scoring ————————————
 
+def _sf(v, default: float) -> float:
+    try:
+        if v is None:
+            return float(default)
+        return float(v)
+    except Exception:
+        return float(default)
+
+
 def compute_target_score(kpis: Dict[str, Any]) -> float:
     """Berechne einen Zielscore (niedriger ist besser) gemäß Gewichten.
     Erwartete Felder (optional):
@@ -58,8 +67,9 @@ def compute_target_score(kpis: Dict[str, Any]) -> float:
       - time_norm (0..1), normalisierte Zeitkosten
     Fallbacks auf konservative Defaults.
     """
-    survival = float(kpis.get("survival", kpis.get("survival_30", 0.6)))
-    corr_med = float(kpis.get("corr_med", 0.6))
-    time_norm = float(kpis.get("time_norm", 0.5))
+    survival_30 = _sf(kpis.get("survival_30", 0.6), 0.6)
+    survival = _sf(kpis.get("survival", survival_30), survival_30)
+    corr_med = _sf(kpis.get("corr_med", 0.6), 0.6)
+    time_norm = _sf(kpis.get("time_norm", 0.5), 0.5)
     score = 0.5 * (1.0 - survival) + 0.3 * (1.0 - corr_med) + 0.2 * time_norm
     return float(score)
