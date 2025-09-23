@@ -39,12 +39,21 @@ def _set_focal_value(cam, val: float) -> Optional[str]:
     for name in ("focal_length", "focal", "lens"):
         if hasattr(cam, name):
             try:
-                setattr(cam, float(val))
+                # FIX: Attributname korrekt übergeben
+                setattr(cam, name, float(val))
                 return name
             except Exception:
-                # falls ein Name nicht setzbar ist → nächsten probieren
                 continue
     return None
+
+
+# Optional: robustere Variante für unbenutzte Hilfsfunktion
+def _next_model(current: str) -> str:
+    try:
+        idx = ALLOWED_MODELS.index(str(current))
+    except Exception:
+        idx = 0
+    return ALLOWED_MODELS[(idx + 1) % len(ALLOWED_MODELS)]
 
 
 def _enforce_focal_override(context, focal_val: float):
@@ -105,14 +114,6 @@ def _cycle_distortion_model(context) -> Tuple[Optional[str], Optional[str]]:
     name = _set_distortion_model(ts, nxt)
     print(f"[SolveTest] model_switch {cur} -> {nxt} via {name}")
     return (cur, nxt)
-
-
-def _next_model(current: str) -> str:
-    try:
-        idx = DISTORTION_MODELS.index(str(current))
-    except Exception:
-        idx = 0
-    return DISTORTION_MODELS[(idx + 1) % len(DISTORTION_MODELS)]
 
 
 def _snapshot_disable_refine(context):
@@ -295,6 +296,10 @@ class CLIP_OT_solve_test(Operator):
     _loops: int
     _last_reduce: Optional[Dict[str, Any]]
     _pass: int  # 0: no refine, 1: all refine
+    # NEU: Focal-Grenzen
+    _focal_base: Optional[float]
+    _focal_low: Optional[float]
+    _focal_high: Optional[float]
 
     def _cleanup(self, context):
         if self._timer:
@@ -316,6 +321,10 @@ class CLIP_OT_solve_test(Operator):
         self._loops = 0
         self._last_reduce = None
         self._pass = 0
+        # INIT: Focal-Attribute definieren
+        self._focal_base = None
+        self._focal_low = None
+        self._focal_high = None
         try:
             context.scene["tco_solve_test_active"] = True
             context.scene["tco_restart_find"] = False
@@ -366,131 +375,141 @@ class CLIP_OT_solve_test(Operator):
         return {'CANCELLED'}
 
     def modal(self, context, event):
-        if event.type != 'TIMER':
-            return {"RUNNING_MODAL"}
-        scn = context.scene
         try:
-            thr = float(getattr(scn, "error_track", 2.0))
-        except Exception:
-            thr = 2.0
-        clip, cam = _get_clip_and_camera(context)
-        if not clip or not cam:
-            return self._finish(context, {"status": "NO_CLIP_OR_CAMERA"})
-
-        use_auto, focal_val = _get_scene_focal_prefs(context)
-
-        if self._state == "INIT":
-            # Pass 0: Refine AUS, Pass 1: Refine AN (bestehende Logik)
-            if self._pass == 0:
-                _force_disable_refine(context)
-                print("[SolveTest] PASS0 (refine OFF)")
-            else:
-                _force_enable_refine_all(context)
-                self._init_focal_bounds_if_needed(context)
-                print("[SolveTest] PASS1 (refine ALL)")
-            # Wenn fix: sofort auf Vorgabewert setzen (für beide Pässe)
-            if not use_auto and focal_val > 0:
-                try:
-                    _enforce_focal_override(context, focal_val)
-                except Exception as ex:
-                    print(f"[SolveTest] enforce focal (INIT) error: {ex}")
-            self._state = "SOLVE"
-            return {"RUNNING_MODAL"}
-
-        if self._state == "SOLVE":
-            if not use_auto and focal_val > 0:
-                try:
-                    _enforce_focal_override(context, focal_val)
-                except Exception as ex:
-                    print(f"[SolveTest] enforce focal (SOLVE) error: {ex}")
+            if event.type != 'TIMER':
+                return {"RUNNING_MODAL"}
+            scn = context.scene
             try:
-                solve_camera_only(context)
+                thr = float(getattr(scn, "error_track", 2.0))
+            except Exception:
+                thr = 2.0
+            clip, cam = _get_clip_and_camera(context)
+            if not clip or not cam:
+                return self._finish(context, {"status": "NO_CLIP_OR_CAMERA"})
+
+            use_auto, focal_val = _get_scene_focal_prefs(context)
+
+            if self._state == "INIT":
+                # Pass 0: Refine AUS, Pass 1: Refine AN (bestehende Logik)
+                if self._pass == 0:
+                    _force_disable_refine(context)
+                    print("[SolveTest] PASS0 (refine OFF)")
+                else:
+                    _force_enable_refine_all(context)
+                    self._init_focal_bounds_if_needed(context)
+                    print("[SolveTest] PASS1 (refine ALL)")
+                # Wenn fix: sofort auf Vorgabewert setzen (für beide Pässe)
+                if not use_auto and focal_val > 0:
+                    try:
+                        _enforce_focal_override(context, focal_val)
+                    except Exception as ex:
+                        print(f"[SolveTest] enforce focal (INIT) error: {ex}")
+                self._state = "SOLVE"
+                return {"RUNNING_MODAL"}
+
+            if self._state == "SOLVE":
+                if not use_auto and focal_val > 0:
+                    try:
+                        _enforce_focal_override(context, focal_val)
+                    except Exception as ex:
+                        print(f"[SolveTest] enforce focal (SOLVE) error: {ex}")
+                try:
+                    solve_camera_only(context)
+                except Exception:
+                    pass
+                self._deadline = time.perf_counter() + 10.0
+                self._state = "WAIT"
+                return {"RUNNING_MODAL"}
+
+            if self._state == "WAIT":
+                try:
+                    try:
+                        context.view_layer.update()
+                    except Exception:
+                        pass
+                    ae = get_solve_average_error(context)
+                except Exception:
+                    ae = None
+                if not isinstance(ae, (int, float)) and time.perf_counter() < self._deadline:
+                    return {"RUNNING_MODAL"}
+                self._ae = float(ae) if isinstance(ae, (int, float)) else None
+                print(f"[SolveTest] pass={self._pass} loop={self._loops} avg_error={self._ae} thr={thr}")
+                # Nach Refine-Solve Focal behandeln:
+                if self._pass == 1:
+                    if not use_auto and focal_val > 0:
+                        # fix: exakt auf Vorgabewert zurücksetzen
+                        _enforce_focal_override(context, focal_val)
+                    else:
+                        # auto: nur ggf. 10%-Klammer
+                        self._clamp_focal_after_refine(context)
+                if (self._ae is not None) and (self._ae <= thr):
+                    return self._finish(context, {"status": "OK", "avg_error": self._ae, "stage": ("pass0" if self._pass == 0 else "pass1"), "restart_find": False})
+                self._state = "REDUCE"
+                return {"RUNNING_MODAL"}
+
+            if self._state == "REDUCE":
+                # Dynamische Anzahl: n = max(1, min(10, ae/thr))
+                try:
+                    ratio = float(self._ae) / max(1e-9, float(thr)) if self._ae is not None else 1.0
+                except Exception:
+                    ratio = 1.0
+                n_delete = int(max(1, min(10, ratio)))
+                print(f"[SolveTest] reduce n={n_delete} (ratio={ratio:.3f})")
+                try:
+                    self._last_reduce = run_reduce_error_tracks(context, max_to_delete=int(n_delete))
+                    try:
+                        scn["tco_last_reduce_error_tracks"] = self._last_reduce
+                    except Exception:
+                        pass
+                    print(f"[SolveTest] reduce_result deleted={self._last_reduce.get('deleted')} names={self._last_reduce.get('names')}")
+                except Exception as ex:
+                    self._last_reduce = {"status": "ERROR", "reason": str(ex)}
+                    print(f"[SolveTest] reduce_error {ex}")
+                self._state = "FINDMAX"
+                return {"RUNNING_MODAL"}
+
+            if self._state == "FINDMAX":
+                # Max-Marker suchen
+                try:
+                    self._find_result = run_find_max_marker_frame(context)
+                except Exception as ex:
+                    self._find_result = {"status": "ERROR", "error": str(ex)}
+                status = (self._find_result or {}).get("status")
+                print(f"[SolveTest] find_max status={status} result={self._find_result}")
+                if status == "FOUND":
+                    prev, nxt = _cycle_distortion_model(context)
+                    payload = {
+                        "status": "MODEL_SWITCH",
+                        "avg_error": self._ae,
+                        "previous_model": prev,
+                        "next_model": nxt,
+                        "restart_find": True,
+                        "find_max": self._find_result,
+                    }
+                    return self._finish(context, payload)
+                # nichts gefunden → nächster Schritt
+                if self._pass == 0:
+                    # weiter zu Pass 1 (alle Refines an)
+                    self._pass = 1
+                    self._state = "INIT"
+                    return {"RUNNING_MODAL"}
+                else:
+                    # nach Pass 1 wieder von vorne (Pass 0)
+                    self._pass = 0
+                    self._loops += 1
+                    self._state = "INIT"
+                    return {"RUNNING_MODAL"}
+
+            return {"RUNNING_MODAL"}
+        except Exception as ex:
+            print(f"[SolveTest] modal error: {ex}")
+            try:
+                context.scene["tco_solve_test_active"] = False
+                context.scene["tco_restart_find"] = False
             except Exception:
                 pass
-            self._deadline = time.perf_counter() + 10.0
-            self._state = "WAIT"
-            return {"RUNNING_MODAL"}
-
-        if self._state == "WAIT":
-            try:
-                try:
-                    context.view_layer.update()
-                except Exception:
-                    pass
-                ae = get_solve_average_error(context)
-            except Exception:
-                ae = None
-            if not isinstance(ae, (int, float)) and time.perf_counter() < self._deadline:
-                return {"RUNNING_MODAL"}
-            self._ae = float(ae) if isinstance(ae, (int, float)) else None
-            print(f"[SolveTest] pass={self._pass} loop={self._loops} avg_error={self._ae} thr={thr}")
-            # Nach Refine-Solve Focal behandeln:
-            if self._pass == 1:
-                if not use_auto and focal_val > 0:
-                    # fix: exakt auf Vorgabewert zurücksetzen
-                    _enforce_focal_override(context, focal_val)
-                else:
-                    # auto: nur ggf. 10%-Klammer
-                    self._clamp_focal_after_refine(context)
-            if (self._ae is not None) and (self._ae <= thr):
-                return self._finish(context, {"status": "OK", "avg_error": self._ae, "stage": ("pass0" if self._pass == 0 else "pass1"), "restart_find": False})
-            self._state = "REDUCE"
-            return {"RUNNING_MODAL"}
-
-        if self._state == "REDUCE":
-            # Dynamische Anzahl: n = max(1, min(10, ae/thr))
-            try:
-                ratio = float(self._ae) / max(1e-9, float(thr)) if self._ae is not None else 1.0
-            except Exception:
-                ratio = 1.0
-            n_delete = int(max(1, min(10, ratio)))
-            print(f"[SolveTest] reduce n={n_delete} (ratio={ratio:.3f})")
-            try:
-                self._last_reduce = run_reduce_error_tracks(context, max_to_delete=int(n_delete))
-                try:
-                    scn["tco_last_reduce_error_tracks"] = self._last_reduce
-                except Exception:
-                    pass
-                print(f"[SolveTest] reduce_result deleted={self._last_reduce.get('deleted')} names={self._last_reduce.get('names')}")
-            except Exception as ex:
-                self._last_reduce = {"status": "ERROR", "reason": str(ex)}
-                print(f"[SolveTest] reduce_error {ex}")
-            self._state = "FINDMAX"
-            return {"RUNNING_MODAL"}
-
-        if self._state == "FINDMAX":
-            # Max-Marker suchen
-            try:
-                self._find_result = run_find_max_marker_frame(context)
-            except Exception as ex:
-                self._find_result = {"status": "ERROR", "error": str(ex)}
-            status = (self._find_result or {}).get("status")
-            print(f"[SolveTest] find_max status={status} result={self._find_result}")
-            if status == "FOUND":
-                prev, nxt = _cycle_distortion_model(context)
-                payload = {
-                    "status": "MODEL_SWITCH",
-                    "avg_error": self._ae,
-                    "previous_model": prev,
-                    "next_model": nxt,
-                    "restart_find": True,
-                    "find_max": self._find_result,
-                }
-                return self._finish(context, payload)
-            # nichts gefunden → nächster Schritt
-            if self._pass == 0:
-                # weiter zu Pass 1 (alle Refines an)
-                self._pass = 1
-                self._state = "INIT"
-                return {"RUNNING_MODAL"}
-            else:
-                # nach Pass 1 wieder von vorne (Pass 0)
-                self._pass = 0
-                self._loops += 1
-                self._state = "INIT"
-                return {"RUNNING_MODAL"}
-
-        return {"RUNNING_MODAL"}
+            self._cleanup(context)
+            return {'CANCELLED'}
 
     def _init_focal_bounds_if_needed(self, context):
         # Nur in Pass 1 initialisieren
@@ -501,17 +520,14 @@ class CLIP_OT_solve_test(Operator):
         if not cam:
             return
         # Baseline aus UI
-        if use_auto:
-            base = _get_focal_value(cam)  # aktuelle Brennweite als Info
-        else:
-            base = focal_val
+        base = _get_focal_value(cam) if use_auto else focal_val
         if base and base > 0:
-            # Wenn fix (use_auto=False): low == high == base (effektiv fix)
             self._focal_base = base
             if use_auto:
                 self._focal_low = base * 0.9
                 self._focal_high = base * 1.1
             else:
+                # Fix: low == high == base
                 self._focal_low = base
                 self._focal_high = base
             print(f"[SolveTest] focal baseline set base={base:.6f} low={self._focal_low:.6f} high={self._focal_high:.6f} (use_auto={use_auto})")
