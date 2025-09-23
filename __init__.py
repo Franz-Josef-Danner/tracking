@@ -1,14 +1,12 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Kaiserlich Tracker – Top-Level Add-on (__init__.py), Solve-QA-UI entfernt."""
+"""Kaiserlich Tracker – Top-Level Add-on (__init__.py), UI ausgelagert nach UI/."""
 from __future__ import annotations
 import bpy
-from bpy.types import PropertyGroup, Panel, Operator as BpyOperator
-from bpy.props import IntProperty, FloatProperty, CollectionProperty, BoolProperty
+from bpy.types import PropertyGroup, Operator as BpyOperator
+from bpy.props import IntProperty, FloatProperty, CollectionProperty
 
-# Nur Klassen importieren – kein register() aus Submodulen aufrufen
 from .Operator.camera_tracking_coordinator import CLIP_OT_camera_tracking_coordinator
 from .Helper.bidirectional_track import CLIP_OT_bidirectional_track
-# Neue delegierte Operatoren explizit importieren, damit sie in Blender registriert werden
 from .Operator.bootstrap_O import CLIP_OT_bootstrap_cycle
 from .Operator.find_frame_O import CLIP_OT_find_low_and_jump
 from .Operator.detect_O import CLIP_OT_detect_cycle
@@ -26,7 +24,7 @@ bl_info = {
 }
 
 # ---------------------------------------------------------------------------
-# Scene-Properties (bereinigt: keine Solve-QA-/Debug-/Log-Props mehr)
+# Scene-Properties (Workflow-Parameter)
 # ---------------------------------------------------------------------------
 class RepeatEntry(PropertyGroup):
     frame: IntProperty(name="Frame", default=0, min=0)
@@ -56,12 +54,7 @@ def _register_scene_props() -> None:
 
 def _unregister_scene_props() -> None:
     sc = bpy.types.Scene
-    for name in (
-        "repeat_frame",
-        "marker_frame",
-        "frames_track",
-        "error_track",
-    ):
+    for name in ("repeat_frame", "marker_frame", "frames_track", "error_track"):
         if hasattr(sc, name):
             try:
                 delattr(sc, name)
@@ -70,7 +63,7 @@ def _unregister_scene_props() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Launcher-Operator: startet den modalen Coordinator
+# Launcher-Operator
 # ---------------------------------------------------------------------------
 class CLIP_OT_kaiserlich_coordinator_launcher(BpyOperator):
     bl_idname = "clip.kaiserlich_coordinator_launcher"
@@ -85,97 +78,33 @@ class CLIP_OT_kaiserlich_coordinator_launcher(BpyOperator):
 
 
 # ---------------------------------------------------------------------------
-# Panel (bereinigt: nur Eingabefelder + Start-Button)
-# ---------------------------------------------------------------------------
-class CLIP_PT_kaiserlich_panel(Panel):
-    bl_space_type = "CLIP_EDITOR"
-    bl_region_type = "UI"
-    bl_category = "Kaiserlich"
-    bl_label = "Kaiserlich Tracker"
-
-    def draw(self, context):
-        layout = self.layout
-        scene = context.scene
-
-        layout.label(text="Tracking Einstellungen")
-        if hasattr(scene, "marker_frame"):
-            layout.prop(scene, "marker_frame")
-        if hasattr(scene, "frames_track"):
-            layout.prop(scene, "frames_track")
-        if hasattr(scene, "error_track"):
-            layout.prop(scene, "error_track")
-
-        layout.separator()
-        layout.operator("clip.kaiserlich_coordinator_launcher", text="Coordinator starten")
-
-
-# ---------------------------------------------------------------------------
 # Register/Unregister
 # ---------------------------------------------------------------------------
-_CLASSES = (
-    RepeatEntry,
-    # Helper/Support-Operatoren zuerst registrieren
-    CLIP_OT_bootstrap_cycle,
-    CLIP_OT_find_low_and_jump,
-    CLIP_OT_detect_cycle,
-    CLIP_OT_clean_cycle,
-    CLIP_OT_solve_test,
-    # Bidi + Coordinator + UI
-    CLIP_OT_bidirectional_track,
-    CLIP_OT_camera_tracking_coordinator,            # modal coordinator
-    CLIP_OT_kaiserlich_coordinator_launcher, # launcher
-    CLIP_PT_kaiserlich_panel,                # ui
-)
-
-
-# Panel-Import jetzt aus UI statt Operator
-try:
-    from .UI.ui_focal_panel import CLIP_PT_focal_control
-except Exception:
-    CLIP_PT_focal_control = None
-
 _CLASSES = [
     RepeatEntry,
-    # Helper/Support-Operatoren zuerst registrieren
+    # Helper/Support-Operatoren
     CLIP_OT_bootstrap_cycle,
     CLIP_OT_find_low_and_jump,
     CLIP_OT_detect_cycle,
     CLIP_OT_clean_cycle,
     CLIP_OT_solve_test,
-    # Bidi + Coordinator + UI
+    # Bidi + Coordinator + Launcher
     CLIP_OT_bidirectional_track,
-    CLIP_OT_camera_tracking_coordinator,            # modal coordinator
-    CLIP_OT_kaiserlich_coordinator_launcher, # launcher
-    CLIP_PT_kaiserlich_panel,                # ui
+    CLIP_OT_camera_tracking_coordinator,
+    CLIP_OT_kaiserlich_coordinator_launcher,
 ]
-if CLIP_PT_focal_control:
-    _CLASSES.append(CLIP_PT_focal_control)
 
 
 def register() -> None:
-    from .ui import register as _ui_register  # weiter im separaten ui/ Ordner
-    bpy.types.Scene.tco_use_auto_focal = BoolProperty(
-        name="Auto-Brennweite (Refine)",
-        description="Wenn aktiv, wird die Brennweite durch Refine automatisch bestimmt. "
-                    "Die 10%-Klammer wird aufgehoben.",
-        default=True,
-    )
-    bpy.types.Scene.tco_focal_override = FloatProperty(
-        name="Fixe Brennweite (mm)",
-        description="Wenn Auto-Brennweite aus ist, wird dieser Wert als fixe Brennweite verwendet "
-                    "und nicht verändert.",
-        default=35.0,
-        min=0.1,
-        max=5000.0,
-        precision=3,
-    )
+    # UI-Paket registriert Panels & UI-Properties
+    from .ui import register as _ui_register
     for c in _CLASSES:
         try:
             bpy.utils.register_class(c)
         except Exception:
             pass
     _register_scene_props()
-    _ui_register()                           # Stub ok
+    _ui_register()  # registriert UI-Panel und UI-Scene-Properties
 
 
 def unregister() -> None:
@@ -187,10 +116,6 @@ def unregister() -> None:
             bpy.utils.unregister_class(c)
         except Exception:
             pass
-    if hasattr(bpy.types.Scene, "tco_use_auto_focal"):
-        del bpy.types.Scene.tco_use_auto_focal
-    if hasattr(bpy.types.Scene, "tco_focal_override"):
-        del bpy.types.Scene.tco_focal_override
 
 
 if __name__ == "__main__":
