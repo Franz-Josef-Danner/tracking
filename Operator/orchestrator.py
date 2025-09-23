@@ -223,11 +223,17 @@ def run_autotrack(context, clip) -> dict:
     profile = _sanitize_detect_profile(profile)
 
     # Zeitbudget für Seeding (z. B. 50 ms oder 2x Marker-Frame in ms)
-    seeding_budget_ms = int(getattr(scn, "seeding_budget_ms", 50)) if scn else 50
-    seeding_t0 = time.time()
-
-    def _time_budget_hit() -> bool:
-        return (time.time() - seeding_t0) * 1000.0 >= seeding_budget_ms
+    raw_budget = getattr(scn, "seeding_budget_ms", None) if scn else None
+    try:
+        seeding_budget_ms = int(raw_budget) if raw_budget is not None else 50
+    except Exception:
+        seeding_budget_ms = 50
+    budget_fn = None
+    if seeding_budget_ms is not None and seeding_budget_ms > 0:
+        seeding_t0 = time.time()
+        def _time_budget_hit() -> bool:
+            return (time.time() - seeding_t0) * 1000.0 >= seeding_budget_ms
+        budget_fn = _time_budget_hit
 
     # Szene-Paket für Seeding
     scene_pkg: Dict[str, Any] = {
@@ -237,9 +243,9 @@ def run_autotrack(context, clip) -> dict:
         "context": context,
         "clip": clip,
         "search": search,
-        # Early-Stop-Callbacks
-        "time_budget_hit": _time_budget_hit,  # callable erlaubt dynamische Prüfung
     }
+    if budget_fn is not None:
+        scene_pkg["time_budget_hit"] = budget_fn
 
     log_step("orchestrator.pre_seeding", {
         "roi_id": roi_id,
