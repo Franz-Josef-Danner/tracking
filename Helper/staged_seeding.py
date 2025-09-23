@@ -7,11 +7,98 @@ from .dedup import build_index, keep_if_far_enough, feedback_min_distance
 from .micro_validate import validate_markers, trim_to_band
 
 
-def _detect_candidates_placeholder(roi_id, threshold: float, levels: int, max_features: int, nms_window_px: int, channel: str | None = None) -> List[dict]:
-    """Platzhalter für echte Detektion. Liefert aktuell keine Kandidaten.
+def _detect_candidates_blender(context, clip, threshold: float, min_distance_px: int, max_features: int, nms_window_px: int, pattern: int | None = None, search_px: int | None = None) -> List[dict]:
+    """Versuche Blender-intern Features zu detektieren und liefere Marker-Kandidaten zurück.
+    Gibt eine Liste von Dicts mit Pixel-Koordinaten zurück: {'x': px, 'y': px}.
+    """
+    try:
+        import bpy  # type: ignore
+    except Exception:
+        return []
+
+    try:
+        # Tracking Settings behutsam setzen, wenn vorhanden
+        ts = getattr(getattr(clip, "tracking", None), "settings", None)
+        if ts:
+            # Muster-/Suchgröße optional anreichern
+            if pattern and hasattr(ts, "default_pattern_size"):
+                try:
+                    ts.default_pattern_size = int(pattern)
+                except Exception:
+                    pass
+            if search_px and hasattr(ts, "default_search_size"):
+                try:
+                    ts.default_search_size = int(search_px)
+                except Exception:
+                    pass
+
+        # Vorher/Nachher-Trackinglisten vergleichen
+        tracks_before = list(getattr(getattr(clip, "tracking", None), "tracks", []) or [])
+        n_before = len(tracks_before)
+
+        # Operator auf aktuellem Frame ausführen
+        frame = int(getattr(getattr(context, "scene", None), "frame_current", 1))
+        try:
+            bpy.ops.clip.detect_features(threshold=float(threshold), min_distance=int(min_distance_px))
+        except Exception:
+            # Fallback: evtl. andere Parameternamen – dann ungetan zurück
+            return []
+
+        tracks_after = list(getattr(getattr(clip, "tracking", None), "tracks", []) or [])
+        n_after = len(tracks_after)
+        new_n = max(0, n_after - n_before)
+        if new_n <= 0:
+            return []
+
+        w, h = (0, 0)
+        try:
+            w, h = getattr(clip, "size", (0, 0))
+        except Exception:
+            pass
+
+        # Neue Tracks sind typischerweise am Ende angehängt
+        new_tracks = tracks_after[-new_n:]
+        out: List[dict] = []
+        for t in new_tracks:
+            try:
+                # Marker am aktuellen Frame holen
+                # API: t.markers.find_frame(frame) (falls vorhanden), sonst best-effort
+                marker = None
+                if hasattr(t.markers, "find_frame"):
+                    marker = t.markers.find_frame(frame)
+                if marker is None:
+                    # Heuristik: nimm den Marker mit passender frame Nummer, sonst letzten
+                    marker = None
+                    for m in t.markers:
+                        if int(getattr(m, "frame", -1)) == frame:
+                            marker = m
+                            break
+                    if marker is None and len(t.markers) > 0:
+                        marker = t.markers[-1]
+                if marker is None:
+                    continue
+                co = getattr(marker, "co", None)
+                if not co or w == 0 or h == 0:
+                    continue
+                x = float(co[0]) * float(w)
+                y = float(co[1]) * float(h)
+                out.append({"x": x, "y": y, "corr": 1.0})
+            except Exception:
+                continue
+        return out
+    except Exception:
+        return []
+
+
+def _detect_candidates_placeholder(roi_id, threshold: float, levels: int, max_features: int, nms_window_px: int, channel: str | None = None, *, context=None, clip=None, pattern: int | None = None, search_px: int | None = None) -> List[dict]:
+    """Platzhalter für echte Detektion. Versucht Blender-Operator zu nutzen; sonst leer.
     Struktur je Kandidat (Beispiel): {'x': float, 'y': float, 'score': float}
     """
-    # TODO: hier echten Detector einhängen
+    # Blender-Integration (wenn verfügbar)
+    cands = _detect_candidates_blender(context, clip, threshold, nms_window_px if nms_window_px else 0, max_features, nms_window_px, pattern=pattern, search_px=search_px)
+    if cands:
+        return cands
+    # TODO: hier alternativen Detector einhängen (z. B. OpenCV)
     return []
 
 
@@ -43,6 +130,11 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
     index = build_index(existing)
     stages_info: List[Dict] = []
 
+    # optionale Blender-Kontexte
+    context = (scene or {}).get("context") if isinstance(scene, dict) else None
+    clip = (scene or {}).get("clip") if isinstance(scene, dict) else None
+    search_px = (scene or {}).get("search") if isinstance(scene, dict) else None
+
     for i, thr in enumerate(thr_stages, start=1):
         placed_this = 0
         cands = _detect_candidates_placeholder(
@@ -52,6 +144,10 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
             max_features=max_features,
             nms_window_px=nms_win,
             channel=(scene or {}).get("channel") if isinstance(scene, dict) else None,
+            context=context,
+            clip=clip,
+            pattern=pattern,
+            search_px=search_px,
         )
 
         kept = []

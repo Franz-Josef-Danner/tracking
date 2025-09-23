@@ -60,8 +60,9 @@ def run_autotrack(context, clip) -> dict:
         "detect_profile": profile,
         "channel": "Y",
         "existing_markers": [],
-        # optionale Bänder (können fehlen, werden intern fallbacked)
-        # "marker_stage_lo": ..., "marker_stage_hi": ...,
+        "context": context,
+        "clip": clip,
+        "search": search,
     }
 
     # Gestufte Setzung ausführen
