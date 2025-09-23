@@ -304,12 +304,13 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
         if isinstance(scene, dict):
             tb = scene.get("time_budget_hit", False)
             try:
-                if callable(tb) and tb():
+                if callable(tb):
+                    if tb():
+                        break
+                elif bool(tb):
                     break
             except Exception:
                 pass
-            if bool(tb):
-                break
 
         # Stufen-Parameter ermitteln
         p_i, a_i, search_i, edge_i = stage_params(i, int(pattern), int(alpha))
@@ -359,12 +360,13 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
             if isinstance(scene, dict):
                 tb = scene.get("time_budget_hit", False)
                 try:
-                    if callable(tb) and tb():
+                    if callable(tb):
+                        if tb():
+                            break
+                    elif bool(tb):
                         break
                 except Exception:
                     pass
-                if bool(tb):
-                    break
             if keep_if_far_enough(c, index, min_dist):
                 kept.append(c)
                 accepted.append(c)
@@ -409,7 +411,7 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
                     break
             except Exception:
                 pass
-            if bool(scene.get("coverage_ok", False)):
+            if not callable(cov_ok) and bool(scene.get("coverage_ok", False)):
                 break
             # time_budget wird zu Beginn der nächsten Stufe erneut geprüft
 
@@ -420,12 +422,12 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
             tb = scene.get("time_budget_hit", False)
             skip_refill = False
             try:
-                if callable(tb) and tb():
+                if callable(tb):
+                    skip_refill = bool(tb())
+                elif bool(tb):
                     skip_refill = True
             except Exception:
-                pass
-            if bool(tb):
-                skip_refill = True
+                skip_refill = False
             if skip_refill:
                 stages_info.append({
                     "stage": 6,
@@ -466,12 +468,13 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
             if isinstance(scene, dict):
                 tb = scene.get("time_budget_hit", False)
                 try:
-                    if callable(tb) and tb():
+                    if callable(tb):
+                        if tb():
+                            break
+                    elif bool(tb):
                         break
                 except Exception:
                     pass
-                if bool(tb):
-                    break
             if keep_if_far_enough(c, index, min_dist):
                 kept.append(c)
                 accepted.append(c)
