@@ -149,7 +149,6 @@ def _snapshot_disable_refine(context):
     for name in (
         "refine_focal_length",
         "refine_principal_point",
-        "refine_tangential",
         "refine_radial_distortion",
         "refine_k1", "refine_k2", "refine_k3", "refine_k4", "refine_k5", "refine_k6",
     ):
@@ -236,11 +235,6 @@ def _force_disable_refine(context) -> bool:
             "refine_distortion",
             "refine_k1",
         )),
-        ("TANGENTIAL", (
-            "refine_tangential",
-            "refine_intrinsics_tangential_distortion",
-            "refine_tangential_distortion",
-        )),
     ]
     for _flag, names in groups:
         name_set = _try_set(ts, names, False)
@@ -250,7 +244,7 @@ def _force_disable_refine(context) -> bool:
 
 
 def _force_enable_refine_all(context) -> bool:
-    """Aktiviere alle Refine-Optionen (Focal, Principal, Radial, optional Tangential)."""
+    """Aktiviere alle Refine-Optionen (Focal, Principal, Radial)."""
     clip, cam = _get_clip_and_camera(context)
     if not clip or not getattr(clip, "tracking", None):
         return False
@@ -282,11 +276,6 @@ def _force_enable_refine_all(context) -> bool:
             "refine_radial_distortion",
             "refine_distortion",
             "refine_k1",
-        )),
-        ("TANGENTIAL", (
-            "refine_tangential",
-            "refine_intrinsics_tangential_distortion",
-            "refine_tangential_distortion",
         )),
     ]
     for _flag, names in groups_true:
