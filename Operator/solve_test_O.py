@@ -10,6 +10,63 @@ from ..Helper.find_max_marker_frame import run_find_max_marker_frame
 
 ALLOWED_MODELS: Tuple[str, ...] = ("POLYNOMIAL", "DIVISION", "BROWN")  # NUKE bewusst ausgelassen
 
+def _get_tracking_objs(context):
+    clip = getattr(context.space_data, "clip", None)
+    tr = getattr(clip, "tracking", None) if clip else None
+    ts = getattr(tr, "settings", None) if tr else None
+    tc = getattr(tr, "camera", None) if tr else None
+    return ts, tc
+
+def _get_distortion_model(context) -> Optional[str]:
+    ts, tc = _get_tracking_objs(context)
+    # Reihenfolge: Settings dann Camera
+    for obj, attr in ((ts, "distortion_model"), (ts, "distortion"),
+                      (tc, "distortion_model"), (tc, "distortion")):
+        if obj and hasattr(obj, attr):
+            try:
+                v = getattr(obj, attr)
+                if isinstance(v, str) and v:
+                    v_up = v.upper()
+                    print(f"[SolveTest] model_read {v_up} from {obj.__class__.__name__}.{attr}")
+                    return v_up
+            except Exception:
+                continue
+    return None
+
+def _set_distortion_model(context, value: str) -> Optional[str]:
+    ts, tc = _get_tracking_objs(context)
+    val = str(value).upper()
+    for obj, attr in ((ts, "distortion_model"), (ts, "distortion"),
+                      (tc, "distortion_model"), (tc, "distortion")):
+        if obj and hasattr(obj, attr):
+            try:
+                setattr(obj, attr, val)
+                # Scene/UI refresh optional
+                try:
+                    context.view_layer.update()
+                except Exception:
+                    pass
+                path = f"{obj.__class__.__name__}.{attr}"
+                print(f"[SolveTest] model_write {val} to {path}")
+                return path
+            except Exception:
+                continue
+    print(f"[SolveTest] model_write FAILED value={val}")
+    return None
+
+def _cycle_distortion_model(context) -> Tuple[Optional[str], Optional[str]]:
+    cur = _get_distortion_model(context)
+    if cur not in ALLOWED_MODELS:
+        nxt = ALLOWED_MODELS[0]
+        where = _set_distortion_model(context, nxt)
+        print(f"[SolveTest] model_switch {cur} -> {nxt} via {where} (fallback)")
+        return (cur, nxt)
+    i = ALLOWED_MODELS.index(cur)
+    nxt = ALLOWED_MODELS[(i + 1) % len(ALLOWED_MODELS)]
+    where = _set_distortion_model(context, nxt)
+    print(f"[SolveTest] model_switch {cur} -> {nxt} via {where}")
+    return (cur, nxt)
+
 
 def _get_clip_and_camera(context):
     clip = getattr(context.space_data, "clip", None)
@@ -70,49 +127,6 @@ def _enforce_focal_override(context, focal_val: float):
     except Exception as ex:
         print(f"[SolveTest] enforce focal error: {ex}")
         return None
-
-
-def _get_distortion_model(ts) -> Optional[str]:
-    for name in ("distortion_model", "distortion"):
-        if hasattr(ts, name):
-            try:
-                v = getattr(ts, name)
-                if isinstance(v, str) and v:
-                    return v.upper()
-            except Exception:
-                pass
-    return None
-
-
-def _set_distortion_model(ts, value: str) -> Optional[str]:
-    value = str(value).upper()
-    for name in ("distortion_model", "distortion"):
-        if hasattr(ts, name):
-            try:
-                setattr(ts, name, value)
-                return name
-            except Exception:
-                continue
-    return None
-
-
-def _cycle_distortion_model(context) -> Tuple[Optional[str], Optional[str]]:
-    """Schaltet das Distortion-Model auf das nächste in ALLOWED_MODELS."""
-    clip, _ = _get_clip_and_camera(context)
-    ts = getattr(getattr(clip, "tracking", None), "settings", None) if clip else None
-    if not ts:
-        return (None, None)
-    cur = _get_distortion_model(ts)
-    if cur not in ALLOWED_MODELS:
-        nxt = ALLOWED_MODELS[0]
-        name = _set_distortion_model(ts, nxt)
-        print(f"[SolveTest] model_switch {cur} -> {nxt} via {name} (fallback)")
-        return (cur, nxt)
-    i = ALLOWED_MODELS.index(cur)
-    nxt = ALLOWED_MODELS[(i + 1) % len(ALLOWED_MODELS)]
-    name = _set_distortion_model(ts, nxt)
-    print(f"[SolveTest] model_switch {cur} -> {nxt} via {name}")
-    return (cur, nxt)
 
 
 def _snapshot_disable_refine(context):
