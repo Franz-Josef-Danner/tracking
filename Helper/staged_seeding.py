@@ -2,6 +2,8 @@
 from __future__ import annotations
 from typing import Dict, List
 import time
+import numpy as np
+import cv2
 
 from .dedup import build_index, keep_if_far_enough, feedback_min_distance
 from .micro_validate import validate_markers, trim_to_band
@@ -181,15 +183,45 @@ def _detect_candidates_blender(context, clip, threshold: float, min_distance_px:
         return []
 
 
+def _detect_candidates_opencv(clip, threshold: float, min_distance_px: int, max_features: int, nms_window_px: int, pattern: int | None = None, search_px: int | None = None) -> List[dict]:
+    """OpenCV-Fallback: GFTT-Detector auf erstem Frame des Clips (Platzhalter)."""
+    # clip muss ein numpy-Array (H x W) oder ein Objekt mit .get_frame() liefern
+    try:
+        if hasattr(clip, "get_frame"):
+            img = clip.get_frame(0)
+        elif isinstance(clip, np.ndarray):
+            img = clip
+        else:
+            return []
+        if img is None:
+            return []
+        if img.ndim == 3:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        # GFTT-Parameter
+        quality = float(threshold)
+        min_dist = int(min_distance_px)
+        max_feat = int(max_features)
+        corners = cv2.goodFeaturesToTrack(img, maxCorners=max_feat, qualityLevel=quality, minDistance=min_dist)
+        out = []
+        if corners is not None:
+            for c in corners:
+                x, y = float(c[0][0]), float(c[0][1])
+                out.append({"x": x, "y": y, "corr": 1.0})
+        return out
+    except Exception:
+        return []
+
+
 def _detect_candidates_placeholder(roi_id, threshold: float, *, min_distance_px: int, levels: int, max_features: int, nms_window_px: int, channel: str | None = None, context=None, clip=None, pattern: int | None = None, search_px: int | None = None) -> List[dict]:
-    """Platzhalter für echte Detektion. Versucht Blender-Operator zu nutzen; sonst leer.
-    Struktur je Kandidat (Beispiel): {'x': float, 'y': float, 'score': float}
-    """
+    """Platzhalter für echte Detektion. Versucht Blender-Operator zu nutzen; sonst OpenCV-Fallback."""
     # Blender-Integration (wenn verfügbar)
     cands = _detect_candidates_blender(context, clip, threshold, int(min_distance_px), max_features, nms_window_px, pattern=pattern, search_px=search_px)
     if cands:
         return cands
-    # TODO: hier alternativen Detector einhängen (z. B. OpenCV)
+    # OpenCV-Fallback
+    cands = _detect_candidates_opencv(clip, threshold, min_distance_px, max_features, nms_window_px, pattern=pattern, search_px=search_px)
+    if cands:
+        return cands
     return []
 
 

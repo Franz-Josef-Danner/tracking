@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 from typing import Any, Dict, Tuple, List
-
+import numpy as np
 
 BBox = Tuple[int, int, int, int]
 
@@ -16,20 +16,34 @@ def _clip_size(clip: Any) -> Tuple[int, int]:
 
 
 def analyze_rois(clip: Any, grid: tuple[int, int] = (4, 6)) -> dict:
-    """Return {roi_id: {bbox, texture, motion, divergence, empty_tiles}}.
+    """Return {roi_id: {bbox, texture, motion, divergence, empty_tiles, tiles}}.
 
-    Minimal-Implementierung:
-    - eine Full-Frame-ROI
-    - neutrale Scores, die später durch echte STRM ersetzt werden
+    STRM: Zerlegt das Bild in Tiles und berechnet pro Tile einfache Texture-/Motion-Scores.
+    Coverage-Löcher = Tiles mit Score < 0.3 (Platzhalter-Logik).
     """
     w, h = _clip_size(clip)
+    nx, ny = grid
+    tile_w = max(1, w // nx)
+    tile_h = max(1, h // ny)
+    tiles = np.zeros((ny, nx), dtype=[('texture', 'f4'), ('motion', 'f4')])
+    # Platzhalter: fülle Tiles mit Pseudo-Scores (später: echte Bilddaten)
+    for iy in range(ny):
+        for ix in range(nx):
+            # Simuliere Textur und Bewegung (z.B. als Funktion der Tile-Position)
+            t = 0.4 + 0.2 * ((ix + iy) % 2)  # Schachbrettmuster
+            m = 0.5 + 0.1 * ((ix - iy) % 2)
+            tiles[iy, ix]["texture"] = t
+            tiles[iy, ix]["motion"] = m
+    # Coverage-Löcher: Tiles mit texture < 0.3
+    empty_tiles = [(ix, iy) for iy in range(ny) for ix in range(nx) if tiles[iy, ix]["texture"] < 0.3]
     roi: Dict[str, Any] = {
         "bbox": (0, 0, int(w), int(h)),
-        "texture": 0.5,
-        "motion": 0.5,
+        "texture": float(np.mean(tiles['texture'])),
+        "motion": float(np.mean(tiles['motion'])),
         "divergence": 0.0,
-        "empty_tiles": [],
-        "grid": tuple(int(x) for x in grid),
+        "empty_tiles": empty_tiles,
+        "tiles": tiles,
+        "grid": (nx, ny),
     }
     return {0: roi}
 
