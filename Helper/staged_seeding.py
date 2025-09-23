@@ -180,6 +180,15 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
         else:
             min_dist = max(lo_clamp, min(hi_clamp, float(min_dist)))
 
+        # Dynamische Ziel-Bandbreite je Stufe (Carry-Over)
+        rem_total = max(0, int(total_target) - int(total_placed))
+        rem_stages = max(1, len(thr_stages) - (i - 1))
+        per_i = max(1, rem_total // rem_stages)
+        lo_i = int(round(per_i * 0.9))
+        hi_i = int(round(per_i * 1.1))
+        # Erlaube Überschreiten des globalen hi, falls nötig um Gesamtziel zu treffen
+        hi_current = max(int(hi), int(hi_i))
+
         placed_this = 0
 
         # Feintuning: Stage-1 Detection-MinDistance = 2.0·p; max_features +25%
@@ -208,14 +217,14 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
                 index["points"].append((float(c.get("x", 0.0)), float(c.get("y", 0.0))))
                 placed_this += 1
                 total_placed += 1
-                if placed_this >= hi:
+                if placed_this >= hi_current:
                     break
 
         # Feedback-Update der Distanz für nächste Entscheidungen in dieser/folgenden Stufen
         min_dist = feedback_min_distance(min_dist, placed_this, per_stage, p_i)
         kept = validate_markers(kept, frames=10, corr_min=0.60, jump_guard=True)
-        if len(kept) > hi:
-            kept = trim_to_band(kept, hi)
+        if len(kept) > hi_current:
+            kept = trim_to_band(kept, hi_current)
 
         stages_info.append({
             "stage": i,
@@ -229,6 +238,8 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
             "levels": int(levels_i),
             "edge_suppr": bool(edge_i),
             "detect_min_distance_px": int(detect_min_px),
+            "lo_target": int(lo_i),
+            "hi_target": int(hi_current),
             "min_distance_px": float(min_dist),
         })
 
@@ -246,6 +257,57 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
                 break
             if bool(scene.get("time_budget_hit", False)):
                 break
+
+    # Refill-Pass, falls nach 5 Stufen das Ziel noch nicht erreicht ist
+    if total_placed < int(total_target):
+        remaining = int(total_target) - int(total_placed)
+        # Nutze letzte Stufen-Parameter (konservativ): p, search, levels=3, edge=True, thr=letzte
+        p_r, a_r, search_r, _edge_r = stage_params(5, int(pattern), int(alpha))
+        detect_min_px_r = int(round(max(2.0 * float(p_r), min_dist or (2.3 * float(p_r)))))
+        nms_win_r = int(round(nms_factor * float(p_r)))
+        cands = _detect_candidates_placeholder(
+            roi_id=roi_id,
+            threshold=thr_stages[-1],
+            min_distance_px=detect_min_px_r,
+            levels=3,
+            max_features=int(max_features * 1.25),
+            nms_window_px=nms_win_r,
+            channel=chan,
+            context=context,
+            clip=clip,
+            pattern=p_r,
+            search_px=search_r,
+        )
+        placed_refill = 0
+        kept = []
+        for c in cands:
+            if keep_if_far_enough(c, index, min_dist):
+                kept.append(c)
+                accepted.append(c)
+                index["points"].append((float(c.get("x", 0.0)), float(c.get("y", 0.0))))
+                placed_refill += 1
+                total_placed += 1
+                if total_placed >= int(total_target):
+                    break
+        min_dist = feedback_min_distance(min_dist, placed_refill, remaining, p_r)
+        kept = validate_markers(kept, frames=10, corr_min=0.60, jump_guard=True)
+        stages_info.append({
+            "stage": 6,
+            "threshold": thr_stages[-1],
+            "attempted": len(cands),
+            "kept": len(kept),
+            "placed": placed_refill,
+            "pattern": int(p_r),
+            "alpha": int(a_r),
+            "search": int(search_r),
+            "levels": 3,
+            "edge_suppr": True,
+            "detect_min_distance_px": int(detect_min_px_r),
+            "lo_target": 0,
+            "hi_target": int(remaining),
+            "min_distance_px": float(min_dist),
+            "refill": True,
+        })
 
     summary = {
         "placed": len(accepted),
