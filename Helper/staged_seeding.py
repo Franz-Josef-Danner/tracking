@@ -181,12 +181,17 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
             min_dist = max(lo_clamp, min(hi_clamp, float(min_dist)))
 
         placed_this = 0
+
+        # Feintuning: Stage-1 Detection-MinDistance = 2.0·p; max_features +25%
+        detect_min_px = int(round(2.0 * float(p_i))) if i == 1 else int(round(min_dist))
+        max_features_i = int(round(max_features * 1.25)) if i == 1 else int(max_features)
+
         cands = _detect_candidates_placeholder(
             roi_id=roi_id,
             threshold=thr,
-            min_distance_px=int(round(min_dist)),
+            min_distance_px=detect_min_px,
             levels=levels_i,
-            max_features=max_features,
+            max_features=max_features_i,
             nms_window_px=nms_win,
             channel=chan,
             context=context,
@@ -223,6 +228,7 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
             "search": int(search_i),
             "levels": int(levels_i),
             "edge_suppr": bool(edge_i),
+            "detect_min_distance_px": int(detect_min_px),
             "min_distance_px": float(min_dist),
         })
 
