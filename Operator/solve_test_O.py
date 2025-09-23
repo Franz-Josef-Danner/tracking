@@ -359,6 +359,41 @@ class CLIP_OT_solve_test(Operator):
 
         return {"RUNNING_MODAL"}
 
+    def _init_focal_bounds_if_needed(self, context):
+        # Nur in Pass 1 initialisieren
+        if self._pass != 1 or self._focal_base is not None:
+            return
+        clip = getattr(context.space_data, "clip", None)
+        cam = getattr(getattr(clip, "tracking", None), "camera", None) if clip else None
+        if not cam:
+            return
+        base = _get_focal_value(cam)
+        if base and base > 0:
+            self._focal_base = base
+            self._focal_low = base * 0.9
+            self._focal_high = base * 1.1
+            print(f"[SolveTest] focal baseline set base={base:.6f} low={self._focal_low:.6f} high={self._focal_high:.6f}")
+
+    def _clamp_focal_after_refine(self, context):
+        # Nur in Pass 1 prüfen/klammern – keine Änderung an Refine-Flags!
+        if self._pass != 1 or self._focal_base is None:
+            return
+        clip = getattr(context.space_data, "clip", None)
+        cam = getattr(getattr(clip, "tracking", None), "camera", None) if clip else None
+        if not cam:
+            return
+        cur = _get_focal_value(cam)
+        if cur is None or self._focal_low is None or self._focal_high is None:
+            return
+        low, high = self._focal_low, self._focal_high
+        if cur < low:
+            name_set = _set_focal_value(cam, low)
+            print(f"[SolveTest] focal_clamp LOW cur={cur:.6f} -> {low:.6f} via {name_set}")
+        elif cur > high:
+            name_set = _set_focal_value(cam, high)
+            print(f"[SolveTest] focal_clamp HIGH cur={cur:.6f} -> {high:.6f} via {name_set}")
+        else:
+            print(f"[SolveTest] focal_ok cur={cur:.6f} within [{low:.6f}, {high:.6f}]")
 
 def register():
     bpy.utils.register_class(CLIP_OT_solve_test)

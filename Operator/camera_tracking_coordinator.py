@@ -37,6 +37,8 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
     phase: str = "FIND"
     detect_started: bool = False
     track_started: bool = False
+    # NEU: Clean vor Solve einmalig nach einem TRACK-Durchlauf
+    needs_clean_before_solve: bool = False
 
     def _finish(self, context, msg: str = "", cancel: bool = False):
         try:
@@ -74,6 +76,7 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
         self.phase = "FIND"
         self.detect_started = False
         self.track_started = False
+        self.needs_clean_before_solve = False
         wm = context.window_manager
         win = getattr(context, "window", None) or getattr(bpy.context, "window", None)
         try:
@@ -111,6 +114,22 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                 self.track_started = False
                 return {'RUNNING_MODAL'}
             if status in {"NONE", ""}:
+                # NEU: Falls zuvor ein TRACK abgeschlossen wurde → zuerst CLEAN ausführen, dann erneut FIND versuchen
+                if self.needs_clean_before_solve:
+                    try:
+                        bpy.ops.clip.clean_cycle('INVOKE_DEFAULT')
+                        print("[Coord] Clean cycle executed before Solve-Test")
+                    except Exception as exc:
+                        self.report({'WARNING'}, f"Clean vor Solve fehlgeschlagen: {exc}")
+                    self.needs_clean_before_solve = False
+                    try:
+                        if "tco_last_findlowjump" in scn:
+                            del scn["tco_last_findlowjump"]
+                    except Exception:
+                        pass
+                    # Nach Clean erneut FIND probieren
+                    self.phase = "FIND"
+                    return {'RUNNING_MODAL'}
                 # Statt Clean/Solve → direkt Solve-Test starten
                 try:
                     bpy.ops.clip.solve_test('INVOKE_DEFAULT')
@@ -219,6 +238,8 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                 self.report({'WARNING'}, f"Track Ergebnis: {result}")
             else:
                 self.report({'INFO'}, "Track abgeschlossen")
+            # Nach TRACK: Clean vor dem nächsten Solve-Test einplanen
+            self.needs_clean_before_solve = True
             self.phase = "FIND"
             return {'RUNNING_MODAL'}
 
