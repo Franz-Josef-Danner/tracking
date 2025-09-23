@@ -21,7 +21,8 @@ Schnittstellen (Helper-API)
 """
 from __future__ import annotations
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
+import time
 
 from .strm import analyze_rois, ROI
 from .init_params import init_pattern_search, select_channel
@@ -30,7 +31,7 @@ from .seeding import staged_detect_with_dedup
 from .online_adapt import track_one_frame
 from .models_select import cluster_fit_models, select_apply_motion_models
 from .stabilization import peer_snap_and_refresh, reseed_coverage_holes, periodic_cleanup
-from .governance import KPI
+from .governance import KPI, TimeBudget, seed_rng
 from .persistence import finalize_metrics, write_presets
 
 try:
@@ -41,20 +42,78 @@ except Exception:  # pragma: no cover
 __all__ = ("run_full_cycle",)
 
 
-def run_full_cycle(context, *, tiles=(4, 6), markers_total: int = 250) -> Dict[str, Any]:
-    rois: List[ROI] = analyze_rois(context, tiles_y=int(tiles[0]), tiles_x=int(tiles[1]))
+def _scene_int(scn, key: str, default: int) -> int:
+    try:
+        return int(scn.get(key, default))
+    except Exception:
+        return int(default)
+
+
+def _scene_float(scn, key: str, default: float) -> float:
+    try:
+        return float(scn.get(key, default))
+    except Exception:
+        return float(default)
+
+
+def run_full_cycle(context, *, tiles: Tuple[int, int] = (4, 6), markers_total: int = 250) -> Dict[str, Any]:
+    scn = bpy.context.scene if bpy is not None else None
+
+    # Governance/Seeds aus Scene-Keys
+    trial_ns = str((scn.get("kc_trial_ns") if scn else "Trial")).strip() or "Trial"
+    sample_frames = _scene_int(scn, "kc_sample_frames", 5) if scn else 5
+    tiles_y = _scene_int(scn, "kc_tiles_y", tiles[0]) if scn else int(tiles[0])
+    tiles_x = _scene_int(scn, "kc_tiles_x", tiles[1]) if scn else int(tiles[1])
+
+    # Zeitbudget (Sekunden) – Default: 0.25 s/ROI, 0.05 s/Stage
+    tb_total = _scene_float(scn, "kc_budget_roi_sec", 0.25) if scn else 0.25
+    tb_stage = _scene_float(scn, "kc_budget_stage_sec", 0.05) if scn else 0.05
+
+    if scn is not None:
+        scn["kc_runtime_cfg"] = {
+            "trial_ns": trial_ns,
+            "sample_frames": int(sample_frames),
+            "tiles": [int(tiles_y), int(tiles_x)],
+            "budget": {"roi_sec": float(tb_total), "stage_sec": float(tb_stage)},
+        }
+
+    # STRM/ROIs
+    rois: List[ROI] = analyze_rois(context, tiles_y=int(tiles_y), tiles_x=int(tiles_x), sample_frames=int(sample_frames))
 
     # Heuristische Priorisierung: höchste Textur zuerst
     rois.sort(key=lambda r: (-r.tau_tex, r.v_motion))
 
     cycle_results: List[Dict[str, Any]] = []
+    t_cycle0 = time.perf_counter()
+
     for roi in rois:
+        # Seed pro ROI für deterministische Micro-Trials
+        cur_frame = int(getattr(context.scene, "frame_current", 0)) if bpy is not None else 0
+        seed_rng(trial_ns, roi.id, stage=0, frame=cur_frame)
+
+        # Zeitbudget für ROI starten
+        tbudget = TimeBudget(seconds_total=float(tb_total), seconds_stage=float(tb_stage))
+        tbudget.start()
+
         roi = init_pattern_search(context, roi)
         roi = select_channel(context, roi)
 
-        # Detect/Seeding
+        # Detect/Seeding – Early Stop, wenn Budget erschöpft
         _ = autotune_detect(context, roi)
+
+        # Staged seeding mit Budget-Kontrolle: Abbruch, wenn ROI-Budget erschöpft
         seed_res = staged_detect_with_dedup(context, roi, N_total=int(markers_total // max(1, len(rois))))
+        tbudget.stop_and_accumulate()
+        if tbudget.remaining_total() <= 0.0:
+            cycle_results.append({
+                "roi": roi.id,
+                "pattern": roi.pattern,
+                "alpha": roi.alpha,
+                "seed": seed_res,
+                "budget_exhausted": True,
+            })
+            # Skip Rest (Online/Models/Cleanup), nächster ROI
+            continue
 
         # Online (ein Schritt als Demo)
         telem = {"corr": 0.93, "fail": False}
@@ -85,4 +144,5 @@ def run_full_cycle(context, *, tiles=(4, 6), markers_total: int = 250) -> Dict[s
             "score": score_res,
         })
 
-    return {"status": "READY", "rois": len(rois), "results": cycle_results}
+    total_ms = (time.perf_counter() - t_cycle0) * 1000.0
+    return {"status": "READY", "rois": len(rois), "time_ms": float(total_ms), "results": cycle_results}
