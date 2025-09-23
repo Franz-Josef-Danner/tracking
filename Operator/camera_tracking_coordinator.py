@@ -123,8 +123,15 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                     return {'RUNNING_MODAL'}
                 except Exception as exc:
                     return self._finish(context, f"Solve konnte nicht gestartet werden: {exc}", cancel=True)
-            # Fehlerfall
-            return self._finish(context, f"FindLow fehlgeschlagen: {data}", cancel=True)
+            # Unerwarteter/Fehler-Status → nicht beenden, sondern erneut versuchen
+            try:
+                self.report({'WARNING'}, f"FindLow unerwarteter Status: {status} data={data}")
+            except Exception:
+                pass
+            self.phase = "FIND"
+            self.detect_started = False
+            self.track_started = False
+            return {'RUNNING_MODAL'}
 
         # PHASE: SOLVE_WAIT – nach solve_clean_O direkt Refine starten
         if self.phase == "SOLVE_WAIT":
