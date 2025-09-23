@@ -282,6 +282,17 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
     accepted_final: List[dict] = []
 
     for i, thr in enumerate(thr_stages, start=1):
+        # Early-Stop per Zeitbudget (Callable oder bool)
+        if isinstance(scene, dict):
+            tb = scene.get("time_budget_hit", False)
+            try:
+                if callable(tb) and tb():
+                    break
+            except Exception:
+                pass
+            if bool(tb):
+                break
+
         # Stufen-Parameter ermitteln
         p_i, a_i, search_i, edge_i = stage_params(i, int(pattern), int(alpha))
         levels_i = 1 if i <= 2 else (2 if i == 3 else 3)
@@ -372,8 +383,7 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
                 pass
             if bool(scene.get("coverage_ok", False)):
                 break
-            if bool(scene.get("time_budget_hit", False)):
-                break
+            # time_budget bereits oben geprüft
 
     # Refill-Pass, falls nach 5 Stufen das Ziel noch nicht erreicht ist
     if total_placed < int(total_target):
