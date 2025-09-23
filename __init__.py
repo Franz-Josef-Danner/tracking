@@ -3,7 +3,7 @@
 from __future__ import annotations
 import bpy
 from bpy.types import PropertyGroup, Panel, Operator as BpyOperator
-from bpy.props import IntProperty, FloatProperty, CollectionProperty
+from bpy.props import IntProperty, FloatProperty, CollectionProperty, BoolProperty
 
 # Nur Klassen importieren – kein register() aus Submodulen aufrufen
 from .Operator.camera_tracking_coordinator import CLIP_OT_camera_tracking_coordinator
@@ -128,11 +128,36 @@ _CLASSES = (
 )
 
 
+# Klassen-Registrierungsliste erweitern
+try:
+    from .Operator.ui_focal_panel import CLIP_PT_focal_control
+except Exception:
+    CLIP_PT_focal_control = None
+
+if CLIP_PT_focal_control:
+    _CLASSES.append(CLIP_PT_focal_control)
+
+
 def register() -> None:
     from .ui import register as _ui_register  # weiter im separaten ui/ Ordner
     for cls in _CLASSES:
         bpy.utils.register_class(cls)
     _register_scene_props()
+    bpy.types.Scene.tco_use_auto_focal = BoolProperty(
+        name="Auto-Brennweite (Refine)",
+        description="Wenn aktiv, wird die Brennweite durch Refine automatisch bestimmt. "
+                    "Die 10%-Klammer wird aufgehoben.",
+        default=True,
+    )
+    bpy.types.Scene.tco_focal_override = FloatProperty(
+        name="Fixe Brennweite (mm)",
+        description="Wenn Auto-Brennweite aus ist, wird dieser Wert als fixe Brennweite verwendet "
+                    "und nicht verändert.",
+        default=35.0,
+        min=0.1,
+        max=5000.0,
+        precision=3,
+    )
     _ui_register()                           # Stub ok
 
 
@@ -145,6 +170,10 @@ def unregister() -> None:
             bpy.utils.unregister_class(cls)
         except Exception:
             pass
+    if hasattr(bpy.types.Scene, "tco_use_auto_focal"):
+        del bpy.types.Scene.tco_use_auto_focal
+    if hasattr(bpy.types.Scene, "tco_focal_override"):
+        del bpy.types.Scene.tco_focal_override
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
-import bpy
+import math
 import time
+import bpy
 from bpy.types import Operator
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -11,12 +12,26 @@ ALLOWED_MODELS: Tuple[str, ...] = ("POLYNOMIAL", "DIVISION", "BROWN")
 
 
 def _get_clip_and_camera(context):
-    # robustes Holen von Clip und Camera aus dem CLIP-Editor
     clip = getattr(context.space_data, "clip", None)
-    cam = getattr(getattr(getattr(clip, "tracking", None), "camera", None), "", None)
-    # camera direkt aus tracking
     cam = getattr(getattr(clip, "tracking", None), "camera", None) if clip else None
     return clip, cam
+
+
+def _get_scene_focal_prefs(context):
+    scn = context.scene
+    use_auto = bool(getattr(scn, "tco_use_auto_focal", True))
+    focal_val = float(getattr(scn, "tco_focal_override", 35.0))
+    return use_auto, focal_val
+
+
+def _enforce_focal_override(context, focal_val: float):
+    clip, cam = _get_clip_and_camera(context)
+    if not cam:
+        return None
+    name = _set_focal_value(cam, focal_val)
+    if name:
+        print(f"[SolveTest] enforce focal {focal_val:.6f} via {name}")
+    return name
 
 
 def _get_distortion_model(ts) -> Optional[str]:
@@ -315,18 +330,27 @@ class CLIP_OT_solve_test(Operator):
         if not clip or not cam:
             return self._finish(context, {"status": "NO_CLIP_OR_CAMERA"})
 
+        use_auto, focal_val = _get_scene_focal_prefs(context)
+
         if self._state == "INIT":
-            # Pass 0: Refine AUS, Pass 1: Refine AN
+            # Pass 0: Refine AUS, Pass 1: Refine AN (bestehende Logik)
             if self._pass == 0:
                 _force_disable_refine(context)
                 print("[SolveTest] PASS0 (refine OFF)")
             else:
                 _force_enable_refine_all(context)
+                self._init_focal_bounds_if_needed(context)
                 print("[SolveTest] PASS1 (refine ALL)")
+            # Wenn fix: sofort auf Vorgabewert setzen (für beide Pässe)
+            if not use_auto and focal_val > 0:
+                _enforce_focal_override(context, focal_val)
             self._state = "SOLVE"
             return {"RUNNING_MODAL"}
 
         if self._state == "SOLVE":
+            # falls fix: vor Solve sicherstellen
+            if not use_auto and focal_val > 0:
+                _enforce_focal_override(context, focal_val)
             try:
                 solve_camera_only(context)
             except Exception:
@@ -348,6 +372,14 @@ class CLIP_OT_solve_test(Operator):
                 return {"RUNNING_MODAL"}
             self._ae = float(ae) if isinstance(ae, (int, float)) else None
             print(f"[SolveTest] pass={self._pass} loop={self._loops} avg_error={self._ae} thr={thr}")
+            # Nach Refine-Solve Focal behandeln:
+            if self._pass == 1:
+                if not use_auto and focal_val > 0:
+                    # fix: exakt auf Vorgabewert zurücksetzen
+                    _enforce_focal_override(context, focal_val)
+                else:
+                    # auto: nur ggf. 10%-Klammer
+                    self._clamp_focal_after_refine(context)
             if (self._ae is not None) and (self._ae <= thr):
                 return self._finish(context, {"status": "OK", "avg_error": self._ae, "stage": ("pass0" if self._pass == 0 else "pass1"), "restart_find": False})
             self._state = "REDUCE"
@@ -412,23 +444,32 @@ class CLIP_OT_solve_test(Operator):
         # Nur in Pass 1 initialisieren
         if self._pass != 1 or self._focal_base is not None:
             return
-        clip = getattr(context.space_data, "clip", None)
-        cam = getattr(getattr(clip, "tracking", None), "camera", None) if clip else None
+        use_auto, focal_val = _get_scene_focal_prefs(context)
+        clip, cam = _get_clip_and_camera(context)
         if not cam:
             return
-        base = _get_focal_value(cam)
+        # Baseline aus UI
+        if use_auto:
+            base = _get_focal_value(cam)  # aktuelle Brennweite als Info
+        else:
+            base = focal_val
         if base and base > 0:
+            # Wenn fix (use_auto=False): low == high == base (effektiv fix)
             self._focal_base = base
-            self._focal_low = base * 0.9
-            self._focal_high = base * 1.1
-            print(f"[SolveTest] focal baseline set base={base:.6f} low={self._focal_low:.6f} high={self._focal_high:.6f}")
+            if use_auto:
+                self._focal_low = base * 0.9
+                self._focal_high = base * 1.1
+            else:
+                self._focal_low = base
+                self._focal_high = base
+            print(f"[SolveTest] focal baseline set base={base:.6f} low={self._focal_low:.6f} high={self._focal_high:.6f} (use_auto={use_auto})")
 
     def _clamp_focal_after_refine(self, context):
-        # Nur in Pass 1 prüfen/klammern – keine Änderung an Refine-Flags!
-        if self._pass != 1 or self._focal_base is None:
+        # Nur in Pass 1 prüfen/klammern – und nur, wenn Auto-Brennweite aktiv
+        use_auto, _ = _get_scene_focal_prefs(context)
+        if self._pass != 1 or self._focal_base is None or not use_auto:
             return
-        clip = getattr(context.space_data, "clip", None)
-        cam = getattr(getattr(clip, "tracking", None), "camera", None) if clip else None
+        clip, cam = _get_clip_and_camera(context)
         if not cam:
             return
         cur = _get_focal_value(cam)
