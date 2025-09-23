@@ -17,6 +17,12 @@ except Exception:
     except Exception:
         CLIP_OT_bidirectional_track = None  # type: ignore
 
+# Optional: Reset wie in clean_O, um sauberen Neustart sicherzustellen
+try:
+    from ..Helper.reset_state import reset_for_new_cycle  # type: ignore
+except Exception:
+    reset_for_new_cycle = None  # type: ignore
+
 # Solve‑Error Abfrage (Flags kommen aus solve_clean_O und refine_solve_O)
 try:
     from ..Helper.reduce_error_tracks import wait_for_solve_average_error, get_solve_average_error  # type: ignore
@@ -210,8 +216,9 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                 return {'RUNNING_MODAL'}
             # Entscheidung anhand des Restart-Flags aus solve_test
             restart = bool(scn.get("tco_restart_find", False))
+            payload = scn.get('tco_solve_test')
             try:
-                print(f"[Coord] solve_test finished: restart_find={restart} payload={scn.get('tco_solve_test')}")
+                print(f"[Coord] solve_test finished: restart_find={restart} payload={payload}")
             except Exception:
                 pass
             # Flags bereinigen
@@ -221,7 +228,19 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
                 except Exception:
                     pass
             if restart:
-                # Optional: direkt FindLow triggern, dann in FIND-Phase weiterlaufen
+                # Zustand zurücksetzen (wie clean_O) und FindLow neu anstoßen
+                try:
+                    # altes FIND-Resultat leeren, um Stale-Reads zu vermeiden
+                    if "tco_last_findlowjump" in scn:
+                        del scn["tco_last_findlowjump"]
+                except Exception:
+                    pass
+                if reset_for_new_cycle is not None:
+                    try:
+                        reset_for_new_cycle(context)
+                        print("[Coord] reset_for_new_cycle executed before FindLow")
+                    except Exception as exc:
+                        print(f"[Coord] reset_for_new_cycle failed: {exc}")
                 try:
                     bpy.ops.clip.find_low_and_jump()
                     print(f"[Coord] find_low_and_jump triggered after model switch; result={scn.get('tco_last_findlowjump')}")
