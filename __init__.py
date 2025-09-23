@@ -1,13 +1,16 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Kaiserlich Tracker – Top-Level Add-on (__init__.py), Solve-QA-UI entfernt."""
+"""Kaiserlich Tracker – Top-Level Add-on (__init__.py), UI ausgelagert nach UI/."""
 from __future__ import annotations
 import bpy
-from bpy.types import PropertyGroup, Panel, Operator as BpyOperator
+from bpy.types import PropertyGroup, Operator as BpyOperator
 from bpy.props import IntProperty, FloatProperty, CollectionProperty
 
-# Nur Klassen importieren – kein register() aus Submodulen aufrufen
-from .Operator.tracking_coordinator import CLIP_OT_tracking_coordinator
+from .Operator.camera_tracking_coordinator import CLIP_OT_camera_tracking_coordinator
 from .Helper.bidirectional_track import CLIP_OT_bidirectional_track
+from .Operator.bootstrap_O import CLIP_OT_bootstrap_cycle
+from .Operator.find_frame_O import CLIP_OT_find_low_and_jump
+from .Operator.detect_O import CLIP_OT_detect_cycle
+from .Operator.clean_O import CLIP_OT_clean_cycle
 
 bl_info = {
     "name": "Kaiserlich Tracker",
@@ -20,7 +23,7 @@ bl_info = {
 }
 
 # ---------------------------------------------------------------------------
-# Scene-Properties (bereinigt: keine Solve-QA-/Debug-/Log-Props mehr)
+# Scene-Properties (Workflow-Parameter)
 # ---------------------------------------------------------------------------
 class RepeatEntry(PropertyGroup):
     frame: IntProperty(name="Frame", default=0, min=0)
@@ -50,12 +53,7 @@ def _register_scene_props() -> None:
 
 def _unregister_scene_props() -> None:
     sc = bpy.types.Scene
-    for name in (
-        "repeat_frame",
-        "marker_frame",
-        "frames_track",
-        "error_track",
-    ):
+    for name in ("repeat_frame", "marker_frame", "frames_track", "error_track"):
         if hasattr(sc, name):
             try:
                 delattr(sc, name)
@@ -64,7 +62,7 @@ def _unregister_scene_props() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Launcher-Operator: startet den modalen Coordinator
+# Launcher-Operator
 # ---------------------------------------------------------------------------
 class CLIP_OT_kaiserlich_coordinator_launcher(BpyOperator):
     bl_idname = "clip.kaiserlich_coordinator_launcher"
@@ -75,61 +73,46 @@ class CLIP_OT_kaiserlich_coordinator_launcher(BpyOperator):
         if bpy.app.background:
             self.report({'ERROR'}, "Kein UI (Background).")
             return {'CANCELLED'}
-        return bpy.ops.clip.tracking_coordinator('INVOKE_DEFAULT')
-
-
-# ---------------------------------------------------------------------------
-# Panel (bereinigt: nur Eingabefelder + Start-Button)
-# ---------------------------------------------------------------------------
-class CLIP_PT_kaiserlich_panel(Panel):
-    bl_space_type = "CLIP_EDITOR"
-    bl_region_type = "UI"
-    bl_category = "Kaiserlich"
-    bl_label = "Kaiserlich Tracker"
-
-    def draw(self, context):
-        layout = self.layout
-        scene = context.scene
-
-        layout.label(text="Tracking Einstellungen")
-        if hasattr(scene, "marker_frame"):
-            layout.prop(scene, "marker_frame")
-        if hasattr(scene, "frames_track"):
-            layout.prop(scene, "frames_track")
-        if hasattr(scene, "error_track"):
-            layout.prop(scene, "error_track")
-
-        layout.separator()
-        layout.operator("clip.kaiserlich_coordinator_launcher", text="Coordinator starten")
+        return bpy.ops.clip.camera_tracking_coordinator('INVOKE_DEFAULT')
 
 
 # ---------------------------------------------------------------------------
 # Register/Unregister
 # ---------------------------------------------------------------------------
-_CLASSES = (
+_CLASSES = [
     RepeatEntry,
-    CLIP_OT_tracking_coordinator,            # modal coordinator
-    CLIP_OT_bidirectional_track,             # bidi helper
-    CLIP_OT_kaiserlich_coordinator_launcher, # launcher
-    CLIP_PT_kaiserlich_panel,                # ui
-)
+    # Helper/Support-Operatoren
+    CLIP_OT_bootstrap_cycle,
+    CLIP_OT_find_low_and_jump,
+    CLIP_OT_detect_cycle,
+    CLIP_OT_clean_cycle,
+    # CLIP_OT_solve_test removed
+    # Bidi + Coordinator + Launcher
+    CLIP_OT_bidirectional_track,
+    CLIP_OT_camera_tracking_coordinator,
+    CLIP_OT_kaiserlich_coordinator_launcher,
+]
 
 
 def register() -> None:
-    from .ui import register as _ui_register  # weiter im separaten ui/ Ordner
-    for cls in _CLASSES:
-        bpy.utils.register_class(cls)
+    # UI-Paket registriert Panels & UI-Properties
+    from .ui import register as _ui_register
+    for c in _CLASSES:
+        try:
+            bpy.utils.register_class(c)
+        except Exception:
+            pass
     _register_scene_props()
-    _ui_register()                           # Stub ok
+    _ui_register()  # registriert UI-Panel und UI-Scene-Properties
 
 
 def unregister() -> None:
     from .ui import unregister as _ui_unregister
     _ui_unregister()
     _unregister_scene_props()
-    for cls in reversed(_CLASSES):
+    for c in reversed(_CLASSES):
         try:
-            bpy.utils.unregister_class(cls)
+            bpy.utils.unregister_class(c)
         except Exception:
             pass
 
