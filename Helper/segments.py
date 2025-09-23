@@ -1,4 +1,24 @@
 # Helper/segments.py
+
+
+def _dbg_enabled_segments():
+    try:
+        import bpy  # local import to avoid global lint issues
+
+        scn = bpy.context.scene
+        return bool(scn and scn.get("tco_debug_segments", False))
+    except Exception:
+        return False
+
+
+def _log_segments(msg: str):
+    if _dbg_enabled_segments():
+        try:
+            print(f"[Segments] {msg}")
+        except Exception:
+            pass
+
+
 def track_has_internal_gaps(track) -> bool:
     """True, wenn im Track mind. eine Lücke von >=1 fehlenden Frames existiert (O(n))."""
     try:
@@ -16,6 +36,7 @@ def track_has_internal_gaps(track) -> bool:
             diff = int(f) - int(prev)
             missing = diff - 1               # Anzahl fehlender Frames zwischen prev und f
             if missing >= 1:                 # schon 1 fehlender Frame ⇒ interne Lücke
+                _log_segments(f"gap found prev={prev} f={f} missing={missing}")
                 return True
             prev = f
         return False
@@ -39,9 +60,11 @@ def get_track_segments(track):
         diff = frames[i] - frames[i - 1]
         missing = diff - 1
         if missing >= 1:                     # ein fehlender Frame reicht für Segmentbruch
+            _log_segments(f"break at {frames[i-1]}→{frames[i]} missing={missing}")
             segments.append(current)
             current = [frames[i]]
         else:
             current.append(frames[i])
     segments.append(current)
+    _log_segments(f"segments={len(segments)} frames_total={len(frames)}")
     return segments
