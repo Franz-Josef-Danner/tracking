@@ -246,15 +246,51 @@ class CLIP_OT_camera_tracking_coordinator(Operator):
 
         # PHASE: SOLVE_TEST_WAIT – warte auf Ende des Model-Wechsels und dann zurück zu FIND
         if self.phase == "SOLVE_TEST_WAIT":
+            restart = bool(scn.get("tco_restart_find", False))
+            active = bool(scn.get("tco_solve_test_active", False))
             try:
-                print(f"[Coord] SOLVE_TEST_WAIT flags active={scn.get('tco_solve_test_active')} restart={scn.get('tco_restart_find')}")
+                print(f"[Coord] SOLVE_TEST_WAIT flags active={active} restart={restart}")
             except Exception:
                 pass
-            if bool(scn.get("tco_solve_test_active", False)):
+            # Wenn Restart gewünscht, nicht auf active warten -> sofort zurück zu FIND
+            if restart:
+                # Flags bereinigen/erzwingen
+                try:
+                    scn["tco_solve_test_active"] = False
+                except Exception:
+                    pass
+                for k in ("tco_restart_find",):
+                    try:
+                        del scn[k]
+                    except Exception:
+                        pass
+                # Zustand zurücksetzen (wie clean_O) und FindLow neu anstoßen
+                try:
+                    if "tco_last_findlowjump" in scn:
+                        del scn["tco_last_findlowjump"]
+                except Exception:
+                    pass
+                if reset_for_new_cycle is not None:
+                    try:
+                        reset_for_new_cycle(context)
+                        print("[Coord] reset_for_new_cycle executed before FindLow")
+                    except Exception as exc:
+                        print(f"[Coord] reset_for_new_cycle failed: {exc}")
+                try:
+                    bpy.ops.clip.find_low_and_jump()
+                    print(f"[Coord] find_low_and_jump triggered after model switch; result={scn.get('tco_last_findlowjump')}")
+                except Exception as exc:
+                    print(f"[Coord] find_low_and_jump failed after solve_test: {exc}")
+                self.phase = "FIND"
+                self.detect_started = False
+                self.track_started = False
+                self.report({'INFO'}, "Solve-Test: Restart-Flag gesetzt → zurück zu FIND")
                 return {'RUNNING_MODAL'}
-            # Model-Wechsel abgeschlossen → zurück zu FIND
-            self.phase = "FIND"
-            return {'RUNNING_MODAL'}
+            # Kein Restart: Nur warten, bis active False ist
+            if active:
+                return {'RUNNING_MODAL'}
+            # Abschluss ohne Restart → Coordinator beenden
+            return self._finish(context, "Solve-Test abgeschlossen – Coordinator beendet.")
 
         # PHASE 2: DETECT
         if self.phase == "DETECT":
