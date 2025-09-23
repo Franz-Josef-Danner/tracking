@@ -2,6 +2,7 @@
 import os
 import json
 import time
+from typing import Dict, Any
 
 _DEF_DIR = os.path.join(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir)), ".telemetry"
@@ -45,3 +46,20 @@ def finalize_metrics() -> dict:
 
 def time_budget_hit(roi_id) -> bool:
     return False
+
+
+# ———————————— Governance / KPI Scoring ————————————
+
+def compute_target_score(kpis: Dict[str, Any]) -> float:
+    """Berechne einen Zielscore (niedriger ist besser) gemäß Gewichten.
+    Erwartete Felder (optional):
+      - survival (0..1), bevorzugt Survival@30f
+      - corr_med (0..1)
+      - time_norm (0..1), normalisierte Zeitkosten
+    Fallbacks auf konservative Defaults.
+    """
+    survival = float(kpis.get("survival", kpis.get("survival_30", 0.6)))
+    corr_med = float(kpis.get("corr_med", 0.6))
+    time_norm = float(kpis.get("time_norm", 0.5))
+    score = 0.5 * (1.0 - survival) + 0.3 * (1.0 - corr_med) + 0.2 * time_norm
+    return float(score)

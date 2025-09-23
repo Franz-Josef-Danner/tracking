@@ -30,3 +30,17 @@ def reseed_coverage_holes(roi_id, pattern: int, alpha: int, needed: int) -> None
     """
     _STATE.setdefault(_k(roi_id), {}).setdefault("reseed_requests", 0)
     _STATE[_k(roi_id)]["reseed_requests"] += int(max(0, needed))
+
+
+# ———————————— API-Wrapper gemäß Pflichtenheft ————————————
+
+def peer_snap_and_refresh(roi_id) -> None:
+    """Führt Peer-Snap und ggf. koordiniertes Re-Template für einen ROI aus.
+    Minimal: wendet die Operationen auf ROI-Id an (Cluster-IDs werden hiermit approximiert).
+    """
+    try:
+        peer_snap(roi_id)
+        coordinated_retemplate(roi_id)
+    except Exception:
+        # soft-fail
+        pass

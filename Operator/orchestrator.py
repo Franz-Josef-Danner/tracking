@@ -2,10 +2,12 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from ..Helper.init_params import init_pattern_search
-from ..Helper.detect_autotune import propose_detect_profile, adjust_detect_profile
+from ..Helper.detect_autotune import autotune_detect
 from ..Helper.staged_seeding import staged_detect_with_dedup
 from ..Helper.roi import analyze_rois, prioritize_rois
 from ..Helper.channels import select_channel
+from ..Helper.telemetry import log_step, finalize_metrics
+from ..Helper.peer_stabilize import peer_snap_and_refresh
 
 
 def _clip_size(clip: Any) -> tuple[int, int]:
@@ -31,7 +33,7 @@ def run_autotrack(context, clip) -> dict:
       - STRM/ROI-Analyse & Priorisierung (platzhalter)
       - Startwerte (pattern/alpha/search)
       - Channel-Selektion (kurzer Heuristik-Prepass)
-      - Detect-Profil (Vorschlag + leichte Justage)
+      - Detect-Autotune (Wrapper)
       - Gestuftes Seeding mit Dedup/Micro-Validation
     Return: einfache Telemetrie/KPIs.
     """
@@ -60,11 +62,8 @@ def run_autotrack(context, clip) -> dict:
     # Channel-Selektion (kurz)
     channel = select_channel(roi_id, pattern, alpha)
 
-    # Detect-Profil
-    profile = propose_detect_profile(roi_id=roi_id, texture=texture, motion=motion)
-    # einfache KPI-Attrappe für mögliche Anpassungen
-    fake_kpis: Dict[str, Any] = {"coverage": 0.0, "target_coverage": 0.8, "texture": texture}
-    profile = adjust_detect_profile(fake_kpis, profile)
+    # Detect-Profil via Wrapper
+    profile = autotune_detect(roi_id, roi_info={"texture": texture, "motion": motion}, kpis={"texture": texture})
 
     # Szene-Paket für Seeding
     scene_pkg: Dict[str, Any] = {
@@ -76,6 +75,16 @@ def run_autotrack(context, clip) -> dict:
         "search": search,
     }
 
+    log_step("orchestrator.pre_seeding", {
+        "roi_id": roi_id,
+        "clip_size": (width, height),
+        "pattern": pattern,
+        "alpha": alpha,
+        "search": search,
+        "channel": channel,
+        "detect_profile": profile,
+    })
+
     # Gestufte Setzung ausführen
     summary = staged_detect_with_dedup(
         roi_id=roi_id,
@@ -84,6 +93,14 @@ def run_autotrack(context, clip) -> dict:
         total_target=total_target,
         scene=scene_pkg,
     )
+
+    log_step("orchestrator.post_seeding", summary)
+
+    # Peer-Refresh Hook (leichtgewichtig)
+    try:
+        peer_snap_and_refresh(roi_id)
+    except Exception:
+        pass
 
     # Ergebnis zusammenstellen (Minimal-KPIs)
     result = {
@@ -96,5 +113,6 @@ def run_autotrack(context, clip) -> dict:
         "channel": channel,
         "detect_profile": profile,
         "seeding": summary,
+        "metrics": finalize_metrics(),
     }
     return result

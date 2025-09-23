@@ -140,3 +140,19 @@ def adjust_detect_profile(kpis: dict, profile: dict) -> dict:
     prof["nms_window_factor"] = float(max(0.5, min(2.0, prof.get("nms_window_factor", 1.0))))
 
     return prof
+
+
+# ———————————— API-Wrapper gemäß Pflichtenheft ————————————
+
+def autotune_detect(roi_id, roi_info: dict | None = None, kpis: dict | None = None) -> dict:
+    """Kompakte Schnittstelle: liefert ein abgestimmtes Detect-Profil für einen ROI.
+
+    roi_info kann Felder enthalten: {texture: [0..1], motion: [0..1]}
+    kpis können Laufzeit-/Qualitätsindikatoren liefern (siehe adjust_detect_profile).
+    """
+    roi_info = roi_info or {}
+    texture = float(roi_info.get("texture", 0.5) or 0.5)
+    motion = float(roi_info.get("motion", 0.5) or 0.5)
+    base = propose_detect_profile(roi_id=roi_id, texture=texture, motion=motion)
+    tuned = adjust_detect_profile(kpis or {"texture": texture}, base)
+    return tuned
