@@ -63,7 +63,7 @@ class CLIP_OT_clean_cycle(Operator):
         total_markers_deleted = 0
 
         # 1) Spike-Filter
-        thr = float(scn.get("tco_clean_track_threshold", scn.get("tco_spike_threshold", 30.0)) or 30.0)
+        thr = float(scn.get("tco_clean_track_threshold", scn.get("tco_spike_threshold", 40.0)) or 40.0)
         if run_marker_spike_filter_cycle is not None:
             try:
                 res = run_marker_spike_filter_cycle(context, track_threshold=thr)
