@@ -100,21 +100,21 @@ class BlenderMetricsProvider(MetricsProvider):
             f0 = 1
         # convert global/frame to clip-local index
         try:
-            idx = int(frame) - int(f0)
+            clip_idx = int(frame) - int(f0)
         except Exception:
-            idx = int(frame) - f0
+            clip_idx = int(frame) - f0
         # keep a diagnostic view of requested vs local
         try:
-            self._log(f"frame mapping: requested_frame={frame} clip_start={f0} clip_idx={idx}")
+            self._log(f"frame mapping: requested_frame={frame} clip_start={f0} clip_idx={clip_idx}")
         except Exception:
             pass
 
         # Resolve roi_id -> track (index or name)
         track = None
         try:
-            idx = int(roi_id)
-            if 0 <= idx < len(tracks):
-                track = tracks[idx]
+            roi_idx = int(roi_id)
+            if 0 <= roi_idx < len(tracks):
+                track = tracks[roi_idx]
         except Exception:
             pass
 
@@ -222,7 +222,7 @@ class BlenderMetricsProvider(MetricsProvider):
                                 mf = int(getattr(m, "frame", -999999))
                             except Exception:
                                 continue
-                            if abs(mf - idx) <= 1 or abs(mf - frame) <= 1:
+                            if abs(mf - clip_idx) <= 1 or abs(mf - frame) <= 1:
                                 markers_present += 1
                                 try:
                                     corrs.append(float(getattr(m, "correlation", getattr(m, "corr", 0.0) or 0.0)))
@@ -299,7 +299,7 @@ class BlenderMetricsProvider(MetricsProvider):
                                         mf = int(getattr(m_, "frame", -999999))
                                     except Exception:
                                         continue
-                                    if abs(mf - idx) <= 1 or abs(mf - frame) <= 1:
+                                    if abs(mf - clip_idx) <= 1 or abs(mf - frame) <= 1:
                                         try:
                                             # Provide both clip-local and global frame values to
                                             # make any frame-offset mapping explicit for callers.
@@ -315,7 +315,7 @@ class BlenderMetricsProvider(MetricsProvider):
                                                 "ref": getattr(t, "name", None),
                                                 "frame_clip": frame_clip,
                                                 "frame_global": frame_global,
-                                                "mapped_idx": int(idx),
+                                                "mapped_idx": int(clip_idx),
                                                 "corr": float(getattr(m_, "correlation", getattr(m_, "corr", 0.0) or 0.0)),
                                                 "jump_px": float(0.0),
                                                 "lost": bool(getattr(m_, "hide", False) or getattr(m_, "mute", False) or getattr(m_, "disabled", False)),
@@ -330,7 +330,7 @@ class BlenderMetricsProvider(MetricsProvider):
                         except Exception:
                             pass
                     try:
-                        self._log(f"aggregated fetched metrics for roi_id={roi_id} frame={frame} clip_idx={idx} markers_present={markers_present} markers_total={markers_total} -> {out}")
+                        self._log(f"aggregated fetched metrics for roi_id={roi_id} frame={frame} clip_idx={clip_idx} markers_present={markers_present} markers_total={markers_total} -> {out}")
                     except Exception:
                         pass
                     return out
@@ -409,7 +409,7 @@ class BlenderMetricsProvider(MetricsProvider):
                 if hasattr(track, "markers") and hasattr(track.markers, "find_frame"):
                     # find_frame expects clip-local frame index in many Blender versions
                     try:
-                        marker = track.markers.find_frame(int(idx))
+                        marker = track.markers.find_frame(int(clip_idx))
                     except Exception:
                         # fallback to requesting with global frame
                         try:
@@ -427,9 +427,9 @@ class BlenderMetricsProvider(MetricsProvider):
                     try:
                         mf = int(getattr(m, "frame", -999999))
                         # consider both clip-local and global frame numbers
-                        for cand in (mf, mf + f0, mf - f0, frame, idx):
+                        for cand in (mf, mf + f0, mf - f0, frame, clip_idx):
                             try:
-                                dist = abs(int(cand) - int(idx))
+                                dist = abs(int(cand) - int(clip_idx))
                                 if best_dist is None or dist < best_dist:
                                     best_dist = dist
                                     best = m
@@ -451,7 +451,7 @@ class BlenderMetricsProvider(MetricsProvider):
                             })
                         except Exception:
                             continue
-                    self._log(f"DIAG: no marker at requested_frame={frame} clip_idx={idx} for track={getattr(track,'name',None)} roi_id={roi_id} markers_count={len(markers)} marker_frames={mf}")
+                    self._log(f"DIAG: no marker at requested_frame={frame} clip_idx={clip_idx} for track={getattr(track,'name',None)} roi_id={roi_id} markers_count={len(markers)} marker_frames={mf}")
                 except Exception:
                     pass
 
@@ -465,7 +465,7 @@ class BlenderMetricsProvider(MetricsProvider):
                         except Exception:
                             continue
                         # match if close to idx or to global frame
-                        if abs(mf - idx) <= 1 or abs(mf - frame) <= 1:
+                        if abs(mf - clip_idx) <= 1 or abs(mf - frame) <= 1:
                             markers_present += 1
                 # if markers_total unknown, approximate by number of markers in online marker_refs or markers length
                 if markers_total == 0:
@@ -629,7 +629,7 @@ class BlenderMetricsProvider(MetricsProvider):
                             "ref": getattr(track, "name", None),
                             "frame_clip": frame_clip,
                             "frame_global": frame_global,
-                            "mapped_idx": int(idx),
+                            "mapped_idx": int(clip_idx),
                             "corr": float(getattr(marker, "correlation", getattr(marker, "corr", 0.0) or 0.0)),
                             "jump_px": float(jump_px or 0.0),
                             "lost": bool(getattr(marker, "hide", False) or getattr(marker, "mute", False) or getattr(marker, "disabled", False)),

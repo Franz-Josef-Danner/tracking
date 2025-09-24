@@ -13,3 +13,4 @@
 {"ts": 1758753384837, "scope": "roi.cluster", "what": "cluster_summary", "payload": {"roi_id": 0, "clusters": 3, "members": 4}}
 {"ts": 1758753540551, "scope": "roi.cluster", "what": "cluster_summary", "payload": {"roi_id": 0, "clusters": 3, "members": 4}}
 {"ts": 1758753950003, "scope": "roi.cluster", "what": "cluster_summary", "payload": {"roi_id": 0, "clusters": 3, "members": 4}}
+{"ts": 1758754483920, "scope": "roi.cluster", "what": "cluster_summary", "payload": {"roi_id": 0, "clusters": 3, "members": 4}}
