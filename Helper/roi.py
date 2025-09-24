@@ -434,6 +434,16 @@ def cluster_tracks(roi_id, window: int = 30) -> list:
             out_clusters.append({"id": cid, "inliers": inlier_ids, "stats": stats})
             cid += 1
 
+    # Telemetrie: log cluster summary if telemetry is available
+    try:
+        from .telemetry import log_batch
+        try:
+            log_batch("roi.cluster", "cluster_summary", {"roi_id": int(roi_id), "clusters": len(out_clusters), "members": sum(len(c.get("inliers", [])) for c in out_clusters)})
+        except Exception:
+            pass
+    except Exception:
+        pass
+
     return out_clusters
 
 

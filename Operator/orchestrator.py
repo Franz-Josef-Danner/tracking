@@ -130,13 +130,26 @@ def _run_online_loop(context, roi_id: int, steps: int = 25, slice_ms: int = 10) 
         if mc.get("gain_ok") is not None:
             log_batch("online.frame", "microcheck", {"frame": f, **mc})
 
-        # Periodik: alle 20 Frames Modell-Fit/Selektion (Cluster-basiert, Platzhalter)
-        if i > 0 and i % 20 == 0:
-            fits_pack = cluster_fit_models(roi_id, window=30)
-            fits = fits_pack.get("fits", {})
-            feats = fits_pack.get("feats", {})
-            decisions = select_apply_motion_models(roi_id, fits, feats)
-            log_step("online.model_select", {"frame": f, "decisions": decisions})
+        # Periodik: Modell-Fit/Selektion (Cluster-basiert). Häufigkeit reduziert,
+        # aber robust gegenüber Fehlern; führe leichtere Auswahl häufiger aus.
+        if i >= 0 and i % 5 == 0:
+            try:
+                fits_pack = cluster_fit_models(roi_id, window=30)
+                fits = fits_pack.get("fits", {}) if isinstance(fits_pack, dict) else {}
+                feats = fits_pack.get("feats", {}) if isinstance(fits_pack, dict) else {}
+                # Only attempt selection if we have any fits
+                if fits:
+                    decisions = select_apply_motion_models(roi_id, fits, feats)
+                else:
+                    decisions = {}
+                # Log cluster sizing info if available
+                cluster_count = len(fits) if isinstance(fits, dict) else 0
+                log_step("online.model_select", {"frame": f, "cluster_count": cluster_count, "decisions": decisions})
+            except Exception:
+                try:
+                    log_step("online.model_select", {"frame": f, "error": True})
+                except Exception:
+                    pass
 
         # Peer-Refresh alle 5 Frames
         if i % 5 == 0:
