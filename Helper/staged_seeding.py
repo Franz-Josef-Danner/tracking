@@ -190,17 +190,41 @@ def _persist_markers(context, clip, markers: list[dict], roi_id: int | None = No
                             except Exception:
                                 pass
                             mk.co = co
+                            # Defensive: re-assign once more (some Blender versions
+                            # require writeback via property setter) and attempt a
+                            # fallback via the track's markers collection if the
+                            # value wasn't accepted.
                             try:
-                                from .telemetry import log_batch
-                                # read back mk.co if possible to confirm assignment
+                                mk.co = (float(co[0]), float(co[1]))
+                            except Exception:
+                                pass
+                            try:
                                 actual = None
                                 try:
                                     actual = tuple(getattr(mk, "co", None))
                                 except Exception:
                                     actual = None
-                                log_batch("staged_seeding", "marker_persist.done", {"roi_id": roi_id, "index": i, "pixel_xy": (x, y), "co_set": co, "co_actual": actual, "frame": frame})
+                                if actual is None or (len(actual) >= 2 and (abs(actual[0] - float(co[0])) > 1e-6 or abs(actual[1] - float(co[1])) > 1e-6)):
+                                    # try writing to the last marker object of this track
+                                    try:
+                                        if hasattr(t, "markers") and len(t.markers) > 0:
+                                            try:
+                                                t.markers[-1].co = (float(co[0]), float(co[1]))
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        pass
+                                try:
+                                    from .telemetry import log_batch
+                                    log_batch("staged_seeding", "marker_persist.done", {"roi_id": roi_id, "index": i, "pixel_xy": (x, y), "co_set": co, "co_actual": actual, "frame": frame})
+                                except Exception:
+                                    pass
                             except Exception:
-                                pass
+                                try:
+                                    from .telemetry import log_batch
+                                    log_batch("staged_seeding", "marker_persist.done.error", {"roi_id": roi_id, "index": i, "pixel_xy": (x, y), "co_set": co, "frame": frame})
+                                except Exception:
+                                    pass
                             # Explizit Pattern/Search setzen, damit Größen im UI sichtbar sind
                             _apply_marker_areas(mk, int(w), int(h), p_sz, s_sz)
                             # Selektion setzen
@@ -242,23 +266,39 @@ def _persist_markers(context, clip, markers: list[dict], roi_id: int | None = No
                     except Exception:
                         pass
                 # Fallback: Operator
-                try:
-                    # Operator fallback: log the requested co as well
                     try:
-                        from .telemetry import log_batch
-                        log_batch("staged_seeding", "marker_persist.operator", {"roi_id": roi_id, "index": i, "pixel_xy": (x, y), "co_requested": co, "frame": frame})
+                        # Operator fallback: log the requested co as well
+                        try:
+                            from .telemetry import log_batch
+                            log_batch("staged_seeding", "marker_persist.operator", {"roi_id": roi_id, "index": i, "pixel_xy": (x, y), "co_requested": co, "frame": frame})
+                        except Exception:
+                            pass
+                        bpy.ops.clip.add_marker(location=co, frame=frame)
+                        # After operator, attempt to locate the most recently created
+                        # track/marker and set its co explicitly (defensive workaround).
+                        try:
+                            tr_coll = getattr(getattr(clip, "tracking", None), "tracks", None)
+                            if tr_coll and len(list(tr_coll)) > 0:
+                                last = list(tr_coll)[-1]
+                                try:
+                                    if hasattr(last, "markers") and len(last.markers) > 0:
+                                        try:
+                                            last.markers[-1].co = (float(co[0]), float(co[1]))
+                                        except Exception:
+                                            pass
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+                        ok += 1
+                        continue
                     except Exception:
+                        try:
+                            from .telemetry import log_batch
+                            log_batch("staged_seeding", "marker_persist.operator_failed", {"roi_id": roi_id, "index": i, "pixel_xy": (x, y), "co_requested": co, "frame": frame})
+                        except Exception:
+                            pass
                         pass
-                    bpy.ops.clip.add_marker(location=co, frame=frame)
-                    ok += 1
-                    continue
-                except Exception:
-                    try:
-                        from .telemetry import log_batch
-                        log_batch("staged_seeding", "marker_persist.operator_failed", {"roi_id": roi_id, "index": i, "pixel_xy": (x, y), "co_requested": co, "frame": frame})
-                    except Exception:
-                        pass
-                    pass
             except Exception:
                 continue
         return ok
