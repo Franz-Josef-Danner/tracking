@@ -15,6 +15,8 @@ from ..Helper.tracking_online import (
     apply_scheduled_next_frame,
     get_online_state,
     set_initial_params,
+    detect_triggers,
+    post_change_microcheck,
 )
 from ..Helper.motion_model import cluster_fit_models, select_apply_motion_models
 from ..Helper.cleanup_pass import periodic_cleanup
@@ -23,6 +25,7 @@ from ..Helper.presets import load_preset, save_preset, write_presets
 from ..Helper.telemetry import compute_target_score
 # Limits erneut anwenden nach Preset
 from ..Helper.init_params import enforce_limits
+from ..Helper.telemetry import log_batch
 
 
 def _clip_size(clip: Any) -> tuple[int, int]:
@@ -63,7 +66,16 @@ def _run_online_loop(context, roi_id: int, steps: int = 25, slice_ms: int = 10) 
         apply_scheduled_next_frame(roi_id, frame=f)
 
         tel = track_one_frame(roi_id, frame=f)
-        schedule_param_changes(roi_id, tel, frame=f)
+        # Trigger ableiten und loggen
+        trig = detect_triggers(roi_id, window=10)
+        log_batch("online.frame", "trigger", {"frame": f, "triggers": trig})
+
+        schedule_param_changes(roi_id, tel, frame=f, triggers=trig)
+
+        # Microcheck nach Pattern-Anwendung überwachen
+        mc = post_change_microcheck(roi_id, window=10)
+        if mc.get("gain_ok") is not None:
+            log_batch("online.frame", "microcheck", {"frame": f, **mc})
 
         # Periodik: alle 20 Frames Modell-Fit/Selektion (Cluster-basiert, Platzhalter)
         if i > 0 and i % 20 == 0:
@@ -77,6 +89,7 @@ def _run_online_loop(context, roi_id: int, steps: int = 25, slice_ms: int = 10) 
         if i % 5 == 0:
             try:
                 peer_snap_and_refresh(roi_id)
+                log_batch("online.frame", "peer_refresh", {"frame": f})
             except Exception:
                 pass
 
@@ -84,6 +97,7 @@ def _run_online_loop(context, roi_id: int, steps: int = 25, slice_ms: int = 10) 
         if i > 0 and i % 30 == 0:
             try:
                 periodic_cleanup(roi_id, clean_error_px=2.0, min_len=5)
+                log_batch("online.frame", "cleanup", {"frame": f})
             except Exception:
                 pass
 

@@ -20,6 +20,24 @@ def log_step(scope: str, payload: dict) -> None:
         pass
 
 
+def log_batch(scope: str, what: str, payload: Dict[str, Any] | None = None) -> None:
+    """Einheitliches Logging pro Ereignisart.
+    Felder: {ts, scope, what, payload}
+    """
+    os.makedirs(_DEF_DIR, exist_ok=True)
+    entry = {
+        "ts": int(time.time() * 1000),
+        "scope": str(scope),
+        "what": str(what),
+        "payload": payload or {},
+    }
+    try:
+        with open(_DEF_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 def aggregate_kpis() -> dict:
     if not os.path.exists(_DEF_FILE):
         return {}
