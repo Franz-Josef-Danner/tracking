@@ -16,19 +16,19 @@ def _round_even(x: float) -> int:
 
 def _default_max_pattern(width: int, height: int) -> int:
     """Dynamische Obergrenze für pattern in px, je nach Auflösung.
-    Ziel: Für High-Res > 2.5K größere Pattern erlauben (z. B. bis 61/71/81).
+    Jetzt jeweils etwa doppelt so hoch wie zuvor (ungerade Caps: 81→161, etc.).
     """
     min_dim = max(0, int(min(width or 0, height or 0)))
-    # Schwellen: konservativ staffeln
+    # Basiscaps verdoppelt und auf ungerade reduziert
     if min_dim <= 1200:
-        return 41
+        return 81   # vorher 41 → jetzt ~2x
     if min_dim <= 2000:
-        return 51
+        return 101  # vorher 51 → jetzt ~2x
     if min_dim <= 3000:
-        return 61
+        return 121  # vorher 61 → jetzt ~2x
     if min_dim <= 4000:
-        return 71
-    return 81
+        return 141  # vorher 71 → jetzt ~2x
+    return 161       # vorher 81 → jetzt ~2x
 
 
 def enforce_limits(pattern: int, alpha: int, width: int, height: int, max_pattern: int | None = None) -> tuple[int, int, int]:
