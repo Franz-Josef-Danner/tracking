@@ -450,6 +450,54 @@ def apply_next_frame(roi_id, change_plan: Optional[Dict[str, Any]] = None, frame
 
 # ———————————— Sequence-Tracking ————————————
 
+def _invoke_clip_track_markers(clip, *, sequence: bool = False) -> bool:
+    """Attempt to run `bpy.ops.clip.track_markers` inside a CLIP_EDITOR override.
+    Falls back to direct call if override can't be created. Returns True on success.
+    """
+    try:
+        import bpy  # type: ignore
+        from types import SimpleNamespace
+        # Try to find a CLIP_EDITOR area/region to construct an override
+        area = None
+        region = None
+        for a in getattr(bpy.context, 'screen', getattr(bpy, 'context', SimpleNamespace(screen=None))).areas if getattr(bpy.context, 'screen', None) else []:
+            try:
+                if getattr(a, 'type', '') == 'CLIP_EDITOR':
+                    area = a
+                    break
+            except Exception:
+                continue
+        if area is not None:
+            try:
+                # find region of type 'WINDOW'
+                for r in getattr(area, 'regions', []) or []:
+                    try:
+                        if getattr(r, 'type', '') == 'WINDOW':
+                            region = r
+                            break
+                    except Exception:
+                        continue
+            except Exception:
+                region = None
+
+        if area is not None and region is not None:
+            override = {'area': area, 'region': region, 'space_data': getattr(area, 'spaces', [None])[0]}
+            try:
+                bpy.ops.clip.track_markers(override, backwards=False, sequence=bool(sequence))
+                return True
+            except Exception:
+                # fallback to direct call below
+                pass
+
+        # Last-resort: direct invocation
+        try:
+            bpy.ops.clip.track_markers(backwards=False, sequence=bool(sequence))
+            return True
+        except Exception:
+            return False
+    except Exception:
+        return False
+
 def run_sequence_track(roi_id, frame: Optional[int] = None) -> bool:
     """Starte Blender-Tracking mit sequence=True einmalig (oder nach Pattern-Änderung).
     Setzt scene.frame_current optional auf 'frame'.
@@ -477,7 +525,9 @@ def run_sequence_track(roi_id, frame: Optional[int] = None) -> bool:
                 pass
         t0 = time.time()
         try:
-            bpy.ops.clip.track_markers(backwards=False, sequence=True)
+            ok = _invoke_clip_track_markers(clip, sequence=True)
+            if not ok:
+                return False
         except Exception:
             return False
         dt_ms = (time.time() - t0) * 1000.0
@@ -535,7 +585,9 @@ def run_single_frame_track(roi_id, frame: Optional[int] = None) -> bool:
             except Exception:
                 pass
         try:
-            bpy.ops.clip.track_markers(backwards=False, sequence=False)
+            ok = _invoke_clip_track_markers(clip, sequence=False)
+            if not ok:
+                return False
         except Exception:
             return False
         return True
