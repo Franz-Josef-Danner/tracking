@@ -143,18 +143,37 @@ def _persist_markers(context, clip, markers: list[dict], roi_id: int | None = No
                 if x < margin or x > (w - margin) or y < margin or y > (h - margin):
                     continue  # Marker außerhalb des erlaubten Bereichs, überspringen
                 # Convert pixel coordinates (x,y) -> normalized (0..1).
-                # Many detectors return y with origin at the top (image coords),
-                # while Blender's MovieClip marker.co uses origin at the bottom.
-                # Therefore invert the y-axis when building the normalized coord.
+                # Wichtig: y-Orientierung korrekt behandeln.
+                # - Blender-Detektion liefert y bereits im unten-links System (kein Flip).
+                # - OpenCV liefert y typisch im oben-links System (Flip nötig).
+                # Kandidaten sollen ein Flag 'flip_y' mitbringen (True=flip nötig),
+                # andernfalls heuristisch über 'source' entscheiden.
                 try:
                     x_norm = max(0.0, min(1.0, x / float(w)))
                 except Exception:
                     x_norm = 0.0
                 try:
-                    y_norm_img = max(0.0, min(1.0, y / float(h)))
-                    y_norm = max(0.0, min(1.0, 1.0 - float(y_norm_img)))
+                    y_img = max(0.0, min(1.0, y / float(h)))
                 except Exception:
-                    y_norm = 0.0
+                    y_img = 0.0
+                # Entscheide Flip
+                flip_flag = None
+                try:
+                    if isinstance(m, dict) and "flip_y" in m:
+                        flip_flag = bool(m.get("flip_y"))
+                    elif isinstance(m, dict):
+                        src = str(m.get("source", "") or "").lower()
+                        if src == "blender":
+                            flip_flag = False
+                        elif src == "opencv":
+                            flip_flag = True
+                except Exception:
+                    flip_flag = None
+                if flip_flag is None:
+                    # Fallback-Default: konservativ annehmen, dass viele externe
+                    # Detektoren (z.B. OpenCV) oben-links nutzen -> Flip nötig.
+                    flip_flag = True
+                y_norm = (1.0 - y_img) if flip_flag else y_img
                 co = (x_norm, y_norm)
                 # Direktes Anlegen eines Tracks
                 try:
@@ -186,7 +205,11 @@ def _persist_markers(context, clip, markers: list[dict], roi_id: int | None = No
                             # Log intent and actual assignment for diagnostics
                             try:
                                 from .telemetry import log_batch
-                                log_batch("staged_seeding", "marker_persist.intent", {"roi_id": roi_id, "index": i, "pixel_xy": (x, y), "co_set": co, "frame": frame})
+                                log_batch(
+                                    "staged_seeding",
+                                    "marker_persist.intent",
+                                    {"roi_id": roi_id, "index": i, "pixel_xy": (x, y), "co_set": co, "frame": frame, "flip_y": bool(flip_flag)},
+                                )
                             except Exception:
                                 pass
                             mk.co = co
@@ -397,7 +420,7 @@ def _detect_candidates_blender(context, clip, threshold: float, min_distance_px:
                     continue
                 x = float(co[0]) * float(w)
                 y = float(co[1]) * float(h)
-                out.append({"x": x, "y": y, "corr": 1.0})
+                out.append({"x": x, "y": y, "corr": 1.0, "flip_y": False, "source": "blender"})
             except Exception:
                 continue
         # Wichtig: neu angelegte Tracks wieder entfernen, damit die Szene nicht vollläuft
@@ -448,7 +471,7 @@ def _detect_candidates_opencv(clip, threshold: float, min_distance_px: int, max_
         if corners is not None:
             for c in corners:
                 x, y = float(c[0][0]), float(c[0][1])
-                out.append({"x": x, "y": y, "corr": 1.0})
+                out.append({"x": x, "y": y, "corr": 1.0, "flip_y": True, "source": "opencv"})
         return out
     except Exception:
         return []
