@@ -36,11 +36,40 @@ def _coerce_int(val, default: int) -> int:
         return int(default)
 
 
+def _apply_marker_areas(marker, width: int, height: int, pattern_px: int | None, search_px: int | None) -> None:
+    """Setze pattern_corners und search_min/max relativ zur Markerposition.
+    Blender erwartet Offsets relativ zur Markerposition in normierten Koordinaten (0..1).
+    """
+    try:
+        if marker is None or width <= 0 or height <= 0:
+            return
+        # Pattern
+        if pattern_px is not None and hasattr(marker, "pattern_corners"):
+            try:
+                dx = float(pattern_px) / (2.0 * float(width))
+                dy = float(pattern_px) / (2.0 * float(height))
+                corners = ((-dx, -dy), (dx, -dy), (dx, dy), (-dx, dy))
+                marker.pattern_corners = corners  # type: ignore[attr-defined]
+            except Exception:
+                pass
+        # Search
+        if search_px is not None and hasattr(marker, "search_min") and hasattr(marker, "search_max"):
+            try:
+                sx = float(search_px) / (2.0 * float(width))
+                sy = float(search_px) / (2.0 * float(height))
+                marker.search_min = (-sx, -sy)  # type: ignore[attr-defined]
+                marker.search_max = (sx, sy)    # type: ignore[attr-defined]
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 def _persist_markers(context, clip, markers: list[dict]) -> int:
     """Lege für gegebene Pixelpositionen neue Tracks an (normierte Koordinaten).
     Gibt die Anzahl erfolgreich angelegter Tracks zurück.
     Setzt pro Marker (falls vorhanden) pattern/search via tracking.settings Default
-    und selektiert Track+Marker.
+    und selektiert Track+Marker. Zusätzlich explizites Setzen von pattern_corners/search.
     """
     try:
         import bpy  # type: ignore
@@ -107,6 +136,8 @@ def _persist_markers(context, clip, markers: list[dict]) -> int:
                                 mk = t.markers[-1] if len(t.markers) > 0 else None
                         if mk is not None:
                             mk.co = co
+                            # Explizit Pattern/Search setzen, damit Größen im UI sichtbar sind
+                            _apply_marker_areas(mk, int(w), int(h), p_sz, s_sz)
                             # Selektion setzen
                             try:
                                 t.select = True
