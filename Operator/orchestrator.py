@@ -1,3 +1,47 @@
+# Minimaler, nutzbarer Orchestrator-Wrapper für den Online-Tracking-Zyklus
+class OnlineOrchestrator:
+    def __init__(self, roi_id: int, context=None, start_frame: int = 1):
+        self.roi_id = roi_id
+        self.context = context
+        self.frame = start_frame
+        self.active = True
+
+    def step(self) -> Dict[str, Any]:
+        # Apply-next zu Beginn des Frames
+        apply_scheduled_next_frame(self.roi_id, frame=self.frame)
+        # Sequence-Tracking ggf. zu Beginn oder nach Pattern-Änderung
+        st = get_online_state(self.roi_id)
+        if self.frame == 1 or int(st.get("last_pattern_change_frame", -1)) == self.frame:
+            run_sequence_track(self.roi_id, frame=self.frame)
+        telemetry = track_one_frame(self.roi_id, frame=self.frame)
+        triggers = detect_triggers(self.roi_id, window=10)
+        plan = schedule_param_changes(self.roi_id, telemetry, frame=self.frame, triggers=triggers)
+        apply_report = apply_next_frame(self.roi_id, change_plan=plan, frame=self.frame)
+        # Microcheck nach Pattern-Anwendung überwachen
+        mc = post_change_microcheck(self.roi_id, window=10)
+        # Modell-Fit/Selektion, Peer-Refresh, Cleanup etc. können nach Bedarf ergänzt werden
+        self.frame += 1
+        return {
+            "frame": self.frame,
+            "telemetry": telemetry,
+            "triggers": triggers,
+            "plan": plan,
+            "apply_report": apply_report,
+            "microcheck": mc,
+        }
+
+    def run(self, max_frames: int = 10):
+        results = []
+        for _ in range(max_frames):
+            if not self.active:
+                break
+            result = self.step()
+            results.append(result)
+        return results
+
+# Beispiel für die Nutzung:
+# orchestrator = OnlineOrchestrator(roi_id=0)
+# results = orchestrator.run(max_frames=10)
 from __future__ import annotations
 from typing import Any, Dict
 import time
