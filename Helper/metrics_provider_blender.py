@@ -105,16 +105,30 @@ class BlenderMetricsProvider(MetricsProvider):
             # Try to find a track with a custom roi_id property (if orchestrator annotated it)
             for t in tracks:
                 try:
-                    v = getattr(t, "roi_id", None)
+                    v = None
+                    # try attribute, dict-like access, or indexing
+                    try:
+                        v = getattr(t, "roi_id", None)
+                    except Exception:
+                        v = None
                     if v is None:
                         try:
-                            # some bpy types allow dict-like access
                             v = t.get("roi_id", None)
                         except Exception:
-                            v = v
-                    if v is not None and str(int(v)) == str(roi_id):
-                        track = t
-                        break
+                            v = None
+                    # tolerant comparison: try int/str/float
+                    if v is not None:
+                        try:
+                            if str(int(v)) == str(int(roi_id)):
+                                track = t
+                                break
+                        except Exception:
+                            try:
+                                if str(v) == str(roi_id):
+                                    track = t
+                                    break
+                            except Exception:
+                                pass
                 except Exception:
                     continue
 
@@ -140,6 +154,32 @@ class BlenderMetricsProvider(MetricsProvider):
                         break
                 except Exception:
                     continue
+
+        # Additional fallback: use marker_refs from online state (registered after seeding)
+        if track is None:
+            try:
+                from .tracking_online import get_online_state
+                try:
+                    st = get_online_state(int(roi_id)) if roi_id is not None else {}
+                except Exception:
+                    st = {}
+                marker_refs = list(st.get("marker_refs", []) or [])
+                if marker_refs:
+                    for name in marker_refs:
+                        try:
+                            for t in tracks:
+                                try:
+                                    if getattr(t, "name", None) == name:
+                                        track = t
+                                        break
+                                except Exception:
+                                    continue
+                            if track is not None:
+                                break
+                        except Exception:
+                            continue
+            except Exception:
+                pass
 
         if track is None:
             # fallback: any selected track
