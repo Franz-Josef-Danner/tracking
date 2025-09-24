@@ -10,6 +10,21 @@ from .micro_validate import validate_markers, trim_to_band
 from .init_params import enforce_limits, _round_even
 
 
+def marker_stage_budget(scene) -> dict:
+    """Berechne das /5-Markerbudget aus Gesamtziel und Liefere Stage-Band.
+    Input: scene dict mit optionalen Schlüsseln {total_target, marker_stage_lo/hi}.
+    Output: {per_stage, lo, hi}
+    """
+    try:
+        total_target = int((scene or {}).get("total_target", 0))
+    except Exception:
+        total_target = 0
+    per_stage = max(0, int(total_target // 5))
+    lo = int((scene or {}).get("marker_stage_lo", round(per_stage * 0.9)))
+    hi = int((scene or {}).get("marker_stage_hi", round(per_stage * 1.1)))
+    return {"per_stage": int(per_stage), "lo": int(lo), "hi": int(hi)}
+
+
 def _clip_size(clip) -> tuple[int, int]:
     try:
         w, h = getattr(clip, "size", (0, 0))

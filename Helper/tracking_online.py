@@ -77,13 +77,22 @@ def track_one_frame(roi_id, frame: Optional[int] = None) -> dict:
 
     n = len(s.get("markers", {}))
     tel = {
+        "frame": int(s["frame"]),
+        "alpha": int(s.get("alpha", 3)),
+        "pattern": int(s.get("pattern", 25)),
+        # Aggregate
+        "aggregate": {
+            "survival_1f": float(1.0 - lost_rate),
+            "corr_med_1f": float(corr),
+            "runtime_ms": float(runtime),
+        },
+        # pro Marker (Platzhalter leer, Struktur vorhanden)
+        "per_marker": [],
+        # einfache Kompatibilitätsfelder
         "markers": n,
         "mismatch_rate": 0.0,
         "corr_med": float(corr),
         "runtime_ms": float(runtime),
-        "frame": int(s["frame"]),
-        "alpha": int(s.get("alpha", 3)),
-        "pattern": int(s.get("pattern", 25)),
         "lost_rate": float(lost_rate),
         "jump_px": float(jump_px),
         "scale_delta": float(scale_delta),
@@ -103,7 +112,15 @@ def track_one_frame(roi_id, frame: Optional[int] = None) -> dict:
     if len(s["window"]) > 10:
         s["window"] = s["window"][-10:]
 
-    s["last_tel"] = dict(tel)
+    s["last_tel"] = dict({**tel, "corr_med": tel["aggregate"]["corr_med_1f"]})
+
+    # Logging
+    try:
+        from .telemetry import log_batch
+        log_batch("online.frame", "track_step", {"roi_id": int(roi_id), **{k: v for k, v in tel.items() if k not in ("per_marker",)}})
+    except Exception:
+        pass
+
     return tel
 
 
@@ -171,18 +188,22 @@ def detect_triggers(roi_id, window: int = 10) -> Dict[str, Any]:
     return triggers
 
 
-def schedule_param_changes(roi_id, telemetry: dict, frame: Optional[int] = None, triggers: Optional[Dict[str, Any]] = None) -> None:
+def schedule_param_changes(roi_id, telemetry: dict, frame: Optional[int] = None, triggers: Optional[Dict[str, Any]] = None) -> None | Dict[str, Any]:
     """Pro Marker: α-Adjust (cheap) live; Pattern-Change gated (apply-next).
 
     Regeln (vereinfacht):
     - cheap-move α: max 1 Param-Move/10 Frames/Marker
     - gated pattern: Cooldown ≥15 Frames; Trigger bei Erosion (≥3 Frames) oder Divergenz
+
+    Return: ChangePlan (marker-/roi-granular) für t+1 (inkl. evtl. sofort gesetzter α-Änderungen als "applied_now").
     """
     s = _roi_state(int(roi_id))
-    corr = float(telemetry.get("corr_med", 0.8))
-    runtime = float(telemetry.get("runtime_ms", 1.0))
+    corr = float(telemetry.get("corr_med", telemetry.get("aggregate", {}).get("corr_med_1f", 0.8)))
+    runtime = float(telemetry.get("runtime_ms", telemetry.get("aggregate", {}).get("runtime_ms", 1.0)))
     now_f = int(telemetry.get("frame", s.get("frame", 0))) if frame is None else int(frame)
     s["frame"] = now_f
+
+    plan: Dict[str, Any] = {"roi_id": int(roi_id), "frame": now_f, "apply_at": now_f + 1, "changes": [], "applied_now": []}
 
     # Erosionszähler (Legacy)
     if 0.7 <= corr <= 0.8:
@@ -196,15 +217,20 @@ def schedule_param_changes(roi_id, telemetry: dict, frame: Optional[int] = None,
     if tr.get("abriss") or corr < 0.65:
         if _allow_move(s, now_f, min_gap=10, last_key="last_alpha_change_frame"):
             s.setdefault("alpha", 3)
-            s["alpha"] = min(4, int(s["alpha"]) + 1)
+            new_a = min(4, int(s["alpha"]) + 1)
+            # Sofort setzen (bewusst "cheap"), dennoch in Plan dokumentieren
+            s["alpha"] = new_a
             s["last_alpha_change_frame"] = now_f
             s["last_any_change_frame"] = now_f
+            plan["applied_now"].append({"type": "alpha", "value": int(new_a)})
     elif tr.get("stabil_teuer") or (corr > 0.8 and runtime > 2.0):
         if _allow_move(s, now_f, min_gap=10, last_key="last_alpha_change_frame"):
             s.setdefault("alpha", 3)
-            s["alpha"] = max(2, int(s["alpha"]) - 1)
+            new_a = max(2, int(s["alpha"]) - 1)
+            s["alpha"] = new_a
             s["last_alpha_change_frame"] = now_f
             s["last_any_change_frame"] = now_f
+            plan["applied_now"].append({"type": "alpha", "value": int(new_a)})
 
     # gated pattern adjust (apply-next)
     can_gate = (now_f - int(s.get("last_pattern_change_frame", -10**9)) >= 15)
@@ -216,7 +242,9 @@ def schedule_param_changes(roi_id, telemetry: dict, frame: Optional[int] = None,
         next_p = max(9, min(161, int(s["pattern"]) + step))
         if (now_f - int(s.get("last_any_change_frame", -10**9))) >= 10:
             s.setdefault("scheduled", [])
-            s["scheduled"].append({"type": "pattern", "value": next_p, "apply_at": now_f + 1})
+            chg = {"type": "pattern", "value": int(next_p), "apply_at": now_f + 1}
+            s["scheduled"].append(chg)
+            plan["changes"].append(chg)
             # Reset Erosion-Zähler
             s["erosion_counter"] = 0
             try:
@@ -224,6 +252,15 @@ def schedule_param_changes(roi_id, telemetry: dict, frame: Optional[int] = None,
                 log_batch("online.schedule", "pattern", {"roi_id": int(roi_id), "frame": now_f, "to": int(next_p), "reason": "erosion" if erosion_gate else "divergence"})
             except Exception:
                 pass
+
+    # Plan-Logging (low-cost)
+    try:
+        from .telemetry import log_batch
+        log_batch("online.schedule", "change_plan", plan)
+    except Exception:
+        pass
+
+    return plan
 
 
 def apply_scheduled_next_frame(roi_id, frame: Optional[int] = None) -> None:
@@ -261,6 +298,57 @@ def apply_scheduled_next_frame(roi_id, frame: Optional[int] = None) -> None:
         else:
             keep.append(ev)
     s["scheduled"] = keep
+
+
+def apply_next_frame(roi_id, change_plan: Optional[Dict[str, Any]] = None, frame: Optional[int] = None) -> Dict[str, Any]:
+    """Setzt geplante Änderungen in t+1 um und liefert einen ApplyReport zurück.
+
+    - alpha wird direkt gesetzt, sofern im Plan vorhanden
+    - pattern-Moves triggern Microcheck & Cooldown (über apply_scheduled_next_frame)
+    """
+    s = _roi_state(int(roi_id))
+    now_f = int(frame if frame is not None else s.get("frame", 0))
+
+    applied, skipped = [], []
+
+    # Übergebenen Plan in die interne Schedule übernehmen (nur zukünftige Events)
+    if isinstance(change_plan, dict):
+        for ch in change_plan.get("changes", []) or []:
+            try:
+                ap = int(ch.get("apply_at", now_f + 1))
+                if ap <= now_f:
+                    # Zu spät – skippe
+                    skipped.append({**ch, "reason": "late"})
+                    continue
+                s.setdefault("scheduled", []).append({**ch, "apply_at": ap})
+            except Exception:
+                skipped.append({**ch, "reason": "invalid"})
+        # alpha-Änderungen sofort anwenden, falls im Plan separat gelistet
+        for ch in change_plan.get("applied_now", []) or []:
+            if ch.get("type") == "alpha":
+                try:
+                    s["alpha"] = int(ch.get("value", s.get("alpha", 3)))
+                    applied.append({**ch, "apply_at": now_f})
+                except Exception:
+                    skipped.append({**ch, "reason": "invalid"})
+
+    # Interne Schedule für aktuelles Frame anwenden (pattern etc.)
+    before = list(s.get("scheduled", []))
+    apply_scheduled_next_frame(roi_id, frame=now_f)
+    after = list(s.get("scheduled", []))
+    # Erkenne angewendete Events anhand der Differenz
+    applied_ids = set(id(x) for x in before) - set(id(x) for x in after)
+    for ev in before:
+        if id(ev) in applied_ids:
+            applied.append({**ev, "apply_at": now_f})
+
+    report = {"applied": applied, "skipped": skipped, "frame": now_f}
+    try:
+        from .telemetry import log_batch
+        log_batch("online.apply", "apply_next_frame", {"roi_id": int(roi_id), **report})
+    except Exception:
+        pass
+    return report
 
 
 # ———————————— Sequence-Tracking ————————————
