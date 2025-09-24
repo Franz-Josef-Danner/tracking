@@ -81,9 +81,50 @@ class BlenderMetricsProvider(MetricsProvider):
             pass
 
         if track is None:
+            # Try to find a track with a custom roi_id property (if orchestrator annotated it)
+            for t in tracks:
+                try:
+                    v = getattr(t, "roi_id", None)
+                    if v is None:
+                        try:
+                            # some bpy types allow dict-like access
+                            v = t.get("roi_id", None)
+                        except Exception:
+                            v = v
+                    if v is not None and str(int(v)) == str(roi_id):
+                        track = t
+                        break
+                except Exception:
+                    continue
+
+        if track is None:
+            # fallback: name exact match
             for t in tracks:
                 try:
                     if t.name == roi_id:
+                        track = t
+                        break
+                except Exception:
+                    continue
+
+        if track is None:
+            # fallback: name patterns like 'roi_{id}' or containing the id
+            needle1 = f"roi_{roi_id}"
+            needle2 = f"roi{roi_id}"
+            for t in tracks:
+                try:
+                    n = getattr(t, "name", "") or ""
+                    if needle1 in n or needle2 in n or n.endswith(f"_{roi_id}"):
+                        track = t
+                        break
+                except Exception:
+                    continue
+
+        if track is None:
+            # fallback: any selected track
+            for t in tracks:
+                try:
+                    if bool(getattr(t, "select", False)):
                         track = t
                         break
                 except Exception:
