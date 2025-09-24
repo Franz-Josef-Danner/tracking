@@ -39,6 +39,8 @@ def _coerce_int(val, default: int) -> int:
 def _persist_markers(context, clip, markers: list[dict]) -> int:
     """Lege für gegebene Pixelpositionen neue Tracks an (normierte Koordinaten).
     Gibt die Anzahl erfolgreich angelegter Tracks zurück.
+    Setzt pro Marker (falls vorhanden) pattern/search via tracking.settings Default
+    und selektiert Track+Marker.
     """
     try:
         import bpy  # type: ignore
@@ -51,40 +53,74 @@ def _persist_markers(context, clip, markers: list[dict]) -> int:
         if not w or not h:
             return 0
         tr_coll = getattr(getattr(clip, "tracking", None), "tracks", None)
+        settings = getattr(getattr(clip, "tracking", None), "settings", None)
         if tr_coll is None:
             return 0
         frame = int(getattr(getattr(context, "scene", None), "frame_current", 1))
         ok = 0
         for i, m in enumerate(markers):
             try:
+                # Optional: stage-spezifische Größen anwenden
+                p_sz = None
+                s_sz = None
+                try:
+                    if isinstance(m, dict):
+                        if m.get("pattern") is not None:
+                            p_sz = int(m.get("pattern"))
+                        if m.get("search") is not None:
+                            s_sz = int(m.get("search"))
+                except Exception:
+                    p_sz = p_sz if isinstance(p_sz, int) else None
+                    s_sz = s_sz if isinstance(s_sz, int) else None
+                if settings is not None:
+                    if p_sz is not None and hasattr(settings, "default_pattern_size"):
+                        try:
+                            settings.default_pattern_size = int(p_sz)
+                        except Exception:
+                            pass
+                    if s_sz is not None and hasattr(settings, "default_search_size"):
+                        try:
+                            settings.default_search_size = int(s_sz)
+                        except Exception:
+                            pass
+
                 x = float(m.get("x", 0.0))
                 y = float(m.get("y", 0.0))
                 co = (max(0.0, min(1.0, x / float(w))), max(0.0, min(1.0, y / float(h))))
-                # Versuch 1: direktes Anlegen eines Tracks
+                # Direktes Anlegen eines Tracks
                 try:
                     t = tr_coll.new(name=f"KI_{int(x)}_{int(y)}")
                 except Exception:
                     t = tr_coll.new() if hasattr(tr_coll, "new") else None
                 if t is not None:
                     try:
+                        # Marker erzeugen
                         mk = None
                         if hasattr(t.markers, "insert"):
                             mk = t.markers.insert(frame)
                         elif hasattr(t.markers, "new"):
                             mk = t.markers.new(frame)
                         if mk is None:
-                            # Fallback: existierenden Marker für Frame suchen
                             if hasattr(t.markers, "find_frame"):
                                 mk = t.markers.find_frame(frame)
                             else:
                                 mk = t.markers[-1] if len(t.markers) > 0 else None
                         if mk is not None:
                             mk.co = co
+                            # Selektion setzen
+                            try:
+                                t.select = True
+                            except Exception:
+                                pass
+                            try:
+                                mk.select = True
+                            except Exception:
+                                pass
                             ok += 1
                             continue
                     except Exception:
                         pass
-                # Versuch 2: Operator (kann UI-Kontext verlangen)
+                # Fallback: Operator
                 try:
                     bpy.ops.clip.add_marker(location=co, frame=frame)
                     ok += 1
@@ -368,8 +404,12 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
                 except Exception:
                     pass
             if keep_if_far_enough(c, index, min_dist):
-                kept.append(c)
-                accepted.append(c)
+                # Stage-Parameter an Kandidat annotieren
+                c2 = dict(c)
+                c2["pattern"] = int(p_i)
+                c2["search"] = int(search_i)
+                kept.append(c2)
+                accepted.append(c2)
                 index["points"].append((float(c.get("x", 0.0)), float(c.get("y", 0.0))))
                 placed_this += 1
                 total_placed += 1
@@ -476,8 +516,11 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
                 except Exception:
                     pass
             if keep_if_far_enough(c, index, min_dist):
-                kept.append(c)
-                accepted.append(c)
+                c2 = dict(c)
+                c2["pattern"] = int(p_r)
+                c2["search"] = int(search_r)
+                kept.append(c2)
+                accepted.append(c2)
                 index["points"].append((float(c.get("x", 0.0)), float(c.get("y", 0.0))))
                 placed_refill += 1
                 total_placed += 1
