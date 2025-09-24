@@ -1,6 +1,8 @@
 from .metrics_provider import TrackingMetrics, MetricsProvider
 import time
 from typing import Optional
+import os
+from pathlib import Path
 
 
 class BlenderMetricsProvider(MetricsProvider):
@@ -36,6 +38,22 @@ class BlenderMetricsProvider(MetricsProvider):
         except Exception:
             return None, None
 
+    def _log(self, msg: str) -> None:
+        """Optional logging helper. Enabled when environment variable
+        METRICS_PROVIDER_VERBOSE is set to a truthy value. Logs are appended to
+        a file in the user's home directory for easier inspection from Blender.
+        """
+        try:
+            if not os.environ.get("METRICS_PROVIDER_VERBOSE"):
+                return
+            p = Path(os.path.expanduser(os.environ.get("METRICS_PROVIDER_LOG", "~/.tracking_metrics_provider.log"))).expanduser()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with p.open("a", encoding="utf-8") as f:
+                f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+        except Exception:
+            # never raise from logging
+            pass
+
     def fetch_tracking_metrics(self, roi_id: str, frame: int) -> TrackingMetrics:
         t0 = time.time()
         bpy, clip = self._find_clip()
@@ -63,13 +81,16 @@ class BlenderMetricsProvider(MetricsProvider):
                     out[k] = float(v)
                 else:
                     out[k] = v
+            self._log(f"no bpy/clip available -> fallback metrics: {out}")
             return out
 
         tracks = getattr(getattr(clip, "tracking", None), "tracks", None)
         if not tracks:
             dt_ms = (time.time() - t0) * 1000.0
             fallback["time_ms"] = float(dt_ms)
-            return {k: float(v) if isinstance(v, (int, float)) else v for k, v in fallback.items()}
+            out = {k: float(v) if isinstance(v, (int, float)) else v for k, v in fallback.items()}
+            self._log(f"no tracks on clip -> fallback metrics: {out}")
+            return out
 
         # Resolve roi_id -> track (index or name)
         track = None
@@ -141,6 +162,7 @@ class BlenderMetricsProvider(MetricsProvider):
                     out[k] = float(v)
                 else:
                     out[k] = v
+            self._log(f"track not found for roi_id={roi_id} -> fallback: {out}")
             return out
 
         # Try to extract per-frame marker and metrics (best-effort)
@@ -176,6 +198,11 @@ class BlenderMetricsProvider(MetricsProvider):
                     continue
             if marker is None and markers:
                 marker = min(markers, key=lambda m: abs(int(getattr(m, "frame", 0)) - int(frame)))
+            if marker is None:
+                try:
+                    self._log(f"no marker found for track={getattr(track,'name',None)} frame={frame}")
+                except Exception:
+                    pass
 
             # correlation: many Blender versions expose `marker.correlation` or `marker.corr`;
             # fall back to 0.0 if not present
@@ -269,7 +296,7 @@ class BlenderMetricsProvider(MetricsProvider):
             rot_delta = rot_delta or 0.0
 
         dt_ms = (time.time() - t0) * 1000.0
-        return {
+        out = {
             "corr": float(max(0.0, min(1.0, corr or 0.0))),
             "residual_px": float(residual_px or 0.0),
             "lost": bool(lost),
@@ -278,3 +305,8 @@ class BlenderMetricsProvider(MetricsProvider):
             "rot_delta": float(rot_delta or 0.0),
             "time_ms": float(dt_ms),
         }
+        try:
+            self._log(f"fetched metrics for roi_id={roi_id} frame={frame} -> {out}")
+        except Exception:
+            pass
+        return out
