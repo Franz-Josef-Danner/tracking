@@ -87,7 +87,13 @@ def register():
         _op_mod.register()
     except Exception:
         pass
+
+    # Metrics Provider: set default Blender provider regardless of Operator registration outcome
+    try:
         set_metrics_provider(BlenderMetricsProvider())
+    except Exception:
+        # If setting provider fails for any reason, ignore — some functionality will fall back to synthetic metrics
+        pass
 
 
 def unregister():
