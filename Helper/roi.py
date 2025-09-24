@@ -16,25 +16,144 @@ def _clip_size(clip: Any) -> Tuple[int, int]:
         return 0, 0
 
 
-def analyze_rois(clip: Any, grid: tuple[int, int] = (4, 6)) -> dict:
+def analyze_rois(clip: Any, grid: tuple[int, int] = (4, 6), frame_img: Any = None, prev_frame_img: Any = None) -> dict:
     """Return {roi_id: {bbox, texture, motion, divergence, empty_tiles, tiles}}.
 
-    STRM: Zerlegt das Bild in Tiles und berechnet pro Tile einfache Texture-/Motion-Scores.
-    Coverage-Löcher = Tiles mit Score < 0.3 (Platzhalter-Logik).
+    Wenn `frame_img` (und optional `prev_frame_img`) als NumPy-Arrays übergeben werden,
+    berechnen wir echte Tile-basierte Texture- und Motion-Scores. Falls OpenCV (`cv2`) vorhanden
+    wird, nutzen wir dessen Laplacian für einen Texture-Score; sonst verwenden wir eine
+    Gradienten-basierte Heuristik (reine NumPy-Implementierung).
+
+    Coverage-Löcher = Tiles mit texture < 0.3 (oder low motion), Platzhalter-Thresholds.
     """
     w, h = _clip_size(clip)
     nx, ny = grid
     tile_w = max(1, w // nx)
     tile_h = max(1, h // ny)
     tiles = np.zeros((ny, nx), dtype=[('texture', 'f4'), ('motion', 'f4')])
-    # Platzhalter: fülle Tiles mit Pseudo-Scores (später: echte Bilddaten)
-    for iy in range(ny):
-        for ix in range(nx):
-            # Simuliere Textur und Bewegung (z.B. als Funktion der Tile-Position)
-            t = 0.4 + 0.2 * ((ix + iy) % 2)  # Schachbrettmuster
-            m = 0.5 + 0.1 * ((ix - iy) % 2)
-            tiles[iy, ix]["texture"] = t
-            tiles[iy, ix]["motion"] = m
+
+    # If frame images provided, compute real texture & motion per tile.
+    img = None
+    prev = None
+    try:
+        import numpy as _np
+        img = _np.asarray(frame_img) if frame_img is not None else None
+        prev = _np.asarray(prev_frame_img) if prev_frame_img is not None else None
+    except Exception:
+        img = None
+        prev = None
+
+    use_cv2 = False
+    try:
+        import cv2  # type: ignore
+        use_cv2 = True
+    except Exception:
+        use_cv2 = False
+
+    if img is None:
+        # Fallback to previous pseudo-scores when no image is available
+        for iy in range(ny):
+            for ix in range(nx):
+                t = 0.4 + 0.2 * ((ix + iy) % 2)
+                m = 0.5 + 0.1 * ((ix - iy) % 2)
+                tiles[iy, ix]["texture"] = float(t)
+                tiles[iy, ix]["motion"] = float(m)
+    else:
+        # Ensure grayscale float image in range 0..1
+        try:
+            if img.ndim == 3 and img.shape[2] >= 3:
+                # convert RGB -> gray
+                img_gray = img[..., :3].astype(float)
+                img_gray = (0.299 * img_gray[..., 0] + 0.587 * img_gray[..., 1] + 0.114 * img_gray[..., 2])
+            else:
+                img_gray = img.astype(float)
+            # normalize to 0..1 if values appear in 0..255
+            if img_gray.max() > 1.5:
+                img_gray = img_gray / 255.0
+        except Exception:
+            img_gray = np.zeros((h, w), dtype=float)
+
+        prev_gray = None
+        if prev is not None:
+            try:
+                if prev.ndim == 3 and prev.shape[2] >= 3:
+                    pgray = prev[..., :3].astype(float)
+                    prev_gray = (0.299 * pgray[..., 0] + 0.587 * pgray[..., 1] + 0.114 * pgray[..., 2])
+                else:
+                    prev_gray = prev.astype(float)
+                if prev_gray.max() > 1.5:
+                    prev_gray = prev_gray / 255.0
+            except Exception:
+                prev_gray = None
+
+        H, W = img_gray.shape[:2]
+        # Resize or crop to declared clip size if mismatch
+        if (W, H) != (w or W, h or H):
+            # Try to respect clip size; but don't fail on mismatch
+            try:
+                # simple crop/resize via slicing if larger
+                img_gray = img_gray[: (h or H), : (w or W)]
+                if prev_gray is not None:
+                    prev_gray = prev_gray[: (h or H), : (w or W)]
+                H, W = img_gray.shape[:2]
+            except Exception:
+                pass
+
+        tile_w = max(1, W // nx)
+        tile_h = max(1, H // ny)
+
+        # Precompute gradient-based texture or use cv2.Laplacian
+        if use_cv2:
+            try:
+                import cv2 as _cv
+                lap = _cv.Laplacian((img_gray * 255.0).astype(_cv.CV_8U), _cv.CV_64F)
+                tex_map = np.abs(lap) / 255.0
+            except Exception:
+                use_cv2 = False
+
+        if not use_cv2:
+            # gradient magnitude heuristic (NumPy-only)
+            gy, gx = np.gradient(img_gray)
+            grad_mag = np.hypot(gx, gy)
+            tex_map = grad_mag
+
+        # Motion map: abs diff if previous frame present
+        if prev_gray is not None:
+            mot_map = np.abs(img_gray - prev_gray)
+        else:
+            mot_map = np.zeros_like(img_gray)
+
+        # Aggregate per tile and normalize to 0..1
+        tvals = []
+        mvals = []
+        for iy in range(ny):
+            for ix in range(nx):
+                y0 = iy * tile_h
+                x0 = ix * tile_w
+                y1 = min(H, y0 + tile_h)
+                x1 = min(W, x0 + tile_w)
+                region_tex = tex_map[y0:y1, x0:x1]
+                region_mot = mot_map[y0:y1, x0:x1]
+                tval = float(np.mean(region_tex)) if region_tex.size else 0.0
+                mval = float(np.mean(region_mot)) if region_mot.size else 0.0
+                tvals.append(tval)
+                mvals.append(mval)
+
+        tvals = np.array(tvals, dtype=float)
+        mvals = np.array(mvals, dtype=float)
+        # Normalize by max or mean to get relative 0..1 scores
+        tmax = float(np.max(tvals)) if tvals.size else 1.0
+        mmax = float(np.max(mvals)) if mvals.size else 1.0
+        tnorm = tvals / (tmax or 1.0)
+        mnorm = mvals / (mmax or 1.0)
+
+        # write back into tiles
+        k = 0
+        for iy in range(ny):
+            for ix in range(nx):
+                tiles[iy, ix]["texture"] = float(tnorm[k])
+                tiles[iy, ix]["motion"] = float(mnorm[k])
+                k += 1
     # Coverage-Löcher: Tiles mit texture < 0.3
     empty_tiles = [(ix, iy) for iy in range(ny) for ix in range(nx) if tiles[iy, ix]["texture"] < 0.3]
     roi: Dict[str, Any] = {
