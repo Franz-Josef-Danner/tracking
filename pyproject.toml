@@ -1,0 +1,20 @@
+[project]
+name = "tracking"
+version = "0.0.0"
+description = "Utilities for movie-clip tracking and online orchestrator tests"
+authors = [ { name = "" } ]
+readme = "README.md"
+requires-python = ">=3.11"
+
+dependencies = [
+  "numpy>=1.24",
+  "pytest>=7.1",
+  "opencv-python-headless>=4.7",
+]
+
+[project.optional-dependencies]
+opencv = ["opencv-python-headless>=4.7"]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
