@@ -26,6 +26,12 @@ class BlenderMetricsProvider(MetricsProvider):
             clip = getattr(bpy.context, "edit_movieclip", None) or getattr(
                 getattr(bpy.context, "space_data", None), "clip", None
             )
+            if clip is None:
+                # fallback: take first movieclip in the blend file
+                try:
+                    clip = bpy.data.movieclips[0] if len(bpy.data.movieclips) > 0 else None
+                except Exception:
+                    clip = None
             return bpy, clip
         except Exception:
             return None, None
@@ -49,7 +55,15 @@ class BlenderMetricsProvider(MetricsProvider):
             # Not running inside Blender / no clip available
             dt_ms = (time.time() - t0) * 1000.0
             fallback["time_ms"] = float(dt_ms)
-            return {k: float(v) if isinstance(v, (int, float)) else v for k, v in fallback.items()}
+            out = {}
+            for k, v in fallback.items():
+                if isinstance(v, bool):
+                    out[k] = v
+                elif isinstance(v, (int, float)):
+                    out[k] = float(v)
+                else:
+                    out[k] = v
+            return out
 
         tracks = getattr(getattr(clip, "tracking", None), "tracks", None)
         if not tracks:
@@ -78,7 +92,15 @@ class BlenderMetricsProvider(MetricsProvider):
         if track is None:
             dt_ms = (time.time() - t0) * 1000.0
             fallback["time_ms"] = float(dt_ms)
-            return {k: float(v) if isinstance(v, (int, float)) else v for k, v in fallback.items()}
+            out = {}
+            for k, v in fallback.items():
+                if isinstance(v, bool):
+                    out[k] = v
+                elif isinstance(v, (int, float)):
+                    out[k] = float(v)
+                else:
+                    out[k] = v
+            return out
 
         # Try to extract per-frame marker and metrics (best-effort)
         corr = 0.0
@@ -89,7 +111,19 @@ class BlenderMetricsProvider(MetricsProvider):
         rot_delta = 0.0
 
         try:
-            markers = getattr(track, "markers", []) or []
+            # Tracks may expose their marker list as `markers` or `markers.items()` depending on API
+            markers = []
+            if hasattr(track, "markers"):
+                try:
+                    markers = list(getattr(track, "markers") or [])
+                except Exception:
+                    markers = []
+            else:
+                # older/alternative api names
+                try:
+                    markers = list(getattr(track, "tracked_points") or [])
+                except Exception:
+                    markers = []
             # find marker at exact frame or nearest one
             marker = None
             for m in markers:
@@ -107,25 +141,33 @@ class BlenderMetricsProvider(MetricsProvider):
             if marker is not None:
                 corr = float(getattr(marker, "correlation", getattr(marker, "corr", 0.0) or 0.0))
                 # check for marker flags that indicate lost/hidden
-                lost = bool(getattr(marker, "hide", False) or getattr(marker, "mute", False))
+                lost = bool(getattr(marker, "hide", False) or getattr(marker, "mute", False) or getattr(marker, "disabled", False))
 
-            # residual / solve error: tracks may have `error`; markers may have `error` too
-            residual_px = float(getattr(track, "error", getattr(marker, "error", 0.0) or 0.0))
+            # residual / solve error: try various possible attribute names
+            residual_px = 0.0
+            try:
+                residual_px = float(getattr(track, "error", getattr(track, "average_error", None) or 0.0) or 0.0)
+            except Exception:
+                residual_px = float(getattr(marker, "error", 0.0) or 0.0)
 
             # jump_px: estimate displacement from previous marker (in pixels if clip size known)
             prev = None
             if markers:
-                prevs = [m for m in markers if int(getattr(m, "frame", 0)) < int(frame)]
-                if prevs:
-                    prev = prevs[-1]
+                try:
+                    prevs = [m for m in markers if int(getattr(m, "frame", 0)) < int(frame)]
+                    if prevs:
+                        prev = prevs[-1]
+                except Exception:
+                    prev = None
 
             if prev is not None and marker is not None:
-                co1 = getattr(prev, "co", None)
-                co2 = getattr(marker, "co", None)
+                co1 = getattr(prev, "co", None) or getattr(prev, "pos", None) or getattr(prev, "co", None)
+                co2 = getattr(marker, "co", None) or getattr(marker, "pos", None) or getattr(marker, "co", None)
                 if co1 is not None and co2 is not None:
                     try:
                         # co are usually normalized coordinates (0..1). Try to scale with clip size if available
-                        w = getattr(clip, "size", None)
+                        # MovieClip stores size as `size` or `resolution` in different versions
+                        w = getattr(clip, "size", None) or getattr(clip, "resolution", None)
                         if w and isinstance(w, (tuple, list)) and len(w) >= 2:
                             sx = w[0]
                             sy = w[1]

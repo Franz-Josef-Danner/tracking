@@ -17,8 +17,19 @@ bl_info = {
     "category": "Tracking",
 }
 
-import bpy
-from bpy.props import IntProperty, FloatProperty
+try:
+    import bpy
+    from bpy.props import IntProperty, FloatProperty
+except Exception:
+    # Allow importing this package outside Blender (tests, static analysis).
+    bpy = None
+
+    def IntProperty(*args, **kwargs):
+        # placeholder for environments without bpy; register() should skip when bpy is None
+        return None
+
+    def FloatProperty(*args, **kwargs):
+        return None
 
 # Submodule-Handles (lazy import in register)
 _ui_mod = None
