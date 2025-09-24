@@ -485,7 +485,12 @@ def _invoke_clip_track_markers(clip, *, sequence: bool = False) -> bool:
             try:
                 bpy.ops.clip.track_markers(override, backwards=False, sequence=bool(sequence))
                 return True
-            except Exception:
+            except Exception as e:
+                try:
+                    from .telemetry import log_batch
+                    log_batch("online.sequence", "track_markers_override_failed", {"reason": str(e), "override_area": getattr(area, "type", None), "override_region": getattr(region, "type", None), "frame": getattr(getattr(bpy.context, 'scene', None), 'frame_current', None)})
+                except Exception:
+                    pass
                 # fallback to direct call below
                 pass
 
@@ -493,9 +498,19 @@ def _invoke_clip_track_markers(clip, *, sequence: bool = False) -> bool:
         try:
             bpy.ops.clip.track_markers(backwards=False, sequence=bool(sequence))
             return True
-        except Exception:
+        except Exception as e:
+            try:
+                from .telemetry import log_batch
+                log_batch("online.sequence", "track_markers_direct_failed", {"reason": str(e), "space_type": getattr(getattr(bpy.context, 'space_data', None), 'type', None), "frame": getattr(getattr(bpy.context, 'scene', None), 'frame_current', None)})
+            except Exception:
+                pass
             return False
-    except Exception:
+    except Exception as e:
+        try:
+            from .telemetry import log_batch
+            log_batch("online.sequence", "track_markers_unavailable", {"reason": str(e)})
+        except Exception:
+            pass
         return False
 
 def run_sequence_track(roi_id, frame: Optional[int] = None) -> bool:
