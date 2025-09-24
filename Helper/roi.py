@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from typing import Any, Dict, Tuple, List
+import math
 import numpy as np
 
 BBox = Tuple[int, int, int, int]
@@ -204,60 +205,115 @@ def cluster_tracks(roi_id, window: int = 30) -> list:
     if not track_infos:
         return []
 
-    # Clustering: simple single-link connectivity using Euclidean distance on last position
+    # Clustering: try HDBSCAN -> sklearn.DBSCAN -> fallback single-link connectivity
     pts = np.array([t["pos"] for t in track_infos], dtype=float)
     n = len(pts)
     # eps: a fraction of the smallest image side, clipped to sensible px
     eps = max(8.0, min(width or 0, height or 0) * 0.03)
-    # Build adjacency
-    adj = [[] for _ in range(n)]
-    for i in range(n):
-        for j in range(i + 1, n):
-            d = float(np.hypot(pts[i, 0] - pts[j, 0], pts[i, 1] - pts[j, 1]))
-            if d <= eps:
-                adj[i].append(j)
-                adj[j].append(i)
 
-    # connected components
-    visited = [False] * n
-    clusters = []
-    for i in range(n):
-        if visited[i]:
-            continue
-        stack = [i]
-        comp = []
-        visited[i] = True
-        while stack:
-            u = stack.pop()
-            comp.append(u)
-            for v in adj[u]:
-                if not visited[v]:
-                    visited[v] = True
-                    stack.append(v)
-        clusters.append(comp)
+    labels = None
+    # Try HDBSCAN if available (better for variable density)
+    try:
+        import hdbscan  # type: ignore
+        labels = hdbscan.HDBSCAN(min_cluster_size=max(2, int(n * 0.05))).fit_predict(pts)
+    except Exception:
+        labels = None
+
+    # Try sklearn DBSCAN as next option
+    if labels is None:
+        try:
+            from sklearn.cluster import DBSCAN  # type: ignore
+            labels = DBSCAN(eps=eps, min_samples=1).fit_predict(pts)
+        except Exception:
+            labels = None
 
     out_clusters = []
-    for cid, comp in enumerate(clusters):
-        members = [track_infos[k] for k in comp]
-        inlier_ids = [m.get("track_id") for m in members]
-        inliers_count = len(members)
-        rms_vals = [m.get("residual", 0.0) for m in members]
-        rot_vals = [m.get("rot", 0.0) for m in members]
-        scale_vals = [m.get("scale", 1.0) for m in members]
-        jump_mags = [math.hypot(float(m.get("dx", 0.0)), float(m.get("dy", 0.0))) for m in members]
 
-        stats = {
-            # convert rotation spread to degrees for heuristics in motion_model
-            "sigma_rot": float(np.std(rot_vals) * (180.0 / math.pi)) if rot_vals else 0.0,
-            "sigma_scale": float(np.std([s - 1.0 for s in scale_vals])) if scale_vals else 0.0,
-            "phi_shear": 0.0,
-            "parallax": float(np.std(jump_mags)) if jump_mags else 0.0,
-            "inliers": float(inliers_count),
-            "rms": float(np.mean(rms_vals)) if rms_vals else 1.0,
-            "outliers": 0.0,
-        }
+    if labels is None:
+        # Fallback: single-link connectivity (original approach)
+        adj = [[] for _ in range(n)]
+        for i in range(n):
+            for j in range(i + 1, n):
+                d = float(np.hypot(pts[i, 0] - pts[j, 0], pts[i, 1] - pts[j, 1]))
+                if d <= eps:
+                    adj[i].append(j)
+                    adj[j].append(i)
 
-        out_clusters.append({"id": cid, "inliers": inlier_ids, "stats": stats})
+        # connected components
+        visited = [False] * n
+        clusters = []
+        for i in range(n):
+            if visited[i]:
+                continue
+            stack = [i]
+            comp = []
+            visited[i] = True
+            while stack:
+                u = stack.pop()
+                comp.append(u)
+                for v in adj[u]:
+                    if not visited[v]:
+                        visited[v] = True
+                        stack.append(v)
+            clusters.append(comp)
+
+        for cid, comp in enumerate(clusters):
+            members = [track_infos[k] for k in comp]
+            inlier_ids = [m.get("track_id") for m in members]
+            inliers_count = len(members)
+            rms_vals = [m.get("residual", 0.0) for m in members]
+            rot_vals = [m.get("rot", 0.0) for m in members]
+            scale_vals = [m.get("scale", 1.0) for m in members]
+            jump_mags = [math.hypot(float(m.get("dx", 0.0)), float(m.get("dy", 0.0))) for m in members]
+
+            stats = {
+                # convert rotation spread to degrees for heuristics in motion_model
+                "sigma_rot": float(np.std(rot_vals) * (180.0 / math.pi)) if rot_vals else 0.0,
+                "sigma_scale": float(np.std([s - 1.0 for s in scale_vals])) if scale_vals else 0.0,
+                "phi_shear": 0.0,
+                "parallax": float(np.std(jump_mags)) if jump_mags else 0.0,
+                "inliers": float(inliers_count),
+                "rms": float(np.mean(rms_vals)) if rms_vals else 1.0,
+                "outliers": 0.0,
+            }
+
+            out_clusters.append({"id": cid, "inliers": inlier_ids, "stats": stats})
+    else:
+        # Build clusters from labels
+        labels = np.array(labels, dtype=int)
+        unique = sorted(set(int(x) for x in labels if x >= 0))
+        label_to_idx = {lab: i for i, lab in enumerate(unique)}
+        groups = {lab: [] for lab in unique}
+        noise = [i for i, lab in enumerate(labels) if lab == -1]
+        for i, lab in enumerate(labels):
+            if lab >= 0:
+                groups[int(lab)].append(i)
+            else:
+                # treat noise as singleton clusters
+                groups.setdefault(f"noise_{i}", []).append(i)
+
+        cid = 0
+        for lab, comp in groups.items():
+            members = [track_infos[k] for k in comp]
+            inlier_ids = [m.get("track_id") for m in members]
+            inliers_count = len(members)
+            rms_vals = [m.get("residual", 0.0) for m in members]
+            rot_vals = [m.get("rot", 0.0) for m in members]
+            scale_vals = [m.get("scale", 1.0) for m in members]
+            jump_mags = [math.hypot(float(m.get("dx", 0.0)), float(m.get("dy", 0.0))) for m in members]
+
+            stats = {
+                "sigma_rot": float(np.std(rot_vals) * (180.0 / math.pi)) if rot_vals else 0.0,
+                "sigma_scale": float(np.std([s - 1.0 for s in scale_vals])) if scale_vals else 0.0,
+                "phi_shear": 0.0,
+                "parallax": float(np.std(jump_mags)) if jump_mags else 0.0,
+                "inliers": float(inliers_count),
+                "rms": float(np.mean(rms_vals)) if rms_vals else 1.0,
+                "outliers": 0.0,
+            }
+
+            out_clusters.append({"id": cid, "inliers": inlier_ids, "stats": stats})
+            cid += 1
 
     return out_clusters
 
