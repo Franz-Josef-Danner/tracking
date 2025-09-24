@@ -7,7 +7,7 @@ import cv2
 
 from .dedup import build_index, keep_if_far_enough, feedback_min_distance
 from .micro_validate import validate_markers, trim_to_band
-from .init_params import enforce_limits
+from .init_params import enforce_limits, _round_even
 
 
 def _clip_size(clip) -> tuple[int, int]:
@@ -338,27 +338,44 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
 
     # Stage-Schedule für (pattern, alpha, levels, edge)
     def stage_params(stage_idx: int, p0: int, a0: int) -> tuple[int, int, int, bool]:
-        """Skaliere pattern eher nach oben (bis ~2x p0), clamp via enforce_limits.
+        """Skaliere pattern eher nach oben (bis ~2.6x p0), search gedämpft und gedeckelt.
         Staffelung:
           1: 0.9x p0, α=2
           2: 1.0x p0, α=3
-          3: 1.25x p0, α=3
-          4: 1.6x p0, α=4
-          5: 2.0x p0, α=4
+          3: 1.4x p0, α=3
+          4: 1.9x p0, α=4
+          5: 2.6x p0, α=4
+        Search-Berechnung: search = round_even(min(search_cap_px, round(search_scale * pattern)))
+          mit search_scale = min(alpha, 3.0) und search_cap_px = cap_frac * minDim (Default 0.08)
         """
         if stage_idx == 1:
-            p, a, lv, edge = int(round(p0 * 0.9)), 2, 1, False
+            p_raw, a, lv, edge = int(round(p0 * 0.9)), 2, 1, False
         elif stage_idx == 2:
-            p, a, lv, edge = int(round(p0 * 1.0)), 3, 1, False
+            p_raw, a, lv, edge = int(round(p0 * 1.0)), 3, 1, False
         elif stage_idx == 3:
-            p, a, lv, edge = int(round(p0 * 1.25)), 3, 2, False
+            p_raw, a, lv, edge = int(round(p0 * 1.4)), 3, 2, False
         elif stage_idx == 4:
-            p, a, lv, edge = int(round(p0 * 1.6)), 4, 3, True
+            p_raw, a, lv, edge = int(round(p0 * 1.9)), 4, 3, True
         else:
-            p, a, lv, edge = int(round(p0 * 2.0)), 4, 3, True
-        # clamp & search via enforce_limits (dynamische max_pattern aktiv)
-        p_c, a_c, s_c = enforce_limits(p, a, width, height)
-        return p_c, a_c, s_c, edge
+            p_raw, a, lv, edge = int(round(p0 * 2.6)), 4, 3, True
+        # pattern/alpha clampen
+        p_c, a_c, _s_dummy = enforce_limits(p_raw, a, width, height)
+        # search gedämpft und gedeckelt
+        min_dim = max(1, min(int(width), int(height)))
+        cap_frac = 0.08
+        try:
+            # optional aus Szene übersteuerbar
+            scn = getattr(context, "scene", None)
+            if scn is not None:
+                cfg = getattr(scn, "search_cap_frac", None)
+                if cfg is not None:
+                    cap_frac = float(cfg)
+        except Exception:
+            pass
+        search_cap_px = int(round(cap_frac * float(min_dim)))
+        search_scale = min(float(a_c), 3.0)
+        s_i = _round_even(int(round(min(search_cap_px, search_scale * float(p_c)))))
+        return p_c, a_c, s_i, edge
 
     # Faktoren (Pattern-bezogen)
     nms_factor = _coerce_float(profile.get("nms_window_factor", 1.0), 1.0)
