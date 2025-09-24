@@ -283,7 +283,40 @@ class BlenderMetricsProvider(MetricsProvider):
                         "_markers_total": markers_total,
                         "_markers_present": markers_present,
                         "_lost_rate": float(lost_rate),
+                        "per_marker": [],
                     }
+                    # populate per_marker entries if we have any samples (limit to first 100)
+                    if markers_present > 0:
+                        try:
+                            per = []
+                            for t in agg_tracks:
+                                try:
+                                    tmarkers = list(getattr(t, "markers") or []) if hasattr(t, "markers") else list(getattr(t, "tracked_points") or [])
+                                except Exception:
+                                    tmarkers = []
+                                for m_ in tmarkers:
+                                    try:
+                                        mf = int(getattr(m_, "frame", -999999))
+                                    except Exception:
+                                        continue
+                                    if abs(mf - idx) <= 1 or abs(mf - frame) <= 1:
+                                        try:
+                                            per.append({
+                                                "ref": getattr(t, "name", None),
+                                                "frame": int(mf),
+                                                "corr": float(getattr(m_, "correlation", getattr(m_, "corr", 0.0) or 0.0)),
+                                                "jump_px": float(0.0),
+                                                "lost": bool(getattr(m_, "hide", False) or getattr(m_, "mute", False) or getattr(m_, "disabled", False)),
+                                            })
+                                        except Exception:
+                                            continue
+                                    if len(per) >= 100:
+                                        break
+                                if len(per) >= 100:
+                                    break
+                            out["per_marker"] = per
+                        except Exception:
+                            pass
                     try:
                         self._log(f"aggregated fetched metrics for roi_id={roi_id} frame={frame} clip_idx={idx} markers_present={markers_present} markers_total={markers_total} -> {out}")
                     except Exception:
@@ -560,7 +593,27 @@ class BlenderMetricsProvider(MetricsProvider):
             "_markers_total": markers_total,
             "_markers_present": markers_present,
             "_lost_rate": float(lost_rate),
+            "per_marker": [],
         }
+        # populate a simple per_marker entry when we detected a marker
+        try:
+            if markers_present > 0:
+                per = []
+                # if we have a single `marker` object from above, add it
+                try:
+                    if marker is not None:
+                        per.append({
+                            "ref": getattr(track, "name", None),
+                            "frame": int(getattr(marker, "frame", frame)),
+                            "corr": float(getattr(marker, "correlation", getattr(marker, "corr", 0.0) or 0.0)),
+                            "jump_px": float(jump_px or 0.0),
+                            "lost": bool(getattr(marker, "hide", False) or getattr(marker, "mute", False) or getattr(marker, "disabled", False)),
+                        })
+                except Exception:
+                    pass
+                out["per_marker"] = per
+        except Exception:
+            pass
         try:
             # Log concise fetch summary
             self._log(f"fetched metrics for roi_id={roi_id} frame={frame} clip_idx={idx} markers_present={markers_present} markers_total={markers_total} -> {out}")
