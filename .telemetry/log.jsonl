@@ -5,3 +5,4 @@
 {"ts": 1758749226277, "scope": "roi.cluster", "what": "cluster_summary", "payload": {"roi_id": 0, "clusters": 3, "members": 4}}
 {"ts": 1758749640759, "scope": "roi.cluster", "what": "cluster_summary", "payload": {"roi_id": 0, "clusters": 3, "members": 4}}
 {"ts": 1758750363945, "scope": "roi.cluster", "what": "cluster_summary", "payload": {"roi_id": 0, "clusters": 3, "members": 4}}
+{"ts": 1758751444785, "scope": "roi.cluster", "what": "cluster_summary", "payload": {"roi_id": 0, "clusters": 3, "members": 4}}

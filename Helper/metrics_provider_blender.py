@@ -92,6 +92,22 @@ class BlenderMetricsProvider(MetricsProvider):
             self._log(f"no tracks on clip -> fallback metrics: {out}")
             return out
 
+        # Determine clip frame offset (Blender movieclip frames are clip-relative)
+        try:
+            f0 = int(getattr(clip, "frame_start", 1) or 1)
+        except Exception:
+            f0 = 1
+        # convert global/frame to clip-local index
+        try:
+            idx = int(frame) - int(f0)
+        except Exception:
+            idx = int(frame) - f0
+        # keep a diagnostic view of requested vs local
+        try:
+            self._log(f"frame mapping: requested_frame={frame} clip_start={f0} clip_idx={idx}")
+        except Exception:
+            pass
+
         # Resolve roi_id -> track (index or name)
         track = None
         try:
@@ -217,8 +233,22 @@ class BlenderMetricsProvider(MetricsProvider):
         scale_delta = 0.0
         rot_delta = 0.0
 
+        # Compute markers_total for this ROI scope (approx.)
         try:
-            # Tracks may expose their marker list as `markers` or `markers.items()` depending on API
+            markers_total = 0
+            # If online state registered marker_refs use that
+            try:
+                from .tracking_online import get_online_state
+                st = get_online_state(int(roi_id)) if roi_id is not None else {}
+                mr = list(st.get("marker_refs", []) or [])
+                markers_total = len(mr) if mr else 0
+            except Exception:
+                markers_total = 0
+        except Exception:
+            markers_total = 0
+
+        try:
+            # Tracks may expose their marker list as `markers` or `tracked_points`; we also try track.markers.find_frame if available
             markers = []
             if hasattr(track, "markers"):
                 try:
@@ -226,22 +256,48 @@ class BlenderMetricsProvider(MetricsProvider):
                 except Exception:
                     markers = []
             else:
-                # older/alternative api names
                 try:
                     markers = list(getattr(track, "tracked_points") or [])
                 except Exception:
                     markers = []
-            # find marker at exact frame or nearest one
+
+            # Find marker by clip-local index if possible (Blender markers store absolute frame numbers sometimes clip-relative)
             marker = None
-            for m in markers:
-                try:
-                    if int(getattr(m, "frame", -999999)) == int(frame):
-                        marker = m
-                        break
-                except Exception:
-                    continue
+            # Prefer dedicated API if available
+            try:
+                if hasattr(track, "markers") and hasattr(track.markers, "find_frame"):
+                    # find_frame expects clip-local frame index in many Blender versions
+                    try:
+                        marker = track.markers.find_frame(int(idx))
+                    except Exception:
+                        # fallback to requesting with global frame
+                        try:
+                            marker = track.markers.find_frame(int(frame))
+                        except Exception:
+                            marker = None
+            except Exception:
+                marker = None
+
+            # Fallback: search nearest marker by comparing stored marker.frame values against clip-local idx and global frame
             if marker is None and markers:
-                marker = min(markers, key=lambda m: abs(int(getattr(m, "frame", 0)) - int(frame)))
+                best = None
+                best_dist = None
+                for m in markers:
+                    try:
+                        mf = int(getattr(m, "frame", -999999))
+                        # consider both clip-local and global frame numbers
+                        for cand in (mf, mf + f0, mf - f0, frame, idx):
+                            try:
+                                dist = abs(int(cand) - int(idx))
+                                if best_dist is None or dist < best_dist:
+                                    best_dist = dist
+                                    best = m
+                            except Exception:
+                                continue
+                    except Exception:
+                        continue
+                marker = best
+
             if marker is None:
                 # marker missing for this frame -> log diagnostic info
                 try:
@@ -254,9 +310,27 @@ class BlenderMetricsProvider(MetricsProvider):
                             })
                         except Exception:
                             continue
-                    self._log(f"DIAG: no marker at frame={frame} for track={getattr(track,'name',None)} roi_id={roi_id} markers_count={len(markers)} marker_frames={mf}")
+                    self._log(f"DIAG: no marker at requested_frame={frame} clip_idx={idx} for track={getattr(track,'name',None)} roi_id={roi_id} markers_count={len(markers)} marker_frames={mf}")
                 except Exception:
                     pass
+
+            # compute simple presence counts for telemetry
+            try:
+                markers_present = 0
+                if markers:
+                    for m in markers:
+                        try:
+                            mf = int(getattr(m, 'frame', -999999))
+                        except Exception:
+                            continue
+                        # match if close to idx or to global frame
+                        if abs(mf - idx) <= 1 or abs(mf - frame) <= 1:
+                            markers_present += 1
+                # if markers_total unknown, approximate by number of markers in online marker_refs or markers length
+                if markers_total == 0:
+                    markers_total = len(markers) if markers else markers_total
+            except Exception:
+                markers_present = 0
 
             # correlation: many Blender versions expose `marker.correlation` or `marker.corr`;
             # fall back to 0.0 if not present
@@ -349,18 +423,51 @@ class BlenderMetricsProvider(MetricsProvider):
             scale_delta = scale_delta or 0.0
             rot_delta = rot_delta or 0.0
 
+        # Post-process aggregated telemetry values and ensure non-empty minimal output
         dt_ms = (time.time() - t0) * 1000.0
+
+        # lost_rate and presence
+        try:
+            markers_total = int(markers_total or 0)
+        except Exception:
+            markers_total = 0
+        try:
+            markers_present = int(markers_present or 0)
+        except Exception:
+            markers_present = 0
+
+        if markers_total > 0:
+            try:
+                lost_rate = float(max(0.0, min(1.0, 1.0 - (markers_present / float(markers_total)))))
+            except Exception:
+                lost_rate = 1.0
+        else:
+            # if we have no total estimate, assume lost if no present markers
+            lost_rate = 0.0 if markers_present > 0 else 1.0
+
+        # corr proxy if missing: use inverse residual or 1/(1+residual_px)
+        try:
+            corr_val = float(max(0.0, min(1.0, corr or (1.0 / (1.0 + float(residual_px or 0.0))))))
+        except Exception:
+            corr_val = float(max(0.0, min(1.0, corr or 0.0)))
+
         out = {
-            "corr": float(max(0.0, min(1.0, corr or 0.0))),
+            "corr": corr_val,
             "residual_px": float(residual_px or 0.0),
-            "lost": bool(lost),
+            "lost": bool(lost) or (markers_present == 0 and markers_total > 0),
             "jump_px": float(jump_px or 0.0),
             "scale_delta": float(scale_delta or 0.0),
             "rot_delta": float(rot_delta or 0.0),
             "time_ms": float(dt_ms),
+            # additional diagnostics (not part of TrackingMetrics shape strictly,
+            # but helpful in logs; callers should ignore unknown keys).
+            "_markers_total": markers_total,
+            "_markers_present": markers_present,
+            "_lost_rate": float(lost_rate),
         }
         try:
-            self._log(f"fetched metrics for roi_id={roi_id} frame={frame} -> {out}")
+            # Log concise fetch summary
+            self._log(f"fetched metrics for roi_id={roi_id} frame={frame} clip_idx={idx} markers_present={markers_present} markers_total={markers_total} -> {out}")
         except Exception:
             pass
         return out
