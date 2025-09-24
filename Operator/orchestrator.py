@@ -1,3 +1,4 @@
+from __future__ import annotations
 # Minimaler, nutzbarer Orchestrator-Wrapper für den Online-Tracking-Zyklus
 class OnlineOrchestrator:
     def __init__(self, roi_id: int, context=None, start_frame: int = 1):
@@ -39,10 +40,9 @@ class OnlineOrchestrator:
             results.append(result)
         return results
 
-# Beispiel für die Nutzung:
-# orchestrator = OnlineOrchestrator(roi_id=0)
-# results = orchestrator.run(max_frames=10)
-from __future__ import annotations
+ # Beispiel für die Nutzung:
+ # orchestrator = OnlineOrchestrator(roi_id=0)
+ # results = orchestrator.run(max_frames=10)
 from typing import Any, Dict
 import time
 
