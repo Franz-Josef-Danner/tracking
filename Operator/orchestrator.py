@@ -121,10 +121,15 @@ def _run_online_loop(context, roi_id: int, steps: int = 25, slice_ms: int = 10) 
                 run_sequence_track(roi_id, frame=f)
 
         # Ensure a per-frame tracking step runs BEFORE fetching metrics (Blender requirement)
+        # Attempt single-frame track and log result for diagnostics
         try:
-            run_single_frame_track(roi_id, frame=f)
+            ok = run_single_frame_track(roi_id, frame=f)
+            log_batch("orchestrator.track_step", "run_single_frame_track", {"frame": f, "ok": bool(ok)})
         except Exception:
-            pass
+            try:
+                log_batch("orchestrator.track_step", "run_single_frame_track", {"frame": f, "ok": False, "error": True})
+            except Exception:
+                pass
 
         tel = track_one_frame(roi_id, frame=f)
         # Trigger ableiten und loggen

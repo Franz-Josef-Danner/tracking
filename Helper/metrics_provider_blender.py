@@ -243,9 +243,18 @@ class BlenderMetricsProvider(MetricsProvider):
             if marker is None and markers:
                 marker = min(markers, key=lambda m: abs(int(getattr(m, "frame", 0)) - int(frame)))
             if marker is None:
-                # marker missing for this frame -> log warning to aid debugging
+                # marker missing for this frame -> log diagnostic info
                 try:
-                    self._log(f"WARN: no marker found for track={getattr(track,'name',None)} frame={frame} roi_id={roi_id}")
+                    mf = []
+                    for m in markers:
+                        try:
+                            mf.append({
+                                'frame': int(getattr(m, 'frame', -999999)),
+                                'corr': float(getattr(m, 'correlation', getattr(m, 'corr', 0.0) or 0.0)),
+                            })
+                        except Exception:
+                            continue
+                    self._log(f"DIAG: no marker at frame={frame} for track={getattr(track,'name',None)} roi_id={roi_id} markers_count={len(markers)} marker_frames={mf}")
                 except Exception:
                     pass
 
