@@ -142,7 +142,20 @@ def _persist_markers(context, clip, markers: list[dict], roi_id: int | None = No
                 # Prüfe margin: Marker dürfen nicht näher am Rand als margin liegen
                 if x < margin or x > (w - margin) or y < margin or y > (h - margin):
                     continue  # Marker außerhalb des erlaubten Bereichs, überspringen
-                co = (max(0.0, min(1.0, x / float(w))), max(0.0, min(1.0, y / float(h))))
+                # Convert pixel coordinates (x,y) -> normalized (0..1).
+                # Many detectors return y with origin at the top (image coords),
+                # while Blender's MovieClip marker.co uses origin at the bottom.
+                # Therefore invert the y-axis when building the normalized coord.
+                try:
+                    x_norm = max(0.0, min(1.0, x / float(w)))
+                except Exception:
+                    x_norm = 0.0
+                try:
+                    y_norm_img = max(0.0, min(1.0, y / float(h)))
+                    y_norm = max(0.0, min(1.0, 1.0 - float(y_norm_img)))
+                except Exception:
+                    y_norm = 0.0
+                co = (x_norm, y_norm)
                 # Direktes Anlegen eines Tracks
                 try:
                     # deterministic naming if roi_id provided
