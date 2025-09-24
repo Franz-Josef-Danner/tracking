@@ -1,6 +1,7 @@
 # Frameweise α-Adjust + gated Pattern-Wechsel (apply-next)
 from __future__ import annotations
 from typing import Dict, Any, Optional, List
+from .metrics_provider import get_metrics_provider, TrackingMetrics
 import time
 import statistics
 
@@ -67,28 +68,25 @@ def track_one_frame(roi_id, frame: Optional[int] = None) -> dict:
     else:
         s["frame"] = int(frame)
 
-    # Platzhalter-KPIs (können später aus Blender ausgelesen werden)
-    corr = float(s.get("last_tel", {}).get("corr_med", 0.8)) or 0.8
-    runtime = 1.0
-    lost_rate = 0.0
-    jump_px = 0.2
-    scale_delta = 0.0
-    rot_delta = 0.0
-
+    provider = get_metrics_provider()
+    m: TrackingMetrics = provider.fetch_tracking_metrics(str(roi_id), int(s["frame"]))
+    corr = float(m["corr"])
+    runtime = float(m["time_ms"])
+    lost_rate = 1.0 if m["lost"] else 0.0
+    jump_px = float(m["jump_px"])
+    scale_delta = float(m["scale_delta"])
+    rot_delta = float(m["rot_delta"])
     n = len(s.get("markers", {}))
     tel = {
         "frame": int(s["frame"]),
         "alpha": int(s.get("alpha", 3)),
         "pattern": int(s.get("pattern", 25)),
-        # Aggregate
         "aggregate": {
             "survival_1f": float(1.0 - lost_rate),
             "corr_med_1f": float(corr),
             "runtime_ms": float(runtime),
         },
-        # pro Marker (Platzhalter leer, Struktur vorhanden)
         "per_marker": [],
-        # einfache Kompatibilitätsfelder
         "markers": n,
         "mismatch_rate": 0.0,
         "corr_med": float(corr),

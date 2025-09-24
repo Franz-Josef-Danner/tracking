@@ -1,3 +1,5 @@
+from .Helper.metrics_provider import set_metrics_provider
+from .Helper.metrics_provider_blender import BlenderMetricsProvider
 # SPDX-License-Identifier: GPL-2.0-or-later
 from __future__ import annotations
 
@@ -84,6 +86,7 @@ def register():
         _op_mod.register()
     except Exception:
         pass
+        set_metrics_provider(BlenderMetricsProvider())
 
 
 def unregister():
