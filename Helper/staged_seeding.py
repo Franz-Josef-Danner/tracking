@@ -338,18 +338,25 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
 
     # Stage-Schedule für (pattern, alpha, levels, edge)
     def stage_params(stage_idx: int, p0: int, a0: int) -> tuple[int, int, int, bool]:
-        # 1..5
+        """Skaliere pattern eher nach oben (bis ~2x p0), clamp via enforce_limits.
+        Staffelung:
+          1: 0.9x p0, α=2
+          2: 1.0x p0, α=3
+          3: 1.25x p0, α=3
+          4: 1.6x p0, α=4
+          5: 2.0x p0, α=4
+        """
         if stage_idx == 1:
-            p, a, lv, edge = p0 - 4, 2, 1, False
+            p, a, lv, edge = int(round(p0 * 0.9)), 2, 1, False
         elif stage_idx == 2:
-            p, a, lv, edge = p0, 3, 1, False
+            p, a, lv, edge = int(round(p0 * 1.0)), 3, 1, False
         elif stage_idx == 3:
-            p, a, lv, edge = p0 + 4, 3, 2, False
+            p, a, lv, edge = int(round(p0 * 1.25)), 3, 2, False
         elif stage_idx == 4:
-            p, a, lv, edge = p0 + 8, 4, 3, True
+            p, a, lv, edge = int(round(p0 * 1.6)), 4, 3, True
         else:
-            p, a, lv, edge = p0 + 10, 4, 3, True
-        # clamp & search via enforce_limits
+            p, a, lv, edge = int(round(p0 * 2.0)), 4, 3, True
+        # clamp & search via enforce_limits (dynamische max_pattern aktiv)
         p_c, a_c, s_c = enforce_limits(p, a, width, height)
         return p_c, a_c, s_c, edge
 
