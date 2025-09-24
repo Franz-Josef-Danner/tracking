@@ -57,6 +57,7 @@ from ..Helper.tracking_online import (
     track_one_frame,
     schedule_param_changes,
     apply_scheduled_next_frame,
+    apply_next_frame,
     get_online_state,
     set_initial_params,
     detect_triggers,
@@ -123,7 +124,16 @@ def _run_online_loop(context, roi_id: int, steps: int = 25, slice_ms: int = 10) 
         trig = detect_triggers(roi_id, window=10)
         log_batch("online.frame", "trigger", {"frame": f, "triggers": trig})
 
-        schedule_param_changes(roi_id, tel, frame=f, triggers=trig)
+        plan = schedule_param_changes(roi_id, tel, frame=f, triggers=trig)
+        # Ensure any planned changes are processed (apply_next_frame is idempotent if plan is empty)
+        try:
+            apply_report = apply_next_frame(roi_id, change_plan=plan, frame=f)
+            log_batch("orchestrator.apply", "apply_next_frame", {"frame": f, "report": apply_report})
+        except Exception:
+            try:
+                log_batch("orchestrator.apply", "apply_next_frame", {"frame": f, "error": True})
+            except Exception:
+                pass
 
         # Microcheck nach Pattern-Anwendung überwachen
         mc = post_change_microcheck(roi_id, window=10)

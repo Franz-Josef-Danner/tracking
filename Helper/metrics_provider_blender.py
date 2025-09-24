@@ -162,7 +162,11 @@ class BlenderMetricsProvider(MetricsProvider):
                     out[k] = float(v)
                 else:
                     out[k] = v
-            self._log(f"track not found for roi_id={roi_id} -> fallback: {out}")
+            # Warn once per missing-track incident to make wiring issues visible
+            try:
+                self._log(f"WARN: track not found for roi_id={roi_id} frame={frame} -> fallback: {out}")
+            except Exception:
+                pass
             return out
 
         # Try to extract per-frame marker and metrics (best-effort)
@@ -199,8 +203,9 @@ class BlenderMetricsProvider(MetricsProvider):
             if marker is None and markers:
                 marker = min(markers, key=lambda m: abs(int(getattr(m, "frame", 0)) - int(frame)))
             if marker is None:
+                # marker missing for this frame -> log warning to aid debugging
                 try:
-                    self._log(f"no marker found for track={getattr(track,'name',None)} frame={frame}")
+                    self._log(f"WARN: no marker found for track={getattr(track,'name',None)} frame={frame} roi_id={roi_id}")
                 except Exception:
                     pass
 

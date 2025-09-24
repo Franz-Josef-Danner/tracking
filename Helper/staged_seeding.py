@@ -636,6 +636,35 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
     # Persistiere final akzeptierte Marker als Tracks
     persisted = _persist_markers(context, clip, accepted_final)
 
+    # Try to register persisted markers into online scope so they are visible to the online loop
+    try:
+        from .tracking_online import register_persisted_markers
+        # Attempt to assemble marker refs: if running inside Blender, try to collect names
+        marker_refs = []
+        try:
+            import bpy  # type: ignore
+            tr_coll = getattr(getattr(clip, "tracking", None), "tracks", None)
+            if tr_coll is not None:
+                # collect last `persisted` tracks by name (best-effort)
+                for t in list(tr_coll)[-int(persisted) :]:
+                    try:
+                        marker_refs.append(getattr(t, "name", str(t)))
+                    except Exception:
+                        continue
+        except Exception:
+            # Not in Blender or clip not available — leave marker_refs empty
+            marker_refs = []
+        try:
+            register_persisted_markers(int((scene or {}).get("roi_id", 0)), marker_refs or [])
+        except Exception:
+            # If roi_id unknown, fallback to 0
+            try:
+                register_persisted_markers(0, marker_refs or [])
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     summary = {
         "placed": len(accepted_final),
         "persisted": int(persisted),

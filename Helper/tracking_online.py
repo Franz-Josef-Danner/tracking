@@ -77,6 +77,13 @@ def track_one_frame(roi_id, frame: Optional[int] = None) -> dict:
     scale_delta = float(m["scale_delta"])
     rot_delta = float(m["rot_delta"])
     n = len(s.get("markers", {}))
+    # Warn if ROI has no markers bound — helps detect scope/ wiring issues
+    if n == 0:
+        try:
+            from .telemetry import log_batch
+            log_batch("online.warn", "no_markers_in_scope", {"roi_id": int(roi_id), "frame": int(s.get("frame", 0))})
+        except Exception:
+            pass
     tel = {
         "frame": int(s["frame"]),
         "alpha": int(s.get("alpha", 3)),
@@ -453,3 +460,23 @@ def get_online_state(roi_id) -> Dict[str, Any]:
     # keine Markerlisten leaken (hier Platzhalter leer)
     s.pop("markers", None)
     return s
+
+
+def register_persisted_markers(roi_id: int, marker_refs: list) -> None:
+    """Register a list of persisted marker references (e.g. Blender track names/ids)
+    into the online scope state so subsequent online frames see them as bound markers.
+    This should be called after seeding/persistence completes.
+    """
+    s = _roi_state(int(roi_id))
+    try:
+        # store both a mapping and a fast count
+        s["markers"] = {str(i): m for i, m in enumerate(marker_refs)}
+        s.setdefault("marker_refs", []).clear()
+        s["marker_refs"].extend(marker_refs or [])
+        try:
+            from .telemetry import log_batch
+            log_batch("online.bind", "register_persisted_markers", {"roi_id": int(roi_id), "persisted": len(marker_refs)})
+        except Exception:
+            pass
+    except Exception:
+        pass
