@@ -85,6 +85,7 @@ def _persist_markers(context, clip, markers: list[dict]) -> int:
     Gibt die Anzahl erfolgreich angelegter Tracks zurück.
     Setzt pro Marker (falls vorhanden) pattern/search via tracking.settings Default
     und selektiert Track+Marker. Zusätzlich explizites Setzen von pattern_corners/search.
+    Berücksichtigt margin aus den Tracker-Settings, damit Marker nicht außerhalb des trackbaren Bereichs platziert werden.
     """
     try:
         import bpy  # type: ignore
@@ -98,8 +99,16 @@ def _persist_markers(context, clip, markers: list[dict]) -> int:
             return 0
         tr_coll = getattr(getattr(clip, "tracking", None), "tracks", None)
         settings = getattr(getattr(clip, "tracking", None), "settings", None)
-        if tr_coll is None:
-            return 0
+        # Margin aus den Tracker-Settings lesen, falls vorhanden
+        margin = None
+        if settings is not None and hasattr(settings, "margin"):
+            try:
+                margin = int(getattr(settings, "margin", 0))
+            except Exception:
+                margin = None
+        if margin is None or margin <= 0:
+            # Fallback wie in marker_helper_main.py
+            margin = max(16, int(0.025 * w))
         frame = int(getattr(getattr(context, "scene", None), "frame_current", 1))
         ok = 0
         for i, m in enumerate(markers):
@@ -130,6 +139,9 @@ def _persist_markers(context, clip, markers: list[dict]) -> int:
 
                 x = float(m.get("x", 0.0))
                 y = float(m.get("y", 0.0))
+                # Prüfe margin: Marker dürfen nicht näher am Rand als margin liegen
+                if x < margin or x > (w - margin) or y < margin or y > (h - margin):
+                    continue  # Marker außerhalb des erlaubten Bereichs, überspringen
                 co = (max(0.0, min(1.0, x / float(w))), max(0.0, min(1.0, y / float(h))))
                 # Direktes Anlegen eines Tracks
                 try:
