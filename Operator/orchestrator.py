@@ -63,6 +63,7 @@ from ..Helper.tracking_online import (
     detect_triggers,
     post_change_microcheck,
     run_sequence_track,
+    run_single_frame_track,
 )
 from ..Helper.motion_model import cluster_fit_models, select_apply_motion_models
 from ..Helper.cleanup_pass import periodic_cleanup
@@ -118,6 +119,12 @@ def _run_online_loop(context, roi_id: int, steps: int = 25, slice_ms: int = 10) 
             st = get_online_state(roi_id)
             if int(st.get("last_pattern_change_frame", -1)) == f:
                 run_sequence_track(roi_id, frame=f)
+
+        # Ensure a per-frame tracking step runs BEFORE fetching metrics (Blender requirement)
+        try:
+            run_single_frame_track(roi_id, frame=f)
+        except Exception:
+            pass
 
         tel = track_one_frame(roi_id, frame=f)
         # Trigger ableiten und loggen

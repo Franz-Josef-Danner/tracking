@@ -80,7 +80,7 @@ def _apply_marker_areas(marker, width: int, height: int, pattern_px: int | None,
         pass
 
 
-def _persist_markers(context, clip, markers: list[dict]) -> int:
+def _persist_markers(context, clip, markers: list[dict], roi_id: int | None = None) -> int:
     """Lege für gegebene Pixelpositionen neue Tracks an (normierte Koordinaten).
     Gibt die Anzahl erfolgreich angelegter Tracks zurück.
     Setzt pro Marker (falls vorhanden) pattern/search via tracking.settings Default
@@ -145,7 +145,15 @@ def _persist_markers(context, clip, markers: list[dict]) -> int:
                 co = (max(0.0, min(1.0, x / float(w))), max(0.0, min(1.0, y / float(h))))
                 # Direktes Anlegen eines Tracks
                 try:
-                    t = tr_coll.new(name=f"KI_{int(x)}_{int(y)}")
+                    # deterministic naming if roi_id provided
+                    if roi_id is not None:
+                        name = f"roi_{int(roi_id)}_{i:04d}"
+                        try:
+                            t = tr_coll.new(name=name)
+                        except Exception:
+                            t = tr_coll.new() if hasattr(tr_coll, "new") else None
+                    else:
+                        t = tr_coll.new(name=f"KI_{int(x)}_{int(y)}")
                 except Exception:
                     t = tr_coll.new() if hasattr(tr_coll, "new") else None
                 if t is not None:
@@ -172,6 +180,31 @@ def _persist_markers(context, clip, markers: list[dict]) -> int:
                                 pass
                             try:
                                 mk.select = True
+                            except Exception:
+                                pass
+                            # annotate first marker with roi_id
+                            try:
+                                if roi_id is not None:
+                                    try:
+                                        mk["roi_id"] = int(roi_id)
+                                    except Exception:
+                                        try:
+                                            setattr(mk, "roi_id", int(roi_id))
+                                        except Exception:
+                                            pass
+                            except Exception:
+                                pass
+                            # Annotate track with roi_id as custom property so providers can map it
+                            try:
+                                if roi_id is not None:
+                                    try:
+                                        # Blender custom property
+                                        t["roi_id"] = int(roi_id)
+                                    except Exception:
+                                        try:
+                                            setattr(t, "roi_id", int(roi_id))
+                                        except Exception:
+                                            pass
                             except Exception:
                                 pass
                             ok += 1
@@ -634,7 +667,7 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
         accepted_final = trim_to_band(accepted_final, int(total_target))
 
     # Persistiere final akzeptierte Marker als Tracks
-    persisted = _persist_markers(context, clip, accepted_final)
+    persisted = _persist_markers(context, clip, accepted_final, roi_id=roi_id)
 
     # Try to register persisted markers into online scope so they are visible to the online loop
     try:

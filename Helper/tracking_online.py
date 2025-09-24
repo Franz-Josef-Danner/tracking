@@ -77,6 +77,29 @@ def track_one_frame(roi_id, frame: Optional[int] = None) -> dict:
     scale_delta = float(m["scale_delta"])
     rot_delta = float(m["rot_delta"])
     n = len(s.get("markers", {}))
+    # Update consecutive lost counter for emergency scheduling
+    consec = int(s.get("consec_lost", 0))
+    if lost_rate >= 0.9:
+        consec += 1
+    else:
+        consec = 0
+    s["consec_lost"] = consec
+
+    # Provider fail-fast logging: scope has markers but fetch returned nothing
+    fetched_count = 0 if bool(m.get("lost", False)) else 1
+    try:
+        from .telemetry import log_batch
+        if n == 0:
+            # earlier warning already logs; keep lightweight
+            pass
+        # Hard warning when scope has markers but provider returns no useful metrics
+        if n > 0 and fetched_count == 0:
+            log_batch("provider.empty_metrics", "warning", {"roi_id": int(roi_id), "frame": int(s.get("frame", 0)), "scope_count": int(n), "fetched_count": int(fetched_count)})
+        # Also warn when lost_rate is very high
+        if lost_rate >= 0.9:
+            log_batch("provider.empty_metrics", "lost_high", {"roi_id": int(roi_id), "frame": int(s.get("frame", 0)), "scope_count": int(n), "lost_rate": float(lost_rate)})
+    except Exception:
+        pass
     # Warn if ROI has no markers bound — helps detect scope/ wiring issues
     if n == 0:
         try:
@@ -118,6 +141,38 @@ def track_one_frame(roi_id, frame: Optional[int] = None) -> dict:
         s["window"] = s["window"][-10:]
 
     s["last_tel"] = dict({**tel, "corr_med": tel["aggregate"]["corr_med_1f"]})
+
+    # Emergency schedule: if consecutive high loss observed, apply conservative moves
+    try:
+        if int(s.get("consec_lost", 0)) >= 3:
+            # Only apply emergency if not already just changed recently
+            now_f = int(s.get("frame", 0))
+            last_any = int(s.get("last_any_change_frame", -10**9))
+            if (now_f - last_any) >= 5:
+                # reduce alpha (cheap immediate) and schedule pattern downshift
+                old_a = int(s.get("alpha", 3))
+                new_a = max(2, old_a - 1)
+                s["alpha"] = new_a
+                s["last_alpha_change_frame"] = now_f
+                s["last_any_change_frame"] = now_f
+                # schedule pattern down (gated apply-next)
+                prev_p = int(s.get("pattern", 25))
+                next_p = max(9, prev_p - 4)
+                s.setdefault("scheduled", []).append({"type": "pattern", "value": int(next_p), "apply_at": now_f + 1})
+                # retrack from last_sequence_start if available
+                try:
+                    s["retrack_from"] = int(s.get("last_sequence_start", now_f))
+                except Exception:
+                    s["retrack_from"] = now_f
+                try:
+                    from .telemetry import log_batch
+                    log_batch("online.emergency", "degrade", {"roi_id": int(roi_id), "frame": now_f, "old_alpha": int(old_a), "new_alpha": int(new_a), "scheduled_pattern": int(next_p)})
+                except Exception:
+                    pass
+                # reset consec counter to avoid repeated triggers
+                s["consec_lost"] = 0
+    except Exception:
+        pass
 
     # Logging
     try:
@@ -397,6 +452,55 @@ def run_sequence_track(roi_id, frame: Optional[int] = None) -> bool:
             log_batch("online.sequence", "track_markers", {"roi_id": int(roi_id), "frame": int(s.get("last_sequence_start", 0)), "dt_ms": float(dt_ms)})
         except Exception:
             pass
+        return True
+    except Exception:
+        return False
+
+
+def run_single_frame_track(roi_id, frame: Optional[int] = None) -> bool:
+    """Perform a single-frame track operation in Blender (non-sequence) to ensure
+    markers/tracks are advanced for the given frame before metrics are fetched.
+    Returns True on success, False otherwise. Safe no-op outside Blender.
+    """
+    s = _roi_state(int(roi_id))
+    try:
+        import bpy  # type: ignore
+        if frame is not None:
+            try:
+                bpy.context.scene.frame_current = int(frame)
+            except Exception:
+                pass
+        # Select tracks that belong to roi_id if annotated
+        clip = getattr(bpy.context, "edit_movieclip", None) or getattr(getattr(bpy.context, "space_data", None), "clip", None)
+        if clip is None:
+            return False
+        tracks = getattr(getattr(clip, "tracking", None), "tracks", None)
+        if tracks is not None:
+            try:
+                for t in tracks:
+                    try:
+                        # select if roi_id annot matches or name prefix
+                        belongs = False
+                        try:
+                            v = getattr(t, "roi_id", None)
+                            if v is not None and str(int(v)) == str(int(roi_id)):
+                                belongs = True
+                        except Exception:
+                            pass
+                        try:
+                            if getattr(t, "name", "").startswith(f"roi_{roi_id}_"):
+                                belongs = True
+                        except Exception:
+                            pass
+                        t.select = bool(belongs)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        try:
+            bpy.ops.clip.track_markers(backwards=False, sequence=False)
+        except Exception:
+            return False
         return True
     except Exception:
         return False
