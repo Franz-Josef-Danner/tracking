@@ -183,7 +183,24 @@ def _persist_markers(context, clip, markers: list[dict], roi_id: int | None = No
                             else:
                                 mk = t.markers[-1] if len(t.markers) > 0 else None
                         if mk is not None:
+                            # Log intent and actual assignment for diagnostics
+                            try:
+                                from .telemetry import log_batch
+                                log_batch("staged_seeding", "marker_persist.intent", {"roi_id": roi_id, "index": i, "pixel_xy": (x, y), "co_set": co, "frame": frame})
+                            except Exception:
+                                pass
                             mk.co = co
+                            try:
+                                from .telemetry import log_batch
+                                # read back mk.co if possible to confirm assignment
+                                actual = None
+                                try:
+                                    actual = tuple(getattr(mk, "co", None))
+                                except Exception:
+                                    actual = None
+                                log_batch("staged_seeding", "marker_persist.done", {"roi_id": roi_id, "index": i, "pixel_xy": (x, y), "co_set": co, "co_actual": actual, "frame": frame})
+                            except Exception:
+                                pass
                             # Explizit Pattern/Search setzen, damit Größen im UI sichtbar sind
                             _apply_marker_areas(mk, int(w), int(h), p_sz, s_sz)
                             # Selektion setzen
@@ -226,10 +243,21 @@ def _persist_markers(context, clip, markers: list[dict], roi_id: int | None = No
                         pass
                 # Fallback: Operator
                 try:
+                    # Operator fallback: log the requested co as well
+                    try:
+                        from .telemetry import log_batch
+                        log_batch("staged_seeding", "marker_persist.operator", {"roi_id": roi_id, "index": i, "pixel_xy": (x, y), "co_requested": co, "frame": frame})
+                    except Exception:
+                        pass
                     bpy.ops.clip.add_marker(location=co, frame=frame)
                     ok += 1
                     continue
                 except Exception:
+                    try:
+                        from .telemetry import log_batch
+                        log_batch("staged_seeding", "marker_persist.operator_failed", {"roi_id": roi_id, "index": i, "pixel_xy": (x, y), "co_requested": co, "frame": frame})
+                    except Exception:
+                        pass
                     pass
             except Exception:
                 continue
