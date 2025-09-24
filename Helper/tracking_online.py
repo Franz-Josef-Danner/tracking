@@ -70,14 +70,22 @@ def track_one_frame(roi_id, frame: Optional[int] = None) -> dict:
 
     provider = get_metrics_provider()
     m: TrackingMetrics = provider.fetch_tracking_metrics(str(roi_id), int(s["frame"]))
-    corr = float(m["corr"])
-    runtime = float(m["time_ms"])
-    lost_rate = 1.0 if m["lost"] else 0.0
-    jump_px = float(m["jump_px"])
-    scale_delta = float(m["scale_delta"])
-    rot_delta = float(m["rot_delta"])
+    corr = float(m.get("corr", 0.0))
+    runtime = float(m.get("time_ms", 0.0))
+    # prefer provider-side lost_rate if present
+    try:
+        lost_rate = float(m.get("_lost_rate", 1.0)) if m.get("_lost_rate", None) is not None else (1.0 if m.get("lost", True) else 0.0)
+    except Exception:
+        lost_rate = 1.0 if m.get("lost", True) else 0.0
+    jump_px = float(m.get("jump_px", 0.0))
+    scale_delta = float(m.get("scale_delta", 0.0))
+    rot_delta = float(m.get("rot_delta", 0.0))
     n = len(s.get("markers", {}))
     # Update consecutive lost counter for emergency scheduling
+    # Use provider's markers info if available
+    markers_total = int(m.get("_markers_total", 0) or 0)
+    markers_present = int(m.get("_markers_present", 0) or 0)
+
     consec = int(s.get("consec_lost", 0))
     if lost_rate >= 0.9:
         consec += 1
@@ -86,16 +94,30 @@ def track_one_frame(roi_id, frame: Optional[int] = None) -> dict:
     s["consec_lost"] = consec
 
     # Provider fail-fast logging: scope has markers but fetch returned nothing
-    fetched_count = 0 if bool(m.get("lost", False)) else 1
+    # Determine fetched_count from provider per_marker or lost flag
+    fetched_count = 0
+    try:
+        if isinstance(m.get("per_marker", None), list) and len(m.get("per_marker", [])) > 0:
+            fetched_count = len(m.get("per_marker", []))
+        else:
+            # fallback: if provider reports markers_present, use that
+            fetched_count = int(markers_present or 0)
+    except Exception:
+        fetched_count = 0
+
     try:
         from .telemetry import log_batch
         if n == 0:
-            # earlier warning already logs; keep lightweight
             pass
-        # Hard warning when scope has markers but provider returns no useful metrics
         if n > 0 and fetched_count == 0:
-            log_batch("provider.empty_metrics", "warning", {"roi_id": int(roi_id), "frame": int(s.get("frame", 0)), "scope_count": int(n), "fetched_count": int(fetched_count)})
-        # Also warn when lost_rate is very high
+            # count an empty-metrics occurrence and log
+            prev_empty = int(s.get("empty_metrics_count", 0))
+            prev_empty += 1
+            s["empty_metrics_count"] = prev_empty
+            log_batch("provider.empty_metrics", "warning", {"roi_id": int(roi_id), "frame": int(s.get("frame", 0)), "scope_count": int(n), "fetched_count": int(fetched_count), "empty_count": int(prev_empty)})
+        else:
+            # reset counter when provider returns samples
+            s["empty_metrics_count"] = 0
         if lost_rate >= 0.9:
             log_batch("provider.empty_metrics", "lost_high", {"roi_id": int(roi_id), "frame": int(s.get("frame", 0)), "scope_count": int(n), "lost_rate": float(lost_rate)})
     except Exception:
@@ -128,6 +150,20 @@ def track_one_frame(roi_id, frame: Optional[int] = None) -> dict:
     }
 
     s.setdefault("window", [])
+    # Prefer provider per_marker entries to fill tel['per_marker'] when available
+    try:
+        pm = m.get("per_marker", None)
+        if isinstance(pm, list) and pm:
+            tel["per_marker"] = pm
+            # update simple mismatch_rate heuristics: markers bound vs fetched
+            try:
+                bound = int(n)
+                fetched = int(len(pm))
+                tel["mismatch_rate"] = float(max(0.0, min(1.0, 1.0 - (fetched / float(bound))))) if bound > 0 else 0.0
+            except Exception:
+                tel["mismatch_rate"] = 0.0
+    except Exception:
+        pass
     s["window"].append({
         "corr": tel["corr_med"],
         "runtime_ms": tel["runtime_ms"],
@@ -141,12 +177,13 @@ def track_one_frame(roi_id, frame: Optional[int] = None) -> dict:
         s["window"] = s["window"][-10:]
 
     s["last_tel"] = dict({**tel, "corr_med": tel["aggregate"]["corr_med_1f"]})
-
-    # Emergency schedule: if consecutive high loss observed, apply conservative moves
+    # Emergency schedule: if consecutive high loss observed OR repeated empty_metrics for ROI with markers
     try:
-        if int(s.get("consec_lost", 0)) >= 3:
+        now_f = int(s.get("frame", 0))
+        # trigger on either consec_lost >=3 or empty_metrics_count >=3 when scope has markers
+        trigger_empty = int(s.get("empty_metrics_count", 0)) >= 3 and n > 0
+        if int(s.get("consec_lost", 0)) >= 3 or trigger_empty:
             # Only apply emergency if not already just changed recently
-            now_f = int(s.get("frame", 0))
             last_any = int(s.get("last_any_change_frame", -10**9))
             if (now_f - last_any) >= 5:
                 # reduce alpha (cheap immediate) and schedule pattern downshift
