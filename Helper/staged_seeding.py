@@ -204,7 +204,17 @@ def _persist_markers(context, clip, markers: list[dict], roi_id: int | None = No
                                     actual = tuple(getattr(mk, "co", None))
                                 except Exception:
                                     actual = None
-                                if actual is None or (len(actual) >= 2 and (abs(actual[0] - float(co[0])) > 1e-6 or abs(actual[1] - float(co[1])) > 1e-6)):
+                                mismatch = False
+                                if actual is None:
+                                    mismatch = True
+                                else:
+                                    try:
+                                        if len(actual) >= 2 and (abs(actual[0] - float(co[0])) > 1e-6 or abs(actual[1] - float(co[1])) > 1e-6):
+                                            mismatch = True
+                                    except Exception:
+                                        mismatch = True
+
+                                if mismatch:
                                     # try writing to the last marker object of this track
                                     try:
                                         if hasattr(t, "markers") and len(t.markers) > 0:
@@ -214,9 +224,15 @@ def _persist_markers(context, clip, markers: list[dict], roi_id: int | None = No
                                                 pass
                                     except Exception:
                                         pass
+                                    # If still mismatched, log an explicit diagnostic
+                                    try:
+                                        from .telemetry import log_batch
+                                        log_batch("staged_seeding", "marker_persist.mismatch", {"roi_id": roi_id, "index": i, "pixel_xy": (x, y), "co_set": co, "co_actual_before": actual, "frame": frame, "track_name": getattr(t, 'name', None)})
+                                    except Exception:
+                                        pass
                                 try:
                                     from .telemetry import log_batch
-                                    log_batch("staged_seeding", "marker_persist.done", {"roi_id": roi_id, "index": i, "pixel_xy": (x, y), "co_set": co, "co_actual": actual, "frame": frame})
+                                    log_batch("staged_seeding", "marker_persist.done", {"roi_id": roi_id, "index": i, "pixel_xy": (x, y), "co_set": co, "co_actual": actual, "frame": frame, "track_name": getattr(t, 'name', None)})
                                 except Exception:
                                     pass
                             except Exception:

@@ -641,7 +641,7 @@ class BlenderMetricsProvider(MetricsProvider):
             pass
         try:
             # Log concise fetch summary
-            self._log(f"fetched metrics for roi_id={roi_id} frame={frame} clip_idx={idx} markers_present={markers_present} markers_total={markers_total} -> {out}")
+            self._log(f"fetched metrics for roi_id={roi_id} frame={frame} clip_idx={clip_idx} markers_present={markers_present} markers_total={markers_total} -> {out}")
         except Exception:
             pass
         return out
