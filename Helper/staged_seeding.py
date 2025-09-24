@@ -679,14 +679,56 @@ def staged_detect_with_dedup(roi_id, pattern: int, alpha: int, total_target: int
             tr_coll = getattr(getattr(clip, "tracking", None), "tracks", None)
             if tr_coll is not None:
                 # collect last `persisted` tracks by name (best-effort)
-                for t in list(tr_coll)[-int(persisted) :]:
-                    try:
-                        marker_refs.append(getattr(t, "name", str(t)))
-                    except Exception:
-                        continue
+                try:
+                    for t in list(tr_coll)[-int(persisted) :]:
+                        try:
+                            marker_refs.append(getattr(t, "name", str(t)))
+                        except Exception:
+                            continue
+                except Exception:
+                    marker_refs = []
+            else:
+                marker_refs = []
         except Exception:
             # Not in Blender or clip not available — leave marker_refs empty
             marker_refs = []
+
+        # If persisted count is zero but there are tracks in the clip with the expected naming
+        # pattern, attempt to register those as a fallback so online loop can bind to them.
+        if int(persisted or 0) == 0:
+            try:
+                if marker_refs:
+                    # nothing to do, we already collected some names
+                    pass
+                else:
+                    try:
+                        import bpy  # type: ignore
+                        tr_coll = getattr(getattr(clip, "tracking", None), "tracks", None)
+                        if tr_coll is not None:
+                            fallback_refs = []
+                            roi_id_local = int((scene or {}).get("roi_id", 0) or 0)
+                            needle = f"roi_{roi_id_local}_"
+                            for t in list(tr_coll):
+                                try:
+                                    nm = getattr(t, "name", "") or ""
+                                    if needle in nm or nm.startswith(needle):
+                                        fallback_refs.append(nm)
+                                except Exception:
+                                    continue
+                            if fallback_refs:
+                                marker_refs = list(dict.fromkeys(fallback_refs))
+                                # update persisted to reflect these discovered tracks (diagnostic only)
+                                persisted = len(marker_refs)
+                                try:
+                                    from .telemetry import log_batch
+                                    log_batch("online.bind", "fallback_register_persisted_markers", {"roi_id": int((scene or {}).get("roi_id", 0) or 0), "found": len(marker_refs), "examples": marker_refs[:10]})
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
         try:
             register_persisted_markers(int((scene or {}).get("roi_id", 0)), marker_refs or [])
         except Exception:
