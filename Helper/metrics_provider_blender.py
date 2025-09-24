@@ -1,5 +1,6 @@
 from .metrics_provider import TrackingMetrics, MetricsProvider
 import time
+import statistics
 from typing import Optional
 import os
 from pathlib import Path
@@ -172,30 +173,125 @@ class BlenderMetricsProvider(MetricsProvider):
                     continue
 
         # Additional fallback: use marker_refs from online state (registered after seeding)
-        if track is None:
+        # If online state provides marker_refs, prefer aggregating over those named tracks
+        try:
+            from .tracking_online import get_online_state
             try:
-                from .tracking_online import get_online_state
-                try:
-                    st = get_online_state(int(roi_id)) if roi_id is not None else {}
-                except Exception:
-                    st = {}
-                marker_refs = list(st.get("marker_refs", []) or [])
-                if marker_refs:
-                    for name in marker_refs:
-                        try:
-                            for t in tracks:
-                                try:
-                                    if getattr(t, "name", None) == name:
-                                        track = t
-                                        break
-                                except Exception:
-                                    continue
-                            if track is not None:
-                                break
-                        except Exception:
-                            continue
+                st = get_online_state(int(roi_id)) if roi_id is not None else {}
             except Exception:
-                pass
+                st = {}
+        except Exception:
+            st = {}
+
+        marker_refs = list(st.get("marker_refs", []) or [])
+        if marker_refs:
+            # Build list of tracks referenced by name and aggregate simple metrics across them
+            agg_tracks = []
+            try:
+                for name in marker_refs:
+                    try:
+                        for t in tracks:
+                            try:
+                                if getattr(t, "name", None) == name:
+                                    agg_tracks.append(t)
+                                    break
+                            except Exception:
+                                continue
+                    except Exception:
+                        continue
+            except Exception:
+                agg_tracks = []
+
+            # If we found aggregated tracks, compute presence/corr/jump across them and return early
+            if agg_tracks:
+                try:
+                    markers_total = 0
+                    markers_present = 0
+                    corrs = []
+                    jumps = []
+                    residuals = []
+                    for t in agg_tracks:
+                        try:
+                            tmarkers = list(getattr(t, "markers") or []) if hasattr(t, "markers") else list(getattr(t, "tracked_points") or [])
+                        except Exception:
+                            tmarkers = []
+                        markers_total += len(tmarkers)
+                        # find marker matching frame idx or nearest
+                        for m in tmarkers:
+                            try:
+                                mf = int(getattr(m, "frame", -999999))
+                            except Exception:
+                                continue
+                            if abs(mf - idx) <= 1 or abs(mf - frame) <= 1:
+                                markers_present += 1
+                                try:
+                                    corrs.append(float(getattr(m, "correlation", getattr(m, "corr", 0.0) or 0.0)))
+                                except Exception:
+                                    pass
+                                # compute simple jump using co if possible vs previous
+                                try:
+                                    # previous marker in this track
+                                    prevs = [pm for pm in tmarkers if int(getattr(pm, "frame", 0)) < int(mf)]
+                                    if prevs:
+                                        prev = prevs[-1]
+                                        co1 = getattr(prev, "co", None) or getattr(prev, "pos", None)
+                                        co2 = getattr(m, "co", None) or getattr(m, "pos", None)
+                                        if co1 is not None and co2 is not None:
+                                            w = getattr(clip, "size", None) or getattr(clip, "resolution", None)
+                                            if w and isinstance(w, (tuple, list)) and len(w) >= 2:
+                                                sx = w[0]
+                                                sy = w[1]
+                                            else:
+                                                sx = sy = 1.0
+                                            dx = (co1[0] - co2[0]) * sx
+                                            dy = (co1[1] - co2[1]) * sy
+                                            jumps.append((dx * dx + dy * dy) ** 0.5)
+                                except Exception:
+                                    pass
+                        try:
+                            residuals.append(float(getattr(t, "error", getattr(t, "average_error", 0.0) or 0.0)))
+                        except Exception:
+                            pass
+
+                    # Compose aggregated output
+                    try:
+                        markers_total = int(markers_total or 0)
+                    except Exception:
+                        markers_total = 0
+                    try:
+                        markers_present = int(markers_present or 0)
+                    except Exception:
+                        markers_present = 0
+
+                    if markers_total > 0:
+                        lost_rate = float(max(0.0, min(1.0, 1.0 - (markers_present / float(markers_total)))))
+                    else:
+                        lost_rate = 0.0 if markers_present > 0 else 1.0
+
+                    corr_val = float(statistics.median(corrs)) if corrs else (1.0 / (1.0 + (statistics.median(residuals) if residuals else 0.0)))
+                    jump_px = float(statistics.median(jumps)) if jumps else 0.0
+                    residual_px = float(statistics.median(residuals)) if residuals else 0.0
+                    dt_ms = (time.time() - t0) * 1000.0
+                    out = {
+                        "corr": float(max(0.0, min(1.0, corr_val or 0.0))),
+                        "residual_px": float(residual_px or 0.0),
+                        "lost": False if markers_present > 0 else True,
+                        "jump_px": float(jump_px or 0.0),
+                        "scale_delta": 0.0,
+                        "rot_delta": 0.0,
+                        "time_ms": float(dt_ms),
+                        "_markers_total": markers_total,
+                        "_markers_present": markers_present,
+                        "_lost_rate": float(lost_rate),
+                    }
+                    try:
+                        self._log(f"aggregated fetched metrics for roi_id={roi_id} frame={frame} clip_idx={idx} markers_present={markers_present} markers_total={markers_total} -> {out}")
+                    except Exception:
+                        pass
+                    return out
+                except Exception:
+                    # fallback to normal per-track handling below
+                    pass
 
         if track is None:
             # fallback: any selected track
