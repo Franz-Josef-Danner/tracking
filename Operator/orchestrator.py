@@ -17,6 +17,7 @@ from ..Helper.tracking_online import (
     set_initial_params,
     detect_triggers,
     post_change_microcheck,
+    run_sequence_track,
 )
 from ..Helper.motion_model import cluster_fit_models, select_apply_motion_models
 from ..Helper.cleanup_pass import periodic_cleanup
@@ -64,6 +65,14 @@ def _run_online_loop(context, roi_id: int, steps: int = 25, slice_ms: int = 10) 
 
         # Apply-next zu Beginn des Frames
         apply_scheduled_next_frame(roi_id, frame=f)
+
+        # Sequence-Tracking: einmalig zu Beginn und nach Pattern-Änderung
+        if i == 0:
+            run_sequence_track(roi_id, frame=f)
+        else:
+            st = get_online_state(roi_id)
+            if int(st.get("last_pattern_change_frame", -1)) == f:
+                run_sequence_track(roi_id, frame=f)
 
         tel = track_one_frame(roi_id, frame=f)
         # Trigger ableiten und loggen

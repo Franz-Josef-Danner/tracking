@@ -25,6 +25,10 @@ def _roi_state(roi_id: int) -> Dict[str, Any]:
         "microcheck": None,  # {active, start_frame, window, prev_pattern, baseline_corr, corr_hist}
         # Letzte Telemetrie (einfach)
         "last_tel": {},
+        # Sequence-Tracking Status
+        "sequence_ready": False,
+        "last_sequence_start": None,
+        "retrack_from": None,
     })
     return s
 
@@ -52,62 +56,24 @@ def set_initial_params(roi_id: int, *, pattern: Optional[int] = None, alpha: Opt
 
 
 def track_one_frame(roi_id, frame: Optional[int] = None) -> dict:
-    """1-Step-Tracking für alle Marker im ROI; return Telemetrie-Aggregate.
+    """1-Step-Tracking Telemetrie; ruft KEIN Blender-Tracking mehr auf.
 
-    Nutzt Blender-Operator, wenn verfügbar: bpy.ops.clip.track_markers(sequence=True).
-    Fällt sonst auf synthetische KPIs zurück.
+    Sequence-Tracking wird separat über run_sequence_track(…) ausgelöst.
+    Fällt auf synthetische KPIs zurück, wenn keine echten Messwerte verfügbar sind.
     """
     s = _roi_state(int(roi_id))
-    # Frame-Index fortschreiben
     if frame is None:
         s["frame"] = int(s.get("frame", -1)) + 1
     else:
         s["frame"] = int(frame)
 
-    # Defaults (werden ggf. durch echten Lauf überschrieben)
-    corr = 0.8
+    # Platzhalter-KPIs (können später aus Blender ausgelesen werden)
+    corr = float(s.get("last_tel", {}).get("corr_med", 0.8)) or 0.8
     runtime = 1.0
     lost_rate = 0.0
     jump_px = 0.2
     scale_delta = 0.0
     rot_delta = 0.0
-
-    # Versuch: echtes Tracking via Blender
-    t0 = time.time()
-    try:
-        import bpy  # type: ignore
-        scn = getattr(bpy.context, "scene", None)
-        if scn is not None:
-            try:
-                scn.frame_current = int(s["frame"])  # Ziel-Frame setzen
-            except Exception:
-                pass
-        # Aktiven Clip/Tracks bestimmen
-        clip = getattr(bpy.context, "edit_movieclip", None)
-        if clip is None:
-            clip = getattr(getattr(bpy.context, "space_data", None), "clip", None)
-        tracks = getattr(getattr(clip, "tracking", None), "tracks", None)
-        # Tracks selektieren (Operator arbeitet auf Selektion)
-        if tracks is not None:
-            try:
-                for t in tracks:
-                    try:
-                        t.select = True
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-        # Tracken (sequenziell, da stabiler als Einzel-Schritt)
-        try:
-            bpy.ops.clip.track_markers(backwards=False, sequence=True)
-        except Exception:
-            # Kontext evtl. nicht korrekt; still fallback
-            pass
-        runtime = max(0.1, (time.time() - t0) * 1000.0)
-        # TODO: echte Telemetrie auslesen (corr/lost/jump/scale/rot), wenn verfügbar
-    except Exception:
-        # Kein Blender-Kontext → fallback
-        runtime = max(0.1, (time.time() - t0) * 1000.0)
 
     n = len(s.get("markers", {}))
     tel = {
@@ -124,7 +90,6 @@ def track_one_frame(roi_id, frame: Optional[int] = None) -> dict:
         "rot_delta": float(rot_delta),
     }
 
-    # Rolling Window aktualisieren (max 10)
     s.setdefault("window", [])
     s["window"].append({
         "corr": tel["corr_med"],
@@ -286,6 +251,8 @@ def apply_scheduled_next_frame(roi_id, frame: Optional[int] = None) -> None:
                     "baseline_corr": float(s.get("last_tel", {}).get("corr_med", 0.8)),
                     "corr_hist": [],
                 }
+                # Retrack ab diesem Frame erforderlich
+                s["retrack_from"] = now_f
                 try:
                     from .telemetry import log_batch
                     log_batch("online.apply", "pattern", {"roi_id": int(roi_id), "frame": now_f, "prev": int(prev), "new": int(s["pattern"])})
@@ -294,6 +261,52 @@ def apply_scheduled_next_frame(roi_id, frame: Optional[int] = None) -> None:
         else:
             keep.append(ev)
     s["scheduled"] = keep
+
+
+# ———————————— Sequence-Tracking ————————————
+
+def run_sequence_track(roi_id, frame: Optional[int] = None) -> bool:
+    """Starte Blender-Tracking mit sequence=True einmalig (oder nach Pattern-Änderung).
+    Setzt scene.frame_current optional auf 'frame'.
+    """
+    s = _roi_state(int(roi_id))
+    try:
+        import bpy  # type: ignore
+        if frame is not None:
+            try:
+                bpy.context.scene.frame_current = int(frame)
+            except Exception:
+                pass
+        clip = getattr(bpy.context, "edit_movieclip", None)
+        if clip is None:
+            clip = getattr(getattr(bpy.context, "space_data", None), "clip", None)
+        tracks = getattr(getattr(clip, "tracking", None), "tracks", None)
+        if tracks is not None:
+            try:
+                for t in tracks:
+                    try:
+                        t.select = True
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        t0 = time.time()
+        try:
+            bpy.ops.clip.track_markers(backwards=False, sequence=True)
+        except Exception:
+            return False
+        dt_ms = (time.time() - t0) * 1000.0
+        s["sequence_ready"] = True
+        s["last_sequence_start"] = int(frame) if frame is not None else int(s.get("frame", 0))
+        s["retrack_from"] = None
+        try:
+            from .telemetry import log_batch
+            log_batch("online.sequence", "track_markers", {"roi_id": int(roi_id), "frame": int(s.get("last_sequence_start", 0)), "dt_ms": float(dt_ms)})
+        except Exception:
+            pass
+        return True
+    except Exception:
+        return False
 
 
 # ———————————— Microcheck & State ————————————
