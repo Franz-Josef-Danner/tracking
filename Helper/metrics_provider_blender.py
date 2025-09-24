@@ -301,9 +301,21 @@ class BlenderMetricsProvider(MetricsProvider):
                                         continue
                                     if abs(mf - idx) <= 1 or abs(mf - frame) <= 1:
                                         try:
+                                            # Provide both clip-local and global frame values to
+                                            # make any frame-offset mapping explicit for callers.
+                                            frame_clip = int(mf)
+                                            # Many Blender clips store marker.frame as clip-local
+                                            # indices; derive a global frame estimate by adding
+                                            # the clip start offset `f0` computed earlier.
+                                            try:
+                                                frame_global = int(frame_clip + int(f0))
+                                            except Exception:
+                                                frame_global = int(frame_clip)
                                             per.append({
                                                 "ref": getattr(t, "name", None),
-                                                "frame": int(mf),
+                                                "frame_clip": frame_clip,
+                                                "frame_global": frame_global,
+                                                "mapped_idx": int(idx),
                                                 "corr": float(getattr(m_, "correlation", getattr(m_, "corr", 0.0) or 0.0)),
                                                 "jump_px": float(0.0),
                                                 "lost": bool(getattr(m_, "hide", False) or getattr(m_, "mute", False) or getattr(m_, "disabled", False)),
@@ -602,9 +614,22 @@ class BlenderMetricsProvider(MetricsProvider):
                 # if we have a single `marker` object from above, add it
                 try:
                     if marker is not None:
+                        try:
+                            mf = int(getattr(marker, "frame", frame))
+                        except Exception:
+                            mf = int(frame)
+                        # As above, produce both clip-local and global frame values
+                        try:
+                            frame_clip = int(mf)
+                            frame_global = int(frame_clip + int(f0))
+                        except Exception:
+                            frame_clip = int(mf)
+                            frame_global = int(mf)
                         per.append({
                             "ref": getattr(track, "name", None),
-                            "frame": int(getattr(marker, "frame", frame)),
+                            "frame_clip": frame_clip,
+                            "frame_global": frame_global,
+                            "mapped_idx": int(idx),
                             "corr": float(getattr(marker, "correlation", getattr(marker, "corr", 0.0) or 0.0)),
                             "jump_px": float(jump_px or 0.0),
                             "lost": bool(getattr(marker, "hide", False) or getattr(marker, "mute", False) or getattr(marker, "disabled", False)),
