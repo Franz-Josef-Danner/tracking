@@ -294,3 +294,80 @@ def track_markers_lk(gray_frames, initial_points, lk_params=None):
         prev_img = next_img
 
     return tracks
+
+
+def extract_patch(img, x_bl, y_bl, size=11):
+    """Extrahiere einen quadratischen Patch um (x,y) aus img.
+    Erwartet Koordinaten im Overlay-System (BL-Ursprung); konvertiert nach TL für Array-Zugriff.
+    Patch wird an Bildgrenzen geclamp't.
+    """
+    h, w = img.shape[:2]
+    x = int(round(float(x_bl)))
+    y_tl = int(round(float(h) - float(y_bl)))
+    half = int(size) // 2
+    x0 = max(x - half, 0)
+    y0 = max(y_tl - half, 0)
+    x1 = min(x + half + 1, w)
+    y1 = min(y_tl + half + 1, h)
+    return img[y0:y1, x0:x1]
+
+
+def compute_track_kpis(track, gray_frames, patch_size=11):
+    """Berechne KPIs pro Track: survival, corr_median, residual_rms.
+    - track: Liste von Punkten (x,y) in BL-Koordinaten oder None pro Frame.
+    - gray_frames: Liste HxW uint8-Frames (TL-Indexierung)
+    """
+    total = len(track)
+    valid_points = [(i, pt) for i, pt in enumerate(track) if pt is not None]
+    num_valid = len(valid_points)
+
+    if num_valid < 2:
+        return None
+
+    survival = num_valid / max(1, total)
+
+    # Korrelationen gegen Referenz (erstes gültiges)
+    ref_idx, ref_pt = valid_points[0]
+    ref_img = gray_frames[min(ref_idx, len(gray_frames) - 1)]
+    ref_patch = extract_patch(ref_img, ref_pt[0], ref_pt[1], size=int(patch_size))
+    corrs = []
+    if ref_patch.size > 0:
+        ref_flat = ref_patch.astype(np.float32).flatten()
+        ref_std = np.std(ref_flat)
+        for i, pt in valid_points[1:]:
+            patch = extract_patch(gray_frames[min(i, len(gray_frames) - 1)], pt[0], pt[1], size=int(patch_size))
+            if patch.shape != ref_patch.shape or patch.size == 0:
+                continue
+            tgt_flat = patch.astype(np.float32).flatten()
+            # numerisch stabil: wenn std ~ 0, Korrelation 0
+            tgt_std = np.std(tgt_flat)
+            if ref_std < 1e-6 or tgt_std < 1e-6:
+                corr = 0.0
+            else:
+                corr = float(np.corrcoef(ref_flat, tgt_flat)[0, 1])
+            # clamp auf [-1,1]
+            if not np.isfinite(corr):
+                corr = 0.0
+            corr = max(-1.0, min(1.0, corr))
+            corrs.append(corr)
+    corr_median = float(np.median(corrs)) if corrs else 0.0
+
+    # RMS der Residuen (Glattheit der Bewegung)
+    deltas = []
+    for i in range(1, total):
+        p0, p1 = track[i - 1], track[i]
+        if p0 is not None and p1 is not None:
+            deltas.append((float(p1[0] - p0[0]), float(p1[1] - p0[1])))
+    if len(deltas) < 2:
+        residual_rms = 0.0
+    else:
+        d = np.asarray(deltas, dtype=np.float32)
+        mean_d = d.mean(axis=0)
+        residuals = d - mean_d
+        residual_rms = float(np.sqrt(np.mean(np.square(residuals))))
+
+    return {
+        "survival": float(survival),
+        "corr_median": float(corr_median),
+        "residual_rms": float(residual_rms),
+    }

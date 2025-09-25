@@ -8,6 +8,7 @@ from .strm_utils import (
     detect_features_in_roi,
     extract_grayscale_frames_range,
     track_markers_lk,
+    compute_track_kpis,
 )
 from .strm_overlay import draw_tile_overlay_callback, get_overlay_state
 
@@ -271,6 +272,53 @@ class STRM_OT_TrackMarkers(bpy.types.Operator):
                         region.tag_redraw()
 
         self.report({'INFO'}, f"{len(tracks)} Marker getrackt über {len(frames)} Frames.")
+        return {'FINISHED'}
+
+
+class STRM_OT_EvalKPIs(bpy.types.Operator):
+    bl_idname = "clip.strm_eval_kpis"
+    bl_label = "STRM: Evaluate KPIs"
+    bl_description = "Berechnet KPIs für alle Tracks"
+
+    patch_size = bpy.props.IntProperty(name="Patch", default=11, min=5, max=31)
+
+    def execute(self, context):
+        scene = context.scene
+        clip = context.edit_movieclip
+        if not clip:
+            self.report({'ERROR'}, "Kein MovieClip ausgewählt.")
+            return {'CANCELLED'}
+
+        overlay = get_overlay_state(scene)
+        tracks = overlay.get("tracks", [])
+        if not tracks:
+            self.report({'ERROR'}, "Keine Tracks zum Bewerten.")
+            return {'CANCELLED'}
+
+        start_frame = scene.frame_current
+        num_frames = len(tracks[0])
+        gray_frames = extract_grayscale_frames_range(clip, start_frame, num_frames)
+        if len(gray_frames) < num_frames:
+            # wir rechnen mit dem, was da ist
+            pass
+
+        kpi_results = []
+        for track in tracks:
+            kpis = compute_track_kpis(track, gray_frames, patch_size=self.patch_size)
+            if kpis is None:
+                kpis = {"survival": 0.0, "corr_median": 0.0, "residual_rms": 1e6}
+            kpi_results.append(kpis)
+
+        overlay["kpis"] = kpi_results
+
+        # Redraw
+        for area in context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        region.tag_redraw()
+
+        self.report({'INFO'}, f"KPI-Auswertung für {len(kpi_results)} Tracks durchgeführt.")
         return {'FINISHED'}
 
 

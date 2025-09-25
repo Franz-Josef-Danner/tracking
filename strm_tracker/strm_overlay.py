@@ -139,17 +139,24 @@ def draw_tile_overlay_callback(self, context):
 
     # Trajektorien (türkis) zeichnen
     tracks = overlay.get("tracks", [])
+    kpis = overlay.get("kpis", [])
     if tracks:
-        shader = gpu.shader.from_builtin('2D_UNIFORM_COLOR')
-        shader.bind()
-        shader.uniform_float("color", (0.0, 1.0, 0.4, 0.6))
         gpu.state.line_width_set(1.5)
-        for traj in tracks:
+        for i, traj in enumerate(tracks):
             coords = []
             for p in traj:
                 if p is None:
-                    # Lücke: aktuellen Streifen zeichnen und neu beginnen
                     if len(coords) >= 2:
+                        color = (0.5, 0.5, 0.5, 0.5)
+                        if i < len(kpis):
+                            corr = float(kpis[i].get("corr_median", 0.0))
+                            corr = max(-1.0, min(1.0, corr))
+                            # Mappe [-1,1] auf [0,1]
+                            s = 0.5 * (corr + 1.0)
+                            color = (1.0 - s, s, 0.0, 0.6)
+                        shader = gpu.shader.from_builtin('2D_UNIFORM_COLOR')
+                        shader.bind()
+                        shader.uniform_float("color", color)
                         batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": coords})
                         batch.draw(shader)
                     coords = []
@@ -159,5 +166,14 @@ def draw_tile_overlay_callback(self, context):
                 if None not in (rx, ry):
                     coords.append((rx, ry))
             if len(coords) >= 2:
+                color = (0.5, 0.5, 0.5, 0.5)
+                if i < len(kpis):
+                    corr = float(kpis[i].get("corr_median", 0.0))
+                    corr = max(-1.0, min(1.0, corr))
+                    s = 0.5 * (corr + 1.0)
+                    color = (1.0 - s, s, 0.0, 0.6)
+                shader = gpu.shader.from_builtin('2D_UNIFORM_COLOR')
+                shader.bind()
+                shader.uniform_float("color", color)
                 batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": coords})
                 batch.draw(shader)
