@@ -227,6 +227,48 @@ def draw_tile_overlay_callback(self, context):
                 if (~inmask).any():
                     draw_lines(pred[~inmask], B[~inmask], (1.0, 0.2, 0.2, 0.7))
 
+    # --- HUD: Cluster-Stats ---
+    try:
+        import blf  # type: ignore
+    except Exception:
+        blf = None
+    if blf is not None:
+        def _draw_text(x, y, text, size=12, color=(1, 1, 1, 1)):
+            try:
+                import bgl  # type: ignore
+            except Exception:
+                bgl = None
+            blf.position(0, float(x), float(y), 0)
+            blf.size(0, int(size), 72)
+            r, g, b, a = color
+            if bgl is not None:
+                try:
+                    bgl.glColor4f(r, g, b, a)
+                except Exception:
+                    pass
+            blf.draw(0, str(text))
+
+        ov = context.scene.get("strm_overlay", {})
+        models = ov.get("cluster_models", [])
+        mm_global = ov.get("motion_model", None)
+
+        y = 30
+        x = 20
+        if mm_global:
+            Sg = mm_global.get('S', mm_global.get('score_S', 0.0))
+            _draw_text(x, y, f"Global: {mm_global.get('type','?')}  S={Sg:.3f}  RMS={mm_global.get('rms',0):.3f}  Inliers={mm_global.get('inliers_count',0)}/{mm_global.get('total',0)}", 12, (1, 1, 0.8, 1))
+            y += 18
+
+        for m in models[:8]:  # zeige bis zu 8 Cluster
+            col = m.get("color", (0.8, 0.8, 0.8, 1))
+            lvl = m.get("level", "?")
+            S = m.get("S", 0.0)
+            rms = m.get("rms", 0.0)
+            nin = m.get("nin", 0)
+            tot = m.get("tot", 0)
+            _draw_text(x, y, f"Cluster {int(m.get('label',-1)):>2}: {lvl:<10}  S={S:.3f}  RMS={rms:.3f}  Inl={nin}/{tot}", 12, (float(col[0]), float(col[1]), float(col[2]), 1.0))
+            y += 16
+
     # ---- Cluster-Residuals farbig zeichnen ----
     ov = context.scene.get("strm_overlay", {})
     tracks2 = ov.get("tracks", [])

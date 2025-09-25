@@ -28,3 +28,8 @@ class STRM_PT_Panel(bpy.types.Panel):
         layout.operator("clip.strm_cluster_fit_promote", icon='GROUP')
         layout.operator("clip.strm_promotion_step", icon='SORTSIZE')
         layout.operator("clip.strm_peer_snap_reseed", icon='SNAP_ON')
+        layout.separator()
+        layout.operator("clip.strm_staged_seeding", icon='PARTICLES')
+        row = layout.row(align=True)
+        row.operator("clip.strm_log_snapshot", text="Log Snapshot", icon='REC')
+        row.operator("clip.strm_export_logs", text="Export Logs", icon='EXPORT')

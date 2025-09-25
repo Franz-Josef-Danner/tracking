@@ -23,6 +23,13 @@ from .strm_utils import (
     tiles_without_inliers,
     dedup_points,
     peer_snap_tracks,
+    log_snapshot,
+    export_logs,
+    staged_quality_levels,
+    pattern_for_stage,
+    clamp_int,
+    select_tiles_by_priority,
+    tile_coverage_ratio,
 )
 from .strm_overlay import draw_tile_overlay_callback, get_overlay_state
 
@@ -709,6 +716,139 @@ class STRM_OT_PeerSnapAndReseed(bpy.types.Operator):
                         region.tag_redraw()
 
         self.report({'INFO'}, f"Peer-Snap angepasst: {total_snapped} | Reseeded: {len(new_markers)}")
+        return {'FINISHED'}
+
+
+class STRM_OT_LogSnapshot(bpy.types.Operator):
+    bl_idname = "clip.strm_log_snapshot"
+    bl_label = "STRM: Log Snapshot"
+    bl_description = "Schreibt einen Log-Eintrag für aktuellen Frame"
+
+    def execute(self, context):
+        scene = context.scene
+        overlay = get_overlay_state(scene)
+        log_snapshot(scene, scene.frame_current, overlay)
+        self.report({'INFO'}, "STRM Snapshot geloggt.")
+        return {'FINISHED'}
+
+
+class STRM_OT_ExportLogs(bpy.types.Operator):
+    bl_idname = "clip.strm_export_logs"
+    bl_label = "STRM: Export Logs"
+    bl_description = "Exportiert STRM-Logs (JSON/CSV)"
+
+    json_path = bpy.props.StringProperty(name="JSON", default="//strm_log.json", subtype='FILE_PATH')
+    csv_path = bpy.props.StringProperty(name="CSV", default="//strm_log.csv", subtype='FILE_PATH')
+
+    def execute(self, context):
+        export_logs(context.scene, self.json_path, self.csv_path)
+        self.report({'INFO'}, f"Logs exportiert nach {self.json_path} / {self.csv_path}")
+        return {'FINISHED'}
+
+
+class STRM_OT_StagedSeeding(bpy.types.Operator):
+    bl_idname = "clip.strm_staged_seeding"
+    bl_label = "STRM: Staged Seeding (/5)"
+    bl_description = "Mehrstufiges Feature-Seeding mit Budget + Dedup + Tile-Priorisierung"
+
+    p0 = bpy.props.IntProperty(name="Pattern p0", default=21, min=9, max=41)
+    marker_target = bpy.props.IntProperty(name="Marker Target (total)", default=500, min=50, max=10000)
+    tile_topk = bpy.props.IntProperty(name="Tiles Top-K", default=9999, min=1, max=999999, description="Optional: Seeding nur in den Top-K Tiles nach Score")
+    score_type = bpy.props.EnumProperty(name="Tile Score", items=[("motion", "Motion", ""), ("texture", "Texture", ""), ("div", "Divergence", "")], default="motion")
+    min_distance_factor = bpy.props.FloatProperty(name="min_dist ∝ pattern", default=2.5, min=1.5, max=4.0)
+    per_tile_cap = bpy.props.IntProperty(name="Max/Tile/Stage", default=40, min=10, max=300)
+
+    def execute(self, context):
+        scene = context.scene
+        clip = context.edit_movieclip
+        overlay = get_overlay_state(scene)
+        tiles = overlay.get("tiles", [])
+        if not tiles:
+            self.report({'ERROR'}, "Keine STRM-Tiles vorhanden.")
+            return {'CANCELLED'}
+
+        frame_num = scene.frame_current
+        gray = extract_single_grayscale_frame(clip, frame_num)
+        if gray is None:
+            self.report({'ERROR'}, "Frame konnte nicht gelesen werden.")
+            return {'CANCELLED'}
+
+        existing = overlay.get("markers", [])
+        total_target = int(self.marker_target)
+        per_stage = max(1, total_target // 5)
+        stage_lo = int(per_stage * 0.90)
+        stage_hi = int(per_stage * 1.10)
+
+        tile_order = select_tiles_by_priority(tiles, score_type=self.score_type, top_k=int(self.tile_topk))
+        # Normierte Tile-Rects in BL-Koordinaten
+        h, w = gray.shape[:2]
+        tile_rects = []
+        for t in tiles:
+            if isinstance(t, dict):
+                tile_rects.append(tuple(map(int, t.get("coords", (0, 0, 0, 0)))))
+            else:
+                # compute_tile_coords liefert TL; nach BL umrechnen
+                x0, y0, x1, y1 = map(int, t)
+                y0_bl = int(h - y1)
+                y1_bl = int(h - y0)
+                tile_rects.append((int(x0), int(y0_bl), int(x1), int(y1_bl)))
+
+        added_total = 0
+        new_markers_all = []
+        q_levels = staged_quality_levels()
+
+        for s_idx, q in enumerate(q_levels):
+            if added_total >= total_target:
+                break
+            # Pattern pro Stage ableiten
+            p_stage = pattern_for_stage(int(self.p0), s_idx)
+            min_dist = max(8.0, float(self.min_distance_factor) * float(p_stage))
+
+            stage_added = 0
+            accepted_stage = []
+
+            for ti in tile_order:
+                if stage_added >= stage_hi:
+                    break
+                x0, y0, x1, y1 = tile_rects[ti]
+                roi = {"coords": (int(x0), int(y0), int(x1), int(y1))}
+                max_feat = max(5, min(int(self.per_tile_cap), stage_hi - stage_added))
+
+                pts = detect_features_in_roi(gray, roi,
+                                             max_features=max_feat,
+                                             quality=float(q),
+                                             min_distance=int(min_dist))
+                if not pts:
+                    continue
+                pts = dedup_points(pts, existing + new_markers_all + accepted_stage, min_dist=min_dist)
+                if not pts:
+                    continue
+
+                take = pts[:max(0, stage_hi - stage_added)]
+                accepted_stage.extend(take)
+                stage_added += len(take)
+
+                if stage_added >= stage_lo:
+                    coverage = tile_coverage_ratio(tiles, existing + new_markers_all + accepted_stage)
+                    if coverage >= 0.70:
+                        break
+
+            new_markers_all.extend(accepted_stage)
+            added_total += len(accepted_stage)
+            if added_total >= total_target:
+                break
+
+        if new_markers_all:
+            overlay["markers"] = existing + new_markers_all
+
+        # Redraw
+        for area in context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        region.tag_redraw()
+
+        self.report({'INFO'}, f"Staged Seeding: +{len(new_markers_all)} (Total now {len(overlay.get('markers',[]))})")
         return {'FINISHED'}
 
 

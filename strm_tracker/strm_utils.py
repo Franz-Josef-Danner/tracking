@@ -407,6 +407,74 @@ def filter_tracks_and_kpis(
     return filtered_tracks, filtered_kpis
 
 
+def clamp_int(x: int, lo: int, hi: int) -> int:
+    """Ganzzahl in [lo, hi] klemmen."""
+    return int(max(lo, min(hi, int(x))))
+
+
+def staged_quality_levels():
+    """Gibt 5 Quality-Level für goodFeaturesToTrack zurück (groß→klein).
+    Werte sind konservativ gewählt und können projektabhängig angepasst werden."""
+    return [0.02, 0.015, 0.01, 0.0075, 0.005]
+
+
+def pattern_for_stage(p0: int, stage_idx: int) -> int:
+    """Leitet aus einem Basis-Pattern p0 je Stage eine Größe ab (abnehmend).
+    Ergibt immer eine ungerade Zahl im Bereich [9, 41]."""
+    # Abnahme 0%, 10%, 20%, 30%, 40%
+    factors = [1.0, 0.9, 0.8, 0.7, 0.6]
+    f = factors[min(max(0, int(stage_idx)), len(factors) - 1)]
+    val = int(round(float(p0) * f))
+    val = clamp_int(val, 9, 41)
+    # auf ungerade bringen
+    if val % 2 == 0:
+        val += 1 if val < 41 else -1
+    return int(val)
+
+
+def select_tiles_by_priority(tiles, score_type: str = "motion", top_k: int = 999999):
+    """Liefert Indizes der Top-K Tiles sortiert nach gewünschtem Score.
+    Erwartet Tiles wie von analyze_strm (Dict mit 'coords' und Scores). Fallback: 0..N-1.
+    """
+    if not tiles:
+        return []
+    # Wenn Tiles als Dicts mit Score vorliegen
+    if isinstance(tiles[0], dict):
+        order = sorted(range(len(tiles)), key=lambda i: float(tiles[i].get(score_type, 0.0)), reverse=True)
+        if top_k is not None and int(top_k) > 0:
+            order = order[: int(top_k)]
+        return order
+    # Fallback: keine Scores bekannt
+    return list(range(min(len(tiles), int(top_k) if top_k else len(tiles))))
+
+
+def tile_coverage_ratio(tiles, points_bl):
+    """Anteil der Tiles (0..1), die mindestens einen Punkt enthalten.
+    Erwartet Tiles wie von analyze_strm (Dict mit 'coords' in BL-Koordinaten).
+    points_bl: Liste von (x,y) in BL-Koordinaten.
+    Fallback: wenn Tiles keine Dicts sind, 0.0 zurückgeben (unbekannte Orientierung).
+    """
+    if not tiles:
+        return 0.0
+    if not points_bl:
+        return 0.0
+    if not isinstance(tiles[0], dict):
+        # compute_tile_coords liefert TL; ohne Bildhöhe ist eine sichere Prüfung nicht möglich
+        return 0.0
+
+    covered = 0
+    for t in tiles:
+        x0, y0, x1, y1 = map(float, t.get("coords", (0.0, 0.0, 0.0, 0.0)))
+        hit = False
+        for (x, y) in points_bl:
+            if x0 <= float(x) <= x1 and y0 <= float(y) <= y1:
+                hit = True
+                break
+        if hit:
+            covered += 1
+    return float(covered) / float(len(tiles))
+
+
 # ---------- Korrespondenzen aus Tracks ----------
 def correspondences_from_tracks(tracks, f0, f1):
     """Sammelt (x0,y0)->(x1,y1) aus allen Tracks für zwei Frames f0,f1.
@@ -1313,3 +1381,115 @@ def dedup_points(new_pts, existing_pts, min_dist=8.0):
         if ok:
             kept.append((float(x), float(y)))
     return kept
+
+
+# =====================
+# Logging (CSV/JSON)
+# =====================
+
+def ensure_log_state(scene):
+    st = scene.get("strm_log")
+    if not st:
+        st = {"rows": []}
+        scene["strm_log"] = st
+    return st
+
+
+def log_snapshot(scene, frame, overlay, extras=None):
+    """
+    Speichert pro Frame: cluster models, global model KPIs, counts, optional extras.
+    """
+    st = ensure_log_state(scene)
+    mm = overlay.get("motion_model", {})
+    row = {
+        "frame": int(frame),
+        "global": {
+            "type": mm.get("type"),
+            "S": mm.get("S", mm.get("score_S")),
+            "rms": mm.get("rms"),
+            "inliers": mm.get("inliers_count"),
+            "total": mm.get("total"),
+        },
+        "clusters": [
+            {
+                "label": m.get("label"),
+                "level": m.get("level"),
+                "S": m.get("S"),
+                "rms": m.get("rms"),
+                "nin": m.get("nin"),
+                "tot": m.get("tot"),
+            }
+            for m in overlay.get("cluster_models", [])
+        ],
+        "counts": {
+            "markers": len(overlay.get("markers", [])),
+            "tracks": len(overlay.get("tracks", [])),
+        },
+        "extras": extras or {},
+    }
+    st.setdefault("rows", []).append(row)
+
+
+def export_logs(scene, json_path="//strm_log.json", csv_path="//strm_log.csv"):
+    import json
+    import csv
+    import bpy  # type: ignore
+
+    st = ensure_log_state(scene)
+    rows = st.get("rows", [])
+
+    # JSON
+    try:
+        with open(bpy.path.abspath(json_path), "w", encoding="utf-8") as f:
+            json.dump(rows, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print("[STRM] JSON export failed:", e)
+
+    # CSV (flach)
+    flat = []
+    for r in rows:
+        gS = r.get("global", {}).get("S")
+        gR = r.get("global", {}).get("rms")
+        markers = r.get("counts", {}).get("markers", 0)
+        tracks = r.get("counts", {}).get("tracks", 0)
+        if r.get("clusters"):
+            for c in r["clusters"]:
+                flat.append({
+                    "frame": r.get("frame"),
+                    "cluster_label": c.get("label"),
+                    "level": c.get("level"),
+                    "S": c.get("S"),
+                    "rms": c.get("rms"),
+                    "nin": c.get("nin"),
+                    "tot": c.get("tot"),
+                    "global_S": gS,
+                    "global_rms": gR,
+                    "markers": markers,
+                    "tracks": tracks,
+                })
+        else:
+            flat.append({
+                "frame": r.get("frame"),
+                "cluster_label": -1,
+                "level": r.get("global", {}).get("type"),
+                "S": gS,
+                "rms": gR,
+                "nin": r.get("global", {}).get("inliers"),
+                "tot": r.get("global", {}).get("total"),
+                "global_S": gS,
+                "global_rms": gR,
+                "markers": markers,
+                "tracks": tracks,
+            })
+
+    try:
+        with open(bpy.path.abspath(csv_path), "w", newline='', encoding="utf-8") as f:
+            if flat:
+                writer = csv.DictWriter(f, fieldnames=list(flat[0].keys()))
+                writer.writeheader()
+                writer.writerows(flat)
+            else:
+                writer = csv.writer(f)
+                writer.writerow(["frame","cluster_label","level","S","rms","nin","tot","global_S","global_rms","markers","tracks"])
+    except Exception as e:
+        print("[STRM] CSV export failed:", e)

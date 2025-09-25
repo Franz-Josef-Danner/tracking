@@ -1,42 +1,32 @@
 # STRM Feature Tracker (Blender Add-on)
 
-Ein minimales Add-on für Blender 3.6+, das eine STRM (Spatio-Temporal Region Map) Analyse auf dem aktiven Movie Clip ausführt. Es teilt das Bild in Tiles (z. B. 4x6) und berechnet pro Tile einfache Metriken: Texture, Motion, Divergence.
+Dieses Add-on analysiert Video-Frames in Tiles (STRM: Texture/Motion/Divergence/Flicker), seeded Features, trackt sie, passt Bewegungsmodelle (Global & pro Cluster) an und bietet Stabilisierung, Reseeding, HUD/Overlay sowie Logging.
 
-## Installation
+Wichtige Hinweise:
 
-1. Dieses Verzeichnis zippen (nur den Ordner `strm_tracker/` mit Inhalt):
-   - Unter Linux/macOS im Terminal im Workspace-Root:
+- Entwicklung außerhalb von Blender zeigt oft „Import nicht aufgelöst“ für `bpy`, `numpy`, `cv2`. Das ist normal – Blender bringt seine eigene Python-Umgebung mit. Teste das Add-on in Blender.
+- Optionale Features nutzen HDBSCAN; ohne installiertes `hdbscan` wird automatisch nur DBSCAN verwendet.
 
-     ```bash
-     zip -r strm_tracker.zip strm_tracker
-     ```
-2. Blender öffnen > Edit > Preferences > Add-ons > Install... > `strm_tracker.zip` wählen und installieren.
-3. Add-on aktivieren.
+Installation (lokal testen):
 
-## Nutzung
+1. Blender öffnen → Edit → Preferences → Add-ons → Install…
+2. Den Ordner `strm_tracker` als Zip packen oder das Repo zippen und installieren.
+3. Add-on aktivieren: „STRM Feature Tracker“.
+4. Movie Clip Editor öffnen → Sidebar „STRM“.
 
-- Wechsle in den Movie Clip Editor und lade einen Clip.
-- Rechts in der Sidebar findest du die Kategorie "STRM" und den Button "STRM Analyse".
-- Es werden 10 Frames ab dem Start (Frame 0) gelesen, in 4x6 Tiles unterteilt und Werte in der Konsole ausgegeben.
+Funktionen (Auszug):
 
-Hinweis: Die API `bpy` ist nur innerhalb von Blender verfügbar. Lint-Fehler in externen Editoren sind normal.
+- Analyse: Tiles farblich nach Score, Auswahl der ROIs.
+- Seeding: normales und „Staged Seeding (/5)“ mit Budget & Priorisierung.
+- Tracking & KPIs: LK-Flow, Qualitätsmetriken, Cleanup.
+- Modelle: Fit globaler Modelle + Promotion Engine (Level: loc → locrot → lrs → affine → perspective).
+- Clustering: Adaptive DBSCAN, HDBSCAN-Fallback, pro Cluster Promotion.
+- Stabilisierung: Peer-Snap Outlier → Medianfluss, Reseed leere Tiles.
+- HUD/Overlay: Residual-Vektoren und Statistiken.
+- Logging: Snapshots aufnehmen, Export als JSON/CSV.
 
-## Abhängigkeiten
+Troubleshooting:
 
-- NumPy (wird mit Blender in der Regel gebündelt)
-- OpenCV-Python (optional; aktuelles Minimalbeispiel nutzt nur NumPy)
-
-Falls OpenCV fehlt, kannst du es in der Python-Umgebung von Blender nachinstallieren:
-
-```bash
-/path/to/blender/python/bin/python3 -m ensurepip --upgrade
-/path/to/blender/python/bin/pip install --upgrade pip
-/path/to/blender/python/bin/pip install opencv-python
-```
-
-## Nächste Schritte
-
-- Overlay der Tile-Ergebnisse im Viewer zeichnen
-- Weitere Metriken: Flicker, Gradienten-Divergenz, KLT-Seed-Vorschläge
-- Operator-Properties für Tile-Größe, Frame-Bereich
-- Logging/KPIs und Presets
+- Wenn keine Tiles erscheinen: sicherstellen, dass ein MovieClip aktiv ist und Overlay eingeschaltet ist.
+- cv2-Fehler: OpenCV muss in der Blender-Python-Umgebung installiert sein (oder System-Python kompatibel einbinden).
+- Performance: Reduziere Tile-Größe, Marker-Anzahl oder die Anzahl Frames pro Tracking.
