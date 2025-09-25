@@ -1,4 +1,5 @@
 import bpy
+from .strm_overlay import get_overlay_state
 
 
 class STRM_PT_Panel(bpy.types.Panel):
@@ -9,6 +10,8 @@ class STRM_PT_Panel(bpy.types.Panel):
     bl_category = 'STRM'
 
     def draw(self, context):
+        # Overlay-State sicherstellen (falls noch nicht vorhanden)
+        get_overlay_state(context.scene)
         layout = self.layout
         layout.operator("clip.strm_analyze", icon='VIEWZOOM')
         layout.operator("clip.strm_toggle_overlay", icon='GRID')
