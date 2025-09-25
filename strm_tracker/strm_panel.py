@@ -11,3 +11,4 @@ class STRM_PT_Panel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         layout.operator("clip.strm_analyze", icon='VIEWZOOM')
+        layout.operator("clip.strm_toggle_overlay", icon='GRID')

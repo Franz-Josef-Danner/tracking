@@ -9,12 +9,14 @@ bl_info = {
 
 import bpy
 from .strm_panel import STRM_PT_Panel
-from .strm_ops import STRM_OT_Analyze
+from .strm_ops import STRM_OT_Analyze, STRM_OT_ToggleOverlay, cleanup_overlay_draw
+from .strm_overlay import draw_tile_overlay_callback  # ensure module is loaded
 
 
 classes = (
     STRM_PT_Panel,
     STRM_OT_Analyze,
+    STRM_OT_ToggleOverlay,
 )
 
 
@@ -26,3 +28,8 @@ def register():
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
+    # Cleanup draw handler if any
+    try:
+        cleanup_overlay_draw()
+    except Exception:
+        pass

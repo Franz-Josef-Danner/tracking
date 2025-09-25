@@ -82,3 +82,25 @@ def analyze_strm(frames, tile_rows=4, tile_cols=6):
             })
 
     return results
+
+
+def compute_tile_coords(clip, tile_rows=4, tile_cols=6):
+    """Berechne (x0, y0, x1, y1) pro Tile in Clip-Pixelkoordinaten.
+    Deckt den gesamten Bereich ab (letzte Zeile/Spalte bis zum Rand)."""
+    width, height = clip.size
+    tile_rows = max(1, int(tile_rows))
+    tile_cols = max(1, int(tile_cols))
+
+    tile_w = max(1, width // tile_cols)
+    tile_h = max(1, height // tile_rows)
+    tiles = []
+
+    for ty in range(tile_rows):
+        for tx in range(tile_cols):
+            x0 = tx * tile_w
+            y0 = ty * tile_h
+            x1 = width if tx == tile_cols - 1 else (tx + 1) * tile_w
+            y1 = height if ty == tile_rows - 1 else (ty + 1) * tile_h
+            tiles.append((float(x0), float(y0), float(x1), float(y1)))
+
+    return tiles
