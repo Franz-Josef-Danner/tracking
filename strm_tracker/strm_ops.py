@@ -9,6 +9,7 @@ from .strm_utils import (
     extract_grayscale_frames_range,
     track_markers_lk,
     compute_track_kpis,
+    filter_tracks_and_kpis,
 )
 from .strm_overlay import draw_tile_overlay_callback, get_overlay_state
 
@@ -319,6 +320,49 @@ class STRM_OT_EvalKPIs(bpy.types.Operator):
                         region.tag_redraw()
 
         self.report({'INFO'}, f"KPI-Auswertung für {len(kpi_results)} Tracks durchgeführt.")
+        return {'FINISHED'}
+
+
+class STRM_OT_CleanupTracks(bpy.types.Operator):
+    bl_idname = "clip.strm_cleanup_tracks"
+    bl_label = "STRM: Cleanup Tracks"
+    bl_description = "Entfernt schlechte oder zu kurze Tracks anhand der KPIs"
+
+    min_survival = bpy.props.FloatProperty(name="Min Survival", default=0.6, min=0.0, max=1.0)
+    min_corr = bpy.props.FloatProperty(name="Min Corr", default=0.6, min=-1.0, max=1.0)
+    max_rms = bpy.props.FloatProperty(name="Max RMS", default=2.0, min=0.0)
+    min_length = bpy.props.IntProperty(name="Min Length", default=4, min=1)
+
+    def execute(self, context):
+        overlay = get_overlay_state(context.scene)
+        tracks = overlay.get("tracks", [])
+        kpis = overlay.get("kpis", [])
+        if not tracks or not kpis:
+            self.report({'ERROR'}, "Es fehlen Tracks oder KPIs.")
+            return {'CANCELLED'}
+
+        before = len(tracks)
+        filtered_tracks, filtered_kpis = filter_tracks_and_kpis(
+            tracks,
+            kpis,
+            min_survival=self.min_survival,
+            min_corr=self.min_corr,
+            max_rms=self.max_rms,
+            min_length=self.min_length,
+        )
+
+        overlay["tracks"] = filtered_tracks
+        overlay["kpis"] = filtered_kpis
+        after = len(filtered_tracks)
+
+        # Redraw
+        for area in context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        region.tag_redraw()
+
+        self.report({'INFO'}, f"{before - after} von {before} Tracks entfernt.")
         return {'FINISHED'}
 
 

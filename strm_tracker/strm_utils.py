@@ -371,3 +371,37 @@ def compute_track_kpis(track, gray_frames, patch_size=11):
         "corr_median": float(corr_median),
         "residual_rms": float(residual_rms),
     }
+
+
+def filter_tracks_and_kpis(
+    tracks,
+    kpis,
+    min_survival: float = 0.6,
+    min_corr: float = 0.6,
+    max_rms: float = 2.0,
+    min_length: int = 4,
+):
+    """Filtere schlechte Tracks basierend auf KPIs und Mindestlänge.
+    Gibt (filtered_tracks, filtered_kpis) zurück in gleicher Reihenfolge wie Eingabe.
+    """
+    if not tracks or not kpis:
+        return [], []
+
+    filtered_tracks = []
+    filtered_kpis = []
+    for track, kpi in zip(tracks, kpis):
+        valid_len = sum(1 for p in track if p is not None)
+        survival = float(kpi.get("survival", 0.0))
+        corr = float(kpi.get("corr_median", 0.0))
+        rms = float(kpi.get("residual_rms", 9_999.0))
+
+        if (
+            valid_len >= int(min_length)
+            and survival >= float(min_survival)
+            and corr >= float(min_corr)
+            and rms <= float(max_rms)
+        ):
+            filtered_tracks.append(track)
+            filtered_kpis.append(kpi)
+
+    return filtered_tracks, filtered_kpis

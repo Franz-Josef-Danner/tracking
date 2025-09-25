@@ -23,3 +23,4 @@ class STRM_PT_Panel(bpy.types.Panel):
         layout.operator("clip.strm_seed_features", icon='PARTICLES')
         layout.operator("clip.strm_track_markers", icon='TRACKING')
         layout.operator("clip.strm_eval_kpis", icon='INFO')
+        layout.operator("clip.strm_cleanup_tracks", icon='PANEL_CLOSE')
