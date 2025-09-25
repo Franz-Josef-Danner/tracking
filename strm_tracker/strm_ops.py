@@ -18,6 +18,11 @@ from .strm_utils import (
     dbscan,
     promotion_per_cluster,
     cluster_color,
+    hdbscan_labels,
+    suggest_eps,
+    tiles_without_inliers,
+    dedup_points,
+    peer_snap_tracks,
 )
 from .strm_overlay import draw_tile_overlay_callback, get_overlay_state
 
@@ -524,7 +529,7 @@ class STRM_OT_ClusterFitPromote(bpy.types.Operator):
     bl_description = "Clustert Korrespondenzen & promotet pro Cluster das Motion-Modell (RANSAC + S-Score)"
 
     frame_offset = bpy.props.IntProperty(name="Frame Offset", default=5, min=1, max=100)
-    eps = bpy.props.FloatProperty(name="DBSCAN eps", default=0.9, min=0.1, max=3.0, description="Radius im z-standardisierten (x,y,dx,dy)-Raum")
+    eps = bpy.props.FloatProperty(name="DBSCAN eps", default=0.0, min=0.0, max=3.0, description="0=auto (kNN-basiert), sonst fester Radius im z-Raum")
     min_samples = bpy.props.IntProperty(name="min_samples", default=6, min=3, max=50)
     lambda_penalty = bpy.props.FloatProperty(name="λ penalty", default=0.12, min=0.0, max=1.0)
     ransac_thresh = bpy.props.FloatProperty(name="RANSAC thr (px)", default=3.0, min=0.5, max=10.0)
@@ -545,7 +550,19 @@ class STRM_OT_ClusterFitPromote(bpy.types.Operator):
             return {'CANCELLED'}
 
         feats_z, _ = zscore(feats)
-        labels = dbscan(feats_z, eps=float(self.eps), min_samples=int(self.min_samples))
+        # Optional HDBSCAN vor DBSCAN probieren
+        labels = None
+        try:
+            labels = hdbscan_labels(feats_z, min_cluster_size=max(8, int(self.min_samples) * 2),
+                                    min_samples=int(self.min_samples))
+        except Exception:
+            labels = None
+
+        if labels is None or (labels >= 0).sum() < 8:
+            eps = float(self.eps)
+            if eps <= 0.0:
+                eps = suggest_eps(feats_z, k=max(6, int(self.min_samples)), factor=1.6)
+            labels = dbscan(feats_z, eps=eps, min_samples=int(self.min_samples))
 
         # Pro Cluster promoten
         img_wh = None
@@ -582,6 +599,7 @@ class STRM_OT_ClusterFitPromote(bpy.types.Operator):
                 "nin": int(res["fit"]["nin"]),
                 "tot": int(res["fit"]["tot"]),
                 "inliers_mask_global": global_inliers,
+                "indices": [int(i) for i in res["indices"].tolist()],
                 "f0": int(f0), "f1": int(f1),
             })
 
@@ -593,6 +611,104 @@ class STRM_OT_ClusterFitPromote(bpy.types.Operator):
                         region.tag_redraw()
 
         self.report({'INFO'}, f"Cluster: {len(set([l for l in labels.tolist() if l>=0]))} | Modelle gespeichert.")
+        return {'FINISHED'}
+
+
+class STRM_OT_PeerSnapAndReseed(bpy.types.Operator):
+    bl_idname = "clip.strm_peer_snap_reseed"
+    bl_label = "STRM: Peer-Snap & Reseed"
+    bl_description = "Stabilisiert Cluster-Outlier zum Peer-Flow und füllt Coverage-Löcher mit neuen Features"
+
+    frame_offset = bpy.props.IntProperty(name="Frame Offset", default=5, min=1, max=100)
+    max_factor = bpy.props.FloatProperty(name="Max Jump ×", default=1.8, min=1.1, max=3.0)
+    pattern = bpy.props.IntProperty(name="Pattern", default=21, min=9, max=41, description="Basis-Pattern für min_distance")
+    per_tile_max = bpy.props.IntProperty(name="Max/Tile", default=30, min=5, max=200, description="Max neue Features pro leeres Tile")
+    quality_level = bpy.props.FloatProperty(name="Quality", default=0.01, min=0.001, max=0.1)
+
+    def execute(self, context):
+        import numpy as np
+
+        scene = context.scene
+        overlay = scene.get("strm_overlay", {})
+        tracks = overlay.get("tracks", [])
+        tiles_data = overlay.get("tiles", [])
+        cluster_models = overlay.get("cluster_models", [])
+        if not tracks or not cluster_models:
+            self.report({'ERROR'}, "Tracks oder Cluster-Modelle fehlen.")
+            return {'CANCELLED'}
+
+        f0 = int(cluster_models[0].get("f0", 0))
+        f1 = min(int(self.frame_offset), len(tracks[0]) - 1)
+
+        # 1) Peer-Snap pro Cluster
+        total_snapped = 0
+        for m in cluster_models:
+            inmask = np.array(m.get("inliers_mask_global", []), dtype=bool)
+            idxs = np.array(m.get("indices", []), dtype=int)
+            if idxs.size == 0:
+                # fallback: alle
+                idxs = np.arange(inmask.shape[0])
+            snapped = peer_snap_tracks(tracks, f0, f1, idxs, inmask, max_factor=float(self.max_factor))
+            total_snapped += snapped
+
+        # 2) Coverage-Löcher identifizieren (Tiles ohne Inliers @ f1)
+        inlier_points = []
+        A = []
+        B = []
+        for tr in tracks:
+            if f0 < len(tr) and f1 < len(tr) and tr[f0] is not None and tr[f1] is not None:
+                A.append(tr[f0]); B.append(tr[f1])
+        if not A:
+            self.report({'INFO'}, f"Peer-Snap: {total_snapped} angepasst, keine Reseed-Kandidaten.")
+            return {'FINISHED'}
+        B = np.float32(B)
+        global_inlier_mask = np.zeros((len(B),), dtype=bool)
+        for m in cluster_models:
+            inmask = np.array(m.get("inliers_mask_global", []), dtype=bool)
+            global_inlier_mask[:len(inmask)] |= inmask[:len(B)]
+        for i, ok in enumerate(global_inlier_mask):
+            if ok:
+                inlier_points.append((float(B[i][0]), float(B[i][1])))
+
+        tile_rects = [t["coords"] if isinstance(t, dict) else t for t in tiles_data]
+        empty_idxs = tiles_without_inliers(tile_rects, inlier_points, tile_rows=0, tile_cols=0)
+
+        # 3) Reseeding in leeren Tiles
+        clip = context.edit_movieclip
+        frame_num = scene.frame_current
+        gray = extract_single_grayscale_frame(clip, frame_num)
+        if gray is None:
+            self.report({'WARNING'}, f"Peer-Snap: {total_snapped} angepasst; Frame nicht lesbar, kein Reseed.")
+            return {'FINISHED'}
+
+        existing = overlay.get("markers", [])
+        min_dist = max(2.5 * float(self.pattern), 8.0)
+        new_markers = []
+        for ti in empty_idxs:
+            if ti < 0 or ti >= len(tile_rects):
+                continue
+            x0, y0, x1, y1 = map(int, tile_rects[ti])
+            roi = {"coords": (x0, y0, x1, y1)}
+            pts = detect_features_in_roi(gray, roi,
+                                         max_features=int(self.per_tile_max),
+                                         quality=float(self.quality_level),
+                                         min_distance=int(min_dist))
+            if not pts:
+                continue
+            pts = dedup_points(pts, existing + new_markers, min_dist=min_dist)
+            new_markers.extend(pts)
+
+        if new_markers:
+            overlay["markers"] = existing + new_markers
+
+        # Redraw
+        for area in context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        region.tag_redraw()
+
+        self.report({'INFO'}, f"Peer-Snap angepasst: {total_snapped} | Reseeded: {len(new_markers)}")
         return {'FINISHED'}
 
 

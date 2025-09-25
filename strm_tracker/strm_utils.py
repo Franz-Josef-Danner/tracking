@@ -1163,3 +1163,153 @@ def promotion_per_cluster(A, B, labels, img_wh, scene, lam=0.12, ransac_thresh=3
         })
 
     return results
+
+
+# =====================
+# Adaptive-DBSCAN (kNN) & HDBSCAN-Fallback
+# =====================
+
+def knn_distances(points_z, k=8):
+    """Euklidische kNN-Distanz (im z-standardisierten Raum) – O(N^2)."""
+    import numpy as _np
+    pts = _np.asarray(points_z, dtype=_np.float32)
+    N = pts.shape[0]
+    if N == 0:
+        return _np.zeros((0,), dtype=_np.float32)
+    if N <= k:
+        k = max(1, N - 1)
+    ss = _np.sum(pts * pts, axis=1, keepdims=True)
+    d2 = ss - 2.0 * (pts @ pts.T) + ss.T
+    d2 = _np.maximum(d2, 0.0)
+    D = _np.sqrt(d2 + 1e-12)
+    idx = _np.argsort(D, axis=1)
+    kth = D[_np.arange(N), idx[:, min(k, N - 1)]]
+    return kth
+
+
+def suggest_eps(points_z, k=8, factor=1.5, clip=(0.3, 2.0)):
+    """Vorschlag für eps aus Median(kNN) * Faktor, im z-Raum."""
+    import numpy as _np
+    kth = knn_distances(points_z, k=k)
+    med = float(_np.median(kth)) if kth.size else 1.0
+    eps = med * float(factor)
+    return float(_np.clip(eps, clip[0], clip[1]))
+
+
+def hdbscan_labels(points_z, min_cluster_size=10, min_samples=6):
+    try:
+        import hdbscan  # type: ignore
+    except Exception:
+        return None
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=int(min_cluster_size),
+                                min_samples=int(min_samples),
+                                metric='euclidean')
+    try:
+        labels = clusterer.fit_predict(points_z)
+    except Exception:
+        return None
+    return labels
+
+
+# =====================
+# Peer-Snap & Reseeding Helpers
+# =====================
+
+def median_flow_for_cluster(A, B, mask=None):
+    """Median dx,dy & Median-Schrittlänge als robustes Peer-Flow-Maß."""
+    import numpy as _np
+    A = _np.asarray(A, _np.float32)
+    B = _np.asarray(B, _np.float32)
+    if mask is not None:
+        mask = _np.asarray(mask, dtype=bool)
+        A = A[mask]
+        B = B[mask]
+    if A.shape[0] == 0:
+        return 0.0, 0.0, 0.0
+    d = B - A
+    dx = float(_np.median(d[:, 0]))
+    dy = float(_np.median(d[:, 1]))
+    step_med = float(_np.median(_np.linalg.norm(d, axis=1)))
+    return dx, dy, step_med
+
+
+def peer_snap_tracks(tracks, f0, f1, cluster_indices, inliers_mask_global, max_factor=1.8):
+    """
+    Snappt pro Cluster Outlier-Schritte (f0->f1) an den Median-Flow.
+    - cluster_indices: globale Korrespondenz-Indices für diesen Cluster
+    - inliers_mask_global: bool (N) Inlier der Cluster-Fits im globalen Korrespondenz-Array
+    """
+    import numpy as _np
+    # Baue globales A,B passend zu tracks (wie beim Cluster-Fit)
+    A = []
+    B = []
+    tri_list = []  # map von globalem Korrespondenzindex -> track index
+    for ti, tr in enumerate(tracks):
+        if f0 < len(tr) and f1 < len(tr) and tr[f0] is not None and tr[f1] is not None:
+            A.append(tr[f0])
+            B.append(tr[f1])
+            tri_list.append(ti)
+    if not A:
+        return 0
+    A = _np.asarray(A, _np.float32)
+    B = _np.asarray(B, _np.float32)
+
+    idxs = _np.asarray(cluster_indices, dtype=int)
+    idxs = idxs[(idxs >= 0) & (idxs < A.shape[0])]
+    if idxs.size == 0:
+        return 0
+    in_c = _np.asarray([bool(inliers_mask_global[i]) for i in idxs], dtype=bool)
+    A_c = A[idxs]
+    B_c = B[idxs]
+
+    dx_med, dy_med, step_med = median_flow_for_cluster(A_c, B_c, mask=in_c)
+    if step_med <= 0:
+        step_med = 1e-3
+    max_step = float(max_factor) * float(step_med)
+
+    changed = 0
+    for loc_i, g_i in enumerate(idxs):
+        ti = tri_list[int(g_i)]
+        p0 = tracks[ti][f0]
+        p1 = tracks[ti][f1]
+        if p0 is None or p1 is None:
+            continue
+        dx = float(p1[0] - p0[0]); dy = float(p1[1] - p0[1])
+        step = (dx * dx + dy * dy) ** 0.5
+        if (not bool(in_c[loc_i])) or (step > max_step):
+            new_p1 = (float(p0[0]) + dx_med, float(p0[1]) + dy_med)
+            tracks[ti][f1] = new_p1
+            changed += 1
+    return changed
+
+
+def tiles_without_inliers(tiles, points, tile_rows=0, tile_cols=0):
+    """
+    tiles: list[(x0,y0,x1,y1)] (Overlay-Tiles)
+    points: list[(x,y)] Inlier-Points
+    return: Liste der Indizes ohne Inlier
+    """
+    covered = [False] * len(tiles)
+    for i, rect in enumerate(tiles):
+        x0, y0, x1, y1 = rect
+        for (x, y) in points:
+            if (x0 <= x < x1) and (y0 <= y < y1):
+                covered[i] = True
+                break
+    empty_idxs = [i for i, c in enumerate(covered) if not c]
+    return empty_idxs
+
+
+def dedup_points(new_pts, existing_pts, min_dist=8.0):
+    kept = []
+    for (x, y) in new_pts:
+        ok = True
+        for (ex, ey) in existing_pts:
+            dx = float(x) - float(ex)
+            dy = float(y) - float(ey)
+            if (dx * dx + dy * dy) < (float(min_dist) * float(min_dist)):
+                ok = False
+                break
+        if ok:
+            kept.append((float(x), float(y)))
+    return kept
