@@ -99,16 +99,31 @@ def _persist_markers(context, clip, markers: list[dict], roi_id: int | None = No
             return 0
         tr_coll = getattr(getattr(clip, "tracking", None), "tracks", None)
         settings = getattr(getattr(clip, "tracking", None), "settings", None)
-        # Margin aus den Tracker-Settings lesen, falls vorhanden
+        # Margin aus den Tracker-Settings lesen, falls vorhanden (übersteuerbar per Szene-Key)
         margin = None
         if settings is not None and hasattr(settings, "margin"):
             try:
                 margin = int(getattr(settings, "margin", 0))
             except Exception:
                 margin = None
-        if margin is None or margin <= 0:
+        # Szene-Override: tco_force_margin (z. B. 0, um den Rand temporär zu deaktivieren)
+        try:
+            scn = getattr(context, "scene", None)
+            if scn is not None and hasattr(scn, "get"):
+                fm = scn.get("tco_force_margin", None)
+                if fm is not None:
+                    margin = int(fm)
+        except Exception:
+            pass
+        if margin is None or margin < 0:
             # Fallback wie in marker_helper_main.py
             margin = max(16, int(0.025 * w))
+        # Telemetrie: effektive Margin loggen
+        try:
+            from .telemetry import log_batch
+            log_batch("staged_seeding", "margin.effective", {"width": int(w), "height": int(h), "margin": int(margin)})
+        except Exception:
+            pass
         frame = int(getattr(getattr(context, "scene", None), "frame_current", 1))
         ok = 0
         for i, m in enumerate(markers):
@@ -140,7 +155,7 @@ def _persist_markers(context, clip, markers: list[dict], roi_id: int | None = No
                 x = float(m.get("x", 0.0))
                 y = float(m.get("y", 0.0))
                 # Prüfe margin: Marker dürfen nicht näher am Rand als margin liegen
-                if x < margin or x > (w - margin) or y < margin or y > (h - margin):
+                if margin and (x < margin or x > (w - margin) or y < margin or y > (h - margin)):
                     continue  # Marker außerhalb des erlaubten Bereichs, überspringen
                 # Convert pixel coordinates (x,y) -> normalized (0..1).
                 # Wichtig: y-Orientierung korrekt behandeln.
@@ -170,9 +185,10 @@ def _persist_markers(context, clip, markers: list[dict], roi_id: int | None = No
                 except Exception:
                     flip_flag = None
                 if flip_flag is None:
-                    # Fallback-Default: konservativ annehmen, dass viele externe
-                    # Detektoren (z.B. OpenCV) oben-links nutzen -> Flip nötig.
-                    flip_flag = True
+                    # Fallback-Default: Kein Flip. Hintergrund: Blender-Detektion
+                    # liefert bereits unten-links-Koordinaten. Externe Detektoren
+                    # (z.B. OpenCV) sollten das Flag explizit setzen.
+                    flip_flag = False
                 y_norm = (1.0 - y_img) if flip_flag else y_img
                 co = (x_norm, y_norm)
                 # Direktes Anlegen eines Tracks
@@ -255,7 +271,11 @@ def _persist_markers(context, clip, markers: list[dict], roi_id: int | None = No
                                         pass
                                 try:
                                     from .telemetry import log_batch
-                                    log_batch("staged_seeding", "marker_persist.done", {"roi_id": roi_id, "index": i, "pixel_xy": (x, y), "co_set": co, "co_actual": actual, "frame": frame, "track_name": getattr(t, 'name', None)})
+                                    log_batch(
+                                        "staged_seeding",
+                                        "marker_persist.done",
+                                        {"roi_id": roi_id, "index": i, "pixel_xy": (x, y), "co_set": co, "co_actual": actual, "frame": frame, "track_name": getattr(t, 'name', None), "flip_y": bool(flip_flag)},
+                                    )
                                 except Exception:
                                     pass
                             except Exception:

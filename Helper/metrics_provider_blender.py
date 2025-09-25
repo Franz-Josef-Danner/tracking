@@ -21,6 +21,9 @@ class BlenderMetricsProvider(MetricsProvider):
 
     def __init__(self, *, clip: Optional[object] = None):
         self.clip = clip
+        # Cache, um teure Pre-Track-Aufrufe pro (roi_id, frame) zu entdoppeln
+        # Struktur: {"<roi_id>:<frame>": last_ts_seconds}
+        self._pretrack_cache = {}
 
     def _find_clip(self):
         try:
@@ -58,6 +61,31 @@ class BlenderMetricsProvider(MetricsProvider):
     def fetch_tracking_metrics(self, roi_id: str, frame: int) -> TrackingMetrics:
         t0 = time.time()
         bpy, clip = self._find_clip()
+
+        # Optional: Vor der Auswertung einen Tracking-Schritt im CLIP-Editor ausführen,
+        # damit frisch gesetzte Marker nicht direkt von der Micro-Validierung entfernt werden
+        # und Marker-Arrays/Flags für das aktuelle Frame konsistent sind.
+        # Der Aufruf ist defensiv und wird per Cache nur einmal pro (roi_id, frame) versucht.
+        try:
+            key = f"{int(roi_id)}:{int(frame)}"
+        except Exception:
+            key = f"{str(roi_id)}:{int(frame)}"
+        try:
+            now = time.time()
+            last = float(self._pretrack_cache.get(key, 0.0))
+            # nur wenn in den letzten 0.25s kein Versuch stattfand
+            if now - last > 0.25:
+                self._pretrack_cache[key] = now
+                try:
+                    from .tracking_online import run_single_frame_track
+                    # Dieser Helper kümmert sich um CLIP_EDITOR-Override und Selektion
+                    ok = bool(run_single_frame_track(roi_id, frame=int(frame)))
+                    self._log(f"pretrack run_single_frame_track roi_id={roi_id} frame={frame} -> {ok}")
+                except Exception as e:
+                    # Leise weiterarbeiten; außerhalb von Blender oder ohne gültigen Kontext
+                    self._log(f"pretrack skipped: {e}")
+        except Exception:
+            pass
 
         # Synthetic fallback values (kept compatible with TrackingMetrics shape)
         fallback = {
