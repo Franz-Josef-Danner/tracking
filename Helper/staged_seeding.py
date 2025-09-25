@@ -206,19 +206,34 @@ def _persist_markers(context, clip, markers: list[dict], roi_id: int | None = No
                     t = tr_coll.new() if hasattr(tr_coll, "new") else None
                 if t is not None:
                     try:
-                        # Marker erzeugen
+                        # Marker erzeugen – bevorzugt mit insert_frame(frame, co=co)
                         mk = None
-                        if hasattr(t.markers, "insert"):
-                            mk = t.markers.insert(frame)
-                        elif hasattr(t.markers, "new"):
-                            mk = t.markers.new(frame)
+                        if hasattr(t.markers, "insert_frame"):
+                            try:
+                                mk = t.markers.insert_frame(frame, co=co)
+                            except Exception:
+                                mk = None
                         if mk is None:
-                            if hasattr(t.markers, "find_frame"):
-                                mk = t.markers.find_frame(frame)
-                            else:
-                                mk = t.markers[-1] if len(t.markers) > 0 else None
+                            if hasattr(t.markers, "insert"):
+                                mk = t.markers.insert(frame)
+                                try:
+                                    mk.co = co  # Fallback für ältere Blender-Versionen ≤ 3.x
+                                except Exception:
+                                    pass
+                            elif hasattr(t.markers, "new"):
+                                mk = t.markers.new(frame)
+                                try:
+                                    mk.co = co
+                                except Exception:
+                                    pass
+                            if mk is None:
+                                if hasattr(t.markers, "find_frame"):
+                                    mk = t.markers.find_frame(frame)
+                                else:
+                                    mk = t.markers[-1] if len(t.markers) > 0 else None
+
                         if mk is not None:
-                            # Log intent and actual assignment for diagnostics
+                            # Log intent und spätere Verifikation des gesetzten co
                             try:
                                 from .telemetry import log_batch
                                 log_batch(
@@ -228,15 +243,8 @@ def _persist_markers(context, clip, markers: list[dict], roi_id: int | None = No
                                 )
                             except Exception:
                                 pass
-                            mk.co = co
-                            # Defensive: re-assign once more (some Blender versions
-                            # require writeback via property setter) and attempt a
-                            # fallback via the track's markers collection if the
-                            # value wasn't accepted.
-                            try:
-                                mk.co = (float(co[0]), float(co[1]))
-                            except Exception:
-                                pass
+
+                            # Verifizieren, was tatsächlich gesetzt wurde, und Telemetrie schreiben
                             try:
                                 actual = None
                                 try:
@@ -254,7 +262,7 @@ def _persist_markers(context, clip, markers: list[dict], roi_id: int | None = No
                                         mismatch = True
 
                                 if mismatch:
-                                    # try writing to the last marker object of this track
+                                    # Versuch, den zuletzt erzeugten Marker direkt zu setzen (Fallback)
                                     try:
                                         if hasattr(t, "markers") and len(t.markers) > 0:
                                             try:
@@ -263,7 +271,7 @@ def _persist_markers(context, clip, markers: list[dict], roi_id: int | None = No
                                                 pass
                                     except Exception:
                                         pass
-                                    # If still mismatched, log an explicit diagnostic
+                                    # Mismatch explizit loggen
                                     try:
                                         from .telemetry import log_batch
                                         log_batch("staged_seeding", "marker_persist.mismatch", {"roi_id": roi_id, "index": i, "pixel_xy": (x, y), "co_set": co, "co_actual_before": actual, "frame": frame, "track_name": getattr(t, 'name', None)})
@@ -284,6 +292,7 @@ def _persist_markers(context, clip, markers: list[dict], roi_id: int | None = No
                                     log_batch("staged_seeding", "marker_persist.done.error", {"roi_id": roi_id, "index": i, "pixel_xy": (x, y), "co_set": co, "frame": frame})
                                 except Exception:
                                     pass
+
                             # Explizit Pattern/Search setzen, damit Größen im UI sichtbar sind
                             _apply_marker_areas(mk, int(w), int(h), p_sz, s_sz)
                             # Selektion setzen
