@@ -136,3 +136,28 @@ def draw_tile_overlay_callback(self, context):
             batch = batch_for_shader(shader, 'POINTS', {"pos": pts})
             gpu.state.point_size_set(4.0)
             batch.draw(shader)
+
+    # Trajektorien (türkis) zeichnen
+    tracks = overlay.get("tracks", [])
+    if tracks:
+        shader = gpu.shader.from_builtin('2D_UNIFORM_COLOR')
+        shader.bind()
+        shader.uniform_float("color", (0.0, 1.0, 0.4, 0.6))
+        gpu.state.line_width_set(1.5)
+        for traj in tracks:
+            coords = []
+            for p in traj:
+                if p is None:
+                    # Lücke: aktuellen Streifen zeichnen und neu beginnen
+                    if len(coords) >= 2:
+                        batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": coords})
+                        batch.draw(shader)
+                    coords = []
+                    continue
+                x, y = p
+                rx, ry = rv2d.view_to_region(x, y, clip=False)
+                if None not in (rx, ry):
+                    coords.append((rx, ry))
+            if len(coords) >= 2:
+                batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": coords})
+                batch.draw(shader)

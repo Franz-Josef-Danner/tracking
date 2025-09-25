@@ -21,3 +21,4 @@ class STRM_PT_Panel(bpy.types.Panel):
         layout.separator()
         layout.operator("clip.strm_select_rois", icon='SELECT_SET')
         layout.operator("clip.strm_seed_features", icon='PARTICLES')
+        layout.operator("clip.strm_track_markers", icon='TRACKING')

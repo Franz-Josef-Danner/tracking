@@ -215,3 +215,82 @@ def detect_features_in_roi(gray_frame, roi, max_features=100, quality=0.01, min_
             results.append((float(gx_tl), float(gy_bl)))
 
     return results
+
+
+def extract_grayscale_frames_range(clip, start_frame, count):
+    """Extrahiere eine Folge von Grayscale-Frames als uint8 [0,255]."""
+    size = clip.size
+    frames = []
+    for i in range(int(count)):
+        f = int(start_frame) + i
+        try:
+            img = clip.frame_to_image(f)
+        except Exception:
+            img = None
+        if img is None:
+            continue
+        pixels = np.array(img.pixels[:], dtype=np.float32).reshape((size[1], size[0], 4))
+        gray = 0.2126 * pixels[..., 0] + 0.7152 * pixels[..., 1] + 0.0722 * pixels[..., 2]
+        frames.append(np.clip(gray * 255.0, 0, 255).astype(np.uint8))
+    return frames
+
+
+def track_markers_lk(gray_frames, initial_points, lk_params=None):
+    """Tracke Marker über eine Sequenz von Frames mit Lucas-Kanade Optical Flow.
+    initial_points erwartet in Overlay-Koordinaten (unten-links Ursprung),
+    Rückgabe: Liste von Trajektorien in Overlay-Koordinaten (BL), None für Ausfall.
+    """
+    if lk_params is None:
+        lk_params = dict(
+            winSize=(15, 15),
+            maxLevel=2,
+            criteria=(1 | 2, 10, 0.03),  # cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT
+        )
+
+    # Lazy import
+    try:
+        import cv2  # type: ignore
+    except Exception as e:
+        raise RuntimeError("OpenCV (cv2) ist nicht installiert: " + str(e))
+
+    num_frames = len(gray_frames)
+    if num_frames < 2 or not initial_points:
+        return []
+
+    h, w = gray_frames[0].shape[:2]
+
+    # BL -> TL für LK
+    pts_tl = []
+    for (x_bl, y_bl) in initial_points:
+        x_tl = float(x_bl)
+        y_tl = float(h) - float(y_bl)
+        pts_tl.append((x_tl, y_tl))
+
+    p0 = np.array(pts_tl, dtype=np.float32).reshape(-1, 1, 2)
+    tracks = [[(float(x), float(y))] for (x, y) in initial_points]
+
+    prev_img = gray_frames[0]
+    for i in range(1, num_frames):
+        next_img = gray_frames[i]
+
+        p1, st, err = cv2.calcOpticalFlowPyrLK(prev_img, next_img, p0, None, **lk_params)
+        if p1 is None or st is None:
+            # mark all as failed from now on
+            for t in tracks:
+                t.append(None)
+            break
+
+        # Update Tracks
+        for idx in range(p1.shape[0]):
+            succ = bool(st[idx][0])
+            if succ:
+                x_tl, y_tl = float(p1[idx][0][0]), float(p1[idx][0][1])
+                x_bl, y_bl = x_tl, float(h) - y_tl
+                tracks[idx].append((x_bl, y_bl))
+            else:
+                tracks[idx].append(None)
+
+        p0 = p1
+        prev_img = next_img
+
+    return tracks

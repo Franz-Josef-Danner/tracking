@@ -6,6 +6,8 @@ from .strm_utils import (
     select_top_tiles_as_rois,
     extract_single_grayscale_frame,
     detect_features_in_roi,
+    extract_grayscale_frames_range,
+    track_markers_lk,
 )
 from .strm_overlay import draw_tile_overlay_callback, get_overlay_state
 
@@ -224,6 +226,51 @@ class STRM_OT_SeedFeatures(bpy.types.Operator):
                         region.tag_redraw()
 
         self.report({'INFO'}, f"{len(all_points)} Features gesät.")
+        return {'FINISHED'}
+
+
+class STRM_OT_TrackMarkers(bpy.types.Operator):
+    bl_idname = "clip.strm_track_markers"
+    bl_label = "STRM: Track Features"
+    bl_description = "Trackt Marker über mehrere Frames (Lucas-Kanade)"
+
+    num_frames = bpy.props.IntProperty(name="Frames", default=10, min=2, max=200)
+
+    def execute(self, context):
+        scene = context.scene
+        clip = context.edit_movieclip
+        if not clip:
+            self.report({'ERROR'}, "Kein MovieClip ausgewählt.")
+            return {'CANCELLED'}
+
+        overlay = get_overlay_state(scene)
+        markers = overlay.get("markers", [])
+        if not markers:
+            self.report({'ERROR'}, "Keine Marker zum Tracken.")
+            return {'CANCELLED'}
+
+        start_frame = scene.frame_current
+        frames = extract_grayscale_frames_range(clip, start_frame, self.num_frames)
+        if len(frames) < 2:
+            self.report({'ERROR'}, "Nicht genügend Frames geladen.")
+            return {'CANCELLED'}
+
+        try:
+            tracks = track_markers_lk(frames, markers)
+        except RuntimeError as e:
+            self.report({'ERROR'}, str(e))
+            return {'CANCELLED'}
+
+        overlay["tracks"] = tracks
+
+        # Redraw
+        for area in context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        region.tag_redraw()
+
+        self.report({'INFO'}, f"{len(tracks)} Marker getrackt über {len(frames)} Frames.")
         return {'FINISHED'}
 
 
