@@ -73,12 +73,17 @@ def analyze_strm(frames, tile_rows=4, tile_cols=6):
                 div = 0.0
                 flicker = 0.0
 
+            # Koordinaten für Overlay (Blender-View: Ursprung unten links)
+            y0_bl = float(h - y1)
+            y1_bl = float(h - y0)
+
             results.append({
                 'texture': texture,
                 'motion': motion,
                 'div': div,
                 'flicker': flicker,
                 'tile': (ty, tx),
+                'coords': (float(x0), y0_bl, float(x1), y1_bl),
             })
 
     return results

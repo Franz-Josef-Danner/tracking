@@ -12,3 +12,9 @@ class STRM_PT_Panel(bpy.types.Panel):
         layout = self.layout
         layout.operator("clip.strm_analyze", icon='VIEWZOOM')
         layout.operator("clip.strm_toggle_overlay", icon='GRID')
+        row = layout.row(align=True)
+        row.operator("clip.strm_set_overlay_score", text="Motion").score_type = 'motion'
+        row.operator("clip.strm_set_overlay_score", text="Texture").score_type = 'texture'
+        row = layout.row(align=True)
+        row.operator("clip.strm_set_overlay_score", text="Divergence").score_type = 'div'
+        row.operator("clip.strm_set_overlay_score", text="Flicker").score_type = 'flicker'

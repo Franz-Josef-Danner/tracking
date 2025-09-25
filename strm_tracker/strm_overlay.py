@@ -33,34 +33,62 @@ def draw_tile_overlay_callback(self, context):
     if not tiles:
         return
 
-    region = context.region
+    score_type = overlay.get("score_type", "motion")
+
     rv2d = context.region.view2d
 
-    # Prepare shader
-    shader = gpu.shader.from_builtin('2D_UNIFORM_COLOR')
-    shader.bind()
-    shader.uniform_float("color", (1.0, 1.0, 0.0, 0.9))  # yellow
+    def normalize_score(v, vmin, vmax):
+        denom = max(1e-8, (vmax - vmin))
+        return max(0.0, min(1.0, (v - vmin) / denom))
 
-    # Build line segments for all tile rectangles
-    coords = []
-    for x0, y0, x1, y1 in tiles:
-        # Convert from image/view space (pixels) to region pixels
+    def colormap(score):
+        # Rot -> Gelb -> Grün, Alpha ~ 0.4
+        if score < 0.5:
+            return (1.0, score * 2.0, 0.0, 0.4)
+        else:
+            return (2.0 * (1.0 - score), 1.0, 0.0, 0.4)
+
+    # Score-Range bestimmen
+    scores = [float(t.get(score_type, 0.0)) for t in tiles]
+    vmin = min(scores) if scores else 0.0
+    vmax = max(scores) if scores else 1.0
+
+    tri_shader = gpu.shader.from_builtin('2D_UNIFORM_COLOR')
+    line_shader = gpu.shader.from_builtin('2D_UNIFORM_COLOR')
+
+    gpu.state.blend_set('ALPHA')
+    gpu.state.line_width_set(1.0)
+
+    for t in tiles:
+        x0, y0, x1, y1 = t.get('coords', (0.0, 0.0, 0.0, 0.0))
+        # Koordinaten aus View (Bildpixel) in Region-Pixel
         rx0, ry0 = rv2d.view_to_region(x0, y0, clip=False)
         rx1, ry1 = rv2d.view_to_region(x1, y1, clip=False)
-        if rx0 is None or ry0 is None or rx1 is None or ry1 is None:
+        if None in (rx0, ry0, rx1, ry1):
             continue
-        coords.extend([
+
+        s = normalize_score(float(t.get(score_type, 0.0)), vmin, vmax)
+        color = colormap(s)
+
+        rect_coords = [(rx0, ry0), (rx1, ry0), (rx1, ry1), (rx0, ry1)]
+        indices = ((0, 1, 2), (2, 3, 0))
+
+        # Füllung
+        tri_shader.bind()
+        tri_shader.uniform_float("color", color)
+        tri_batch = batch_for_shader(tri_shader, 'TRIS', {"pos": rect_coords}, indices=indices)
+        tri_batch.draw(tri_shader)
+
+        # Rahmen
+        line_coords = [
             (rx0, ry0), (rx1, ry0),
             (rx1, ry0), (rx1, ry1),
             (rx1, ry1), (rx0, ry1),
             (rx0, ry1), (rx0, ry0),
-        ])
+        ]
+        line_shader.bind()
+        line_shader.uniform_float("color", (0.0, 0.0, 0.0, 0.35))
+        line_batch = batch_for_shader(line_shader, 'LINES', {"pos": line_coords})
+        line_batch.draw(line_shader)
 
-    if not coords:
-        return
-
-    batch = batch_for_shader(shader, 'LINES', {"pos": coords})
-    gpu.state.blend_set('ALPHA')
-    gpu.state.line_width_set(1.0)
-    batch.draw(shader)
     gpu.state.blend_set('NONE')

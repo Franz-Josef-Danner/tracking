@@ -30,6 +30,12 @@ class STRM_OT_Analyze(bpy.types.Operator):
             self.report({'ERROR'}, f"Fehler bei STRM-Analyse: {e}")
             return {'CANCELLED'}
 
+        # Ergebnisse in Szene speichern (für Overlay)
+        overlay = get_overlay_state(context.scene)
+        overlay["tiles"] = tile_data
+        overlay["enabled"] = True
+        overlay["score_type"] = overlay.get("score_type", "motion")
+
         print("\n[STRM-Ausgabe]")
         for idx, t in enumerate(tile_data):
             print(
@@ -79,6 +85,32 @@ class STRM_OT_ToggleOverlay(bpy.types.Operator):
                 _draw_handle = None
 
         # Region neu zeichnen
+        for area in context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        region.tag_redraw()
+        return {'FINISHED'}
+
+
+class STRM_OT_SetOverlayScore(bpy.types.Operator):
+    bl_idname = "clip.strm_set_overlay_score"
+    bl_label = "Set STRM Overlay Score"
+    bl_description = "Wählt den Score-Typ für das farbige Overlay"
+
+    items = [
+        ('motion', "Motion", "Bewegung"),
+        ('texture', "Texture", "Textur"),
+        ('div', "Divergence", "Divergenz"),
+        ('flicker', "Flicker", "Helligkeitsschwankung"),
+    ]
+    score_type = bpy.props.EnumProperty(name="Score", items=items, default='motion')
+
+    def execute(self, context):
+        overlay = get_overlay_state(context.scene)
+        overlay["score_type"] = self.score_type
+
+        # Redraw
         for area in context.screen.areas:
             if area.type == 'CLIP_EDITOR':
                 for region in area.regions:
