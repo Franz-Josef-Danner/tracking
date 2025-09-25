@@ -10,8 +10,8 @@ class STRM_PT_Panel(bpy.types.Panel):
     bl_category = 'STRM'
 
     def draw(self, context):
-        # Overlay-State sicherstellen (falls noch nicht vorhanden)
-        get_overlay_state(context.scene)
+        # Im Draw-Kontext niemals in ID-Properties schreiben
+        get_overlay_state(context.scene, ensure=False)
         layout = self.layout
         layout.operator("clip.strm_analyze", icon='VIEWZOOM')
         layout.operator("clip.strm_toggle_overlay", icon='GRID')

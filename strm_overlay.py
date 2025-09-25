@@ -3,16 +3,33 @@ import gpu
 from gpu_extras.batch import batch_for_shader
 
 
-def get_overlay_state(scene: bpy.types.Scene):
-    """Get or initialize overlay state on the scene as an IDProperty dict."""
+def get_overlay_state(scene: bpy.types.Scene, ensure: bool = True):
+    """Holt den Overlay-State.
+    ensure=True: legt ihn an/ergänzt fehlende Keys (nur außerhalb von Draw-Kontexten verwenden!)
+    ensure=False: gibt nur zurück (oder temporären Fallback), ohne ID-Properties zu schreiben.
+    """
     ov = scene.get("strm_overlay")
     if not isinstance(ov, dict):
-        ov = {"enabled": False, "tiles": []}
-        scene["strm_overlay"] = ov
-    else:
-        # ensure expected keys exist
-        ov.setdefault("enabled", False)
-        ov.setdefault("tiles", [])
+        default = {"enabled": False, "tiles": []}
+        if ensure:
+            try:
+                scene["strm_overlay"] = default
+                return scene["strm_overlay"]
+            except Exception:
+                # In Draw-Kontext oder wenn Schreiben nicht erlaubt ist
+                return default
+        else:
+            return default
+    # vorhandenes Dict
+    if ensure:
+        # fehlende Keys ergänzen (schreibt in ID-Props; nur außerhalb von Draw-Kontexten nutzen)
+        try:
+            if "enabled" not in ov:
+                ov["enabled"] = False
+            if "tiles" not in ov:
+                ov["tiles"] = []
+        except Exception:
+            pass
     return ov
 
 
@@ -25,7 +42,7 @@ def draw_tile_overlay_callback(self, context):
     if not clip:
         return
 
-    overlay = get_overlay_state(context.scene)
+    overlay = get_overlay_state(context.scene, ensure=False)
     if not overlay.get("enabled"):
         return
 
