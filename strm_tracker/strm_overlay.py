@@ -197,7 +197,7 @@ def draw_tile_overlay_callback(self, context):
             from .strm_utils import correspondences_from_tracks as _corr, apply_affine_2x3 as _aff, apply_homography as _hom
             A, B, _ = _corr(tracks, f0, f1)
             if A is not None and len(A) == len(inmask):
-                if mtype in ("translation", "similarity", "affine"):
+                if mtype in ("translation", "similarity", "affine", "loc", "locrot", "lrs"):
                     pred = _aff(M[:2, :], A)
                 else:
                     pred = _hom(M, A)

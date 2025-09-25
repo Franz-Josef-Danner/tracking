@@ -602,3 +602,381 @@ def fit_motion_models_all(A, B, lam=0.12, ransac_thresh=3.0, min_inliers=8):
 
     best = choose_best_model(fits, lam=lam, min_inliers=min_inliers)
     return best, fits
+
+
+# =====================
+# Promotion-Engine (Levels)
+# =====================
+
+# ---------- Level-Definition ----------
+MODEL_LEVELS = ["loc", "locrot", "lrs", "affine", "perspective"]
+
+
+def level_index(level):
+    return MODEL_LEVELS.index(level)
+
+
+def kappa_for_level(level):
+    # κ={1,2,3,4,6}
+    return {"loc": 1, "locrot": 2, "lrs": 3, "affine": 4, "perspective": 6}[level]
+
+
+# ---------- Matrix-Decomposition/Build ----------
+def decompose_affine_2x3(M2x3):
+    """
+    Zerlege 2x3-Affine in Rotation (deg), Scale (sx, sy), Shear (phi_shear).
+    """
+    import numpy as _np
+
+    A = M2x3[:, :2].astype(_np.float64)  # 2x2
+    # Polar Decomp approximiert via SVD: A = U * diag(S) * V^T; R = U*V^T
+    U, S, Vt = _np.linalg.svd(A)
+    R = U @ Vt
+    if _np.linalg.det(R) < 0:
+        Vt[1, :] *= -1
+        R = U @ Vt
+        S = _np.array([S[0], -S[1]])
+    rot_rad = _np.arctan2(R[1, 0], R[0, 0])
+    rot_deg = _np.degrees(rot_rad)
+
+    # Symmetrischer Anteil (Skalierung+Shear)
+    Sym = Vt.T @ _np.diag(S) @ Vt
+    sx = Sym[0, 0] ** 0.5 if Sym[0, 0] > 0 else 1.0
+    sy = Sym[1, 1] ** 0.5 if Sym[1, 1] > 0 else 1.0
+    # Shear-Proxy: Off-Diagonal relativ zur Scale
+    shear = Sym[0, 1] / max(1e-6, (sx * sy))
+
+    return float(rot_deg), float(sx), float(sy), float(shear)
+
+
+def force_locrot_from_similarity(M2x3):
+    """
+    Nimmt eine Similarity-Schätzung (Rot+Scale) und erzeugt Rot-only (Scale=1) mit gleicher Translation.
+    """
+    import numpy as _np
+
+    rot_deg, sx, sy, shear = decompose_affine_2x3(M2x3)
+    theta = _np.radians(rot_deg)
+    R = _np.array([[_np.cos(theta), -_np.sin(theta)],
+                   [_np.sin(theta),  _np.cos(theta)]], dtype=_np.float32)
+    t = M2x3[:, 2:3].astype(_np.float32)
+    M_locrot = _np.concatenate([R, t], axis=1)  # 2x3
+    return M_locrot
+
+
+# ---------- Fit pro Level (nutzt vorhandene Fits als Basis) ----------
+def fit_loc(A, B):
+    import numpy as _np
+
+    A = _np.asarray(A, dtype=_np.float32)
+    B = _np.asarray(B, dtype=_np.float32)
+    if A.shape[0] == 0:
+        return None
+    d = _np.mean(B - A, axis=0)
+    pred = A + d
+    rms = float(_np.sqrt(_np.mean(_np.sum((pred - B) ** 2, axis=1))))
+    inliers = _np.ones((A.shape[0],), dtype=bool)
+    M33 = _np.array([[1, 0, d[0]], [0, 1, d[1]], [0, 0, 1]], dtype=_np.float32)
+    return {"level": "loc", "M": M33, "inliers": inliers, "rms": rms}
+
+
+def fit_locrot(A, B, thresh=3.0):
+    # erst Similarity schätzen, dann Scale→1 zwingen und neu bewerten
+    try:
+        import cv2  # type: ignore
+    except Exception:
+        return None
+    import numpy as _np
+
+    M, inl = cv2.estimateAffinePartial2D(_np.asarray(A, _np.float32), _np.asarray(B, _np.float32),
+                                         method=cv2.RANSAC,
+                                         ransacReprojThreshold=float(thresh),
+                                         confidence=0.99, maxIters=2000, refineIters=10)
+    if M is None:
+        return None
+    M_lr = force_locrot_from_similarity(M)
+    homA = _np.concatenate([_np.asarray(A, _np.float32), _np.ones((_np.asarray(A).shape[0], 1), _np.float32)], axis=1)
+    pred = (M_lr @ homA.T).T
+    inliers = _np.linalg.norm(pred - _np.asarray(B, _np.float32), axis=1) < (float(thresh) * 1.25)
+    rms = float(_np.sqrt(_np.mean(_np.sum((pred[inliers] - _np.asarray(B, _np.float32)[inliers]) ** 2, axis=1)))) if _np.any(inliers) else _np.inf
+    M33 = _np.array([[M_lr[0, 0], M_lr[0, 1], M_lr[0, 2]],
+                     [M_lr[1, 0], M_lr[1, 1], M_lr[1, 2]],
+                     [0, 0, 1]], dtype=_np.float32)
+    return {"level": "locrot", "M": M33, "inliers": inliers, "rms": rms}
+
+
+def fit_lrs(A, B, thresh=3.0):
+    try:
+        import cv2  # type: ignore
+    except Exception:
+        return None
+    import numpy as _np
+
+    M, inl = cv2.estimateAffinePartial2D(_np.asarray(A, _np.float32), _np.asarray(B, _np.float32),
+                                         method=cv2.RANSAC,
+                                         ransacReprojThreshold=float(thresh),
+                                         confidence=0.99, maxIters=2000, refineIters=10)
+    if M is None or inl is None:
+        return None
+    inliers = inl.ravel().astype(bool)
+    homA = _np.concatenate([_np.asarray(A, _np.float32), _np.ones((_np.asarray(A).shape[0], 1), _np.float32)], axis=1)
+    pred = (M @ homA.T).T
+    rms = float(_np.sqrt(_np.mean(_np.sum((pred[inliers] - _np.asarray(B, _np.float32)[inliers]) ** 2, axis=1)))) if _np.any(inliers) else _np.inf
+    M33 = _np.array([[M[0, 0], M[0, 1], M[0, 2]],
+                     [M[1, 0], M[1, 1], M[1, 2]],
+                     [0, 0, 1]], dtype=_np.float32)
+    return {"level": "lrs", "M": M33, "inliers": inliers, "rms": rms}
+
+
+def fit_affine_level(A, B, thresh=3.0):
+    try:
+        import cv2  # type: ignore
+    except Exception:
+        return None
+    import numpy as _np
+
+    M, inl = cv2.estimateAffine2D(_np.asarray(A, _np.float32), _np.asarray(B, _np.float32),
+                                  method=cv2.RANSAC,
+                                  ransacReprojThreshold=float(thresh),
+                                  confidence=0.99, maxIters=2000, refineIters=10)
+    if M is None or inl is None:
+        return None
+    inliers = inl.ravel().astype(bool)
+    homA = _np.concatenate([_np.asarray(A, _np.float32), _np.ones((_np.asarray(A).shape[0], 1), _np.float32)], axis=1)
+    pred = (M @ homA.T).T
+    rms = float(_np.sqrt(_np.mean(_np.sum((pred[inliers] - _np.asarray(B, _np.float32)[inliers]) ** 2, axis=1)))) if _np.any(inliers) else _np.inf
+    M33 = _np.array([[M[0, 0], M[0, 1], M[0, 2]],
+                     [M[1, 0], M[1, 1], M[1, 2]],
+                     [0, 0, 1]], dtype=_np.float32)
+    return {"level": "affine", "M": M33, "inliers": inliers, "rms": rms}
+
+
+def fit_perspective_level(A, B, thresh=3.5):
+    try:
+        import cv2  # type: ignore
+    except Exception:
+        return None
+    import numpy as _np
+
+    A = _np.asarray(A, _np.float32)
+    B = _np.asarray(B, _np.float32)
+    if A.shape[0] < 4:
+        return None
+    H, inl = cv2.findHomography(A, B, method=cv2.RANSAC,
+                                ransacReprojThreshold=float(thresh),
+                                maxIters=5000, confidence=0.995)
+    if H is None or inl is None:
+        return None
+    inliers = inl.ravel().astype(bool)
+    homA = _np.concatenate([A, _np.ones((A.shape[0], 1), _np.float32)], axis=1)
+    proj = (H @ homA.T).T
+    proj = proj[:, :2] / _np.clip(proj[:, 2:3], 1e-8, None)
+    rms = float(_np.sqrt(_np.mean(_np.sum((proj[inliers] - B[inliers]) ** 2, axis=1)))) if _np.any(inliers) else _np.inf
+    return {"level": "perspective", "M": H.astype(_np.float32), "inliers": inliers, "rms": rms}
+
+
+# ---------- S-Score ----------
+def s_score(rms, level, lam=0.12):
+    return float(rms + float(lam) * kappa_for_level(level))
+
+
+# ---------- Indikatoren (Rot/Scale/Shear/Parallax) ----------
+def indicators_for_fit(fit, A, B, img_wh=None):
+    import numpy as _np
+
+    lvl = fit["level"]
+    M = fit["M"]
+    nin = int(_np.sum(fit["inliers"]))
+    tot = A.shape[0]
+    outlier_drop_ratio = 1.0 - (nin / max(1, tot))
+
+    rot_deg = 0.0
+    scale = 1.0
+    shear_phi = 0.0
+    if lvl in ("locrot", "lrs", "affine"):
+        M2 = M[:2, :]
+        rdeg, sx, sy, shear = decompose_affine_2x3(M2)
+        rot_deg = abs(rdeg)
+        scale = 0.5 * (sx + sy)
+        shear_phi = abs(shear)
+
+    # Parallax-Proxy: Korrelation Residuallänge mit Radius zum Bildzentrum
+    parallax = 0.0
+    try:
+        if img_wh is not None:
+            w, h = img_wh
+            cx, cy = w * 0.5, h * 0.5
+            A_np = _np.asarray(A, _np.float32)
+            B_np = _np.asarray(B, _np.float32)
+            if lvl in ("loc", "locrot", "lrs", "affine"):
+                pred = (M[:2, :] @ _np.concatenate([A_np, _np.ones((A_np.shape[0], 1), _np.float32)], axis=1).T).T
+            else:
+                homA = _np.concatenate([A_np, _np.ones((A_np.shape[0], 1), _np.float32)], axis=1)
+                proj = (M @ homA.T).T
+                pred = proj[:, :2] / _np.clip(proj[:, 2:3], 1e-8, None)
+            res = _np.linalg.norm(pred - B_np, axis=1)
+            rad = _np.sqrt((A_np[:, 0] - cx) ** 2 + (A_np[:, 1] - cy) ** 2)
+            if _np.std(res) > 1e-6 and _np.std(rad) > 1e-6:
+                parallax = float(_np.corrcoef(res, rad)[0, 1])
+    except Exception:
+        parallax = 0.0
+
+    return {
+        "nin": nin, "tot": tot,
+        "outlier_drop": outlier_drop_ratio,
+        "rot_deg": float(rot_deg),
+        "scale": float(scale),
+        "shear_phi": float(shear_phi),
+        "parallax": float(parallax),
+    }
+
+
+# ---------- Promotion Engine ----------
+def get_model_state(scene, window_len=30):
+    st = scene.get("strm_model_state")
+    if not st:
+        st = {
+            "current_level": "loc",
+            "history": [],  # list of dicts with: level,S,rms,nin,tot,rot,scale,shear,parallax
+            "promote_counter": 0,
+            "rollback_counter": 0,
+            "cooldown": 0,
+        }
+        scene["strm_model_state"] = st
+    return st
+
+
+def append_history(state, entry, maxlen=40):
+    hist = state.get("history", [])
+    hist.append(entry)
+    if len(hist) > maxlen:
+        del hist[0]
+    state["history"] = hist
+
+
+def rolling_sigma(vals, k=3):
+    vals = [v for v in vals if v is not None]
+    if len(vals) < k:
+        return None
+    import numpy as _np
+    arr = _np.array(vals[-k:], dtype=_np.float32)
+    return float(_np.std(arr))
+
+
+def promotion_step(A, B, img_wh, scene, lam=0.12, ransac_thresh=3.0):
+    """
+    Führt einen Promotionsschritt durch:
+    - fitte alle Levels (sofern möglich)
+    - evaluiere ΔS und Indikatoren
+    - update current_level mit Hysterese/Rollback/Cooldown
+    """
+    import numpy as _np
+
+    st = get_model_state(scene)
+    cur = st["current_level"]
+
+    # Fit-Kandidaten
+    candidates = []
+    loc = fit_loc(A, B);                   candidates.append(loc)
+    locrot = fit_locrot(A, B, ransac_thresh);  candidates.append(locrot)
+    lrs = fit_lrs(A, B, ransac_thresh);        candidates.append(lrs)
+    aff = fit_affine_level(A, B, ransac_thresh); candidates.append(aff)
+    hom = fit_perspective_level(A, B, ransac_thresh * 1.25); candidates.append(hom)
+
+    fits = {f["level"]: f for f in candidates if f is not None and _np.sum(f["inliers"]) >= 8}
+    if not fits:
+        return {}, st
+    if cur not in fits:
+        # Fallback: setze auf einfachstes verfügbares
+        cur = sorted(fits.keys(), key=lambda L: level_index(L))[0]
+        st["current_level"] = cur
+
+    # Scores + Indikatoren
+    stats = {}
+    for lvl, f in fits.items():
+        S = s_score(f["rms"], lvl, lam=lam)
+        ind = indicators_for_fit(f, A, B, img_wh)
+        stats[lvl] = {"fit": f, "S": S, **ind}
+
+    # Aktuelle Kennzahlen
+    curS = stats[cur]["S"]
+    append_history(st, {"level": cur, "S": curS, "rms": stats[cur]["fit"]["rms"],
+                        "nin": stats[cur]["nin"], "tot": stats[cur]["tot"],
+                        "rot": stats[cur].get("rot_deg"), "scale": stats[cur].get("scale"),
+                        "shear": stats[cur].get("shear_phi"), "parallax": stats[cur].get("parallax")})
+
+    # Cooldown?
+    if st.get("cooldown", 0) > 0:
+        st["cooldown"] = max(0, st["cooldown"] - 1)
+        return stats, st  # keine Promotion während Cooldown
+
+    # Helper: ΔS zum nächsten Level
+    def try_promote(target, dS_thresh, extra_ok):
+        if target in stats:
+            dS = curS - stats[target]["S"]
+            return (dS >= dS_thresh) or extra_ok
+        return False
+
+    next_level = None
+
+    # ——— Promotion-Regeln ———
+    if cur == "loc":
+        # ΔS≥0.3 oder σ_rot≥0.5° (3 Fenster)
+        sigma_rot = rolling_sigma([h.get("rot") for h in st["history"]], k=3)
+        cond_extra = (sigma_rot is not None and sigma_rot >= 0.5)
+        if try_promote("locrot", 0.30, cond_extra):
+            next_level = "locrot"
+    elif cur == "locrot":
+        # ΔS≥0.25 oder σ_scale≥1.5 % (3 Fenster)
+        sigma_scale = rolling_sigma([h.get("scale") for h in st["history"]], k=3)
+        cond_extra = (sigma_scale is not None and (sigma_scale * 100.0) >= 1.5)
+        if try_promote("lrs", 0.25, cond_extra):
+            next_level = "lrs"
+    elif cur == "lrs":
+        # ΔS≥0.20 oder ϕ_shear≥0.15 UND Outlier↓≥10 %
+        if "affine" in stats:
+            dS = curS - stats["affine"]["S"]
+            out_drop = stats["affine"]["outlier_drop"] - stats["lrs"]["outlier_drop"]
+            shear_ok = stats["affine"]["shear_phi"] >= 0.15
+            if (dS >= 0.20) or (shear_ok and out_drop >= 0.10):
+                next_level = "affine"
+    elif cur == "affine":
+        # ΔS≥0.20 UND Parallaxe hoch UND Outlier↓≥5 %
+        if "perspective" in stats:
+            dS = curS - stats["perspective"]["S"]
+            out_drop = stats["perspective"]["outlier_drop"] - stats["affine"]["outlier_drop"]
+            parallax_ok = stats["perspective"].get("parallax", 0.0) >= 0.3
+            if (dS >= 0.20) and parallax_ok and (out_drop >= 0.05):
+                next_level = "perspective"
+
+    if next_level:
+        st["promote_counter"] = st.get("promote_counter", 0) + 1
+        # Hysterese: 3 Fenster positiv für Stufen <affine>, 2 Fenster für affine→persp
+        need = 3 if next_level in ("locrot", "lrs", "affine") else 2
+        if st["promote_counter"] >= need:
+            st["current_level"] = next_level
+            st["promote_counter"] = 0
+            st["rollback_counter"] = 0
+            st["cooldown"] = 15  # min. Cooldown (Frames)
+    else:
+        # kein Upgrade → Counter zurücksetzen
+        st["promote_counter"] = 0
+
+    # ——— Rollback: wenn kein Benefit (2 Fenster) ———
+    # prüfe, ob ein einfacheres Level aktuell klar besseren S liefert
+    simpler_levels = [L for L in MODEL_LEVELS if level_index(L) < level_index(st["current_level"]) and L in stats]
+    if simpler_levels:
+        best_simple = min(simpler_levels, key=lambda L: stats[L]["S"])
+        dS_back = stats[best_simple]["S"] - stats[st["current_level"]]["S"]
+        # Wenn S_current nicht besser als einfacher Level (dS_back >= 0) über 2 Fenster -> rollback
+        if dS_back >= -1e-6:
+            st["rollback_counter"] = st.get("rollback_counter", 0) + 1
+            if st["rollback_counter"] >= 2:
+                st["current_level"] = best_simple
+                st["rollback_counter"] = 0
+                st["promote_counter"] = 0
+                st["cooldown"] = 10
+        else:
+            st["rollback_counter"] = 0
+
+    return stats, st

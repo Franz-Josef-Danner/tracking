@@ -12,6 +12,7 @@ from .strm_utils import (
     filter_tracks_and_kpis,
     correspondences_from_tracks,
     fit_motion_models_all,
+    promotion_step,
 )
 from .strm_overlay import draw_tile_overlay_callback, get_overlay_state
 
@@ -434,6 +435,81 @@ class STRM_OT_FitMotionModel(bpy.types.Operator):
                         region.tag_redraw()
 
         self.report({'INFO'}, f"Bestes Modell: {best['type']} | RMS={best['rms']:.3f} | S={best['score_S']:.3f} | Inliers={int(np.sum(best['inliers']))}/{best['total']}")
+        return {'FINISHED'}
+
+
+class STRM_OT_PromotionStep(bpy.types.Operator):
+    bl_idname = "clip.strm_promotion_step"
+    bl_label = "STRM: Promotion Step"
+    bl_description = "Führt einen Promotions-/Rollback-Schritt für das Motion-Modell aus (rollierend)"
+
+    frame_offset = bpy.props.IntProperty(
+        name="Frame Offset", default=5, min=1, max=100
+    )
+    lambda_penalty = bpy.props.FloatProperty(
+        name="λ penalty", default=0.12, min=0.0, max=1.0
+    )
+    ransac_thresh = bpy.props.FloatProperty(
+        name="RANSAC thr (px)", default=3.0, min=0.5, max=10.0
+    )
+
+    def execute(self, context):
+        import numpy as np
+
+        scene = context.scene
+        overlay = scene.get("strm_overlay", {})
+        tracks = overlay.get("tracks", [])
+        if not tracks:
+            self.report({'ERROR'}, "Keine Tracks vorhanden.")
+            return {'CANCELLED'}
+
+        # Korrespondenzen aus aktuellem Trackingfenster
+        f0 = 0
+        f1 = min(self.frame_offset, len(tracks[0]) - 1)
+        A, B, _ = correspondences_from_tracks(tracks, f0, f1)
+        if A is None or A.shape[0] < 8:
+            self.report({'ERROR'}, "Zu wenige Korrespondenzen (Min 8).")
+            return {'CANCELLED'}
+
+        img_wh = None
+        clip = context.edit_movieclip
+        if clip:
+            w, h = clip.size
+            img_wh = (w, h)
+
+        stats, state = promotion_step(
+            A, B, img_wh, scene,
+            lam=self.lambda_penalty,
+            ransac_thresh=self.ransac_thresh
+        )
+
+        # Speichere aktuelles bestes Fit des aktiven Levels ins Overlay
+        cur_lvl = state["current_level"]
+        fit = None
+        if cur_lvl in stats:
+            fit = stats[cur_lvl]["fit"]
+        if fit is not None:
+            overlay["motion_model"] = {
+                "type": cur_lvl,
+                "M": fit["M"].tolist(),
+                "rms": fit["rms"],
+                "S": stats[cur_lvl]["S"],
+                "inliers_count": int(np.sum(fit["inliers"])),
+                "total": int(A.shape[0]),
+                "inliers_mask": fit["inliers"].astype(bool).tolist(),
+                "f0": f0, "f1": f1,
+            }
+        overlay["motion_model_stats"] = {k: {
+            "S": v["S"], "rms": v["fit"]["rms"],
+            "inliers": int(np.sum(v["fit"]["inliers"])),
+            "rot": v.get("rot_deg"), "scale": v.get("scale"),
+            "shear": v.get("shear_phi"), "parallax": v.get("parallax")
+        } for k, v in stats.items()}
+
+        if fit is not None:
+            self.report({'INFO'}, f"Level: {state['current_level']} | S={overlay['motion_model']['S']:.3f} | Inliers={overlay['motion_model']['inliers_count']}/{overlay['motion_model']['total']}")
+        else:
+            self.report({'INFO'}, f"Level: {state['current_level']} (kein Fit gespeichert – zu wenige Inlier)")
         return {'FINISHED'}
 
 
