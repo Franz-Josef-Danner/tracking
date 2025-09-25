@@ -1,0 +1,84 @@
+import numpy as np
+
+
+def extract_grayscale_frames(clip, start=0, count=10):
+    """Extrahiere Grayscale-Frames aus einem MovieClip"""
+    size = clip.size
+    frames = []
+
+    # Sicherheit: clamp count
+    count = max(1, int(count))
+
+    for i in range(count):
+        frame = start + i
+        # Blender API: set current frame and get image data
+        try:
+            img = clip.frame_to_image(frame)
+        except Exception:
+            img = None
+        if img is None:
+            continue
+
+        # img.pixels ist flach (rgba), Größe: width*height*4
+        pixels = np.array(img.pixels[:], dtype=np.float32)
+        pixels = pixels.reshape((size[1], size[0], 4))
+        # Luminanz-Umrechnung
+        gray = 0.2126 * pixels[..., 0] + 0.7152 * pixels[..., 1] + 0.0722 * pixels[..., 2]
+        frames.append(gray.astype(np.float32))
+
+    return frames if frames else None
+
+
+def analyze_strm(frames, tile_rows=4, tile_cols=6):
+    """Berechne Texture-, Motion- und Divergenz-Score pro Tile"""
+    if not frames:
+        return []
+
+    # Normierung: sicherstellen gleiche Größe/Typ
+    base = np.asarray(frames[0], dtype=np.float32)
+    h, w = base.shape
+
+    tile_rows = max(1, int(tile_rows))
+    tile_cols = max(1, int(tile_cols))
+
+    tile_h, tile_w = h // tile_rows, w // tile_cols
+    tile_h = max(1, tile_h)
+    tile_w = max(1, tile_w)
+
+    # Stapel als (T, H, W)
+    stack = [np.asarray(f, dtype=np.float32) for f in frames]
+    results = []
+
+    for ty in range(tile_rows):
+        for tx in range(tile_cols):
+            y0 = ty * tile_h
+            y1 = h if ty == tile_rows - 1 else (ty + 1) * tile_h
+            x0 = tx * tile_w
+            x1 = w if tx == tile_cols - 1 else (tx + 1) * tile_w
+            tile_stack = np.stack([f[y0:y1, x0:x1] for f in stack], axis=0)
+
+            # Texture Score: Standardabweichung über alle Pixel im ersten Frame
+            texture = float(np.std(tile_stack[0]))
+
+            # Motion Score: mittlerer Frame-Differenzbetrag
+            if tile_stack.shape[0] > 1:
+                diff = np.abs(np.diff(tile_stack, axis=0))
+                motion = float(np.mean(diff))
+                div = float(np.var(diff))
+                # Flicker: Std der mittleren Helligkeit pro Frame (temporale Helligkeitsschwankung)
+                per_frame_mean = tile_stack.reshape(tile_stack.shape[0], -1).mean(axis=1)
+                flicker = float(np.std(per_frame_mean))
+            else:
+                motion = 0.0
+                div = 0.0
+                flicker = 0.0
+
+            results.append({
+                'texture': texture,
+                'motion': motion,
+                'div': div,
+                'flicker': flicker,
+                'tile': (ty, tx),
+            })
+
+    return results
