@@ -177,3 +177,52 @@ def draw_tile_overlay_callback(self, context):
                 shader.uniform_float("color", color)
                 batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": coords})
                 batch.draw(shader)
+
+    # Residual-Visualisierung für bestes Modell (grün=Inlier, rot=Outlier)
+    mm = overlay.get("motion_model")
+    if mm and tracks:
+        try:
+            import numpy as np  # type: ignore
+        except Exception:
+            np = None
+        f0 = int(mm.get("f0", 0))
+        f1 = int(mm.get("f1", 0))
+        inmask_list = mm.get("inliers_mask", [])
+        M = mm.get("M")
+        mtype = mm.get("type")
+        if M is not None and inmask_list:
+            import numpy as _np
+            inmask = _np.array(inmask_list, dtype=bool)
+            M = _np.array(M, dtype=_np.float32)
+            from .strm_utils import correspondences_from_tracks as _corr, apply_affine_2x3 as _aff, apply_homography as _hom
+            A, B, _ = _corr(tracks, f0, f1)
+            if A is not None and len(A) == len(inmask):
+                if mtype in ("translation", "similarity", "affine"):
+                    pred = _aff(M[:2, :], A)
+                else:
+                    pred = _hom(M, A)
+
+                def draw_lines(points_from, points_to, color):
+                    shader = gpu.shader.from_builtin('2D_UNIFORM_COLOR')
+                    shader.bind()
+                    shader.uniform_float("color", color)
+                    segs = []
+                    for p, q in zip(points_from, points_to):
+                        rx0, ry0 = rv2d.view_to_region(float(p[0]), float(p[1]), clip=False)
+                        rx1, ry1 = rv2d.view_to_region(float(q[0]), float(q[1]), clip=False)
+                        if None in (rx0, ry0, rx1, ry1):
+                            continue
+                        segs.append((rx0, ry0))
+                        segs.append((rx1, ry1))
+                    if segs:
+                        shader = gpu.shader.from_builtin('2D_UNIFORM_COLOR')
+                        shader.bind()
+                        shader.uniform_float("color", color)
+                        batch = batch_for_shader(shader, 'LINES', {"pos": segs})
+                        gpu.state.blend_set('ALPHA')
+                        batch.draw(shader)
+                        gpu.state.blend_set('NONE')
+
+                draw_lines(pred[inmask], B[inmask], (0.0, 1.0, 0.2, 0.7))
+                if (~inmask).any():
+                    draw_lines(pred[~inmask], B[~inmask], (1.0, 0.2, 0.2, 0.7))

@@ -405,3 +405,200 @@ def filter_tracks_and_kpis(
             filtered_kpis.append(kpi)
 
     return filtered_tracks, filtered_kpis
+
+
+# ---------- Korrespondenzen aus Tracks ----------
+def correspondences_from_tracks(tracks, f0, f1):
+    """Sammelt (x0,y0)->(x1,y1) aus allen Tracks für zwei Frames f0,f1.
+    Punkte werden als float32-Arrays (N,2) zurückgegeben."""
+    A = []
+    B = []
+    idx_map = []  # (track_idx, f0, f1)
+    for ti, tr in enumerate(tracks):
+        if f0 < len(tr) and f1 < len(tr):
+            p0 = tr[f0]
+            p1 = tr[f1]
+            if p0 is not None and p1 is not None:
+                A.append(p0)
+                B.append(p1)
+                idx_map.append((ti, f0, f1))
+    if not A:
+        return None, None, []
+    return np.asarray(A, dtype=np.float32), np.asarray(B, dtype=np.float32), idx_map
+
+
+# ---------- Helfer: Transformation anwenden ----------
+def apply_affine_2x3(M, pts):
+    """M: (2,3), pts: (N,2) -> (N,2)"""
+    pts = np.asarray(pts, dtype=np.float32)
+    N = pts.shape[0]
+    hom = np.concatenate([pts, np.ones((N, 1), dtype=np.float32)], axis=1)  # (N,3)
+    out = (M @ hom.T).T  # (N,2)
+    return out.astype(np.float32)
+
+
+def apply_homography(H, pts):
+    """H: (3,3), pts: (N,2) -> (N,2)"""
+    pts = np.asarray(pts, dtype=np.float32)
+    N = pts.shape[0]
+    hom = np.concatenate([pts, np.ones((N, 1), dtype=np.float32)], axis=1)  # (N,3)
+    proj = (H @ hom.T).T  # (N,3)
+    w = np.clip(proj[:, 2:3], 1e-8, None)
+    out = proj[:, :2] / w
+    return out.astype(np.float32)
+
+
+def rms_residual(pred, tgt, mask=None):
+    pred = np.asarray(pred, dtype=np.float32)
+    tgt = np.asarray(tgt, dtype=np.float32)
+    if mask is not None:
+        mask = np.asarray(mask, dtype=bool)
+        pred = pred[mask]
+        tgt = tgt[mask]
+    if pred.shape[0] == 0:
+        return float("inf")
+    res = pred - tgt
+    return float(np.sqrt(np.mean(np.sum(res * res, axis=1))))
+
+
+# ---------- Translation Fit ----------
+def fit_translation(A, B):
+    """Einfacher Mittelwert-Versatz (kein RANSAC)."""
+    A = np.asarray(A, dtype=np.float32)
+    B = np.asarray(B, dtype=np.float32)
+    if A.shape[0] == 0:
+        return None
+    d = np.mean(B - A, axis=0)
+
+    def apply(pts):
+        return pts + d
+
+    pred = apply(A)
+    rms = rms_residual(pred, B)
+    inliers = np.ones((A.shape[0],), dtype=bool)  # alle
+    # Als 3x3 Mat für Einheitlichkeit zurückgeben
+    M = np.array([[1, 0, d[0]],
+                  [0, 1, d[1]],
+                  [0, 0, 1]], dtype=np.float32)
+    return {"type": "translation", "M": M, "inliers": inliers, "rms": rms}
+
+
+# ---------- Similarity (LocRotScale) via RANSAC ----------
+def fit_similarity(A, B, ransacReprojThreshold=3.0, confidence=0.99, maxIters=2000):
+    try:
+        import cv2  # type: ignore
+    except Exception:
+        return None
+    M, inliers = cv2.estimateAffinePartial2D(
+        A, B, method=cv2.RANSAC,
+        ransacReprojThreshold=ransacReprojThreshold,
+        confidence=confidence, maxIters=maxIters, refineIters=10
+    )
+    if M is None or inliers is None:
+        return None
+    inliers = inliers.ravel().astype(bool)
+    pred = apply_affine_2x3(M, A)
+    rms = rms_residual(pred, B, mask=inliers)
+    # in 3x3 betten
+    M33 = np.array([[M[0, 0], M[0, 1], M[0, 2]],
+                    [M[1, 0], M[1, 1], M[1, 2]],
+                    [0, 0, 1]], dtype=np.float32)
+    return {"type": "similarity", "M": M33, "inliers": inliers, "rms": rms}
+
+
+# ---------- Affine via RANSAC ----------
+def fit_affine(A, B, ransacReprojThreshold=3.0, confidence=0.99, maxIters=2000):
+    try:
+        import cv2  # type: ignore
+    except Exception:
+        return None
+    M, inliers = cv2.estimateAffine2D(
+        A, B, method=cv2.RANSAC,
+        ransacReprojThreshold=ransacReprojThreshold,
+        confidence=confidence, maxIters=maxIters, refineIters=10
+    )
+    if M is None or inliers is None:
+        return None
+    inliers = inliers.ravel().astype(bool)
+    pred = apply_affine_2x3(M, A)
+    rms = rms_residual(pred, B, mask=inliers)
+    M33 = np.array([[M[0, 0], M[0, 1], M[0, 2]],
+                    [M[1, 0], M[1, 1], M[1, 2]],
+                    [0, 0, 1]], dtype=np.float32)
+    return {"type": "affine", "M": M33, "inliers": inliers, "rms": rms}
+
+
+# ---------- Perspective (Homographie) via RANSAC ----------
+def fit_perspective(A, B, ransacReprojThreshold=3.0, confidence=0.995, maxIters=5000):
+    try:
+        import cv2  # type: ignore
+    except Exception:
+        return None
+    if A.shape[0] < 4:
+        return None
+    H, inliers = cv2.findHomography(A, B, method=cv2.RANSAC,
+                                    ransacReprojThreshold=ransacReprojThreshold,
+                                    maxIters=maxIters, confidence=confidence)
+    if H is None or inliers is None:
+        return None
+    inliers = inliers.ravel().astype(bool)
+    pred = apply_homography(H, A)
+    rms = rms_residual(pred, B, mask=inliers)
+    return {"type": "perspective", "M": H.astype(np.float32), "inliers": inliers, "rms": rms}
+
+
+# ---------- Score & Auswahl ----------
+def model_complexity_kappa(model_type):
+    # gemäß Spez: κ={1,2,3,4,6}; wir mappen:
+    # translation=1, similarity=3, affine=4, perspective=6
+    return {"translation": 1, "similarity": 3, "affine": 4, "perspective": 6}.get(model_type, 4)
+
+
+def choose_best_model(fits, lam=0.12, min_inliers=8):
+    best = None
+    for f in fits:
+        if f is None:
+            continue
+        nin = int(np.sum(f["inliers"])) if f.get("inliers") is not None else 0
+        if nin < int(min_inliers):
+            continue
+        kappa = model_complexity_kappa(f["type"])
+        S = float(f["rms"]) + float(lam) * float(kappa)
+        f["score_S"] = float(S)
+        f["inliers_count"] = nin
+        f["inliers_ratio"] = float(nin) / float(max(1, f.get("total", nin)))
+        if best is None or S < best["score_S"]:
+            best = f
+    return best
+
+
+def fit_motion_models_all(A, B, lam=0.12, ransac_thresh=3.0, min_inliers=8):
+    total = int(A.shape[0])
+    fits = []
+
+    # Translation (kein RANSAC)
+    tr = fit_translation(A, B)
+    if tr is not None:
+        tr["total"] = total
+    fits.append(tr)
+
+    # Similarity
+    sim = fit_similarity(A, B, ransacReprojThreshold=ransac_thresh)
+    if sim:
+        sim["total"] = total
+    fits.append(sim)
+
+    # Affine
+    aff = fit_affine(A, B, ransacReprojThreshold=ransac_thresh)
+    if aff:
+        aff["total"] = total
+    fits.append(aff)
+
+    # Perspective (etwas großzügigerer Threshold)
+    hom = fit_perspective(A, B, ransacReprojThreshold=float(ransac_thresh) * 1.25)
+    if hom:
+        hom["total"] = total
+    fits.append(hom)
+
+    best = choose_best_model(fits, lam=lam, min_inliers=min_inliers)
+    return best, fits

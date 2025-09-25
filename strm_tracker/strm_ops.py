@@ -10,6 +10,8 @@ from .strm_utils import (
     track_markers_lk,
     compute_track_kpis,
     filter_tracks_and_kpis,
+    correspondences_from_tracks,
+    fit_motion_models_all,
 )
 from .strm_overlay import draw_tile_overlay_callback, get_overlay_state
 
@@ -363,6 +365,75 @@ class STRM_OT_CleanupTracks(bpy.types.Operator):
                         region.tag_redraw()
 
         self.report({'INFO'}, f"{before - after} von {before} Tracks entfernt.")
+        return {'FINISHED'}
+
+
+class STRM_OT_FitMotionModel(bpy.types.Operator):
+    bl_idname = "clip.strm_fit_motion_model"
+    bl_label = "STRM: Fit Motion Model (RANSAC)"
+    bl_description = "Fittet ein globales Motion-Modell über Tracks (Frame-Paar)"
+
+    frame_offset = bpy.props.IntProperty(name="Frame Offset", default=5, min=1, max=100)
+    lambda_penalty = bpy.props.FloatProperty(name="λ penalty", default=0.12, min=0.0, max=1.0)
+    ransac_thresh = bpy.props.FloatProperty(name="RANSAC thr (px)", default=3.0, min=0.5, max=10.0)
+    min_inliers = bpy.props.IntProperty(name="Min Inliers", default=8, min=3, max=100)
+
+    def execute(self, context):
+        import numpy as np
+
+        overlay = get_overlay_state(context.scene)
+        tracks = overlay.get("tracks", [])
+        if not tracks:
+            self.report({'ERROR'}, "Keine Tracks vorhanden.")
+            return {'CANCELLED'}
+
+        f0 = 0
+        f1 = min(int(self.frame_offset), len(tracks[0]) - 1)
+        A, B, idx_map = correspondences_from_tracks(tracks, f0, f1)
+        if A is None or A.shape[0] < 3:
+            self.report({'ERROR'}, "Zu wenige Korrespondenzen.")
+            return {'CANCELLED'}
+
+        best, all_fits = fit_motion_models_all(
+            A, B,
+            lam=float(self.lambda_penalty),
+            ransac_thresh=float(self.ransac_thresh),
+            min_inliers=int(self.min_inliers),
+        )
+        if best is None:
+            self.report({'ERROR'}, "Kein Modell erfüllt die Min-Inliers.")
+            return {'CANCELLED'}
+
+        overlay["motion_model"] = {
+            "type": best["type"],
+            "M": best["M"].tolist(),
+            "rms": float(best["rms"]),
+            "score_S": float(best["score_S"]),
+            "inliers_count": int(np.sum(best["inliers"])),
+            "total": int(best["total"]),
+            "inliers_mask": best["inliers"].astype(bool).tolist(),
+            "f0": int(f0),
+            "f1": int(f1),
+        }
+
+        overlay["motion_model_candidates"] = [
+            ({
+                "type": f.get("type"),
+                "rms": float(f.get("rms")) if f and f.get("rms") is not None else None,
+                "S": float(f.get("score_S")) if f and f.get("score_S") is not None else None,
+                "inliers": int(np.sum(f.get("inliers"))) if f and f.get("inliers") is not None else 0,
+            } if f else None)
+            for f in all_fits
+        ]
+
+        # Redraw
+        for area in context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        region.tag_redraw()
+
+        self.report({'INFO'}, f"Bestes Modell: {best['type']} | RMS={best['rms']:.3f} | S={best['score_S']:.3f} | Inliers={int(np.sum(best['inliers']))}/{best['total']}")
         return {'FINISHED'}
 
 
