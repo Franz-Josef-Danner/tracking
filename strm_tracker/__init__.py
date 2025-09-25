@@ -9,7 +9,7 @@ bl_info = {
 
 import bpy
 from .strm_panel import STRM_PT_Panel
-from .strm_ops import STRM_OT_Analyze, STRM_OT_ToggleOverlay, STRM_OT_SetOverlayScore, cleanup_overlay_draw
+from .strm_ops import STRM_OT_Analyze, STRM_OT_ToggleOverlay, STRM_OT_SetOverlayScore, STRM_OT_SelectROIs, cleanup_overlay_draw
 from .strm_overlay import draw_tile_overlay_callback  # ensure module is loaded
 
 
@@ -18,6 +18,7 @@ classes = (
     STRM_OT_Analyze,
     STRM_OT_ToggleOverlay,
     STRM_OT_SetOverlayScore,
+    STRM_OT_SelectROIs,
 )
 
 

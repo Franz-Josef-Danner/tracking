@@ -18,3 +18,5 @@ class STRM_PT_Panel(bpy.types.Panel):
         row = layout.row(align=True)
         row.operator("clip.strm_set_overlay_score", text="Divergence").score_type = 'div'
         row.operator("clip.strm_set_overlay_score", text="Flicker").score_type = 'flicker'
+        layout.separator()
+        layout.operator("clip.strm_select_rois", icon='SELECT_SET')

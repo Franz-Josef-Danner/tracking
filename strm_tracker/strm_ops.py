@@ -1,5 +1,5 @@
 import bpy
-from .strm_utils import extract_grayscale_frames, analyze_strm, compute_tile_coords
+from .strm_utils import extract_grayscale_frames, analyze_strm, compute_tile_coords, select_top_tiles_as_rois
 from .strm_overlay import draw_tile_overlay_callback, get_overlay_state
 
 
@@ -116,6 +116,51 @@ class STRM_OT_SetOverlayScore(bpy.types.Operator):
                 for region in area.regions:
                     if region.type == 'WINDOW':
                         region.tag_redraw()
+        return {'FINISHED'}
+
+
+class STRM_OT_SelectROIs(bpy.types.Operator):
+    bl_idname = "clip.strm_select_rois"
+    bl_label = "STRM: Select ROIs"
+    bl_description = "Wählt Top-N STRM-Tiles als ROIs basierend auf Score"
+
+    top_n = bpy.props.IntProperty(name="Top N", default=6, min=1, max=100)
+    score_type = bpy.props.EnumProperty(
+        name="Score Type",
+        items=[
+            ("motion", "Motion", ""),
+            ("texture", "Texture", ""),
+            ("div", "Divergence", ""),
+            ("flicker", "Flicker", ""),
+        ],
+        default="motion",
+    )
+
+    def execute(self, context):
+        overlay = get_overlay_state(context.scene)
+        tiles = overlay.get("tiles", [])
+        if not tiles:
+            self.report({'ERROR'}, "Keine STRM-Tiles gefunden.")
+            return {'CANCELLED'}
+
+        rois = select_top_tiles_as_rois(
+            tiles,
+            score_type=self.score_type,
+            top_n=self.top_n,
+            min_distance_px=20,
+        )
+
+        overlay["rois"] = rois
+        overlay["score_type"] = self.score_type
+
+        # Redraw
+        for area in context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        region.tag_redraw()
+
+        self.report({'INFO'}, f"{len(rois)} ROIs gewählt (nach {self.score_type})")
         return {'FINISHED'}
 
 

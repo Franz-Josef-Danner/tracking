@@ -109,3 +109,45 @@ def compute_tile_coords(clip, tile_rows=4, tile_cols=6):
             tiles.append((float(x0), float(y0), float(x1), float(y1)))
 
     return tiles
+
+
+def select_top_tiles_as_rois(tiles, score_type="motion", top_n=6, min_distance_px=0):
+    """Wählt Top-N Tiles basierend auf Score (motion/texture/div/flicker), optional mit Mindestabstand.
+    Erwartet Tiles mit Schlüsseln: 'coords' und Score-Felder.
+    Gibt ROIs als Dicts mit 'coords', 'center', 'score' zurück."""
+    if not tiles:
+        return []
+
+    # Sortiere absteigend nach gewünschtem Score
+    sorted_tiles = sorted(tiles, key=lambda t: float(t.get(score_type, 0.0)), reverse=True)
+
+    selected_rois = []
+    for tile in sorted_tiles:
+        if 'coords' not in tile:
+            continue
+        x0, y0, x1, y1 = tile['coords']
+        cx = 0.5 * (x0 + x1)
+        cy = 0.5 * (y0 + y1)
+
+        if min_distance_px > 0:
+            too_close = False
+            for roi in selected_rois:
+                rcx, rcy = roi['center']
+                dx = cx - rcx
+                dy = cy - rcy
+                if (dx * dx + dy * dy) ** 0.5 < float(min_distance_px):
+                    too_close = True
+                    break
+            if too_close:
+                continue
+
+        selected_rois.append({
+            'coords': (float(x0), float(y0), float(x1), float(y1)),
+            'center': (float(cx), float(cy)),
+            'score': float(tile.get(score_type, 0.0)),
+        })
+
+        if len(selected_rois) >= int(top_n):
+            break
+
+    return selected_rois
