@@ -13,6 +13,11 @@ from .strm_utils import (
     correspondences_from_tracks,
     fit_motion_models_all,
     promotion_step,
+    build_corr_and_features_from_tracks,
+    zscore,
+    dbscan,
+    promotion_per_cluster,
+    cluster_color,
 )
 from .strm_overlay import draw_tile_overlay_callback, get_overlay_state
 
@@ -510,6 +515,84 @@ class STRM_OT_PromotionStep(bpy.types.Operator):
             self.report({'INFO'}, f"Level: {state['current_level']} | S={overlay['motion_model']['S']:.3f} | Inliers={overlay['motion_model']['inliers_count']}/{overlay['motion_model']['total']}")
         else:
             self.report({'INFO'}, f"Level: {state['current_level']} (kein Fit gespeichert – zu wenige Inlier)")
+        return {'FINISHED'}
+
+
+class STRM_OT_ClusterFitPromote(bpy.types.Operator):
+    bl_idname = "clip.strm_cluster_fit_promote"
+    bl_label = "STRM: Cluster Fit & Promote"
+    bl_description = "Clustert Korrespondenzen & promotet pro Cluster das Motion-Modell (RANSAC + S-Score)"
+
+    frame_offset = bpy.props.IntProperty(name="Frame Offset", default=5, min=1, max=100)
+    eps = bpy.props.FloatProperty(name="DBSCAN eps", default=0.9, min=0.1, max=3.0, description="Radius im z-standardisierten (x,y,dx,dy)-Raum")
+    min_samples = bpy.props.IntProperty(name="min_samples", default=6, min=3, max=50)
+    lambda_penalty = bpy.props.FloatProperty(name="λ penalty", default=0.12, min=0.0, max=1.0)
+    ransac_thresh = bpy.props.FloatProperty(name="RANSAC thr (px)", default=3.0, min=0.5, max=10.0)
+
+    def execute(self, context):
+        scene = context.scene
+        overlay = scene.get("strm_overlay", {})
+        tracks = overlay.get("tracks", [])
+        if not tracks:
+            self.report({'ERROR'}, "Keine Tracks vorhanden.")
+            return {'CANCELLED'}
+
+        f0 = 0
+        f1 = min(int(self.frame_offset), len(tracks[0]) - 1)
+        A, B, feats, idx_map = build_corr_and_features_from_tracks(tracks, f0, f1)
+        if A is None or A.shape[0] < 8:
+            self.report({'ERROR'}, "Zu wenige gültige Korrespondenzen (Min 8).")
+            return {'CANCELLED'}
+
+        feats_z, _ = zscore(feats)
+        labels = dbscan(feats_z, eps=float(self.eps), min_samples=int(self.min_samples))
+
+        # Pro Cluster promoten
+        img_wh = None
+        clip = context.edit_movieclip
+        if clip:
+            img_wh = (clip.size[0], clip.size[1])
+
+        cluster_results = promotion_per_cluster(
+            A, B, labels, img_wh, scene,
+            lam=float(self.lambda_penalty),
+            ransac_thresh=float(self.ransac_thresh)
+        )
+
+        # Speichern fürs Overlay
+        overlay["cluster_labels"] = labels.tolist()
+        overlay["cluster_models"] = []
+        for res in cluster_results:
+            label = int(res["label"])
+            col = cluster_color(label)
+            # Inliers-Maske in globale Index-Länge umsetzen
+            global_inliers = [False] * int(A.shape[0])
+            in_local = res["fit"]["inliers"]
+            for local_i, global_i in enumerate(res["indices"]):
+                if in_local[local_i]:
+                    global_inliers[int(global_i)] = True
+
+            overlay["cluster_models"].append({
+                "label": label,
+                "color": col,
+                "level": res["level"],
+                "M": res["fit"]["M"].tolist(),
+                "rms": float(res["fit"]["rms"]),
+                "S": float(res["fit"]["S"]),
+                "nin": int(res["fit"]["nin"]),
+                "tot": int(res["fit"]["tot"]),
+                "inliers_mask_global": global_inliers,
+                "f0": int(f0), "f1": int(f1),
+            })
+
+        # Redraw
+        for area in context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        region.tag_redraw()
+
+        self.report({'INFO'}, f"Cluster: {len(set([l for l in labels.tolist() if l>=0]))} | Modelle gespeichert.")
         return {'FINISHED'}
 
 

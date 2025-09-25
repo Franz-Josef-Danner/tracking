@@ -980,3 +980,186 @@ def promotion_step(A, B, img_wh, scene, lam=0.12, ransac_thresh=3.0):
             st["rollback_counter"] = 0
 
     return stats, st
+
+
+# =====================
+# Clustering & Cluster-Promotion
+# =====================
+
+def dbscan(points, eps=0.9, min_samples=6):
+    """
+    Einfache DBSCAN-Implementierung (ohne sklearn).
+    points: (N,D) np.array, idealerweise z-standardisiert
+    eps: Radius im standardisierten Raum
+    returns: labels (N,), -1 = Noise
+    """
+    import numpy as _np
+
+    points = _np.asarray(points, dtype=_np.float32)
+    N = points.shape[0]
+    if N == 0:
+        return _np.zeros((0,), dtype=_np.int32)
+
+    labels = -_np.ones(N, dtype=_np.int32)
+    visited = _np.zeros(N, dtype=bool)
+    cluster_id = 0
+
+    # Distanzmatrix (O(N^2)) – ausreichend für einige Hundert Punkte
+    ss = _np.sum(points * points, axis=1, keepdims=True)  # (N,1)
+    d2 = ss - 2.0 * (points @ points.T) + ss.T
+    d2 = _np.maximum(d2, 0.0)
+
+    for i in range(N):
+        if visited[i]:
+            continue
+        visited[i] = True
+        neigh = _np.where(d2[i] <= float(eps) * float(eps))[0]
+        if len(neigh) < int(min_samples):
+            labels[i] = -1  # Noise
+            continue
+
+        # expand cluster
+        labels[i] = cluster_id
+        seeds = list(map(int, neigh.tolist()))
+        j = 0
+        while j < len(seeds):
+            idx = seeds[j]
+            if not visited[idx]:
+                visited[idx] = True
+                neigh2 = _np.where(d2[idx] <= float(eps) * float(eps))[0]
+                if len(neigh2) >= int(min_samples):
+                    # merge new neighbors
+                    for k in neigh2.tolist():
+                        if k not in seeds:
+                            seeds.append(int(k))
+            if labels[idx] < 0:
+                labels[idx] = cluster_id
+            j += 1
+        cluster_id += 1
+
+    return labels
+
+
+def build_corr_and_features_from_tracks(tracks, f0, f1):
+    """
+    returns:
+      A: (M,2) Startpunkte,
+      B: (M,2) Zielpunkte,
+      feats: (M,4) = [x, y, dx, dy] für DBSCAN (noch unskaliert),
+      idx_map: [(track_idx,f0,f1,dx,dy)] pro Korrespondenz
+    """
+    import numpy as _np
+
+    A = []
+    B = []
+    idx_map = []
+    for ti, tr in enumerate(tracks):
+        if f0 < len(tr) and f1 < len(tr):
+            p0 = tr[f0]
+            p1 = tr[f1]
+            if p0 is not None and p1 is not None:
+                A.append(p0)
+                B.append(p1)
+                dx = float(p1[0] - p0[0])
+                dy = float(p1[1] - p0[1])
+                idx_map.append((ti, f0, f1, dx, dy))
+    if not A:
+        return None, None, None, []
+    A = _np.asarray(A, dtype=_np.float32)
+    B = _np.asarray(B, dtype=_np.float32)
+    feats = _np.concatenate([A, (B - A)], axis=1)  # [x,y,dx,dy]
+    return A, B, feats, idx_map
+
+
+def zscore(arr, eps=1e-6):
+    import numpy as _np
+    arr = _np.asarray(arr, dtype=_np.float32)
+    mu = _np.mean(arr, axis=0, keepdims=True)
+    sd = _np.std(arr, axis=0, keepdims=True)
+    sd = _np.where(sd < float(eps), float(eps), sd)
+    return (arr - mu) / sd, (mu, sd)
+
+
+def cluster_color(i):
+    # angenehme, unterscheidbare Farben (RGBA)
+    base = [
+        (0.95, 0.35, 0.25, 0.9), (0.25, 0.65, 1.0, 0.9), (0.95, 0.75, 0.25, 0.9),
+        (0.45, 0.85, 0.55, 0.9), (0.75, 0.55, 0.95, 0.9), (0.15, 0.85, 0.9, 0.9),
+        (0.9, 0.5, 0.7, 0.9),    (0.5, 0.5, 0.5, 0.9)
+    ]
+    return base[int(i) % len(base)]
+
+
+def promotion_per_cluster(A, B, labels, img_wh, scene, lam=0.12, ransac_thresh=3.0):
+    """
+    Führt die Promotion/Selection separat pro Cluster (label>=0) aus.
+    Speichert den State unter scene['strm_cluster_states'][label].
+    returns: list of dicts pro Cluster: { 'label', 'level', 'fit', 'stats', 'indices' }
+    """
+    import numpy as _np
+
+    A = _np.asarray(A, _np.float32)
+    B = _np.asarray(B, _np.float32)
+    labels = _np.asarray(labels)
+    results = []
+
+    # State-Container
+    cluster_states = scene.get("strm_cluster_states")
+    if cluster_states is None:
+        cluster_states = {}
+        scene["strm_cluster_states"] = cluster_states
+
+    unique_labels = sorted(set(labels.tolist()))
+    all_states = cluster_states.get("states") or {}
+
+    for label in unique_labels:
+        if int(label) < 0:
+            continue
+        idxs = _np.where(labels == int(label))[0]
+        if len(idxs) < 8:
+            continue
+        A_c = A[idxs]
+        B_c = B[idxs]
+
+        # pro Cluster eigenen State: key = str(label)
+        state_key = f"cluster_{int(label)}"
+
+        # Proxy-Szene (dict), damit promotion_step seinen State ablegt
+        class _ProxyScene(dict):
+            pass
+
+        proxy = _ProxyScene()
+        proxy["strm_model_state"] = all_states.get(state_key)
+
+        stats, new_state = promotion_step(A_c, B_c, img_wh, proxy, lam=lam, ransac_thresh=ransac_thresh)
+
+        # zurück in globalen container
+        all_states[state_key] = new_state
+        cluster_states["states"] = all_states
+
+        cur_lvl = new_state["current_level"]
+        if cur_lvl not in stats:
+            # falls nicht vorhanden, zum nächsten einfachen Level greifen
+            available = list(stats.keys())
+            if not available:
+                continue
+            cur_lvl = sorted(available, key=lambda L: level_index(L))[0]
+        fit = stats[cur_lvl]["fit"]
+
+        results.append({
+            "label": int(label),
+            "level": cur_lvl,
+            "fit": {
+                "M": fit["M"],
+                "inliers": fit["inliers"],
+                "rms": fit["rms"],
+                "S": stats[cur_lvl]["S"],
+                "nin": int(_np.sum(fit["inliers"])),
+                "tot": int(A_c.shape[0]),
+            },
+            "stats": {k: {"S": v["S"], "rms": v["fit"]["rms"], "nin": int(_np.sum(v["fit"]["inliers"]))}
+                      for k, v in stats.items()},
+            "indices": idxs,
+        })
+
+    return results

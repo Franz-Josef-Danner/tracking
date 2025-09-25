@@ -226,3 +226,62 @@ def draw_tile_overlay_callback(self, context):
                 draw_lines(pred[inmask], B[inmask], (0.0, 1.0, 0.2, 0.7))
                 if (~inmask).any():
                     draw_lines(pred[~inmask], B[~inmask], (1.0, 0.2, 0.2, 0.7))
+
+    # ---- Cluster-Residuals farbig zeichnen ----
+    ov = context.scene.get("strm_overlay", {})
+    tracks2 = ov.get("tracks", [])
+    labels = ov.get("cluster_labels", [])
+    models = ov.get("cluster_models", [])
+    if tracks2 and labels and models:
+        # f0/f1 vom ersten Modell verwenden
+        f0 = int(models[0].get("f0", 0))
+        f1 = int(models[0].get("f1", 0))
+
+        # Korrespondenzen in gleicher Reihenfolge sammeln
+        A = []
+        B = []
+        for tr in tracks2:
+            if f0 < len(tr) and f1 < len(tr) and tr[f0] is not None and tr[f1] is not None:
+                A.append(tr[f0]); B.append(tr[f1])
+        if A:
+            import numpy as _np
+            A = _np.float32(A); B = _np.float32(B)
+
+            def draw_lines_v2(points_from, points_to, color):
+                shader = gpu.shader.from_builtin('2D_UNIFORM_COLOR')
+                shader.bind()
+                shader.uniform_float("color", color)
+                segs = []
+                for p, q in zip(points_from, points_to):
+                    rx0, ry0 = rv2d.view_to_region(float(p[0]), float(p[1]), clip=False)
+                    rx1, ry1 = rv2d.view_to_region(float(q[0]), float(q[1]), clip=False)
+                    if None in (rx0, ry0, rx1, ry1):
+                        continue
+                    segs.append((rx0, ry0))
+                    segs.append((rx1, ry1))
+                if segs:
+                    batch = batch_for_shader(gpu.shader.from_builtin('2D_UNIFORM_COLOR'), 'LINES', {"pos": segs})
+                    gpu.state.blend_set('ALPHA')
+                    batch.draw(gpu.shader.from_builtin('2D_UNIFORM_COLOR'))
+                    gpu.state.blend_set('NONE')
+
+            for m in models:
+                col = tuple(m.get("color", (0.9,0.5,0.7,0.9)))
+                inmask_global = _np.array(m.get("inliers_mask_global", []), dtype=bool)
+                if inmask_global.shape[0] != A.shape[0]:
+                    continue
+                M = _np.array(m.get("M"), dtype=_np.float32)
+                lvl = m.get("level")
+                if lvl in ("loc", "locrot", "lrs", "affine"):
+                    M2 = M[:2, :]
+                    hom = _np.concatenate([A, _np.ones((A.shape[0], 1), _np.float32)], axis=1)
+                    pred = (M2 @ hom.T).T
+                else:
+                    hom = _np.concatenate([A, _np.ones((A.shape[0], 1), _np.float32)], axis=1)
+                    proj = (M @ hom.T).T
+                    pred = proj[:, :2] / _np.clip(proj[:, 2:3], 1e-8, None)
+
+                # Inlier in Clusterfarbe, Outlier etwas grauer
+                draw_lines_v2(pred[inmask_global], B[inmask_global], col)
+                if (~inmask_global).any():
+                    draw_lines_v2(pred[~inmask_global], B[~inmask_global], (0.6, 0.6, 0.6, 0.6))

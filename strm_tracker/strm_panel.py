@@ -25,4 +25,5 @@ class STRM_PT_Panel(bpy.types.Panel):
         layout.operator("clip.strm_eval_kpis", icon='INFO')
         layout.operator("clip.strm_cleanup_tracks", icon='PANEL_CLOSE')
         layout.operator("clip.strm_fit_motion_model", icon='CONSTRAINT')
-    layout.operator("clip.strm_promotion_step", icon='SORTSIZE')
+        layout.operator("clip.strm_cluster_fit_promote", icon='GROUP')
+        layout.operator("clip.strm_promotion_step", icon='SORTSIZE')
