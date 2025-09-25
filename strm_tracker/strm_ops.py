@@ -1,5 +1,12 @@
 import bpy
-from .strm_utils import extract_grayscale_frames, analyze_strm, compute_tile_coords, select_top_tiles_as_rois
+from .strm_utils import (
+    extract_grayscale_frames,
+    analyze_strm,
+    compute_tile_coords,
+    select_top_tiles_as_rois,
+    extract_single_grayscale_frame,
+    detect_features_in_roi,
+)
 from .strm_overlay import draw_tile_overlay_callback, get_overlay_state
 
 
@@ -161,6 +168,62 @@ class STRM_OT_SelectROIs(bpy.types.Operator):
                         region.tag_redraw()
 
         self.report({'INFO'}, f"{len(rois)} ROIs gewählt (nach {self.score_type})")
+        return {'FINISHED'}
+
+
+class STRM_OT_SeedFeatures(bpy.types.Operator):
+    bl_idname = "clip.strm_seed_features"
+    bl_label = "STRM: Seed Features"
+    bl_description = "Seede Keypoints in den ausgewählten ROIs"
+
+    max_features_per_roi = bpy.props.IntProperty(name="Max/ROI", default=50, min=1, max=500)
+    quality_level = bpy.props.FloatProperty(name="Quality", default=0.01, min=0.0001, max=0.1)
+    min_distance = bpy.props.IntProperty(name="Min Dist", default=5, min=1, max=50)
+
+    def execute(self, context):
+        scene = context.scene
+        clip = context.edit_movieclip
+        if not clip:
+            self.report({'ERROR'}, "Kein MovieClip ausgewählt.")
+            return {'CANCELLED'}
+
+        overlay = get_overlay_state(scene)
+        rois = overlay.get("rois", [])
+        if not rois:
+            self.report({'ERROR'}, "Keine ROIs zum Seeden.")
+            return {'CANCELLED'}
+
+        frame_num = scene.frame_current
+        gray = extract_single_grayscale_frame(clip, frame_num)
+        if gray is None:
+            self.report({'ERROR'}, "Frame konnte nicht gelesen werden.")
+            return {'CANCELLED'}
+
+        all_points = []
+        try:
+            for roi in rois:
+                pts = detect_features_in_roi(
+                    gray,
+                    roi,
+                    max_features=self.max_features_per_roi,
+                    quality=self.quality_level,
+                    min_distance=self.min_distance,
+                )
+                all_points.extend(pts)
+        except RuntimeError as e:
+            self.report({'ERROR'}, str(e))
+            return {'CANCELLED'}
+
+        overlay["markers"] = all_points
+
+        # Redraw
+        for area in context.screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        region.tag_redraw()
+
+        self.report({'INFO'}, f"{len(all_points)} Features gesät.")
         return {'FINISHED'}
 
 

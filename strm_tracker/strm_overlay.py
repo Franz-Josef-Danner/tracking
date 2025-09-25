@@ -120,3 +120,19 @@ def draw_tile_overlay_callback(self, context):
             batch = batch_for_shader(shader, 'LINES', {"pos": line_coords})
             batch.draw(shader)
             gpu.state.blend_set('NONE')
+
+    # Markerpunkte (rot) zeichnen
+    markers = overlay.get("markers", [])
+    if markers:
+        pts = []
+        for x, y in markers:
+            rx, ry = rv2d.view_to_region(x, y, clip=False)
+            if None not in (rx, ry):
+                pts.append((rx, ry))
+        if pts:
+            shader = gpu.shader.from_builtin('2D_UNIFORM_COLOR')
+            shader.bind()
+            shader.uniform_float("color", (1.0, 0.2, 0.2, 1.0))
+            batch = batch_for_shader(shader, 'POINTS', {"pos": pts})
+            gpu.state.point_size_set(4.0)
+            batch.draw(shader)

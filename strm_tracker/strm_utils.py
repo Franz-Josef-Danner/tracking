@@ -151,3 +151,67 @@ def select_top_tiles_as_rois(tiles, score_type="motion", top_n=6, min_distance_p
             break
 
     return selected_rois
+
+
+def extract_single_grayscale_frame(clip, frame_number):
+    """Extrahiere ein einzelnes Frame als 2D-Grayscale-Array in uint8 [0,255]."""
+    size = clip.size
+    try:
+        img = clip.frame_to_image(int(frame_number))
+    except Exception:
+        img = None
+    if img is None:
+        return None
+    pixels = np.array(img.pixels[:], dtype=np.float32)
+    pixels = pixels.reshape((size[1], size[0], 4))  # H, W, RGBA
+    gray = 0.2126 * pixels[..., 0] + 0.7152 * pixels[..., 1] + 0.0722 * pixels[..., 2]
+    gray = np.clip(gray * 255.0, 0.0, 255.0).astype(np.uint8)
+    return gray
+
+
+def detect_features_in_roi(gray_frame, roi, max_features=100, quality=0.01, min_distance=5):
+    """Finde Features innerhalb eines Rechtecks.
+    Erwartet roi['coords'] im Overlay-Koordinatensystem (unten-links Ursprung).
+    Konvertiert intern in Bild-Indexkoordinaten (oben-links Ursprung) für OpenCV.
+    Gibt Punkte in Overlay-Koordinaten (unten-links Ursprung) zurück.
+    """
+    # Lazy import, um Add-on-Registrierung ohne cv2 zu ermöglichen
+    try:
+        import cv2  # type: ignore
+    except Exception as e:
+        raise RuntimeError("OpenCV (cv2) ist nicht installiert: " + str(e))
+
+    h, w = gray_frame.shape[:2]
+    x0_bl, y0_bl, x1_bl, y1_bl = roi.get('coords', (0.0, 0.0, 0.0, 0.0))
+
+    # In TL-Koordinaten für Array-Slicing umrechnen
+    x0_tl = int(np.clip(x0_bl, 0, w - 1))
+    x1_tl = int(np.clip(x1_bl, 1, w))
+    y0_tl = int(np.clip(h - y1_bl, 0, h - 1))
+    y1_tl = int(np.clip(h - y0_bl, 1, h))
+
+    if x1_tl <= x0_tl or y1_tl <= y0_tl:
+        return []
+
+    roi_img = gray_frame[y0_tl:y1_tl, x0_tl:x1_tl]
+    roi_img = np.ascontiguousarray(roi_img, dtype=np.uint8)
+
+    keypoints = cv2.goodFeaturesToTrack(
+        roi_img,
+        maxCorners=int(max_features),
+        qualityLevel=float(quality),
+        minDistance=float(min_distance),
+        useHarrisDetector=False
+    )
+
+    results = []
+    if keypoints is not None:
+        for pt in keypoints:
+            x, y = pt[0]
+            gx_tl = float(x0_tl) + float(x)
+            gy_tl = float(y0_tl) + float(y)
+            # zurück in BL-View-Koordinaten
+            gy_bl = float(h) - gy_tl
+            results.append((float(gx_tl), float(gy_bl)))
+
+    return results

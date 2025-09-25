@@ -20,3 +20,4 @@ class STRM_PT_Panel(bpy.types.Panel):
         row.operator("clip.strm_set_overlay_score", text="Flicker").score_type = 'flicker'
         layout.separator()
         layout.operator("clip.strm_select_rois", icon='SELECT_SET')
+        layout.operator("clip.strm_seed_features", icon='PARTICLES')
