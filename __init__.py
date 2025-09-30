@@ -10,6 +10,7 @@ bl_info = {
 
 import importlib
 from . import operators, ui  # noqa: F401
+from .properties import TRACKING_PG_detect_settings
 
 modules = [
     operators,
@@ -26,6 +27,7 @@ from .operators.detect_markers import TRACKING_OT_detect_markers
 from .ui.panel import TRACKING_PT_tools_panel
 
 classes = (
+    TRACKING_PG_detect_settings,
     TRACKING_OT_detect_markers,
     TRACKING_PT_tools_panel,
 )
@@ -33,9 +35,12 @@ classes = (
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
+    bpy.types.Scene.tracking_detect_settings = bpy.props.PointerProperty(type=TRACKING_PG_detect_settings)
 
 
 def unregister():
+    if hasattr(bpy.types.Scene, 'tracking_detect_settings'):
+        del bpy.types.Scene.tracking_detect_settings
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
 
