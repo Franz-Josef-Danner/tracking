@@ -168,6 +168,8 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
         new_tracks = [t for t in clip.tracking.tracks if id(t) in new_ids]
         # Für Distanzvergleich: current_search_size (Pixel) = search_size (bereits px) oder fallback
         min_dist = float(search_size) if search_size is not None else 0.0
+        debug_prefix = f"[TrackingHelper][Pass {pass_index} thr {thr:.5f}]"
+        print(f"{debug_prefix} Neue Tracks Kandidaten: {len(new_tracks)}, akzeptierte bisher: {len(accepted_positions)}, min_dist={min_dist}")
         for t in new_tracks:
             marker_co_norm = None
             marker_px = None
@@ -193,19 +195,35 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
             too_close = False
             if marker_px is not None and min_dist > 0 and accepted_positions:
                 mx, my = marker_px
-                for (ax, ay) in accepted_positions:
+                for idx, (ax, ay) in enumerate(accepted_positions):
                     dx = mx - ax
                     dy = my - ay
-                    if (dx*dx + dy*dy) ** 0.5 < min_dist:
+                    dist = (dx*dx + dy*dy) ** 0.5
+                    print(f"{debug_prefix} Distanz zu akzeptiert[{idx}]=({ax:.2f},{ay:.2f}) -> {dist:.2f} px")
+                    if dist < min_dist:
                         too_close = True
                         break
+            elif marker_px is None:
+                print(f"{debug_prefix} WARN: Marker '{t.name}' hat keine Pixelposition (w/h unbekannt?) -> wird akzeptiert")
+            elif min_dist <= 0:
+                print(f"{debug_prefix} Hinweis: min_dist=0 -> kein Filter aktiv")
             if too_close:
                 try:
                     clip.tracking.tracks.remove(t)
                     removed_total += 1
-                    print(
-                        f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} TRACK '{t.name}' entfernt (Abstand < {min_dist}px) pos_px={marker_px}"
-                    )
+                    print(f"{debug_prefix} TRACK '{t.name}' entfernt (Abstand < {min_dist}px) pos_px={marker_px}")
+                    marker_logs.append({
+                        'pass': pass_index,
+                        'threshold': thr,
+                        'track_name': t.name,
+                        'frame': frame_used,
+                        'pos_norm': marker_co_norm,
+                        'pos_px': marker_px,
+                        'pattern': pattern_size,
+                        'search': search_size,
+                        'filtered': True,
+                        'reason': f'distance<{min_dist}'
+                    })
                 except Exception:  # noqa: BLE001
                     pass
                 continue
@@ -215,8 +233,7 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
             if marker_px is not None:
                 accepted_positions.append(marker_px)
             print(
-                f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} NEUER TRACK '{t.name}' "
-                f"frame={frame_used} pos_norm={marker_co_norm} pos_px={marker_px} pattern={pattern_size} search={search_size}"
+                f"{debug_prefix} NEUER TRACK '{t.name}' frame={frame_used} pos_norm={marker_co_norm} pos_px={marker_px} pattern={pattern_size} search={search_size}"
             )
             marker_logs.append({
                 'pass': pass_index,
@@ -227,7 +244,8 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
                 'pos_px': marker_px,
                 'pattern': pattern_size,
                 'search': search_size,
-                'filtered': False
+                'filtered': False,
+                'reason': 'accepted'
             })
         existing_track_ids.update(new_ids)
         return count
