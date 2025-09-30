@@ -26,6 +26,7 @@ def detect_features_multipass(
     factor=0.5,
     max_passes=32,
     overlap_pixel_threshold=6,
+    verbose=False,
 ):
     """Führt mehrfache Feature-Erkennung aus.
 
@@ -149,6 +150,10 @@ def detect_features_multipass(
                             return True
         return False
 
+    def log(msg):
+        if verbose:
+            print(f"[Tracking Detect Helper] {msg}")
+
     def run_detect(thr, allow_param=True):
         prev = len(clip.tracking.tracks) if clip else 0
         note = ''
@@ -177,31 +182,12 @@ def detect_features_multipass(
                 existing_ids = {id(t) for t in existing_tracks_snapshot}
 
                 if not has_threshold:
-                    added_raw, note = run_detect(current, allow_param=False)
-                    removed = 0
-                    if added_raw > 0 and clip:
-                        w, h = clip.size
-                        # Identify truly new tracks by object identity
-                        new_tracks = [t for t in clip.tracking.tracks if id(t) not in existing_ids]
-                        for t in list(new_tracks):
-                            c, bb = marker_and_bbox_px(t, frame, w, h)
-                            if not c:
-                                continue
-                            if is_overlap(c, bb, existing_items):
-                                clip.tracking.tracks.remove(t)
-                                removed += 1
-                    per_pass.append((current, added_raw - removed, (note or 'kein threshold Param') + (f', removed {removed}' if removed else '')))
-                    passes = 1
-                else:
-                    while current >= min_threshold and passes < max_passes:
-                        frame = current_frame()
-                        existing_tracks_snapshot = list(clip.tracking.tracks) if clip else []
-                        existing_items = collect_existing(existing_tracks_snapshot, frame)
-                        existing_ids = {id(t) for t in existing_tracks_snapshot}
-                        added_raw, note = run_detect(current, allow_param=True)
+                    try:
+                        added_raw, note = run_detect(current, allow_param=False)
                         removed = 0
                         if added_raw > 0 and clip:
                             w, h = clip.size
+                            # Identify truly new tracks by object identity
                             new_tracks = [t for t in clip.tracking.tracks if id(t) not in existing_ids]
                             for t in list(new_tracks):
                                 c, bb = marker_and_bbox_px(t, frame, w, h)
@@ -211,7 +197,38 @@ def detect_features_multipass(
                                     clip.tracking.tracks.remove(t)
                                     removed += 1
                         kept = added_raw - removed
-                        per_pass.append((current, kept, note + (f', removed {removed}' if removed else '')))
+                        per_pass.append((current, kept, (note or 'kein threshold Param') + (f', removed {removed}' if removed else '')))
+                        log(f"Pass {passes+1} thr={current:.5f} added_raw={added_raw} removed={removed} kept={kept}")
+                        passes = 1
+                    except Exception as e:  # noqa: BLE001
+                        per_pass.append((current, 0, f'Exception {e}'))
+                        log(f"Abbruch wegen Exception bei Pass 1: {e}")
+                else:
+                    while current >= min_threshold and passes < max_passes:
+                        try:
+                            frame = current_frame()
+                            existing_tracks_snapshot = list(clip.tracking.tracks) if clip else []
+                            existing_items = collect_existing(existing_tracks_snapshot, frame)
+                            existing_ids = {id(t) for t in existing_tracks_snapshot}
+                            added_raw, note = run_detect(current, allow_param=True)
+                            removed = 0
+                            if added_raw > 0 and clip:
+                                w, h = clip.size
+                                new_tracks = [t for t in clip.tracking.tracks if id(t) not in existing_ids]
+                                for t in list(new_tracks):
+                                    c, bb = marker_and_bbox_px(t, frame, w, h)
+                                    if not c:
+                                        continue
+                                    if is_overlap(c, bb, existing_items):
+                                        clip.tracking.tracks.remove(t)
+                                        removed += 1
+                            kept = added_raw - removed
+                            per_pass.append((current, kept, note + (f', removed {removed}' if removed else '')))
+                            log(f"Pass {passes+1} thr={current:.5f} added_raw={added_raw} removed={removed} kept={kept}")
+                        except Exception as e:  # noqa: BLE001
+                            per_pass.append((current, 0, f'Exception {e}'))
+                            log(f"Exception in Pass {passes+1} thr={current:.5f}: {e}")
+                            break
                         passes += 1
                         current *= factor
         except AttributeError:
@@ -224,45 +241,13 @@ def detect_features_multipass(
             existing_items = collect_existing(existing_tracks_snapshot, frame)
             existing_ids = {id(t) for t in existing_tracks_snapshot}
             if not has_threshold:
-                prev = len(clip.tracking.tracks) if clip else 0
-                bpy.ops.clip.detect_features(override)
-                new_total = len(clip.tracking.tracks) if clip else prev
-                added_raw = new_total - prev
-                removed = 0
-                if added_raw > 0 and clip:
-                    w, h = clip.size
-                    new_tracks = [t for t in clip.tracking.tracks if id(t) not in existing_ids]
-                    for t in list(new_tracks):
-                        c, bb = marker_and_bbox_px(t, frame, w, h)
-                        if not c:
-                            continue
-                        if is_overlap(c, bb, existing_items):
-                            clip.tracking.tracks.remove(t)
-                            removed += 1
-                per_pass.append((current, added_raw - removed, f'fallback ohne threshold, removed {removed}' if removed else 'fallback ohne threshold'))
-                passes = 1
-            else:
-                while current >= min_threshold and passes < max_passes:
+                try:
                     prev = len(clip.tracking.tracks) if clip else 0
-                    try:
-                        bpy.ops.clip.detect_features(override, threshold=current)
-                    except TypeError:
-                        bpy.ops.clip.detect_features(override)
-                        per_pass.append((current, 0, 'fallback threshold TypeError'))
-                        break
-                    # snapshot before filtering
-                    frame = current_frame()
-                    existing_tracks_snapshot = [t for t in clip.tracking.tracks if id(t) < 0]  # dummy to keep variable defined
-                    # Reconstruct existing baseline for this pass: those before prev count not tracked easily here; approximate by previous iteration's total minus new
-                    # Simpler: treat all previous tracks as existing_ids (cache outside loop better for clarity, omitted for fallback simplicity)
+                    bpy.ops.clip.detect_features(override)
                     new_total = len(clip.tracking.tracks) if clip else prev
                     added_raw = new_total - prev
                     removed = 0
                     if added_raw > 0 and clip:
-                        # Build existing items by taking first prev tracks (order stable)
-                        existing_tracks_snapshot = clip.tracking.tracks[:prev]
-                        existing_items = collect_existing(existing_tracks_snapshot, frame)
-                        existing_ids = {id(t) for t in existing_tracks_snapshot}
                         w, h = clip.size
                         new_tracks = [t for t in clip.tracking.tracks if id(t) not in existing_ids]
                         for t in list(new_tracks):
@@ -272,7 +257,46 @@ def detect_features_multipass(
                             if is_overlap(c, bb, existing_items):
                                 clip.tracking.tracks.remove(t)
                                 removed += 1
-                    per_pass.append((current, added_raw - removed, 'fallback' + (f', removed {removed}' if removed else '')))
+                    per_pass.append((current, added_raw - removed, f'fallback ohne threshold, removed {removed}' if removed else 'fallback ohne threshold'))
+                    passes = 1
+                    log(f"Fallback Pass 1 thr={current:.5f} added_raw={added_raw} removed={removed}")
+                except Exception as e:  # noqa: BLE001
+                    per_pass.append((current, 0, f'Fallback Exception {e}'))
+                    log(f"Fallback Exception Pass 1: {e}")
+            else:
+                while current >= min_threshold and passes < max_passes:
+                    try:
+                        prev = len(clip.tracking.tracks) if clip else 0
+                        try:
+                            bpy.ops.clip.detect_features(override, threshold=current)
+                        except TypeError:
+                            bpy.ops.clip.detect_features(override)
+                            per_pass.append((current, 0, 'fallback threshold TypeError'))
+                            log(f"Fallback TypeError thr={current:.5f}")
+                            break
+                        frame = current_frame()
+                        new_total = len(clip.tracking.tracks) if clip else prev
+                        added_raw = new_total - prev
+                        removed = 0
+                        if added_raw > 0 and clip:
+                            existing_tracks_snapshot = clip.tracking.tracks[:prev]
+                            existing_items = collect_existing(existing_tracks_snapshot, frame)
+                            existing_ids = {id(t) for t in existing_tracks_snapshot}
+                            w, h = clip.size
+                            new_tracks = [t for t in clip.tracking.tracks if id(t) not in existing_ids]
+                            for t in list(new_tracks):
+                                c, bb = marker_and_bbox_px(t, frame, w, h)
+                                if not c:
+                                    continue
+                                if is_overlap(c, bb, existing_items):
+                                    clip.tracking.tracks.remove(t)
+                                    removed += 1
+                        per_pass.append((current, added_raw - removed, 'fallback' + (f', removed {removed}' if removed else '')))
+                        log(f"Fallback Pass {passes+1} thr={current:.5f} added_raw={added_raw} removed={removed}")
+                    except Exception as e:  # noqa: BLE001
+                        per_pass.append((current, 0, f'Fallback Exception {e}'))
+                        log(f"Fallback Exception Pass {passes+1} thr={current:.5f}: {e}")
+                        break
                     passes += 1
                     current *= factor
     except Exception as e:  # noqa: BLE001

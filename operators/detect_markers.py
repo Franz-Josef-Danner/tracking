@@ -11,8 +11,14 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
     )
     bl_options = {"REGISTER", "UNDO"}
 
+    verbose = bpy.props.BoolProperty(
+        name="Verbose",
+        description="Ausführliche Debug-Ausgaben in der Konsole",
+        default=False,
+    )
+
     def execute(self, context):
-        result = detect_features_multipass(context)
+        result = detect_features_multipass(context, verbose=self.verbose)
         if not result.get('success'):
             self.report({'ERROR'}, result.get('message', 'Unbekannter Fehler'))
             return {'CANCELLED'}
