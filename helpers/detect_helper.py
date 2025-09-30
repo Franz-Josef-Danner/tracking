@@ -1,4 +1,7 @@
-import bpy
+try:  # Blender Umgebung
+    import bpy  # type: ignore
+except ImportError:  # außerhalb Blender
+    bpy = None  # type: ignore
 
 
 def find_clip_editor_area(context):
@@ -44,29 +47,53 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
         }
 
     clip = get_clip_from_area(area)
+    pattern_size = None
+    search_size = None
+    old_pattern = None
+    old_search = None
+    settings = None
     if clip:
         try:
             w, h = clip.size
             print(f"[TrackingHelper] Clip Breite (px): {w}")
+            # Berechnung gemäß Anforderung:
+            # pattern_size = horizontale Auflösung * 0.01
+            pattern_size = max(3, int(round(w * 0.01)))
+            search_size = pattern_size * 2
+            settings = getattr(clip.tracking, 'settings', None)
+            if settings is not None:
+                # Alte Werte sichern
+                old_pattern = getattr(settings, 'default_pattern_size', None)
+                old_search = getattr(settings, 'default_search_size', None)
+                # Setzen falls Attribute vorhanden
+                if hasattr(settings, 'default_pattern_size'):
+                    settings.default_pattern_size = pattern_size
+                if hasattr(settings, 'default_search_size'):
+                    settings.default_search_size = search_size
+                print(f"[TrackingHelper] Set pattern_size={pattern_size}, search_size={search_size}")
         except Exception:  # noqa: BLE001
             pass
     tracks_before = len(clip.tracking.tracks) if clip else -1
 
     # Prüfen ob threshold unterstützt wird
-    try:
-        rna = bpy.ops.clip.detect_features.get_rna_type()
-        has_threshold = 'threshold' in rna.properties.keys()
-    except Exception:  # noqa: BLE001
-        has_threshold = False
+    has_threshold = False
+    if bpy is not None:
+        try:
+            rna = bpy.ops.clip.detect_features.get_rna_type()
+            has_threshold = 'threshold' in rna.properties.keys()
+        except Exception:  # noqa: BLE001
+            has_threshold = False
 
     per_pass = []
     passes = 0
     current = start_threshold
 
     def run_detect(thr, allow_param=True):
-        prev = len(clip.tracking.tracks) if clip else 0
+        prev = len(clip.tracking.tracks) if (clip and bpy is not None) else 0
         note = ''
         try:
+            if bpy is None:
+                return 0, 'kein bpy (Entwicklungsumgebung)'
             if has_threshold and allow_param:
                 bpy.ops.clip.detect_features(threshold=thr)
             else:
@@ -75,14 +102,17 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
                     note = 'threshold nicht unterstützt'
         except TypeError:
             # Versuche ohne Parameter
-            bpy.ops.clip.detect_features()
+            if bpy is not None:
+                bpy.ops.clip.detect_features()
             note = 'TypeError threshold'
-        new_total = len(clip.tracking.tracks) if clip else prev
+        new_total = len(clip.tracking.tracks) if (clip and bpy is not None) else prev
         return new_total - prev, note
 
     try:
         try:
             # Prefer temp_override
+            if bpy is None:
+                raise RuntimeError('bpy nicht verfügbar')
             with context.temp_override(area=area, region=region):
                 if not has_threshold:
                     added, note = run_detect(current, allow_param=False)
@@ -124,8 +154,20 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
             'message': f'Fehler: {e}',
             'passes': passes,
             'total_added': -1,
-            'per_pass': per_pass
+            'per_pass': per_pass,
+            'pattern_size': pattern_size,
+            'search_size': search_size
         }
+    finally:
+        # Ursprüngliche Werte wiederherstellen
+        if settings is not None:
+            try:
+                if old_pattern is not None and hasattr(settings, 'default_pattern_size'):
+                    settings.default_pattern_size = old_pattern
+                if old_search is not None and hasattr(settings, 'default_search_size'):
+                    settings.default_search_size = old_search
+            except Exception:  # noqa: BLE001
+                pass
 
     if clip:
         total_added = len(clip.tracking.tracks) - tracks_before
@@ -137,5 +179,7 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
         'message': 'OK',
         'passes': passes,
         'total_added': total_added,
-        'per_pass': per_pass
+        'per_pass': per_pass,
+        'pattern_size': pattern_size,
+        'search_size': search_size
     }
