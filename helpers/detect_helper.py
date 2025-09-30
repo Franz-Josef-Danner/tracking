@@ -44,6 +44,12 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
         }
 
     clip = get_clip_from_area(area)
+    if clip:
+        try:
+            w, h = clip.size
+            print(f"[TrackingHelper] Clip Breite (px): {w}")
+        except Exception:  # noqa: BLE001
+            pass
     tracks_before = len(clip.tracking.tracks) if clip else -1
 
     # Prüfen ob threshold unterstützt wird
