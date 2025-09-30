@@ -158,8 +158,15 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
                         if marker_ref is not None:
                             co_norm = marker_ref.co
                             existing_positions_px.append((co_norm[0] * w, co_norm[1] * h))
+                fallback_used = False
+                # Fallback: wenn Blender offenbar die alten Tracks ersetzt (leer) aber wir frühere Marker geloggt haben
+                if not existing_positions_px and marker_logs and w is not None and h is not None:
+                    prev = [m['pos_px'] for m in marker_logs if m.get('pos_px') is not None]
+                    if prev:
+                        existing_positions_px = prev
+                        fallback_used = True
             except Exception:  # noqa: BLE001
-                pass
+                fallback_used = False
         count = 0
         for t in clip.tracking.tracks:
             if id(t) in new_ids:
@@ -205,6 +212,7 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
                     'nearest_dist_px': nearest_dist_px,
                     'pattern': pattern_size,
                     'search': search_size,
+                    'distance_fallback': fallback_used,
                 })
         existing_track_ids.update(new_ids)
         return count
