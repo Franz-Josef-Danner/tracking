@@ -170,6 +170,8 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
         min_dist = float(search_size) if search_size is not None else 0.0
         debug_prefix = f"[TrackingHelper][Pass {pass_index} thr {thr:.5f}]"
         print(f"{debug_prefix} Neue Tracks Kandidaten: {len(new_tracks)}, akzeptierte bisher: {len(accepted_positions)}, min_dist={min_dist}")
+        to_remove = []  # verzögertes Entfernen vermeiden Iterator-Modifikation
+        raw_added = len(new_tracks)
         for t in new_tracks:
             marker_co_norm = None
             marker_px = None
@@ -208,24 +210,7 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
             elif min_dist <= 0:
                 print(f"{debug_prefix} Hinweis: min_dist=0 -> kein Filter aktiv")
             if too_close:
-                try:
-                    clip.tracking.tracks.remove(t)
-                    removed_total += 1
-                    print(f"{debug_prefix} TRACK '{t.name}' entfernt (Abstand < {min_dist}px) pos_px={marker_px}")
-                    marker_logs.append({
-                        'pass': pass_index,
-                        'threshold': thr,
-                        'track_name': t.name,
-                        'frame': frame_used,
-                        'pos_norm': marker_co_norm,
-                        'pos_px': marker_px,
-                        'pattern': pattern_size,
-                        'search': search_size,
-                        'filtered': True,
-                        'reason': f'distance<{min_dist}'
-                    })
-                except Exception:  # noqa: BLE001
-                    pass
+                to_remove.append((t, marker_co_norm, marker_px, frame_used))
                 continue
 
             # Track akzeptiert
@@ -247,7 +232,29 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
                 'filtered': False,
                 'reason': 'accepted'
             })
-        existing_track_ids.update(new_ids)
+        # Jetzt Entfernen durchführen
+        for t, marker_co_norm, marker_px, frame_used in to_remove:
+            try:
+                clip.tracking.tracks.remove(t)
+                removed_total += 1
+                print(f"{debug_prefix} TRACK '{t.name}' entfernt (Abstand < {min_dist}px) pos_px={marker_px}")
+                marker_logs.append({
+                    'pass': pass_index,
+                    'threshold': thr,
+                    'track_name': t.name,
+                    'frame': frame_used,
+                    'pos_norm': marker_co_norm,
+                    'pos_px': marker_px,
+                    'pattern': pattern_size,
+                    'search': search_size,
+                    'filtered': True,
+                    'reason': f'distance<{min_dist}'
+                })
+            except Exception as e:  # noqa: BLE001
+                print(f"{debug_prefix} Entfernen fehlgeschlagen für '{t.name}': {e}")
+
+        existing_track_ids.update(new_ids - {id(t) for t, *_ in to_remove})
+        print(f"{debug_prefix} Zusammenfassung Pass: raw_added={raw_added} accepted={count} removed={len(to_remove)} total_removed_sum={removed_total}")
         return count
 
     try:
