@@ -61,6 +61,30 @@ def detect_features_multipass(
     except Exception:  # noqa: BLE001
         has_threshold = False
 
+    # Defensive Cast für Fälle, in denen versehentlich ein Property-Objekt weitergereicht wird
+    try:
+        if not isinstance(min_distance_px, (int, float)):
+            # Versuche typische Attribute eines Blender Property Platzhalters
+            candidate = getattr(min_distance_px, 'default', None)
+            if isinstance(candidate, (int, float)):
+                min_distance_px = candidate
+            else:
+                min_distance_px = 6.0
+    except Exception:  # noqa: BLE001
+        min_distance_px = 6.0
+
+    try:
+        min_distance_px = float(min_distance_px)
+    except Exception:  # noqa: BLE001
+        min_distance_px = 6.0
+
+    if min_distance_px < 0.1:
+        min_distance_px = 0.1
+
+    def _d(msg):
+        if debug:
+            print(f"[TrackingDetect] {msg}")
+
     per_pass = []  # Elemente: (threshold, added, removed, note)
     passes = 0
     current = start_threshold
@@ -199,6 +223,7 @@ def detect_features_multipass(
         removed_new = _remove_within_new(new_tracks_remaining, context.scene.frame_current)
         if debug:
             print(f"[TrackingDetect] Thr {thr:.6f} added={added} removed_prev={removed_prev} removed_new={removed_new}")
+        _d(f"Pass thr={thr:.6f} added={added} removed_prev={removed_prev} removed_new={removed_new} min_dist={min_distance_px}")
         return added, removed_prev, removed_new, note
 
     try:
@@ -247,6 +272,7 @@ def detect_features_multipass(
     # Gesamt entfernte Duplikate zählen
     total_removed = sum(r for _t, _a, r, _n in per_pass)
 
+    _d(f"Fertig: passes={passes} total_added={total_added} total_removed={total_removed} min_distance={min_distance_px}")
     return {
         'success': True,
         'message': 'OK',
