@@ -140,6 +140,26 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
         if not new_ids:
             return 0
         cur_frame = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
+        # Sammle Positionen (Pixel) aller bisherigen Tracks (vor diesem Pass) für Distanzvergleich
+        existing_positions_px = []
+        if w is not None and h is not None:
+            try:
+                for t in clip.tracking.tracks:
+                    if id(t) in existing_track_ids:  # nur alte Tracks
+                        # Nimm Marker dieses Frames oder ersten
+                        marker_ref = None
+                        if cur_frame is not None:
+                            for m in t.markers:
+                                if m.frame == cur_frame:
+                                    marker_ref = m
+                                    break
+                        if marker_ref is None and len(t.markers) > 0:
+                            marker_ref = t.markers[0]
+                        if marker_ref is not None:
+                            co_norm = marker_ref.co
+                            existing_positions_px.append((co_norm[0] * w, co_norm[1] * h))
+            except Exception:  # noqa: BLE001
+                pass
         count = 0
         for t in clip.tracking.tracks:
             if id(t) in new_ids:
@@ -147,6 +167,7 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
                 marker_co_norm = None
                 marker_px = None
                 frame_used = None
+                nearest_dist_px = None
                 try:
                     marker = None
                     if cur_frame is not None:
@@ -161,11 +182,18 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
                         frame_used = marker.frame
                         if w is not None and h is not None:
                             marker_px = (marker_co_norm[0] * w, marker_co_norm[1] * h)
+                            # Distanz zu nächstem existierenden Marker berechnen
+                            if existing_positions_px:
+                                try:
+                                    x, y = marker_px
+                                    nearest_dist_px = min(((x - ex)**2 + (y - ey)**2) for ex, ey in existing_positions_px) ** 0.5
+                                except Exception:  # noqa: BLE001
+                                    nearest_dist_px = None
                 except Exception:  # noqa: BLE001
                     pass
                 print(
                     f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} NEUER TRACK '{t.name}' "
-                    f"frame={frame_used} pos_norm={marker_co_norm} pos_px={marker_px} pattern={pattern_size} search={search_size}"
+                    f"frame={frame_used} pos_norm={marker_co_norm} pos_px={marker_px} nearest_px={nearest_dist_px} pattern={pattern_size} search={search_size}"
                 )
                 marker_logs.append({
                     'pass': pass_index,
@@ -174,6 +202,7 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
                     'frame': frame_used,
                     'pos_norm': marker_co_norm,
                     'pos_px': marker_px,
+                    'nearest_dist_px': nearest_dist_px,
                     'pattern': pattern_size,
                     'search': search_size,
                 })
