@@ -29,6 +29,8 @@ def detect_features_multipass(
     debug=False,
     use_overlap=True,
     overlap_threshold=0.2,
+    tag_pass_names=True,
+    rounding_step=0.25,
 ):
     """Führt mehrfache Feature-Erkennung aus.
 
@@ -84,6 +86,7 @@ def detect_features_multipass(
     factor = _as_float(factor, 0.5)
     overlap_threshold = _as_float(overlap_threshold, 0.2)
     min_distance_px = _as_float(min_distance_px, 6.0)
+    rounding_step = _as_float(rounding_step, 0.25)
 
     if min_distance_px < 0.1:
         min_distance_px = 0.1
@@ -160,6 +163,11 @@ def detect_features_multipass(
         # Verwende Verhältnis zur kleineren Fläche (robuster wenn Größen variieren)
         return inter_area / min(area_a, area_b)
 
+    def _round_coord(v: float) -> float:
+        if rounding_step and rounding_step > 0.0:
+            return round(v / rounding_step) * rounding_step
+        return v
+
     def _collect_track_centers(frame_current):
         centers = []
         if not clip:
@@ -170,8 +178,8 @@ def detect_features_multipass(
             if pos is None:
                 continue
             x, y = pos
-            xq = round(x * 4) / 4.0
-            yq = round(y * 4) / 4.0
+            xq = _round_coord(x)
+            yq = _round_coord(y)
             centers.append((tr.name, xq, yq))
         return centers
 
@@ -185,8 +193,8 @@ def detect_features_multipass(
             if pos is None:
                 continue
             x, y = pos
-            xq = round(x * 4) / 4.0
-            yq = round(y * 4) / 4.0
+            xq = _round_coord(x)
+            yq = _round_coord(y)
             centers.append((tr, xq, yq))
         return centers
 
@@ -208,8 +216,8 @@ def detect_features_multipass(
             if pos is None:
                 continue
             x, y = pos
-            xq = round(x * 4) / 4.0
-            yq = round(y * 4) / 4.0
+            xq = _round_coord(x)
+            yq = _round_coord(y)
             bbox_new = _get_pattern_bbox(tr, frame_current, w, h) if use_overlap else None
             for _tr_old, ox, oy in prev_centers:
                 dx = xq - ox
@@ -244,8 +252,8 @@ def detect_features_multipass(
             if pos is None:
                 continue
             x, y = pos
-            xq = round(x * 4) / 4.0
-            yq = round(y * 4) / 4.0
+            xq = _round_coord(x)
+            yq = _round_coord(y)
             centers.append((tr, xq, yq))
         removed = 0
         min_dist_sq = min_distance_px * min_distance_px
@@ -279,7 +287,7 @@ def detect_features_multipass(
                 kept.append((tr, xq, yq))
         return removed
 
-    def run_detect(thr, allow_param=True):
+    def run_detect(pass_index, thr, allow_param=True):
         if not clip:
             return 0, 0, 0, 'kein Clip'
         prev_tracks = list(clip.tracking.tracks)
@@ -299,13 +307,44 @@ def detect_features_multipass(
             return 0, 0, 0, f'Fehler detect: {e}'
         after_tracks = list(clip.tracking.tracks)
         new_tracks = [t for t in after_tracks if id(t) not in prev_ids]
+
+        # Pass-Tagging (vor Duplikat-Löschung, damit Name konsistent für Analyse bleibt)
+        if tag_pass_names and new_tracks:
+            for t in new_tracks:
+                try:
+                    t.name = f"P{pass_index}_{t.name}"
+                except Exception:  # noqa: BLE001
+                    pass
+
         added = len(new_tracks)
         removed_prev = _remove_overlapping(prev_tracks, new_tracks, context.scene.frame_current)
         # Nach Entfernen, filtere verbliebene "neue" erneut (da einige gelöscht wurden)
         after_tracks2 = list(clip.tracking.tracks)
         new_tracks_remaining = [t for t in after_tracks2 if id(t) not in prev_ids]
         removed_new = _remove_within_new(new_tracks_remaining, context.scene.frame_current)
-        _d(f"Pass thr={thr:.6f} added={added} removed_prev={removed_prev} removed_new={removed_new} min_dist={min_distance_px} overlap_thr={overlap_threshold} use_overlap={use_overlap}")
+        # Diagnostik: Rest-Paare unter Mindestabstand (sollten 0 sein)
+        residual_close = 0
+        if debug and (removed_prev + removed_new) == 0 and added > 0:
+            # Prüfe neue (nach Löschungen) gegen vorherige Tracks
+            w, h = clip.size
+            final_new = [t for t in clip.tracking.tracks if id(t) not in prev_ids]
+            prev_centers_full = _calc_centers_for_tracks(prev_tracks, context.scene.frame_current)
+            min_dist_sq = min_distance_px * min_distance_px
+            for tr in final_new:
+                pos = _get_marker_center(tr, context.scene.frame_current, w, h)
+                if pos is None:
+                    continue
+                x, y = pos
+                xq = _round_coord(x)
+                yq = _round_coord(y)
+                for _tr_old, ox, oy in prev_centers_full:
+                    dx = xq - ox
+                    dy = yq - oy
+                    if (dx * dx + dy * dy) <= min_dist_sq:
+                        residual_close += 1
+                        _d(f"WARN: verbleibender Track '{tr.name}' dist<={min_distance_px} zu '{_tr_old.name if hasattr(_tr_old,'name') else _tr_old}' (Δ=({dx:.2f},{dy:.2f}))")
+                        break
+        _d(f"Pass {pass_index} thr={thr:.6f} added={added} removed_prev={removed_prev} removed_new={removed_new} residual_close={residual_close} min_dist={min_distance_px} overlap_thr={overlap_threshold} use_overlap={use_overlap} rounding_step={rounding_step}")
         return added, removed_prev, removed_new, note
 
     try:
@@ -313,12 +352,12 @@ def detect_features_multipass(
             # Prefer temp_override
             with context.temp_override(area=area, region=region):
                 if not has_threshold:
-                    added, removed_prev, removed_new, note = run_detect(current, allow_param=False)
+                    added, removed_prev, removed_new, note = run_detect(1, current, allow_param=False)
                     per_pass.append((current, added, removed_prev + removed_new, note or 'kein threshold Param'))
                     passes = 1
                 else:
                     while current >= min_threshold and passes < max_passes:
-                        added, removed_prev, removed_new, note = run_detect(current, allow_param=True)
+                        added, removed_prev, removed_new, note = run_detect(passes + 1, current, allow_param=True)
                         per_pass.append((current, added, removed_prev + removed_new, note))
                         passes += 1
                         current *= factor
@@ -328,12 +367,12 @@ def detect_features_multipass(
             override['area'] = area
             override['region'] = region
             if not has_threshold:
-                added, removed_prev, removed_new, note = run_detect(current, allow_param=False)
+                added, removed_prev, removed_new, note = run_detect(1, current, allow_param=False)
                 per_pass.append((current, added, removed_prev + removed_new, (note or '') + ' fallback ohne threshold'))
                 passes = 1
             else:
                 while current >= min_threshold and passes < max_passes:
-                    added, removed_prev, removed_new, note = run_detect(current, allow_param=True)
+                    added, removed_prev, removed_new, note = run_detect(passes + 1, current, allow_param=True)
                     per_pass.append((current, added, removed_prev + removed_new, note + ' fallback'))
                     passes += 1
                     current *= factor

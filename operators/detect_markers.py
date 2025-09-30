@@ -42,6 +42,21 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         precision=3
     )
 
+    tag_pass_names = bpy.props.BoolProperty(
+        name="Pass-Präfixe",
+        description="Neue Tracks erhalten ein 'P#_' Präfix zur Analyse je Durchlauf",
+        default=True
+    )
+
+    rounding_step = bpy.props.FloatProperty(
+        name="Rundung (px)",
+        description="Rundet Marker-Zentren vor Distanzvergleich (0 = aus)",
+        default=0.25,
+        min=0.0,
+        max=5.0,
+        precision=3
+    )
+
     def execute(self, context):
         result = detect_features_multipass(
             context,
@@ -49,6 +64,8 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             debug=self.debug,
             use_overlap=self.use_overlap,
             overlap_threshold=self.overlap_threshold,
+            tag_pass_names=self.tag_pass_names,
+            rounding_step=self.rounding_step,
         )
         if not result.get('success'):
             self.report({'ERROR'}, result.get('message', 'Unbekannter Fehler'))
