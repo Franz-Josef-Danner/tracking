@@ -89,6 +89,10 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
     per_pass = []
     passes = 0
     current = start_threshold
+    marker_logs = []  # speichert detailinformationen neuer Marker
+    existing_track_ids = set()
+    if clip and bpy is not None:
+        existing_track_ids = {id(t) for t in clip.tracking.tracks}
 
     def apply_sizes(cur_pattern):
         """Setzt pattern/search size auf Basis cur_pattern."""
@@ -108,11 +112,8 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
         except Exception:  # noqa: BLE001
             pass
 
-    def run_detect(thr, allow_param=True, pass_index=0):
+    def run_detect(thr, allow_param=True):
         prev_count = len(clip.tracking.tracks) if (clip and bpy is not None) else 0
-        prev_ids = set()
-        if clip and bpy is not None:
-            prev_ids = {id(t) for t in clip.tracking.tracks}
         note = ''
         try:
             if bpy is None:
@@ -124,40 +125,60 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
                 if allow_param and not has_threshold:
                     note = 'threshold nicht unterstützt'
         except TypeError:
-            # Versuche ohne Parameter
             if bpy is not None:
                 bpy.ops.clip.detect_features()
             note = 'TypeError threshold'
         new_total = len(clip.tracking.tracks) if (clip and bpy is not None) else prev_count
-        added = new_total - prev_count
-        # Logging neuer Marker / Tracks
-        if added > 0 and clip and bpy is not None:
-            cur_frame = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
-            for t in clip.tracking.tracks:
-                if id(t) not in prev_ids:
-                    marker_co_norm = None
-                    marker_px = None
-                    try:
-                        marker = None
-                        if cur_frame is not None:
-                            # Suche Marker dieses Frames
-                            for m in t.markers:
-                                if m.frame == cur_frame:
-                                    marker = m
-                                    break
-                        if marker is None and len(t.markers) > 0:
-                            marker = t.markers[0]
-                        if marker is not None:
-                            marker_co_norm = marker.co
-                            if w is not None and h is not None:
-                                marker_px = (marker_co_norm[0] * w, marker_co_norm[1] * h)
-                    except Exception:  # noqa: BLE001
-                        pass
-                    print(
-                        f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} NEUER TRACK '{t.name}' "
-                        f"pos_norm={marker_co_norm} pos_px={marker_px} pattern={pattern_size} search={search_size}"
-                    )
-        return added, note
+        return new_total - prev_count, note
+
+    def log_new_tracks(pass_index, thr):
+        if not (clip and bpy is not None):
+            return 0
+        nonlocal existing_track_ids
+        cur_ids = {id(t) for t in clip.tracking.tracks}
+        new_ids = cur_ids - existing_track_ids
+        if not new_ids:
+            return 0
+        cur_frame = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
+        count = 0
+        for t in clip.tracking.tracks:
+            if id(t) in new_ids:
+                count += 1
+                marker_co_norm = None
+                marker_px = None
+                frame_used = None
+                try:
+                    marker = None
+                    if cur_frame is not None:
+                        for m in t.markers:
+                            if m.frame == cur_frame:
+                                marker = m
+                                break
+                    if marker is None and len(t.markers) > 0:
+                        marker = t.markers[0]
+                    if marker is not None:
+                        marker_co_norm = tuple(marker.co)
+                        frame_used = marker.frame
+                        if w is not None and h is not None:
+                            marker_px = (marker_co_norm[0] * w, marker_co_norm[1] * h)
+                except Exception:  # noqa: BLE001
+                    pass
+                print(
+                    f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} NEUER TRACK '{t.name}' "
+                    f"frame={frame_used} pos_norm={marker_co_norm} pos_px={marker_px} pattern={pattern_size} search={search_size}"
+                )
+                marker_logs.append({
+                    'pass': pass_index,
+                    'threshold': thr,
+                    'track_name': t.name,
+                    'frame': frame_used,
+                    'pos_norm': marker_co_norm,
+                    'pos_px': marker_px,
+                    'pattern': pattern_size,
+                    'search': search_size,
+                })
+        existing_track_ids.update(new_ids)
+        return count
 
     try:
         try:
@@ -168,7 +189,9 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
                 if not has_threshold:
                     # Set sizes für diesen Pass
                     apply_sizes(pattern_size)
-                    added, note = run_detect(current, allow_param=False, pass_index=passes + 1)
+                    added, note = run_detect(current, allow_param=False)
+                    # Log erst nach Detect
+                    log_new_tracks(passes + 1, current)
                     per_pass.append((current, added, note or 'kein threshold Param'))
                     passes = 1
                 else:
@@ -176,12 +199,13 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
                     while current >= min_threshold and passes < max_passes:
                         if cur_pattern_progressive is not None:
                             apply_sizes(cur_pattern_progressive)
-                        added, note = run_detect(current, allow_param=True, pass_index=passes + 1)
+                        added, note = run_detect(current, allow_param=True)
+                        log_new_tracks(passes + 1, current)
                         per_pass.append((current, added, note))
                         passes += 1
                         current *= factor
                         if cur_pattern_progressive is not None:
-                            cur_pattern_progressive *= 1.15
+                            cur_pattern_progressive *= 1.5
         except AttributeError:
             # Fallback ohne temp_override
             override = context.copy()
@@ -190,7 +214,8 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
             if not has_threshold:
                 apply_sizes(pattern_size)
                 # Verwende run_detect auch hier, um identisches Logging zu gewährleisten
-                added, note = run_detect(current, allow_param=False, pass_index=passes + 1)
+                added, note = run_detect(current, allow_param=False)
+                log_new_tracks(passes + 1, current)
                 per_pass.append((current, added, note or 'fallback ohne threshold'))
                 passes = 1
             else:
@@ -199,9 +224,8 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
                     if cur_pattern_progressive is not None:
                         apply_sizes(cur_pattern_progressive)
                     try:
-                        # Nutzung von run_detect innerhalb des Overrides wäre möglich,
-                        # aber hier müssen wir threshold param direkt versuchen
-                        added, note = run_detect(current, allow_param=True, pass_index=passes + 1)
+                        added, note = run_detect(current, allow_param=True)
+                        log_new_tracks(passes + 1, current)
                         per_pass.append((current, added, note or 'fallback'))
                     except Exception:  # noqa: BLE001
                         per_pass.append((current, 0, 'fallback Fehler'))
@@ -218,7 +242,8 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
             'total_added': -1,
             'per_pass': per_pass,
             'pattern_size': pattern_size,
-            'search_size': search_size
+            'search_size': search_size,
+            'marker_logs': marker_logs
         }
     finally:
         # Ursprüngliche Werte wiederherstellen
@@ -243,5 +268,6 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
         'total_added': total_added,
         'per_pass': per_pass,
         'pattern_size': pattern_size,
-        'search_size': search_size
+        'search_size': search_size,
+        'marker_logs': marker_logs
     }
