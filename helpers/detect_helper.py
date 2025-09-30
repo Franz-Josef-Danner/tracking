@@ -64,21 +64,32 @@ def detect_features_multipass(
     passes = 0
     current = start_threshold
 
+    def _get_marker_center(track, frame_current, w, h):
+        """Finde Marker im gegebenen Frame; fallback: erster Marker. Liefert Pixel-Koordinaten (float)."""
+        try:
+            for mk in track.markers:
+                if mk.frame == frame_current:
+                    cx, cy = mk.co
+                    return cx * w, cy * h
+            mk0 = track.markers[0]
+            cx, cy = mk0.co
+            return cx * w, cy * h
+        except Exception:  # noqa: BLE001
+            return None
+
     def _collect_track_centers(frame_current):
         centers = []
         if not clip:
             return centers
         w, h = clip.size
         for tr in clip.tracking.tracks:
-            try:
-                marker = tr.markers.find_frame(frame_current)
-                if marker is None:
-                    # Fallback: erster Marker
-                    marker = tr.markers[0]
-                cx, cy = marker.co
-                centers.append((tr.name, cx * w, cy * h))
-            except Exception:  # noqa: BLE001
-                pass
+            pos = _get_marker_center(tr, frame_current, w, h)
+            if pos is None:
+                continue
+            x, y = pos
+            xq = round(x * 4) / 4.0
+            yq = round(y * 4) / 4.0
+            centers.append((tr.name, xq, yq))
         return centers
 
     def _remove_overlapping(new_track_names, old_centers, frame_current):
@@ -87,26 +98,27 @@ def detect_features_multipass(
         w, h = clip.size
         removed = 0
         min_dist_sq = min_distance_px * min_distance_px
+        # Erstelle schnelle Liste ohne Namen für Distanz
+        old_pts = [(ox, oy) for _n, ox, oy in old_centers]
         for tr in list(clip.tracking.tracks):
             if tr.name not in new_track_names:
                 continue
-            try:
-                marker = tr.markers.find_frame(frame_current)
-                if marker is None:
-                    marker = tr.markers[0]
-                cx, cy = marker.co
-                px, py = cx * w, cy * h
-                # Prüfe gegen alle alten Zentren
-                for _name_old, ox, oy in old_centers:
-                    dx = px - ox
-                    dy = py - oy
-                    if (dx * dx + dy * dy) <= min_dist_sq:
-                        # Löschen und abbrechen
+            pos = _get_marker_center(tr, frame_current, w, h)
+            if pos is None:
+                continue
+            x, y = pos
+            xq = round(x * 4) / 4.0
+            yq = round(y * 4) / 4.0
+            for (ox, oy) in old_pts:
+                dx = xq - ox
+                dy = yq - oy
+                if (dx * dx + dy * dy) <= min_dist_sq:
+                    try:
                         clip.tracking.tracks.remove(tr)
                         removed += 1
-                        break
-            except Exception:  # noqa: BLE001
-                continue
+                    except Exception:  # noqa: BLE001
+                        pass
+                    break
         return removed
 
     def run_detect(thr, allow_param=True):
