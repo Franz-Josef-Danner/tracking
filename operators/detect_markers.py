@@ -27,8 +27,29 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         default=False
     )
 
+    use_overlap = bpy.props.BoolProperty(
+        name="BBox Overlap",
+        description="Pattern-Bounding-Box Überlappung zusätzlich für Duplikaterkennung verwenden",
+        default=True
+    )
+
+    overlap_threshold = bpy.props.FloatProperty(
+        name="Overlap Schwelle",
+        description="Relative Überlappung (gegen kleinere Fläche) ab der gelöscht wird",
+        default=0.2,
+        min=0.01,
+        max=1.0,
+        precision=3
+    )
+
     def execute(self, context):
-        result = detect_features_multipass(context, min_distance_px=self.min_distance_px, debug=self.debug)
+        result = detect_features_multipass(
+            context,
+            min_distance_px=self.min_distance_px,
+            debug=self.debug,
+            use_overlap=self.use_overlap,
+            overlap_threshold=self.overlap_threshold,
+        )
         if not result.get('success'):
             self.report({'ERROR'}, result.get('message', 'Unbekannter Fehler'))
             return {'CANCELLED'}
