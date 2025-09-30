@@ -92,38 +92,55 @@ def detect_features_multipass(
             centers.append((tr.name, xq, yq))
         return centers
 
-    def _remove_overlapping(new_track_names, old_centers, frame_current):
-        if not clip or not new_track_names:
-            return 0
+    def _calc_centers_for_tracks(track_list, frame_current):
+        if not clip:
+            return []
         w, h = clip.size
-        removed = 0
-        min_dist_sq = min_distance_px * min_distance_px
-        # Erstelle schnelle Liste ohne Namen für Distanz
-        old_pts = [(ox, oy) for _n, ox, oy in old_centers]
-        for tr in list(clip.tracking.tracks):
-            if tr.name not in new_track_names:
-                continue
+        centers = []
+        for tr in track_list:
             pos = _get_marker_center(tr, frame_current, w, h)
             if pos is None:
                 continue
             x, y = pos
             xq = round(x * 4) / 4.0
             yq = round(y * 4) / 4.0
-            for (ox, oy) in old_pts:
+            centers.append((tr, xq, yq))
+        return centers
+
+    def _remove_overlapping(prev_tracks, new_tracks, frame_current):
+        if not clip or not new_tracks or not prev_tracks:
+            return 0
+        removed = 0
+        min_dist_sq = min_distance_px * min_distance_px
+        prev_centers = _calc_centers_for_tracks(prev_tracks, frame_current)
+        w, h = clip.size
+        to_delete = []
+        for tr in new_tracks:
+            pos = _get_marker_center(tr, frame_current, w, h)
+            if pos is None:
+                continue
+            x, y = pos
+            xq = round(x * 4) / 4.0
+            yq = round(y * 4) / 4.0
+            for _tr_old, ox, oy in prev_centers:
                 dx = xq - ox
                 dy = yq - oy
                 if (dx * dx + dy * dy) <= min_dist_sq:
-                    try:
-                        clip.tracking.tracks.remove(tr)
-                        removed += 1
-                    except Exception:  # noqa: BLE001
-                        pass
+                    to_delete.append(tr)
                     break
+        for tr in to_delete:
+            try:
+                clip.tracking.tracks.remove(tr)
+                removed += 1
+            except Exception:  # noqa: BLE001
+                pass
         return removed
 
     def run_detect(thr, allow_param=True):
-        prev_names = set(tr.name for tr in clip.tracking.tracks) if clip else set()
-        old_centers = _collect_track_centers(context.scene.frame_current)
+        if not clip:
+            return 0, 0, 'kein Clip'
+        prev_tracks = list(clip.tracking.tracks)
+        prev_ids = set(id(t) for t in prev_tracks)
         note = ''
         try:
             if has_threshold and allow_param:
@@ -137,12 +154,10 @@ def detect_features_multipass(
             note = 'TypeError threshold'
         except Exception as e:  # noqa: BLE001
             return 0, 0, f'Fehler detect: {e}'
-        # Auswertung
-        if not clip:
-            return 0, 0, note
-        new_names = [tr.name for tr in clip.tracking.tracks if tr.name not in prev_names]
-        added = len(new_names)
-        removed = _remove_overlapping(new_names, old_centers, context.scene.frame_current)
+        after_tracks = list(clip.tracking.tracks)
+        new_tracks = [t for t in after_tracks if id(t) not in prev_ids]
+        added = len(new_tracks)
+        removed = _remove_overlapping(prev_tracks, new_tracks, context.scene.frame_current)
         return added, removed, note
 
     try:
