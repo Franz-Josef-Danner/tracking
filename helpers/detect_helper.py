@@ -148,7 +148,7 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
                         passes += 1
                         current *= factor
                         if cur_pattern_progressive is not None:
-                            cur_pattern_progressive *= 1.5
+                            cur_pattern_progressive *= 1.1
         except AttributeError:
             # Fallback ohne temp_override
             override = context.copy()
