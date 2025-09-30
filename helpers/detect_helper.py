@@ -150,7 +150,7 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
         new_total = len(clip.tracking.tracks) if (clip and bpy is not None) else prev_count
         return new_total - prev_count, note
 
-    removed_total = 0
+    removed_total = 0  # Anzahl gelöschter Marker (nicht Tracks)
 
     def log_new_tracks(pass_index, thr):
         if not (clip and bpy is not None):
@@ -166,8 +166,8 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
         count = 0
         # Liste der tatsächlich neuen Track Objekte
         new_tracks = [t for t in clip.tracking.tracks if id(t) in new_ids]
-        # Für Distanzvergleich: current_search_size (Pixel) = search_size (bereits px) oder fallback
-        min_dist = float(search_size) if search_size is not None else 0.0
+        # Für Distanzvergleich: Mindestabstand = pattern_size (Pixel)
+        min_dist = float(pattern_size) if pattern_size is not None else 0.0
         for t in new_tracks:
             marker_co_norm = None
             marker_px = None
@@ -201,11 +201,23 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
                         break
             if too_close:
                 try:
-                    clip.tracking.tracks.remove(t)
-                    removed_total += 1
-                    print(
-                        f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} TRACK '{t.name}' entfernt (Abstand < {min_dist}px) pos_px={marker_px}"
-                    )
+                    # Lösche nur den Marker dieses Frames
+                    frame_to_delete = frame_used
+                    if frame_to_delete is not None:
+                        try:
+                            t.markers.delete_frame(frame_to_delete)
+                            removed_total += 1
+                            print(
+                                f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} MARKER von TRACK '{t.name}' gelöscht (Abstand < {min_dist}px) pos_px={marker_px} frame={frame_to_delete}"
+                            )
+                        except Exception:  # noqa: BLE001
+                            pass
+                    # Falls Track jetzt keine Marker mehr besitzt -> Track entfernen
+                    if len(t.markers) == 0:
+                        try:
+                            clip.tracking.tracks.remove(t)
+                        except Exception:  # noqa: BLE001
+                            pass
                 except Exception:  # noqa: BLE001
                     pass
                 continue
