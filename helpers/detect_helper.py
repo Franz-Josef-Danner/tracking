@@ -75,7 +75,23 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
                 print(f"[TrackingHelper] Set pattern_size={pattern_size}, search_size={search_size}")
         except Exception:  # noqa: BLE001
             pass
-    tracks_before = len(clip.tracking.tracks) if clip else -1
+    # Ermitteln der korrekten Track-Collection (Multi-Object Tracking berücksichtigen)
+    tracks_collection = None
+    if clip and bpy is not None:
+        try:
+            tracking = clip.tracking
+            tracking_obj = None
+            if hasattr(tracking, 'objects') and hasattr(tracking.objects, 'active') and tracking.objects.active is not None:
+                tracking_obj = tracking.objects.active
+            if tracking_obj and hasattr(tracking_obj, 'tracks'):
+                tracks_collection = tracking_obj.tracks
+            else:  # Fallback (ältere Variante / direkte Collection)
+                tracks_collection = tracking.tracks
+        except Exception:  # noqa: BLE001
+            tracks_collection = None
+    tracks_before = len(tracks_collection) if tracks_collection is not None else -1
+    if tracks_collection is None:
+        print("[TrackingHelper] WARN: Konnte Tracks Collection nicht zuverlässig bestimmen – Zählungen evtl. ungenau.")
 
     # Prüfen ob threshold unterstützt wird
     has_threshold = False
@@ -92,13 +108,13 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
     marker_logs = []  # speichert detailinformationen neuer Marker
     existing_track_ids = set()
     accepted_positions = []  # Liste bereits akzeptierter (x_px, y_px) Positionen
-    if clip and bpy is not None:
-        existing_track_ids = {id(t) for t in clip.tracking.tracks}
+    if clip and bpy is not None and tracks_collection is not None:
+        existing_track_ids = {id(t) for t in tracks_collection}
         # Initiale Positionen vorhandener Tracks sammeln
         try:
             if w is not None and h is not None:
                 cur_frame_init = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
-                for t in clip.tracking.tracks:
+                for t in tracks_collection:
                     marker = None
                     if cur_frame_init is not None:
                         for m in t.markers:
@@ -132,7 +148,7 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
             pass
 
     def run_detect(thr, allow_param=True):
-        prev_count = len(clip.tracking.tracks) if (clip and bpy is not None) else 0
+        prev_count = len(tracks_collection) if (tracks_collection is not None and bpy is not None) else 0
         note = ''
         try:
             if bpy is None:
@@ -147,31 +163,57 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
             if bpy is not None:
                 bpy.ops.clip.detect_features()
             note = 'TypeError threshold'
-        new_total = len(clip.tracking.tracks) if (clip and bpy is not None) else prev_count
+        new_total = len(tracks_collection) if (tracks_collection is not None and bpy is not None) else prev_count
         return new_total - prev_count, note
 
     removed_total = 0
 
     def log_new_tracks(pass_index, thr):
-        if not (clip and bpy is not None):
+        if not (clip and bpy is not None and tracks_collection is not None):
             return 0
         nonlocal existing_track_ids
         nonlocal removed_total
         nonlocal accepted_positions
-        cur_ids = {id(t) for t in clip.tracking.tracks}
+        cur_ids = {id(t) for t in tracks_collection}
         new_ids = cur_ids - existing_track_ids
         if not new_ids:
             return 0
         cur_frame = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
         count = 0
         # Liste der tatsächlich neuen Track Objekte
-        new_tracks = [t for t in clip.tracking.tracks if id(t) in new_ids]
+        new_tracks = [t for t in tracks_collection if id(t) in new_ids]
         # Für Distanzvergleich: current_search_size (Pixel) = search_size (bereits px) oder fallback
         min_dist = float(search_size) if search_size is not None else 0.0
         debug_prefix = f"[TrackingHelper][Pass {pass_index} thr {thr:.5f}]"
         print(f"{debug_prefix} Neue Tracks Kandidaten: {len(new_tracks)}, akzeptierte bisher: {len(accepted_positions)}, min_dist={min_dist}")
         to_remove = []  # verzögertes Entfernen vermeiden Iterator-Modifikation
         raw_added = len(new_tracks)
+
+        # Hilfsfunktion für Entfernen (Collection oder Operator Fallback)
+        def _remove_track(track_obj):
+            try:
+                if tracks_collection is not None and hasattr(tracks_collection, 'remove'):
+                    tracks_collection.remove(track_obj)
+                    return True, 'collection.remove'
+                # Operator-Fallback: selektieren & löschen
+                # Alle deselektieren
+                for tsel in tracks_collection:
+                    try:
+                        tsel.select = False
+                    except Exception:  # noqa: BLE001
+                        pass
+                try:
+                    track_obj.select = True
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    bpy.ops.clip.tracks_delete()
+                    return True, 'bpy.ops.clip.tracks_delete'
+                except Exception as oe:  # noqa: BLE001
+                    return False, f'OperatorFail: {oe}'
+            except Exception as e:  # noqa: BLE001
+                return False, f'Exception: {e}'
+
         for t in new_tracks:
             marker_co_norm = None
             marker_px = None
@@ -234,10 +276,10 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
             })
         # Jetzt Entfernen durchführen
         for t, marker_co_norm, marker_px, frame_used in to_remove:
-            try:
-                clip.tracking.tracks.remove(t)
+            ok, how = _remove_track(t)
+            if ok:
                 removed_total += 1
-                print(f"{debug_prefix} TRACK '{t.name}' entfernt (Abstand < {min_dist}px) pos_px={marker_px}")
+                print(f"{debug_prefix} TRACK '{t.name}' entfernt (Abstand < {min_dist}px) via {how} pos_px={marker_px}")
                 marker_logs.append({
                     'pass': pass_index,
                     'threshold': thr,
@@ -250,8 +292,8 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
                     'filtered': True,
                     'reason': f'distance<{min_dist}'
                 })
-            except Exception as e:  # noqa: BLE001
-                print(f"{debug_prefix} Entfernen fehlgeschlagen für '{t.name}': {e}")
+            else:
+                print(f"{debug_prefix} Entfernen fehlgeschlagen für '{t.name}' (Versuch: {how})")
 
         existing_track_ids.update(new_ids - {id(t) for t, *_ in to_remove})
         print(f"{debug_prefix} Zusammenfassung Pass: raw_added={raw_added} accepted={count} removed={len(to_remove)} total_removed_sum={removed_total}")
@@ -334,8 +376,8 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
             except Exception:  # noqa: BLE001
                 pass
 
-    if clip:
-        total_added = len(clip.tracking.tracks) - tracks_before
+    if tracks_collection is not None:
+        total_added = len(tracks_collection) - tracks_before
     else:
         total_added = -1
 
