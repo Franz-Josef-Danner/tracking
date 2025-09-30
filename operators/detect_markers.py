@@ -6,8 +6,8 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
     bl_idname = "tracking.detect_markers"
     bl_label = "Detect Markers"
     bl_description = (
-        "Mehrfaches Feature-Detect: Startet bei Threshold=1.0 und halbiert bis < 0.0001.\n"
-        "So werden erst sehr starke, dann zunehmend schwächere Features hinzugefügt."
+        "Mehrfaches Feature-Detect: Startet bei Threshold=1.0 und halbiert bis < 0.1.\n"
+        "So werden erst sehr starke, dann moderat schwächere Features hinzugefügt (früher <0.0001)."
     )
     bl_options = {"REGISTER", "UNDO"}
 
