@@ -129,6 +129,7 @@ class STRM_OT_SetOverlayScore(bpy.types.Operator):
     bl_label = "Set STRM Overlay Score"
     bl_description = "Wählt den Score-Typ für das farbige Overlay"
 
+    # In Blender 4.x ist es robuster, Properties per Typannotation zu definieren.
     items = [
         ('motion', "Motion", "Bewegung"),
         ('texture', "Texture", "Textur"),
