@@ -63,25 +63,39 @@ def detect_features_multipass(
     except Exception:  # noqa: BLE001
         has_threshold = False
 
-    # Defensive Cast für Fälle, in denen versehentlich ein Property-Objekt weitergereicht wird
-    try:
-        if not isinstance(min_distance_px, (int, float)):
-            # Versuche typische Attribute eines Blender Property Platzhalters
-            candidate = getattr(min_distance_px, 'default', None)
-            if isinstance(candidate, (int, float)):
-                min_distance_px = candidate
-            else:
-                min_distance_px = 6.0
-    except Exception:  # noqa: BLE001
-        min_distance_px = 6.0
+    def _as_float(val, default):
+        if isinstance(val, (int, float)):
+            return float(val)
+        # Versuche 'value' oder 'default' Attribut (Blender Property Platzhalter)
+        for attr in ('value', 'default'):
+            try:
+                candidate = getattr(val, attr)
+                if isinstance(candidate, (int, float)):
+                    return float(candidate)
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            return float(val)
+        except Exception:  # noqa: BLE001
+            return float(default)
 
-    try:
-        min_distance_px = float(min_distance_px)
-    except Exception:  # noqa: BLE001
-        min_distance_px = 6.0
+    start_threshold = _as_float(start_threshold, 1.0)
+    min_threshold = _as_float(min_threshold, 0.0001)
+    factor = _as_float(factor, 0.5)
+    overlap_threshold = _as_float(overlap_threshold, 0.2)
+    min_distance_px = _as_float(min_distance_px, 6.0)
 
     if min_distance_px < 0.1:
         min_distance_px = 0.1
+    if factor <= 0.0 or factor >= 1.0:
+        # Sicherheitswert
+        factor = 0.5
+    if min_threshold <= 0.0:
+        min_threshold = 0.0001
+    if start_threshold <= 0.0:
+        start_threshold = 1.0
+    if overlap_threshold <= 0.0:
+        overlap_threshold = 0.2
 
     def _d(msg):
         if debug:
@@ -340,7 +354,7 @@ def detect_features_multipass(
     # Gesamt entfernte Duplikate zählen
     total_removed = sum(r for _t, _a, r, _n in per_pass)
 
-    _d(f"Fertig: passes={passes} total_added={total_added} total_removed={total_removed} min_distance={min_distance_px}")
+    _d(f"Fertig: passes={passes} total_added={total_added} total_removed={total_removed} min_distance={min_distance_px} start_thr={start_threshold} min_thr={min_threshold} factor={factor} overlap_thr={overlap_threshold}")
     return {
         'success': True,
         'message': 'OK',
