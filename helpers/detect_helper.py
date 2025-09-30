@@ -189,28 +189,23 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
             override['region'] = region
             if not has_threshold:
                 apply_sizes(pattern_size)
-                prev = len(clip.tracking.tracks) if clip else 0
-                bpy.ops.clip.detect_features(override)
-                new_total = len(clip.tracking.tracks) if clip else prev
-                added = new_total - prev
-                # Log neue Tracks (Fallback) – vereinfachtes Logging ohne Koordinaten-Berechnung erneut
-                per_pass.append((current, added, 'fallback ohne threshold'))
+                # Verwende run_detect auch hier, um identisches Logging zu gewährleisten
+                added, note = run_detect(current, allow_param=False, pass_index=passes + 1)
+                per_pass.append((current, added, note or 'fallback ohne threshold'))
                 passes = 1
             else:
                 cur_pattern_progressive = float(pattern_size) if pattern_size else None
                 while current >= min_threshold and passes < max_passes:
                     if cur_pattern_progressive is not None:
                         apply_sizes(cur_pattern_progressive)
-                    prev = len(clip.tracking.tracks) if clip else 0
                     try:
-                        bpy.ops.clip.detect_features(override, threshold=current)
-                    except TypeError:
-                        bpy.ops.clip.detect_features(override)
-                        per_pass.append((current, 0, 'fallback threshold TypeError'))
+                        # Nutzung von run_detect innerhalb des Overrides wäre möglich,
+                        # aber hier müssen wir threshold param direkt versuchen
+                        added, note = run_detect(current, allow_param=True, pass_index=passes + 1)
+                        per_pass.append((current, added, note or 'fallback'))
+                    except Exception:  # noqa: BLE001
+                        per_pass.append((current, 0, 'fallback Fehler'))
                         break
-                    new_total = len(clip.tracking.tracks) if clip else prev
-                    added = new_total - prev
-                    per_pass.append((current, added, 'fallback'))
                     passes += 1
                     current *= factor
                     if cur_pattern_progressive is not None:
