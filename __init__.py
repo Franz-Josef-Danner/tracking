@@ -1,39 +1,34 @@
 bl_info = {
-    "name": "STRM Feature Tracker",
-    "blender": (3, 6, 0),
-    "category": "MovieClip",
+    "name": "Tracking Marker Tools",
+    "author": "",
     "version": (0, 1, 0),
-    "author": "Dein Name",
-    "description": "Analyse von STRM (Spatio-Temporal Region Map) für automatische Feature-Tracking-Seeds",
+    "blender": (3, 0, 0),
+    "location": "Movie Clip Editor > Sidebar > Tracking",
+    "description": "Operator zum automatischen Setzen von Markern (detect features) und Button im UI",
+    "category": "Tracking",
 }
 
-import bpy
-from .strm_panel import STRM_PT_Panel
-from .strm_set_markers import STRM_OT_PlaceMarkers
-from .strm_ops import STRM_OT_Analyze, STRM_OT_ToggleOverlay, STRM_OT_SetOverlayScore, STRM_OT_SelectROIs, STRM_OT_SeedFeatures, STRM_OT_TrackMarkers, STRM_OT_EvalKPIs, STRM_OT_CleanupTracks, STRM_OT_FitMotionModel, STRM_OT_PromotionStep, STRM_OT_ClusterFitPromote, STRM_OT_PeerSnapAndReseed, STRM_OT_LogSnapshot, STRM_OT_ExportLogs, STRM_OT_StagedSeeding, cleanup_overlay_draw
-from .strm_overlay import draw_tile_overlay_callback  # ensure module is loaded
+import importlib
+from . import operators, ui  # noqa: F401
 
+modules = [
+    operators,
+    ui,
+]
+
+def reload_modules():
+    for m in modules:
+        importlib.reload(m)
+
+import bpy
+
+from .operators.detect_markers import TRACKING_OT_detect_markers
+from .ui.panel import TRACKING_PT_tools_panel
 
 classes = (
-    STRM_PT_Panel,
-    STRM_OT_PlaceMarkers,
-    STRM_OT_Analyze,
-    STRM_OT_ToggleOverlay,
-    STRM_OT_SetOverlayScore,
-    STRM_OT_SelectROIs,
-    STRM_OT_SeedFeatures,
-    STRM_OT_TrackMarkers,
-    STRM_OT_EvalKPIs,
-    STRM_OT_CleanupTracks,
-    STRM_OT_FitMotionModel,
-    STRM_OT_PromotionStep,
-    STRM_OT_ClusterFitPromote,
-    STRM_OT_PeerSnapAndReseed,
-    STRM_OT_LogSnapshot,
-    STRM_OT_ExportLogs,
-    STRM_OT_StagedSeeding,
+    TRACKING_OT_detect_markers,
+    TRACKING_PT_tools_panel,
 )
-
 
 def register():
     for cls in classes:
@@ -43,8 +38,6 @@ def register():
 def unregister():
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
-    # Cleanup draw handler if any
-    try:
-        cleanup_overlay_draw()
-    except Exception:
-        pass
+
+if __name__ == "__main__":
+    register()
