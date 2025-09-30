@@ -91,8 +91,27 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
     current = start_threshold
     marker_logs = []  # speichert detailinformationen neuer Marker
     existing_track_ids = set()
+    accepted_positions = []  # Liste bereits akzeptierter (x_px, y_px) Positionen
     if clip and bpy is not None:
         existing_track_ids = {id(t) for t in clip.tracking.tracks}
+        # Initiale Positionen vorhandener Tracks sammeln
+        try:
+            if w is not None and h is not None:
+                cur_frame_init = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
+                for t in clip.tracking.tracks:
+                    marker = None
+                    if cur_frame_init is not None:
+                        for m in t.markers:
+                            if m.frame == cur_frame_init:
+                                marker = m
+                                break
+                    if marker is None and len(t.markers) > 0:
+                        marker = t.markers[0]
+                    if marker is not None:
+                        co = marker.co
+                        accepted_positions.append((co[0]*w, co[1]*h))
+        except Exception:  # noqa: BLE001
+            pass
 
     def apply_sizes(cur_pattern):
         """Setzt pattern/search size auf Basis cur_pattern."""
@@ -131,52 +150,85 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
         new_total = len(clip.tracking.tracks) if (clip and bpy is not None) else prev_count
         return new_total - prev_count, note
 
+    removed_total = 0
+
     def log_new_tracks(pass_index, thr):
         if not (clip and bpy is not None):
             return 0
         nonlocal existing_track_ids
+        nonlocal removed_total
+        nonlocal accepted_positions
         cur_ids = {id(t) for t in clip.tracking.tracks}
         new_ids = cur_ids - existing_track_ids
         if not new_ids:
             return 0
         cur_frame = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
         count = 0
-        for t in clip.tracking.tracks:
-            if id(t) in new_ids:
-                count += 1
-                marker_co_norm = None
-                marker_px = None
-                frame_used = None
+        # Liste der tatsächlich neuen Track Objekte
+        new_tracks = [t for t in clip.tracking.tracks if id(t) in new_ids]
+        # Für Distanzvergleich: current_search_size (Pixel) = search_size (bereits px) oder fallback
+        min_dist = float(search_size) if search_size is not None else 0.0
+        for t in new_tracks:
+            marker_co_norm = None
+            marker_px = None
+            frame_used = None
+            try:
+                marker = None
+                if cur_frame is not None:
+                    for m in t.markers:
+                        if m.frame == cur_frame:
+                            marker = m
+                            break
+                if marker is None and len(t.markers) > 0:
+                    marker = t.markers[0]
+                if marker is not None:
+                    marker_co_norm = tuple(marker.co)
+                    frame_used = marker.frame
+                    if w is not None and h is not None:
+                        marker_px = (marker_co_norm[0] * w, marker_co_norm[1] * h)
+            except Exception:  # noqa: BLE001
+                pass
+
+            # Distanzprüfung nur wenn Pixelkoordinate vorhanden und min_dist > 0
+            too_close = False
+            if marker_px is not None and min_dist > 0 and accepted_positions:
+                mx, my = marker_px
+                for (ax, ay) in accepted_positions:
+                    dx = mx - ax
+                    dy = my - ay
+                    if (dx*dx + dy*dy) ** 0.5 < min_dist:
+                        too_close = True
+                        break
+            if too_close:
                 try:
-                    marker = None
-                    if cur_frame is not None:
-                        for m in t.markers:
-                            if m.frame == cur_frame:
-                                marker = m
-                                break
-                    if marker is None and len(t.markers) > 0:
-                        marker = t.markers[0]
-                    if marker is not None:
-                        marker_co_norm = tuple(marker.co)
-                        frame_used = marker.frame
-                        if w is not None and h is not None:
-                            marker_px = (marker_co_norm[0] * w, marker_co_norm[1] * h)
+                    clip.tracking.tracks.remove(t)
+                    removed_total += 1
+                    print(
+                        f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} TRACK '{t.name}' entfernt (Abstand < {min_dist}px) pos_px={marker_px}"
+                    )
                 except Exception:  # noqa: BLE001
                     pass
-                print(
-                    f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} NEUER TRACK '{t.name}' "
-                    f"frame={frame_used} pos_norm={marker_co_norm} pos_px={marker_px} pattern={pattern_size} search={search_size}"
-                )
-                marker_logs.append({
-                    'pass': pass_index,
-                    'threshold': thr,
-                    'track_name': t.name,
-                    'frame': frame_used,
-                    'pos_norm': marker_co_norm,
-                    'pos_px': marker_px,
-                    'pattern': pattern_size,
-                    'search': search_size,
-                })
+                continue
+
+            # Track akzeptiert
+            count += 1
+            if marker_px is not None:
+                accepted_positions.append(marker_px)
+            print(
+                f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} NEUER TRACK '{t.name}' "
+                f"frame={frame_used} pos_norm={marker_co_norm} pos_px={marker_px} pattern={pattern_size} search={search_size}"
+            )
+            marker_logs.append({
+                'pass': pass_index,
+                'threshold': thr,
+                'track_name': t.name,
+                'frame': frame_used,
+                'pos_norm': marker_co_norm,
+                'pos_px': marker_px,
+                'pattern': pattern_size,
+                'search': search_size,
+                'filtered': False
+            })
         existing_track_ids.update(new_ids)
         return count
 
@@ -243,7 +295,8 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
             'per_pass': per_pass,
             'pattern_size': pattern_size,
             'search_size': search_size,
-            'marker_logs': marker_logs
+            'marker_logs': marker_logs,
+            'removed': removed_total
         }
     finally:
         # Ursprüngliche Werte wiederherstellen
@@ -269,5 +322,6 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
         'per_pass': per_pass,
         'pattern_size': pattern_size,
         'search_size': search_size,
-        'marker_logs': marker_logs
+        'marker_logs': marker_logs,
+        'removed': removed_total
     }
