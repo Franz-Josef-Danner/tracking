@@ -22,7 +22,7 @@ def get_clip_from_area(area):
         return None
 
 
-def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.01, factor=0.5, max_passes=32):
+def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001, factor=0.5, max_passes=32):
     """Führt mehrfache Feature-Erkennung aus.
 
     Returns:
@@ -290,6 +290,45 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.01, 
     else:
         total_added = -1
 
+    # Distanz-Statistiken berechnen (global & pro Pass), um Transparenz zu schaffen
+    def _compute_stats(values):
+        if not values:
+            return {'count': 0, 'min': None, 'max': None, 'mean': None, 'median': None}
+        s = sorted(values)
+        n = len(s)
+        mean = sum(s) / n
+        if n % 2:
+            median = s[n // 2]
+        else:
+            median = 0.5 * (s[n // 2 - 1] + s[n // 2])
+        return {
+            'count': n,
+            'min': s[0],
+            'max': s[-1],
+            'mean': mean,
+            'median': median,
+        }
+
+    distances_all = [m['nearest_dist_px'] for m in marker_logs if m.get('nearest_dist_px') is not None]
+    distance_stats = _compute_stats(distances_all)
+    distances_per_pass = {}
+    per_pass_stats = {}
+    for m in marker_logs:
+        if m.get('nearest_dist_px') is None:
+            continue
+        p = m['pass']
+        distances_per_pass.setdefault(p, []).append(m['nearest_dist_px'])
+    for p, vals in distances_per_pass.items():
+        per_pass_stats[p] = _compute_stats(vals)
+
+    # Kurze Ausgabe zur Orientierung
+    try:
+        print(
+            f"[TrackingHelper] Distanz Statistik gesamt: count={distance_stats['count']} min={distance_stats['min']} max={distance_stats['max']} "
+            f"median={distance_stats['median']} mean={distance_stats['mean']}")
+    except Exception:  # noqa: BLE001
+        pass
+
     return {
         'success': True,
         'message': 'OK',
@@ -298,5 +337,7 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.01, 
         'per_pass': per_pass,
         'pattern_size': pattern_size,
         'search_size': search_size,
-        'marker_logs': marker_logs
+        'marker_logs': marker_logs,
+        'distance_stats': distance_stats,
+        'per_pass_distance_stats': per_pass_stats,
     }
