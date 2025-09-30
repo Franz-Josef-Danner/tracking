@@ -25,7 +25,7 @@ def detect_features_multipass(
     min_threshold=0.0001,
     factor=0.5,
     max_passes=32,
-    overlap_pixel_threshold=6,
+    overlap_pixel_threshold=10,
 ):
     """Führt mehrfache Feature-Erkennung aus.
 
@@ -94,6 +94,36 @@ def detect_features_multipass(
                 centers.append((t.name, c))
         return centers
 
+    def remove_overlaps(clip, frame, existing_centers, candidate_tracks, pixel_threshold):
+        """Entfernt Kandidaten, die entweder mit bestehenden oder bereits akzeptierten neuen Track-Zentren überlappen.
+
+        Returns (kept_count, removed_count)
+        """
+        if not clip or frame is None:
+            return 0, 0
+        w, h = clip.size
+        accepted_centers = [c for _, c in existing_centers]  # Start mit alten
+        removed = 0
+        kept = 0
+        for t in list(candidate_tracks):
+            c = marker_center_px(t, frame, w, h)
+            if not c:
+                continue
+            too_close = False
+            for ac in accepted_centers:
+                dx = c[0] - ac[0]
+                dy = c[1] - ac[1]
+                if (dx*dx + dy*dy) ** 0.5 <= pixel_threshold:
+                    # Entfernen
+                    clip.tracking.tracks.remove(t)
+                    removed += 1
+                    too_close = True
+                    break
+            if not too_close:
+                accepted_centers.append(c)
+                kept += 1
+        return kept, removed
+
     def run_detect(thr, allow_param=True):
         prev = len(clip.tracking.tracks) if clip else 0
         note = ''
@@ -123,22 +153,11 @@ def detect_features_multipass(
                 if not has_threshold:
                     added_raw, note = run_detect(current, allow_param=False)
                     removed = 0
+                    kept = added_raw
                     if added_raw > 0 and clip:
-                        # Filter overlaps
-                        w, h = clip.size
                         new_tracks = [t for t in clip.tracking.tracks if t.name not in existing_names]
-                        for t in list(new_tracks):
-                            c = marker_center_px(t, frame, w, h)
-                            if not c:
-                                continue
-                            for _, old_c in existing_centers:
-                                dx = c[0] - old_c[0]
-                                dy = c[1] - old_c[1]
-                                if (dx*dx + dy*dy) ** 0.5 <= overlap_pixel_threshold:
-                                    clip.tracking.tracks.remove(t)
-                                    removed += 1
-                                    break
-                    per_pass.append((current, added_raw - removed, (note or 'kein threshold Param') + (f', removed {removed}' if removed else '')))
+                        kept, removed = remove_overlaps(clip, frame, existing_centers, new_tracks, overlap_pixel_threshold)
+                    per_pass.append((current, kept, (note or 'kein threshold Param') + (f', removed {removed}' if removed else '')))
                     passes = 1
                 else:
                     while current >= min_threshold and passes < max_passes:
@@ -147,21 +166,10 @@ def detect_features_multipass(
                         existing_names = {name for name, _ in existing_centers}
                         added_raw, note = run_detect(current, allow_param=True)
                         removed = 0
+                        kept = added_raw
                         if added_raw > 0 and clip:
-                            w, h = clip.size
                             new_tracks = [t for t in clip.tracking.tracks if t.name not in existing_names]
-                            for t in list(new_tracks):
-                                c = marker_center_px(t, frame, w, h)
-                                if not c:
-                                    continue
-                                for _, old_c in existing_centers:
-                                    dx = c[0] - old_c[0]
-                                    dy = c[1] - old_c[1]
-                                    if (dx*dx + dy*dy) ** 0.5 <= overlap_pixel_threshold:
-                                        clip.tracking.tracks.remove(t)
-                                        removed += 1
-                                        break
-                        kept = added_raw - removed
+                            kept, removed = remove_overlaps(clip, frame, existing_centers, new_tracks, overlap_pixel_threshold)
                         per_pass.append((current, kept, note + (f', removed {removed}' if removed else '')))
                         passes += 1
                         current *= factor
@@ -179,21 +187,11 @@ def detect_features_multipass(
                 new_total = len(clip.tracking.tracks) if clip else prev
                 added_raw = new_total - prev
                 removed = 0
+                kept = added_raw
                 if added_raw > 0 and clip:
-                    w, h = clip.size
                     new_tracks = [t for t in clip.tracking.tracks if t.name not in existing_names]
-                    for t in list(new_tracks):
-                        c = marker_center_px(t, frame, w, h)
-                        if not c:
-                            continue
-                        for _, old_c in existing_centers:
-                            dx = c[0] - old_c[0]
-                            dy = c[1] - old_c[1]
-                            if (dx*dx + dy*dy) ** 0.5 <= overlap_pixel_threshold:
-                                clip.tracking.tracks.remove(t)
-                                removed += 1
-                                break
-                per_pass.append((current, added_raw - removed, f'fallback ohne threshold, removed {removed}' if removed else 'fallback ohne threshold'))
+                    kept, removed = remove_overlaps(clip, frame, existing_centers, new_tracks, overlap_pixel_threshold)
+                per_pass.append((current, kept, f'fallback ohne threshold, removed {removed}' if removed else 'fallback ohne threshold'))
                 passes = 1
             else:
                 while current >= min_threshold and passes < max_passes:
@@ -207,21 +205,11 @@ def detect_features_multipass(
                     new_total = len(clip.tracking.tracks) if clip else prev
                     added_raw = new_total - prev
                     removed = 0
+                    kept = added_raw
                     if added_raw > 0 and clip:
-                        w, h = clip.size
                         new_tracks = [t for t in clip.tracking.tracks if t.name not in existing_names]
-                        for t in list(new_tracks):
-                            c = marker_center_px(t, frame, w, h)
-                            if not c:
-                                continue
-                            for _, old_c in existing_centers:
-                                dx = c[0] - old_c[0]
-                                dy = c[1] - old_c[1]
-                                if (dx*dx + dy*dy) ** 0.5 <= overlap_pixel_threshold:
-                                    clip.tracking.tracks.remove(t)
-                                    removed += 1
-                                    break
-                    per_pass.append((current, added_raw - removed, 'fallback' + (f', removed {removed}' if removed else '')))
+                        kept, removed = remove_overlaps(clip, frame, existing_centers, new_tracks, overlap_pixel_threshold)
+                    per_pass.append((current, kept, 'fallback' + (f', removed {removed}' if removed else '')))
                     passes += 1
                     current *= factor
     except Exception as e:  # noqa: BLE001
