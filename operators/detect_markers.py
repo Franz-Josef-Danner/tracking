@@ -5,9 +5,8 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
     bl_idname = "tracking.detect_markers"
     bl_label = "Detect Markers"
     bl_description = (
-        "Ruft den eingebauten 'Detect Features' Operator auf und erzeugt automatisch Marker.\n"
-        "Diese Minimal-Variante nutzt die Standardparameter der aktuellen Blender-Version,\n"
-        "um Versionsinkompatibilitäten (Parameteränderungen) zu vermeiden."
+        "Mehrfaches Feature-Detect: Startet bei Threshold=1.0 und halbiert bis < 0.0001.\n"
+        "So werden erst sehr starke, dann zunehmend schwächere Features hinzugefügt."
     )
     bl_options = {"REGISTER", "UNDO"}
 
@@ -31,23 +30,81 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             self.report({'ERROR'}, 'Keine gültige WINDOW Region im Clip Editor gefunden.')
             return {'CANCELLED'}
 
+        # Multi-Pass Detect
+        start_threshold = 1.0
+        min_threshold = 0.0001
+        factor = 0.5
+        max_passes = 32  # Sicherheitsgrenze
+
+        passes = 0
+        current = start_threshold
+        clip = None
+        # Versuche Clip zu ermitteln (falls im aktiven Space vorhanden)
         try:
-            # Neues API Pattern (>= 3.x) – Kontext temporär überschreiben
+            clip = area.spaces.active.clip
+        except Exception:  # noqa: BLE001
+            clip = None
+
+        tracks_before = len(clip.tracking.tracks) if clip else -1
+        added_each_pass = []
+
+        try:
             with context.temp_override(area=area, region=region):
-                bpy.ops.clip.detect_features()
+                while current >= min_threshold and passes < max_passes:
+                    prev_tracks = len(clip.tracking.tracks) if clip else 0
+                    try:
+                        result = bpy.ops.clip.detect_features(threshold=current)
+                        # Falls Operator Rückgabe nicht FINISHED liefert, abbrechen
+                        if result not in {{'FINISHED', 'CANCELLED'}}:
+                            pass
+                    except TypeError:
+                        # Threshold-Argument wird nicht unterstützt -> einmal ohne und dann abbrechen
+                        if passes == 0:
+                            bpy.ops.clip.detect_features()
+                        break
+                    except Exception as e:  # noqa: BLE001
+                        self.report({'WARNING'}, f'Pass {passes+1} bei Threshold {current:.6f} fehlgeschlagen: {e}')
+                        break
+
+                    new_tracks = len(clip.tracking.tracks) if clip else prev_tracks
+                    added = new_tracks - prev_tracks
+                    added_each_pass.append((current, added))
+                    passes += 1
+                    current *= factor
         except AttributeError:
-            # Fallback für sehr alte Versionen ohne temp_override (sollte bei 4.4 nicht nötig sein)
+            # Fallback ohne temp_override
             override = context.copy()
             override['area'] = area
             override['region'] = region
-            try:
-                bpy.ops.clip.detect_features(override)
-            except Exception as e:  # noqa: BLE001
-                self.report({'ERROR'}, f'Detect Features fehlgeschlagen: {e}')
-                return {'CANCELLED'}
+            current = start_threshold
+            while current >= min_threshold and passes < max_passes:
+                prev_tracks = len(clip.tracking.tracks) if clip else 0
+                try:
+                    bpy.ops.clip.detect_features(override, threshold=current)
+                except TypeError:
+                    if passes == 0:
+                        bpy.ops.clip.detect_features(override)
+                    break
+                except Exception as e:  # noqa: BLE001
+                    self.report({'WARNING'}, f'Pass {passes+1} (Fallback) fehlgeschlagen: {e}')
+                    break
+                new_tracks = len(clip.tracking.tracks) if clip else prev_tracks
+                added_each_pass.append((current, new_tracks - prev_tracks))
+                passes += 1
+                current *= factor
         except Exception as e:  # noqa: BLE001
-            self.report({'ERROR'}, f'Fehler beim Ausführen: {e}')
+            self.report({'ERROR'}, f'Unerwarteter Fehler: {e}')
             return {'CANCELLED'}
 
-        self.report({'INFO'}, 'Marker erkannt (Standardparameter).')
+        if clip:
+            total_added = len(clip.tracking.tracks) - tracks_before
+        else:
+            total_added = -1
+
+        summary_parts = []
+        for thr, added in added_each_pass:
+            summary_parts.append(f'{thr:.5f}:{added}')
+        summary = ', '.join(summary_parts) if summary_parts else 'keine Marker hinzugefügt'
+
+        self.report({'INFO'}, f'{passes} Durchläufe, hinzugefügt: {total_added} (pro Pass: {summary})')
         return {'FINISHED'}
