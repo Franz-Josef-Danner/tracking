@@ -30,7 +30,7 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             self.report({'ERROR'}, 'Keine gültige WINDOW Region im Clip Editor gefunden.')
             return {'CANCELLED'}
 
-        # Multi-Pass Detect
+        # Multi-Pass Detect Parameter
         start_threshold = 1.0
         min_threshold = 0.0001
         factor = 0.5
@@ -39,59 +39,91 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         passes = 0
         current = start_threshold
         clip = None
-        # Versuche Clip zu ermitteln (falls im aktiven Space vorhanden)
         try:
             clip = area.spaces.active.clip
         except Exception:  # noqa: BLE001
             clip = None
 
         tracks_before = len(clip.tracking.tracks) if clip else -1
-        added_each_pass = []
+        added_each_pass = []  # Liste von Tupeln (threshold, hinzugefügt, hinweis)
+
+        # Prüfen ob threshold-Property existiert
+        has_threshold = False
+        try:
+            rna = bpy.ops.clip.detect_features.get_rna_type()
+            has_threshold = 'threshold' in rna.properties.keys()
+        except Exception:  # noqa: BLE001
+            has_threshold = False
+
+        def run_detect(thr, override_threshold=True):
+            """Führt detect_features aus. Gibt (added, used_thr, note)."""
+            prev = len(clip.tracking.tracks) if clip else 0
+            note = ''
+            try:
+                if has_threshold and override_threshold:
+                    bpy.ops.clip.detect_features(threshold=thr)
+                else:
+                    bpy.ops.clip.detect_features()
+                    if override_threshold and not has_threshold:
+                        note = 'threshold nicht unterstützt'
+            except TypeError:
+                # Falls trotz has_threshold ein Typfehler kommt -> einmal ohne und dann als nicht unterstützt markieren
+                if override_threshold:
+                    bpy.ops.clip.detect_features()
+                    note = 'threshold TypeError'
+                else:
+                    raise
+            new_total = len(clip.tracking.tracks) if clip else prev
+            return new_total - prev, thr, note
 
         try:
             with context.temp_override(area=area, region=region):
-                while current >= min_threshold and passes < max_passes:
-                    prev_tracks = len(clip.tracking.tracks) if clip else 0
-                    try:
-                        result = bpy.ops.clip.detect_features(threshold=current)
-                        # Falls Operator Rückgabe nicht FINISHED liefert, abbrechen
-                        if result not in {{'FINISHED', 'CANCELLED'}}:
-                            pass
-                    except TypeError:
-                        # Threshold-Argument wird nicht unterstützt -> einmal ohne und dann abbrechen
-                        if passes == 0:
-                            bpy.ops.clip.detect_features()
-                        break
-                    except Exception as e:  # noqa: BLE001
-                        self.report({'WARNING'}, f'Pass {passes+1} bei Threshold {current:.6f} fehlgeschlagen: {e}')
-                        break
-
-                    new_tracks = len(clip.tracking.tracks) if clip else prev_tracks
-                    added = new_tracks - prev_tracks
-                    added_each_pass.append((current, added))
-                    passes += 1
-                    current *= factor
+                if not has_threshold:
+                    # Nur ein einziger Pass möglich
+                    added, thr, note = run_detect(current, override_threshold=False)
+                    passes = 1
+                    added_each_pass.append((thr, added, note or 'kein threshold Param'))
+                else:
+                    while current >= min_threshold and passes < max_passes:
+                        added, thr, note = run_detect(current, override_threshold=True)
+                        added_each_pass.append((thr, added, note))
+                        passes += 1
+                        current *= factor
         except AttributeError:
             # Fallback ohne temp_override
             override = context.copy()
             override['area'] = area
             override['region'] = region
-            current = start_threshold
-            while current >= min_threshold and passes < max_passes:
-                prev_tracks = len(clip.tracking.tracks) if clip else 0
+            # Einfacher Fallback: keine differenzierten Kontexte mehr
+            if not has_threshold:
+                prev = len(clip.tracking.tracks) if clip else 0
                 try:
-                    bpy.ops.clip.detect_features(override, threshold=current)
-                except TypeError:
-                    if passes == 0:
-                        bpy.ops.clip.detect_features(override)
-                    break
+                    bpy.ops.clip.detect_features(override)
                 except Exception as e:  # noqa: BLE001
-                    self.report({'WARNING'}, f'Pass {passes+1} (Fallback) fehlgeschlagen: {e}')
-                    break
-                new_tracks = len(clip.tracking.tracks) if clip else prev_tracks
-                added_each_pass.append((current, new_tracks - prev_tracks))
-                passes += 1
-                current *= factor
+                    self.report({'ERROR'}, f'Fallback detect failed: {e}')
+                    return {'CANCELLED'}
+                new_total = len(clip.tracking.tracks) if clip else prev
+                added_each_pass.append((start_threshold, new_total - prev, 'fallback ohne threshold'))
+                passes = 1
+            else:
+                current = start_threshold
+                while current >= min_threshold and passes < max_passes:
+                    prev = len(clip.tracking.tracks) if clip else 0
+                    try:
+                        bpy.ops.clip.detect_features(override, threshold=current)
+                    except TypeError:
+                        try:
+                            bpy.ops.clip.detect_features(override)
+                        except Exception as e:  # noqa: BLE001
+                            self.report({'WARNING'}, f'Fallback Pass {passes+1} Fehler: {e}')
+                            break
+                    except Exception as e:  # noqa: BLE001
+                        self.report({'WARNING'}, f'Fallback Pass {passes+1} Fehler: {e}')
+                        break
+                    new_total = len(clip.tracking.tracks) if clip else prev
+                    added_each_pass.append((current, new_total - prev, 'fallback'))
+                    passes += 1
+                    current *= factor
         except Exception as e:  # noqa: BLE001
             self.report({'ERROR'}, f'Unerwarteter Fehler: {e}')
             return {'CANCELLED'}
@@ -102,8 +134,11 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             total_added = -1
 
         summary_parts = []
-        for thr, added in added_each_pass:
-            summary_parts.append(f'{thr:.5f}:{added}')
+        for thr, added, note in added_each_pass:
+            base = f'{thr:.5f}:{added}'
+            if note:
+                base += f' ({note})'
+            summary_parts.append(base)
         summary = ', '.join(summary_parts) if summary_parts else 'keine Marker hinzugefügt'
 
         self.report({'INFO'}, f'{passes} Durchläufe, hinzugefügt: {total_added} (pro Pass: {summary})')
