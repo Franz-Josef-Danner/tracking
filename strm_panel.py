@@ -18,11 +18,11 @@ class STRM_PT_Panel(bpy.types.Panel):
         layout.operator("clip.strm_analyze", icon='VIEWZOOM')
         layout.operator("clip.strm_toggle_overlay", icon='GRID')
         row = layout.row(align=True)
-        row.operator("clip.strm_set_overlay_score", text="Motion").score_type = 'motion'
-        row.operator("clip.strm_set_overlay_score", text="Texture").score_type = 'texture'
+        op = row.operator("clip.strm_set_overlay_score", text="Motion"); op.score_type = 'motion'
+        op = row.operator("clip.strm_set_overlay_score", text="Texture"); op.score_type = 'texture'
         row = layout.row(align=True)
-        row.operator("clip.strm_set_overlay_score", text="Divergence").score_type = 'div'
-        row.operator("clip.strm_set_overlay_score", text="Flicker").score_type = 'flicker'
+        op = row.operator("clip.strm_set_overlay_score", text="Divergence"); op.score_type = 'div'
+        op = row.operator("clip.strm_set_overlay_score", text="Flicker"); op.score_type = 'flicker'
         layout.separator()
         layout.operator("clip.strm_select_rois", icon='SELECT_SET')
         layout.operator("clip.strm_seed_features", icon='PARTICLES')
