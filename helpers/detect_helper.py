@@ -31,6 +31,8 @@ def detect_features_multipass(
     overlap_threshold=0.2,
     tag_pass_names=True,
     rounding_step=0.25,
+    cluster_cleanup=True,
+    cluster_use_pattern=True,
 ):
     """Führt mehrfache Feature-Erkennung aus.
 
@@ -392,6 +394,65 @@ def detect_features_multipass(
 
     # Gesamt entfernte Duplikate zählen
     total_removed = sum(r for _t, _a, r, _n in per_pass)
+
+    # Optionaler globaler Cluster-Cleanup nachdem alle Pässe durchlaufen wurden
+    if cluster_cleanup and clip and total_added > 0:
+        try:
+            w, h = clip.size
+            # Sammle (track, center, bbox, area)
+            items = []
+            for tr in list(clip.tracking.tracks):
+                ctr = _get_marker_center(tr, context.scene.frame_current, w, h)
+                if not ctr:
+                    continue
+                bbox = _get_pattern_bbox(tr, context.scene.frame_current, w, h)
+                if bbox:
+                    ax1, ay1, ax2, ay2 = bbox
+                    area = max(1.0, (ax2 - ax1) * (ay2 - ay1))
+                else:
+                    area = 1.0
+                items.append((tr, ctr, bbox, area))
+            # Sortiere stabil: frühere Namen (frühere Pässe) zuerst behalten
+            items.sort(key=lambda x: x[0].name)
+            effective_min_dist = min_distance_px
+            removed_cluster = 0
+            kept = []  # list of (ctr, bbox, area, track)
+            for tr, (cx, cy), bbox, area in items:
+                # Dynamischer Abstand: falls Pattern größer als min_distance
+                local_min = effective_min_dist
+                if cluster_use_pattern and bbox:
+                    ax1, ay1, ax2, ay2 = bbox
+                    pw = ax2 - ax1
+                    ph = ay2 - ay1
+                    # Verwende diagonale / 2 als Schätzwert für halbe Pattern-Ausdehnung
+                    import math
+                    pattern_radius = 0.5 * math.sqrt(pw * pw + ph * ph)
+                    if pattern_radius > local_min:
+                        local_min = pattern_radius
+                local_min_sq = local_min * local_min
+                conflict = False
+                for (ocx, ocy), obox, oarea, otr in ((k[0], k[1], k[2], k[3]) for k in [((kc[0], kc[1]), kb, ka, kt) for kc, kb, ka, kt in [((kctr[0], kctr[1]), kbbox, karea, ktrack) for kctr, kbbox, karea, ktrack in kept]]):
+                    dx = cx - ocx
+                    dy = cy - ocy
+                    if (dx * dx + dy * dy) <= local_min_sq:
+                        conflict = True
+                        break
+                if conflict:
+                    try:
+                        clip.tracking.tracks.remove(tr)
+                        removed_cluster += 1
+                        if debug:
+                            _d(f"Cluster remove '{tr.name}' local_min={local_min:.2f}")
+                    except Exception:  # noqa: BLE001
+                        pass
+                else:
+                    kept.append(((cx, cy), bbox, area, tr))
+            if debug:
+                _d(f"Cluster-Cleanup entfernt {removed_cluster} Tracks (effektiver min_dist Basis={min_distance_px})")
+            total_removed += removed_cluster
+        except Exception as e:  # noqa: BLE001
+            if debug:
+                _d(f"Cluster-Cleanup Fehler: {e}")
 
     _d(f"Fertig: passes={passes} total_added={total_added} total_removed={total_removed} min_distance={min_distance_px} start_thr={start_threshold} min_thr={min_threshold} factor={factor} overlap_thr={overlap_threshold}")
     return {

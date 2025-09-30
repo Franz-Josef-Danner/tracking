@@ -28,3 +28,10 @@ class TRACKING_PT_tools_panel(bpy.types.Panel):
             col2.prop(settings, 'overlap_threshold')
         col2.prop(settings, 'tag_pass_names')
         col2.prop(settings, 'debug')
+
+        box2 = layout.box()
+        box2.label(text="Cluster Cleanup")
+        colc = box2.column(align=True)
+        colc.prop(settings, 'cluster_cleanup')
+        if settings.cluster_cleanup:
+            colc.prop(settings, 'cluster_use_pattern')

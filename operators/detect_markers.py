@@ -24,6 +24,8 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             overlap_threshold=settings.overlap_threshold,
             tag_pass_names=settings.tag_pass_names,
             rounding_step=settings.rounding_step,
+            cluster_cleanup=settings.cluster_cleanup,
+            cluster_use_pattern=settings.cluster_use_pattern,
         )
         if not result.get('success'):
             self.report({'ERROR'}, result.get('message', 'Unbekannter Fehler'))

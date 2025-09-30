@@ -40,3 +40,13 @@ class TRACKING_PG_detect_settings(bpy.types.PropertyGroup):
         description="Ausführliche Log-Ausgaben in der Konsole",
         default=False
     )
+    cluster_cleanup: bpy.props.BoolProperty(
+        name="Cluster Cleanup",
+        description="Nach allen Durchläufen zusätzliche Cluster-Bereinigung (global) ausführen",
+        default=True
+    )
+    cluster_use_pattern: bpy.props.BoolProperty(
+        name="Pattern Distanz",
+        description="Verwendet max(Patterngröße, MinDist) als effektiven Mindestabstand",
+        default=True
+    )
