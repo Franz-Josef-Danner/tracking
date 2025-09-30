@@ -88,6 +88,24 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
     passes = 0
     current = start_threshold
 
+    def apply_sizes(cur_pattern):
+        """Setzt pattern/search size auf Basis cur_pattern."""
+        if settings is None:
+            return
+        try:
+            p = max(3, int(round(cur_pattern)))
+            s = p * 2
+            if hasattr(settings, 'default_pattern_size'):
+                settings.default_pattern_size = p
+            if hasattr(settings, 'default_search_size'):
+                settings.default_search_size = s
+            # für Rückgabe aktualisieren (letzte Werte)
+            nonlocal pattern_size, search_size
+            pattern_size = p
+            search_size = s
+        except Exception:  # noqa: BLE001
+            pass
+
     def run_detect(thr, allow_param=True):
         prev = len(clip.tracking.tracks) if (clip and bpy is not None) else 0
         note = ''
@@ -115,28 +133,39 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
                 raise RuntimeError('bpy nicht verfügbar')
             with context.temp_override(area=area, region=region):
                 if not has_threshold:
+                    # Set sizes für diesen Pass
+                    apply_sizes(pattern_size)
                     added, note = run_detect(current, allow_param=False)
                     per_pass.append((current, added, note or 'kein threshold Param'))
                     passes = 1
                 else:
+                    cur_pattern_progressive = float(pattern_size) if pattern_size else None
                     while current >= min_threshold and passes < max_passes:
+                        if cur_pattern_progressive is not None:
+                            apply_sizes(cur_pattern_progressive)
                         added, note = run_detect(current, allow_param=True)
                         per_pass.append((current, added, note))
                         passes += 1
                         current *= factor
+                        if cur_pattern_progressive is not None:
+                            cur_pattern_progressive *= 1.5
         except AttributeError:
             # Fallback ohne temp_override
             override = context.copy()
             override['area'] = area
             override['region'] = region
             if not has_threshold:
+                apply_sizes(pattern_size)
                 prev = len(clip.tracking.tracks) if clip else 0
                 bpy.ops.clip.detect_features(override)
                 new_total = len(clip.tracking.tracks) if clip else prev
                 per_pass.append((current, new_total - prev, 'fallback ohne threshold'))
                 passes = 1
             else:
+                cur_pattern_progressive = float(pattern_size) if pattern_size else None
                 while current >= min_threshold and passes < max_passes:
+                    if cur_pattern_progressive is not None:
+                        apply_sizes(cur_pattern_progressive)
                     prev = len(clip.tracking.tracks) if clip else 0
                     try:
                         bpy.ops.clip.detect_features(override, threshold=current)
@@ -148,6 +177,8 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.0001
                     per_pass.append((current, new_total - prev, 'fallback'))
                     passes += 1
                     current *= factor
+                    if cur_pattern_progressive is not None:
+                        cur_pattern_progressive *= 1.5
     except Exception as e:  # noqa: BLE001
         return {
             'success': False,
