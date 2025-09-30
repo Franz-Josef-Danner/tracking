@@ -26,6 +26,7 @@ def detect_features_multipass(
     factor=0.5,
     max_passes=32,
     min_distance_px=6.0,
+    debug=False,
 ):
     """Führt mehrfache Feature-Erkennung aus.
 
@@ -136,9 +137,43 @@ def detect_features_multipass(
                 pass
         return removed
 
+    def _remove_within_new(new_tracks, frame_current):
+        if not clip or not new_tracks:
+            return 0
+        w, h = clip.size
+        centers = []  # list of (track, xq, yq)
+        for tr in new_tracks:
+            pos = _get_marker_center(tr, frame_current, w, h)
+            if pos is None:
+                continue
+            x, y = pos
+            xq = round(x * 4) / 4.0
+            yq = round(y * 4) / 4.0
+            centers.append((tr, xq, yq))
+        removed = 0
+        min_dist_sq = min_distance_px * min_distance_px
+        kept = []
+        for tr, xq, yq in centers:
+            duplicate = False
+            for _ktr, kx, ky in kept:
+                dx = xq - kx
+                dy = yq - ky
+                if (dx * dx + dy * dy) <= min_dist_sq:
+                    # Delete this duplicate
+                    try:
+                        clip.tracking.tracks.remove(tr)
+                        removed += 1
+                    except Exception:  # noqa: BLE001
+                        pass
+                    duplicate = True
+                    break
+            if not duplicate:
+                kept.append((tr, xq, yq))
+        return removed
+
     def run_detect(thr, allow_param=True):
         if not clip:
-            return 0, 0, 'kein Clip'
+            return 0, 0, 0, 'kein Clip'
         prev_tracks = list(clip.tracking.tracks)
         prev_ids = set(id(t) for t in prev_tracks)
         note = ''
@@ -153,25 +188,31 @@ def detect_features_multipass(
             bpy.ops.clip.detect_features()
             note = 'TypeError threshold'
         except Exception as e:  # noqa: BLE001
-            return 0, 0, f'Fehler detect: {e}'
+            return 0, 0, 0, f'Fehler detect: {e}'
         after_tracks = list(clip.tracking.tracks)
         new_tracks = [t for t in after_tracks if id(t) not in prev_ids]
         added = len(new_tracks)
-        removed = _remove_overlapping(prev_tracks, new_tracks, context.scene.frame_current)
-        return added, removed, note
+        removed_prev = _remove_overlapping(prev_tracks, new_tracks, context.scene.frame_current)
+        # Nach Entfernen, filtere verbliebene "neue" erneut (da einige gelöscht wurden)
+        after_tracks2 = list(clip.tracking.tracks)
+        new_tracks_remaining = [t for t in after_tracks2 if id(t) not in prev_ids]
+        removed_new = _remove_within_new(new_tracks_remaining, context.scene.frame_current)
+        if debug:
+            print(f"[TrackingDetect] Thr {thr:.6f} added={added} removed_prev={removed_prev} removed_new={removed_new}")
+        return added, removed_prev, removed_new, note
 
     try:
         try:
             # Prefer temp_override
             with context.temp_override(area=area, region=region):
                 if not has_threshold:
-                    added, removed, note = run_detect(current, allow_param=False)
-                    per_pass.append((current, added, removed, note or 'kein threshold Param'))
+                    added, removed_prev, removed_new, note = run_detect(current, allow_param=False)
+                    per_pass.append((current, added, removed_prev + removed_new, note or 'kein threshold Param'))
                     passes = 1
                 else:
                     while current >= min_threshold and passes < max_passes:
-                        added, removed, note = run_detect(current, allow_param=True)
-                        per_pass.append((current, added, removed, note))
+                        added, removed_prev, removed_new, note = run_detect(current, allow_param=True)
+                        per_pass.append((current, added, removed_prev + removed_new, note))
                         passes += 1
                         current *= factor
         except AttributeError:
@@ -180,13 +221,13 @@ def detect_features_multipass(
             override['area'] = area
             override['region'] = region
             if not has_threshold:
-                added, removed, note = run_detect(current, allow_param=False)
-                per_pass.append((current, added, removed, (note or '') + ' fallback ohne threshold'))
+                added, removed_prev, removed_new, note = run_detect(current, allow_param=False)
+                per_pass.append((current, added, removed_prev + removed_new, (note or '') + ' fallback ohne threshold'))
                 passes = 1
             else:
                 while current >= min_threshold and passes < max_passes:
-                    added, removed, note = run_detect(current, allow_param=True)
-                    per_pass.append((current, added, removed, note + ' fallback'))
+                    added, removed_prev, removed_new, note = run_detect(current, allow_param=True)
+                    per_pass.append((current, added, removed_prev + removed_new, note + ' fallback'))
                     passes += 1
                     current *= factor
     except Exception as e:  # noqa: BLE001
