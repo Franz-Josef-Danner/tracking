@@ -1,4 +1,5 @@
 import bpy
+from .strm_set_markers import STRM_OT_PlaceMarkers
 from .strm_overlay import get_overlay_state
 
 
@@ -13,6 +14,7 @@ class STRM_PT_Panel(bpy.types.Panel):
         # Im Draw-Kontext niemals in ID-Properties schreiben
         get_overlay_state(context.scene, ensure=False)
         layout = self.layout
+        layout.operator("clip.strm_place_markers", icon='MARKER_HLT')
         layout.operator("clip.strm_analyze", icon='VIEWZOOM')
         layout.operator("clip.strm_toggle_overlay", icon='GRID')
         row = layout.row(align=True)
