@@ -38,7 +38,7 @@ def detect_features_multipass(
     start_threshold=1.0,
     min_threshold=0.1,
     factor=0.5,
-    max_passes=32,
+    max_passes=4,
     remove_duplicates=True,
     duplicate_tolerance_px=0.0,
     keep_first_marker=True,
