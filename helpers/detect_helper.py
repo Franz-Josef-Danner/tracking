@@ -140,33 +140,35 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
         if not new_ids:
             return 0
         cur_frame = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
-        # Sammle Positionen (Pixel) aller bisherigen Tracks (vor diesem Pass) für Distanzvergleich
-        existing_positions_px = []
+        # NEU: Wir verwenden primär alle zuvor geloggten Marker-Positionen (marker_logs),
+        # damit auch bei Blender-Replacements (IDs ändern sich) die Distanz-Basis erhalten bleibt.
+        # Zusätzlich sammeln wir – falls verfügbar – die realen existierenden Track-Objekt-Positionen.
+        existing_positions_px = []  # inkrementell erweitert, auch innerhalb dieses Passes
+        fallback_used = False
         if w is not None and h is not None:
             try:
+                # Basis aus allen zuvor geloggten Markern (Pass < aktueller Pass)
+                if marker_logs:
+                    existing_positions_px.extend([m['pos_px'] for m in marker_logs if m.get('pos_px')])
+                # Ergänzend: aktuelle Track-Objekte, die nicht neu sind (sofern Blender sie nicht ersetzt hat)
                 for t in clip.tracking.tracks:
-                    if id(t) in existing_track_ids:  # nur alte Tracks
-                        # Nimm Marker dieses Frames oder ersten
+                    if id(t) in existing_track_ids:
                         marker_ref = None
                         if cur_frame is not None:
-                            for m in t.markers:
-                                if m.frame == cur_frame:
-                                    marker_ref = m
+                            for mm in t.markers:
+                                if mm.frame == cur_frame:
+                                    marker_ref = mm
                                     break
                         if marker_ref is None and len(t.markers) > 0:
                             marker_ref = t.markers[0]
                         if marker_ref is not None:
                             co_norm = marker_ref.co
                             existing_positions_px.append((co_norm[0] * w, co_norm[1] * h))
-                fallback_used = False
-                # Fallback: wenn Blender offenbar die alten Tracks ersetzt (leer) aber wir frühere Marker geloggt haben
-                if not existing_positions_px and marker_logs and w is not None and h is not None:
-                    prev = [m['pos_px'] for m in marker_logs if m.get('pos_px') is not None]
-                    if prev:
-                        existing_positions_px = prev
-                        fallback_used = True
+                # Falls immer noch leer (kein einziger früherer Marker), bekommen die ersten neuen Marker keine Distanz.
+                if not existing_positions_px:
+                    fallback_used = True  # markiere nur zur Info
             except Exception:  # noqa: BLE001
-                fallback_used = False
+                fallback_used = True
         count = 0
         for t in clip.tracking.tracks:
             if id(t) in new_ids:
@@ -175,6 +177,7 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
                 marker_px = None
                 frame_used = None
                 nearest_dist_px = None
+                replaced_name = False
                 try:
                     marker = None
                     if cur_frame is not None:
@@ -189,13 +192,19 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
                         frame_used = marker.frame
                         if w is not None and h is not None:
                             marker_px = (marker_co_norm[0] * w, marker_co_norm[1] * h)
-                            # Distanz zu nächstem existierenden Marker berechnen
+                            # Distanz zu allen vorhandenen (bisherigen) Marker-Positionen berechnen
                             if existing_positions_px:
                                 try:
                                     x, y = marker_px
-                                    nearest_dist_px = min(((x - ex)**2 + (y - ey)**2) for ex, ey in existing_positions_px) ** 0.5
+                                    nearest_dist_px = min(((x - ex) ** 2 + (y - ey) ** 2) for ex, ey in existing_positions_px) ** 0.5
                                 except Exception:  # noqa: BLE001
                                     nearest_dist_px = None
+                            # Aktuellen Marker sofort zu Basis hinzufügen, damit spätere Marker IN DIESEM PASS
+                            # ihre Distanz auch zu ihm berechnen können.
+                            existing_positions_px.append(marker_px)
+                    # Prüfen, ob Track-Name schon früher existierte (ersetzt / dupliziert); nur für Analysezwecke
+                    if marker_logs and any(m['track_name'] == t.name for m in marker_logs):
+                        replaced_name = True
                 except Exception:  # noqa: BLE001
                     pass
                 print(
@@ -213,6 +222,7 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
                     'pattern': pattern_size,
                     'search': search_size,
                     'distance_fallback': fallback_used,
+                    'replaced_name': replaced_name,
                 })
         existing_track_ids.update(new_ids)
         return count
