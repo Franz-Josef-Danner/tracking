@@ -22,7 +22,17 @@ def get_clip_from_area(area):
         return None
 
 
-def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, factor=0.5, max_passes=32):
+def detect_features_multipass(
+    context,
+    start_threshold=1.0,
+    min_threshold=0.1,
+    factor=0.5,
+    max_passes=32,
+    remove_duplicates=True,
+    duplicate_tolerance_px=0.0,
+    keep_first_marker=True,
+    immediate_delete=False,
+):
     """Führt mehrfache Feature-Erkennung aus.
 
     Returns:
@@ -32,6 +42,8 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
             passes (int)
             total_added (int | -1)
             per_pass (list[tuple(threshold, added, note)])
+            removed_duplicate_tracks (list[str])
+            removed_duplicate_count (int)
     """
     area = find_clip_editor_area(context)
     if area is None:
@@ -217,33 +229,42 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
                         no_distance_reason = 'no_reference_positions'
                     else:
                         no_distance_reason = 'calc_error'
-                # Sofortiges Entfernen von Duplikaten: nur wenn eine Referenzbasis besteht (nicht erster Marker)
-                if (nearest_dist_px == 0.0 or (nearest_dist_px is None and existing_positions_px)) and existing_positions_px:
-                    # Selektiere nur diesen Track und lösche ihn über Operator
-                    try:
-                        # Deselect all
-                        for tr in clip.tracking.tracks:
+                # Optional: sofortiges Löschen (Default deaktiviert, weil instabil in manchen Kontexten)
+                if immediate_delete and remove_duplicates:
+                    is_duplicate = False
+                    if nearest_dist_px is not None and nearest_dist_px <= duplicate_tolerance_px:
+                        is_duplicate = True
+                    elif nearest_dist_px is None and existing_positions_px:  # nur wenn Referenz existiert
+                        is_duplicate = True
+                    # keep_first_marker schützt den allerersten Marker komplett
+                    if is_duplicate and keep_first_marker and not marker_logs:
+                        is_duplicate = False
+                    if is_duplicate:
+                        try:
+                            for tr in clip.tracking.tracks:
+                                try:
+                                    tr.select = False
+                                except Exception:  # noqa: BLE001
+                                    pass
                             try:
-                                tr.select = False
+                                t.select = True
                             except Exception:  # noqa: BLE001
                                 pass
-                        try:
-                            t.select = True
-                        except Exception:  # noqa: BLE001
-                            pass
-                        try:
-                            bpy.ops.clip.delete_track()
-                            removed_immediately = True
+                            try:
+                                clip.tracking.tracks.active = t  # type: ignore[attr-defined]
+                            except Exception:  # noqa: BLE001
+                                pass
+                            try:
+                                bpy.ops.clip.delete_track()
+                                removed_immediately = True
+                                print(
+                                    f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} DUPLIKAT ENTFERNT '{t.name}' dist={nearest_dist_px} (immediate)"
+                                )
+                                continue
+                            except Exception:  # noqa: BLE001
+                                removed_immediately = False
                         except Exception:  # noqa: BLE001
                             removed_immediately = False
-                    except Exception:  # noqa: BLE001
-                        removed_immediately = False
-                    if removed_immediately:
-                        print(
-                            f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} DUPLIKAT ENTFERNT '{t.name}' dist={nearest_dist_px}"
-                        )
-                        # Nicht in existing_track_ids aufnehmen, nicht als bestehender Track behandeln
-                        continue  # überspringe Logging als NEUER TRACK
                 print(
                     f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} NEUER TRACK '{t.name}' "
                     f"frame={frame_used} pos_norm={marker_co_norm} pos_px={marker_px} nearest_px={nearest_dist_px} pattern={pattern_size} search={search_size}"
@@ -320,8 +341,68 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
                     current *= factor
                     if cur_pattern_progressive is not None:
                         cur_pattern_progressive *= 1.5
-        # End-Batch-Löschung entfernt – Duplicate werden bereits während des Passes eliminiert.
-        removed_track_names = set(m['track_name'] for m in marker_logs if m.get('removed_immediately'))
+        removed_track_names = set()
+        # Batch-Duplikatlöschung am Ende (robuster): nur wenn nicht immediate oder Reste
+        if remove_duplicates and clip and bpy is not None and not immediate_delete:
+            # Finde Kandidaten
+            candidates = []
+            for m in marker_logs:
+                dist = m.get('nearest_dist_px')
+                name = m['track_name']
+                if keep_first_marker and m is marker_logs[0]:
+                    continue
+                if dist is None:
+                    # Wenn keine Distanz und nicht erster Marker -> Duplikat
+                    candidates.append(name)
+                elif dist <= duplicate_tolerance_px:
+                    candidates.append(name)
+            # Entfernen
+            if candidates:
+                # Erster Durchlauf: Kontext-override versuchen
+                def _delete_list(name_list):
+                    removed_local = []
+                    for nm in name_list:
+                        trk = next((t for t in clip.tracking.tracks if t.name == nm), None)
+                        if not trk:
+                            continue
+                        try:
+                            # Deselect all
+                            for tr in clip.tracking.tracks:
+                                try:
+                                    tr.select = False
+                                except Exception:  # noqa: BLE001
+                                    pass
+                            try:
+                                trk.select = True
+                            except Exception:  # noqa: BLE001
+                                pass
+                            try:
+                                clip.tracking.tracks.active = trk  # type: ignore[attr-defined]
+                            except Exception:  # noqa: BLE001
+                                pass
+                            try:
+                                bpy.ops.clip.delete_track()
+                            except TypeError:
+                                # Manche Versionen erwarten keinen speziellen Kontext
+                                bpy.ops.clip.delete_track()
+                            # Prüfen ob wirklich weg:
+                            if not any(t.name == nm for t in clip.tracking.tracks):
+                                removed_local.append(nm)
+                        except Exception:  # noqa: BLE001
+                            pass
+                    return removed_local
+                try:
+                    with context.temp_override(area=area, region=region):
+                        removed_list = _delete_list(candidates)
+                except Exception:
+                    removed_list = _delete_list(candidates)
+                removed_track_names.update(removed_list)
+                if removed_track_names:
+                    print(
+                        f"[TrackingHelper] Entfernt {len(removed_track_names)} Tracks (Batch, tol={duplicate_tolerance_px}) : {sorted(removed_track_names)}"
+                    )
+                else:
+                    print("[TrackingHelper] Batch-Löschung: keine Tracks entfernt (evtl. Kontextproblem oder keine echten Duplikate)")
     except Exception as e:  # noqa: BLE001
         return {
             'success': False,
