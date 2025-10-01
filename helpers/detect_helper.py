@@ -36,7 +36,7 @@ def get_clip_from_area(area):
 def detect_features_multipass(
     context,
     start_threshold=1.0,
-    min_threshold=0.0001,
+    min_threshold=0.1,
     factor=0.5,
     max_passes=32,
     remove_duplicates=True,
