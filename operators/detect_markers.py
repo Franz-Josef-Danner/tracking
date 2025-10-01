@@ -118,6 +118,25 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
                     min_new = None
             except Exception:  # noqa: BLE001
                 min_new = None
+        # Sichere Ermittlung simple_pass_limit (bei Blender kann _PropertyDeferred auftreten)
+        simple_limit = None
+        if self.single_pass_debug:
+            try:
+                val = getattr(self, 'simple_pass_count', None)
+                # Mehrstufige Konvertierung
+                def _coerce(v):
+                    try:
+                        return int(v)
+                    except Exception:
+                        try:
+                            return int(str(v))
+                        except Exception:
+                            return None
+                simple_limit = _coerce(val)
+                if simple_limit is not None and simple_limit < 1:
+                    simple_limit = 1
+            except Exception:  # noqa: BLE001
+                simple_limit = None
         result = detect_features_multipass(
             context,
             remove_duplicates=self.remove_duplicates,
@@ -131,7 +150,7 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             target_range_lower=lower_bound,
             target_range_upper=upper_bound,
             adaptive=not self.single_pass_debug,
-            simple_pass_limit=(int(self.simple_pass_count) if self.single_pass_debug else None),
+            simple_pass_limit=simple_limit,
         )
         if not result.get('success'):
             # Erweiterte Diagnoseausgaben, falls vorhanden
