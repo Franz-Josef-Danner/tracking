@@ -88,10 +88,19 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         # Mindestanzahl neuer Marker pro Pass ermitteln: (marker_per_frame * 4) / 14
         scene = context.scene
         min_new = None
+        lower_bound = None
+        upper_bound = None
         if hasattr(scene, 'marker_per_frame'):
             try:
                 raw = int(scene.marker_per_frame)
-                min_new = max(1, int(round((raw * 4) / 14))) if raw > 0 else None
+                base = (raw * 4) / 14 if raw > 0 else None
+                if base is not None:
+                    min_new = max(1, int(round(base)))
+                    # Toleranzbereich ±10%
+                    lower_bound = max(1, int(round(base * 0.9)))
+                    upper_bound = max(lower_bound, int(round(base * 1.1)))
+                else:
+                    min_new = None
             except Exception:  # noqa: BLE001
                 min_new = None
         result = detect_features_multipass(
@@ -104,6 +113,8 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             cluster_tolerance_px=self.cluster_tolerance_px,
             cluster_max_per_cluster=self.cluster_max_per_cluster,
             min_new_markers_per_pass=min_new,
+            target_range_lower=lower_bound,
+            target_range_upper=upper_bound,
         )
         if not result.get('success'):
             # Erweiterte Diagnoseausgaben, falls vorhanden
@@ -144,6 +155,10 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         if aborted:
             min_info = ' (vorzeitig gestoppt wegen Mindestanzahl)'
         if hasattr(context.scene, 'marker_per_frame') and context.scene.marker_per_frame > 0:
-            min_info += f" | MinNeu/Pass={(int(round((context.scene.marker_per_frame * 4)/14)))}"
+            base_calc = (context.scene.marker_per_frame * 4) / 14
+            base_int = int(round(base_calc))
+            lo = int(round(base_calc * 0.9))
+            hi = int(round(base_calc * 1.1))
+            min_info += f" | Ziel ~{base_int} (Range {lo}-{hi})"
         self.report({'INFO'}, f'{passes} Durchlaeufe, hinzugefuegt: {total_added} (pro Pass: {summary}){info_tail}{min_info}')
         return {'FINISHED'}

@@ -422,6 +422,10 @@ def detect_features_multipass(
                         if cur_pattern_progressive is not None:
                             apply_sizes(cur_pattern_progressive)
                         target_cnt = min_new_markers_per_pass
+                        range_lo = target_cnt
+                        range_hi = target_cnt
+                        # Range wird ggf. vom Operator übergeben: nutzen falls global gesetzt (später erweiterbar)
+                        # (Für jetzige Implementierung: falls Operator erweitert, könnten target_range_lower/upper Parameter kommen.)
                         # Starte jede Pass-Runde mit Basis-Mindestdistanz 100 (oder dynamic_min_distance_px falls gesetzt)
                         base_md = float(dynamic_min_distance_px) if dynamic_min_distance_px else 100.0
                         md = base_md
@@ -556,11 +560,12 @@ def detect_features_multipass(
                                 per_pass.append((current, am, f"attempt={attempt} md={md:.2f} (kein Ziel)"))
                                 accepted = True
                                 break
-                            if am == target_cnt:
+                            if am == target_cnt or (range_lo is not None and range_hi is not None and range_lo <= am <= range_hi):
                                 for sig in new_signatures:
                                     seen_signatures.add(sig)
                                 pass_new_signatures.append(new_signatures)
-                                per_pass.append((current, am, f"attempt={attempt} md={md:.2f} OK"))
+                                tag = "OK" if am == target_cnt else "RANGE_OK"
+                                per_pass.append((current, am, f"attempt={attempt} md={md:.2f} {tag}"))
                                 accepted = True
                                 break
                             # Abweichung -> Bewertung und ggf. behalten besten Versuch falls Abbruch
