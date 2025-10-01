@@ -51,6 +51,7 @@ def detect_features_multipass(
     target_range_lower=None,
     target_range_upper=None,
     verbose=False,
+    adaptive=True,
 ):
     """Fuehrt mehrfache Feature-Erkennung aus.
 
@@ -433,6 +434,23 @@ def detect_features_multipass(
                         else:
                             range_lo = target_cnt
                             range_hi = target_cnt
+                        # Falls nicht adaptiv: Fuehre exakt einen einfachen Detect aus und verlasse Schleife
+                        if not adaptive:
+                            added_count, note = run_detect(current, allow_param=True)
+                            log_new_tracks(passes + 1, current)
+                            # einfache neue Signaturen erfassen
+                            new_sigs_simple = []
+                            if clip:
+                                for t in clip.tracking.tracks:
+                                    sig = _build_signature(t)
+                                    if sig and sig not in seen_signatures and sig not in new_sigs_simple:
+                                        new_sigs_simple.append(sig)
+                            for sig in new_sigs_simple:
+                                seen_signatures.add(sig)
+                            pass_new_signatures.append(new_sigs_simple)
+                            per_pass.append((current, len(new_sigs_simple), f"single_pass added={len(new_sigs_simple)} raw_op={added_count}"))
+                            passes += 1
+                            break
                         # Starte jede Pass-Runde mit Basis-Mindestdistanz 100 (oder dynamic_min_distance_px falls gesetzt)
                         base_md = float(dynamic_min_distance_px) if dynamic_min_distance_px else 100.0
                         md = base_md

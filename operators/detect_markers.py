@@ -56,6 +56,11 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         min=1,
         description="Wie viele Marker pro Cluster behalten werden",
     )
+    single_pass_debug = BoolProperty(
+        name="Nur 1 Pass (Debug)",
+        default=False,
+        description="Fuehrt nur einen einfachen Detect-Pass ohne adaptive Wiederholungen aus",
+    )
 
     def draw(self, context):  # noqa: D401
         layout = self.layout
@@ -83,6 +88,8 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             sub2.enabled = True
         sub2.prop(self, "cluster_tolerance_px")
         sub2.prop(self, "cluster_max_per_cluster")
+        col.separator()
+        col.prop(self, "single_pass_debug")
 
     def execute(self, context):
         # Mindestanzahl neuer Marker pro Pass ermitteln: (marker_per_frame * 4) / 14
@@ -115,6 +122,7 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             min_new_markers_per_pass=min_new,
             target_range_lower=lower_bound,
             target_range_upper=upper_bound,
+            adaptive=not self.single_pass_debug,
         )
         if not result.get('success'):
             # Erweiterte Diagnoseausgaben, falls vorhanden
