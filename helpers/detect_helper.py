@@ -134,13 +134,17 @@ def detect_features_multipass(
     except Exception:  # noqa: BLE001
         cluster_max_per_cluster = 1
 
-    per_pass = []
+    per_pass = []  # Liste von Tuplen (threshold, added_count, note)
     passes = 0
     current = start_threshold
     marker_logs = []  # speichert detailinformationen neuer Marker
     existing_track_ids = set()
     if clip and bpy is not None:
         existing_track_ids = {id(t) for t in clip.tracking.tracks}
+
+    # Maximalzahl neuer Marker pro Detect-Lauf
+    MAX_NEW_MARKERS = 7
+    early_limit_hit = False
 
     def _ensure_tracking_mode():
         """Versucht den Clip Editor in den TRACKING Modus zu versetzen, falls moeglich."""
@@ -382,9 +386,21 @@ def detect_features_multipass(
                         log_new_tracks(passes + 1, current)
                         per_pass.append((current, added, note))
                         passes += 1
+                        # Prüfen ob Limit erreicht
+                        if clip:
+                            try:
+                                new_count_now = sum(1 for t in clip.tracking.tracks if id(t) not in original_track_ids_snapshot)
+                                if new_count_now >= MAX_NEW_MARKERS:
+                                    early_limit_hit = True
+                                    break
+                            except Exception:  # noqa: BLE001
+                                pass
                         current *= factor
                         if cur_pattern_progressive is not None:
                             cur_pattern_progressive *= 1.15
+                    # Falls früh gestoppt wegen Limit -> restliche Schleife verlassen
+                    if early_limit_hit:
+                        pass
         except AttributeError:
             # Fallback ohne temp_override
             override = context.copy()
@@ -410,9 +426,19 @@ def detect_features_multipass(
                         per_pass.append((current, 0, 'fallback Fehler'))
                         break
                     passes += 1
+                    if clip:
+                        try:
+                            new_count_now = sum(1 for t in clip.tracking.tracks if id(t) not in original_track_ids_snapshot)
+                            if new_count_now >= MAX_NEW_MARKERS:
+                                early_limit_hit = True
+                                break
+                        except Exception:  # noqa: BLE001
+                            pass
                     current *= factor
                     if cur_pattern_progressive is not None:
                         cur_pattern_progressive *= 1.5
+                if early_limit_hit:
+                    pass
         removed_track_names = set()
         # Batch-Duplikatloeschung am Ende (robuster): nur wenn nicht immediate oder Reste
         if remove_duplicates and clip and bpy is not None and not immediate_delete:
@@ -749,9 +775,12 @@ def detect_features_multipass(
         cluster_removed_cnt = len(cluster_removed) if 'cluster_removed' in locals() else 0
         limit_removed_cnt = len(limit_removed) if 'limit_removed' in locals() else 0
         remaining_new = max(0, final_total - len(original_track_names)) if final_total >= 0 else '?'
+        if isinstance(remaining_new, int) and remaining_new > MAX_NEW_MARKERS:
+            # Sicherheitswarnung, falls Limit doch überschritten (sollte nicht vorkommen)
+            print(f"[TrackingHelper][WARN] Limit {MAX_NEW_MARKERS} wurde überschritten (remaining_new={remaining_new})")
         print(
             f"[TrackingHelper] Marker Zusammenfassung: vorher={tracks_before} final={final_total} roh_neu={total_added} "
-            f"entfernt(Dupl={dup_removed_cnt},Cluster={cluster_removed_cnt},Limit={limit_removed_cnt}) verbleibend_neu={remaining_new} (Limit=7)"
+            f"entfernt(Dupl={dup_removed_cnt},Cluster={cluster_removed_cnt},Limit={limit_removed_cnt}) verbleibend_neu={remaining_new} (Limit={MAX_NEW_MARKERS}{' early_stop' if early_limit_hit else ''})"
         )
     except Exception:  # noqa: BLE001
         pass
@@ -778,4 +807,5 @@ def detect_features_multipass(
         'cluster_stats': cluster_info,
         'max_limit_removed_tracks': sorted(limit_removed) if 'limit_removed' in locals() else [],
         'max_limit_removed_count': len(limit_removed) if 'limit_removed' in locals() else 0,
+        'early_limit_hit': early_limit_hit,
     }

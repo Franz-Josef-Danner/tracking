@@ -17,39 +17,39 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     # --- Optionen (Annotation Syntax gegen _PropertyDeferred Probleme) ---
-    remove_duplicates = BoolProperty(
+    remove_duplicates: BoolProperty = BoolProperty(
         name="Duplikate entfernen",
         default=True,
         description="Marker mit Distanz <= Duplikat-Toleranz oder ohne Distanz (ab zweitem) entfernen",
     )
-    duplicate_tolerance = FloatProperty(
+    duplicate_tolerance: FloatProperty = FloatProperty(
         name="Duplikat Tol (px)",
         default=0.5,
         min=0.0,
         description="Maximaler Pixelabstand fuer exakt gleiche Marker (0 = nur identisch)",
     )
-    keep_first_marker = BoolProperty(
+    keep_first_marker: BoolProperty = BoolProperty(
         name="Ersten behalten",
         default=True,
         description="Ersten erkannten Marker niemals als Duplikat loeschen",
     )
-    immediate_delete = BoolProperty(
+    immediate_delete: BoolProperty = BoolProperty(
         name="Sofort loeschen",
         default=False,
         description="Duplikate nicht am Ende im Batch, sondern direkt beim Erkennen loeschen (instabiler)",
     )
-    cluster_consolidate = BoolProperty(
+    cluster_consolidate: BoolProperty = BoolProperty(
         name="Cluster konsolidieren",
         default=True,
         description="Raeumlich nahe Marker zusaetzlich clustern und zusammenfassen",
     )
-    cluster_tolerance_px = FloatProperty(
+    cluster_tolerance_px: FloatProperty = FloatProperty(
         name="Cluster Tol (px)",
         default=6.0,
         min=0.0,
         description="Radius fuer Cluster-Zuordnung (Pixel)",
     )
-    cluster_max_per_cluster = IntProperty(
+    cluster_max_per_cluster: IntProperty = IntProperty(
         name="Max/Cluster",
         default=1,
         min=1,
@@ -120,6 +120,7 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         removed_dup = result.get('removed_duplicate_count', 0)
         removed_cluster = result.get('cluster_removed_count', 0)
         removed_limit = result.get('max_limit_removed_count', 0)
+        early_limit = result.get('early_limit_hit', False)
         extra = []
         if removed_dup:
             extra.append(f'Dupl:{removed_dup}')
@@ -127,6 +128,8 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             extra.append(f'Cluster:{removed_cluster}')
         if removed_limit:
             extra.append(f'Limit:{removed_limit}')
+        if early_limit:
+            extra.append('EarlyStop')
         info_tail = (' | ' + ', '.join(extra)) if extra else ''
         self.report({'INFO'}, f'{passes} Durchlaeufe, hinzugefuegt: {total_added} (pro Pass: {summary}){info_tail}')
         return {'FINISHED'}
