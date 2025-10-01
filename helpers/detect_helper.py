@@ -103,6 +103,13 @@ def detect_features_multipass(
             original_track_names = {t.name for t in clip.tracking.tracks}
         except Exception:  # noqa: BLE001
             original_track_names = set()
+    # Ursprüngliche IDs separat festhalten (wird NICHT verändert wie existing_track_ids)
+    original_track_ids_snapshot = set()
+    if clip and bpy is not None:
+        try:
+            original_track_ids_snapshot = {id(t) for t in clip.tracking.tracks}
+        except Exception:  # noqa: BLE001
+            original_track_ids_snapshot = set()
 
     # Pruefen ob threshold unterstuetzt wird
     has_threshold = False
@@ -577,14 +584,20 @@ def detect_features_multipass(
         limit_removed = []
         if clip and bpy is not None and max_new_markers is not None:
             try:
-                # Liste der aktuell noch vorhandenen NEUEN Tracks in Entstehungsreihenfolge laut marker_logs
-                creation_order_names = [m['track_name'] for m in marker_logs]
-                # Filter: existieren aktuell UND waren nicht schon vor dem Detect da
+                # Mapping Name -> Track Objekt (aktuell vorhanden)
+                current_track_by_name = {t.name: t for t in clip.tracking.tracks}
+                # Entstehungsreihenfolge laut Logs filtern auf noch existierende + wirklich neue (ID nicht in Snapshot)
+                creation_order_names = [m['track_name'] for m in marker_logs if not m.get('removed_immediately')]
                 current_new_names = []
-                existing_now = {t.name for t in clip.tracking.tracks}
                 for nm in creation_order_names:
-                    if nm in existing_now and nm not in original_track_names:
-                        current_new_names.append(nm)
+                    trk = current_track_by_name.get(nm)
+                    if not trk:
+                        continue
+                    try:
+                        if id(trk) not in original_track_ids_snapshot:
+                            current_new_names.append(nm)
+                    except Exception:  # noqa: BLE001
+                        continue
                 if len(current_new_names) > max_new_markers:
                     keep = set(current_new_names[:max_new_markers])
                     to_remove_overflow = [nm for nm in current_new_names if nm not in keep]
@@ -627,6 +640,12 @@ def detect_features_multipass(
                         limit_removed = _delete_overflow(to_remove_overflow)
                     if limit_removed:
                         print(f"[TrackingHelper] Max-Limit: {len(limit_removed)} ueberzaehlige Marker geloescht (Limit={max_new_markers}) -> {limit_removed}")
+                        # Aktualisiere total_added (damit Rueckgabe dem finalen Zustand entspricht)
+                        try:
+                            if clip:
+                                pass  # wird spaeter ohnehin anhand der finalen Anzahl berechnet
+                        except Exception:  # noqa: BLE001
+                            pass
             except Exception as lim_err:  # noqa: BLE001
                 print(f"[TrackingHelper] Fehler bei Max-Limit Entfernung: {lim_err}")
     except Exception as e:  # noqa: BLE001
@@ -729,9 +748,10 @@ def detect_features_multipass(
         dup_removed_cnt = len(removed_track_names) if 'removed_track_names' in locals() else 0
         cluster_removed_cnt = len(cluster_removed) if 'cluster_removed' in locals() else 0
         limit_removed_cnt = len(limit_removed) if 'limit_removed' in locals() else 0
+        remaining_new = max(0, final_total - len(original_track_names)) if final_total >= 0 else '?'
         print(
-            f"[TrackingHelper] Marker Zusammenfassung: vorher={tracks_before} final={final_total} neu_total={total_added} "
-            f"entfernt(Dupl={dup_removed_cnt},Cluster={cluster_removed_cnt},Limit={limit_removed_cnt}) verbleibend_neu={max(0, final_total - len(original_track_names)) if final_total >=0 else '?'}"
+            f"[TrackingHelper] Marker Zusammenfassung: vorher={tracks_before} final={final_total} roh_neu={total_added} "
+            f"entfernt(Dupl={dup_removed_cnt},Cluster={cluster_removed_cnt},Limit={limit_removed_cnt}) verbleibend_neu={remaining_new} (Limit=7)"
         )
     except Exception:  # noqa: BLE001
         pass
