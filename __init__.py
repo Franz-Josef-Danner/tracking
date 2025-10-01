@@ -39,7 +39,7 @@ def register():
             "Gewuenschte Gesamt-Markeranzahl pro Frame. Mindestanzahl neuer Marker pro Detect-Pass = (Wert * 4) / 14. "
             "Bleibt ein Pass darunter, werden keine weiteren Paesse ausgefuehrt."
         ),
-        default=25,
+        default=50,
         min=0,
     )
     for cls in classes:

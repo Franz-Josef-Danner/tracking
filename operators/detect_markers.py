@@ -56,11 +56,6 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         min=1,
         description="Wie viele Marker pro Cluster behalten werden",
     )
-    single_pass_debug = BoolProperty(
-        name="Nur 1 Pass (Debug)",
-        default=False,
-        description="Fuehrt nur einen einfachen Detect-Pass ohne adaptive Wiederholungen aus",
-    )
 
     def draw(self, context):  # noqa: D401
         layout = self.layout
@@ -88,26 +83,15 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             sub2.enabled = True
         sub2.prop(self, "cluster_tolerance_px")
         sub2.prop(self, "cluster_max_per_cluster")
-        col.separator()
-        col.prop(self, "single_pass_debug")
 
     def execute(self, context):
         # Mindestanzahl neuer Marker pro Pass ermitteln: (marker_per_frame * 4) / 14
         scene = context.scene
         min_new = None
-        lower_bound = None
-        upper_bound = None
         if hasattr(scene, 'marker_per_frame'):
             try:
                 raw = int(scene.marker_per_frame)
-                base = (raw * 4) / 14 if raw > 0 else None
-                if base is not None:
-                    min_new = max(1, int(round(base)))
-                    # Toleranzbereich ±10%
-                    lower_bound = max(1, int(round(base * 0.9)))
-                    upper_bound = max(lower_bound, int(round(base * 1.1)))
-                else:
-                    min_new = None
+                min_new = max(1, int(round((raw * 4) / 14))) if raw > 0 else None
             except Exception:  # noqa: BLE001
                 min_new = None
         result = detect_features_multipass(
@@ -120,9 +104,6 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             cluster_tolerance_px=self.cluster_tolerance_px,
             cluster_max_per_cluster=self.cluster_max_per_cluster,
             min_new_markers_per_pass=min_new,
-            target_range_lower=lower_bound,
-            target_range_upper=upper_bound,
-            adaptive=not self.single_pass_debug,
         )
         if not result.get('success'):
             # Erweiterte Diagnoseausgaben, falls vorhanden
@@ -163,10 +144,6 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         if aborted:
             min_info = ' (vorzeitig gestoppt wegen Mindestanzahl)'
         if hasattr(context.scene, 'marker_per_frame') and context.scene.marker_per_frame > 0:
-            base_calc = (context.scene.marker_per_frame * 4) / 14
-            base_int = int(round(base_calc))
-            lo = int(round(base_calc * 0.9))
-            hi = int(round(base_calc * 1.1))
-            min_info += f" | Ziel ~{base_int} (Range {lo}-{hi})"
+            min_info += f" | MinNeu/Pass={(int(round((context.scene.marker_per_frame * 4)/14)))}"
         self.report({'INFO'}, f'{passes} Durchlaeufe, hinzugefuegt: {total_added} (pro Pass: {summary}){info_tail}{min_info}')
         return {'FINISHED'}
