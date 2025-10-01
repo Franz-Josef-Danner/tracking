@@ -217,6 +217,23 @@ def detect_features_multipass(
             except Exception:  # noqa: BLE001
                 fallback_used = True
         count = 0
+        # Helper einmal definieren (nicht pro Track neu)
+        def _safe_track_name(obj):
+            try:
+                nm = obj.name
+                if isinstance(nm, str):
+                    return nm
+                return str(nm)
+            except UnicodeDecodeError as ue:  # spezieller Fall
+                raw = getattr(obj, 'name', b'?')
+                try:
+                    if isinstance(raw, bytes):
+                        return 'TRACK_NAME_ERR:' + raw.decode('utf-8', 'backslashreplace')
+                except Exception:  # noqa: BLE001
+                    pass
+                return f'TRACK_NAME_ERR:{ue}'
+            except Exception:  # noqa: BLE001
+                return 'TRACK_NAME_ERR:unknown'
         for t in clip.tracking.tracks:
             if id(t) in new_ids:
                 count += 1
@@ -226,6 +243,7 @@ def detect_features_multipass(
                 nearest_dist_px = None
                 replaced_name = False
                 removed_immediately = False
+                safe_name = _safe_track_name(t)
                 try:
                     marker = None
                     if cur_frame is not None:
@@ -302,14 +320,17 @@ def detect_features_multipass(
                                 removed_immediately = False
                         except Exception:  # noqa: BLE001
                             removed_immediately = False
-                print(
-                    f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} NEUER TRACK '{t.name}' "
-                    f"frame={frame_used} pos_norm={marker_co_norm} pos_px={marker_px} nearest_px={nearest_dist_px} pattern={pattern_size} search={search_size}"
-                )
+                try:
+                    print(
+                        f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} NEUER TRACK '{safe_name}' "
+                        f"frame={frame_used} pos_norm={marker_co_norm} pos_px={marker_px} nearest_px={nearest_dist_px} pattern={pattern_size} search={search_size}"
+                    )
+                except UnicodeDecodeError as ue_print:  # should not happen now
+                    print(f"[TrackingHelper][WARN] Unicode problem beim Drucken eines Track-Namens: {ue_print}")
                 marker_logs.append({
                     'pass': pass_index,
                     'threshold': thr,
-                    'track_name': t.name,
+                    'track_name': safe_name,
                     'frame': frame_used,
                     'pos_norm': marker_co_norm,
                     'pos_px': marker_px,
