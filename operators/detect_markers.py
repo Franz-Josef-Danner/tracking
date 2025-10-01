@@ -17,50 +17,43 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     # --- Optionen (Annotation Syntax gegen _PropertyDeferred Probleme) ---
-    remove_duplicates: BoolProperty = BoolProperty(
+    remove_duplicates = BoolProperty(
         name="Duplikate entfernen",
         default=True,
         description="Marker mit Distanz <= Duplikat-Toleranz oder ohne Distanz (ab zweitem) entfernen",
     )
-    duplicate_tolerance: FloatProperty = FloatProperty(
+    duplicate_tolerance = FloatProperty(
         name="Duplikat Tol (px)",
         default=0.5,
         min=0.0,
         description="Maximaler Pixelabstand fuer exakt gleiche Marker (0 = nur identisch)",
     )
-    keep_first_marker: BoolProperty = BoolProperty(
+    keep_first_marker = BoolProperty(
         name="Ersten behalten",
         default=True,
         description="Ersten erkannten Marker niemals als Duplikat loeschen",
     )
-    immediate_delete: BoolProperty = BoolProperty(
+    immediate_delete = BoolProperty(
         name="Sofort loeschen",
         default=False,
         description="Duplikate nicht am Ende im Batch, sondern direkt beim Erkennen loeschen (instabiler)",
     )
-    cluster_consolidate: BoolProperty = BoolProperty(
+    cluster_consolidate = BoolProperty(
         name="Cluster konsolidieren",
         default=True,
         description="Raeumlich nahe Marker zusaetzlich clustern und zusammenfassen",
     )
-    cluster_tolerance_px: FloatProperty = FloatProperty(
+    cluster_tolerance_px = FloatProperty(
         name="Cluster Tol (px)",
         default=6.0,
         min=0.0,
         description="Radius fuer Cluster-Zuordnung (Pixel)",
     )
-    cluster_max_per_cluster: IntProperty = IntProperty(
+    cluster_max_per_cluster = IntProperty(
         name="Max/Cluster",
         default=1,
         min=1,
         description="Wie viele Marker pro Cluster behalten werden",
-    )
-    max_new_markers: IntProperty = IntProperty(
-        name="Max Marker",
-        default=7,
-        min=1,
-        max=100,
-        description="Maximalzahl neu hinzuzufügender Marker (hartes Limit)",
     )
 
     def draw(self, context):  # noqa: D401
@@ -89,9 +82,6 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             sub2.enabled = True
         sub2.prop(self, "cluster_tolerance_px")
         sub2.prop(self, "cluster_max_per_cluster")
-        col.separator()
-        col.label(text="Limit:")
-        col.prop(self, "max_new_markers")
 
     def execute(self, context):
         result = detect_features_multipass(
@@ -103,7 +93,6 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             cluster_consolidate=self.cluster_consolidate,
             cluster_tolerance_px=self.cluster_tolerance_px,
             cluster_max_per_cluster=self.cluster_max_per_cluster,
-            max_new_markers=self.max_new_markers,
         )
         if not result.get('success'):
             # Erweiterte Diagnoseausgaben, falls vorhanden
@@ -115,20 +104,14 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
                 print("[TrackingHelper][TRACEBACK]\n" + tb)
             self.report({'ERROR'}, result.get('message', 'Unbekannter Fehler'))
             return {'CANCELLED'}
+
         passes = result.get('passes', 0)
-        total_added = result.get('total_added', -1)  # effektive Netto-Anzahl
+        total_added = result.get('total_added', -1)
         per_pass = result.get('per_pass', [])
-        raw_total = result.get('raw_total_added', None)
 
         summary_parts = []
-        for entry in per_pass:
-            if not isinstance(entry, (list, tuple)) or len(entry) < 5:
-                continue
-            thr, raw_added, removed_limit, cumulative_new, note = entry
-            base = f'{thr:.5f}:raw{raw_added}'
-            if removed_limit:
-                base += f'-lim{removed_limit}'
-            base += f'->cum{cumulative_new}'
+        for thr, added, note in per_pass:
+            base = f'{thr:.5f}:{added}'
             if note:
                 base += f' ({note})'
             summary_parts.append(base)
@@ -136,17 +119,11 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
 
         removed_dup = result.get('removed_duplicate_count', 0)
         removed_cluster = result.get('cluster_removed_count', 0)
-        removed_limit = result.get('max_limit_removed_count', 0)
         extra = []
         if removed_dup:
             extra.append(f'Dupl:{removed_dup}')
         if removed_cluster:
             extra.append(f'Cluster:{removed_cluster}')
-        if removed_limit:
-            extra.append(f'Limit:{removed_limit}')
         info_tail = (' | ' + ', '.join(extra)) if extra else ''
-        msg = f'{passes} Durchlaeufe, hinzugefuegt: {total_added} (pro Pass: {summary}){info_tail}'
-        if raw_total is not None and raw_total != total_added:
-            msg += f' | raw_total:{raw_total}'
-        self.report({'INFO'}, msg)
+        self.report({'INFO'}, f'{passes} Durchlaeufe, hinzugefuegt: {total_added} (pro Pass: {summary}){info_tail}')
         return {'FINISHED'}

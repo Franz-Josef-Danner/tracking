@@ -1,18 +1,3 @@
-"""Feature Detection Helper – bereinigt.
-
-Diese Datei wurde vollständig neu geschrieben, um alte, fragmentierte Legacy-Blöcke
-und fehlerhafte `nonlocal` Verwendungen zu entfernen.
-
-Hauptfunktion: detect_features_multipass
-    - Mehrere Detect-Pässe mit absteigendem Threshold
-    - Pro Pass sofortige Limit-Kappung (rollierend, kein Early-Abbruch)
-    - Optionale Duplikat- und Cluster-Konsolidierung zum Schluss
-    - Rückgabe enthält pro Pass: (threshold, raw_added, removed_limit, cumulative_new, note)
-    - Endgültig nie mehr als `max_new_markers` neue Marker
-"""
-
-from __future__ import annotations
-
 try:  # Blender Umgebung
     import bpy  # type: ignore
 except ImportError:  # außerhalb Blender
@@ -20,524 +5,97 @@ except ImportError:  # außerhalb Blender
 
 import traceback
 
-DEFAULT_MAX_NEW_MARKERS = 7
 
-
-def _find_clip_area(context):
-    for window in getattr(context.window_manager, 'windows', []):
-        screen = window.screen
-        if not screen:
+def find_clip_editor_area(context):
+    for window in context.window_manager.windows:
+        scr = window.screen
+        if not scr:
             continue
-        area = next((a for a in screen.areas if a.type == 'CLIP_EDITOR'), None)
+        area = next((a for a in scr.areas if a.type == 'CLIP_EDITOR'), None)
         if area:
             return area
     return None
 
 
-def _get_clip(area):
+def get_clip_from_area(area):
     try:
         return area.spaces.active.clip
     except Exception:  # noqa: BLE001
         return None
 
 
-def _marker_px(track, width, height, frame):
-    marker = None
-    if frame is not None:
-        for m in track.markers:
-            if m.frame == frame:
-                marker = m
-                break
-    if marker is None and track.markers:
-        marker = track.markers[0]
-    if not marker:
-        return None
-    try:
-        x, y = marker.co
-        return (x * width, y * height)
-    except Exception:  # noqa: BLE001
-        return None
-
-
 def detect_features_multipass(
     context,
-    start_threshold: float = 1.0,
-    min_threshold: float = 0.0001,
-    factor: float = 0.5,
-    max_passes: int = 32,
-    remove_duplicates: bool = True,
-    duplicate_tolerance_px: float = 0.0,
-    keep_first_marker: bool = True,
-    immediate_delete: bool = False,  # (ignoriert – nur Batch am Ende)
-    cluster_consolidate: bool = False,
-    cluster_tolerance_px: float = 2.0,
-    cluster_max_per_cluster: int = 1,
-    max_new_markers: int | None = None,
+    start_threshold=1.0,
+    min_threshold=0.0001,
+    factor=0.5,
+    max_passes=32,
+    remove_duplicates=True,
+    duplicate_tolerance_px=0.0,
+    keep_first_marker=True,
+    immediate_delete=False,
+    cluster_consolidate=False,
+    cluster_tolerance_px=2.0,
+    cluster_max_per_cluster=1,
 ):
-    # Kontext / Clip
-    area = _find_clip_area(context)
+    """Fuehrt mehrfache Feature-Erkennung aus.
+
+    Returns:
+        dict mit Schluesseln:
+            success (bool)
+            message (str)
+            passes (int)
+            total_added (int | -1)
+        per_pass (list[tuple(threshold, added, note)])
+            removed_duplicate_tracks (list[str])
+            removed_duplicate_count (int)
+        cluster_removed_tracks (list[str])
+        cluster_removed_count (int)
+        cluster_stats (dict | None)
+    """
+    area = find_clip_editor_area(context)
     if area is None:
-        return {'success': False, 'message': 'Kein Movie Clip Editor Bereich gefunden.'}
+        return {
+            'success': False,
+            'message': 'Kein Movie Clip Editor Bereich gefunden (oeffne einen Clip Editor).'
+        }
     region = next((r for r in area.regions if r.type == 'WINDOW'), None)
     if region is None:
-        return {'success': False, 'message': 'Keine WINDOW Region gefunden.'}
-    clip = _get_clip(area)
-    if not clip:
-        return {'success': False, 'message': 'Kein aktiver Clip.'}
+        return {
+            'success': False,
+            'message': 'Keine gueltige WINDOW Region im Clip Editor gefunden.'
+        }
 
-    # Parameter normalisieren
-    try:
-        duplicate_tolerance_px = float(duplicate_tolerance_px)
-    except Exception:  # noqa: BLE001
-        duplicate_tolerance_px = 0.0
-    try:
-        cluster_tolerance_px = float(cluster_tolerance_px)
-    except Exception:  # noqa: BLE001
-        cluster_tolerance_px = 2.0
-    try:
-        cluster_max_per_cluster = int(cluster_max_per_cluster)
-    except Exception:  # noqa: BLE001
-        cluster_max_per_cluster = 1
-    if max_new_markers is None:
-        max_new_markers = DEFAULT_MAX_NEW_MARKERS
-    try:
-        max_new_markers = int(max_new_markers)
-    except Exception:  # noqa: BLE001
-        max_new_markers = DEFAULT_MAX_NEW_MARKERS
-    if max_new_markers <= 0:
-        max_new_markers = DEFAULT_MAX_NEW_MARKERS
-
-    # Clip/Settings Größenverwaltung
-    settings = getattr(clip.tracking, 'settings', None)
-    old_pattern = getattr(settings, 'default_pattern_size', None) if settings else None
-    old_search = getattr(settings, 'default_search_size', None) if settings else None
-    try:
-        w, h = clip.size
-    except Exception:  # noqa: BLE001
-        w = h = None
-    if w:
-        pattern_size = max(3, int(round(w * 0.01)))
-        search_size = pattern_size * 2
-        if settings is not None:
-            try:
+    clip = get_clip_from_area(area)
+    pattern_size = None
+    search_size = None
+    old_pattern = None
+    old_search = None
+    settings = None
+    w = None
+    h = None
+    if clip:
+        try:
+            w, h = clip.size
+            print(f"[TrackingHelper] Clip Breite (px): {w}")
+            # Berechnung gemoaß Anforderung:
+            # pattern_size = horizontale Aufloesung * 0.01
+            pattern_size = max(3, int(round(w * 0.01)))
+            search_size = pattern_size * 2
+            settings = getattr(clip.tracking, 'settings', None)
+            if settings is not None:
+                # Alte Werte sichern
+                old_pattern = getattr(settings, 'default_pattern_size', None)
+                old_search = getattr(settings, 'default_search_size', None)
+                # Setzen falls Attribute vorhanden
                 if hasattr(settings, 'default_pattern_size'):
                     settings.default_pattern_size = pattern_size
                 if hasattr(settings, 'default_search_size'):
                     settings.default_search_size = search_size
-            except Exception:  # noqa: BLE001
-                pass
-    else:
-        pattern_size = search_size = None
-
-    original_ids = {id(t) for t in clip.tracking.tracks}
-    marker_order: list[str] = []  # Reihenfolge neuer Marker (Namen)
-    per_pass: list[tuple[float, int, int, int, str]] = []
-    passes = 0
-    thr = float(start_threshold)
-
-    # Threshold unterstützung prüfen
-    has_threshold = False
-    if bpy is not None:
-        try:
-            rna = bpy.ops.clip.detect_features.get_rna_type()
-            has_threshold = 'threshold' in rna.properties.keys()
+                print(f"[TrackingHelper] Set pattern_size={pattern_size}, search_size={search_size}")
         except Exception:  # noqa: BLE001
-            has_threshold = False
-
-    def net_new_tracks():
-        return [t for t in clip.tracking.tracks if id(t) not in original_ids]
-
-    def log_new_names():
-        for t in clip.tracking.tracks:
-            if id(t) in original_ids:
-                continue
-            if t.name not in marker_order:
-                marker_order.append(t.name)
-
-    def enforce_limit() -> int:
-        new_list = net_new_tracks()
-        if len(new_list) <= max_new_markers:
-            return 0
-        keep_names = set(marker_order[:max_new_markers])
-        removed = []
-        for t in new_list:
-            if t.name in keep_names:
-                continue
-            try:
-                for tt in clip.tracking.tracks:
-                    try:
-                        tt.select = False
-                    except Exception:  # noqa: BLE001
-                        pass
-                t.select = True  # type: ignore[attr-defined]
-                clip.tracking.tracks.active = t  # type: ignore[attr-defined]
-                bpy.ops.clip.delete_track()
-                removed.append(t.name)
-            except Exception:  # noqa: BLE001
-                pass
-        if removed:
-            print(f"[TrackingHelper] Limit-Kappung: {len(removed)} entfernt -> {removed}")
-        return len(removed)
-
-    def remove_duplicates_batch():
-        if not remove_duplicates or duplicate_tolerance_px <= 0:
-            return []
-        frame_cur = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
-        width = w or 1
-        height = h or 1
-        kept = []
-        removed_names = []
-        for t in list(net_new_tracks()):
-            pos = _marker_px(t, width, height, frame_cur)
-            if not pos:
-                if keep_first_marker and not kept:
-                    kept.append(t)
-                    continue
-                # Löschen
-                try:
-                    for tt in clip.tracking.tracks:
-                        try: tt.select = False
-                        except Exception: pass  # noqa: BLE001
-                    t.select = True  # type: ignore[attr-defined]
-                    clip.tracking.tracks.active = t  # type: ignore[attr-defined]
-                    bpy.ops.clip.delete_track()
-                    removed_names.append(t.name)
-                except Exception:  # noqa: BLE001
-                    pass
-                continue
-            is_dup = False
-            for kt in kept:
-                kpos = _marker_px(kt, width, height, frame_cur)
-                if not kpos:
-                    continue
-                dx = pos[0] - kpos[0]
-                dy = pos[1] - kpos[1]
-                if (dx*dx + dy*dy) ** 0.5 <= duplicate_tolerance_px:
-                    is_dup = True
-                    break
-            if is_dup:
-                try:
-                    for tt in clip.tracking.tracks:
-                        try: tt.select = False
-                        except Exception: pass  # noqa: BLE001
-                    t.select = True  # type: ignore[attr-defined]
-                    clip.tracking.tracks.active = t  # type: ignore[attr-defined]
-                    bpy.ops.clip.delete_track()
-                    removed_names.append(t.name)
-                except Exception:  # noqa: BLE001
-                    pass
-            else:
-                kept.append(t)
-        if removed_names:
-            print(f"[TrackingHelper] Duplikate entfernt: {removed_names}")
-        return removed_names
-
-    def cluster_consolidate_batch():
-        if not cluster_consolidate or cluster_tolerance_px <= 0:
-            return []
-        frame_cur = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
-        width = w or 1
-        height = h or 1
-        order_map = {nm: i for i, nm in enumerate(marker_order)}
-        entries = []  # (name, order, x, y)
-        for t in net_new_tracks():
-            pos = _marker_px(t, width, height, frame_cur)
-            if not pos:
-                continue
-            entries.append((t.name, order_map.get(t.name, 10**9), pos[0], pos[1]))
-        entries.sort(key=lambda x: (x[1], x[0]))
-        r2 = cluster_tolerance_px * cluster_tolerance_px
-        clusters: list[dict] = []
-        for nm, _, x, y in entries:
-            assigned = False
-            for c in clusters:
-                cx, cy = c['center']
-                if (x - cx)**2 + (y - cy)**2 <= r2:
-                    c['members'].append(nm)
-                    assigned = True
-                    break
-            if not assigned:
-                clusters.append({'center': (x, y), 'members': [nm]})
-        to_remove = []
-        for c in clusters:
-            if len(c['members']) > cluster_max_per_cluster:
-                to_remove.extend(c['members'][cluster_max_per_cluster:])
-        removed = []
-        for nm in to_remove:
-            trk = next((t for t in clip.tracking.tracks if t.name == nm), None)
-            if not trk:
-                continue
-            try:
-                for tt in clip.tracking.tracks:
-                    try: tt.select = False
-                    except Exception: pass  # noqa: BLE001
-                trk.select = True  # type: ignore[attr-defined]
-                clip.tracking.tracks.active = trk  # type: ignore[attr-defined]
-                bpy.ops.clip.delete_track()
-                removed.append(nm)
-            except Exception:  # noqa: BLE001
-                pass
-        if removed:
-            print(f"[TrackingHelper] Cluster entfernt: {removed}")
-        return removed
-
-    # Hauptschleife: Alle Pässe, kein Early Break – Limit wird nur durch Löschen erzwungen
-    try:
-        with context.temp_override(area=area, region=region):
-            while thr >= min_threshold and passes < max_passes:
-                before = len(clip.tracking.tracks)
-                note = ''
-                try:
-                    if has_threshold:
-                        bpy.ops.clip.detect_features(threshold=thr)
-                    else:
-                        bpy.ops.clip.detect_features()
-                        note = 'no_thr_param'
-                except Exception as de:  # noqa: BLE001
-                    note = f'err:{type(de).__name__}'
-                after = len(clip.tracking.tracks)
-                raw_added = after - before
-                passes += 1
-                log_new_names()
-                removed_limit = enforce_limit()
-                cumulative_new = len(net_new_tracks())
-                per_pass.append((thr, raw_added, removed_limit, cumulative_new, note))
-                thr *= factor
-    except Exception as e:  # noqa: BLE001
-        tb = traceback.format_exc()
-        return {
-            'success': False,
-            'message': f'Fehler: {e}',
-            'exception_type': type(e).__name__,
-            'traceback': tb,
-            'passes': passes,
-            'total_added': -1,
-            'per_pass': per_pass,
-        }
-    finally:
-        if settings is not None:
-            try:
-                if old_pattern is not None and hasattr(settings, 'default_pattern_size'):
-                    settings.default_pattern_size = old_pattern
-                if old_search is not None and hasattr(settings, 'default_search_size'):
-                    settings.default_search_size = old_search
-            except Exception:  # noqa: BLE001
-                pass
-
-    # Nachbearbeitung
-    removed_dups = remove_duplicates_batch()
-    removed_cluster = cluster_consolidate_batch()
-    enforce_limit()  # falls durch Duplikat/Cluster Löschungen Reihenfolge neue Marker zuließ
-
-    final_new = len(net_new_tracks())
-    raw_total_added = sum(r for _, r, *_ in per_pass)
-    limit_removed_total = sum(rem for _, _, rem, *_ in per_pass)
-
-    print(
-        f"[TrackingHelper] Summary passes={passes} final_new={final_new} raw_total={raw_total_added} "
-        f"limit_removed={limit_removed_total} dupl={len(removed_dups)} cluster={len(removed_cluster)} limit={max_new_markers}"
-    )
-
-    return {
-        'success': True,
-        'message': 'OK',
-        'passes': passes,
-        'total_added': final_new,
-        'per_pass': per_pass,
-        'removed_duplicate_tracks': removed_dups,
-        'removed_duplicate_count': len(removed_dups),
-        'cluster_removed_tracks': removed_cluster,
-        'cluster_removed_count': len(removed_cluster),
-        'max_limit_removed_tracks': [],
-        'max_limit_removed_count': limit_removed_total,
-        'raw_total_added': raw_total_added,
-        'raw_per_pass': [r for _, r, *_ in per_pass],
-    }
-
-# Dateiende – saubere, konsolidierte Version
-
-    def _remove_duplicates():
-        if not remove_duplicates or duplicate_tolerance_px < 0:
-            return []
-        frame_cur = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
-        width = w or 1
-        height = h or 1
-        tol = duplicate_tolerance_px
-        kept = []
-        removed = []
-        for t in list(clip.tracking.tracks):
-            if id(t) in original_ids and keep_first_marker:
-                kept.append(t)
-                continue
-            pos = _track_position_px(t, width, height, frame_cur)
-            if not pos:
-                # Keine Position -> als Duplikat behandeln (falls nicht erster)
-                if keep_first_marker and not kept:
-                    kept.append(t)
-                else:
-                    try:
-                        for tt in clip.tracking.tracks:
-                            tt.select = False
-                        t.select = True
-                        clip.tracking.tracks.active = t  # type: ignore[attr-defined]
-                        bpy.ops.clip.delete_track()
-                        removed.append(t.name)
-                    except Exception:  # noqa: BLE001
-                        pass
-                continue
-            is_dup = False
-            for kt in kept:
-                kpos = _track_position_px(kt, width, height, frame_cur)
-                if not kpos:
-                    continue
-                dx = pos[0] - kpos[0]
-                dy = pos[1] - kpos[1]
-                if sqrt(dx*dx + dy*dy) <= tol:
-                    is_dup = True
-                    break
-            if is_dup:
-                try:
-                    for tt in clip.tracking.tracks:
-                        tt.select = False
-                    t.select = True
-                    clip.tracking.tracks.active = t  # type: ignore[attr-defined]
-                    bpy.ops.clip.delete_track()
-                    removed.append(t.name)
-                except Exception:  # noqa: BLE001
-                    pass
-            else:
-                kept.append(t)
-        if removed:
-            print(f"[TrackingHelper] Duplikate entfernt: {removed}")
-        return removed
-
-    def _cluster_consolidate():
-        if not cluster_consolidate or cluster_tolerance_px <= 0:
-            return []
-        frame_cur = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
-        width = w or 1
-        height = h or 1
-        # Sammle Positionen
-        entries = []  # (name, order_idx, x, y)
-        order = {m['name']: i for i, m in enumerate(marker_logs)}
-        for t in clip.tracking.tracks:
-            pos = _track_position_px(t, width, height, frame_cur)
-            if not pos:
-                continue
-            entries.append((t.name, order.get(t.name, 10**9), pos[0], pos[1]))
-        entries.sort(key=lambda x: (x[1], x[0]))
-        clusters = []  # list of dict(center=(x,y), members=[name,...])
-        r2 = cluster_tolerance_px * cluster_tolerance_px
-        for nm, _, x, y in entries:
-            placed = False
-            for c in clusters:
-                cx, cy = c['center']
-                if (x - cx)**2 + (y - cy)**2 <= r2:
-                    c['members'].append(nm)
-                    placed = True
-                    break
-            if not placed:
-                clusters.append({'center': (x, y), 'members': [nm]})
-        to_remove = []
-        for c in clusters:
-            if len(c['members']) > cluster_max_per_cluster:
-                # entferne spätere
-                to_remove.extend(c['members'][cluster_max_per_cluster:])
-        removed = []
-        for nm in to_remove:
-            trk = next((t for t in clip.tracking.tracks if t.name == nm), None)
-            if not trk:
-                continue
-            try:
-                for tt in clip.tracking.tracks:
-                    tt.select = False
-                trk.select = True
-                clip.tracking.tracks.active = trk  # type: ignore[attr-defined]
-                bpy.ops.clip.delete_track()
-                removed.append(nm)
-            except Exception:  # noqa: BLE001
-                pass
-        if removed:
-            print(f"[TrackingHelper] Cluster entfernt: {removed}")
-        return removed
-
-    try:
-        with context.temp_override(area=area, region=region):
-            while current_thr >= min_threshold and passes < max_passes:
-                added_raw, note = _run_detect(current_thr)
-                raw_total_added += added_raw
-                raw_per_pass.append(added_raw)
-                passes += 1
-                _log_new(current_thr, passes)
-                # Enforce Limit direkt nach Pass (falls schon erreicht -> abbrechen)
-                _enforce_limit()
-                effective_new = len(_net_new_ids())
-                per_pass.append((current_thr, effective_new, note))
-                if effective_new >= max_new_markers:
-                    print(f"[TrackingHelper] Limit {max_new_markers} erreicht – Abbruch weiterer Pässe.")
-                    break
-                current_thr *= factor
-    except Exception as e:  # noqa: BLE001
-        tb = traceback.format_exc()
-        return {
-            'success': False,
-            'message': f'Fehler: {e}',
-            'exception_type': type(e).__name__,
-            'traceback': tb,
-            'passes': passes,
-            'total_added': -1,
-            'per_pass': per_pass,
-        }
-    finally:
-        # Pattern/Search zurücksetzen
-        if settings is not None:
-            try:
-                if old_pattern is not None and hasattr(settings, 'default_pattern_size'):
-                    settings.default_pattern_size = old_pattern
-                if old_search is not None and hasattr(settings, 'default_search_size'):
-                    settings.default_search_size = old_search
-            except Exception:  # noqa: BLE001
-                pass
-
-    # Nach allen Pässen: Duplikate & Cluster (Reihenfolge: Duplikate -> Cluster) und dann Limit erneut
-    removed_duplicate_tracks = _remove_duplicates() if remove_duplicates else []
-    removed_cluster_tracks = _cluster_consolidate() if cluster_consolidate else []
-    _enforce_limit(final=True)
-
-    final_new = len(_net_new_ids())
-    total_added = final_new  # Netto neue Marker
-
-    # Basic Distanzstatistik (vereinfacht): Distanz zwischen neuen Markern (paarweise minimal, optional)
-    distance_stats = {'count': 0, 'min': None, 'max': None, 'mean': None, 'median': None}
-    per_pass_distance_stats = {}
-
-    summary_log = (
-        f"[TrackingHelper] Zusammenfassung: Passes={passes} neu={final_new} raw_total={raw_total_added} "
-        f"Dupl={len(removed_duplicate_tracks)} Cluster={len(removed_cluster_tracks)} LimitEntf={len(max_limit_removed_tracks)} Limit={max_new_markers}" )
-    print(summary_log)
-
-    return {
-        'success': True,
-        'message': 'OK',
-        'passes': passes,
-        'total_added': total_added,
-        'per_pass': per_pass,
-        'pattern_size': pattern_size,
-        'search_size': search_size,
-        'marker_logs': marker_logs,
-        'distance_stats': distance_stats,
-        'per_pass_distance_stats': per_pass_distance_stats,
-        'removed_duplicate_tracks': removed_duplicate_tracks,
-        'removed_duplicate_count': len(removed_duplicate_tracks),
-        'cluster_removed_tracks': removed_cluster_tracks,
-        'cluster_removed_count': len(removed_cluster_tracks),
-        'cluster_stats': None,
-        'max_limit_removed_tracks': max_limit_removed_tracks,
-        'max_limit_removed_count': len(max_limit_removed_tracks),
-        'raw_total_added': raw_total_added,
-        'raw_per_pass': raw_per_pass,
-    }
-
+            pass
+    tracks_before = len(clip.tracking.tracks) if clip else -1
 
     # Pruefen ob threshold unterstuetzt wird
     has_threshold = False
@@ -562,7 +120,13 @@ def detect_features_multipass(
     except Exception:  # noqa: BLE001
         cluster_max_per_cluster = 1
 
-    # (Alter Block fuer per-Pass Limit wurde entfernt – aktuelle Implementierung steht weiter oben.)
+    per_pass = []
+    passes = 0
+    current = start_threshold
+    marker_logs = []  # speichert detailinformationen neuer Marker
+    existing_track_ids = set()
+    if clip and bpy is not None:
+        existing_track_ids = {id(t) for t in clip.tracking.tracks}
 
     def _ensure_tracking_mode():
         """Versucht den Clip Editor in den TRACKING Modus zu versetzen, falls moeglich."""
@@ -797,30 +361,16 @@ def detect_features_multipass(
                     passes = 1
                 else:
                     cur_pattern_progressive = float(pattern_size) if pattern_size else None
-                    net_prev = _count_net_new()
                     while current >= min_threshold and passes < max_passes:
                         if cur_pattern_progressive is not None:
                             apply_sizes(cur_pattern_progressive)
                         added, note = run_detect(current, allow_param=True)
-                        raw_total_added_local = added
-                        raw_total_added += raw_total_added_local
-                        raw_per_pass.append(raw_total_added_local)
                         log_new_tracks(passes + 1, current)
-                        removed_now = _enforce_limit()  # Kappung
-                        net_now = _count_net_new()
-                        effective_added = max(0, net_now - net_prev)
-                        net_prev = net_now
-                        if removed_now or effective_added != added:
-                            if removed_now:
-                                note = (note + ';trim') if note else 'trim'
-                            if effective_added != added:
-                                note = (note + f";raw:{added}") if note else f"raw:{added}"
-                        per_pass.append((current, effective_added, note))
+                        per_pass.append((current, added, note))
                         passes += 1
                         current *= factor
                         if cur_pattern_progressive is not None:
                             cur_pattern_progressive *= 1.15
-                    # Kein Early Stop mehr – vollständige Schleife oder min_threshold erreicht
         except AttributeError:
             # Fallback ohne temp_override
             override = context.copy()
@@ -835,26 +385,13 @@ def detect_features_multipass(
                 passes = 1
             else:
                 cur_pattern_progressive = float(pattern_size) if pattern_size else None
-                net_prev = _count_net_new()
                 while current >= min_threshold and passes < max_passes:
                     if cur_pattern_progressive is not None:
                         apply_sizes(cur_pattern_progressive)
                     try:
                         added, note = run_detect(current, allow_param=True)
-                        raw_total_added_local = added
-                        raw_total_added += raw_total_added_local
-                        raw_per_pass.append(raw_total_added_local)
                         log_new_tracks(passes + 1, current)
-                        removed_now = _enforce_limit()
-                        net_now = _count_net_new()
-                        effective_added = max(0, net_now - net_prev)
-                        net_prev = net_now
-                        if removed_now or effective_added != added:
-                            if removed_now:
-                                note = (note + ';trim') if note else 'trim'
-                            if effective_added != added:
-                                note = (note + f";raw:{added}") if note else f"raw:{added}"
-                        per_pass.append((current, effective_added, (note or 'fallback')))
+                        per_pass.append((current, added, note or 'fallback'))
                     except Exception:  # noqa: BLE001
                         per_pass.append((current, 0, 'fallback Fehler'))
                         break
@@ -862,7 +399,6 @@ def detect_features_multipass(
                     current *= factor
                     if cur_pattern_progressive is not None:
                         cur_pattern_progressive *= 1.5
-                # Kein Early Stop mehr
         removed_track_names = set()
         # Batch-Duplikatloeschung am Ende (robuster): nur wenn nicht immediate oder Reste
         if remove_duplicates and clip and bpy is not None and not immediate_delete:
@@ -1028,7 +564,6 @@ def detect_features_multipass(
                     )
             except Exception as cl_err:  # noqa: BLE001
                 print(f"[TrackingHelper] Cluster-Konsolidierung Fehler: {cl_err}")
-
     except Exception as e:  # noqa: BLE001
         tb = traceback.format_exc()
         return {
@@ -1055,7 +590,7 @@ def detect_features_multipass(
                 pass
 
     if clip:
-        total_added = len(clip.tracking.tracks) - tracks_before  # effektive Netto-Anzahl
+        total_added = len(clip.tracking.tracks) - tracks_before
     else:
         total_added = -1
 
@@ -1124,18 +659,6 @@ def detect_features_multipass(
                 reason_counter[r] = reason_counter.get(r, 0) + 1
             reason_parts = ', '.join(f"{k}:{v}" for k, v in sorted(reason_counter.items()))
             print(f"[TrackingHelper] Distanz fehlend fuer {len(missing)} Marker (Gruende: {reason_parts})")
-        # Abschluss-Gesamtlog mit Marker-Anzahlen
-        final_total = len(clip.tracking.tracks) if clip else -1
-        dup_removed_cnt = len(removed_track_names) if 'removed_track_names' in locals() else 0
-        cluster_removed_cnt = len(cluster_removed) if 'cluster_removed' in locals() else 0
-        limit_removed_cnt = len(limit_removed) if 'limit_removed' in locals() else 0
-        remaining_new = max(0, final_total - len(original_track_names)) if final_total >= 0 else '?'
-        if isinstance(remaining_new, int) and remaining_new > max_new_markers:
-            print(f"[TrackingHelper][WARN] Limit {max_new_markers} überschritten (remaining_new={remaining_new}) – unerwartet.")
-        print(
-            f"[TrackingHelper] Marker Zusammenfassung: vorher={tracks_before} final={final_total} roh_neu={total_added} "
-            f"entfernt(Dupl={dup_removed_cnt},Cluster={cluster_removed_cnt},Limit={limit_removed_cnt}) verbleibend_neu={remaining_new} (Limit={MAX_NEW_MARKERS})"
-        )
     except Exception:  # noqa: BLE001
         pass
 
@@ -1159,8 +682,4 @@ def detect_features_multipass(
         'cluster_removed_tracks': sorted(cluster_removed) if 'cluster_removed' in locals() else [],
         'cluster_removed_count': len(cluster_removed) if 'cluster_removed' in locals() else 0,
         'cluster_stats': cluster_info,
-        'max_limit_removed_tracks': sorted(limit_removed) if 'limit_removed' in locals() else [],
-        'max_limit_removed_count': len(limit_removed) if 'limit_removed' in locals() else 0,
-        'raw_total_added': raw_total_added,
-        'raw_per_pass': raw_per_pass,
     }
