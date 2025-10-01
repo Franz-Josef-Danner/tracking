@@ -48,6 +48,8 @@ def detect_features_multipass(
     cluster_max_per_cluster=1,
     min_new_markers_per_pass=None,
     dynamic_min_distance_px=100.0,
+    target_range_lower=None,
+    target_range_upper=None,
 ):
     """Fuehrt mehrfache Feature-Erkennung aus.
 
@@ -422,10 +424,13 @@ def detect_features_multipass(
                         if cur_pattern_progressive is not None:
                             apply_sizes(cur_pattern_progressive)
                         target_cnt = min_new_markers_per_pass
-                        range_lo = target_cnt
-                        range_hi = target_cnt
-                        # Range wird ggf. vom Operator übergeben: nutzen falls global gesetzt (später erweiterbar)
-                        # (Für jetzige Implementierung: falls Operator erweitert, könnten target_range_lower/upper Parameter kommen.)
+                        # Falls ein expliziter Range uebergeben wurde, verwende diesen; sonst exakt target_cnt
+                        if target_range_lower is not None or target_range_upper is not None:
+                            range_lo = target_range_lower if target_range_lower is not None else target_cnt
+                            range_hi = target_range_upper if target_range_upper is not None else target_cnt
+                        else:
+                            range_lo = target_cnt
+                            range_hi = target_cnt
                         # Starte jede Pass-Runde mit Basis-Mindestdistanz 100 (oder dynamic_min_distance_px falls gesetzt)
                         base_md = float(dynamic_min_distance_px) if dynamic_min_distance_px else 100.0
                         md = base_md
@@ -976,6 +981,8 @@ def detect_features_multipass(
         'per_pass': per_pass,
         'aborted_due_to_min': aborted_due_to_min,
     'dynamic_min_distance_px': dynamic_min_distance_px,
+    'target_range_lower': target_range_lower,
+    'target_range_upper': target_range_upper,
         'pattern_size': pattern_size,
         'search_size': search_size,
         'marker_logs': marker_logs,
