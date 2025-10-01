@@ -35,7 +35,10 @@ def register():
     # Scene Property fuer UI Eingabe
     bpy.types.Scene.marker_per_frame = IntProperty(
         name="Marker per Frame",
-        description="Gewuenschte Anzahl von Markern pro Frame (derzeit nur Anzeige, noch ohne Logik)",
+        description=(
+            "Gewuenschte Gesamt-Markeranzahl pro Frame. Wird intern durch 14 geteilt, "
+            "um die Mindestanzahl NEUER Marker je Detect-Pass festzulegen. Bleibt ein Pass darunter, wird abgebrochen."
+        ),
         default=50,
         min=0,
     )
