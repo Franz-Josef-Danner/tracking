@@ -22,7 +22,7 @@ import traceback
 from math import sqrt
 
 
-MAX_NEW_MARKERS = 7  # globales hartes Limit neuer Marker pro Lauf
+DEFAULT_MAX_NEW_MARKERS = 7  # Default-Limit neuer Marker
 
 
 def find_clip_editor_area(context):
@@ -74,6 +74,7 @@ def detect_features_multipass(
     cluster_consolidate=False,
     cluster_tolerance_px=2.0,
     cluster_max_per_cluster=1,
+    max_new_markers: int | None = None,
 ):
     """Fuehrt mehrfache Feature-Erkennung aus und begrenzt NEUE Marker auf MAX_NEW_MARKERS.
 
@@ -148,6 +149,14 @@ def detect_features_multipass(
     removed_duplicate_tracks = []
     removed_cluster_tracks = []
     max_limit_removed_tracks = []
+    if max_new_markers is None:
+        max_new_markers = DEFAULT_MAX_NEW_MARKERS
+    try:
+        max_new_markers = int(max_new_markers)
+    except Exception:  # noqa: BLE001
+        max_new_markers = DEFAULT_MAX_NEW_MARKERS
+    if max_new_markers <= 0:
+        max_new_markers = DEFAULT_MAX_NEW_MARKERS
 
     def _run_detect(thr):
         before = len(clip.tracking.tracks)
@@ -175,11 +184,11 @@ def detect_features_multipass(
     def _enforce_limit(final=False):
         # Haelt nur die ersten MAX_NEW_MARKERS (nach Entstehung laut marker_logs)
         new_tracks = _net_new_ids()
-        if len(new_tracks) <= MAX_NEW_MARKERS:
+        if len(new_tracks) <= max_new_markers:
             return 0
         # Sortiere nach Reihenfolge in marker_logs
         order = {m['name']: i for i, m in enumerate(marker_logs)}
-        survivors = sorted(new_tracks, key=lambda t: order.get(t.name, 10**9))[:MAX_NEW_MARKERS]
+        survivors = sorted(new_tracks, key=lambda t: order.get(t.name, 10**9))[:max_new_markers]
         keep_names = {t.name for t in survivors}
         to_delete = [t for t in new_tracks if t.name not in keep_names]
         removed_names = []
@@ -201,7 +210,7 @@ def detect_features_multipass(
                 pass
         if removed_names:
             max_limit_removed_tracks.extend(removed_names)
-            print(f"[TrackingHelper] LIMIT entfernt {len(removed_names)} Marker -> {removed_names}")
+            print(f"[TrackingHelper] LIMIT entfernt {len(removed_names)} Marker (Limit={max_new_markers}) -> {removed_names}")
         return len(removed_names)
 
     def _remove_duplicates():
@@ -321,8 +330,8 @@ def detect_features_multipass(
                 _enforce_limit()
                 effective_new = len(_net_new_ids())
                 per_pass.append((current_thr, effective_new, note))
-                if effective_new >= MAX_NEW_MARKERS:
-                    print(f"[TrackingHelper] Limit {MAX_NEW_MARKERS} erreicht – Abbruch weiterer Pässe.")
+                if effective_new >= max_new_markers:
+                    print(f"[TrackingHelper] Limit {max_new_markers} erreicht – Abbruch weiterer Pässe.")
                     break
                 current_thr *= factor
     except Exception as e:  # noqa: BLE001
@@ -361,8 +370,7 @@ def detect_features_multipass(
 
     summary_log = (
         f"[TrackingHelper] Zusammenfassung: Passes={passes} neu={final_new} raw_total={raw_total_added} "
-        f"Dupl={len(removed_duplicate_tracks)} Cluster={len(removed_cluster_tracks)} LimitEntf={len(max_limit_removed_tracks)}"
-    )
+        f"Dupl={len(removed_duplicate_tracks)} Cluster={len(removed_cluster_tracks)} LimitEntf={len(max_limit_removed_tracks)} Limit={max_new_markers}" )
     print(summary_log)
 
     return {

@@ -55,6 +55,13 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         min=1,
         description="Wie viele Marker pro Cluster behalten werden",
     )
+    max_new_markers: IntProperty = IntProperty(
+        name="Max Marker",
+        default=7,
+        min=1,
+        max=100,
+        description="Maximalzahl neu hinzuzufügender Marker (hartes Limit)",
+    )
 
     def draw(self, context):  # noqa: D401
         layout = self.layout
@@ -82,6 +89,9 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             sub2.enabled = True
         sub2.prop(self, "cluster_tolerance_px")
         sub2.prop(self, "cluster_max_per_cluster")
+        col.separator()
+        col.label(text="Limit:")
+        col.prop(self, "max_new_markers")
 
     def execute(self, context):
         result = detect_features_multipass(
@@ -93,6 +103,7 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             cluster_consolidate=self.cluster_consolidate,
             cluster_tolerance_px=self.cluster_tolerance_px,
             cluster_max_per_cluster=self.cluster_max_per_cluster,
+            max_new_markers=self.max_new_markers,
         )
         if not result.get('success'):
             # Erweiterte Diagnoseausgaben, falls vorhanden
