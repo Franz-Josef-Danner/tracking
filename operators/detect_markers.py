@@ -108,10 +108,13 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         passes = result.get('passes', 0)
         total_added = result.get('total_added', -1)
         per_pass = result.get('per_pass', [])
+        per_pass_new_counts = result.get('per_pass_new_counts', [])
 
         summary_parts = []
-        for thr, added, note in per_pass:
-            base = f'{thr:.5f}:{added}'
+        for idx, (thr, added, note) in enumerate(per_pass, start=1):
+            # bevorzugt reale neue Marker aus per_pass_new_counts
+            new_cnt = per_pass_new_counts[idx - 1] if idx - 1 < len(per_pass_new_counts) else added
+            base = f'{thr:.5f}:{new_cnt}'
             if note:
                 base += f' ({note})'
             summary_parts.append(base)

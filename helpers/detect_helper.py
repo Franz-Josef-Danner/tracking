@@ -367,6 +367,9 @@ def detect_features_multipass(
                     # Neue Marker dieses Passes erfassen
                     try:
                         new_in_pass = log_new_tracks(passes + 1, current)
+                        if new_in_pass == 0 and added > 0:
+                            # Fallback: Blender hat ggf. IDs recycelt / nicht erkannt -> 'added' verwenden
+                            new_in_pass = added
                     except Exception:  # noqa: BLE001
                         new_in_pass = added
                     # Minimaler Log-Eintrag: nur neu gesetzte Marker in diesem Pass
@@ -384,6 +387,8 @@ def detect_features_multipass(
                         added, note = run_detect(current, allow_param=True)
                         try:
                             new_in_pass = log_new_tracks(passes + 1, current)
+                            if new_in_pass == 0 and added > 0:
+                                new_in_pass = added
                         except Exception:  # noqa: BLE001
                             new_in_pass = added
                         try:
@@ -406,6 +411,8 @@ def detect_features_multipass(
                 added, note = run_detect(current, allow_param=False)
                 try:
                     new_in_pass = log_new_tracks(passes + 1, current)
+                    if new_in_pass == 0 and added > 0:
+                        new_in_pass = added
                 except Exception:  # noqa: BLE001
                     new_in_pass = added
                 try:
@@ -423,6 +430,8 @@ def detect_features_multipass(
                         added, note = run_detect(current, allow_param=True)
                         try:
                             new_in_pass = log_new_tracks(passes + 1, current)
+                            if new_in_pass == 0 and added > 0:
+                                new_in_pass = added
                         except Exception:  # noqa: BLE001
                             new_in_pass = added
                         try:
@@ -701,6 +710,12 @@ def detect_features_multipass(
         except Exception:  # noqa: BLE001
             pass
 
+    # Erzeuge Liste der pro Pass neu hinzugekommenen Marker (nach evtl. Duplikat-/Clusterentfernung kann sie von per_pass Added abweichen)
+    per_pass_new_counts = []
+    for p_index in range(1, passes + 1):
+        cnt = sum(1 for m in marker_logs if m['pass'] == p_index)
+        per_pass_new_counts.append(cnt)
+
     return {
         'success': True,
         'message': 'OK',
@@ -721,4 +736,5 @@ def detect_features_multipass(
         'cluster_removed_tracks': sorted(cluster_removed) if 'cluster_removed' in locals() else [],
         'cluster_removed_count': len(cluster_removed) if 'cluster_removed' in locals() else 0,
         'cluster_stats': cluster_info,
+        'per_pass_new_counts': per_pass_new_counts,
     }
