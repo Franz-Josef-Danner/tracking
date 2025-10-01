@@ -137,6 +137,10 @@ def detect_features_multipass(
     if clip and bpy is not None:
         existing_track_ids = {id(t) for t in clip.tracking.tracks}
 
+    # Verfolge kumulative Gesamtzahl der Tracks, um echtes Delta (neu in diesem Pass) zu bestimmen
+    last_cumulative_tracks = len(clip.tracking.tracks) if clip else 0
+    new_markers_per_pass = []  # Liste der echten neuen Marker je Pass (Delta)
+
     def _ensure_tracking_mode():
         """Versucht den Clip Editor in den TRACKING Modus zu versetzen, falls moeglich."""
         try:
@@ -364,11 +368,16 @@ def detect_features_multipass(
                     # Set sizes fuer diesen Pass
                     apply_sizes(pattern_size)
                     added, note = run_detect(current, allow_param=False)
-                    # Detail-Erfassung (nicht fuer Log-Zahl relevant)
+                    # Detail-Erfassung (Analyse/Verbose)
                     log_new_tracks(passes + 1, current)
-                    # Log nur: neu gesetzte Marker dieses Durchgangs
+                    # Reale kumulative Gesamtzahl nach diesem Pass
+                    cumulative_now = len(clip.tracking.tracks) if clip else last_cumulative_tracks
+                    new_in_pass = max(0, cumulative_now - last_cumulative_tracks)
+                    new_markers_per_pass.append(new_in_pass)
+                    last_cumulative_tracks = cumulative_now
+                    # Log: nur neu gesetzte Marker in diesem Pass
                     try:
-                        print(f"[Detect] Pass {passes + 1} Marker={added}")
+                        print(f"[Detect] Pass {passes + 1} Marker={new_in_pass}")
                     except Exception:  # noqa: BLE001
                         pass
                     per_pass.append((current, added, note or 'kein threshold Param'))
@@ -380,8 +389,12 @@ def detect_features_multipass(
                             apply_sizes(cur_pattern_progressive)
                         added, note = run_detect(current, allow_param=True)
                         log_new_tracks(passes + 1, current)
+                        cumulative_now = len(clip.tracking.tracks) if clip else last_cumulative_tracks
+                        new_in_pass = max(0, cumulative_now - last_cumulative_tracks)
+                        new_markers_per_pass.append(new_in_pass)
+                        last_cumulative_tracks = cumulative_now
                         try:
-                            print(f"[Detect] Pass {passes + 1} Marker={added}")
+                            print(f"[Detect] Pass {passes + 1} Marker={new_in_pass}")
                         except Exception:  # noqa: BLE001
                             pass
                         per_pass.append((current, added, note))
@@ -399,8 +412,12 @@ def detect_features_multipass(
                 # Verwende run_detect auch hier, um identisches Logging zu gewoahrleisten
                 added, note = run_detect(current, allow_param=False)
                 log_new_tracks(passes + 1, current)
+                cumulative_now = len(clip.tracking.tracks) if clip else last_cumulative_tracks
+                new_in_pass = max(0, cumulative_now - last_cumulative_tracks)
+                new_markers_per_pass.append(new_in_pass)
+                last_cumulative_tracks = cumulative_now
                 try:
-                    print(f"[Detect] Pass {passes + 1} Marker={added}")
+                    print(f"[Detect] Pass {passes + 1} Marker={new_in_pass}")
                 except Exception:  # noqa: BLE001
                     pass
                 per_pass.append((current, added, note or 'fallback ohne threshold'))
@@ -413,8 +430,12 @@ def detect_features_multipass(
                     try:
                         added, note = run_detect(current, allow_param=True)
                         log_new_tracks(passes + 1, current)
+                        cumulative_now = len(clip.tracking.tracks) if clip else last_cumulative_tracks
+                        new_in_pass = max(0, cumulative_now - last_cumulative_tracks)
+                        new_markers_per_pass.append(new_in_pass)
+                        last_cumulative_tracks = cumulative_now
                         try:
-                            print(f"[Detect] Pass {passes + 1} Marker={added}")
+                            print(f"[Detect] Pass {passes + 1} Marker={new_in_pass}")
                         except Exception:  # noqa: BLE001
                             pass
                         per_pass.append((current, added, note or 'fallback'))
@@ -691,9 +712,8 @@ def detect_features_multipass(
 
     # Erzeuge Liste der pro Pass neu hinzugekommenen Marker (nach evtl. Duplikat-/Clusterentfernung kann sie von per_pass Added abweichen)
     per_pass_new_counts = []
-    # per_pass enthaelt (threshold, added, note); added ist die reine Anzahl neu erzeugter Marker in diesem Detect-Durchlauf
-    for _, added, _ in per_pass:
-        per_pass_new_counts.append(added)
+    # Verwende die waehrend der Schleifen erfassten echten Delta-Werte
+    per_pass_new_counts.extend(new_markers_per_pass)
 
     return {
         'success': True,
