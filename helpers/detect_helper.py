@@ -291,6 +291,30 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
                     current *= factor
                     if cur_pattern_progressive is not None:
                         cur_pattern_progressive *= 1.5
+        # Nach Abschluss aller Passes: Duplikate (Distanz None oder 0) löschen
+        removed_track_names = set()
+        if clip and bpy is not None:
+            # Kandidaten anhand Logs
+            candidate_names = {m['track_name'] for m in marker_logs if m.get('nearest_dist_px') in (None, 0.0)}
+            if candidate_names:
+                try:
+                    # Arbeitsbereich kontextuell überschreiben für Remove-Operationen
+                    try:
+                        with context.temp_override(area=area, region=region):
+                            for t in list(clip.tracking.tracks):
+                                if t.name in candidate_names:
+                                    clip.tracking.tracks.remove(t)
+                                    removed_track_names.add(t.name)
+                    except Exception:
+                        # Fallback ohne temp_override
+                        for t in list(clip.tracking.tracks):
+                            if t.name in candidate_names:
+                                clip.tracking.tracks.remove(t)
+                                removed_track_names.add(t.name)
+                    if removed_track_names:
+                        print(f"[TrackingHelper] Entfernt {len(removed_track_names)} Tracks (Distanz None/0): {sorted(removed_track_names)}")
+                except Exception as rem_err:  # noqa: BLE001
+                    print(f"[TrackingHelper] Fehler beim Entfernen von Duplikat-Tracks: {rem_err}")
     except Exception as e:  # noqa: BLE001
         return {
             'success': False,
@@ -337,12 +361,17 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
             'median': median,
         }
 
-    distances_all = [m['nearest_dist_px'] for m in marker_logs if m.get('nearest_dist_px') is not None]
+    # Filter: entfernte Tracks (Distanz None/0) nicht mehr in Statistik zählen
+    removed_for_stats = {m['track_name'] for m in marker_logs if m.get('nearest_dist_px') in (None, 0.0)} if 'removed_track_names' in locals() else set()
+    distances_all = [
+        m['nearest_dist_px'] for m in marker_logs
+        if m.get('nearest_dist_px') is not None and m['track_name'] not in removed_for_stats
+    ]
     distance_stats = _compute_stats(distances_all)
     distances_per_pass = {}
     per_pass_stats = {}
     for m in marker_logs:
-        if m.get('nearest_dist_px') is None:
+        if m.get('nearest_dist_px') is None or m['track_name'] in removed_for_stats:
             continue
         p = m['pass']
         distances_per_pass.setdefault(p, []).append(m['nearest_dist_px'])
@@ -366,7 +395,7 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
                 f"[TrackingHelper] Distanz Verteilung: zeros={zero_count} ({zero_ratio:.2%} ) >0={positive_count} min_pos={min_positive}"
             )
         # Zusatz: Gründe für fehlende Distanzen, falls Diskrepanz auffällig
-        missing = [m for m in marker_logs if m.get('nearest_dist_px') is None]
+        missing = [m for m in marker_logs if m.get('nearest_dist_px') is None and m['track_name'] not in removed_for_stats]
         if missing:
             reason_counter = {}
             for m in missing:
@@ -392,4 +421,6 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
         'positive_distance_count': positive_count,
         'min_positive_distance': min_positive,
         'zero_distance_ratio': zero_ratio,
+        'removed_duplicate_tracks': sorted(removed_track_names) if 'removed_track_names' in locals() else [],
+        'removed_duplicate_count': len(removed_track_names) if 'removed_track_names' in locals() else 0,
     }
