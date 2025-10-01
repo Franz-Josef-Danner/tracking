@@ -178,6 +178,7 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
                 frame_used = None
                 nearest_dist_px = None
                 replaced_name = False
+                removed_immediately = False
                 try:
                     marker = None
                     if cur_frame is not None:
@@ -216,6 +217,33 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
                         no_distance_reason = 'no_reference_positions'
                     else:
                         no_distance_reason = 'calc_error'
+                # Sofortiges Entfernen von Duplikaten: nur wenn eine Referenzbasis besteht (nicht erster Marker)
+                if (nearest_dist_px == 0.0 or (nearest_dist_px is None and existing_positions_px)) and existing_positions_px:
+                    # Selektiere nur diesen Track und lösche ihn über Operator
+                    try:
+                        # Deselect all
+                        for tr in clip.tracking.tracks:
+                            try:
+                                tr.select = False
+                            except Exception:  # noqa: BLE001
+                                pass
+                        try:
+                            t.select = True
+                        except Exception:  # noqa: BLE001
+                            pass
+                        try:
+                            bpy.ops.clip.delete_track()
+                            removed_immediately = True
+                        except Exception:  # noqa: BLE001
+                            removed_immediately = False
+                    except Exception:  # noqa: BLE001
+                        removed_immediately = False
+                    if removed_immediately:
+                        print(
+                            f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} DUPLIKAT ENTFERNT '{t.name}' dist={nearest_dist_px}"
+                        )
+                        # Nicht in existing_track_ids aufnehmen, nicht als bestehender Track behandeln
+                        continue  # überspringe Logging als NEUER TRACK
                 print(
                     f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} NEUER TRACK '{t.name}' "
                     f"frame={frame_used} pos_norm={marker_co_norm} pos_px={marker_px} nearest_px={nearest_dist_px} pattern={pattern_size} search={search_size}"
@@ -233,6 +261,7 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
                     'distance_fallback': fallback_used,
                     'replaced_name': replaced_name,
                     'no_distance_reason': no_distance_reason,
+                    'removed_immediately': removed_immediately,
                 })
         existing_track_ids.update(new_ids)
         return count
@@ -291,52 +320,8 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
                     current *= factor
                     if cur_pattern_progressive is not None:
                         cur_pattern_progressive *= 1.5
-        # Nach Abschluss aller Passes: Duplikate (Distanz None oder 0) löschen via Operator (remove() existiert offenbar nicht)
-        removed_track_names = set()
-        if clip and bpy is not None:
-            candidate_names = {m['track_name'] for m in marker_logs if m.get('nearest_dist_px') in (None, 0.0)}
-            if candidate_names:
-                # Vorab speichern, um später zu melden (Operator löscht Selektierte ohne Rückgabe)
-                to_remove_ordered = [t.name for t in clip.tracking.tracks if t.name in candidate_names]
-                if to_remove_ordered:
-                    def _delete_tracks(run_context):
-                        # Alles deselektieren
-                        for tr in clip.tracking.tracks:
-                            try:
-                                tr.select = False
-                            except Exception:  # noqa: BLE001
-                                pass
-                        # Gewünschte selektieren
-                        for tr in clip.tracking.tracks:
-                            if tr.name in candidate_names:
-                                try:
-                                    tr.select = True
-                                except Exception:  # noqa: BLE001
-                                    pass
-                        # Operator ausführen
-                        try:
-                            bpy.ops.clip.delete_track(run_context)
-                        except TypeError:
-                            # Manche Blender Versionen erwarten keinen Param
-                            bpy.ops.clip.delete_track()
-                    try:
-                        with context.temp_override(area=area, region=region):
-                            _delete_tracks({})
-                    except Exception:
-                        # Fallback ohne temp_override
-                        try:
-                            _delete_tracks({})
-                        except Exception as rem_err:  # noqa: BLE001
-                            print(f"[TrackingHelper] Fehler beim Entfernen von Duplikat-Tracks (Operator): {rem_err}")
-                    # Nachher prüfen welche wirklich weg sind
-                    remaining = {t.name for t in clip.tracking.tracks}
-                    for nm in to_remove_ordered:
-                        if nm not in remaining:
-                            removed_track_names.add(nm)
-                    if removed_track_names:
-                        print(f"[TrackingHelper] Entfernt {len(removed_track_names)} Tracks (Distanz None/0) via Operator: {sorted(removed_track_names)}")
-                    else:
-                        print("[TrackingHelper] Keine Duplikat-Tracks entfernt (Operator-Aufruf ohne Effekt?)")
+        # End-Batch-Löschung entfernt – Duplicate werden bereits während des Passes eliminiert.
+        removed_track_names = set(m['track_name'] for m in marker_logs if m.get('removed_immediately'))
     except Exception as e:  # noqa: BLE001
         return {
             'success': False,
