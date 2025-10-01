@@ -104,6 +104,20 @@ def detect_features_multipass(
         except Exception:  # noqa: BLE001
             has_threshold = False
 
+    # Sichere Konvertierung der möglicherweise als Property übergebenen Werte
+    try:
+        duplicate_tolerance_px = float(duplicate_tolerance_px)
+    except Exception:  # noqa: BLE001
+        duplicate_tolerance_px = 0.0
+    try:
+        cluster_tolerance_px = float(cluster_tolerance_px)
+    except Exception:  # noqa: BLE001
+        cluster_tolerance_px = 2.0
+    try:
+        cluster_max_per_cluster = int(cluster_max_per_cluster)
+    except Exception:  # noqa: BLE001
+        cluster_max_per_cluster = 1
+
     per_pass = []
     passes = 0
     current = start_threshold
