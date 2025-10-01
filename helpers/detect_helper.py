@@ -50,6 +50,7 @@ def detect_features_multipass(
     dynamic_min_distance_px=100.0,
     target_range_lower=None,
     target_range_upper=None,
+    verbose=False,
 ):
     """Fuehrt mehrfache Feature-Erkennung aus.
 
@@ -135,6 +136,7 @@ def detect_features_multipass(
         cluster_max_per_cluster = 1
 
     per_pass = []
+    attempt_logs = []  # strukturierte Log-Einträge
     passes = 0
     current = start_threshold
     marker_logs = []  # speichert detailinformationen neuer Marker
@@ -440,10 +442,14 @@ def detect_features_multipass(
                         best_attempt_diff = None
                         best_attempt_data = None
                         # Menge akzeptierter Signaturen aus vorigen Paessen (bereits in seen_signatures)
+                        if verbose:
+                            print(f"[Detect][PassStart] pass_index={passes+1} thr={current:.5f} target={target_cnt} range=({range_lo},{range_hi}) base_md={base_md}")
                         while attempt <= max_attempts and not accepted:
                             # Snapshot vor Detect
                             pre_tracks = set(id(t) for t in clip.tracking.tracks) if (clip and bpy is not None) else set()
                             added_count, note = run_detect(current, allow_param=True)
+                            if verbose:
+                                print(f"[Detect][Attempt] pass={passes+1} attempt={attempt} thr={current:.5f} md={md:.3f} raw_added_tracks={added_count}")
                             # Sammel neue Track Objekte
                             new_tracks = []
                             if clip and bpy is not None:
@@ -563,6 +569,8 @@ def detect_features_multipass(
                                     seen_signatures.add(sig)
                                 pass_new_signatures.append(new_signatures)
                                 per_pass.append((current, am, f"attempt={attempt} md={md:.2f} (kein Ziel)"))
+                                if verbose:
+                                    print(f"[Detect][Accept] pass={passes+1} attempt={attempt} reason=NO_TARGET accepted={am}")
                                 accepted = True
                                 break
                             if am == target_cnt or (range_lo is not None and range_hi is not None and range_lo <= am <= range_hi):
@@ -571,6 +579,8 @@ def detect_features_multipass(
                                 pass_new_signatures.append(new_signatures)
                                 tag = "OK" if am == target_cnt else "RANGE_OK"
                                 per_pass.append((current, am, f"attempt={attempt} md={md:.2f} {tag}"))
+                                if verbose:
+                                    print(f"[Detect][Accept] pass={passes+1} attempt={attempt} reason={tag} accepted={am}")
                                 accepted = True
                                 break
                             # Abweichung -> Bewertung und ggf. behalten besten Versuch falls Abbruch
@@ -608,6 +618,8 @@ def detect_features_multipass(
                             # Guardrails
                             if md < 0.1: md = 0.1
                             if md > 10000: md = 10000
+                            if verbose:
+                                print(f"[Detect][Adjust] pass={passes+1} next_attempt={attempt+1} new_md={md:.3f} last_am={am}")
                             attempt += 1
                         # Ende Attempt-Loop
                         if not accepted:
@@ -617,15 +629,21 @@ def detect_features_multipass(
                                 # Wir muessen die Marker fuer den besten Versuch erneut erzeugen -> einfacher: letzten Versuch belassen falls noch vorhanden
                                 # Falls geloescht, koennen wir sie nicht rekonstruieren ohne erneuten Detect -> Hinweis
                                 per_pass.append((current, best_am, f"attempt={best_att} md~{best_md:.2f} BEST (kein exakter Treffer)"))
+                                if verbose:
+                                    print(f"[Detect][FallbackBest] pass={passes+1} attempt={best_att} best_am={best_am} best_md={best_md:.3f}")
                                 for sig in best_sigs:
                                     seen_signatures.add(sig)
                                 pass_new_signatures.append(best_sigs)
                             else:
                                 per_pass.append((current, 0, "keine Marker akzeptiert"))
+                                if verbose:
+                                    print(f"[Detect][FallbackNone] pass={passes+1} no markers accepted")
                         passes += 1
                         current *= factor
                         if cur_pattern_progressive is not None:
                             cur_pattern_progressive *= 1.15
+                        if verbose:
+                            print(f"[Detect][PassEnd] pass={passes} surviving_new={len(pass_new_signatures[-1]) if pass_new_signatures else 0}")
         except AttributeError:
             # Fallback ohne temp_override
             override = context.copy()
