@@ -119,11 +119,14 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
 
         removed_dup = result.get('removed_duplicate_count', 0)
         removed_cluster = result.get('cluster_removed_count', 0)
+        removed_limit = result.get('max_limit_removed_count', 0)
         extra = []
         if removed_dup:
             extra.append(f'Dupl:{removed_dup}')
         if removed_cluster:
             extra.append(f'Cluster:{removed_cluster}')
+        if removed_limit:
+            extra.append(f'Limit:{removed_limit}')
         info_tail = (' | ' + ', '.join(extra)) if extra else ''
         self.report({'INFO'}, f'{passes} Durchlaeufe, hinzugefuegt: {total_added} (pro Pass: {summary}){info_tail}')
         return {'FINISHED'}

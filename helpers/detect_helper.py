@@ -96,6 +96,13 @@ def detect_features_multipass(
         except Exception:  # noqa: BLE001
             pass
     tracks_before = len(clip.tracking.tracks) if clip else -1
+    # Namen der bereits existierenden Tracks merken, damit wir spaeter nur NEUE beschraenken
+    original_track_names = set()
+    if clip:
+        try:
+            original_track_names = {t.name for t in clip.tracking.tracks}
+        except Exception:  # noqa: BLE001
+            original_track_names = set()
 
     # Pruefen ob threshold unterstuetzt wird
     has_threshold = False
@@ -564,6 +571,64 @@ def detect_features_multipass(
                     )
             except Exception as cl_err:  # noqa: BLE001
                 print(f"[TrackingHelper] Cluster-Konsolidierung Fehler: {cl_err}")
+
+        # --- MAXIMALE ANZAHL NEUER MARKER BEGRENZEN (z.B. 7) ---
+        max_new_markers = 7
+        limit_removed = []
+        if clip and bpy is not None and max_new_markers is not None:
+            try:
+                # Liste der aktuell noch vorhandenen NEUEN Tracks in Entstehungsreihenfolge laut marker_logs
+                creation_order_names = [m['track_name'] for m in marker_logs]
+                # Filter: existieren aktuell UND waren nicht schon vor dem Detect da
+                current_new_names = []
+                existing_now = {t.name for t in clip.tracking.tracks}
+                for nm in creation_order_names:
+                    if nm in existing_now and nm not in original_track_names:
+                        current_new_names.append(nm)
+                if len(current_new_names) > max_new_markers:
+                    keep = set(current_new_names[:max_new_markers])
+                    to_remove_overflow = [nm for nm in current_new_names if nm not in keep]
+                    def _delete_overflow(name_list):
+                        removed_local = []
+                        for nm2 in name_list:
+                            trk = next((t for t in clip.tracking.tracks if t.name == nm2), None)
+                            if not trk:
+                                continue
+                            try:
+                                _ensure_tracking_mode()
+                                # Deselect all
+                                for tr in clip.tracking.tracks:
+                                    try:
+                                        tr.select = False
+                                    except Exception:  # noqa: BLE001
+                                        pass
+                                try:
+                                    trk.select = True
+                                except Exception:  # noqa: BLE001
+                                    pass
+                                try:
+                                    clip.tracking.tracks.active = trk  # type: ignore[attr-defined]
+                                except Exception:  # noqa: BLE001
+                                    pass
+                                try:
+                                    _ensure_tracking_mode()
+                                    bpy.ops.clip.delete_track()
+                                except TypeError:
+                                    bpy.ops.clip.delete_track()
+                                if not any(t.name == nm2 for t in clip.tracking.tracks):
+                                    removed_local.append(nm2)
+                            except Exception:  # noqa: BLE001
+                                pass
+                        return removed_local
+                    try:
+                        with context.temp_override(area=area, region=region):
+                            limit_removed = _delete_overflow(to_remove_overflow)
+                    except Exception:
+                        limit_removed = _delete_overflow(to_remove_overflow)
+                    if limit_removed:
+                        print(f"[TrackingHelper] Max-Limit: {len(limit_removed)} ueberzaehlige Marker geloescht (Limit={max_new_markers}) -> {limit_removed}")
+            except Exception as lim_err:  # noqa: BLE001
+                print(f"[TrackingHelper] Fehler bei Max-Limit Entfernung: {lim_err}")
     except Exception as e:  # noqa: BLE001
         tb = traceback.format_exc()
         return {
@@ -682,4 +747,6 @@ def detect_features_multipass(
         'cluster_removed_tracks': sorted(cluster_removed) if 'cluster_removed' in locals() else [],
         'cluster_removed_count': len(cluster_removed) if 'cluster_removed' in locals() else 0,
         'cluster_stats': cluster_info,
+        'max_limit_removed_tracks': sorted(limit_removed) if 'limit_removed' in locals() else [],
+        'max_limit_removed_count': len(limit_removed) if 'limit_removed' in locals() else 0,
     }
