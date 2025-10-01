@@ -137,8 +137,8 @@ def detect_features_multipass(
     if clip and bpy is not None:
         existing_track_ids = {id(t) for t in clip.tracking.tracks}
 
-    # Liste der wirklich neu entstandenen Tracks je Pass (per ID-Differenz vor/nach detect)
-    per_pass_new_counts_internal = []
+    # Die neu gesetzten Marker pro Pass entnehmen wir direkt dem Rueckgabewert von run_detect (added)
+    per_pass_new_counts_internal = []  # wird synchron mit per_pass gefuellt
 
     def _ensure_tracking_mode():
         """Versucht den Clip Editor in den TRACKING Modus zu versetzen, falls moeglich."""
@@ -366,15 +366,12 @@ def detect_features_multipass(
                 if not has_threshold:
                     # Set sizes fuer diesen Pass
                     apply_sizes(pattern_size)
-                    before_ids = {id(t) for t in clip.tracking.tracks} if clip else set()
                     added, note = run_detect(current, allow_param=False)
                     # Detail-Erfassung (Analyse/Verbose) - hat eigene ID-Nachverfolgung
                     log_new_tracks(passes + 1, current)
-                    after_ids = {id(t) for t in clip.tracking.tracks} if clip else set()
-                    new_in_pass = len(after_ids - before_ids)
-                    per_pass_new_counts_internal.append(new_in_pass)
+                    per_pass_new_counts_internal.append(added)
                     try:
-                        print(f"[Detect] Pass {passes + 1} Marker={new_in_pass}")
+                        print(f"[Detect] Pass {passes + 1} Marker={added}")
                     except Exception:  # noqa: BLE001
                         pass
                     per_pass.append((current, added, note or 'kein threshold Param'))
@@ -384,14 +381,11 @@ def detect_features_multipass(
                     while current >= min_threshold and passes < max_passes:
                         if cur_pattern_progressive is not None:
                             apply_sizes(cur_pattern_progressive)
-                        before_ids = {id(t) for t in clip.tracking.tracks} if clip else set()
                         added, note = run_detect(current, allow_param=True)
                         log_new_tracks(passes + 1, current)
-                        after_ids = {id(t) for t in clip.tracking.tracks} if clip else set()
-                        new_in_pass = len(after_ids - before_ids)
-                        per_pass_new_counts_internal.append(new_in_pass)
+                        per_pass_new_counts_internal.append(added)
                         try:
-                            print(f"[Detect] Pass {passes + 1} Marker={new_in_pass}")
+                            print(f"[Detect] Pass {passes + 1} Marker={added}")
                         except Exception:  # noqa: BLE001
                             pass
                         per_pass.append((current, added, note))
@@ -407,14 +401,11 @@ def detect_features_multipass(
             if not has_threshold:
                 apply_sizes(pattern_size)
                 # Verwende run_detect auch hier, um identisches Logging zu gewoahrleisten
-                before_ids = {id(t) for t in clip.tracking.tracks} if clip else set()
                 added, note = run_detect(current, allow_param=False)
                 log_new_tracks(passes + 1, current)
-                after_ids = {id(t) for t in clip.tracking.tracks} if clip else set()
-                new_in_pass = len(after_ids - before_ids)
-                per_pass_new_counts_internal.append(new_in_pass)
+                per_pass_new_counts_internal.append(added)
                 try:
-                    print(f"[Detect] Pass {passes + 1} Marker={new_in_pass}")
+                    print(f"[Detect] Pass {passes + 1} Marker={added}")
                 except Exception:  # noqa: BLE001
                     pass
                 per_pass.append((current, added, note or 'fallback ohne threshold'))
@@ -425,14 +416,11 @@ def detect_features_multipass(
                     if cur_pattern_progressive is not None:
                         apply_sizes(cur_pattern_progressive)
                     try:
-                        before_ids = {id(t) for t in clip.tracking.tracks} if clip else set()
                         added, note = run_detect(current, allow_param=True)
                         log_new_tracks(passes + 1, current)
-                        after_ids = {id(t) for t in clip.tracking.tracks} if clip else set()
-                        new_in_pass = len(after_ids - before_ids)
-                        per_pass_new_counts_internal.append(new_in_pass)
+                        per_pass_new_counts_internal.append(added)
                         try:
-                            print(f"[Detect] Pass {passes + 1} Marker={new_in_pass}")
+                            print(f"[Detect] Pass {passes + 1} Marker={added}")
                         except Exception:  # noqa: BLE001
                             pass
                         per_pass.append((current, added, note or 'fallback'))
