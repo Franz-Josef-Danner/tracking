@@ -447,9 +447,11 @@ def detect_features_multipass(
                             range_hi = target_cnt
                         # Falls nicht adaptiv: Fuehre exakt einen einfachen Detect aus und verlasse Schleife
                         if not adaptive:
-                            # Mehrere einfache Passes falls simple_pass_limit gesetzt
-                            simple_count = 0
-                            while current >= min_threshold and passes < max_passes:
+                            # Feste Anzahl einfacher Passes (Default 1)
+                            target_simple = simple_pass_limit_int if simple_pass_limit_int is not None else 1
+                            for simple_idx in range(target_simple):
+                                if current < min_threshold or passes >= max_passes:
+                                    break
                                 if cur_pattern_progressive is not None:
                                     apply_sizes(cur_pattern_progressive)
                                 added_count, note = run_detect(current, allow_param=True)
@@ -465,14 +467,14 @@ def detect_features_multipass(
                                 pass_new_signatures.append(new_sigs_simple)
                                 per_pass.append((current, len(new_sigs_simple), f"single_pass added={len(new_sigs_simple)} raw_op={added_count}"))
                                 passes += 1
-                                simple_count += 1
                                 if verbose:
-                                    print(f"[Detect][SimplePass] index={passes} thr={current:.5f} new={len(new_sigs_simple)} raw_added={added_count}")
-                                current *= factor
-                                if cur_pattern_progressive is not None:
-                                    cur_pattern_progressive *= 1.15
-                                if simple_pass_limit_int is not None and simple_count >= simple_pass_limit_int:
-                                    break
+                                    print(f"[Detect][SimplePass] idx={simple_idx+1}/{target_simple} global_pass={passes} thr={current:.5f} new={len(new_sigs_simple)} raw_added={added_count}")
+                                # Threshold und pattern progress nur fortsetzen wenn weiterer Simple-Pass folgen soll
+                                if simple_idx + 1 < target_simple:
+                                    current *= factor
+                                    if cur_pattern_progressive is not None:
+                                        cur_pattern_progressive *= 1.15
+                            # Nach Simple-Pass Sequenz outer while beenden
                             break
                         # Starte jede Pass-Runde mit Basis-Mindestdistanz 100 (oder dynamic_min_distance_px falls gesetzt)
                         base_md = float(dynamic_min_distance_px) if dynamic_min_distance_px else 100.0
