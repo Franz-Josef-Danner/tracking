@@ -364,12 +364,14 @@ def detect_features_multipass(
                     # Set sizes fuer diesen Pass
                     apply_sizes(pattern_size)
                     added, note = run_detect(current, allow_param=False)
-                    # Log erst nach Detect
-                    log_new_tracks(passes + 1, current)
-                    # Minimaler Log-Eintrag: Markeranzahl nach diesem Pass
+                    # Neue Marker dieses Passes erfassen
                     try:
-                        total_markers_now = len(clip.tracking.tracks) if clip else 0
-                        print(f"[Detect] Pass {passes + 1} Marker={total_markers_now}")
+                        new_in_pass = log_new_tracks(passes + 1, current)
+                    except Exception:  # noqa: BLE001
+                        new_in_pass = added
+                    # Minimaler Log-Eintrag: nur neu gesetzte Marker in diesem Pass
+                    try:
+                        print(f"[Detect] Pass {passes + 1} Marker={new_in_pass}")
                     except Exception:  # noqa: BLE001
                         pass
                     per_pass.append((current, added, note or 'kein threshold Param'))
@@ -380,10 +382,12 @@ def detect_features_multipass(
                         if cur_pattern_progressive is not None:
                             apply_sizes(cur_pattern_progressive)
                         added, note = run_detect(current, allow_param=True)
-                        log_new_tracks(passes + 1, current)
                         try:
-                            total_markers_now = len(clip.tracking.tracks) if clip else 0
-                            print(f"[Detect] Pass {passes + 1} Marker={total_markers_now}")
+                            new_in_pass = log_new_tracks(passes + 1, current)
+                        except Exception:  # noqa: BLE001
+                            new_in_pass = added
+                        try:
+                            print(f"[Detect] Pass {passes + 1} Marker={new_in_pass}")
                         except Exception:  # noqa: BLE001
                             pass
                         per_pass.append((current, added, note))
@@ -400,10 +404,12 @@ def detect_features_multipass(
                 apply_sizes(pattern_size)
                 # Verwende run_detect auch hier, um identisches Logging zu gewoahrleisten
                 added, note = run_detect(current, allow_param=False)
-                log_new_tracks(passes + 1, current)
                 try:
-                    total_markers_now = len(clip.tracking.tracks) if clip else 0
-                    print(f"[Detect] Pass {passes + 1} Marker={total_markers_now}")
+                    new_in_pass = log_new_tracks(passes + 1, current)
+                except Exception:  # noqa: BLE001
+                    new_in_pass = added
+                try:
+                    print(f"[Detect] Pass {passes + 1} Marker={new_in_pass}")
                 except Exception:  # noqa: BLE001
                     pass
                 per_pass.append((current, added, note or 'fallback ohne threshold'))
@@ -415,10 +421,12 @@ def detect_features_multipass(
                         apply_sizes(cur_pattern_progressive)
                     try:
                         added, note = run_detect(current, allow_param=True)
-                        log_new_tracks(passes + 1, current)
                         try:
-                            total_markers_now = len(clip.tracking.tracks) if clip else 0
-                            print(f"[Detect] Pass {passes + 1} Marker={total_markers_now}")
+                            new_in_pass = log_new_tracks(passes + 1, current)
+                        except Exception:  # noqa: BLE001
+                            new_in_pass = added
+                        try:
+                            print(f"[Detect] Pass {passes + 1} Marker={new_in_pass}")
                         except Exception:  # noqa: BLE001
                             pass
                         per_pass.append((current, added, note or 'fallback'))
