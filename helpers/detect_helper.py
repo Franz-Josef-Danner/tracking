@@ -47,6 +47,7 @@ def detect_features_multipass(
     cluster_tolerance_px=2.0,
     cluster_max_per_cluster=1,
     min_new_markers_per_pass=None,
+    dynamic_min_distance_px=100.0,
 ):
     """Fuehrt mehrfache Feature-Erkennung aus.
 
@@ -420,32 +421,197 @@ def detect_features_multipass(
                     while current >= min_threshold and passes < max_passes:
                         if cur_pattern_progressive is not None:
                             apply_sizes(cur_pattern_progressive)
-                        before_known = set(seen_signatures)
-                        added, note = run_detect(current, allow_param=True)
-                        log_new_tracks(passes + 1, current)
-                        new_sigs_this_pass = []
-                        if clip:
-                            for t in clip.tracking.tracks:
-                                sig = _build_signature(t)
-                                if sig and sig not in seen_signatures and sig not in new_sigs_this_pass:
-                                    new_sigs_this_pass.append(sig)
-                        for sig in new_sigs_this_pass:
-                            seen_signatures.add(sig)
-                        pass_new_signatures.append(new_sigs_this_pass)
-                        per_pass.append((current, added, note))
-                        # Mindestanzahl pruefen (Roh-Anzahl vor spaeterer Duplikat-/Cluster-Entfernung)
-                        if min_new_markers_per_pass is not None:
-                            if len(new_sigs_this_pass) < min_new_markers_per_pass:
-                                note_abort = (
-                                    f"abgebrochen: neue Marker {len(new_sigs_this_pass)} < Mindestanzahl {min_new_markers_per_pass}"
-                                )
-                                per_pass[-1] = (
-                                    per_pass[-1][0],
-                                    per_pass[-1][1],
-                                    (per_pass[-1][2] + ' | ' + note_abort).strip(),
-                                )
-                                aborted_due_to_min = True
+                        target_cnt = min_new_markers_per_pass
+                        # Starte jede Pass-Runde mit Basis-Mindestdistanz 100 (oder dynamic_min_distance_px falls gesetzt)
+                        base_md = float(dynamic_min_distance_px) if dynamic_min_distance_px else 100.0
+                        md = base_md
+                        max_attempts = 15
+                        attempt = 1
+                        accepted = False
+                        best_attempt_diff = None
+                        best_attempt_data = None
+                        # Menge akzeptierter Signaturen aus vorigen Paessen (bereits in seen_signatures)
+                        while attempt <= max_attempts and not accepted:
+                            # Snapshot vor Detect
+                            pre_tracks = set(id(t) for t in clip.tracking.tracks) if (clip and bpy is not None) else set()
+                            added_count, note = run_detect(current, allow_param=True)
+                            # Sammel neue Track Objekte
+                            new_tracks = []
+                            if clip and bpy is not None:
+                                for t in clip.tracking.tracks:
+                                    if id(t) not in pre_tracks:
+                                        new_tracks.append(t)
+                            # Distanzberechnung zu bestehenden (surviving) Tracks
+                            accepted_names = []
+                            removed_names = []
+                            new_signatures = []
+                            # Baue Liste existierender (akzeptierter) Positionen fuer Distanz
+                            existing_positions_px = []
+                            if clip and bpy is not None and w is not None and h is not None:
+                                for t in clip.tracking.tracks:
+                                    if id(t) in pre_tracks:  # nur alte Tracks
+                                        try:
+                                            marker_ref = None
+                                            cur_frame_ctx = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
+                                            if cur_frame_ctx is not None:
+                                                for mm in t.markers:
+                                                    if mm.frame == cur_frame_ctx:
+                                                        marker_ref = mm
+                                                        break
+                                            if marker_ref is None and len(t.markers) > 0:
+                                                marker_ref = t.markers[0]
+                                            if marker_ref is None:
+                                                continue
+                                            co = marker_ref.co
+                                            existing_positions_px.append((co[0]*w, co[1]*h))
+                                        except Exception:  # noqa: BLE001
+                                            pass
+                            # Helper fuer Distance
+                            def _nearest_dist_px(track_obj):
+                                try:
+                                    if w is None or h is None:
+                                        return None
+                                    marker_ref = None
+                                    cur_frame_ctx = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
+                                    if cur_frame_ctx is not None:
+                                        for mm in track_obj.markers:
+                                            if mm.frame == cur_frame_ctx:
+                                                marker_ref = mm
+                                                break
+                                    if marker_ref is None and len(track_obj.markers) > 0:
+                                        marker_ref = track_obj.markers[0]
+                                    if marker_ref is None:
+                                        return None
+                                    co = marker_ref.co
+                                    px = co[0]*w
+                                    py = co[1]*h
+                                    if not existing_positions_px:
+                                        return 10**9  # kein Vergleich => sehr groß
+                                    return min(((px-ex)**2 + (py-ey)**2) for ex,ey in existing_positions_px)**0.5
+                                except Exception:  # noqa: BLE001
+                                    return None
+                            # Filter nach Mindestdistanz
+                            for t in new_tracks:
+                                dist = _nearest_dist_px(t)
+                                # Distanz None -> behandeln wie 0 (verwerfen) damit stabile Regel
+                                if dist is None:
+                                    keep = False
+                                else:
+                                    keep = dist >= md
+                                if keep:
+                                    accepted_names.append(t.name)
+                                    # Position sofort zu Referenz hinzufuegen fuer Folgetracks
+                                    try:
+                                        if w is not None and h is not None:
+                                            marker_ref = None
+                                            cur_frame_ctx = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
+                                            if cur_frame_ctx is not None:
+                                                for mm in t.markers:
+                                                    if mm.frame == cur_frame_ctx:
+                                                        marker_ref = mm
+                                                        break
+                                            if marker_ref is None and len(t.markers) > 0:
+                                                marker_ref = t.markers[0]
+                                            if marker_ref is not None:
+                                                co = marker_ref.co
+                                                existing_positions_px.append((co[0]*w, co[1]*h))
+                                    except Exception:  # noqa: BLE001
+                                        pass
+                                else:
+                                    removed_names.append(t.name)
+                            # Entferne verworfene Tracks physisch
+                            if removed_names and clip and bpy is not None:
+                                try:
+                                    with context.temp_override(area=area, region=region):
+                                        for nm in removed_names:
+                                            trk = next((tt for tt in clip.tracking.tracks if tt.name == nm), None)
+                                            if not trk:
+                                                continue
+                                            try:
+                                                for tr in clip.tracking.tracks:
+                                                    try: tr.select = False
+                                                    except Exception: pass
+                                                try: trk.select = True
+                                                except Exception: pass
+                                                try: clip.tracking.tracks.active = trk  # type: ignore[attr-defined]
+                                                except Exception: pass
+                                                bpy.ops.clip.delete_track()
+                                            except Exception:
+                                                pass
+                                except Exception:
+                                    pass
+                            # Neue Signaturen akzeptierter Marker bestimmen
+                            if clip:
+                                for t in clip.tracking.tracks:
+                                    if t.name in accepted_names:
+                                        sig = _build_signature(t)
+                                        if sig and sig not in new_signatures and sig not in seen_signatures:
+                                            new_signatures.append(sig)
+                            am = len(new_signatures)
+                            if target_cnt is None:
+                                # Akzeptieren ohne Ziel
+                                for sig in new_signatures:
+                                    seen_signatures.add(sig)
+                                pass_new_signatures.append(new_signatures)
+                                per_pass.append((current, am, f"attempt={attempt} md={md:.2f} (kein Ziel)"))
+                                accepted = True
                                 break
+                            if am == target_cnt:
+                                for sig in new_signatures:
+                                    seen_signatures.add(sig)
+                                pass_new_signatures.append(new_signatures)
+                                per_pass.append((current, am, f"attempt={attempt} md={md:.2f} OK"))
+                                accepted = True
+                                break
+                            # Abweichung -> Bewertung und ggf. behalten besten Versuch falls Abbruch
+                            diff = abs(am - target_cnt)
+                            if best_attempt_diff is None or diff < best_attempt_diff:
+                                # Snapshot besten Versuch (Signaturen + Namen) zur Notfall-Uebernahme
+                                best_attempt_diff = diff
+                                best_attempt_data = (list(new_signatures), am, md, attempt)
+                            # Alle akzeptierten neuen Marker wieder loeschen (zur Wiederholung) wenn nicht letzter Versuch
+                            if accepted is False and (attempt < max_attempts):
+                                if accepted_names and clip and bpy is not None:
+                                    try:
+                                        with context.temp_override(area=area, region=region):
+                                            for nm in accepted_names:
+                                                trk = next((tt for tt in clip.tracking.tracks if tt.name == nm), None)
+                                                if not trk: continue
+                                                try:
+                                                    for tr in clip.tracking.tracks:
+                                                        try: tr.select = False
+                                                        except Exception: pass
+                                                    try: trk.select = True
+                                                    except Exception: pass
+                                                    try: clip.tracking.tracks.active = trk  # type: ignore[attr-defined]
+                                                    except Exception: pass
+                                                    bpy.ops.clip.delete_track()
+                                                except Exception: pass
+                                    except Exception:
+                                        pass
+                            # md anpassen gem. Formel: md = md * (am/za); Schutz vor Null
+                            if target_cnt > 0:
+                                if am == 0:
+                                    md = md * 0.5  # fallback schrumpfen
+                                else:
+                                    md = md * (am / target_cnt)
+                            # Guardrails
+                            if md < 0.1: md = 0.1
+                            if md > 10000: md = 10000
+                            attempt += 1
+                        # Ende Attempt-Loop
+                        if not accepted:
+                            # Nimm besten bisherigen Versuch, fuege dessen Signaturen hinzu (erneut detect nicht ausfuehren)
+                            if best_attempt_data is not None:
+                                best_sigs, best_am, best_md, best_att = best_attempt_data
+                                # Wir muessen die Marker fuer den besten Versuch erneut erzeugen -> einfacher: letzten Versuch belassen falls noch vorhanden
+                                # Falls geloescht, koennen wir sie nicht rekonstruieren ohne erneuten Detect -> Hinweis
+                                per_pass.append((current, best_am, f"attempt={best_att} md~{best_md:.2f} BEST (kein exakter Treffer)"))
+                                for sig in best_sigs:
+                                    seen_signatures.add(sig)
+                                pass_new_signatures.append(best_sigs)
+                            else:
+                                per_pass.append((current, 0, "keine Marker akzeptiert"))
                         passes += 1
                         current *= factor
                         if cur_pattern_progressive is not None:
@@ -804,6 +970,7 @@ def detect_features_multipass(
         'total_added': total_added,
         'per_pass': per_pass,
         'aborted_due_to_min': aborted_due_to_min,
+    'dynamic_min_distance_px': dynamic_min_distance_px,
         'pattern_size': pattern_size,
         'search_size': search_size,
         'marker_logs': marker_logs,
