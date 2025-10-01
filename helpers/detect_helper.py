@@ -136,6 +136,16 @@ def detect_features_multipass(
         cluster_max_per_cluster = int(cluster_max_per_cluster)
     except Exception:  # noqa: BLE001
         cluster_max_per_cluster = 1
+    # simple_pass_limit kann aus Blender als _PropertyDeferred kommen -> robust konvertieren
+    if simple_pass_limit is not None:
+        try:
+            simple_pass_limit_int = int(simple_pass_limit)
+            if simple_pass_limit_int < 1:
+                simple_pass_limit_int = 1
+        except Exception:  # noqa: BLE001
+            simple_pass_limit_int = None
+    else:
+        simple_pass_limit_int = None
 
     per_pass = []
     attempt_logs = []  # strukturierte Log-Einträge
@@ -461,7 +471,7 @@ def detect_features_multipass(
                                 current *= factor
                                 if cur_pattern_progressive is not None:
                                     cur_pattern_progressive *= 1.15
-                                if simple_pass_limit is not None and simple_count >= simple_pass_limit:
+                                if simple_pass_limit_int is not None and simple_count >= simple_pass_limit_int:
                                     break
                             break
                         # Starte jede Pass-Runde mit Basis-Mindestdistanz 100 (oder dynamic_min_distance_px falls gesetzt)
