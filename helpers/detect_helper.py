@@ -207,6 +207,15 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
                         replaced_name = True
                 except Exception:  # noqa: BLE001
                     pass
+                no_distance_reason = None
+                if nearest_dist_px is None:
+                    if marker_px is None:
+                        no_distance_reason = 'no_marker_position'
+                    elif not existing_positions_px or (len(existing_positions_px) == 1 and existing_positions_px[-1] == marker_px):
+                        # Nur der aktuelle Marker vorhanden -> keine Vergleichsbasis
+                        no_distance_reason = 'no_reference_positions'
+                    else:
+                        no_distance_reason = 'calc_error'
                 print(
                     f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} NEUER TRACK '{t.name}' "
                     f"frame={frame_used} pos_norm={marker_co_norm} pos_px={marker_px} nearest_px={nearest_dist_px} pattern={pattern_size} search={search_size}"
@@ -223,6 +232,7 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
                     'search': search_size,
                     'distance_fallback': fallback_used,
                     'replaced_name': replaced_name,
+                    'no_distance_reason': no_distance_reason,
                 })
         existing_track_ids.update(new_ids)
         return count
@@ -339,11 +349,31 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
     for p, vals in distances_per_pass.items():
         per_pass_stats[p] = _compute_stats(vals)
 
+    # Zusatz-Metriken: Zero-Distanzen (Marker exakt auf bestehender Position) sind erwartungsgemäß häufig
+    zero_count = sum(1 for d in distances_all if d == 0.0)
+    positive_distances = [d for d in distances_all if d and d > 0.0]
+    min_positive = min(positive_distances) if positive_distances else None
+    positive_count = len(positive_distances)
+    zero_ratio = (zero_count / len(distances_all)) if distances_all else None
+
     # Kurze Ausgabe zur Orientierung
     try:
         print(
             f"[TrackingHelper] Distanz Statistik gesamt: count={distance_stats['count']} min={distance_stats['min']} max={distance_stats['max']} "
             f"median={distance_stats['median']} mean={distance_stats['mean']}")
+        if distances_all:
+            print(
+                f"[TrackingHelper] Distanz Verteilung: zeros={zero_count} ({zero_ratio:.2%} ) >0={positive_count} min_pos={min_positive}"
+            )
+        # Zusatz: Gründe für fehlende Distanzen, falls Diskrepanz auffällig
+        missing = [m for m in marker_logs if m.get('nearest_dist_px') is None]
+        if missing:
+            reason_counter = {}
+            for m in missing:
+                r = m.get('no_distance_reason') or 'unknown'
+                reason_counter[r] = reason_counter.get(r, 0) + 1
+            reason_parts = ', '.join(f"{k}:{v}" for k, v in sorted(reason_counter.items()))
+            print(f"[TrackingHelper] Distanz fehlend für {len(missing)} Marker (Gruende: {reason_parts})")
     except Exception:  # noqa: BLE001
         pass
 
@@ -358,4 +388,8 @@ def detect_features_multipass(context, start_threshold=1.0, min_threshold=0.1, f
         'marker_logs': marker_logs,
         'distance_stats': distance_stats,
         'per_pass_distance_stats': per_pass_stats,
+        'zero_distance_count': zero_count,
+        'positive_distance_count': positive_count,
+        'min_positive_distance': min_positive,
+        'zero_distance_ratio': zero_ratio,
     }
