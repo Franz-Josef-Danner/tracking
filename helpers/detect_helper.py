@@ -32,6 +32,9 @@ def detect_features_multipass(
     duplicate_tolerance_px=0.0,
     keep_first_marker=True,
     immediate_delete=False,
+    cluster_consolidate=False,
+    cluster_tolerance_px=2.0,
+    cluster_max_per_cluster=1,
 ):
     """Führt mehrfache Feature-Erkennung aus.
 
@@ -41,9 +44,12 @@ def detect_features_multipass(
             message (str)
             passes (int)
             total_added (int | -1)
-            per_pass (list[tuple(threshold, added, note)])
+        per_pass (list[tuple(threshold, added, note)])
             removed_duplicate_tracks (list[str])
             removed_duplicate_count (int)
+        cluster_removed_tracks (list[str])
+        cluster_removed_count (int)
+        cluster_stats (dict | None)
     """
     area = find_clip_editor_area(context)
     if area is None:
@@ -403,6 +409,105 @@ def detect_features_multipass(
                     )
                 else:
                     print("[TrackingHelper] Batch-Löschung: keine Tracks entfernt (evtl. Kontextproblem oder keine echten Duplikate)")
+
+        # Cluster-Konsolidierung (nach Duplikat-Phase), falls aktiviert
+        cluster_removed = []
+        cluster_info = None
+        if cluster_consolidate and clip and bpy is not None:
+            try:
+                # Map Track-Name -> (order_index, (x,y)) unter Verwendung der marker_logs Reihenfolge
+                name_order = {m['track_name']: i for i, m in enumerate(marker_logs)}
+                track_positions = []
+                if w is not None and h is not None:
+                    for t in clip.tracking.tracks:
+                        # Hole Marker-Koordinate (Frame current oder erster)
+                        marker_ref = None
+                        cur_frame = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
+                        if cur_frame is not None:
+                            for mm in t.markers:
+                                if mm.frame == cur_frame:
+                                    marker_ref = mm
+                                    break
+                        if marker_ref is None and len(t.markers) > 0:
+                            marker_ref = t.markers[0]
+                        if marker_ref is None:
+                            continue
+                        co_norm = marker_ref.co
+                        track_positions.append(
+                            (t.name, name_order.get(t.name, 10**9), co_norm[0] * w, co_norm[1] * h)
+                        )
+                # Sortiere nach Entstehungsreihenfolge (aus Logs), dann Name
+                track_positions.sort(key=lambda x: (x[1], x[0]))
+                tol2 = float(cluster_tolerance_px) ** 2
+                clusters = []  # Liste: {center:(x,y), members:[name,...]}
+                for nm, _, px, py in track_positions:
+                    assigned = False
+                    for c in clusters:
+                        cx, cy = c['center']
+                        if (px - cx) ** 2 + (py - cy) ** 2 <= tol2:
+                            c['members'].append((nm, px, py))
+                            assigned = True
+                            break
+                    if not assigned:
+                        clusters.append({'center': (px, py), 'members': [(nm, px, py)]})
+                # Reduziere Cluster auf max_per_cluster
+                to_remove_cluster = []
+                for c in clusters:
+                    members = c['members']
+                    if len(members) > cluster_max_per_cluster:
+                        # Behalte die ersten (nach Entstehungssortierung), entferne Rest
+                        surplus = members[cluster_max_per_cluster:]
+                        to_remove_cluster.extend(n for (n, _, _) in surplus)
+                if to_remove_cluster:
+                    def _delete_names(name_list):
+                        removed_local = []
+                        for nm in name_list:
+                            trk = next((t for t in clip.tracking.tracks if t.name == nm), None)
+                            if not trk:
+                                continue
+                            try:
+                                for tr in clip.tracking.tracks:
+                                    try:
+                                        tr.select = False
+                                    except Exception:  # noqa: BLE001
+                                        pass
+                                try:
+                                    trk.select = True
+                                except Exception:  # noqa: BLE001
+                                    pass
+                                try:
+                                    clip.tracking.tracks.active = trk  # type: ignore[attr-defined]
+                                except Exception:  # noqa: BLE001
+                                    pass
+                                try:
+                                    bpy.ops.clip.delete_track()
+                                except TypeError:
+                                    bpy.ops.clip.delete_track()
+                                if not any(t.name == nm for t in clip.tracking.tracks):
+                                    removed_local.append(nm)
+                            except Exception:  # noqa: BLE001
+                                pass
+                        return removed_local
+                    try:
+                        with context.temp_override(area=area, region=region):
+                            removed_cluster = _delete_names(to_remove_cluster)
+                    except Exception:
+                        removed_cluster = _delete_names(to_remove_cluster)
+                    cluster_removed.extend(removed_cluster)
+                # Cluster-Statistik
+                cluster_info = {
+                    'clusters_total': len(clusters),
+                    'clusters_gt1': sum(1 for c in clusters if len(c['members']) > 1),
+                    'removed_in_cluster': len(cluster_removed),
+                    'tolerance_px': cluster_tolerance_px,
+                    'max_per_cluster': cluster_max_per_cluster,
+                }
+                if cluster_removed:
+                    print(
+                        f"[TrackingHelper] Cluster-Konsolidierung: entfernt {len(cluster_removed)} Tracks innerhalb Toleranz {cluster_tolerance_px}px (max_per_cluster={cluster_max_per_cluster})"
+                    )
+            except Exception as cl_err:  # noqa: BLE001
+                print(f"[TrackingHelper] Cluster-Konsolidierung Fehler: {cl_err}")
     except Exception as e:  # noqa: BLE001
         return {
             'success': False,
@@ -450,7 +555,11 @@ def detect_features_multipass(
         }
 
     # Filter: entfernte Tracks (Distanz None/0) nicht mehr in Statistik zählen
-    removed_for_stats = {m['track_name'] for m in marker_logs if m.get('nearest_dist_px') in (None, 0.0)} if 'removed_track_names' in locals() else set()
+    removed_for_stats = set()
+    if 'removed_track_names' in locals():
+        removed_for_stats.update(removed_track_names)
+    if 'cluster_removed' in locals():
+        removed_for_stats.update(cluster_removed)
     distances_all = [
         m['nearest_dist_px'] for m in marker_logs
         if m.get('nearest_dist_px') is not None and m['track_name'] not in removed_for_stats
@@ -511,4 +620,7 @@ def detect_features_multipass(
         'zero_distance_ratio': zero_ratio,
         'removed_duplicate_tracks': sorted(removed_track_names) if 'removed_track_names' in locals() else [],
         'removed_duplicate_count': len(removed_track_names) if 'removed_track_names' in locals() else 0,
+        'cluster_removed_tracks': sorted(cluster_removed) if 'cluster_removed' in locals() else [],
+        'cluster_removed_count': len(cluster_removed) if 'cluster_removed' in locals() else 0,
+        'cluster_stats': cluster_info,
     }
