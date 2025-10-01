@@ -724,6 +724,15 @@ def detect_features_multipass(
                 reason_counter[r] = reason_counter.get(r, 0) + 1
             reason_parts = ', '.join(f"{k}:{v}" for k, v in sorted(reason_counter.items()))
             print(f"[TrackingHelper] Distanz fehlend fuer {len(missing)} Marker (Gruende: {reason_parts})")
+        # Abschluss-Gesamtlog mit Marker-Anzahlen
+        final_total = len(clip.tracking.tracks) if clip else -1
+        dup_removed_cnt = len(removed_track_names) if 'removed_track_names' in locals() else 0
+        cluster_removed_cnt = len(cluster_removed) if 'cluster_removed' in locals() else 0
+        limit_removed_cnt = len(limit_removed) if 'limit_removed' in locals() else 0
+        print(
+            f"[TrackingHelper] Marker Zusammenfassung: vorher={tracks_before} final={final_total} neu_total={total_added} "
+            f"entfernt(Dupl={dup_removed_cnt},Cluster={cluster_removed_cnt},Limit={limit_removed_cnt}) verbleibend_neu={max(0, final_total - len(original_track_names)) if final_total >=0 else '?'}"
+        )
     except Exception:  # noqa: BLE001
         pass
 
