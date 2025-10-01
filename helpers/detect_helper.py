@@ -3,6 +3,8 @@ try:  # Blender Umgebung
 except ImportError:  # außerhalb Blender
     bpy = None  # type: ignore
 
+import traceback
+
 
 def find_clip_editor_area(context):
     for window in context.window_manager.windows:
@@ -542,9 +544,12 @@ def detect_features_multipass(
             except Exception as cl_err:  # noqa: BLE001
                 print(f"[TrackingHelper] Cluster-Konsolidierung Fehler: {cl_err}")
     except Exception as e:  # noqa: BLE001
+        tb = traceback.format_exc()
         return {
             'success': False,
             'message': f'Fehler: {e}',
+            'exception_type': type(e).__name__,
+            'traceback': tb,
             'passes': passes,
             'total_added': -1,
             'per_pass': per_pass,
