@@ -36,10 +36,10 @@ def detect_features_multipass(
     cluster_tolerance_px=2.0,
     cluster_max_per_cluster=1,
 ):
-    """Führt mehrfache Feature-Erkennung aus.
+    """Fuehrt mehrfache Feature-Erkennung aus.
 
     Returns:
-        dict mit Schlüsseln:
+        dict mit Schluesseln:
             success (bool)
             message (str)
             passes (int)
@@ -55,13 +55,13 @@ def detect_features_multipass(
     if area is None:
         return {
             'success': False,
-            'message': 'Kein Movie Clip Editor Bereich gefunden (öffne einen Clip Editor).'
+            'message': 'Kein Movie Clip Editor Bereich gefunden (oeffne einen Clip Editor).'
         }
     region = next((r for r in area.regions if r.type == 'WINDOW'), None)
     if region is None:
         return {
             'success': False,
-            'message': 'Keine gültige WINDOW Region im Clip Editor gefunden.'
+            'message': 'Keine gueltige WINDOW Region im Clip Editor gefunden.'
         }
 
     clip = get_clip_from_area(area)
@@ -76,8 +76,8 @@ def detect_features_multipass(
         try:
             w, h = clip.size
             print(f"[TrackingHelper] Clip Breite (px): {w}")
-            # Berechnung gemäß Anforderung:
-            # pattern_size = horizontale Auflösung * 0.01
+            # Berechnung gemoaß Anforderung:
+            # pattern_size = horizontale Aufloesung * 0.01
             pattern_size = max(3, int(round(w * 0.01)))
             search_size = pattern_size * 2
             settings = getattr(clip.tracking, 'settings', None)
@@ -95,7 +95,7 @@ def detect_features_multipass(
             pass
     tracks_before = len(clip.tracking.tracks) if clip else -1
 
-    # Prüfen ob threshold unterstützt wird
+    # Pruefen ob threshold unterstuetzt wird
     has_threshold = False
     if bpy is not None:
         try:
@@ -104,7 +104,7 @@ def detect_features_multipass(
         except Exception:  # noqa: BLE001
             has_threshold = False
 
-    # Sichere Konvertierung der möglicherweise als Property übergebenen Werte
+    # Sichere Konvertierung der moeglicherweise als Property uebergebenen Werte
     try:
         duplicate_tolerance_px = float(duplicate_tolerance_px)
     except Exception:  # noqa: BLE001
@@ -127,11 +127,11 @@ def detect_features_multipass(
         existing_track_ids = {id(t) for t in clip.tracking.tracks}
 
     def _ensure_tracking_mode():
-        """Versucht den Clip Editor in den TRACKING Modus zu versetzen, falls möglich."""
+        """Versucht den Clip Editor in den TRACKING Modus zu versetzen, falls moeglich."""
         try:
             if area and hasattr(area, 'spaces') and area.spaces:
                 space = area.spaces.active
-                # Manche Versionen haben space.mode für ClipEditor
+                # Manche Versionen haben space.mode fuer ClipEditor
                 if hasattr(space, 'mode'):
                     # Nur setzen wenn nicht schon richtig
                     if getattr(space, 'mode', None) != 'TRACKING':
@@ -150,7 +150,7 @@ def detect_features_multipass(
                 settings.default_pattern_size = p
             if hasattr(settings, 'default_search_size'):
                 settings.default_search_size = s
-            # für Rückgabe aktualisieren (letzte Werte)
+            # fuer Rueckgabe aktualisieren (letzte Werte)
             nonlocal pattern_size, search_size
             pattern_size = p
             search_size = s
@@ -168,7 +168,7 @@ def detect_features_multipass(
             else:
                 bpy.ops.clip.detect_features()
                 if allow_param and not has_threshold:
-                    note = 'threshold nicht unterstützt'
+                    note = 'threshold nicht unterstuetzt'
         except TypeError:
             if bpy is not None:
                 bpy.ops.clip.detect_features()
@@ -185,9 +185,9 @@ def detect_features_multipass(
         if not new_ids:
             return 0
         cur_frame = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
-        # NEU: Wir verwenden primär alle zuvor geloggten Marker-Positionen (marker_logs),
-        # damit auch bei Blender-Replacements (IDs ändern sich) die Distanz-Basis erhalten bleibt.
-        # Zusätzlich sammeln wir – falls verfügbar – die realen existierenden Track-Objekt-Positionen.
+        # NEU: Wir verwenden primoar alle zuvor geloggten Marker-Positionen (marker_logs),
+        # damit auch bei Blender-Replacements (IDs oandern sich) die Distanz-Basis erhalten bleibt.
+        # Zusoatzlich sammeln wir – falls verfuegbar – die realen existierenden Track-Objekt-Positionen.
         existing_positions_px = []  # inkrementell erweitert, auch innerhalb dieses Passes
         fallback_used = False
         if w is not None and h is not None:
@@ -195,7 +195,7 @@ def detect_features_multipass(
                 # Basis aus allen zuvor geloggten Markern (Pass < aktueller Pass)
                 if marker_logs:
                     existing_positions_px.extend([m['pos_px'] for m in marker_logs if m.get('pos_px')])
-                # Ergänzend: aktuelle Track-Objekte, die nicht neu sind (sofern Blender sie nicht ersetzt hat)
+                # Ergoanzend: aktuelle Track-Objekte, die nicht neu sind (sofern Blender sie nicht ersetzt hat)
                 for t in clip.tracking.tracks:
                     if id(t) in existing_track_ids:
                         marker_ref = None
@@ -209,7 +209,7 @@ def detect_features_multipass(
                         if marker_ref is not None:
                             co_norm = marker_ref.co
                             existing_positions_px.append((co_norm[0] * w, co_norm[1] * h))
-                # Falls immer noch leer (kein einziger früherer Marker), bekommen die ersten neuen Marker keine Distanz.
+                # Falls immer noch leer (kein einziger frueherer Marker), bekommen die ersten neuen Marker keine Distanz.
                 if not existing_positions_px:
                     fallback_used = True  # markiere nur zur Info
             except Exception:  # noqa: BLE001
@@ -245,10 +245,10 @@ def detect_features_multipass(
                                     nearest_dist_px = min(((x - ex) ** 2 + (y - ey) ** 2) for ex, ey in existing_positions_px) ** 0.5
                                 except Exception:  # noqa: BLE001
                                     nearest_dist_px = None
-                            # Aktuellen Marker sofort zu Basis hinzufügen, damit spätere Marker IN DIESEM PASS
-                            # ihre Distanz auch zu ihm berechnen können.
+                            # Aktuellen Marker sofort zu Basis hinzufuegen, damit spoatere Marker IN DIESEM PASS
+                            # ihre Distanz auch zu ihm berechnen koennen.
                             existing_positions_px.append(marker_px)
-                    # Prüfen, ob Track-Name schon früher existierte (ersetzt / dupliziert); nur für Analysezwecke
+                    # Pruefen, ob Track-Name schon frueher existierte (ersetzt / dupliziert); nur fuer Analysezwecke
                     if marker_logs and any(m['track_name'] == t.name for m in marker_logs):
                         replaced_name = True
                 except Exception:  # noqa: BLE001
@@ -262,14 +262,14 @@ def detect_features_multipass(
                         no_distance_reason = 'no_reference_positions'
                     else:
                         no_distance_reason = 'calc_error'
-                # Optional: sofortiges Löschen (Default deaktiviert, weil instabil in manchen Kontexten)
+                # Optional: sofortiges Loeschen (Default deaktiviert, weil instabil in manchen Kontexten)
                 if immediate_delete and remove_duplicates:
                     is_duplicate = False
                     if nearest_dist_px is not None and nearest_dist_px <= duplicate_tolerance_px:
                         is_duplicate = True
                     elif nearest_dist_px is None and existing_positions_px:  # nur wenn Referenz existiert
                         is_duplicate = True
-                    # keep_first_marker schützt den allerersten Marker komplett
+                    # keep_first_marker schuetzt den allerersten Marker komplett
                     if is_duplicate and keep_first_marker and not marker_logs:
                         is_duplicate = False
                     if is_duplicate:
@@ -326,10 +326,10 @@ def detect_features_multipass(
         try:
             # Prefer temp_override
             if bpy is None:
-                raise RuntimeError('bpy nicht verfügbar')
+                raise RuntimeError('bpy nicht verfuegbar')
             with context.temp_override(area=area, region=region):
                 if not has_threshold:
-                    # Set sizes für diesen Pass
+                    # Set sizes fuer diesen Pass
                     apply_sizes(pattern_size)
                     added, note = run_detect(current, allow_param=False)
                     # Log erst nach Detect
@@ -355,7 +355,7 @@ def detect_features_multipass(
             override['region'] = region
             if not has_threshold:
                 apply_sizes(pattern_size)
-                # Verwende run_detect auch hier, um identisches Logging zu gewährleisten
+                # Verwende run_detect auch hier, um identisches Logging zu gewoahrleisten
                 added, note = run_detect(current, allow_param=False)
                 log_new_tracks(passes + 1, current)
                 per_pass.append((current, added, note or 'fallback ohne threshold'))
@@ -377,7 +377,7 @@ def detect_features_multipass(
                     if cur_pattern_progressive is not None:
                         cur_pattern_progressive *= 1.5
         removed_track_names = set()
-        # Batch-Duplikatlöschung am Ende (robuster): nur wenn nicht immediate oder Reste
+        # Batch-Duplikatloeschung am Ende (robuster): nur wenn nicht immediate oder Reste
         if remove_duplicates and clip and bpy is not None and not immediate_delete:
             # Finde Kandidaten
             candidates = []
@@ -422,7 +422,7 @@ def detect_features_multipass(
                             except TypeError:
                                 # Manche Versionen erwarten keinen speziellen Kontext
                                 bpy.ops.clip.delete_track()
-                            # Prüfen ob wirklich weg:
+                            # Pruefen ob wirklich weg:
                             if not any(t.name == nm for t in clip.tracking.tracks):
                                 removed_local.append(nm)
                         except Exception:  # noqa: BLE001
@@ -439,7 +439,7 @@ def detect_features_multipass(
                         f"[TrackingHelper] Entfernt {len(removed_track_names)} Tracks (Batch, tol={duplicate_tolerance_px}) : {sorted(removed_track_names)}"
                     )
                 else:
-                    print("[TrackingHelper] Batch-Löschung: keine Tracks entfernt (evtl. Kontextproblem oder keine echten Duplikate)")
+                    print("[TrackingHelper] Batch-Loeschung: keine Tracks entfernt (evtl. Kontextproblem oder keine echten Duplikate)")
 
         # Cluster-Konsolidierung (nach Duplikat-Phase), falls aktiviert
         cluster_removed = []
@@ -553,7 +553,7 @@ def detect_features_multipass(
             'marker_logs': marker_logs
         }
     finally:
-        # Ursprüngliche Werte wiederherstellen
+        # Urspruengliche Werte wiederherstellen
         if settings is not None:
             try:
                 if old_pattern is not None and hasattr(settings, 'default_pattern_size'):
@@ -587,7 +587,7 @@ def detect_features_multipass(
             'median': median,
         }
 
-    # Filter: entfernte Tracks (Distanz None/0) nicht mehr in Statistik zählen
+    # Filter: entfernte Tracks (Distanz None/0) nicht mehr in Statistik zoahlen
     removed_for_stats = set()
     if 'removed_track_names' in locals():
         removed_for_stats.update(removed_track_names)
@@ -608,7 +608,7 @@ def detect_features_multipass(
     for p, vals in distances_per_pass.items():
         per_pass_stats[p] = _compute_stats(vals)
 
-    # Zusatz-Metriken: Zero-Distanzen (Marker exakt auf bestehender Position) sind erwartungsgemäß häufig
+    # Zusatz-Metriken: Zero-Distanzen (Marker exakt auf bestehender Position) sind erwartungsgemoaß hoaufig
     zero_count = sum(1 for d in distances_all if d == 0.0)
     positive_distances = [d for d in distances_all if d and d > 0.0]
     min_positive = min(positive_distances) if positive_distances else None
@@ -624,7 +624,7 @@ def detect_features_multipass(
             print(
                 f"[TrackingHelper] Distanz Verteilung: zeros={zero_count} ({zero_ratio:.2%} ) >0={positive_count} min_pos={min_positive}"
             )
-        # Zusatz: Gründe für fehlende Distanzen, falls Diskrepanz auffällig
+        # Zusatz: Gruende fuer fehlende Distanzen, falls Diskrepanz auffoallig
         missing = [m for m in marker_logs if m.get('nearest_dist_px') is None and m['track_name'] not in removed_for_stats]
         if missing:
             reason_counter = {}
@@ -632,7 +632,7 @@ def detect_features_multipass(
                 r = m.get('no_distance_reason') or 'unknown'
                 reason_counter[r] = reason_counter.get(r, 0) + 1
             reason_parts = ', '.join(f"{k}:{v}" for k, v in sorted(reason_counter.items()))
-            print(f"[TrackingHelper] Distanz fehlend für {len(missing)} Marker (Gruende: {reason_parts})")
+            print(f"[TrackingHelper] Distanz fehlend fuer {len(missing)} Marker (Gruende: {reason_parts})")
     except Exception:  # noqa: BLE001
         pass
 

@@ -12,7 +12,7 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
     bl_label = "Detect Markers"
     bl_description = (
         "Mehrfaches Feature-Detect: Startet bei Threshold=1.0 und halbiert bis < 0.1.\n"
-        "So werden erst sehr starke, dann moderat schwächere Features hinzugefügt (früher <0.0001)."
+        "So werden erst sehr starke, dann moderat schwaechere Features hinzugefuegt (frueher <0.0001)."
     )
     bl_options = {"REGISTER", "UNDO"}
 
@@ -26,28 +26,28 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         name="Duplikat Tol (px)",
         default=0.5,
         min=0.0,
-        description="Maximaler Pixelabstand für exakt gleiche Marker (0 = nur identisch)"
+        description="Maximaler Pixelabstand fuer exakt gleiche Marker (0 = nur identisch)"
     )
     keep_first_marker = BoolProperty(
         name="Ersten behalten",
         default=True,
-        description="Ersten erkannten Marker niemals als Duplikat löschen"
+        description="Ersten erkannten Marker niemals als Duplikat loeschen"
     )
     immediate_delete = BoolProperty(
-        name="Sofort löschen",
+        name="Sofort loeschen",
         default=False,
-        description="Duplikate nicht am Ende im Batch, sondern direkt beim Erkennen löschen (instabiler)"
+        description="Duplikate nicht am Ende im Batch, sondern direkt beim Erkennen loeschen (instabiler)"
     )
     cluster_consolidate = BoolProperty(
         name="Cluster konsolidieren",
         default=True,
-        description="Räumlich nahe Marker zusätzlich clustern und zusammenfassen"
+        description="Raeumlich nahe Marker zusaetzlich clustern und zusammenfassen"
     )
     cluster_tolerance_px = FloatProperty(
         name="Cluster Tol (px)",
         default=6.0,
         min=0.0,
-        description="Radius für Cluster-Zuordnung (Pixel)"
+        description="Radius fuer Cluster-Zuordnung (Pixel)"
     )
     cluster_max_per_cluster = IntProperty(
         name="Max/Cluster",
@@ -99,7 +99,7 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             if note:
                 base += f' ({note})'
             summary_parts.append(base)
-        summary = ', '.join(summary_parts) if summary_parts else 'keine Marker hinzugefügt'
+        summary = ', '.join(summary_parts) if summary_parts else 'keine Marker hinzugefuegt'
 
         removed_dup = result.get('removed_duplicate_count', 0)
         removed_cluster = result.get('cluster_removed_count', 0)
@@ -109,5 +109,5 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         if removed_cluster:
             extra.append(f'Cluster:{removed_cluster}')
         info_tail = (' | ' + ', '.join(extra)) if extra else ''
-        self.report({'INFO'}, f'{passes} Durchläufe, hinzugefügt: {total_added} (pro Pass: {summary}){info_tail}')
+        self.report({'INFO'}, f'{passes} Durchlaeufe, hinzugefuegt: {total_added} (pro Pass: {summary}){info_tail}')
         return {'FINISHED'}
