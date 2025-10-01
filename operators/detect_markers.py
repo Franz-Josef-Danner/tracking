@@ -104,10 +104,10 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
                 print("[TrackingHelper][TRACEBACK]\n" + tb)
             self.report({'ERROR'}, result.get('message', 'Unbekannter Fehler'))
             return {'CANCELLED'}
-
         passes = result.get('passes', 0)
-        total_added = result.get('total_added', -1)
+        total_added = result.get('total_added', -1)  # effektive Netto-Anzahl
         per_pass = result.get('per_pass', [])
+        raw_total = result.get('raw_total_added', None)
 
         summary_parts = []
         for thr, added, note in per_pass:
@@ -128,5 +128,8 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         if removed_limit:
             extra.append(f'Limit:{removed_limit}')
         info_tail = (' | ' + ', '.join(extra)) if extra else ''
-        self.report({'INFO'}, f'{passes} Durchlaeufe, hinzugefuegt: {total_added} (pro Pass: {summary}){info_tail}')
+        msg = f'{passes} Durchlaeufe, hinzugefuegt: {total_added} (pro Pass: {summary}){info_tail}'
+        if raw_total is not None and raw_total != total_added:
+            msg += f' | raw_total:{raw_total}'
+        self.report({'INFO'}, msg)
         return {'FINISHED'}

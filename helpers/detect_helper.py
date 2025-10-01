@@ -134,7 +134,7 @@ def detect_features_multipass(
     except Exception:  # noqa: BLE001
         cluster_max_per_cluster = 1
 
-    per_pass = []  # Liste von Tuplen (threshold, added_count, note)
+    per_pass = []  # Liste von Tuplen (threshold, effective_added_count, note)
     passes = 0
     current = start_threshold
     marker_logs = []  # speichert detailinformationen neuer Marker
@@ -147,7 +147,18 @@ def detect_features_multipass(
     # Sammelliste der pro Limit entfernten Track-Namen (über alle Passes)
     limit_removed = []
 
-    def _enforce_limit():
+    def _count_net_new():
+        if not (clip and bpy is not None):
+            return 0
+        try:
+            return sum(1 for t in clip.tracking.tracks if id(t) not in original_track_ids_snapshot)
+        except Exception:  # noqa: BLE001
+            return 0
+
+    raw_total_added = 0  # Summe aller rohen Additionen (vor Kappung)
+    raw_per_pass = []  # Liste roher Additionen
+
+    def _enforce_limit():  # noqa: C901
         """Kappung nach jedem Pass: nur die ersten MAX_NEW_MARKERS neu entstandenen Tracks behalten.
         Entscheidung: Behalte aeltere (frühere Passes = stärkere Features)."""
         if not (clip and bpy is not None):
@@ -451,17 +462,25 @@ def detect_features_multipass(
                     passes = 1
                 else:
                     cur_pattern_progressive = float(pattern_size) if pattern_size else None
+                    net_prev = _count_net_new()
                     while current >= min_threshold and passes < max_passes:
                         if cur_pattern_progressive is not None:
                             apply_sizes(cur_pattern_progressive)
                         added, note = run_detect(current, allow_param=True)
+                        raw_total_added_local = added
+                        raw_total_added += raw_total_added_local
+                        raw_per_pass.append(raw_total_added_local)
                         log_new_tracks(passes + 1, current)
-                        # Nach jedem Pass sofort limitieren
-                        removed_now = _enforce_limit()
-                        if removed_now:
-                            # Hinweis zum Pass ergänzen
-                            note = (note + ';trim') if note else 'trim'
-                        per_pass.append((current, added, note))
+                        removed_now = _enforce_limit()  # Kappung
+                        net_now = _count_net_new()
+                        effective_added = max(0, net_now - net_prev)
+                        net_prev = net_now
+                        if removed_now or effective_added != added:
+                            if removed_now:
+                                note = (note + ';trim') if note else 'trim'
+                            if effective_added != added:
+                                note = (note + f";raw:{added}") if note else f"raw:{added}"
+                        per_pass.append((current, effective_added, note))
                         passes += 1
                         current *= factor
                         if cur_pattern_progressive is not None:
@@ -481,16 +500,26 @@ def detect_features_multipass(
                 passes = 1
             else:
                 cur_pattern_progressive = float(pattern_size) if pattern_size else None
+                net_prev = _count_net_new()
                 while current >= min_threshold and passes < max_passes:
                     if cur_pattern_progressive is not None:
                         apply_sizes(cur_pattern_progressive)
                     try:
                         added, note = run_detect(current, allow_param=True)
+                        raw_total_added_local = added
+                        raw_total_added += raw_total_added_local
+                        raw_per_pass.append(raw_total_added_local)
                         log_new_tracks(passes + 1, current)
                         removed_now = _enforce_limit()
-                        if removed_now:
-                            note = (note + ';trim') if note else 'trim'
-                        per_pass.append((current, added, note or 'fallback'))
+                        net_now = _count_net_new()
+                        effective_added = max(0, net_now - net_prev)
+                        net_prev = net_now
+                        if removed_now or effective_added != added:
+                            if removed_now:
+                                note = (note + ';trim') if note else 'trim'
+                            if effective_added != added:
+                                note = (note + f";raw:{added}") if note else f"raw:{added}"
+                        per_pass.append((current, effective_added, (note or 'fallback')))
                     except Exception:  # noqa: BLE001
                         per_pass.append((current, 0, 'fallback Fehler'))
                         break
@@ -760,7 +789,7 @@ def detect_features_multipass(
                 pass
 
     if clip:
-        total_added = len(clip.tracking.tracks) - tracks_before
+        total_added = len(clip.tracking.tracks) - tracks_before  # effektive Netto-Anzahl
     else:
         total_added = -1
 
@@ -867,4 +896,6 @@ def detect_features_multipass(
         'cluster_stats': cluster_info,
         'max_limit_removed_tracks': sorted(limit_removed) if 'limit_removed' in locals() else [],
         'max_limit_removed_count': len(limit_removed) if 'limit_removed' in locals() else 0,
+        'raw_total_added': raw_total_added,
+        'raw_per_pass': raw_per_pass,
     }
