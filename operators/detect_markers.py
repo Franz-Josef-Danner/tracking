@@ -61,12 +61,6 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         default=False,
         description="Fuehrt nur einen einfachen Detect-Pass ohne adaptive Wiederholungen aus",
     )
-    simple_pass_count = IntProperty(
-        name="Simple Passes",
-        default=2,
-        min=1,
-        description="Anzahl einfacher Passes wenn Debug aktiv ist (ohne adaptive Wiederholung)",
-    )
 
     def draw(self, context):  # noqa: D401
         layout = self.layout
@@ -96,8 +90,6 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         sub2.prop(self, "cluster_max_per_cluster")
         col.separator()
         col.prop(self, "single_pass_debug")
-        if self.single_pass_debug:
-            col.prop(self, "simple_pass_count")
 
     def execute(self, context):
         # Mindestanzahl neuer Marker pro Pass ermitteln: (marker_per_frame * 4) / 14
@@ -118,25 +110,6 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
                     min_new = None
             except Exception:  # noqa: BLE001
                 min_new = None
-        # Sichere Ermittlung simple_pass_limit (bei Blender kann _PropertyDeferred auftreten)
-        simple_limit = None
-        if self.single_pass_debug:
-            try:
-                val = getattr(self, 'simple_pass_count', None)
-                # Mehrstufige Konvertierung
-                def _coerce(v):
-                    try:
-                        return int(v)
-                    except Exception:
-                        try:
-                            return int(str(v))
-                        except Exception:
-                            return None
-                simple_limit = _coerce(val)
-                if simple_limit is not None and simple_limit < 1:
-                    simple_limit = 1
-            except Exception:  # noqa: BLE001
-                simple_limit = None
         result = detect_features_multipass(
             context,
             remove_duplicates=self.remove_duplicates,
@@ -150,7 +123,6 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             target_range_lower=lower_bound,
             target_range_upper=upper_bound,
             adaptive=not self.single_pass_debug,
-            simple_pass_limit=simple_limit,
         )
         if not result.get('success'):
             # Erweiterte Diagnoseausgaben, falls vorhanden
