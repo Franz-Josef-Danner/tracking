@@ -137,8 +137,38 @@ def detect_features_multipass(
     if clip and bpy is not None:
         existing_track_ids = {id(t) for t in clip.tracking.tracks}
 
-    # Die neu gesetzten Marker pro Pass entnehmen wir direkt dem Rueckgabewert von run_detect (added)
-    per_pass_new_counts_internal = []  # wird synchron mit per_pass gefuellt
+    # Signatur-basierte Nachverfolgung aller jemals gesehenen Marker (Name, Frame, Position in Pixeln gerundet)
+    seen_signatures = set()
+    per_pass_new_counts_internal = []  # wirklich neu erkannte Marker je Pass basierend auf Signaturen
+
+    def _build_signature(track_obj):
+        try:
+            marker_ref = None
+            cur_frame_ctx = bpy.context.scene.frame_current if bpy and bpy.context and bpy.context.scene else None
+            if cur_frame_ctx is not None:
+                for mm in track_obj.markers:
+                    if mm.frame == cur_frame_ctx:
+                        marker_ref = mm
+                        break
+            if marker_ref is None and len(track_obj.markers) > 0:
+                marker_ref = track_obj.markers[0]
+            if marker_ref is None:
+                return None
+            co = marker_ref.co
+            if w is not None and h is not None:
+                px = co[0] * w
+                py = co[1] * h
+                # Rundung auf 0.5 Pixel zur Stabilisierung gegen minimalen Jitter
+                rpx = round(px * 2) / 2.0
+                rpy = round(py * 2) / 2.0
+            else:
+                rpx = round(co[0], 5)
+                rpy = round(co[1], 5)
+            frame_val = marker_ref.frame
+            name_val = getattr(track_obj, 'name', '<noname>')
+            return (name_val, frame_val, rpx, rpy)
+        except Exception:  # noqa: BLE001
+            return None
 
     def _ensure_tracking_mode():
         """Versucht den Clip Editor in den TRACKING Modus zu versetzen, falls moeglich."""
@@ -366,12 +396,22 @@ def detect_features_multipass(
                 if not has_threshold:
                     # Set sizes fuer diesen Pass
                     apply_sizes(pattern_size)
+                    # Vorher bekannte Signaturen merken
+                    before_known = set(seen_signatures)
                     added, note = run_detect(current, allow_param=False)
-                    # Detail-Erfassung (Analyse/Verbose) - hat eigene ID-Nachverfolgung
+                    # Detail (Verbose) ermitteln, nicht fuer die reine Zaehllogik noetig
                     log_new_tracks(passes + 1, current)
-                    per_pass_new_counts_internal.append(added)
+                    # Nachher Signaturen sammeln
+                    if clip:
+                        for t in clip.tracking.tracks:
+                            sig = _build_signature(t)
+                            if sig:
+                                if sig not in seen_signatures:
+                                    seen_signatures.add(sig)
+                    new_count = len(seen_signatures) - len(before_known)
+                    per_pass_new_counts_internal.append(new_count)
                     try:
-                        print(f"[Detect] Pass {passes + 1} Marker={added}")
+                        print(f"[Detect] Pass {passes + 1} Marker={new_count}")
                     except Exception:  # noqa: BLE001
                         pass
                     per_pass.append((current, added, note or 'kein threshold Param'))
@@ -381,11 +421,18 @@ def detect_features_multipass(
                     while current >= min_threshold and passes < max_passes:
                         if cur_pattern_progressive is not None:
                             apply_sizes(cur_pattern_progressive)
+                        before_known = set(seen_signatures)
                         added, note = run_detect(current, allow_param=True)
                         log_new_tracks(passes + 1, current)
-                        per_pass_new_counts_internal.append(added)
+                        if clip:
+                            for t in clip.tracking.tracks:
+                                sig = _build_signature(t)
+                                if sig and sig not in seen_signatures:
+                                    seen_signatures.add(sig)
+                        new_count = len(seen_signatures) - len(before_known)
+                        per_pass_new_counts_internal.append(new_count)
                         try:
-                            print(f"[Detect] Pass {passes + 1} Marker={added}")
+                            print(f"[Detect] Pass {passes + 1} Marker={new_count}")
                         except Exception:  # noqa: BLE001
                             pass
                         per_pass.append((current, added, note))
@@ -401,11 +448,18 @@ def detect_features_multipass(
             if not has_threshold:
                 apply_sizes(pattern_size)
                 # Verwende run_detect auch hier, um identisches Logging zu gewoahrleisten
+                before_known = set(seen_signatures)
                 added, note = run_detect(current, allow_param=False)
                 log_new_tracks(passes + 1, current)
-                per_pass_new_counts_internal.append(added)
+                if clip:
+                    for t in clip.tracking.tracks:
+                        sig = _build_signature(t)
+                        if sig and sig not in seen_signatures:
+                            seen_signatures.add(sig)
+                new_count = len(seen_signatures) - len(before_known)
+                per_pass_new_counts_internal.append(new_count)
                 try:
-                    print(f"[Detect] Pass {passes + 1} Marker={added}")
+                    print(f"[Detect] Pass {passes + 1} Marker={new_count}")
                 except Exception:  # noqa: BLE001
                     pass
                 per_pass.append((current, added, note or 'fallback ohne threshold'))
@@ -416,11 +470,18 @@ def detect_features_multipass(
                     if cur_pattern_progressive is not None:
                         apply_sizes(cur_pattern_progressive)
                     try:
+                        before_known = set(seen_signatures)
                         added, note = run_detect(current, allow_param=True)
                         log_new_tracks(passes + 1, current)
-                        per_pass_new_counts_internal.append(added)
+                        if clip:
+                            for t in clip.tracking.tracks:
+                                sig = _build_signature(t)
+                                if sig and sig not in seen_signatures:
+                                    seen_signatures.add(sig)
+                        new_count = len(seen_signatures) - len(before_known)
+                        per_pass_new_counts_internal.append(new_count)
                         try:
-                            print(f"[Detect] Pass {passes + 1} Marker={added}")
+                            print(f"[Detect] Pass {passes + 1} Marker={new_count}")
                         except Exception:  # noqa: BLE001
                             pass
                         per_pass.append((current, added, note or 'fallback'))
