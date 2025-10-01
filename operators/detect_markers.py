@@ -14,7 +14,8 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         "Mehrfaches Feature-Detect: Startet bei Threshold=1.0 und halbiert bis < 0.1.\n"
         "So werden erst sehr starke, dann moderat schwaechere Features hinzugefuegt (frueher <0.0001)."
     )
-    bl_options = {"REGISTER", "UNDO"}
+    # REGISTER entfernt, damit kein Redo/Popup-Fenster mit den Einstellungen aufpoppt
+    bl_options = {"UNDO"}
 
     # --- Optionen (Annotation Syntax gegen _PropertyDeferred Probleme) ---
     remove_duplicates = BoolProperty(
