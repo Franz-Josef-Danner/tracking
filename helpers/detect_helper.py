@@ -52,6 +52,7 @@ def detect_features_multipass(
     target_range_upper=None,
     verbose=False,
     adaptive=True,
+    simple_pass_limit=None,
 ):
     """Fuehrt mehrfache Feature-Erkennung aus.
 
@@ -436,20 +437,32 @@ def detect_features_multipass(
                             range_hi = target_cnt
                         # Falls nicht adaptiv: Fuehre exakt einen einfachen Detect aus und verlasse Schleife
                         if not adaptive:
-                            added_count, note = run_detect(current, allow_param=True)
-                            log_new_tracks(passes + 1, current)
-                            # einfache neue Signaturen erfassen
-                            new_sigs_simple = []
-                            if clip:
-                                for t in clip.tracking.tracks:
-                                    sig = _build_signature(t)
-                                    if sig and sig not in seen_signatures and sig not in new_sigs_simple:
-                                        new_sigs_simple.append(sig)
-                            for sig in new_sigs_simple:
-                                seen_signatures.add(sig)
-                            pass_new_signatures.append(new_sigs_simple)
-                            per_pass.append((current, len(new_sigs_simple), f"single_pass added={len(new_sigs_simple)} raw_op={added_count}"))
-                            passes += 1
+                            # Mehrere einfache Passes falls simple_pass_limit gesetzt
+                            simple_count = 0
+                            while current >= min_threshold and passes < max_passes:
+                                if cur_pattern_progressive is not None:
+                                    apply_sizes(cur_pattern_progressive)
+                                added_count, note = run_detect(current, allow_param=True)
+                                log_new_tracks(passes + 1, current)
+                                new_sigs_simple = []
+                                if clip:
+                                    for t in clip.tracking.tracks:
+                                        sig = _build_signature(t)
+                                        if sig and sig not in seen_signatures and sig not in new_sigs_simple:
+                                            new_sigs_simple.append(sig)
+                                for sig in new_sigs_simple:
+                                    seen_signatures.add(sig)
+                                pass_new_signatures.append(new_sigs_simple)
+                                per_pass.append((current, len(new_sigs_simple), f"single_pass added={len(new_sigs_simple)} raw_op={added_count}"))
+                                passes += 1
+                                simple_count += 1
+                                if verbose:
+                                    print(f"[Detect][SimplePass] index={passes} thr={current:.5f} new={len(new_sigs_simple)} raw_added={added_count}")
+                                current *= factor
+                                if cur_pattern_progressive is not None:
+                                    cur_pattern_progressive *= 1.15
+                                if simple_pass_limit is not None and simple_count >= simple_pass_limit:
+                                    break
                             break
                         # Starte jede Pass-Runde mit Basis-Mindestdistanz 100 (oder dynamic_min_distance_px falls gesetzt)
                         base_md = float(dynamic_min_distance_px) if dynamic_min_distance_px else 100.0
