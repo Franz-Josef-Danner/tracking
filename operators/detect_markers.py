@@ -95,6 +95,13 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             cluster_max_per_cluster=self.cluster_max_per_cluster,
         )
         if not result.get('success'):
+            # Erweiterte Diagnoseausgaben, falls vorhanden
+            etype = result.get('exception_type')
+            tb = result.get('traceback')
+            if etype:
+                print(f"[TrackingHelper][ERROR] exception_type={etype}")
+            if tb:
+                print("[TrackingHelper][TRACEBACK]\n" + tb)
             self.report({'ERROR'}, result.get('message', 'Unbekannter Fehler'))
             return {'CANCELLED'}
 
