@@ -76,7 +76,7 @@ def detect_features_multipass(
     cluster_max_per_cluster=1,
     max_new_markers: int | None = None,
 ):
-    """Fuehrt mehrfache Feature-Erkennung aus und begrenzt NEUE Marker auf MAX_NEW_MARKERS.
+    """Fuehrt mehrfache Feature-Erkennung aus und begrenzt NEUE Marker auf das konfigurierte Limit.
 
     Rueckgabe: dict mit Kennzahlen analog zur vorherigen Version (vereinfacht wo noetig).
     """
@@ -182,7 +182,7 @@ def detect_features_multipass(
         return [t for t in clip.tracking.tracks if id(t) not in original_ids]
 
     def _enforce_limit(final=False):
-        # Haelt nur die ersten MAX_NEW_MARKERS (nach Entstehung laut marker_logs)
+    # Haelt nur die ersten "max_new_markers" (nach Entstehung laut marker_logs)
         new_tracks = _net_new_ids()
         if len(new_tracks) <= max_new_markers:
             return 0
@@ -419,100 +419,7 @@ def detect_features_multipass(
     except Exception:  # noqa: BLE001
         cluster_max_per_cluster = 1
 
-    per_pass = []  # Liste von Tuplen (threshold, effective_added_count, note)
-    passes = 0
-    current = start_threshold
-    marker_logs = []  # speichert detailinformationen neuer Marker
-    existing_track_ids = set()
-    if clip and bpy is not None:
-        existing_track_ids = {id(t) for t in clip.tracking.tracks}
-
-    # Maximalzahl neuer Marker (global neu gegenüber Start) – nach jedem Pass wird gekappt
-    MAX_NEW_MARKERS = 7
-    # Sammelliste der pro Limit entfernten Track-Namen (über alle Passes)
-    limit_removed = []
-
-    def _count_net_new():
-        if not (clip and bpy is not None):
-            return 0
-        try:
-            return sum(1 for t in clip.tracking.tracks if id(t) not in original_track_ids_snapshot)
-        except Exception:  # noqa: BLE001
-            return 0
-
-    raw_total_added = 0  # Summe aller rohen Additionen (vor Kappung)
-    raw_per_pass = []  # Liste roher Additionen
-
-    def _enforce_limit():  # noqa: C901
-        """Kappung nach jedem Pass: nur die ersten MAX_NEW_MARKERS neu entstandenen Tracks behalten.
-        Entscheidung: Behalte aeltere (frühere Passes = stärkere Features)."""
-        if not (clip and bpy is not None):
-            return 0
-        try:
-            current_tracks = list(clip.tracking.tracks)
-            # Reihenfolge der Entstehung laut marker_logs (nur nicht bereits geloeschte Einträge)
-            ordered_new_names = []
-            seen = set()
-            for m in marker_logs:
-                nm = m['track_name']
-                if nm in seen:
-                    continue
-                seen.add(nm)
-                # existiert noch und ist wirklich neu?
-                trk = next((t for t in current_tracks if t.name == nm), None)
-                if not trk:
-                    continue
-                if id(trk) in original_track_ids_snapshot:
-                    continue  # war schon vorher da
-                ordered_new_names.append(nm)
-            if len(ordered_new_names) <= MAX_NEW_MARKERS:
-                return 0
-            keep = set(ordered_new_names[:MAX_NEW_MARKERS])
-            to_remove = [nm for nm in ordered_new_names if nm not in keep]
-            removed_local = []
-            def _delete_names(name_list):
-                removed_del = []
-                for nm in name_list:
-                    trk = next((t for t in clip.tracking.tracks if t.name == nm), None)
-                    if not trk:
-                        continue
-                    try:
-                        _ensure_tracking_mode()
-                        for tr in clip.tracking.tracks:
-                            try:
-                                tr.select = False
-                            except Exception:  # noqa: BLE001
-                                pass
-                        try:
-                            trk.select = True
-                        except Exception:  # noqa: BLE001
-                            pass
-                        try:
-                            clip.tracking.tracks.active = trk  # type: ignore[attr-defined]
-                        except Exception:  # noqa: BLE001
-                            pass
-                        try:
-                            _ensure_tracking_mode()
-                            bpy.ops.clip.delete_track()
-                        except TypeError:
-                            bpy.ops.clip.delete_track()
-                        if not any(t.name == nm for t in clip.tracking.tracks):
-                            removed_del.append(nm)
-                    except Exception:  # noqa: BLE001
-                        pass
-                return removed_del
-            try:
-                with context.temp_override(area=area, region=region):
-                    removed_local = _delete_names(to_remove)
-            except Exception:
-                removed_local = _delete_names(to_remove)
-            if removed_local:
-                limit_removed.extend(removed_local)
-                print(f"[TrackingHelper] Per-Pass Limit-Kappung: entfernt {len(removed_local)} Marker (Limit={MAX_NEW_MARKERS}) -> {removed_local}")
-            return len(removed_local)
-        except Exception as _lim_err:  # noqa: BLE001
-            print(f"[TrackingHelper] Limit-Kappung Fehler: {_lim_err}")
-            return 0
+    # (Alter Block fuer per-Pass Limit wurde entfernt – aktuelle Implementierung steht weiter oben.)
 
     def _ensure_tracking_mode():
         """Versucht den Clip Editor in den TRACKING Modus zu versetzen, falls moeglich."""
@@ -1080,9 +987,8 @@ def detect_features_multipass(
         cluster_removed_cnt = len(cluster_removed) if 'cluster_removed' in locals() else 0
         limit_removed_cnt = len(limit_removed) if 'limit_removed' in locals() else 0
         remaining_new = max(0, final_total - len(original_track_names)) if final_total >= 0 else '?'
-        if isinstance(remaining_new, int) and remaining_new > MAX_NEW_MARKERS:
-            # Falls trotz Kappung noch mehr da (z.B. Umbenennungen / Ersetzungen) -> Warnung
-            print(f"[TrackingHelper][WARN] Limit {MAX_NEW_MARKERS} überschritten (remaining_new={remaining_new}) – unerwartet.")
+        if isinstance(remaining_new, int) and remaining_new > max_new_markers:
+            print(f"[TrackingHelper][WARN] Limit {max_new_markers} überschritten (remaining_new={remaining_new}) – unerwartet.")
         print(
             f"[TrackingHelper] Marker Zusammenfassung: vorher={tracks_before} final={final_total} roh_neu={total_added} "
             f"entfernt(Dupl={dup_removed_cnt},Cluster={cluster_removed_cnt},Limit={limit_removed_cnt}) verbleibend_neu={remaining_new} (Limit={MAX_NEW_MARKERS})"
