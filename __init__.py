@@ -36,8 +36,8 @@ def register():
     bpy.types.Scene.marker_per_frame = IntProperty(
         name="Marker per Frame",
         description=(
-            "Gewuenschte Gesamt-Markeranzahl pro Frame. Wird intern durch 14 geteilt, "
-            "um die Mindestanzahl NEUER Marker je Detect-Pass festzulegen. Bleibt ein Pass darunter, wird abgebrochen."
+            "Gewuenschte Gesamt-Markeranzahl pro Frame. Mindestanzahl neuer Marker pro Detect-Pass = (Wert * 4) / 14. "
+            "Bleibt ein Pass darunter, werden keine weiteren Paesse ausgefuehrt."
         ),
         default=50,
         min=0,

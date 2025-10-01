@@ -85,6 +85,15 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         sub2.prop(self, "cluster_max_per_cluster")
 
     def execute(self, context):
+        # Mindestanzahl neuer Marker pro Pass ermitteln: (marker_per_frame * 4) / 14
+        scene = context.scene
+        min_new = None
+        if hasattr(scene, 'marker_per_frame'):
+            try:
+                raw = int(scene.marker_per_frame)
+                min_new = max(1, int(round((raw * 4) / 14))) if raw > 0 else None
+            except Exception:  # noqa: BLE001
+                min_new = None
         result = detect_features_multipass(
             context,
             remove_duplicates=self.remove_duplicates,
@@ -94,6 +103,7 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             cluster_consolidate=self.cluster_consolidate,
             cluster_tolerance_px=self.cluster_tolerance_px,
             cluster_max_per_cluster=self.cluster_max_per_cluster,
+            min_new_markers_per_pass=min_new,
         )
         if not result.get('success'):
             # Erweiterte Diagnoseausgaben, falls vorhanden
@@ -129,5 +139,11 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         if removed_cluster:
             extra.append(f'Cluster:{removed_cluster}')
         info_tail = (' | ' + ', '.join(extra)) if extra else ''
-        self.report({'INFO'}, f'{passes} Durchlaeufe, hinzugefuegt: {total_added} (pro Pass: {summary}){info_tail}')
+        aborted = result.get('aborted_due_to_min')
+        min_info = ''
+        if aborted:
+            min_info = ' (vorzeitig gestoppt wegen Mindestanzahl)'
+        if hasattr(context.scene, 'marker_per_frame') and context.scene.marker_per_frame > 0:
+            min_info += f" | MinNeu/Pass={(int(round((context.scene.marker_per_frame * 4)/14)))}"
+        self.report({'INFO'}, f'{passes} Durchlaeufe, hinzugefuegt: {total_added} (pro Pass: {summary}){info_tail}{min_info}')
         return {'FINISHED'}
