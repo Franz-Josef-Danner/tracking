@@ -16,53 +16,59 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
     )
     bl_options = {"REGISTER", "UNDO"}
 
-    # --- Neue Optionen ---
+    # --- Optionen (Annotation Syntax gegen _PropertyDeferred Probleme) ---
     remove_duplicates = BoolProperty(
         name="Duplikate entfernen",
         default=True,
-        description="Marker mit Distanz <= Duplikat-Toleranz oder ohne Distanz (ab zweitem) entfernen"
+        description="Marker mit Distanz <= Duplikat-Toleranz oder ohne Distanz (ab zweitem) entfernen",
     )
     duplicate_tolerance = FloatProperty(
         name="Duplikat Tol (px)",
         default=0.5,
         min=0.0,
-        description="Maximaler Pixelabstand fuer exakt gleiche Marker (0 = nur identisch)"
+        description="Maximaler Pixelabstand fuer exakt gleiche Marker (0 = nur identisch)",
     )
     keep_first_marker = BoolProperty(
         name="Ersten behalten",
         default=True,
-        description="Ersten erkannten Marker niemals als Duplikat loeschen"
+        description="Ersten erkannten Marker niemals als Duplikat loeschen",
     )
     immediate_delete = BoolProperty(
         name="Sofort loeschen",
         default=False,
-        description="Duplikate nicht am Ende im Batch, sondern direkt beim Erkennen loeschen (instabiler)"
+        description="Duplikate nicht am Ende im Batch, sondern direkt beim Erkennen loeschen (instabiler)",
     )
     cluster_consolidate = BoolProperty(
         name="Cluster konsolidieren",
         default=True,
-        description="Raeumlich nahe Marker zusaetzlich clustern und zusammenfassen"
+        description="Raeumlich nahe Marker zusaetzlich clustern und zusammenfassen",
     )
     cluster_tolerance_px = FloatProperty(
         name="Cluster Tol (px)",
         default=6.0,
         min=0.0,
-        description="Radius fuer Cluster-Zuordnung (Pixel)"
+        description="Radius fuer Cluster-Zuordnung (Pixel)",
     )
     cluster_max_per_cluster = IntProperty(
         name="Max/Cluster",
         default=1,
         min=1,
-        description="Wie viele Marker pro Cluster behalten werden"
+        description="Wie viele Marker pro Cluster behalten werden",
     )
 
     def draw(self, context):  # noqa: D401
         layout = self.layout
         col = layout.column(align=True)
         col.label(text="Duplikate:")
+        if not hasattr(self, "remove_duplicates"):
+            col.label(text="[WARN] Properties nicht registriert", icon='ERROR')
+            return
         col.prop(self, "remove_duplicates")
         sub = col.column(align=True)
-        sub.enabled = self.remove_duplicates
+        try:
+            sub.enabled = bool(self.remove_duplicates)
+        except Exception:  # noqa: BLE001
+            sub.enabled = True
         sub.prop(self, "duplicate_tolerance")
         sub.prop(self, "keep_first_marker")
         sub.prop(self, "immediate_delete")
@@ -70,7 +76,10 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         col.label(text="Cluster:")
         col.prop(self, "cluster_consolidate")
         sub2 = col.column(align=True)
-        sub2.enabled = self.cluster_consolidate
+        try:
+            sub2.enabled = bool(self.cluster_consolidate)
+        except Exception:  # noqa: BLE001
+            sub2.enabled = True
         sub2.prop(self, "cluster_tolerance_px")
         sub2.prop(self, "cluster_max_per_cluster")
 
