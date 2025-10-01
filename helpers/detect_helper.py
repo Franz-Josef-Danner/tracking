@@ -46,8 +46,6 @@ def detect_features_multipass(
     cluster_consolidate=False,
     cluster_tolerance_px=2.0,
     cluster_max_per_cluster=1,
-    min_new_markers_per_pass=None,
-    dynamic_min_distance_px=100.0,
 ):
     """Fuehrt mehrfache Feature-Erkennung aus.
 
@@ -118,7 +116,6 @@ def detect_features_multipass(
             has_threshold = False
 
     # Sichere Konvertierung der moeglicherweise als Property uebergebenen Werte
-    aborted_due_to_min = False
     try:
         duplicate_tolerance_px = float(duplicate_tolerance_px)
     except Exception:  # noqa: BLE001
@@ -434,19 +431,6 @@ def detect_features_multipass(
                             seen_signatures.add(sig)
                         pass_new_signatures.append(new_sigs_this_pass)
                         per_pass.append((current, added, note))
-                        # Mindestanzahl pruefen (Roh-Anzahl vor spaeterer Duplikat-/Cluster-Entfernung)
-                        if min_new_markers_per_pass is not None:
-                            if len(new_sigs_this_pass) < min_new_markers_per_pass:
-                                note_abort = (
-                                    f"abgebrochen: neue Marker {len(new_sigs_this_pass)} < Mindestanzahl {min_new_markers_per_pass}"
-                                )
-                                per_pass[-1] = (
-                                    per_pass[-1][0],
-                                    per_pass[-1][1],
-                                    (per_pass[-1][2] + ' | ' + note_abort).strip(),
-                                )
-                                aborted_due_to_min = True
-                                break
                         passes += 1
                         current *= factor
                         if cur_pattern_progressive is not None:
@@ -492,18 +476,6 @@ def detect_features_multipass(
                             seen_signatures.add(sig)
                         pass_new_signatures.append(new_sigs_this_pass)
                         per_pass.append((current, added, note or 'fallback'))
-                        if min_new_markers_per_pass is not None:
-                            if len(new_sigs_this_pass) < min_new_markers_per_pass:
-                                note_abort = (
-                                    f"abgebrochen: neue Marker {len(new_sigs_this_pass)} < Mindestanzahl {min_new_markers_per_pass}"
-                                )
-                                per_pass[-1] = (
-                                    per_pass[-1][0],
-                                    per_pass[-1][1],
-                                    (per_pass[-1][2] + ' | ' + note_abort).strip(),
-                                )
-                                aborted_due_to_min = True
-                                break
                     except Exception:  # noqa: BLE001
                         per_pass.append((current, 0, 'fallback Fehler'))
                         break
@@ -804,8 +776,6 @@ def detect_features_multipass(
         'passes': passes,
         'total_added': total_added,
         'per_pass': per_pass,
-        'aborted_due_to_min': aborted_due_to_min,
-    'dynamic_min_distance_px': dynamic_min_distance_px,
         'pattern_size': pattern_size,
         'search_size': search_size,
         'marker_logs': marker_logs,
