@@ -138,12 +138,18 @@ def detect_features_multipass(
         cluster_max_per_cluster = 1
     # simple_pass_limit kann aus Blender als _PropertyDeferred kommen -> robust konvertieren
     if simple_pass_limit is not None:
+        temp_limit = None
         try:
-            simple_pass_limit_int = int(simple_pass_limit)
-            if simple_pass_limit_int < 1:
-                simple_pass_limit_int = 1
+            temp_limit = int(simple_pass_limit)
         except Exception:  # noqa: BLE001
-            simple_pass_limit_int = None
+            try:
+                # Manche _PropertyDeferred koennen str() liefern
+                temp_limit = int(str(simple_pass_limit))
+            except Exception:  # noqa: BLE001
+                temp_limit = None
+        if temp_limit is not None and temp_limit < 1:
+            temp_limit = 1
+        simple_pass_limit_int = temp_limit
     else:
         simple_pass_limit_int = None
 

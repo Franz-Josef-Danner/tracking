@@ -131,7 +131,7 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
             target_range_lower=lower_bound,
             target_range_upper=upper_bound,
             adaptive=not self.single_pass_debug,
-            simple_pass_limit=self.simple_pass_count if self.single_pass_debug else None,
+            simple_pass_limit=(int(self.simple_pass_count) if self.single_pass_debug else None),
         )
         if not result.get('success'):
             # Erweiterte Diagnoseausgaben, falls vorhanden
