@@ -121,8 +121,14 @@ class TRACKING_OT_detect_markers(bpy.types.Operator):
         raw_total = result.get('raw_total_added', None)
 
         summary_parts = []
-        for thr, added, note in per_pass:
-            base = f'{thr:.5f}:{added}'
+        for entry in per_pass:
+            if not isinstance(entry, (list, tuple)) or len(entry) < 5:
+                continue
+            thr, raw_added, removed_limit, cumulative_new, note = entry
+            base = f'{thr:.5f}:raw{raw_added}'
+            if removed_limit:
+                base += f'-lim{removed_limit}'
+            base += f'->cum{cumulative_new}'
             if note:
                 base += f' ({note})'
             summary_parts.append(base)
