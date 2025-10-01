@@ -112,6 +112,19 @@ def detect_features_multipass(
     if clip and bpy is not None:
         existing_track_ids = {id(t) for t in clip.tracking.tracks}
 
+    def _ensure_tracking_mode():
+        """Versucht den Clip Editor in den TRACKING Modus zu versetzen, falls möglich."""
+        try:
+            if area and hasattr(area, 'spaces') and area.spaces:
+                space = area.spaces.active
+                # Manche Versionen haben space.mode für ClipEditor
+                if hasattr(space, 'mode'):
+                    # Nur setzen wenn nicht schon richtig
+                    if getattr(space, 'mode', None) != 'TRACKING':
+                        space.mode = 'TRACKING'
+        except Exception:  # noqa: BLE001
+            pass
+
     def apply_sizes(cur_pattern):
         """Setzt pattern/search size auf Basis cur_pattern."""
         if settings is None:
@@ -247,6 +260,7 @@ def detect_features_multipass(
                         is_duplicate = False
                     if is_duplicate:
                         try:
+                            _ensure_tracking_mode()
                             for tr in clip.tracking.tracks:
                                 try:
                                     tr.select = False
@@ -261,6 +275,7 @@ def detect_features_multipass(
                             except Exception:  # noqa: BLE001
                                 pass
                             try:
+                                _ensure_tracking_mode()
                                 bpy.ops.clip.delete_track()
                                 removed_immediately = True
                                 print(
@@ -372,6 +387,7 @@ def detect_features_multipass(
                         if not trk:
                             continue
                         try:
+                            _ensure_tracking_mode()
                             # Deselect all
                             for tr in clip.tracking.tracks:
                                 try:
@@ -387,6 +403,7 @@ def detect_features_multipass(
                             except Exception:  # noqa: BLE001
                                 pass
                             try:
+                                _ensure_tracking_mode()
                                 bpy.ops.clip.delete_track()
                             except TypeError:
                                 # Manche Versionen erwarten keinen speziellen Kontext
@@ -466,6 +483,7 @@ def detect_features_multipass(
                             if not trk:
                                 continue
                             try:
+                                _ensure_tracking_mode()
                                 for tr in clip.tracking.tracks:
                                     try:
                                         tr.select = False
@@ -480,6 +498,7 @@ def detect_features_multipass(
                                 except Exception:  # noqa: BLE001
                                     pass
                                 try:
+                                    _ensure_tracking_mode()
                                     bpy.ops.clip.delete_track()
                                 except TypeError:
                                     bpy.ops.clip.delete_track()
