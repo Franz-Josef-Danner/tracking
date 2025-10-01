@@ -5,6 +5,15 @@ except ImportError:  # außerhalb Blender
 
 import traceback
 
+# Minimal-Logging Modus: Nur noch pro Detect-Pass die Markeranzahl ausgeben.
+# Fuer Debugging kann VERBOSE_TRACKING_LOGS=True gesetzt werden.
+VERBOSE_TRACKING_LOGS = False
+
+def _vprint(*args, **kwargs):  # noqa: D401
+    """Interne Helferfunktion fuer optionale (Verbose) Ausgaben."""
+    if VERBOSE_TRACKING_LOGS:
+        print(*args, **kwargs)
+
 
 def find_clip_editor_area(context):
     for window in context.window_manager.windows:
@@ -77,7 +86,7 @@ def detect_features_multipass(
     if clip:
         try:
             w, h = clip.size
-            print(f"[TrackingHelper] Clip Breite (px): {w}")
+            _vprint(f"[TrackingHelper] Clip Breite (px): {w}")
             # Berechnung gemoaß Anforderung:
             # pattern_size = horizontale Aufloesung * 0.01
             pattern_size = max(3, int(round(w * 0.01)))
@@ -92,7 +101,7 @@ def detect_features_multipass(
                     settings.default_pattern_size = pattern_size
                 if hasattr(settings, 'default_search_size'):
                     settings.default_search_size = search_size
-                print(f"[TrackingHelper] Set pattern_size={pattern_size}, search_size={search_size}")
+                _vprint(f"[TrackingHelper] Set pattern_size={pattern_size}, search_size={search_size}")
         except Exception:  # noqa: BLE001
             pass
     tracks_before = len(clip.tracking.tracks) if clip else -1
@@ -312,7 +321,7 @@ def detect_features_multipass(
                                 _ensure_tracking_mode()
                                 bpy.ops.clip.delete_track()
                                 removed_immediately = True
-                                print(
+                                _vprint(
                                     f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} DUPLIKAT ENTFERNT '{t.name}' dist={nearest_dist_px} (immediate)"
                                 )
                                 continue
@@ -321,12 +330,12 @@ def detect_features_multipass(
                         except Exception:  # noqa: BLE001
                             removed_immediately = False
                 try:
-                    print(
+                    _vprint(
                         f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} NEUER TRACK '{safe_name}' "
                         f"frame={frame_used} pos_norm={marker_co_norm} pos_px={marker_px} nearest_px={nearest_dist_px} pattern={pattern_size} search={search_size}"
                     )
                 except UnicodeDecodeError as ue_print:  # should not happen now
-                    print(f"[TrackingHelper][WARN] Unicode problem beim Drucken eines Track-Namens: {ue_print}")
+                    _vprint(f"[TrackingHelper][WARN] Unicode problem beim Drucken eines Track-Namens: {ue_print}")
                 marker_logs.append({
                     'pass': pass_index,
                     'threshold': thr,
@@ -357,6 +366,12 @@ def detect_features_multipass(
                     added, note = run_detect(current, allow_param=False)
                     # Log erst nach Detect
                     log_new_tracks(passes + 1, current)
+                    # Minimaler Log-Eintrag: Markeranzahl nach diesem Pass
+                    try:
+                        total_markers_now = len(clip.tracking.tracks) if clip else 0
+                        print(f"[Detect] Pass {passes + 1} Marker={total_markers_now}")
+                    except Exception:  # noqa: BLE001
+                        pass
                     per_pass.append((current, added, note or 'kein threshold Param'))
                     passes = 1
                 else:
@@ -366,6 +381,11 @@ def detect_features_multipass(
                             apply_sizes(cur_pattern_progressive)
                         added, note = run_detect(current, allow_param=True)
                         log_new_tracks(passes + 1, current)
+                        try:
+                            total_markers_now = len(clip.tracking.tracks) if clip else 0
+                            print(f"[Detect] Pass {passes + 1} Marker={total_markers_now}")
+                        except Exception:  # noqa: BLE001
+                            pass
                         per_pass.append((current, added, note))
                         passes += 1
                         current *= factor
@@ -381,6 +401,11 @@ def detect_features_multipass(
                 # Verwende run_detect auch hier, um identisches Logging zu gewoahrleisten
                 added, note = run_detect(current, allow_param=False)
                 log_new_tracks(passes + 1, current)
+                try:
+                    total_markers_now = len(clip.tracking.tracks) if clip else 0
+                    print(f"[Detect] Pass {passes + 1} Marker={total_markers_now}")
+                except Exception:  # noqa: BLE001
+                    pass
                 per_pass.append((current, added, note or 'fallback ohne threshold'))
                 passes = 1
             else:
@@ -391,6 +416,11 @@ def detect_features_multipass(
                     try:
                         added, note = run_detect(current, allow_param=True)
                         log_new_tracks(passes + 1, current)
+                        try:
+                            total_markers_now = len(clip.tracking.tracks) if clip else 0
+                            print(f"[Detect] Pass {passes + 1} Marker={total_markers_now}")
+                        except Exception:  # noqa: BLE001
+                            pass
                         per_pass.append((current, added, note or 'fallback'))
                     except Exception:  # noqa: BLE001
                         per_pass.append((current, 0, 'fallback Fehler'))
@@ -458,11 +488,11 @@ def detect_features_multipass(
                     removed_list = _delete_list(candidates)
                 removed_track_names.update(removed_list)
                 if removed_track_names:
-                    print(
+                    _vprint(
                         f"[TrackingHelper] Entfernt {len(removed_track_names)} Tracks (Batch, tol={duplicate_tolerance_px}) : {sorted(removed_track_names)}"
                     )
                 else:
-                    print("[TrackingHelper] Batch-Loeschung: keine Tracks entfernt (evtl. Kontextproblem oder keine echten Duplikate)")
+                    _vprint("[TrackingHelper] Batch-Loeschung: keine Tracks entfernt (evtl. Kontextproblem oder keine echten Duplikate)")
 
         # Cluster-Konsolidierung (nach Duplikat-Phase), falls aktiviert
         cluster_removed = []
@@ -559,11 +589,11 @@ def detect_features_multipass(
                     'max_per_cluster': cluster_max_per_cluster,
                 }
                 if cluster_removed:
-                    print(
+                    _vprint(
                         f"[TrackingHelper] Cluster-Konsolidierung: entfernt {len(cluster_removed)} Tracks innerhalb Toleranz {cluster_tolerance_px}px (max_per_cluster={cluster_max_per_cluster})"
                     )
             except Exception as cl_err:  # noqa: BLE001
-                print(f"[TrackingHelper] Cluster-Konsolidierung Fehler: {cl_err}")
+                _vprint(f"[TrackingHelper] Cluster-Konsolidierung Fehler: {cl_err}")
     except Exception as e:  # noqa: BLE001
         tb = traceback.format_exc()
         return {
@@ -642,25 +672,26 @@ def detect_features_multipass(
     zero_ratio = (zero_count / len(distances_all)) if distances_all else None
 
     # Kurze Ausgabe zur Orientierung
-    try:
-        print(
-            f"[TrackingHelper] Distanz Statistik gesamt: count={distance_stats['count']} min={distance_stats['min']} max={distance_stats['max']} "
-            f"median={distance_stats['median']} mean={distance_stats['mean']}")
-        if distances_all:
-            print(
-                f"[TrackingHelper] Distanz Verteilung: zeros={zero_count} ({zero_ratio:.2%} ) >0={positive_count} min_pos={min_positive}"
-            )
-        # Zusatz: Gruende fuer fehlende Distanzen, falls Diskrepanz auffoallig
-        missing = [m for m in marker_logs if m.get('nearest_dist_px') is None and m['track_name'] not in removed_for_stats]
-        if missing:
-            reason_counter = {}
-            for m in missing:
-                r = m.get('no_distance_reason') or 'unknown'
-                reason_counter[r] = reason_counter.get(r, 0) + 1
-            reason_parts = ', '.join(f"{k}:{v}" for k, v in sorted(reason_counter.items()))
-            print(f"[TrackingHelper] Distanz fehlend fuer {len(missing)} Marker (Gruende: {reason_parts})")
-    except Exception:  # noqa: BLE001
-        pass
+    if VERBOSE_TRACKING_LOGS:
+        try:
+            _vprint(
+                f"[TrackingHelper] Distanz Statistik gesamt: count={distance_stats['count']} min={distance_stats['min']} max={distance_stats['max']} "
+                f"median={distance_stats['median']} mean={distance_stats['mean']}")
+            if distances_all:
+                _vprint(
+                    f"[TrackingHelper] Distanz Verteilung: zeros={zero_count} ({zero_ratio:.2%} ) >0={positive_count} min_pos={min_positive}"
+                )
+            # Zusatz: Gruende fuer fehlende Distanzen, falls Diskrepanz auffoallig
+            missing = [m for m in marker_logs if m.get('nearest_dist_px') is None and m['track_name'] not in removed_for_stats]
+            if missing:
+                reason_counter = {}
+                for m in missing:
+                    r = m.get('no_distance_reason') or 'unknown'
+                    reason_counter[r] = reason_counter.get(r, 0) + 1
+                reason_parts = ', '.join(f"{k}:{v}" for k, v in sorted(reason_counter.items()))
+                _vprint(f"[TrackingHelper] Distanz fehlend fuer {len(missing)} Marker (Gruende: {reason_parts})")
+        except Exception:  # noqa: BLE001
+            pass
 
     return {
         'success': True,
