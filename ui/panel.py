@@ -1,10 +1,11 @@
 import bpy
 
 class TRACKING_PT_tools_panel(bpy.types.Panel):
-    bl_label = "Tracking Tools"
+    bl_label = "Kaiserlich Tracker"
     bl_space_type = 'CLIP_EDITOR'
     bl_region_type = 'UI'
-    bl_category = 'Tracking'
+    # Tab-Name in der Sidebar (kurz halten)
+    bl_category = 'Kaiserlich'
 
     def draw(self, context):
         layout = self.layout

@@ -1,3 +1,7 @@
+# Kaiserlich Tracker
+
+Dieses Add-on ("Kaiserlich Tracker") bietet mehrstufiges Feature-Seeding, Duplikat-/Cluster-Bereinigung und künftige Zielsteuerung (Marker per Frame). Nachfolgend die konzeptionellen Notizen / Roadmap:
+
 0) Governance & KPIs
 
 Seeds & Namespaces: Trial/ROI-Prefix, deterministische Sample-Frames.

@@ -1,10 +1,10 @@
 bl_info = {
-    "name": "Tracking Marker Tools",
+    "name": "Kaiserlich Tracker",
     "author": "",
     "version": (0, 1, 0),
     "blender": (3, 0, 0),
-    "location": "Movie Clip Editor > Sidebar > Tracking",
-    "description": "Operator zum automatischen Setzen von Markern (detect features) und Button im UI",
+    "location": "Movie Clip Editor > Sidebar > Kaiserlich",
+    "description": "Kaiserlich Tracker: Mehrstufiges automatisches Marker-Detect & Konsolidierung.",
     "category": "Tracking",
 }
 
