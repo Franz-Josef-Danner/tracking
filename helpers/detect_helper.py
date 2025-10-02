@@ -36,7 +36,7 @@ def get_clip_from_area(area):
 def detect_features_multipass(
     context,
     start_threshold=1.0,
-    min_threshold=0.0001,
+    min_threshold=0.1,   # vorher 0.0001
     factor=0.5,
     max_passes=32,
     remove_duplicates=True,
@@ -404,7 +404,6 @@ def detect_features_multipass(
                             seen_signatures.add(sig)
                         pass_new_signatures.append(new_sigs_this_pass)
 
-                        # Marker-Steuerlogik
                         ctl_note = _apply_marker_control_and_maybe_modify(
                             note=note,
                             new_sigs=new_sigs_this_pass,
@@ -414,13 +413,9 @@ def detect_features_multipass(
                         )
                         if ctl_note:
                             note = (note + ' | ' + ctl_note) if note else ctl_note
-                        if marker_control and marker_control[-1].get('stopped'):
-                            stop_detect_loop = True
 
                         per_pass.append((current, added, note))
                         passes += 1
-                        if stop_detect_loop:
-                            break
                         current *= factor
                         if cur_pattern_progressive is not None:
                             cur_pattern_progressive *= 1.15
@@ -722,39 +717,48 @@ def detect_features_multipass(
 
 
 def _apply_marker_control_and_maybe_modify(note, new_sigs, passes_ref, threshold, marker_control):
-    """Hilfsfunktion für die Marker-Band-Logik.
+    """Marker-Band-Logik (rein beobachtend, kein Stopp).
 
-    Gibt einen Zusatz-Note-String zurück oder None.
+    Fügt einen Datensatz in marker_control ein:
+        pass, threshold, ef, za, ug, og, am, deviation, factor, in_band, reason, stopped(False)
+
+    Rückgabe: kurzer Note-String (ctl:band | ctl:dev factor=... | ctl:zero za=0 | ctl:empty am=0)
     """
     try:
         scene = bpy.context.scene if bpy and bpy.context else None
         if not scene or not hasattr(scene, 'marker_per_frame'):
             return None
+
         ef = max(0, int(scene.marker_per_frame))
         za = (ef * 4.0) / 14.0 if ef > 0 else 0.0
         ug = za * 0.9
         og = za * 1.1
         am = len(new_sigs)
+
         if za <= 0:
             factor_val = None
+            deviation = None
             in_band = False
             reason = 'za=0'
-            stopped = False
+            note_out = 'ctl:zero za=0'
         else:
+            deviation = ((am - za) / za) if za > 0 else None
             in_band = (am > ug) and (am < og)
-            if in_band:
+            if am <= 0:
+                factor_val = 0.0
+                reason = 'am=0'
+                note_out = 'ctl:empty am=0'
+            elif in_band:
                 factor_val = None
                 reason = 'band'
-                stopped = False
+                note_out = 'ctl:band'
             else:
+                # md / (za / am) == md * am / za
                 md = 100.0
-                if am <= 0:
-                    factor_val = 0.0
-                    reason = 'am=0'
-                else:
-                    factor_val = md / (za / am)  # = md * am / za
-                    reason = 'out_of_band'
-                stopped = False
+                factor_val = md * am / za
+                reason = 'out_of_band'
+                note_out = f'ctl:dev factor={factor_val:.2f}'
+
         marker_control.append({
             'pass': passes_ref,
             'threshold': threshold,
@@ -763,15 +767,12 @@ def _apply_marker_control_and_maybe_modify(note, new_sigs, passes_ref, threshold
             'ug': ug,
             'og': og,
             'am': am,
+            'deviation': deviation,          # relativer Fehler (am-za)/za
+            'factor': factor_val,            # Skalierungsfaktor-Idee
             'in_band': in_band,
-            'factor': factor_val,
-            'stopped': stopped,
             'reason': reason,
+            'stopped': False,                # bleibt für Kompatibilität
         })
-        if in_band:
-            return 'ctl:band'
-        if factor_val is not None:
-            return f'ctl:stop factor={factor_val:.2f}'
-        return f'ctl:stop {reason}'
+        return note_out
     except Exception as _err:  # noqa: BLE001
         return f'ctl:error {type(_err).__name__}'
