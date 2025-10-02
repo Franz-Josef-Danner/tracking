@@ -414,6 +414,131 @@ def detect_features_multipass(
                         while True:
                             added, note = run_detect(threshold_for_cycle, allow_param=True)
                             new_added_tracks = log_new_tracks(passes + 1, threshold_for_cycle)
+                            # --- Per-Pass Cleanup (Duplikate & Cluster) nur auf NEU erkannte Marker anwenden ---
+                            # Wir identifizieren neue Marker anhand pass_index==passes+1 in marker_logs.
+                            # Danach bestimmen wir neue Signaturen (bereinigt) für am.
+                            new_marker_names = set()
+                            if marker_logs:
+                                for mlog in marker_logs:
+                                    if mlog.get('pass') == passes + 1:
+                                        nm = mlog.get('track_name')
+                                        if nm:
+                                            new_marker_names.add(nm)
+
+                            # Duplikat-Entfernung lokal (vereinfachte Variante) basierend auf nearest_dist_px und duplicate_tolerance_px
+                            if remove_duplicates and not immediate_delete and clip and bpy is not None:
+                                try:
+                                    # Kandidaten nur aus neuen Markern
+                                    dup_candidates = []
+                                    for mlog in marker_logs:
+                                        if mlog.get('pass') != passes + 1:
+                                            continue
+                                        dist = mlog.get('nearest_dist_px')
+                                        nm = mlog.get('track_name')
+                                        if keep_first_marker and mlog is marker_logs[0]:
+                                            continue
+                                        if nm not in new_marker_names:
+                                            continue
+                                        if dist is None or (dist is not None and dist <= duplicate_tolerance_px):
+                                            dup_candidates.append(nm)
+                                    if dup_candidates:
+                                        def _delete_local(names):
+                                            removed_local = []
+                                            for nm in names:
+                                                trk = next((t for t in clip.tracking.tracks if t.name == nm), None)
+                                                if not trk:
+                                                    continue
+                                                try:
+                                                    for tr in clip.tracking.tracks:
+                                                        try: tr.select = False
+                                                        except Exception: pass
+                                                    try: trk.select = True
+                                                    except Exception: pass
+                                                    try: clip.tracking.tracks.active = trk  # type: ignore[attr-defined]
+                                                    except Exception: pass
+                                                    try: bpy.ops.clip.delete_track()
+                                                    except TypeError: bpy.ops.clip.delete_track()
+                                                    if not any(t.name == nm for t in clip.tracking.tracks):
+                                                        removed_local.append(nm)
+                                                except Exception:  # noqa: BLE001
+                                                    pass
+                                            return removed_local
+                                        try:
+                                            with context.temp_override(area=area, region=region):
+                                                _delete_local(dup_candidates)
+                                        except Exception:
+                                            _delete_local(dup_candidates)
+                                except Exception:  # noqa: BLE001
+                                    pass
+
+                            # Cluster-Konsolidierung lokal (optional) nur auf neue Marker
+                            if cluster_consolidate and clip and bpy is not None and cluster_tolerance_px > 0:
+                                try:
+                                    wloc, hloc = (w, h)
+                                    if wloc and hloc:
+                                        # Sammle Positionen der neuen Marker (noch existierende)
+                                        new_positions = []
+                                        for t in clip.tracking.tracks:
+                                            if t.name not in new_marker_names:
+                                                continue
+                                            marker_ref = None
+                                            cur_frame = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
+                                            if cur_frame is not None:
+                                                for mm in t.markers:
+                                                    if mm.frame == cur_frame:
+                                                        marker_ref = mm
+                                                        break
+                                            if marker_ref is None and len(t.markers) > 0:
+                                                marker_ref = t.markers[0]
+                                            if not marker_ref:
+                                                continue
+                                            co_norm = marker_ref.co
+                                            new_positions.append((t.name, co_norm[0]*wloc, co_norm[1]*hloc))
+                                        # Cluster bilden
+                                        tol2 = float(cluster_tolerance_px) ** 2
+                                        clusters_tmp = []
+                                        for nm, px, py in new_positions:
+                                            assigned = False
+                                            for c in clusters_tmp:
+                                                cx, cy = c['center']
+                                                if (px-cx)**2 + (py-cy)**2 <= tol2:
+                                                    c['members'].append((nm, px, py))
+                                                    assigned = True
+                                                    break
+                                            if not assigned:
+                                                clusters_tmp.append({'center': (px, py), 'members': [(nm, px, py)]})
+                                        to_remove_local = []
+                                        for c in clusters_tmp:
+                                            if len(c['members']) > cluster_max_per_cluster:
+                                                surplus = c['members'][cluster_max_per_cluster:]
+                                                to_remove_local.extend(n for (n, _, _) in surplus)
+                                        if to_remove_local:
+                                            def _delete_cluster(names):
+                                                for nm in names:
+                                                    trk = next((t for t in clip.tracking.tracks if t.name == nm), None)
+                                                    if not trk:
+                                                        continue
+                                                    try:
+                                                        for tr in clip.tracking.tracks:
+                                                            try: tr.select = False
+                                                            except Exception: pass
+                                                        try: trk.select = True
+                                                        except Exception: pass
+                                                        try: clip.tracking.tracks.active = trk  # type: ignore[attr-defined]
+                                                        except Exception: pass
+                                                        try: bpy.ops.clip.delete_track()
+                                                        except TypeError: bpy.ops.clip.delete_track()
+                                                    except Exception:  # noqa: BLE001
+                                                        pass
+                                            try:
+                                                with context.temp_override(area=area, region=region):
+                                                    _delete_cluster(to_remove_local)
+                                            except Exception:
+                                                _delete_cluster(to_remove_local)
+                                except Exception:  # noqa: BLE001
+                                    pass
+
+                            # Neu bereinigte neue Signaturen bestimmen
                             new_sigs_this_pass = []
                             if clip:
                                 for t in clip.tracking.tracks:
@@ -429,6 +554,7 @@ def detect_features_multipass(
                             else:
                                 zero_streak = 0
 
+                            # Bewertung NACH Cleanup
                             ctl_note = _apply_marker_control_and_maybe_modify(
                                 note=note,
                                 new_sigs=new_sigs_this_pass,
@@ -439,7 +565,6 @@ def detect_features_multipass(
                             if ctl_note:
                                 note = (note + ' | ' + ctl_note) if note else ctl_note
 
-                            # Letzten marker_control Eintrag inspizieren
                             last_mc = marker_control[-1] if marker_control else {}
                             in_band = last_mc.get('in_band')
                             am_val = last_mc.get('am')
@@ -492,15 +617,21 @@ def detect_features_multipass(
                             break
 
                         # Nächster Haupt-Threshold (außer adaptiv ändert ihn separat)
-                        if adaptive and marker_control:
+                        if marker_control:
                             last_mc2 = marker_control[-1]
                             fval = last_mc2.get('factor')
-                            if fval and last_mc2.get('za'):
+                            za_val = last_mc2.get('za')
+                            # Nutzung des Faktors auch wenn adaptive False ist:
+                            if fval and za_val:
                                 ratio = (fval / 100.0)
                                 try:
                                     import math as _math
-                                    adj = ratio ** adaptive_gain if ratio > 0 else 1.0
-                                    adj = max(0.25, min(2.5, adj))
+                                    # Wenn adaptive True: exponentielle Abschwaechung; sonst direkte Anwendung
+                                    if adaptive:
+                                        adj = ratio ** adaptive_gain if ratio > 0 else 1.0
+                                    else:
+                                        adj = ratio if ratio > 0 else 1.0
+                                    adj = max(0.1, min(5.0, adj))
                                     current *= (factor * adj)
                                 except Exception:  # noqa: BLE001
                                     current *= factor
