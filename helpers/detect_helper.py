@@ -395,6 +395,7 @@ def detect_features_multipass(
                 raise RuntimeError('bpy nicht verfuegbar')
             with context.temp_override(area=area, region=region):
                 if not has_threshold:
+                    # (Ein-Pass Modus) ...
                     # Set sizes fuer diesen Pass
                     apply_sizes(pattern_size)
                     # Vorher bekannte Signaturen merken
@@ -418,23 +419,83 @@ def detect_features_multipass(
                     while current >= min_threshold and passes < max_passes:
                         if cur_pattern_progressive is not None:
                             apply_sizes(cur_pattern_progressive)
-                        before_known = set(seen_signatures)
                         added, note = run_detect(current, allow_param=True)
                         log_new_tracks(passes + 1, current)
+
                         new_sigs_this_pass = []
                         if clip:
                             for t in clip.tracking.tracks:
                                 sig = _build_signature(t)
                                 if sig and sig not in seen_signatures and sig not in new_sigs_this_pass:
                                     new_sigs_this_pass.append(sig)
+
                         for sig in new_sigs_this_pass:
                             seen_signatures.add(sig)
-                        pass_new_signatures.append(new_sigs_this_pass)
+                        pass_index = passes + 1
+                        # --- NEU Steuerlogik anhand scene.marker_per_frame ---
+                        ctl_note = ''
+                        try:
+                            scene = bpy.context.scene if bpy and bpy.context else None
+                            if scene and hasattr(scene, 'marker_per_frame'):
+                                ef = max(0, int(scene.marker_per_frame))
+                                za = (ef * 4.0) / 14.0 if ef > 0 else 0.0
+                                ug = za * 0.9
+                                og = za * 1.1
+                                am = len(new_sigs_this_pass)
+                                in_band = (am > ug) and (am < og) if za > 0 else False
+                                factor_val = None
+                                stop_reason = None
+                                if za <= 0:
+                                    stop_reason = 'za=0'
+                                elif in_band:
+                                    ctl_note = 'ctl:band'
+                                else:
+                                    # Abweichung → Faktor berechnen und abbrechen
+                                    md = 100.0
+                                    # Schutz Division
+                                    if am <= 0:
+                                        factor_val = 0.0
+                                        stop_reason = 'am=0'
+                                    else:
+                                        factor_val = md / (za / am)  # md * am / za
+                                    stop_reason = stop_reason or 'out_of_band'
+                                    ctl_note = f'ctl:stop factor={factor_val:.2f}'
+                                marker_control.append({
+                                    'pass': pass_index,
+                                    'ef': ef,
+                                    'za': za,
+                                    'ug': ug,
+                                    'og': og,
+                                    'am': am,
+                                    'in_band': in_band,
+                                    'factor': factor_val,
+                                    'stopped': bool(stop_reason and not in_band),
+                                    'reason': stop_reason if stop_reason and not in_band else ('band' if in_band else None),
+                                })
+                                if ctl_note:
+                                    if note:
+                                        note = note + ' | ' + ctl_note
+                                    else:
+                                        note = ctl_note
+                                # Loop-Abbruch falls außerhalb Band
+                                if marker_control and marker_control[-1]['stopped']:
+                                    per_pass.append((current, added, note))
+                                    passes += 1
+                                    break
+                            # Ende Steuerlogik
+                        except Exception as _ctl_err:  # noqa: BLE001
+                            ctl_note = f'ctl:error {type(_ctl_err).__name__}'
+                            if note:
+                                note = note + ' | ' + ctl_note
+                            else:
+                                note = ctl_note
+
                         per_pass.append((current, added, note))
                         passes += 1
                         current *= factor
                         if cur_pattern_progressive is not None:
                             cur_pattern_progressive *= 1.15
+                    # Ende while
         except AttributeError:
             # Fallback ohne temp_override
             override = context.copy()
@@ -791,4 +852,5 @@ def detect_features_multipass(
         'cluster_removed_count': len(cluster_removed) if 'cluster_removed' in locals() else 0,
         'cluster_stats': cluster_info,
         'per_pass_new_counts': per_pass_new_counts,
+        'marker_control': marker_control,  # NEU
     }
