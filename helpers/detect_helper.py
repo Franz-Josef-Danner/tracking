@@ -43,13 +43,18 @@ def detect_features_multipass(
     keep_first_marker=True,
     immediate_delete=False,
     min_distance=120,
+    **_deprecated,
 ):
     """
     Mehrfaches Feature-Detect (Multi-Threshold) mit Band-Überwachung (ef->za) und
     vereinheitlichter Duplikatlogik.
 
     WICHTIG: Duplikatprüfung verwendet ab jetzt IMMER min_distance als Distanzgrenze.
-             (Parameter duplicate_tolerance_px & jede Cluster-Funktion wurden entfernt.)
+             (Parameter duplicate_tolerance_px & Cluster-Parameter wurden entfernt.)
+
+    Abwärtskompatibilität: Zusätzliche alte Parameter werden über **_deprecated
+    aufgenommen und ignoriert, damit alte Operator-Versionen keinen TypeError mehr
+    auslösen. Bei VERBOSE_TRACKING_LOGS wird einmalig ein Hinweis ausgegeben.
 
     Parameter:
         start_threshold (float)   – Start Threshold.
@@ -66,6 +71,11 @@ def detect_features_multipass(
         removed_duplicate_tracks / removed_duplicate_count
         per_pass, per_pass_new_counts, distance_stats, etc.
     """
+    if _deprecated and VERBOSE_TRACKING_LOGS:
+        try:
+            print("[detect_features_multipass] Ignoriere veraltete Parameter:", list(_deprecated.keys()))
+        except Exception:
+            pass
     marker_control = []
 
     area = find_clip_editor_area(context)
