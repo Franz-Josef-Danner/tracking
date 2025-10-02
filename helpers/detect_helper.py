@@ -40,9 +40,12 @@ def detect_features_multipass(
     factor=0.5,
     max_passes=32,
     remove_duplicates=True,
+    duplicate_tolerance_px=0.0,
     keep_first_marker=True,
     immediate_delete=False,
-    min_distance=120,
+    cluster_consolidate=False,
+    cluster_tolerance_px=2.0,
+    cluster_max_per_cluster=1,
 ):
     """
     Mehrfaches Feature-Detect (Multi-Threshold) mit Band-Überwachung (ef->za) und
