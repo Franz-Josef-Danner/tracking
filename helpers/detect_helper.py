@@ -210,20 +210,13 @@ def detect_features_multipass(
         return new_total - prev_count, note
 
     def log_new_tracks(pass_index, thr):
-        """Erfasst neu entstandene Tracks dieses Passes und loggt sie.
-
-        Rueckgabe: (count, [namen])
-        """
         if not (clip and bpy is not None):
-            return 0, []
+            return 0
         nonlocal existing_track_ids
-        try:
-            cur_ids = {id(t) for t in clip.tracking.tracks}
-        except Exception:  # noqa: BLE001
-            return 0, []
+        cur_ids = {id(t) for t in clip.tracking.tracks}
         new_ids = cur_ids - existing_track_ids
         if not new_ids:
-            return 0, []
+            return 0
         cur_frame = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
         existing_positions_px = []
         fallback_used = False
@@ -249,7 +242,6 @@ def detect_features_multipass(
             except Exception:  # noqa: BLE001
                 fallback_used = True
         count = 0
-        new_names = []
 
         def _safe_track_name(obj):
             try:
@@ -266,143 +258,106 @@ def detect_features_multipass(
             except Exception:  # noqa: BLE001
                 return 'TRACK_NAME_ERR:unknown'
 
-        for t in list(clip.tracking.tracks):
-            if id(t) not in new_ids:
-                continue
-            count += 1
-            try:
-                new_names.append(t.name)
-            except Exception:  # noqa: BLE001
-                pass
-            marker_co_norm = None
-            marker_px = None
-            frame_used = None
-            nearest_dist_px = None
-            replaced_name = False
-            safe_name = _safe_track_name(t)
-            try:
-                marker = None
-                if cur_frame is not None:
-                    for mm in t.markers:
-                        if mm.frame == cur_frame:
-                            marker = mm
-                            break
-                if marker is None and len(t.markers) > 0:
-                    marker = t.markers[0]
-                if marker is not None:
-                    marker_co_norm = tuple(marker.co)
-                    frame_used = marker.frame
-                    if w is not None and h is not None:
-                        marker_px = (marker_co_norm[0] * w, marker_co_norm[1] * h)
-                        if existing_positions_px:
-                            try:
-                                x, y = marker_px
-                                nearest_dist_px = min(
-                                    ((x - ex) ** 2 + (y - ey) ** 2) for ex, ey in existing_positions_px
-                                ) ** 0.5
-                            except Exception:  # noqa: BLE001
-                                nearest_dist_px = None
-                        existing_positions_px.append(marker_px)
-                if marker_logs and any(m['track_name'] == t.name for m in marker_logs):
-                    replaced_name = True
-            except Exception:  # noqa: BLE001
-                pass
+        for t in clip.tracking.tracks:
+            if id(t) in new_ids:
+                count += 1
+                marker_co_norm = None
+                marker_px = None
+                frame_used = None
+                nearest_dist_px = None
+                replaced_name = False
+                removed_immediately = False
+                safe_name = _safe_track_name(t)
+                try:
+                    marker = None
+                    if cur_frame is not None:
+                        for m in t.markers:
+                            if m.frame == cur_frame:
+                                marker = m
+                                break
+                    if marker is None and len(t.markers) > 0:
+                        marker = t.markers[0]
+                    if marker is not None:
+                        marker_co_norm = tuple(marker.co)
+                        frame_used = marker.frame
+                        if w is not None and h is not None:
+                            marker_px = (marker_co_norm[0] * w, marker_co_norm[1] * h)
+                            if existing_positions_px:
+                                try:
+                                    x, y = marker_px
+                                    nearest_dist_px = min(
+                                        ((x - ex) ** 2 + (y - ey) ** 2) for ex, ey in existing_positions_px
+                                    ) ** 0.5
+                                except Exception:  # noqa: BLE001
+                                    nearest_dist_px = None
+                            existing_positions_px.append(marker_px)
+                    if marker_logs and any(m['track_name'] == t.name for m in marker_logs):
+                        replaced_name = True
+                except Exception:  # noqa: BLE001
+                    pass
 
-            no_distance_reason = None
-            if nearest_dist_px is None:
-                if marker_px is None:
-                    no_distance_reason = 'no_marker_position'
-                elif not existing_positions_px or (len(existing_positions_px) == 1 and existing_positions_px[-1] == marker_px):
-                    no_distance_reason = 'no_reference_positions'
-                else:
-                    no_distance_reason = 'calc_error'
+                no_distance_reason = None
+                if nearest_dist_px is None:
+                    if marker_px is None:
+                        no_distance_reason = 'no_marker_position'
+                    elif not existing_positions_px or (
+                        len(existing_positions_px) == 1 and existing_positions_px[-1] == marker_px
+                    ):
+                        no_distance_reason = 'no_reference_positions'
+                    else:
+                        no_distance_reason = 'calc_error'
 
-            if immediate_delete and remove_duplicates:
-                is_duplicate = False
-                if nearest_dist_px is not None and nearest_dist_px <= duplicate_tolerance_px:
-                    is_duplicate = True
-                elif nearest_dist_px is None and existing_positions_px:
-                    is_duplicate = True
-                if keep_first_marker and not marker_logs:
+                if immediate_delete and remove_duplicates:
                     is_duplicate = False
-                if is_duplicate:
-                    try:
-                        _ensure_tracking_mode()
-                        for tr in clip.tracking.tracks:
-                            try:
-                                tr.select = False
-                            except Exception:  # noqa: BLE001
-                                pass
-                        try:
-                            t.select = True
-                        except Exception:  # noqa: BLE001
-                            pass
-                        try:
-                            clip.tracking.tracks.active = t  # type: ignore[attr-defined]
-                        except Exception:  # noqa: BLE001
-                            pass
+                    if nearest_dist_px is not None and nearest_dist_px <= duplicate_tolerance_px:
+                        is_duplicate = True
+                    elif nearest_dist_px is None and existing_positions_px:
+                        is_duplicate = True
+                    if is_duplicate and keep_first_marker and not marker_logs:
+                        is_duplicate = False
+                    if is_duplicate:
                         try:
                             _ensure_tracking_mode()
-                            bpy.ops.clip.delete_track()
-                            continue
+                            for tr in clip.tracking.tracks:
+                                try:
+                                    tr.select = False
+                                except Exception:  # noqa: BLE001
+                                    pass
+                            try:
+                                t.select = True
+                            except Exception:  # noqa: BLE001
+                                pass
+                            try:
+                                clip.tracking.tracks.active = t  # type: ignore[attr-defined]
+                            except Exception:  # noqa: BLE001
+                                pass
+                            try:
+                                _ensure_tracking_mode()
+                                bpy.ops.clip.delete_track()
+                                removed_immediately = True
+                                continue
+                            except Exception:  # noqa: BLE001
+                                removed_immediately = False
                         except Exception:  # noqa: BLE001
-                            pass
-                    except Exception:  # noqa: BLE001
-                        pass
+                            removed_immediately = False
 
-            marker_logs.append({
-                'pass': pass_index,
-                'threshold': thr,
-                'track_name': safe_name,
-                'frame': frame_used,
-                'pos_norm': marker_co_norm,
-                'pos_px': marker_px,
-                'nearest_dist_px': nearest_dist_px,
-                'pattern': pattern_size,
-                'search': search_size,
-                'distance_fallback': fallback_used,
-                'replaced_name': replaced_name,
-                'no_distance_reason': no_distance_reason,
-                'removed_immediately': False,
-            })
-
+                marker_logs.append({
+                    'pass': pass_index,
+                    'threshold': thr,
+                    'track_name': safe_name,
+                    'frame': frame_used,
+                    'pos_norm': marker_co_norm,
+                    'pos_px': marker_px,
+                    'nearest_dist_px': nearest_dist_px,
+                    'pattern': pattern_size,
+                    'search': search_size,
+                    'distance_fallback': fallback_used,
+                    'replaced_name': replaced_name,
+                    'no_distance_reason': no_distance_reason,
+                    'removed_immediately': removed_immediately,
+                })
         existing_track_ids.update(new_ids)
-        return count, new_names
-
-    def _delete_tracks_by_name(track_names):
-        """Loescht eine Liste von Track-Namen sofort im Clip (Best-Effort)."""
-        if not (clip and bpy is not None):
-            return []
-        removed_local = []
-        for nm in track_names:
-            trk = next((t for t in clip.tracking.tracks if t.name == nm), None)
-            if not trk:
-                continue
-            try:
-                _ensure_tracking_mode()
-                for tr in clip.tracking.tracks:
-                    try:
-                        tr.select = False
-                    except Exception:  # noqa: BLE001
-                        pass
-                try:
-                    trk.select = True
-                except Exception:  # noqa: BLE001
-                    pass
-                try:
-                    clip.tracking.tracks.active = trk  # type: ignore[attr-defined]
-                except Exception:  # noqa: BLE001
-                    pass
-                try:
-                    _ensure_tracking_mode()
-                    bpy.ops.clip.delete_track()
-                except TypeError:
-                    bpy.ops.clip.delete_track()
-                if not any(t.name == nm for t in clip.tracking.tracks):
-                    removed_local.append(nm)
-            except Exception:  # noqa: BLE001
-                pass
-        return removed_local
+        return count
 
     try:
         try:
@@ -438,7 +393,7 @@ def detect_features_multipass(
                         if cur_pattern_progressive is not None:
                             apply_sizes(cur_pattern_progressive)
                         added, note = run_detect(current, allow_param=True)
-                        new_count, new_names = log_new_tracks(passes + 1, current)
+                        log_new_tracks(passes + 1, current)
                         new_sigs_this_pass = []
                         if clip:
                             for t in clip.tracking.tracks:
@@ -448,37 +403,6 @@ def detect_features_multipass(
                         for sig in new_sigs_this_pass:
                             seen_signatures.add(sig)
                         pass_new_signatures.append(new_sigs_this_pass)
-                        # --- Neue Algorithmus-Steuerlogik nach erstem Durchlauf ---
-                        alg_note = None
-                        try:
-                            scene = bpy.context.scene if bpy and bpy.context else None
-                            if scene and hasattr(scene, 'marker_per_frame') and passes >= 1:  # nach erstem Pass
-                                ef_val = max(0, int(scene.marker_per_frame))
-                                if ef_val > 0:
-                                    za = (ef_val * 4.0) / 14.0
-                                    og = za * 1.1
-                                    ug = za * 0.9
-                                    am = new_count  # neue Marker dieses Passes
-                                    md = 100.0  # min_distance Konstant gem. Vorgabe
-                                    # Faktor-Berechnung (md / (za / am)) = md * am / za
-                                    factor_formula = (md * am / za) if za > 0 and am > 0 else None
-                                    if am > ug:
-                                        if am < og:
-                                            # In Band -> Threshold stark reduzieren fuer naechsten Pass
-                                            current *= 0.15
-                                            alg_note = f'alg:band thr*0.15 am={am} ug={ug:.2f} og={og:.2f}'
-                                        else:
-                                            # Zu viele -> neue Marker verwerfen
-                                            removed_now = _delete_tracks_by_name(new_names)
-                                            alg_note = f'alg:too_many removed={len(removed_now)} am={am} og>=' + f'{og:.2f}'
-                                    else:
-                                        # Zu wenige -> neue Marker verwerfen
-                                        removed_now = _delete_tracks_by_name(new_names)
-                                        alg_note = f'alg:too_few removed={len(removed_now)} am={am} ug<=' + f'{ug:.2f}'
-                                    if factor_formula is not None:
-                                        alg_note = (alg_note + f' factor={factor_formula:.2f}') if alg_note else f'factor={factor_formula:.2f}'
-                        except Exception as _alg_err:  # noqa: BLE001
-                            alg_note = f'alg:error {type(_alg_err).__name__}'
 
                         ctl_note = _apply_marker_control_and_maybe_modify(
                             note=note,
@@ -489,19 +413,10 @@ def detect_features_multipass(
                         )
                         if ctl_note:
                             note = (note + ' | ' + ctl_note) if note else ctl_note
-                        if alg_note:
-                            note = (note + ' | ' + alg_note) if note else alg_note
 
                         per_pass.append((current, added, note))
                         passes += 1
-                        # Nur alte Faktor-Logik, falls Algorithmus nicht aktiv war (kein ef gesetzt oder erster Pass)
-                        try:
-                            scene = bpy.context.scene if bpy and bpy.context else None
-                            ef_val_check = (scene.marker_per_frame if scene and hasattr(scene, 'marker_per_frame') else 0)
-                            if not (scene and hasattr(scene, 'marker_per_frame') and int(ef_val_check) > 0 and passes >= 1):
-                                current *= factor
-                        except Exception:  # noqa: BLE001
-                            current *= factor
+                        current *= factor
                         if cur_pattern_progressive is not None:
                             cur_pattern_progressive *= 1.15
         except AttributeError:
