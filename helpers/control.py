@@ -1,12 +1,22 @@
 from .delete import delete_marker
 
 
-def control_cycle(context, nm_list, values, restart_callback):
+def _clamp_md(md):
+    # Begrenze md um Überlauf/Unsinn zu verhindern
+    return max(2, min(int(md), 2048))
+
+
+def control_cycle(context, nm_list, values):
     """Kontrolllogik für Anzahl der Marker.
 
-    Rückgabe: True falls Restart initiiert, False falls abgeschlossen.
+    Rückgabe: String Aktion:
+      'done'   -> Fertig
+      'retry'  -> Parameter geändert, erneuter Detect nötig
+      'repeat' -> Parameter geändert, neu erkannte Marker wurden gelöscht und Detect nötig
     """
-    am = len(nm_list)
+    # Nur aktive Marker zählen
+    active_nm = [m for m in nm_list if not getattr(m, 'mute', False)]
+    am = len(active_nm)
     ug = values['ug']
     og = values['og']
     za = values['za']
@@ -15,29 +25,32 @@ def control_cycle(context, nm_list, values, restart_callback):
     # Fertig?
     if ug <= am <= og:
         print('[Kaiserlich][control] Cycle finished (Toleranz erfüllt)')
-        return False
+        return 'done'
 
     # Zu wenige Marker
     if am < ug:
         values['tr'] *= 0.5
         if values['tr'] < 0.1:
             print('[Kaiserlich][control] Cycle finished (threshold zu niedrig)')
-            return False
+            return 'done'
         # Größeres Pattern probieren
         values['pz'] *= 1.1
         values['sz'] = values['pz'] * 2
         print(f'[Kaiserlich][control] Retry: tr={values["tr"]:.3f} pz={values["pz"]:.2f}')
-        restart_callback()
-        return True
+        return 'retry'
 
     # Zu viele Marker
     if am > og:
-        md_adj = values['md'] / (za / am) if za > 0 else values['md'] * 1.2
-        values['md'] = md_adj
-        print(f'[Kaiserlich][control] Too many markers → md adjusted = {md_adj:.2f}. Lösche neue Marker und restart.')
-        for marker in nm_list:
+        # Verhältnis: wir wollen ungefähr za Marker -> skaliere md proportional
+        if am > 0:
+            scale = am / za if za > 0 else 1.5
+            md_adj = values['md'] * scale
+        else:
+            md_adj = values['md'] * 1.5
+        values['md'] = _clamp_md(md_adj)
+        print(f'[Kaiserlich][control] Too many markers → md adjusted = {values["md"]}. Lösche neue Marker und restart.')
+        for marker in active_nm:
             delete_marker(marker)
-        restart_callback()
-        return True
+        return 'repeat'
 
-    return False
+    return 'done'
