@@ -48,8 +48,8 @@ def detect_cyclus(context, max_cycles: int = 15):
         total_after_cleanup = len(after_cleanup_all)
         removed = raw_total - total_after_cleanup
 
-        # Neu entstandene Tracks (Feature-Detect erstellt i.d.R. neue Tracks pro Marker)
-        post_tracks = [t for t in clip.tracking.tracks]
+        # Neu entstandene Tracks (Info-Zweck)
+        post_tracks = list(clip.tracking.tracks)
         new_tracks = [t for t in post_tracks if t.name not in pre_track_names]
 
         # Neu entstandene Marker (nur zur Info)
@@ -61,7 +61,7 @@ def detect_cyclus(context, max_cycles: int = 15):
             f"Kaiserlich Tracker: Zyklus {cycle} – Roh +{raw_added} | entfernt {removed} | neu {new_count} | total {candidate_total}"
         )
 
-        status = control_cycle(context, clip, new_tracks, candidate_total, values)
+        status = control_cycle(context, clip, pre_track_names, candidate_total, values, new_tracks)
 
         if status == STOP:
             print(
@@ -85,23 +85,30 @@ def detect_cyclus(context, max_cycles: int = 15):
         print(f"Kaiserlich Tracker: Abbruch nach max_cycles={max_cycles} ohne Stabilisierung.")
 
 
-def control_cycle(context, clip, new_tracks, candidate_total, values):
-    """Bewertet Gesamtmarkerzahl; löscht bei Abweichung komplette neu entstandene Tracks.
-
-    Rückgabe: STOP | RETRY_FEW | RETRY_MANY
-    """
+def control_cycle(context, clip, pre_track_names, candidate_total, values, new_tracks):
+    """Bewertet Gesamtmarkerzahl; bei Abweichung werden alle seit Zyklus-Beginn
+    entstandenen Tracks entfernt (Rollback auf pre_track_names)."""
     ug = values["ug"]
     og = values["og"]
 
     if ug <= candidate_total <= og:
         return STOP
 
-    # Neue Tracks verwerfen
-    for tr in new_tracks:
+    # Rollback: Alle Tracks löschen, die nicht in pre_track_names waren
+    current_tracks = list(clip.tracking.tracks)
+    to_remove = [t for t in current_tracks if t.name not in pre_track_names]
+    removed_names = []
+    for tr in to_remove:
         try:
+            removed_names.append(tr.name)
             clip.tracking.tracks.remove(tr)
         except Exception:
             pass
+    if removed_names:
+        print(f"Kaiserlich Tracker: Rollback – entfernte Tracks: {len(removed_names)} ({', '.join(removed_names[:6])}{'...' if len(removed_names)>6 else ''})")
+    else:
+        # Debug-Hinweis, falls nichts gefunden wurde
+        print("Kaiserlich Tracker: Rollback – keine neuen Tracks identifiziert (Namensgleichheit?).")
 
     if candidate_total < ug:
         values["tr"] *= 0.5
