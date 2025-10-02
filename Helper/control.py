@@ -16,13 +16,18 @@ def detect_cyclus(context, max_cycles: int = 15):
     max_cycles: Sicherheitsgrenze gegen endlose Schleifen.
     """
     values = bootstrap(context)
+    print(
+        f"Kaiserlich Tracker: Zielkorridor initialisiert – Untergrenze (ug)={values['ug']:.1f}, Ziel (za)={values['za']:.1f}, Obergrenze (og)={values['og']:.1f}"
+    )
     cycle = 0
     while cycle < max_cycles:
         cycle += 1
         lm = snapshot(context)  # Marker vor neuem Detect
         prev_count = len(lm)
 
-        print(f"Kaiserlich Tracker: Zyklus {cycle} – Start: {prev_count} Marker (ug={values['ug']:.1f}, za={values['za']:.1f}, og={values['og']:.1f})")
+        print(
+            f"Kaiserlich Tracker: Zyklus {cycle} – Start: {prev_count} Marker | Untergrenze={values['ug']:.1f} Ziel={values['za']:.1f} Obergrenze={values['og']:.1f}"
+        )
 
         # Feature Detection
         detect_features(context, values)
@@ -47,13 +52,19 @@ def detect_cyclus(context, max_cycles: int = 15):
 
         status = control_cycle(context, nm_final, values)
         if status == STOP:
-            print(f"Kaiserlich Tracker: Finished nach {cycle} Zyklen mit {final_count} Markern")
+            print(
+                f"Kaiserlich Tracker: Finished nach {cycle} Zyklen mit {final_count} Markern (ug={values['ug']:.1f} ≤ {final_count} ≤ og={values['og']:.1f})"
+            )
             break
         elif status == RETRY_TOO_FEW:
-            print("Kaiserlich Tracker: Zu wenige Marker – Parameter angepasst, nächster Zyklus...")
+            print(
+                f"Kaiserlich Tracker: Zu wenige Marker ({final_count} < ug={values['ug']:.1f}) – threshold abgesenkt auf {values['tr']:.3f}, nächster Zyklus..."
+            )
             continue
         elif status == RETRY_TOO_MANY:
-            print("Kaiserlich Tracker: Zu viele Marker – Mindestabstand erhöht, nächster Zyklus...")
+            print(
+                f"Kaiserlich Tracker: Zu viele Marker ({final_count} > og={values['og']:.1f}) – Mindestabstand erhöht auf {values['md']:.1f}, nächster Zyklus..."
+            )
             continue
         else:
             print(f"Kaiserlich Tracker: Unbekannter Status '{status}', Abbruch.")
