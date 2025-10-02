@@ -53,6 +53,10 @@ def detect_features_multipass(
     max_time_seconds=None,         # Abbruch nach Zeitbudget (float Sekunden)
     progress_callback=None,        # optional callable(dict) pro Pass
     early_stop_on_band=False,      # wenn in Band (marker_per_frame), Schleife abbrechen
+    # --- Neue Wiederholungslogik pro Threshold ---
+    repeat_until_band=False,       # Gleichen Threshold (mit feiner Absenkung) mehrfach versuchen bis Band erreicht
+    max_repeats_per_threshold=5,   # Maximale Zusatz-Wiederholungen pro Threshold
+    repeat_threshold_decay=0.9,    # Multiplikator für Threshold bei Wiederholung (nur innerhalb gleicher Stufe)
 ):
     """Fuehrt mehrfache Feature-Erkennung aus (Multi-Threshold) und steuert optional über scene.marker_per_frame.
 
@@ -403,77 +407,99 @@ def detect_features_multipass(
                     while current >= min_threshold and passes < max_passes:
                         if cur_pattern_progressive is not None:
                             apply_sizes(cur_pattern_progressive)
-                        added, note = run_detect(current, allow_param=True)
-                        new_added_tracks = log_new_tracks(passes + 1, current)
-                        new_sigs_this_pass = []
-                        if clip:
-                            for t in clip.tracking.tracks:
-                                sig = _build_signature(t)
-                                if sig and sig not in seen_signatures and sig not in new_sigs_this_pass:
-                                    new_sigs_this_pass.append(sig)
-                        for sig in new_sigs_this_pass:
-                            seen_signatures.add(sig)
-                        pass_new_signatures.append(new_sigs_this_pass)
-                        new_count_effective = len(new_sigs_this_pass)
-                        if new_count_effective == 0:
-                            zero_streak += 1
-                        else:
-                            zero_streak = 0
+                        # Innere Wiederholungen für identischen Threshold bis Band erreicht (optional)
+                        inner_repeat_index = 0
+                        proceed_to_next_threshold = False
+                        threshold_for_cycle = current
+                        while True:
+                            added, note = run_detect(threshold_for_cycle, allow_param=True)
+                            new_added_tracks = log_new_tracks(passes + 1, threshold_for_cycle)
+                            new_sigs_this_pass = []
+                            if clip:
+                                for t in clip.tracking.tracks:
+                                    sig = _build_signature(t)
+                                    if sig and sig not in seen_signatures and sig not in new_sigs_this_pass:
+                                        new_sigs_this_pass.append(sig)
+                            for sig in new_sigs_this_pass:
+                                seen_signatures.add(sig)
+                            pass_new_signatures.append(new_sigs_this_pass)
+                            new_count_effective = len(new_sigs_this_pass)
+                            if new_count_effective == 0:
+                                zero_streak += 1
+                            else:
+                                zero_streak = 0
 
-                        ctl_note = _apply_marker_control_and_maybe_modify(
-                            note=note,
-                            new_sigs=new_sigs_this_pass,
-                            passes_ref=passes + 1,
-                            threshold=current,
-                            marker_control=marker_control
-                        )
-                        if ctl_note:
-                            note = (note + ' | ' + ctl_note) if note else ctl_note
-                        # Progress Callback (nicht-blockierend)
-                        if callable(progress_callback):
-                            try:
-                                progress_callback({
-                                    'pass': passes + 1,
-                                    'threshold': current,
-                                    'added_raw': added,
-                                    'added_new_unique': new_count_effective,
-                                    'note': note,
-                                    'zero_streak': zero_streak,
-                                    'time_elapsed': _time.time() - start_time,
-                                })
-                            except Exception:  # noqa: BLE001
-                                pass
+                            ctl_note = _apply_marker_control_and_maybe_modify(
+                                note=note,
+                                new_sigs=new_sigs_this_pass,
+                                passes_ref=passes + 1,
+                                threshold=threshold_for_cycle,
+                                marker_control=marker_control
+                            )
+                            if ctl_note:
+                                note = (note + ' | ' + ctl_note) if note else ctl_note
 
-                        per_pass.append((current, added, note))
-                        passes += 1
+                            # Letzten marker_control Eintrag inspizieren
+                            last_mc = marker_control[-1] if marker_control else {}
+                            in_band = last_mc.get('in_band')
+                            am_val = last_mc.get('am')
 
-                        # Abbruchkriterien prüfen
-                        if max_time_seconds is not None:
-                            if (_time.time() - start_time) >= max_time_seconds:
+                            if callable(progress_callback):
+                                try:
+                                    progress_callback({
+                                        'pass': passes + 1,
+                                        'threshold': threshold_for_cycle,
+                                        'added_raw': added,
+                                        'added_new_unique': new_count_effective,
+                                        'note': note,
+                                        'zero_streak': zero_streak,
+                                        'time_elapsed': _time.time() - start_time,
+                                        'repeat_index': inner_repeat_index,
+                                        'in_band': in_band,
+                                        'am': am_val,
+                                    })
+                                except Exception:  # noqa: BLE001
+                                    pass
+
+                            per_pass.append((threshold_for_cycle, added, note))
+                            passes += 1
+
+                            # Abbruchkriterien global
+                            if max_time_seconds is not None and (_time.time() - start_time) >= max_time_seconds:
                                 stop_reason = 'time_limit'
+                                proceed_to_next_threshold = True
                                 break
-                        if stop_if_no_new > 0 and zero_streak >= stop_if_no_new:
-                            stop_reason = 'no_new'
-                            break
-                        if early_stop_on_band and marker_control:
-                            last_mc = marker_control[-1]
-                            if last_mc.get('in_band') and last_mc.get('am', 0) > 0:
+                            if stop_if_no_new > 0 and zero_streak >= stop_if_no_new:
+                                stop_reason = 'no_new'
+                                proceed_to_next_threshold = True
+                                break
+                            if early_stop_on_band and in_band and am_val and am_val > 0:
                                 stop_reason = 'in_band'
+                                proceed_to_next_threshold = True
                                 break
 
-                        # Adaptiver Faktor/Threshold
+                            # Innere Wiederholungslogik
+                            if repeat_until_band and not in_band and inner_repeat_index < max_repeats_per_threshold:
+                                # Leicht tieferen Threshold probieren
+                                threshold_for_cycle *= repeat_threshold_decay
+                                inner_repeat_index += 1
+                                continue
+                            # Band erreicht oder keine Wiederholung mehr => zum nächsten Threshold wechseln
+                            break
+
+                        # Wenn globaler Abbruch ausgelöst wurde, Schleife beenden
+                        if stop_reason:
+                            break
+
+                        # Nächster Haupt-Threshold (außer adaptiv ändert ihn separat)
                         if adaptive and marker_control:
-                            last_mc = marker_control[-1]
-                            # factor_val ~ (md * am / za), siehe Original; hier normalisieren wir grob auf 1
-                            fval = last_mc.get('factor')
-                            if fval and last_mc.get('za'):
-                                # Normalisierung: fval ~ (md * am / za) mit md=100 => am/za * 100
+                            last_mc2 = marker_control[-1]
+                            fval = last_mc2.get('factor')
+                            if fval and last_mc2.get('za'):
                                 ratio = (fval / 100.0)
-                                # Ziel ratio ~= 1 => Multiplikator Richtung ratio^-gain (wenn ratio >1 -> threshold schneller runter)
                                 try:
                                     import math as _math
                                     adj = ratio ** adaptive_gain if ratio > 0 else 1.0
-                                    # Begrenzen
                                     adj = max(0.25, min(2.5, adj))
                                     current *= (factor * adj)
                                 except Exception:  # noqa: BLE001
