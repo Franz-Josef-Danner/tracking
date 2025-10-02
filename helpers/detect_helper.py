@@ -46,6 +46,13 @@ def detect_features_multipass(
     cluster_consolidate=False,
     cluster_tolerance_px=2.0,
     cluster_max_per_cluster=1,
+    # --- Erweiterungen ---
+    adaptive=False,                # adaptiver Threshold/Faktor auf Basis marker_per_frame
+    adaptive_gain=0.5,             # 0..1 (hoeher = aggressivere Anpassung)
+    stop_if_no_new=0,              # >0: Abbruch nach so vielen aufeinanderfolgenden Passes ohne neue Marker
+    max_time_seconds=None,         # Abbruch nach Zeitbudget (float Sekunden)
+    progress_callback=None,        # optional callable(dict) pro Pass
+    early_stop_on_band=False,      # wenn in Band (marker_per_frame), Schleife abbrechen
 ):
     """Fuehrt mehrfache Feature-Erkennung aus (Multi-Threshold) und steuert optional über scene.marker_per_frame.
 
@@ -389,11 +396,15 @@ def detect_features_multipass(
                 else:
                     cur_pattern_progressive = float(pattern_size) if pattern_size else None
                     stop_detect_loop = False
+                    import time as _time  # lokale, um bei Nicht-Blender Tests nicht global zu stören
+                    start_time = _time.time()
+                    zero_streak = 0
+                    stop_reason = None
                     while current >= min_threshold and passes < max_passes:
                         if cur_pattern_progressive is not None:
                             apply_sizes(cur_pattern_progressive)
                         added, note = run_detect(current, allow_param=True)
-                        log_new_tracks(passes + 1, current)
+                        new_added_tracks = log_new_tracks(passes + 1, current)
                         new_sigs_this_pass = []
                         if clip:
                             for t in clip.tracking.tracks:
@@ -403,6 +414,11 @@ def detect_features_multipass(
                         for sig in new_sigs_this_pass:
                             seen_signatures.add(sig)
                         pass_new_signatures.append(new_sigs_this_pass)
+                        new_count_effective = len(new_sigs_this_pass)
+                        if new_count_effective == 0:
+                            zero_streak += 1
+                        else:
+                            zero_streak = 0
 
                         ctl_note = _apply_marker_control_and_maybe_modify(
                             note=note,
@@ -413,12 +429,68 @@ def detect_features_multipass(
                         )
                         if ctl_note:
                             note = (note + ' | ' + ctl_note) if note else ctl_note
+                        # Progress Callback (nicht-blockierend)
+                        if callable(progress_callback):
+                            try:
+                                progress_callback({
+                                    'pass': passes + 1,
+                                    'threshold': current,
+                                    'added_raw': added,
+                                    'added_new_unique': new_count_effective,
+                                    'note': note,
+                                    'zero_streak': zero_streak,
+                                    'time_elapsed': _time.time() - start_time,
+                                })
+                            except Exception:  # noqa: BLE001
+                                pass
 
                         per_pass.append((current, added, note))
                         passes += 1
-                        current *= factor
+
+                        # Abbruchkriterien prüfen
+                        if max_time_seconds is not None:
+                            if (_time.time() - start_time) >= max_time_seconds:
+                                stop_reason = 'time_limit'
+                                break
+                        if stop_if_no_new > 0 and zero_streak >= stop_if_no_new:
+                            stop_reason = 'no_new'
+                            break
+                        if early_stop_on_band and marker_control:
+                            last_mc = marker_control[-1]
+                            if last_mc.get('in_band') and last_mc.get('am', 0) > 0:
+                                stop_reason = 'in_band'
+                                break
+
+                        # Adaptiver Faktor/Threshold
+                        if adaptive and marker_control:
+                            last_mc = marker_control[-1]
+                            # factor_val ~ (md * am / za), siehe Original; hier normalisieren wir grob auf 1
+                            fval = last_mc.get('factor')
+                            if fval and last_mc.get('za'):
+                                # Normalisierung: fval ~ (md * am / za) mit md=100 => am/za * 100
+                                ratio = (fval / 100.0)
+                                # Ziel ratio ~= 1 => Multiplikator Richtung ratio^-gain (wenn ratio >1 -> threshold schneller runter)
+                                try:
+                                    import math as _math
+                                    adj = ratio ** adaptive_gain if ratio > 0 else 1.0
+                                    # Begrenzen
+                                    adj = max(0.25, min(2.5, adj))
+                                    current *= (factor * adj)
+                                except Exception:  # noqa: BLE001
+                                    current *= factor
+                            else:
+                                current *= factor
+                        else:
+                            current *= factor
+
                         if cur_pattern_progressive is not None:
                             cur_pattern_progressive *= 1.15
+                    # stop_reason in Ergebnis speichern (spaeter im return)
+                    if stop_reason:
+                        try:
+                            per_pass.append(('__STOP_REASON__', 0, stop_reason))
+                        except Exception:  # noqa: BLE001
+                            pass
         except AttributeError:
             # Fallback ohne temp_override (Minimalvariante—Steuerlogik kann hier bei Bedarf nachgezogen werden)
             override = context.copy()
@@ -440,13 +512,17 @@ def detect_features_multipass(
                 per_pass.append((current, added, note or 'fallback ohne threshold'))
                 passes = 1
             else:
+                import time as _time
+                start_time = _time.time()
                 cur_pattern_progressive = float(pattern_size) if pattern_size else None
+                zero_streak = 0
+                stop_reason = None
                 while current >= min_threshold and passes < max_passes:
                     if cur_pattern_progressive is not None:
                         apply_sizes(cur_pattern_progressive)
                     try:
                         added, note = run_detect(current, allow_param=True)
-                        log_new_tracks(passes + 1, current)
+                        new_added_tracks = log_new_tracks(passes + 1, current)
                         new_sigs_this_pass = []
                         if clip:
                             for t in clip.tracking.tracks:
@@ -456,14 +532,31 @@ def detect_features_multipass(
                         for sig in new_sigs_this_pass:
                             seen_signatures.add(sig)
                         pass_new_signatures.append(new_sigs_this_pass)
+                        new_count_effective = len(new_sigs_this_pass)
+                        if new_count_effective == 0:
+                            zero_streak += 1
+                        else:
+                            zero_streak = 0
                         per_pass.append((current, added, note or 'fallback'))
+                        # Abbruchkriterien Fallback
+                        if max_time_seconds is not None and (_time.time() - start_time) >= max_time_seconds:
+                            stop_reason = 'time_limit'
+                            break
+                        if stop_if_no_new > 0 and zero_streak >= stop_if_no_new:
+                            stop_reason = 'no_new'
+                            break
                     except Exception:  # noqa: BLE001
                         per_pass.append((current, 0, 'fallback Fehler'))
                         break
                     passes += 1
-                    current *= factor
+                    current *= factor  # Fallback ohne Adaptive Logik
                     if cur_pattern_progressive is not None:
                         cur_pattern_progressive *= 1.5
+                if stop_reason:
+                    try:
+                        per_pass.append(('__STOP_REASON__', 0, stop_reason))
+                    except Exception:  # noqa: BLE001
+                        pass
 
         # (Rest des Originals: Duplikat-Entfernung, Cluster-Konsolidierung, Statistiken etc.)
         removed_track_names = set()
@@ -713,6 +806,7 @@ def detect_features_multipass(
         'cluster_stats': cluster_info,
         'per_pass_new_counts': per_pass_new_counts,
         'marker_control': marker_control,
+        'adaptive': adaptive,
     }
 
 
