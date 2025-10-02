@@ -46,7 +46,6 @@ def detect_features_multipass(
     cluster_consolidate=False,
     cluster_tolerance_px=2.0,
     cluster_max_per_cluster=1,
-    min_distance=100,  # NEU: Standard-Abstand fuer Duplikat-/Detect-Steuerung
 ):
     """
     Mehrfaches Feature-Detect (Multi-Threshold) mit Band-Überwachung (ef->za) und
@@ -63,7 +62,7 @@ def detect_features_multipass(
         remove_duplicates (bool)  – Am Ende (oder sofort bei immediate_delete) doppelte Marker löschen.
         keep_first_marker (bool)  – Ersten jemals gefundenen Marker nie als Duplikat löschen.
         immediate_delete (bool)   – Duplikate sofort beim Entstehen löschen.
-    min_distance (int/float)  – (Default 100) Wird an bpy.ops.clip.detect_features übergeben UND als Duplikatgrenze genutzt.
+        min_distance (int/float)  – Wird an bpy.ops.clip.detect_features übergeben UND als Duplikatgrenze genutzt.
 
     Rückgabe enthält u.a.:
         marker_control  – Band-Telemetrie je Pass.
@@ -153,6 +152,7 @@ def detect_features_multipass(
                     space.mode = 'TRACKING'
         except Exception:
             pass
+
     def apply_sizes(cur_pattern):
         if settings is None:
             return
@@ -366,7 +366,7 @@ def detect_features_multipass(
                 if not has_threshold:
                     # (Unverändert – Ein-Pass Modus)
                     apply_sizes(pattern_size)
-                    added, note = run_detect(current, allow_param=False, md=min_distance)
+                    added, note = run_detect(current, allow_param=False)
                     log_new_tracks(1, current)
                     new_sigs_this_pass = []
                     if clip:
@@ -402,7 +402,8 @@ def detect_features_multipass(
                             if clip and bpy is not None:
                                 pre_track_names = {t.name for t in clip.tracking.tracks}
 
-                            # Logging mit neuem Pass-Index (added/note bereits gesetzt)
+                            added, note = run_detect(current, allow_param=True)
+                            # Logging mit neuem Pass-Index
                             pass_index = passes + 1
                             log_new_tracks(pass_index, current)
 
@@ -503,7 +504,7 @@ def detect_features_multipass(
             # (Optional könntest du hier die gleiche Retry-Logik nachziehen.)
             if not has_threshold:
                 apply_sizes(pattern_size)
-                added, note = run_detect(current, allow_param=False, md=min_distance)
+                added, note = run_detect(current, allow_param=False)
                 log_new_tracks(1, current)
                 new_sigs_this_pass = []
                 if clip:
@@ -522,7 +523,7 @@ def detect_features_multipass(
                     if cur_pattern_progressive is not None:
                         apply_sizes(cur_pattern_progressive)
                     try:
-                        added, note = run_detect(current, allow_param=True, md=min_distance)
+                        added, note = run_detect(current, allow_param=True)
                         log_new_tracks(passes + 1, current)
                         new_sigs_this_pass = []
                         if clip:
