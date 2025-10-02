@@ -47,23 +47,33 @@ def detect_features_multipass(
     cluster_tolerance_px=2.0,
     cluster_max_per_cluster=1,
 ):
-    """Fuehrt mehrfache Feature-Erkennung aus.
-    Returns: dict(...)
+    """Fuehrt mehrfache Feature-Erkennung aus (Multi-Threshold) und steuert optional über scene.marker_per_frame.
+
+    Rückgabe enthält Diagnose- und Kontroll-Daten (marker_control) mit Feldern:
+        pass, ef, za, ug, og, am, in_band, factor, stopped, reason
     """
-    # --- Vorhandene Initialisierungen (area, region, clip, pattern_size, etc.) ---
+    # Sicherstellen: marker_control immer vorhanden
+    marker_control = []
+
     area = find_clip_editor_area(context)
     if area is None:
         return {
             'success': False,
             'message': 'Kein Movie Clip Editor Bereich gefunden (oeffne einen Clip Editor).',
-            'marker_control': [],  # konsistent zurückgeben
+            'passes': 0,
+            'total_added': -1,
+            'per_pass': [],
+            'marker_control': marker_control,
         }
     region = next((r for r in area.regions if r.type == 'WINDOW'), None)
     if region is None:
         return {
             'success': False,
             'message': 'Keine gueltige WINDOW Region im Clip Editor gefunden.',
-            'marker_control': [],
+            'passes': 0,
+            'total_added': -1,
+            'per_pass': [],
+            'marker_control': marker_control,
         }
 
     clip = get_clip_from_area(area)
@@ -77,27 +87,22 @@ def detect_features_multipass(
     if clip:
         try:
             w, h = clip.size
-            _vprint(f"[TrackingHelper] Clip Breite (px): {w}")
-            # Berechnung gemoaß Anforderung:
-            # pattern_size = horizontale Aufloesung * 0.01
             pattern_size = max(3, int(round(w * 0.01)))
             search_size = pattern_size * 2
             settings = getattr(clip.tracking, 'settings', None)
             if settings is not None:
-                # Alte Werte sichern
                 old_pattern = getattr(settings, 'default_pattern_size', None)
                 old_search = getattr(settings, 'default_search_size', None)
-                # Setzen falls Attribute vorhanden
                 if hasattr(settings, 'default_pattern_size'):
                     settings.default_pattern_size = pattern_size
                 if hasattr(settings, 'default_search_size'):
                     settings.default_search_size = search_size
-                _vprint(f"[TrackingHelper] Set pattern_size={pattern_size}, search_size={search_size}")
         except Exception:  # noqa: BLE001
             pass
+
     tracks_before = len(clip.tracking.tracks) if clip else -1
 
-    # Pruefen ob threshold unterstuetzt wird
+    # Prüfen ob threshold unterstützt wird
     has_threshold = False
     if bpy is not None:
         try:
@@ -106,7 +111,7 @@ def detect_features_multipass(
         except Exception:  # noqa: BLE001
             has_threshold = False
 
-    # Sichere Konvertierung der moeglicherweise als Property uebergebenen Werte
+    # Sanitisierung eingehender Parameter
     try:
         duplicate_tolerance_px = float(duplicate_tolerance_px)
     except Exception:  # noqa: BLE001
@@ -123,15 +128,14 @@ def detect_features_multipass(
     per_pass = []
     passes = 0
     current = start_threshold
-    marker_logs = []  # speichert detailinformationen neuer Marker
+    marker_logs = []
     existing_track_ids = set()
     if clip and bpy is not None:
         existing_track_ids = {id(t) for t in clip.tracking.tracks}
 
-    # Signatur-basierte Nachverfolgung aller jemals gesehenen Marker (Name, Frame, Position in Pixeln gerundet)
     seen_signatures = set()
-    pass_new_signatures = []  # Liste von Listen: neu erkannte Signaturen pro Pass (vor spaeterem Entfernen)
-    per_pass_new_counts_internal = []  # finale Zahlen (erst nach Entfernen berechnet)
+    pass_new_signatures = []
+    per_pass_new_counts_internal = []
 
     def _build_signature(track_obj):
         try:
@@ -150,7 +154,6 @@ def detect_features_multipass(
             if w is not None and h is not None:
                 px = co[0] * w
                 py = co[1] * h
-                # Rundung auf 0.5 Pixel zur Stabilisierung gegen minimalen Jitter
                 rpx = round(px * 2) / 2.0
                 rpy = round(py * 2) / 2.0
             else:
@@ -163,20 +166,15 @@ def detect_features_multipass(
             return None
 
     def _ensure_tracking_mode():
-        """Versucht den Clip Editor in den TRACKING Modus zu versetzen, falls moeglich."""
         try:
             if area and hasattr(area, 'spaces') and area.spaces:
                 space = area.spaces.active
-                # Manche Versionen haben space.mode fuer ClipEditor
-                if hasattr(space, 'mode'):
-                    # Nur setzen wenn nicht schon richtig
-                    if getattr(space, 'mode', None) != 'TRACKING':
-                        space.mode = 'TRACKING'
+                if hasattr(space, 'mode') and getattr(space, 'mode', None) != 'TRACKING':
+                    space.mode = 'TRACKING'
         except Exception:  # noqa: BLE001
             pass
 
     def apply_sizes(cur_pattern):
-        """Setzt pattern/search size auf Basis cur_pattern."""
         if settings is None:
             return
         try:
@@ -186,7 +184,6 @@ def detect_features_multipass(
                 settings.default_pattern_size = p
             if hasattr(settings, 'default_search_size'):
                 settings.default_search_size = s
-            # fuer Rueckgabe aktualisieren (letzte Werte)
             nonlocal pattern_size, search_size
             pattern_size = p
             search_size = s
@@ -198,7 +195,7 @@ def detect_features_multipass(
         note = ''
         try:
             if bpy is None:
-                return 0, 'kein bpy (Entwicklungsumgebung)'
+                return 0, 'kein bpy'
             if has_threshold and allow_param:
                 bpy.ops.clip.detect_features(threshold=thr)
             else:
@@ -221,17 +218,12 @@ def detect_features_multipass(
         if not new_ids:
             return 0
         cur_frame = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
-        # NEU: Wir verwenden primoar alle zuvor geloggten Marker-Positionen (marker_logs),
-        # damit auch bei Blender-Replacements (IDs oandern sich) die Distanz-Basis erhalten bleibt.
-        # Zusoatzlich sammeln wir – falls verfuegbar – die realen existierenden Track-Objekt-Positionen.
-        existing_positions_px = []  # inkrementell erweitert, auch innerhalb dieses Passes
+        existing_positions_px = []
         fallback_used = False
         if w is not None and h is not None:
             try:
-                # Basis aus allen zuvor geloggten Markern (Pass < aktueller Pass)
                 if marker_logs:
                     existing_positions_px.extend([m['pos_px'] for m in marker_logs if m.get('pos_px')])
-                # Ergoanzend: aktuelle Track-Objekte, die nicht neu sind (sofern Blender sie nicht ersetzt hat)
                 for t in clip.tracking.tracks:
                     if id(t) in existing_track_ids:
                         marker_ref = None
@@ -245,29 +237,27 @@ def detect_features_multipass(
                         if marker_ref is not None:
                             co_norm = marker_ref.co
                             existing_positions_px.append((co_norm[0] * w, co_norm[1] * h))
-                # Falls immer noch leer (kein einziger frueherer Marker), bekommen die ersten neuen Marker keine Distanz.
                 if not existing_positions_px:
-                    fallback_used = True  # markiere nur zur Info
+                    fallback_used = True
             except Exception:  # noqa: BLE001
                 fallback_used = True
         count = 0
-        # Helper einmal definieren (nicht pro Track neu)
+
         def _safe_track_name(obj):
             try:
                 nm = obj.name
-                if isinstance(nm, str):
-                    return nm
-                return str(nm)
-            except UnicodeDecodeError as ue:  # spezieller Fall
+                return nm if isinstance(nm, str) else str(nm)
+            except UnicodeDecodeError as ue:
                 raw = getattr(obj, 'name', b'?')
-                try:
-                    if isinstance(raw, bytes):
+                if isinstance(raw, bytes):
+                    try:
                         return 'TRACK_NAME_ERR:' + raw.decode('utf-8', 'backslashreplace')
-                except Exception:  # noqa: BLE001
-                    pass
+                    except Exception:  # noqa: BLE001
+                        pass
                 return f'TRACK_NAME_ERR:{ue}'
             except Exception:  # noqa: BLE001
                 return 'TRACK_NAME_ERR:unknown'
+
         for t in clip.tracking.tracks:
             if id(t) in new_ids:
                 count += 1
@@ -292,38 +282,37 @@ def detect_features_multipass(
                         frame_used = marker.frame
                         if w is not None and h is not None:
                             marker_px = (marker_co_norm[0] * w, marker_co_norm[1] * h)
-                            # Distanz zu allen vorhandenen (bisherigen) Marker-Positionen berechnen
                             if existing_positions_px:
                                 try:
                                     x, y = marker_px
-                                    nearest_dist_px = min(((x - ex) ** 2 + (y - ey) ** 2) for ex, ey in existing_positions_px) ** 0.5
+                                    nearest_dist_px = min(
+                                        ((x - ex) ** 2 + (y - ey) ** 2) for ex, ey in existing_positions_px
+                                    ) ** 0.5
                                 except Exception:  # noqa: BLE001
                                     nearest_dist_px = None
-                            # Aktuellen Marker sofort zu Basis hinzufuegen, damit spoatere Marker IN DIESEM PASS
-                            # ihre Distanz auch zu ihm berechnen koennen.
                             existing_positions_px.append(marker_px)
-                    # Pruefen, ob Track-Name schon frueher existierte (ersetzt / dupliziert); nur fuer Analysezwecke
                     if marker_logs and any(m['track_name'] == t.name for m in marker_logs):
                         replaced_name = True
                 except Exception:  # noqa: BLE001
                     pass
+
                 no_distance_reason = None
                 if nearest_dist_px is None:
                     if marker_px is None:
                         no_distance_reason = 'no_marker_position'
-                    elif not existing_positions_px or (len(existing_positions_px) == 1 and existing_positions_px[-1] == marker_px):
-                        # Nur der aktuelle Marker vorhanden -> keine Vergleichsbasis
+                    elif not existing_positions_px or (
+                        len(existing_positions_px) == 1 and existing_positions_px[-1] == marker_px
+                    ):
                         no_distance_reason = 'no_reference_positions'
                     else:
                         no_distance_reason = 'calc_error'
-                # Optional: sofortiges Loeschen (Default deaktiviert, weil instabil in manchen Kontexten)
+
                 if immediate_delete and remove_duplicates:
                     is_duplicate = False
                     if nearest_dist_px is not None and nearest_dist_px <= duplicate_tolerance_px:
                         is_duplicate = True
-                    elif nearest_dist_px is None and existing_positions_px:  # nur wenn Referenz existiert
+                    elif nearest_dist_px is None and existing_positions_px:
                         is_duplicate = True
-                    # keep_first_marker schuetzt den allerersten Marker komplett
                     if is_duplicate and keep_first_marker and not marker_logs:
                         is_duplicate = False
                     if is_duplicate:
@@ -346,21 +335,12 @@ def detect_features_multipass(
                                 _ensure_tracking_mode()
                                 bpy.ops.clip.delete_track()
                                 removed_immediately = True
-                                _vprint(
-                                    f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} DUPLIKAT ENTFERNT '{t.name}' dist={nearest_dist_px} (immediate)"
-                                )
                                 continue
                             except Exception:  # noqa: BLE001
                                 removed_immediately = False
                         except Exception:  # noqa: BLE001
                             removed_immediately = False
-                try:
-                    _vprint(
-                        f"[TrackingHelper] Pass {pass_index} thr {thr:.5f} NEUER TRACK '{safe_name}' "
-                        f"frame={frame_used} pos_norm={marker_co_norm} pos_px={marker_px} nearest_px={nearest_dist_px} pattern={pattern_size} search={search_size}"
-                    )
-                except UnicodeDecodeError as ue_print:  # should not happen now
-                    _vprint(f"[TrackingHelper][WARN] Unicode problem beim Drucken eines Track-Namens: {ue_print}")
+
                 marker_logs.append({
                     'pass': pass_index,
                     'threshold': thr,
@@ -381,123 +361,78 @@ def detect_features_multipass(
 
     try:
         try:
-            # Prefer temp_override
             if bpy is None:
                 raise RuntimeError('bpy nicht verfuegbar')
             with context.temp_override(area=area, region=region):
                 if not has_threshold:
-                    # (Ein-Pass Modus) ...
-                    # Set sizes fuer diesen Pass
                     apply_sizes(pattern_size)
-                    # Vorher bekannte Signaturen merken
-                    before_known = set(seen_signatures)
                     added, note = run_detect(current, allow_param=False)
-                    log_new_tracks(passes + 1, current)
+                    log_new_tracks(1, current)
                     new_sigs_this_pass = []
                     if clip:
                         for t in clip.tracking.tracks:
                             sig = _build_signature(t)
                             if sig and sig not in seen_signatures and sig not in new_sigs_this_pass:
                                 new_sigs_this_pass.append(sig)
-                    # jetzt neue in globale Menge aufnehmen (fuer folgende Paesse nicht nochmal neu)
                     for sig in new_sigs_this_pass:
                         seen_signatures.add(sig)
                     pass_new_signatures.append(new_sigs_this_pass)
+
+                    # Steuerlogik Ein-Pass
+                    note = _apply_marker_control_and_maybe_modify(note=None,  # Placeholder (kein Loop)
+                                                                  new_sigs=new_sigs_this_pass,
+                                                                  passes_ref=1,
+                                                                  threshold=current,
+                                                                  marker_control=marker_control) or note
                     per_pass.append((current, added, note or 'kein threshold Param'))
                     passes = 1
                 else:
                     cur_pattern_progressive = float(pattern_size) if pattern_size else None
+                    stop_detect_loop = False
                     while current >= min_threshold and passes < max_passes:
                         if cur_pattern_progressive is not None:
                             apply_sizes(cur_pattern_progressive)
                         added, note = run_detect(current, allow_param=True)
                         log_new_tracks(passes + 1, current)
-
                         new_sigs_this_pass = []
                         if clip:
                             for t in clip.tracking.tracks:
                                 sig = _build_signature(t)
                                 if sig and sig not in seen_signatures and sig not in new_sigs_this_pass:
                                     new_sigs_this_pass.append(sig)
-
                         for sig in new_sigs_this_pass:
                             seen_signatures.add(sig)
-                        pass_index = passes + 1
-                        # --- NEU Steuerlogik anhand scene.marker_per_frame ---
-                        ctl_note = ''
-                        try:
-                            scene = bpy.context.scene if bpy and bpy.context else None
-                            if scene and hasattr(scene, 'marker_per_frame'):
-                                ef = max(0, int(scene.marker_per_frame))
-                                za = (ef * 4.0) / 14.0 if ef > 0 else 0.0
-                                ug = za * 0.9
-                                og = za * 1.1
-                                am = len(new_sigs_this_pass)
-                                in_band = (am > ug) and (am < og) if za > 0 else False
-                                factor_val = None
-                                stop_reason = None
-                                if za <= 0:
-                                    stop_reason = 'za=0'
-                                elif in_band:
-                                    ctl_note = 'ctl:band'
-                                else:
-                                    # Abweichung → Faktor berechnen und abbrechen
-                                    md = 100.0
-                                    # Schutz Division
-                                    if am <= 0:
-                                        factor_val = 0.0
-                                        stop_reason = 'am=0'
-                                    else:
-                                        factor_val = md / (za / am)  # md * am / za
-                                    stop_reason = stop_reason or 'out_of_band'
-                                    ctl_note = f'ctl:stop factor={factor_val:.2f}'
-                                marker_control.append({
-                                    'pass': pass_index,
-                                    'ef': ef,
-                                    'za': za,
-                                    'ug': ug,
-                                    'og': og,
-                                    'am': am,
-                                    'in_band': in_band,
-                                    'factor': factor_val,
-                                    'stopped': bool(stop_reason and not in_band),
-                                    'reason': stop_reason if stop_reason and not in_band else ('band' if in_band else None),
-                                })
-                                if ctl_note:
-                                    if note:
-                                        note = note + ' | ' + ctl_note
-                                    else:
-                                        note = ctl_note
-                                # Loop-Abbruch falls außerhalb Band
-                                if marker_control and marker_control[-1]['stopped']:
-                                    per_pass.append((current, added, note))
-                                    passes += 1
-                                    break
-                            # Ende Steuerlogik
-                        except Exception as _ctl_err:  # noqa: BLE001
-                            ctl_note = f'ctl:error {type(_ctl_err).__name__}'
-                            if note:
-                                note = note + ' | ' + ctl_note
-                            else:
-                                note = ctl_note
+                        pass_new_signatures.append(new_sigs_this_pass)
+
+                        # Marker-Steuerlogik
+                        ctl_note = _apply_marker_control_and_maybe_modify(
+                            note=note,
+                            new_sigs=new_sigs_this_pass,
+                            passes_ref=passes + 1,
+                            threshold=current,
+                            marker_control=marker_control
+                        )
+                        if ctl_note:
+                            note = (note + ' | ' + ctl_note) if note else ctl_note
+                        if marker_control and marker_control[-1].get('stopped'):
+                            stop_detect_loop = True
 
                         per_pass.append((current, added, note))
                         passes += 1
+                        if stop_detect_loop:
+                            break
                         current *= factor
                         if cur_pattern_progressive is not None:
                             cur_pattern_progressive *= 1.15
-                    # Ende while
         except AttributeError:
-            # Fallback ohne temp_override
+            # Fallback ohne temp_override (Minimalvariante—Steuerlogik kann hier bei Bedarf nachgezogen werden)
             override = context.copy()
             override['area'] = area
             override['region'] = region
             if not has_threshold:
                 apply_sizes(pattern_size)
-                # Verwende run_detect auch hier, um identisches Logging zu gewoahrleisten
-                before_known = set(seen_signatures)
                 added, note = run_detect(current, allow_param=False)
-                log_new_tracks(passes + 1, current)
+                log_new_tracks(1, current)
                 new_sigs_this_pass = []
                 if clip:
                     for t in clip.tracking.tracks:
@@ -515,7 +450,6 @@ def detect_features_multipass(
                     if cur_pattern_progressive is not None:
                         apply_sizes(cur_pattern_progressive)
                     try:
-                        before_known = set(seen_signatures)
                         added, note = run_detect(current, allow_param=True)
                         log_new_tracks(passes + 1, current)
                         new_sigs_this_pass = []
@@ -535,10 +469,10 @@ def detect_features_multipass(
                     current *= factor
                     if cur_pattern_progressive is not None:
                         cur_pattern_progressive *= 1.5
+
+        # (Rest des Originals: Duplikat-Entfernung, Cluster-Konsolidierung, Statistiken etc.)
         removed_track_names = set()
-        # Batch-Duplikatloeschung am Ende (robuster): nur wenn nicht immediate oder Reste
         if remove_duplicates and clip and bpy is not None and not immediate_delete:
-            # Finde Kandidaten
             candidates = []
             for m in marker_logs:
                 dist = m.get('nearest_dist_px')
@@ -546,13 +480,11 @@ def detect_features_multipass(
                 if keep_first_marker and m is marker_logs[0]:
                     continue
                 if dist is None:
-                    # Wenn keine Distanz und nicht erster Marker -> Duplikat
                     candidates.append(name)
                 elif dist <= duplicate_tolerance_px:
                     candidates.append(name)
-            # Entfernen
+
             if candidates:
-                # Erster Durchlauf: Kontext-override versuchen
                 def _delete_list(name_list):
                     removed_local = []
                     for nm in name_list:
@@ -561,7 +493,6 @@ def detect_features_multipass(
                             continue
                         try:
                             _ensure_tracking_mode()
-                            # Deselect all
                             for tr in clip.tracking.tracks:
                                 try:
                                     tr.select = False
@@ -579,9 +510,7 @@ def detect_features_multipass(
                                 _ensure_tracking_mode()
                                 bpy.ops.clip.delete_track()
                             except TypeError:
-                                # Manche Versionen erwarten keinen speziellen Kontext
                                 bpy.ops.clip.delete_track()
-                            # Pruefen ob wirklich weg:
                             if not any(t.name == nm for t in clip.tracking.tracks):
                                 removed_local.append(nm)
                         except Exception:  # noqa: BLE001
@@ -593,24 +522,15 @@ def detect_features_multipass(
                 except Exception:
                     removed_list = _delete_list(candidates)
                 removed_track_names.update(removed_list)
-                if removed_track_names:
-                    _vprint(
-                        f"[TrackingHelper] Entfernt {len(removed_track_names)} Tracks (Batch, tol={duplicate_tolerance_px}) : {sorted(removed_track_names)}"
-                    )
-                else:
-                    _vprint("[TrackingHelper] Batch-Loeschung: keine Tracks entfernt (evtl. Kontextproblem oder keine echten Duplikate)")
 
-        # Cluster-Konsolidierung (nach Duplikat-Phase), falls aktiviert
         cluster_removed = []
         cluster_info = None
         if cluster_consolidate and clip and bpy is not None:
             try:
-                # Map Track-Name -> (order_index, (x,y)) unter Verwendung der marker_logs Reihenfolge
                 name_order = {m['track_name']: i for i, m in enumerate(marker_logs)}
                 track_positions = []
                 if w is not None and h is not None:
                     for t in clip.tracking.tracks:
-                        # Hole Marker-Koordinate (Frame current oder erster)
                         marker_ref = None
                         cur_frame = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
                         if cur_frame is not None:
@@ -626,10 +546,9 @@ def detect_features_multipass(
                         track_positions.append(
                             (t.name, name_order.get(t.name, 10**9), co_norm[0] * w, co_norm[1] * h)
                         )
-                # Sortiere nach Entstehungsreihenfolge (aus Logs), dann Name
                 track_positions.sort(key=lambda x: (x[1], x[0]))
                 tol2 = float(cluster_tolerance_px) ** 2
-                clusters = []  # Liste: {center:(x,y), members:[name,...]}
+                clusters = []
                 for nm, _, px, py in track_positions:
                     assigned = False
                     for c in clusters:
@@ -640,12 +559,10 @@ def detect_features_multipass(
                             break
                     if not assigned:
                         clusters.append({'center': (px, py), 'members': [(nm, px, py)]})
-                # Reduziere Cluster auf max_per_cluster
                 to_remove_cluster = []
                 for c in clusters:
                     members = c['members']
                     if len(members) > cluster_max_per_cluster:
-                        # Behalte die ersten (nach Entstehungssortierung), entferne Rest
                         surplus = members[cluster_max_per_cluster:]
                         to_remove_cluster.extend(n for (n, _, _) in surplus)
                 if to_remove_cluster:
@@ -686,7 +603,6 @@ def detect_features_multipass(
                     except Exception:
                         removed_cluster = _delete_names(to_remove_cluster)
                     cluster_removed.extend(removed_cluster)
-                # Cluster-Statistik
                 cluster_info = {
                     'clusters_total': len(clusters),
                     'clusters_gt1': sum(1 for c in clusters if len(c['members']) > 1),
@@ -694,12 +610,9 @@ def detect_features_multipass(
                     'tolerance_px': cluster_tolerance_px,
                     'max_per_cluster': cluster_max_per_cluster,
                 }
-                if cluster_removed:
-                    _vprint(
-                        f"[TrackingHelper] Cluster-Konsolidierung: entfernt {len(cluster_removed)} Tracks innerhalb Toleranz {cluster_tolerance_px}px (max_per_cluster={cluster_max_per_cluster})"
-                    )
-            except Exception as cl_err:  # noqa: BLE001
-                _vprint(f"[TrackingHelper] Cluster-Konsolidierung Fehler: {cl_err}")
+            except Exception:  # noqa: BLE001
+                pass
+
     except Exception as e:  # noqa: BLE001
         tb = traceback.format_exc()
         return {
@@ -707,16 +620,15 @@ def detect_features_multipass(
             'message': f'Fehler: {e}',
             'exception_type': type(e).__name__,
             'traceback': tb,
-            'passes': locals().get('passes', 0),
+            'passes': passes,
             'total_added': -1,
-            'per_pass': locals().get('per_pass', []),
-            'pattern_size': locals().get('pattern_size'),
-            'search_size': locals().get('search_size'),
-            'marker_logs': locals().get('marker_logs', []),
-            'marker_control': marker_control,  # WICHTIG: jetzt vorhanden
+            'per_pass': per_pass,
+            'pattern_size': pattern_size,
+            'search_size': search_size,
+            'marker_logs': marker_logs,
+            'marker_control': marker_control,
         }
     finally:
-        # Urspruengliche Werte wiederherstellen
         if settings is not None:
             try:
                 if old_pattern is not None and hasattr(settings, 'default_pattern_size'):
@@ -731,78 +643,41 @@ def detect_features_multipass(
     else:
         total_added = -1
 
-    # Distanz-Statistiken berechnen (global & pro Pass), um Transparenz zu schaffen
     def _compute_stats(values):
         if not values:
             return {'count': 0, 'min': None, 'max': None, 'mean': None, 'median': None}
         s = sorted(values)
         n = len(s)
         mean = sum(s) / n
-        if n % 2:
-            median = s[n // 2]
-        else:
-            median = 0.5 * (s[n // 2 - 1] + s[n // 2])
-        return {
-            'count': n,
-            'min': s[0],
-            'max': s[-1],
-            'mean': mean,
-            'median': median,
-        }
+        median = s[n // 2] if n % 2 else 0.5 * (s[n // 2 - 1] + s[n // 2])
+        return {'count': n, 'min': s[0], 'max': s[-1], 'mean': mean, 'median': median}
 
-    # Filter: entfernte Tracks (Distanz None/0) nicht mehr in Statistik zoahlen
     removed_for_stats = set()
     if 'removed_track_names' in locals():
         removed_for_stats.update(removed_track_names)
     if 'cluster_removed' in locals():
         removed_for_stats.update(cluster_removed)
+
     distances_all = [
         m['nearest_dist_px'] for m in marker_logs
         if m.get('nearest_dist_px') is not None and m['track_name'] not in removed_for_stats
     ]
     distance_stats = _compute_stats(distances_all)
     distances_per_pass = {}
-    per_pass_stats = {}
     for m in marker_logs:
         if m.get('nearest_dist_px') is None or m['track_name'] in removed_for_stats:
             continue
         p = m['pass']
         distances_per_pass.setdefault(p, []).append(m['nearest_dist_px'])
-    for p, vals in distances_per_pass.items():
-        per_pass_stats[p] = _compute_stats(vals)
+    per_pass_stats = {p: _compute_stats(vals) for p, vals in distances_per_pass.items()}
 
-    # Zusatz-Metriken: Zero-Distanzen (Marker exakt auf bestehender Position) sind erwartungsgemoaß hoaufig
     zero_count = sum(1 for d in distances_all if d == 0.0)
     positive_distances = [d for d in distances_all if d and d > 0.0]
     min_positive = min(positive_distances) if positive_distances else None
     positive_count = len(positive_distances)
     zero_ratio = (zero_count / len(distances_all)) if distances_all else None
 
-    # Kurze Ausgabe zur Orientierung
-    if VERBOSE_TRACKING_LOGS:
-        try:
-            _vprint(
-                f"[TrackingHelper] Distanz Statistik gesamt: count={distance_stats['count']} min={distance_stats['min']} max={distance_stats['max']} "
-                f"median={distance_stats['median']} mean={distance_stats['mean']}")
-            if distances_all:
-                _vprint(
-                    f"[TrackingHelper] Distanz Verteilung: zeros={zero_count} ({zero_ratio:.2%} ) >0={positive_count} min_pos={min_positive}"
-                )
-            # Zusatz: Gruende fuer fehlende Distanzen, falls Diskrepanz auffoallig
-            missing = [m for m in marker_logs if m.get('nearest_dist_px') is None and m['track_name'] not in removed_for_stats]
-            if missing:
-                reason_counter = {}
-                for m in missing:
-                    r = m.get('no_distance_reason') or 'unknown'
-                    reason_counter[r] = reason_counter.get(r, 0) + 1
-                reason_parts = ', '.join(f"{k}:{v}" for k, v in sorted(reason_counter.items()))
-                _vprint(f"[TrackingHelper] Distanz fehlend fuer {len(missing)} Marker (Gruende: {reason_parts})")
-        except Exception:  # noqa: BLE001
-            pass
-
-    # Erzeuge Liste der pro Pass neu hinzugekommenen Marker (nach evtl. Duplikat-/Clusterentfernung kann sie von per_pass Added abweichen)
-    per_pass_new_counts = []
-    # Jetzt (nach moeglichem Entfernen von Duplikaten & Clustern) finale Zaehler bestimmen
+    # Überlebende Signaturen zählen (nach evtl. Löschungen)
     surviving_signatures = set()
     if clip:
         for t in clip.tracking.tracks:
@@ -813,12 +688,10 @@ def detect_features_multipass(
     for sig_list in pass_new_signatures:
         cnt = sum(1 for sig in sig_list if sig in surviving_signatures)
         final_counts.append(cnt)
-    per_pass_new_counts_internal = final_counts
-    per_pass_new_counts.extend(per_pass_new_counts_internal)
+    per_pass_new_counts = final_counts
 
-    # Ausgabe jetzt erst, damit nur surviving Marker gezaehlt werden
     try:
-        for idx, cnt in enumerate(per_pass_new_counts_internal, start=1):
+        for idx, cnt in enumerate(per_pass_new_counts, start=1):
             print(f"[Detect] Pass {idx} Marker={cnt}")
     except Exception:  # noqa: BLE001
         pass
@@ -844,5 +717,61 @@ def detect_features_multipass(
         'cluster_removed_count': len(cluster_removed) if 'cluster_removed' in locals() else 0,
         'cluster_stats': cluster_info,
         'per_pass_new_counts': per_pass_new_counts,
-        'marker_control': marker_control,  # NEU
+        'marker_control': marker_control,
     }
+
+
+def _apply_marker_control_and_maybe_modify(note, new_sigs, passes_ref, threshold, marker_control):
+    """Hilfsfunktion für die Marker-Band-Logik.
+
+    Gibt einen Zusatz-Note-String zurück oder None.
+    """
+    try:
+        scene = bpy.context.scene if bpy and bpy.context else None
+        if not scene or not hasattr(scene, 'marker_per_frame'):
+            return None
+        ef = max(0, int(scene.marker_per_frame))
+        za = (ef * 4.0) / 14.0 if ef > 0 else 0.0
+        ug = za * 0.9
+        og = za * 1.1
+        am = len(new_sigs)
+        if za <= 0:
+            factor_val = None
+            in_band = False
+            reason = 'za=0'
+            stopped = True
+        else:
+            in_band = (am > ug) and (am < og)
+            if in_band:
+                factor_val = None
+                reason = 'band'
+                stopped = False
+            else:
+                md = 100.0
+                if am <= 0:
+                    factor_val = 0.0
+                    reason = 'am=0'
+                else:
+                    factor_val = md / (za / am)  # = md * am / za
+                    reason = 'out_of_band'
+                stopped = True
+        marker_control.append({
+            'pass': passes_ref,
+            'threshold': threshold,
+            'ef': ef,
+            'za': za,
+            'ug': ug,
+            'og': og,
+            'am': am,
+            'in_band': in_band,
+            'factor': factor_val,
+            'stopped': stopped,
+            'reason': reason,
+        })
+        if in_band:
+            return 'ctl:band'
+        if factor_val is not None:
+            return f'ctl:stop factor={factor_val:.2f}'
+        return f'ctl:stop {reason}'
+    except Exception as _err:  # noqa: BLE001
+        return f'ctl:error {type(_err).__name__}'
