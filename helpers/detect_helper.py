@@ -739,7 +739,7 @@ def _apply_marker_control_and_maybe_modify(note, new_sigs, passes_ref, threshold
             factor_val = None
             in_band = False
             reason = 'za=0'
-            stopped = True
+            stopped = False
         else:
             in_band = (am > ug) and (am < og)
             if in_band:
@@ -754,7 +754,7 @@ def _apply_marker_control_and_maybe_modify(note, new_sigs, passes_ref, threshold
                 else:
                     factor_val = md / (za / am)  # = md * am / za
                     reason = 'out_of_band'
-                stopped = True
+                stopped = False
         marker_control.append({
             'pass': passes_ref,
             'threshold': threshold,
