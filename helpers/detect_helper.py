@@ -43,18 +43,13 @@ def detect_features_multipass(
     keep_first_marker=True,
     immediate_delete=False,
     min_distance=120,
-    **_deprecated,
 ):
     """
     Mehrfaches Feature-Detect (Multi-Threshold) mit Band-Überwachung (ef->za) und
     vereinheitlichter Duplikatlogik.
 
     WICHTIG: Duplikatprüfung verwendet ab jetzt IMMER min_distance als Distanzgrenze.
-             (Parameter duplicate_tolerance_px & Cluster-Parameter wurden entfernt.)
-
-    Abwärtskompatibilität: Zusätzliche alte Parameter werden über **_deprecated
-    aufgenommen und ignoriert, damit alte Operator-Versionen keinen TypeError mehr
-    auslösen. Bei VERBOSE_TRACKING_LOGS wird einmalig ein Hinweis ausgegeben.
+             (Parameter duplicate_tolerance_px & jede Cluster-Funktion wurden entfernt.)
 
     Parameter:
         start_threshold (float)   – Start Threshold.
@@ -71,11 +66,6 @@ def detect_features_multipass(
         removed_duplicate_tracks / removed_duplicate_count
         per_pass, per_pass_new_counts, distance_stats, etc.
     """
-    if _deprecated and VERBOSE_TRACKING_LOGS:
-        try:
-            print("[detect_features_multipass] Ignoriere veraltete Parameter:", list(_deprecated.keys()))
-        except Exception:
-            pass
     marker_control = []
 
     area = find_clip_editor_area(context)
@@ -363,26 +353,36 @@ def detect_features_multipass(
         existing_track_ids.update(new_ids)
         return count
 
+    MAX_RETRIES_PER_THRESHOLD = 3  # NEU: maximale Wiederholungen eines Thresholds, wenn ausserhalb Band
+
     try:
         try:
             if bpy is None:
-                raise RuntimeError('bpy nicht verfügbar')
+                raise RuntimeError('bpy nicht verfuegbar')
             with context.temp_override(area=area, region=region):
                 if not has_threshold:
+                    # (Unverändert – Ein-Pass Modus)
                     apply_sizes(pattern_size)
-                    added, note = run_detect(current, allow_param=False, md=min_distance)
+                    added, note = run_detect(current, allow_param=False)
                     log_new_tracks(1, current)
-                    new_sigs = []
+                    new_sigs_this_pass = []
                     if clip:
                         for t in clip.tracking.tracks:
                             sig = _build_signature(t)
-                            if sig and sig not in seen_signatures and sig not in new_sigs:
-                                new_sigs.append(sig)
-                    for sig in new_sigs:
+                            if sig and sig not in seen_signatures and sig not in new_sigs_this_pass:
+                                new_sigs_this_pass.append(sig)
+                    for sig in new_sigs_this_pass:
                         seen_signatures.add(sig)
-                    pass_new_signatures.append(new_sigs)
-                    # Band-Logik (beobachtend)
-                    note = _apply_marker_control_and_maybe_modify(None, new_sigs, 1, current, marker_control) or note
+                    pass_new_signatures.append(new_sigs_this_pass)
+                    note_ctl = _apply_marker_control_and_maybe_modify(
+                        note=None,
+                        new_sigs=new_sigs_this_pass,
+                        passes_ref=1,
+                        threshold=current,
+                        marker_control=marker_control
+                    )
+                    if note_ctl:
+                        note = (note + ' | ' + note_ctl) if note else note_ctl
                     per_pass.append((current, added, note or 'kein threshold Param'))
                     passes = 1
                 else:
@@ -390,45 +390,128 @@ def detect_features_multipass(
                     while current >= min_threshold and passes < max_passes:
                         if cur_pattern_progressive is not None:
                             apply_sizes(cur_pattern_progressive)
-                        added, note = run_detect(current, allow_param=True, md=min_distance)
-                        log_new_tracks(passes + 1, current)
-                        new_sigs = []
-                        if clip:
-                            for t in clip.tracking.tracks:
-                                sig = _build_signature(t)
-                                if sig and sig not in seen_signatures and sig not in new_sigs:
-                                    new_sigs.append(sig)
-                        for sig in new_sigs:
-                            seen_signatures.add(sig)
-                        pass_new_signatures.append(new_sigs)
-                        ctl_note = _apply_marker_control_and_maybe_modify(
-                            note, new_sigs, passes + 1, current, marker_control
-                        )
-                        if ctl_note:
-                            note = (note + ' | ' + ctl_note) if note else ctl_note
-                        per_pass.append((current, added, note))
-                        passes += 1
+
+                        retry = 0
+                        # Diese Schleife wiederholt denselben Threshold, wenn ausserhalb Band
+                        while True:
+                            # Snapshot vor Detect
+                            pre_track_names = set()
+                            if clip and bpy is not None:
+                                pre_track_names = {t.name for t in clip.tracking.tracks}
+
+                            added, note = run_detect(current, allow_param=True)
+                            # Logging mit neuem Pass-Index
+                            pass_index = passes + 1
+                            log_new_tracks(pass_index, current)
+
+                            # Neue Signaturen für diesen Versuch
+                            new_sigs_this_attempt = []
+                            if clip:
+                                for t in clip.tracking.tracks:
+                                    sig = _build_signature(t)
+                                    if sig and sig not in seen_signatures and sig not in new_sigs_this_attempt:
+                                        new_sigs_this_attempt.append(sig)
+                            for sig in new_sigs_this_attempt:
+                                seen_signatures.add(sig)
+                            pass_new_signatures.append(new_sigs_this_attempt)
+
+                            # Control
+                            ctl_note = _apply_marker_control_and_maybe_modify(
+                                note=note,
+                                new_sigs=new_sigs_this_attempt,
+                                passes_ref=pass_index,
+                                threshold=current,
+                                marker_control=marker_control
+                            )
+                            if ctl_note:
+                                note = (note + ' | ' + ctl_note) if note else ctl_note
+
+                            # Werte aus marker_control
+                            mc_last = marker_control[-1] if marker_control else {}
+                            in_band = mc_last.get('in_band', False)
+                            am = mc_last.get('am', 0)
+                            ug = mc_last.get('ug', 0.0)
+                            og = mc_last.get('og', 0.0)
+
+                            # Protokollierung dieses Versuchs
+                            per_pass.append((current, added, note))
+                            passes += 1
+
+                            # Abbruchbedingungen Versuchsschleife:
+                            if in_band or retry >= MAX_RETRIES_PER_THRESHOLD or passes >= max_passes:
+                                break
+
+                            # Außerhalb Band -> Wiederholung:
+                            # 1) Neu hinzugekommene Tracks (dieses Versuches) ermitteln
+                            if clip and bpy is not None:
+                                post_track_names = {t.name for t in clip.tracking.tracks}
+                                new_names_this_try = list(post_track_names - pre_track_names)
+
+                                if new_names_this_try:
+                                    # 2) Löschen dieser neuen Tracks
+                                    def _delete_names(name_list):
+                                        removed_local = 0
+                                        for nm in name_list:
+                                            trk = next((t for t in clip.tracking.tracks if t.name == nm), None)
+                                            if not trk:
+                                                continue
+                                            try:
+                                                for tr in clip.tracking.tracks:
+                                                    try:
+                                                        tr.select = False
+                                                    except Exception:
+                                                        pass
+                                                try:
+                                                    trk.select = True
+                                                except Exception:
+                                                    pass
+                                                try:
+                                                    clip.tracking.tracks.active = trk  # type: ignore[attr-defined]
+                                                except Exception:
+                                                    pass
+                                                _ensure_tracking_mode()
+                                                try:
+                                                    bpy.ops.clip.delete_track()
+                                                except TypeError:
+                                                    bpy.ops.clip.delete_track()
+                                                if not any(t.name == nm for t in clip.tracking.tracks):
+                                                    removed_local += 1
+                                            except Exception:
+                                                pass
+                                        return removed_local
+                                    try:
+                                        with context.temp_override(area=area, region=region):
+                                            _delete_names(new_names_this_try)
+                                    except Exception:
+                                        _delete_names(new_names_this_try)
+                            # 3) Retry-Zähler erhöhen und erneut denselben Threshold versuchen
+                            retry += 1
+                            continue  # zurück in while True
+
+                        # Nächster Threshold
                         current *= factor
                         if cur_pattern_progressive is not None:
                             cur_pattern_progressive *= 1.15
+                        # Schleifenende wenn nächste Stufe unter min_threshold
         except AttributeError:
-            # Fallback ohne temp_override
+            # Fallback unverändert (keine Wiederholungen implementiert)
             override = context.copy()
             override['area'] = area
             override['region'] = region
+            # (Optional könntest du hier die gleiche Retry-Logik nachziehen.)
             if not has_threshold:
                 apply_sizes(pattern_size)
-                added, note = run_detect(current, allow_param=False, md=min_distance)
+                added, note = run_detect(current, allow_param=False)
                 log_new_tracks(1, current)
-                new_sigs = []
+                new_sigs_this_pass = []
                 if clip:
                     for t in clip.tracking.tracks:
                         sig = _build_signature(t)
-                        if sig and sig not in seen_signatures and sig not in new_sigs:
-                            new_sigs.append(sig)
-                for sig in new_sigs:
+                        if sig and sig not in seen_signatures and sig not in new_sigs_this_pass:
+                            new_sigs_this_pass.append(sig)
+                for sig in new_sigs_this_pass:
                     seen_signatures.add(sig)
-                pass_new_signatures.append(new_sigs)
+                pass_new_signatures.append(new_sigs_this_pass)
                 per_pass.append((current, added, note or 'fallback ohne threshold'))
                 passes = 1
             else:
@@ -437,17 +520,17 @@ def detect_features_multipass(
                     if cur_pattern_progressive is not None:
                         apply_sizes(cur_pattern_progressive)
                     try:
-                        added, note = run_detect(current, allow_param=True, md=min_distance)
+                        added, note = run_detect(current, allow_param=True)
                         log_new_tracks(passes + 1, current)
-                        new_sigs = []
+                        new_sigs_this_pass = []
                         if clip:
                             for t in clip.tracking.tracks:
                                 sig = _build_signature(t)
-                                if sig and sig not in seen_signatures and sig not in new_sigs:
-                                    new_sigs.append(sig)
-                        for sig in new_sigs:
+                                if sig and sig not in seen_signatures and sig not in new_sigs_this_pass:
+                                    new_sigs_this_pass.append(sig)
+                        for sig in new_sigs_this_pass:
                             seen_signatures.add(sig)
-                        pass_new_signatures.append(new_sigs)
+                        pass_new_signatures.append(new_sigs_this_pass)
                         per_pass.append((current, added, note or 'fallback'))
                     except Exception:
                         per_pass.append((current, 0, 'fallback Fehler'))
