@@ -11,59 +11,65 @@ RETRY_TOO_FEW = "RETRY_FEW"
 RETRY_TOO_MANY = "RETRY_MANY"
 
 def detect_cyclus(context, max_cycles: int = 15):
-    """Führt einen adaptiven Feature-Detection-Zyklus iterativ aus.
+    """Iterative Steuerung des Marker-Detektionszyklus nach geänderter Bedingung.
 
-    max_cycles: Sicherheitsgrenze gegen endlose Schleifen.
+    Änderung: Falls Reinbereich NICHT erreicht wird, werden ALLE neu entstandenen Marker
+    (dieses Zyklus) vor Anpassung & Restart wieder gelöscht – egal ob zu wenig oder zu viele.
     """
     values = bootstrap(context)
     print(
-        f"Kaiserlich Tracker: Zielkorridor initialisiert – Untergrenze (ug)={values['ug']:.1f}, Ziel (za)={values['za']:.1f}, Obergrenze (og)={values['og']:.1f}"
+        f"Kaiserlich Tracker: Zielkorridor – ug={values['ug']:.1f} za={values['za']:.1f} og={values['og']:.1f}"
     )
     cycle = 0
     while cycle < max_cycles:
         cycle += 1
-        lm = snapshot(context)  # Marker vor neuem Detect
-        prev_count = len(lm)
+        lm = snapshot(context)  # Alte Marker vor neuem Detect
+        old_count = len(lm)
 
         print(
-            f"Kaiserlich Tracker: Zyklus {cycle} – Start: {prev_count} Marker | Untergrenze={values['ug']:.1f} Ziel={values['za']:.1f} Obergrenze={values['og']:.1f}"
+            f"Kaiserlich Tracker: Zyklus {cycle} – Start: {old_count} alt | ug={values['ug']:.1f} za={values['za']:.1f} og={values['og']:.1f} tr={values['tr']:.3f} md={values['md']:.1f}"
         )
 
-        # Feature Detection
+        # Neue Features suchen
         detect_features(context, values)
 
-        # Marker direkt nach Detection (vor Cleanup)
-        nm_raw = newmarker(context)
-        raw_count = len(nm_raw)
-        raw_added = raw_count - prev_count
+        # Marker nach Detection und vor Cleanup
+        all_after_detection = newmarker(context)
+        raw_total = len(all_after_detection)
+        raw_added = raw_total - old_count
 
-        # Cleanup Duplikate entfernen
-        cleanup(context, nm_raw, lm, values)
+        # Cleanup (Duplikate entfernen)
+        cleanup(context, all_after_detection, lm, values)
 
-        # Finale Marker nach Cleanup erneut zählen
-        nm_final = snapshot(context)
-        final_count = len(nm_final)
-        final_added = final_count - prev_count
-        removed = raw_count - final_count
+        # Nach Cleanup neu zählen
+        after_cleanup_all = snapshot(context)
+        total_after_cleanup = len(after_cleanup_all)
+        removed = raw_total - total_after_cleanup
+
+        # Neu entstandene Marker extrahieren
+        new_markers = [m for m in after_cleanup_all if m not in lm]
+        new_count = len(new_markers)
+        candidate_total = old_count + new_count  # sollte == total_after_cleanup sein
 
         print(
-            f"Kaiserlich Tracker: Zyklus {cycle} – Roh +{raw_added} -> bereinigt -{removed} = +{final_added} (End: {final_count}) | tr={values['tr']:.3f} md={values['md']:.1f}"
+            f"Kaiserlich Tracker: Zyklus {cycle} – Roh +{raw_added} | entfernt {removed} | neu {new_count} | total {candidate_total}"
         )
 
-        status = control_cycle(context, nm_final, values)
+        status = control_cycle(context, old_count, new_markers, candidate_total, values)
+
         if status == STOP:
             print(
-                f"Kaiserlich Tracker: Finished nach {cycle} Zyklen mit {final_count} Markern (ug={values['ug']:.1f} ≤ {final_count} ≤ og={values['og']:.1f})"
+                f"Kaiserlich Tracker: Fertig nach {cycle} Zyklen mit {candidate_total} Markern (ug≤{candidate_total}≤og)"
             )
             break
         elif status == RETRY_TOO_FEW:
             print(
-                f"Kaiserlich Tracker: Zu wenige Marker ({final_count} < ug={values['ug']:.1f}) – threshold abgesenkt auf {values['tr']:.3f}, nächster Zyklus..."
+                f"Kaiserlich Tracker: Restart (zu wenig) – threshold={values['tr']:.3f} pz={values['pz']:.3f} md={values['md']:.1f}"
             )
             continue
         elif status == RETRY_TOO_MANY:
             print(
-                f"Kaiserlich Tracker: Zu viele Marker ({final_count} > og={values['og']:.1f}) – Mindestabstand erhöht auf {values['md']:.1f}, nächster Zyklus..."
+                f"Kaiserlich Tracker: Restart (zu viele) – threshold={values['tr']:.3f} md={values['md']:.1f}"
             )
             continue
         else:
@@ -73,31 +79,40 @@ def detect_cyclus(context, max_cycles: int = 15):
         print(f"Kaiserlich Tracker: Abbruch nach max_cycles={max_cycles} ohne Stabilisierung.")
 
 
-def control_cycle(context, nm_list, values):
-    """Bewertet Ergebnis und passt Parameter an.
+def control_cycle(context, old_count, new_markers, candidate_total, values):
+    """Bewertet Kandidat (alte + neue Marker) und entscheidet.
+
+    Wenn candidate_total im Korridor: KEEP (STOP)
+    Sonst: löscht alle new_markers und passt Parameter an.
 
     Rückgabe: STOP | RETRY_FEW | RETRY_MANY
     """
-    am = len(nm_list)
+    ug = values["ug"]
+    og = values["og"]
 
-    # Zielkorridor erreicht
-    if values["ug"] <= am <= values["og"]:
+    if ug <= candidate_total <= og:
+        # Erfolg: neue Marker bleiben erhalten
         return STOP
 
-    # Zu wenige Marker: threshold senken, pz erhöhen (Reserve für spätere Nutzung)
-    if am < values["ug"]:
+    # Außerhalb -> neue Marker löschen
+    for m in new_markers:
+        delete_marker(m)
+
+    if candidate_total < ug:
+        # Zu wenig -> Schwelle reduzieren
         values["tr"] *= 0.5
         if values["tr"] < 0.1:
             return STOP
         values["pz"] *= 1.1
         return RETRY_TOO_FEW
 
-    # Zu viele Marker: alle neuen löschen und Mindestabstand adaptiv erhöhen
-    if am > values["og"]:
-        for nm in nm_list:
-            delete_marker(nm)
+    if candidate_total > og:
+        # Zu viele -> Mindestabstand hochskalieren
         if values["za"] > 0:
-            values["md"] *= (am / values["za"])
+            factor = candidate_total / values["za"]
+            # Begrenze Faktor etwas, um Überschwingen zu dämpfen
+            factor = min(factor, 4.0)
+            values["md"] *= factor
         return RETRY_TOO_MANY
 
-    return STOP  # Fallback
+    return STOP
