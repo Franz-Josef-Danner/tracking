@@ -48,31 +48,22 @@ def detect_features_multipass(
     cluster_max_per_cluster=1,
 ):
     """Fuehrt mehrfache Feature-Erkennung aus.
-
-    Returns:
-        dict mit Schluesseln:
-            success (bool)
-            message (str)
-            passes (int)
-            total_added (int | -1)
-        per_pass (list[tuple(threshold, added, note)])
-            removed_duplicate_tracks (list[str])
-            removed_duplicate_count (int)
-        cluster_removed_tracks (list[str])
-        cluster_removed_count (int)
-        cluster_stats (dict | None)
+    Returns: dict(...)
     """
+    # --- Vorhandene Initialisierungen (area, region, clip, pattern_size, etc.) ---
     area = find_clip_editor_area(context)
     if area is None:
         return {
             'success': False,
-            'message': 'Kein Movie Clip Editor Bereich gefunden (oeffne einen Clip Editor).'
+            'message': 'Kein Movie Clip Editor Bereich gefunden (oeffne einen Clip Editor).',
+            'marker_control': [],  # konsistent zurückgeben
         }
     region = next((r for r in area.regions if r.type == 'WINDOW'), None)
     if region is None:
         return {
             'success': False,
-            'message': 'Keine gueltige WINDOW Region im Clip Editor gefunden.'
+            'message': 'Keine gueltige WINDOW Region im Clip Editor gefunden.',
+            'marker_control': [],
         }
 
     clip = get_clip_from_area(area)
@@ -716,12 +707,13 @@ def detect_features_multipass(
             'message': f'Fehler: {e}',
             'exception_type': type(e).__name__,
             'traceback': tb,
-            'passes': passes,
+            'passes': locals().get('passes', 0),
             'total_added': -1,
-            'per_pass': per_pass,
-            'pattern_size': pattern_size,
-            'search_size': search_size,
-            'marker_logs': marker_logs
+            'per_pass': locals().get('per_pass', []),
+            'pattern_size': locals().get('pattern_size'),
+            'search_size': locals().get('search_size'),
+            'marker_logs': locals().get('marker_logs', []),
+            'marker_control': marker_control,  # WICHTIG: jetzt vorhanden
         }
     finally:
         # Urspruengliche Werte wiederherstellen
