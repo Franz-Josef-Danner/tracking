@@ -46,6 +46,7 @@ def detect_features_multipass(
     cluster_consolidate=False,
     cluster_tolerance_px=2.0,
     cluster_max_per_cluster=1,
+    min_distance=100.0,
 ):
     """
     Mehrfaches Feature-Detect (Multi-Threshold) mit Band-Überwachung (ef->za) und
@@ -55,14 +56,14 @@ def detect_features_multipass(
              (Parameter duplicate_tolerance_px & jede Cluster-Funktion wurden entfernt.)
 
     Parameter:
-        start_threshold (float)   – Start Threshold.
-        min_threshold (float)     – Abbruchschwelle für Threshold-Kaskade.
-        factor (float)            – Multiplikator pro Pass (current *= factor).
-        max_passes (int)          – Sicherheitslimit.
-        remove_duplicates (bool)  – Am Ende (oder sofort bei immediate_delete) doppelte Marker löschen.
-        keep_first_marker (bool)  – Ersten jemals gefundenen Marker nie als Duplikat löschen.
-        immediate_delete (bool)   – Duplikate sofort beim Entstehen löschen.
-        min_distance (int/float)  – Wird an bpy.ops.clip.detect_features übergeben UND als Duplikatgrenze genutzt.
+        start_threshold (float)      – Start Threshold.
+        min_threshold (float)        – Abbruchschwelle für Threshold-Kaskade.
+        factor (float)               – Multiplikator pro Pass (current *= factor).
+        max_passes (int)             – Sicherheitslimit.
+        remove_duplicates (bool)     – Am Ende (oder sofort bei immediate_delete) doppelte Marker löschen.
+        keep_first_marker (bool)     – Ersten jemals gefundenen Marker nie als Duplikat löschen.
+        immediate_delete (bool)      – Duplikate sofort beim Entstehen löschen.
+        min_distance (int | float)   – Distanzschwelle (Pixel) für Duplikaterkennung UND Übergabe an detect.
 
     Rückgabe enthält u.a.:
         marker_control  – Band-Telemetrie je Pass.
@@ -70,6 +71,12 @@ def detect_features_multipass(
         per_pass, per_pass_new_counts, distance_stats, etc.
     """
     marker_control = []
+
+    # Normalisierung min_distance (NameError-Fix & robust gegen falsche Typen)
+    try:
+        min_distance = float(min_distance)
+    except Exception:  # noqa: BLE001
+        min_distance = 100.0
 
     area = find_clip_editor_area(context)
     if area is None:
