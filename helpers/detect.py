@@ -15,7 +15,10 @@ def detect_features(context, values):
     if md != values['md']:
         values['md'] = md  # sync
 
-    print(f"[Kaiserlich][detect] threshold={values['tr']} margin={values['ma']} md={values['md']}")
+    print(
+        f"[Kaiserlich][detect] threshold={values['tr']} margin={values['ma']} md={values['md']} "
+        f"pattern={settings.default_pattern_size} search={settings.default_search_size}"
+    )
     bpy.ops.clip.detect_features(
         placement='FRAME',
         margin=int(values['ma']),
