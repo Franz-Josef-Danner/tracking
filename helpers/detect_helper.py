@@ -210,166 +210,164 @@ def detect_features_multipass(
         return new_total - prev_count, note
 
     def log_new_tracks(pass_index, thr):
-        def log_new_tracks(pass_index, thr):
-            """Erfasst neu hinzugekommene Tracks dieses Passes.
+        """Erfasst neu entstandene Tracks dieses Passes und loggt sie.
 
-            Gibt (anzahl, namen_liste) zurueck. Fuegt Eintraege in marker_logs ein, ausser sofort geloeschte Duplikate.
-            """
-            if not (clip and bpy is not None):
-                return 0, []
-            nonlocal existing_track_ids
+        Rueckgabe: (count, [namen])
+        """
+        if not (clip and bpy is not None):
+            return 0, []
+        nonlocal existing_track_ids
+        try:
+            cur_ids = {id(t) for t in clip.tracking.tracks}
+        except Exception:  # noqa: BLE001
+            return 0, []
+        new_ids = cur_ids - existing_track_ids
+        if not new_ids:
+            return 0, []
+        cur_frame = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
+        existing_positions_px = []
+        fallback_used = False
+        if w is not None and h is not None:
             try:
-                cur_ids = {id(t) for t in clip.tracking.tracks}
-            except Exception:  # noqa: BLE001
-                return 0, []
-            new_ids = cur_ids - existing_track_ids
-            if not new_ids:
-                return 0, []
-            cur_frame = bpy.context.scene.frame_current if bpy.context and bpy.context.scene else None
-            existing_positions_px = []
-            fallback_used = False
-            if w is not None and h is not None:
-                try:
-                    if marker_logs:
-                        existing_positions_px.extend([m['pos_px'] for m in marker_logs if m.get('pos_px')])
-                    for t in clip.tracking.tracks:
-                        if id(t) in existing_track_ids:
-                            marker_ref = None
-                            if cur_frame is not None:
-                                for mm in t.markers:
-                                    if mm.frame == cur_frame:
-                                        marker_ref = mm
-                                        break
-                            if marker_ref is None and len(t.markers) > 0:
-                                marker_ref = t.markers[0]
-                            if marker_ref is not None:
-                                co_norm = marker_ref.co
-                                existing_positions_px.append((co_norm[0] * w, co_norm[1] * h))
-                    if not existing_positions_px:
-                        fallback_used = True
-                except Exception:  # noqa: BLE001
+                if marker_logs:
+                    existing_positions_px.extend([m['pos_px'] for m in marker_logs if m.get('pos_px')])
+                for t in clip.tracking.tracks:
+                    if id(t) in existing_track_ids:
+                        marker_ref = None
+                        if cur_frame is not None:
+                            for mm in t.markers:
+                                if mm.frame == cur_frame:
+                                    marker_ref = mm
+                                    break
+                        if marker_ref is None and len(t.markers) > 0:
+                            marker_ref = t.markers[0]
+                        if marker_ref is not None:
+                            co_norm = marker_ref.co
+                            existing_positions_px.append((co_norm[0] * w, co_norm[1] * h))
+                if not existing_positions_px:
                     fallback_used = True
-            count = 0
-            new_names = []
+            except Exception:  # noqa: BLE001
+                fallback_used = True
+        count = 0
+        new_names = []
 
-            def _safe_track_name(obj):  # lokal fuer Unicode-Robustheit
-                try:
-                    nm = obj.name
-                    return nm if isinstance(nm, str) else str(nm)
-                except UnicodeDecodeError as ue:
-                    raw = getattr(obj, 'name', b'?')
-                    if isinstance(raw, bytes):
+        def _safe_track_name(obj):
+            try:
+                nm = obj.name
+                return nm if isinstance(nm, str) else str(nm)
+            except UnicodeDecodeError as ue:
+                raw = getattr(obj, 'name', b'?')
+                if isinstance(raw, bytes):
+                    try:
+                        return 'TRACK_NAME_ERR:' + raw.decode('utf-8', 'backslashreplace')
+                    except Exception:  # noqa: BLE001
+                        pass
+                return f'TRACK_NAME_ERR:{ue}'
+            except Exception:  # noqa: BLE001
+                return 'TRACK_NAME_ERR:unknown'
+
+        for t in list(clip.tracking.tracks):
+            if id(t) not in new_ids:
+                continue
+            count += 1
+            try:
+                new_names.append(t.name)
+            except Exception:  # noqa: BLE001
+                pass
+            marker_co_norm = None
+            marker_px = None
+            frame_used = None
+            nearest_dist_px = None
+            replaced_name = False
+            safe_name = _safe_track_name(t)
+            try:
+                marker = None
+                if cur_frame is not None:
+                    for mm in t.markers:
+                        if mm.frame == cur_frame:
+                            marker = mm
+                            break
+                if marker is None and len(t.markers) > 0:
+                    marker = t.markers[0]
+                if marker is not None:
+                    marker_co_norm = tuple(marker.co)
+                    frame_used = marker.frame
+                    if w is not None and h is not None:
+                        marker_px = (marker_co_norm[0] * w, marker_co_norm[1] * h)
+                        if existing_positions_px:
+                            try:
+                                x, y = marker_px
+                                nearest_dist_px = min(
+                                    ((x - ex) ** 2 + (y - ey) ** 2) for ex, ey in existing_positions_px
+                                ) ** 0.5
+                            except Exception:  # noqa: BLE001
+                                nearest_dist_px = None
+                        existing_positions_px.append(marker_px)
+                if marker_logs and any(m['track_name'] == t.name for m in marker_logs):
+                    replaced_name = True
+            except Exception:  # noqa: BLE001
+                pass
+
+            no_distance_reason = None
+            if nearest_dist_px is None:
+                if marker_px is None:
+                    no_distance_reason = 'no_marker_position'
+                elif not existing_positions_px or (len(existing_positions_px) == 1 and existing_positions_px[-1] == marker_px):
+                    no_distance_reason = 'no_reference_positions'
+                else:
+                    no_distance_reason = 'calc_error'
+
+            if immediate_delete and remove_duplicates:
+                is_duplicate = False
+                if nearest_dist_px is not None and nearest_dist_px <= duplicate_tolerance_px:
+                    is_duplicate = True
+                elif nearest_dist_px is None and existing_positions_px:
+                    is_duplicate = True
+                if keep_first_marker and not marker_logs:
+                    is_duplicate = False
+                if is_duplicate:
+                    try:
+                        _ensure_tracking_mode()
+                        for tr in clip.tracking.tracks:
+                            try:
+                                tr.select = False
+                            except Exception:  # noqa: BLE001
+                                pass
                         try:
-                            return 'TRACK_NAME_ERR:' + raw.decode('utf-8', 'backslashreplace')
+                            t.select = True
                         except Exception:  # noqa: BLE001
                             pass
-                    return f'TRACK_NAME_ERR:{ue}'
-                except Exception:  # noqa: BLE001
-                    return 'TRACK_NAME_ERR:unknown'
-
-            for t in list(clip.tracking.tracks):
-                if id(t) not in new_ids:
-                    continue
-                count += 1
-                try:
-                    new_names.append(t.name)
-                except Exception:  # noqa: BLE001
-                    pass
-                marker_co_norm = None
-                marker_px = None
-                frame_used = None
-                nearest_dist_px = None
-                replaced_name = False
-                safe_name = _safe_track_name(t)
-                try:
-                    marker = None
-                    if cur_frame is not None:
-                        for mm in t.markers:
-                            if mm.frame == cur_frame:
-                                marker = mm
-                                break
-                    if marker is None and len(t.markers) > 0:
-                        marker = t.markers[0]
-                    if marker is not None:
-                        marker_co_norm = tuple(marker.co)
-                        frame_used = marker.frame
-                        if w is not None and h is not None:
-                            marker_px = (marker_co_norm[0] * w, marker_co_norm[1] * h)
-                            if existing_positions_px:
-                                try:
-                                    x, y = marker_px
-                                    nearest_dist_px = min(
-                                        ((x - ex) ** 2 + (y - ey) ** 2) for ex, ey in existing_positions_px
-                                    ) ** 0.5
-                                except Exception:  # noqa: BLE001
-                                    nearest_dist_px = None
-                            existing_positions_px.append(marker_px)
-                    if marker_logs and any(m['track_name'] == t.name for m in marker_logs):
-                        replaced_name = True
-                except Exception:  # noqa: BLE001
-                    pass
-
-                no_distance_reason = None
-                if nearest_dist_px is None:
-                    if marker_px is None:
-                        no_distance_reason = 'no_marker_position'
-                    elif not existing_positions_px or (len(existing_positions_px) == 1 and existing_positions_px[-1] == marker_px):
-                        no_distance_reason = 'no_reference_positions'
-                    else:
-                        no_distance_reason = 'calc_error'
-
-                if immediate_delete and remove_duplicates:
-                    is_duplicate = False
-                    if nearest_dist_px is not None and nearest_dist_px <= duplicate_tolerance_px:
-                        is_duplicate = True
-                    elif nearest_dist_px is None and existing_positions_px:
-                        is_duplicate = True
-                    if keep_first_marker and not marker_logs:
-                        is_duplicate = False
-                    if is_duplicate:
+                        try:
+                            clip.tracking.tracks.active = t  # type: ignore[attr-defined]
+                        except Exception:  # noqa: BLE001
+                            pass
                         try:
                             _ensure_tracking_mode()
-                            for tr in clip.tracking.tracks:
-                                try:
-                                    tr.select = False
-                                except Exception:  # noqa: BLE001
-                                    pass
-                            try:
-                                t.select = True
-                            except Exception:  # noqa: BLE001
-                                pass
-                            try:
-                                clip.tracking.tracks.active = t  # type: ignore[attr-defined]
-                            except Exception:  # noqa: BLE001
-                                pass
-                            try:
-                                _ensure_tracking_mode()
-                                bpy.ops.clip.delete_track()
-                                # nicht loggen, weil geloescht
-                                continue
-                            except Exception:  # noqa: BLE001
-                                pass
+                            bpy.ops.clip.delete_track()
+                            continue
                         except Exception:  # noqa: BLE001
                             pass
+                    except Exception:  # noqa: BLE001
+                        pass
 
-                marker_logs.append({
-                    'pass': pass_index,
-                    'threshold': thr,
-                    'track_name': safe_name,
-                    'frame': frame_used,
-                    'pos_norm': marker_co_norm,
-                    'pos_px': marker_px,
-                    'nearest_dist_px': nearest_dist_px,
-                    'pattern': pattern_size,
-                    'search': search_size,
-                    'distance_fallback': fallback_used,
-                    'replaced_name': replaced_name,
-                    'no_distance_reason': no_distance_reason,
-                    'removed_immediately': False,
-                })
+            marker_logs.append({
+                'pass': pass_index,
+                'threshold': thr,
+                'track_name': safe_name,
+                'frame': frame_used,
+                'pos_norm': marker_co_norm,
+                'pos_px': marker_px,
+                'nearest_dist_px': nearest_dist_px,
+                'pattern': pattern_size,
+                'search': search_size,
+                'distance_fallback': fallback_used,
+                'replaced_name': replaced_name,
+                'no_distance_reason': no_distance_reason,
+                'removed_immediately': False,
+            })
 
-            existing_track_ids.update(new_ids)
-            return count, new_names
+        existing_track_ids.update(new_ids)
+        return count, new_names
 
     def _delete_tracks_by_name(track_names):
         """Loescht eine Liste von Track-Namen sofort im Clip (Best-Effort)."""
