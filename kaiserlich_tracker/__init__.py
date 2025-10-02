@@ -22,17 +22,17 @@ bl_info = {
 import bpy
 
 from . import ui
-from .operator.detect_cycle import KAISERLICH_OT_detect_cycle
+from .operator.detect_cycle import KAISERLICH_OT_detect_cyclus
 
 
 def register():
-    bpy.utils.register_class(KAISERLICH_OT_detect_cycle)
+    bpy.utils.register_class(KAISERLICH_OT_detect_cyclus)
     ui.register()
 
 
 def unregister():
     ui.unregister()
-    bpy.utils.unregister_class(KAISERLICH_OT_detect_cycle)
+    bpy.utils.unregister_class(KAISERLICH_OT_detect_cyclus)
 
 
 if __name__ == "__main__":

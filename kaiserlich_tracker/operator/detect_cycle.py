@@ -9,10 +9,10 @@ from ..helpers.cleanup import cleanup
 from ..helpers.control import control_cycle
 
 
-class KAISERLICH_OT_detect_cycle(Operator):
-    bl_idname = "clip.kaiserlich_detect_cycle"
-    bl_label = "Kaiserlich Detect Cycle"
-    bl_description = "Starte den automatischen Marker-Detektions-Zyklus"
+class KAISERLICH_OT_detect_cyclus(Operator):
+    bl_idname = "clip.kaiserlich_detect_cyclus"
+    bl_label = "Kaiserlich Detect Cyclus"
+    bl_description = "Starte den automatischen Marker-Detektions-Cyclus"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -50,4 +50,4 @@ class KAISERLICH_OT_detect_cycle(Operator):
         # Kontrolle & ggf. Restart
         restart = control_cycle(context, nm, values, restart_callback=lambda: self.detect_cyclus(context, values))
         if not restart:
-            print('[Kaiserlich] Cycle finished in depth', depth)
+            print('[Kaiserlich] Cyclus finished in depth', depth)

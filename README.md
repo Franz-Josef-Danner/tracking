@@ -6,7 +6,7 @@ Umsetzung des bereitgestellten Pseudocode-Workflows als Blender Add-on Modulstru
 
 * UI Panel im Movie Clip Editor (Sidebar -> Kaiserlich)
 * Szene-Property `kaiserlich_marker_per_frame`
-* Operator `clip.kaiserlich_detect_cycle`
+* Operator `clip.kaiserlich_detect_cyclus`
 * Bootstrap der Startparameter (margin, min distance, pattern/search size, threshold, Zielbereich)
 * Snapshot vorhandener Marker im aktuellen Frame
 * Feature Detection via `bpy.ops.clip.detect_features`
