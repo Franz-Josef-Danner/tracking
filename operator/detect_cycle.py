@@ -38,19 +38,20 @@ class KAISERLICH_OT_detect_cyclus(Operator):
         while loop < max_loops:
             loop += 1
             values['_loop'] = loop
-            # Snapshot alte Marker (alle aktiven am Frame)
+            # Snapshot alte aktive Marker
             lm = snapshot(context)
-            # Detect
+            # Detect neue Features
             detect_features(context, values)
-            # Neue Marker (roh)
-            nm = newmarker(context)
-            # Cleanup -> verbleibende neue Marker
+            # Nur wirklich neue Marker holen
+            nm = newmarker(context, lm)
+            # Cleanup der neuen Marker gegen alte Marker
             nm_clean = cleanup(context, nm, lm, values)
+            # Total aktive Marker = alte + neue akzeptierte
+            total_active = lm + nm_clean
             # Kontrolle
-            action = control_cycle(context, nm_clean, values)
+            action = control_cycle(context, total_active, nm_clean, values)
             if action == 'done':
                 print(f'[Kaiserlich] Cyclus finished in loop {loop}')
                 break
-            # 'retry' oder 'repeat' => Schleife fortsetzen
         else:
             print('[Kaiserlich] Abbruch: max_loops erreicht')
