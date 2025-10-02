@@ -19,15 +19,41 @@ def detect_cyclus(context, max_cycles: int = 15):
     cycle = 0
     while cycle < max_cycles:
         cycle += 1
-        lm = snapshot(context)
+        lm = snapshot(context)  # Marker vor neuem Detect
+        prev_count = len(lm)
+
+        print(f"Kaiserlich Tracker: Zyklus {cycle} – Start: {prev_count} Marker (ug={values['ug']:.1f}, za={values['za']:.1f}, og={values['og']:.1f})")
+
+        # Feature Detection
         detect_features(context, values)
-        nm = newmarker(context)
-        cleanup(context, nm, lm, values)
-        status = control_cycle(context, nm, values)
+
+        # Marker direkt nach Detection (vor Cleanup)
+        nm_raw = newmarker(context)
+        raw_count = len(nm_raw)
+        raw_added = raw_count - prev_count
+
+        # Cleanup Duplikate entfernen
+        cleanup(context, nm_raw, lm, values)
+
+        # Finale Marker nach Cleanup erneut zählen
+        nm_final = snapshot(context)
+        final_count = len(nm_final)
+        final_added = final_count - prev_count
+        removed = raw_count - final_count
+
+        print(
+            f"Kaiserlich Tracker: Zyklus {cycle} – Roh +{raw_added} -> bereinigt -{removed} = +{final_added} (End: {final_count}) | tr={values['tr']:.3f} md={values['md']:.1f}"
+        )
+
+        status = control_cycle(context, nm_final, values)
         if status == STOP:
-            print(f"Kaiserlich Tracker: Finished after {cycle} cycle(s) with {len(nm)} markers")
+            print(f"Kaiserlich Tracker: Finished nach {cycle} Zyklen mit {final_count} Markern")
             break
-        elif status == RETRY_TOO_FEW or status == RETRY_TOO_MANY:
+        elif status == RETRY_TOO_FEW:
+            print("Kaiserlich Tracker: Zu wenige Marker – Parameter angepasst, nächster Zyklus...")
+            continue
+        elif status == RETRY_TOO_MANY:
+            print("Kaiserlich Tracker: Zu viele Marker – Mindestabstand erhöht, nächster Zyklus...")
             continue
         else:
             print(f"Kaiserlich Tracker: Unbekannter Status '{status}', Abbruch.")
