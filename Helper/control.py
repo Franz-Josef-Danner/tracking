@@ -25,6 +25,8 @@ def detect_cyclus(context, max_cycles: int = 15):
         cycle += 1
         lm = snapshot(context)  # Alte Marker vor neuem Detect
         old_count = len(lm)
+        clip = context.edit_movieclip
+        pre_track_names = {t.name for t in clip.tracking.tracks}
 
         print(
             f"Kaiserlich Tracker: Zyklus {cycle} – Start: {old_count} alt | ug={values['ug']:.1f} za={values['za']:.1f} og={values['og']:.1f} tr={values['tr']:.3f} md={values['md']:.1f}"
@@ -46,16 +48,20 @@ def detect_cyclus(context, max_cycles: int = 15):
         total_after_cleanup = len(after_cleanup_all)
         removed = raw_total - total_after_cleanup
 
-        # Neu entstandene Marker extrahieren
-        new_markers = [m for m in after_cleanup_all if m not in lm]
+        # Neu entstandene Tracks (Feature-Detect erstellt i.d.R. neue Tracks pro Marker)
+        post_tracks = [t for t in clip.tracking.tracks]
+        new_tracks = [t for t in post_tracks if t.name not in pre_track_names]
+
+        # Neu entstandene Marker (nur zur Info)
+        new_markers = [m for tr in new_tracks for m in tr.markers if m.frame == context.scene.frame_current]
         new_count = len(new_markers)
-        candidate_total = old_count + new_count  # sollte == total_after_cleanup sein
+        candidate_total = total_after_cleanup
 
         print(
             f"Kaiserlich Tracker: Zyklus {cycle} – Roh +{raw_added} | entfernt {removed} | neu {new_count} | total {candidate_total}"
         )
 
-        status = control_cycle(context, old_count, new_markers, candidate_total, values)
+        status = control_cycle(context, clip, new_tracks, candidate_total, values)
 
         if status == STOP:
             print(
@@ -79,11 +85,8 @@ def detect_cyclus(context, max_cycles: int = 15):
         print(f"Kaiserlich Tracker: Abbruch nach max_cycles={max_cycles} ohne Stabilisierung.")
 
 
-def control_cycle(context, old_count, new_markers, candidate_total, values):
-    """Bewertet Kandidat (alte + neue Marker) und entscheidet.
-
-    Wenn candidate_total im Korridor: KEEP (STOP)
-    Sonst: löscht alle new_markers und passt Parameter an.
+def control_cycle(context, clip, new_tracks, candidate_total, values):
+    """Bewertet Gesamtmarkerzahl; löscht bei Abweichung komplette neu entstandene Tracks.
 
     Rückgabe: STOP | RETRY_FEW | RETRY_MANY
     """
@@ -91,15 +94,16 @@ def control_cycle(context, old_count, new_markers, candidate_total, values):
     og = values["og"]
 
     if ug <= candidate_total <= og:
-        # Erfolg: neue Marker bleiben erhalten
         return STOP
 
-    # Außerhalb -> neue Marker löschen
-    for m in new_markers:
-        delete_marker(m)
+    # Neue Tracks verwerfen
+    for tr in new_tracks:
+        try:
+            clip.tracking.tracks.remove(tr)
+        except Exception:
+            pass
 
     if candidate_total < ug:
-        # Zu wenig -> Schwelle reduzieren
         values["tr"] *= 0.5
         if values["tr"] < 0.1:
             return STOP
@@ -107,10 +111,8 @@ def control_cycle(context, old_count, new_markers, candidate_total, values):
         return RETRY_TOO_FEW
 
     if candidate_total > og:
-        # Zu viele -> Mindestabstand hochskalieren
         if values["za"] > 0:
             factor = candidate_total / values["za"]
-            # Begrenze Faktor etwas, um Überschwingen zu dämpfen
             factor = min(factor, 4.0)
             values["md"] *= factor
         return RETRY_TOO_MANY
