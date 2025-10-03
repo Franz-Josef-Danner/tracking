@@ -4,6 +4,7 @@ from typing import List
 
 @dataclass
 class MarkerSnapshot:
+    track_name: str
     frame: int
     co_x: float
     co_y: float
@@ -11,7 +12,10 @@ class MarkerSnapshot:
     mute: bool
 
     def __repr__(self):
-        return f"MarkerSnapshot(frame={self.frame}, co=({self.co_x:.4f},{self.co_y:.4f}), keyed={self.is_keyed}, mute={self.mute})"
+        return (
+            f"MarkerSnapshot(track={self.track_name}, frame={self.frame}, "
+            f"co=({self.co_x:.4f},{self.co_y:.4f}), keyed={self.is_keyed}, mute={self.mute})"
+        )
 
 
 def capture_current_frame_markers(context) -> List[MarkerSnapshot]:
@@ -42,6 +46,7 @@ def capture_current_frame_markers(context) -> List[MarkerSnapshot]:
             continue
         # marker.co sind normalisierte Koordinaten (0..1)
         snap = MarkerSnapshot(
+            track_name=track.name,
             frame=marker.frame,
             co_x=marker.co[0],
             co_y=marker.co[1],
