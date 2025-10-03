@@ -1,4 +1,5 @@
 from .delete import delete_marker
+from .detect import _apply_pattern_size, _normalize_pattern_size
 
 
 def control_cycle(context, new_marker_list, values):
@@ -7,7 +8,8 @@ def control_cycle(context, new_marker_list, values):
     # ✅ Ziel erreicht
     if values["ug"] <= amount <= values["og"]:
         clip = context.edit_movieclip
-        clip.tracking.settings.pattern_size = int(max(5, values["pz"]))
+        if clip:
+            _apply_pattern_size(clip, _normalize_pattern_size(values["pz"]))
         print(f"[Kaiserlich] Cycle finished: {amount} Marker")
         return True
 
