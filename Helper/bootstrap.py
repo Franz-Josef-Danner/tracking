@@ -26,5 +26,17 @@ def run(context, ef: int):
     ug = za * 0.9
 
     print(f"ef={ef} za={za} og={og} ug={ug} hz={hz} vc={vc} ma={ma} md={md} pz={pz} sz={sz} tr={tr}")
-
-    # Hier könnte weitere Logik folgen (z.B. Tracking-Setup)
+    # Rückgabe der relevanten Parameter für weitere Schritte
+    return {
+        "ef": ef,
+        "hz": hz,
+        "vc": vc,
+        "ma": int(ma),  # detect_features erwartet ints für margin / min_distance
+        "md": int(md),
+        "tr": float(tr),
+        "pz": pz,
+        "sz": sz,
+        "za": za,
+        "og": og,
+        "ug": ug,
+    }
