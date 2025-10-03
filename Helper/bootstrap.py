@@ -17,8 +17,22 @@ def run(context, ef: int):
       ug = za * 0.9
     """
     scene = context.scene
-    hz = scene.render.resolution_x
-    vc = scene.render.resolution_y
+
+    # Bestimme Auflösung: bevorzugt echte Clip-Auflösung, Fallback Render-Auflösung
+    space = getattr(context, 'space_data', None)
+    clip = None
+    if space and getattr(space, 'type', None) == 'CLIP_EDITOR':
+        clip = getattr(space, 'clip', None)
+    if clip and getattr(clip, 'size', None):
+        try:
+            hz = int(clip.size[0])
+            vc = int(clip.size[1])
+        except Exception:
+            hz = scene.render.resolution_x
+            vc = scene.render.resolution_y
+    else:
+        hz = scene.render.resolution_x
+        vc = scene.render.resolution_y
 
     ma = hz * 0.025
     md = hz * 0.025
@@ -36,11 +50,8 @@ def run(context, ef: int):
     og = int(za * 1.1)
     ug = int(za * 0.9)
 
-    # Tracking Settings (pattern/search size) direkt setzen, falls verfügbar
-    space = getattr(context, 'space_data', None)
-    clip = None
-    if space and getattr(space, 'type', None) == 'CLIP_EDITOR':
-        clip = getattr(space, 'clip', None)
+    # Tracking Settings (linke Panels -> Track Panel -> Tracking Settings)
+    # pattern size = pz, search size = sz
     if clip:
         tracking = clip.tracking
         try:
