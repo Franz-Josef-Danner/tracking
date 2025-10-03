@@ -1,5 +1,5 @@
 import bpy
-from ..Helper import bootstrap
+from ..Helper import bootstrap, snapshot
 
 class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
     bl_idname = "kaiserlich.detect_cycle"  # ID bleibt technisch gleich für Kompatibilität
@@ -13,7 +13,17 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
         self.report({'INFO'}, f"Bootstrap ausgeführt mit ef={ef}")
         return {'FINISHED'}
 
-classes = [KAISERLICH_OT_detect_cyclus]
+class KAISERLICH_OT_cyclus_start(bpy.types.Operator):
+    bl_idname = "kaiserlich.cyclus_start"
+    bl_label = "Cyclus Start"
+    bl_description = "Erstellt Snapshot der aktiven Marker im aktuellen Frame"
+
+    def execute(self, context):
+        data = snapshot.store_snapshot(context)
+        self.report({'INFO'}, f"{len(data)} Marker gespeichert")
+        return {'FINISHED'}
+
+classes = [KAISERLICH_OT_detect_cyclus, KAISERLICH_OT_cyclus_start]
 
 def register():
     for cls in classes:

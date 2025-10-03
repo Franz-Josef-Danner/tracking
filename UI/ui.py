@@ -17,6 +17,7 @@ class KAISERLICH_PT_tracker(bpy.types.Panel):
         scn = context.scene
         layout.prop(scn, "kaiserlich_marker_per_frame")
         layout.operator("kaiserlich.detect_cycle", text="Detect Cyclus")
+        layout.operator("kaiserlich.cyclus_start", text="Cyclus Start")
 
 
 def register():
