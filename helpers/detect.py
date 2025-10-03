@@ -35,10 +35,19 @@ def detect_features(context, values):
     # Dynamische Pattern Size vorbereiten
     p_size = _normalize_pattern_size(values["pz"])
     _apply_pattern_size(clip, p_size)
+    # Blender 4.4: margin & min_distance müssen ints sein
+    margin = max(1, int(round(values["ma"])))
+    min_distance = max(1, int(round(values["md"])))
+    threshold = float(values["tr"])  # sicherstellen, dass numerisch
 
-    bpy.ops.clip.detect_features(
-        placement='FRAME',
-        margin=values["ma"],
-        threshold=values["tr"],
-        min_distance=values["md"],
-    )
+    try:
+        bpy.ops.clip.detect_features(
+            placement='FRAME',
+            margin=margin,
+            threshold=threshold,
+            min_distance=min_distance,
+        )
+    except TypeError as e:
+        print(f"[Kaiserlich] detect_features Parameterfehler: {e}")
+    except Exception as e:
+        print(f"[Kaiserlich] Unerwarteter Fehler bei detect_features: {e}")
