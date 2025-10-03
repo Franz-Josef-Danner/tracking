@@ -2,86 +2,61 @@ bl_info = {
     "name": "Kaiserlich Tracker",
     "author": "Franz Josef Danner",
     "version": (0, 1, 0),
-    "blender": (3, 0, 0),
-    "location": "Clip Editor > Sidebar > Kaiserlich",
-    "description": "Adaptive automatische Feature- / Marker-Detection mit Zyklensteuerung",
-    "category": "Tracking"
+    "blender": (4, 0, 0),
+    "location": "Video Sequence Editor > Sidebar",
+    "description": "Tracking Hilfs-Addon",
+    "category": "Animation",
 }
 
 import importlib
-import bpy
+try:
+    import bpy  # Blender Runtime
+except Exception:  # pragma: no cover - außerhalb von Blender nicht verfügbar
+    bpy = None
 
-from . import ui, operator as op_module, helpers
+from .UI import ui as ui_module
+from .Operator import operator as operator_module
 
-# Hot-reload Untermodule bei Skript-Neuladen in Blender
-if "_KAISERLICH_RELOADED" in locals():  # type: ignore
-    importlib.reload(ui)
-    importlib.reload(op_module)
-    importlib.reload(helpers)
-
-_KAISERLICH_RELOADED = True  # Marker
-
-
-classes = (
-    ui.CLIP_PT_KaiserlichTracker,
-    op_module.CLIP_OT_KaiserlichDetectCycle,
-)
-
-
-def register_properties():
-    scene = bpy.types.Scene
-    from bpy.props import IntProperty, BoolProperty
-
-    if not hasattr(scene, "kaiserlich_marker_per_frame"):
-        scene.kaiserlich_marker_per_frame = IntProperty(
-            name="Marker / Frame",
-            description="Angestrebte Anzahl neuer Marker pro Frame (Richtwert)",
-            default=25,
-            min=1,
-            max=500
-        )
-
-    if not hasattr(scene, "kaiserlich_cycle_running"):
-        scene.kaiserlich_cycle_running = BoolProperty(
-            name="Cycle Running",
-            description="Interner Status, um Mehrfachstarts zu verhindern",
-            default=False
-        )
-
-    if not hasattr(scene, "kaiserlich_last_marker_count"):
-        scene.kaiserlich_last_marker_count = IntProperty(
-            name="Letzte Markeranzahl",
-            description="Markeranzahl beim letzten erfolgreichen Zyklus",
-            default=0,
-            min=0
-        )
-
-
-def unregister_properties():
-    scene = bpy.types.Scene
-    for attr in [
-        "kaiserlich_marker_per_frame",
-        "kaiserlich_cycle_running",
-        "kaiserlich_last_marker_count",
-    ]:
-        if hasattr(scene, attr):
-            delattr(scene, attr)
+modules = [ui_module, operator_module]
 
 
 def register():
-    register_properties()
-    for cls in classes:
-        bpy.utils.register_class(cls)
+    for m in modules:
+        importlib.reload(m)
+    if bpy:
+        # Modul-eigene Register Funktionen (Properties etc.)
+        if hasattr(ui_module, "register"):
+            ui_module.register()
+        if hasattr(operator_module, "register"):
+            operator_module.register()
+        # Fallback: direkte Klassenregistrierung (falls nicht im Modul-Register enthalten)
+        for cls in ui_module.classes + operator_module.classes:
+            if not hasattr(bpy.types, cls.__name__):
+                try:
+                    bpy.utils.register_class(cls)
+                except Exception:
+                    pass
 
 
 def unregister():
-    for cls in reversed(classes):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception:
-            pass
-    unregister_properties()
+    if bpy:
+        if hasattr(ui_module, "unregister"):
+            try:
+                ui_module.unregister()
+            except Exception:
+                pass
+        if hasattr(operator_module, "unregister"):
+            try:
+                operator_module.unregister()
+            except Exception:
+                pass
+        for cls in reversed(ui_module.classes + operator_module.classes):
+            try:
+                bpy.utils.unregister_class(cls)
+            except Exception:
+                pass
 
+__all__ = ["register", "unregister"]
 
 if __name__ == "__main__":
     register()
