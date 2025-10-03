@@ -1,5 +1,5 @@
 import bpy
-from ..Helper import bootstrap, snapshot, detect, newmarker
+from ..Helper import bootstrap, snapshot, detect, newmarker, cleaneup
 
 class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
     bl_idname = "kaiserlich.detect_cycle"  # ID bleibt technisch gleich für Kompatibilität
@@ -46,13 +46,34 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
             print("[Kaiserlich Tracker] Marker Vergleich:")
             for line in comparison_log:
                 print("   ", line)
+
+        # 7) Cleanup vorbereiten: Paare für alte+neue Marker nur wenn AMA
+        from ..Helper.cleaneup import MarkerPair  # lokaler Import um Zyklus zu vermeiden
+        marker_pairs = []
+        for nm in new_markers:
+            old = old_by_track.get(nm.track_name)
+            if old:
+                marker_pairs.append(MarkerPair(
+                    track_name=nm.track_name,
+                    old_co=(old.co_x, old.co_y),
+                    new_co=(nm.co_x, nm.co_y)
+                ))
+        deleted_count = 0
+        if marker_pairs and params.get('md') is not None:
+            deleted_count = cleaneup.cleanup_markers(
+                context,
+                marker_pairs=marker_pairs,
+                md=params.get('md'),
+                hz=params.get('hz'),
+                vc=params.get('vc')
+            )
         tr = params.get('tr')
         md = params.get('md')
         ma = params.get('ma')
         pz = params.get('pz')
         sz = params.get('sz')
         self.report({'INFO'}, (
-            f"Detect Cyclus fertig: alt={len(markers)} neu={len(new_markers)} | ef={ef} "
+            f"Detect Cyclus fertig: alt={len(markers)} neu={len(new_markers)} del={deleted_count} | ef={ef} "
             f"tr={tr} md={md} ma={ma} pz={pz} sz={sz}"
         ))
         return {'FINISHED'}
