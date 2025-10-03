@@ -38,10 +38,12 @@ def run(context, ef: int):
     md = hz * 0.025
     print(f"md = {md}")
 
-    pz = hz * 0.01
+    # pattern size (integer)
+    pz = int(hz * 0.01)
     print(f"pz = {pz}")
 
-    sz = pz * 2
+    # search size (integer)
+    sz = int(pz * 2)
 
     tr = 1
     print(f"tr = {tr}")
@@ -56,11 +58,17 @@ def run(context, ef: int):
         tracking = clip.tracking
         try:
             settings = tracking.settings
+            # Setze Defaults für neu erstellte Tracks
+            if hasattr(settings, 'default_pattern_size'):
+                settings.default_pattern_size = int(pz)
+            if hasattr(settings, 'default_search_size'):
+                settings.default_search_size = int(sz)
+            # Fallback: Setze auch direkte pattern/search size falls vorhanden
             if hasattr(settings, 'pattern_size'):
                 settings.pattern_size = int(pz)
             if hasattr(settings, 'search_size'):
                 settings.search_size = int(sz)
-            print(f"Tracking settings gesetzt: pattern_size={int(pz)} search_size={int(sz)}")
+            print(f"Tracking settings gesetzt: default_pattern_size={int(pz)} default_search_size={int(sz)}")
         except Exception as e:
             print(f"Konnte Tracking Settings nicht setzen: {e}")
 
@@ -73,8 +81,8 @@ def run(context, ef: int):
         "ma": int(ma),  # margin
         "md": int(md),  # min_distance
         "tr": float(tr),  # threshold
-        "pz": float(pz),  # pattern size (berechnet in Pixeln)
-        "sz": float(sz),  # search size (berechnet in Pixeln)
+    "pz": int(pz),  # pattern size (Pixel, int)
+    "sz": int(sz),  # search size (Pixel, int)
         "za": float(za),
         "og": int(og),
         "ug": int(ug),
