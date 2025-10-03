@@ -19,18 +19,16 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
         za = base_params['za']
         ma = base_params['ma']
 
-        # Arbeitskopie für adaptive Parameter
+        # Arbeitskopie für adaptive Parameter (ohne Obergrenze für Iterationen)
         tr = base_params['tr']
         md = base_params['md']
         pz = base_params['pz']
         sz = base_params['sz']
 
-        MAX_ITER = 5
         iteration = 0
         summary_deleted = 0
-        last_new_count = 0
 
-        while iteration < MAX_ITER:
+        while True:
             iteration += 1
             print(f"[Kaiserlich Tracker] === Cyclus Iteration {iteration} === tr={tr} md={md} pz={pz} sz={sz}")
 
@@ -103,9 +101,17 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                 deleted_count = 0
 
             # Abbruchbedingungen / Adaptive Logik
+            # Falls keine neuen Marker: aggressiveres Nachjustieren statt sofortigem Ende
             if am == 0:
-                print("[Kaiserlich Tracker] Keine neuen Marker - Ende.")
-                break
+                tr *= 0.5  # Schwelle senken um mehr Features zuzulassen
+                pz = max(2, int(pz * 1.05))  # leicht größere Pattern Size
+                sz = max(4, int(pz * 2))
+                print(f"[Kaiserlich Tracker] am==0 -> tr reduziert auf {tr:.4f}, pz={pz}, sz={sz} (weiter)")
+                if tr < 0.1:
+                    print("[Kaiserlich Tracker] tr < 0.1 nach am==0 Anpassungen - Ende.")
+                    break
+                continue
+
             if tr < 0.1:
                 print("[Kaiserlich Tracker] Schwelle < 0.1 - Ende.")
                 break

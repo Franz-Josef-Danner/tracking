@@ -1,4 +1,5 @@
 import bpy
+import math
 from . import marker_size
 
 def run(context, ef: int):
@@ -50,8 +51,9 @@ def run(context, ef: int):
     print(f"tr = {tr}")
 
     za = (ef * 4) / 14
-    og = int(za * 1.1)
-    ug = int(za * 0.9)
+    # og aufrunden (ceil), ug abrunden (floor)
+    og = math.ceil(za * 1.1)
+    ug = math.floor(za * 0.9)
 
     # Delegiere Setzen der Markergrößen an marker_size Modul
     if clip:
