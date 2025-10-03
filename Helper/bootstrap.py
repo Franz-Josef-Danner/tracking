@@ -1,4 +1,5 @@
 import bpy
+from . import marker_size
 
 def run(context, ef: int):
     """Berechnet alle Parameter laut Vorgabe und gibt sie als Dict zurück.
@@ -52,25 +53,9 @@ def run(context, ef: int):
     og = int(za * 1.1)
     ug = int(za * 0.9)
 
-    # Tracking Settings (linke Panels -> Track Panel -> Tracking Settings)
-    # pattern size = pz, search size = sz
+    # Delegiere Setzen der Markergrößen an marker_size Modul
     if clip:
-        tracking = clip.tracking
-        try:
-            settings = tracking.settings
-            # Setze Defaults für neu erstellte Tracks
-            if hasattr(settings, 'default_pattern_size'):
-                settings.default_pattern_size = int(pz)
-            if hasattr(settings, 'default_search_size'):
-                settings.default_search_size = int(sz)
-            # Fallback: Setze auch direkte pattern/search size falls vorhanden
-            if hasattr(settings, 'pattern_size'):
-                settings.pattern_size = int(pz)
-            if hasattr(settings, 'search_size'):
-                settings.search_size = int(sz)
-            print(f"Tracking settings gesetzt: default_pattern_size={int(pz)} default_search_size={int(sz)}")
-        except Exception as e:
-            print(f"Konnte Tracking Settings nicht setzen: {e}")
+        marker_size.apply_marker_sizes(context, pz, sz)
 
     print(f"[Kaiserlich Tracker] ef={ef} hz={hz} vc={vc} ma={ma} md={md} pz={pz} sz={sz} tr={tr} za={za} og={og} ug={ug}")
 
@@ -81,8 +66,8 @@ def run(context, ef: int):
         "ma": int(ma),  # margin
         "md": int(md),  # min_distance
         "tr": float(tr),  # threshold
-    "pz": int(pz),  # pattern size (Pixel, int)
-    "sz": int(sz),  # search size (Pixel, int)
+        "pz": int(pz),  # pattern size (Pixel, int)
+        "sz": int(sz),  # search size (Pixel, int)
         "za": float(za),
         "og": int(og),
         "ug": int(ug),
