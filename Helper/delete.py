@@ -1,4 +1,26 @@
 import bpy
+
+# Einfache Laufzeit-API (wird von cleaneup.py erwartet)
+def run(track):
+    """Entfernt den gesamten Track (Fallback wenn nur Marker-Löschung gefordert war).
+
+    Rückgabe: True bei Erfolg, sonst False.
+    """
+    try:
+        clip = bpy.context.edit_movieclip
+        if not clip:
+            print('delete.run: kein aktiver Clip')
+            return False
+        # Sicherheitsprüfung: track gehört zum Clip?
+        if track not in clip.tracking.tracks:
+            print(f'delete.run: Track {getattr(track, "name", "?<unknown>")} nicht im Clip')
+            return False
+        clip.tracking.tracks.remove(track)
+        print(f'delete.run: Track {getattr(track, "name", "<unnamed>")} entfernt')
+        return True
+    except Exception as e:
+        print(f'delete.run: Fehler {e}')
+        return False
 def _resolve_track(context, track_name: str, case_insensitive: bool = True):
     """Findet einen Track anhand seines Namens (optional case-insensitive)."""
     space = context.space_data
