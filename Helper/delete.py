@@ -2,25 +2,101 @@ import bpy
 
 # Einfache Laufzeit-API (wird von cleaneup.py erwartet)
 def run(track):
-    """Entfernt den gesamten Track (Fallback wenn nur Marker-Löschung gefordert war).
+    """Versucht einen gesamten Track robust zu entfernen.
 
-    Rückgabe: True bei Erfolg, sonst False.
+    Vorgehen:
+      1. Direkter Entfernen-Versuch über clip.tracking.tracks.remove(track)
+      2. Falls noch vorhanden: Operator-Fallback bpy.ops.clip.delete_track
+    Rückgabe: True bei Erfolg.
     """
-    try:
-        clip = bpy.context.edit_movieclip
-        if not clip:
-            print('delete.run: kein aktiver Clip')
-            return False
-        # Sicherheitsprüfung: track gehört zum Clip?
-        if track not in clip.tracking.tracks:
-            print(f'delete.run: Track {getattr(track, "name", "?<unknown>")} nicht im Clip')
-            return False
-        clip.tracking.tracks.remove(track)
-        print(f'delete.run: Track {getattr(track, "name", "<unnamed>")} entfernt')
-        return True
-    except Exception as e:
-        print(f'delete.run: Fehler {e}')
+    clip = bpy.context.edit_movieclip
+    if not clip:
+        print('delete.run: kein aktiver Clip')
         return False
+    name = getattr(track, 'name', '<unnamed>')
+
+    # Prüfen ob Track-Objekt im Clip existiert (Identitätsvergleich)
+    found = False
+    for t in clip.tracking.tracks:
+        if t == track:
+            found = True
+            break
+    if not found:
+        # Fallback: evtl. gleicher Name
+        for t in clip.tracking.tracks:
+            if t.name == name:
+                track = t
+                found = True
+                break
+    if not found:
+        print(f'delete.run: Track {name} nicht (mehr) vorhanden')
+        return False
+
+    # 1. Direkter Remove
+    try:
+        clip.tracking.tracks.remove(track)
+        if all(t.name != name for t in clip.tracking.tracks):
+            print(f'delete.run: Track {name} entfernt (direct)')
+            return True
+    except Exception as e:
+        # Ignorieren und Operator versuchen
+        print(f'delete.run: direct remove Fehler {e}')
+
+    # 2. Operator-Fallback
+    # Selektions-Reset
+    try:
+        for t in clip.tracking.tracks:
+            try:
+                t.select = False
+            except Exception:
+                pass
+        try:
+            track.select = True
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    override = None
+    try:
+        wm = bpy.context.window_manager
+        for window in wm.windows:
+            for area in window.screen.areas:
+                if area.type == 'CLIP_EDITOR':
+                    for region in area.regions:
+                        if region.type == 'WINDOW':
+                            space = area.spaces.active
+                            if getattr(space, 'clip', None) == clip:
+                                override = {
+                                    'window': window,
+                                    'screen': window.screen,
+                                    'area': area,
+                                    'region': region,
+                                    'scene': bpy.context.scene,
+                                    'space_data': space,
+                                    'clip': clip,
+                                }
+                                raise StopIteration
+                    # Ende regions
+        # Ende windows
+    except StopIteration:
+        pass
+    except Exception:
+        pass
+
+    try:
+        if override:
+            _ = bpy.ops.clip.delete_track(override)
+        else:
+            _ = bpy.ops.clip.delete_track()
+    except Exception as e:
+        print(f'delete.run: Operator Fehler {e}')
+
+    if all(t.name != name for t in clip.tracking.tracks):
+        print(f'delete.run: Track {name} entfernt (operator)')
+        return True
+    print(f'delete.run: Entfernen von {name} fehlgeschlagen')
+    return False
 def _resolve_track(context, track_name: str, case_insensitive: bool = True):
     """Findet einen Track anhand seines Namens (optional case-insensitive)."""
     space = context.space_data
