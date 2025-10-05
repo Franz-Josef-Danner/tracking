@@ -32,12 +32,16 @@ def cleanup_markers(context, marker_pairs: List[MarkerPair], md: int, hz: int, v
         int: Anzahl gelöschter neuer Marker (Tracks)
     """
     deleted = 0
+    total = len(marker_pairs)
+    if total:
+        print(f"[KT][cleanup] start pairs={total} md={md}")
     for pair in marker_pairs:
         dis_h, dis_v = pair.distance_px(hz, vc)
         if dis_h < md or dis_v < md:
             frame_current = context.scene.frame_current
             if delete.delete_marker_frame(context, pair.track_name, frame_current):
                 deleted += 1
-        else:
-            pass
+                print(f"[KT][cleanup] deleted {pair.track_name}@{frame_current} dx={dis_h:.1f} dy={dis_v:.1f}")
+    if total:
+        print(f"[KT][cleanup] done deleted={deleted}/{total}")
     return deleted
