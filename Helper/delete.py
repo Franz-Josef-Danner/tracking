@@ -1,5 +1,5 @@
 import bpy
-from typing import Iterable, List, Optional
+from typing import Iterable, List
 
 def _get_tracking(context):
     clip = context.space_data.clip if getattr(context, "space_data", None) else None
@@ -12,101 +12,95 @@ def _get_tracking(context):
         return None
     return tracking
 
-def _direct_remove(tracks, track) -> bool:
-    """Versucht direkten remove-Aufruf, falls Collection dies unterstützt."""
-    if hasattr(tracks, "remove"):
-        try:
-            tracks.remove(track)
-            return True
-        except Exception as e:  # noqa
-            print(f"[Kaiserlich Tracker] delete: direct remove fehlgeschlagen: {e}")
-    else:
-        print("[Kaiserlich Tracker] delete: tracks.remove nicht verfügbar – versuche Operator-Fallback.")
-    return False
+def _find_clip_editor_area(clip):
+    """Sucht eine passende CLIP_EDITOR Area für Context Override."""
+    for window in bpy.context.window_manager.windows:
+        screen = window.screen
+        for area in screen.areas:
+            if area.type == 'CLIP_EDITOR':
+                for space in area.spaces:
+                    if space.type == 'CLIP_EDITOR':
+                        # Wenn Clip gesetzt, bevorzugt passenden
+                        if getattr(space, 'clip', None) == clip or space.clip is None:
+                            # Nehme erste Region mit WINDOW
+                            region_window = None
+                            for region in area.regions:
+                                if region.type == 'WINDOW':
+                                    region_window = region
+                                    break
+                            if region_window:
+                                return window, area, region_window, space
+    return None, None, None, None
 
-def _operator_remove(context, track) -> bool:
-    """Fallback: Track per Operator entfernen (benötigt richtigen Clip-Editor Kontext).
-    Versucht mehrere mögliche Operatornamen (API Unterschiede)."""
-    # Auswahl setzen
-    tracking = _get_tracking(context)
-    if tracking is None:
-        return False
-    tracks = tracking.tracks
-    for t in tracks:
-        try:
-            t.select = False
-        except Exception:
-            pass
+def _operator_delete_selected(window, area, region, space) -> bool:
+    """Führt den eigentlichen Operator im Override-Kontext aus."""
     try:
-        track.select = True
-    except Exception:
-        pass
-
-    candidates = [
-        "clip.delete_track",            # wahrscheinlich (X im Clip Editor)
-        "clip.tracking_track_delete",   # mögliche Variante
-        "clip.track_remove",            # fallback Name geraten
-    ]
-    for op in candidates:
-        if not hasattr(bpy.ops.clip, op.split('.')[-1]):
-            continue
-        try:
-            res = bpy.ops.clip.__getattribute__(op.split('.')[-1])()
-            if 'CANCELLED' not in res:
-                return True
-        except Exception:
-            continue
+        with bpy.context.temp_override(window=window, area=area, region=region, space_data=space):
+            # Primär bekannter Operator
+            if hasattr(bpy.ops.clip, 'delete_track'):
+                res = bpy.ops.clip.delete_track()
+                return 'CANCELLED' not in res
+            # Fallback Namen probieren
+            for name in ['tracking_track_delete', 'track_remove']:
+                if hasattr(bpy.ops.clip, name):
+                    res = getattr(bpy.ops.clip, name)()
+                    if 'CANCELLED' not in res:
+                        return True
+    except Exception as e:  # noqa
+        print(f"[Kaiserlich Tracker] delete: Operator-Ausführung fehlgeschlagen: {e}")
     return False
 
 def delete_track_by_name(context, track_name: str) -> bool:
-    """Löscht den GESAMTEN Track (inkl. aller Marker) anhand seines Namens.
-
-    Reihenfolge:
-      1. Direkter remove-Aufruf (schnell, wenn API unterstützt)
-      2. Operator-Fallback (benötigt passenden Kontext)
-
-    Rückgabe True wenn gelöscht, sonst False.
-    """
-    tracking = _get_tracking(context)
-    if tracking is None:
-        return False
-    tracks = tracking.tracks
-    track = tracks.get(track_name)
-    if track is None:
-        return False
-
-    if _direct_remove(tracks, track):
-        print(f"[Kaiserlich Tracker] delete: Track '{track_name}' per direct remove gelöscht.")
-        return True
-    # Operator-Fallback
-    if _operator_remove(context, track):
-        print(f"[Kaiserlich Tracker] delete: Track '{track_name}' per Operator gelöscht.")
-        return True
-
-    print(f"[Kaiserlich Tracker] delete: Track '{track_name}' konnte nicht gelöscht werden.")
-    return False
+    """Löscht einen kompletten Track (alle Marker) über Operator-Selektion."""
+    return delete_tracks_by_names(context, [track_name]) == 1
 
 def delete_tracks_by_names(context, track_names: Iterable[str]) -> int:
-    """Löscht mehrere komplette Tracks.
+    """Löscht mehrere komplette Tracks per Operator in einem Rutsch.
 
-    Rückgabe: Anzahl erfolgreich entfernter Tracks.
+    Vorgehen:
+      - Alle Tracks des Clips holen
+      - Auswahl leeren
+      - Nur gewünschte Tracks select=True setzen
+      - Einmal Operator aufrufen
+    Rückgabe: Anzahl der tatsächlich entfernten Tracks (Heuristik über vorher/nachher Zählung).
     """
     tracking = _get_tracking(context)
     if tracking is None:
         return 0
+    clip = bpy.context.space_data.clip if getattr(bpy.context, 'space_data', None) else None
     tracks = tracking.tracks
-    removed = 0
-    # Um Mehrfachnamen zu vermeiden, Liste materialisieren + unique
+
     unique: List[str] = list(dict.fromkeys(track_names))
+    targets = []
     for name in unique:
-        track = tracks.get(name)
-        if track is None:
-            continue
+        tr = tracks.get(name)
+        if tr is not None:
+            targets.append(tr)
+    if not targets:
+        return 0
+
+    # Auswahl zurücksetzen
+    for tr in tracks:
         try:
-            tracks.remove(track)
-            removed += 1
-            print(f"[Kaiserlich Tracker] delete: Track '{name}' entfernt.")
-        except Exception as e:  # noqa
-            print(f"[Kaiserlich Tracker] delete: Fehler beim Entfernen von '{name}': {e}")
-    print(f"[Kaiserlich Tracker] delete: {removed} Tracks insgesamt gelöscht.")
+            tr.select = False
+        except Exception:
+            pass
+    # Auswahl setzen
+    for tr in targets:
+        try:
+            tr.select = True
+        except Exception:
+            pass
+
+    before = len(tracks)
+    window, area, region, space = _find_clip_editor_area(clip)
+    if not window:
+        print("[Kaiserlich Tracker] delete: Kein CLIP_EDITOR Kontext gefunden – bitte Fenster öffnen.")
+        return 0
+    if not _operator_delete_selected(window, area, region, space):
+        print("[Kaiserlich Tracker] delete: Operator konnte Tracks nicht löschen.")
+        return 0
+    after = len(tracks)
+    removed = max(0, before - after)
+    print(f"[Kaiserlich Tracker] delete: {removed} Tracks gelöscht (Ziel: {len(targets)}).")
     return removed
