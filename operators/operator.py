@@ -3,6 +3,7 @@ import bpy
 from ..Helper import bootstrap as helper_bootstrap
 from ..Helper import snapshot as helper_snapshot
 from ..Helper import detect as helper_detect
+from ..Helper import newmarker as helper_newmarker
 
 
 class KT_OT_detect_cyclus(bpy.types.Operator):
@@ -16,6 +17,7 @@ class KT_OT_detect_cyclus(bpy.types.Operator):
 		importlib.reload(helper_bootstrap)
 		importlib.reload(helper_snapshot)
 		importlib.reload(helper_detect)
+		importlib.reload(helper_newmarker)
 		# Zugriff über PropertyGroup (persistente Parameter)
 		params_pg = context.scene.kt_params
 		marker_per_frame = params_pg.marker_per_frame
@@ -25,10 +27,16 @@ class KT_OT_detect_cyclus(bpy.types.Operator):
 		except RuntimeError as e:
 			self.report({'WARNING'}, f"Abgebrochen: {e}")
 			return {'CANCELLED'}
-		# 2. Snapshot vor Detection
-		markers = helper_snapshot.collect_active_markers(context)
-		params['marker_count'] = len(markers)
-		# 3. Feature Detection mit tr, md, ma
+		# 2. Markergrößen Defaults setzen
+		from ..Helper import marker_size as helper_marker_size
+		importlib.reload(helper_marker_size)
+		helper_marker_size.apply_marker_size(params['pz'], params['sz'])
+		# 3. Snapshot vor NewMarker/Detect
+		markers_before = helper_snapshot.collect_active_markers(context)
+		params['marker_count'] = len(markers_before)
+		# 4. Neue Marker vorbereiten (Platzhalter)
+		helper_newmarker.create_new_markers(context, 0)
+		# 5. Feature Detection mit tr, md, ma
 		detect_res = helper_detect.run_detect(
 			context,
 			tr=params['tr'],
