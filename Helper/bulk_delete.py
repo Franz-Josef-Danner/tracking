@@ -127,6 +127,68 @@ def _try_operator_delete_with_variants(track, target_clip):
                 _log(f'Operator Fehlversuch {op_name} Kontext={list(ctx.keys())}: {e}')
     return False, ops_tried
 
+def _try_temp_override_delete(track, target_clip):
+    """Versucht Löschung über neue Context Override API (Blender 3.2+)."""
+    wm = bpy.context.window_manager
+    for window in wm.windows:
+        for area in window.screen.areas:
+            if area.type != 'CLIP_EDITOR':
+                continue
+            space = area.spaces.active
+            if getattr(space, 'clip', None) != target_clip:
+                continue
+            for region in area.regions:
+                if region.type != 'WINDOW':
+                    continue
+                try:
+                    # Auswahl setzen innerhalb Override
+                    with bpy.context.temp_override(window=window, area=area, region=region, scene=bpy.context.scene, space_data=space):
+                        for t in target_clip.tracking.tracks:
+                            try: t.select = False
+                            except Exception: pass
+                        try:
+                            track.select = True
+                            target_clip.tracking.tracks.active = track
+                        except Exception:
+                            pass
+                        try:
+                            res = bpy.ops.clip.delete_track()
+                            _log(f'temp_override Versuch delete_track -> {res}')
+                            if res == {'FINISHED'}:
+                                remaining = [t.name for t in target_clip.tracking.tracks]
+                                if track.name not in remaining:
+                                    return True
+                        except Exception as e:
+                            _log(f'temp_override Fehler: {e}')
+                except Exception as e:
+                    _log(f'Override Setup Fehler: {e}')
+    return False
+
+def purge_logically_deleted(target_clip=None):
+    """Entfernt alle Tracks deren Name mit DELETED_ beginnt sofern API es erlaubt.
+
+    Falls physisches Entfernen nicht geht, werden sie lediglich gezählt.
+    """
+    if target_clip is None:
+        target_clip = bpy.context.edit_movieclip
+    if not target_clip:
+        _log('purge: kein Clip')
+        return {'removed': 0, 'remaining_deleted': 0}
+    deleted_tracks = [t for t in target_clip.tracking.tracks if t.name.startswith('DELETED_')]
+    removed = 0
+    if hasattr(target_clip.tracking.tracks, 'remove'):
+        for t in list(deleted_tracks):
+            try:
+                target_clip.tracking.tracks.remove(t)
+                removed += 1
+            except Exception as e:
+                _log(f'purge remove Fehler {t.name}: {e}')
+    else:
+        _log('purge: Collection.remove nicht verfügbar – nur zählen')
+    remaining_deleted = len([t for t in target_clip.tracking.tracks if t.name.startswith('DELETED_')])
+    _log(f'purge: entfernt={removed} verbleibend_markiert={remaining_deleted}')
+    return {'removed': removed, 'remaining_deleted': remaining_deleted}
+
 def delete_tracks(tracks):
     """Versucht mehrere Tracks mittels Operator in einem Durchgang zu löschen.
 
@@ -163,6 +225,11 @@ def delete_tracks(tracks):
             _log(f'Physisch entfernt (Operator Varianten): {name_before}')
             continue
         _log(f'Alle Operator-Varianten gescheitert für {name_before}. Attempts={attempts}')
+        # Neuer Versuch über temp_override
+        if _try_temp_override_delete(target, clip):
+            total_removed += 1
+            _log(f'Physisch entfernt (temp_override): {name_before}')
+            continue
         # Direkter Remove Versuch falls vorhanden
         try:
             if hasattr(clip.tracking.tracks, 'remove'):
