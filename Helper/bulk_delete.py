@@ -48,6 +48,85 @@ def _find_clip_editor_context(target_clip):
         _debug_list_clip_editors(target_clip)
     return ctx_copy
 
+def _iter_clip_context_variants(target_clip):
+    """Erzeugt verschiedene Minimal-Kontexte für Operator-Aufrufe.
+
+    Einige Blender-Versionen akzeptieren nur sehr schlanke Overrides.
+    """
+    wm = bpy.context.window_manager
+    for window in wm.windows:
+        screen = window.screen
+        for area in screen.areas:
+            if area.type != 'CLIP_EDITOR':
+                continue
+            space = area.spaces.active
+            if getattr(space, 'clip', None) != target_clip:
+                continue
+            # Variante 1: Voll
+            full = bpy.context.copy()
+            for region in area.regions:
+                if region.type == 'WINDOW':
+                    full.update({'window': window, 'screen': screen, 'area': area, 'region': region, 'space_data': space, 'scene': bpy.context.scene})
+                    yield full
+                    # Variante 2: Minimal (nur area/region/space_data)
+                    minimal = {'area': area, 'region': region, 'space_data': space}
+                    yield minimal
+                    # Variante 3: Minimal + scene
+                    minimal_scene = {'area': area, 'region': region, 'space_data': space, 'scene': bpy.context.scene}
+                    yield minimal_scene
+                    # Variante 4: Ohne region (manchmal tolerant)
+                    yield {'area': area, 'space_data': space}
+                    break
+
+def _try_operator_delete_with_variants(track, target_clip):
+    ops_tried = []
+    # Mögliche Operator-Namen (Plural falls neue API?)
+    operator_candidates = []
+    try:
+        operator_candidates.append(bpy.ops.clip.delete_track)
+    except Exception:
+        pass
+    # Versuch plural
+    try:
+        operator_candidates.append(getattr(bpy.ops.clip, 'delete_tracks'))
+    except Exception:
+        pass
+    # Tracking Namespace (Spekulation für API Änderung)
+    try:
+        operator_candidates.append(getattr(bpy.ops.clip.tracking, 'delete_track'))
+    except Exception:
+        pass
+    try:
+        operator_candidates.append(getattr(bpy.ops.clip.tracking, 'delete_tracks'))
+    except Exception:
+        pass
+
+    for ctx in _iter_clip_context_variants(target_clip):
+        # Sicherstellen Track selektiert + aktiv im aktuellen Real-Kontext
+        try:
+            for t in target_clip.tracking.tracks:
+                t.select = False
+            track.select = True
+            target_clip.tracking.tracks.active = track
+        except Exception:
+            pass
+        for op in operator_candidates:
+            if op is None:
+                continue
+            op_name = getattr(op, '__name__', str(op))
+            try:
+                res = op(ctx)
+                _log(f'Operator Versuch {op_name} mit Kontext {list(ctx.keys())} -> {res}')
+                ops_tried.append((op_name, True, list(ctx.keys())))
+                # Erfolg prüfen: Track verschwunden?
+                remaining_names = [t.name for t in target_clip.tracking.tracks]
+                if track.name not in remaining_names and not any(n.endswith(track.name) for n in remaining_names):
+                    return True, ops_tried
+            except Exception as e:
+                ops_tried.append((op_name, False, f'{list(ctx.keys())} ERR={e}'))
+                _log(f'Operator Fehlversuch {op_name} Kontext={list(ctx.keys())}: {e}')
+    return False, ops_tried
+
 def delete_tracks(tracks):
     """Versucht mehrere Tracks mittels Operator in einem Durchgang zu löschen.
 
@@ -76,65 +155,30 @@ def delete_tracks(tracks):
     total_removed = 0
     for target in to_delete:
         name_before = target.name
-        ctx = _find_clip_editor_context(clip)
-        if not ctx:
-            _log(f'Kein Kontext für {name_before} – markiere nur (logical delete)')
-            try:
-                target.name = f'DELETED_UNREM_{name_before}'
-            except Exception:
-                pass
-            continue
-        # Alle deselektieren
-        for t in clip.tracking.tracks:
-            try:
-                t.select = False
-            except Exception:
-                pass
-        # Ziel selektieren + aktiv setzen
-        try:
-            target.select = True
-            clip.tracking.tracks.active = target
-        except Exception as e:
-            _log(f'Set active/select fehlgeschlagen {name_before}: {e}')
         before_names = [t.name for t in clip.tracking.tracks]
         _log(f'Vor Löschung einzelner Track={name_before} Tracks={before_names}')
-        try:
-            res = bpy.ops.clip.delete_track(ctx)
-            _log(f'Operator Einzel-Löschung {name_before} Ergebnis: {res}')
-        except Exception as e:
-            _log(f'Operator Fehler bei {name_before}: {e} – versuche direkten remove()')
-            # Direkter Remove (falls API unterstützt)
-            try:
-                # Prüfen ob Collection remove unterstützt
-                if hasattr(clip.tracking.tracks, 'remove'):
-                    clip.tracking.tracks.remove(target)
-                    _log(f'Direkt entfernt via Collection.remove: {name_before}')
-                    total_removed += 1
-                    continue
-                else:
-                    _log('Collection.remove nicht verfügbar – logical rename')
-            except Exception as e2:
-                _log(f'Direkter remove Fehler {name_before}: {e2}')
-            # Logical Delete (Rename) als Fallback
-            try:
-                if not name_before.startswith('DELETED_'):
-                    target.name = f'DELETED_{name_before}'
-                    _log(f'Logical umbenannt: {target.name}')
-            except Exception:
-                pass
-            continue
-        # Erfolg prüfen: existiert Name noch?
-        after_names = [t.name for t in clip.tracking.tracks]
-        if name_before not in after_names:
+        success, attempts = _try_operator_delete_with_variants(target, clip)
+        if success:
             total_removed += 1
-            _log(f'Bestätigt entfernt: {name_before}')
-        else:
-            _log(f'Noch vorhanden nach Operator: {name_before} – versuche rename logical')
+            _log(f'Physisch entfernt (Operator Varianten): {name_before}')
+            continue
+        _log(f'Alle Operator-Varianten gescheitert für {name_before}. Attempts={attempts}')
+        # Direkter Remove Versuch falls vorhanden
+        try:
+            if hasattr(clip.tracking.tracks, 'remove'):
+                clip.tracking.tracks.remove(target)
+                total_removed += 1
+                _log(f'Direkt entfernt via Collection.remove (nach Varianten): {name_before}')
+                continue
+            else:
+                _log('Collection.remove nicht verfügbar – logical rename')
+        except Exception as e2:
+            _log(f'Direkter remove Fehler {name_before}: {e2}')
+        # Logical rename Fallback
+        if not name_before.startswith('DELETED_'):
             try:
-                tgt = next((t for t in clip.tracking.tracks if t.name == name_before), None)
-                if tgt and not tgt.name.startswith('DELETED_'):
-                    tgt.name = f'DELETED_{name_before}'
-                    _log(f'Logical rename fallback: {tgt.name}')
+                target.name = f'DELETED_{name_before}'
+                _log(f'Logical umbenannt: {target.name}')
             except Exception:
                 pass
     _log(f'Gesamt physisch entfernt: {total_removed} (logical markierte bleiben erhalten)')
