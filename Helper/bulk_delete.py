@@ -1,6 +1,14 @@
 import bpy
 import time
 
+# ===== Safe Mode Optionen =====
+# Wenn True: Nur temp_override (oder direct remove) – keine Operator-Varianten
+SAFE_MODE = True
+# Max Gesamtzeit pro delete_tracks Aufruf (Sekunden)
+SAFE_TOTAL_TIMEOUT = 4.0
+# Minimale Pause (Sekunden) nach physischem Entfernen zur internen Aktualisierung
+SAFE_POST_REMOVE_SLEEP = 0.0
+
 # Globale Caches / Flags zur Laufzeit zur Stabilitäts-/Performance-Steigerung
 # Sobald klar ist, dass Operator-Löschung nicht funktioniert, sparen wir uns weitere Versuche.
 _OPERATOR_DELETE_UNSUPPORTED = False
@@ -98,6 +106,8 @@ def _try_operator_delete_with_variants(track, target_clip):
     Nutzt globales Flag _OPERATOR_DELETE_UNSUPPORTED um erneute Massen-Versuche zu vermeiden.
     """
     global _OPERATOR_DELETE_UNSUPPORTED
+    if SAFE_MODE:
+        return False, [('SKIPPED', False, 'SAFE_MODE aktiv – Operator übersprungen')]
     if _OPERATOR_DELETE_UNSUPPORTED:
         return False, [('SKIPPED', False, 'Operator bereits als unsupported markiert')]
 
@@ -178,8 +188,13 @@ def _try_temp_override_delete(track, target_clip):
     """
     global _TEMP_OVERRIDE_CAPABLE
     # Wenn bereits bekannt, dass es nicht geht: sofort abbrechen
-    if _TEMP_OVERRIDE_CAPABLE is False:
-        return False
+    if SAFE_MODE:
+        # In Safe Mode immer versuchen; Capability Cache weiterhin nutzen
+        if _TEMP_OVERRIDE_CAPABLE is False:
+            return False
+    else:
+        if _TEMP_OVERRIDE_CAPABLE is False:
+            return False
     wm = bpy.context.window_manager
     start = time.perf_counter()
     for window in wm.windows:
@@ -266,31 +281,70 @@ def delete_tracks(tracks, strategy='auto'):
         return 0
 
     # Namen auflösen (frische Referenzen)
+    # Eingaben in Namensliste normalisieren, um Dangling-Access zu vermeiden
+    input_names = []
+    for t in tracks:
+        try:
+            n = getattr(t, 'name', None)
+            if n:
+                input_names.append(n)
+        except Exception:
+            pass
+    # Doppelte entfernen bei Mehrfachmarkierung
+    seen = set()
+    norm_names = []
+    for n in input_names:
+        if n not in seen:
+            seen.add(n)
+            norm_names.append(n)
+    # Jetzt existierende Tracks filtern
     current_map = {t.name: t for t in clip.tracking.tracks}
-    to_delete = [current_map[t.name] for t in tracks if getattr(t, 'name', None) in current_map]
-    if not to_delete:
+    to_delete_names = [n for n in norm_names if n in current_map]
+    if not to_delete_names:
         _log('Keine übereinstimmenden Track-Namen')
         return 0
 
     total_removed = 0
-    use_operator_first = (strategy == 'operator_first') or (strategy == 'auto' and not _TEMP_OVERRIDE_CAPABLE and OPERATOR_FIRST_DEFAULT)
-    for idx, target in enumerate(to_delete, 1):
-        name_before = target.name
-        _log(f'[{idx}/{len(to_delete)}] Lösche Track {name_before}')
+    start_total = time.perf_counter()
+    use_operator_first = (not SAFE_MODE) and ((strategy == 'operator_first') or (strategy == 'auto' and not _TEMP_OVERRIDE_CAPABLE and OPERATOR_FIRST_DEFAULT))
+    for idx, name_before in enumerate(to_delete_names, 1):
+        if (time.perf_counter() - start_total) > SAFE_TOTAL_TIMEOUT:
+            _log('Abbruch: SAFE_TOTAL_TIMEOUT erreicht')
+            break
+        # Re-Resolve Track Objekt (kann sich ändern / gelöscht worden sein)
+        current_obj = None
+        try:
+            current_obj = next((t for t in clip.tracking.tracks if t.name == name_before), None)
+        except Exception:
+            current_obj = None
+        if current_obj is None:
+            _log(f'Skip {name_before}: bereits entfernt')
+            continue
+        _log(f'[{idx}/{len(to_delete_names)}] Lösche Track {name_before}')
         start_track = time.perf_counter()
 
-        # Reihenfolge bestimmen je nach Strategie
+        # Reihenfolge bestimmen je nach Strategie / Safe Mode
         methods = []
-        if strategy == 'temp_first' or (strategy == 'auto' and _TEMP_OVERRIDE_CAPABLE):
-            methods = ['temp', 'operator']
-        elif use_operator_first:
-            methods = ['operator', 'temp']
+        if SAFE_MODE:
+            methods = ['temp']
         else:
-            # Bevorzugt temp (vermutlich zuverlässiger in deiner Umgebung)
-            methods = ['temp', 'operator']
+            if strategy == 'temp_first' or (strategy == 'auto' and _TEMP_OVERRIDE_CAPABLE):
+                methods = ['temp', 'operator']
+            elif use_operator_first:
+                methods = ['operator', 'temp']
+            else:
+                methods = ['temp', 'operator']
 
         removed = False
         for m in methods:
+            # Objekt vor jedem Versuch neu auflösen (kann verschwunden sein)
+            try:
+                target = next((t for t in clip.tracking.tracks if t.name == name_before), None)
+            except Exception:
+                target = None
+            if target is None:
+                removed = True  # Schon weg
+                break
             if m == 'temp':
                 if _try_temp_override_delete(target, clip):
                     removed = True
@@ -303,15 +357,15 @@ def delete_tracks(tracks, strategy='auto'):
                     _log(f'Removed via Operator: {name_before}')
                     break
                 else:
-                    # Nur kompaktes Summary loggen
                     if attempts:
                         last = attempts[-1]
                         _log(f'Operator fehlgeschlagen (summary letzte={last})')
 
         if not removed:
-            # Direkter remove Versuch falls Collection.remove existiert
+            # Direkter remove Versuch falls Collection.remove existiert (neu auflösen)
             try:
-                if hasattr(clip.tracking.tracks, 'remove'):
+                target = next((t for t in clip.tracking.tracks if t.name == name_before), None)
+                if target and hasattr(clip.tracking.tracks, 'remove'):
                     clip.tracking.tracks.remove(target)
                     removed = True
                     _log(f'Removed via collection.remove: {name_before}')
@@ -329,6 +383,11 @@ def delete_tracks(tracks, strategy='auto'):
         else:
             total_removed += 1
 
+        if removed and SAFE_POST_REMOVE_SLEEP > 0:
+            try:
+                time.sleep(SAFE_POST_REMOVE_SLEEP)
+            except Exception:
+                pass
         dur_ms = (time.perf_counter() - start_track) * 1000
         _log(f'Fertig Track {name_before} ({dur_ms:.1f}ms) removed={removed}')
 
@@ -338,5 +397,5 @@ def delete_tracks(tracks, strategy='auto'):
         except Exception:
             pass
 
-    _log(f'Gesamt physisch entfernt: {total_removed} / {len(to_delete)} (Rest logical)')
+    _log(f'Gesamt physisch entfernt: {total_removed} / {len(to_delete_names)} (Rest logical)')
     return total_removed
