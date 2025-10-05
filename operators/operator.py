@@ -27,15 +27,16 @@ class KT_OT_detect_cyclus(bpy.types.Operator):
 		except RuntimeError as e:
 			self.report({'WARNING'}, f"Abgebrochen: {e}")
 			return {'CANCELLED'}
-		# 2. Markergrößen Defaults setzen
-		from ..Helper import marker_size as helper_marker_size
+		# 2. Snapshot vor Detection
+		markers = helper_snapshot.collect_active_markers(context)
+		params['marker_count'] = len(markers)
+		# 3. Marker Größen setzen (Pattern/Search) – bereits durch compute_parameters pz/sz ermittelt
+		from ..Helper import marker_size as helper_marker_size  # local import to ensure latest
 		importlib.reload(helper_marker_size)
 		helper_marker_size.apply_marker_size(params['pz'], params['sz'])
-		# 3. Snapshot vor NewMarker/Detect
-		markers_before = helper_snapshot.collect_active_markers(context)
-		params['marker_count'] = len(markers_before)
-		# 4. Neue Marker vorbereiten (Platzhalter)
-		helper_newmarker.create_new_markers(context, 0)
+		# 4. Neue Marker anlegen (heuristisch) – optional: hier nutzen wir og als Zielmenge Obergrenze
+		new_added = helper_newmarker.create_new_markers(context, desired=int(params['og']))
+		params['new_marker_added'] = new_added
 		# 5. Feature Detection mit tr, md, ma
 		detect_res = helper_detect.run_detect(
 			context,
@@ -55,7 +56,7 @@ class KT_OT_detect_cyclus(bpy.types.Operator):
 		params_pg.za = float(params['za'])
 		params_pg.tr = int(params['tr'])
 		params_pg.marker_count = int(params.get('marker_count', 0))
-		self.report({'INFO'}, f"Detect Cyclus fertig (features detect={detect_res} pz={params['pz']} sz={params['sz']} markers={params.get('marker_count', 0)})")
+		self.report({'INFO'}, f"Detect Cyclus fertig (detect={detect_res} neu={params.get('new_marker_added',0)} pz={params['pz']} sz={params['sz']} markers={params.get('marker_count', 0)})")
 		return {'FINISHED'}
 
 

@@ -1,6 +1,7 @@
 """Marker-Größen Verarbeitung.
 
-Setzt globale Defaults im Tracking-Kontext für neu erstellte Marker.
+Setzt die Standard-Pattern- und Suchgrößen für neu anzulegende Tracks.
+Hinweis: Blender speichert globale Tracking Settings unter clip.tracking.settings.
 """
 from __future__ import annotations
 
@@ -8,19 +9,15 @@ import bpy
 
 
 def apply_marker_size(pz: int, sz: int):
-    print(f"[Kaiserlich Tracker][MARKER_SIZE] Set pattern={pz} search={sz}")
     clip = _get_active_clip(bpy.context)
     if clip is None:
+        print("[Kaiserlich Tracker][MARKER_SIZE] Kein aktiver Clip.")
         return {'CANCELLED'}
-    tracking = clip.tracking
-    settings = tracking.settings
-    # Blender interne Props: default_pattern_size / default_search_size
-    try:
-        settings.default_pattern_size = int(pz)
-        settings.default_search_size = int(sz)
-    except Exception as e:  # noqa: BLE001
-        print(f"[Kaiserlich Tracker][MARKER_SIZE][ERROR] {e}")
-        return {'CANCELLED'}
+    settings = clip.tracking.settings
+    # Blender erwartet ints
+    settings.default_pattern_size = int(pz)
+    settings.default_search_size = int(sz)
+    print(f"[Kaiserlich Tracker][MARKER_SIZE] pattern={settings.default_pattern_size} search={settings.default_search_size}")
     return {'FINISHED'}
 
 
@@ -29,4 +26,3 @@ def _get_active_clip(context):
     if space and space.type == 'CLIP_EDITOR':
         return space.clip
     return None
-
