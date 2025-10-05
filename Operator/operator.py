@@ -55,6 +55,16 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                 'sz': sz,
             })
 
+            # Redraw nach jedem Detect zur visuellen Aktualisierung
+            try:
+                wm = bpy.context.window_manager
+                for window in wm.windows:
+                    for area in window.screen.areas:
+                        if area.type == 'CLIP_EDITOR':
+                            area.tag_redraw()
+            except Exception:
+                pass
+
             # Neue Marker nach Detect
             new_markers = newmarker.capture_new_tracks(context, old_names)
             am = len(new_markers)
