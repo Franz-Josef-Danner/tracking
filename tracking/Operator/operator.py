@@ -8,7 +8,19 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        ef = scene.kaiserlich_tracker.marker_per_frame
+        # Sicherstellen, dass Property existiert
+        props = getattr(scene, 'kaiserlich_tracker', None)
+        if props is None or not hasattr(props, 'marker_per_frame'):
+            self.report({'ERROR'}, 'Property marker_per_frame nicht gefunden – bitte Add-on neu laden.')
+            return {'CANCELLED'}
+
+        ef_raw = props.marker_per_frame
+        try:
+            ef = int(ef_raw)
+        except Exception:
+            self.report({'ERROR'}, f'Ungueltiger Eingabewert: {ef_raw}')
+            return {'CANCELLED'}
+
         bootstrap.run(context, ef)
         self.report({'INFO'}, f'Berechnung gestartet mit Eingabewert {ef}')
         return {'FINISHED'}

@@ -14,15 +14,13 @@ class KAISERLICH_PT_tracker(bpy.types.Panel):
         layout.operator('kaiserlich.detect_cyclus', icon='TRACKING')
 
 class KaiserlichTrackerProperties(bpy.types.PropertyGroup):
-    # Wird nachträglich durch IntProperty ersetzt, damit statische Analyse nicht scheitert
-    marker_per_frame: int
-
-KaiserlichTrackerProperties.marker_per_frame = bpy.props.IntProperty(
-    name='Marker per Frame',
-    description='Anzahl Marker pro Frame',
-    default=25,
-    min=1
-)
+    # Direkt in der Klasse definieren (notwendig für Blender RNA Registrierung)
+    marker_per_frame: bpy.props.IntProperty(
+        name='Marker per Frame',
+        description='Anzahl Marker pro Frame',
+        default=25,
+        min=1
+    )
 
 
 classes = (
