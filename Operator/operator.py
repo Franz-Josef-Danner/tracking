@@ -90,11 +90,9 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                         old_co=(old.co_x, old.co_y),
                         new_co=(nm.co_x, nm.co_y)
                     ))
-            if marker_pairs:
-                deleted_count = cleaneup.cleanup_markers(context, marker_pairs, md=md, hz=hz, vc=vc)
-                summary_deleted += deleted_count
-            else:
-                deleted_count = 0
+            # Cleanup jetzt immer aufrufen, damit Logging sichtbar ist, auch wenn 0 Paare
+            deleted_count = cleaneup.cleanup_markers(context, marker_pairs, md=md, hz=hz, vc=vc)
+            summary_deleted += deleted_count
 
             # Abbruchbedingungen / Adaptive Logik
             # Falls keine neuen Marker: aggressiveres Nachjustieren statt sofortigem Ende
