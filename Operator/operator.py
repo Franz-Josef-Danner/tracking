@@ -46,7 +46,7 @@ class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
     corridor_tr_factor: bpy.props.FloatProperty(  # type: ignore
         name="Korridor Threshold Faktor",
         default=0.15,
-        min=0.01,
+        min=0.001,
         max=0.99,
         description="Faktor zur Multiplikation von tr wenn (ug < am < og)"
     )
