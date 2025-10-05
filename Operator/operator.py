@@ -34,11 +34,12 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
         print('--- Feature Detection ---')
         detect.run(context, tr=values['tr'], md=values['md'], ma=values['ma'])
         print('--- Marker Vergleich ---')
-        compare.run(context)
+        cmp_result = compare.run(context)
         print('--- Cleaneup ---')
-        cleaneup.run(context, values)
+        surviving = cleaneup.run(context, values, new_tracks=cmp_result.get('new_tracks'), old_tracks=cmp_result.get('old_tracks'))
+        print(f'Anzahl neuer Marker nach Cleanup: {surviving}')
 
-        self.report({'INFO'}, f'Zyklus ausgeführt (ef={ef})')
+        self.report({'INFO'}, f'Zyklus ausgeführt (ef={ef}) – neue Marker: {surviving}')
         return {'FINISHED'}
 
 classes = (KAISERLICH_OT_detect_cyclus,)

@@ -14,7 +14,7 @@ def _marker_at_frame(track, frame_current):
             return m
     return None
 
-def run(context, values: dict):
+def run(context, values: dict, new_tracks=None, old_tracks=None):
     """Bereinigt neu angelegte Marker, die zu nahe an bestehenden liegen.
 
     Algorithmus gemäß Vorgabe:
@@ -35,10 +35,12 @@ def run(context, values: dict):
     vc = values.get('vc')
     frame_current = context.scene.frame_current
 
+    # Wenn externe Listen (aus compare.run) übergeben: nutzen, sonst selbst ermitteln
     prev_names = snapshot.get_previous_for_clip(clip)
     current_tracks = list(clip.tracking.tracks)
-    new_tracks = [t for t in current_tracks if t.name not in prev_names and not t.name.startswith('DELETED_')]
-    old_tracks = [t for t in current_tracks if t.name in prev_names and not t.name.startswith('DELETED_')]
+    if new_tracks is None or old_tracks is None:
+        new_tracks = [t for t in current_tracks if t.name not in prev_names and not t.name.startswith('DELETED_')]
+        old_tracks = [t for t in current_tracks if t.name in prev_names and not t.name.startswith('DELETED_')]
 
     print(f'cleaneup: {len(new_tracks)} neue / {len(old_tracks)} alte Marker, md={md}')
 
@@ -129,3 +131,9 @@ def run(context, values: dict):
         print(f'cleaneup: entfernt {removed} Tracks – verbleibende Tracks: {remaining}')
     except Exception:
         print(f'cleaneup: entfernt {removed} Tracks')
+    # Rückgabe: Anzahl der (nach Cleanup) gültigen neuen Marker
+    try:
+        surviving_new = [t for t in clip.tracking.tracks if t.name not in prev_names and not t.name.startswith('DELETED_')]
+        return len(surviving_new)
+    except Exception:
+        return 0
