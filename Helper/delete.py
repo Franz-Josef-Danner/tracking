@@ -140,15 +140,88 @@ def delete_marker_frame(context, track_name: str, frame: int) -> bool:
 
             # Sonderfall: Spur mit einzigem Marker lässt sich per API nicht leeren -> ggf. Track entfernen
             if still_there and len(frames_nachher) == 1 and removed:
-                print(f"[Kaiserlich Tracker][DEBUG] Single-Marker-Track Fallback -> Entferne gesamten Track '{tr.name}'")
+                print(f"[Kaiserlich Tracker][DEBUG] Single-Marker-Track Fallback aktiv für Track '{tr.name}' (Frame {frame})")
+                # Versuch 1: Track per Operator löschen
+                deleted_track = False
                 try:
-                    tr_parent = getattr(tr, 'track', None)
-                    # Direktes Entfernen aus tracking.tracks
-                    tracking.tracks.remove(tr)
-                    print(f"[Kaiserlich Tracker] Track entfernt (wegen letztem Marker): {track_name}")
+                    # Selektions-Setup nur für Track
+                    for tsel in tracking.tracks:
+                        try:
+                            tsel.select = False
+                        except Exception:
+                            pass
+                    try:
+                        tr.select = True
+                    except Exception:
+                        pass
+                    # Kontext sammeln
+                    override = None
+                    wm = bpy.context.window_manager
+                    for window in wm.windows:
+                        for area in window.screen.areas:
+                            if area.type == 'CLIP_EDITOR':
+                                for region in area.regions:
+                                    if region.type == 'WINDOW':
+                                        override = {
+                                            'window': window,
+                                            'screen': window.screen,
+                                            'area': area,
+                                            'region': region,
+                                            'scene': context.scene,
+                                            'space_data': area.spaces.active,
+                                        }
+                                        space = area.spaces.active
+                                        if getattr(space, 'clip', None):
+                                            override['clip'] = space.clip
+                                        break
+                                if override:
+                                    break
+                        if override:
+                            break
+                    print(f"[Kaiserlich Tracker][DEBUG] Fallback Track Delete Operator Kontext gefunden={bool(override)}")
+                    try:
+                        result = bpy.ops.clip.delete_track(override) if override else bpy.ops.clip.delete_track()
+                        print(f"[Kaiserlich Tracker][DEBUG] Operator clip.delete_track Rückgabe: {result}")
+                    except Exception as oe:
+                        print(f"[Kaiserlich Tracker][DEBUG] Operator clip.delete_track Fehler -> {oe}")
+                    # Prüfen ob Track weg ist
+                    deleted_track = all(t.name != tr.name for t in tracking.tracks)
+                except Exception as e_op:
+                    print(f"[Kaiserlich Tracker][DEBUG] Track-Operator Löschung Ausnahme -> {e_op}")
+
+                if deleted_track:
+                    print(f"[Kaiserlich Tracker] Track gelöscht (Einzel-Marker Spur): {track_name}")
                     return True
-                except Exception as e:
-                    print(f"[Kaiserlich Tracker][DEBUG] Track-Remove FAIL -> {e}")
+                else:
+                    print(f"[Kaiserlich Tracker][DEBUG] Track nicht gelöscht via Operator. Versuche Dummy-Workaround ...")
+                    # Versuch 2: Dummy-Marker an anderem Frame anlegen, dann Ziel löschen
+                    try:
+                        dummy_frame = frame + 1
+                        if hasattr(tr.markers, 'find_frame') and tr.markers.find_frame(dummy_frame) is None:
+                            tr.markers.insert_frame(dummy_frame)
+                            print(f"[Kaiserlich Tracker][DEBUG] Dummy Marker eingefügt bei Frame {dummy_frame}")
+                        # Nochmals Ziel löschen
+                        if hasattr(tr.markers, 'delete_frame'):
+                            tr.markers.delete_frame(frame)
+                            check_after_dummy = any(m.frame == frame for m in tr.markers)
+                            if not check_after_dummy:
+                                print(f"[Kaiserlich Tracker] Marker gelöscht nach Dummy-Workaround: track={track_name} frame={frame}")
+                                return True
+                            else:
+                                print(f"[Kaiserlich Tracker][DEBUG] Dummy-Workaround löschte Marker nicht (track={track_name})")
+                        # Aufräumen: Dummy wieder löschen wenn nur er übrig ist und nicht gewollt
+                        if len(tr.markers) == 1 and any(m.frame == dummy_frame for m in tr.markers):
+                            # Versuchen Track doch zu entfernen
+                            try:
+                                for tsel in tracking.tracks:
+                                    tsel.select = False
+                                tr.select = True
+                                result2 = bpy.ops.clip.delete_track(override) if override else bpy.ops.clip.delete_track()
+                                print(f"[Kaiserlich Tracker][DEBUG] Zweiter Versuch Track löschen (nur Dummy übrig) -> {result2}")
+                            except Exception as e2:
+                                print(f"[Kaiserlich Tracker][DEBUG] Zweiter Versuch Track delete Fehler -> {e2}")
+                    except Exception as dwe:
+                        print(f"[Kaiserlich Tracker][DEBUG] Dummy-Workaround Fehler -> {dwe}")
 
             if not still_there and removed:
                 try:
