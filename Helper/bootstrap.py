@@ -47,4 +47,4 @@ def run_bootstrap(context, ef: int):
     print(f"Obergrenze (og): {og}")
     print(f"Untergrenze (ug): {ug}")
 
-    apply_marker_sizes(pz, sz)
+    apply_marker_sizes(clip, pz, sz)
