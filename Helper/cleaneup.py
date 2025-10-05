@@ -19,8 +19,8 @@ class MarkerPair:
 
 
 def cleanup_markers(context, marker_pairs: List[MarkerPair], md: int, hz: int, vc: int) -> int:
-    """Prüft Abstände zwischen alten und neuen Markern und löscht neue Marker,
-    wenn horizontal oder vertikal innerhalb md Pixel.
+    """Erhält vorgefilterte Paare (alter vs neuer Marker) und löscht neue Marker,
+    wenn horizontal oder vertikal innerhalb md Pixel (Prüfung erfolgt trotzdem nochmal zur Sicherheit).
 
     Args:
         marker_pairs: Liste der Paare (alter vs neuer Marker)
@@ -38,7 +38,7 @@ def cleanup_markers(context, marker_pairs: List[MarkerPair], md: int, hz: int, v
     for idx, pair in enumerate(marker_pairs):
         dis_h, dis_v = pair.distance_px(hz, vc)
         close = (dis_h < md or dis_v < md)
-        print(f"[KT][cleanup] pair#{idx} track={pair.track_name} dx={dis_h:.1f} dy={dis_v:.1f} md={md} close={close}")
+        print(f"[KT][cleanup] pair#{idx} new_track={pair.track_name} dx={dis_h:.1f} dy={dis_v:.1f} md={md} close={close}")
         if close:
             frame_current = context.scene.frame_current
             if delete.delete_marker_frame(context, pair.track_name, frame_current):

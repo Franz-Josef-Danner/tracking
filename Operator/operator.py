@@ -83,23 +83,36 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                     )
             # Vergleichslog entfernt
 
-            # Cleanup Paare bilden nur für AMA
+            # Neue Pair-Logik: Nächstgelegener alter Marker je neuem Marker (Pixel-Distanz)
             from ..Helper.cleaneup import MarkerPair
             marker_pairs = []
-            for nm in new_markers:
-                old = old_by_track.get(nm.track_name)
-                if old:
-                    marker_pairs.append(MarkerPair(
-                        track_name=nm.track_name,
-                        old_co=(old.co_x, old.co_y),
-                        new_co=(nm.co_x, nm.co_y)
-                    ))
-            if not marker_pairs and am > 0 and old_markers:
-                inter = {nm.track_name for nm in new_markers} & {om.track_name for om in old_markers}
-                if not inter:
-                    print("[KT][cycle][warn] Keine AMA-Paare gebildet: Track-Namen alter und neuer Marker überschneiden sich nicht. Evtl. andere Logik nötig (z.B. Abstandsvergleich aller neuen untereinander).")
+            if old_markers and new_markers:
+                # Precompute old coords list
+                old_list = list(old_markers)
+                for nm in new_markers:
+                    best = None
+                    best_dx = None
+                    best_dy = None
+                    for om in old_list:
+                        dx = abs((nm.co_x - om.co_x) * hz)
+                        dy = abs((nm.co_y - om.co_y) * vc)
+                        if best is None or (dx + dy) < (best_dx + best_dy):
+                            best = om
+                            best_dx = dx
+                            best_dy = dy
+                    if best is not None:
+                        close = (best_dx < md) or (best_dy < md)
+                        print(f"[KT][pair] new={nm.track_name} best_old={best.track_name} dx={best_dx:.1f} dy={best_dy:.1f} md={md} close={close}")
+                        if close:
+                            marker_pairs.append(MarkerPair(
+                                track_name=nm.track_name,  # wir löschen den NEUEN Track falls zu nah
+                                old_co=(best.co_x, best.co_y),
+                                new_co=(nm.co_x, nm.co_y)
+                            ))
             else:
-                print(f"[KT][cycle] pairs={len(marker_pairs)} (für Distanzprüfung)")
+                if not old_markers:
+                    print("[KT][pair] skip: keine alten Marker für Distanzvergleich verfügbar")
+            print(f"[KT][cycle] dist_pairs={len(marker_pairs)} (Close-Kandidaten für Löschung)")
             # Cleanup jetzt immer aufrufen, damit Logging sichtbar ist, auch wenn 0 Paare
             deleted_count = cleaneup.cleanup_markers(context, marker_pairs, md=md, hz=hz, vc=vc)
             summary_deleted += deleted_count
