@@ -55,14 +55,29 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                 'sz': sz,
             })
 
-            # Neue Marker nach Detect
+            # Neue Marker (nur wirklich neu entstandene Tracks)
             new_markers = newmarker.capture_new_tracks(context, old_names)
             am = len(new_markers)
-            print(f"[KT][cycle] frame={context.scene.frame_current} old_count={len(old_markers)} new_count={am}")
-            if old_markers:
-                print(f"[KT][cycle] old_names_sample={[m.track_name for m in old_markers[:5]]}")
-            if new_markers:
-                print(f"[KT][cycle] new_names_sample={[m.track_name for m in new_markers[:5]]}")
+            print(f"am = {am}")
+
+            # Post-Snapshot für AMA-Paare (Tracks, die schon vorher existierten)
+            post_markers = snapshot.capture_current_frame_markers(context)
+            old_by_name = {m.track_name: m for m in old_markers}
+            post_by_name = {m.track_name: m for m in post_markers}
+
+            # AMA-Paare = Track existierte vorher und nachher
+            from ..Helper.cleaneup import MarkerPair
+            marker_pairs = []
+            for tname, old_m in old_by_name.items():
+                new_m = post_by_name.get(tname)
+                if new_m:
+                    marker_pairs.append(MarkerPair(
+                        track_name=tname,
+                        old_co=(old_m.co_x, old_m.co_y),
+                        new_co=(new_m.co_x, new_m.co_y)
+                    ))
+            # Distanz-Prüfung nur auf AMA-Paare (neue Tracks ohne Vorgänger werden nicht geprüft)
+            cleaneup.cleanup_markers(context, marker_pairs, md=md, hz=hz, vc=vc)
 
             # Vergleich alt/neu
             old_by_track = {m.track_name: m for m in old_markers}
@@ -83,19 +98,7 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                     )
             # Vergleichslog entfernt
 
-            # Neue Logik: alle neuen Marker gegen alle alten vergleichen
-            deleted_count = cleaneup.delete_new_markers_close_to_old(
-                context,
-                old_markers=old_markers,
-                new_markers=new_markers,
-                md=md,
-                hz=hz,
-                vc=vc,
-            )
-            summary_deleted += deleted_count
-            # TEMP: Abbruch jetzt nach der zweiten Iteration
-            if iteration >= 2:
-                break
+            # (Kein Frühabbruch mehr – voller Zyklus gemäß Vorgabe)
 
             # Abbruchbedingungen / Adaptive Logik
             # Falls keine neuen Marker: aggressiveres Nachjustieren statt sofortigem Ende
@@ -105,6 +108,7 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                 sz = max(4, int(pz * 2))
                 if tr < 0.01:
                     break
+                print(f"pz = {pz}")
                 continue
 
             if tr < 0.01:
@@ -118,12 +122,14 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                         break
                     pz = max(2, int(pz * 1.1))
                     sz = max(4, int(pz * 2))
+                    print(f"pz = {pz}")
                     continue  # neuer Zyklus
                 else:
                     # am >= og -> md neu kalibrieren und alle neuen Marker löschen
                     ratio = za / max(am, 1)
                     if ratio > 0:
                         md = int(md / ratio) if ratio != 0 else md
+                    print(f"md = {md}")
                     for nm in new_markers:
                         delete.delete_marker_frame(context, nm.track_name, context.scene.frame_current)
                     continue  # neuer Zyklus
@@ -132,6 +138,7 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                 ratio = za / max(am, 1)
                 if ratio > 0:
                     md = int(md / ratio) if ratio != 0 else md
+                print(f"md = {md}")
                 for nm in new_markers:
                     delete.delete_marker_frame(context, nm.track_name, context.scene.frame_current)
                 continue
