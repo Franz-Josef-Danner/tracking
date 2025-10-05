@@ -16,7 +16,7 @@ def _recompute_md(current_md: float, za: float, am: int) -> float:
     """
     if am <= 0 or za <= 0:
         return max(1.0, current_md * 0.5)
-    new_md = current_md * max(-0.5, min(2, (am / za)))
+    new_md = current_md * max(0.5, min(2, (am / za)))
     return max(1.0, new_md)
 
 class KAISERLICHTRACKER_OT_detect_cycle(bpy.types.Operator):
