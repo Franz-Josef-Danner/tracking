@@ -271,7 +271,7 @@ def purge_logically_deleted(target_clip=None):
     _log(f'purge: entfernt={removed} verbleibend_markiert={remaining_deleted}')
     return {'removed': removed, 'remaining_deleted': remaining_deleted}
 
-def delete_tracks(tracks, strategy='auto'):
+def delete_tracks(tracks, strategy='auto', clip=None):
     """ Löscht mehrere Tracking-Tracks stabil mit mehrstufigem Fallback.
 
     Parameter:
@@ -285,9 +285,14 @@ def delete_tracks(tracks, strategy='auto'):
     if not tracks:
         _log('Keine Tracks übergeben')
         return 0
-    clip = bpy.context.edit_movieclip
+    # Clip bevorzugt aus Parameter (stabilerer Kontext), sonst versuchen aus aktueller Context
+    if clip is None:
+        try:
+            clip = getattr(bpy.context, 'edit_movieclip', None)
+        except Exception:
+            clip = None
     if not clip:
-        _log('Kein aktiver Clip')
+        _log('Kein Clip (Kontext hat kein edit_movieclip) – Abbruch ohne Fehler')
         return 0
 
     # Namen auflösen (frische Referenzen)

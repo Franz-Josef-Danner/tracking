@@ -96,7 +96,7 @@ def run(context, values: dict):
                 attempt += 1
                 before_names = [t.name for t in chunk]
                 print(f'cleaneup: Chunk {i//_BULK_CHUNK_SIZE+1} Versuch {attempt} Tracks={before_names}')
-                removed_now = bulk_delete.delete_tracks(chunk, strategy=_DELETE_STRATEGY)
+                removed_now = bulk_delete.delete_tracks(chunk, strategy=_DELETE_STRATEGY, clip=clip)
                 removed += removed_now
                 # Re-Check Clip stabil (kein erneuter Direktzugriff auf context wenn UI gewechselt)
                 try:
