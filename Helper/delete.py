@@ -1,23 +1,66 @@
 import bpy
 
-# Track-orientierte API: Löscht den gesamten Track (einfacher & robust für Duplikat-Bereinigung)
-def run(track):
-    """Entfernt den kompletten Track per Operator-Kontext.
+# Globale Debug-Flag (bei Bedarf auf False setzen um die Menge zu reduzieren)
+DEBUG_DELETE = True
 
-    Vorgehen:
-      1. Track-Objekt im aktuellen Clip auffinden (Identität oder Name).
-      2. Selektionszustand zurücksetzen, Ziel selektieren.
-      3. Kontext-Override für CLIP_EDITOR WINDOW Region herstellen.
-      4. bpy.ops.clip.delete_track ausführen.
-    Rückgabe: True bei Erfolg.
-    """
+def _log(msg):
+    if DEBUG_DELETE:
+        print(f'[delete] {msg}')
+
+def _build_override_for_clip(target_clip):
+    """Versucht einen gültigen Override-Kontext für den Clip Editor zu erstellen."""
+    wm = bpy.context.window_manager
+    for window in wm.windows:
+        for area in window.screen.areas:
+            if area.type != 'CLIP_EDITOR':
+                continue
+            space = area.spaces.active
+            if getattr(space, 'clip', None) != target_clip:
+                continue
+            for region in area.regions:
+                if region.type == 'WINDOW':
+                    override = {
+                        'window': window,
+                        'screen': window.screen,
+                        'area': area,
+                        'region': region,
+                        'space_data': space,
+                        'scene': bpy.context.scene,
+                        'clip': target_clip,
+                    }
+                    return override
+    return None
+
+def _manual_track_wipe(track):
+    """Fallback: löscht alle Marker einzeln, versucht danach erneut Operator."""
+    frames = []
+    try:
+        for m in track.markers:
+            fr = getattr(m, 'frame', None)
+            if fr is not None:
+                frames.append(fr)
+        frames = sorted(set(frames), reverse=True)  # rückwärts löschen
+        for fr in frames:
+            try:
+                if hasattr(track.markers, 'delete_frame'):
+                    track.markers.delete_frame(fr)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return len(track.markers) == 0
+
+# Track-orientierte API: Löscht den gesamten Track oder (Fallback) alle Marker
+def run(track):
     clip = bpy.context.edit_movieclip
     if not clip:
-        print('delete.run: kein aktiver Clip')
+        _log('kein aktiver Clip')
         return False
-
     name = getattr(track, 'name', None)
-    # Eindeutig passendes Track-Objekt bestimmen
+    before_names = [t.name for t in clip.tracking.tracks]
+    _log(f'Vorher Tracks: {before_names}')
+
+    # Zielobjekt ermitteln (Identität oder Name)
     target = None
     for t in clip.tracking.tracks:
         if t == track:
@@ -29,10 +72,10 @@ def run(track):
                 target = t
                 break
     if target is None:
-        print(f'delete.run: Track {name} nicht gefunden')
+        _log(f'Track {name} nicht gefunden – Abbruch')
         return False
 
-    # Selektionsreset
+    # Selektion zurücksetzen
     try:
         for t in clip.tracking.tracks:
             try:
@@ -44,50 +87,59 @@ def run(track):
         except Exception:
             pass
     except Exception:
-        pass
+        _log('Fehler beim Selektionsreset')
 
-    # Kontext für Operator suchen (erstes CLIP_EDITOR/WINDOW)
-    override = None
-    try:
-        wm = bpy.context.window_manager
-        for window in wm.windows:
-            for area in window.screen.areas:
-                if area.type == 'CLIP_EDITOR':
-                    space = area.spaces.active
-                    if getattr(space, 'clip', None) != clip:
-                        continue
-                    for region in area.regions:
-                        if region.type == 'WINDOW':
-                            override = {
-                                'window': window,
-                                'screen': window.screen,
-                                'area': area,
-                                'region': region,
-                                'space_data': space,
-                                'scene': bpy.context.scene,
-                            }
-                            raise StopIteration
-            # Ende areas
-    except StopIteration:
-        pass
-    except Exception:
-        override = None
+    override = _build_override_for_clip(clip)
+    _log(f'Override gefunden: {bool(override)}')
+    if override:
+        oa = override.get('area'); orr = override.get('region'); osp = override.get('space_data')
+        _log(f'Override Details area={getattr(oa, "type", None)} region={getattr(orr, "type", None)} space_clip_ok={getattr(osp, "clip", None) == clip}')
 
-    # Operator ausführen
+    # Operator versuchen
+    op_result = None
     try:
         if override:
-            result = bpy.ops.clip.delete_track(override)
+            op_result = bpy.ops.clip.delete_track(override)
         else:
-            # Versuch ohne Override (falls im CLIP_EDITOR Kontext ausgeführt wird)
-            result = bpy.ops.clip.delete_track()
-        # Erfolg prüfen
-        if all(t.name != name for t in clip.tracking.tracks):
-            print(f'delete.run: Track {name} entfernt ({result})')
-            return True
+            op_result = bpy.ops.clip.delete_track()
+        _log(f'Operator Ergebnis: {op_result}')
     except Exception as e:
-        print(f'delete.run: Fehler beim Operator {e}')
+        _log(f'Operator Exception: {e}')
 
-    print(f'delete.run: Entfernen von {name} fehlgeschlagen')
+    after_names = [t.name for t in clip.tracking.tracks]
+    _log(f'Nachher Tracks: {after_names}')
+    if name not in after_names:
+        _log(f'Track {name} entfernt (Operator)')
+        return True
+
+    _log('Operator hat Track nicht entfernt -> Fallback Marker-Wipe')
+    # Fallback: alle Marker löschen und erneut probieren
+    wiped = _manual_track_wipe(target)
+    _log(f'Marker-Wipe Erfolg={wiped} verbleibende Marker={len(target.markers) if target in clip.tracking.tracks else "?"}')
+    if wiped:
+        # Nochmal Operator
+        try:
+            if override:
+                op_result = bpy.ops.clip.delete_track(override)
+            else:
+                op_result = bpy.ops.clip.delete_track()
+            _log(f'Operator nach Wipe Ergebnis: {op_result}')
+        except Exception as e:
+            _log(f'Operator Exception nach Wipe: {e}')
+        after2 = [t.name for t in clip.tracking.tracks]
+        _log(f'Nachher2 Tracks: {after2}')
+        if name not in after2:
+            _log(f'Track {name} entfernt (Fallback)')
+            return True
+
+    # Letzter Ausweg: Umbenennen zur Sichtbarmachung
+    try:
+        new_name = f'FAILED_DEL_{name}' if name else 'FAILED_DEL'
+        target.name = new_name
+        _log(f'Track Umbenannt -> {new_name}')
+    except Exception:
+        pass
+    _log(f'Entfernen von {name} endgültig fehlgeschlagen')
     return False
 def _resolve_track(context, track_name: str, case_insensitive: bool = True):
     """Findet einen Track anhand seines Namens (optional case-insensitive)."""
