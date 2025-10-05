@@ -134,7 +134,7 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                         md = int(md / ratio) if ratio != 0 else md
                     print(f"[Kaiserlich Tracker] Neue md (over-range) = {md}")
                     for nm in new_markers:
-                        delete.delete_track(context, nm.track_name)
+                        delete.delete_marker_frame(context, nm.track_name, context.scene.frame_current)
                     continue  # neuer Zyklus
             else:
                 # am <= ug -> md anpassen und neue Marker löschen
@@ -143,7 +143,7 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                     md = int(md / ratio) if ratio != 0 else md
                 print(f"[Kaiserlich Tracker] Neue md (under-range) = {md}")
                 for nm in new_markers:
-                    delete.delete_track(context, nm.track_name)
+                    delete.delete_marker_frame(context, nm.track_name, context.scene.frame_current)
                 continue
 
         # Abschlussreport
