@@ -28,9 +28,9 @@ def run(context, ef: int):
     vc = clip.size[1]
 
     ma = hz * 0.025
+    ma = hz * 0.025
     md = hz * 0.025
     print(f'ma (margin): {ma}')
-    print(f'md (min_distance): {md}')
     pz = int(hz * 0.01)
     print(f'pz (pixel size basis): {pz}')
     sz = pz * 2
