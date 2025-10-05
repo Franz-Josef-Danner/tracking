@@ -10,8 +10,8 @@ bl_info = {
 }
 
 import importlib
-from .tracking.UI import ui
-from .tracking.Operator import operator
+from .UI import ui
+from .Operator import operator
 
 modules = [ui, operator]
 
