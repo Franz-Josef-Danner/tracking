@@ -5,7 +5,7 @@ import time
 # Konfiguration für Stabilität
 _BULK_CHUNK_SIZE = 4          # In kleineren Gruppen löschen um UI-Block zu reduzieren
 _RETRY_ON_FAIL = 1            # Wie oft eine fehlgeschlagene Gruppe nochmals versucht wird
-_DELETE_STRATEGY = 'temp_first'  # 'auto' | 'temp_first' | 'operator_first'
+_DELETE_STRATEGY = None  # veraltet – wird nicht mehr genutzt, nur für rückwärtskompatibles Logging
 _GLOBAL_TIMEOUT_SEC = 5       # Harte Obergrenze für gesamten Cleanup-Löschteil
 
 def _marker_at_frame(track, frame_current):
@@ -83,7 +83,7 @@ def run(context, values: dict):
 
     # Jetzt gesammelt löschen
     if to_delete_tracks:
-        print(f'cleaneup: versuche {len(to_delete_tracks)} Tracks via bulk_delete (Strategie={_DELETE_STRATEGY}) zu entfernen')
+        print(f'cleaneup: versuche {len(to_delete_tracks)} Tracks via bulk_delete zu entfernen')
         start_delete = time.perf_counter()
         # In Chunks verarbeiten
         for i in range(0, len(to_delete_tracks), _BULK_CHUNK_SIZE):
@@ -96,7 +96,7 @@ def run(context, values: dict):
                 attempt += 1
                 before_names = [t.name for t in chunk]
                 print(f'cleaneup: Chunk {i//_BULK_CHUNK_SIZE+1} Versuch {attempt} Tracks={before_names}')
-                removed_now = bulk_delete.delete_tracks(chunk, strategy=_DELETE_STRATEGY, clip=clip)
+                removed_now = bulk_delete.delete_tracks(chunk, clip=clip)
                 removed += removed_now
                 # Re-Check Clip stabil (kein erneuter Direktzugriff auf context wenn UI gewechselt)
                 try:
