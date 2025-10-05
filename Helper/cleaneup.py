@@ -55,7 +55,7 @@ def run(context, values: dict):
             disV = abs(om_y - nm_y)
             if disH < md:
                 print(f'cleaneup: disH {disH:.2f} < {md} -> remove {nt.name}')
-                success = delete.run(nt)
+                success = delete.run(nt, frame=frame_current)
                 print(f'cleaneup: delete result for {nt.name} success={success}')
                 if success:
                     removed += 1
@@ -63,7 +63,7 @@ def run(context, values: dict):
                 break
             elif disV < md:
                 print(f'cleaneup: disV {disV:.2f} < {md} -> remove {nt.name}')
-                success = delete.run(nt)
+                success = delete.run(nt, frame=frame_current)
                 print(f'cleaneup: delete result for {nt.name} success={success}')
                 if success:
                     removed += 1

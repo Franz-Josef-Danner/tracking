@@ -1,146 +1,112 @@
 import bpy
 
-# Globale Debug-Flag (bei Bedarf auf False setzen um die Menge zu reduzieren)
 DEBUG_DELETE = True
 
 def _log(msg):
     if DEBUG_DELETE:
         print(f'[delete] {msg}')
 
-def _build_override_for_clip(target_clip):
-    """Versucht einen gültigen Override-Kontext für den Clip Editor zu erstellen."""
-    wm = bpy.context.window_manager
-    for window in wm.windows:
-        for area in window.screen.areas:
-            if area.type != 'CLIP_EDITOR':
-                continue
-            space = area.spaces.active
-            if getattr(space, 'clip', None) != target_clip:
-                continue
-            for region in area.regions:
-                if region.type == 'WINDOW':
-                    override = {
-                        'window': window,
-                        'screen': window.screen,
-                        'area': area,
-                        'region': region,
-                        'space_data': space,
-                        'scene': bpy.context.scene,
-                        'clip': target_clip,
-                    }
-                    return override
+def _find_track(clip, candidate):
+    name = getattr(candidate, 'name', None)
+    for t in clip.tracking.tracks:
+        if t == candidate:
+            return t
+    if name:
+        for t in clip.tracking.tracks:
+            if t.name == name:
+                return t
     return None
 
-def _manual_track_wipe(track):
-    """Fallback: löscht alle Marker einzeln, versucht danach erneut Operator."""
-    frames = []
-    try:
-        for m in track.markers:
-            fr = getattr(m, 'frame', None)
-            if fr is not None:
-                frames.append(fr)
-        frames = sorted(set(frames), reverse=True)  # rückwärts löschen
-        for fr in frames:
+def _track_still_exists(clip, name):
+    for t in clip.tracking.tracks:
+        if t.name == name:
+            return True
+    return False
+
+def _delete_marker_at_frame(track, frame):
+    # Versuche gezielt Marker am Frame zu löschen
+    if hasattr(track.markers, 'find_frame'):
+        try:
+            m = track.markers.find_frame(frame)
+        except Exception:
+            m = None
+        if m is not None:
             try:
-                if hasattr(track.markers, 'delete_frame'):
-                    track.markers.delete_frame(fr)
+                track.markers.delete_frame(frame)
+                return True
             except Exception:
                 pass
-    except Exception:
-        pass
-    return len(track.markers) == 0
+    # Fallback: Suche manuell
+    found = None
+    for mk in track.markers:
+        if getattr(mk, 'frame', None) == frame:
+            found = mk
+            break
+    if found is not None and hasattr(track.markers, 'delete_frame'):
+        try:
+            track.markers.delete_frame(frame)
+            return True
+        except Exception:
+            pass
+    return False
 
-# Track-orientierte API: Löscht den gesamten Track oder (Fallback) alle Marker
-def run(track):
+def _delete_all_markers(track):
+    frames = []
+    for mk in track.markers:
+        fr = getattr(mk, 'frame', None)
+        if fr is not None:
+            frames.append(fr)
+    frames = sorted(set(fr), reverse=True)
+    ok = True
+    for fr in frames:
+        if not _delete_marker_at_frame(track, fr):
+            ok = False
+    return ok and len(track.markers) == 0
+
+def run(track, frame=None):
+    """Entfernt (primär) nur Marker am aktuellen Frame oder – falls nötig – alle Marker.
+
+    Falls Track danach leer ist: versucht optional Track zu löschen (soft), ansonsten markiert (rename).
+    Rückgabe: True falls mindestens ein Marker entfernt oder Track geleert wurde.
+    """
     clip = bpy.context.edit_movieclip
     if not clip:
         _log('kein aktiver Clip')
         return False
-    name = getattr(track, 'name', None)
-    before_names = [t.name for t in clip.tracking.tracks]
-    _log(f'Vorher Tracks: {before_names}')
-
-    # Zielobjekt ermitteln (Identität oder Name)
-    target = None
-    for t in clip.tracking.tracks:
-        if t == track:
-            target = t
-            break
-    if target is None and name:
-        for t in clip.tracking.tracks:
-            if t.name == name:
-                target = t
-                break
+    target = _find_track(clip, track)
     if target is None:
-        _log(f'Track {name} nicht gefunden – Abbruch')
+        _log('Track nicht gefunden (Abbruch)')
         return False
+    name = target.name
+    if frame is None:
+        frame = bpy.context.scene.frame_current
+    _log(f'Run delete für Track={name} Frame={frame}')
 
-    # Selektion zurücksetzen
-    try:
-        for t in clip.tracking.tracks:
-            try:
-                t.select = False
-            except Exception:
-                pass
+    # 1. Versuch: Marker am Frame löschen
+    removed_marker = _delete_marker_at_frame(target, frame)
+    _log(f'Marker am Frame gelöscht={removed_marker}')
+
+    # 2. Wenn nichts gelöscht wurde -> kompletten Track leeren (Marker-Wipe)
+    if not removed_marker:
+        wiped = _delete_all_markers(target)
+        _log(f'Alle Marker entfernt (wipe)={wiped} verbleibend={len(target.markers)}')
+    else:
+        wiped = len(target.markers) == 0
+
+    # 3. Optional: Track löschen falls leer – aber ohne Operator (Problemquelle) -> nur rename/mute
+    if len(target.markers) == 0:
         try:
-            target.select = True
+            target.mute = True
         except Exception:
             pass
-    except Exception:
-        _log('Fehler beim Selektionsreset')
-
-    override = _build_override_for_clip(clip)
-    _log(f'Override gefunden: {bool(override)}')
-    if override:
-        oa = override.get('area'); orr = override.get('region'); osp = override.get('space_data')
-        _log(f'Override Details area={getattr(oa, "type", None)} region={getattr(orr, "type", None)} space_clip_ok={getattr(osp, "clip", None) == clip}')
-
-    # Operator versuchen
-    op_result = None
-    try:
-        if override:
-            op_result = bpy.ops.clip.delete_track(override)
-        else:
-            op_result = bpy.ops.clip.delete_track()
-        _log(f'Operator Ergebnis: {op_result}')
-    except Exception as e:
-        _log(f'Operator Exception: {e}')
-
-    after_names = [t.name for t in clip.tracking.tracks]
-    _log(f'Nachher Tracks: {after_names}')
-    if name not in after_names:
-        _log(f'Track {name} entfernt (Operator)')
+        try:
+            target.name = f'DELETED_{name}'
+        except Exception:
+            pass
+        _log(f'Track {name} ist leer -> markiert als gelöscht (mute/rename)')
         return True
 
-    _log('Operator hat Track nicht entfernt -> Fallback Marker-Wipe')
-    # Fallback: alle Marker löschen und erneut probieren
-    wiped = _manual_track_wipe(target)
-    _log(f'Marker-Wipe Erfolg={wiped} verbleibende Marker={len(target.markers) if target in clip.tracking.tracks else "?"}')
-    if wiped:
-        # Nochmal Operator
-        try:
-            if override:
-                op_result = bpy.ops.clip.delete_track(override)
-            else:
-                op_result = bpy.ops.clip.delete_track()
-            _log(f'Operator nach Wipe Ergebnis: {op_result}')
-        except Exception as e:
-            _log(f'Operator Exception nach Wipe: {e}')
-        after2 = [t.name for t in clip.tracking.tracks]
-        _log(f'Nachher2 Tracks: {after2}')
-        if name not in after2:
-            _log(f'Track {name} entfernt (Fallback)')
-            return True
-
-    # Letzter Ausweg: Umbenennen zur Sichtbarmachung
-    try:
-        new_name = f'FAILED_DEL_{name}' if name else 'FAILED_DEL'
-        target.name = new_name
-        _log(f'Track Umbenannt -> {new_name}')
-    except Exception:
-        pass
-    _log(f'Entfernen von {name} endgültig fehlgeschlagen')
-    return False
+    return removed_marker
 def _resolve_track(context, track_name: str, case_insensitive: bool = True):
     """Findet einen Track anhand seines Namens (optional case-insensitive)."""
     space = context.space_data
