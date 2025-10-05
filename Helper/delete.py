@@ -115,13 +115,10 @@ def delete_marker_frame(context, track_name: str, frame: int) -> bool:
             still_there = any(m.frame == frame for m in tr.markers)
             frames_nachher = _marker_frames(tr)
 
-            # Sonderfall: Spur mit einzigem Marker lässt sich per API nicht leeren -> ggf. Track entfernen
+            # Sonderfall: Spur mit einzigem Marker lässt sich per API nicht leeren -> versuche Track direkt zu löschen (ohne Dummy-Marker)
             if still_there and len(frames_nachher) == 1 and removed:
-                # Fallback für Single-Marker-Track
-                # Versuch 1: Track per Operator löschen
                 deleted_track = False
                 try:
-                    # Selektions-Setup nur für Track
                     for tsel in tracking.tracks:
                         try:
                             tsel.select = False
@@ -131,7 +128,6 @@ def delete_marker_frame(context, track_name: str, frame: int) -> bool:
                         tr.select = True
                     except Exception:
                         pass
-                    # Kontext sammeln
                     override = None
                     wm = bpy.context.window_manager
                     for window in wm.windows:
@@ -159,38 +155,11 @@ def delete_marker_frame(context, track_name: str, frame: int) -> bool:
                         _ = bpy.ops.clip.delete_track(override) if override else bpy.ops.clip.delete_track()
                     except Exception:
                         pass
-                    # Prüfen ob Track weg ist
                     deleted_track = all(t.name != tr.name for t in tracking.tracks)
                 except Exception:
                     pass
-
                 if deleted_track:
                     return True
-                else:
-                    # Versuch 2: Dummy-Marker an anderem Frame anlegen, dann Ziel löschen
-                    try:
-                        dummy_frame = frame + 1
-                        if hasattr(tr.markers, 'find_frame') and tr.markers.find_frame(dummy_frame) is None:
-                            tr.markers.insert_frame(dummy_frame)
-                            pass
-                        # Nochmals Ziel löschen
-                        if hasattr(tr.markers, 'delete_frame'):
-                            tr.markers.delete_frame(frame)
-                            check_after_dummy = any(m.frame == frame for m in tr.markers)
-                            if not check_after_dummy:
-                                return True
-                        # Aufräumen: Dummy wieder löschen wenn nur er übrig ist und nicht gewollt
-                        if len(tr.markers) == 1 and any(m.frame == dummy_frame for m in tr.markers):
-                            # Versuchen Track doch zu entfernen
-                            try:
-                                for tsel in tracking.tracks:
-                                    tsel.select = False
-                                tr.select = True
-                                _ = bpy.ops.clip.delete_track(override) if override else bpy.ops.clip.delete_track()
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
 
             if not still_there and removed:
                 try:
