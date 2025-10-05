@@ -1,6 +1,6 @@
 import bpy
 
-def run(context, tr: float, md: float, ma: float):
+def run(context, tr: float, md: float, ma: float, clip=None):
     """Wrap für bpy.ops.clip.detect_features mit übergebenen Parametern.
 
     Parameter:
@@ -8,9 +8,10 @@ def run(context, tr: float, md: float, ma: float):
       md -> min_distance
       ma -> margin
     """
-    clip = bpy.context.edit_movieclip
+    if clip is None:
+        clip = getattr(bpy.context, 'edit_movieclip', None)
     if not clip:
-        print('detect: kein Clip')
+        print('detect: kein Clip (Kontext ohne edit_movieclip)')
         return
     try:
         res = bpy.ops.clip.detect_features(

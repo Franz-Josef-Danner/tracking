@@ -31,26 +31,37 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
         ug = values['ug']
         md_current = values['md']  # dynamisch anpassbar
 
+        # Clip einmal sichern (Initialkontext). Falls später None -> Abbruch.
+        base_clip = getattr(bpy.context, 'edit_movieclip', None)
+        if not base_clip:
+            self.report({'ERROR'}, 'Kein aktiver Movie Clip (kein edit_movieclip im Kontext)')
+            return {'CANCELLED'}
+
         surviving = 0
         iteration = 0
         while True:
             iteration += 1
             print(f'=== Zyklus Start Iteration {iteration} (md={md_current}) ===')
             # Snapshot (Baseline alte Marker)
-            snapshot.run(context, values)
+            # Robust: falls Clip verschwunden -> Abbruch
+            if not base_clip:
+                print('[Cycle] Clip verloren – Abbruch')
+                break
+            snapshot.run(context, values, clip=base_clip)
             # Vorbereitung neuer Marker (Platzhalter)
-            newmarker.run(context, values)
+            newmarker.run(context, values, clip=base_clip)
             # Detection mit aktuellem md
-            detect.run(context, tr=values['tr'], md=md_current, ma=values['ma'])
+            detect.run(context, tr=values['tr'], md=md_current, ma=values['ma'], clip=base_clip)
             # Vergleich alt / neu
-            cmp_result = compare.run(context)
+            cmp_result = compare.run(context, clip=base_clip)
             # Cleanup (löscht zu nahe neue Marker) – Werte dict mit aktuellem md versorgen
             values['md'] = md_current
             surviving = cleaneup.run(
                 context,
                 values,
                 new_tracks=cmp_result.get('new_tracks'),
-                old_tracks=cmp_result.get('old_tracks')
+                old_tracks=cmp_result.get('old_tracks'),
+                clip=base_clip
             )
             am = surviving  # Anzahl neuer Marker nach Cleanup
             print(f'[Cycle] Neue Marker (am) nach Cleanup: {am} (ug={ug}, za={za})')
@@ -74,14 +85,12 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                 print('[Cycle] za=0 -> md unverändert')
             # Ganze neue Tracks löschen (statt nur Marker), um frisches Feld für nächste Iteration zu haben
             try:
-                clip = bpy.context.edit_movieclip
-                if clip:
+                if base_clip:
                     candidate_names = set(cmp_result.get('new_names', set()))
-                    # Erneut nur diejenigen nehmen, die noch existieren (nach Cleanup evtl. schon weg)
-                    to_remove_objs = [t for t in clip.tracking.tracks if t.name in candidate_names]
+                    to_remove_objs = [t for t in base_clip.tracking.tracks if t.name in candidate_names]
                     if to_remove_objs:
                         print(f'[Cycle] Entferne komplette neue Tracks: {[t.name for t in to_remove_objs]}')
-                        bulk_delete.delete_tracks(to_remove_objs, clip=clip)
+                        bulk_delete.delete_tracks(to_remove_objs, clip=base_clip)
                     else:
                         print('[Cycle] Keine neuen Tracks mehr zum Entfernen (evtl. durch Cleanup gelöscht)')
             except Exception as e:

@@ -14,7 +14,7 @@ def _marker_at_frame(track, frame_current):
             return m
     return None
 
-def run(context, values: dict, new_tracks=None, old_tracks=None):
+def run(context, values: dict, new_tracks=None, old_tracks=None, clip=None):
     """Bereinigt neu angelegte Marker, die zu nahe an bestehenden liegen.
 
     Algorithmus gemäß Vorgabe:
@@ -25,10 +25,11 @@ def run(context, values: dict, new_tracks=None, old_tracks=None):
           Sonst wenn disV < md -> neuer Marker wird gelöscht
           Sonst bleibt er erhalten
     """
-    clip = bpy.context.edit_movieclip
+    if clip is None:
+        clip = getattr(bpy.context, 'edit_movieclip', None)
     if not clip:
-        print('cleaneup: kein Clip')
-        return
+        print('cleaneup: kein Clip (Kontext ohne edit_movieclip)')
+        return 0
 
     md = values.get('md')
     hz = values.get('hz')

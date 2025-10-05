@@ -4,15 +4,16 @@ import bpy
 _previous_tracks = {}
 _previous_marker_counts = {}
 
-def run(context, values: dict):
+def run(context, values: dict, clip=None):
     """Snapshot der vorhandenen Track-Namen vor der Detection.
 
     Legt im Modul ein Set der aktuellen Track-Namen ab, damit später verglichen
     werden kann, welche neu sind.
     """
-    clip = bpy.context.edit_movieclip
+    if clip is None:
+        clip = getattr(bpy.context, 'edit_movieclip', None)
     if not clip:
-        print('snapshot: kein Clip')
+        print('snapshot: kein Clip (Kontext ohne edit_movieclip)')
         return
     frame = context.scene.frame_current
     names = {t.name for t in clip.tracking.tracks if not (t.name.startswith('DELETED_') or t.name.startswith('FAILED_DEL_') or t.name.startswith('DELETED_UNREM_'))}

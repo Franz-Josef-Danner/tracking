@@ -1,7 +1,7 @@
 import bpy
 from . import snapshot
 
-def run(context):
+def run(context, clip=None):
     """Vergleicht aktuelle Track-Liste mit Snapshot und klassifiziert Marker.
 
     Rückgabe:
@@ -16,9 +16,10 @@ def run(context):
     AMA = Alter Marker (Track existierte im Snapshot)
     NM  = Neuer Marker (Track ist neu seit Snapshot)
     """
-    clip = bpy.context.edit_movieclip
+    if clip is None:
+        clip = getattr(bpy.context, 'edit_movieclip', None)
     if not clip:
-        print('compare: kein Clip')
+        print('compare: kein Clip (Kontext ohne edit_movieclip)')
         return {
             'new_tracks': [], 'old_tracks': [], 'new_names': set(), 'old_names': set(),
             'new_count': 0, 'old_count': 0

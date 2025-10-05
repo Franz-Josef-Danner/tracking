@@ -1,10 +1,10 @@
 import bpy
 
-def run(context, values: dict):
+def run(context, values: dict, clip=None):
     """Platzhalter für Logik zum Anlegen neuer Marker falls nötig."""
-    clip = bpy.context.edit_movieclip
+    if clip is None:
+        clip = getattr(bpy.context, 'edit_movieclip', None)
     if not clip:
-        print('newmarker: kein Clip')
+        print('newmarker: kein Clip (Kontext ohne edit_movieclip)')
         return
-    # Hier könnte man gezielt Marker hinzufügen – aktuell nur Ausgabe.
     print('newmarker: Vorbereitung abgeschlossen (keine expliziten Marker erzeugt)')
