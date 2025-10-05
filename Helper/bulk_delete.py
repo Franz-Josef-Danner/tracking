@@ -197,43 +197,53 @@ def _try_temp_override_delete(track, target_clip):
             return False
     wm = bpy.context.window_manager
     start = time.perf_counter()
-    for window in wm.windows:
-        for area in window.screen.areas:
-            if area.type != 'CLIP_EDITOR':
-                continue
-            space = area.spaces.active
-            if getattr(space, 'clip', None) != target_clip:
-                continue
-            for region in area.regions:
-                if region.type != 'WINDOW':
+    # Nur erster passende CLIP_EDITOR wird verwendet (reduziert Mehrfach-Ausführungen / Instabilität)
+    try:
+        for window in wm.windows:
+            for area in window.screen.areas:
+                if area.type != 'CLIP_EDITOR':
                     continue
-                try:
-                    with bpy.context.temp_override(window=window, area=area, region=region, scene=bpy.context.scene, space_data=space):
-                        # Auswahl setzen
-                        try:
-                            for t in target_clip.tracking.tracks:
-                                t.select = False
-                            track.select = True
-                            target_clip.tracking.tracks.active = track
-                        except Exception:
-                            pass
-                        try:
-                            res = bpy.ops.clip.delete_track()
-                            _log(f'temp_override Versuch delete_track -> {res}')
-                            if res == {'FINISHED'}:
-                                remaining = [t.name for t in target_clip.tracking.tracks]
-                                if track.name not in remaining:
-                                    _TEMP_OVERRIDE_CAPABLE = True
-                                    dur = (time.perf_counter() - start) * 1000
-                                    _log(f'temp_override Erfolg nach {dur:.1f}ms')
-                                    return True
-                        except Exception as e:
-                            _log(f'temp_override Fehler: {e}')
-                except Exception as e:
-                    _log(f'Override Setup Fehler: {e}')
-    # Kein Erfolg
+                space = area.spaces.active
+                if getattr(space, 'clip', None) != target_clip:
+                    continue
+                region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+                if not region:
+                    continue
+                with bpy.context.temp_override(window=window, area=area, region=region, scene=bpy.context.scene, space_data=space):
+                    try:
+                        for t in target_clip.tracking.tracks:
+                            t.select = False
+                        track.select = True
+                        target_clip.tracking.tracks.active = track
+                    except Exception:
+                        pass
+                    try:
+                        res = bpy.ops.clip.delete_track()
+                        _log(f'temp_override Versuch delete_track -> {res}')
+                        if res == {'FINISHED'}:
+                            _TEMP_OVERRIDE_CAPABLE = True
+                            dur = (time.perf_counter() - start) * 1000
+                            _log(f'temp_override Rückkehr (nicht verifiziert) nach {dur:.1f}ms')
+                            return True  # Erfolg (Verifikation erfolgt später durch Namens-Check)
+                    except Exception as e:
+                        _log(f'temp_override Fehler: {e}')
+                # Nach erstem passenden Bereich abbrechen
+                break
+            if _TEMP_OVERRIDE_CAPABLE:
+                break
+    except Exception as outer_e:
+        _log(f'temp_override global Fehler: {outer_e}')
     if _TEMP_OVERRIDE_CAPABLE is None:
         _TEMP_OVERRIDE_CAPABLE = False
+    return False
+
+def _track_exists(clip, name):
+    try:
+        for t in clip.tracking.tracks:
+            if t.name == name:
+                return True
+    except Exception:
+        pass
     return False
 
 def purge_logically_deleted(target_clip=None):
@@ -347,9 +357,13 @@ def delete_tracks(tracks, strategy='auto'):
                 break
             if m == 'temp':
                 if _try_temp_override_delete(target, clip):
-                    removed = True
-                    _log(f'Removed via temp_override: {name_before}')
-                    break
+                    # Nachlauf-Prüfung ob Name noch existiert
+                    if not _track_exists(clip, name_before):
+                        removed = True
+                        _log(f'Removed via temp_override: {name_before}')
+                        break
+                    else:
+                        _log(f'temp_override meldete FINISHED, Track {name_before} existiert jedoch noch')
             elif m == 'operator':
                 success, attempts = _try_operator_delete_with_variants(target, clip)
                 if success:
@@ -362,24 +376,28 @@ def delete_tracks(tracks, strategy='auto'):
                         _log(f'Operator fehlgeschlagen (summary letzte={last})')
 
         if not removed:
-            # Direkter remove Versuch falls Collection.remove existiert (neu auflösen)
+            # Direkter remove Versuch falls vorhanden
             try:
                 target = next((t for t in clip.tracking.tracks if t.name == name_before), None)
                 if target and hasattr(clip.tracking.tracks, 'remove'):
                     clip.tracking.tracks.remove(target)
-                    removed = True
-                    _log(f'Removed via collection.remove: {name_before}')
+                    if not _track_exists(clip, name_before):
+                        removed = True
+                        _log(f'Removed via collection.remove: {name_before}')
             except Exception as e2:
                 _log(f'collection.remove Fehler {name_before}: {e2}')
 
         if not removed:
-            # Logical Rename Fallback
-            if not name_before.startswith('DELETED_'):
-                try:
+            # Logical Rename Fallback (erneut auflösen um Zombie Referenzen zu vermeiden)
+            try:
+                target = next((t for t in clip.tracking.tracks if t.name == name_before), None)
+                if target and not name_before.startswith('DELETED_'):
                     target.name = f'DELETED_{name_before}'
                     _log(f'Logical rename -> {target.name}')
-                except Exception:
-                    _log('Logical rename fehlgeschlagen (ignoriert)')
+                elif target is None:
+                    removed = True  # bereits verschwunden
+            except Exception:
+                _log('Logical rename fehlgeschlagen (ignoriert)')
         else:
             total_removed += 1
 

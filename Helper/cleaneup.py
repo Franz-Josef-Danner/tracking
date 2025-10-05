@@ -98,12 +98,21 @@ def run(context, values: dict):
                 print(f'cleaneup: Chunk {i//_BULK_CHUNK_SIZE+1} Versuch {attempt} Tracks={before_names}')
                 removed_now = bulk_delete.delete_tracks(chunk, strategy=_DELETE_STRATEGY)
                 removed += removed_now
-                # Herausfiltern was noch existiert (nicht physisch gelöscht) aber nicht logisch umbenannt
+                # Re-Check Clip stabil (kein erneuter Direktzugriff auf context wenn UI gewechselt)
+                try:
+                    current_clip = clip if clip and clip == bpy.context.edit_movieclip else clip
+                except Exception:
+                    current_clip = clip
                 remaining_obj = []
-                current_names = {t.name: t for t in bpy.context.edit_movieclip.tracking.tracks}
-                for t in chunk:
-                    if t.name in current_names and not t.name.startswith('DELETED_'):
-                        remaining_obj.append(current_names[t.name])
+                if current_clip:
+                    try:
+                        live_names = {t.name for t in current_clip.tracking.tracks}
+                        for t in chunk:
+                            # Wenn Name noch unverändert da und nicht logical markiert -> erneut versuchen
+                            if t.name in live_names and not t.name.startswith('DELETED_'):
+                                remaining_obj.append(t)
+                    except Exception:
+                        pass
                 if not remaining_obj:
                     break  # Alles erledigt (physisch oder logical)
                 if removed_now == 0 and attempt > _RETRY_ON_FAIL:
