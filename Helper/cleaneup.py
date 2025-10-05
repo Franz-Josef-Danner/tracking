@@ -35,12 +35,14 @@ def cleanup_markers(context, marker_pairs: List[MarkerPair], md: int, hz: int, v
     total = len(marker_pairs)
     # Immer Log – auch wenn keine Paare vorhanden
     print(f"[KT][cleanup] start pairs={total} md={md}")
-    for pair in marker_pairs:
+    for idx, pair in enumerate(marker_pairs):
         dis_h, dis_v = pair.distance_px(hz, vc)
-        if dis_h < md or dis_v < md:
+        close = (dis_h < md or dis_v < md)
+        print(f"[KT][cleanup] pair#{idx} track={pair.track_name} dx={dis_h:.1f} dy={dis_v:.1f} md={md} close={close}")
+        if close:
             frame_current = context.scene.frame_current
             if delete.delete_marker_frame(context, pair.track_name, frame_current):
                 deleted += 1
-                print(f"[KT][cleanup] deleted {pair.track_name}@{frame_current} dx={dis_h:.1f} dy={dis_v:.1f}")
+                print(f"[KT][cleanup] deleted {pair.track_name}@{frame_current}")
     print(f"[KT][cleanup] done deleted={deleted}/{total}")
     return deleted

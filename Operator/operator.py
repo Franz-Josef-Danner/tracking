@@ -58,7 +58,11 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
             # Neue Marker nach Detect
             new_markers = newmarker.capture_new_tracks(context, old_names)
             am = len(new_markers)
-            # Anzahl neue Marker intern verfügbar (am)
+            print(f"[KT][cycle] frame={context.scene.frame_current} old_count={len(old_markers)} new_count={am}")
+            if old_markers:
+                print(f"[KT][cycle] old_names_sample={[m.track_name for m in old_markers[:5]]}")
+            if new_markers:
+                print(f"[KT][cycle] new_names_sample={[m.track_name for m in new_markers[:5]]}")
 
             # Vergleich alt/neu
             old_by_track = {m.track_name: m for m in old_markers}
@@ -90,6 +94,12 @@ class KAISERLICH_OT_detect_cyclus(bpy.types.Operator):
                         old_co=(old.co_x, old.co_y),
                         new_co=(nm.co_x, nm.co_y)
                     ))
+            if not marker_pairs and am > 0 and old_markers:
+                inter = {nm.track_name for nm in new_markers} & {om.track_name for om in old_markers}
+                if not inter:
+                    print("[KT][cycle][warn] Keine AMA-Paare gebildet: Track-Namen alter und neuer Marker überschneiden sich nicht. Evtl. andere Logik nötig (z.B. Abstandsvergleich aller neuen untereinander).")
+            else:
+                print(f"[KT][cycle] pairs={len(marker_pairs)} (für Distanzprüfung)")
             # Cleanup jetzt immer aufrufen, damit Logging sichtbar ist, auch wenn 0 Paare
             deleted_count = cleaneup.cleanup_markers(context, marker_pairs, md=md, hz=hz, vc=vc)
             summary_deleted += deleted_count
